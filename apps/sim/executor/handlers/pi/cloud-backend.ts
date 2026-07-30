@@ -1,5 +1,5 @@
 /**
- * Cloud-mode backend: runs the Pi CLI inside an E2B sandbox against a cloned
+ * Create PR backend: runs the Pi CLI inside an E2B sandbox against a cloned
  * GitHub repo, then pushes a branch and opens a PR. Secrets are isolated per
  * command (S2/KTD10): the GitHub token is present only for the clone and push
  * commands (and stripped from the cloned remote), while the Pi loop runs with a
@@ -10,14 +10,29 @@
  * It is written into sandbox files via the E2B filesystem API and read back from
  * fixed paths (Pi's prompt on stdin, `git commit -F <file>`), so a collaborator-
  * authored skill cannot inject shell into the Pi step where the model key lives.
+ *
+ * Optional web search adds a second sandbox credential, delivered the same way as
+ * the model key, plus a runtime-written Pi extension that performs the provider
+ * call. Every text this backend surfaces — events, totals, prompt, commit title,
+ * PR body, diff, changed files, thrown errors — is scrubbed against all three
+ * credentials.
  */
 
 import { createLogger } from '@sim/logger'
 import { generateShortId } from '@sim/utils/id'
 import { truncate } from '@sim/utils/string'
-import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
-import { withPiSandbox } from '@/lib/execution/e2b'
+import { withPiSandbox } from '@/lib/execution/remote-sandbox'
 import type { PiBackendRun, PiCloudRunParams } from '@/executor/handlers/pi/backend'
+import {
+  buildPiScript,
+  CLONE_TIMEOUT_MS,
+  extractMarkerValues,
+  PI_TIMEOUT_MS,
+  PROMPT_PATH,
+  REPO_DIR,
+  raceAbort,
+  scrubGitSecrets,
+} from '@/executor/handlers/pi/cloud-shared'
 import { buildPiPrompt } from '@/executor/handlers/pi/context'
 import {
   applyPiEvent,
@@ -26,30 +41,35 @@ import {
   parseJsonLine,
 } from '@/executor/handlers/pi/events'
 import { mapThinkingLevel, providerApiKeyEnvVar } from '@/executor/handlers/pi/keys'
+import {
+  createScrubbedPiError,
+  scrubPiEvent,
+  scrubPiSecrets,
+} from '@/executor/handlers/pi/redaction'
+import {
+  PI_SEARCH_API_KEY_ENV_VAR,
+  PI_SEARCH_EXTENSION_PATH,
+  PI_SEARCH_EXTENSION_SOURCE,
+  PI_SEARCH_PROVIDER_ENV_VAR,
+} from '@/executor/handlers/pi/search/extension-source'
+import { getPiProviderId } from '@/providers/pi-providers'
 import { executeTool } from '@/tools'
 
 const logger = createLogger('PiCloudBackend')
 
-const REPO_DIR = '/workspace/repo'
 const DIFF_PATH = '/workspace/pi.diff'
-
-const PROMPT_PATH = '/workspace/pi-prompt.txt'
 const COMMIT_MSG_PATH = '/workspace/pi-commit.txt'
-
 const PUSH_ERR_PATH = '/workspace/pi-push-err.txt'
-const CLONE_TIMEOUT_MS = 10 * 60 * 1000
-
-const PI_TIMEOUT_MS = getMaxExecutionTimeout()
 const FINALIZE_TIMEOUT_MS = 10 * 60 * 1000
 const MAX_DIFF_BYTES = 200_000
 const COMMIT_TITLE_MAX = 72
 const PR_SUMMARY_MAX = 2000
 const PUSH_ERROR_MAX = 1000
 
-// The agent only edits files; Sim commits, pushes, and opens the PR after the run.
-// Without this, the coding agent tries to git push / open a PR / run the test
-// toolchain itself and fails — the sandbox has no GitHub auth (the token is
-// stripped from the remote after clone) and may lack the project's tooling.
+/**
+ * Keeps git authentication out of the agent loop by reserving commit, push, and
+ * PR creation for Sim's credential-scoped finalization step.
+ */
 const CLOUD_GUIDANCE =
   'You are running inside an automated sandbox. Make only the file changes needed to complete the task. ' +
   'Do not run git commands (commit, push, branch, remote), do not configure git credentials or authenticate ' +
@@ -68,18 +88,12 @@ echo "__DEFAULT_BRANCH__=$DEFAULT_BRANCH"
 git checkout -b "$BRANCH"
 git remote set-url origin "https://github.com/$REPO_OWNER/$REPO_NAME.git"`
 
-const PI_SCRIPT = `cd ${REPO_DIR}
-pi -p --mode json --provider "$PI_PROVIDER" --model "$PI_MODEL" --thinking "$PI_THINKING" < ${PROMPT_PATH}`
-
-// Finalize is split so the GitHub token is in scope for ONLY the push. `git add`,
-// `commit`, and `diff` run repo-config-driven programs that `core.hooksPath` does
-// NOT disable — gitattributes clean/smudge filters (on add), `core.fsmonitor`
-// (on add/diff), and `diff.external`/textconv (on diff). The untrusted Pi loop can
-// plant `.gitattributes` + `.git/config` to run code during these. Keeping the
-// token out of PREPARE's env means a planted program has no credential to steal;
-// hooks are disabled too as defense-in-depth. Commit runs unconditionally
-// (`|| true` tolerates an empty commit); the push decision is gated on HEAD
-// advancing past base, so commits the agent made itself are still pushed.
+/**
+ * Stages, commits, and diffs without the GitHub token because repository config
+ * can execute filters, fsmonitor, external diffs, or textconv during these git
+ * operations. Commit tolerates an empty tree; the marker checks whether HEAD
+ * advanced before the separately authenticated push.
+ */
 const PREPARE_SCRIPT = `set -e
 cd ${REPO_DIR}
 git -c core.hooksPath=/dev/null add -A
@@ -88,49 +102,12 @@ git diff --name-only "$BASE_SHA" HEAD | sed "s/^/__CHANGED__=/"
 git diff "$BASE_SHA" HEAD > ${DIFF_PATH} 2>/dev/null || true
 if git diff --quiet "$BASE_SHA" HEAD; then echo "__NO_CHANGES__=1"; else echo "__NEEDS_PUSH__=1"; fi`
 
-// The only token-bearing command. The agent-planted `.git/config` is still active,
-// so neutralize every config key that could run a program during push: hooks
-// (pre-push), `credential.helper` (runs during auth), and `core.fsmonitor`.
-// Filters/textconv don't run on push (no checkout/add/diff here).
+/**
+ * The only token-bearing command. It neutralizes repository-configured hooks,
+ * credential helpers, and fsmonitor before pushing agent-authored changes.
+ */
 const PUSH_SCRIPT = `cd ${REPO_DIR}
 git -c core.hooksPath=/dev/null -c credential.helper= -c core.fsmonitor= push "https://x-access-token:$GITHUB_TOKEN@github.com/$REPO_OWNER/$REPO_NAME.git" "$BRANCH" >/dev/null 2>${PUSH_ERR_PATH} && echo "__PUSHED__=1"`
-
-function raceAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return promise
-  if (signal.aborted) return Promise.reject(new Error('Pi run aborted'))
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(new Error('Pi run aborted'))
-    signal.addEventListener('abort', onAbort, { once: true })
-    promise.then(
-      (value) => {
-        signal.removeEventListener('abort', onAbort)
-        resolve(value)
-      },
-      (error) => {
-        signal.removeEventListener('abort', onAbort)
-        reject(error)
-      }
-    )
-  })
-}
-
-function extractMarkerValues(stdout: string, prefix: string): string[] {
-  return stdout
-    .split('\n')
-    .filter((line) => line.startsWith(prefix))
-    .map((line) => line.slice(prefix.length).trim())
-    .filter(Boolean)
-}
-
-/**
- * Redacts the GitHub token from git output before it is surfaced in an error.
- * Removes the literal token and any URL userinfo (`//user:token@`), so a failure
- * message can quote git's real stderr without leaking the credential.
- */
-function scrubGitSecrets(text: string, token: string): string {
-  const withoutToken = token ? text.split(token).join('***') : text
-  return withoutToken.replace(/\/\/[^/@\s]+@/g, '//***@')
-}
 
 function buildPrBody(task: string, finalText: string): string {
   const summary = finalText.trim()
@@ -148,7 +125,8 @@ async function openPullRequest(
   params: PiCloudRunParams,
   branch: string,
   detectedBase: string | undefined,
-  totals: PiRunTotals
+  totals: PiRunTotals,
+  secrets: readonly string[]
 ): Promise<string | undefined> {
   const base = params.baseBranch?.trim() || detectedBase
   if (!base) {
@@ -156,8 +134,11 @@ async function openPullRequest(
       `Branch ${branch} pushed, but the base branch could not be determined — set "Base Branch" on the block and re-run.`
     )
   }
-  const title = defaultTitle(params)
-  const body = params.prBody?.trim() || buildPrBody(params.task, totals.finalText)
+  const title = scrubPiSecrets(defaultTitle(params), secrets)
+  const body = scrubPiSecrets(
+    params.prBody?.trim() || buildPrBody(params.task, totals.finalText),
+    secrets
+  )
 
   const result = await executeTool('github_create_pr', {
     owner: params.owner,
@@ -183,24 +164,33 @@ async function openPullRequest(
 export const runCloudPi: PiBackendRun<PiCloudRunParams> = async (params, context) => {
   if (!params.isBYOK) {
     throw new Error(
-      'Cloud mode requires your own provider API key (BYOK). Set one in Settings > BYOK.'
+      'Create PR requires your own provider API key (BYOK). Set one in Settings > BYOK.'
     )
   }
   const keyEnvVar = providerApiKeyEnvVar(params.providerId)
   if (!keyEnvVar) {
     throw new Error(
-      `Provider "${params.providerId}" is not supported in cloud mode. Use a key-based provider or run in local mode.`
+      `Provider "${params.providerId}" is not supported in Create PR. Use a key-based provider or run in Local Dev.`
     )
   }
 
+  // Every credential that reaches this run, scrubbed from agent-visible and GitHub-visible text.
+  // The guarantee covers the paths the key travels by design; it deliberately does not extend to a
+  // key wired into `branchName`, which becomes a git ref and could not be substituted without
+  // failing the checkout outright.
+  const secrets = [params.apiKey, params.githubToken, params.search?.apiKey ?? '']
+
   const branch = params.branchName?.trim() || `pi/${generateShortId(8)}`
-  const commitMessage = defaultTitle(params)
-  const prompt = buildPiPrompt({
-    skills: params.skills,
-    initialMessages: params.initialMessages,
-    task: params.task,
-    guidance: CLOUD_GUIDANCE,
-  })
+  const commitMessage = scrubPiSecrets(defaultTitle(params), secrets)
+  const prompt = scrubPiSecrets(
+    buildPiPrompt({
+      skills: params.skills,
+      initialMessages: params.initialMessages,
+      task: params.task,
+      guidance: CLOUD_GUIDANCE,
+    }),
+    secrets
+  )
   const totals = createPiTotals()
   const thinking = mapThinkingLevel(params.thinkingLevel) ?? 'medium'
 
@@ -235,35 +225,50 @@ export const runCloudPi: PiBackendRun<PiCloudRunParams> = async (params, context
       // launches the Pi loop.
       await runner.writeFile(PROMPT_PATH, prompt)
 
+      // Outside REPO_DIR: a path inside the cloned tree would be staged by `git add -A` into the
+      // user's pull request, and the agent holds write/edit/bash on that tree for the whole run.
+      if (params.search) {
+        await runner.writeFile(PI_SEARCH_EXTENSION_PATH, PI_SEARCH_EXTENSION_SOURCE)
+      }
+
       let buffer = ''
+      // Scrubbed before `applyPiEvent`, not just before `onEvent`: `totals.finalText` accumulates
+      // from text events and becomes both the block output and the PR body.
+      const handleEvent = (raw: ReturnType<typeof parseJsonLine>) => {
+        const event = scrubPiEvent(raw, secrets)
+        if (!event) return
+        applyPiEvent(totals, event)
+        context.onEvent(event)
+      }
       const handleChunk = (chunk: string) => {
         buffer += chunk
         const lines = buffer.split('\n')
         buffer = lines.pop() ?? ''
         for (const line of lines) {
-          const event = parseJsonLine(line)
-          if (!event) continue
-          applyPiEvent(totals, event)
-          context.onEvent(event)
+          handleEvent(parseJsonLine(line))
         }
       }
       const piRun = await raceAbort(
-        runner.run(PI_SCRIPT, {
+        runner.run(buildPiScript(params.search ? PI_SEARCH_EXTENSION_PATH : undefined), {
           envs: {
             [keyEnvVar]: params.apiKey,
-            PI_PROVIDER: params.providerId,
-            PI_MODEL: params.model,
+            PI_PROVIDER: getPiProviderId(params.providerId),
+            PI_MODEL: params.piModel,
             PI_THINKING: thinking,
+            ...(params.search
+              ? {
+                  [PI_SEARCH_PROVIDER_ENV_VAR]: params.search.provider,
+                  [PI_SEARCH_API_KEY_ENV_VAR]: params.search.apiKey,
+                }
+              : {}),
           },
           timeoutMs: PI_TIMEOUT_MS,
           onStdout: handleChunk,
         }),
         context.signal
       )
-      const remaining = buffer.trim() ? parseJsonLine(buffer) : null
-      if (remaining) {
-        applyPiEvent(totals, remaining)
-        context.onEvent(remaining)
+      if (buffer.trim()) {
+        handleEvent(parseJsonLine(buffer))
       }
       if (piRun.exitCode !== 0) {
         throw new Error(
@@ -287,7 +292,9 @@ export const runCloudPi: PiBackendRun<PiCloudRunParams> = async (params, context
         }),
         context.signal
       )
-      const changedFiles = extractMarkerValues(prepare.stdout, '__CHANGED__=')
+      const changedFiles = extractMarkerValues(prepare.stdout, '__CHANGED__=').map((file) =>
+        scrubPiSecrets(file, secrets)
+      )
       const noChanges = prepare.stdout.includes('__NO_CHANGES__=1')
       const needsPush = prepare.stdout.includes('__NEEDS_PUSH__=1')
       // PREPARE (`set -e`) emits exactly one of the two markers on success. Neither
@@ -300,7 +307,7 @@ export const runCloudPi: PiBackendRun<PiCloudRunParams> = async (params, context
 
       let diff: string | undefined
       try {
-        const raw = await runner.readFile(DIFF_PATH)
+        const raw = scrubPiSecrets(await runner.readFile(DIFF_PATH), secrets)
         diff =
           raw.length > MAX_DIFF_BYTES ? `${raw.slice(0, MAX_DIFF_BYTES)}\n[diff truncated]` : raw
       } catch {
@@ -339,15 +346,17 @@ export const runCloudPi: PiBackendRun<PiCloudRunParams> = async (params, context
         throw new Error(`git push failed: ${truncate(scrubbed, PUSH_ERROR_MAX)}`)
       }
 
-      const prUrl = await openPullRequest(params, branch, detectedBase, totals)
+      const prUrl = await openPullRequest(params, branch, detectedBase, totals, secrets)
       return { totals, changedFiles, diff, prUrl, branch }
     } catch (error) {
       // Aborts propagate as errors so a cancelled/timed-out run is not reported as
-      // success and no partial memory turn is persisted (local mode mirrors this).
+      // success and no partial memory turn is persisted (Local Dev mirrors this).
       if (context.signal?.aborted) {
         logger.info('Pi cloud run aborted', { owner: params.owner, repo: params.repo })
       }
-      throw error
+      // The Pi step's failure path rethrows the sandbox's stderr verbatim, and a misconfigured
+      // provider key is exactly a non-zero exit with stderr.
+      throw createScrubbedPiError(error, secrets, 'Pi cloud run failed')
     }
   })
 }

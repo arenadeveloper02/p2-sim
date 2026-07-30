@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
+import { firecrawlHosting } from '@/tools/firecrawl/hosting'
 import type { FirecrawlCrawlParams, FirecrawlCrawlResponse } from '@/tools/firecrawl/types'
 import { CRAWLED_PAGE_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
@@ -71,36 +72,7 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
     },
   },
 
-  hosting: {
-    envKeyPrefix: 'FIRECRAWL_API_KEY',
-    apiKeyParam: 'apiKey',
-    byokProviderId: 'firecrawl',
-    pricing: {
-      type: 'custom',
-      getCost: (_params, output) => {
-        const creditsUsed =
-          (output.metadata as { creditsUsed?: number } | undefined)?.creditsUsed ??
-          (typeof output.creditsUsed === 'number' ? output.creditsUsed : undefined)
-        if (creditsUsed == null) {
-          throw new Error('Firecrawl response missing creditsUsed field')
-        }
-
-        if (Number.isNaN(creditsUsed)) {
-          throw new Error('Firecrawl response returned a non-numeric creditsUsed field')
-        }
-
-        // $0.001 per credit — same rate as scrape
-        return {
-          cost: creditsUsed * 0.001,
-          metadata: { creditsUsed },
-        }
-      },
-    },
-    rateLimit: {
-      mode: 'per_request',
-      requestsPerMinute: 100,
-    },
-  },
+  hosting: firecrawlHosting(),
 
   request: {
     url: 'https://api.firecrawl.dev/v2/crawl',
@@ -182,12 +154,14 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
         logger.info(`Firecrawl crawl job ${jobId} status: ${crawlData.status}`)
 
         if (crawlData.status === 'completed') {
-          const creditsUsed = crawlData.creditsUsed || 0
           result.output = {
             pages: crawlData.data || [],
             total: crawlData.total || 0,
-            creditsUsed,
-            metadata: { creditsUsed },
+            // Forwarded as-is: defaulting a missing count to 0 would look like
+            // a free crawl to the hosted-key pricing helper instead of the
+            // metering failure it is.
+            creditsUsed: crawlData.creditsUsed,
+            metadata: { creditsUsed: crawlData.creditsUsed },
           }
           return result
         }

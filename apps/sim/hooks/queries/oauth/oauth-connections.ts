@@ -14,6 +14,7 @@ import {
 } from '@/lib/api/contracts/oauth-connections'
 import { client } from '@/lib/auth/auth-client'
 import { readOAuthReturnContext } from '@/lib/credentials/client-state'
+import { getDesktopBridge } from '@/lib/desktop'
 import { OAUTH_PROVIDERS, type OAuthServiceConfig } from '@/lib/oauth'
 import { requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
 import { environmentKeys } from '@/hooks/queries/environment'
@@ -302,6 +303,12 @@ export function useConnectOAuthService() {
         return { success: true }
       }
 
+      if (providerId === 'instagram') {
+        const returnUrl = encodeURIComponent(callbackURL)
+        window.location.href = `/api/auth/instagram/authorize?returnUrl=${returnUrl}`
+        return { success: true }
+      }
+
       if (providerId === 'shopify') {
         const returnUrl = encodeURIComponent(callbackURL)
         const url = `${origin}/api/auth/shopify/authorize?returnUrl=${returnUrl}`
@@ -362,6 +369,21 @@ export function useConnectOAuthService() {
         const url = await fetchOAuth2LinkAuthorizeUrl(providerId, callbackURL)
         postArenaV3OAuthNavigateToParent(url)
         logger.info('Delegated OAuth navigation to parent (Arena v3 iframe)', { providerId })
+        return { success: true }
+      }
+
+      // Desktop app: OAuth cannot run in the embedded window (Google/Microsoft
+      // block embedded user agents, and better-auth binds the flow's state to
+      // the initiating browser's cookies), so the whole flow is handed to the
+      // system browser and returns via the app's loopback. Completion arrives
+      // through onOAuthConnectComplete (see useDesktopOAuthConnectListener),
+      // which refreshes caches and shows the connected toast.
+      const desktopBridge = getDesktopBridge()
+      if (desktopBridge?.beginOAuthConnect) {
+        const opened = await desktopBridge.beginOAuthConnect(providerId)
+        if (!opened) {
+          throw new Error('Could not open your browser to connect this account.')
+        }
         return { success: true }
       }
 

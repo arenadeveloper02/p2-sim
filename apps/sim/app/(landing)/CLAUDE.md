@@ -44,7 +44,7 @@ Target: Lighthouse 95+ on mobile, LCP < 2.0s, CLS < 0.05, minimal hydration cost
 
 `page.tsx` owns the metadata (title, description, OG/Twitter, canonical, robots) - keep it the single source of truth and keep it aligned with the constitution's claim hierarchy. Beyond metadata:
 
-- **One `<h1>`, in the hero, containing "Sim" and "AI workspace".** Strict hierarchy below it: H2 per section, H3 for items within a section. Never skip levels, never add a second H1.
+- **One `<h1>`, in the hero, containing "AI workspace".** The brand carries in the title tag, the meta description, and the hero's `sr-only` summary, so the H1 itself is free to lead with the non-brand keywords people actually search ("AI workspace", "AI agents") rather than spending its first two words on "Sim is the". Whichever wording it uses, the hero's `sr-only` paragraph must still open by naming Sim. Strict hierarchy below it: H2 per section, H3 for items within a section. Never skip levels, never add a second H1.
 - **Semantic landmarks**: `<header>`, `<main>`, `<footer>`, `<nav>`; each section is `<section id="…" aria-labelledby="…-heading">`. Decorative/animated elements get `aria-hidden='true'`.
 - **Structured data**: emit JSON-LD (`Organization`, `WebSite`, `WebApplication` with `featureList`, `FAQPage` if an FAQ exists) from a server component rendered before visible content. Keep `featureList` in sync with the features actually shown on the page.
 - **Crawlable links**: all internal navigation uses Next `<Link>` with real `href`s - never `onClick` navigation. External links get `rel='noopener noreferrer'`.
@@ -85,13 +85,13 @@ Follow `.claude/rules/constitution.md` exactly: Sim is "the open-source AI works
     │   ├── landing-shell/               # light wrapper + skip link + Navbar(stars) + Footer; wraps every page
     │   ├── hero-cta/                    # the one email-capture + Sign-up CTA (hero + every platform hero)
     │   └── logos/                       # the one customer-logo set; layout='grid' (hero) | 'row' (platform)
-    └── platform-page/                   # the reusable platform-page layout (Workflows, Tables, Files, …)
-        ├── platform-page.tsx, index.ts, types.ts, constants.ts   # PlatformPage + the content contract + spacing
-        └── components/                  # platform-hero, platform-logos-row, platform-card-row (→ card, pill-cta),
-                                         #   platform-visual-frame, platform-structured-data
+    └── solutions-page/                  # the reusable solutions/platform layout (Workflows, Knowledge, Tables, Files, Logs, solutions/*)
+        ├── solutions-page.tsx, index.ts, types.ts, constants.ts  # SolutionsPage + the content contract + spacing
+        └── components/                  # solutions-hero, solutions-logos-row, solutions-card-row (→ card, pill-cta),
+                                         #   solutions-visual-frame, solutions-structured-data
 ```
 
-Each section component's TSDoc carries its layout spec - read it before implementing. Section components own their landmark (Navbar → `<header>`, Footer → `<footer>`, the rest → `<section>`); the shared `LandingShell` owns the page frame (light wrapper, skip link, navbar, footer, GitHub stars via `@/lib/github/stars` - fetched at build/revalidate time, never client-fetched), and the page's `<main>` owns the section order and rhythm. Platform routes consume `PlatformPage` with a single content `config` - see `platform-page/CLAUDE`-level TSDoc on `platform-page.tsx`. Sub-components of a section go in `components/<section>/components/`.
+Each section component's TSDoc carries its layout spec - read it before implementing. Section components own their landmark (Navbar → `<header>`, Footer → `<footer>`, the rest → `<section>`); the shared `LandingShell` owns the page frame (light wrapper, skip link, navbar, footer, GitHub stars via `@/lib/github/stars` - fetched at build/revalidate time, never client-fetched), and the page's `<main>` owns the section order and rhythm. Platform and solutions routes consume `SolutionsPage` with a single content `config` - see the TSDoc on `solutions-page.tsx`. Sub-components of a section go in `components/<section>/components/`.
 
 Absolute imports only in component code (`@/app/(landing)/components/...`); `index.ts` barrels use relative re-exports (`export { X } from './x'`), matching the workspace convention. Props interfaces for every component. No `utils.ts` until two files share a helper.
 

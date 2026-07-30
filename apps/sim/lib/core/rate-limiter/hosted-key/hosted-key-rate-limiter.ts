@@ -96,9 +96,19 @@ function pushLegacyEnvKeys(names: string[], prefix: string): void {
  * For backward compatibility with older self-hosted env files, when `_COUNT`
  * is unset or zero we also fall back to singular and `_1..3` names.
  * Google-hosted image tools additionally accept the Gemini key namespace.
+ * 
+ * 
+ * Resolves env var names for a hosted-key prefix. Numbered pools use a
+ * `{PREFIX}_COUNT` env var. Deployments that still provide one legacy singular
+ * `{PREFIX}` key remain supported when no count is configured.
  */
 function resolveEnvKeys(prefix: string): string[] {
-  const count = Number.parseInt(process.env[`${prefix}_COUNT`] || '0', 10)
+  const countValue = process.env[`${prefix}_COUNT`]
+  if (countValue === undefined) {
+    return process.env[prefix] ? [prefix] : []
+  }
+
+  const count = Number.parseInt(countValue, 10)
   const names: string[] = []
 
   if (count > 0) {
@@ -298,7 +308,8 @@ export class HostedKeyRateLimiter {
    * back to `MAX_QUEUE_WAIT_MS`. On exhaustion the call returns today's 429 result. The
    * ticket is removed from the queue on exit regardless of success or failure.
    *
-   * @param envKeyPrefix - Env var prefix (e.g. 'EXA_API_KEY'). Keys resolved via `{prefix}_COUNT`.
+   * @param envKeyPrefix - Env var prefix (e.g. 'EXA_API_KEY'). Uses a numbered
+   * pool via `{prefix}_COUNT`, or the singular prefix when no count is set.
    * @param billingActorId - The billing actor (typically workspace ID) to rate limit against
    * @param signal - Optional execution `AbortSignal`; bounds the queue wait to the run's budget.
    */

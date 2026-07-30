@@ -14,6 +14,7 @@ import {
   getMaxTemperature,
   getModelsWithDeepResearch,
   getModelsWithoutMemory,
+  getModelsWithPromptCaching,
   getModelsWithReasoningEffort,
   getModelsWithThinking,
   getModelsWithVerbosity,
@@ -31,6 +32,7 @@ const MODELS_WITHOUT_AGENT_TOOLS = ['gpt-4o-search-preview'] as const
 const MODELS_WITH_REASONING_EFFORT = getModelsWithReasoningEffort()
 const MODELS_WITH_VERBOSITY = getModelsWithVerbosity()
 const MODELS_WITH_THINKING = getModelsWithThinking()
+const MODELS_WITH_PROMPT_CACHING = getModelsWithPromptCaching()
 const MODELS_WITH_DEEP_RESEARCH = getModelsWithDeepResearch()
 const MODELS_WITHOUT_MEMORY = getModelsWithoutMemory()
 
@@ -312,6 +314,19 @@ Return ONLY the JSON array.`,
       condition: {
         field: 'model',
         value: MODELS_WITH_THINKING,
+      },
+    },
+    {
+      id: 'promptCaching',
+      title: 'Prompt Caching',
+      type: 'switch',
+      description:
+        'Cache the system prompt and tool definitions so repeat runs reuse them at a reduced rate. Writing the cache costs more than a normal request, so this pays off when the same prompt runs repeatedly.',
+      defaultValue: false,
+      mode: 'advanced',
+      condition: {
+        field: 'model',
+        value: MODELS_WITH_PROMPT_CACHING,
       },
     },
 
@@ -649,6 +664,10 @@ Return ONLY the JSON array.`,
     thinkingLevel: {
       type: 'string',
       description: 'Thinking level for models with extended thinking (Anthropic Claude, Gemini 3)',
+    },
+    promptCaching: {
+      type: 'boolean',
+      description: 'Cache the system prompt and tool definitions on models that support it',
     },
     tools: { type: 'json', description: 'Available tools configuration' },
     skills: { type: 'json', description: 'Selected skills configuration' },

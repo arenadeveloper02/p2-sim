@@ -1,18 +1,18 @@
 import { db, workflow } from '@sim/db'
 import { eq } from 'drizzle-orm'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
-import type {
-  ExecutionEnvironment,
-  ExecutionTrigger,
-  TraceSpan,
-  WorkflowState,
-} from '@/lib/logs/types'
 import {
   accumulateEmbeddedToolCosts,
   extractEmbeddedToolCostsFromSpan,
   normalizeEmbeddedToolCosts,
   resolveEmbeddedToolCostKey,
 } from '@/lib/logs/embedded-tool-costs'
+import type {
+  ExecutionEnvironment,
+  ExecutionTrigger,
+  TraceSpan,
+  WorkflowState,
+} from '@/lib/logs/types'
 import {
   loadDeployedWorkflowState,
   loadWorkflowFromNormalizedTables,
@@ -147,6 +147,12 @@ export interface CostSummary {
   totalCompletionTokens: number
   baseExecutionCharge: number
   models: Record<string, CostSummaryModel>
+  /**
+   * Model costs owned by workflow finalization. Mothership spans remain in
+   * `models` and the display totals, but Go's cumulative update-cost path owns
+   * their usage ledger rows.
+   */
+  workflowLedgerModels: Record<string, CostSummaryModel>
   /** Non-model billable charges keyed by span name (tool/integration costs). */
   charges: Record<string, CostSummaryCharge>
   /** Cost-block external vendor spend keyed by span name. */
@@ -178,8 +184,7 @@ function extractExternalChargeFromSpan(span: BillableTraceSpan): {
   metadata: CostSummaryExternalCharge['metadata']
 } {
   const raw = (span.output?.raw ?? {}) as CostBlockRawOutput
-  const description =
-    span.name?.trim() || raw.label?.trim() || raw.vendor?.trim() || 'external'
+  const description = span.name?.trim() || raw.label?.trim() || raw.vendor?.trim() || 'external'
 
   return {
     description,
@@ -207,6 +212,11 @@ function isModelBreakdownSpan(span: CostTraceSpan): boolean {
   return span.type === 'model'
 }
 
+/** Mothership model spend is ledgered cumulatively by Go update-cost. */
+function isMothershipUpdateCostOwned(span: CostTraceSpan): boolean {
+  return span.type === 'mothership'
+}
+
 export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): CostSummary {
   if (!traceSpans || traceSpans.length === 0) {
     return {
@@ -218,6 +228,7 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
       totalCompletionTokens: 0,
       baseExecutionCharge: BASE_EXECUTION_CHARGE,
       models: {},
+      workflowLedgerModels: {},
       charges: {},
       external: {},
     }
@@ -284,8 +295,42 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
   let totalPromptTokens = 0
   let totalCompletionTokens = 0
   const models: Record<string, CostSummaryModel> = {}
+  const workflowLedgerModels: Record<string, CostSummaryModel> = {}
   const charges: Record<string, CostSummaryCharge> = {}
   const external: Record<string, CostSummaryExternalCharge> = {}
+
+  const addModelCost = (
+    target: Record<string, CostSummaryModel>,
+    model: string,
+    span: BillableTraceSpan
+  ) => {
+    if (!target[model]) {
+      target[model] = {
+        input: 0,
+        output: 0,
+        total: 0,
+        tokens: { input: 0, output: 0, total: 0 },
+      }
+    }
+    target[model].input += span.cost.input || 0
+    target[model].output += span.cost.output || 0
+    target[model].total += span.cost.total || 0
+    target[model].tokens.input += span.tokens?.input ?? span.tokens?.prompt ?? 0
+    target[model].tokens.output += span.tokens?.output ?? span.tokens?.completion ?? 0
+    target[model].tokens.total += span.tokens?.total || 0
+
+    if (span.cost.toolCost) {
+      target[model].toolCost = (target[model].toolCost || 0) + span.cost.toolCost
+      const normalized = normalizeEmbeddedToolCosts(
+        extractEmbeddedToolCostsFromSpan(span),
+        span.cost.toolCost
+      )
+      target[model].embeddedToolCosts = accumulateEmbeddedToolCosts(
+        target[model].embeddedToolCosts,
+        normalized
+      )
+    }
+  }
 
   for (const span of costSpans) {
     totalCost += span.cost.total || 0
@@ -297,33 +342,14 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
 
     if (span.model) {
       const model = span.model
-      if (!models[model]) {
-        models[model] = {
-          input: 0,
-          output: 0,
-          total: 0,
-          tokens: { input: 0, output: 0, total: 0 },
-        }
+      addModelCost(models, model, span)
+      if (!isMothershipUpdateCostOwned(span)) {
+        addModelCost(workflowLedgerModels, model, span)
       }
-      models[model].input += span.cost.input || 0
-      models[model].output += span.cost.output || 0
-      models[model].total += span.cost.total || 0
-      models[model].tokens.input += span.tokens?.input ?? span.tokens?.prompt ?? 0
-      models[model].tokens.output += span.tokens?.output ?? span.tokens?.completion ?? 0
-      models[model].tokens.total += span.tokens?.total || 0
-
-      if (span.cost.toolCost) {
-        models[model].toolCost = (models[model].toolCost || 0) + span.cost.toolCost
-        const embeddedRaw = extractEmbeddedToolCostsFromSpan(span)
-        const normalized = normalizeEmbeddedToolCosts(embeddedRaw, span.cost.toolCost)
-        models[model].embeddedToolCosts = accumulateEmbeddedToolCosts(
-          models[model].embeddedToolCosts,
-          normalized
-        )
-      }
-    } else if ((span.cost.total || 0) > 0) {
+    } else if (!isMothershipUpdateCostOwned(span) && (span.cost.total || 0) > 0) {
       if (span.type === 'cost') {
-        const { description, vendor, quantity, unit, metadata } = extractExternalChargeFromSpan(span)
+        const { description, vendor, quantity, unit, metadata } =
+          extractExternalChargeFromSpan(span)
         if (!external[description]) {
           external[description] = { total: 0, vendor, quantity, unit, metadata }
         }
@@ -355,6 +381,7 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
     totalCompletionTokens,
     baseExecutionCharge: BASE_EXECUTION_CHARGE,
     models,
+    workflowLedgerModels,
     charges,
     external,
   }

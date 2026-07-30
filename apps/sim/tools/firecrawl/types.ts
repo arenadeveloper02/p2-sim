@@ -492,9 +492,8 @@ export interface FirecrawlCrawlResponse extends ToolResponse {
       }
     }>
     total: number
-    creditsUsed: number
-    /** Hosted-key billing reads credits from here (aligned with scrape). */
-    metadata?: { creditsUsed: number }
+    /** Absent when Firecrawl reported no credit count, so hosted-key billing can reject it. */
+    creditsUsed?: number
   }
 }
 

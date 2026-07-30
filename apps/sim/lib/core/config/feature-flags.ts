@@ -56,14 +56,6 @@ interface FeatureFlagDefinition {
 
 /** The single registry of known flags. To add a flag, add one entry here. */
 const FEATURE_FLAGS = {
-  'mothership-beta': {
-    description:
-      'Mothership beta plan/changelog artifact surfaces in the copilot VFS and doc compiler. ' +
-      'Note: userId/orgId targeting only works for WorkspaceVfs (resolved in materialize). ' +
-      'getE2BDocFormat, resolveInputFiles, and resolveWorkflowAliasForWorkspace evaluate without ' +
-      'user context — use enabled:true for global rollout rather than per-user targeting.',
-    fallback: 'MOTHERSHIP_BETA_FEATURES',
-  },
   'table-snapshot-cache': {
     description:
       'Mount Sim tables into code sandboxes by reference via a version-keyed CSV snapshot in ' +
@@ -111,6 +103,15 @@ const FEATURE_FLAGS = {
       'description; Start inputs become block inputs). Gates the Deploy-modal "Block" tab and the ' +
       'custom-block publish/list routes. Off-AppConfig falls back to DEPLOY_AS_BLOCK.',
     fallback: 'DEPLOY_AS_BLOCK',
+  },
+  'table-locks': {
+    description:
+      'Per-table mutation locks (schema/insert/update/delete) an admin toggles to make a table ' +
+      'append-only or read-only. Gates the ability to SET locks (the settings UI + the PATCH ' +
+      'locks branch); enforcement of any lock already stored always runs. Since new tables are ' +
+      'created unlocked and forks reset locks, an off flag means no table can become locked, so ' +
+      'the woven-in asserts stay no-ops. Off-AppConfig falls back to TABLE_LOCKS.',
+    fallback: 'TABLE_LOCKS',
   },
 } satisfies Record<string, FeatureFlagDefinition>
 

@@ -9,6 +9,10 @@ import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
 import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import {
+  AGENT_STREAM_PROTOCOL_HEADER,
+  AGENT_STREAM_PROTOCOL_V1,
+} from '@/lib/workflows/streaming/agent-stream-protocol'
 import type { InputFormatField } from '@/lib/workflows/types'
 import {
   ChatErrorState,
@@ -140,8 +144,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [isConversationFinished, setIsConversationFinished] = useState<any>(false)
 
   const [showScrollButton, setShowScrollButton] = useState(false)
-  const [userHasScrolled, setUserHasScrolled] = useState(false)
-  const isUserScrollingRef = useRef(false)
+  /** ChatGPT-style: follow new tokens only while the viewport is near the bottom. */
+  const stickToBottomRef = useRef(true)
+  const ignoreScrollRef = useRef(false)
 
   const [isAutoLoginInProgress, setIsAutoLoginInProgress] = useState<boolean>(false)
 
@@ -187,10 +192,31 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const audioContextRef = useRef<AudioContext | null>(null)
   const { isPlayingAudio, streamTextToAudio, stopAudio } = useAudioStreaming(audioContextRef)
 
-  const scrollToBottom = useCallback(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+  const NEAR_BOTTOM_THRESHOLD_PX = 100
+
+  /**
+   * ChatGPT-style scroll. Without `force`, no-ops when the user has scrolled away.
+   * With `force` (jump button), re-pins to bottom.
+   */
+  const scrollToBottom = useCallback((options?: { behavior?: ScrollBehavior; force?: boolean }) => {
+    const behavior = options?.behavior ?? 'smooth'
+    const force = options?.force === true
+    if (!force && !stickToBottomRef.current) return
+    if (!messagesEndRef.current) return
+
+    if (force) {
+      stickToBottomRef.current = true
+      setShowScrollButton(false)
     }
+
+    ignoreScrollRef.current = true
+    messagesEndRef.current.scrollIntoView({ behavior })
+    window.setTimeout(
+      () => {
+        ignoreScrollRef.current = false
+      },
+      behavior === 'smooth' ? 400 : 50
+    )
   }, [])
 
   useEffect(() => {
@@ -228,9 +254,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     },
     [messagesContainerRef]
   )
-
-  const isStreamingResponseRef = useRef(isStreamingResponse)
-  isStreamingResponseRef.current = isStreamingResponse
 
   // Fetch history messages
   useEffect(() => {
@@ -324,33 +347,21 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     if (!container) return
 
     const handleScroll = () => {
+      if (ignoreScrollRef.current) return
       const { scrollTop, scrollHeight, clientHeight } = container
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight
-      setShowScrollButton(distanceFromBottom > 100)
-
-      if (isStreamingResponseRef.current && !isUserScrollingRef.current) {
-        setUserHasScrolled(true)
-      }
+      const nearBottom = distanceFromBottom <= NEAR_BOTTOM_THRESHOLD_PX
+      stickToBottomRef.current = nearBottom
+      setShowScrollButton(!nearBottom)
     }
 
     container.addEventListener('scroll', handleScroll, { passive: true })
     return () => container.removeEventListener('scroll', handleScroll)
   }, [chatConfig, isVoiceFirstMode, authRequired])
 
-  useEffect(() => {
-    if (isStreamingResponse) {
-      setUserHasScrolled(false)
-
-      isUserScrollingRef.current = true
-      const timeoutId = setTimeout(() => {
-        isUserScrollingRef.current = false
-      }, 1000)
-      return () => clearTimeout(timeoutId)
-    }
-  }, [isStreamingResponse])
-
   const fetchChatConfig = async () => {
     try {
+      // boundary-raw-fetch: reads the 401 error body (`auth_required_email`) to drive the Arena auto-login retry, which requestJson's thrown error does not expose
       const response = await fetch(`/api/chat/${identifier}`, {
         credentials: 'same-origin',
         headers: {
@@ -484,7 +495,8 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       filesCount: files?.length,
     })
 
-    setUserHasScrolled(false)
+    stickToBottomRef.current = true
+    setShowScrollButton(false)
 
     let userMessageId: string | null = null
     const userMessage: ChatMessage = {
@@ -514,7 +526,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       }, 100)
     }
 
+    // One AbortController for fetch + SSE body reads so Stop cancels server work too.
     const abortController = new AbortController()
+    abortControllerRef.current = abortController
     const timeoutId = setTimeout(() => {
       abortController.abort()
     }, CHAT_REQUEST_TIMEOUT_MS)
@@ -576,6 +590,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         headers: {
           'Content-Type': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
+          [AGENT_STREAM_PROTOCOL_HEADER]: AGENT_STREAM_PROTOCOL_V1,
         },
         body: JSON.stringify(payload),
         credentials: 'same-origin',
@@ -613,8 +628,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         response,
         setMessages,
         setIsLoading,
-        scrollToBottom,
-        userHasScrolled,
+        () => scrollToBottom({ behavior: 'auto' }),
         {
           voiceSettings: {
             isVoiceEnabled: shouldPlayAudio,
@@ -623,6 +637,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           },
           audioStreamHandler: audioHandler,
           outputConfigs: chatConfig?.outputConfigs,
+          abortController,
         }
       )
     } catch (error) {
@@ -1024,7 +1039,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         showScrollButton={showScrollButton}
         messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
         messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
-        scrollToBottom={scrollToBottom}
+        scrollToBottom={() => scrollToBottom({ behavior: 'smooth', force: true })}
         scrollToMessage={scrollToMessage}
         chatConfig={chatConfig}
         workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}

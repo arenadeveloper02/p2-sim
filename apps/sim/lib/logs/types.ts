@@ -1,6 +1,7 @@
 import type { Edge } from 'reactflow'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import type { PersistedChatAttachment } from '@/lib/chat/history-persistence'
+import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
 import type { ParentIteration, SerializableExecutionState } from '@/executor/execution/types'
 import type {
@@ -134,6 +135,7 @@ export interface WorkflowExecutionLog {
   executionData: {
     environment?: ExecutionEnvironment
     trigger?: ExecutionTrigger
+    billingAttribution?: BillingAttributionSnapshot
     correlation?: AsyncExecutionCorrelation
     error?: string
     lastStartedBlock?: ExecutionLastStartedBlock
@@ -442,6 +444,8 @@ export interface ExecutionLoggerService {
     executionId: string
     trigger: ExecutionTrigger
     environment: ExecutionEnvironment
+    actorUserId?: string | null
+    billingAttribution?: BillingAttributionSnapshot
     workflowState: WorkflowState
   }): Promise<{
     workflowLog: WorkflowExecutionLog
@@ -481,6 +485,8 @@ export interface ExecutionLoggerService {
     completionFailure?: string
     isResume?: boolean
     level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
+    actorUserId?: string | null
+    billingAttribution?: BillingAttributionSnapshot
   }): Promise<WorkflowExecutionLog>
 }

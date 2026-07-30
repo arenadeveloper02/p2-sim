@@ -8,7 +8,6 @@ import {
   deleteWorkspaceContract,
   getWorkspaceContract,
   getWorkspaceMembersContract,
-  getWorkspaceOwnerBillingContract,
   getWorkspacePermissionsContract,
   getWorkspaceZoomAdminAccessContract,
   listWorkspacesContract,
@@ -16,13 +15,17 @@ import {
   type Workspace,
   type WorkspaceCreationPolicy,
   type WorkspaceMember,
-  type WorkspaceOwnerBilling,
   type WorkspacePermissions,
   type WorkspaceQueryScope,
   type WorkspacesResponse,
 } from '@/lib/api/contracts'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { setZoomAdminAccessCache } from '@/lib/workspaces/zoom-admin-access-cache'
+import {
+  normalizeWorkspace,
+  normalizeWorkspacesResponse,
+  WORKSPACE_LIST_STALE_TIME,
+} from '@/hooks/queries/utils/workspace-list-query'
 
 /**
  * Query key factory for workspace-related queries.
@@ -38,7 +41,6 @@ export const workspaceKeys = {
   settings: (id: string) => [...workspaceKeys.detail(id), 'settings'] as const,
   permissions: (id: string) => [...workspaceKeys.detail(id), 'permissions'] as const,
   members: (id: string) => [...workspaceKeys.detail(id), 'members'] as const,
-  ownerBilling: (id: string) => [...workspaceKeys.detail(id), 'ownerBilling'] as const,
   zoomAdminAccess: (id: string) => [...workspaceKeys.detail(id), 'zoomAdminAccess'] as const,
   adminLists: () => [...workspaceKeys.all, 'adminList'] as const,
   adminList: (userId: string | undefined) => [...workspaceKeys.adminLists(), userId ?? ''] as const,
@@ -47,7 +49,6 @@ export const workspaceKeys = {
 export type { Workspace, WorkspaceCreationPolicy, WorkspaceMember, WorkspacePermissions }
 
 export const WORKSPACE_PERMISSIONS_STALE_TIME = 30 * 1000
-export const WORKSPACE_LIST_STALE_TIME = 30 * 1000
 export const WORKSPACE_SETTINGS_STALE_TIME = 30 * 1000
 export const WORKSPACE_MEMBERS_STALE_TIME = 5 * 60 * 1000
 export const WORKSPACE_ADMIN_LIST_STALE_TIME = 60 * 1000
@@ -58,29 +59,7 @@ async function fetchWorkspaces(
   signal?: AbortSignal
 ): Promise<WorkspacesResponse> {
   const data = await requestJson(listWorkspacesContract, { query: { scope }, signal })
-  return {
-    workspaces:
-      data.workspaces?.map((workspace: Workspace) => ({
-        ...workspace,
-        organizationId: workspace.organizationId ?? null,
-        workspaceMode: workspace.workspaceMode ?? 'organization',
-        isPersonal: workspace.isPersonal ?? false,
-        inviteMembersEnabled: workspace.inviteMembersEnabled ?? false,
-        inviteDisabledReason: workspace.inviteDisabledReason ?? null,
-        inviteUpgradeRequired: workspace.inviteUpgradeRequired ?? false,
-      })) || [],
-    lastActiveWorkspaceId:
-      typeof data.lastActiveWorkspaceId === 'string' ? data.lastActiveWorkspaceId : null,
-    creationPolicy: data.creationPolicy
-      ? {
-          ...data.creationPolicy,
-          organizationId: data.creationPolicy.organizationId ?? null,
-          reason: data.creationPolicy.reason ?? null,
-          workspaceMode: data.creationPolicy.workspaceMode ?? 'organization',
-          isPersonal: data.creationPolicy.isPersonal ?? false,
-        }
-      : null,
-  }
+  return normalizeWorkspacesResponse(data)
 }
 
 const selectWorkspaces = (data: WorkspacesResponse): Workspace[] => data.workspaces
@@ -121,36 +100,6 @@ export function useWorkspaceCreationPolicy(enabled = true) {
     select: (data) => data.creationPolicy,
     enabled,
     staleTime: WORKSPACE_LIST_STALE_TIME,
-  })
-}
-
-async function fetchWorkspaceOwnerBilling(
-  workspaceId: string,
-  signal?: AbortSignal
-): Promise<WorkspaceOwnerBilling> {
-  return requestJson(getWorkspaceOwnerBillingContract, {
-    params: { id: workspaceId },
-    signal,
-  })
-}
-
-/**
- * Subscription access state of the workspace's billed account (its owner's
- * rolled-up plan) — the workspace-scoped counterpart to `useSubscriptionData`.
- * Feed the result to `getSubscriptionAccessState` to gate workspace features on
- * the owner's plan rather than the viewer's, so a free member of a paid workspace
- * isn't gated.
- *
- * `staleTime: 0` so consumers (e.g. the deploy modal) refetch on mount: a plan
- * change happens outside this query's invalidation graph, and the cached value is
- * shown during the background refetch (no flash), so gates self-heal on reopen.
- */
-export function useWorkspaceOwnerBilling(workspaceId?: string) {
-  return useQuery({
-    queryKey: workspaceKeys.ownerBilling(workspaceId ?? ''),
-    queryFn: ({ signal }) => fetchWorkspaceOwnerBilling(workspaceId as string, signal),
-    enabled: Boolean(workspaceId),
-    staleTime: 0,
   })
 }
 
@@ -410,14 +359,7 @@ async function fetchAdminWorkspaces(
   }
 
   const workspacesData = await requestJson(listWorkspacesContract, { query: {}, signal })
-  const allUserWorkspaces = (workspacesData.workspaces || []).map((workspace: Workspace) => ({
-    ...workspace,
-    organizationId: workspace.organizationId ?? null,
-    workspaceMode: workspace.workspaceMode ?? 'grandfathered_shared',
-    inviteMembersEnabled: workspace.inviteMembersEnabled ?? false,
-    inviteDisabledReason: workspace.inviteDisabledReason ?? null,
-    inviteUpgradeRequired: workspace.inviteUpgradeRequired ?? false,
-  }))
+  const allUserWorkspaces = workspacesData.workspaces.map(normalizeWorkspace)
 
   return allUserWorkspaces
     .filter((workspace: Workspace) => workspace.permissions === 'admin')

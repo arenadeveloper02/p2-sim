@@ -16,6 +16,7 @@ const TERMINAL_ERRORS = new Set<string>([
   // refresh request had no organization scope to resolve one from. Retrying
   // against a nonexistent app would never succeed, so treat it as terminal.
   'custom_app_not_configured',
+  'token_revoked',
 ])
 
 const DEAD_CACHE_TTL_SEC = 60 * 60

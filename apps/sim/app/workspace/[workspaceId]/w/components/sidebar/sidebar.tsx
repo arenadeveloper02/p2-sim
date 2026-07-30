@@ -39,6 +39,7 @@ import { MoreHorizontal, Pin } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
+import { SlackIcon } from '@/components/icons'
 import { useSession } from '@/lib/auth/auth-client'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
 import { isMacPlatform } from '@/lib/core/utils/platform'
@@ -119,23 +120,28 @@ import { useSidebarStore } from '@/stores/sidebar/store'
 
 const logger = createLogger('Sidebar')
 
+const SLACK_COMMUNITY_URL =
+  'https://join.slack.com/t/sim-ott9864/shared_invite/zt-43lp8tc5v-0qrrqHGBKUsvQlpoouH~TA'
+
 export function SidebarTooltip({
   children,
   label,
   enabled,
   side = 'right',
+  shortcut,
 }: {
   children: React.ReactElement
   label: string
   enabled: boolean
   side?: 'right' | 'bottom'
+  shortcut?: string
 }) {
   if (!enabled) return children
   return (
     <Tooltip.Root>
       <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
       <Tooltip.Content side={side}>
-        <p>{label}</p>
+        {shortcut ? <Tooltip.Shortcut keys={shortcut}>{label}</Tooltip.Shortcut> : <p>{label}</p>}
       </Tooltip.Content>
     </Tooltip.Root>
   )
@@ -1180,6 +1186,16 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
 
   const handleOpenHelpFromMenu = useCallback(() => setIsHelpModalOpen(true), [])
 
+  const handleOpenDocs = useCallback(() => {
+    window.open('https://docs.sim.ai', '_blank', 'noopener,noreferrer')
+    captureEvent(posthog, 'docs_opened', { source: 'help_menu' })
+  }, [posthog])
+
+  const handleOpenSlackCommunity = useCallback(() => {
+    window.open(SLACK_COMMUNITY_URL, '_blank', 'noopener,noreferrer')
+    captureEvent(posthog, 'slack_community_opened', { source: 'help_menu' })
+  }, [posthog])
+
   const handleChatRenameBlur = useCallback(
     () => void chatFlyoutRename.saveRename(),
     [chatFlyoutRename.saveRename]
@@ -1266,6 +1282,12 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
           handleCreateWorkflow()
         },
       },
+      {
+        id: 'toggle-sidebar',
+        handler: () => {
+          toggleCollapsed()
+        },
+      },
     ])
   )
 
@@ -1306,7 +1328,11 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
               brandName={brand?.name}
               arenaHubAgentsUrl={arenaHubAgentsUrl}
             />
-            <div className='flex flex-shrink-0 items-center px-2 pt-2'>
+            <div
+              aria-hidden
+              className='desktop-window-drag-region desktop-workspace-window-drag-region h-[var(--desktop-title-bar-height)]'
+            />
+            <div className='relative flex flex-shrink-0 items-center px-2 pt-2 [[data-sim-desktop-title-bar=inset]_&]:pt-[var(--desktop-title-bar-height)]'>
               <WorkspaceHeader
                 activeWorkspace={activeWorkspace}
                 workspaceId={workspaceId}
@@ -1328,18 +1354,23 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
                 isCollapsed={isCollapsed}
                 onExpandSidebar={toggleCollapsed}
               />
-              <SidebarTooltip label='Collapse sidebar' enabled={!isCollapsed} side='bottom'>
+              <SidebarTooltip
+                label='Collapse sidebar'
+                enabled={!isCollapsed}
+                side='bottom'
+                shortcut={isMac ? '⌘B' : 'Ctrl+B'}
+              >
                 <button
                   type='button'
                   onClick={toggleCollapsed}
                   className={cn(
-                    'ml-2 flex h-[30px] items-center justify-center overflow-hidden rounded-lg transition-all duration-200 hover-hover:bg-[var(--surface-active)]',
+                    'ml-2 flex h-[30px] items-center justify-center overflow-hidden rounded-lg transition-all duration-200 [-webkit-app-region:no-drag] hover-hover:bg-[var(--surface-active)] [[data-sim-desktop-title-bar=inset]_&]:hidden',
                     isCollapsed ? 'w-0 opacity-0' : 'w-[30px] opacity-100'
                   )}
                   aria-label='Collapse sidebar'
                   tabIndex={isCollapsed ? -1 : undefined}
                 >
-                  <PanelLeft className='h-[16px] w-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+                  <PanelLeft className='size-[16px] flex-shrink-0 text-[var(--text-icon)]' />
                 </button>
               </SidebarTooltip>
             </div>
@@ -1719,6 +1750,11 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
                           Privacy policy
                         </DropdownMenuItem>
                       ) : null}
+                      {brand?.slackCommunityUrl ?
+                      <DropdownMenuItem onSelect={handleOpenSlackCommunity}>
+                        <SlackIcon className='size-[14px]' />
+                        Slack Community
+                      </DropdownMenuItem> : null}
                       <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
                         <HelpCircle className='h-[14px] w-[14px]' />
                         Report an issue

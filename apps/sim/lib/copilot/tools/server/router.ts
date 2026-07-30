@@ -3,9 +3,6 @@ import { z } from 'zod'
 import { getBlockVisibilityForCopilot } from '@/lib/copilot/block-visibility'
 import {
   CreateFile,
-  CreateFileFolder,
-  DeleteFile,
-  DeleteFileFolder,
   DownloadToWorkspaceFile,
   Ffmpeg,
   GenerateAudio,
@@ -16,10 +13,6 @@ import {
   ManageCustomTool,
   ManageMcpTool,
   ManageSkill,
-  MoveFile,
-  MoveFileFolder,
-  RenameFile,
-  RenameFileFolder,
   UserMemory,
   UserTable,
   WorkspaceFile,
@@ -34,28 +27,29 @@ import { getTriggerBlocksServerTool } from '@/lib/copilot/tools/server/blocks/ge
 import { searchDocumentationServerTool } from '@/lib/copilot/tools/server/docs/search-documentation'
 import { enrichmentRunServerTool } from '@/lib/copilot/tools/server/enrichment/enrichment-run'
 import { createFileServerTool } from '@/lib/copilot/tools/server/files/create-file'
-import { deleteFileServerTool } from '@/lib/copilot/tools/server/files/delete-file'
 import { downloadToWorkspaceFileServerTool } from '@/lib/copilot/tools/server/files/download-to-workspace-file'
 import { editContentServerTool } from '@/lib/copilot/tools/server/files/edit-content'
 import {
   createFileFolderServerTool,
-  deleteFileFolderServerTool,
   listFileFoldersServerTool,
   moveFileFolderServerTool,
   moveFileServerTool,
   renameFileFolderServerTool,
 } from '@/lib/copilot/tools/server/files/file-folders'
 import { renameFileServerTool } from '@/lib/copilot/tools/server/files/rename-file'
+import { shareFileServerTool } from '@/lib/copilot/tools/server/files/share-file'
 import { workspaceFileServerTool } from '@/lib/copilot/tools/server/files/workspace-file'
 import { validateGeneratedToolPayload } from '@/lib/copilot/tools/server/generated-schema'
 import { generateImageServerTool } from '@/lib/copilot/tools/server/image/generate-image'
 import { getJobLogsServerTool } from '@/lib/copilot/tools/server/jobs/get-job-logs'
 import { knowledgeBaseServerTool } from '@/lib/copilot/tools/server/knowledge/knowledge-base'
+import { searchKnowledgeBaseServerTool } from '@/lib/copilot/tools/server/knowledge/search-knowledge-base'
 import { ffmpegServerTool } from '@/lib/copilot/tools/server/media/ffmpeg'
 import { generateAudioServerTool } from '@/lib/copilot/tools/server/media/generate-audio'
 import { generateVideoServerTool } from '@/lib/copilot/tools/server/media/generate-video'
 import { searchOnlineServerTool } from '@/lib/copilot/tools/server/other/search-online'
 import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
+import { queryUserTableServerTool } from '@/lib/copilot/tools/server/table/query-user-table'
 import { userTableServerTool } from '@/lib/copilot/tools/server/table/user-table'
 import { getCredentialsServerTool } from '@/lib/copilot/tools/server/user/get-credentials'
 import { setEnvironmentVariablesServerTool } from '@/lib/copilot/tools/server/user/set-environment-variables'
@@ -132,13 +126,12 @@ const WRITE_ACTIONS: Record<string, string[]> = {
   [WorkspaceFile.id]: ['create', 'append', 'update', 'delete', 'rename', 'patch'],
   [editContentServerTool.name]: ['*'],
   [CreateFile.id]: ['*'],
-  [RenameFile.id]: ['*'],
-  [DeleteFile.id]: ['*'],
-  [MoveFile.id]: ['*'],
-  [CreateFileFolder.id]: ['*'],
-  [RenameFileFolder.id]: ['*'],
-  [MoveFileFolder.id]: ['*'],
-  [DeleteFileFolder.id]: ['*'],
+  rename_file: ['*'],
+  [shareFileServerTool.name]: ['*'],
+  move_file: ['*'],
+  create_file_folder: ['*'],
+  rename_file_folder: ['*'],
+  move_file_folder: ['*'],
   [DownloadToWorkspaceFile.id]: ['*'],
   [GenerateImage.id]: ['generate'],
   [GenerateVideo.id]: ['generate'],
@@ -174,19 +167,20 @@ const baseServerToolRegistry: Record<string, BaseServerTool> = {
   [setEnvironmentVariablesServerTool.name]: setEnvironmentVariablesServerTool,
   [getCredentialsServerTool.name]: getCredentialsServerTool,
   [knowledgeBaseServerTool.name]: knowledgeBaseServerTool,
+  [searchKnowledgeBaseServerTool.name]: searchKnowledgeBaseServerTool,
   [enrichmentRunServerTool.name]: enrichmentRunServerTool,
   [userTableServerTool.name]: userTableServerTool,
+  [queryUserTableServerTool.name]: queryUserTableServerTool,
   [workspaceFileServerTool.name]: workspaceFileServerTool,
   [editContentServerTool.name]: editContentServerTool,
   [createFileServerTool.name]: createFileServerTool,
   [renameFileServerTool.name]: renameFileServerTool,
-  [deleteFileServerTool.name]: deleteFileServerTool,
+  [shareFileServerTool.name]: shareFileServerTool,
   [moveFileServerTool.name]: moveFileServerTool,
   [listFileFoldersServerTool.name]: listFileFoldersServerTool,
   [createFileFolderServerTool.name]: createFileFolderServerTool,
   [renameFileFolderServerTool.name]: renameFileFolderServerTool,
   [moveFileFolderServerTool.name]: moveFileFolderServerTool,
-  [deleteFileFolderServerTool.name]: deleteFileFolderServerTool,
   [downloadToWorkspaceFileServerTool.name]: downloadToWorkspaceFileServerTool,
   [generateImageServerTool.name]: generateImageServerTool,
   [generateVideoServerTool.name]: generateVideoServerTool,

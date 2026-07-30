@@ -16,12 +16,10 @@ import {
 } from '@/lib/api/contracts/invitations'
 import {
   createOrganizationContract,
-  getMyMemberCreditsContract,
   getOrganizationMemberUsageLimitContract,
   getOrganizationRosterContract,
   inviteOrganizationMembersContract,
   listOrganizationMembersContract,
-  type MyMemberCreditsData,
   type OrganizationMembersResponse,
   type OrganizationMemberUsageLimitData,
   type OrganizationRoster,
@@ -60,7 +58,6 @@ export const ORGANIZATION_SUBSCRIPTION_STALE_TIME = 30 * 1000
 export const ORGANIZATION_BILLING_STALE_TIME = 30 * 1000
 export const ORGANIZATION_MEMBERS_STALE_TIME = 30 * 1000
 export const ORGANIZATION_MEMBER_USAGE_LIMIT_STALE_TIME = 30 * 1000
-export const ORGANIZATION_MY_MEMBER_CREDITS_STALE_TIME = 30 * 1000
 
 type OrganizationSubscriptionCandidate = {
   id: string
@@ -123,8 +120,6 @@ export const organizationKeys = {
   memberUsageLimit: (id: string, userId: string) =>
     [...organizationKeys.detail(id), 'member-usage-limit', userId] as const,
   roster: (id: string) => [...organizationKeys.detail(id), 'roster'] as const,
-  myMemberCredits: (workspaceId: string) =>
-    [...organizationKeys.all, 'my-member-credits', workspaceId] as const,
 }
 
 export type { CreatorOrganization }
@@ -156,7 +151,7 @@ async function fetchOrganizationRoster(
     })
     return payload.data
   } catch (error) {
-    if (error instanceof ApiClientError && (error.status === 403 || error.status === 404)) {
+    if (error instanceof ApiClientError && error.status === 404) {
       return null
     }
     throw error
@@ -169,14 +164,16 @@ export function useOrganizationRoster(orgId: string | undefined | null) {
     queryFn: ({ signal }) => fetchOrganizationRoster(orgId as string, signal),
     enabled: !!orgId,
     staleTime: ORGANIZATION_ROSTER_STALE_TIME,
-    placeholderData: keepPreviousData,
   })
 }
 
 /**
- * Fetch all organizations for the current user
- * Note: Billing data is fetched separately via useSubscriptionData() to avoid duplicate calls
- * Note: better-auth client does not support AbortSignal, so signal is accepted but not forwarded
+ * Fetches the current viewer's account-scoped organizations.
+ *
+ * `activeOrganization` reflects the viewer session's selected organization. It
+ * must not be used as the organization context for a routed workspace; those
+ * surfaces use the workspace host context instead. Billing data is fetched
+ * separately, and the Better Auth client does not accept an AbortSignal.
  */
 async function fetchOrganizations(_signal?: AbortSignal) {
   const [orgsResponse, activeOrgResponse] = await Promise.all([
@@ -191,7 +188,10 @@ async function fetchOrganizations(_signal?: AbortSignal) {
 }
 
 /**
- * Hook to fetch all organizations
+ * Reads the viewer's account organizations and account-scoped active organization.
+ *
+ * Workspace-bound consumers must use the routed workspace host context instead
+ * of `activeOrganization`.
  */
 export function useOrganizations() {
   return useQuery({
@@ -226,7 +226,6 @@ export function useOrganization(orgId: string) {
     queryFn: ({ signal }) => fetchOrganization(orgId, signal),
     enabled: !!orgId,
     staleTime: ORGANIZATION_DETAIL_STALE_TIME,
-    placeholderData: keepPreviousData,
   })
 }
 
@@ -310,7 +309,6 @@ export function useOrganizationBilling(
     enabled: !!orgId && (options?.enabled ?? true),
     retry: false,
     staleTime: ORGANIZATION_BILLING_STALE_TIME,
-    placeholderData: keepPreviousData,
   })
 }
 
@@ -587,31 +585,6 @@ export function useUpdateOrganizationMemberUsageLimit() {
         queryKey: organizationKeys.memberUsageLimit(variables.orgId, variables.userId),
       })
     },
-  })
-}
-
-async function fetchMyMemberCredits(
-  workspaceId: string,
-  signal?: AbortSignal
-): Promise<MyMemberCreditsData> {
-  const response = await requestJson(getMyMemberCreditsContract, {
-    query: { workspaceId },
-    signal,
-  })
-  return response.data
-}
-
-/**
- * The caller's OWN per-member credit usage + cap for a workspace's organization.
- * `creditLimit` is null when no per-member cap applies (non-hosted, non-org
- * workspace, or no cap set) — callers then fall back to the plan-level view.
- */
-export function useMyMemberCredits(workspaceId?: string) {
-  return useQuery({
-    queryKey: organizationKeys.myMemberCredits(workspaceId ?? ''),
-    queryFn: ({ signal }) => fetchMyMemberCredits(workspaceId as string, signal),
-    enabled: Boolean(workspaceId),
-    staleTime: ORGANIZATION_MY_MEMBER_CREDITS_STALE_TIME,
   })
 }
 

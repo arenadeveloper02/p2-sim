@@ -7,6 +7,19 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getValidationErrorMessage, parseJsonBody } from '@/lib/api/server'
 import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import {
+  checkAttributedUsageLimits,
+  requireBillingAttributionHeader,
+  resolveBillingAttribution,
+  // toBillingContext, // applied inside recordSearchEmbeddingUsage
+} from '@/lib/billing/core/billing-attribution'
+// Threshold billing runs inside recordSearchEmbeddingUsage, so the route no
+// longer calls it directly.
+// import {
+//   checkAndBillOverageThreshold,
+//   checkAndBillPayerOverageThreshold,
+// } from '@/lib/billing/threshold-billing'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -305,18 +318,28 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
+      const accessibleKbs = accessChecks
+        .filter((ac): ac is NonNullable<typeof ac> & { hasAccess: true } => ac?.hasAccess === true)
+        .map((ac) => ac.knowledgeBase)
       const workspaceId = accessChecks.find((ac) => ac?.hasAccess)?.knowledgeBase?.workspaceId
 
+      // Upstream drives the reranker from flat `rerankerEnabled` / `rerankerModel`
+      // body fields. This fork drives it from the nested `rerank` object instead,
+      // via `rerankConfig` further down, so these two lines stay disabled.
+      // const useReranker = validatedData.rerankerEnabled && Boolean(validatedData.query?.trim())
+      // const rerankerModel = useReranker ? validatedData.rerankerModel : null
+
       const hasQuery = validatedData.query && validatedData.query.trim().length > 0
-      const embeddingModels = Array.from(
-        new Set(
-          accessChecks
-            .filter(
-              (ac): ac is NonNullable<typeof ac> & { hasAccess: true } => ac?.hasAccess === true
-            )
-            .map((ac) => ac.knowledgeBase.embeddingModel)
+
+      const workspaceIds = new Set(accessibleKbs.map((kb) => kb.workspaceId ?? null))
+      if (hasQuery && workspaceIds.size > 1) {
+        return NextResponse.json(
+          { error: 'Selected knowledge bases must belong to the same workspace' },
+          { status: 400 }
         )
-      )
+      }
+
+      const embeddingModels = Array.from(new Set(accessibleKbs.map((kb) => kb.embeddingModel)))
       if (hasQuery && embeddingModels.length > 1) {
         return NextResponse.json(
           {
@@ -336,6 +359,49 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           { error: `Knowledge bases not found or access denied: ${inaccessibleKbIds.join(', ')}` },
           { status: 404 }
         )
+      }
+
+      /**
+       * Resolved once here and threaded into `recordSearchEmbeddingUsage` below,
+       * which rejects workspace-scoped usage that arrives without attribution.
+       */
+      const billingAttribution =
+        hasQuery && workspaceId
+          ? auth.authType === AuthType.INTERNAL_JWT
+            ? requireBillingAttributionHeader(request.headers, {
+                actorUserId: userId,
+                workspaceId,
+              })
+            : shouldMeter
+              ? await resolveBillingAttribution({
+                  actorUserId: userId,
+                  workspaceId,
+                })
+              : undefined
+          : undefined
+
+      // Upstream pre-warms the embedding here; each search branch below generates
+      // it instead so the BYOK flag can be captured per strategy.
+      // const queryEmbeddingPromise = hasQuery
+      //   ? generateSearchEmbedding(validatedData.query!, queryEmbeddingModel, workspaceId)
+      //   : Promise.resolve(null)
+
+      /**
+       * Gate the workspace payer and actor before hosted embedding cost. Internal
+       * workflow tools were gated during preprocessing, and tag-only search is free.
+       */
+      if (shouldMeter && hasQuery) {
+        const usage = billingAttribution
+          ? await checkAttributedUsageLimits(billingAttribution)
+          : await checkActorUsageLimits(userId)
+        if (usage.isExceeded) {
+          return NextResponse.json(
+            {
+              error: usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.',
+            },
+            { status: 402 }
+          )
+        }
       }
 
       // if (workflowId) {
@@ -422,6 +488,37 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
+      // Upstream records the embedding charge inline here. This fork routes it
+      // through `recordSearchEmbeddingUsage` below, which already performs the
+      // same `recordUsage` write plus the payer overage check, so keeping both
+      // would bill the same search twice.
+      // if (shouldMeter && cost && cost.total > 0) {
+      //   const { recordUsage } = await import('@/lib/billing/core/usage-log')
+      //   try {
+      //     await recordUsage({
+      //       userId,
+      //       workspaceId: workspaceId ?? undefined,
+      //       ...(billingAttribution ? toBillingContext(billingAttribution) : {}),
+      //       entries: [
+      //         {
+      //           category: 'model',
+      //           source: 'knowledge-base',
+      //           description: queryEmbeddingModel,
+      //           cost: cost.total,
+      //           sourceReference: `kb-search:${requestId}`,
+      //         },
+      //       ],
+      //     })
+      //     if (billingAttribution) {
+      //       await checkAndBillPayerOverageThreshold(billingAttribution.billingEntity)
+      //     } else {
+      //       await checkAndBillOverageThreshold(userId)
+      //     }
+      //   } catch (billingError) {
+      //     logger.error(`[${requestId}] Failed to record KB search usage`, { error: billingError })
+      //   }
+      // }
+
       // Calculate cost for the embedding (with fallback if calculation fails)
       let cost = null
       let tokenCount = null
@@ -444,6 +541,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             query: validatedData.query!,
             isBYOK: queryEmbeddingIsBYOK,
             sourceReference: `kb-search:${requestId}`,
+            billingAttribution,
           })
         }
       }
@@ -474,7 +572,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
       // Fetch document names for the results
       const documentIds = results.map((result) => result.documentId)
-      const documentNameMap = await getDocumentMetadataByIds(documentIds)
+      const documentMetadataMap = await getDocumentMetadataByIds(documentIds)
 
       // Fetch workspaceId per knowledge base for "View in Knowledge Base" links (only for users with workspace access)
       const kbIds = [...new Set(results.map((r) => r.knowledgeBaseId))]
@@ -504,9 +602,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
         if (rerankResult.searchUnits > 0) {
           const pricing = getRerankModelPricing(rerankResult.model)
-          rerankerCost = pricing
-            ? pricing.perSearchUnit * rerankResult.searchUnits
-            : undefined
+          rerankerCost = pricing ? pricing.perSearchUnit * rerankResult.searchUnits : undefined
 
           if (shouldMeter && workspaceId) {
             await recordSearchRerankUsage({
@@ -554,9 +650,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
               }
             })
 
+            const docMeta = documentMetadataMap[result.documentId]
             return {
               documentId: result.documentId,
-              documentName: documentNameMap[result.documentId] || undefined,
+              documentName: docMeta?.filename || undefined,
+              sourceUrl: docMeta?.sourceUrl ?? null,
               content: result.content,
               chunkIndex: result.chunkIndex,
               metadata: tags, // Clean display name mapped tags

@@ -26,6 +26,8 @@ export interface KnowledgeBaseWithCounts {
   updatedAt: Date
   deletedAt: Date | null
   workspaceId: string | null
+  /** Folder in the workspace's `knowledge_base` folder tree; `null` at the root. */
+  folderId: string | null
   docCount: number
   connectorTypes: string[]
 }
@@ -40,6 +42,7 @@ export interface CreateKnowledgeBaseData {
   name: string
   description?: string
   workspaceId: string
+  folderId?: string | null
   embeddingModel: string
   embeddingDimension: 1536
   chunkingConfig: ChunkingConfig
@@ -120,6 +123,8 @@ export interface KnowledgeBaseData {
   updatedAt: string
   deletedAt: string | null
   workspaceId: string | null
+  /** Folder in the workspace's `knowledge_base` folder tree; `null` at the root. */
+  folderId: string | null
   docCount?: number
   connectorTypes?: string[]
 }

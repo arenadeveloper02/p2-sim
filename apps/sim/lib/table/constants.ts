@@ -38,8 +38,9 @@ export const TABLE_LIMITS = {
 
 /**
  * Default plan-based table limits. Each value can be overridden via env vars
- * (see `getTablePlanLimits`) so self-hosted deployments can raise the free-tier
- * caps that apply when billing is disabled.
+ * (see `getTablePlanLimits`). Billing-disabled deployments are unlimited
+ * unless the free-tier env vars are explicitly set (see
+ * `getBillingDisabledTableLimits`).
  */
 export const DEFAULT_TABLE_PLAN_LIMITS = {
   free: {
@@ -90,6 +91,20 @@ export interface TablePlanLimits {
   maxRowsPerTable: number
 }
 
+/**
+ * Table limits for billing-disabled deployments: unlimited by default, with
+ * each cap opting back in only when its free-tier env var is explicitly set
+ * to a valid positive integer.
+ */
+export function getBillingDisabledTableLimits(): TablePlanLimits {
+  const tablesOverride = envNumber(env.FREE_TABLES_LIMIT, 0, { min: 1, integer: true })
+  const rowsOverride = envNumber(env.FREE_TABLE_ROWS_LIMIT, 0, { min: 1, integer: true })
+  return {
+    maxTables: tablesOverride > 0 ? tablesOverride : Number.MAX_SAFE_INTEGER,
+    maxRowsPerTable: rowsOverride > 0 ? rowsOverride : Number.MAX_SAFE_INTEGER,
+  }
+}
+
 export type TablePlanLimitsByPlan = Record<PlanName, TablePlanLimits>
 
 /**
@@ -133,7 +148,10 @@ export function getTablePlanLimits(): TablePlanLimitsByPlan {
   }
 }
 
-export const COLUMN_TYPES = ['string', 'number', 'boolean', 'date', 'json'] as const
+export const COLUMN_TYPES = ['string', 'number', 'boolean', 'date', 'json', 'select'] as const
+
+/** Maximum number of options a `select`/`multiselect` column may declare. */
+export const MAX_SELECT_OPTIONS = 100
 
 export const NAME_PATTERN = /^[a-z_][a-z0-9_]*$/i
 

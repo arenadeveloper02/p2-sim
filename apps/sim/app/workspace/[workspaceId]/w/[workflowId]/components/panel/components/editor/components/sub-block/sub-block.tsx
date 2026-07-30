@@ -71,9 +71,13 @@ import { SlackClientSelector } from './components/slack-client-selector'
 
 const SLACK_OVERRIDES: SelectorOverrides = {
   transformContext: (context, deps) => {
-    // Slack selectors (channels/users) rely on an oauthCredential in context.
-    // We always use the Slack OAuth credential; token type selection is handled server-side.
-    const oauthCredential = String(deps.credential ?? '')
+    // v1 gates on authMethod (raw bot token vs OAuth); v2 has one merged
+    // credential field for actions and customBotCredential for triggers.
+    const authMethod = deps.authMethod as string
+    const oauthCredential =
+      authMethod === 'bot_token'
+        ? String(deps.botToken ?? '')
+        : String(deps.credential ?? deps.customBotCredential ?? '')
     return { ...context, oauthCredential }
   },
 }
@@ -1039,6 +1043,7 @@ function SubBlockComponent({
             allowStartFilesReference={config.allowStartFilesReference}
             conversationFileMode={config.conversationFileMode}
             defaultValue={config.defaultValue}
+            requiresCloudStorage={config.requiresCloudStorage === true}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}

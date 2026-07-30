@@ -48,7 +48,11 @@ import {
   OutputSelect,
   StartBlockInputModal,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
-import { useChatFileUpload } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/hooks'
+import {
+  type ChatFile,
+  MAX_CHAT_FILES,
+  useChatFileUpload,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/hooks'
 import {
   usePreventZoom,
   useScrollManagement,
@@ -58,7 +62,12 @@ import {
   useFloatDrag,
   useFloatResize,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/float'
-import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
+import {
+  isChatWorkflowRunResult,
+  useWorkflowExecution,
+  WorkflowAttachmentUploadError,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
+import type { UploadedWorkflowAttachment } from '@/app/workspace/[workspaceId]/w/[workflowId]/utils/workflow-attachment-upload'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useChatStore } from '@/stores/chat/store'
@@ -84,81 +93,70 @@ const formatFileSize = (bytes: number): string => {
   return `${Math.round((bytes / 1024 ** i) * 10) / 10} ${units[i]}`
 }
 
-/**
- * Represents a chat file attachment before processing
- */
-interface ChatFile {
-  id: string
-  name: string
-  type: string
-  size: number
-  file: File
-  dataUrl?: string
+function toChatMessageAttachments(
+  uploadedAttachments: UploadedWorkflowAttachment[]
+): ChatMessageAttachment[] {
+  return uploadedAttachments.map((file) => {
+    const supportsPreview = file.type.startsWith('image/') || file.type.startsWith('video/')
+    return {
+      id: file.id,
+      filename: file.name,
+      media_type: file.type,
+      size: file.size,
+      ...(supportsPreview ? { previewUrl: file.url } : {}),
+    }
+  })
 }
 
-/** Timeout for FileReader operations in milliseconds */
-const FILE_READ_TIMEOUT_MS = 60000
+interface ChatFilePreviewProps {
+  file: ChatFile
+  onRemove: (fileId: string) => void
+}
 
 /**
- * Reads files and converts them to data URLs for image display
- * @param chatFiles - Array of chat files to process
- * @returns Promise resolving to array of files with data URLs for images
+ * Uses a short-lived object URL only while an image remains in the composer.
+ * Successful uploads replace it with the storage-backed URL in message history.
  */
-const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ChatMessageAttachment[]> => {
-  return Promise.all(
-    chatFiles.map(async (file) => {
-      let previewUrl: string | undefined
-      if (file.type.startsWith('image/')) {
-        try {
-          previewUrl =
-            file.dataUrl ||
-            (await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader()
-              let settled = false
+function ChatFilePreview({ file, onRemove }: ChatFilePreviewProps) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
-              const timeoutId = setTimeout(() => {
-                if (!settled) {
-                  settled = true
-                  reader.abort()
-                  reject(new Error(`File read timed out after ${FILE_READ_TIMEOUT_MS}ms`))
-                }
-              }, FILE_READ_TIMEOUT_MS)
+  useEffect(() => {
+    if (!file.type.startsWith('image/')) return
 
-              reader.onload = () => {
-                if (!settled) {
-                  settled = true
-                  clearTimeout(timeoutId)
-                  resolve(reader.result as string)
-                }
-              }
-              reader.onerror = () => {
-                if (!settled) {
-                  settled = true
-                  clearTimeout(timeoutId)
-                  reject(reader.error)
-                }
-              }
-              reader.onabort = () => {
-                if (!settled) {
-                  settled = true
-                  clearTimeout(timeoutId)
-                  reject(new Error('File read aborted'))
-                }
-              }
-              reader.readAsDataURL(file.file)
-            }))
-        } catch (error) {
-          logger.error('Error reading file as data URL:', error)
-        }
-      }
-      return {
-        id: file.id,
-        filename: file.name,
-        media_type: file.type,
-        size: file.size,
-        previewUrl,
-      }
-    })
+    const objectUrl = URL.createObjectURL(file.file)
+    setPreviewUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [file.file, file.type])
+
+  return (
+    <div
+      className={cn(
+        'group relative flex-shrink-0 overflow-hidden rounded-md bg-[var(--surface-2)]',
+        previewUrl
+          ? 'size-[40px]'
+          : 'flex min-w-[80px] max-w-[120px] items-center justify-center px-2 py-0.5'
+      )}
+    >
+      {previewUrl ? (
+        <img src={previewUrl} alt={file.name} className='size-full object-cover' />
+      ) : (
+        <div className='min-w-0 flex-1'>
+          <div className='truncate font-medium text-[var(--white)] text-micro'>{file.name}</div>
+          <div className='text-[9px] text-[var(--text-tertiary)]'>{formatFileSize(file.size)}</div>
+        </div>
+      )}
+
+      <Button
+        variant='ghost'
+        onClick={(event) => {
+          event.stopPropagation()
+          onRemove(file.id)
+        }}
+        className='absolute top-0.5 right-0.5 size-4 p-0 opacity-0 transition-opacity group-hover:opacity-100'
+      >
+        <X className='size-2.5' />
+      </Button>
+    </div>
   )
 }
 
@@ -305,6 +303,7 @@ export function Chat() {
     selectedWorkflowOutputs,
     setSelectedWorkflowOutput,
     appendMessageContent,
+    setMessageContent,
     finalizeMessageStream,
     getConversationId,
     clearChat,
@@ -323,6 +322,7 @@ export function Chat() {
       selectedWorkflowOutputs: s.selectedWorkflowOutputs,
       setSelectedWorkflowOutput: s.setSelectedWorkflowOutput,
       appendMessageContent: s.appendMessageContent,
+      setMessageContent: s.setMessageContent,
       finalizeMessageStream: s.finalizeMessageStream,
       getConversationId: s.getConversationId,
       clearChat: s.clearChat,
@@ -358,6 +358,7 @@ export function Chat() {
     uploadErrors,
     isDragOver,
     removeFile,
+    reportUploadError,
     clearFiles,
     clearErrors,
     handleFileInputChange,
@@ -366,38 +367,10 @@ export function Chat() {
     handleDragLeave,
     handleDrop,
   } = useChatFileUpload()
-  const filePreviewUrls = useRef<Map<string, string>>(new Map())
 
-  const getFilePreviewUrl = useCallback((file: ChatFile): string | null => {
-    if (!file.type.startsWith('image/')) return null
-
-    const existing = filePreviewUrls.current.get(file.id)
-    if (existing) return existing
-
-    const url = URL.createObjectURL(file.file)
-    filePreviewUrls.current.set(file.id, url)
-    return url
-  }, [])
-
-  useEffect(() => {
-    const currentFileIds = new Set(chatFiles.map((f) => f.id))
-    const urlMap = filePreviewUrls.current
-
-    for (const [fileId, url] of urlMap.entries()) {
-      if (!currentFileIds.has(fileId)) {
-        URL.revokeObjectURL(url)
-        urlMap.delete(fileId)
-      }
-    }
-
-    return () => {
-      for (const url of urlMap.values()) {
-        URL.revokeObjectURL(url)
-      }
-      urlMap.clear()
-    }
-  }, [chatFiles])
-
+  /**
+   * Resolves the unified start block for chat execution, if available.
+   */
   const startBlockCandidate = useMemo(() => {
     if (!activeWorkflowId) {
       return null
@@ -492,9 +465,7 @@ export function Chat() {
 
   const workflowMessages = useMemo(() => {
     if (!activeWorkflowId) return []
-    return messages
-      .filter((msg) => msg.workflowId === activeWorkflowId)
-      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+    return messages.filter((msg) => msg.workflowId === activeWorkflowId)
   }, [messages, activeWorkflowId])
 
   const {
@@ -636,10 +607,21 @@ export function Chat() {
     async (stream: ReadableStream<Uint8Array>, responseMessageId: string) => {
       const reader = stream.getReader()
       streamReaderRef.current = reader
+
+      /**
+       * Answer text tracked per block so a `chunk_reset` frame (a live-streamed
+       * turn resolved to tool calls) can drop one block's contribution. Each
+       * flush replaces the message content with the joined segments.
+       */
+      const blockOrder: string[] = []
+      const blockSegments = new Map<string, string>()
       let accumulatedContent = ''
+      const recomputeContent = () => {
+        accumulatedContent = blockOrder.map((id) => blockSegments.get(id) ?? '').join('')
+      }
 
       const BATCH_MAX_MS = 50
-      let pendingChunks = ''
+      let contentDirty = false
       let batchRAF: number | null = null
       let batchTimer: ReturnType<typeof setTimeout> | null = null
       let lastFlush = 0
@@ -653,9 +635,9 @@ export function Chat() {
           clearTimeout(batchTimer)
           batchTimer = null
         }
-        if (pendingChunks) {
-          appendMessageContent(responseMessageId, pendingChunks)
-          pendingChunks = ''
+        if (contentDirty) {
+          setMessageContent(responseMessageId, accumulatedContent)
+          contentDirty = false
         }
         lastFlush = performance.now()
       }
@@ -675,12 +657,17 @@ export function Chat() {
 
       let finalError: string | null = null
       try {
-        await readSSEEvents<{ event?: string; data?: ExecutionResult; chunk?: string }>(reader, {
+        await readSSEEvents<{
+          event?: string
+          data?: ExecutionResult
+          chunk?: string
+          blockId?: string
+        }>(reader, {
           onParseError: (_data, e) => {
             logger.error('Error parsing stream data:', e)
           },
           onEvent: (json) => {
-            const { event, data: eventData, chunk: contentChunk } = json
+            const { event, data: eventData, chunk: contentChunk, blockId } = json
 
             if (event === 'final' && eventData) {
               if ('success' in eventData && !eventData.success) {
@@ -689,9 +676,32 @@ export function Chat() {
               return true
             }
 
+            if (event === 'chunk_reset' && blockId) {
+              // Drop the block's provisional text and its order slot — the
+              // final turn re-registers at the end, keeping render order =
+              // arrival order (separators are recomputed on re-stream).
+              if (blockSegments.has(blockId)) {
+                blockSegments.delete(blockId)
+                const orderIndex = blockOrder.indexOf(blockId)
+                if (orderIndex !== -1) {
+                  blockOrder.splice(orderIndex, 1)
+                }
+                recomputeContent()
+                contentDirty = true
+                scheduleFlush()
+              }
+              return
+            }
+
             if (contentChunk) {
-              accumulatedContent += contentChunk
-              pendingChunks += contentChunk
+              const segmentKey = blockId ?? ''
+              if (!blockSegments.has(segmentKey)) {
+                blockOrder.push(segmentKey)
+                blockSegments.set(segmentKey, '')
+              }
+              blockSegments.set(segmentKey, blockSegments.get(segmentKey)! + contentChunk)
+              recomputeContent()
+              contentDirty = true
               scheduleFlush()
             }
           },
@@ -722,7 +732,14 @@ export function Chat() {
         focusInput(100)
       }
     },
-    [appendMessageContent, finalizeMessageStream, focusInput, selectedOutputs, activeWorkflowId]
+    [
+      appendMessageContent,
+      setMessageContent,
+      finalizeMessageStream,
+      focusInput,
+      selectedOutputs,
+      activeWorkflowId,
+    ]
   )
 
   const handleWorkflowResponse = useCallback(
@@ -847,27 +864,11 @@ export function Chat() {
     }
 
     const sentMessage = chatMessage.trim()
-
-    if (sentMessage && promptHistory[promptHistory.length - 1] !== sentMessage) {
-      setPromptHistory((prev) => [...prev, sentMessage])
-    }
-    setHistoryIndex(-1)
-
     const conversationId = getConversationId(activeWorkflowId)
 
+    clearErrors()
+
     try {
-      workflowChatMsgSentEvent({
-        'Message Content': sentMessage,
-        'Message Type':
-          chatFiles?.length > 0 && sentMessage
-            ? 'Text + Attachment'
-            : chatFiles?.length > 0 && !sentMessage
-              ? 'Attachment'
-              : 'Text',
-        'Message ID': conversationId,
-        'Workspace Name': workspaceName,
-        'Workspace ID': workspaceId,
-      })
       const selectedImageFiles = await materializeSelectedGeneratedImages()
       const combinedChatFiles = [
         ...chatFiles,
@@ -880,13 +881,18 @@ export function Chat() {
           dataUrl: image.dataUrl,
         })),
       ]
-      const attachmentsWithData = await processFileAttachments(combinedChatFiles)
 
-      addMessage({
-        content: sentMessage,
-        workflowId: activeWorkflowId,
-        type: 'user',
-        attachments: attachmentsWithData,
+      workflowChatMsgSentEvent({
+        'Message Content': sentMessage,
+        'Message Type':
+          combinedChatFiles.length > 0 && sentMessage
+            ? 'Text + Attachment'
+            : combinedChatFiles.length > 0 && !sentMessage
+              ? 'Attachment'
+              : 'Text',
+        'Message ID': conversationId,
+        'Workspace Name': workspaceName,
+        'Workspace ID': workspaceId,
       })
 
       const fileArray =
@@ -903,11 +909,27 @@ export function Chat() {
 
       const workflowInput = buildCompleteWorkflowInput(sentMessage, conversationId, fileArray)
 
-      if (fileArray && fileArray.length > 0) {
-        workflowInput.onUploadError = (message: string) => {
-          logger.error('File upload error:', message)
-        }
+      const result = await handleRunWorkflow(workflowInput)
+      if (!isChatWorkflowRunResult(result)) {
+        focusInput(10)
+        return
       }
+      const messageAttachments = toChatMessageAttachments(result.uploadedAttachments)
+
+      if (sentMessage && promptHistory[promptHistory.length - 1] !== sentMessage) {
+        setPromptHistory((prev) => [...prev, sentMessage])
+      }
+      setHistoryIndex(-1)
+
+      const messageContent =
+        sentMessage ||
+        (combinedChatFiles.length > 0 ? `Uploaded ${combinedChatFiles.length} file(s)` : '')
+      addMessage({
+        content: messageContent,
+        workflowId: activeWorkflowId,
+        type: 'user',
+        attachments: messageAttachments,
+      })
 
       setChatMessage('')
       clearFiles()
@@ -915,10 +937,15 @@ export function Chat() {
       clearErrors()
       focusInput(10)
 
-      const result = await handleRunWorkflow(workflowInput)
       handleWorkflowResponse(result)
     } catch (error) {
-      logger.error('Error in handleSendMessage:', error)
+      if (error instanceof WorkflowAttachmentUploadError) {
+        reportUploadError(error.message)
+      } else {
+        logger.error('Error in handleSendMessage:', error)
+      }
+      focusInput(10)
+      return
     }
 
     focusInput(100)
@@ -934,6 +961,7 @@ export function Chat() {
     handleRunWorkflow,
     handleWorkflowResponse,
     focusInput,
+    reportUploadError,
     clearFiles,
     clearErrors,
     buildCompleteWorkflowInput,
@@ -1348,49 +1376,9 @@ export function Chat() {
 
             {chatFiles.length > 0 && (
               <div className='mt-1 flex flex-wrap gap-1.5'>
-                {chatFiles.map((file) => {
-                  const previewUrl = getFilePreviewUrl(file)
-
-                  return (
-                    <div
-                      key={file.id}
-                      className={cn(
-                        'group relative flex-shrink-0 overflow-hidden rounded-md bg-[var(--surface-2)]',
-                        previewUrl
-                          ? 'size-[40px]'
-                          : 'flex min-w-[80px] max-w-[120px] items-center justify-center px-2 py-0.5'
-                      )}
-                    >
-                      {previewUrl ? (
-                        <img
-                          src={previewUrl}
-                          alt={file.name}
-                          className='h-full w-full object-cover'
-                        />
-                      ) : (
-                        <div className='min-w-0 flex-1'>
-                          <div className='truncate font-medium text-[var(--white)] text-micro'>
-                            {file.name}
-                          </div>
-                          <div className='text-[9px] text-[var(--text-tertiary)]'>
-                            {formatFileSize(file.size)}
-                          </div>
-                        </div>
-                      )}
-
-                      <Button
-                        variant='ghost'
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          removeFile(file.id)
-                        }}
-                        className='absolute top-0.5 right-0.5 size-4 p-0 opacity-0 transition-opacity group-hover:opacity-100'
-                      >
-                        <X className='h-2.5 w-2.5' />
-                      </Button>
-                    </div>
-                  )
-                })}
+                {chatFiles.map((file) => (
+                  <ChatFilePreview key={file.id} file={file} onRemove={removeFile} />
+                ))}
               </div>
             )}
 
@@ -1415,7 +1403,7 @@ export function Chat() {
                       onClick={() => document.getElementById('floating-chat-file-input')?.click()}
                       className={cn(
                         '!bg-transparent !border-0 cursor-pointer rounded-md p-[0px]',
-                        (!activeWorkflowId || isExecuting || chatFiles.length >= 15) &&
+                        (!activeWorkflowId || isExecuting || chatFiles.length >= MAX_CHAT_FILES) &&
                           'cursor-not-allowed opacity-50'
                       )}
                     >

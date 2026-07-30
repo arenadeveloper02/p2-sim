@@ -55,14 +55,9 @@ export function EmailLayout({
           {/* Header with logo */}
           <Section style={baseStyles.header}>
             <Img
-              // src={logoPng || brand.logoUrl || `${baseUrl}/brand/color/email/type.png`}
-              // width='70'
-              src={logoPng || brand.logoUrl || `${baseUrl}/brand/color/email/wordmark.png`}
-              // width='48'
-              // height='48'
-              height='34'
-              {...(hasCustomLogo ? {} : { width: '70' })}
+              src={brand.logoUrl || `${baseUrl}/brand/color/email/wordmark.png`}
               alt={brand.name}
+              {...(hasCustomLogo ? { height: '34' } : { height: '41', width: '68' })}
               style={hasCustomLogo ? { display: 'block', width: 'auto' } : { display: 'block' }}
             />
           </Section>

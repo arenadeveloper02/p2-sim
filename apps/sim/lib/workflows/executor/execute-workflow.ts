@@ -1,6 +1,10 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import {
+  assertBillingAttributionSnapshot,
+  type BillingAttributionSnapshot,
+} from '@/lib/billing/core/billing-attribution'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { resolveChildExecutionLineage } from '@/lib/execution/lineage'
 import { captureServerEvent } from '@/lib/posthog/server'
@@ -59,6 +63,17 @@ export interface ExecuteWorkflowOptions {
   triggeringChatId?: string
   /** Copilot run that triggered this run (rollup only). */
   triggeringRunId?: string
+  /** Immutable actor/payer decision captured by preprocessing. */
+  billingAttribution?: BillingAttributionSnapshot
+  /** Deployed-chat thinking policy; persisted on the snapshot for resume. */
+  includeThinking?: boolean
+  /** Deployed-chat tool lifecycle policy; persisted on the snapshot for resume. */
+  includeToolCalls?: boolean
+  /**
+   * Run-level agent-events opt-in (see {@link ExecutionMetadata.agentEvents}).
+   * Callers set this only when the surface consumes thinking/tool events.
+   */
+  agentEvents?: boolean
 }
 
 export interface WorkflowInfo {
@@ -83,6 +98,17 @@ export async function executeWorkflow(
 
   const workflowId = workflow.id
   const workspaceId = workflow.workspaceId
+  if (!streamConfig?.billingAttribution) {
+    throw new Error('Billing attribution is required for workspace execution')
+  }
+  const billingAttribution = assertBillingAttributionSnapshot(streamConfig.billingAttribution)
+  if (
+    billingAttribution.actorUserId !== actorUserId ||
+    billingAttribution.workspaceId !== workspaceId
+  ) {
+    throw new Error('Workflow billing attribution does not match its actor and workspace')
+  }
+
   const executionId = providedExecutionId || generateId()
   const triggerType = streamConfig?.workflowTriggerType || 'api'
   const loggingSession = new LoggingSession(workflowId, executionId, triggerType, requestId)
@@ -104,6 +130,7 @@ export async function executeWorkflow(
       workflowId,
       workspaceId,
       userId: actorUserId,
+      billingAttribution,
       workflowUserId: workflow.userId,
       sessionUserId,
       triggerType,
@@ -119,6 +146,12 @@ export async function executeWorkflow(
       rootExecutionId: lineage.rootExecutionId,
       triggeringChatId: lineage.triggeringChatId,
       triggeringRunId: lineage.triggeringRunId,
+      includeThinking: streamConfig?.includeThinking === true ? true : undefined,
+      includeToolCalls:
+        typeof streamConfig?.includeToolCalls === 'boolean'
+          ? streamConfig.includeToolCalls
+          : undefined,
+      agentEvents: streamConfig?.agentEvents === true ? true : undefined,
     }
 
     const snapshot = new ExecutionSnapshot(

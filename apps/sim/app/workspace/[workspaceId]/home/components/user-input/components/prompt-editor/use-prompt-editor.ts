@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useAvailableResources } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/add-resource-dropdown'
 import { snapSelectionToChips } from '@/app/workspace/[workspaceId]/home/components/user-input/chip-selection'
 import {
   chipDisplayToken,
@@ -24,6 +23,7 @@ import {
   restoreSkillTriggerText,
   SKILL_CHIP_TRIGGER,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/utils'
+import { type McpServer, useMcpServers } from '@/hooks/queries/mcp'
 import { type SkillDefinition, useSkills } from '@/hooks/queries/skills'
 import type { ChatContext } from '@/stores/panel'
 
@@ -155,6 +155,11 @@ export function usePromptEditor({
   onPasteFiles,
 }: UsePromptEditorProps) {
   const { data: skills = [] } = useSkills(workspaceId)
+  const { data: allMcpServers = [] } = useMcpServers(workspaceId)
+  const mcpServers = useMemo(
+    () => allMcpServers.filter((server) => server.enabled && server.workspaceId === workspaceId),
+    [allMcpServers, workspaceId]
+  )
 
   const [value, setValueState] = useState(initialValue)
   const valueRef = useRef(value)
@@ -224,6 +229,7 @@ export function usePromptEditor({
 
   const skillAutoMention = useSkillAutoMention({
     skills,
+    mcpServers,
     setSelectedContexts: contextManagement.setSelectedContexts,
   })
 
@@ -272,23 +278,8 @@ export function usePromptEditor({
       valueRef.current = converted
       setValueState(converted)
     }
-    seedRef.current = skills.length > 0 ? null : converted
-  }, [skills.length, applyAutoMentions])
-
-  const existingResourceKeys = useMemo(() => {
-    const keys = new Set<string>()
-    for (const ctx of contextManagement.selectedContexts) {
-      if (ctx.kind === 'workflow' && ctx.workflowId) keys.add(`workflow:${ctx.workflowId}`)
-      if (ctx.kind === 'knowledge' && ctx.knowledgeId) keys.add(`knowledgebase:${ctx.knowledgeId}`)
-      if (ctx.kind === 'table' && ctx.tableId) keys.add(`table:${ctx.tableId}`)
-      if (ctx.kind === 'file' && ctx.fileId) keys.add(`file:${ctx.fileId}`)
-      if (ctx.kind === 'folder' && ctx.folderId) keys.add(`folder:${ctx.folderId}`)
-      if (ctx.kind === 'past_chat' && ctx.chatId) keys.add(`task:${ctx.chatId}`)
-    }
-    return keys
-  }, [contextManagement.selectedContexts])
-
-  const availableResources = useAvailableResources(workspaceId, existingResourceKeys)
+    seedRef.current = skills.length > 0 || mcpServers.length > 0 ? null : converted
+  }, [skills.length, mcpServers.length, applyAutoMentions])
 
   /**
    * Programmatically replaces the editor text. Chipifies by default so any
@@ -440,6 +431,32 @@ export function usePromptEditor({
       }
 
       addContextNotified({ kind: 'skill', skillId: skill.id, label: skill.name })
+    },
+    [textareaRef, addContextNotified]
+  )
+
+  const handleMcpSelect = useCallback(
+    (server: McpServer) => {
+      const textarea = textareaRef.current
+      if (textarea) {
+        const currentValue = valueRef.current
+        const range = slashRangeRef.current
+        const insertAt = range?.start ?? textarea.selectionStart ?? currentValue.length
+        const end = range?.end ?? insertAt
+        const needsSpaceBefore = insertAt > 0 && !/\s/.test(currentValue.charAt(insertAt - 1))
+        const insertText = `${needsSpaceBefore ? ' ' : ''}${SKILL_CHIP_TRIGGER}${server.name} `
+        const newValue = `${currentValue.slice(0, insertAt)}${insertText}${currentValue.slice(end)}`
+        const newPos = insertAt + insertText.length
+
+        pendingCursorRef.current = newPos
+        valueRef.current = newValue
+        slashRangeRef.current = null
+        setSlashQuery(null)
+        dismissedSlashStartRef.current = null
+        setValueState(newValue)
+      }
+
+      addContextNotified({ kind: 'mcp', serverId: server.id, label: server.name })
     },
     [textareaRef, addContextNotified]
   )
@@ -656,9 +673,13 @@ export function usePromptEditor({
           return
         }
         if ((e.key === 'Tab' || e.key === 'Enter') && !e.shiftKey) {
-          // Confirm the highlighted match if there is one. If no items match, fall
-          // through so Enter still submits and Tab still does its default thing.
-          if (plusMenuRef.current?.selectActive()) {
+          // Confirm the highlighted match if there is one. If the lists are still
+          // loading, swallow the key — "no match" isn't knowable yet, and falling
+          // through would submit the message with the mention left as raw text.
+          // Only once they are loaded does an empty result mean a genuine no-match,
+          // where Enter should submit and Tab should do its default thing.
+          const result = plusMenuRef.current?.selectActive()
+          if (result === 'selected' || result === 'hydrating') {
             e.preventDefault()
             return
           }
@@ -1008,9 +1029,11 @@ export function usePromptEditor({
     textareaRef,
 
     /** @internal Wiring consumed by the {@link PromptEditor} view. */
+    workspaceId,
+    /** @internal */
     skills,
     /** @internal */
-    availableResources,
+    mcpServers,
     /** @internal */
     mentionQuery,
     /** @internal */
@@ -1025,6 +1048,8 @@ export function usePromptEditor({
     insertResource,
     /** @internal */
     handleSkillSelect,
+    /** @internal */
+    handleMcpSelect,
     /** @internal */
     handlePlusMenuClose,
     /** @internal */

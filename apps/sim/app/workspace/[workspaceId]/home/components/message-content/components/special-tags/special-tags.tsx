@@ -1,6 +1,6 @@
 'use client'
 
-import { createElement, useMemo, useState } from 'react'
+import { createElement, lazy, Suspense, useMemo, useState } from 'react'
 import {
   ArrowRight,
   Button,
@@ -13,17 +13,36 @@ import {
   Tooltip,
   toast,
 } from '@sim/emcn'
+import { Cursor, TerminalWindow } from '@sim/emcn/icons'
 import { useParams } from 'next/navigation'
+import { ThinkingLoader } from '@/components/ui'
+import { useSession } from '@/lib/auth/auth-client'
+import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
+import { isBrowserAgentAvailable, sendBrowserPanelAction } from '@/lib/browser-agent/transport'
 import { canonicalWorkspaceFilePath } from '@/lib/copilot/vfs/path-utils'
 import { isSafeHttpUrl } from '@/lib/core/utils/urls'
+import { getDesktopBridge } from '@/lib/desktop'
+import {
+  resolveOAuthServiceForSlug,
+  resolveServiceAccountIntegration,
+} from '@/lib/integrations/oauth-service'
 import { OAUTH_PROVIDERS } from '@/lib/oauth/oauth'
+import { getServiceConfigByProviderId } from '@/lib/oauth/utils'
+import { finishTerminalHandoff, isTerminalAvailable } from '@/lib/terminal/transport'
 import { ContextMentionIcon } from '@/app/workspace/[workspaceId]/home/components/context-mention-icon'
+import { QuestionDisplay } from '@/app/workspace/[workspaceId]/home/components/message-content/components/question'
 import { ChartDisplay } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/chart-display'
 import type {
   ChatMessageContext,
   MothershipResource,
 } from '@/app/workspace/[workspaceId]/home/types'
+// Deep import, not the barrel: the barrel also re-exports
+// ConnectServiceAccountModal, and that edge would pull the modal into this
+// chunk and defeat the lazy() split below.
+import { useServiceAccountConnectTarget } from '@/app/workspace/[workspaceId]/integrations/components/connect-service-account-modal/use-service-account-connect'
+import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import { useWorkspaceCredential } from '@/hooks/queries/credentials'
 import {
   usePersonalEnvironment,
   useSavePersonalEnvironment,
@@ -33,6 +52,7 @@ import { useKnowledgeBasesQuery } from '@/hooks/queries/kb/knowledge'
 import { useTablesList } from '@/hooks/queries/tables'
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
+import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 
 export interface OptionsItemData {
   title: string
@@ -55,6 +75,17 @@ export interface UsageUpgradeTagData {
   message: string
 }
 
+/**
+ * Kept out of the chat's initial chunk — it pulls in three provider-specific
+ * setup forms and is only mounted once a message actually offers a service
+ * account.
+ */
+const ConnectServiceAccountModal = lazy(() =>
+  import(
+    '@/app/workspace/[workspaceId]/integrations/components/connect-service-account-modal/connect-service-account-modal'
+  ).then((m) => ({ default: m.ConnectServiceAccountModal }))
+)
+
 export const CREDENTIAL_TAG_TYPES = [
   'env_key',
   'oauth_key',
@@ -62,6 +93,10 @@ export const CREDENTIAL_TAG_TYPES = [
   'credential_id',
   'link',
   'secret_input',
+  'folder_access',
+  'browser_takeover',
+  'terminal_handoff',
+  'service_account',
 ] as const
 
 export type CredentialTagType = (typeof CREDENTIAL_TAG_TYPES)[number]
@@ -74,14 +109,19 @@ export interface CredentialTagData {
   value?: string
   type: CredentialTagType
   provider?: string
-  redacted?: boolean
   /**
-   * Env-var key name to save the pasted secret under (secret_input only),
-   * e.g. "OPENAI_API_KEY".
+   * Env-var key name to save the pasted secret under (secret_input), e.g.
+   * "OPENAI_API_KEY"; the folder hint for folder_access; the takeover reason
+   * for browser_takeover; what the user needs to do for terminal_handoff.
    */
   name?: string
   /** Where a secret_input value is persisted. Defaults to "workspace". */
   scope?: SecretInputScope
+  /**
+   * Existing credential to reconnect in place (service_account only). Present =
+   * rotate the secret on this credential; absent = create a new one.
+   */
+  credentialId?: string
 }
 
 export interface MothershipErrorTagData {
@@ -95,6 +135,30 @@ export interface FileTagData {
   type: string
   content: string
 }
+
+export const QUESTION_TYPES = ['single_select', 'multi_select'] as const
+
+export type QuestionType = (typeof QUESTION_TYPES)[number]
+
+export interface QuestionOption {
+  id: string
+  label: string
+}
+
+/**
+ * One question in a `<question>` tag: a single_select or multi_select with at
+ * least one real option. The card always appends its own free-text "Something
+ * else" row, so agent-supplied catch-all options ("Other", "Something else",
+ * ...) are stripped during parsing.
+ */
+export interface QuestionItem {
+  type: QuestionType
+  prompt: string
+  options: QuestionOption[]
+}
+
+/** Normalized `<question>` payload: single-object bodies become a one-element array. */
+export type QuestionTagData = QuestionItem[]
 
 export const WORKSPACE_RESOURCE_TAG_TYPES = ['workflow', 'table', 'file'] as const
 
@@ -137,6 +201,7 @@ export type ContentSegment =
   | { type: 'mothership-error'; data: MothershipErrorTagData }
   | { type: 'workspace_resource'; data: WorkspaceResourceTagData }
   | { type: 'chart'; data: ChartTagData }
+  | { type: 'question'; data: QuestionTagData }
 
 export type RuntimeSpecialTagName =
   | 'thinking'
@@ -146,6 +211,7 @@ export type RuntimeSpecialTagName =
   | 'file'
   | 'workspace_resource'
   | 'chart'
+  | 'question'
 
 export interface ParsedSpecialContent {
   segments: ContentSegment[]
@@ -160,6 +226,7 @@ const RUNTIME_SPECIAL_TAG_NAMES = [
   'file',
   'workspace_resource',
   'chart',
+  'question',
 ] as const
 
 const SPECIAL_TAG_NAMES = [
@@ -170,6 +237,7 @@ const SPECIAL_TAG_NAMES = [
   'mothership-error',
   'workspace_resource',
   'chart',
+  'question',
 ] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -216,7 +284,35 @@ function isCredentialTagData(value: unknown): value is CredentialTagData {
     }
     return typeof value.name === 'string' && value.name.trim().length > 0
   }
-  if (value.redacted === true) return value.value === undefined || typeof value.value === 'string'
+  // folder_access, browser_takeover and terminal_handoff are value-less action
+  // chips (optional `name` carries the folder hint / reason).
+  if (
+    value.type === 'folder_access' ||
+    value.type === 'browser_takeover' ||
+    value.type === 'terminal_handoff'
+  ) {
+    return value.name === undefined || typeof value.name === 'string'
+  }
+
+  // A service_account tag is a control, not a value: it names the provider
+  // whose setup form to open, and the user types the secret into that form —
+  // so it never carries a `value`, but it is useless without a provider. An
+  // optional `credentialId` reconnects an existing service account in place;
+  // reject a blank one, since the renderer treats a truthy id as "reconnect"
+  // and would try to rotate a non-existent credential.
+  if (value.type === 'service_account') {
+    if (value.credentialId !== undefined) {
+      if (typeof value.credentialId !== 'string' || value.credentialId.trim().length === 0) {
+        return false
+      }
+    }
+    return typeof value.provider === 'string' && value.provider.trim().length > 0
+  }
+  // A sim_key chip is platform-filled: the model only marks where the workspace
+  // API key belongs (it never holds the value) and Sim injects it from the tool
+  // result, so the tag is valid with or without a `value`. Every other rendered
+  // type (e.g. link) needs a string value to render.
+  if (value.type === 'sim_key') return true
   return typeof value.value === 'string'
 }
 
@@ -293,6 +389,105 @@ function isChartTagData(value: unknown): value is ChartTagData {
   )
 }
 
+function isQuestionOption(value: unknown): value is QuestionOption {
+  if (!isRecord(value)) return false
+  return typeof value.id === 'string' && typeof value.label === 'string'
+}
+
+/**
+ * Catch-all labels the agent must not supply as options — the card renders
+ * its own free-text "Something else" row. Matching options are stripped; a
+ * question left with no real options is invalid.
+ */
+const SELF_PROVIDED_OPTION_LABELS = new Set([
+  'other',
+  'others',
+  'something else',
+  'none of the above',
+  'none of these',
+])
+
+function isQuestionItem(value: unknown): value is QuestionItem {
+  if (!isRecord(value)) return false
+  if (
+    typeof value.type !== 'string' ||
+    !(QUESTION_TYPES as readonly string[]).includes(value.type)
+  ) {
+    return false
+  }
+  if (typeof value.prompt !== 'string' || value.prompt.trim().length === 0) return false
+  return (
+    Array.isArray(value.options) &&
+    value.options.length > 0 &&
+    value.options.every(isQuestionOption)
+  )
+}
+
+/** Strips agent-supplied catch-all options; null when none remain. */
+function sanitizeQuestionItem(item: QuestionItem): QuestionItem | null {
+  const options = item.options.filter(
+    (option) => !SELF_PROVIDED_OPTION_LABELS.has(option.label.trim().toLowerCase())
+  )
+  if (options.length === 0) return null
+  return options.length === item.options.length ? item : { ...item, options }
+}
+
+/**
+ * Parses a `<question>` tag body. Accepts a single question object or a
+ * non-empty array of them; single objects are normalized to a one-element
+ * array so the renderer only handles the array shape.
+ */
+/**
+ * Extracts the last complete `<question>` tag payload from raw message
+ * content. Used by the chat list to pair an assistant question card with the
+ * user message that answered it.
+ */
+export function parseLastQuestionTag(content: string): QuestionTagData | null {
+  const matches = content.match(/<question>([\s\S]*?)<\/question>/g)
+  if (!matches || matches.length === 0) return null
+  const last = matches[matches.length - 1]
+  return parseQuestionTagBody(last.slice('<question>'.length, -'</question>'.length))
+}
+
+/**
+ * Recovers the question text from a `<question>` body that failed validation.
+ * A well-formed tag with an invalid body renders as nothing, which silently
+ * drops the question the assistant was blocking on and leaves the message
+ * looking truncated. The prompts are still answerable in the chat input, so
+ * surfacing them as plain text degrades to a prose question instead of losing
+ * it. A body that is not even parseable JSON has nothing to recover.
+ */
+function recoverQuestionPrompts(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as unknown
+    const items = Array.isArray(parsed) ? parsed : [parsed]
+    const prompts = items
+      .filter(isRecord)
+      .map((item) => (typeof item.prompt === 'string' ? item.prompt.trim() : ''))
+      .filter((prompt) => prompt.length > 0)
+    return prompts.length > 0 ? prompts.join('\n\n') : null
+  } catch {
+    return null
+  }
+}
+
+export function parseQuestionTagBody(body: string): QuestionTagData | null {
+  try {
+    const parsed = JSON.parse(body) as unknown
+    const items = Array.isArray(parsed) ? parsed : [parsed]
+    if (items.length === 0 || !items.every(isQuestionItem)) return null
+    const sanitized: QuestionItem[] = []
+    for (const item of items) {
+      const clean = sanitizeQuestionItem(item)
+      if (!clean) return null
+      sanitized.push(clean)
+    }
+    return sanitized
+  } catch {
+    return null
+  }
+}
+
 export function parseJsonTagBody<T>(
   body: string,
   isExpectedShape: (value: unknown) => value is T
@@ -335,6 +530,7 @@ function parseSpecialTagData(
   tagName: (typeof SPECIAL_TAG_NAMES)[number],
   body: string
 ):
+  | { type: 'text'; content: string }
   | { type: 'thinking'; content: string }
   | { type: 'options'; data: OptionsTagData }
   | { type: 'usage_upgrade'; data: UsageUpgradeTagData }
@@ -342,6 +538,7 @@ function parseSpecialTagData(
   | { type: 'mothership-error'; data: MothershipErrorTagData }
   | { type: 'workspace_resource'; data: WorkspaceResourceTagData }
   | { type: 'chart'; data: ChartTagData }
+  | { type: 'question'; data: QuestionTagData }
   | null {
   if (tagName === 'thinking') {
     const content = parseTextTagBody(body)
@@ -376,6 +573,12 @@ function parseSpecialTagData(
   if (tagName === 'chart') {
     const data = parseJsonTagBody(body, isChartTagData)
     return data ? { type: 'chart', data } : null
+  }
+  if (tagName === 'question') {
+    const data = parseQuestionTagBody(body)
+    if (data) return { type: 'question', data }
+    const recovered = recoverQuestionPrompts(body)
+    return recovered ? { type: 'text', content: recovered } : null
   }
 
   return null
@@ -477,7 +680,10 @@ const THINKING_BLOCKS = [
 
 interface SpecialTagsProps {
   segment: Exclude<ContentSegment, { type: 'text' }>
+  /** Transcript-derived answers for this message's question card (renders the recap). */
+  questionAnswers?: string[]
   onOptionSelect?: (id: string) => void
+  onQuestionDismiss?: () => void
   onWorkspaceResourceSelect?: (resource: MothershipResource) => void
 }
 
@@ -487,7 +693,9 @@ interface SpecialTagsProps {
  */
 export function SpecialTags({
   segment,
+  questionAnswers,
   onOptionSelect,
+  onQuestionDismiss,
   onWorkspaceResourceSelect,
 }: SpecialTagsProps) {
   switch (segment.type) {
@@ -505,32 +713,32 @@ export function SpecialTags({
       return <WorkspaceResourceDisplay data={segment.data} onSelect={onWorkspaceResourceSelect} />
     case 'chart':
       return <ChartDisplay data={segment.data} />
+    case 'question':
+      return (
+        <QuestionDisplay
+          data={segment.data}
+          answers={questionAnswers}
+          onSelect={onOptionSelect}
+          onDismiss={onQuestionDismiss}
+        />
+      )
     default:
       return null
   }
 }
 
 interface PendingTagIndicatorProps {
-  /** Server-authored live status (Local Copilot). Defaults to Thinking…. */
-  label?: string
+  /** Activity phrase next to the loader; crossfades on change. */
+  label: string
 }
 
 /**
- * Renders a "Thinking" shimmer while a special tag is still streaming in.
+ * Renders the turn-level activity shimmer.
  */
-export function PendingTagIndicator({ label = 'Thinking…' }: PendingTagIndicatorProps) {
+export function PendingTagIndicator({ label }: PendingTagIndicatorProps) {
   return (
-    <div className='flex animate-stream-fade-in items-center gap-2 py-2'>
-      <div className='grid size-[16px] grid-cols-2 gap-[1.5px]'>
-        {THINKING_BLOCKS.map((block, i) => (
-          <div
-            key={i}
-            className='animate-thinking-block rounded-xs'
-            style={{ backgroundColor: block.color, animationDelay: block.delay }}
-          />
-        ))}
-      </div>
-      <span className='text-[var(--text-body)] text-sm'>{label}</span>
+    <div className='animate-stream-fade-in py-2'>
+      <ThinkingLoader size={20} startVariant='corners' label={label} labelRatio={0.7} />
     </div>
   )
 }
@@ -830,36 +1038,321 @@ function SecretInputDisplay({ data }: { data: CredentialTagData }) {
   )
 }
 
-function CredentialDisplay({ data }: { data: CredentialTagData }) {
+/**
+ * Folder icon for the local-folder grant chip (matches the credential chip
+ * icon sizing).
+ */
+const FolderGrantIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox='0 0 16 16' fill='none' xmlns='http://www.w3.org/2000/svg'>
+    <path
+      d='M1.5 4.5A1.5 1.5 0 0 1 3 3h3.2l1.6 1.8H13A1.5 1.5 0 0 1 14.5 6.3v5.2A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5v-7z'
+      stroke='currentColor'
+      strokeWidth='1.2'
+      strokeLinejoin='round'
+    />
+  </svg>
+)
+
+/**
+ * Inline grant chip rendered for
+ * `<credential>{"type":"folder_access","name":"Desktop"}</credential>`.
+ * Clicking opens the desktop app's native folder picker (read-only grant,
+ * same flow as the Desktop settings folder picker). Renders nothing outside the
+ * desktop app — there is no local filesystem bridge to grant against.
+ */
+function FolderAccessDisplay({ data }: { data: CredentialTagData }) {
+  const [picking, setPicking] = useState(false)
+  const [grantedName, setGrantedName] = useState<string | null>(null)
+
+  const bridge = getDesktopBridge()
+  if (!bridge?.localFilesystem) return null
+
+  const hint = (data.name ?? '').trim()
+  const label = grantedName
+    ? `Access granted — ${grantedName}`
+    : hint
+      ? `Grant access to ${hint}`
+      : 'Grant access to a local folder'
+
+  const handleClick = async () => {
+    if (picking || grantedName) return
+    setPicking(true)
+    try {
+      const response = await bridge.localFilesystem({ operation: 'mount_directory' })
+      if (response.ok && 'mount' in response.data && response.data.mount) {
+        setGrantedName(response.data.mount.name)
+        toast.success(`Granted access to ${response.data.mount.name}`)
+      }
+    } catch {
+      toast.error("Couldn't open the folder picker. Please try again.")
+    } finally {
+      setPicking(false)
+    }
+  }
+
+  return (
+    <button
+      type='button'
+      onClick={() => void handleClick()}
+      disabled={picking || grantedName !== null}
+      className={cn(
+        'flex w-full items-center gap-2 rounded-2xl border border-[var(--border-1)] px-3 py-2.5 text-left transition-colors',
+        grantedName === null && !picking && 'hover-hover:bg-[var(--surface-5)]',
+        picking && 'opacity-60'
+      )}
+    >
+      <FolderGrantIcon className='size-[16px] shrink-0' />
+      <span className='flex-1 text-[var(--text-body)] text-sm'>
+        {picking ? 'Choose a folder…' : label}
+      </span>
+      {grantedName === null && (
+        <ArrowRight className='size-[16px] shrink-0 text-[var(--text-icon)]' />
+      )}
+    </button>
+  )
+}
+
+/**
+ * Inline hand-back chip rendered while `browser_request_takeover` waits on
+ * the user (`{"type":"browser_takeover","name":"Please sign in to LinkedIn"}`).
+ * Same chip as the other credential actions; clicking hands control of the
+ * agent browser back to Sim. Renders nothing outside the desktop app — there
+ * is no agent browser to hand back.
+ */
+function BrowserTakeoverDisplay({ data }: { data: CredentialTagData }) {
+  const [handedBack, setHandedBack] = useState(false)
+
+  if (!isBrowserAgentAvailable()) return null
+
+  const reason = (data.name ?? '').trim()
+  const label = handedBack
+    ? 'Handed control back to Sim'
+    : reason || 'Take over in the browser, then hand control back'
+
+  return (
+    <button
+      type='button'
+      onClick={() => {
+        if (handedBack) return
+        setHandedBack(true)
+        sendBrowserPanelAction('takeover-done')
+      }}
+      disabled={handedBack}
+      className={cn(
+        'flex w-full items-center gap-2 rounded-2xl border border-[var(--border-1)] px-3 py-2.5 text-left transition-colors',
+        !handedBack && 'hover-hover:bg-[var(--surface-5)]'
+      )}
+    >
+      <Cursor className='size-[16px] shrink-0' />
+      <span className='flex-1 text-[var(--text-body)] text-sm'>{label}</span>
+      {!handedBack && <ArrowRight className='size-[16px] shrink-0 text-[var(--text-icon)]' />}
+    </button>
+  )
+}
+
+/**
+ * Inline "set up a service account" control rendered for
+ * `<credential>{"type":"service_account","provider":"slack"}</credential>`.
+ *
+ * Opens `ConnectServiceAccountModal` over the chat rather than linking out to
+ * the integrations page — the user stays in the conversation that asked for
+ * the credential, and comes back to it with the credential in hand.
+ */
+function ServiceAccountConnectDisplay({ data }: { data: CredentialTagData }) {
+  const { workspaceId } = useParams<{ workspaceId: string }>()
+  const { canEdit } = useUserPermissionsContext()
+  const [open, setOpen] = useState(false)
+
+  const match = useMemo(
+    () => (data.provider ? resolveServiceAccountIntegration(data.provider) : null),
+    [data.provider]
+  )
+  const service = useMemo(() => (match ? resolveOAuthServiceForSlug(match.slug) : null), [match])
+  const target = useServiceAccountConnectTarget({
+    serviceAccountProviderId: match?.serviceAccountProviderId,
+    serviceName: match?.serviceName,
+    serviceIcon: service?.serviceIcon,
+  })
+
+  // A credentialId reconnects (rotates the secret on) that existing service
+  // account in place rather than creating a new one — the modal keeps its id.
+  const reconnectCredentialId = data.credentialId
+  const { data: reconnectCredential } = useWorkspaceCredential(reconnectCredentialId)
+
+  // Creating a credential mutates the workspace — hide it from read-only
+  // members, and honour the provider's own preview gate (custom Slack bots
+  // ride the slack_v2 flag) so chat can't surface what the integrations page
+  // deliberately hides.
+  if (!target || target.hidden || !canEdit || !workspaceId) return null
+
+  const label = reconnectCredentialId
+    ? `Reconnect ${reconnectCredential?.displayName ?? target.serviceName}`
+    : `${target.label} for ${target.serviceName}`
+
+  return (
+    <>
+      <button
+        type='button'
+        onClick={() => setOpen(true)}
+        className='flex w-full items-center gap-2 rounded-2xl border border-[var(--border-1)] px-3 py-2.5 text-left transition-colors hover-hover:bg-[var(--surface-5)]'
+      >
+        {createElement(target.serviceIcon, { className: 'size-[16px] shrink-0' })}
+        <span className='flex-1 text-[var(--text-body)] text-sm'>{label}</span>
+        <ArrowRight className='size-[16px] shrink-0 text-[var(--text-icon)]' />
+      </button>
+      {open && (
+        <Suspense fallback={null}>
+          <ConnectServiceAccountModal
+            open={open}
+            onOpenChange={setOpen}
+            workspaceId={workspaceId}
+            serviceAccountProviderId={target.serviceAccountProviderId}
+            serviceName={target.serviceName}
+            serviceIcon={target.serviceIcon}
+            credentialId={reconnectCredentialId}
+            credentialDisplayName={reconnectCredential?.displayName ?? undefined}
+          />
+        </Suspense>
+      )}
+    </>
+  )
+}
+
+function CredentialLinkDisplay({ data }: { data: CredentialTagData }) {
   const { canEdit } = useUserPermissionsContext()
 
+  // A connect URL carrying a credentialId re-authorizes that existing
+  // credential in place (reconnect) rather than creating a new one.
+  const reconnectCredentialId = useMemo(() => {
+    if (!data.value) return undefined
+    try {
+      return new URL(data.value).searchParams.get('credentialId') ?? undefined
+    } catch {
+      return undefined
+    }
+  }, [data.value])
+  const { data: reconnectCredential } = useWorkspaceCredential(reconnectCredentialId)
+
+  // Connecting a credential mutates the workspace — hide it from read-only members.
+  if (!data.provider || !canEdit) return null
+  // The connect link value comes from the streamed model output, so only
+  // render it as a clickable link when it resolves to a real http(s) URL.
+  if (!data.value || !isSafeHttpUrl(data.value)) return null
+  const Icon = getCredentialIcon(data.provider) ?? LockIcon
+  const integrationName =
+    getServiceConfigByProviderId(data.provider)?.name ??
+    OAUTH_PROVIDERS[data.provider.toLowerCase()]?.name ??
+    data.provider
+  const label = reconnectCredentialId
+    ? `Reconnect ${reconnectCredential?.displayName ?? integrationName}`
+    : `Connect ${integrationName}`
+
+  /**
+   * Desktop app: OAuth cannot run in an embedded window — not in the app
+   * window (better-auth binds the flow's state to the initiating browser's
+   * cookies) and not in the Sim browser panel (its partition isn't signed in
+   * to Sim, and Google/Microsoft reject embedded user agents outright). So
+   * the chip hands the whole flow to the system browser via the connect
+   * handoff, carrying the workspace/credential scope from the authorize URL;
+   * completion returns through the app's loopback and refreshes credentials.
+   */
+  const handleClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    const bridge = getDesktopBridge()
+    if (!bridge?.beginOAuthConnect || !data.value) return
+    event.preventDefault()
+    const url = new URL(data.value)
+    const providerId = url.searchParams.get('providerId') ?? data.provider
+    if (!providerId) return
+    void bridge.beginOAuthConnect(providerId, {
+      workspaceId: url.searchParams.get('workspaceId') ?? undefined,
+      credentialId: url.searchParams.get('credentialId') ?? undefined,
+    })
+  }
+
+  return (
+    <a
+      href={data.value}
+      target='_blank'
+      rel='noopener noreferrer'
+      onClick={handleClick}
+      className='flex items-center gap-2 rounded-2xl border border-[var(--border-1)] px-3 py-2.5 transition-colors hover-hover:bg-[var(--surface-5)]'
+    >
+      {createElement(Icon, { className: 'size-[16px] shrink-0' })}
+      <span className='flex-1 text-[var(--text-body)] text-sm'>{label}</span>
+      <ArrowRight className='size-[16px] shrink-0 text-[var(--text-icon)]' />
+    </a>
+  )
+}
+
+/**
+ * Inline hand-back chip rendered while a terminal handoff waits on the user —
+ * a command sitting on a prompt only they can answer. Without it the tool row
+ * just spins: the command is blocked in a panel the user may not even be
+ * looking at, with nothing saying it wants them. Clicking tells the waiting
+ * handoff they are done; the terminal id rides in `value` so the click reaches
+ * the right shell. Renders nothing outside the desktop app.
+ */
+function TerminalHandoffDisplay({ data }: { data: CredentialTagData }) {
+  const [handedBack, setHandedBack] = useState(false)
+
+  if (!isTerminalAvailable()) return null
+
+  const reason = (data.name ?? '').trim()
+  const label = handedBack
+    ? 'Handed control back to Sim'
+    : reason || 'Finish in the terminal, then hand control back'
+
+  return (
+    <button
+      type='button'
+      onClick={() => {
+        if (handedBack) return
+        setHandedBack(true)
+        finishTerminalHandoff(data.value ?? '')
+      }}
+      disabled={handedBack}
+      className={cn(
+        'flex w-full items-center gap-2 rounded-2xl border border-[var(--border-1)] px-3 py-2.5 text-left transition-colors',
+        !handedBack && 'hover-hover:bg-[var(--surface-5)]'
+      )}
+    >
+      <TerminalWindow className='size-[16px] shrink-0' />
+      <span className='flex-1 text-[var(--text-body)] text-sm'>{label}</span>
+      {!handedBack && <ArrowRight className='size-[16px] shrink-0 text-[var(--text-icon)]' />}
+    </button>
+  )
+}
+
+export function CredentialDisplay({ data }: { data: CredentialTagData }) {
   if (data.type === 'secret_input') {
     return <SecretInputDisplay data={data} />
   }
 
+  if (data.type === 'folder_access') {
+    return <FolderAccessDisplay data={data} />
+  }
+
+  if (data.type === 'browser_takeover') {
+    return <BrowserTakeoverDisplay data={data} />
+  }
+
+  if (data.type === 'terminal_handoff') {
+    return <TerminalHandoffDisplay data={data} />
+  }
+
   if (data.type === 'link') {
-    // Connecting a credential mutates the workspace — hide it from read-only members.
-    if (!data.provider || !canEdit) return null
-    // The connect link value comes from the streamed model output, so only
-    // render it as a clickable link when it resolves to a real http(s) URL.
-    if (!data.value || !isSafeHttpUrl(data.value)) return null
-    const Icon = getCredentialIcon(data.provider) ?? LockIcon
-    return (
-      <a
-        href={data.value}
-        target='_blank'
-        rel='noopener noreferrer'
-        className='flex items-center gap-2 rounded-lg border border-[var(--divider)] px-3 py-2.5 transition-colors hover-hover:bg-[var(--surface-5)]'
-      >
-        {createElement(Icon, { className: 'size-[16px] shrink-0' })}
-        <span className='flex-1 text-[var(--text-body)] text-sm'>Connect {data.provider}</span>
-        <ArrowRight className='size-[16px] shrink-0 text-[var(--text-icon)]' />
-      </a>
-    )
+    return <CredentialLinkDisplay data={data} />
+  }
+
+  if (data.type === 'service_account') {
+    return <ServiceAccountConnectDisplay data={data} />
   }
 
   if (data.type === 'sim_key') {
-    return <SecretReveal value={data.value} redacted={data.redacted || !data.value} />
+    // SecretReveal masks itself when there's no value, so a value-less tag (the
+    // model's placeholder / persisted form) renders masked and a Sim-filled tag
+    // reveals the key + copy button — no separate "redacted" flag needed.
+    return <SecretReveal value={data.value} />
   }
 
   return null
@@ -872,12 +1365,18 @@ function MothershipErrorDisplay({ data }: { data: MothershipErrorTagData }) {
 }
 
 function UsageUpgradeDisplay({ data }: { data: UsageUpgradeTagData }) {
-  const { workspaceId } = useParams<{ workspaceId: string }>()
-  const settingsPath = `/workspace/${workspaceId}/settings/billing`
+  const { data: session } = useSession()
+  const hostContext = useWorkspaceHostContext()
+  const { getSettingsHref } = useSettingsNavigation()
+  const settingsPath = getSettingsHref({ section: 'billing' })
   const buttonLabel = data.action === 'upgrade_plan' ? 'Upgrade Plan' : 'Increase Limit'
+  const canManageBilling = canManageWorkspaceBilling(hostContext, session?.user?.id)
+  const unavailableMessage = hostContext.hostOrganizationId
+    ? 'Contact an organization admin to manage this workspace’s usage limits.'
+    : 'Only the workspace owner can manage this workspace’s usage limits.'
 
   return (
-    <div className='rounded-xl border border-amber-300/40 bg-amber-50/50 px-4 py-3 dark:border-amber-500/20 dark:bg-amber-950/20'>
+    <div className='rounded-2xl border border-amber-300/40 bg-amber-50/50 px-4 py-3 dark:border-amber-500/20 dark:bg-amber-950/20'>
       <div className='flex items-center gap-2'>
         <svg
           className='size-4 shrink-0 text-amber-600 dark:text-amber-400'
@@ -901,13 +1400,19 @@ function UsageUpgradeDisplay({ data }: { data: UsageUpgradeTagData }) {
       <p className='mt-1.5 text-amber-700/90 text-small leading-[20px] dark:text-amber-400/80'>
         {data.message}
       </p>
-      <a
-        href={settingsPath}
-        className='mt-2 inline-flex items-center gap-1 font-[500] text-amber-700 text-small underline decoration-dashed underline-offset-2 transition-colors hover-hover:text-amber-900 dark:text-amber-300 dark:hover-hover:text-amber-200'
-      >
-        {buttonLabel}
-        <ArrowRight className='size-3' />
-      </a>
+      {canManageBilling ? (
+        <a
+          href={settingsPath}
+          className='mt-2 inline-flex items-center gap-1 font-[500] text-amber-700 text-small underline decoration-dashed underline-offset-2 transition-colors hover-hover:text-amber-900 dark:text-amber-300 dark:hover-hover:text-amber-200'
+        >
+          {buttonLabel}
+          <ArrowRight className='size-3' />
+        </a>
+      ) : (
+        <p className='mt-2 font-[500] text-amber-700 text-small dark:text-amber-300'>
+          {unavailableMessage}
+        </p>
+      )}
     </div>
   )
 }
