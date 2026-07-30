@@ -85,7 +85,7 @@ export function SidebarBrandHeader({
       {arenaHubAgentsUrl ? (
         <div className='flex flex-shrink-0 flex-col px-2 pt-2 pb-0'>
           <SidebarTooltip label='Back to Arena agents' enabled={showCollapsedTooltips} side='right'>
-            <Link
+            <a
               href={arenaHubAgentsUrl}
               className={chipVariants({ fullWidth: true })}
               aria-label='Back to Arena agents'
@@ -94,7 +94,7 @@ export function SidebarBrandHeader({
               <span className='sidebar-collapse-hide truncate text-[var(--text-body)]'>
                 Back to Arena agents
               </span>
-            </Link>
+            </a>
           </SidebarTooltip>
         </div>
       ) : null}
