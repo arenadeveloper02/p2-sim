@@ -77,6 +77,7 @@ export function resolveEngagementProvider(
         enabled: true,
         provider: 'openai',
         model,
+        specialistModel: model,
         apiKey,
       })
     }
