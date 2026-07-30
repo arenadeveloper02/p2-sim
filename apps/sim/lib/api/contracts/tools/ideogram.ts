@@ -141,6 +141,7 @@ export const ideogramPostProcessBodySchema = z
     imageUrl: z.string().min(1, 'imageUrl is required'),
     workflowId: z.string().min(1).optional(),
     resolution: z.string().min(1).optional(),
+    renderingSpeed: z.string().optional(),
     includeBbox: z.boolean().optional(),
     prompt: z.string().optional(),
     seed: z.number().optional(),

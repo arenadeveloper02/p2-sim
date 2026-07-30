@@ -19,6 +19,7 @@ import {
   GoogleIcon,
   HunterIOIcon,
   IcypeasIcon,
+  IdeogramIcon,
   JinaAIIcon,
   LeadMagicIcon,
   LinkupIcon,
@@ -111,6 +112,13 @@ const PROVIDERS: (BYOKManagerProvider & { id: BYOKProviderId })[] = [
     icon: FalIcon,
     description: 'Image and video generation',
     placeholder: 'Enter your Fal.ai API key',
+  },
+  {
+    id: 'ideogram',
+    name: 'Ideogram',
+    icon: IdeogramIcon,
+    description: 'Image generation and post-processing',
+    placeholder: 'Enter your Ideogram API key',
   },
   {
     id: 'firecrawl',
@@ -300,6 +308,7 @@ const PROVIDER_SECTIONS: BYOKProviderSection[] = [
       'baseten',
       'ollama-cloud',
       'falai',
+      'ideogram',
     ],
   },
   {

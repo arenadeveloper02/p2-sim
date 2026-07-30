@@ -1,5 +1,6 @@
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import type { IdeogramOperation } from '@/tools/ideogram/constants'
+import { createIdeogramHosting } from '@/tools/ideogram/hosting'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 
 interface CreateIdeogramToolOptions<P extends Record<string, unknown>, R extends ToolResponse> {
@@ -71,6 +72,7 @@ export function createIdeogramProxyTool<
       },
       ...options.params,
     },
+    hosting: createIdeogramHosting(options.operation),
     request: {
       url: '/api/tools/ideogram',
       method: 'POST',

@@ -19,7 +19,7 @@ import { getCostMultiplier } from '@/lib/core/config/env-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import type { IdeogramPostProcessorOperation } from '@/lib/image-generation/ideogram-post-processor-fields'
-import { getIdeogramPostProcessRawCost } from '@/lib/image-generation/ideogram-post-process-pricing'
+import { getIdeogramPostProcessRawCost } from '@/lib/image-generation/ideogram-pricing'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { extractStorageKey, isInternalFileUrl } from '@/lib/uploads/utils/file-utils'
 
@@ -82,9 +82,13 @@ async function recordPostProcessUsage(params: {
   operation: IdeogramPostProcessorOperation
   requestId: string
   byok: boolean
+  renderingSpeed?: string
   resultImageUrl?: string
 }): Promise<void> {
-  const rawCost = getIdeogramPostProcessRawCost(params.operation, { byok: params.byok })
+  const rawCost = getIdeogramPostProcessRawCost(params.operation, {
+    byok: params.byok,
+    renderingSpeed: params.renderingSpeed,
+  })
   const billableCost = rawCost > 0 ? rawCost * getCostMultiplier() : 0
   const toolId = `ideogram_${params.operation}`
   const eventKey = createHash('sha256')
@@ -124,10 +128,12 @@ async function recordPostProcessUsage(params: {
           multiplier: getCostMultiplier(),
           pricingSource: 'fixed',
           capturedAt: new Date().toISOString(),
+          ...(params.renderingSpeed ? { renderingSpeed: params.renderingSpeed } : {}),
         },
         metadata: {
           operation: params.operation,
           byok: params.byok,
+          ...(params.renderingSpeed ? { renderingSpeed: params.renderingSpeed } : {}),
           ...(params.resultImageUrl ? { resultImageUrl: params.resultImageUrl } : {}),
         },
       },
@@ -187,6 +193,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       operation: body.operation,
       ...(body.apiKey ? { apiKey: body.apiKey } : {}),
       ...(body.resolution ? { resolution: body.resolution } : {}),
+      ...(body.renderingSpeed ? { renderingSpeed: body.renderingSpeed } : {}),
       ...(body.includeBbox !== undefined ? { includeBbox: body.includeBbox } : {}),
       ...(body.prompt ? { prompt: body.prompt } : {}),
       ...(body.seed !== undefined ? { seed: body.seed } : {}),
@@ -249,6 +256,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         operation: body.operation,
         requestId,
         byok: Boolean(body.apiKey?.trim()),
+        renderingSpeed: body.renderingSpeed,
         resultImageUrl,
       })
       logger.info(`[${requestId}] Recorded image post-process usage`, {

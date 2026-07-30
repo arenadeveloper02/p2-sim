@@ -10,7 +10,7 @@ import {
 import {
   getIdeogramPostProcessRawCost,
   IDEOGRAM_POST_PROCESS_RAW_COST_USD,
-} from '@/lib/image-generation/ideogram-post-process-pricing'
+} from '@/lib/image-generation/ideogram-pricing'
 
 describe('coercePostProcessorImageInput', () => {
   it('coerces an internal serve URL into a FileInput-shaped object', () => {
