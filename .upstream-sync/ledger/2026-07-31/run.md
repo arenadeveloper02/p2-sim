@@ -54,21 +54,21 @@ No new open questions — no duplicate PR comment posted per resume-mode rules.
 ### parent-grill-analysis
 - **Model:** `claude-opus-4-8`
 - **Iterations:** 1
-- **Input tokens (direct):** 9
-- **Input tokens (cache read):** 198,275
-- **Input tokens (cache create):** 37,979
-- **Input tokens (total):** 236,263
-- **Output tokens:** 4,127
-- **Cost:** $0.441125 (provider-reported)
+- **Input tokens (direct):** 16
+- **Input tokens (cache read):** 411,653
+- **Input tokens (cache create):** 42,170
+- **Input tokens (total):** 453,839
+- **Output tokens:** 5,448
+- **Cost:** $0.607068 (provider-reported)
 
 ### Totals
-- **Total input tokens:** 236,263
-- **Total output tokens:** 4,127
+- **Total input tokens:** 453,839
+- **Total output tokens:** 5,448
 - **Primary models:** claude-opus-4-8
-- **Provider-reported cost:** $0.441125
+- **Provider-reported cost:** $0.607068
 
 ### Cost by agent
-- **parent-grill-analysis:** $0.441125 (provider-reported)
+- **parent-grill-analysis:** $0.607068 (provider-reported)
 
 ## Format
 
@@ -86,90 +86,90 @@ No new open questions — no duplicate PR comment posted per resume-mode rules.
    • Running format:check in 21 packages
    • Remote caching disabled
 
-::group::@sim/security:format:check
-cache miss, executing fc2410243714aad2
+::group::@sim/workflow-renderer:format:check
+cache miss, executing ba94021415352e4f
 $ biome format .
-Checked 13 files in 35ms. No fixes applied.
-::endgroup::
-::group::@sim/realtime-protocol:format:check
-cache miss, executing 11ef7410ee5e5d5c
-$ biome format .
-Checked 5 files in 20ms. No fixes applied.
-::endgroup::
-::group::@sim/workflow-persistence:format:check
-cache miss, executing 6a2f322f646254f4
-$ biome format .
-Checked 8 files in 26ms. No fixes applied.
-::endgroup::
-::group::@sim/runtime-secrets:format:check
-cache miss, executing 54427b0fcf80d46c
-$ biome format .
-Checked 5 files in 46ms. No fixes applied.
+Checked 12 files in 55ms. No fixes applied.
 ::endgroup::
 ::group::@sim/audit:format:check
 cache miss, executing 435b10fd6837457b
 $ biome format .
-Checked 7 files in 62ms. No fixes applied.
-::endgroup::
-::group::@sim/workflow-renderer:format:check
-cache miss, executing ba94021415352e4f
-$ biome format .
-Checked 12 files in 49ms. No fixes applied.
-::endgroup::
-::group::@sim/logger:format:check
-cache miss, executing d07801b30193037f
-$ biome format .
-Checked 6 files in 58ms. No fixes applied.
-::endgroup::
-::group::@sim/auth:format:check
-cache miss, executing 7b95f933c974b740
-$ biome format .
-Checked 3 files in 12ms. No fixes applied.
-::endgroup::
-::group::simstudio-ts-sdk:format:check
-cache miss, executing e723f477a2f513f3
-$ biome format .
-Checked 6 files in 131ms. No fixes applied.
-::endgroup::
-::group::simstudio:format:check
-cache miss, executing db888607b0259b5e
-$ biome format .
-Checked 3 files in 34ms. No fixes applied.
-::endgroup::
-::group::@sim/platform-authz:format:check
-cache miss, executing 20bfbd17ba902713
-$ biome format .
-Checked 5 files in 67ms. No fixes applied.
+Checked 7 files in 20ms. No fixes applied.
 ::endgroup::
 ::group::@sim/workflow-types:format:check
 cache miss, executing 80f69e46ffb00c04
 $ biome format .
-Checked 4 files in 52ms. No fixes applied.
+Checked 4 files in 22ms. No fixes applied.
 ::endgroup::
-::group::@sim/testing:format:check
-cache miss, executing 6754342b8949f5f1
+::group::@sim/runtime-secrets:format:check
+cache miss, executing 54427b0fcf80d46c
 $ biome format .
-Checked 66 files in 361ms. No fixes applied.
+Checked 5 files in 26ms. No fixes applied.
 ::endgroup::
-::group::@sim/emcn:format:check
-cache miss, executing 133b9523f844114a
+::group::simstudio-ts-sdk:format:check
+cache miss, executing e723f477a2f513f3
 $ biome format .
-Checked 189 files in 675ms. No fixes applied.
+Checked 6 files in 48ms. No fixes applied.
 ::endgroup::
-::group::@sim/utils:format:check
-cache miss, executing 251fb15243601532
+::group::@sim/platform-authz:format:check
+cache miss, executing 20bfbd17ba902713
 $ biome format .
-Checked 22 files in 121ms. No fixes applied.
+Checked 5 files in 53ms. No fixes applied.
+::endgroup::
+::group::@sim/auth:format:check
+cache miss, executing 7b95f933c974b740
+$ biome format .
+Checked 3 files in 27ms. No fixes applied.
+::endgroup::
+::group::@sim/security:format:check
+cache miss, executing fc2410243714aad2
+$ biome format .
+Checked 13 files in 19ms. No fixes applied.
 ::endgroup::
 ::group::@sim/realtime:format:check
 cache miss, executing 1065da2db0dc0980
 $ biome format .
-Checked 32 files in 245ms. No fixes applied.
+Checked 32 files in 232ms. No fixes applied.
+::endgroup::
+::group::@sim/testing:format:check
+cache miss, executing 6754342b8949f5f1
+$ biome format .
+Checked 66 files in 335ms. No fixes applied.
+::endgroup::
+::group::@sim/utils:format:check
+cache miss, executing 251fb15243601532
+$ biome format .
+Checked 22 files in 157ms. No fixes applied.
+::endgroup::
+::group::simstudio:format:check
+cache miss, executing db888607b0259b5e
+$ biome format .
+Checked 3 files in 19ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime-protocol:format:check
+cache miss, executing 11ef7410ee5e5d5c
+$ biome format .
+Checked 5 files in 46ms. No fixes applied.
+::endgroup::
+::group::@sim/logger:format:check
+cache miss, executing d07801b30193037f
+$ biome format .
+Checked 6 files in 42ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-persistence:format:check
+cache miss, executing 6a2f322f646254f4
+$ biome format .
+Checked 8 files in 77ms. No fixes applied.
+::endgroup::
+::group::@sim/emcn:format:check
+cache miss, executing 133b9523f844114a
+$ biome format .
+Checked 189 files in 665ms. No fixes applied.
 ::endgroup::
 ::group::docs:format:check
 cache miss, executing 42e792dc12ce87af
 $ biome format .
-Checked 100 files in 1071ms. No fixes applied.
+Checked 100 files in 779ms. No fixes applied.
 ::endgroup::
 ::group::@sim/db:format:check
 cache miss, executing b6439e244765f843
@@ -177,14 +177,14 @@ $ biome format .
 Checked 284 files in 4s. No fixes applied.
 ::endgroup::
 ::group::sim:format:check
-cache miss, executing a06738c55c0530d2
+cache miss, executing 3d543e372e8ffd96
 $ biome format .
 Checked 11244 files in 13s. No fixes applied.
 ::endgroup::
 
  Tasks:    19 successful, 19 total
 Cached:    0 cached, 19 total
-  Time:    14.2s 
+  Time:    14.229s 
 
 
 ```
@@ -199,111 +199,118 @@ Cached:    0 cached, 19 total
    • Running lint in 21 packages
    • Remote caching disabled
 
-::group::simstudio:lint
-cache miss, executing 3b3448794fd8d67a
+::group::@sim/logger:lint
+cache miss, executing 101959f903fffb42
 $ biome check --write --unsafe .
-Checked 3 files in 26ms. No fixes applied.
+Checked 6 files in 41ms. No fixes applied.
 ::endgroup::
 ::group::@sim/workflow-types:lint
 cache miss, executing 6903535170672abf
 $ biome check --write --unsafe .
-Checked 4 files in 29ms. No fixes applied.
-::endgroup::
-::group::@sim/logger:lint
-cache miss, executing 101959f903fffb42
-$ biome check --write --unsafe .
-Checked 6 files in 118ms. No fixes applied.
-::endgroup::
-::group::@sim/security:lint
-cache miss, executing f0d899d639617b3d
-$ biome check --write --unsafe .
-Checked 13 files in 118ms. No fixes applied.
+Checked 4 files in 30ms. No fixes applied.
 ::endgroup::
 ::group::@sim/realtime-protocol:lint
 cache miss, executing 0122da9ed0cc036d
 $ biome check --write --unsafe .
-Checked 5 files in 107ms. No fixes applied.
-::endgroup::
-::group::simstudio-ts-sdk:lint
-cache miss, executing c86521201f82f1d8
-$ biome check --write --unsafe .
-Checked 6 files in 241ms. No fixes applied.
+Checked 5 files in 76ms. No fixes applied.
 ::endgroup::
 ::group::@sim/workflow-renderer:lint
 cache miss, executing 26cec225a2bccef4
 $ biome check --write --unsafe .
-Checked 12 files in 155ms. No fixes applied.
+Checked 12 files in 172ms. No fixes applied.
+::endgroup::
+::group::@sim/security:lint
+cache miss, executing f0d899d639617b3d
+$ biome check --write --unsafe .
+Checked 13 files in 144ms. No fixes applied.
 ::endgroup::
 ::group::@sim/utils:lint
 cache miss, executing 07ed1635ff1bad02
 $ biome check --write --unsafe .
-Checked 22 files in 311ms. No fixes applied.
+Checked 22 files in 242ms. No fixes applied.
 ::endgroup::
-::group::@sim/runtime-secrets:lint
-cache miss, executing 0affd3cfd3a3ca22
+::group::simstudio:lint
+cache miss, executing 3b3448794fd8d67a
 $ biome check --write --unsafe .
-Checked 5 files in 78ms. No fixes applied.
+Checked 3 files in 95ms. No fixes applied.
 ::endgroup::
-::group::@sim/workflow-persistence:lint
-cache miss, executing 52e90ffa1f215c7b
+::group::simstudio-ts-sdk:lint
+cache miss, executing c86521201f82f1d8
 $ biome check --write --unsafe .
-Checked 8 files in 143ms. No fixes applied.
+Checked 6 files in 264ms. No fixes applied.
 ::endgroup::
 ::group::@sim/auth:lint
 cache miss, executing 9bca023c18774e05
 $ biome check --write --unsafe .
-Checked 3 files in 57ms. No fixes applied.
+Checked 3 files in 56ms. No fixes applied.
+::endgroup::
+::group::@sim/runtime-secrets:lint
+cache miss, executing 0affd3cfd3a3ca22
+$ biome check --write --unsafe .
+Checked 5 files in 103ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-persistence:lint
+cache miss, executing 52e90ffa1f215c7b
+$ biome check --write --unsafe .
+Checked 8 files in 105ms. No fixes applied.
 ::endgroup::
 ::group::@sim/platform-authz:lint
 cache miss, executing ab14447a9def3247
 $ biome check --write --unsafe .
-Checked 5 files in 80ms. No fixes applied.
+Checked 5 files in 64ms. No fixes applied.
 ::endgroup::
 ::group::@sim/audit:lint
 cache miss, executing b1f8ee93290662d5
 $ biome check --write --unsafe .
-Checked 7 files in 181ms. No fixes applied.
+Checked 7 files in 52ms. No fixes applied.
 ::endgroup::
 ::group::@sim/testing:lint
 cache miss, executing 3e85379ba14ee220
 $ biome check --write --unsafe .
-Checked 66 files in 768ms. No fixes applied.
+Checked 66 files in 682ms. No fixes applied.
 ::endgroup::
 ::group::@sim/realtime:lint
 cache miss, executing 92bc76cba3601506
 $ biome check --write --unsafe .
-Checked 32 files in 586ms. No fixes applied.
+Checked 32 files in 316ms. No fixes applied.
 ::endgroup::
 ::group::@sim/emcn:lint
 cache miss, executing 7c9037a01b46da77
 $ biome check --write --unsafe .
-Checked 189 files in 1765ms. No fixes applied.
+Checked 189 files in 1536ms. No fixes applied.
 ::endgroup::
 ::group::docs:lint
 cache miss, executing 2fddc1ac6696b586
 $ biome check --write --unsafe .
-Checked 100 files in 1811ms. No fixes applied.
+Checked 100 files in 1718ms. No fixes applied.
 ::endgroup::
 ::group::@sim/db:lint
 cache miss, executing 0e4794115b454eed
 $ biome check --write --unsafe .
-Checked 284 files in 6s. No fixes applied.
+Checked 284 files in 8s. No fixes applied.
 ::endgroup::
 [;31msim:lint[;0m
-cache miss, executing 51302944420cceee
+cache miss, executing 665e121f7ad96ef2
 $ biome check --write --unsafe .
-app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/highlight.ts:16:24 lint/complexity/noUselessStringRaw ━━━━━━━━━━
+local-copilot/lib/agent/orchestrator.billing.test.ts:70:25 lint/correctness/useYield ━━━━━━━━━━━━━━━
 
-  i String.raw is useless when the raw string doesn't contain any escape sequence.
+  × This generator function doesn't contain yield.
   
-    14 │  * the closing `==` still terminates the run.
-    15 │  */
-  > 16 │ const HIGHLIGHT_BODY = String.raw`(?:[^=]|=(?!=))+?`
-       │                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    17 │ const HIGHLIGHT_TOKEN = new RegExp(String.raw`^==(?!\s)(${HIGHLIGHT_BODY})(?<!\s)==`)
-    18 │ /** Input/paste rule form (anchored on a preceding boundary) so typing `==x==` toggles the mark. */
+    69 │ vi.mock('@/local-copilot/lib/agent/specialists/parallel-subagents', () => ({
+  > 70 │   runParallelSubagents: async function* () {
+       │                         ^^^^^^^^^^^^^^^^^^^^
+  > 71 │     return { findings: '', results: [], events: [] }
+  > 72 │   },
+       │   ^
+    73 │ }))
+    74 │ 
   
-  i Remove the String.raw cal
+
+local-copilot/lib/agent/orchestrator.billing.test.ts:76:22 lint/correctness/useYield ━━━━━━━━━━━━━━━
+
+  × This generator function doesn't contain yield.
+  
+    75 │ vi.mock('@/local-copilot/lib/
 ```
 
 ## Merge policy
