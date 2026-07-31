@@ -1087,6 +1087,36 @@ const EDIT_DATABASE_CONTEXT_PATHS = [
   'lib/types.ts',
 ] as const
 
+/** Max non-pinned paths the select-pass may request for edit context. */
+const MAX_EDIT_SELECTED_PATHS = 20
+
+/** Always included in edit context when present (cheap, high-leverage anchors). */
+const EDIT_ALWAYS_PIN_PATHS = ['package.json', 'app/layout.tsx', 'app/globals.css'] as const
+
+const EDIT_FILE_SELECTION_SYSTEM_PROMPT = `You select which files an engineer must read to fulfill an edit on an existing Next.js App Router app.
+
+Respond ONLY with JSON matching the schema: { "paths": string[] }.
+
+Rules:
+- Choose the minimum paths required to understand and implement the edit
+- Prefer pages, components, actions, types, and config the request clearly touches
+- Include obvious import dependencies named in the summary when relevant
+- At most ${MAX_EDIT_SELECTED_PATHS} paths
+- Paths must match the file index exactly — never invent paths`
+
+const EDIT_FILE_SELECTION_JSON_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    paths: {
+      type: 'array',
+      items: { type: 'string' },
+      maxItems: MAX_EDIT_SELECTED_PATHS,
+    },
+  },
+  required: ['paths'],
+  additionalProperties: false,
+}
+
 function collectPrismaModelNames(schema: string): Set<string> {
   const names = new Set<string>()
   for (const match of schema.matchAll(/model\s+(\w+)\s*\{/g)) {
@@ -2045,7 +2075,7 @@ Respond ONLY with JSON matching the provided schema.
 
 ${EDIT_APP_PRISMA_SCHEMA_PRESERVATION}
 
-The user message contains the CURRENT contents of the repository files. Treat them as the source of truth: when you modify a file, start from its existing content and apply the requested change — never regenerate a file from scratch based on its name or the summary. Keep every cross-file contract (types, exports, prop names, Prisma fields, function signatures) consistent with the files you are NOT changing.
+The user message contains the CURRENT contents of SELECTED repository files (not necessarily the full tree). Treat them as the source of truth: when you modify a file, start from its existing content and apply the requested change — never regenerate a file from scratch based on its name or the summary. Keep every cross-file contract (types, exports, prop names, Prisma fields, function signatures) consistent with files you are NOT changing.
 
 ${GENERATED_APP_GENERATION_MANDATES}
 
@@ -2128,7 +2158,117 @@ function inferAppMetadataFromFiles(
   }
 }
 
-function buildEditReferenceContext(
+function normalizeGeneratedAppPath(path: string): string {
+  return path.replace(/\\/g, '/')
+}
+
+function indexGeneratedAppFiles(files: GeneratedAppFile[]): Map<string, GeneratedAppFile> {
+  const byPath = new Map<string, GeneratedAppFile>()
+  for (const file of files) {
+    byPath.set(normalizeGeneratedAppPath(file.path), file)
+  }
+  return byPath
+}
+
+function collectPinnedEditPaths(
+  byPath: Map<string, GeneratedAppFile>,
+  requiresDatabase: boolean
+): string[] {
+  const pins: string[] = []
+  for (const path of EDIT_ALWAYS_PIN_PATHS) {
+    if (byPath.has(path)) {
+      pins.push(path)
+    }
+  }
+  if (requiresDatabase) {
+    for (const path of EDIT_DATABASE_CONTEXT_PATHS) {
+      if (byPath.has(path) && !pins.includes(path)) {
+        pins.push(path)
+      }
+    }
+  }
+  return pins
+}
+
+/**
+ * Scores repo paths against tokens from the user edit request for empty-selection fallback.
+ */
+function selectHeuristicEditPaths(
+  userInput: string,
+  existingPaths: string[],
+  maxPaths: number
+): string[] {
+  const tokens = userInput
+    .toLowerCase()
+    .split(/[^a-z0-9_./-]+/)
+    .filter((token) => token.length > 2)
+  if (tokens.length === 0) {
+    return []
+  }
+
+  const scored: Array<{ path: string; score: number }> = []
+  for (const path of existingPaths) {
+    const lower = path.toLowerCase()
+    let score = 0
+    for (const token of tokens) {
+      if (lower.includes(token)) {
+        score += 1
+      }
+    }
+    if (score > 0) {
+      scored.push({ path, score })
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
+  return scored.slice(0, maxPaths).map((entry) => entry.path)
+}
+
+/**
+ * Merges LLM-selected paths with pinned anchors; falls back to keyword matches when empty.
+ */
+function resolveEditContextPaths(
+  requestedPaths: string[],
+  existingFiles: GeneratedAppFile[],
+  requiresDatabase: boolean,
+  userInput: string
+): string[] {
+  const byPath = indexGeneratedAppFiles(existingFiles)
+  const pins = collectPinnedEditPaths(byPath, requiresDatabase)
+  const pinSet = new Set(pins)
+  const seen = new Set<string>()
+  const others: string[] = []
+
+  const tryAddOther = (path: string) => {
+    const normalized = normalizeGeneratedAppPath(path)
+    if (!byPath.has(normalized) || pinSet.has(normalized) || seen.has(normalized)) {
+      return
+    }
+    if (others.length >= MAX_EDIT_SELECTED_PATHS) {
+      return
+    }
+    seen.add(normalized)
+    others.push(normalized)
+  }
+
+  for (const path of requestedPaths) {
+    tryAddOther(path)
+  }
+
+  if (others.length === 0) {
+    for (const path of selectHeuristicEditPaths(
+      userInput,
+      [...byPath.keys()],
+      MAX_EDIT_SELECTED_PATHS
+    )) {
+      tryAddOther(path)
+    }
+  }
+
+  return [...pins, ...others]
+}
+
+function buildRepoSummaryForEdit(
   repoName: string,
   metadata: Pick<LlmAppSpec, 'appName' | 'description' | 'features' | 'requiresDatabase'>,
   existingFiles: GeneratedAppFile[]
@@ -2140,20 +2280,59 @@ function buildEditReferenceContext(
     repoName,
     requiresDatabase: metadata.requiresDatabase,
   }
-
   const filesWithSummary = ensureRepoSummaryFile(existingFiles, summaryOptions)
-  const repoSummary =
+  return (
     filesWithSummary.find((file) => file.path === GENERATED_APP_REPO_SUMMARY_PATH)?.content ??
     buildRepoSummaryContent(filesWithSummary, summaryOptions)
+  )
+}
 
+/**
+ * Structure-only context for the edit select pass — no file bodies.
+ */
+function buildEditStructureContext(
+  repoName: string,
+  metadata: Pick<LlmAppSpec, 'appName' | 'description' | 'features' | 'requiresDatabase'>,
+  existingFiles: GeneratedAppFile[]
+): string {
+  const repoSummary = buildRepoSummaryForEdit(repoName, metadata, existingFiles)
   const fileIndex = existingFiles
-    .map((file) => file.path.replace(/\\/g, '/'))
+    .map((file) => normalizeGeneratedAppPath(file.path))
     .sort()
     .join('\n')
 
+  const databaseHint =
+    metadata.requiresDatabase === true
+      ? `
+This app uses Neon Postgres + Prisma. Prefer including prisma/schema.prisma, lib/actions.ts, lib/types.ts, and lib/prisma.ts when the edit touches data, forms, or server actions.
+`
+      : ''
+
+  return `Repository summary (architecture, routes, and scope):
+
+${repoSummary}
+${databaseHint}
+Complete file index (${existingFiles.length} paths):
+${fileIndex}`
+}
+
+/**
+ * Selected-file edit context — only pinned + chosen paths (plus DB baseline when needed).
+ */
+function buildEditSelectedFilesContext(
+  repoName: string,
+  metadata: Pick<LlmAppSpec, 'appName' | 'description' | 'features' | 'requiresDatabase'>,
+  existingFiles: GeneratedAppFile[],
+  selectedPaths: string[]
+): string {
+  const byPath = indexGeneratedAppFiles(existingFiles)
+  const selectedFiles = selectedPaths
+    .map((path) => byPath.get(normalizeGeneratedAppPath(path)))
+    .filter((file): file is GeneratedAppFile => Boolean(file))
+
+  const repoSummary = buildRepoSummaryForEdit(repoName, metadata, existingFiles)
   const databaseContext =
     metadata.requiresDatabase === true ? buildEditDatabaseContext(existingFiles) : ''
-
   const databaseSection = databaseContext
     ? `${databaseContext}
 
@@ -2164,12 +2343,12 @@ function buildEditReferenceContext(
 
 ${repoSummary}
 
-${databaseSection}Complete file index (${existingFiles.length} paths):
-${fileIndex}
+${databaseSection}Selected file index (${selectedFiles.length} of ${existingFiles.length} paths):
+${selectedPaths.join('\n')}
 
-Current repository files (source of truth — base every edit on this exact code; keep cross-file contracts consistent with files you do not change):
+Selected repository files (source of truth — base every edit on this exact code; keep cross-file contracts consistent with files you do not change):
 
-${buildRepairFileContext(existingFiles, {
+${buildRepairFileContext(selectedFiles, {
   extraSkipPaths: databaseContext ? EDIT_DATABASE_CONTEXT_PATHS : undefined,
 })}`
 }
@@ -2182,8 +2361,59 @@ async function requestAppEditsFromLlm(
 ): Promise<LlmAppSpec> {
   const anthropic = createDevelopmentAnthropicClient(getAnthropicApiKey())
   const metadata = inferAppMetadataFromFiles(repoName, existingFiles)
+  const requiresDatabase = metadata.requiresDatabase === true
 
-  const editReference = buildEditReferenceContext(repoName, metadata, existingFiles)
+  const structureContext = buildEditStructureContext(repoName, metadata, existingFiles)
+  const selectionPrompt = `Repository: ${repoName}
+App name: ${metadata.appName}
+Description: ${metadata.description}
+
+${structureContext}
+
+User edit request:
+${userInput}
+
+Return JSON with the repo-relative paths whose contents are required to implement this edit.`
+
+  let requestedPaths: string[] = []
+  try {
+    const selection = await requestStructuredJsonWithContinuations(
+      anthropic,
+      EDIT_FILE_SELECTION_SYSTEM_PROMPT,
+      selectionPrompt,
+      EDIT_FILE_SELECTION_JSON_SCHEMA,
+      (text) => JSON.parse(extractJsonFromLlmText(text)) as { paths?: unknown },
+      undefined,
+      'edit'
+    )
+    requestedPaths = Array.isArray(selection.paths)
+      ? selection.paths.filter((path): path is string => typeof path === 'string')
+      : []
+  } catch (error) {
+    logger.warn('Edit file selection failed; falling back to heuristic paths', {
+      error: toError(error).message,
+    })
+  }
+
+  const contextPaths = resolveEditContextPaths(
+    requestedPaths,
+    existingFiles,
+    requiresDatabase,
+    userInput
+  )
+
+  logger.info('Edit context files selected', {
+    requestedCount: requestedPaths.length,
+    contextCount: contextPaths.length,
+    paths: contextPaths,
+  })
+
+  const editReference = buildEditSelectedFilesContext(
+    repoName,
+    metadata,
+    existingFiles,
+    contextPaths
+  )
 
   const userPrompt = `Repository: ${repoName}
 App name: ${metadata.appName}
@@ -2194,7 +2424,7 @@ ${editReference}
 User edit request:
 ${userInput}
 
-DATABASE RULE (non-negotiable): ALWAYS return prisma/schema.prisma in this edit response. Never drop, rename, retype, or edit any existing column — existing field lines must stay identical. Add new columns only. If UI no longer needs a field, stop using it in code — leave it in the schema unchanged.
+DATABASE RULE (non-negotiable): ALWAYS return prisma/schema.prisma in this edit response when the app uses a database. Never drop, rename, retype, or edit any existing column — existing field lines must stay identical. Add new columns only. If UI no longer needs a field, stop using it in code — leave it in the schema unchanged.
 
 Return JSON with app metadata and the files you changed or added (plus prisma/schema.prisma whenever the app uses a database).`
 
