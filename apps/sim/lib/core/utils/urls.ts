@@ -170,8 +170,7 @@ export function getArenaHubAgentsUrl(hostname?: string): string | null {
     return `${base.replace(/\/$/, '')}/hub/agents`
   }
 
-  const host =
-    hostname ?? (typeof window !== 'undefined' ? window.location.hostname : undefined)
+  const host = hostname ?? (typeof window !== 'undefined' ? window.location.hostname : undefined)
   if (!host) return null
 
   if (LOCALHOST_HOSTNAMES.has(host) || host.includes('localhost')) {

@@ -104,7 +104,9 @@ describe('resolveChartContentFromFinalOutput', () => {
   })
 
   it('returns null for text-only output (no regression on plain responses)', () => {
-    expect(resolveChartContentFromFinalOutput({ content: 'just a summary, no chart' }, [])).toBeNull()
+    expect(
+      resolveChartContentFromFinalOutput({ content: 'just a summary, no chart' }, [])
+    ).toBeNull()
     expect(resolveChartContentFromFinalOutput('hello world', [])).toBeNull()
     expect(resolveChartContentFromFinalOutput(null, [])).toBeNull()
     expect(resolveChartContentFromFinalOutput(undefined, [])).toBeNull()
@@ -132,7 +134,16 @@ describe('resolveChartContentFromFinalOutput', () => {
 describe('resolveChartContentFromFinalOutput - any chart type (dynamic)', () => {
   const optionForType = (type: string) => ({
     title: { text: `${type} chart` },
-    series: [{ name: 'S', type, data: [{ name: 'A', value: 1 }, { name: 'B', value: 2 }] }],
+    series: [
+      {
+        name: 'S',
+        type,
+        data: [
+          { name: 'A', value: 1 },
+          { name: 'B', value: 2 },
+        ],
+      },
+    ],
   })
 
   const chartTypes = ['bar', 'line', 'pie', 'funnel', 'scatter', 'radar', 'heatmap', 'gauge']

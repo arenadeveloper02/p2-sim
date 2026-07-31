@@ -20,7 +20,8 @@ export const arenaDevelopmentEditAppTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Requested code changes, features, UI updates, or bug fixes for the existing app',
+      description:
+        'Requested code changes, features, UI updates, or bug fixes for the existing app',
     },
     repoName: {
       type: 'string',

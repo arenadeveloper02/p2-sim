@@ -8,16 +8,7 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import {
-  and,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  notInArray,
-  or,
-  sql,
-} from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm'
 import {
   usageLogSourceSchema,
   type WorkspaceUsageAnalytics,
@@ -206,7 +197,11 @@ export async function getWorkspaceUsageAnalytics(
         })
         .from(usageLog)
         .where(and(...ledgerConditions))
-        .groupBy(bySourceDisplayBucketExpr(), bySourceLedgerSourceExpr(), bySourceDisplayLabelExpr()),
+        .groupBy(
+          bySourceDisplayBucketExpr(),
+          bySourceLedgerSourceExpr(),
+          bySourceDisplayLabelExpr()
+        ),
 
       dbReplica
         .select({
@@ -302,10 +297,7 @@ export async function getWorkspaceUsageAnalytics(
             ...periodRange(copilotRuns.startedAt, period)
           )
         )
-        .leftJoin(
-          usageLog,
-          and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions)
-        )
+        .leftJoin(usageLog, and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions))
         .where(
           and(
             eq(copilotChats.workspaceId, workspaceId),
@@ -561,9 +553,7 @@ export async function getWorkspaceUsageAnalytics(
             ...ledgerJoinConditions
           )
         )
-        .where(
-          and(...executionConditions, isNotNull(workflowExecutionLogs.triggeringChatId))
-        )
+        .where(and(...executionConditions, isNotNull(workflowExecutionLogs.triggeringChatId)))
         .groupBy(workflowExecutionLogs.triggeringChatId),
 
       dbReplica
@@ -618,11 +608,7 @@ export async function getWorkspaceUsageAnalytics(
       })
       .from(usageLog)
       .where(
-        and(
-          ...ledgerConditions,
-          eq(usageLog.category, 'model'),
-          isNotNull(usageLog.executionId)
-        )
+        and(...ledgerConditions, eq(usageLog.category, 'model'), isNotNull(usageLog.executionId))
       )
 
     const embeddedToolSplit = computeEmbeddedToolVirtualSplit(modelMetadataRows)
@@ -655,7 +641,8 @@ export async function getWorkspaceUsageAnalytics(
           count: row.count,
         }))
         .sort(
-          (a, b) => CHARGE_TYPE_ORDER.indexOf(a.chargeType) - CHARGE_TYPE_ORDER.indexOf(b.chargeType)
+          (a, b) =>
+            CHARGE_TYPE_ORDER.indexOf(a.chargeType) - CHARGE_TYPE_ORDER.indexOf(b.chargeType)
         ),
       embeddedToolSplit
     )
@@ -788,8 +775,7 @@ export async function getWorkspaceUsageAnalytics(
       })
     }
 
-    const limitedAttribution =
-      totalLedgerRows > 0 && missingActorRows / totalLedgerRows > 0.1
+    const limitedAttribution = totalLedgerRows > 0 && missingActorRows / totalLedgerRows > 0.1
 
     const drillDownTotals = lineageDrillDownTotals[0]
     const drillDown =
@@ -992,8 +978,7 @@ export async function getWorkspaceUsageAnalytics(
       lineage: {
         roots: lineageRootRows
           .filter(
-            (row): row is typeof row & { rootExecutionId: string } =>
-              row.rootExecutionId !== null
+            (row): row is typeof row & { rootExecutionId: string } => row.rootExecutionId !== null
           )
           .map((row) => ({
             rootExecutionId: row.rootExecutionId,

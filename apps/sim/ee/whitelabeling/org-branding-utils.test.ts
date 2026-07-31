@@ -23,9 +23,9 @@ describe('resolveOrgFaviconUrl', () => {
     expect(resolveOrgFaviconUrl({ logoUrl: 'https://cdn.example.com/logo.png' }, '/sim.svg')).toBe(
       'https://cdn.example.com/logo.png'
     )
-    expect(resolveOrgFaviconUrl({ wordmarkUrl: 'https://cdn.example.com/wordmark.png' }, '/sim.svg')).toBe(
-      'https://cdn.example.com/wordmark.png'
-    )
+    expect(
+      resolveOrgFaviconUrl({ wordmarkUrl: 'https://cdn.example.com/wordmark.png' }, '/sim.svg')
+    ).toBe('https://cdn.example.com/wordmark.png')
     expect(resolveOrgFaviconUrl({}, '/sim.svg')).toBe('/sim.svg')
     expect(resolveOrgFaviconUrl(null, '/sim.svg')).toBe('/sim.svg')
   })

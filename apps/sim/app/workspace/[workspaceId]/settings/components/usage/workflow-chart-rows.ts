@@ -17,10 +17,7 @@ function workflowRowId(row: WorkflowUsageRow): string {
 }
 
 function workflowRowSecondary(row: WorkflowUsageRow): string {
-  const parts = [
-    row.workspaceName,
-    `${row.executionCount.toLocaleString()} runs`,
-  ].filter(Boolean)
+  const parts = [row.workspaceName, `${row.executionCount.toLocaleString()} runs`].filter(Boolean)
   return parts.join(' · ')
 }
 

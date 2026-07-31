@@ -51,9 +51,7 @@ export function CostShareBars({
   const maxCost = chartRows[0]?.billableCost ?? 0
 
   if (chartRows.length === 0 || maxCost <= 0) {
-    return (
-      <p className='py-6 text-center text-[var(--text-muted)] text-small'>{emptyMessage}</p>
-    )
+    return <p className='py-6 text-center text-[var(--text-muted)] text-small'>{emptyMessage}</p>
   }
 
   return (

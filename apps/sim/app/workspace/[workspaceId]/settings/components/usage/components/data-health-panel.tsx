@@ -27,8 +27,8 @@ export function DataHealthPanel({ data }: DataHealthPanelProps) {
               Limited attribution
             </Badge>
             <p className='text-[var(--text-secondary)] text-small'>
-              More than 10% of ledger rows in this period lack actor fields — common for
-              pre-cutover data.
+              More than 10% of ledger rows in this period lack actor fields — common for pre-cutover
+              data.
             </p>
           </div>
         </div>

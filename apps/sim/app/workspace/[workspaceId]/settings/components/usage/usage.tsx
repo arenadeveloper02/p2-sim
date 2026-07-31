@@ -136,16 +136,18 @@ function UsageDashboardContent({
 
   const workflowChartRows = useMemo(
     () =>
-      buildWorkflowTotalCostChartRows(data.workflow.byWorkflow, (workflowId) =>
-        `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
+      buildWorkflowTotalCostChartRows(
+        data.workflow.byWorkflow,
+        (workflowId) => `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
       ),
     [data.workflow.byWorkflow, workspaceId]
   )
 
   const workflowAverageChartRows = useMemo(
     () =>
-      buildWorkflowAverageCostChartRows(data.workflow.byWorkflow, (workflowId) =>
-        `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
+      buildWorkflowAverageCostChartRows(
+        data.workflow.byWorkflow,
+        (workflowId) => `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
       ),
     [data.workflow.byWorkflow, workspaceId]
   )

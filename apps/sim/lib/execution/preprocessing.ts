@@ -17,10 +17,7 @@ import {
 import { getExecutionTimeout } from '@/lib/core/execution-limits'
 import { RateLimiter } from '@/lib/core/rate-limiter/rate-limiter'
 import type { SubscriptionPlan } from '@/lib/core/rate-limiter/types'
-import {
-  resolveExecutionActor,
-  type ExecutionActor,
-} from '@/lib/execution/actor-resolution'
+import { resolveExecutionActor, type ExecutionActor } from '@/lib/execution/actor-resolution'
 import { LoggingSession, type SessionStartParams } from '@/lib/logs/execution/logging-session'
 import {
   getScheduleExecutionActorUserId,

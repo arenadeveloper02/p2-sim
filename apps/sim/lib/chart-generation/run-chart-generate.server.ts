@@ -170,8 +170,7 @@ export async function runChartGenerate(
       valid: normalized.valid,
       skipped: normalized.skipped,
       dashboard: { charts: normalized.charts, count: normalized.count },
-      content:
-        typeof result.content === 'string' ? result.content : stringifyJSON(result.content),
+      content: typeof result.content === 'string' ? result.content : stringifyJSON(result.content),
       model: result.model,
       tokens: {
         input: inputTokens,
