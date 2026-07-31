@@ -121,9 +121,23 @@ function totalInputTokens(record: Pick<
   return record.inputTokens + record.cacheReadInputTokens + record.cacheCreationInputTokens
 }
 
+function tokenTotal(tokens: {
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number
+  cacheCreationInputTokens: number
+}): number {
+  return (
+    tokens.inputTokens +
+    tokens.outputTokens +
+    tokens.cacheReadInputTokens +
+    tokens.cacheCreationInputTokens
+  )
+}
+
 function resolveCost(
   model: string,
-  stdout: string,
+  providerCost: number | null,
   tokens: {
     inputTokens: number
     outputTokens: number
@@ -131,17 +145,11 @@ function resolveCost(
     cacheCreationInputTokens: number
   }
 ): { estimatedCostUsd: number | null; costSource: CostSource } {
-  const providerCost = parseCostFromStdout(stdout)
   if (providerCost !== null) {
     return { estimatedCostUsd: providerCost, costSource: 'provider' }
   }
 
-  const tokenTotal =
-    tokens.inputTokens +
-    tokens.outputTokens +
-    tokens.cacheReadInputTokens +
-    tokens.cacheCreationInputTokens
-  if (tokenTotal <= 0) {
+  if (tokenTotal(tokens) <= 0) {
     return { estimatedCostUsd: null, costSource: 'unavailable' }
   }
 
@@ -149,6 +157,129 @@ function resolveCost(
     estimatedCostUsd: estimateCostFromTokens(model, tokens),
     costSource: 'estimated',
   }
+}
+
+interface StreamTokenTotals {
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number
+  cacheCreationInputTokens: number
+}
+
+interface SessionUsageAccumulator {
+  costUsd: number | null
+  tokens: StreamTokenTotals | null
+  tokenScore: number
+}
+
+function emptyTokenTotals(): StreamTokenTotals {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+  }
+}
+
+function readUsageObject(value: unknown): StreamTokenTotals | null {
+  if (!value || typeof value !== 'object') return null
+  const u = value as Record<string, unknown>
+  const inputTokens = u.input_tokens ?? u.inputTokens
+  const outputTokens = u.output_tokens ?? u.outputTokens
+  const cacheRead = u.cache_read_input_tokens ?? u.cacheReadInputTokens
+  const cacheCreate = u.cache_creation_input_tokens ?? u.cacheCreationInputTokens
+  if (
+    typeof inputTokens !== 'number' ||
+    typeof outputTokens !== 'number' ||
+    typeof cacheRead !== 'number' ||
+    typeof cacheCreate !== 'number'
+  ) {
+    return null
+  }
+  return {
+    inputTokens,
+    outputTokens,
+    cacheReadInputTokens: cacheRead,
+    cacheCreationInputTokens: cacheCreate,
+  }
+}
+
+/**
+ * Parse Claude Code stream-json / session NDJSON for provider cost + token totals.
+ *
+ * Claude emits many intermediate `type:"result"` events; `total_cost_usd` is
+ * session-cumulative. We take the max cost (and best token footprint) per
+ * `session_id`, then sum across sessions so multi-iteration Sandcastle runs
+ * are not under-counted.
+ */
+export function parseUsageFromClaudeStream(ndjson: string): {
+  costUsd: number | null
+  tokens: StreamTokenTotals
+} | null {
+  if (!ndjson.trim()) return null
+
+  const bySession = new Map<string, SessionUsageAccumulator>()
+
+  for (const rawLine of ndjson.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line.startsWith('{')) continue
+    let obj: Record<string, unknown>
+    try {
+      obj = JSON.parse(line) as Record<string, unknown>
+    } catch {
+      continue
+    }
+    if (obj.type !== 'result') continue
+
+    const sid =
+      typeof obj.session_id === 'string' && obj.session_id.length > 0
+        ? obj.session_id
+        : '__anon__'
+
+    const prev = bySession.get(sid) ?? { costUsd: null, tokens: null, tokenScore: -1 }
+
+    const costRaw = obj.total_cost_usd
+    if (typeof costRaw === 'number' && Number.isFinite(costRaw)) {
+      if (prev.costUsd === null || costRaw > prev.costUsd) {
+        prev.costUsd = costRaw
+      }
+    }
+
+    const tokens = readUsageObject(obj.usage)
+    if (tokens) {
+      const score = tokenTotal(tokens)
+      if (score >= prev.tokenScore) {
+        prev.tokens = tokens
+        prev.tokenScore = score
+      }
+    }
+
+    bySession.set(sid, prev)
+  }
+
+  if (bySession.size === 0) return null
+
+  const tokens = emptyTokenTotals()
+  let costUsd: number | null = null
+  let sawCost = false
+  let sawTokens = false
+
+  for (const session of bySession.values()) {
+    if (session.costUsd !== null) {
+      costUsd = (costUsd ?? 0) + session.costUsd
+      sawCost = true
+    }
+    if (session.tokens) {
+      tokens.inputTokens += session.tokens.inputTokens
+      tokens.outputTokens += session.tokens.outputTokens
+      tokens.cacheReadInputTokens += session.tokens.cacheReadInputTokens
+      tokens.cacheCreationInputTokens += session.tokens.cacheCreationInputTokens
+      sawTokens = true
+    }
+  }
+
+  if (!sawCost && !sawTokens) return null
+  return { costUsd: sawCost ? costUsd : null, tokens }
 }
 
 function formatCostLabel(costUsd: number | null, source: CostSource): string {
@@ -172,11 +303,13 @@ function logUsageRecord(record: AgentUsageRecord): void {
 export function recordAgentUsage(
   agentName: string,
   model: string,
-  result: RunResult | null | undefined
+  result: RunResult | null | undefined,
+  /** Raw Claude/Codex NDJSON captured from the agent stream (preferred over text-only stdout). */
+  streamNdjson?: string
 ): AgentUsageRecord | null {
   if (!result?.iterations?.length) return null
 
-  const totals = result.iterations.reduce(
+  const fromIterations = result.iterations.reduce(
     (acc, iteration) => {
       if (!iteration.usage) return acc
       acc.inputTokens += iteration.usage.inputTokens ?? 0
@@ -185,15 +318,20 @@ export function recordAgentUsage(
       acc.cacheCreationInputTokens += iteration.usage.cacheCreationInputTokens ?? 0
       return acc
     },
-    {
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadInputTokens: 0,
-      cacheCreationInputTokens: 0,
-    }
+    emptyTokenTotals()
   )
 
-  const cost = resolveCost(model, result.stdout ?? '', totals)
+  // Sandcastle's Claude parser does not emit usage events and `result.stdout` is
+  // agent text only — fall back to raw stream-json NDJSON when iteration usage
+  // is missing or under-counts (session parse often keeps only the last turn).
+  const fromStream = parseUsageFromClaudeStream(streamNdjson ?? result.stdout ?? '')
+  const streamTokens = fromStream?.tokens
+  const totals =
+    streamTokens && tokenTotal(streamTokens) > tokenTotal(fromIterations)
+      ? streamTokens
+      : fromIterations
+
+  const cost = resolveCost(model, fromStream?.costUsd ?? null, totals)
   const record: AgentUsageRecord = {
     agentName,
     model,
@@ -362,10 +500,10 @@ export function persistUsageArtifacts(runId: string): string {
   return markdown
 }
 
-/** Best-effort parse of Claude Code cost JSON embedded in agent stdout. */
+/**
+ * Best-effort parse of Claude Code cost JSON embedded in agent stdout/NDJSON.
+ * Uses max `total_cost_usd` per session (cumulative), summed across sessions.
+ */
 export function parseCostFromStdout(stdout: string): number | null {
-  const match = stdout.match(/"total_cost_usd"\s*:\s*([0-9.]+)/)
-  if (!match) return null
-  const value = Number(match[1])
-  return Number.isFinite(value) ? value : null
+  return parseUsageFromClaudeStream(stdout)?.costUsd ?? null
 }
