@@ -42,7 +42,12 @@ None. Everything resolves mechanically from `merge-policy.json` (fork-first on t
 
 ### Resume note (2026-07-31)
 
-Grill analysis stands unchanged on resume. The only logged item was the harness verification-failure notice (`bun run check` → biome format on `findCatalogModel` in `apps/sim/providers/models.ts`). This is a mechanical formatting fix, not a fork-vs-upstream product decision: the signature was reflowed to a single line (`export function findCatalogModel(modelId: string): {`) by commit `751c8dec4`, and `bunx biome format providers/models.ts` now confirms no further changes. No new open questions — no duplicate PR comment posted per resume-mode rules.
+Grill analysis stands unchanged on resume. Two harness verification-failure notices were logged, both mechanical fixes (biome), neither a fork-vs-upstream product decision — both already resolved by commits on the sync branch:
+
+- `bun run check` → biome format on `findCatalogModel` in `apps/sim/providers/models.ts`. The signature was reflowed to a single line (`export function findCatalogModel(modelId: string): {`) by commit `751c8dec4`; `bunx biome format providers/models.ts` confirms no further changes.
+- `bun run lint` → `lint/complexity/noUselessStringRaw` on `HIGHLIGHT_BODY` in `apps/sim/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/highlight.ts` (a `String.raw` template with no escape sequences). Fixed by commit `e26b9b657` by dropping the useless `String.raw` tag; the sibling `HIGHLIGHT_TOKEN` retains `String.raw` since it contains `\s` escapes.
+
+No new open questions — no duplicate PR comment posted per resume-mode rules.
 
 ## Usage
 
