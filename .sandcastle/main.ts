@@ -10,10 +10,10 @@
  * 6. Verification (check, lint, test, build)
  * 7. Update draft PR body + final ledger commit
  */
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { RunResult } from '@ai-hero/sandcastle'
+import type { AgentStreamEvent, RunResult } from '@ai-hero/sandcastle'
 import { run } from '@ai-hero/sandcastle'
 import { noSandbox } from '@ai-hero/sandcastle/sandboxes/no-sandbox'
 import {
@@ -47,9 +47,11 @@ import {
   groupConflictClusters,
   isPrOpen,
   isSyncBranch,
+  applyMergeWip,
   listConflictFiles,
   logHarnessQuestion,
   MERGE_POLICY_PATH,
+  persistMergeWip,
   QUESTION_MARKER,
   remoteBranchExists,
   RESUME_COMMAND,
@@ -162,6 +164,14 @@ async function runAgentPrompt(options: {
     )
   }
 
+  // File + verbose logging is required so we can capture Claude stream-json NDJSON
+  // (Sandcastle's Claude parser never emits usage events; result.stdout is text-only).
+  const logDir = join(process.cwd(), '.sandcastle', 'logs')
+  mkdirSync(logDir, { recursive: true })
+  const safeName = options.name.replace(/[^a-zA-Z0-9_-]+/g, '_')
+  const logPath = join(logDir, `${safeName}.log`)
+  const rawNdjsonLines: string[] = []
+
   const result = await run({
     agent: options.agent,
     prompt: options.prompt,
@@ -173,10 +183,25 @@ async function runAgentPrompt(options: {
     hooks: SKIP_SANDCASTLE_INSTALL_HOOKS,
     idleTimeoutSeconds: Number(process.env.UPSTREAM_SYNC_IDLE_TIMEOUT_SECONDS ?? 7200),
     completionTimeoutSeconds: 120,
-    logging: { type: 'stdout', verbose: true },
+    logging: {
+      type: 'file',
+      path: logPath,
+      verbose: true,
+      onAgentStreamEvent: (event: AgentStreamEvent) => {
+        if (event.type !== 'raw') return
+        rawNdjsonLines.push(event.line)
+        // Mirror into Actions logs (parity with previous stdout verbose mode).
+        console.log(event.line)
+      },
+    },
   })
 
-  recordAgentUsage(options.name, resolveAgentModel(options.agentKind, options.provider), result)
+  recordAgentUsage(
+    options.name,
+    resolveAgentModel(options.agentKind, options.provider),
+    result,
+    rawNdjsonLines.join('\n')
+  )
   return result
 }
 
@@ -442,9 +467,29 @@ async function main(): Promise<void> {
     ensureSandcastleEnvFile()
     fetchUpstream()
 
-    const initialState = readState()
+    let initialState = readState()
     const mergeBase = resolveMergeBase(initialState, RESUME)
     console.log(`Sync target: ${mergeBase} ← simstudioai/sim main (PR base)`)
+
+    // Resume checks out the sync branch; seed lastSynced from the target branch when missing.
+    if (!initialState.lastSyncedUpstreamSha && mergeBase) {
+      try {
+        const raw = runGit(['show', `origin/${mergeBase}:.upstream-sync/state.json`])
+        const fromTarget = JSON.parse(raw) as typeof initialState
+        if (fromTarget.lastSyncedUpstreamSha) {
+          initialState = {
+            ...initialState,
+            lastSyncedUpstreamSha: fromTarget.lastSyncedUpstreamSha,
+            lastSyncedAt: fromTarget.lastSyncedAt ?? initialState.lastSyncedAt,
+          }
+          console.log(
+            `Seeded lastSyncedUpstreamSha ${fromTarget.lastSyncedUpstreamSha.slice(0, 8)} from origin/${mergeBase}.`
+          )
+        }
+      } catch {
+        // Target branch may not have state.json yet.
+      }
+    }
 
     const baseline = resolveAnalysisBaseline(mergeBase, initialState)
     const headSha = baseline.upstreamHeadSha
@@ -739,6 +784,10 @@ async function main(): Promise<void> {
       return
     }
 
+    // Re-apply prior mid-merge resolutions from the WIP sidecar (resume / crashed runs).
+    const conflictSnapshot = listConflictFiles()
+    applyMergeWip({ syncBranch })
+
     try {
       runGit(['push', 'origin', syncBranch])
     } catch (error) {
@@ -772,11 +821,24 @@ async function main(): Promise<void> {
         provider: agents.provider,
         maxIterations: 5,
       })
+
+      persistMergeWip({
+        syncBranch,
+        runId,
+        clusterId: cluster.id,
+        conflictSnapshot,
+      })
     }
 
     const remaining = listConflictFiles()
     if (remaining.length > 0) {
-      appendUsageToRunLog(runId)
+      persistMergeWip({
+        syncBranch,
+        runId,
+        clusterId: 'blocked-final',
+        conflictSnapshot,
+      })
+      const usageSectionBlocked = appendUsageToRunLog(runId)
       appendRunLogSections(runId, {
         Status: 'blocked',
         'Remaining conflicts': remaining.map((f) => `- ${f}`).join('\n'),
@@ -789,6 +851,9 @@ async function main(): Promise<void> {
         `${remaining.length} unresolved conflict(s). Review ledger at \`.upstream-sync/ledger/${runId}/\`.`,
         '',
         `Reply with \`${RESUME_COMMAND}\` after answering open questions.`,
+        '',
+        '### Agent usage',
+        usageSectionBlocked,
       ].join('\n')
 
       const prNumber = resolveDraftPr(

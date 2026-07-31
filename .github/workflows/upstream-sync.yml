@@ -10,8 +10,8 @@ name: Upstream Sync
 #
 # Repo Variables (Settings → Variables → Actions): UPSTREAM_REMOTE, UPSTREAM_REPO,
 # UPSTREAM_BRANCH, UPSTREAM_SYNC_TARGET_BRANCH, UPSTREAM_SYNC_PR_REVIEWERS.
-# Secrets (Settings → Secrets → Actions): GH_PAT or UPSTREAM_SYNC_GH_TOKEN;
-# when agents run — ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN) / OPENAI_API_KEY.
+# Secrets (Settings → Secrets → Actions): ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN)
+# / OPENAI_API_KEY when agents run. GitHub auth uses Actions GITHUB_TOKEN only.
 
 on:
   push:
@@ -110,8 +110,9 @@ jobs:
             else
               should_run=false
             fi
-          elif [ "$EVENT" = "push" ] && echo "${{ github.ref_name }}" | grep -q '^upstream-sync/'; then
-            # Harness pushes sync branches — do not re-enter the pipeline (wrong PR base).
+          elif [ "$EVENT" = "push" ]; then
+            # Push only registers workflow_dispatch on the branch. Do not auto-merge on push —
+            # that raced resume runs and used skip_agent=true dry-runs against open sync PRs.
             should_run=false
           else
             should_run=true
@@ -134,68 +135,29 @@ jobs:
       pull-requests: write
       issues: write
     env:
-      # Default to GITHUB_TOKEN. Fail-fast may override GH_TOKEN in GITHUB_ENV when a
-      # valid GH_PAT / UPSTREAM_SYNC_GH_TOKEN is present (preferred for fork PR pushes).
+      # Same-repo sync PRs: Actions GITHUB_TOKEN is enough (contents + pull-requests write).
+      # Do not prefer GH_PAT — an expired secret would override and break the run.
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
-          # Always use GITHUB_TOKEN for checkout. An expired GH_PAT in secrets would
-          # otherwise win the || chain and fail with "could not read Username".
           token: ${{ github.token }}
 
       - name: Fail fast credentials
         env:
           SKIP_AGENT: ${{ needs.gate.outputs.skip_agent }}
           AGENT_PROVIDER: ${{ needs.gate.outputs.agent_provider }}
-          CANDIDATE_GH_PAT: ${{ secrets.GH_PAT }}
-          CANDIDATE_UPSTREAM_SYNC_GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_GH_TOKEN }}
-          CANDIDATE_GITHUB_TOKEN: ${{ github.token }}
           HAS_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
           HAS_CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
         run: |
-          # GITHUB_TOKEN cannot call /user; PATs can. Accept either /user or repo read.
-          token_ok() {
-            local token="$1"
-            [ -n "$token" ] || return 1
-            if GH_TOKEN="$token" gh api user --jq .login >/dev/null 2>&1; then
-              return 0
-            fi
-            GH_TOKEN="$token" gh api "repos/${GITHUB_REPOSITORY}" --jq .full_name >/dev/null 2>&1
-          }
-
-          selected_source=""
-          selected_token=""
-
-          if token_ok "$CANDIDATE_GH_PAT"; then
-            selected_source=GH_PAT
-            selected_token="$CANDIDATE_GH_PAT"
-          elif token_ok "$CANDIDATE_UPSTREAM_SYNC_GH_TOKEN"; then
-            selected_source=UPSTREAM_SYNC_GH_TOKEN
-            selected_token="$CANDIDATE_UPSTREAM_SYNC_GH_TOKEN"
-          elif token_ok "$CANDIDATE_GITHUB_TOKEN"; then
-            selected_source=github.token
-            selected_token="$CANDIDATE_GITHUB_TOKEN"
-            if [ -n "$CANDIDATE_GH_PAT" ] || [ -n "$CANDIDATE_UPSTREAM_SYNC_GH_TOKEN" ]; then
-              echo "::warning::GH_PAT / UPSTREAM_SYNC_GH_TOKEN is set but invalid or expired; falling back to github.token. Rotate the secret under Settings → Secrets → Actions."
-            fi
-          else
-            echo "No usable GitHub token. github.token failed auth, and GH_PAT / UPSTREAM_SYNC_GH_TOKEN are missing or invalid."
-            echo "Add a classic ghp_* PAT with repo scope as GH_PAT under Settings → Secrets → Actions."
+          if ! gh api "repos/${GITHUB_REPOSITORY}" --jq .full_name >/dev/null 2>&1; then
+            echo "github.token cannot access ${GITHUB_REPOSITORY}."
             exit 1
           fi
-
-          echo "GitHub token source: $selected_source"
-          echo "GH_TOKEN=$selected_token" >> "$GITHUB_ENV"
-          # Also expose preferred PAT names so the harness resolveGhToken() picks the same value.
-          if [ "$selected_source" = "GH_PAT" ]; then
-            echo "GH_PAT=$selected_token" >> "$GITHUB_ENV"
-          elif [ "$selected_source" = "UPSTREAM_SYNC_GH_TOKEN" ]; then
-            echo "UPSTREAM_SYNC_GH_TOKEN=$selected_token" >> "$GITHUB_ENV"
-          fi
+          echo "GitHub token source: github.token"
 
           if [ "$SKIP_AGENT" = "true" ]; then
             exit 0
@@ -226,7 +188,8 @@ jobs:
             echo "resume=true requires resume_pr when using workflow_dispatch"
             exit 1
           fi
-          branch=$(gh pr view "$pr_number" --json headRefName --jq .headRefName)
+          # REST — `gh pr view` uses GraphQL and often fails with Actions GITHUB_TOKEN.
+          branch=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq .head.ref)
           git fetch origin "$branch"
           git checkout "$branch"
           echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
@@ -286,8 +249,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          # GH_TOKEN / GH_PAT come from Fail fast credentials via GITHUB_ENV (validated).
-          # Do not re-inject secrets.GH_PAT here — an expired PAT would override GH_TOKEN.
+          # Job-level GH_TOKEN is github.token. Do not inject GH_PAT here.
           UPSTREAM_SYNC_AGENT: ${{ needs.gate.outputs.agent_provider }}
           UPSTREAM_SYNC_FORCE: ${{ needs.gate.outputs.force }}
           UPSTREAM_SYNC_RESUME: ${{ needs.gate.outputs.resume }}

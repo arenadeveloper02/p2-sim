@@ -40,6 +40,13 @@ Before asking the human, read `.upstream-sync/grill-log.md` and `.upstream-sync/
 
 ## Done
 
-Stage and commit resolved files for this cluster. Output:
+Resolve **only** this cluster's files, then `git add` them.
+
+**Do not `git commit`.** While other clusters still have unmerged paths, Git refuses any commit.
+The harness persists your staged resolutions to the WIP sidecar branch
+(`{{SYNC_BRANCH}}-wip`) via `--force-with-lease` after you finish, and completes the
+merge commit only when every conflict is cleared.
+
+Output:
 
 <promise>UPSTREAM_SYNC_COMPLETE</promise>

@@ -35,6 +35,10 @@ export function isAncestor(ancestor: string, descendant: string): boolean {
 /**
  * Resolve the commit range used for FBI reports, release notes, and agent context.
  * Falls back to git merge-base when persisted lastSyncedUpstreamSha is missing or stale.
+ *
+ * Baseline SHAs must be ancestors of upstream HEAD. Fork-only merge commits that share a
+ * message with an upstream release (e.g. a local `v0.7.28` merge) must never bound the range —
+ * `git log forkMerge..upstream` inflates the commit list.
  */
 export function resolveAnalysisBaseline(targetBranch: string, state?: SyncState): AnalysisBaseline {
   const syncState = state ?? readState()
@@ -50,11 +54,27 @@ export function resolveAnalysisBaseline(targetBranch: string, state?: SyncState)
     )
   }
 
+  if (!isAncestor(mergeBaseSha, headSha)) {
+    console.warn(
+      `merge-base ${mergeBaseSha.slice(0, 8)} is not an ancestor of upstream HEAD ${headSha.slice(0, 8)} — refusing it as analysis baseline.`
+    )
+    mergeBaseSha = headSha
+  }
+
   const lastSynced = syncState.lastSyncedUpstreamSha
   if (lastSynced && isAncestor(lastSynced, headSha)) {
+    // Prefer the newer of lastSynced vs merge-base so we never re-analyze already-shared history.
+    const baselineSha = isAncestor(mergeBaseSha, lastSynced) ? lastSynced : mergeBaseSha
+    const baselineSource: BaselineSource =
+      baselineSha === lastSynced ? 'lastSyncedUpstreamSha' : 'merge-base'
+    if (baselineSha !== lastSynced) {
+      console.warn(
+        `lastSyncedUpstreamSha ${lastSynced.slice(0, 8)} is behind merge-base ${mergeBaseSha.slice(0, 8)} — using merge-base.`
+      )
+    }
     return {
-      baselineSha: lastSynced,
-      baselineSource: 'lastSyncedUpstreamSha',
+      baselineSha,
+      baselineSource,
       targetBranch,
       upstreamHeadSha: headSha,
       mergeBaseSha,

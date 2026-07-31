@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 export const UPSTREAM_SYNC_ROOT = '.upstream-sync'
 export const LEDGER_DIR = join(UPSTREAM_SYNC_ROOT, 'ledger')
@@ -306,7 +306,7 @@ export function explainPrCreateFailure(
   }
 
   if (message.includes('403') || message.includes('Resource not accessible')) {
-    return 'GitHub API denied PR creation — set GH_PAT (classic ghp_* token with repo scope) on the fork.'
+    return 'GitHub API denied PR creation — check Actions permissions (contents + pull-requests write).'
   }
 
   return message
@@ -463,11 +463,10 @@ export function runGit(args: string[], cwd = process.cwd()): string {
 }
 
 function resolveGhToken(): string | undefined {
-  for (const key of ['GH_PAT', 'UPSTREAM_SYNC_GH_TOKEN', 'GH_TOKEN'] as const) {
-    const value = process.env[key]?.trim()
-    if (value) return value
-  }
-  return undefined
+  // Prefer GH_TOKEN (Actions github.token). Ignore GH_PAT / UPSTREAM_SYNC_GH_TOKEN so an
+  // expired repo secret cannot override the working Actions token.
+  const value = process.env.GH_TOKEN?.trim()
+  return value || undefined
 }
 
 export function runGh(args: string[]): string {
@@ -571,14 +570,12 @@ export function remoteBranchExists(branch: string): boolean {
 /** Resolve the head branch name for a PR, or null if lookup fails. */
 export function resolvePrHeadBranch(prNumber: number): string | null {
   try {
+    const { owner, repo } = repoSlug()
     const branch = runGh([
-      'pr',
-      'view',
-      String(prNumber),
-      '--json',
-      'headRefName',
+      'api',
+      `repos/${owner}/${repo}/pulls/${prNumber}`,
       '--jq',
-      '.headRefName',
+      '.head.ref',
     ])
     return branch.trim() || null
   } catch {
@@ -588,7 +585,15 @@ export function resolvePrHeadBranch(prNumber: number): string | null {
 
 /** Post a comment on a PR. */
 export function commentOnPr(prNumber: number, body: string): void {
-  runGh(['pr', 'comment', String(prNumber), '--body', body])
+  const { owner, repo } = repoSlug()
+  runGh([
+    'api',
+    '-X',
+    'POST',
+    `repos/${owner}/${repo}/issues/${prNumber}/comments`,
+    '-f',
+    `body=${body}`,
+  ])
 }
 
 /** Request PR reviewers via REST (avoids GraphQL UpdatePullRequest). */
@@ -622,9 +627,15 @@ export function getPrReviewers(): string[] {
 
 export function isPrOpen(prNumber: number): boolean {
   try {
-    const raw = runGh(['pr', 'view', String(prNumber), '--json', 'state'])
-    const { state } = JSON.parse(raw) as { state: string }
-    return state === 'OPEN'
+    // REST — `gh pr view` uses GraphQL and often fails with Actions GITHUB_TOKEN.
+    const { owner, repo } = repoSlug()
+    const state = runGh([
+      'api',
+      `repos/${owner}/${repo}/pulls/${prNumber}`,
+      '--jq',
+      '.state',
+    ])
+    return state.trim().toLowerCase() === 'open'
   } catch {
     return false
   }
@@ -652,7 +663,15 @@ export function closeSupersededPr(
   ].join('\n')
 
   commentOnPr(prNumber, comment)
-  runGh(['pr', 'close', String(prNumber)])
+  const { owner, repo } = repoSlug()
+  runGh([
+    'api',
+    '-X',
+    'PATCH',
+    `repos/${owner}/${repo}/pulls/${prNumber}`,
+    '-f',
+    'state=closed',
+  ])
   console.log(`Closed superseded sync PR #${prNumber}.`)
 }
 
@@ -838,6 +857,178 @@ export function listConflictFiles(): string[] {
     return out ? out.split('\n').filter(Boolean) : []
   } catch {
     return []
+  }
+}
+
+/**
+ * Paths from `originalConflicts` that are no longer unmerged in the index.
+ * Used to snapshot mid-merge agent progress onto the WIP sidecar branch.
+ */
+export function listResolvedConflictFiles(originalConflicts: string[]): string[] {
+  const stillUnmerged = new Set(listConflictFiles())
+  return originalConflicts.filter((file) => !stillUnmerged.has(file))
+}
+
+/** WIP sidecar branch for a sync branch (`upstream-sync/<stamp>-wip`). */
+export function wipBranchName(syncBranch: string): string {
+  assertUpstreamSyncRef(syncBranch)
+  if (syncBranch.endsWith('-wip')) return syncBranch
+  return `${syncBranch}-wip`
+}
+
+/**
+ * Reject force-push targets outside harness sync refs.
+ * WIP branches are still under `upstream-sync/`.
+ */
+export function assertUpstreamSyncRef(name: string): void {
+  if (!isSyncBranch(name)) {
+    throw new Error(
+      `Refusing WIP operation on non-sync ref "${name}" — only refs under ${SYNC_BRANCH_PREFIX} are allowed`
+    )
+  }
+}
+
+/** Args for a lease-protected push of a WIP branch (never bare `--force`). */
+export function forceWithLeasePushArgs(wipBranch: string): string[] {
+  assertUpstreamSyncRef(wipBranch)
+  return [
+    'push',
+    `--force-with-lease=refs/heads/${wipBranch}:refs/heads/${wipBranch}`,
+    'origin',
+    wipBranch,
+  ]
+}
+
+function wipWorktreePath(): string {
+  const base = process.env.RUNNER_TEMP || process.env.TMPDIR || '/tmp'
+  return join(base, 'upstream-sync-wip')
+}
+
+function removeWipWorktree(worktreePath: string): void {
+  try {
+    runGit(['worktree', 'remove', '--force', worktreePath])
+  } catch {
+    // Worktree may not exist yet.
+  }
+  try {
+    runGit(['worktree', 'prune'])
+  } catch {
+    // Ignore prune failures.
+  }
+}
+
+/**
+ * Snapshot resolved conflict files onto `upstream-sync/<stamp>-wip` and push with
+ * `--force-with-lease`. Safe to call while a merge is still in progress on the sync branch.
+ * Failures are logged and do not throw — losing a WIP push must not abort the harness.
+ */
+export function persistMergeWip(options: {
+  syncBranch: string
+  runId: string
+  clusterId: string
+  /** Conflict paths captured when the merge first produced conflicts. */
+  conflictSnapshot: string[]
+}): number {
+  try {
+    assertUpstreamSyncRef(options.syncBranch)
+    const resolved = listResolvedConflictFiles(options.conflictSnapshot).filter((file) =>
+      existsSync(join(process.cwd(), file))
+    )
+    if (resolved.length === 0) {
+      console.log(`[wip] No newly resolved files to persist after ${options.clusterId}`)
+      return 0
+    }
+
+    const wipBranch = wipBranchName(options.syncBranch)
+    const worktreePath = wipWorktreePath()
+    const repoRoot = process.cwd()
+
+    removeWipWorktree(worktreePath)
+
+    let startPoint = runGit(['rev-parse', options.syncBranch])
+    try {
+      runGit(['fetch', 'origin', wipBranch])
+      startPoint = runGit(['rev-parse', `origin/${wipBranch}`])
+    } catch {
+      // First WIP snapshot — start from the sync branch tip (pre-merge commit).
+    }
+
+    runGit(['worktree', 'add', '-B', wipBranch, worktreePath, startPoint])
+
+    for (const file of resolved) {
+      const src = join(repoRoot, file)
+      const dest = join(worktreePath, file)
+      mkdirSync(dirname(dest), { recursive: true })
+      copyFileSync(src, dest)
+      runGit(['add', '--', file], worktreePath)
+    }
+
+    try {
+      runGit(['diff', '--cached', '--quiet'], worktreePath)
+      console.log(`[wip] Resolved files unchanged on ${wipBranch} after ${options.clusterId}`)
+    } catch {
+      runGit(
+        [
+          'commit',
+          '-m',
+          `upstream-sync(wip): ${options.clusterId} (${resolved.length} files) [${options.runId}]`,
+        ],
+        worktreePath
+      )
+      runGit(forceWithLeasePushArgs(wipBranch), worktreePath)
+      console.log(
+        `[wip] Persisted ${resolved.length} resolved file(s) to ${wipBranch} after ${options.clusterId}`
+      )
+    }
+
+    removeWipWorktree(worktreePath)
+    return resolved.length
+  } catch (error) {
+    console.warn(`[wip] Failed to persist merge WIP after ${options.clusterId}:`, error)
+    try {
+      removeWipWorktree(wipWorktreePath())
+    } catch {
+      // Ignore cleanup failures.
+    }
+    return 0
+  }
+}
+
+/**
+ * Re-apply resolved file overlays from the WIP sidecar onto the current merge.
+ * Call after `git merge` recreates conflicts (fresh run or resume).
+ * @returns Number of conflicted paths replaced from WIP
+ */
+export function applyMergeWip(options: { syncBranch: string }): number {
+  try {
+    assertUpstreamSyncRef(options.syncBranch)
+    const wipBranch = wipBranchName(options.syncBranch)
+    try {
+      runGit(['fetch', 'origin', wipBranch])
+    } catch {
+      console.log(`[wip] No remote WIP branch ${wipBranch} — nothing to apply`)
+      return 0
+    }
+
+    const conflicts = listConflictFiles()
+    if (conflicts.length === 0) return 0
+
+    let applied = 0
+    for (const file of conflicts) {
+      try {
+        runGit(['cat-file', '-e', `origin/${wipBranch}:${file}`])
+        runGit(['checkout', `origin/${wipBranch}`, '--', file])
+        applied++
+      } catch {
+        // Path not present on WIP tip.
+      }
+    }
+
+    console.log(`[wip] Applied ${applied} resolved file(s) from ${wipBranch}`)
+    return applied
+  } catch (error) {
+    console.warn(`[wip] Failed to apply merge WIP:`, error)
+    return 0
   }
 }
 
