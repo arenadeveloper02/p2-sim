@@ -36,6 +36,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Safe here since this repo's source is already fully public on GitHub -
   // no additional exposure versus Next's default (disabled to avoid leaking
+  // source on the client).
   productionBrowserSourceMaps: true,
   turbopack: {
     root: monorepoRoot,
@@ -160,6 +161,15 @@ const nextConfig: NextConfig = {
   experimental: {
     turbopackFileSystemCacheForDev: false,
     preloadEntriesOnStart: false,
+    /**
+     * Docker/CI image builds run under a tight BuildKit cgroup (~7GB on
+     * ubuntu-latest). Next defaults to ~CPU-count page-data workers; three
+     * workers loading the full route graph regularly SIGKILL (exit 137). Cap
+     * concurrency when DOCKER_BUILD is set so peak RSS stays under the limit.
+     * Do not also set memoryBasedWorkersCount — that path enforces a minimum
+     * of 4 workers and would defeat this cap.
+     */
+    ...(isTruthy(env.DOCKER_BUILD) ? { cpus: 1 } : {}),
     /**
      * Turbopack's persistent build cache (beta) — opt-in via env so only the
      * CI check build uses it; production image builds stay on the default
