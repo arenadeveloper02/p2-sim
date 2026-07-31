@@ -68,15 +68,6 @@ The fork's large `models.ts` / `utils.test.ts` deltas are **additive/reordering*
 
 ## Usage
 
-### parent-grill-analysis
-- **Model:** `claude-opus-4-8`
-- **Iterations:** 1
-- **Input tokens (direct):** 26
-- **Input tokens (cache read):** 691,721
-- **Input tokens (cache create):** 51,782
-- **Input tokens (total):** 743,529
-- **Output tokens:** 12,710
-- **Cost:** $0.988777 (provider-reported)
 ### child-cluster-1
 - **Model:** `claude-sonnet-4-6`
 - **Iterations:** 1
@@ -86,16 +77,25 @@ The fork's large `models.ts` / `utils.test.ts` deltas are **additive/reordering*
 - **Input tokens (total):** 1,045,730
 - **Output tokens:** 5,362
 - **Cost:** $0.607184 (provider-reported)
+### parent-grill-analysis
+- **Model:** `claude-opus-4-8`
+- **Iterations:** 1
+- **Input tokens (direct):** 26
+- **Input tokens (cache read):** 691,721
+- **Input tokens (cache create):** 51,782
+- **Input tokens (total):** 743,529
+- **Output tokens:** 12,710
+- **Cost:** $0.988777 (provider-reported)
 
 ### Totals
 - **Total input tokens:** 1,789,259
 - **Total output tokens:** 18,072
-- **Primary models:** claude-opus-4-8, claude-sonnet-4-6
+- **Primary models:** claude-sonnet-4-6, claude-opus-4-8
 - **Provider-reported cost:** $1.595961
 
 ### Cost by agent
-- **parent-grill-analysis:** $0.988777 (provider-reported)
 - **child-cluster-1:** $0.607184 (provider-reported)
+- **parent-grill-analysis:** $0.988777 (provider-reported)
 
 ## Format
 
