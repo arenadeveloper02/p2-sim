@@ -120,8 +120,9 @@ jobs:
     name: Build GHCR Branch Images
     needs: [secret-scan, resolve-ghcr-tag]
     if: github.event_name == 'push' && github.ref == 'refs/heads/version-4.2-prod'
-    # App image next build peaks well past ubuntu-latest (~7GB); use the
-    # larger Blacksmith runner for that matrix entry only. db/realtime stay light.
+    # App image is memory-heavy; optionally pin to Blacksmith via repo var
+    # CI_PROVIDER=blacksmith. Default to ubuntu-latest so orgs without
+    # Blacksmith don't sit forever on "Waiting for a runner".
     runs-on: ${{ matrix.runner }}
     permissions:
       actions: write
@@ -133,7 +134,7 @@ jobs:
         include:
           - dockerfile: ./docker/app.Dockerfile
             ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-simstudio
-            runner: ${{ (vars.CI_PROVIDER == '' || vars.CI_PROVIDER == 'blacksmith') && 'blacksmith-8vcpu-ubuntu-2404' || 'ubuntu-latest' }}
+            runner: ${{ vars.CI_PROVIDER == 'blacksmith' && 'blacksmith-8vcpu-ubuntu-2404' || 'ubuntu-latest' }}
           - dockerfile: ./docker/db.Dockerfile
             ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-migrations
             runner: ubuntu-latest
