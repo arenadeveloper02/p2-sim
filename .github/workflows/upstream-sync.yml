@@ -7,6 +7,11 @@ name: Upstream Sync
 #
 # push: activates workflow_dispatch on feature branches (must run once before
 # `gh workflow run upstream-sync.yml --ref <branch>` works off default branch).
+#
+# Repo Variables (Settings → Variables → Actions): UPSTREAM_REMOTE, UPSTREAM_REPO,
+# UPSTREAM_BRANCH, UPSTREAM_SYNC_TARGET_BRANCH, UPSTREAM_SYNC_PR_REVIEWERS.
+# Secrets (Settings → Secrets → Actions): GH_PAT or UPSTREAM_SYNC_GH_TOKEN;
+# when agents run — ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN) / OPENAI_API_KEY.
 
 on:
   push:
@@ -58,12 +63,12 @@ permissions:
   issues: write
 
 env:
-  UPSTREAM_REMOTE: upstream
-  UPSTREAM_REPO: simstudioai/sim
-  UPSTREAM_BRANCH: main
-  # TEMP: explicit merge target while validating on feat/github-merge-agent.
-  # Restore when validated: TARGET_BRANCH: version-4.2-main
-  TARGET_BRANCH: feat/github-merge-agent
+  UPSTREAM_REMOTE: ${{ vars.UPSTREAM_REMOTE || 'upstream' }}
+  UPSTREAM_REPO: ${{ vars.UPSTREAM_REPO || 'simstudioai/sim' }}
+  UPSTREAM_BRANCH: ${{ vars.UPSTREAM_BRANCH || 'main' }}
+  # TEMP fallback while validating on feat/github-merge-agent.
+  # After merge to default: set repo var UPSTREAM_SYNC_TARGET_BRANCH=version-5-main.
+  TARGET_BRANCH: ${{ vars.UPSTREAM_SYNC_TARGET_BRANCH || 'feat/github-merge-agent' }}
   # GitHub usernames (comma-separated). Set repo variable UPSTREAM_SYNC_PR_REVIEWERS
   # to the GitHub login for utcarsh.srivastava@position2.com (emails cannot be used).
   UPSTREAM_SYNC_PR_REVIEWERS: ${{ vars.UPSTREAM_SYNC_PR_REVIEWERS }}
@@ -138,6 +143,33 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT || secrets.UPSTREAM_SYNC_GH_TOKEN || github.token }}
 
+      - name: Fail fast credentials
+        env:
+          SKIP_AGENT: ${{ needs.gate.outputs.skip_agent }}
+          AGENT_PROVIDER: ${{ needs.gate.outputs.agent_provider }}
+          HAS_GH_PAT: ${{ secrets.GH_PAT != '' }}
+          HAS_UPSTREAM_SYNC_GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_GH_TOKEN != '' }}
+          HAS_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          HAS_CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          HAS_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
+        run: |
+          if [ "$HAS_GH_PAT" != "true" ] && [ "$HAS_UPSTREAM_SYNC_GH_TOKEN" != "true" ]; then
+            echo "Missing GH_PAT or UPSTREAM_SYNC_GH_TOKEN. Add one under Settings → Secrets → Actions."
+            exit 1
+          fi
+          if [ "$SKIP_AGENT" = "true" ]; then
+            exit 0
+          fi
+          if [ "$AGENT_PROVIDER" = "openai" ]; then
+            if [ "$HAS_OPENAI_API_KEY" != "true" ]; then
+              echo "Missing OPENAI_API_KEY. Add it under Settings → Secrets → Actions."
+              exit 1
+            fi
+          elif [ "$HAS_ANTHROPIC_API_KEY" != "true" ] && [ "$HAS_CLAUDE_CODE_OAUTH_TOKEN" != "true" ]; then
+            echo "Missing ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN. Add one under Settings → Secrets → Actions."
+            exit 1
+          fi
+
       - name: Snapshot harness (resume)
         if: needs.gate.outputs.resume == 'true'
         run: cp -a .sandcastle "$RUNNER_TEMP/upstream-sync-harness"
@@ -175,12 +207,13 @@ jobs:
 
       - name: Add upstream remote
         run: |
-          if git remote get-url upstream >/dev/null 2>&1; then
-            git remote set-url upstream "https://github.com/${{ env.UPSTREAM_REPO }}.git"
+          remote="${{ env.UPSTREAM_REMOTE }}"
+          if git remote get-url "$remote" >/dev/null 2>&1; then
+            git remote set-url "$remote" "https://github.com/${{ env.UPSTREAM_REPO }}.git"
           else
-            git remote add upstream "https://github.com/${{ env.UPSTREAM_REPO }}.git"
+            git remote add "$remote" "https://github.com/${{ env.UPSTREAM_REPO }}.git"
           fi
-          git fetch upstream "${{ env.UPSTREAM_BRANCH }}"
+          git fetch "$remote" "${{ env.UPSTREAM_BRANCH }}"
 
       - name: Bootstrap package manager (resume)
         if: needs.gate.outputs.resume == 'true'
@@ -214,6 +247,7 @@ jobs:
       - name: Run upstream sync harness
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GH_PAT: ${{ secrets.GH_PAT }}
           UPSTREAM_SYNC_GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_GH_TOKEN }}
