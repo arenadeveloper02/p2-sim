@@ -94,7 +94,13 @@ import {
   recoverUsageFromLogDir,
   resetUsageRecords,
 } from './lib/usage'
-import { allVerificationPassed, autofixFormat, formatVerifyResults, runVerification } from './lib/verify'
+import {
+  allVerificationPassed,
+  autofixFormat,
+  formatVerifyResults,
+  formatVerifyStatusLine,
+  runVerification,
+} from './lib/verify'
 
 const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'prompts')
 const SKIP_AGENT = process.env.UPSTREAM_SYNC_SKIP_AGENT === 'true'
@@ -1061,7 +1067,7 @@ async function main(): Promise<void> {
     }
 
     const verifyResults = runVerification()
-    const usageSection = appendUsageToRunLog(runId)
+    const verifyPassed = allVerificationPassed(verifyResults)
     appendRunLogSections(runId, {
       Format: formatResult.success
         ? '✅ `bun run format` (pre-verify autofix)'
@@ -1070,53 +1076,10 @@ async function main(): Promise<void> {
       'Merge policy': readFileSync(MERGE_POLICY_PATH, 'utf8').slice(0, 2000),
     })
 
-    if (!allVerificationPassed(verifyResults)) {
-      writeState({ ...readState(), status: 'failed' })
-      const prBody = [
-        QUESTION_MARKER,
-        `## Upstream sync — verification failed (${runId})`,
-        '',
-        formatVerifyResults(verifyResults),
-        '',
-        `Fix failures on \`${syncBranch}\`, then reply \`${RESUME_COMMAND}\`.`,
-        '',
-        '### Agent usage',
-        usageSection,
-      ].join('\n')
-      const prNumber = resolveDraftPr(
-        activePrNumber,
-        mergeBase,
-        syncBranch,
-        runId,
-        extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
-        headSha,
-        syncPrTitle
+    if (!verifyPassed) {
+      console.warn(
+        '[verify] One or more advisory checks failed — continuing to finalize. Results are in the ledger / PR / job summary.'
       )
-      logHarnessQuestion(
-        runId,
-        prNumber,
-        `Verification failed on sync branch. Fix and reply with ${RESUME_COMMAND}.`,
-        verifyResults
-          .filter((r) => !r.success)
-          .map((r) => r.command)
-          .join(', ')
-      )
-      if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
-      commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
-      writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
-      writeRunOutcome(runId, {
-        kind: 'awaiting_input',
-        title: 'Verification failed',
-        detail: `Fix failures on \`${syncBranch}\`, then reply ${RESUME_COMMAND}.`,
-        syncBranch,
-        mergeBase,
-        upstreamSha: headSha,
-        prNumber: prNumber || null,
-        commitCount: upstreamCommits.length,
-        verification: verificationToOutcome(verifyResults),
-      })
-      process.exitCode = 1
-      return
     }
 
     endGroup()
@@ -1148,8 +1111,10 @@ async function main(): Promise<void> {
       `- [.upstream-sync/grill-log.md](.upstream-sync/grill-log.md) — **rolling grill Q&A across all runs**`,
       `- [.upstream-sync/ledger/${runId}/skipped.md](.upstream-sync/ledger/${runId}/skipped.md) — **upstream changes we declined**`,
       '',
-      '### Verification',
-      '✅ `bun run check` · `bun run lint` · `bun run test` · `bun run build`',
+      '### Verification (advisory — does not block the sync)',
+      formatVerifyStatusLine(verifyResults),
+      '',
+      formatVerifyResults(verifyResults),
       '',
       '### Agent usage',
       usageSectionFinal,
@@ -1186,8 +1151,12 @@ async function main(): Promise<void> {
 
     writeRunOutcome(runId, {
       kind: 'completed',
-      title: 'Upstream sync completed',
-      detail: `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Draft PR ready for review.`,
+      title: verifyPassed
+        ? 'Upstream sync completed'
+        : 'Upstream sync completed (verification warnings)',
+      detail: verifyPassed
+        ? `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Draft PR ready for review.`
+        : `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Advisory verification reported failures — see ledger / PR / job summary; they did not fail the workflow.`,
       syncBranch,
       mergeBase,
       upstreamSha: headSha,

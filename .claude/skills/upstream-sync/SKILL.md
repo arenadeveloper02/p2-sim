@@ -43,7 +43,10 @@ Every declined upstream change → `.upstream-sync/ledger/<RUN_ID>/skipped.md`:
 - **What we miss:** …
 ```
 
-## Verification (required)
+## Verification (advisory)
+
+Runs after merge and is published to the ledger, draft PR, and Actions job summary.
+Failures are recorded but **do not** fail the workflow (known repo-level test/check issues must not block sync).
 
 ```bash
 bun run check

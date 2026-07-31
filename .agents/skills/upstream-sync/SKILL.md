@@ -20,7 +20,7 @@ Sync parent repo `simstudioai/sim` `main` into the branch that triggered the run
 
 1. `/upstream-sync-grill` → `.claude/skills/upstream-sync-grill/SKILL.md`
 2. `/upstream-sync` → `.claude/skills/upstream-sync/SKILL.md`
-3. `/diagnosing-bugs` → `.claude/skills/diagnosing-bugs/SKILL.md` (when verify fails)
+3. `/diagnosing-bugs` → `.claude/skills/diagnosing-bugs/SKILL.md` (when investigating regressions; verify is advisory and does not fail the workflow)
 4. `/tdd` → `.claude/skills/tdd/SKILL.md` (regression tests)
 5. `/review-upstream-merge` → `.claude/skills/review-upstream-merge/SKILL.md`
 
@@ -32,6 +32,10 @@ Sync parent repo `simstudioai/sim` `main` into the branch that triggered the run
 | `.upstream-sync/qa-history.jsonl` | Machine-readable Q&A |
 | `.upstream-sync/ledger/<RUN_ID>/release-notes.md` | All upstream release notes in range |
 | `.upstream-sync/ledger/<RUN_ID>/skipped.md` | Declined upstream changes |
+
+## Verification (advisory)
+
+`check` / `lint` / `test` / `build` run after merge and are published to the ledger, draft PR, and Actions summary. Failures do **not** fail the workflow.
 
 ## Commands
 
