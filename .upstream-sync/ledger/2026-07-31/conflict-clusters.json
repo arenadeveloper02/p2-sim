@@ -1,9 +1,1 @@
-[
-  {
-    "id": "cluster-1",
-    "prefix": "apps/sim/providers/",
-    "files": [
-      "apps/sim/providers/utils.test.ts"
-    ]
-  }
-]
+[]
