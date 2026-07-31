@@ -114,10 +114,12 @@ export function estimateCostFromTokens(
   return Number(usd.toFixed(6))
 }
 
-function totalInputTokens(record: Pick<
-  AgentUsageRecord,
-  'inputTokens' | 'cacheReadInputTokens' | 'cacheCreationInputTokens'
->): number {
+function totalInputTokens(
+  record: Pick<
+    AgentUsageRecord,
+    'inputTokens' | 'cacheReadInputTokens' | 'cacheCreationInputTokens'
+  >
+): number {
   return record.inputTokens + record.cacheReadInputTokens + record.cacheCreationInputTokens
 }
 
@@ -232,9 +234,7 @@ export function parseUsageFromClaudeStream(ndjson: string): {
     if (obj.type !== 'result') continue
 
     const sid =
-      typeof obj.session_id === 'string' && obj.session_id.length > 0
-        ? obj.session_id
-        : '__anon__'
+      typeof obj.session_id === 'string' && obj.session_id.length > 0 ? obj.session_id : '__anon__'
 
     const prev = bySession.get(sid) ?? { costUsd: null, tokens: null, tokenScore: -1 }
 
@@ -315,17 +315,14 @@ export function recordAgentUsage(
   /** Raw Claude/Codex NDJSON captured from the agent stream (preferred over text-only stdout). */
   streamNdjson?: string
 ): AgentUsageRecord | null {
-  const fromIterations = (result?.iterations ?? []).reduce(
-    (acc, iteration) => {
-      if (!iteration.usage) return acc
-      acc.inputTokens += iteration.usage.inputTokens ?? 0
-      acc.outputTokens += iteration.usage.outputTokens ?? 0
-      acc.cacheReadInputTokens += iteration.usage.cacheReadInputTokens ?? 0
-      acc.cacheCreationInputTokens += iteration.usage.cacheCreationInputTokens ?? 0
-      return acc
-    },
-    emptyTokenTotals()
-  )
+  const fromIterations = (result?.iterations ?? []).reduce((acc, iteration) => {
+    if (!iteration.usage) return acc
+    acc.inputTokens += iteration.usage.inputTokens ?? 0
+    acc.outputTokens += iteration.usage.outputTokens ?? 0
+    acc.cacheReadInputTokens += iteration.usage.cacheReadInputTokens ?? 0
+    acc.cacheCreationInputTokens += iteration.usage.cacheCreationInputTokens ?? 0
+    return acc
+  }, emptyTokenTotals())
 
   // Sandcastle's Claude parser does not emit usage events and `result.stdout` is
   // agent text only — fall back to raw stream-json NDJSON when iteration usage
@@ -402,20 +399,14 @@ export function recoverUsageFromLogDir(
 
   const recovered: AgentUsageRecord[] = []
   for (const fileName of entries) {
-    const agentName =
-      options?.agentNameFromFile?.(fileName) ?? fileName.replace(/\.log$/i, '')
+    const agentName = options?.agentNameFromFile?.(fileName) ?? fileName.replace(/\.log$/i, '')
     let contents: string
     try {
       contents = readFileSync(join(logDir, fileName), 'utf8')
     } catch {
       continue
     }
-    const record = recordAgentUsage(
-      agentName,
-      inferModelForAgentName(agentName),
-      null,
-      contents
-    )
+    const record = recordAgentUsage(agentName, inferModelForAgentName(agentName), null, contents)
     if (record) recovered.push(record)
   }
   return recovered
@@ -519,9 +510,7 @@ export function formatUsageStepSummary(records: readonly AgentUsageRecord[]): st
     .filter((r) => r.costSource === 'estimated')
     .reduce((sum, r) => sum + (r.estimatedCostUsd ?? 0), 0)
   const hasAnyCost = records.some((r) => r.estimatedCostUsd !== null)
-  const totalLabel = hasAnyCost
-    ? `$${(providerTotal + estimatedTotal).toFixed(4)}`
-    : 'unavailable'
+  const totalLabel = hasAnyCost ? `$${(providerTotal + estimatedTotal).toFixed(4)}` : 'unavailable'
 
   return [
     '## Agent usage',
@@ -535,7 +524,10 @@ export function formatUsageStepSummary(records: readonly AgentUsageRecord[]): st
 }
 
 /** Persist structured usage under the run ledger directory. */
-export function writeUsageJson(runId: string, records: readonly AgentUsageRecord[] = usageRecords): string {
+export function writeUsageJson(
+  runId: string,
+  records: readonly AgentUsageRecord[] = usageRecords
+): string {
   const dir = ensureLedgerRunDir(runId)
   const path = join(dir, 'usage.json')
   writeFileSync(
@@ -635,8 +627,7 @@ export function loadUsageRecordsFromJson(runId: string): AgentUsageRecord[] {
       iterations: typeof r.iterations === 'number' ? r.iterations : 0,
       inputTokens: typeof r.inputTokens === 'number' ? r.inputTokens : 0,
       outputTokens: typeof r.outputTokens === 'number' ? r.outputTokens : 0,
-      cacheReadInputTokens:
-        typeof r.cacheReadInputTokens === 'number' ? r.cacheReadInputTokens : 0,
+      cacheReadInputTokens: typeof r.cacheReadInputTokens === 'number' ? r.cacheReadInputTokens : 0,
       cacheCreationInputTokens:
         typeof r.cacheCreationInputTokens === 'number' ? r.cacheCreationInputTokens : 0,
       estimatedCostUsd:
@@ -646,7 +637,9 @@ export function loadUsageRecordsFromJson(runId: string): AgentUsageRecord[] {
             ? null
             : null,
       costSource:
-        r.costSource === 'provider' || r.costSource === 'estimated' || r.costSource === 'unavailable'
+        r.costSource === 'provider' ||
+        r.costSource === 'estimated' ||
+        r.costSource === 'unavailable'
           ? r.costSource
           : 'unavailable',
     }
