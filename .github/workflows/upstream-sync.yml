@@ -234,6 +234,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.UPSTREAM_SYNC_GH_TOKEN || github.token }}
         run: |
+          echo "::group::Diagnose GitHub token"
           if [ -n "${{ secrets.GH_PAT }}" ]; then
             echo "Token source: GH_PAT"
           elif [ -n "${{ secrets.UPSTREAM_SYNC_GH_TOKEN }}" ]; then
@@ -243,6 +244,7 @@ jobs:
           fi
           gh api user --jq '{login: .login, type: .type}'
           gh api -i user 2>&1 | grep -i '^x-oauth-scopes:' || echo "No x-oauth-scopes header (fine-grained or GITHUB_TOKEN)"
+          echo "::endgroup::"
 
       - name: Run upstream sync harness
         env:
@@ -260,16 +262,24 @@ jobs:
           GITHUB_HEAD_REF: ${{ github.head_ref || github.ref_name }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
           TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
-        run: bun run upstream-sync
+        run: |
+          echo "::group::Upstream sync harness"
+          set +e
+          bun run upstream-sync
+          status=$?
+          echo "::endgroup::"
+          exit $status
 
       - name: Upload Sandcastle logs (if any)
         if: always()
         run: |
+          echo "::group::Upload Sandcastle logs"
           if [ -d .sandcastle/logs ] && [ -n "$(ls -A .sandcastle/logs 2>/dev/null)" ]; then
             echo "has_logs=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_logs=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "::endgroup::"
         id: sandcastle_logs
 
       - name: Upload Sandcastle log artifact

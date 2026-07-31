@@ -45,6 +45,7 @@ UPSTREAM_SYNC_FORCE=true bun run upstream-sync
 
 - Daily 06:00 UTC + manual dispatch
 - Resume: `/upstream-sync resume` on the draft PR
+- Reuse: open sync PR/branch is extended when upstream advances (`FORCE_RUN` / `UPSTREAM_SYNC_FORCE=true` still opens a fresh PR)
 - Reviewer: `utcarshsrivastava-collab` (see `merge-policy.json`)
 
 ## `force` workflow input

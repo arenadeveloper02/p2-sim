@@ -369,6 +369,21 @@ function appendUsageToRunLog(runId: string): string {
   return usageMarkdown
 }
 
+/**
+ * Opens a collapsible GitHub Actions log group (or a local phase banner).
+ * Returns an idempotent closer so early returns still emit `::endgroup::`.
+ */
+function startLogGroup(name: string): () => void {
+  const inActions = process.env.GITHUB_ACTIONS === 'true'
+  console.log(inActions ? `::group::${name}` : `\n▸ ${name}`)
+  let closed = false
+  return () => {
+    if (closed) return
+    closed = true
+    if (inActions) console.log('::endgroup::')
+  }
+}
+
 function ensureActiveDraftPr(options: {
   existingPrNumber: number
   mergeBase: string
@@ -419,483 +434,507 @@ function ensureActiveDraftPr(options: {
 
 async function main(): Promise<void> {
   resetUsageRecords()
-  ensureUpstreamSyncScaffold()
-  assertAgentCredentials()
-  ensureSandcastleEnvFile()
-  fetchUpstream()
 
-  const initialState = readState()
-  const mergeBase = resolveMergeBase(initialState, RESUME)
-  console.log(`Sync target: ${mergeBase} ← simstudioai/sim main (PR base)`)
+  let endGroup = startLogGroup('detect/baseline')
+  try {
+    ensureUpstreamSyncScaffold()
+    assertAgentCredentials()
+    ensureSandcastleEnvFile()
+    fetchUpstream()
 
-  const baseline = resolveAnalysisBaseline(mergeBase, initialState)
-  const headSha = baseline.upstreamHeadSha
-  const runId = todayRunId()
-  const upstreamCommits = commitsSinceBaseline(baseline)
+    const initialState = readState()
+    const mergeBase = resolveMergeBase(initialState, RESUME)
+    console.log(`Sync target: ${mergeBase} ← simstudioai/sim main (PR base)`)
 
-  appendRunLogSections(runId, {
-    'Sync topology': formatBaselineMetadata(baseline, upstreamCommits.length),
-  })
+    const baseline = resolveAnalysisBaseline(mergeBase, initialState)
+    const headSha = baseline.upstreamHeadSha
+    const runId = todayRunId()
+    const upstreamCommits = commitsSinceBaseline(baseline)
 
-  if (!FORCE_RUN && !RESUME && initialState.lastSyncedUpstreamSha === headSha) {
-    console.log(`No upstream changes (already at ${headSha.slice(0, 8)}).`)
-    return
-  }
-
-  if (upstreamCommits.length === 0 && !FORCE_RUN && !RESUME) {
-    console.log('No new upstream commits.')
-    writeState({ ...initialState, lastSyncedUpstreamSha: headSha, status: 'idle' })
-    return
-  }
-
-  let syncBranch: string
-  let extending = false
-  let previousUpstreamSha: string | null = null
-  const resuming = RESUME
-  if (resuming) {
-    syncBranch = resolveResumeSyncBranch(initialState)
-  } else {
-    let candidateBranch = initialState.activeBranch
-    const prOpen = Boolean(
-      initialState.activePrNumber && isPrOpen(initialState.activePrNumber)
-    )
-    if (
-      !candidateBranch &&
-      initialState.activePrNumber &&
-      prOpen
-    ) {
-      candidateBranch = resolvePrHeadBranch(initialState.activePrNumber)
-    }
-
-    const branchExistsOnRemote = candidateBranch
-      ? remoteBranchExists(candidateBranch)
-      : false
-    const decision = decideSyncBranchAction({
-      force: FORCE_RUN,
-      activePrNumber: initialState.activePrNumber,
-      activeBranch: candidateBranch,
-      prOpen,
-      branchExistsOnRemote,
+    appendRunLogSections(runId, {
+      'Sync topology': formatBaselineMetadata(baseline, upstreamCommits.length),
     })
 
-    if (decision.action === 'reuse') {
-      syncBranch = decision.branch
-      extending = true
-      previousUpstreamSha =
-        initialState.lastSyncedUpstreamSha ?? baseline.baselineSha
-      console.log(
-        `Reusing open sync PR #${decision.prNumber} on \`${syncBranch}\` (extend to ${headSha.slice(0, 8)}).`
-      )
-    } else {
-      syncBranch = syncBranchName()
-      if (prOpen && initialState.activePrNumber) {
-        closeSupersededPr(initialState.activePrNumber, {
-          newUpstreamSha: headSha,
-          runId,
-          newBranch: syncBranch,
-        })
-      }
-      console.log(`Starting fresh sync branch \`${syncBranch}\` (${decision.reason}).`)
-    }
-  }
-
-  checkoutSyncBranch(syncBranch, resuming || extending)
-
-  if (resuming || listConflictFiles().length > 0) {
-    if (!ensureInstallableWorkspace(runId)) {
-      appendRunLogSections(runId, {
-        Status: 'blocked',
-        'Package bootstrap':
-          'Could not regenerate bun.lock while resuming. Resolve package.json conflicts manually, then resume.',
-      })
-      writeState({ ...readState(), status: 'awaiting_input' })
-      process.exitCode = 1
+    if (!FORCE_RUN && !RESUME && initialState.lastSyncedUpstreamSha === headSha) {
+      console.log(`No upstream changes (already at ${headSha.slice(0, 8)}).`)
       return
     }
-    try {
-      runGit(['push', 'origin', syncBranch])
-    } catch (error) {
-      console.warn(`Could not push bootstrapped ${syncBranch}:`, error)
+
+    if (upstreamCommits.length === 0 && !FORCE_RUN && !RESUME) {
+      console.log('No new upstream commits.')
+      writeState({ ...initialState, lastSyncedUpstreamSha: headSha, status: 'idle' })
+      return
     }
-  }
 
-  const branchState = readState()
-  const resumePrNumber = parseResumePrNumber()
-  let activePrNumber = resolveActivePrNumber({
-    state: branchState,
-    mergeBase,
-    syncBranch,
-    resumePrNumber,
-  })
-
-  let workingState = branchState
-  if (RESUME && activePrNumber > 0) {
-    const ingested = ingestGrillQaFromPr(
-      activePrNumber,
-      branchState.lastRunId ?? runId,
-      workingState
-    )
-    workingState = ingested.state
-    if (ingested.added > 0) {
-      console.log(`Synced ${ingested.added} grill Q&A comment(s) from PR #${activePrNumber}.`)
-    }
-    commitUpstreamLedger(
-      `upstream-sync(${branchState.lastRunId ?? runId}): log resume Q&A`
-    )
-  }
-
-  writeState({
-    ...workingState,
-    status: 'running',
-    lastRunId: runId,
-    activeBranch: syncBranch,
-    activeMergeBase: mergeBase,
-    activePrNumber: activePrNumber || null,
-  })
-
-  writeFbiReport(
-    runId,
-    upstreamCommits,
-    'Fork maintains Arena/P2/Unipile/Facebook/Presentation integrations and mothership admin routes.'
-  )
-  writeSkippedReport(runId, [])
-
-  const releaseEntries = fetchAllUpstreamReleaseNotes(detectReleaseVersions(upstreamCommits))
-  const releaseNotesMarkdown = formatReleaseNotesMarkdown(releaseEntries)
-  writeReleaseNotesReport(runId, releaseNotesMarkdown, releaseEntries.length)
-
-  commitUpstreamLedger(`upstream-sync(${runId}): pre-merge ledger`)
-
-  const syncPrTitle = formatSyncPrTitle({
-    mergeBase,
-    runId,
-    extendedToSha: extending ? headSha : undefined,
-  })
-  const extendedBanner =
-    extending && previousUpstreamSha
-      ? formatExtendedBanner({
-          previousSha: previousUpstreamSha,
-          newSha: headSha,
-          commitCount: upstreamCommits.length,
-          runId,
-        })
-      : null
-
-  let earlyPrBody = [
-    QUESTION_MARKER,
-    `## Upstream sync in progress — grill/analysis phase (${runId})`,
-    '',
-    `Branch \`${syncBranch}\` · merging [\`simstudioai/sim@${headSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${headSha}) into \`${mergeBase}\`.`,
-    '',
-    `**Sync range:** ${upstreamCommits.length} commit(s) since \`${baseline.baselineSha.slice(0, 8)}\` (${baseline.baselineSource}).`,
-    '',
-    'The parent grill agent will post questions here. Reply with `/upstream-sync resume` after answering.',
-    '',
-    `### Ledger (in progress)`,
-    `- [.upstream-sync/ledger/${runId}/run.md](.upstream-sync/ledger/${runId}/run.md)`,
-    `- [.upstream-sync/ledger/${runId}/fbi-report.md](.upstream-sync/ledger/${runId}/fbi-report.md)`,
-    `- [.upstream-sync/ledger/${runId}/release-notes.md](.upstream-sync/ledger/${runId}/release-notes.md)`,
-  ].join('\n')
-  if (extendedBanner) {
-    earlyPrBody = withExtendedBanner(earlyPrBody, extendedBanner)
-  }
-
-  activePrNumber = ensureActiveDraftPr({
-    existingPrNumber: activePrNumber,
-    mergeBase,
-    syncBranch,
-    runId,
-    headSha,
-    body: earlyPrBody,
-    title: syncPrTitle,
-  })
-
-  if (extending && activePrNumber > 0 && previousUpstreamSha) {
-    try {
-      commentOnPr(
-        activePrNumber,
-        formatExtendedPrComment({
-          previousSha: previousUpstreamSha,
-          newSha: headSha,
-          commitCount: upstreamCommits.length,
-          runId,
-        })
+    let syncBranch: string
+    let extending = false
+    let previousUpstreamSha: string | null = null
+    const resuming = RESUME
+    if (resuming) {
+      syncBranch = resolveResumeSyncBranch(initialState)
+    } else {
+      let candidateBranch = initialState.activeBranch
+      const prOpen = Boolean(
+        initialState.activePrNumber && isPrOpen(initialState.activePrNumber)
       )
-    } catch (error) {
-      console.warn(`Could not post extension comment on PR #${activePrNumber}:`, error)
+      if (
+        !candidateBranch &&
+        initialState.activePrNumber &&
+        prOpen
+      ) {
+        candidateBranch = resolvePrHeadBranch(initialState.activePrNumber)
+      }
+
+      const branchExistsOnRemote = candidateBranch
+        ? remoteBranchExists(candidateBranch)
+        : false
+      const decision = decideSyncBranchAction({
+        force: FORCE_RUN,
+        activePrNumber: initialState.activePrNumber,
+        activeBranch: candidateBranch,
+        prOpen,
+        branchExistsOnRemote,
+      })
+
+      if (decision.action === 'reuse') {
+        syncBranch = decision.branch
+        extending = true
+        previousUpstreamSha =
+          initialState.lastSyncedUpstreamSha ?? baseline.baselineSha
+        console.log(
+          `Reusing open sync PR #${decision.prNumber} on \`${syncBranch}\` (extend to ${headSha.slice(0, 8)}).`
+        )
+      } else {
+        syncBranch = syncBranchName()
+        if (prOpen && initialState.activePrNumber) {
+          closeSupersededPr(initialState.activePrNumber, {
+            newUpstreamSha: headSha,
+            runId,
+            newBranch: syncBranch,
+          })
+        }
+        console.log(`Starting fresh sync branch \`${syncBranch}\` (${decision.reason}).`)
+      }
     }
-  }
 
-  persistActiveSyncState({
-    runId,
-    syncBranch,
-    mergeBase,
-    activePrNumber: activePrNumber || null,
-  })
+    checkoutSyncBranch(syncBranch, resuming || extending)
 
-  const agents = resolveAgents()
-  const skipParentGrill = shouldSkipParentGrill({ resume: RESUME, prNumber: activePrNumber })
+    if (resuming || listConflictFiles().length > 0) {
+      if (!ensureInstallableWorkspace(runId)) {
+        appendRunLogSections(runId, {
+          Status: 'blocked',
+          'Package bootstrap':
+            'Could not regenerate bun.lock while resuming. Resolve package.json conflicts manually, then resume.',
+        })
+        writeState({ ...readState(), status: 'awaiting_input' })
+        process.exitCode = 1
+        return
+      }
+      try {
+        runGit(['push', 'origin', syncBranch])
+      } catch (error) {
+        console.warn(`Could not push bootstrapped ${syncBranch}:`, error)
+      }
+    }
 
-  if (skipParentGrill) {
-    console.log(
-      `Skipping parent grill — resume answer found on PR #${activePrNumber}. Proceeding to merge.`
-    )
-    appendRunLogSections(runId, {
-      'Grill analysis':
-        'Skipped on resume. Human answers were recorded in `grill-log.md` / `qa-history.jsonl` — do not re-ask the same decisions.',
-    })
-  } else if (!SKIP_AGENT) {
-    const parentPrompt = substitutePrompt(readPrompt('parent-orchestrator.md'), {
-      RUN_ID: runId,
-      SYNC_BRANCH: syncBranch,
-      UPSTREAM_SHA: headSha,
-      COMMIT_COUNT: String(upstreamCommits.length),
-      BASELINE_SHA: baseline.baselineSha,
-      BASELINE_SOURCE: baseline.baselineSource,
-      RELEASE_VERSIONS: releaseEntries.map((e) => e.version).join(', ') || 'none',
-      RELEASE_NOTES_PATH: `.upstream-sync/ledger/${runId}/release-notes.md`,
-      RELEASE_NOTES_SUMMARY: releaseNotesMarkdown.slice(0, 4000),
-      PR_NUMBER: activePrNumber > 0 ? String(activePrNumber) : 'none',
-      RESUME_MODE: RESUME ? 'yes' : 'no',
+    const branchState = readState()
+    const resumePrNumber = parseResumePrNumber()
+    let activePrNumber = resolveActivePrNumber({
+      state: branchState,
+      mergeBase,
+      syncBranch,
+      resumePrNumber,
     })
 
-    await runAgentPrompt({
-      prompt: parentPrompt,
-      name: 'parent-grill-analysis',
-      branch: syncBranch,
+    let workingState = branchState
+    if (RESUME && activePrNumber > 0) {
+      const ingested = ingestGrillQaFromPr(
+        activePrNumber,
+        branchState.lastRunId ?? runId,
+        workingState
+      )
+      workingState = ingested.state
+      if (ingested.added > 0) {
+        console.log(`Synced ${ingested.added} grill Q&A comment(s) from PR #${activePrNumber}.`)
+      }
+      commitUpstreamLedger(
+        `upstream-sync(${branchState.lastRunId ?? runId}): log resume Q&A`
+      )
+    }
+
+    writeState({
+      ...workingState,
+      status: 'running',
+      lastRunId: runId,
+      activeBranch: syncBranch,
+      activeMergeBase: mergeBase,
+      activePrNumber: activePrNumber || null,
+    })
+
+    writeFbiReport(
       runId,
-      agent: agents.parent,
-      agentKind: 'parent',
-      provider: agents.provider,
-      maxIterations: 1,
-      completionSignal: GRILL_COMPLETION_SIGNAL,
+      upstreamCommits,
+      'Fork maintains Arena/P2/Unipile/Facebook/Presentation integrations and mothership admin routes.'
+    )
+    writeSkippedReport(runId, [])
+
+    const releaseEntries = fetchAllUpstreamReleaseNotes(detectReleaseVersions(upstreamCommits))
+    const releaseNotesMarkdown = formatReleaseNotesMarkdown(releaseEntries)
+    writeReleaseNotesReport(runId, releaseNotesMarkdown, releaseEntries.length)
+
+    commitUpstreamLedger(`upstream-sync(${runId}): pre-merge ledger`)
+
+    const syncPrTitle = formatSyncPrTitle({
+      mergeBase,
+      runId,
+      extendedToSha: extending ? headSha : undefined,
     })
+    const extendedBanner =
+      extending && previousUpstreamSha
+        ? formatExtendedBanner({
+            previousSha: previousUpstreamSha,
+            newSha: headSha,
+            commitCount: upstreamCommits.length,
+            runId,
+          })
+        : null
 
-    commitUpstreamLedger(`upstream-sync(${runId}): grill analysis`)
-  } else {
-    console.log('[skip-agent] parent-grill-analysis')
-  }
+    endGroup()
+    endGroup = startLogGroup('draft PR')
 
-  try {
-    runGit(['merge', '--no-edit', `${upstreamRemote()}/${upstreamBranch()}`])
-  } catch {
-    console.log('Merge conflicts detected — bootstrapping package manager before child agents.')
-  }
+    let earlyPrBody = [
+      QUESTION_MARKER,
+      `## Upstream sync in progress — grill/analysis phase (${runId})`,
+      '',
+      `Branch \`${syncBranch}\` · merging [\`simstudioai/sim@${headSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${headSha}) into \`${mergeBase}\`.`,
+      '',
+      `**Sync range:** ${upstreamCommits.length} commit(s) since \`${baseline.baselineSha.slice(0, 8)}\` (${baseline.baselineSource}).`,
+      '',
+      'The parent grill agent will post questions here. Reply with `/upstream-sync resume` after answering.',
+      '',
+      `### Ledger (in progress)`,
+      `- [.upstream-sync/ledger/${runId}/run.md](.upstream-sync/ledger/${runId}/run.md)`,
+      `- [.upstream-sync/ledger/${runId}/fbi-report.md](.upstream-sync/ledger/${runId}/fbi-report.md)`,
+      `- [.upstream-sync/ledger/${runId}/release-notes.md](.upstream-sync/ledger/${runId}/release-notes.md)`,
+    ].join('\n')
+    if (extendedBanner) {
+      earlyPrBody = withExtendedBanner(earlyPrBody, extendedBanner)
+    }
 
-  if (!ensureInstallableWorkspace(runId)) {
-    appendRunLogSections(runId, {
-      Status: 'blocked',
-      'Package bootstrap':
-        'Could not regenerate bun.lock after merge. Resolve package.json conflicts manually, then resume.',
-    })
-    const prNumber = ensureActiveDraftPr({
+    activePrNumber = ensureActiveDraftPr({
       existingPrNumber: activePrNumber,
       mergeBase,
       syncBranch,
       runId,
       headSha,
+      body: earlyPrBody,
       title: syncPrTitle,
-      body: (() => {
-        const body = [
-          QUESTION_MARKER,
-          `## Upstream sync blocked (${runId})`,
-          '',
-          'Package manager bootstrap failed — bun.lock still has merge conflict markers.',
-          '',
-          `Reply with \`${RESUME_COMMAND}\` after fixing manifests manually.`,
-        ].join('\n')
-        return extendedBanner ? withExtendedBanner(body, extendedBanner) : body
-      })(),
-    })
-    writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
-    process.exitCode = 1
-    return
-  }
-
-  try {
-    runGit(['push', 'origin', syncBranch])
-  } catch (error) {
-    console.warn(`Could not push ${syncBranch} after package bootstrap:`, error)
-  }
-
-  const conflicts = listConflictFiles()
-  const clusters = groupConflictClusters(conflicts)
-  writeClusterManifest(runId, clusters)
-
-  for (const cluster of clusters) {
-    const childPrompt = substitutePrompt(readPrompt('child-resolve-conflicts.md'), {
-      RUN_ID: runId,
-      SYNC_BRANCH: syncBranch,
-      CLUSTER_ID: cluster.id,
-      CLUSTER_PREFIX: cluster.prefix,
-      CLUSTER_FILES: cluster.files.map((f) => `- ${f}`).join('\n'),
-      PR_NUMBER: activePrNumber > 0 ? String(activePrNumber) : 'none',
     })
 
-    await runAgentPrompt({
-      prompt: childPrompt,
-      name: `child-${cluster.id}`,
-      branch: syncBranch,
+    if (extending && activePrNumber > 0 && previousUpstreamSha) {
+      try {
+        commentOnPr(
+          activePrNumber,
+          formatExtendedPrComment({
+            previousSha: previousUpstreamSha,
+            newSha: headSha,
+            commitCount: upstreamCommits.length,
+            runId,
+          })
+        )
+      } catch (error) {
+        console.warn(`Could not post extension comment on PR #${activePrNumber}:`, error)
+      }
+    }
+
+    persistActiveSyncState({
       runId,
-      agent: agents.child,
-      agentKind: 'child',
-      provider: agents.provider,
-      maxIterations: 5,
-    })
-  }
-
-  const remaining = listConflictFiles()
-  if (remaining.length > 0) {
-    appendUsageToRunLog(runId)
-    appendRunLogSections(runId, {
-      Status: 'blocked',
-      'Remaining conflicts': remaining.map((f) => `- ${f}`).join('\n'),
-    })
-
-    const prBody = [
-      QUESTION_MARKER,
-      `## Upstream sync blocked (${runId})`,
-      '',
-      `${remaining.length} unresolved conflict(s). Review ledger at \`.upstream-sync/ledger/${runId}/\`.`,
-      '',
-      `Reply with \`${RESUME_COMMAND}\` after answering open questions.`,
-    ].join('\n')
-
-    const prNumber = resolveDraftPr(
-      activePrNumber,
-      mergeBase,
       syncBranch,
+      mergeBase,
+      activePrNumber: activePrNumber || null,
+    })
+
+    endGroup()
+    endGroup = startLogGroup('grill')
+
+    const agents = resolveAgents()
+    const skipParentGrill = shouldSkipParentGrill({ resume: RESUME, prNumber: activePrNumber })
+
+    if (skipParentGrill) {
+      console.log(
+        `Skipping parent grill — resume answer found on PR #${activePrNumber}. Proceeding to merge.`
+      )
+      appendRunLogSections(runId, {
+        'Grill analysis':
+          'Skipped on resume. Human answers were recorded in `grill-log.md` / `qa-history.jsonl` — do not re-ask the same decisions.',
+      })
+    } else if (!SKIP_AGENT) {
+      const parentPrompt = substitutePrompt(readPrompt('parent-orchestrator.md'), {
+        RUN_ID: runId,
+        SYNC_BRANCH: syncBranch,
+        UPSTREAM_SHA: headSha,
+        COMMIT_COUNT: String(upstreamCommits.length),
+        BASELINE_SHA: baseline.baselineSha,
+        BASELINE_SOURCE: baseline.baselineSource,
+        RELEASE_VERSIONS: releaseEntries.map((e) => e.version).join(', ') || 'none',
+        RELEASE_NOTES_PATH: `.upstream-sync/ledger/${runId}/release-notes.md`,
+        RELEASE_NOTES_SUMMARY: releaseNotesMarkdown.slice(0, 4000),
+        PR_NUMBER: activePrNumber > 0 ? String(activePrNumber) : 'none',
+        RESUME_MODE: RESUME ? 'yes' : 'no',
+      })
+
+      await runAgentPrompt({
+        prompt: parentPrompt,
+        name: 'parent-grill-analysis',
+        branch: syncBranch,
+        runId,
+        agent: agents.parent,
+        agentKind: 'parent',
+        provider: agents.provider,
+        maxIterations: 1,
+        completionSignal: GRILL_COMPLETION_SIGNAL,
+      })
+
+      commitUpstreamLedger(`upstream-sync(${runId}): grill analysis`)
+    } else {
+      console.log('[skip-agent] parent-grill-analysis')
+    }
+
+    endGroup()
+    endGroup = startLogGroup('merge/bootstrap')
+
+    try {
+      runGit(['merge', '--no-edit', `${upstreamRemote()}/${upstreamBranch()}`])
+    } catch {
+      console.log('Merge conflicts detected — bootstrapping package manager before child agents.')
+    }
+
+    if (!ensureInstallableWorkspace(runId)) {
+      appendRunLogSections(runId, {
+        Status: 'blocked',
+        'Package bootstrap':
+          'Could not regenerate bun.lock after merge. Resolve package.json conflicts manually, then resume.',
+      })
+      const prNumber = ensureActiveDraftPr({
+        existingPrNumber: activePrNumber,
+        mergeBase,
+        syncBranch,
+        runId,
+        headSha,
+        title: syncPrTitle,
+        body: (() => {
+          const body = [
+            QUESTION_MARKER,
+            `## Upstream sync blocked (${runId})`,
+            '',
+            'Package manager bootstrap failed — bun.lock still has merge conflict markers.',
+            '',
+            `Reply with \`${RESUME_COMMAND}\` after fixing manifests manually.`,
+          ].join('\n')
+          return extendedBanner ? withExtendedBanner(body, extendedBanner) : body
+        })(),
+      })
+      writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
+      process.exitCode = 1
+      return
+    }
+
+    try {
+      runGit(['push', 'origin', syncBranch])
+    } catch (error) {
+      console.warn(`Could not push ${syncBranch} after package bootstrap:`, error)
+    }
+
+    endGroup()
+    endGroup = startLogGroup('child clusters')
+
+    const conflicts = listConflictFiles()
+    const clusters = groupConflictClusters(conflicts)
+    writeClusterManifest(runId, clusters)
+
+    for (const cluster of clusters) {
+      const childPrompt = substitutePrompt(readPrompt('child-resolve-conflicts.md'), {
+        RUN_ID: runId,
+        SYNC_BRANCH: syncBranch,
+        CLUSTER_ID: cluster.id,
+        CLUSTER_PREFIX: cluster.prefix,
+        CLUSTER_FILES: cluster.files.map((f) => `- ${f}`).join('\n'),
+        PR_NUMBER: activePrNumber > 0 ? String(activePrNumber) : 'none',
+      })
+
+      await runAgentPrompt({
+        prompt: childPrompt,
+        name: `child-${cluster.id}`,
+        branch: syncBranch,
+        runId,
+        agent: agents.child,
+        agentKind: 'child',
+        provider: agents.provider,
+        maxIterations: 5,
+      })
+    }
+
+    const remaining = listConflictFiles()
+    if (remaining.length > 0) {
+      appendUsageToRunLog(runId)
+      appendRunLogSections(runId, {
+        Status: 'blocked',
+        'Remaining conflicts': remaining.map((f) => `- ${f}`).join('\n'),
+      })
+
+      const prBody = [
+        QUESTION_MARKER,
+        `## Upstream sync blocked (${runId})`,
+        '',
+        `${remaining.length} unresolved conflict(s). Review ledger at \`.upstream-sync/ledger/${runId}/\`.`,
+        '',
+        `Reply with \`${RESUME_COMMAND}\` after answering open questions.`,
+      ].join('\n')
+
+      const prNumber = resolveDraftPr(
+        activePrNumber,
+        mergeBase,
+        syncBranch,
+        runId,
+        extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
+        headSha,
+        syncPrTitle
+      )
+      logHarnessQuestion(
+        runId,
+        prNumber,
+        `${remaining.length} unresolved merge conflict(s). Review ledger and reply with ${RESUME_COMMAND}.`,
+        remaining.join(', ')
+      )
+      if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
+      commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
+      writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
+      process.exitCode = 1
+      return
+    }
+
+    runGit(['add', '-A'])
+    if (hasStagedChanges()) {
+      runGit(['commit', '-m', `upstream-sync(${runId}): merge simstudioai/sim main`])
+    }
+
+    endGroup()
+    endGroup = startLogGroup('verify')
+
+    const verifyResults = runVerification()
+    const usageSection = appendUsageToRunLog(runId)
+    appendRunLogSections(runId, {
+      Verification: formatVerifyResults(verifyResults),
+      'Merge policy': readFileSync(MERGE_POLICY_PATH, 'utf8').slice(0, 2000),
+    })
+
+    if (!allVerificationPassed(verifyResults)) {
+      writeState({ ...readState(), status: 'failed' })
+      const prBody = [
+        QUESTION_MARKER,
+        `## Upstream sync — verification failed (${runId})`,
+        '',
+        formatVerifyResults(verifyResults),
+        '',
+        `Fix failures on \`${syncBranch}\`, then reply \`${RESUME_COMMAND}\`.`,
+        '',
+        '### Agent usage',
+        usageSection,
+      ].join('\n')
+      const prNumber = resolveDraftPr(
+        activePrNumber,
+        mergeBase,
+        syncBranch,
+        runId,
+        extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
+        headSha,
+        syncPrTitle
+      )
+      logHarnessQuestion(
+        runId,
+        prNumber,
+        `Verification failed on sync branch. Fix and reply with ${RESUME_COMMAND}.`,
+        verifyResults
+          .filter((r) => !r.success)
+          .map((r) => r.command)
+          .join(', ')
+      )
+      if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
+      commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
+      writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
+      process.exitCode = 1
+      return
+    }
+
+    endGroup()
+    endGroup = startLogGroup('finalize/usage')
+
+    appendExtensibilityNote(
       runId,
-      extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
-      headSha,
-      syncPrTitle
+      '- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.'
     )
-    logHarnessQuestion(
-      runId,
-      prNumber,
-      `${remaining.length} unresolved merge conflict(s). Review ledger and reply with ${RESUME_COMMAND}.`,
-      remaining.join(', ')
-    )
-    if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
-    commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
-    writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
-    process.exitCode = 1
-    return
-  }
 
-  runGit(['add', '-A'])
-  if (hasStagedChanges()) {
-    runGit(['commit', '-m', `upstream-sync(${runId}): merge simstudioai/sim main`])
-  }
+    runGit(['add', '.upstream-sync'])
+    if (hasStagedChanges()) {
+      runGit(['commit', '-m', `upstream-sync(${runId}): update ledger`])
+    }
 
-  const verifyResults = runVerification()
-  const usageSection = appendUsageToRunLog(runId)
-  appendRunLogSections(runId, {
-    Verification: formatVerifyResults(verifyResults),
-    'Merge policy': readFileSync(MERGE_POLICY_PATH, 'utf8').slice(0, 2000),
-  })
-
-  if (!allVerificationPassed(verifyResults)) {
-    writeState({ ...readState(), status: 'failed' })
-    const prBody = [
-      QUESTION_MARKER,
-      `## Upstream sync — verification failed (${runId})`,
+    const usageSectionFinal = appendUsageToRunLog(runId)
+    let prBody = [
+      `## Upstream sync — ${runId}`,
       '',
-      formatVerifyResults(verifyResults),
+      `Merges [\`simstudioai/sim@${headSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${headSha}) into \`${mergeBase}\`.`,
       '',
-      `Fix failures on \`${syncBranch}\`, then reply \`${RESUME_COMMAND}\`.`,
+      `**Sync range:** ${upstreamCommits.length} commit(s) since \`${baseline.baselineSha.slice(0, 8)}\` (${baseline.baselineSource}).`,
+      '',
+      `### Ledger`,
+      `- [.upstream-sync/ledger/${runId}/run.md](.upstream-sync/ledger/${runId}/run.md)`,
+      `- [.upstream-sync/ledger/${runId}/fbi-report.md](.upstream-sync/ledger/${runId}/fbi-report.md)`,
+      `- [.upstream-sync/ledger/${runId}/release-notes.md](.upstream-sync/ledger/${runId}/release-notes.md) — **all upstream release notes since last sync**`,
+      `- [.upstream-sync/ledger/${runId}/grill-qa.md](.upstream-sync/ledger/${runId}/grill-qa.md) — **grill Q&A for this run**`,
+      `- [.upstream-sync/grill-log.md](.upstream-sync/grill-log.md) — **rolling grill Q&A across all runs**`,
+      `- [.upstream-sync/ledger/${runId}/skipped.md](.upstream-sync/ledger/${runId}/skipped.md) — **upstream changes we declined**`,
+      '',
+      '### Verification',
+      '✅ `bun run check` · `bun run lint` · `bun run test` · `bun run build`',
       '',
       '### Agent usage',
-      usageSection,
+      usageSectionFinal,
+      '',
+      '**Draft** — mark ready for review when satisfied.',
     ].join('\n')
+    if (extendedBanner) {
+      prBody = withExtendedBanner(prBody, extendedBanner)
+    }
+
     const prNumber = resolveDraftPr(
       activePrNumber,
       mergeBase,
       syncBranch,
       runId,
-      extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
+      prBody,
       headSha,
       syncPrTitle
     )
-    logHarnessQuestion(
-      runId,
-      prNumber,
-      `Verification failed on sync branch. Fix and reply with ${RESUME_COMMAND}.`,
-      verifyResults
-        .filter((r) => !r.success)
-        .map((r) => r.command)
-        .join(', ')
-    )
     if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
     commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
-    writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
-    process.exitCode = 1
-    return
+    runGit(['push', 'origin', syncBranch])
+
+    writeState({
+      lastSyncedUpstreamSha: headSha,
+      lastSyncedAt: new Date().toISOString(),
+      lastRunId: runId,
+      status: 'completed',
+      openQuestions: [],
+      activeBranch: syncBranch,
+      activePrNumber: prNumber,
+      activeMergeBase: mergeBase,
+    })
+
+    console.log(`Upstream sync complete. Draft PR #${prNumber} on ${syncBranch}.`)
+  } finally {
+    endGroup()
   }
-
-  appendExtensibilityNote(
-    runId,
-    '- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.'
-  )
-
-  runGit(['add', '.upstream-sync'])
-  if (hasStagedChanges()) {
-    runGit(['commit', '-m', `upstream-sync(${runId}): update ledger`])
-  }
-
-  const usageSectionFinal = appendUsageToRunLog(runId)
-  let prBody = [
-    `## Upstream sync — ${runId}`,
-    '',
-    `Merges [\`simstudioai/sim@${headSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${headSha}) into \`${mergeBase}\`.`,
-    '',
-    `**Sync range:** ${upstreamCommits.length} commit(s) since \`${baseline.baselineSha.slice(0, 8)}\` (${baseline.baselineSource}).`,
-    '',
-    `### Ledger`,
-    `- [.upstream-sync/ledger/${runId}/run.md](.upstream-sync/ledger/${runId}/run.md)`,
-    `- [.upstream-sync/ledger/${runId}/fbi-report.md](.upstream-sync/ledger/${runId}/fbi-report.md)`,
-    `- [.upstream-sync/ledger/${runId}/release-notes.md](.upstream-sync/ledger/${runId}/release-notes.md) — **all upstream release notes since last sync**`,
-    `- [.upstream-sync/ledger/${runId}/grill-qa.md](.upstream-sync/ledger/${runId}/grill-qa.md) — **grill Q&A for this run**`,
-    `- [.upstream-sync/grill-log.md](.upstream-sync/grill-log.md) — **rolling grill Q&A across all runs**`,
-    `- [.upstream-sync/ledger/${runId}/skipped.md](.upstream-sync/ledger/${runId}/skipped.md) — **upstream changes we declined**`,
-    '',
-    '### Verification',
-    '✅ `bun run check` · `bun run lint` · `bun run test` · `bun run build`',
-    '',
-    '### Agent usage',
-    usageSectionFinal,
-    '',
-    '**Draft** — mark ready for review when satisfied.',
-  ].join('\n')
-  if (extendedBanner) {
-    prBody = withExtendedBanner(prBody, extendedBanner)
-  }
-
-  const prNumber = resolveDraftPr(
-    activePrNumber,
-    mergeBase,
-    syncBranch,
-    runId,
-    prBody,
-    headSha,
-    syncPrTitle
-  )
-  if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
-  commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
-  runGit(['push', 'origin', syncBranch])
-
-  writeState({
-    lastSyncedUpstreamSha: headSha,
-    lastSyncedAt: new Date().toISOString(),
-    lastRunId: runId,
-    status: 'completed',
-    openQuestions: [],
-    activeBranch: syncBranch,
-    activePrNumber: prNumber,
-    activeMergeBase: mergeBase,
-  })
-
-  console.log(`Upstream sync complete. Draft PR #${prNumber} on ${syncBranch}.`)
 }
 
 main().catch((error) => {
