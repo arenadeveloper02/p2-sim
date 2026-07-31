@@ -212,7 +212,9 @@ export function toolNamesForDomain(domain: LocalCopilotSpecialistDomain): Set<st
 }
 
 export function toolNamesForIntent(intent: LocalCopilotIntent): Set<string> | null {
-  if (intent.useFullCatalog || intent.primary === 'general') return null
+  if (intent.useFullCatalog) return null
+  // Ambiguous / general: always-on leaf tools only; orchestrator unions specialist entry tools.
+  if (intent.primary === 'general') return new Set(ALWAYS_ON_TOOL_NAMES)
   const names = toolNamesForDomain(intent.primary)
   for (const domain of intent.secondary) {
     if (domain === 'general') continue

@@ -11,6 +11,7 @@ import { LOCAL_COPILOT_MAX_HISTORY_MESSAGES } from '@/local-copilot/lib/context/
 import type { SessionMemoryTurn } from '@/local-copilot/lib/context/session-memory'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import { stripLeakedToolMarkers } from '@/local-copilot/lib/synthesize-assistant-summary'
+import { formatToolResultForLlm } from '@/local-copilot/lib/tools/format-tool-result'
 
 const MAX_HISTORY_MESSAGES = LOCAL_COPILOT_MAX_HISTORY_MESSAGES
 
@@ -114,13 +115,33 @@ function toolResultContent(block: PersistedContentBlock): string {
 
   const result = toolCall.result
   if (result && typeof result === 'object') {
-    const payload: Record<string, unknown> = { success: result.success }
-    if (result.output !== undefined) payload.output = result.output
-    if (result.error) payload.error = result.error
-    return JSON.stringify(payload)
+    const record = result as {
+      success?: boolean
+      output?: unknown
+      error?: unknown
+    }
+    // Prefer the live tool output shape so formatToolResultForLlm can strip workflowState etc.
+    const payload =
+      record.output !== undefined
+        ? record.output && typeof record.output === 'object'
+          ? {
+              ...(record.output as Record<string, unknown>),
+              ...(typeof record.success === 'boolean' ? { success: record.success } : {}),
+              ...(record.error ? { error: record.error } : {}),
+            }
+          : {
+              success: record.success,
+              output: record.output,
+              ...(record.error ? { error: record.error } : {}),
+            }
+        : {
+            ...(typeof record.success === 'boolean' ? { success: record.success } : {}),
+            ...(record.error ? { error: record.error } : {}),
+          }
+    return formatToolResultForLlm(toolCall.name, payload)
   }
 
-  return JSON.stringify({
+  return formatToolResultForLlm(toolCall.name, {
     success: toolCall.state === 'success',
     ...(toolCall.error ? { error: toolCall.error } : {}),
   })

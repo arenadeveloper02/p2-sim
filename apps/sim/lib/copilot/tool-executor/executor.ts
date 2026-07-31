@@ -49,8 +49,9 @@ export async function executeTool(
   // is no client to delegate to, so fall back to the registered server-side handler when one
   // exists — otherwise the call would route to executeAppTool and throw "Tool not found".
   const canUseRegisteredHandler =
-    isKnownTool(toolId) &&
-    (isSimExecuted(toolId) || (isClientExecuted(toolId) && hasHandler(toolId)))
+    (hasHandler(toolId) && !isKnownTool(toolId)) ||
+    (isKnownTool(toolId) &&
+      (isSimExecuted(toolId) || (isClientExecuted(toolId) && hasHandler(toolId))))
   if (!canUseRegisteredHandler) {
     const appParams = buildAppToolParams(toolId, params, context)
     return executeAppTool(toolId, appParams)

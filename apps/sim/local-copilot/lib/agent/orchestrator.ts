@@ -42,11 +42,13 @@ import {
 import {
   compactChatHistory,
   estimateChatMessagesTokens,
+  estimateToolDefinitionTokens,
   fitPromptToTokenBudget,
   LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
   LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
+import { applyMicrocompactInPlace, microcompactMessages } from '@/local-copilot/lib/context/microcompact'
 import {
   extractFollowUpDirectives,
   formatActiveDirectiveSystemMessage,
@@ -60,7 +62,24 @@ import {
   type SessionMemoryTurn,
 } from '@/local-copilot/lib/context/session-memory'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
-import { formatOptionsTag } from '@/local-copilot/lib/format-options-tag'
+import {
+  extractOptionsTitles,
+  formatOptionsTag,
+  hasOptionsTag,
+  stripOptionsTagsForDisplay,
+} from '@/local-copilot/lib/format-options-tag'
+import { formatOAuthConnectCredentialTag } from '@/local-copilot/lib/oauth-connect-text'
+import {
+  buildBlocksMetadataReuseSystemMessage,
+  buildWorkflowBuildCompleteSystemMessage,
+  editResultNeedsFollowUp,
+  pendingFollowUpsAreOauthOnly,
+  type PostBuildToolMode,
+  isBridgingAssistantNarration,
+  shouldStreamAssistantRoundText,
+  shouldSynthesizeAssistantSummary,
+  stripIdsFromUserFacingText,
+} from '@/local-copilot/lib/user-facing-text'
 import {
   appendMessage,
   createConversation,
@@ -114,15 +133,29 @@ Response format:
 - Never mention cost, pricing, dollar amounts, or spend in user-facing replies — even if tool results include them (e.g. do not write "cost ~$0.016"). You may still mention runtime/duration when useful.
 - User-facing replies (CRITICAL):
   - Never mention block UUIDs, internal IDs, tool names (\`edit_workflow\`, \`get_workflow_context\`, etc.), or operation internals in user-visible text.
-  - Refer to blocks only by display name (e.g. "Writer", "Reviewer").
-  - Do not narrate planned writes ("I'm about to call…", "issuing edit_workflow…", "real block IDs…"). Issue the tool call first, then summarize the outcome in plain language ("Updated the Writer instructions…").
+  - Refer to blocks only by display name (e.g. "Writer", "Reviewer", "Fetch Emails"). Never write "Start block ID is …".
+  - Do not narrate planned work ("Let me check…", "Now I'll grab metadata…", "I'm about to…"). Call the tool; speak only after outcomes that the user needs.
+  - While tools are still running, keep user-visible text to a short status line or silence — save the full summary for the final reply.
   - If a tool fails, explain the blocker in plain language without dumping IDs or raw JSON.
-- When suggesting next steps, end your message with a clickable options block in this exact format (never use markdown bullet lists for suggestions):
+- Finish efficiently (CRITICAL — avoid thrash):
+  - Call \`get_blocks_metadata\` **once** with every block type you need in that call (e.g. \`{ "blockIds": ["agent","start_trigger","gmail"] }\`). Do not re-fetch the same types.
+  - Prefer one \`edit_workflow\` that adds all blocks and wires connections. Only call edit again when the result reports skippedItems, inputValidationErrors, needsFollowUpEdit, or real lint errors.
+  - After a successful create + populate edit with no repair needed: **STOP**. One final reply. Do NOT call \`validate_workflow\`, re-open the workflow, re-fetch metadata, or restate the same completion summary.
+  - Missing OAuth only: call \`oauth_get_auth_link\` once, share the link, then stop.
+- Similar existing workflows (CRITICAL):
+  - If \`workspaceWorkflows\` already has a close match (e.g. Weekly Email Summary vs a 10-day email summary), do **not** silently create a duplicate.
+  - First reply with a short question and an \`<options>\` block offering: edit/adjust the existing one vs create a new named variant. Only create after the user chooses "create" / a new variant, or when they already named a clearly distinct workflow.
+  - When the user already asked to create a distinctly named new workflow (e.g. "10-Day Email Summary"), pass \`confirmNewWorkflow: true\` and build it — still skip metadata thrash and post-success validation loops.
+- Suggested follow-ups (CRITICAL — avoid spam):
+  - Emit at most ONE \`<options>\` block, and only in your FINAL reply after all tool work is finished.
+  - Never include \`<options>\` while you still plan to call tools, verify config, or continue working.
+  - Never restate the same completion summary or options block more than once in a turn.
+  - At most 3 options. Omit the options block entirely when no follow-ups are needed.
+  - Format (never use markdown bullet lists for suggestions):
 
 <options>{"1":{"title":"Run Weekly Email Summary","description":"Execute the existing workflow and summarize results"},"2":{"title":"Debug the last run","description":"Inspect logs from the most recent execution"},"3":{"title":"Create a brand-new workflow","description":"Only when nothing existing fits"}}</options>
 
 - Each option title is sent as the user's next message when they click it — write titles as clear imperative commands (e.g. "Check my inbox", "Debug the last run").
-- Include 3–4 options when offering follow-ups. Omit the options block when no follow-ups are needed.
 - Charts: when the user asks for a chart, graph, plot, or visualization of data you have (tool results, logs, tables, numbers they provided), render it inline with a chart tag in this exact format (never quickchart.io links, never ASCII art, never a markdown table as a substitute):
 
 <chart>{"type":"bar","title":"Runs per day","labels":["Mon","Tue","Wed"],"series":[{"name":"Successful","data":[12,18,9]},{"name":"Failed","data":[1,0,3]}]}</chart>
@@ -145,18 +178,20 @@ Rules:
 - On the workspace home chat there may be no workflow open — still prefer running or editing \`workspaceWorkflows\` entries before creating new ones.
 - After create_workflow succeeds (only when truly new), immediately call edit_workflow with add operations to populate the workflow. Use the returned workflowId and startBlockId.
 - Building workflows with edit_workflow (CRITICAL — follow exactly to avoid retry loops):
-  - Call get_blocks_metadata with the block types you need (e.g. \`["agent","start_trigger"]\`) before the first edit — use the returned input field ids verbatim in params.inputs.
+  - Call get_blocks_metadata **once** with \`{ "blockIds": ["agent","start_trigger", …] }\` including every integration type you will add (e.g. gmail). Use returned field ids verbatim in params.inputs.
+  - Never call get_blocks_metadata again for types already returned this turn.
   - When workflow context has \`detail: "compact"\`, call \`get_workflow_context\` with \`blockNames\` (preferred) or \`blockIds\` for every block you will edit BEFORE \`edit_workflow\`. Compact context omits prompt/message bodies.
-  - Never add edges as separate operations or with type "edge". Connections live on the SOURCE block: \`params.connections: { source: "<target-block-id>" }\`. To wire Start → Agent, edit the Start block (startBlockId from create_workflow) with connections pointing to the agent block_id.
+  - Never add edges as separate operations or with type "edge". Connections live on the SOURCE block: \`params.connections: { source: "<target-block-id>" }\`. To wire Start → Agent, edit the Start block (startBlockId from create_workflow) with connections pointing to the agent block_id — use that id only in the tool args, never in user-visible text.
   - Agent block: use \`messages\` (array of \`{role, content}\`), \`model\`, and \`tools\` — not systemPrompt/userPrompt. If you only have a system prompt string, still pass it via \`messages: [{role:"system",content:"..."},{role:"user",content:"..."}]\` (legacy systemPrompt is auto-mapped, but \`messages\` is preferred). Exa web search tool entry: \`{ type: "exa", title: "Exa Search", toolId: "exa_search", usageControl: "auto" }\`.
   - Prefer one edit_workflow call with all add operations plus a final edit on the Start block for connections. deferredConnections in results are normal for forward references within the same batch — do not re-issue them unless the target id was wrong.
   - If workflowLintMessage reports orphan blocks, fix connections on the Start (or upstream) block before run_workflow.
   - Always issue the \`edit_workflow\` tool call to apply changes. Never end a turn by only describing the intended edit.
+  - Do not call \`validate_workflow\` after a clean successful edit — trust the edit result unless it reported errors.
 - Block output references (CRITICAL):
   - Wire upstream block outputs using angle-bracket tags with the block's **display name**, never its UUID: \`<My Agent.content>\`, not \`<bd80a5a8-ef94-43ef-afcf-f6daa926495f.content>\`.
   - Before wiring inputs (e.g. Gmail body, Slack message, API payload), call \`get_block_upstream_references\` for the target block and use the exact tags returned (e.g. \`agent1.content\` for a default agent without structured outputs).
   - Block UUIDs are for \`block_id\` in operations only — never put UUIDs inside \`<...>\` reference tags.
-- When edit_workflow returns skippedItems, inputValidationErrors, workflowLintMessage, or needsFollowUpEdit, call edit_workflow again with corrected operations. Do not tell the user the workflow is complete until these are resolved.
+- When edit_workflow returns skippedItems, inputValidationErrors, needsFollowUpEdit, or a non-credential workflowLintMessage, call edit_workflow again with corrected operations. If the only lint is a missing OAuth credential (needsOAuthConnect), call oauth_get_auth_link once and stop — do not re-edit.
 - deferredConnections in edit_workflow results are normal — the engine wires them when target blocks exist. Do not re-issue deferred edges unless the target id was a typo.
 - Never expose API keys, tokens, passwords, or secret env values.
 - User memory (CRITICAL):
@@ -409,7 +444,9 @@ export async function* runLocalCopilotAgent(
   }
 
   const historyMessages: ChatMessage[] = rawHistory.length
-    ? compactChatHistory(rawHistory, { sessionMemoryPresent: Boolean(sessionMemory) })
+    ? microcompactMessages(
+        compactChatHistory(rawHistory, { sessionMemoryPresent: Boolean(sessionMemory) })
+      ).messages
     : []
 
   const workflowDetail = resolveWorkflowContextDetail(
@@ -459,13 +496,6 @@ export async function* runLocalCopilotAgent(
   const allowedToolNames = toolNamesForIntent(intent)
   let tools = filterToolsByNames(allTools, allowedToolNames)
 
-  // Never leave the model with an empty tool list — fall back to full catalog.
-  const usedFullCatalog =
-    intent.useFullCatalog || intent.primary === 'general' || tools.length === 0
-  if (tools.length === 0) {
-    tools = allTools
-  }
-
   // Hybrid: intent leaf tools ∪ 12 specialist entry tools.
   const specialistTools = getParentSpecialistToolDefinitions()
   const seenToolNames = new Set(tools.map((tool) => tool.name))
@@ -474,6 +504,13 @@ export async function* runLocalCopilotAgent(
       tools = [...tools, specialistTool]
       seenToolNames.add(specialistTool.name)
     }
+  }
+
+  // Full catalog only when the hybrid set is empty (never solely because primary is general).
+  let usedFullCatalog = allowedToolNames === null
+  if (tools.length === 0) {
+    tools = allTools
+    usedFullCatalog = true
   }
 
   const specialistBudget = createSpecialistBudget()
@@ -485,6 +522,7 @@ export async function* runLocalCopilotAgent(
     contextEntries: params.contexts?.length ?? 0,
     fileAttachments: params.fileAttachments?.length ?? 0,
     estimatedPromptTokens: estimateChatMessagesTokens(messages, config.model),
+    estimatedToolDefinitionTokens: estimateToolDefinitionTokens(tools, config.model),
     tokenCountModel: config.model,
     toolDefinitionCount: tools.length,
     toolCatalogCount: allTools.length,
@@ -623,6 +661,16 @@ export async function* runLocalCopilotAgent(
   let assistantText = ''
   let proposedPatch: WorkflowPatch | undefined
   let recommendations: string[] = []
+  /** Last model-emitted follow-up titles (from stripped `<options>` tags). */
+  let modelFollowUpTitles: string[] = []
+  let blocksMetadataFetchedThisTurn = false
+  let streamedCreateProgress = false
+  let streamedEditProgress = false
+  let workflowBuildCompleteNudgeSent = false
+  let postBuildToolMode: PostBuildToolMode = 'all'
+  let endTurnAfterThisRound = false
+  /** Full user-visible prose streamed this turn (survives per-round assistantText resets). */
+  let streamedUserFacingText = ''
   const turnToolRecords: ToolTurnRecord[] = []
   const maxToolRounds = MAX_TOOL_ITERATIONS
   let pendingFollowUps: MandatoryFollowUp[] = []
@@ -634,11 +682,33 @@ export async function* runLocalCopilotAgent(
 
   for (let round = 0; round < maxToolRounds; round++) {
     if (stagnationStopMessage) break
+    if (postBuildToolMode === 'done') break
+
     const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
     let roundInputTokens = 0
     let roundOutputTokens = 0
     let roundCacheReadTokens: number | undefined
     let roundCacheCreationTokens: number | undefined
+
+    const roundTools =
+      postBuildToolMode === 'final_only'
+        ? []
+        : postBuildToolMode === 'oauth_only'
+          ? tools.filter((tool) => tool.name === 'oauth_get_auth_link')
+          : tools
+
+    // Buffer model text until the round finishes. If the round also calls tools,
+    // keep the text in the LLM transcript only — streaming it creates repeated
+    // "Arena Copilot >" mothership headers between every tool batch.
+    let roundRawText = ''
+    const contentBeforeRound = streamedUserFacingText
+
+    // Keep the trailing Thinking… pulse alive across tool → model gaps so the
+    // UI never looks finished while the turn is still in flight.
+    yield {
+      type: 'status',
+      message: round === 0 ? 'Working on it…' : 'Deciding next step…',
+    }
 
     // Status heartbeats cover the immediate first line + rotation while the
     // model stream is quiet (including pauses after the first token).
@@ -646,13 +716,13 @@ export async function* runLocalCopilotAgent(
       source: provider.chatCompletionStream({
         model: config.model,
         messages,
-        tools,
+        tools: roundTools,
         signal: params.signal,
       }),
       abortSignal: params.signal,
       messages: MODEL_WAIT_STATUS_FALLBACK,
       idleMs: 0,
-      intervalMs: 4000,
+      intervalMs: 2500,
       enrichMessages: (abortSignal) =>
         generateEngagementStatusMessages({
           phase: 'model_wait',
@@ -669,8 +739,7 @@ export async function* runLocalCopilotAgent(
       if (chunk.type === 'text' && chunk.content) {
         const cleaned = stripLeakedToolMarkers(chunk.content, { trim: false })
         if (!cleaned) continue
-        assistantText += cleaned
-        yield { type: 'text_delta', content: cleaned }
+        roundRawText += cleaned
       }
       if (chunk.type === 'tool_call' && chunk.toolCall) {
         pendingToolCalls.push(chunk.toolCall)
@@ -681,6 +750,29 @@ export async function* runLocalCopilotAgent(
         roundCacheReadTokens = chunk.usage.cacheReadTokens
         roundCacheCreationTokens = chunk.usage.cacheCreationTokens
       }
+    }
+
+    {
+      const display = stripIdsFromUserFacingText(stripOptionsTagsForDisplay(roundRawText, false))
+      if (display) {
+        // Always keep model-facing transcript text for the assistant tool message.
+        assistantText += display
+        if (
+          shouldStreamAssistantRoundText({
+            hasToolCalls: pendingToolCalls.length > 0,
+            contentBeforeRound,
+            display,
+          })
+        ) {
+          streamedUserFacingText += display
+          yield { type: 'text_delta', content: display }
+        }
+      }
+    }
+
+    const roundFollowUps = extractOptionsTitles(roundRawText)
+    if (roundFollowUps.length > 0) {
+      modelFollowUpTitles = roundFollowUps
     }
 
     logger.info('Arena Copilot model round finished', {
@@ -713,11 +805,15 @@ export async function* runLocalCopilotAgent(
     }
 
     if (pendingToolCalls.length === 0) {
-      if (
+      const shouldForceOauthFollowUp =
+        postBuildToolMode === 'oauth_only' && pendingFollowUpsAreOauthOnly(pendingFollowUps)
+      const canForceFollowUp =
         pendingFollowUps.length > 0 &&
         forcedFollowUpRounds < MAX_FORCED_FOLLOW_UP_ROUNDS &&
-        round < maxToolRounds - 1
-      ) {
+        round < maxToolRounds - 1 &&
+        (postBuildToolMode === 'all' || shouldForceOauthFollowUp)
+
+      if (canForceFollowUp) {
         forcedFollowUpRounds += 1
         const continuation = buildFollowUpContinuationMessage(pendingFollowUps)
         messages.push({ role: 'user', content: continuation })
@@ -725,8 +821,14 @@ export async function* runLocalCopilotAgent(
           round,
           forcedFollowUpRounds,
           pendingFollowUpIds: pendingFollowUps.map((item) => item.id),
+          postBuildToolMode,
         })
         continue
+      }
+
+      if (postBuildToolMode === 'final_only' || postBuildToolMode === 'oauth_only') {
+        // Text-only (or oauth-only with no call) — finish the turn.
+        postBuildToolMode = 'done'
       }
 
       if (pendingFollowUps.length > 0) {
@@ -738,7 +840,15 @@ export async function* runLocalCopilotAgent(
       break
     }
 
-    const orderedToolCalls = sortToolCallsForExecution(pendingToolCalls)
+    const orderedToolCalls = sortToolCallsForExecution(
+      postBuildToolMode === 'oauth_only'
+        ? pendingToolCalls.filter((call) => call.name === 'oauth_get_auth_link')
+        : pendingToolCalls
+    )
+    if (orderedToolCalls.length === 0) {
+      postBuildToolMode = postBuildToolMode === 'all' ? 'all' : 'done'
+      break
+    }
 
     messages.push({
       role: 'assistant',
@@ -746,6 +856,8 @@ export async function* runLocalCopilotAgent(
       toolCalls: orderedToolCalls,
     })
     assistantText = ''
+    const deferredSystemMessages: Array<{ role: 'system'; content: string }> = []
+    const completedToolCallIds = new Set<string>()
 
     const specialistCalls = orderedToolCalls.filter((call) => isSpecialistTool(call.name))
     const specialistOutcomes = new Map<
@@ -840,6 +952,21 @@ export async function* runLocalCopilotAgent(
           toolCallId: call.id,
           content: formattedToolResult,
         })
+        completedToolCallIds.add(call.id)
+
+        if (outcome.success && call.name === 'workflow' && !streamedCreateProgress) {
+          const progress = synthesizeAssistantSummaryFromTools([
+            { name: call.name, success: true, result: outcome.output },
+          ])
+          if (progress?.trim()) {
+            streamedCreateProgress = true
+            const safe = stripIdsFromUserFacingText(progress)
+            const chunk = assistantText ? `\n\n${safe}` : safe
+            assistantText += chunk
+            streamedUserFacingText += chunk
+            yield { type: 'text_delta', content: chunk }
+          }
+        }
 
         const stagnationHit = stagnationTracker.record(
           call.name,
@@ -848,14 +975,26 @@ export async function* runLocalCopilotAgent(
           outcome.output
         )
         if (stagnationHit) {
-          stagnationStopMessage = stagnationHit.message
-          messages.push({ role: 'system', content: buildStagnationSystemMessage(stagnationHit) })
-          logger.warn('Arena Copilot tool stagnation detected', {
-            toolName: stagnationHit.toolName,
-            count: stagnationHit.count,
-            fingerprint: stagnationHit.fingerprint,
-          })
-          break
+          if (pendingFollowUps.length > 0) {
+            deferredSystemMessages.push({
+              role: 'system',
+              content:
+                buildStagnationSystemMessage(stagnationHit) +
+                ' Required follow-up tools are still pending — call them now instead of retrying the stalled tool.',
+            })
+          } else {
+            stagnationStopMessage = stagnationHit.message
+            deferredSystemMessages.push({
+              role: 'system',
+              content: buildStagnationSystemMessage(stagnationHit),
+            })
+            logger.warn('Arena Copilot tool stagnation detected', {
+              toolName: stagnationHit.toolName,
+              count: stagnationHit.count,
+              fingerprint: stagnationHit.fingerprint,
+            })
+            break
+          }
         }
         continue
       }
@@ -991,6 +1130,91 @@ export async function* runLocalCopilotAgent(
         toolCallId: call.id,
         content: formattedToolResult,
       })
+      completedToolCallIds.add(call.id)
+
+      if (call.name === 'get_blocks_metadata' && toolResult.success) {
+        if (blocksMetadataFetchedThisTurn) {
+          deferredSystemMessages.push({
+            role: 'system',
+            content: buildBlocksMetadataReuseSystemMessage(),
+          })
+        }
+        blocksMetadataFetchedThisTurn = true
+      }
+
+      if (
+        call.name === 'edit_workflow' &&
+        toolResult.success &&
+        !editResultNeedsFollowUp(formattedToolResult) &&
+        (pendingFollowUps.length === 0 || pendingFollowUpsAreOauthOnly(pendingFollowUps)) &&
+        !workflowBuildCompleteNudgeSent
+      ) {
+        workflowBuildCompleteNudgeSent = true
+        const needsOauth =
+          pendingFollowUpsAreOauthOnly(pendingFollowUps) ||
+          /needsOAuthConnect|oauth_get_auth_link/i.test(formattedToolResult)
+        postBuildToolMode = needsOauth ? 'oauth_only' : 'final_only'
+        deferredSystemMessages.push({
+          role: 'system',
+          content: buildWorkflowBuildCompleteSystemMessage(postBuildToolMode),
+        })
+        logger.info('Arena Copilot post-build tool mode set', {
+          postBuildToolMode,
+          needsOauth,
+        })
+      }
+
+      if (call.name === 'oauth_get_auth_link' && toolResult.success) {
+        postBuildToolMode = 'done'
+        endTurnAfterThisRound = true
+        // Narration in tool rounds is buffered — stream the Connect control ourselves
+        // so the user always gets a clickable connect option.
+        const connectText = formatOAuthConnectCredentialTag(toolResult.result)
+        if (connectText && !streamedUserFacingText.includes('<credential>')) {
+          const chunk = streamedUserFacingText.trim() ? `\n\n${connectText}` : connectText
+          assistantText += chunk
+          streamedUserFacingText += chunk
+          yield { type: 'text_delta', content: chunk }
+        }
+        deferredSystemMessages.push({
+          role: 'system',
+          content:
+            '[System] Auth link was shown to the user as a Connect control. Stop. Do not call more tools or restate the completion.',
+        })
+      }
+
+      // Mid-turn progress for create and a clean populate edit so the panel is
+      // not left blank if the final model round is empty/aborted.
+      if (toolResult.success && call.name === 'create_workflow' && !streamedCreateProgress) {
+        const progress = synthesizeAssistantSummaryFromTools([
+          { name: call.name, success: true, result: toolResult.result },
+        ])
+        if (progress?.trim()) {
+          streamedCreateProgress = true
+          const safe = stripIdsFromUserFacingText(progress)
+          const chunk = assistantText ? `\n\n${safe}` : safe
+          assistantText += chunk
+          streamedUserFacingText += chunk
+          yield { type: 'text_delta', content: chunk }
+        }
+      } else if (
+        toolResult.success &&
+        call.name === 'edit_workflow' &&
+        !editResultNeedsFollowUp(formattedToolResult) &&
+        !streamedEditProgress
+      ) {
+        const progress = synthesizeAssistantSummaryFromTools([
+          { name: call.name, success: true, result: toolResult.result },
+        ])
+        if (progress?.trim()) {
+          streamedEditProgress = true
+          const safe = stripIdsFromUserFacingText(progress)
+          const chunk = assistantText ? `\n\n${safe}` : safe
+          assistantText += chunk
+          streamedUserFacingText += chunk
+          yield { type: 'text_delta', content: chunk }
+        }
+      }
 
       const stagnationHit = stagnationTracker.record(
         call.name,
@@ -999,18 +1223,70 @@ export async function* runLocalCopilotAgent(
         toolResult.result
       )
       if (stagnationHit) {
-        stagnationStopMessage = stagnationHit.message
-        messages.push({ role: 'system', content: buildStagnationSystemMessage(stagnationHit) })
-        logger.warn('Arena Copilot tool stagnation detected', {
-          toolName: stagnationHit.toolName,
-          count: stagnationHit.count,
-          fingerprint: stagnationHit.fingerprint,
-        })
-        break
+        // Never abort while mandatory follow-ups (e.g. populate after create) remain.
+        if (pendingFollowUps.length > 0) {
+          deferredSystemMessages.push({
+            role: 'system',
+            content:
+              buildStagnationSystemMessage(stagnationHit) +
+              ' Required follow-up tools are still pending — call them now instead of retrying the stalled tool.',
+          })
+          logger.warn('Arena Copilot tool stagnation soft-nudge (pending follow-ups)', {
+            toolName: stagnationHit.toolName,
+            count: stagnationHit.count,
+            pendingFollowUpIds: pendingFollowUps.map((item) => item.id),
+          })
+        } else {
+          stagnationStopMessage = stagnationHit.message
+          deferredSystemMessages.push({
+            role: 'system',
+            content: buildStagnationSystemMessage(stagnationHit),
+          })
+          logger.warn('Arena Copilot tool stagnation detected', {
+            toolName: stagnationHit.toolName,
+            count: stagnationHit.count,
+            fingerprint: stagnationHit.fingerprint,
+          })
+          break
+        }
       }
     }
 
+    // Anthropic requires every tool_use to have an immediate tool_result. If we
+    // stopped mid-batch, synthesize skipped results before any deferred system nudges.
+    for (const call of orderedToolCalls) {
+      if (completedToolCallIds.has(call.id)) continue
+      messages.push({
+        role: 'tool',
+        toolCallId: call.id,
+        content: JSON.stringify({
+          success: false,
+          error: 'Tool call was skipped before a result was produced.',
+        }),
+      })
+    }
+    for (const deferred of deferredSystemMessages) {
+      messages.push(deferred)
+    }
+
+    if (!stagnationStopMessage && !endTurnAfterThisRound) {
+      yield { type: 'status', message: 'Reviewing results…' }
+    }
+
+    const microcompactStats = applyMicrocompactInPlace(messages)
+    if (microcompactStats.clearedCount > 0) {
+      logger.info('Arena Copilot microcompact applied', {
+        round,
+        clearedCount: microcompactStats.clearedCount,
+        charsFreed: microcompactStats.charsFreed,
+      })
+    }
+
     if (stagnationStopMessage) break
+    if (endTurnAfterThisRound) {
+      postBuildToolMode = 'done'
+      break
+    }
   }
 
   if (stagnationStopMessage) {
@@ -1027,7 +1303,7 @@ export async function* runLocalCopilotAgent(
       abortSignal: params.signal,
       messages: MODEL_WAIT_STATUS_FALLBACK,
       idleMs: 0,
-      intervalMs: 4000,
+      intervalMs: 2500,
     })) {
       if (event.type === 'status') {
         yield event
@@ -1038,6 +1314,7 @@ export async function* runLocalCopilotAgent(
         const cleaned = stripLeakedToolMarkers(chunk.content, { trim: false })
         if (!cleaned) continue
         assistantText += cleaned
+        streamedUserFacingText += cleaned
         yield { type: 'text_delta', content: cleaned }
       }
       if (chunk.type === 'done' && chunk.usage) {
@@ -1053,22 +1330,58 @@ export async function* runLocalCopilotAgent(
     }
     if (assistantText.length === priorAssistantChars) {
       assistantText += stagnationStopMessage
+      streamedUserFacingText += stagnationStopMessage
       yield { type: 'text_delta', content: stagnationStopMessage }
     }
   }
 
-  if (!assistantText.trim() && turnToolRecords.length > 0) {
-    const synthesized =
-      synthesizeAssistantSummaryFromTools(turnToolRecords) ??
-      'I finished the requested steps, but had nothing further to add.'
-    assistantText = synthesized
-    yield { type: 'text_delta', content: synthesized }
+  // Prefer the full streamed user-facing transcript for persistence — per-round
+  // assistantText is cleared when tool calls continue.
+  if (streamedUserFacingText.trim().length > assistantText.trim().length) {
+    assistantText = streamedUserFacingText
   }
 
-  if (recommendations.length) {
-    const optionsTag = formatOptionsTag(recommendations)
+  // Tool-round / bridging narration is buffered (not streamed) to avoid repeated
+  // Arena Copilot headers and empty-looking settles. If the UI never got a real
+  // answer — or only got a "let me retry…" bridge — synthesize from tools (prefer)
+  // or flush non-bridging buffered prose so the turn never ends on a blank bubble.
+  if (
+    shouldSynthesizeAssistantSummary({
+      streamedUserFacingText,
+      toolRecordCount: turnToolRecords.length,
+    })
+  ) {
+    if (turnToolRecords.length > 0) {
+      const synthesized =
+        synthesizeAssistantSummaryFromTools(turnToolRecords) ??
+        'I finished the requested steps, but had nothing further to add.'
+      const safe = stripIdsFromUserFacingText(synthesized)
+      assistantText = safe
+      streamedUserFacingText = safe
+      yield { type: 'text_delta', content: safe }
+    } else if (assistantText.trim() && !isBridgingAssistantNarration(assistantText)) {
+      const safe = stripIdsFromUserFacingText(assistantText)
+      streamedUserFacingText = safe
+      assistantText = safe
+      yield { type: 'text_delta', content: safe }
+    }
+  }
+
+  // Emit at most one follow-up block for the whole turn (never after each tool round).
+  const followUpItems =
+    recommendations.length > 0
+      ? recommendations
+      : modelFollowUpTitles.length > 0
+        ? modelFollowUpTitles
+        : []
+  if (followUpItems.length > 0 && !hasOptionsTag(assistantText)) {
+    const optionsTag = formatOptionsTag(followUpItems)
     assistantText += optionsTag
+    streamedUserFacingText += optionsTag
     yield { type: 'text_delta', content: optionsTag }
+    if (recommendations.length === 0) {
+      recommendations = followUpItems
+    }
   }
 
   let patchId: string | undefined

@@ -11,8 +11,20 @@ import {
 import type { ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
 
-const TOOL_HEARTBEAT_MS = 4000
+const DEFAULT_TOOL_HEARTBEAT_MS = 2500
+const LONG_TOOL_HEARTBEAT_MS = 2000
 const POLL_MS = 100
+
+const LONG_RUNNING_TOOLS = new Set([
+  'run_workflow',
+  'run_workflow_until_block',
+  'run_block',
+  'run_from_block',
+  'function_execute',
+  'development_generate_app',
+  'development_edit_app',
+  'search_online',
+])
 
 /**
  * Runs a tool while yielding immediate + heartbeat + onProgress status events.
@@ -27,6 +39,9 @@ export async function* runToolWithStatus(params: {
   execute: (onProgress: (message: string) => void) => Promise<ToolExecutionResult>
 }): AsyncGenerator<LocalCopilotStreamEvent, ToolExecutionResult, undefined> {
   const { toolCallId, toolName, args, abortSignal, execute } = params
+  const heartbeatMs = LONG_RUNNING_TOOLS.has(toolName)
+    ? LONG_TOOL_HEARTBEAT_MS
+    : DEFAULT_TOOL_HEARTBEAT_MS
   const startMessage = buildToolStartStatus(toolName, args)
   yield { type: 'status', message: startMessage, toolCallId, toolName }
 
@@ -34,8 +49,12 @@ export async function* runToolWithStatus(params: {
   let lastProgressAt = Date.now()
   const progressQueue: string[] = []
 
-  let engagementMessages: string[] | null = null
-  let engagementIndex = 0
+  // Boxed so async enrichment can mutate without TS narrowing the binding to
+  // `null` forever (control-flow analysis ignores assignments in `.then()`).
+  const engagement = {
+    messages: null as string[] | null,
+    index: 0,
+  }
   const enrichController = new AbortController()
   const onParentAbort = () => enrichController.abort()
   abortSignal?.addEventListener('abort', onParentAbort, { once: true })
@@ -44,7 +63,7 @@ export async function* runToolWithStatus(params: {
   )
     .then((messages) => {
       if (messages && messages.length > 0) {
-        engagementMessages = [...messages]
+        engagement.messages = [...messages]
       }
     })
     .catch(() => undefined)
@@ -80,12 +99,13 @@ export async function* runToolWithStatus(params: {
         if (!message) continue
         yield { type: 'status', message, toolCallId, toolName }
       }
-      if (!settled && Date.now() - lastProgressAt >= TOOL_HEARTBEAT_MS) {
+      if (!settled && Date.now() - lastProgressAt >= heartbeatMs) {
+        const messages = engagement.messages
         const heartbeat =
-          engagementMessages && engagementMessages.length > 0
-            ? engagementMessages[engagementIndex % engagementMessages.length]!
+          messages && messages.length > 0
+            ? messages[engagement.index % messages.length]!
             : buildToolHeartbeatStatus(lastMessage, toolName, args)
-        engagementIndex += 1
+        engagement.index += 1
         lastMessage = heartbeat
         lastProgressAt = Date.now()
         yield { type: 'status', message: heartbeat, toolCallId, toolName }

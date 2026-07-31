@@ -418,27 +418,6 @@ export async function runLocalCopilotMothershipLifecycle(
     const billingModel = turnUsage?.model || getLocalCopilotConfig().model
     context.billingModel = billingModel
 
-    // Include usage for traces; omit cost so `/api/billing/update-cost` does not
-    // double-bill — Local already writes usage_log via recordLocalCopilotTurnUsage once per turn.
-    const completePayload: {
-      status: typeof status
-      usage?: {
-        model: string
-        input_tokens: number
-        output_tokens: number
-        total_tokens: number
-      }
-    } = { status }
-
-    if (turnUsage && (turnUsage.inputTokens > 0 || turnUsage.outputTokens > 0)) {
-      completePayload.usage = {
-        model: billingModel,
-        input_tokens: turnUsage.inputTokens,
-        output_tokens: turnUsage.outputTokens,
-        total_tokens: turnUsage.inputTokens + turnUsage.outputTokens,
-      }
-    }
-
     logger.info('Arena Copilot mothership lifecycle finished', {
       workspaceId,
       workflowId: workflowId ?? null,
@@ -455,18 +434,15 @@ export async function runLocalCopilotMothershipLifecycle(
       memory: getLocalCopilotMemorySnapshot(),
     })
 
-    // Complete without cost so handleCompleteEvent does not also POST update-cost
-    // (Local interactive already wrote the chat ledger; block execute returns cost
-    // on the orchestrator result for the workflow logger only).
-    await dispatchStreamEvent(
-      {
-        type: MothershipStreamV1EventType.complete,
-        payload: completePayload,
-      },
-      context,
-      execContext,
-      options
-    )
+    // Defer the `complete` SSE until after `onComplete` persists the assistant
+    // row (run.ts → finalizeStream). Publishing complete here races the client's
+    // detail refetch and can replace the rich live turn with an empty message.
+    if (turnUsage && (turnUsage.inputTokens > 0 || turnUsage.outputTokens > 0)) {
+      context.usage = {
+        prompt: turnUsage.inputTokens,
+        completion: turnUsage.outputTokens,
+      }
+    }
 
     if (isMothershipBlockExecute && blockExecuteCost && blockExecuteCost.total > 0) {
       context.cost = {

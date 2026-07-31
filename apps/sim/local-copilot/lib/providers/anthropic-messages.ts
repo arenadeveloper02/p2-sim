@@ -39,30 +39,71 @@ export interface AnthropicMessage {
 }
 
 /**
- * Drops tool results that are not preceded by a matching assistant tool_use turn.
+ * Ensures every assistant `tool_use` is followed by matching `tool_result`s.
+ * Drops orphan tool results, defers interleaved system messages until after
+ * the tool-result batch, and synthesizes error results for missing ids so
+ * Anthropic never sees unpaired tool_use blocks.
  */
 export function sanitizeToolMessagePairing(messages: ChatMessage[]): ChatMessage[] {
   const out: ChatMessage[] = []
-  let pendingToolUseIds = new Set<string>()
+  let index = 0
 
-  for (const message of messages) {
+  while (index < messages.length) {
+    const message = messages[index]
+
     if (message.role === 'assistant' && message.toolCalls?.length) {
       out.push(message)
-      pendingToolUseIds = new Set(message.toolCalls.map((call) => call.id))
+      const needed = new Set(message.toolCalls.map((call) => call.id))
+      const results = new Map<string, ChatMessage>()
+      const deferred: ChatMessage[] = []
+      index += 1
+
+      while (index < messages.length && needed.size > 0) {
+        const next = messages[index]
+        if (next.role === 'tool') {
+          const toolCallId = next.toolCallId ?? ''
+          if (toolCallId && needed.has(toolCallId) && !results.has(toolCallId)) {
+            results.set(toolCallId, next)
+            needed.delete(toolCallId)
+          }
+          index += 1
+          continue
+        }
+        if (next.role === 'system') {
+          deferred.push(next)
+          index += 1
+          continue
+        }
+        break
+      }
+
+      for (const call of message.toolCalls) {
+        const existing = results.get(call.id)
+        if (existing) {
+          out.push(existing)
+        } else {
+          out.push({
+            role: 'tool',
+            toolCallId: call.id,
+            content: JSON.stringify({
+              success: false,
+              error: 'Tool call was skipped before a result was produced.',
+            }),
+          })
+        }
+      }
+      out.push(...deferred)
       continue
     }
 
     if (message.role === 'tool') {
-      const toolCallId = message.toolCallId ?? ''
-      if (toolCallId && pendingToolUseIds.has(toolCallId)) {
-        out.push(message)
-        pendingToolUseIds.delete(toolCallId)
-      }
+      // Orphan tool result with no preceding assistant tool_use — drop.
+      index += 1
       continue
     }
 
-    pendingToolUseIds = new Set()
     out.push(message)
+    index += 1
   }
 
   return out

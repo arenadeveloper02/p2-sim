@@ -30,7 +30,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'edit_workflow',
     description:
-      'Applies block operations to a workflow (add, edit, delete). Requires workflowId from create_workflow or an open workflow. CONNECTIONS: never add edges as separate operations or type "edge". Wire on the SOURCE block via params.connections — e.g. { source: "<target-block-id>" } on the Start block to connect Start → Agent. Branch blocks use handle keys from get_blocks_metadata. Pass subblock values under params.inputs (flat keys), not params.subBlocks. Call get_blocks_metadata(["agent","start_trigger"]) for exact field names before first edit.',
+      'Applies block operations to a workflow (add, edit, delete). Requires workflowId from create_workflow or an open workflow. CONNECTIONS: never add edges as separate operations or type "edge". Wire on the SOURCE block via params.connections — e.g. { source: "<target-block-id>" } on the Start block to connect Start → Agent. Call get_blocks_metadata ONCE with every block type you need before the first edit. Prefer one edit_workflow for all adds + Start connections. Do not validate_workflow after a clean success. Always pass operations as a non-empty array.',
     parameters: {
       type: 'object',
       properties: {
@@ -67,7 +67,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'get_blocks_metadata',
     description:
-      'Returns exact subblock field names, types, and examples for block types (e.g. ["agent","start_trigger","exa"]). Call before edit_workflow when configuring blocks — avoids guessing field names like systemPrompt vs messages.',
+      'Returns exact subblock field names, types, and examples for block types. Call ONCE with every type you need (e.g. ["agent","start_trigger","gmail"]) before edit_workflow — do not re-fetch the same types in the same turn.',
     parameters: {
       type: 'object',
       properties: {
@@ -143,7 +143,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'validate_workflow',
     description:
-      'Validates the current workflow JSON for structural issues, missing credentials, and disconnected blocks.',
+      'Validates the current workflow for structural issues. Only use when edit_workflow reported errors/lint issues or the user asked to validate — never as a routine step after a clean successful build.',
     parameters: {
       type: 'object',
       properties: {
