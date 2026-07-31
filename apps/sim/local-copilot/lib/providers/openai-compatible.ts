@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
+import { fetchProviderWithRetry } from '@/local-copilot/lib/providers/provider-fetch'
 import type {
   ChatCompletionRequest,
   LocalCopilotProvider,
@@ -68,15 +69,19 @@ export function createOpenAiCompatibleProvider(config: LocalCopilotConfig): Loca
         max_tokens: request.maxTokens ?? 4096,
       }
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiKey ?? ''}`,
+      const response = await fetchProviderWithRetry(
+        url,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${config.apiKey ?? ''}`,
+          },
+          body: JSON.stringify(body),
+          signal: request.signal,
         },
-        body: JSON.stringify(body),
-        signal: request.signal,
-      })
+        'LLM request failed'
+      )
 
       if (!response.ok) {
         const errorText = await response.text()

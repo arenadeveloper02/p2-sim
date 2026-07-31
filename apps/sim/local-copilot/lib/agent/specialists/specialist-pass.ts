@@ -1,7 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { truncate } from '@sim/utils/string'
-import { recordModelUsage } from '@/lib/billing/core/record-model-usage.server'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
 import type { SpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
 import {
@@ -206,18 +205,6 @@ export async function executeSpecialistLoop(
           model: params.model,
           inputTokens: roundInputTokens,
           outputTokens: roundOutputTokens,
-        })
-      }
-      if (roundInputTokens > 0 || roundOutputTokens > 0) {
-        await recordModelUsage({
-          userId: params.userId,
-          workspaceId: params.workspaceId,
-          workflowId: params.workflowId,
-          model: params.model,
-          inputTokens: roundInputTokens,
-          outputTokens: roundOutputTokens,
-          source: 'copilot',
-          sourceReference: `local-copilot:${params.usageTurnId}:specialist-${params.domain}-${entered.depth}-${round}`,
         })
       }
 
