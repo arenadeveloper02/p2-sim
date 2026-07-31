@@ -51,15 +51,6 @@
 
 ## Usage
 
-### parent-grill-analysis
-- **Model:** `claude-opus-4-8`
-- **Iterations:** 1
-- **Input tokens (direct):** 26
-- **Input tokens (cache read):** 721,512
-- **Input tokens (cache create):** 55,764
-- **Input tokens (total):** 777,302
-- **Output tokens:** 11,985
-- **Cost:** $1.010425 (provider-reported)
 ### child-cluster-1
 - **Model:** `claude-sonnet-4-6`
 - **Iterations:** 1
@@ -69,16 +60,25 @@
 - **Input tokens (total):** 810,748
 - **Output tokens:** 4,638
 - **Cost:** $0.517826 (provider-reported)
+### parent-grill-analysis
+- **Model:** `claude-opus-4-8`
+- **Iterations:** 1
+- **Input tokens (direct):** 26
+- **Input tokens (cache read):** 721,512
+- **Input tokens (cache create):** 55,764
+- **Input tokens (total):** 777,302
+- **Output tokens:** 11,985
+- **Cost:** $1.010425 (provider-reported)
 
 ### Totals
 - **Total input tokens:** 1,588,050
 - **Total output tokens:** 16,623
-- **Primary models:** claude-opus-4-8, claude-sonnet-4-6
+- **Primary models:** claude-sonnet-4-6, claude-opus-4-8
 - **Provider-reported cost:** $1.528251
 
 ### Cost by agent
-- **parent-grill-analysis:** $1.010425 (provider-reported)
 - **child-cluster-1:** $0.517826 (provider-reported)
+- **parent-grill-analysis:** $1.010425 (provider-reported)
 
 ## Verification
 
