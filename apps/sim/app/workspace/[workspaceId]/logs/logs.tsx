@@ -32,7 +32,7 @@ import type {
   WorkflowLogRow,
   WorkflowLogSummary,
 } from '@/lib/api/contracts/logs'
-import { dollarsToCredits } from '@/lib/billing/credits/conversion'
+import { formatCreditCost } from '@/lib/billing/credits/conversion'
 import {
   getEndDateFromTimeRange,
   getStartDateFromTimeRange,
@@ -776,11 +776,9 @@ export default function Logs() {
         const durationText =
           durationMs != null ? (formatDuration(durationMs, { precision: 2 }) ?? '—') : '—'
 
-        const costCredits =
-          typeof log.cost?.total === 'number' ? dollarsToCredits(log.cost.total) : null
         const costText =
-          costCredits !== null
-            ? `${costCredits.toLocaleString()} ${costCredits === 1 ? 'credit' : 'credits'}`
+          typeof log.cost?.total === 'number'
+            ? (formatCreditCost(log.cost.total) ?? '0 credits')
             : '—'
 
         return {

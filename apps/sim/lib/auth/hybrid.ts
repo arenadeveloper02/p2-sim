@@ -36,6 +36,7 @@ export interface AuthResult {
   userEmail?: string | null
   authType?: AuthTypeValue
   apiKeyType?: 'personal' | 'workspace'
+  apiKeyId?: string
   error?: string
 }
 
@@ -213,6 +214,7 @@ export async function checkHybridAuth(
           workspaceId: result.workspaceId,
           authType: AuthType.API_KEY,
           apiKeyType: result.keyType,
+          apiKeyId: result.keyId,
         }
       }
 

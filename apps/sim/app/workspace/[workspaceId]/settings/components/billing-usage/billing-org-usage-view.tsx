@@ -9,16 +9,19 @@ import {
   ChipInput,
   CircleInfo,
   Credit,
+  chipVariants,
+  cn,
   Download,
   Info,
   Search,
   Server,
   Users,
   Workflow,
-  chipVariants,
 } from '@sim/emcn'
-import type { CreditUsageSummary, MemberCreditUsageRow } from '@/lib/api/contracts/billing-credit-usage'
-import { cn } from '@sim/emcn'
+import type {
+  CreditUsageSummary,
+  MemberCreditUsageRow,
+} from '@/lib/api/contracts/billing-credit-usage'
 import { BillingUsageMetricCard } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-metric-card'
 import { BillingUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-section'
 import {
@@ -27,8 +30,7 @@ import {
   getMemberInitials,
 } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-utils'
 
-const USAGE_SOURCE_DESCRIPTION =
-  'Credits include combined usage from Mothership and Workflow Runs.'
+const USAGE_SOURCE_DESCRIPTION = 'Credits include combined usage from Mothership and Workflow Runs.'
 
 const PAGE_SIZE = 10
 
@@ -156,10 +158,7 @@ export function BillingOrgUsageView({ data }: BillingOrgUsageViewProps) {
         </div>
       </BillingUsageSection>
 
-      <BillingUsageSection
-        label='User usage breakdown'
-        description={USAGE_SOURCE_DESCRIPTION}
-      >
+      <BillingUsageSection label='User usage breakdown' description={USAGE_SOURCE_DESCRIPTION}>
         <div className='flex flex-col gap-4'>
           <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
             <ChipInput

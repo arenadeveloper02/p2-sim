@@ -14,7 +14,6 @@ import {
   toast,
 } from '@sim/emcn'
 import { useParams } from 'next/navigation'
-import { ThinkingLoader } from '@/components/ui'
 import { canonicalWorkspaceFilePath } from '@/lib/copilot/vfs/path-utils'
 import { isSafeHttpUrl } from '@/lib/core/utils/urls'
 import { OAUTH_PROVIDERS } from '@/lib/oauth/oauth'

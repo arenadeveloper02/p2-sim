@@ -23,6 +23,7 @@ export const guardrailsValidateContract = defineRouteContract({
     bedrockSecretKey: z.string().optional(),
     bedrockRegion: z.string().optional(),
     workflowId: z.string().optional(),
+    executionId: z.string().optional(),
     piiEntityTypes: z.array(z.string()).optional(),
     piiMode: z.string().optional(),
     piiLanguage: z.string().optional(),

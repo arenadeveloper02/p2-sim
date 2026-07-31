@@ -1,0 +1,200 @@
+name: Build and Push Images
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: Docker image tag to push to GHCR
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Docker image tag to push to GHCR (for example, 0.0.7). Must be new — existing git/GHCR tags are rejected.
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+  packages: write
+
+env:
+  # Git tag namespace that locks a Docker tag so it cannot be republished.
+  GHCR_GIT_TAG_PREFIX: ghcr/
+
+jobs:
+  reserve-image-tag:
+    name: Reserve immutable tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+    outputs:
+      image_tag: ${{ steps.validate.outputs.image_tag }}
+      git_tag: ${{ steps.validate.outputs.git_tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate and reserve tag
+        id: validate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${IMAGE_TAG}" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Invalid Docker tag: ${IMAGE_TAG}" >&2
+            exit 1
+          fi
+
+          if [[ "${IMAGE_TAG}" == *"/"* ]]; then
+            echo "Docker tag must not contain '/': ${IMAGE_TAG}" >&2
+            exit 1
+          fi
+
+          GIT_TAG="${GHCR_GIT_TAG_PREFIX}${IMAGE_TAG}"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "git_tag=${GIT_TAG}" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse -q --verify "refs/tags/${GIT_TAG}" >/dev/null; then
+            echo "Git tag already exists: ${GIT_TAG}" >&2
+            echo "Pick a new image_tag — published tags are immutable." >&2
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${GIT_TAG}" >/dev/null 2>&1; then
+            echo "Remote git tag already exists: ${GIT_TAG}" >&2
+            echo "Pick a new image_tag — published tags are immutable." >&2
+            exit 1
+          fi
+
+          PACKAGES=(p2-sim-simstudio p2-sim-realtime p2-sim-migrations)
+          for PKG in "${PACKAGES[@]}"; do
+            if gh api "/users/${OWNER}/packages/container/${PKG}/versions" --paginate \
+              --jq '.[].metadata.container.tags[]?' 2>/dev/null \
+              | grep -Fx "${IMAGE_TAG}" >/dev/null; then
+              echo "GHCR tag already exists: ghcr.io/${OWNER}/${PKG}:${IMAGE_TAG}" >&2
+              echo "Pick a new image_tag — published tags are immutable." >&2
+              exit 1
+            fi
+          done
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${GIT_TAG}" -m "Immutable GHCR image lock for ${IMAGE_TAG} (sha ${GITHUB_SHA})"
+          git push origin "refs/tags/${GIT_TAG}"
+          echo "Reserved git tag ${GIT_TAG} → ${GITHUB_SHA}"
+
+  secret-scan:
+    name: Secret Scan
+    needs: [reserve-image-tag]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - name: Check committed secrets
+        run: bun run check:secrets
+
+  build-ghcr-images:
+    name: Build GHCR Images
+    needs: [secret-scan, reserve-image-tag]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: ./docker/app.Dockerfile
+            ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-simstudio
+          - dockerfile: ./docker/db.Dockerfile
+            ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-migrations
+          - dockerfile: ./docker/realtime.Dockerfile
+            ghcr_image: ghcr.io/${{ github.repository_owner }}/p2-sim-realtime
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate tags
+        id: meta
+        run: |
+          IMAGE_TAG="${{ needs.reserve-image-tag.outputs.image_tag }}"
+          GHCR_IMAGE="${{ matrix.ghcr_image }}"
+          echo "tags=${GHCR_IMAGE}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Add swap
+        run: |
+          SWAPFILE=/mnt/gh-actions-swap
+          if sudo swapon --show=NAME | awk -v file="$SWAPFILE" '$1 == file { found = 1 } END { exit !found }'; then
+            echo "$SWAPFILE is already active"
+            free -h
+            exit 0
+          fi
+          sudo swapoff "$SWAPFILE" 2>/dev/null || true
+          sudo rm -f "$SWAPFILE"
+          sudo dd if=/dev/zero of="$SWAPFILE" bs=1M count=20480 status=none
+          sudo chmod 600 "$SWAPFILE"
+          sudo mkswap "$SWAPFILE"
+          sudo swapon "$SWAPFILE"
+          free -h
+
+      - name: Build and push images
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.dockerfile }}-amd64
+          cache-to: type=gha,mode=max,scope=${{ matrix.dockerfile }}-amd64
+          build-args: |
+            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL || 'http://localhost:3000' }}
+          provenance: false
+          sbom: false
+
+  release-failed-tag:
+    name: Release tag on failure
+    if: failure() && needs.reserve-image-tag.result == 'success'
+    needs: [reserve-image-tag, secret-scan, build-ghcr-images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete reserved git tag so the image_tag can be retried
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_TAG: ${{ needs.reserve-image-tag.outputs.git_tag }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GIT_TAG}" ]]; then
+            echo "No git tag to release"
+            exit 0
+          fi
+          # Nested tags like ghcr/0.0.7 must be path-encoded for the refs API.
+          ENCODED_TAG="$(printf '%s' "${GIT_TAG}" | sed 's|/|%2F|g')"
+          gh api -X DELETE "/repos/${{ github.repository }}/git/refs/tags/${ENCODED_TAG}" || true
+          echo "Deleted reserved tag ${GIT_TAG} after failed build"

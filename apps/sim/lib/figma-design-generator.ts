@@ -48,16 +48,42 @@
 
 import { existsSync } from 'fs'
 import fs from 'fs/promises'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import Anthropic from '@anthropic-ai/sdk'
 import { Builder, By, Key, until, type WebDriver } from 'selenium-webdriver'
 import chrome from 'selenium-webdriver/chrome'
+import { createAnthropicMessage } from '@/lib/anthropic/create-message'
+import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
+import { buildToolLlmCostFromModelUsage } from '@/lib/billing/core/tool-llm-cost'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
 import { extractStorageKey } from '@/lib/uploads/utils/file-utils'
-import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
 
 const FIGMA_AI_MODEL = 'claude-opus-4-8'
 const FIGMA_AI_MAX_OUTPUT_TOKENS = getMaxOutputTokensForModel(FIGMA_AI_MODEL)
+
+type LlmUsageAccumulator = Map<string, { inputTokens: number; outputTokens: number }>
+const llmUsageStorage = new AsyncLocalStorage<LlmUsageAccumulator>()
+
+function trackAnthropicUsage(model: string, inputTokens: number, outputTokens: number): void {
+  const acc = llmUsageStorage.getStore()
+  if (!acc) {
+    return
+  }
+  const prev = acc.get(model) ?? { inputTokens: 0, outputTokens: 0 }
+  acc.set(model, {
+    inputTokens: prev.inputTokens + inputTokens,
+    outputTokens: prev.outputTokens + outputTokens,
+  })
+}
+
+function getTrackedLlmUsage(): ModelUsageByModel | undefined {
+  const acc = llmUsageStorage.getStore()
+  if (!acc || acc.size === 0) {
+    return undefined
+  }
+  return Object.fromEntries(acc)
+}
 
 interface FigmaDesignInputs {
   projectId: string
@@ -90,6 +116,19 @@ interface FigmaDesignResult {
   error?: string
   figmaFileUrl?: string
   designTargets?: string[]
+  /** Overall tool price (= summed LLM cost). */
+  cost?: {
+    input: number
+    output: number
+    total: number
+  }
+  model?: string
+  tokens?: {
+    input: number
+    output: number
+    total: number
+  }
+  llmUsage?: ModelUsageByModel
 }
 
 const TARGET_EXPERIENCE_MAP: Record<string, TargetExperienceConfig> = {
@@ -120,75 +159,82 @@ const TARGET_EXPERIENCE_MAP: Record<string, TargetExperienceConfig> = {
  * @returns Result containing the rendered HTML/CSS and Figma file URL
  */
 export async function generateFigmaDesign(inputs: FigmaDesignInputs): Promise<FigmaDesignResult> {
-  try {
-    // Step 1: Read the files and create system prompt
-    console.log('Step 1: Reading input files...')
-    const systemPrompt = await buildSystemPrompt(inputs)
+  return llmUsageStorage.run(new Map(), async () => {
+    try {
+      // Step 1: Read the files and create system prompt
+      console.log('Step 1: Reading input files...')
+      const systemPrompt = await buildSystemPrompt(inputs)
 
-    // Step 2: Call Claude API to generate HTML and CSS per target experience
-    console.log('Step 2: Calling Claude API to generate target-specific designs...')
-    const targetExperiences = resolveTargetExperiences(inputs.designTargets)
-    console.log('Target experiences:', targetExperiences)
-    const generatedTargets: GeneratedTargetHtml[] = []
+      // Step 2: Call Claude API to generate HTML and CSS per target experience
+      console.log('Step 2: Calling Claude API to generate target-specific designs...')
+      const targetExperiences = resolveTargetExperiences(inputs.designTargets)
+      console.log('Target experiences:', targetExperiences)
+      const generatedTargets: GeneratedTargetHtml[] = []
 
-    for (const [index, targetExperience] of targetExperiences.entries()) {
-      console.log(
-        `→ Generating HTML for ${targetExperience.label} (${targetExperience.viewportWidth}px) [${
-          index + 1
-        }/${targetExperiences.length}]`
-      )
-      const targetPrompt = buildTargetPrompt(
-        inputs.prompt,
-        targetExperience,
-        generatedTargets[generatedTargets.length - 1]
-      )
-      const renderedData = await generateHTMLCSS(systemPrompt, targetPrompt)
+      for (const [index, targetExperience] of targetExperiences.entries()) {
+        console.log(
+          `→ Generating HTML for ${targetExperience.label} (${targetExperience.viewportWidth}px) [${
+            index + 1
+          }/${targetExperiences.length}]`
+        )
+        const targetPrompt = buildTargetPrompt(
+          inputs.prompt,
+          targetExperience,
+          generatedTargets[generatedTargets.length - 1]
+        )
+        const renderedData = await generateHTMLCSS(systemPrompt, targetPrompt)
 
-      if (!renderedData) {
-        return {
-          success: false,
-          error: `Failed to generate HTML/CSS for ${targetExperience.label}`,
+        if (!renderedData) {
+          return withBilling({
+            success: false,
+            error: `Failed to generate HTML/CSS for ${targetExperience.label}`,
+          })
         }
+
+        const cleanedHtml = cleanGeneratedHtml(renderedData)
+        generatedTargets.push({
+          ...targetExperience,
+          html: cleanedHtml,
+          iteration: index + 1,
+        })
       }
 
-      const cleanedHtml = cleanGeneratedHtml(renderedData)
-      generatedTargets.push({
-        ...targetExperience,
-        html: cleanedHtml,
-        iteration: index + 1,
+      if (generatedTargets.length === 0) {
+        return withBilling({
+          success: false,
+          error: 'Failed to generate HTML/CSS from Claude API',
+        })
+      }
+
+      // Step 4: Do Selenium automation
+      console.log('Step 4: Starting Figma automation...')
+      const figmaFileUrl = await automateDesignCreation(
+        inputs.projectId,
+        inputs.fileName,
+        generatedTargets,
+        inputs.designTargets || []
+      )
+
+      return withBilling({
+        success: true,
+        renderedData: generatedTargets[0]?.html,
+        renderedTargets: generatedTargets,
+        figmaFileUrl,
+        designTargets: targetExperiences.map((target) => target.id),
+      })
+    } catch (error) {
+      console.error('Error generating Figma design:', error)
+      return withBilling({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
       })
     }
+  })
+}
 
-    if (generatedTargets.length === 0) {
-      return {
-        success: false,
-        error: 'Failed to generate HTML/CSS from Claude API',
-      }
-    }
-
-    // Step 4: Do Selenium automation
-    console.log('Step 4: Starting Figma automation...')
-    const figmaFileUrl = await automateDesignCreation(
-      inputs.projectId,
-      inputs.fileName,
-      generatedTargets,
-      inputs.designTargets || []
-    )
-
-    return {
-      success: true,
-      renderedData: generatedTargets[0]?.html,
-      renderedTargets: generatedTargets,
-      figmaFileUrl,
-      designTargets: targetExperiences.map((target) => target.id),
-    }
-  } catch (error) {
-    console.error('Error generating Figma design:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    }
-  }
+function withBilling(result: FigmaDesignResult): FigmaDesignResult {
+  const billing = buildToolLlmCostFromModelUsage(getTrackedLlmUsage())
+  return billing ? { ...result, ...billing } : result
 }
 
 /**
@@ -278,6 +324,12 @@ async function extractTextFromPdfWithClaudeVision(
       },
     ],
   })
+
+  trackAnthropicUsage(
+    FIGMA_AI_MODEL,
+    message.usage?.input_tokens ?? 0,
+    message.usage?.output_tokens ?? 0
+  )
 
   const textBlock = message.content.find((block) => block.type === 'text')
   if (!textBlock || textBlock.type !== 'text' || !textBlock.text.trim()) {
@@ -591,6 +643,12 @@ async function generateHTMLCSS(systemPrompt: string, userPrompt: string): Promis
       },
     ],
   })
+
+  trackAnthropicUsage(
+    FIGMA_AI_MODEL,
+    message.usage?.input_tokens ?? 0,
+    message.usage?.output_tokens ?? 0
+  )
 
   // Extract text content from the response
   const textContent = message.content.find((block) => block.type === 'text')

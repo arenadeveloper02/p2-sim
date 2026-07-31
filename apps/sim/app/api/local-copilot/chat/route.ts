@@ -2,14 +2,14 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
 import { parseRequest } from '@/lib/api/server'
+import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
+import { localCopilotChatContract } from '@/local-copilot/contracts/local-copilot'
+import { requireLocalCopilotAccess } from '@/local-copilot/lib/access'
 import { formatSSE, runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
-import { requireLocalCopilotAccess } from '@/local-copilot/lib/access'
-import { localCopilotChatContract } from '@/local-copilot/contracts/local-copilot'
 
 const logger = createLogger('LocalCopilotChatAPI')
 

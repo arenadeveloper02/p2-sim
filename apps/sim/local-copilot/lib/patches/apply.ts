@@ -1,11 +1,11 @@
 import { db } from '@sim/db'
 import { localCopilotPatches } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import type { WorkflowState } from '@sim/workflow-types/workflow'
 import { eq } from 'drizzle-orm'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { validateWorkflowPatch } from '@/local-copilot/lib/patches/validate'
 import type { WorkflowPatch } from '@/local-copilot/lib/types'
-import type { WorkflowState } from '@sim/workflow-types/workflow'
 
 const logger = createLogger('LocalCopilotPatchApply')
 
@@ -65,7 +65,11 @@ export async function applyWorkflowPatch(params: ApplyPatchParams): Promise<Appl
 
 export async function rejectWorkflowPatch(patchId: string, userId: string): Promise<boolean> {
   const [patchRow] = await db
-    .select({ id: localCopilotPatches.id, userId: localCopilotPatches.userId, status: localCopilotPatches.status })
+    .select({
+      id: localCopilotPatches.id,
+      userId: localCopilotPatches.userId,
+      status: localCopilotPatches.status,
+    })
     .from(localCopilotPatches)
     .where(eq(localCopilotPatches.id, patchId))
     .limit(1)

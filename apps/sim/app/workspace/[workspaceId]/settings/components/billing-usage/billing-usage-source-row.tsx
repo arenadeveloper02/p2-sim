@@ -1,6 +1,9 @@
 import type { ReactNode } from 'react'
 import { cn } from '@sim/emcn'
-import { clampPercent, formatCreditCount } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-utils'
+import {
+  clampPercent,
+  formatCreditCount,
+} from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-utils'
 
 interface BillingUsageSourceRowProps {
   label: string

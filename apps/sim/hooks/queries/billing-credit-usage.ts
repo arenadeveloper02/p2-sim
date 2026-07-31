@@ -1,8 +1,8 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import {
-  getCreditUsageSummaryContract,
   type CreditUsageSummary,
+  getCreditUsageSummaryContract,
 } from '@/lib/api/contracts/billing-credit-usage'
 
 export const billingCreditUsageKeys = {

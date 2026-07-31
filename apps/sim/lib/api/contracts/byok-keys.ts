@@ -13,6 +13,8 @@ export const byokProviderIdSchema = z.enum([
   'falai',
   'firecrawl',
   'exa',
+  'semrush',
+  'browser_use',
   'serper',
   'linkup',
   'perplexity',

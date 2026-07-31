@@ -1,15 +1,14 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { getAnthropicAutomaticCacheControl } from '@/lib/anthropic/prompt-cache'
-import { supportsTemperature } from '@/providers/models'
 import { convertMessagesToAnthropic } from '@/local-copilot/lib/providers/anthropic-messages'
 import type {
-  ChatCompletionChunk,
   ChatCompletionRequest,
   LocalCopilotProvider,
   TokenUsage,
 } from '@/local-copilot/lib/providers/types'
 import type { LocalCopilotConfig } from '@/local-copilot/lib/types'
+import { supportsTemperature } from '@/providers/models'
 
 const logger = createLogger('LocalCopilotAnthropicProvider')
 
@@ -22,9 +21,7 @@ export function toAnthropicTools(tools: ChatCompletionRequest['tools']) {
     name: tool.name,
     description: tool.description,
     input_schema: tool.parameters as Record<string, unknown>,
-    ...(index === all.length - 1
-      ? { cache_control: getAnthropicAutomaticCacheControl() }
-      : {}),
+    ...(index === all.length - 1 ? { cache_control: getAnthropicAutomaticCacheControl() } : {}),
   }))
 }
 
@@ -209,9 +206,7 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
                 usage,
               }
             }
-          } catch {
-            continue
-          }
+          } catch {}
         }
       }
     },

@@ -31,9 +31,7 @@ type EmbedHtmlResult = {
   html?: string
 }
 
-type UpstreamAuth =
-  | { type: 'apiKey'; apiKey: string }
-  | { type: 'internalJwt'; userId: string }
+type UpstreamAuth = { type: 'apiKey'; apiKey: string } | { type: 'internalJwt'; userId: string }
 
 function parseEmbedWorkflowId(result: EmbedResolveResult | undefined): string | null {
   if (!result) return null
@@ -228,10 +226,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         resolveWorkflowId,
         response: resolvePayload,
       })
-      return NextResponse.json(
-        { error: 'Agent API did not return workflow_id' },
-        { status: 502 }
-      )
+      return NextResponse.json({ error: 'Agent API did not return workflow_id' }, { status: 502 })
     }
 
     // Resolve workflows often return a stale/invalid api_key. For same-deployment
@@ -266,10 +261,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         workflowId: htmlWorkflowId,
         error: htmlPayload.error,
       })
-      return NextResponse.json(
-        { error: htmlPayload.error },
-        { status: 502 }
-      )
+      return NextResponse.json({ error: htmlPayload.error }, { status: 502 })
     }
 
     const html = htmlPayload.output?.result?.html ?? htmlPayload.result?.html

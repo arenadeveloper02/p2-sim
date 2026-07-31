@@ -1,7 +1,6 @@
+import { exaHosting } from '@/tools/exa/hosting'
 import type { ExaGetContentsParams, ExaGetContentsResponse } from '@/tools/exa/types'
 import type { ToolConfig } from '@/tools/types'
-
-const exaApiKey = process.env.EXA_API_KEY
 
 export const getContentsTool: ToolConfig<ExaGetContentsParams, ExaGetContentsResponse> = {
   id: 'exa_get_contents',
@@ -9,6 +8,8 @@ export const getContentsTool: ToolConfig<ExaGetContentsParams, ExaGetContentsRes
   description:
     'Retrieve the contents of webpages using Exa AI. Returns the title, text content, and optional summaries for each URL.',
   version: '1.0.0',
+
+  hosting: exaHosting,
 
   params: {
     urls: {
@@ -67,9 +68,9 @@ export const getContentsTool: ToolConfig<ExaGetContentsParams, ExaGetContentsRes
   request: {
     url: 'https://api.exa.ai/contents',
     method: 'POST',
-    headers: () => ({
+    headers: (params) => ({
       'Content-Type': 'application/json',
-      'x-api-key': exaApiKey ?? '',
+      'x-api-key': params.apiKey,
     }),
     body: (params) => {
       // Parse the comma-separated URLs into an array

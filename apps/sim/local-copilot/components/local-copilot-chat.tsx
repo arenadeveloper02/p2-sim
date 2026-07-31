@@ -1,7 +1,7 @@
 'use client'
 
-import { Bug, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react'
 import { Button, Chip, ChipTextarea, cn } from '@sim/emcn'
+import { Bug, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react'
 import { ChatContent } from '@/app/workspace/[workspaceId]/home/components/message-content/components/chat-content'
 import { PatchPreview } from '@/local-copilot/components/patch-preview'
 import type { LocalCopilotMessage } from '@/local-copilot/hooks/use-local-copilot'
@@ -93,9 +93,7 @@ export function LocalCopilotChat({
                   <ChatContent
                     content={message.text || (message.streaming ? '…' : '')}
                     isStreaming={isStreamingAssistant}
-                    onOptionSelect={
-                      isLast && !isStreaming ? (title) => onSend(title) : undefined
-                    }
+                    onOptionSelect={isLast && !isStreaming ? (title) => onSend(title) : undefined}
                   />
                 ) : (
                   <p className='whitespace-pre-wrap'>{message.text}</p>

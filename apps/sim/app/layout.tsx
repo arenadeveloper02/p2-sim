@@ -7,6 +7,7 @@ import { BrandedLayout } from '@/components/branded-layout'
 import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'
 import { generateBrandedMetadata, generateThemeCSS } from '@/ee/whitelabeling'
 import '@/app/_styles/globals.css'
+import { getEnv } from '@/lib/core/config/env'
 import { isHosted, isReactGrabEnabled, isReactScanEnabled } from '@/lib/core/config/env-flags'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
 import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
@@ -15,8 +16,8 @@ import { QueryProvider } from '@/app/_shell/providers/query-provider'
 import { SessionProvider } from '@/app/_shell/providers/session-provider'
 import { ThemeProvider } from '@/app/_shell/providers/theme-provider'
 import { TooltipProvider } from '@/app/_shell/providers/tooltip-provider'
-import { ResumePathSync } from '@/app/_shell/resume-path-sync'
 import { PublicEnvScript } from '@/app/_shell/public-env-script'
+import { ResumePathSync } from '@/app/_shell/resume-path-sync'
 import { season } from '@/app/_styles/fonts/season/season'
 
 export const viewport: Viewport = {
@@ -32,6 +33,18 @@ export const metadata: Metadata = generateBrandedMetadata()
 
 const GTM_ID = 'GTM-T7PHSRX5' as const
 const GA_ID = 'G-DR7YBE70VS' as const
+
+/**
+ * Static PublicEnvScript is only safe when public env is fixed per image build
+ * (sim.ai hosted). Arena agent hosts share one GHCR image across envs and must
+ * inject `NEXT_PUBLIC_*` at request time via next-runtime-env.
+ */
+function useRuntimePublicEnvScript(): boolean {
+  const appUrl = getEnv('NEXT_PUBLIC_APP_URL')
+  return (
+    appUrl !== 'https://www.sim.ai' && appUrl !== 'https://www.staging.sim.ai'
+  )
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const themeCSS = generateThemeCSS()
@@ -263,7 +276,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           </>
         )}
 
-        {isHosted ? <PublicEnvScript /> : <RuntimePublicEnvScript />}
+        {useRuntimePublicEnvScript() ? <RuntimePublicEnvScript /> : <PublicEnvScript />}
       </head>
       <body className={`${season.variable} font-season`} suppressHydrationWarning>
         {/* Google Tag Manager (noscript) — hosted only */}

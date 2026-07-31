@@ -9,6 +9,8 @@ export interface WorkflowExecutorParams {
     workflowId?: string
     workspaceId?: string
     executionId?: string
+    rootExecutionId?: string
+    callChain?: string[]
     isDeployedContext?: boolean
   }
 }

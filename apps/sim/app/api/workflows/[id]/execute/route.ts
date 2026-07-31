@@ -32,12 +32,18 @@ import {
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { resolveWorkflowSyncTimeoutMs } from '@/lib/development/execution-timeout'
 import {
   buildNextCallChain,
   parseCallChain,
   SIM_VIA_HEADER,
   validateCallChain,
 } from '@/lib/execution/call-chain'
+import {
+  resolveChildExecutionLineage,
+  resolveExecutionLineageAuthMode,
+  sanitizeExecutionLineageInput,
+} from '@/lib/execution/lineage'
 import {
   createExecutionEventWriter,
   flushExecutionStreamReplayBuffer,
@@ -63,7 +69,6 @@ import {
   hydrateUserFilesWithBase64,
 } from '@/lib/uploads/utils/user-file-base64.server'
 import { getCustomBlockRowsForWorkspace } from '@/lib/workflows/custom-blocks/operations'
-import { resolveWorkflowSyncTimeoutMs } from '@/lib/development/execution-timeout'
 import { executeWorkflow } from '@/lib/workflows/executor/execute-workflow'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
 import { type ExecutionEvent, encodeSSEEvent } from '@/lib/workflows/executor/execution-events'
@@ -535,6 +540,21 @@ async function handleExecutePost(
     } = validation.data
     const triggerBlockId = parsedTriggerBlockId ?? startBlockId
 
+    const lineageAuthMode = resolveExecutionLineageAuthMode({
+      authType: auth.authType,
+      isClientSession,
+      triggerType,
+    })
+    const sanitizedLineageInput = sanitizeExecutionLineageInput(
+      {
+        parentExecutionId: validation.data.parentExecutionId,
+        parentRootExecutionId: validation.data.parentRootExecutionId,
+        triggeringChatId: validation.data.triggeringChatId,
+        triggeringRunId: validation.data.triggeringRunId,
+      },
+      lineageAuthMode
+    )
+
     if (isPublicApiAccess && isClientSession) {
       return NextResponse.json(
         { error: 'Public API callers cannot set isClientSession' },
@@ -694,6 +714,11 @@ async function handleExecutePost(
     executionId = isClientSession && requestedExecutionId ? requestedExecutionId : generateId()
     reqLogger = reqLogger.withMetadata({ userId, executionId })
 
+    const executionLineage = await resolveChildExecutionLineage({
+      executionId,
+      input: sanitizedLineageInput,
+    })
+
     reqLogger.info('Starting server-side execution', {
       hasInput: !!input,
       triggerType,
@@ -769,6 +794,8 @@ async function handleExecutePost(
       loggingSession,
       useDraftState: shouldUseDraftState,
       useAuthenticatedUserAsActor,
+      apiKeyId: auth.authType === AuthType.API_KEY ? auth.apiKeyId : undefined,
+      apiKeyType: auth.authType === AuthType.API_KEY ? auth.apiKeyType : undefined,
       workflowRecord: workflowAuthorization.workflow ?? undefined,
     })
 
@@ -788,6 +815,7 @@ async function handleExecutePost(
     }
 
     const actorUserId = preprocessResult.actorUserId!
+    const executionActor = preprocessResult.executionActor
     const workflow = preprocessResult.workflowRecord!
 
     if (!workflow.workspaceId) {
@@ -899,6 +927,7 @@ async function handleExecutePost(
         workspaceId,
         variables: {},
         conversationId: undefined,
+        executionActor,
       })
 
       await loggingSession.safeCompleteWithError({
@@ -969,6 +998,11 @@ async function handleExecutePost(
         allowLargeValueWorkflowScope,
         callChain,
         executionMode: 'sync',
+        parentExecutionId: executionLineage.parentExecutionId,
+        rootExecutionId: executionLineage.rootExecutionId,
+        triggeringChatId: executionLineage.triggeringChatId,
+        triggeringRunId: executionLineage.triggeringRunId,
+        executionActor,
       }
 
       const executionVariables = cachedWorkflowData?.variables ?? workflow.variables ?? {}
@@ -1549,6 +1583,11 @@ async function handleExecutePost(
             allowLargeValueWorkflowScope,
             callChain,
             executionMode: 'sync',
+            parentExecutionId: executionLineage.parentExecutionId,
+            rootExecutionId: executionLineage.rootExecutionId,
+            triggeringChatId: executionLineage.triggeringChatId,
+            triggeringRunId: executionLineage.triggeringRunId,
+            executionActor,
           }
 
           const sseExecutionVariables = cachedWorkflowData?.variables ?? workflow.variables ?? {}

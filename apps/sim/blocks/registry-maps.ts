@@ -14,6 +14,7 @@ import { ApifyBlock, ApifyBlockMeta } from '@/blocks/blocks/apify'
 import { ApolloBlock, ApolloBlockMeta } from '@/blocks/blocks/apollo'
 import { AppConfigBlock, AppConfigBlockMeta } from '@/blocks/blocks/appconfig'
 import { ArenaBlock } from '@/blocks/blocks/arena'
+import { ArenaDevelopmentBlock } from '@/blocks/blocks/arena-development'
 import { ArxivBlock, ArxivBlockMeta } from '@/blocks/blocks/arxiv'
 import { AsanaBlock, AsanaBlockMeta } from '@/blocks/blocks/asana'
 import { AshbyBlock, AshbyBlockMeta } from '@/blocks/blocks/ashby'
@@ -41,6 +42,7 @@ import { ConditionBlock } from '@/blocks/blocks/condition'
 import { ConfluenceBlock, ConfluenceBlockMeta, ConfluenceV2Block } from '@/blocks/blocks/confluence'
 import { ContextDevBlock, ContextDevBlockMeta } from '@/blocks/blocks/context_dev'
 import { ConvexBlock, ConvexBlockMeta } from '@/blocks/blocks/convex'
+import { CostBlock } from '@/blocks/blocks/cost'
 import { CredentialBlock } from '@/blocks/blocks/credential'
 import { CrowdStrikeBlock, CrowdStrikeBlockMeta } from '@/blocks/blocks/crowdstrike'
 import { CursorBlock, CursorBlockMeta, CursorV2Block } from '@/blocks/blocks/cursor'
@@ -374,6 +376,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   apify: ApifyBlock,
   appconfig: AppConfigBlock,
   apollo: ApolloBlock,
+  arena_development: ArenaDevelopmentBlock,
   arxiv: ArxivBlock,
   asana: AsanaBlock,
   ashby: AshbyBlock,
@@ -402,6 +405,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   confluence_v2: ConfluenceV2Block,
   context_dev: ContextDevBlock,
   convex: ConvexBlock,
+  cost: CostBlock,
   credential: CredentialBlock,
   crowdstrike: CrowdStrikeBlock,
   cursor: CursorBlock,

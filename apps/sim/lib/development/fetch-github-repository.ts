@@ -1,6 +1,5 @@
 import { createLogger } from '@sim/logger'
 import { sleep } from '@sim/utils/helpers'
-import { toError } from '@sim/utils/errors'
 
 const logger = createLogger('FetchGitHubRepository')
 
@@ -32,10 +31,7 @@ interface GitHubUserResponse {
   login: string
 }
 
-async function githubFetch<T>(
-  token: string,
-  path: string
-): Promise<{ data: T; status: number }> {
+async function githubFetch<T>(token: string, path: string): Promise<{ data: T; status: number }> {
   const response = await fetch(`${GITHUB_API}${path}`, {
     headers: {
       Accept: 'application/vnd.github+json',

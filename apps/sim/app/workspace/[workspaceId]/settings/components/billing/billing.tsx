@@ -441,7 +441,7 @@ export function Billing() {
             </div>
           </div>
           <div className='flex min-w-0 flex-col'>
-            <span className='truncate text-[var(--text-body)] text-sm'>{displayPlanName } plan</span>
+            <span className='truncate text-[var(--text-body)] text-sm'>{displayPlanName} plan</span>
             <span className='truncate text-[var(--text-muted)] text-caption'>{priceText}</span>
           </div>
         </div>

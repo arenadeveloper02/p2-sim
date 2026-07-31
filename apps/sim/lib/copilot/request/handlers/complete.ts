@@ -32,12 +32,17 @@ export const handleCompleteEvent: StreamHandler = async (event, context, execCon
     await postStreamBillingUpdateCost({
       userId: execContext.userId,
       workspaceId: execContext.workspaceId,
+      chatId: context.chatId ?? execContext.chatId,
+      runId: context.runId ?? execContext.runId,
       messageId: context.messageId,
       goRoute: context.billingGoRoute ?? '/api/copilot',
       model: context.billingModel,
       cost: cumulativeCost,
       inputTokens: context.usage?.prompt,
       outputTokens: context.usage?.completion,
+      ...(context.billingGoRoute?.startsWith('/api/mothership/execute') && execContext.executionId
+        ? { parentExecutionId: execContext.executionId }
+        : {}),
     })
   }
 }

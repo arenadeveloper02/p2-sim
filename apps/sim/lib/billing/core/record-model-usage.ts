@@ -10,6 +10,8 @@ export interface RecordModelUsageParams {
   workspaceId?: string
   workflowId?: string
   executionId?: string
+  /** Mothership/copilot chat for Usage joins (`usage_log.chat_id`). */
+  chatId?: string
   sourceReference?: string
 }
 

@@ -22,6 +22,7 @@ export default {
     extend: {
       fontFamily: {
         season: ['var(--font-season)'],
+        poppins: ['var(--font-poppins)'],
         body: [
           'ui-sans-serif',
           '-apple-system',

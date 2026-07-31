@@ -1,5 +1,5 @@
-import { SignJWT } from 'jose'
 import { createLogger } from '@sim/logger'
+import { SignJWT } from 'jose'
 import {
   buildTableCellTextEndIndexMap,
   buildTableContentRequests,
@@ -180,7 +180,6 @@ function isSimInternalImageUrl(url: string): boolean {
     return false
   }
 }
-
 
 /**
  * Generates a short-lived internal JWT that satisfies `checkSessionOrInternalAuth` on
@@ -489,7 +488,9 @@ export const createFromTemplateTool: ToolConfig<
     )
     const templatePresData = await templatePresRes.json()
     if (!templatePresRes.ok) {
-      throw new Error(templatePresData.error?.message || 'Failed to read template presentation for tables')
+      throw new Error(
+        templatePresData.error?.message || 'Failed to read template presentation for tables'
+      )
     }
 
     const slidesOrdered = expandSlidesForTableOverflow([...schema.slides], templatePresData)
@@ -608,7 +609,6 @@ export const createFromTemplateTool: ToolConfig<
       imageUrl: string
       source?: BlockLike['source']
     }[] = []
-
 
     for (let s = 0; s < slidesOrdered.length; s++) {
       const slideSchema = slidesOrdered[s] as SlideLike

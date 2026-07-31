@@ -55,6 +55,7 @@ describe('GET /api/users/me/usage-logs', () => {
         id: 'log-1',
         createdAt: '2026-07-01T00:00:00.000Z',
         source: 'workflow',
+        sourceLabel: 'Workflow',
         workflowName: null,
         creditCost: 100,
         dollarCost: 0.5,

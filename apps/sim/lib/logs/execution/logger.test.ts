@@ -5,9 +5,11 @@ import { ExecutionLogger } from '@/lib/logs/execution/logger'
 
 const dbSelectMock = vi.hoisted(() => vi.fn())
 const dbExecuteMock = vi.hoisted(() => vi.fn())
-const txUpdateMock = vi.hoisted(() =>
-  vi.fn(() => ({ set: () => ({ where: () => Promise.resolve() }) }))
-)
+const dbUpdateWhereMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
+const dbUpdateSetMock = vi.hoisted(() => vi.fn(() => ({ where: dbUpdateWhereMock })))
+const dbUpdateMock = vi.hoisted(() => vi.fn(() => ({ set: dbUpdateSetMock })))
+const txUpdateSetMock = vi.hoisted(() => vi.fn(() => ({ where: () => Promise.resolve() })))
+const txUpdateMock = vi.hoisted(() => vi.fn(() => ({ set: txUpdateSetMock })))
 
 vi.mock('@sim/db', () => {
   // The reconcile runs inside db.transaction with an advisory lock. The tx
@@ -25,7 +27,7 @@ vi.mock('@sim/db', () => {
     db: {
       select: dbSelectMock,
       insert: vi.fn(),
-      update: vi.fn(),
+      update: dbUpdateMock,
       execute: dbExecuteMock,
       transaction: vi.fn(async (cb: (txArg: typeof tx) => Promise<unknown>) => cb(tx)),
     },
@@ -534,22 +536,25 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     baseExecutionCharge: 0.005,
     models: {},
     charges: {},
+    external: {},
     ...overrides,
   })
 
-  // db.select() is called twice in recordExecutionUsage: first the workflow row
-  // (terminated by .limit), then the already-billed usage_log rows (terminated
-  // by .groupBy). Return each in order.
+  // db.select() is called in recordExecutionUsage: workflow row, optional
+  // execution-log lineage row (when executionId is set), then already-billed rows.
   const mockDb = (billedRows: Array<Record<string, unknown>>) => {
-    let call = 0
-    dbSelectMock.mockImplementation(() => {
-      call += 1
-      const rows = call === 1 ? [{ id: 'workflow-1', workspaceId: 'ws-1' }] : billedRows
+    dbSelectMock.mockImplementation((fields?: unknown) => {
+      const isLineageSelect =
+        fields && typeof fields === 'object' && 'parentExecutionId' in (fields as object)
+
       const chain: any = {
         from: () => chain,
         where: () => chain,
-        limit: () => Promise.resolve(rows),
-        groupBy: () => Promise.resolve(rows),
+        limit: () =>
+          Promise.resolve(
+            isLineageSelect ? [] : [{ id: 'workflow-1', workspaceId: 'ws-1' }]
+          ),
+        groupBy: () => Promise.resolve(billedRows),
       }
       return chain
     })
@@ -589,6 +594,30 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     expect(recorded).toBeCloseTo(1.005, 8)
     // cost_total is refined to the exact ledger sum inside the locked tx.
     expect(txUpdateMock).toHaveBeenCalledTimes(1)
+    expect(txUpdateSetMock).toHaveBeenCalledWith({ costTotal: '1.005' })
+  })
+
+  test('cost_total projection matches SUM(usage_log) for workflow source at completion', async () => {
+    await run(
+      costSummary({
+        models: {
+          'gpt-4o': {
+            total: 2.5,
+            input: 1.5,
+            output: 1,
+            tokens: { input: 10, output: 5, total: 15 },
+          },
+        },
+        charges: { 'Exa Search': { total: 0.02 } },
+      }),
+      []
+    )
+
+    const ledgerSum = vi
+      .mocked(recordUsage)
+      .mock.calls[0][0].entries.reduce((sum: number, entry: { cost: number }) => sum + entry.cost, 0)
+    expect(ledgerSum).toBeCloseTo(2.525, 8)
+    expect(txUpdateSetMock).toHaveBeenCalledWith({ costTotal: ledgerSum.toString() })
   })
 
   test('resume records only the increment over what is already billed', async () => {
@@ -708,6 +737,43 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     ])
   })
 
+  test('external Cost block charge reconciles as an external row with vendor metadata', async () => {
+    await run(
+      costSummary({
+        external: {
+          'Twilio Cost': {
+            total: 0.05,
+            vendor: 'Twilio',
+            quantity: 2,
+            unit: 'message',
+            metadata: {
+              originalAmount: 0.05,
+              originalCurrency: 'USD',
+              source: 'fixed',
+            },
+          },
+        },
+      }),
+      [{ category: 'fixed', description: 'execution_fee', cost: '0.005' }]
+    )
+
+    expect(lastEntries()).toEqual([
+      expect.objectContaining({
+        category: 'external',
+        description: 'Twilio Cost',
+        cost: 0.05,
+        vendor: 'Twilio',
+        quantity: 2,
+        unit: 'message',
+        metadata: {
+          originalAmount: 0.05,
+          originalCurrency: 'USD',
+          source: 'fixed',
+        },
+      }),
+    ])
+  })
+
   test('two boundaries (pause then resume) bill the full run exactly once', async () => {
     const model = (total: number) => ({
       'gpt-4o': {
@@ -802,7 +868,7 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     ])
   })
 
-  test('zero-cost models and charges (BYOK) are filtered out, leaving only the base fee', async () => {
+  test('zero-cost models without usage metadata are filtered out, leaving only the base fee', async () => {
     await run(
       costSummary({
         models: {
@@ -814,6 +880,30 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     )
     expect(lastEntries()).toEqual([
       expect.objectContaining({ category: 'fixed', description: 'execution_fee', cost: 0.005 }),
+    ])
+  })
+
+  test('BYOK model usage with tokens records a zero-cost ledger row', async () => {
+    await run(
+      costSummary({
+        models: {
+          'gpt-4o': {
+            input: 0,
+            output: 0,
+            total: 0,
+            tokens: { input: 120, output: 45, total: 165 },
+          },
+        },
+      }),
+      [{ category: 'fixed', description: 'execution_fee', cost: '0.005' }]
+    )
+    expect(lastEntries()).toEqual([
+      expect.objectContaining({
+        category: 'model',
+        description: 'gpt-4o',
+        cost: 0,
+        metadata: { inputTokens: 120, outputTokens: 45 },
+      }),
     ])
   })
 
@@ -832,5 +922,23 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     expect(recordUsage).toHaveBeenCalledTimes(1)
     // The ledger INSERT participates in the locked transaction.
     expect(vi.mocked(recordUsage).mock.calls[0][0]).toHaveProperty('tx')
+  })
+
+  test('marks billingReconciliationPending when recordUsage fails', async () => {
+    vi.mocked(recordUsage).mockRejectedValueOnce(new Error('ledger insert failed'))
+    mockDb([])
+
+    const recorded = await logger.recordExecutionUsage(
+      'workflow-1',
+      costSummary({ baseExecutionCharge: 0.005 }),
+      'api',
+      'exec-fail-1',
+      'user-1'
+    )
+
+    expect(recorded).toBe(0)
+    expect(dbUpdateMock).toHaveBeenCalled()
+    expect(dbUpdateSetMock).toHaveBeenCalled()
+    expect(dbUpdateWhereMock).toHaveBeenCalled()
   })
 })

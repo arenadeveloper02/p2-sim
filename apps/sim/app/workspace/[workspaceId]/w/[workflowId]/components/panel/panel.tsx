@@ -55,8 +55,6 @@ import {
 } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { ConversationListItem } from '@/app/workspace/[workspaceId]/components'
 import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components'
-import { WorkflowCopilotShell } from '@/local-copilot/integration/workflow-copilot-shell'
-import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import { getWorkflowCopilotUseChatOptions, useChat } from '@/app/workspace/[workspaceId]/home/hooks'
 import type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
@@ -91,6 +89,8 @@ import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
+import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
+import { WorkflowCopilotShell } from '@/local-copilot/integration/workflow-copilot-shell'
 import { useChatStore } from '@/stores/chat/store'
 import type { ChatContext, PanelTab } from '@/stores/panel'
 import { usePanelStore } from '@/stores/panel'
@@ -132,8 +132,12 @@ const RunAgentExternalChat = ({
         if (response.ok) {
           const data = await response.json()
           if (data.isDeployed && data.deployment?.identifier) {
-            const url = `/chat/${data.deployment.identifier}?workspaceId=${workspaceId}&fromControlBar=true`
-            setChatUrl(url)
+            if (data.deployment.deploymentType === 'app' && data.deployment.redirectUrl) {
+              setChatUrl(data.deployment.redirectUrl)
+            } else {
+              const url = `/chat/${data.deployment.identifier}?workspaceId=${workspaceId}&fromControlBar=true`
+              setChatUrl(url)
+            }
           } else {
             setChatUrl(null)
           }
@@ -155,9 +159,13 @@ const RunAgentExternalChat = ({
     return null
   }
 
+  const isExternalUrl = chatUrl.startsWith('http://') || chatUrl.startsWith('https://')
+
   return (
     <Link
       href={chatUrl}
+      target={isExternalUrl ? '_blank' : undefined}
+      rel={isExternalUrl ? 'noopener noreferrer' : undefined}
       onClick={() =>
         workflowRunCTAEvent({
           'Workspace Name': workspaceName || '',

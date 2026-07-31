@@ -1,5 +1,7 @@
 import { createLogger } from '@sim/logger'
 
+import { ensureArenaScaffoldFiles } from '@/lib/development/arena/scaffold'
+
 const logger = createLogger('NormalizeGeneratedApp')
 
 export interface GeneratedAppFile {
@@ -35,6 +37,25 @@ const REACT19_COMPAT_DEPENDENCY_OVERRIDES: Record<string, string> = {
 }
 
 /**
+ * Transitive tooling the LLM sometimes pins directly (often with hallucinated or
+ * too-new versions). Leave resolution to autoprefixer/browserslist instead.
+ */
+const STRIP_DIRECT_TOOLING_DEPENDENCIES = new Set([
+  'caniuse-lite',
+  'browserslist',
+  'update-browserslist-db',
+])
+
+/** Lockfiles from the LLM freeze bad transitive versions and break fresh npm installs. */
+const GENERATED_APP_LOCKFILE_PATHS = new Set([
+  'package-lock.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+  'bun.lock',
+  'bun.lockb',
+])
+
+/**
  * Added to package.json when source files import the package but the LLM omitted it.
  * Import-driven only — nothing here is forced onto apps that do not use it.
  */
@@ -44,7 +65,10 @@ const AUTO_ADD_DEPENDENCIES: Record<string, string> = {
 }
 
 /** Runtime packages auto-added only when a generated file imports them. Version-pinned dev types travel with them. */
-const AUTO_ADD_DEPENDENCIES_WITH_TYPES: Record<string, { dep: string; devTypes: string; typesPackage: string }> = {
+const AUTO_ADD_DEPENDENCIES_WITH_TYPES: Record<
+  string,
+  { dep: string; devTypes: string; typesPackage: string }
+> = {
   jsonwebtoken: { dep: '^9.0.2', devTypes: '^9.0.9', typesPackage: '@types/jsonwebtoken' },
   bcryptjs: { dep: '^2.4.3', devTypes: '^2.4.6', typesPackage: '@types/bcryptjs' },
 }
@@ -57,6 +81,8 @@ export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these ex
 - If ANY file imports a third-party package (e.g. lucide-react, recharts, date-fns, zod, bcryptjs, jsonwebtoken), package.json dependencies MUST include that exact package — a missing dependency causes TS2307 "Cannot find module" at typecheck
 - Add matching @types/* devDependencies for packages that ship no bundled types (e.g. @types/jsonwebtoken, @types/bcryptjs)
 - When using lucide-react, pin "lucide-react": "^0.479.0" or newer (React 19 compatible) — never ^0.395.x
+- NEVER add caniuse-lite, browserslist, or update-browserslist-db as direct dependencies/devDependencies/overrides — they are transitive via autoprefixer; pinning them causes npm ETARGET install failures
+- NEVER emit package-lock.json, yarn.lock, pnpm-lock.yaml, or bun.lock
 Use Tailwind CSS v3 only (tailwind.config.ts + postcss.config.mjs with tailwindcss and autoprefixer). Do NOT use a Tailwind v4-only setup.
 next.config.ts MUST NOT include an eslint property (removed in Next.js 16 — builds no longer run ESLint from next.config)`
 
@@ -443,10 +469,7 @@ export const GENERATED_APP_DATABASE_EDIT_GUIDANCE = `Database edits (existing Ne
 - MANDATORY: always return prisma/schema.prisma on every edit; when you ADD models/fields/relations also return lib/actions.ts + lib/types.ts together
 - Read the provided lib/actions.ts and lib/types.ts in context before editing — extend their patterns, do not invent conflicting field names`
 
-export const GENERATED_APP_DATABASE_FILE_PATHS = [
-  'prisma/schema.prisma',
-  'lib/prisma.ts',
-] as const
+export const GENERATED_APP_DATABASE_FILE_PATHS = ['prisma/schema.prisma', 'lib/prisma.ts'] as const
 
 const PINNED_PRISMA_VERSION = '^6.9.0'
 
@@ -462,6 +485,8 @@ export interface NormalizeGeneratedAppFilesOptions {
   latestUserRequest?: string
   /** Neon project id — recorded in REPO_SUMMARY.md for edit-time connection reuse. */
   neonProjectId?: string
+  /** When true, inject Arena iframe emailId scaffold into the generated app. */
+  arenaMode?: boolean
 }
 
 export const GENERATED_APP_REPO_SUMMARY_GUIDANCE = `REPO_SUMMARY.md (required, auto-maintained):
@@ -570,6 +595,7 @@ export function patchPackageJsonContent(
     const pkg = JSON.parse(content) as {
       dependencies?: Record<string, string>
       devDependencies?: Record<string, string>
+      overrides?: Record<string, unknown>
       scripts?: Record<string, string>
     }
 
@@ -581,6 +607,8 @@ export function patchPackageJsonContent(
         pkg.dependencies[dep] = version
       }
     }
+
+    stripDirectToolingDependencies(pkg)
 
     if (options.usedPackages) {
       for (const usedPackage of options.usedPackages) {
@@ -622,6 +650,31 @@ export function patchPackageJsonContent(
     return `${JSON.stringify(pkg, null, 2)}\n`
   } catch {
     return content
+  }
+}
+
+function stripDirectToolingDependencies(pkg: {
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+  overrides?: Record<string, unknown>
+}): void {
+  if (pkg.dependencies) {
+    for (const name of STRIP_DIRECT_TOOLING_DEPENDENCIES) {
+      delete pkg.dependencies[name]
+    }
+  }
+  if (pkg.devDependencies) {
+    for (const name of STRIP_DIRECT_TOOLING_DEPENDENCIES) {
+      delete pkg.devDependencies[name]
+    }
+  }
+  if (pkg.overrides) {
+    for (const name of STRIP_DIRECT_TOOLING_DEPENDENCIES) {
+      delete pkg.overrides[name]
+    }
+    if (Object.keys(pkg.overrides).length === 0) {
+      delete pkg.overrides
+    }
   }
 }
 
@@ -698,7 +751,10 @@ function isComponentAliasPath(importPath: string): boolean {
   return (
     importPath.startsWith('components/') ||
     /^components\//.test(importPath) ||
-    importPath.split('/').pop()?.match(/^[A-Z]/) !== null
+    importPath
+      .split('/')
+      .pop()
+      ?.match(/^[A-Z]/) !== null
   )
 }
 
@@ -761,7 +817,9 @@ export function collectUsedNpmPackageNames(files: GeneratedAppFile[]): Set<strin
           continue
         }
 
-        const pkg = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]
+        const pkg = spec.startsWith('@')
+          ? spec.split('/').slice(0, 2).join('/')
+          : spec.split('/')[0]
         packages.add(pkg)
       }
     }
@@ -1088,7 +1146,9 @@ export function sanitizeComponentFileImports(content: string): string {
   result = result.replace(
     /^import\s+type\s*\{([^}]*)\}\s*from\s*['"]@\/lib\/actions['"]\s*;?\s*$/gm,
     (_match, imports: string) => {
-      const names = parseNamedImportBinding(imports).filter((name) => !REACT_BUILTIN_TYPES.has(name))
+      const names = parseNamedImportBinding(imports).filter(
+        (name) => !REACT_BUILTIN_TYPES.has(name)
+      )
       if (names.length === 0) {
         return ''
       }
@@ -1124,7 +1184,12 @@ export function sanitizeComponentFileImports(content: string): string {
     const line = passthroughLines[index]
     const trimmed = line.trim()
 
-    if (!mergedInserted && trimmed && !trimmed.startsWith('import ') && trimmed !== "'use client'") {
+    if (
+      !mergedInserted &&
+      trimmed &&
+      !trimmed.startsWith('import ') &&
+      trimmed !== "'use client'"
+    ) {
       output.push(mergedImport)
       mergedInserted = true
     }
@@ -1149,7 +1214,10 @@ export function sanitizeComponentFileImports(content: string): string {
     }
   }
 
-  return output.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()
+  return output
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd()
 }
 
 /**
@@ -1167,7 +1235,7 @@ export function ensureDatabasePagesAreDynamic(files: GeneratedAppFile[]): Genera
       return file
     }
     if (
-      !file.content.includes("@/lib/actions") &&
+      !file.content.includes('@/lib/actions') &&
       !file.content.includes("from '@/lib/prisma'") &&
       !file.content.includes('from "@/lib/prisma"')
     ) {
@@ -1177,7 +1245,11 @@ export function ensureDatabasePagesAreDynamic(files: GeneratedAppFile[]): Genera
     const importEnd = file.content.lastIndexOf('\nimport ')
     const metadataIdx = file.content.indexOf('export const metadata')
     const insertAt =
-      metadataIdx >= 0 ? metadataIdx : importEnd >= 0 ? file.content.indexOf('\n', importEnd) + 1 : 0
+      metadataIdx >= 0
+        ? metadataIdx
+        : importEnd >= 0
+          ? file.content.indexOf('\n', importEnd) + 1
+          : 0
 
     return {
       ...file,
@@ -1247,7 +1319,9 @@ function pagePathToRoute(pagePath: string): string | undefined {
 
   const routeSegments = match[1]
     .split('/')
-    .map((segment) => (segment.startsWith('[') && segment.endsWith(']') ? `:${segment.slice(1, -1)}` : segment))
+    .map((segment) =>
+      segment.startsWith('[') && segment.endsWith(']') ? `:${segment.slice(1, -1)}` : segment
+    )
     .join('/')
 
   return `/${routeSegments}`
@@ -1266,9 +1340,7 @@ function collectAppRoutes(files: GeneratedAppFile[]): string[] {
   return [...routes].sort()
 }
 
-function collectAppRouteEntries(
-  files: GeneratedAppFile[]
-): Array<{ route: string; file: string }> {
+function collectAppRouteEntries(files: GeneratedAppFile[]): Array<{ route: string; file: string }> {
   const entries: Array<{ route: string; file: string }> = []
 
   for (const file of files) {
@@ -1352,8 +1424,7 @@ export function buildReadmeContent(
     readPackageName(files)?.replace(/-/g, ' ') ||
     'Generated App'
   const description =
-    options.description?.trim() ||
-    `${appName} — a Next.js app generated with Sim Development.`
+    options.description?.trim() || `${appName} — a Next.js app generated with Sim Development.`
   const features =
     options.features && options.features.length > 0
       ? options.features
@@ -1451,8 +1522,7 @@ export function buildRepoSummaryContent(
     readPackageName(files)?.replace(/-/g, ' ') ||
     'Generated App'
   const description =
-    options.description?.trim() ||
-    `${appName} — a Next.js app generated with Sim Development.`
+    options.description?.trim() || `${appName} — a Next.js app generated with Sim Development.`
   const features =
     options.features && options.features.length > 0
       ? options.features
@@ -1496,7 +1566,10 @@ export function buildRepoSummaryContent(
 
   const inventorySections = Object.entries(groupedPaths)
     .filter(([, groupPaths]) => groupPaths.length > 0)
-    .map(([label, groupPaths]) => `### ${label}\n\n${groupPaths.map((path) => `- \`${path}\``).join('\n')}`)
+    .map(
+      ([label, groupPaths]) =>
+        `### ${label}\n\n${groupPaths.map((path) => `- \`${path}\``).join('\n')}`
+    )
     .join('\n\n')
 
   const latestChangeSection = options.latestUserRequest?.trim()
@@ -1642,7 +1715,16 @@ export function normalizeGeneratedAppFiles(
 ): GeneratedAppFile[] {
   const useSrcDir = projectUsesSrcAppDir(files)
 
-  const patched = files.map((file) => {
+  const withoutLockfiles = files.filter((file) => {
+    const path = normalizePath(file.path)
+    if (!GENERATED_APP_LOCKFILE_PATHS.has(path)) {
+      return true
+    }
+    logger.warn('Removed generated lockfile (npm must resolve transitive deps fresh)', { path })
+    return false
+  })
+
+  const patched = withoutLockfiles.map((file) => {
     const path = normalizePath(file.path)
 
     if (path === 'package.json' || path.endsWith('/package.json')) {
@@ -1668,9 +1750,12 @@ export function normalizeGeneratedAppFiles(
   const withNextEnv = ensureNextEnvFile(withDatabase)
   const withReadme = ensureReadmeFile(withNextEnv, options)
   const withRepoSummary = ensureRepoSummaryFile(withReadme, options)
-  const usedPackages = collectUsedNpmPackageNames(withRepoSummary)
+  const withArena = options.arenaMode
+    ? ensureArenaScaffoldFiles(withRepoSummary)
+    : withRepoSummary
+  const usedPackages = collectUsedNpmPackageNames(withArena)
 
-  return withRepoSummary.map((file) => {
+  return withArena.map((file) => {
     if (normalizePath(file.path) !== 'package.json') {
       return file
     }

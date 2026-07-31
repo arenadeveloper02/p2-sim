@@ -1,5 +1,5 @@
-import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { BlockState, Variable, WorkflowState } from '@sim/workflow-types/workflow'
+import type { MothershipResource } from '@/lib/copilot/resources/types'
 
 export interface LocalCopilotE2bCapabilities {
   enabled: boolean
@@ -18,7 +18,13 @@ export type LocalCopilotProviderId =
 export interface LocalCopilotConfig {
   enabled: boolean
   provider: LocalCopilotProviderId
+  /** Main agent model (parent tool loop). */
   model: string
+  /**
+   * Model for specialist / parallel-subagent passes. Defaults to a cheaper
+   * Anthropic Haiku when provider is anthropic; otherwise matches {@link model}.
+   */
+  specialistModel: string
   apiKey?: string
   baseUrl?: string
 }

@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
-import { chatPromptFeedback, workflowExecutionLogs } from '@sim/db/schema'
+import { chat, chatPromptFeedback, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
 import {
@@ -88,11 +88,35 @@ export async function GET(
       return addCorsHeaders(createErrorResponse('Authentication required', 401), request)
     }
 
+    const deploymentResult = await db
+      .select({ workflowId: chat.workflowId, isActive: chat.isActive })
+      .from(chat)
+      .where(
+        and(
+          or(eq(chat.identifier, identifier), eq(chat.workflowId, identifier)),
+          isNull(chat.archivedAt)
+        )
+      )
+      .limit(1)
+
+    if (deploymentResult.length === 0) {
+      return addCorsHeaders(createErrorResponse('Chat not found', 404), request)
+    }
+
+    if (!deploymentResult[0].isActive) {
+      return addCorsHeaders(createErrorResponse('This chat is currently unavailable', 403), request)
+    }
+
+    const deploymentWorkflowId = deploymentResult[0].workflowId
+
     // Build query conditions for external chat logs
     let conditions = and(
-      eq(workflowExecutionLogs.workflowId, identifier),
-      eq(workflowExecutionLogs.isExternalChat, true), // Only external chat logs
-      eq(workflowExecutionLogs.userId, executingUserId) // Filter by executing user
+      eq(workflowExecutionLogs.workflowId, deploymentWorkflowId),
+      eq(workflowExecutionLogs.isExternalChat, true),
+      or(
+        eq(workflowExecutionLogs.userId, executingUserId),
+        isNull(workflowExecutionLogs.userId)
+      )
     )
 
     // Add date range filters if provided
@@ -120,7 +144,8 @@ export async function GET(
 
     // Log the conditions in a safe way (avoid circular references)
     const conditionsInfo = {
-      workflowId: identifier,
+      workflowId: deploymentWorkflowId,
+      identifier,
       isExternalChat: true,
       executingUserId,
       startDate: startDate || null,

@@ -138,7 +138,13 @@ export const PATCH = withRouteHandler(
         password,
         allowedEmails,
         outputConfigs,
+        deploymentType,
+        redirectUrl,
       } = validatedData
+
+      if (deploymentType === 'app' && !redirectUrl?.trim()) {
+        return createErrorResponse('Redirect URL is required when deploying as an app', 400)
+      }
 
       if (workflowId && workflowId !== existingChat[0].workflowId) {
         return createErrorResponse('Changing the workflow of a chat deployment is not allowed', 400)
@@ -229,6 +235,11 @@ export const PATCH = withRouteHandler(
 
       if (outputConfigs) {
         updateData.outputConfigs = outputConfigs
+      }
+
+      if (deploymentType) {
+        updateData.deploymentType = deploymentType
+        updateData.redirectUrl = deploymentType === 'app' ? (redirectUrl?.trim() ?? null) : null
       }
 
       const emailCount = Array.isArray(updateData.allowedEmails)

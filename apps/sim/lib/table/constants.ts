@@ -7,7 +7,7 @@ import { env, envNumber } from '@/lib/core/config/env'
 
 export const TABLE_LIMITS = {
   MAX_TABLES_PER_WORKSPACE: 100,
-  MAX_ROWS_PER_TABLE: 10000,
+  MAX_ROWS_PER_TABLE: 30000,
   MAX_ROW_SIZE_BYTES: 400 * 1024, // 400KB
   MAX_COLUMNS_PER_TABLE: 50,
   MAX_TABLE_NAME_LENGTH: 128,
