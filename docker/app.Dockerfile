@@ -78,6 +78,11 @@ ENV DATABASE_URL=${DATABASE_URL}
 ARG NEXT_PUBLIC_APP_URL="http://localhost:3000"
 ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 
+# Dummy auth secret so page-data collection doesn't throw BetterAuthError on
+# every route that imports `@/lib/auth`. Runtime overrides this at deploy time.
+ARG BETTER_AUTH_SECRET="docker-build-dummy-better-auth-secret-32b"
+ENV BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+
 # Docker builders are memory-constrained (GH Actions ~7GB RAM). BuildKit's sandbox
 # blocks swapon() without the security.insecure entitlement, which many CI setups
 # don't (and shouldn't have to) grant. Instead of provisioning swap inside the
@@ -85,8 +90,10 @@ ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 # `build` script reads this directly (defaults to 8192 if unset) and passes it
 # to `next build` as NODE_OPTIONS itself, so set it here rather than NODE_OPTIONS
 # directly (an ENV NODE_OPTIONS here would just get overridden by that script).
+# Leave headroom below the cgroup limit for native/page-data RSS; next.config also
+# sets experimental.cpus=1 under DOCKER_BUILD so workers don't multiply peak memory.
 # Lower this further if the build still OOMs on your runner.
-ENV BUILD_MAX_OLD_SPACE_MB=5120
+ENV BUILD_MAX_OLD_SPACE_MB=4096
 
 # Per-platform cache id keeps arm64/amd64 SWC artifacts isolated.
 RUN --mount=type=cache,id=next-cache-${TARGETPLATFORM},target=/app/apps/sim/.next/cache \

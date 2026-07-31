@@ -162,6 +162,18 @@ const nextConfig: NextConfig = {
     turbopackFileSystemCacheForDev: false,
     preloadEntriesOnStart: false,
     /**
+     * Docker/CI image builds run under a tight BuildKit cgroup (~7GB on
+     * ubuntu-latest). Next defaults to one page-data worker per CPU; three
+     * workers loading the full route graph regularly SIGKILL (exit 137). Cap
+     * concurrency when DOCKER_BUILD is set so peak RSS stays under the limit.
+     */
+    ...(isTruthy(env.DOCKER_BUILD)
+      ? {
+          cpus: 1,
+          memoryBasedWorkersCount: true,
+        }
+      : {}),
+    /**
      * Turbopack's persistent build cache (beta) — opt-in via env so only the
      * CI check build uses it; production image builds stay on the default
      * cold-build path until the feature stabilizes.
