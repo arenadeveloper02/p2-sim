@@ -1,16 +1,16 @@
 {
   "runId": "2026-07-31",
-  "recordedAt": "2026-07-31T13:46:50.780Z",
+  "recordedAt": "2026-07-31T14:00:32.203Z",
   "agents": [
     {
       "agentName": "parent-grill-analysis",
       "model": "claude-opus-4-8",
       "iterations": 1,
-      "inputTokens": 4,
-      "outputTokens": 2085,
-      "cacheReadInputTokens": 98559,
-      "cacheCreationInputTokens": 33699,
-      "estimatedCostUsd": 0.31346725000000003,
+      "inputTokens": 7,
+      "outputTokens": 2444,
+      "cacheReadInputTokens": 142886,
+      "cacheCreationInputTokens": 34189,
+      "estimatedCostUsd": 0.34768325,
       "costSource": "provider"
     }
   ]
