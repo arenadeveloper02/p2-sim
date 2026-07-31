@@ -105,9 +105,24 @@ export const facebookAdsQueryTool: ToolConfig<FacebookAdsQueryParams, unknown> =
       }
 
       const data = await response.json()
+      const graphResponse = data.data
+      const rows = Array.isArray(graphResponse)
+        ? graphResponse
+        : Array.isArray(graphResponse?.data)
+          ? graphResponse.data
+          : []
+      const paging =
+        graphResponse &&
+        typeof graphResponse === 'object' &&
+        !Array.isArray(graphResponse) &&
+        graphResponse.paging &&
+        typeof graphResponse.paging === 'object'
+          ? graphResponse.paging
+          : undefined
+
       logger.info('Facebook Ads query successful', {
         account: params?.account ?? params?.adAccountId,
-        dataLength: data.data?.length || 0,
+        dataLength: rows.length,
       })
 
       const { cost, model, tokens, ...payload } = data
@@ -116,6 +131,8 @@ export const facebookAdsQueryTool: ToolConfig<FacebookAdsQueryParams, unknown> =
         success: true,
         output: {
           ...payload,
+          data: rows,
+          ...(paging ? { paging } : {}),
           ...(cost && typeof cost === 'object' ? { cost } : {}),
           ...(typeof model === 'string' ? { model } : {}),
           ...(tokens && typeof tokens === 'object' ? { tokens } : {}),
@@ -144,6 +161,7 @@ export type FacebookAdsQueryResponse = {
     endpoint?: string
     date_preset?: string
     level?: string
+    paging?: Record<string, unknown>
     cost?: {
       input: number
       output: number
