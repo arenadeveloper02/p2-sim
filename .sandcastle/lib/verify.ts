@@ -57,10 +57,7 @@ export function autofixFormat(): VerifyResult {
 
 export function formatVerifyResults(results: VerifyResult[]): string {
   return results
-    .map(
-      (r) =>
-        `### ${r.command}\n\n${r.success ? '✅ passed' : '❌ failed'}\n\n\`\`\`\n${r.output.slice(0, 4000)}\n\`\`\``
-    )
+    .map((r) => `### ${r.command}\n\n${r.success ? '✅ passed' : '❌ failed'}\n\n\`\`\`\n${(r.success ? r.output.slice(0, 4000) : r.output.slice(-8000))}\n\`\`\``)
     .join('\n\n')
 }
 

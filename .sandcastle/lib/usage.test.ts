@@ -240,9 +240,7 @@ describe('usage reporting', () => {
 
   test('recordAgentUsage returns null when both result and stream are empty', () => {
     expect(recordAgentUsage('ghost', 'claude-opus-4-8', null, '')).toBeNull()
-    expect(
-      recordAgentUsage('ghost', 'claude-opus-4-8', { stdout: '', iterations: [] } as never)
-    ).toBeNull()
+    expect(recordAgentUsage('ghost', 'claude-opus-4-8', { stdout: '', iterations: [] } as never)).toBeNull()
   })
 
   test('recordAgentUsage upserts the larger footprint for the same agent name', () => {
