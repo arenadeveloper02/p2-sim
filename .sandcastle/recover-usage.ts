@@ -11,12 +11,7 @@
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  appendRunLogSections,
-  readState,
-  runGit,
-  todayRunId,
-} from './lib/config'
+import { appendRunLogSections, readState, runGit, todayRunId } from './lib/config'
 import {
   inferOutcomeFromEnvironment,
   publishRunJobSummary,
@@ -94,9 +89,7 @@ if (records.length > 0) {
   writeUsageJson(runId, records)
   const markdown = formatUsageMarkdown(records)
   appendRunLogSections(runId, { Usage: markdown })
-  console.log(
-    `[recover-usage] wrote usage for ${records.length} agent(s) under ledger/${runId}/`
-  )
+  console.log(`[recover-usage] wrote usage for ${records.length} agent(s) under ledger/${runId}/`)
 } else {
   console.log('[recover-usage] no agent usage found in logs or ledger')
 }

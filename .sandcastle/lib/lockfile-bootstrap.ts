@@ -1,10 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
-import {
-  MERGE_POLICY_PATH,
-  listConflictFiles,
-  runGit,
-} from './config'
+import { MERGE_POLICY_PATH, listConflictFiles, runGit } from './config'
 
 const PACKAGE_MANIFEST_PATTERN = /(?:^|\/)package\.json$/
 const LOCKFILE_PATH = 'bun.lock'
@@ -193,7 +189,9 @@ export function ensureInstallableWorkspace(runId: string): boolean {
   }
 
   if (fileHasConflictMarkers(BUNFIG_PATH)) {
-    console.error('[lockfile-bootstrap] bunfig.toml still contains conflict markers after bootstrap.')
+    console.error(
+      '[lockfile-bootstrap] bunfig.toml still contains conflict markers after bootstrap.'
+    )
     return false
   }
 
