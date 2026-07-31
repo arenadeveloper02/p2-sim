@@ -3514,9 +3514,7 @@ function matchesCatalogModelId(candidate: string, catalogId: string): boolean {
  * Finds a catalog model entry for a runtime label, including date-suffixed IDs
  * returned by provider APIs (e.g. `claude-sonnet-4-5-20250514`).
  */
-export function findCatalogModel(
-  modelId: string
-): {
+export function findCatalogModel(modelId: string): {
   providerId: string
   model: (typeof PROVIDER_DEFINITIONS)[keyof typeof PROVIDER_DEFINITIONS]['models'][number]
 } | null {
