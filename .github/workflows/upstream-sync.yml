@@ -157,10 +157,14 @@ jobs:
           HAS_CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
         run: |
+          # GITHUB_TOKEN cannot call /user; PATs can. Accept either /user or repo read.
           token_ok() {
             local token="$1"
             [ -n "$token" ] || return 1
-            GH_TOKEN="$token" gh api user --jq .login >/dev/null 2>&1
+            if GH_TOKEN="$token" gh api user --jq .login >/dev/null 2>&1; then
+              return 0
+            fi
+            GH_TOKEN="$token" gh api "repos/${GITHUB_REPOSITORY}" --jq .full_name >/dev/null 2>&1
           }
 
           selected_source=""
@@ -269,8 +273,11 @@ jobs:
       - name: Diagnose GitHub token
         run: |
           echo "::group::Diagnose GitHub token"
-          gh api user --jq '{login: .login, type: .type}'
-          gh api -i user 2>&1 | grep -i '^x-oauth-scopes:' || echo "No x-oauth-scopes header (fine-grained or GITHUB_TOKEN)"
+          if gh api user --jq '{login: .login, type: .type}' 2>/dev/null; then
+            gh api -i user 2>&1 | grep -i '^x-oauth-scopes:' || echo "No x-oauth-scopes header (fine-grained or GITHUB_TOKEN)"
+          else
+            echo "Token has no /user identity (expected for github.token)"
+          fi
           gh api "repos/${GITHUB_REPOSITORY}" --jq '{full_name, permissions: .permissions}'
           echo "::endgroup::"
 
