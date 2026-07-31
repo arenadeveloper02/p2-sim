@@ -116,9 +116,7 @@ export function resolveCappedUpstreamTip(
   const untilSha = (options?.untilSha ?? process.env.UPSTREAM_SYNC_UNTIL_SHA ?? '').trim()
   const maxCommitsRaw =
     options?.maxCommits ??
-    (process.env.UPSTREAM_SYNC_MAX_COMMITS
-      ? Number(process.env.UPSTREAM_SYNC_MAX_COMMITS)
-      : 0)
+    (process.env.UPSTREAM_SYNC_MAX_COMMITS ? Number(process.env.UPSTREAM_SYNC_MAX_COMMITS) : 0)
   const maxCommits =
     typeof maxCommitsRaw === 'number' && Number.isFinite(maxCommitsRaw)
       ? Math.floor(maxCommitsRaw)
