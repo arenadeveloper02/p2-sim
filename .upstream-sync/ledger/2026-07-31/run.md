@@ -30,11 +30,13 @@ upstream in this range:
    Fork has diverged (6 fork commits, mostly upstream merges). **Resolution:** fork-first —
    preserve fork behavior; take upstream a11y/URL-search hunks only where they do not conflict
    with fork customizations.
-2. `apps/sim/lib/permission-groups/` (`block-access.ts`, `types.ts`) — upstream `#5818`
+2. `apps/sim/lib/permission-groups/types.ts` — upstream `#5818`
    (`feat(access-control): per-group chat-deploy auth modes + polish`). Fork has heavily
-   customized this dir (19 fork commits). **Resolution:** fork-first, additive union — keep the
-   fork's block-access logic AND layer upstream's per-group chat-deploy auth mode where it does
-   not overwrite fork code. Watch `types.ts` for both sides extending the same type.
+   customized this dir (19 fork commits). Verified this run: upstream touches **only** `types.ts`
+   in the range (not `block-access.ts`), so the collision is confined to type definitions.
+   **Resolution:** fork-first, additive union — keep the fork's block-access logic AND layer
+   upstream's per-group chat-deploy auth mode where it does not overwrite fork code. Watch
+   `types.ts` for both sides extending the same type.
 
 All other fork product surfaces — `arena/`, `p2_docs/`, `unipile/`, `facebook_ads/`,
 `presentation/`, `figma/`, `app/chat/`, `lib/branding/`, `lib/hubspot/`, `app/api/admin/`,
@@ -102,4 +104,22 @@ non-conflicting upstream hunks; nothing is deliberately dropped. `skipped.md` re
 
 None. All resolutions above derive from `merge-policy.json` + `db-migrate` + registry union
 conventions. No `<!-- upstream-sync-question -->` comment posted to PR #668.
+
+### Verification (this run)
+
+Re-ran the analysis against a live `git diff e2fecc86..19d929b1` and confirmed the two central
+claims independently:
+
+- **Fork-owned collision surface = 2 files.** Intersecting all 38 `forkFirst` prefixes with the
+  upstream diff yields exactly `apps/sim/hooks/queries/mothership-admin.ts` (`#5955`) and
+  `apps/sim/lib/permission-groups/types.ts` (`#5818`). Every other fork product surface is
+  untouched, as stated above.
+- **Migration collision = 0258–0277 upstream vs 0258–0261 fork.** Upstream added 20 migrations
+  (`0258_gigantic_lady_mastermind` … `0277_workspace_sandboxes`); fork holds
+  `0258_deployed_chat_thread_metadata`, `0259_organization_oauth_apps`,
+  `0260_organization_oauth_apps_allowed_workspaces`, `0261_local_copilot_user_memory`.
+  `meta/_journal.json` is modified on both sides → guaranteed conflict. Renumber fork's four to
+  follow `0277` per `db-migrate`.
+
+No new open questions. Analysis stands.
 
