@@ -49,3 +49,212 @@
 
 - **None.** Fully resolvable from codebase + merge-policy (fork-first). No PR comment posted.
 
+## Usage
+
+### parent-grill-analysis
+- **Model:** `claude-opus-4-8`
+- **Iterations:** 1
+- **Input tokens (direct):** 26
+- **Input tokens (cache read):** 721,512
+- **Input tokens (cache create):** 55,764
+- **Input tokens (total):** 777,302
+- **Output tokens:** 11,985
+- **Cost:** $1.010425 (provider-reported)
+### child-cluster-1
+- **Model:** `claude-sonnet-4-6`
+- **Iterations:** 1
+- **Input tokens (direct):** 13
+- **Input tokens (cache read):** 751,662
+- **Input tokens (cache create):** 59,073
+- **Input tokens (total):** 810,748
+- **Output tokens:** 4,638
+- **Cost:** $0.517826 (provider-reported)
+
+### Totals
+- **Total input tokens:** 1,588,050
+- **Total output tokens:** 16,623
+- **Primary models:** claude-opus-4-8, claude-sonnet-4-6
+- **Provider-reported cost:** $1.528251
+
+### Cost by agent
+- **parent-grill-analysis:** $1.010425 (provider-reported)
+- **child-cluster-1:** $0.517826 (provider-reported)
+
+## Verification
+
+### bun run check
+
+❌ failed
+
+```
+
+   • Packages in scope: @sim/audit, @sim/auth, @sim/db, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk
+   • Running format:check in 21 packages
+   • Remote caching disabled
+
+::group::@sim/auth:format:check
+cache miss, executing 7b95f933c974b740
+$ biome format .
+Checked 3 files in 16ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime-protocol:format:check
+cache miss, executing 11ef7410ee5e5d5c
+$ biome format .
+Checked 5 files in 49ms. No fixes applied.
+::endgroup::
+::group::@sim/platform-authz:format:check
+cache miss, executing 20bfbd17ba902713
+$ biome format .
+Checked 5 files in 59ms. No fixes applied.
+::endgroup::
+::group::@sim/security:format:check
+cache miss, executing fc2410243714aad2
+$ biome format .
+Checked 13 files in 68ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-renderer:format:check
+cache miss, executing ba94021415352e4f
+$ biome format .
+Checked 12 files in 100ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime:format:check
+cache miss, executing 1065da2db0dc0980
+$ biome format .
+Checked 32 files in 296ms. No fixes applied.
+::endgroup::
+::group::@sim/logger:format:check
+cache miss, executing d07801b30193037f
+$ biome format .
+Checked 6 files in 46ms. No fixes applied.
+::endgroup::
+::group::simstudio:format:check
+cache miss, executing db888607b0259b5e
+$ biome format .
+Checked 3 files in 23ms. No fixes applied.
+::endgroup::
+::group::@sim/runtime-secrets:format:check
+cache miss, executing 54427b0fcf80d46c
+$ biome format .
+Checked 5 files in 35ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-persistence:format:check
+cache miss, executing 6a2f322f646254f4
+$ biome format .
+Checked 8 files in 48ms. No fixes applied.
+::endgroup::
+::group::@sim/audit:format:check
+cache miss, executing 435b10fd6837457b
+$ biome format .
+Checked 7 files in 30ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-types:format:check
+cache miss, executing 80f69e46ffb00c04
+$ biome format .
+Checked 4 files in 38ms. No fixes applied.
+::endgroup::
+::group::simstudio-ts-sdk:format:check
+cache miss, executing e723f477a2f513f3
+$ biome format .
+Checked 6 files in 60ms. No fixes applied.
+::endgroup::
+::group::@sim/utils:format:check
+cache miss, executing 251fb15243601532
+$ biome format .
+Checked 22 files in 153ms. No fixes applied.
+::endgroup::
+::group::@sim/testing:format:check
+cache miss, executing 6754342b8949f5f1
+$ biome format .
+Checked 66 files in 315ms. No fixes applied.
+::endgroup::
+::group::@sim/emcn:format:check
+cache miss, executing 133b9523f844114a
+$ biome format .
+Checked 189 files in 845ms. No fixes applied.
+::endgroup::
+::group::docs:format:check
+cache miss, executing 42e792dc12ce87af
+$ biome format .
+Checked 100 files in 1267ms. No fixes applied.
+::endgroup::
+[;31m@sim/db:format:check[;0m
+cache miss, executing d81199a747a5cf87
+$ biome format .
+schema.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    3637 3637 │         .on(table.chatId)
+    3638 3638 │         .where(sql`${table.chatId} IS NOT NULL`),
+    3639      │ - ····runIdIdx:·index('usage_log_run_id_idx')
+    3640      │ - ······.on(table.runId)
+    3641      │ - ······.where(sql`${table.runId}·IS·NOT·NULL`),
+         3639 │ + ····runIdIdx:·index('usage_log_run_id_idx').on(table.runId).where(sql`${table.runId}·IS·NOT·NULL`),
+    3642 3640 │       workspaceOccurredAtIdx: index('usage_log_workspace_occurred_at_idx').on(
+    3643 3641 │         table.workspaceId,
+  
+
+migrations/meta/_journal.json format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    1838 1838 │       }
+    1839 1839 │     ]
+    1840      │ - }
+Checked 284 files in 4s
+```
+
+## Merge policy
+
+{
+  "strategy": "fork-first",
+  "description": "Preserve version-5-main behavior by default. Cherry-pick upstream when changes do not override fork-owned paths. Upstream wins on shared infra (deps, CI, security) unless ledger says otherwise.",
+  "forkFirst": [
+    "apps/sim/tools/arena/",
+    "apps/sim/app/api/tools/arena/",
+    "apps/sim/app/api/arena/",
+    "apps/sim/lib/arena-utils/",
+    "apps/sim/blocks/blocks/arena.ts",
+    "apps/sim/hooks/queries/arena-clients.ts",
+    "apps/sim/app/arenaMixpanelEvents/",
+    "apps/sim/public/arena-ai-docs/",
+    "apps/sim/app/api/help/arena-help/",
+    "apps/sim/tools/p2_docs/",
+    "apps/sim/blocks/blocks/p2_docs.ts",
+    "apps/sim/lib/hubspot/",
+    "apps/sim/tools/unipile/",
+    "apps/sim/app/api/tools/unipile/",
+    "apps/sim/app/api/unipile/",
+    "apps/sim/lib/unipile/",
+    "apps/sim/blocks/blocks/unipile.ts",
+    "apps/sim/tools/facebook_ads/",
+    "apps/sim/app/api/facebook-ads/",
+    "apps/sim/blocks/blocks/facebook_ads.ts",
+    "apps/sim/tools/presentation/",
+    "apps/sim/app/api/tools/presentation/",
+    "apps/sim/blocks/blocks/presentation.ts",
+    "apps/sim/app/api/figma/",
+    "apps/sim/lib/figma-design-generator.ts",
+    "apps/sim/app/api/admin/",
+    "apps/sim/hooks/queries/mothership-admin.ts",
+    "apps/sim/app/chat/",
+    "apps/sim/lib/branding/",
+    "apps/sim/lib/auth/session-cookie-domain.ts",
+    "apps/sim/lib/auth/legacy-session-cookie-clears.ts",
+    "apps/sim/app/api/auth/clear-domain-session-cookies/",
+    "apps/sim/lib/users/is-client-user.ts",
+    "apps/sim/lib/workspaces/is-admin-workspace.ts",
+    "apps/sim/lib/permission-groups/",
+    "scripts/deploy-ec2-ghcr.sh",
+    "scripts/deploy-ec2-local-build.sh",
+    "scripts/ci/ghcr-next-branch-tag.sh",
+    "docker-compose.p2prod.yml",
+    "docker-compose.test-env.yml",
+    "docker-compose.local-build.yml",
+    "docker-compose.dev-env.yml",
+    "docker-compose.sandbox.yml",
+    "bunfig.toml"
+  ],
+  "upstreamFirst": [
+    "apps/sim/lib/copilot/genera
+
