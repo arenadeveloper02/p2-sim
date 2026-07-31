@@ -304,6 +304,7 @@ export async function* runLocalCopilotAgent(
     usageTurnId,
     provider: config.provider,
     model: config.model,
+    specialistModel: config.specialistModel,
     hasApiKey: Boolean(config.apiKey),
     messageChars: params.message.length,
     priorTurns: params.priorMessages?.length ?? 0,
@@ -542,7 +543,7 @@ export async function* runLocalCopilotAgent(
     const parallel = runParallelSubagents({
       domains: parallelDomains,
       userMessage: userTurnText,
-      model: config.model,
+      model: config.specialistModel,
       provider,
       allTools,
       toolCtx,
@@ -582,7 +583,7 @@ export async function* runLocalCopilotAgent(
       const pass = runSpecialistPass({
         domain: passDomain,
         userMessage: userTurnText,
-        model: config.model,
+        model: config.specialistModel,
         provider,
         allTools,
         toolCtx,
@@ -756,7 +757,7 @@ export async function* runLocalCopilotAgent(
       const specialistRunner = runParentSpecialistToolCalls({
         calls: specialistCalls,
         lastUserMessage: userTurnText,
-        model: config.model,
+        model: config.specialistModel,
         provider,
         allTools,
         toolCtx,

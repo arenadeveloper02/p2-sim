@@ -45,6 +45,7 @@ export const localCopilotConfigResponseSchema = z.object({
   localOnly: z.boolean(),
   provider: z.string(),
   model: z.string(),
+  specialistModel: z.string(),
   selfHosted: z.boolean(),
 })
 

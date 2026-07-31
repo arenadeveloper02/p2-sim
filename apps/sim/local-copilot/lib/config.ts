@@ -4,6 +4,11 @@ import type { LocalCopilotConfig, LocalCopilotProviderId } from '@/local-copilot
 
 /** Default Local Copilot main agent model (override with `COPILOT_MODEL`). */
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
+/**
+ * Default specialist / parallel-subagent model when `COPILOT_PROVIDER=anthropic`
+ * and `COPILOT_SPECIALIST_MODEL` is unset. Cheaper than Sonnet for leaf tool work.
+ */
+const DEFAULT_ANTHROPIC_SPECIALIST_MODEL = 'claude-haiku-4-5'
 const DEFAULT_PROVIDER: LocalCopilotProviderId = 'anthropic'
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -24,6 +29,20 @@ function resolveProvider(value: string | undefined): LocalCopilotProviderId {
   return allowed.includes(normalized as LocalCopilotProviderId)
     ? (normalized as LocalCopilotProviderId)
     : DEFAULT_PROVIDER
+}
+
+/**
+ * Resolves the specialist model: explicit override, else Haiku for Anthropic,
+ * else the main agent model.
+ */
+export function resolveSpecialistModel(
+  provider: LocalCopilotProviderId,
+  mainModel: string,
+  specialistOverride?: string
+): string {
+  const override = specialistOverride?.trim()
+  if (override) return override
+  return provider === 'anthropic' ? DEFAULT_ANTHROPIC_SPECIALIST_MODEL : mainModel
 }
 
 /**
@@ -57,10 +76,18 @@ function resolveApiKey(provider: LocalCopilotProviderId): string | undefined {
 
 export function getLocalCopilotConfig(): LocalCopilotConfig {
   const provider = resolveProvider(process.env.COPILOT_PROVIDER)
+  const model = process.env.COPILOT_MODEL?.trim() || DEFAULT_MODEL
+  const specialistModel = resolveSpecialistModel(
+    provider,
+    model,
+    process.env.COPILOT_SPECIALIST_MODEL
+  )
+
   return {
     enabled: parseBoolean(process.env.COPILOT_ENABLED, true),
     provider,
-    model: process.env.COPILOT_MODEL?.trim() || DEFAULT_MODEL,
+    model,
+    specialistModel,
     apiKey: resolveApiKey(provider),
     baseUrl: process.env.COPILOT_BASE_URL?.trim() || undefined,
   }
