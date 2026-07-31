@@ -1,0 +1,1 @@
+{"id":"harness-2026-07-31-1785503870015","runId":"2026-07-31","prNumber":673,"question":"Verification failed on sync branch. Fix and reply with /upstream-sync resume.","context":"bun run check","askedAt":"2026-07-31T13:17:50.015Z","askedBy":"upstream-sync[bot]","source":"harness"}
