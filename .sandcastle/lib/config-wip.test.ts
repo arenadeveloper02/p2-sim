@@ -49,11 +49,22 @@ describe('assertUpstreamSyncRef', () => {
 })
 
 describe('forceWithLeasePushArgs', () => {
-  test('uses force-with-lease and never bare --force', () => {
+  test('first push uses plain -u without force', () => {
     const args = forceWithLeasePushArgs('upstream-sync/2026-07-31T07-40-03-wip')
+    expect(args).toEqual(['push', '-u', 'origin', 'upstream-sync/2026-07-31T07-40-03-wip'])
+    expect(args.some((arg) => arg === '--force' || arg.startsWith('--force-with-lease'))).toBe(
+      false
+    )
+  })
+
+  test('later push leases against the fetched remote SHA', () => {
+    const args = forceWithLeasePushArgs(
+      'upstream-sync/2026-07-31T07-40-03-wip',
+      'abc123def456'
+    )
     expect(args).toEqual([
       'push',
-      '--force-with-lease=refs/heads/upstream-sync/2026-07-31T07-40-03-wip:refs/heads/upstream-sync/2026-07-31T07-40-03-wip',
+      '--force-with-lease=refs/heads/upstream-sync/2026-07-31T07-40-03-wip:abc123def456',
       'origin',
       'upstream-sync/2026-07-31T07-40-03-wip',
     ])

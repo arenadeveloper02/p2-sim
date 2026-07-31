@@ -888,12 +888,23 @@ export function assertUpstreamSyncRef(name: string): void {
   }
 }
 
-/** Args for a lease-protected push of a WIP branch (never bare `--force`). */
-export function forceWithLeasePushArgs(wipBranch: string): string[] {
+/**
+ * Args for pushing a WIP branch.
+ * - First snapshot (no remote tip yet): plain `-u` push.
+ * - Later snapshots: `--force-with-lease` against the **fetched** remote SHA, never against
+ *   the local tip (that always looks "stale" after we commit in the worktree).
+ */
+export function forceWithLeasePushArgs(
+  wipBranch: string,
+  expectedRemoteSha?: string | null
+): string[] {
   assertUpstreamSyncRef(wipBranch)
+  if (!expectedRemoteSha) {
+    return ['push', '-u', 'origin', wipBranch]
+  }
   return [
     'push',
-    `--force-with-lease=refs/heads/${wipBranch}:refs/heads/${wipBranch}`,
+    `--force-with-lease=refs/heads/${wipBranch}:${expectedRemoteSha}`,
     'origin',
     wipBranch,
   ]
@@ -945,10 +956,12 @@ export function persistMergeWip(options: {
 
     removeWipWorktree(worktreePath)
 
+    let expectedRemoteSha: string | null = null
     let startPoint = runGit(['rev-parse', options.syncBranch])
     try {
       runGit(['fetch', 'origin', wipBranch])
-      startPoint = runGit(['rev-parse', `origin/${wipBranch}`])
+      expectedRemoteSha = runGit(['rev-parse', `origin/${wipBranch}`])
+      startPoint = expectedRemoteSha
     } catch {
       // First WIP snapshot — start from the sync branch tip (pre-merge commit).
     }
@@ -975,7 +988,7 @@ export function persistMergeWip(options: {
         ],
         worktreePath
       )
-      runGit(forceWithLeasePushArgs(wipBranch), worktreePath)
+      runGit(forceWithLeasePushArgs(wipBranch, expectedRemoteSha), worktreePath)
       console.log(
         `[wip] Persisted ${resolved.length} resolved file(s) to ${wipBranch} after ${options.clusterId}`
       )
