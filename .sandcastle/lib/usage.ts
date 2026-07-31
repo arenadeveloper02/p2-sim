@@ -1,7 +1,7 @@
-import { appendFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RunResult } from '@ai-hero/sandcastle'
-import { ensureLedgerRunDir } from './config'
+import { ensureLedgerRunDir, ledgerRunDir } from './config'
 
 /** Where the USD figure on a usage record came from. */
 export type CostSource = 'provider' | 'estimated' | 'unavailable'
@@ -300,6 +300,14 @@ function logUsageRecord(record: AgentUsageRecord): void {
   )
 }
 
+/**
+ * Record token/cost usage for one agent run.
+ *
+ * Works when Sandcastle returns a normal `RunResult`, and also when the run
+ * errors or is cancelled mid-flight — as long as Claude stream-json NDJSON was
+ * captured (in-memory lines or a verbose log file). Returns null only when
+ * neither iterations nor stream NDJSON contain usage.
+ */
 export function recordAgentUsage(
   agentName: string,
   model: string,
@@ -307,9 +315,7 @@ export function recordAgentUsage(
   /** Raw Claude/Codex NDJSON captured from the agent stream (preferred over text-only stdout). */
   streamNdjson?: string
 ): AgentUsageRecord | null {
-  if (!result?.iterations?.length) return null
-
-  const fromIterations = result.iterations.reduce(
+  const fromIterations = (result?.iterations ?? []).reduce(
     (acc, iteration) => {
       if (!iteration.usage) return acc
       acc.inputTokens += iteration.usage.inputTokens ?? 0
@@ -324,25 +330,95 @@ export function recordAgentUsage(
   // Sandcastle's Claude parser does not emit usage events and `result.stdout` is
   // agent text only — fall back to raw stream-json NDJSON when iteration usage
   // is missing or under-counts (session parse often keeps only the last turn).
-  const fromStream = parseUsageFromClaudeStream(streamNdjson ?? result.stdout ?? '')
+  // On cancel/error, `result` is often null but stream NDJSON still has cost.
+  const fromStream = parseUsageFromClaudeStream(streamNdjson ?? result?.stdout ?? '')
   const streamTokens = fromStream?.tokens
+  const hasStreamUsage = fromStream !== null
+  const hasIterationUsage = tokenTotal(fromIterations) > 0 || (result?.iterations?.length ?? 0) > 0
+
+  if (!hasStreamUsage && !hasIterationUsage) return null
+
   const totals =
     streamTokens && tokenTotal(streamTokens) > tokenTotal(fromIterations)
       ? streamTokens
       : fromIterations
 
   const cost = resolveCost(model, fromStream?.costUsd ?? null, totals)
+  const iterationCount = result?.iterations?.length ?? 0
   const record: AgentUsageRecord = {
     agentName,
     model,
-    iterations: result.iterations.length,
+    // Cancelled/errored runs may have stream usage with no completed iterations.
+    iterations: iterationCount > 0 ? iterationCount : hasStreamUsage ? 1 : 0,
     ...totals,
     estimatedCostUsd: cost.estimatedCostUsd,
     costSource: cost.costSource,
   }
-  usageRecords.push(record)
+  upsertUsageRecord(record)
   logUsageRecord(record)
   return record
+}
+
+function upsertUsageRecord(record: AgentUsageRecord): void {
+  const existingIdx = usageRecords.findIndex((r) => r.agentName === record.agentName)
+  if (existingIdx >= 0) {
+    const existing = usageRecords[existingIdx]
+    // Prefer the larger token footprint (cancel flush vs later recover, etc.).
+    if (tokenTotal(record) >= tokenTotal(existing)) {
+      usageRecords[existingIdx] = record
+    }
+    return
+  }
+  usageRecords.push(record)
+}
+
+/** Infer parent vs child model defaults from an agent / log basename. */
+export function inferModelForAgentName(agentName: string): string {
+  const provider = (process.env.UPSTREAM_SYNC_AGENT ?? 'anthropic').toLowerCase()
+  if (provider === 'openai') {
+    return process.env.UPSTREAM_SYNC_OPENAI_MODEL ?? 'gpt-5.5'
+  }
+  if (agentName.startsWith('parent') || agentName.includes('grill')) {
+    return process.env.UPSTREAM_SYNC_ANTHROPIC_PARENT_MODEL ?? 'claude-opus-4-8'
+  }
+  return process.env.UPSTREAM_SYNC_ANTHROPIC_CHILD_MODEL ?? 'claude-sonnet-4-6'
+}
+
+/**
+ * Rebuild usage records from Sandcastle verbose log files under `.sandcastle/logs/`.
+ * Used when the harness process is killed (workflow cancel / runner SIGKILL) before
+ * in-memory records can be persisted.
+ */
+export function recoverUsageFromLogDir(
+  logDir: string,
+  options?: { agentNameFromFile?: (fileName: string) => string }
+): AgentUsageRecord[] {
+  let entries: string[]
+  try {
+    entries = readdirSync(logDir).filter((name) => name.endsWith('.log'))
+  } catch {
+    return []
+  }
+
+  const recovered: AgentUsageRecord[] = []
+  for (const fileName of entries) {
+    const agentName =
+      options?.agentNameFromFile?.(fileName) ?? fileName.replace(/\.log$/i, '')
+    let contents: string
+    try {
+      contents = readFileSync(join(logDir, fileName), 'utf8')
+    } catch {
+      continue
+    }
+    const record = recordAgentUsage(
+      agentName,
+      inferModelForAgentName(agentName),
+      null,
+      contents
+    )
+    if (record) recovered.push(record)
+  }
+  return recovered
 }
 
 export function getUsageRecords(): readonly AgentUsageRecord[] {
@@ -489,15 +565,95 @@ export function appendUsageStepSummary(
 }
 
 /**
+ * Force-publish agent usage into the Actions job summary.
+ * Safe to call from a post-job step even when the harness already tried —
+ * each Actions step gets its own summary file that rolls up into the job.
+ */
+export function publishUsageJobSummary(
+  records: readonly AgentUsageRecord[] = usageRecords
+): boolean {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY
+  if (!summaryPath) {
+    console.log('[usage] GITHUB_STEP_SUMMARY unset — skipping job summary')
+    return false
+  }
+  appendFileSync(summaryPath, `\n${formatUsageStepSummary(records)}\n`)
+  stepSummaryWritten = true
+  console.log(
+    records.length === 0
+      ? '[usage] published empty agent usage section to job summary'
+      : `[usage] published ${records.length} agent(s) to job summary`
+  )
+  return true
+}
+
+/**
  * Write ledger `usage.json` and (once) the Actions step summary.
  * Returns the PR/run-log markdown section.
+ *
+ * In GitHub Actions, the job Summary tab is owned by the dedicated
+ * `Publish agent usage summary` always() step (`recover-usage.ts`) so cancelled
+ * runs still get a table. Locally we still write `$GITHUB_STEP_SUMMARY` if set.
  */
 export function persistUsageArtifacts(runId: string): string {
   const records = getUsageRecords()
   const markdown = formatUsageMarkdown(records)
   writeUsageJson(runId, records)
-  appendUsageStepSummary(records)
+  if (process.env.GITHUB_ACTIONS !== 'true') {
+    appendUsageStepSummary(records)
+  }
   return markdown
+}
+
+/** Load previously written ledger usage.json into the in-memory record list. */
+export function loadUsageRecordsFromJson(runId: string): AgentUsageRecord[] {
+  const path = join(ledgerRunDir(runId), 'usage.json')
+  let raw: string
+  try {
+    raw = readFileSync(path, 'utf8')
+  } catch {
+    return []
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return []
+  }
+  if (!parsed || typeof parsed !== 'object') return []
+  const agents = (parsed as { agents?: unknown }).agents
+  if (!Array.isArray(agents)) return []
+
+  const loaded: AgentUsageRecord[] = []
+  for (const entry of agents) {
+    if (!entry || typeof entry !== 'object') continue
+    const r = entry as Partial<AgentUsageRecord>
+    if (typeof r.agentName !== 'string' || typeof r.model !== 'string') continue
+    const record: AgentUsageRecord = {
+      agentName: r.agentName,
+      model: r.model,
+      iterations: typeof r.iterations === 'number' ? r.iterations : 0,
+      inputTokens: typeof r.inputTokens === 'number' ? r.inputTokens : 0,
+      outputTokens: typeof r.outputTokens === 'number' ? r.outputTokens : 0,
+      cacheReadInputTokens:
+        typeof r.cacheReadInputTokens === 'number' ? r.cacheReadInputTokens : 0,
+      cacheCreationInputTokens:
+        typeof r.cacheCreationInputTokens === 'number' ? r.cacheCreationInputTokens : 0,
+      estimatedCostUsd:
+        typeof r.estimatedCostUsd === 'number'
+          ? r.estimatedCostUsd
+          : r.estimatedCostUsd === null
+            ? null
+            : null,
+      costSource:
+        r.costSource === 'provider' || r.costSource === 'estimated' || r.costSource === 'unavailable'
+          ? r.costSource
+          : 'unavailable',
+    }
+    upsertUsageRecord(record)
+    loaded.push(record)
+  }
+  return loaded
 }
 
 /**

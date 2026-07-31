@@ -10,7 +10,7 @@
  * 6. Verification (check, lint, test, build)
  * 7. Update draft PR body + final ledger commit
  */
-import { mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { AgentStreamEvent, RunResult } from '@ai-hero/sandcastle'
@@ -86,8 +86,14 @@ import {
 } from './lib/grill-state'
 import { ensureInstallableWorkspace } from './lib/lockfile-bootstrap'
 import {
+  verificationToOutcome,
+  writeRunOutcome,
+} from './lib/job-summary'
+import {
+  getUsageRecords,
   persistUsageArtifacts,
   recordAgentUsage,
+  recoverUsageFromLogDir,
   resetUsageRecords,
 } from './lib/usage'
 import { allVerificationPassed, formatVerifyResults, runVerification } from './lib/verify'
@@ -96,6 +102,10 @@ const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'prompts')
 const SKIP_AGENT = process.env.UPSTREAM_SYNC_SKIP_AGENT === 'true'
 const FORCE_RUN = process.env.UPSTREAM_SYNC_FORCE === 'true'
 const RESUME = process.env.UPSTREAM_SYNC_RESUME === 'true'
+
+/** Active ledger run id for cancel/error flush handlers. */
+let activeRunId: string | null = null
+let usageFlushCompleted = false
 
 function hasStagedChanges(): boolean {
   try {
@@ -171,38 +181,51 @@ async function runAgentPrompt(options: {
   const safeName = options.name.replace(/[^a-zA-Z0-9_-]+/g, '_')
   const logPath = join(logDir, `${safeName}.log`)
   const rawNdjsonLines: string[] = []
+  let result: RunResult | null = null
 
-  const result = await run({
-    agent: options.agent,
-    prompt: options.prompt,
-    name: options.name,
-    maxIterations: options.maxIterations ?? 3,
-    completionSignal: options.completionSignal ?? COMPLETION_SIGNAL,
-    sandbox: noSandbox(),
-    branchStrategy: { type: 'head' },
-    hooks: SKIP_SANDCASTLE_INSTALL_HOOKS,
-    idleTimeoutSeconds: Number(process.env.UPSTREAM_SYNC_IDLE_TIMEOUT_SECONDS ?? 7200),
-    completionTimeoutSeconds: 120,
-    logging: {
-      type: 'file',
-      path: logPath,
-      verbose: true,
-      onAgentStreamEvent: (event: AgentStreamEvent) => {
-        if (event.type !== 'raw') return
-        rawNdjsonLines.push(event.line)
-        // Mirror into Actions logs (parity with previous stdout verbose mode).
-        console.log(event.line)
+  try {
+    result = await run({
+      agent: options.agent,
+      prompt: options.prompt,
+      name: options.name,
+      maxIterations: options.maxIterations ?? 3,
+      completionSignal: options.completionSignal ?? COMPLETION_SIGNAL,
+      sandbox: noSandbox(),
+      branchStrategy: { type: 'head' },
+      hooks: SKIP_SANDCASTLE_INSTALL_HOOKS,
+      idleTimeoutSeconds: Number(process.env.UPSTREAM_SYNC_IDLE_TIMEOUT_SECONDS ?? 7200),
+      completionTimeoutSeconds: 120,
+      logging: {
+        type: 'file',
+        path: logPath,
+        verbose: true,
+        onAgentStreamEvent: (event: AgentStreamEvent) => {
+          if (event.type !== 'raw') return
+          rawNdjsonLines.push(event.line)
+          // Mirror into Actions logs (parity with previous stdout verbose mode).
+          console.log(event.line)
+        },
       },
-    },
-  })
-
-  recordAgentUsage(
-    options.name,
-    resolveAgentModel(options.agentKind, options.provider),
-    result,
-    rawNdjsonLines.join('\n')
-  )
-  return result
+    })
+    return result
+  } finally {
+    // Always record usage — including cancelled / errored runs — from captured
+    // stream NDJSON (or the verbose log file if the callback buffer is empty).
+    let streamNdjson = rawNdjsonLines.join('\n')
+    if (!streamNdjson.trim() && existsSync(logPath)) {
+      try {
+        streamNdjson = readFileSync(logPath, 'utf8')
+      } catch {
+        // best-effort
+      }
+    }
+    recordAgentUsage(
+      options.name,
+      resolveAgentModel(options.agentKind, options.provider),
+      result,
+      streamNdjson
+    )
+  }
 }
 
 function createDraftPrViaApi(
@@ -391,7 +414,80 @@ function persistActiveSyncState(options: {
 function appendUsageToRunLog(runId: string): string {
   const usageMarkdown = persistUsageArtifacts(runId)
   appendRunLogSections(runId, { Usage: usageMarkdown })
+  usageFlushCompleted = true
   return usageMarkdown
+}
+
+/**
+ * Best-effort usage flush for workflow cancel / harness errors.
+ * Recovers from Sandcastle log files when in-memory records are empty, writes
+ * ledger + step summary, and tries to commit (push is left to the always() CI step).
+ */
+function flushUsageBestEffort(reason: string): string | null {
+  if (usageFlushCompleted) return null
+  const runId = activeRunId ?? (() => {
+    try {
+      return readState().lastRunId ?? todayRunId()
+    } catch {
+      return todayRunId()
+    }
+  })()
+
+  try {
+    if (getUsageRecords().length === 0) {
+      const logDir = join(process.cwd(), '.sandcastle', 'logs')
+      recoverUsageFromLogDir(logDir)
+    }
+    if (getUsageRecords().length === 0) {
+      console.log(`[usage] flush skipped (${reason}): no agent usage to record`)
+      usageFlushCompleted = true
+      return null
+    }
+
+    console.log(`[usage] flushing artifacts (${reason}) for run ${runId}`)
+    const markdown = appendUsageToRunLog(runId)
+    commitUpstreamLedger(`upstream-sync(${runId}): agent usage (${reason})`)
+    usageFlushCompleted = true
+    return markdown
+  } catch (error) {
+    console.warn(`[usage] flush failed (${reason}):`, error)
+    return null
+  }
+}
+
+function installUsageFlushHandlers(): void {
+  const onSignal = (signal: NodeJS.Signals) => {
+    console.warn(`[usage] received ${signal} — flushing agent usage before exit`)
+    flushUsageBestEffort(`signal:${signal}`)
+    try {
+      const runId = activeRunId ?? readState().lastRunId ?? todayRunId()
+      const state = readState()
+      writeRunOutcome(runId, {
+        kind: 'cancelled',
+        title: `Workflow cancelled (${signal})`,
+        detail: 'Actions sent a termination signal. Partial usage/conflicts recovered below.',
+        syncBranch: state.activeBranch,
+        mergeBase: state.activeMergeBase,
+        upstreamSha: state.lastSyncedUpstreamSha,
+        prNumber: state.activePrNumber,
+        remainingConflicts: (() => {
+          try {
+            return listConflictFiles()
+          } catch {
+            return []
+          }
+        })(),
+      })
+      writeState({ ...state, status: 'failed' })
+    } catch {
+      // best-effort
+    }
+    // Re-raise default behavior after flush so Actions still marks the job cancelled.
+    process.exitCode = process.exitCode ?? 1
+    process.exit()
+  }
+  process.once('SIGTERM', () => onSignal('SIGTERM'))
+  process.once('SIGINT', () => onSignal('SIGINT'))
 }
 
 /**
@@ -459,6 +555,9 @@ function ensureActiveDraftPr(options: {
 
 async function main(): Promise<void> {
   resetUsageRecords()
+  usageFlushCompleted = false
+  activeRunId = null
+  installUsageFlushHandlers()
 
   let endGroup = startLogGroup('detect/baseline')
   try {
@@ -494,6 +593,7 @@ async function main(): Promise<void> {
     const baseline = resolveAnalysisBaseline(mergeBase, initialState)
     const headSha = baseline.upstreamHeadSha
     const runId = todayRunId()
+    activeRunId = runId
     const upstreamCommits = commitsSinceBaseline(baseline)
 
     appendRunLogSections(runId, {
@@ -502,12 +602,27 @@ async function main(): Promise<void> {
 
     if (!FORCE_RUN && !RESUME && initialState.lastSyncedUpstreamSha === headSha) {
       console.log(`No upstream changes (already at ${headSha.slice(0, 8)}).`)
+      writeRunOutcome(runId, {
+        kind: 'noop',
+        title: 'No upstream changes',
+        detail: `Already synced to ${headSha.slice(0, 8)}.`,
+        mergeBase,
+        upstreamSha: headSha,
+        commitCount: 0,
+      })
       return
     }
 
     if (upstreamCommits.length === 0 && !FORCE_RUN && !RESUME) {
       console.log('No new upstream commits.')
       writeState({ ...initialState, lastSyncedUpstreamSha: headSha, status: 'idle' })
+      writeRunOutcome(runId, {
+        kind: 'noop',
+        title: 'No new upstream commits',
+        mergeBase,
+        upstreamSha: headSha,
+        commitCount: 0,
+      })
       return
     }
 
@@ -572,6 +687,17 @@ async function main(): Promise<void> {
             'Could not regenerate bun.lock while resuming. Resolve package.json conflicts manually, then resume.',
         })
         writeState({ ...readState(), status: 'awaiting_input' })
+        writeRunOutcome(runId, {
+          kind: 'awaiting_input',
+          title: 'Package bootstrap failed while resuming',
+          detail:
+            'Could not regenerate bun.lock. Resolve package.json conflicts manually, then resume.',
+          syncBranch,
+          mergeBase,
+          upstreamSha: headSha,
+          prNumber: initialState.activePrNumber,
+          commitCount: upstreamCommits.length,
+        })
         process.exitCode = 1
         return
       }
@@ -780,6 +906,17 @@ async function main(): Promise<void> {
         })(),
       })
       writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
+      writeRunOutcome(runId, {
+        kind: 'awaiting_input',
+        title: 'Package bootstrap failed after merge',
+        detail: 'bun.lock still has merge conflict markers. Fix manifests manually, then resume.',
+        syncBranch,
+        mergeBase,
+        upstreamSha: headSha,
+        prNumber: prNumber || null,
+        commitCount: upstreamCommits.length,
+        remainingConflicts: listConflictFiles(),
+      })
       process.exitCode = 1
       return
     }
@@ -874,6 +1011,17 @@ async function main(): Promise<void> {
       if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
       commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
       writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
+      writeRunOutcome(runId, {
+        kind: 'awaiting_input',
+        title: `${remaining.length} unresolved merge conflict(s)`,
+        detail: `Review ledger at \`.upstream-sync/ledger/${runId}/\` and reply with ${RESUME_COMMAND}.`,
+        syncBranch,
+        mergeBase,
+        upstreamSha: headSha,
+        prNumber: prNumber || null,
+        commitCount: upstreamCommits.length,
+        remainingConflicts: remaining,
+      })
       process.exitCode = 1
       return
     }
@@ -927,6 +1075,17 @@ async function main(): Promise<void> {
       if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
       commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
       writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
+      writeRunOutcome(runId, {
+        kind: 'awaiting_input',
+        title: 'Verification failed',
+        detail: `Fix failures on \`${syncBranch}\`, then reply ${RESUME_COMMAND}.`,
+        syncBranch,
+        mergeBase,
+        upstreamSha: headSha,
+        prNumber: prNumber || null,
+        commitCount: upstreamCommits.length,
+        verification: verificationToOutcome(verifyResults),
+      })
       process.exitCode = 1
       return
     }
@@ -996,6 +1155,18 @@ async function main(): Promise<void> {
       activeMergeBase: mergeBase,
     })
 
+    writeRunOutcome(runId, {
+      kind: 'completed',
+      title: 'Upstream sync completed',
+      detail: `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Draft PR ready for review.`,
+      syncBranch,
+      mergeBase,
+      upstreamSha: headSha,
+      prNumber: prNumber || null,
+      commitCount: upstreamCommits.length,
+      verification: verificationToOutcome(verifyResults),
+    })
+
     console.log(`Upstream sync complete. Draft PR #${prNumber} on ${syncBranch}.`)
   } finally {
     endGroup()
@@ -1004,8 +1175,28 @@ async function main(): Promise<void> {
 
 main().catch((error) => {
   console.error(error)
+  flushUsageBestEffort('harness-error')
   try {
-    writeState({ ...readState(), status: 'failed' })
+    const runId = activeRunId ?? readState().lastRunId ?? todayRunId()
+    const state = readState()
+    writeRunOutcome(runId, {
+      kind: 'failed',
+      title: 'Harness error',
+      detail: 'The upstream-sync harness threw before finishing.',
+      syncBranch: state.activeBranch,
+      mergeBase: state.activeMergeBase,
+      upstreamSha: state.lastSyncedUpstreamSha,
+      prNumber: state.activePrNumber,
+      remainingConflicts: (() => {
+        try {
+          return listConflictFiles()
+        } catch {
+          return []
+        }
+      })(),
+      errorMessage: error instanceof Error ? error.stack ?? error.message : String(error),
+    })
+    writeState({ ...state, status: 'failed' })
   } catch {
     // state file may not exist if bootstrap failed early
   }

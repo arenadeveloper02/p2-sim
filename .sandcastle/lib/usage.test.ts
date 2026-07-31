@@ -2,17 +2,22 @@
  * Run with: bun test ./.sandcastle/lib/usage.test.ts
  */
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   estimateCostFromTokens,
   formatUsageMarkdown,
   formatUsageStepSummary,
+  getUsageRecords,
+  inferModelForAgentName,
+  loadUsageRecordsFromJson,
   parseCostFromStdout,
   parseUsageFromClaudeStream,
   persistUsageArtifacts,
+  publishUsageJobSummary,
   recordAgentUsage,
+  recoverUsageFromLogDir,
   resetUsageRecords,
   resolveModelPricing,
   writeUsageJson,
@@ -218,6 +223,121 @@ describe('usage reporting', () => {
 
     expect(record?.estimatedCostUsd).toBeNull()
     expect(record?.costSource).toBe('unavailable')
+  })
+
+  test('recordAgentUsage recovers from stream NDJSON when result is null (cancel/error)', () => {
+    const stream =
+      '{"type":"result","session_id":"s","total_cost_usd":0.42,"usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":100,"cache_creation_input_tokens":5}}'
+
+    const record = recordAgentUsage('child-cluster-0', 'claude-sonnet-4-6', null, stream)
+
+    expect(record).not.toBeNull()
+    expect(record?.estimatedCostUsd).toBe(0.42)
+    expect(record?.costSource).toBe('provider')
+    expect(record?.outputTokens).toBe(20)
+    expect(record?.iterations).toBe(1)
+  })
+
+  test('recordAgentUsage returns null when both result and stream are empty', () => {
+    expect(recordAgentUsage('ghost', 'claude-opus-4-8', null, '')).toBeNull()
+    expect(recordAgentUsage('ghost', 'claude-opus-4-8', { stdout: '', iterations: [] } as never)).toBeNull()
+  })
+
+  test('recordAgentUsage upserts the larger footprint for the same agent name', () => {
+    recordAgentUsage(
+      'child-cluster-0',
+      'claude-sonnet-4-6',
+      null,
+      '{"type":"result","session_id":"s","total_cost_usd":0.1,"usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":1,"cache_creation_input_tokens":1}}'
+    )
+    recordAgentUsage(
+      'child-cluster-0',
+      'claude-sonnet-4-6',
+      null,
+      '{"type":"result","session_id":"s","total_cost_usd":0.9,"usage":{"input_tokens":10,"output_tokens":50,"cache_read_input_tokens":100,"cache_creation_input_tokens":20}}'
+    )
+
+    const records = getUsageRecords()
+    expect(records).toHaveLength(1)
+    expect(records[0]?.estimatedCostUsd).toBe(0.9)
+    expect(records[0]?.outputTokens).toBe(50)
+  })
+
+  test('recoverUsageFromLogDir rebuilds records from verbose Sandcastle logs', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'usage-logs-'))
+    try {
+      const logPath = join(tempDir, 'parent-grill-analysis.log')
+      writeFileSync(
+        logPath,
+        [
+          'noise that is not json',
+          '{"type":"assistant","message":{"content":"hi"}}',
+          '{"type":"result","session_id":"s","total_cost_usd":1.25,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200}}',
+        ].join('\n')
+      )
+
+      const recovered = recoverUsageFromLogDir(tempDir)
+      expect(recovered).toHaveLength(1)
+      expect(recovered[0]?.agentName).toBe('parent-grill-analysis')
+      expect(recovered[0]?.estimatedCostUsd).toBe(1.25)
+      expect(recovered[0]?.costSource).toBe('provider')
+      expect(getUsageRecords()).toHaveLength(1)
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  test('inferModelForAgentName picks parent vs child defaults', () => {
+    expect(inferModelForAgentName('parent-grill-analysis')).toContain('opus')
+    expect(inferModelForAgentName('child-cluster-3')).toContain('sonnet')
+  })
+
+  test('publishUsageJobSummary writes the agent usage table to GITHUB_STEP_SUMMARY', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'usage-summary-'))
+    const summaryPath = join(tempDir, 'summary.md')
+    try {
+      process.env.GITHUB_STEP_SUMMARY = summaryPath
+      recordAgentUsage(
+        'parent-grill-analysis',
+        'claude-opus-4-8',
+        null,
+        '{"type":"result","session_id":"s","total_cost_usd":1.5,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+      )
+      expect(publishUsageJobSummary()).toBe(true)
+      const summary = readFileSync(summaryPath, 'utf8')
+      expect(summary).toContain('## Agent usage')
+      expect(summary).toContain('parent-grill-analysis')
+      expect(summary).toContain('$1.5000')
+      expect(summary).toContain('**Total cost:** $1.5000')
+    } finally {
+      delete process.env.GITHUB_STEP_SUMMARY
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  test('loadUsageRecordsFromJson reloads ledger usage for job summary republish', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'usage-reload-'))
+    const previousCwd = process.cwd()
+    try {
+      process.chdir(tempDir)
+      recordAgentUsage(
+        'child-cluster-0',
+        'claude-sonnet-4-6',
+        null,
+        '{"type":"result","session_id":"s","total_cost_usd":0.5,"usage":{"input_tokens":10,"output_tokens":20,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}'
+      )
+      writeUsageJson('2026-07-31')
+      resetUsageRecords()
+      expect(getUsageRecords()).toHaveLength(0)
+
+      const loaded = loadUsageRecordsFromJson('2026-07-31')
+      expect(loaded).toHaveLength(1)
+      expect(loaded[0]?.estimatedCostUsd).toBe(0.5)
+      expect(getUsageRecords()).toHaveLength(1)
+    } finally {
+      process.chdir(previousCwd)
+      rmSync(tempDir, { recursive: true, force: true })
+    }
   })
 
   test('estimateCostFromTokens uses Opus/Sonnet/GPT price table', () => {

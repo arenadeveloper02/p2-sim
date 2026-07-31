@@ -267,6 +267,35 @@ jobs:
           echo "::endgroup::"
           exit $status
 
+      # Always publish a detailed Summary tab (status, sync context, conflicts,
+      # verification, agent usage) — including cancelled / failed runs.
+      - name: Publish run summary
+        if: always() && needs.gate.outputs.skip_agent != 'true'
+        env:
+          UPSTREAM_SYNC_JOB_STATUS: ${{ job.status }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+        run: |
+          echo "::group::Publish run summary"
+          bun .sandcastle/recover-usage.ts --commit || true
+          branch=$(git branch --show-current 2>/dev/null || true)
+          if [ -n "$branch" ] && [[ "$branch" == upstream-sync/* ]]; then
+            if ! git diff --quiet HEAD -- .upstream-sync 2>/dev/null || \
+               ! git diff --cached --quiet -- .upstream-sync 2>/dev/null; then
+              git add .upstream-sync || true
+              git diff --cached --quiet || git commit -m "upstream-sync: recover agent usage after cancel/error" || true
+            fi
+            git push origin "HEAD:refs/heads/${branch}" || echo "Could not push usage recovery to ${branch}"
+          else
+            echo "Not on an upstream-sync/* branch (${branch:-unknown}) — summary left in job Summary / artifacts"
+          fi
+          if ls .upstream-sync/ledger/*/usage.json >/dev/null 2>&1; then
+            echo "usage.json present under .upstream-sync/ledger/"
+          fi
+          if ls .upstream-sync/ledger/*/outcome.json >/dev/null 2>&1; then
+            echo "outcome.json present under .upstream-sync/ledger/"
+          fi
+          echo "::endgroup::"
+
       - name: Upload Sandcastle logs (if any)
         if: always()
         run: |
@@ -286,3 +315,15 @@ jobs:
           name: sandcastle-logs-${{ github.run_id }}
           path: .sandcastle/logs/
           retention-days: 14
+
+      - name: Upload usage ledger artifact
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: upstream-sync-usage-${{ github.run_id }}
+          path: |
+            .upstream-sync/ledger/**/usage.json
+            .upstream-sync/ledger/**/outcome.json
+          if-no-files-found: ignore
+          retention-days: 30
