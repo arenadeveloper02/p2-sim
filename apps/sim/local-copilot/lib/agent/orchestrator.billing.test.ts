@@ -1,6 +1,7 @@
 /**
  * @vitest-environment node
  */
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { mockRecordLocalCopilotTurnUsage, mockChatCompletionStream } = vi.hoisted(() => ({
@@ -158,5 +159,15 @@ describe('runLocalCopilotAgent billing turn id', () => {
         (event as { type: string }).type === 'done'
     )
     expect(done?.messageId).toBe(messageId)
+  })
+
+  it('does not reference undeclared turnMessageId after usageTurnId rename', () => {
+    const source = readFileSync(
+      new URL('./orchestrator.ts', import.meta.url),
+      'utf8'
+    )
+    expect(source).not.toMatch(/\bturnMessageId\b/)
+    expect(source).toMatch(/\busageTurnId\b/)
+    expect(source).toMatch(/messageId:\s*usageTurnId/)
   })
 })
