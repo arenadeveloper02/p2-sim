@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+# check=skip=SecretsUsedInArgOrEnv
 # ========================================
 # Base Stage: Debian-based Bun with Node.js 22
 # ========================================
@@ -79,9 +81,9 @@ ARG NEXT_PUBLIC_APP_URL="http://localhost:3000"
 ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 
 # Dummy auth secret so page-data collection doesn't throw BetterAuthError on
-# every route that imports `@/lib/auth`. Runtime overrides this at deploy time.
-ARG BETTER_AUTH_SECRET="docker-build-dummy-better-auth-secret-32b"
-ENV BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+# every route that imports `@/lib/auth`. Not a real credential — build-time
+# only; runtime overrides at deploy. (SecretsUsedInArgOrEnv skipped at file top.)
+ENV BETTER_AUTH_SECRET="docker-build-dummy-better-auth-secret-32b"
 
 # Docker builders are memory-constrained (GH Actions ~7GB RAM). BuildKit's sandbox
 # blocks swapon() without the security.insecure entitlement, which many CI setups
@@ -90,10 +92,11 @@ ENV BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
 # `build` script reads this directly (defaults to 8192 if unset) and passes it
 # to `next build` as NODE_OPTIONS itself, so set it here rather than NODE_OPTIONS
 # directly (an ENV NODE_OPTIONS here would just get overridden by that script).
-# Leave headroom below the cgroup limit for native/page-data RSS; next.config also
-# sets experimental.cpus=1 under DOCKER_BUILD so workers don't multiply peak memory.
-# Lower this further if the build still OOMs on your runner.
-ENV BUILD_MAX_OLD_SPACE_MB=4096
+# Keep this well under the cgroup limit so V8 GCs before the kernel OOM-kills
+# the process (a high ceiling + static-page RSS is what caused exit 137 at
+# ~304/1218 pages). next.config also sets experimental.cpus=1 and
+# staticGenerationMaxConcurrency=1 under DOCKER_BUILD.
+ENV BUILD_MAX_OLD_SPACE_MB=3072
 
 # Per-platform cache id keeps arm64/amd64 SWC artifacts isolated.
 RUN --mount=type=cache,id=next-cache-${TARGETPLATFORM},target=/app/apps/sim/.next/cache \

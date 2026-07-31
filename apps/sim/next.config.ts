@@ -163,20 +163,25 @@ const nextConfig: NextConfig = {
     preloadEntriesOnStart: false,
     /**
      * Docker/CI image builds run under a tight BuildKit cgroup (~7GB on
-     * ubuntu-latest). Next defaults to ~CPU-count page-data workers; three
-     * workers loading the full route graph regularly SIGKILL (exit 137). Cap
-     * concurrency when DOCKER_BUILD is set so peak RSS stays under the limit.
-     * Do not also set memoryBasedWorkersCount — that path enforces a minimum
-     * of 4 workers and would defeat this cap.
+     * ubuntu-latest). Without these caps, Next spawns ~CPU-count page-data
+     * workers and each worker still renders
+     * `staticGenerationMaxConcurrency` (default 8) pages in parallel —
+     * regularly SIGKILL (exit 137) around a few hundred of ~1200 static
+     * pages. Cap both knobs when DOCKER_BUILD is set. Do not also set
+     * memoryBasedWorkersCount — that path enforces a minimum of 4 workers.
      */
-    ...(isTruthy(env.DOCKER_BUILD) ? { cpus: 1 } : {}),
+    ...(isTruthy(env.DOCKER_BUILD)
+      ? {
+          cpus: 1,
+          staticGenerationMaxConcurrency: 1,
+        }
+      : {}),
     /**
-     * Turbopack's persistent build cache (beta) — opt-in via env so only the
-     * CI check build uses it; production image builds stay on the default
-     * cold-build path until the feature stabilizes.
+     * Turbopack's persistent build cache (beta). Keep it off for Docker image
+     * builds — the cache itself adds RSS under the BuildKit cgroup. Non-Docker
+     * CI builds can still opt in via the default below.
      */
-
-    turbopackFileSystemCacheForBuild: true,
+    turbopackFileSystemCacheForBuild: !isTruthy(env.DOCKER_BUILD),
     optimizePackageImports: [
       'lodash',
       'framer-motion',
