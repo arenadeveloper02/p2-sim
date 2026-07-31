@@ -196,16 +196,15 @@ describe('Model Capabilities', () => {
         'gpt-4.1-mini',
         'gpt-4.1-nano',
         'gpt-5-chat-latest',
-        'azure/gpt-5-chat',
+
         'gemini-2.5-flash',
         'claude-sonnet-4-5',
         'claude-opus-4-1',
         'grok-3-latest',
         'grok-3-fast-latest',
-        'deepseek-v3',
-        'deepseek-chat',
+
         'groq/meta-llama/llama-4-scout-17b-16e-instruct',
-        'mistral-large-latest',
+
       ]
 
       for (const model of supportedModels) {
@@ -221,21 +220,13 @@ describe('Model Capabilities', () => {
         'o1',
         'o3',
         'o4-mini',
-        'azure/o3',
-        'azure/o4-mini',
-        'deepseek-r1',
-        'azure/model-router',
+
         'gpt-5.1',
-        'azure/gpt-5.1',
-        'azure/gpt-5.1-mini',
-        'azure/gpt-5.1-nano',
-        'azure/gpt-5.1-codex',
+
         'gpt-5',
         'gpt-5-mini',
         'gpt-5-nano',
-        'azure/gpt-5',
-        'azure/gpt-5-mini',
-        'azure/gpt-5-nano',
+
       ]
 
       for (const model of unsupportedModels) {
@@ -261,13 +252,12 @@ describe('Model Capabilities', () => {
     it.concurrent('should return 2 for models with temperature range 0-2', () => {
       const modelsRange02 = [
         'gpt-4o',
-        'azure/gpt-4o',
+
         'gpt-5-chat-latest',
-        'azure/gpt-5-chat',
+
         'gemini-2.5-pro',
         'gemini-2.5-flash',
-        'deepseek-v3',
-        'deepseek-chat',
+
         'grok-3-latest',
         'grok-3-fast-latest',
         'groq/meta-llama/llama-4-scout-17b-16e-instruct',
@@ -287,9 +277,7 @@ describe('Model Capabilities', () => {
     })
 
     it.concurrent('should return 1.5 for models with temperature range 0-1.5', () => {
-      const modelsRange015 = ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest']
-
-      for (const model of modelsRange015) {
+      for (const model of MODELS_TEMP_RANGE_0_15) {
         expect(getMaxTemperature(model)).toBe(1.5)
       }
     })
@@ -367,8 +355,6 @@ describe('Model Capabilities', () => {
       expect(supportsReasoningEffort('gpt-5.2')).toBe(true)
       expect(supportsReasoningEffort('o3')).toBe(true)
       expect(supportsReasoningEffort('o4-mini')).toBe(true)
-      expect(supportsReasoningEffort('azure/gpt-5')).toBe(true)
-      expect(supportsReasoningEffort('azure/o3')).toBe(true)
     })
 
     it.concurrent('should return false for models without reasoning effort capability', () => {
@@ -393,7 +379,6 @@ describe('Model Capabilities', () => {
       expect(supportsVerbosity('gpt-5-mini')).toBe(true)
       expect(supportsVerbosity('gpt-5.1')).toBe(true)
       expect(supportsVerbosity('gpt-5.2')).toBe(true)
-      expect(supportsVerbosity('azure/gpt-5')).toBe(true)
     })
 
     it.concurrent('should return false for models without verbosity capability', () => {
@@ -438,7 +423,6 @@ describe('Model Capabilities', () => {
     it.concurrent('should have correct models in MODELS_TEMP_RANGE_0_2', () => {
       expect(MODELS_TEMP_RANGE_0_2).toContain('gpt-4o')
       expect(MODELS_TEMP_RANGE_0_2).toContain('gemini-2.5-flash')
-      expect(MODELS_TEMP_RANGE_0_2).toContain('deepseek-v3')
       expect(MODELS_TEMP_RANGE_0_2).toContain('grok-3-latest')
       expect(MODELS_TEMP_RANGE_0_2).not.toContain('claude-sonnet-4-5')
     })
@@ -472,8 +456,6 @@ describe('Model Capabilities', () => {
 
     it.concurrent('should have correct models in MODELS_WITH_REASONING_EFFORT', () => {
       expect(MODELS_WITH_REASONING_EFFORT).toContain('gpt-5.1')
-      expect(MODELS_WITH_REASONING_EFFORT).toContain('azure/gpt-5.1')
-      expect(MODELS_WITH_REASONING_EFFORT).toContain('azure/gpt-5.1-codex')
 
       expect(MODELS_WITH_REASONING_EFFORT).not.toContain('azure/gpt-5.1-mini')
       expect(MODELS_WITH_REASONING_EFFORT).not.toContain('azure/gpt-5.1-nano')
@@ -481,18 +463,12 @@ describe('Model Capabilities', () => {
       expect(MODELS_WITH_REASONING_EFFORT).toContain('gpt-5')
       expect(MODELS_WITH_REASONING_EFFORT).toContain('gpt-5-mini')
       expect(MODELS_WITH_REASONING_EFFORT).toContain('gpt-5-nano')
-      expect(MODELS_WITH_REASONING_EFFORT).toContain('azure/gpt-5')
-      expect(MODELS_WITH_REASONING_EFFORT).toContain('azure/gpt-5-mini')
-      expect(MODELS_WITH_REASONING_EFFORT).toContain('azure/gpt-5-nano')
 
       expect(MODELS_WITH_REASONING_EFFORT).toContain('gpt-5.2')
-      expect(MODELS_WITH_REASONING_EFFORT).toContain('azure/gpt-5.2')
 
       expect(MODELS_WITH_REASONING_EFFORT).toContain('o1')
       expect(MODELS_WITH_REASONING_EFFORT).toContain('o3')
       expect(MODELS_WITH_REASONING_EFFORT).toContain('o4-mini')
-      expect(MODELS_WITH_REASONING_EFFORT).toContain('azure/o3')
-      expect(MODELS_WITH_REASONING_EFFORT).toContain('azure/o4-mini')
 
       expect(MODELS_WITH_REASONING_EFFORT).not.toContain('gpt-5-chat-latest')
       expect(MODELS_WITH_REASONING_EFFORT).not.toContain('azure/gpt-5-chat')
@@ -503,8 +479,6 @@ describe('Model Capabilities', () => {
 
     it.concurrent('should have correct models in MODELS_WITH_VERBOSITY', () => {
       expect(MODELS_WITH_VERBOSITY).toContain('gpt-5.1')
-      expect(MODELS_WITH_VERBOSITY).toContain('azure/gpt-5.1')
-      expect(MODELS_WITH_VERBOSITY).toContain('azure/gpt-5.1-codex')
 
       expect(MODELS_WITH_VERBOSITY).not.toContain('azure/gpt-5.1-mini')
       expect(MODELS_WITH_VERBOSITY).not.toContain('azure/gpt-5.1-nano')
@@ -512,12 +486,8 @@ describe('Model Capabilities', () => {
       expect(MODELS_WITH_VERBOSITY).toContain('gpt-5')
       expect(MODELS_WITH_VERBOSITY).toContain('gpt-5-mini')
       expect(MODELS_WITH_VERBOSITY).toContain('gpt-5-nano')
-      expect(MODELS_WITH_VERBOSITY).toContain('azure/gpt-5')
-      expect(MODELS_WITH_VERBOSITY).toContain('azure/gpt-5-mini')
-      expect(MODELS_WITH_VERBOSITY).toContain('azure/gpt-5-nano')
 
       expect(MODELS_WITH_VERBOSITY).toContain('gpt-5.2')
-      expect(MODELS_WITH_VERBOSITY).toContain('azure/gpt-5.2')
 
       expect(MODELS_WITH_VERBOSITY).not.toContain('gpt-5-chat-latest')
       expect(MODELS_WITH_VERBOSITY).not.toContain('azure/gpt-5-chat')
@@ -613,15 +583,6 @@ describe('Model Capabilities', () => {
       expect(getReasoningEffortValuesForModel('gpt-4o')).toBeNull()
       expect(getReasoningEffortValuesForModel('claude-sonnet-4-5')).toBeNull()
       expect(getReasoningEffortValuesForModel('gemini-2.5-flash')).toBeNull()
-    })
-
-    it.concurrent('should return correct values for Azure GPT-5.2', () => {
-      const values = getReasoningEffortValuesForModel('azure/gpt-5.2')
-      expect(values).toBeDefined()
-      expect(values).not.toContain('minimal')
-      expect(values).toContain('none')
-      expect(values).toContain('high')
-      expect(values).not.toContain('xhigh')
     })
   })
 
@@ -720,12 +681,7 @@ describe('Max Output Tokens', () => {
       expect(getMaxOutputTokensForModel('gemini-2.5-pro')).toBe(65536)
     })
 
-    it.concurrent('should return published max for Azure GPT-5.2', () => {
-      expect(getMaxOutputTokensForModel('azure/gpt-5.2')).toBe(128000)
-    })
-
     it.concurrent('should return standard default for models without maxOutputTokens', () => {
-      expect(getMaxOutputTokensForModel('deepseek-reasoner')).toBe(4096)
       expect(getMaxOutputTokensForModel('grok-4-latest')).toBe(4096)
     })
 
@@ -880,7 +836,7 @@ describe('getHostedModels', () => {
     expect(hostedModels).toContain('gemini-2.5-flash')
 
     expect(hostedModels).not.toContain('deepseek-v3')
-    expect(hostedModels).not.toContain('grok-4-latest')
+    expect(hostedModels).toContain('grok-4-latest')
   })
 
   it.concurrent('should return an array of strings', () => {
