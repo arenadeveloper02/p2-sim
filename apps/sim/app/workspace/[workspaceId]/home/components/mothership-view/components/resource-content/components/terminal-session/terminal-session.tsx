@@ -411,7 +411,9 @@ const TerminalView = memo(function TerminalView({
         // not that it shrank. Fitting to that would resize the pty to nonsense.
         if (!onscreenRef.current || host.clientWidth <= 0 || host.clientHeight <= 0) return
         try {
-          fit.fit()
+          // Avoid `.fit()` call form — Biome's noFocusedTests false-positives on it (Jest `fit`).
+          const fitTerminal = fit.fit.bind(fit)
+          fitTerminal()
         } catch {
           // Zero-sized while animating; the next observation refits.
         }
@@ -473,7 +475,12 @@ const TerminalView = memo(function TerminalView({
       const host = hostRef.current
       if (!host || host.clientWidth <= 0 || host.clientHeight <= 0) return
       try {
-        fitRef.current?.fit()
+        // Avoid `.fit()` call form — Biome's noFocusedTests false-positives on it (Jest `fit`).
+        const addon = fitRef.current
+        if (addon) {
+          const fitTerminal = addon.fit.bind(addon)
+          fitTerminal()
+        }
         terminalRef.current?.focus()
       } catch {
         // Panel still animating; the ResizeObserver refits.

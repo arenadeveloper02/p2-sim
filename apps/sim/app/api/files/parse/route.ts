@@ -490,9 +490,13 @@ async function handleExternalUrl(
   try {
     logger.info('Fetching external URL:', url)
 
-    const { getStorageConfig, USE_S3_STORAGE, USE_BLOB_STORAGE, USE_GCS_STORAGE, S3_EXECUTION_FILES_CONFIG } = await import(
-      '@/lib/uploads/config'
-    )
+    const {
+      getStorageConfig,
+      USE_S3_STORAGE,
+      USE_BLOB_STORAGE,
+      USE_GCS_STORAGE,
+      S3_EXECUTION_FILES_CONFIG,
+    } = await import('@/lib/uploads/config')
     const executionConfig = getStorageConfig('execution')
 
     let isExecutionFile = false

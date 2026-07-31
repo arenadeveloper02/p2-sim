@@ -3,12 +3,11 @@ import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
 import { sendToProfound } from './lib/analytics/profound'
 import { getEnv } from './lib/core/config/env'
+import { isAuthDisabled, isDev } from './lib/core/config/env-flags'
 import { apiCorsPatch } from './lib/core/security/api-cors'
-import { getLoginRedirectUrl } from './lib/core/utils/urls'
-import { isAuthDisabled, isDev, isHosted } from './lib/core/config/env-flags'
 import { generateRuntimeCSP } from './lib/core/security/csp'
 import { getClientIp } from './lib/core/utils/request'
-import { isNonCanonicalSimHost } from './lib/core/utils/urls'
+import { getLoginRedirectUrl, isNonCanonicalSimHost } from './lib/core/utils/urls'
 
 const logger = createLogger('Proxy')
 

@@ -1,8 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
-import { createLogger } from '@sim/logger'
-import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { buildToolLlmCostFields } from '@/lib/billing/core/tool-llm-cost'
-import { getMaxOutputTokensForModel } from '@/providers/utils'
 import type { ToolConfig, WorkflowToolExecutionContext } from '@/tools/types'
 
 // Parameters for the tool
@@ -196,16 +192,16 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
             combinedHtml: '',
           },
         },
-        error: data.error || 'Figma to HTML conversion failed',
+        error: errorMessage || 'Figma to HTML conversion failed',
       }
     }
 
-    return {
-      success: true,
-      output: {
-        metadata: data.metadata,
-      },
-    }
+    // return {
+    //   success: true,
+    //   output: {
+    //     metadata: data.metadata,
+    //   },
+    // }
   },
 
   outputs: {

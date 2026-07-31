@@ -90,7 +90,6 @@ export function canApplyDraftSnapshot(workflowId: string, versions: DraftSyncVer
   )
 }
 
-
 /**
  * Persists any subblock values that exist only in the subblock store into the
  * normalized draft tables before deployment. Deploy snapshots and post-deploy

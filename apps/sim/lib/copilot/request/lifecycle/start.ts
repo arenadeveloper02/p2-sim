@@ -52,10 +52,10 @@ import { SSE_RESPONSE_HEADERS } from '@/lib/copilot/request/session/sse'
 import { TraceCollector } from '@/lib/copilot/request/trace'
 import { getMothershipBaseURL, getMothershipSourceEnvHeaders } from '@/lib/copilot/server/agent-url'
 import { env } from '@/lib/core/config/env'
+import { isCopilotBillingAttributionV1Enabled, isHosted } from '@/lib/core/config/env-flags'
 import { isLocalCopilotEnabledForUser } from '@/local-copilot/lib/access'
 import { generateLocalChatTitle } from '@/local-copilot/lib/agent/chat-title'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
-import { isCopilotBillingAttributionV1Enabled, isHosted } from '@/lib/core/config/env-flags'
 
 export { SSE_RESPONSE_HEADERS }
 
@@ -511,7 +511,17 @@ export async function requestChatTitle(params: {
   billingAttribution?: BillingAttributionSnapshot
   otelContext?: Context
 }): Promise<string | null> {
-  const { message, model, provider, userId, workspaceId, billingAttribution, otelContext, userEmail, copilotBackend, } = params
+  const {
+    message,
+    model,
+    provider,
+    userId,
+    workspaceId,
+    billingAttribution,
+    otelContext,
+    userEmail,
+    copilotBackend,
+  } = params
   if (!message || !model) return null
 
   if ((await isLocalCopilotEnabledForUser(userId)) && copilotBackend !== 'external') {

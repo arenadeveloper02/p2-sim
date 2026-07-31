@@ -59,14 +59,14 @@ import {
   ZoomIcon,
 } from '@/components/icons'
 import { env } from '@/lib/core/config/env'
-import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
-import { getMicrosoftOAuthEndpoints } from '@/lib/oauth/microsoft'
 import { isSlackExtendedScopesEnabled } from '@/lib/core/config/env-flags'
 import {
   DEFAULT_MAX_ERROR_BODY_BYTES,
   readResponseTextWithLimit,
 } from '@/lib/core/utils/stream-limits'
+import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
 import { parseInstagramLongLivedToken } from '@/lib/oauth/instagram'
+import { getMicrosoftOAuthEndpoints } from '@/lib/oauth/microsoft'
 import type { OAuthProviderConfig } from './types'
 
 const logger = createLogger('OAuth')

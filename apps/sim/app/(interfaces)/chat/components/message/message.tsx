@@ -3,10 +3,6 @@
 import { memo, useState } from 'react'
 import { Button, cn, Duplicate, Tooltip } from '@sim/emcn'
 import { Check, File as FileIcon, FileText, Image as ImageIcon } from 'lucide-react'
-import type {
-  AssistantGeneratedImage,
-  AssistantChatFile as ChatFile,
-} from '@/lib/chat/assistant-assets'
 import {
   AgentStreamThinkingChrome,
   AgentStreamToolCallsChrome,
@@ -15,6 +11,10 @@ import type {
   AgentStreamToolCall,
   AgentStreamToolStatus,
 } from '@/components/agent-stream/tool-call-lifecycle'
+import type {
+  AssistantGeneratedImage,
+  AssistantChatFile as ChatFile,
+} from '@/lib/chat/assistant-assets'
 import {
   ChatFileDownload,
   ChatFileDownloadAll,

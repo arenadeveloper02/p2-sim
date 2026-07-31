@@ -4,11 +4,9 @@ import type {
   ModelUsageByModel,
   RecordModelUsageParams,
 } from '@/lib/billing/core/record-model-usage'
-import { resolveToolModelUsageSource } from '@/lib/billing/core/record-model-usage'
 import { recordUsage } from '@/lib/billing/core/usage-log'
 import { getCostMultiplier } from '@/lib/core/config/env-flags'
 import { calculateCost } from '@/providers/utils'
-import type { ToolResponse } from '@/tools/types'
 
 const logger = createLogger('RecordModelUsage')
 

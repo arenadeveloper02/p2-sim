@@ -4,7 +4,6 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { guardrailsValidateContract } from '@/lib/api/contracts'
 import { parseRequest } from '@/lib/api/server'
 import { authorizeCredentialUse } from '@/lib/auth/credential-access'
-import { normalizeUsageModelId } from '@/lib/billing/core/usage-entry-normalize'
 import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import {
   type BillingAttributionSnapshot,
@@ -14,6 +13,7 @@ import {
   serializeBillingAttributionHeader,
   toBillingContext,
 } from '@/lib/billing/core/billing-attribution'
+import { normalizeUsageModelId } from '@/lib/billing/core/usage-entry-normalize'
 import { checkAndBillPayerOverageThreshold } from '@/lib/billing/threshold-billing'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'

@@ -1,7 +1,7 @@
 import type { Edge } from 'reactflow'
+import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { AssistantGeneratedImage } from '@/lib/chat/assistant-assets'
 import type { PersistedChatAttachment } from '@/lib/chat/history-persistence'
-import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
 import type { ParentIteration, SerializableExecutionState } from '@/executor/execution/types'
 import type {

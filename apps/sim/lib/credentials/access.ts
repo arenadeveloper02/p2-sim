@@ -1,6 +1,12 @@
 import { db } from '@sim/db'
+import {
+  account,
+  credential,
+  credentialMember,
+  credentialTypeEnum,
+  workspace,
+} from '@sim/db/schema'
 import { generateId } from '@sim/utils/id'
-import { account, credential, credentialMember, credentialTypeEnum, workspace } from '@sim/db/schema'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { DbOrTx } from '@/lib/db/types'
 import {

@@ -5,15 +5,15 @@ import { helpFormBodySchema } from '@/lib/api/contracts/common'
 import { validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { getHelpInboxEmail } from '@/lib/core/utils/urls'
 import {
   isPayloadSizeLimitError,
   MAX_MULTIPART_OVERHEAD_BYTES,
   readFormDataWithLimit,
 } from '@/lib/core/utils/stream-limits'
+import { getHelpInboxEmail } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { sendEmail } from '@/lib/messaging/email/mailer'
-import { getFromEmailAddress, getHelpEmailAddress } from '@/lib/messaging/email/utils'
+import { getFromEmailAddress } from '@/lib/messaging/email/utils'
 import { MAX_WORKSPACE_FORMDATA_FILE_SIZE } from '@/lib/uploads/shared/types'
 
 const logger = createLogger('HelpAPI')

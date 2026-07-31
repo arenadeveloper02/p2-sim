@@ -12,10 +12,9 @@ import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useActiveSearchTarget } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
 import type { SubBlockConfig } from '@/blocks/types'
-import { useUserAccessKnowledgeBases } from '@/hooks/use-knowledge'
-import { useKnowledgeBasesList } from '@/hooks/kb/use-knowledge'
 import { fetchKnowledgeBase } from '@/hooks/queries/kb/knowledge'
 import { knowledgeKeys } from '@/hooks/queries/utils/knowledge-keys'
+import { useUserAccessKnowledgeBases } from '@/hooks/use-knowledge'
 
 interface KnowledgeBaseSelectorProps {
   blockId: string

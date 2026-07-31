@@ -10,6 +10,7 @@ import { performCreateWorkspaceApiKey } from '@/lib/api-key/orchestration'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
 import { prepareWorkflowExecutionAdmission } from '@/lib/copilot/request/tools/workflow-context'
 import type { ExecutionContext, ToolCallResult } from '@/lib/copilot/request/types'
+import { buildCopilotWorkflowLineageOptions } from '@/lib/copilot/tools/handlers/workflow/lineage'
 import {
   buildVfsFolderPathMap,
   decodeVfsPathSegments,
@@ -18,7 +19,6 @@ import {
 import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getSocketServerUrl } from '@/lib/core/utils/urls'
-import { buildCopilotWorkflowLineageOptions } from '@/lib/copilot/tools/handlers/workflow/lineage'
 import {
   type ExecuteWorkflowOptions,
   executeWorkflow,
@@ -487,8 +487,8 @@ export async function executeRunWorkflow(
         workflowTriggerType: 'copilot',
         triggerBlockId: prepared.triggerBlockId,
         ...buildCopilotWorkflowLineageOptions(context),
-      }
-    )
+      },
+    })
 
     return buildExecutionOutput(result)
   } catch (error) {
@@ -759,8 +759,8 @@ export async function executeRunWorkflowUntilBlock(
         workflowTriggerType: 'copilot',
         triggerBlockId: prepared.triggerBlockId,
         ...buildCopilotWorkflowLineageOptions(context),
-      }
-    )
+      },
+    })
 
     return buildExecutionOutput(result, { stoppedAfterBlockId: params.stopAfterBlockId })
   } catch (error) {
@@ -861,8 +861,8 @@ export async function executeRunFromBlock(
           sourceExecutionId: sourceSnapshot.executionId,
         },
         ...buildCopilotWorkflowLineageOptions(context),
-      }
-    )
+      },
+    })
 
     return buildExecutionOutput(result, { startBlockId: params.startBlockId })
   } catch (error) {
@@ -1105,8 +1105,8 @@ export async function executeRunBlock(
         },
         stopAfterBlockId: params.blockId,
         ...buildCopilotWorkflowLineageOptions(context),
-      }
-    )
+      },
+    })
 
     return buildExecutionOutput(result, { blockId: params.blockId })
   } catch (error) {

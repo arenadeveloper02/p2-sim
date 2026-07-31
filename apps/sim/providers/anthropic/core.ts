@@ -3,11 +3,11 @@ import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema
 import type { RawMessageStreamEvent } from '@anthropic-ai/sdk/resources/messages/messages'
 import type { Logger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
+import { isRecordLike } from '@sim/utils/object'
 import {
   getAnthropicAutomaticCacheControl,
   supportsAnthropicAutomaticPromptCaching,
 } from '@/lib/anthropic/prompt-cache'
-import { isRecordLike } from '@sim/utils/object'
 import type { IterationToolCall, NormalizedBlockOutput, StreamingExecution } from '@/executor/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 import { convertAnthropicRequestHistory } from '@/providers/anthropic/request-history'

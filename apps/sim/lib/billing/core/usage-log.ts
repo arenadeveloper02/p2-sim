@@ -960,14 +960,14 @@ export async function recordCumulativeUsage(
         .where(eq(usageLog.eventKey, eventKey))
         .limit(1)
 
-        if (existing) {
-          assertCumulativeUsageLedgerBinding(existing, {
-            userId,
-            workspaceId,
-            billingContext,
-            eventKey,
-          })
-        }
+      if (existing) {
+        assertCumulativeUsageLedgerBinding(existing, {
+          userId,
+          workspaceId,
+          billingContext,
+          eventKey,
+        })
+      }
 
       const recordedRaw = existing ? Number.parseFloat(existing.rawCost ?? existing.cost) : 0
       const { shouldBill, delta, newTotal } = resolveCumulativeTopUp(recordedRaw, cost)

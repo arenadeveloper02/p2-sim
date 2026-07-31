@@ -8,7 +8,6 @@ export interface ChatFile {
   type: string
   file: File
   dataUrl?: string
-
 }
 
 export const MAX_CHAT_FILES = 15

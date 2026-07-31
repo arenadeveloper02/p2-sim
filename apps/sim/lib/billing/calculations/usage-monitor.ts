@@ -11,7 +11,11 @@ import {
   getUserUsageLimit,
   type UsageLimitSubscription,
 } from '@/lib/billing/core/usage'
-import { type BillingEntity, getBillingPeriodUsageCost, COPILOT_USAGE_SOURCES } from '@/lib/billing/core/usage-log'
+import {
+  type BillingEntity,
+  COPILOT_USAGE_SOURCES,
+  getBillingPeriodUsageCost,
+} from '@/lib/billing/core/usage-log'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import {
   computeDailyRefreshConsumed,

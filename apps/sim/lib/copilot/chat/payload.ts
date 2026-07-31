@@ -17,8 +17,8 @@ import { encodeVfsSegment } from '@/lib/copilot/vfs/path-utils'
 import type { BlockVisibilityState } from '@/lib/core/config/block-visibility'
 import { isDocSandboxEnabled, isHosted } from '@/lib/core/config/env-flags'
 import { trackChatUpload } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
-import { isAdminWorkspace, isAdminWorkspaceOnlyTool } from '@/lib/workspaces/is-admin-workspace'
 import { buildArchiveExtractGuidance, isArchiveFileName } from '@/lib/uploads/utils/file-utils'
+import { isAdminWorkspace, isAdminWorkspaceOnlyTool } from '@/lib/workspaces/is-admin-workspace'
 import { stripVersionSuffix } from '@/tools/utils'
 
 const logger = createLogger('CopilotChatPayload')

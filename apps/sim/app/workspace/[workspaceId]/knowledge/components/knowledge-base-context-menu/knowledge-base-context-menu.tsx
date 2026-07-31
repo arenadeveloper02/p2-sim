@@ -79,7 +79,7 @@ export const KnowledgeBaseContextMenu = memo(function KnowledgeBaseContextMenu({
   const hasNavigationSection = showOpenInNewTab && !!onOpenInNewTab
   const hasInfoSection = (showViewTags && !!onViewTags) || !!onCopyId || !!onTogglePin
   const hasMoveSection = !disableEdit && !!onMove && !!moveOptions && moveOptions.length > 0
-  const hasEditSection = (showEdit && !!onEdit) || hasMoveSection
+  // const hasEditSection = (showEdit && !!onEdit) || hasMoveSection
   const hasEditSection =
     (showEdit && !!onEdit) || (showCopyToWorkspace && !!onCopyToWorkspace) || hasMoveSection
   const hasDestructiveSection = showDelete && !!onDelete

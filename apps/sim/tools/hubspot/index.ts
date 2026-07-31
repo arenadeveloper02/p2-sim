@@ -1,3 +1,4 @@
+export { hubspotAddListMembershipsTool } from './add_list_memberships'
 export {
   hubspotGetCampaignAssetsTool,
   hubspotGetCampaignBudgetItemTool,
@@ -12,7 +13,6 @@ export {
   hubspotListCampaignsTool,
   // hubspotListEmailsTool,
 } from './campaigns'
-export { hubspotAddListMembershipsTool } from './add_list_memberships'
 export { hubspotCreateAppointmentTool } from './create_appointment'
 export { hubspotCreateAssociationTool } from './create_association'
 export { hubspotCreateCompanyTool } from './create_company'

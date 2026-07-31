@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Chip } from '@sim/emcn'
 import { CircleAlert } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
@@ -10,11 +9,10 @@ import { requestJson } from '@/lib/api/client/request'
 import { getWorkflowStateContract } from '@/lib/api/contracts/workflows'
 import { createWorkspaceContract } from '@/lib/api/contracts/workspaces'
 import { useSession } from '@/lib/auth/auth-client'
-import { fetchUserProfileSetPeopleMP } from '@/utilities/mixPanelTrigger'
 import { recoverFromStaleSession } from '@/lib/auth/stale-session-recovery'
 import { WorkspaceRecencyStorage } from '@/lib/core/utils/browser-storage'
-import { WorkspaceConicLoader } from '@/app/workspace/workspace-conic-loader'
 import { useWorkspacesWithMetadata, type WorkspaceCreationPolicy } from '@/hooks/queries/workspace'
+import { fetchUserProfileSetPeopleMP } from '@/utilities/mixPanelTrigger'
 
 const logger = createLogger('WorkspacePage')
 

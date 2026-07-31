@@ -3,10 +3,11 @@ import { workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { describeError, toError } from '@sim/utils/errors'
 import { and, eq, sql } from 'drizzle-orm'
-import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import { isRetryableInfrastructureError } from '@/lib/core/errors/retryable-infrastructure'
+import type { ExecutionActor } from '@/lib/execution/actor-resolution'
+import type { ExecutionLineage } from '@/lib/execution/lineage'
 import { executionLogger } from '@/lib/logs/execution/logger'
 import {
   calculateCostSummary,
@@ -30,7 +31,6 @@ import type {
   TraceSpan,
   WorkflowState,
 } from '@/lib/logs/types'
-import type { ExecutionLineage } from '@/lib/execution/lineage'
 import type { SerializableExecutionState } from '@/executor/execution/types'
 
 type TriggerData = Record<string, unknown> & {

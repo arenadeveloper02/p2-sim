@@ -20,13 +20,12 @@ import {
 } from '@sim/emcn'
 import { ManageWorkspace, PanelLeft } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
-import { useSession } from '@/lib/auth/auth-client'
-// import { env } from '@/lib/core/config/env'
-import { isAdminOrOwner } from '@/lib/workspaces/organization'
 import { useQueryClient } from '@tanstack/react-query'
 import { MoreHorizontal, Search } from 'lucide-react'
-import { useActiveOrganization } from '@/lib/auth/auth-client'
+import { useActiveOrganization, useSession } from '@/lib/auth/auth-client'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
+// import { env } from '@/lib/core/config/env'
+import { isAdminOrOwner } from '@/lib/workspaces/organization'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
 import {
@@ -34,10 +33,10 @@ import {
   type CreateWorkspaceTarget,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
 import { InviteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/invite-modal'
-import { useOrganizations } from '@/hooks/queries/organization'
 import { ViewInvitationsMenuItem } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/pending-invitations/view-invitations-menu-item'
 import { ViewInvitationsModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/pending-invitations/view-invitations-modal'
 import { invitationKeys } from '@/hooks/queries/invitations'
+import { useOrganizations } from '@/hooks/queries/organization'
 import {
   type Workspace,
   type WorkspaceCreationPolicy,
@@ -757,32 +756,32 @@ function WorkspaceHeaderImpl({
 
                 {isOrganizationAdmin && (
                   <div className='flex flex-col gap-0.5'>
-                  <DisabledReasonTooltip reason={createWorkspaceDisabledReason}>
-                    <Chip
-                      leftIcon={Plus}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (!canCreateWorkspace) {
-                          if (isBillingEnabled) navigateToSettings({ section: 'billing' })
-                          return
-                        }
-                        setIsWorkspaceMenuOpen(false)
-                        setIsCreateModalOpen(true)
-                      }}
-                      disabled={isCreatingWorkspace}
-                      aria-disabled={!canCreateWorkspace || undefined}
-                      fullWidth
-                      flush
-                      className={cn(
-                        'select-none',
-                        !canCreateWorkspace &&
-                          'cursor-not-allowed opacity-60 hover-hover:bg-transparent'
-                      )}
-                    >
-                      New workspace
-                    </Chip>
-                  </DisabledReasonTooltip>
-                </div>
+                    <DisabledReasonTooltip reason={createWorkspaceDisabledReason}>
+                      <Chip
+                        leftIcon={Plus}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (!canCreateWorkspace) {
+                            if (isBillingEnabled) navigateToSettings({ section: 'billing' })
+                            return
+                          }
+                          setIsWorkspaceMenuOpen(false)
+                          setIsCreateModalOpen(true)
+                        }}
+                        disabled={isCreatingWorkspace}
+                        aria-disabled={!canCreateWorkspace || undefined}
+                        fullWidth
+                        flush
+                        className={cn(
+                          'select-none',
+                          !canCreateWorkspace &&
+                            'cursor-not-allowed opacity-60 hover-hover:bg-transparent'
+                        )}
+                      >
+                        New workspace
+                      </Chip>
+                    </DisabledReasonTooltip>
+                  </div>
                 )}
                 <DropdownMenuSeparator className='mx-0' />
                 <DisabledReasonTooltip reason={inviteDisabledReason}>

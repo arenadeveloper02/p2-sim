@@ -46,8 +46,8 @@ import {
   type TriggerData,
   type WorkflowData,
 } from '@/lib/logs/search-suggestions'
-import { logsPageSearchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
+import { logsPageSearchEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
 import type {
   FilterTag,
   ResourceAction,
@@ -468,9 +468,9 @@ export default function Logs() {
     })
   }, [debouncedSearchQuery, level, timeRange, triggers, workflowIds, workflows])
 
-  const handleLogClick = useCallback((rowId: string) => {
-    dispatch({ type: 'TOGGLE_LOG', logId: rowId })
-  }, [])
+  // const handleLogClick = useCallback((rowId: string) => {
+  //   dispatch({ type: 'TOGGLE_LOG', logId: rowId })
+  // }, [])
   /**
    * The single write path for user-driven `executionId` changes. Cancels any
    * in-flight deep-link resolution first — an explicit interaction supersedes

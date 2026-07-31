@@ -112,7 +112,8 @@ export const CostBlock: BlockConfig = {
       title: 'Response path',
       type: 'short-input',
       placeholder: 'data.usage.total_cost',
-      description: 'Dot path on the source block output (e.g. data.meta.cost or headers.x-cost-usd)',
+      description:
+        'Dot path on the source block output (e.g. data.meta.cost or headers.x-cost-usd)',
       condition: { field: 'mode', value: 'response_path' },
     },
     {
@@ -198,7 +199,8 @@ export const CostBlock: BlockConfig = {
     },
     sourceBlock: {
       type: 'string',
-      description: 'Upstream block name or ID; auto-detects when empty in per_unit/response_path modes',
+      description:
+        'Upstream block name or ID; auto-detects when empty in per_unit/response_path modes',
     },
     quantityPath: {
       type: 'string',
@@ -240,7 +242,8 @@ export const CostBlock: BlockConfig = {
     },
     raw: {
       type: 'json',
-      description: 'Audit metadata (amount, currency, vendor, label, source mode, units, unitPrice)',
+      description:
+        'Audit metadata (amount, currency, vendor, label, source mode, units, unitPrice)',
     },
     recorded: { type: 'boolean', description: 'Whether a positive cost was emitted' },
     passthrough: {

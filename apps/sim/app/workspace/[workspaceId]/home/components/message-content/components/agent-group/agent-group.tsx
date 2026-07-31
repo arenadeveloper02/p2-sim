@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
 import { ChevronDown, cn, Expandable, ExpandableContent } from '@sim/emcn'
 import { ShimmerText } from '@/components/ui'
+import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
 import { useSmoothText } from '@/hooks/use-smooth-text'
 import { type ToolCallData, ToolCallStatus } from '../../../../types'
 import { getAgentIcon, isToolDone } from '../../utils'

@@ -96,8 +96,8 @@ function pushLegacyEnvKeys(names: string[], prefix: string): void {
  * For backward compatibility with older self-hosted env files, when `_COUNT`
  * is unset or zero we also fall back to singular and `_1..3` names.
  * Google-hosted image tools additionally accept the Gemini key namespace.
- * 
- * 
+ *
+ *
  * Resolves env var names for a hosted-key prefix. Numbered pools use a
  * `{PREFIX}_COUNT` env var. Deployments that still provide one legacy singular
  * `{PREFIX}` key remain supported when no count is configured.

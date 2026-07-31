@@ -34,8 +34,8 @@ import {
   updateOrganizationUsageLimitContract,
 } from '@/lib/api/contracts/organization'
 import {
-  listCreatorOrganizationsContract,
   type CreatorOrganization,
+  listCreatorOrganizationsContract,
 } from '@/lib/api/contracts/organizations'
 import {
   getOrganizationBillingContract,

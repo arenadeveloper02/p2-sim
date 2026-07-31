@@ -1,7 +1,6 @@
 import Link from 'next/link'
-import { ArenaWordmark } from '@/app/(landing)/components/navbar/components/sim-wordmark'
 import { ALL_COMPETITORS } from '@/app/(landing)/comparisons/utils'
-import { SimWordmark } from '@/app/(landing)/components/navbar/components/sim-wordmark'
+import { ArenaWordmark } from '@/app/(landing)/components/navbar/components/sim-wordmark'
 import { MODEL_PROVIDERS_WITH_CATALOGS } from '@/app/(landing)/models/utils'
 
 /**

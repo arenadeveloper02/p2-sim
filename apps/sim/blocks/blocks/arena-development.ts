@@ -11,7 +11,7 @@ async function fetchArenaDevelopmentRepos(): Promise<Array<{ label: string; id: 
     return _inflightRepoFetch
   }
 
-  _inflightRepoFetch = (
+  _inflightRepoFetch =
     // boundary-raw-fetch: internal JSON GET for Arena Development block repo dropdown hydration
     fetch('/api/tools/development/repos', { credentials: 'same-origin' })
       .then((response) => response.json())
@@ -30,7 +30,6 @@ async function fetchArenaDevelopmentRepos(): Promise<Array<{ label: string; id: 
         _inflightRepoFetch = null
         return []
       })
-  )
 
   return _inflightRepoFetch
 }

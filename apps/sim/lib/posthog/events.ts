@@ -558,7 +558,7 @@ export interface PostHogEventMap {
   }
 
   arena_docs_opened: {
-     source: 'help_menu'
+    source: 'help_menu'
   }
 
   slack_community_opened: {

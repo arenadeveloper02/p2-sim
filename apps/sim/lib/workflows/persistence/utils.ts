@@ -23,8 +23,8 @@ import { LRUCache } from 'lru-cache'
 import type { Edge } from 'reactflow'
 import { releaseWebhookPathClaims } from '@/lib/webhooks/path-claims'
 import { remapConditionBlockIds, remapConditionEdgeHandle } from '@/lib/workflows/condition-ids'
-import { migrateBlockTypes } from '@/lib/workflows/migrations/block-type-migrations'
 import { isDynamicHandleSubblock } from '@/lib/workflows/dynamic-handle-topology'
+import { migrateBlockTypes } from '@/lib/workflows/migrations/block-type-migrations'
 import {
   backfillCanonicalModes,
   migrateSubblockIds,

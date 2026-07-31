@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest'
 import {
   findCatalogModel,
   getBaseModelProviders,
-  getModelPricing,
   getHostedModels,
+  getModelPricing,
   getModelsWithPromptCaching,
   getPromptCachingMinimumTokens,
   getThinkingStreamVisibility,

@@ -9,12 +9,6 @@ import {
 } from '@sim/db/schema'
 import { and, eq, type SQL } from 'drizzle-orm'
 import type { AdditiveCostLeaf, CostLedger } from '@/lib/api/contracts/logs'
-import {
-  type ExecutionProgressMarkers,
-  getProgressMarkers,
-  pickLatestCompletedMarker,
-  pickLatestStartedMarker,
-} from '@/lib/logs/execution/progress-markers'
 import type { ModelUsageMetadata } from '@/lib/billing/core/usage-log'
 import {
   formatEmbeddedToolLabel,
@@ -22,6 +16,12 @@ import {
   resolveEmbeddedToolsForModel,
   UNATTRIBUTED_AGENT_TOOLS_ID,
 } from '@/lib/logs/embedded-tool-costs'
+import {
+  type ExecutionProgressMarkers,
+  getProgressMarkers,
+  pickLatestCompletedMarker,
+  pickLatestStartedMarker,
+} from '@/lib/logs/execution/progress-markers'
 import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
 import type { TraceSpan } from '@/lib/logs/types'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
@@ -30,10 +30,7 @@ type LookupColumn = 'id' | 'executionId'
 
 type LedgerItem = CostLedger['items'][number]
 
-function mergeLedgerMetadata(
-  existing: LedgerItem,
-  metadata: ModelUsageMetadata
-): void {
+function mergeLedgerMetadata(existing: LedgerItem, metadata: ModelUsageMetadata): void {
   if (typeof metadata.inputTokens === 'number') {
     existing.inputTokens = Math.max(existing.inputTokens ?? 0, metadata.inputTokens)
   }
@@ -74,7 +71,10 @@ export function buildAdditiveCostLeaves(
   traceSpans?: TraceSpan[]
 ): AdditiveCostLeaf[] {
   const enrichedItems = items.map((item) => {
-    const copy = { ...item, embeddedTools: item.embeddedTools ? [...item.embeddedTools] : undefined }
+    const copy = {
+      ...item,
+      embeddedTools: item.embeddedTools ? [...item.embeddedTools] : undefined,
+    }
     enrichModelItemFromTrace(copy, traceSpans)
     return copy
   })

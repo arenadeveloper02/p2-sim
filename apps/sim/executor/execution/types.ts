@@ -1,7 +1,7 @@
 import type { Edge } from 'reactflow'
-import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
+import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import type { CustomPiiPattern } from '@/lib/guardrails/pii-entities'
 import type { NodeMetadata } from '@/executor/dag/types'
 import type {

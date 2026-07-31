@@ -47,6 +47,7 @@ import { resolveEnvVarReferences } from '@/executor/utils/reference-validation'
 import type { ErrorInfo } from '@/tools/error-extractors'
 import { extractErrorMessage } from '@/tools/error-extractors'
 import { getImageGenerationWrapperBaseToolId } from '@/tools/image_generation/wrapper-ids'
+import { normalizeToolId } from '@/tools/normalize'
 import type {
   BYOKProviderId,
   OAuthTokenPayload,
@@ -1020,45 +1021,47 @@ async function applyHostedKeyCostToResult(
     await reportCustomDimensionUsage(tool, params, finalResult.output, executionContext, requestId)
 
     const provider = resolveHostingField(tool.hosting?.byokProviderId, params) || tool.id
-  const key = envVarName ?? 'unknown'
-  
+    const key = envVarName ?? 'unknown'
 
-  let hostedKeyCost = 0
-  let metadata: Record<string, unknown> | undefined
+    let hostedKeyCost = 0
+    let metadata: Record<string, unknown> | undefined
 
-  try {
-    ;({ cost: hostedKeyCost, metadata } = await processHostedKeyCost(
-      tool,
-      params,
-      finalResult.output,
-      executionContext,
-      requestId
-    ))
-  } catch (error) {
-    // The provider already ran and already charged Sim's key. Failing the
-    // execution here would destroy the caller's result without recovering the
-    // spend, so the run stands and the gap is raised for reconciliation.
-    logger.error(
-      `[${requestId}] Hosted-key metering failed for ${tool.id}; execution succeeded unbilled`,
-      { provider, error: getErrorMessage(error) }
-    )
-    hostedKeyMetrics.recordFailed({ provider, tool: tool.id, key, reason: 'metering' })
-  }
+    try {
+      ;({ cost: hostedKeyCost, metadata } = await processHostedKeyCost(
+        tool,
+        params,
+        finalResult.output,
+        executionContext,
+        requestId
+      ))
+    } catch (error) {
+      // The provider already ran and already charged Sim's key. Failing the
+      // execution here would destroy the caller's result without recovering the
+      // spend, so the run stands and the gap is raised for reconciliation.
+      logger.error(
+        `[${requestId}] Hosted-key metering failed for ${tool.id}; execution succeeded unbilled`,
+        { provider, error: getErrorMessage(error) }
+      )
+      hostedKeyMetrics.recordFailed({ provider, tool: tool.id, key, reason: 'metering' })
+    }
 
-  hostedKeyMetrics.recordUsed({ provider, tool: tool.id, key })
-  hostedKeyMetrics.recordCostCharged(hostedKeyCost, { provider, tool: tool.id })
+    hostedKeyMetrics.recordUsed({ provider, tool: tool.id, key })
+    hostedKeyMetrics.recordCostCharged(hostedKeyCost, { provider, tool: tool.id })
 
-  if (hostedKeyCost > 0) {
-    const { copilotToolExecution } = resolveToolScope(params, executionContext)
-    finalResult.output = {
-      ...finalResult.output,
-      cost: {
-        ...metadata,
-        total: hostedKeyCost,
-      },
-      // Copilot-only: workflow runs must not emit _serviceCost or the cost
-      // would be billed twice (execution ledger + Go service charge).
-      ...(copilotToolExecution ? { _serviceCost: { service: provider, cost: hostedKeyCost } } : {}),
+    if (hostedKeyCost > 0) {
+      const { copilotToolExecution } = resolveToolScope(params, executionContext)
+      finalResult.output = {
+        ...finalResult.output,
+        cost: {
+          ...metadata,
+          total: hostedKeyCost,
+        },
+        // Copilot-only: workflow runs must not emit _serviceCost or the cost
+        // would be billed twice (execution ledger + Go service charge).
+        ...(copilotToolExecution
+          ? { _serviceCost: { service: provider, cost: hostedKeyCost } }
+          : {}),
+      }
     }
   } catch (error) {
     logger.error(`[${requestId}] Failed to apply hosted key cost for ${tool.id}:`, {
@@ -1066,8 +1069,6 @@ async function applyHostedKeyCostToResult(
     })
   }
 }
-
-import { normalizeToolId } from '@/tools/normalize'
 
 /**
  * Maximum request body sizes before we fail with a clear error.
@@ -1625,32 +1626,36 @@ export async function executeTool(
     // Check for direct execution (no HTTP request needed)
     const wrapperBaseToolId = getImageGenerationWrapperBaseToolId(normalizedToolId)
     const directExecution =
-    normalizedToolId === 'google_nano_banana'
-      ? executeNanoBananaDirect
-      : normalizedToolId === 'image_generate'
-        ? executeImageGenerateDirect
-        : normalizedToolId === 'openai_image'
-          ? executeOpenAIImageDirect
-          : wrapperBaseToolId
-            ? (params: Record<string, any>) =>
-                executeImageGenerationWrapperV2Direct(normalizedToolId, params)
-      : normalizedToolId === 'development_generate_app' ||
-          normalizedToolId === 'arena_development_generate_app'
-        ? (params: Record<string, any>) =>
-            executeDevelopmentGenerateAppDirect({
-              ...params,
-              arenaMode:
-                normalizedToolId === 'arena_development_generate_app' ? true : params.arenaMode,
-            })
-        : normalizedToolId === 'development_edit_app' ||
-            normalizedToolId === 'arena_development_edit_app'
-          ? (params: Record<string, any>) =>
-              executeDevelopmentEditAppDirect({
-                ...params,
-                arenaMode:
-                  normalizedToolId === 'arena_development_edit_app' ? true : params.arenaMode,
-              })
-          : tool.directExecution
+      normalizedToolId === 'google_nano_banana'
+        ? executeNanoBananaDirect
+        : normalizedToolId === 'image_generate'
+          ? executeImageGenerateDirect
+          : normalizedToolId === 'openai_image'
+            ? executeOpenAIImageDirect
+            : wrapperBaseToolId
+              ? (params: Record<string, any>) =>
+                  executeImageGenerationWrapperV2Direct(normalizedToolId, params)
+              : normalizedToolId === 'development_generate_app' ||
+                  normalizedToolId === 'arena_development_generate_app'
+                ? (params: Record<string, any>) =>
+                    executeDevelopmentGenerateAppDirect({
+                      ...params,
+                      arenaMode:
+                        normalizedToolId === 'arena_development_generate_app'
+                          ? true
+                          : params.arenaMode,
+                    })
+                : normalizedToolId === 'development_edit_app' ||
+                    normalizedToolId === 'arena_development_edit_app'
+                  ? (params: Record<string, any>) =>
+                      executeDevelopmentEditAppDirect({
+                        ...params,
+                        arenaMode:
+                          normalizedToolId === 'arena_development_edit_app'
+                            ? true
+                            : params.arenaMode,
+                      })
+                  : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await tool.directExecution(contextParams, effectiveSignal)

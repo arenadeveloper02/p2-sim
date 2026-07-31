@@ -35,8 +35,8 @@ import {
   useUpdateChat,
 } from '@/hooks/queries/chats'
 import type { ChatDetail } from '@/hooks/queries/deployments'
-import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import { useIdentifierValidation } from './hooks'
 import {
   getPasswordHelperText,
@@ -1094,8 +1094,6 @@ function AuthSelector({
       setInvalidEmailItems(invalidEmailItemsRef.current)
     }
   }
-
- 
 
   /** Reset prefill ref when in edit mode so create mode can prefill again on next open. */
   useEffect(() => {

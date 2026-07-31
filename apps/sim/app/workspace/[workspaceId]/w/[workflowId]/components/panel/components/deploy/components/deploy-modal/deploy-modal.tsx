@@ -57,7 +57,10 @@ import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { syncLocalDraftFromServer, flushMergedLocalDraftToServer } from '@/stores/workflows/sync-local-draft'
+import {
+  flushMergedLocalDraftToServer,
+  syncLocalDraftFromServer,
+} from '@/stores/workflows/sync-local-draft'
 import { mergeSubblockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'

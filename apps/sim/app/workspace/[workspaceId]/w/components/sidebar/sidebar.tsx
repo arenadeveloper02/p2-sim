@@ -1750,11 +1750,12 @@ export const Sidebar = memo(function Sidebar({ isCollapsed }: SidebarProps) {
                           Privacy policy
                         </DropdownMenuItem>
                       ) : null}
-                      {brand?.slackCommunityUrl ?
-                      <DropdownMenuItem onSelect={handleOpenSlackCommunity}>
-                        <SlackIcon className='size-[14px]' />
-                        Slack Community
-                      </DropdownMenuItem> : null}
+                      {brand?.slackCommunityUrl ? (
+                        <DropdownMenuItem onSelect={handleOpenSlackCommunity}>
+                          <SlackIcon className='size-[14px]' />
+                          Slack Community
+                        </DropdownMenuItem>
+                      ) : null}
                       <DropdownMenuItem onSelect={handleOpenHelpFromMenu}>
                         <HelpCircle className='h-[14px] w-[14px]' />
                         Report an issue

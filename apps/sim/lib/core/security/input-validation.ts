@@ -795,8 +795,6 @@ export function validateProxyUrl(
   return validateExternalUrl(url, paramName)
 }
 
-
-
 export function isPrivateOrReservedIP(ip: string): boolean {
   try {
     if (!ipaddr.isValid(ip)) {

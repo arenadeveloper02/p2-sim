@@ -87,16 +87,16 @@ import {
 } from '@/lib/core/config/env-flags'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import {
+  readResponseJsonWithLimit,
+  readResponseTextWithLimit,
+} from '@/lib/core/utils/stream-limits'
+import {
   getBaseUrl,
   getInternalApiBaseUrl,
   getLoginRedirectUrl,
   isLocalhostUrl,
   parseOriginList,
 } from '@/lib/core/utils/urls'
-import {  
-  readResponseJsonWithLimit,
-  readResponseTextWithLimit,
-} from '@/lib/core/utils/stream-limits'
 import { processCredentialDraft } from '@/lib/credentials/draft-processor'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress, getPersonalEmailFrom } from '@/lib/messaging/email/utils'
@@ -120,7 +120,6 @@ import { SSO_TRUSTED_PROVIDERS } from '@/ee/sso/constants'
 
 const logger = createLogger('Auth')
 const microsoftOAuthEndpoints = getMicrosoftOAuthEndpoints()
-
 
 /**
  * Extracts user info from a Microsoft ID token JWT instead of calling Graph API /me.

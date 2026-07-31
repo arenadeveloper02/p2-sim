@@ -17,7 +17,7 @@ export function getRotatingApiKey(provider: string): string {
     provider !== 'gemini' &&
     provider !== 'cohere' &&
     provider !== 'zai' &&
-    provider !== 'xai' &&
+    // provider !== 'xai' &&
     provider !== 'kimi'
   ) {
     throw new Error(`No rotation implemented for provider: ${provider}`)
@@ -58,10 +58,10 @@ export function getRotatingApiKey(provider: string): string {
     if (env.ZAI_API_KEY_1) keys.push(env.ZAI_API_KEY_1)
     if (env.ZAI_API_KEY_2) keys.push(env.ZAI_API_KEY_2)
     if (env.ZAI_API_KEY_3) keys.push(env.ZAI_API_KEY_3)
-  } else if (provider === 'xai') {
-    if (env.XAI_API_KEY_1) keys.push(env.XAI_API_KEY_1)
-    if (env.XAI_API_KEY_2) keys.push(env.XAI_API_KEY_2)
-    if (env.XAI_API_KEY_3) keys.push(env.XAI_API_KEY_3)
+    // } else if (provider === 'xai') {
+    //   if (env.XAI_API_KEY_1) keys.push(env.XAI_API_KEY_1)
+    //   if (env.XAI_API_KEY_2) keys.push(env.XAI_API_KEY_2)
+    //   if (env.XAI_API_KEY_3) keys.push(env.XAI_API_KEY_3)
   } else if (provider === 'kimi') {
     if (env.KIMI_API_KEY_1) keys.push(env.KIMI_API_KEY_1)
     if (env.KIMI_API_KEY_2) keys.push(env.KIMI_API_KEY_2)

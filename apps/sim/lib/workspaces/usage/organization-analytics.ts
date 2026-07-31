@@ -3,16 +3,16 @@ import {
   copilotChats,
   copilotRuns,
   usageLog,
-  workspace,
   workflowExecutionLogs,
+  workspace,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, asc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm'
 import type { OrganizationUsageAnalytics } from '@/lib/api/contracts/organization-usage'
 import {
-  usageLogSourceSchema,
   type UsageChargeTypeValue,
+  usageLogSourceSchema,
 } from '@/lib/api/contracts/workspace-usage'
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
 import { COPILOT_USAGE_SOURCES } from '@/lib/billing/core/usage-log'
@@ -24,10 +24,10 @@ import {
   subtractEmbeddedFromBucketRows,
 } from '@/lib/workspaces/usage/embedded-tool-virtual-split'
 import {
+  buildCopilotByChatTypeQuery,
   buildExecutionConditions,
   buildExpensiveCopilotChatsQuery,
   buildExpensiveWorkflowsQuery,
-  buildCopilotByChatTypeQuery,
   buildLedgerConditions,
   buildLedgerJoinConditions,
   bySourceDisplayBucketExpr,
@@ -51,10 +51,10 @@ import {
   parseDecimal,
   periodRange,
   type ResolvedPeriod,
-  resolveExplicitPeriod,
-  resolvePeriodFromDateCandidates,
   resolvedActorTypeExpr,
   resolvedActorUserIdExpr,
+  resolveExplicitPeriod,
+  resolvePeriodFromDateCandidates,
   sortByBillableCostDesc,
   timeBucketExpr,
   usageMetricsSelect,
@@ -310,7 +310,11 @@ export async function getOrganizationUsageAnalytics(
         })
         .from(usageLog)
         .where(and(...ledgerConditions))
-        .groupBy(bySourceDisplayBucketExpr(), bySourceLedgerSourceExpr(), bySourceDisplayLabelExpr()),
+        .groupBy(
+          bySourceDisplayBucketExpr(),
+          bySourceLedgerSourceExpr(),
+          bySourceDisplayLabelExpr()
+        ),
 
       dbReplica
         .select({
@@ -411,7 +415,10 @@ export async function getOrganizationUsageAnalytics(
         .from(copilotChats)
         .leftJoin(
           copilotRuns,
-          and(eq(copilotRuns.chatId, copilotChats.id), ...periodRange(copilotRuns.startedAt, period))
+          and(
+            eq(copilotRuns.chatId, copilotChats.id),
+            ...periodRange(copilotRuns.startedAt, period)
+          )
         )
         .leftJoin(usageLog, and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions))
         .where(
@@ -431,7 +438,10 @@ export async function getOrganizationUsageAnalytics(
         })
         .from(copilotRuns)
         .where(
-          and(inArray(copilotRuns.workspaceId, workspaceIds), ...periodRange(copilotRuns.startedAt, period))
+          and(
+            inArray(copilotRuns.workspaceId, workspaceIds),
+            ...periodRange(copilotRuns.startedAt, period)
+          )
         ),
 
       buildCopilotByChatTypeQuery({
@@ -657,7 +667,9 @@ export async function getOrganizationUsageAnalytics(
         metadata: usageLog.metadata,
       })
       .from(usageLog)
-      .where(and(...ledgerConditions, eq(usageLog.category, 'model'), isNotNull(usageLog.executionId)))
+      .where(
+        and(...ledgerConditions, eq(usageLog.category, 'model'), isNotNull(usageLog.executionId))
+      )
 
     const embeddedToolSplit = computeEmbeddedToolVirtualSplit(modelMetadataRows)
 
@@ -689,7 +701,8 @@ export async function getOrganizationUsageAnalytics(
           count: row.count,
         }))
         .sort(
-          (a, b) => CHARGE_TYPE_ORDER.indexOf(a.chargeType) - CHARGE_TYPE_ORDER.indexOf(b.chargeType)
+          (a, b) =>
+            CHARGE_TYPE_ORDER.indexOf(a.chargeType) - CHARGE_TYPE_ORDER.indexOf(b.chargeType)
         ),
       embeddedToolSplit
     )
@@ -931,7 +944,7 @@ export async function getOrganizationUsageAnalytics(
         ),
         byChat: mapExpensiveCopilotChatRows(
           expensiveChatRows.filter(
-            (row): row is (typeof row & { workspaceId: string }) => row.workspaceId !== null
+            (row): row is typeof row & { workspaceId: string } => row.workspaceId !== null
           )
         ).map((row) => ({
           workspaceId: row.workspaceId,
@@ -961,9 +974,7 @@ export async function getOrganizationUsageAnalytics(
           byChat: sortByBillableCostDesc(
             triggeredWorkflowRows
               .filter(
-                (
-                  row
-                ): row is typeof row & { triggeringChatId: string; workspaceId: string } =>
+                (row): row is typeof row & { triggeringChatId: string; workspaceId: string } =>
                   row.triggeringChatId !== null && row.workspaceId !== null
               )
               .map((row) => ({
@@ -1045,9 +1056,7 @@ export async function getOrganizationUsageAnalytics(
       lineage: {
         roots: lineageRootRows
           .filter(
-            (
-              row
-            ): row is typeof row & { rootExecutionId: string; workspaceId: string } =>
+            (row): row is typeof row & { rootExecutionId: string; workspaceId: string } =>
               row.rootExecutionId !== null && row.workspaceId !== null
           )
           .map((row) => ({

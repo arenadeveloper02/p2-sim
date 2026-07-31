@@ -132,6 +132,8 @@ export function EmailFooter({
                     &nbsp;
                   </td>
                 </tr>
+              </>
+            )}
 
             <tr>
               <td style={baseStyles.spacer} height={16}>

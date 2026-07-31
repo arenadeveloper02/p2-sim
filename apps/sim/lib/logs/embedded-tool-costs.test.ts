@@ -18,10 +18,12 @@ import {
 describe('embedded-tool-costs', () => {
   it('extracts image model from tool output fields', () => {
     expect(extractToolOutputModel({ model: 'gpt-image-1.5' })).toBe('gpt-image-1.5')
-    expect(extractToolOutputModel({ cost: { model: 'flux-2-pro', total: 0.04 } })).toBe('flux-2-pro')
-    expect(
-      extractToolOutputModel({ metadata: { model: 'gemini-3.1-flash-image-preview' } })
-    ).toBe('gemini-3.1-flash-image-preview')
+    expect(extractToolOutputModel({ cost: { model: 'flux-2-pro', total: 0.04 } })).toBe(
+      'flux-2-pro'
+    )
+    expect(extractToolOutputModel({ metadata: { model: 'gemini-3.1-flash-image-preview' } })).toBe(
+      'gemini-3.1-flash-image-preview'
+    )
   })
 
   it('resolves image_generate to the underlying model when present', () => {
