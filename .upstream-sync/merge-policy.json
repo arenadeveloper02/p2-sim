@@ -47,9 +47,7 @@
     "docker-compose.sandbox.yml",
     "bunfig.toml"
   ],
-  "upstreamFirst": [
-    "apps/sim/lib/copilot/generated/"
-  ],
+  "upstreamFirst": ["apps/sim/lib/copilot/generated/"],
   "manualReview": [
     "packages/db/migrations/",
     "packages/db/schema/",

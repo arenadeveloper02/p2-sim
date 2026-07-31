@@ -367,7 +367,8 @@ async function runDryRun(options: Options): Promise<number> {
     }
   }
 
-  const allRecords = priorRecords.length > 0 ? [...priorRecords, ...summary.records] : summary.records
+  const allRecords =
+    priorRecords.length > 0 ? [...priorRecords, ...summary.records] : summary.records
 
   if (options.reviewDeltas) {
     printDeltaReview(allRecords)

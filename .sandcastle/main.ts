@@ -83,10 +83,7 @@ import {
   shouldSkipParentGrill,
 } from './lib/grill-state'
 import { ensureInstallableWorkspace } from './lib/lockfile-bootstrap'
-import {
-  verificationToOutcome,
-  writeRunOutcome,
-} from './lib/job-summary'
+import { verificationToOutcome, writeRunOutcome } from './lib/job-summary'
 import {
   getUsageRecords,
   persistUsageArtifacts,
@@ -94,7 +91,12 @@ import {
   recoverUsageFromLogDir,
   resetUsageRecords,
 } from './lib/usage'
-import { allVerificationPassed, autofixFormat, formatVerifyResults, runVerification } from './lib/verify'
+import {
+  allVerificationPassed,
+  autofixFormat,
+  formatVerifyResults,
+  runVerification,
+} from './lib/verify'
 
 const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'prompts')
 const SKIP_AGENT = process.env.UPSTREAM_SYNC_SKIP_AGENT === 'true'
@@ -423,13 +425,15 @@ function appendUsageToRunLog(runId: string): string {
  */
 function flushUsageBestEffort(reason: string): string | null {
   if (usageFlushCompleted) return null
-  const runId = activeRunId ?? (() => {
-    try {
-      return readState().lastRunId ?? todayRunId()
-    } catch {
-      return todayRunId()
-    }
-  })()
+  const runId =
+    activeRunId ??
+    (() => {
+      try {
+        return readState().lastRunId ?? todayRunId()
+      } catch {
+        return todayRunId()
+      }
+    })()
 
   try {
     if (getUsageRecords().length === 0) {
@@ -513,8 +517,7 @@ function ensureActiveDraftPr(options: {
   title?: string
 }): number {
   const title =
-    options.title ??
-    formatSyncPrTitle({ mergeBase: options.mergeBase, runId: options.runId })
+    options.title ?? formatSyncPrTitle({ mergeBase: options.mergeBase, runId: options.runId })
 
   if (options.existingPrNumber > 0 && isPrOpen(options.existingPrNumber)) {
     try {
@@ -648,20 +651,12 @@ async function main(): Promise<void> {
       syncBranch = resolveResumeSyncBranch(initialState)
     } else {
       let candidateBranch = initialState.activeBranch
-      const prOpen = Boolean(
-        initialState.activePrNumber && isPrOpen(initialState.activePrNumber)
-      )
-      if (
-        !candidateBranch &&
-        initialState.activePrNumber &&
-        prOpen
-      ) {
+      const prOpen = Boolean(initialState.activePrNumber && isPrOpen(initialState.activePrNumber))
+      if (!candidateBranch && initialState.activePrNumber && prOpen) {
         candidateBranch = resolvePrHeadBranch(initialState.activePrNumber)
       }
 
-      const branchExistsOnRemote = candidateBranch
-        ? remoteBranchExists(candidateBranch)
-        : false
+      const branchExistsOnRemote = candidateBranch ? remoteBranchExists(candidateBranch) : false
       const decision = decideSyncBranchAction({
         force: FORCE_RUN,
         activePrNumber: initialState.activePrNumber,
@@ -673,8 +668,7 @@ async function main(): Promise<void> {
       if (decision.action === 'reuse') {
         syncBranch = decision.branch
         extending = true
-        previousUpstreamSha =
-          initialState.lastSyncedUpstreamSha ?? baseline.baselineSha
+        previousUpstreamSha = initialState.lastSyncedUpstreamSha ?? baseline.baselineSha
         console.log(
           `Reusing open sync PR #${decision.prNumber} on \`${syncBranch}\` (extend to ${headSha.slice(0, 8)}).`
         )
@@ -742,9 +736,7 @@ async function main(): Promise<void> {
       if (ingested.added > 0) {
         console.log(`Synced ${ingested.added} grill Q&A comment(s) from PR #${activePrNumber}.`)
       }
-      commitUpstreamLedger(
-        `upstream-sync(${branchState.lastRunId ?? runId}): log resume Q&A`
-      )
+      commitUpstreamLedger(`upstream-sync(${branchState.lastRunId ?? runId}): log resume Q&A`)
     }
 
     writeState({
@@ -1223,7 +1215,7 @@ main().catch((error) => {
           return []
         }
       })(),
-      errorMessage: error instanceof Error ? error.stack ?? error.message : String(error),
+      errorMessage: error instanceof Error ? (error.stack ?? error.message) : String(error),
     })
     writeState({ ...state, status: 'failed' })
   } catch {
