@@ -40,6 +40,10 @@ None. No `forkFirst`/`manualReview` prefix is touched. `providers/models.ts` is 
 
 None. Everything resolves mechanically from `merge-policy.json` (fork-first on the single trivial test conflict). No genuine fork-vs-upstream product decision — no PR question posted.
 
+### Resume note (2026-07-31)
+
+Grill analysis stands unchanged on resume. The only logged item was the harness verification-failure notice (`bun run check` → biome format on `findCatalogModel` in `apps/sim/providers/models.ts`). This is a mechanical formatting fix, not a fork-vs-upstream product decision: the signature was reflowed to a single line (`export function findCatalogModel(modelId: string): {`) by commit `751c8dec4`, and `bunx biome format providers/models.ts` now confirms no further changes. No new open questions — no duplicate PR comment posted per resume-mode rules.
+
 ## Usage
 
 ### child-cluster-1
