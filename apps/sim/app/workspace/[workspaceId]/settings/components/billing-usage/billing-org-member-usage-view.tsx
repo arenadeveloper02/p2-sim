@@ -1,7 +1,7 @@
 'use client'
 
 import { CircleInfo, Credit, Info, Server, Workflow } from '@sim/emcn'
-import { useParams } from 'next/navigation'
+// import { useParams } from 'next/navigation'
 import type { CreditUsageSummary } from '@/lib/api/contracts/billing-credit-usage'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { BillingUsageMetricCard } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-metric-card'
@@ -11,7 +11,8 @@ import {
   formatCreditCount,
   resolveOrgMemberCreditDisplay,
 } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-utils'
-import { useMyMemberCredits } from '@/hooks/queries/organization'
+
+// import { useMyMemberCredits } from '@/hooks/queries/organization'
 
 const MY_USAGE_TOOLTIP =
   'Organization credit pool for the current billing period, your optional admin allocation, and your personal usage within this organization.'
@@ -32,8 +33,11 @@ function formatCreditsValue(value: number | 'unlimited'): string {
  * used/remaining, and source breakdown.
  */
 export function BillingOrgMemberUsageView({ data }: BillingOrgMemberUsageViewProps) {
-  const { workspaceId } = useParams<{ workspaceId: string }>()
-  const { data: memberCredits } = useMyMemberCredits(workspaceId)
+  // const { workspaceId } = useParams<{ workspaceId: string }>()
+  // const { data: memberCredits } = useMyMemberCredits(workspaceId)
+  // Member-credits route was removed; allocation falls back to null until wired
+  // through useOrganizationMemberUsageLimit(orgId, userId).
+  const memberCredits: { limitDollars?: number | null } | undefined = undefined
 
   const orgPool = data.orgPool
   if (!orgPool) return null

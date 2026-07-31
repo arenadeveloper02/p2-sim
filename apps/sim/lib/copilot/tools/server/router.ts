@@ -13,7 +13,7 @@ import {
   ManageCustomTool,
   ManageMcpTool,
   ManageSkill,
-  UserMemory,
+  // UserMemory,
   UserTable,
   WorkspaceFile,
 } from '@/lib/copilot/generated/tool-catalog-v1'
@@ -139,7 +139,8 @@ const WRITE_ACTIONS: Record<string, string[]> = {
   [Ffmpeg.id]: ['*'],
   // Paid external-provider lookups (hosted-key cost), like the media tools.
   [enrichmentRunServerTool.name]: ['*'],
-  [UserMemory.id]: ['add', 'delete', 'correct'],
+  // UserMemory catalog export was removed; keep write actions for the local tool id.
+  [userMemoryServerTool.name]: ['add', 'delete', 'correct'],
 }
 
 function isWritePermission(userPermission: string): boolean {

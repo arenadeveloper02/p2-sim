@@ -12,7 +12,7 @@ import {
   clampPercent,
   formatCreditCount,
 } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-utils'
-import { useMyMemberCredits } from '@/hooks/queries/organization'
+// import { useMyMemberCredits } from '@/hooks/queries/organization'
 import { useSubscriptionData } from '@/hooks/queries/subscription'
 
 const MY_USAGE_TOOLTIP =
@@ -59,7 +59,9 @@ function resolvePersonalAllowance(
 export function BillingPersonalUsageView({ data }: BillingPersonalUsageViewProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data: subscriptionData } = useSubscriptionData({ workspaceId })
-  const { data: memberCredits } = useMyMemberCredits(workspaceId)
+  // const { data: memberCredits } = useMyMemberCredits(workspaceId)
+  // Member-credits route was removed; fall back to plan-level allowance only.
+  const memberCredits: { limitDollars?: number | null } | undefined = undefined
 
   const consumed = data.summary.totalCredits
   const { totalCredits, hint, isUnlimited } = resolvePersonalAllowance(

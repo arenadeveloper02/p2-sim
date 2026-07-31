@@ -1,3 +1,4 @@
+import { createLogger } from '@sim/logger'
 import type OpenAI from 'openai'
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { CompletionUsage } from 'openai/resources/completions'
@@ -6,7 +7,59 @@ import { buildOpenAIMessageContent } from '@/providers/attachments'
 import type { ModelUsage } from '@/providers/cost-policy'
 import type { AgentStreamEvent } from '@/providers/stream-events'
 import type { Message } from '@/providers/types'
-import { createOpenAICompatibleStream } from '@/providers/utils'
+
+// import { createOpenAICompatibleStream } from '@/providers/utils'
+
+/**
+ * Creates a ReadableStream from an OpenAI-compatible chat-completions stream.
+ * Inlined here after the shared helper was removed from `@/providers/utils`.
+ */
+function createOpenAICompatibleStream(
+  stream: AsyncIterable<ChatCompletionChunk>,
+  providerName: string,
+  onComplete?: (content: string, usage: CompletionUsage) => void
+): ReadableStream<Uint8Array> {
+  const streamLogger = createLogger(`${providerName}Utils`)
+  let fullContent = ''
+  let promptTokens = 0
+  let completionTokens = 0
+  let totalTokens = 0
+
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const chunk of stream) {
+          if (chunk.usage) {
+            promptTokens = chunk.usage.prompt_tokens ?? 0
+            completionTokens = chunk.usage.completion_tokens ?? 0
+            totalTokens = chunk.usage.total_tokens ?? 0
+          }
+
+          const content = chunk.choices?.[0]?.delta?.content || ''
+          if (content) {
+            fullContent += content
+            controller.enqueue(new TextEncoder().encode(content))
+          }
+        }
+
+        if (onComplete) {
+          if (promptTokens === 0 && completionTokens === 0) {
+            streamLogger.warn(`${providerName} stream completed without usage data`)
+          }
+          onComplete(fullContent, {
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: totalTokens || promptTokens + completionTokens,
+          })
+        }
+
+        controller.close()
+      } catch (error) {
+        controller.error(error)
+      }
+    },
+  })
+}
 
 /**
  * Creates a ReadableStream from an OpenAI chat-completions stream.
