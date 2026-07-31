@@ -1,27 +1,16 @@
 {
   "runId": "2026-07-31",
-  "recordedAt": "2026-07-31T13:23:39.925Z",
+  "recordedAt": "2026-07-31T13:32:50.073Z",
   "agents": [
-    {
-      "agentName": "child-cluster-1",
-      "model": "claude-sonnet-4-6",
-      "iterations": 1,
-      "inputTokens": 13,
-      "outputTokens": 3768,
-      "cacheReadInputTokens": 738486,
-      "cacheCreationInputTokens": 56871,
-      "estimatedCostUsd": 0.49256605,
-      "costSource": "provider"
-    },
     {
       "agentName": "parent-grill-analysis",
       "model": "claude-opus-4-8",
       "iterations": 1,
-      "inputTokens": 28,
-      "outputTokens": 10208,
-      "cacheReadInputTokens": 733325,
-      "cacheCreationInputTokens": 47762,
-      "estimatedCostUsd": 0.921939,
+      "inputTokens": 9,
+      "outputTokens": 4127,
+      "cacheReadInputTokens": 198275,
+      "cacheCreationInputTokens": 37979,
+      "estimatedCostUsd": 0.44112525,
       "costSource": "provider"
     }
   ]
