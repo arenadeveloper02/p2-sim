@@ -11,3 +11,7 @@ Rolling log of structural improvements that reduce merge conflict surface with `
 ## Notes
 
 <!-- Agents append dated entries below during each sync run. -->
+
+## 2026-07-31
+
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
