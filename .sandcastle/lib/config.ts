@@ -14,7 +14,101 @@ export const SYNC_BRANCH_README_PATH = join(UPSTREAM_SYNC_ROOT, 'SYNC-BRANCH.md'
 export const COMPLETION_SIGNAL = '<promise>UPSTREAM_SYNC_COMPLETE</promise>'
 export const GRILL_COMPLETION_SIGNAL = '<promise>UPSTREAM_SYNC_GRILL_COMPLETE</promise>'
 export const QUESTION_MARKER = '<!-- upstream-sync-question -->'
+export const EXTENDED_MARKER = '<!-- upstream-sync-extended -->'
 export const RESUME_COMMAND = '/upstream-sync resume'
+
+/** Decision for whether to reuse an open sync PR/branch or start fresh. */
+export type SyncBranchDecision =
+  | { action: 'reuse'; branch: string; prNumber: number }
+  | {
+      action: 'fresh'
+      reason: 'force' | 'no-open-pr' | 'pr-closed' | 'branch-missing'
+    }
+
+/**
+ * Pure policy: reuse an open sync PR when its branch still exists on origin;
+ * otherwise open a fresh sync. `FORCE_RUN` always forces a fresh branch/PR.
+ */
+export function decideSyncBranchAction(input: {
+  force: boolean
+  activePrNumber: number | null
+  activeBranch: string | null
+  prOpen: boolean
+  branchExistsOnRemote: boolean
+}): SyncBranchDecision {
+  if (input.force) return { action: 'fresh', reason: 'force' }
+  if (!input.activePrNumber) return { action: 'fresh', reason: 'no-open-pr' }
+  if (!input.prOpen) return { action: 'fresh', reason: 'pr-closed' }
+  if (!input.activeBranch || !input.branchExistsOnRemote) {
+    return { action: 'fresh', reason: 'branch-missing' }
+  }
+  return {
+    action: 'reuse',
+    branch: input.activeBranch,
+    prNumber: input.activePrNumber,
+  }
+}
+
+/** Draft PR title — normal run or extended reuse of an open sync PR. */
+export function formatSyncPrTitle(options: {
+  mergeBase: string
+  runId: string
+  extendedToSha?: string
+}): string {
+  if (options.extendedToSha) {
+    return `upstream-sync: merge simstudioai/sim main into ${options.mergeBase} (extended ${options.runId} → ${options.extendedToSha.slice(0, 8)})`
+  }
+  return `upstream-sync: merge simstudioai/sim main into ${options.mergeBase} (${options.runId})`
+}
+
+/** Banner prepended when an open sync PR is extended with newer upstream commits. */
+export function formatExtendedBanner(options: {
+  previousSha: string
+  newSha: string
+  commitCount: number
+  runId: string
+}): string {
+  return [
+    '## Extended',
+    '',
+    'This open sync PR was extended with newer upstream commits.',
+    '',
+    '| | |',
+    '|---|---|',
+    `| Previous upstream | [\`${options.previousSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${options.previousSha}) |`,
+    `| New upstream | [\`${options.newSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${options.newSha}) |`,
+    `| Commits added | ${options.commitCount} |`,
+    `| Ledger | [.upstream-sync/ledger/${options.runId}/](.upstream-sync/ledger/${options.runId}/) |`,
+    '',
+  ].join('\n')
+}
+
+/** Short PR comment posted when a sync run extends an existing open PR. */
+export function formatExtendedPrComment(options: {
+  previousSha: string
+  newSha: string
+  commitCount: number
+  runId: string
+}): string {
+  return [
+    EXTENDED_MARKER,
+    '## Sync extended',
+    '',
+    `Upstream advanced \`${options.previousSha.slice(0, 8)}\` → \`${options.newSha.slice(0, 8)}\` (+${options.commitCount} commit${options.commitCount === 1 ? '' : 's'}). Continuing on this branch/PR.`,
+    '',
+    `Ledger: \`.upstream-sync/ledger/${options.runId}/\``,
+  ].join('\n')
+}
+
+/** Prepend an Extended banner while keeping any leading question marker. */
+export function withExtendedBanner(body: string, banner: string): string {
+  const trimmedBanner = banner.trimEnd()
+  if (body.startsWith(QUESTION_MARKER)) {
+    const rest = body.slice(QUESTION_MARKER.length).replace(/^\n+/, '')
+    return `${QUESTION_MARKER}\n${trimmedBanner}\n\n${rest}`
+  }
+  return `${trimmedBanner}\n\n${body}`
+}
 
 export const VERIFY_COMMANDS = ['bun run check', 'bun run lint', 'bun run test', 'bun run build'] as const
 
@@ -444,15 +538,57 @@ export function commitSyncBranchScaffold(options: {
 
 /** Update an existing draft PR body via REST (avoids GraphQL UpdatePullRequest). */
 export function updateDraftPrBody(prNumber: number, body: string): void {
+  updateDraftPr(prNumber, { body })
+}
+
+/** Update draft PR title and/or body via REST (avoids GraphQL UpdatePullRequest). */
+export function updateDraftPr(
+  prNumber: number,
+  options: { title?: string; body?: string }
+): void {
   const { owner, repo } = repoSlug()
-  runGh([
-    'api',
-    '-X',
-    'PATCH',
-    `repos/${owner}/${repo}/pulls/${prNumber}`,
-    '-f',
-    `body=${body}`,
-  ])
+  const args = ['api', '-X', 'PATCH', `repos/${owner}/${repo}/pulls/${prNumber}`]
+  if (options.title !== undefined) {
+    args.push('-f', `title=${options.title}`)
+  }
+  if (options.body !== undefined) {
+    args.push('-f', `body=${options.body}`)
+  }
+  if (options.title === undefined && options.body === undefined) return
+  runGh(args)
+}
+
+/** True when `origin` has a remote-tracking head for the given branch. */
+export function remoteBranchExists(branch: string): boolean {
+  try {
+    runGit(['ls-remote', '--exit-code', '--heads', 'origin', branch])
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Resolve the head branch name for a PR, or null if lookup fails. */
+export function resolvePrHeadBranch(prNumber: number): string | null {
+  try {
+    const branch = runGh([
+      'pr',
+      'view',
+      String(prNumber),
+      '--json',
+      'headRefName',
+      '--jq',
+      '.headRefName',
+    ])
+    return branch.trim() || null
+  } catch {
+    return null
+  }
+}
+
+/** Post a comment on a PR. */
+export function commentOnPr(prNumber: number, body: string): void {
+  runGh(['pr', 'comment', String(prNumber), '--body', body])
 }
 
 /** Request PR reviewers via REST (avoids GraphQL UpdatePullRequest). */
@@ -495,7 +631,8 @@ export function isPrOpen(prNumber: number): boolean {
 }
 
 /**
- * Close a stale open sync PR when upstream main has moved and a fresh sync starts.
+ * Close a stale open sync PR when a fresh sync is forced or the prior sync branch is gone.
+ * Daily advances reuse the open PR instead — see `decideSyncBranchAction`.
  */
 export function closeSupersededPr(
   prNumber: number,
@@ -514,7 +651,7 @@ export function closeSupersededPr(
     'Cherry-pick anything you still need from this branch into the new sync PR.',
   ].join('\n')
 
-  runGh(['pr', 'comment', String(prNumber), '--body', comment])
+  commentOnPr(prNumber, comment)
   runGh(['pr', 'close', String(prNumber)])
   console.log(`Closed superseded sync PR #${prNumber}.`)
 }

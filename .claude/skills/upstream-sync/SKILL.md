@@ -68,4 +68,4 @@ bun run build
 
 - Daily 06:00 UTC + manual dispatch
 - Resume: `/upstream-sync resume` on the draft PR
-- Supersede: stale open sync PR closed when upstream advances again
+- Reuse: open sync PR/branch is extended when upstream advances (`FORCE_RUN` still opens a fresh PR)

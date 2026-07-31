@@ -27,8 +27,10 @@ import {
   appendRunLogSections,
   COMPLETION_SIGNAL,
   closeSupersededPr,
+  commentOnPr,
   commitSyncBranchScaffold,
   comparePullRequestUrl,
+  decideSyncBranchAction,
   detectReleaseVersions,
   ensureSandcastleEnvFile,
   ensureUpstreamSyncScaffold,
@@ -36,7 +38,10 @@ import {
   fetchAllUpstreamReleaseNotes,
   fetchUpstream,
   findOpenSyncPr,
+  formatExtendedBanner,
+  formatExtendedPrComment,
   formatReleaseNotesMarkdown,
+  formatSyncPrTitle,
   GRILL_COMPLETION_SIGNAL,
   getPrReviewers,
   groupConflictClusters,
@@ -46,20 +51,23 @@ import {
   logHarnessQuestion,
   MERGE_POLICY_PATH,
   QUESTION_MARKER,
+  remoteBranchExists,
   RESUME_COMMAND,
   readState,
   repoSlug,
   requestPrReviewers,
   resolveMergeBase,
+  resolvePrHeadBranch,
   runGh,
   runGit,
   substitutePrompt,
   syncGrillQaFromPr,
   todayRunId,
-  updateDraftPrBody,
+  updateDraftPr,
   upstreamBranch,
   upstreamHeadSha,
   upstreamRemote,
+  withExtendedBanner,
   writeClusterManifest,
   writeFbiReport,
   writeReleaseNotesReport,
@@ -76,8 +84,7 @@ import {
 } from './lib/grill-state'
 import { ensureInstallableWorkspace } from './lib/lockfile-bootstrap'
 import {
-  formatUsageMarkdown,
-  getUsageRecords,
+  persistUsageArtifacts,
   recordAgentUsage,
   resetUsageRecords,
 } from './lib/usage'
@@ -106,8 +113,8 @@ function syncBranchName(): string {
   return `upstream-sync/${stamp}`
 }
 
-function checkoutSyncBranch(syncBranch: string, resume: boolean): void {
-  if (resume) {
+function checkoutSyncBranch(syncBranch: string, reuseExisting: boolean): void {
+  if (reuseExisting) {
     runGit(['fetch', 'origin', syncBranch])
     runGit(['checkout', syncBranch])
     return
@@ -215,7 +222,8 @@ function createDraftPr(
   branch: string,
   runId: string,
   body: string,
-  upstreamSha: string
+  upstreamSha: string,
+  title?: string
 ): number {
   if (isSyncBranch(mergeBase)) {
     const hint = explainPrCreateFailure(
@@ -227,7 +235,7 @@ function createDraftPr(
     return 0
   }
 
-  const title = `upstream-sync: merge simstudioai/sim main into ${mergeBase} (${runId})`
+  const prTitle = title ?? formatSyncPrTitle({ mergeBase, runId })
   const { owner, repo } = repoSlug()
   const currentBranch = runGit(['branch', '--show-current'])
 
@@ -238,7 +246,7 @@ function createDraftPr(
   const existing = findOpenSyncPr(mergeBase, branch)
   if (existing > 0) {
     console.log(`Reusing open PR #${existing} for ${branch} → ${mergeBase}.`)
-    updateDraftPrBody(existing, body)
+    updateDraftPr(existing, { title: prTitle, body })
     return existing
   }
 
@@ -250,7 +258,7 @@ function createDraftPr(
     '--base',
     mergeBase,
     '--title',
-    title,
+    prTitle,
     '--body',
     body,
     '--draft',
@@ -267,7 +275,7 @@ function createDraftPr(
     return prNumber
   } catch (cliError) {
     try {
-      const prNumber = createDraftPrViaApi(mergeBase, branch, title, body)
+      const prNumber = createDraftPrViaApi(mergeBase, branch, prTitle, body)
       if (prNumber > 0) {
         console.log(`Opened draft PR #${prNumber} via GitHub REST API.`)
         attachPrReviewers(prNumber)
@@ -298,7 +306,8 @@ function resolveDraftPr(
   branch: string,
   runId: string,
   body: string,
-  upstreamSha: string
+  upstreamSha: string,
+  title?: string
 ): number {
   return ensureActiveDraftPr({
     existingPrNumber: existingPrNumber ?? 0,
@@ -307,6 +316,7 @@ function resolveDraftPr(
     runId,
     headSha: upstreamSha,
     body,
+    title,
   })
 }
 
@@ -354,7 +364,7 @@ function persistActiveSyncState(options: {
 }
 
 function appendUsageToRunLog(runId: string): string {
-  const usageMarkdown = formatUsageMarkdown(getUsageRecords())
+  const usageMarkdown = persistUsageArtifacts(runId)
   appendRunLogSections(runId, { Usage: usageMarkdown })
   return usageMarkdown
 }
@@ -366,10 +376,15 @@ function ensureActiveDraftPr(options: {
   runId: string
   headSha: string
   body: string
+  title?: string
 }): number {
+  const title =
+    options.title ??
+    formatSyncPrTitle({ mergeBase: options.mergeBase, runId: options.runId })
+
   if (options.existingPrNumber > 0 && isPrOpen(options.existingPrNumber)) {
     try {
-      updateDraftPrBody(options.existingPrNumber, options.body)
+      updateDraftPr(options.existingPrNumber, { title, body: options.body })
     } catch (error) {
       console.warn(`Could not update draft PR #${options.existingPrNumber}:`, error)
     }
@@ -379,7 +394,7 @@ function ensureActiveDraftPr(options: {
   const discovered = findOpenSyncPr(options.mergeBase, options.syncBranch)
   if (discovered > 0) {
     try {
-      updateDraftPrBody(discovered, options.body)
+      updateDraftPr(discovered, { title, body: options.body })
     } catch (error) {
       console.warn(`Could not update draft PR #${discovered}:`, error)
     }
@@ -397,7 +412,8 @@ function ensureActiveDraftPr(options: {
     options.syncBranch,
     options.runId,
     options.body,
-    options.headSha
+    options.headSha,
+    title
   )
 }
 
@@ -433,21 +449,57 @@ async function main(): Promise<void> {
   }
 
   let syncBranch: string
+  let extending = false
+  let previousUpstreamSha: string | null = null
   const resuming = RESUME
   if (resuming) {
     syncBranch = resolveResumeSyncBranch(initialState)
   } else {
-    if (initialState.activePrNumber) {
-      closeSupersededPr(initialState.activePrNumber, {
-        newUpstreamSha: headSha,
-        runId,
-        newBranch: syncBranchName(),
-      })
+    let candidateBranch = initialState.activeBranch
+    const prOpen = Boolean(
+      initialState.activePrNumber && isPrOpen(initialState.activePrNumber)
+    )
+    if (
+      !candidateBranch &&
+      initialState.activePrNumber &&
+      prOpen
+    ) {
+      candidateBranch = resolvePrHeadBranch(initialState.activePrNumber)
     }
-    syncBranch = syncBranchName()
+
+    const branchExistsOnRemote = candidateBranch
+      ? remoteBranchExists(candidateBranch)
+      : false
+    const decision = decideSyncBranchAction({
+      force: FORCE_RUN,
+      activePrNumber: initialState.activePrNumber,
+      activeBranch: candidateBranch,
+      prOpen,
+      branchExistsOnRemote,
+    })
+
+    if (decision.action === 'reuse') {
+      syncBranch = decision.branch
+      extending = true
+      previousUpstreamSha =
+        initialState.lastSyncedUpstreamSha ?? baseline.baselineSha
+      console.log(
+        `Reusing open sync PR #${decision.prNumber} on \`${syncBranch}\` (extend to ${headSha.slice(0, 8)}).`
+      )
+    } else {
+      syncBranch = syncBranchName()
+      if (prOpen && initialState.activePrNumber) {
+        closeSupersededPr(initialState.activePrNumber, {
+          newUpstreamSha: headSha,
+          runId,
+          newBranch: syncBranch,
+        })
+      }
+      console.log(`Starting fresh sync branch \`${syncBranch}\` (${decision.reason}).`)
+    }
   }
 
-  checkoutSyncBranch(syncBranch, resuming)
+  checkoutSyncBranch(syncBranch, resuming || extending)
 
   if (resuming || listConflictFiles().length > 0) {
     if (!ensureInstallableWorkspace(runId)) {
@@ -514,7 +566,22 @@ async function main(): Promise<void> {
 
   commitUpstreamLedger(`upstream-sync(${runId}): pre-merge ledger`)
 
-  const earlyPrBody = [
+  const syncPrTitle = formatSyncPrTitle({
+    mergeBase,
+    runId,
+    extendedToSha: extending ? headSha : undefined,
+  })
+  const extendedBanner =
+    extending && previousUpstreamSha
+      ? formatExtendedBanner({
+          previousSha: previousUpstreamSha,
+          newSha: headSha,
+          commitCount: upstreamCommits.length,
+          runId,
+        })
+      : null
+
+  let earlyPrBody = [
     QUESTION_MARKER,
     `## Upstream sync in progress — grill/analysis phase (${runId})`,
     '',
@@ -529,6 +596,9 @@ async function main(): Promise<void> {
     `- [.upstream-sync/ledger/${runId}/fbi-report.md](.upstream-sync/ledger/${runId}/fbi-report.md)`,
     `- [.upstream-sync/ledger/${runId}/release-notes.md](.upstream-sync/ledger/${runId}/release-notes.md)`,
   ].join('\n')
+  if (extendedBanner) {
+    earlyPrBody = withExtendedBanner(earlyPrBody, extendedBanner)
+  }
 
   activePrNumber = ensureActiveDraftPr({
     existingPrNumber: activePrNumber,
@@ -537,7 +607,24 @@ async function main(): Promise<void> {
     runId,
     headSha,
     body: earlyPrBody,
+    title: syncPrTitle,
   })
+
+  if (extending && activePrNumber > 0 && previousUpstreamSha) {
+    try {
+      commentOnPr(
+        activePrNumber,
+        formatExtendedPrComment({
+          previousSha: previousUpstreamSha,
+          newSha: headSha,
+          commitCount: upstreamCommits.length,
+          runId,
+        })
+      )
+    } catch (error) {
+      console.warn(`Could not post extension comment on PR #${activePrNumber}:`, error)
+    }
+  }
 
   persistActiveSyncState({
     runId,
@@ -607,14 +694,18 @@ async function main(): Promise<void> {
       syncBranch,
       runId,
       headSha,
-      body: [
-        QUESTION_MARKER,
-        `## Upstream sync blocked (${runId})`,
-        '',
-        'Package manager bootstrap failed — bun.lock still has merge conflict markers.',
-        '',
-        `Reply with \`${RESUME_COMMAND}\` after fixing manifests manually.`,
-      ].join('\n'),
+      title: syncPrTitle,
+      body: (() => {
+        const body = [
+          QUESTION_MARKER,
+          `## Upstream sync blocked (${runId})`,
+          '',
+          'Package manager bootstrap failed — bun.lock still has merge conflict markers.',
+          '',
+          `Reply with \`${RESUME_COMMAND}\` after fixing manifests manually.`,
+        ].join('\n')
+        return extendedBanner ? withExtendedBanner(body, extendedBanner) : body
+      })(),
     })
     writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
     process.exitCode = 1
@@ -670,7 +761,15 @@ async function main(): Promise<void> {
       `Reply with \`${RESUME_COMMAND}\` after answering open questions.`,
     ].join('\n')
 
-    const prNumber = resolveDraftPr(activePrNumber, mergeBase, syncBranch, runId, prBody, headSha)
+    const prNumber = resolveDraftPr(
+      activePrNumber,
+      mergeBase,
+      syncBranch,
+      runId,
+      extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
+      headSha,
+      syncPrTitle
+    )
     logHarnessQuestion(
       runId,
       prNumber,
@@ -709,7 +808,15 @@ async function main(): Promise<void> {
       '### Agent usage',
       usageSection,
     ].join('\n')
-    const prNumber = resolveDraftPr(activePrNumber, mergeBase, syncBranch, runId, prBody, headSha)
+    const prNumber = resolveDraftPr(
+      activePrNumber,
+      mergeBase,
+      syncBranch,
+      runId,
+      extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
+      headSha,
+      syncPrTitle
+    )
     logHarnessQuestion(
       runId,
       prNumber,
@@ -737,7 +844,7 @@ async function main(): Promise<void> {
   }
 
   const usageSectionFinal = appendUsageToRunLog(runId)
-  const prBody = [
+  let prBody = [
     `## Upstream sync — ${runId}`,
     '',
     `Merges [\`simstudioai/sim@${headSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${headSha}) into \`${mergeBase}\`.`,
@@ -760,8 +867,19 @@ async function main(): Promise<void> {
     '',
     '**Draft** — mark ready for review when satisfied.',
   ].join('\n')
+  if (extendedBanner) {
+    prBody = withExtendedBanner(prBody, extendedBanner)
+  }
 
-  const prNumber = resolveDraftPr(activePrNumber, mergeBase, syncBranch, runId, prBody, headSha)
+  const prNumber = resolveDraftPr(
+    activePrNumber,
+    mergeBase,
+    syncBranch,
+    runId,
+    prBody,
+    headSha,
+    syncPrTitle
+  )
   if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
   commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
   runGit(['push', 'origin', syncBranch])
@@ -772,9 +890,9 @@ async function main(): Promise<void> {
     lastRunId: runId,
     status: 'completed',
     openQuestions: [],
-    activeBranch: null,
+    activeBranch: syncBranch,
     activePrNumber: prNumber,
-    activeMergeBase: null,
+    activeMergeBase: mergeBase,
   })
 
   console.log(`Upstream sync complete. Draft PR #${prNumber} on ${syncBranch}.`)
