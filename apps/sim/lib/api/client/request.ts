@@ -177,7 +177,10 @@ function messageFromSchemaValidationError(error: unknown): string {
 
   const path = Array.isArray(first.path)
     ? first.path
-        .filter((segment): segment is string | number => typeof segment === 'string' || typeof segment === 'number')
+        .filter(
+          (segment): segment is string | number =>
+            typeof segment === 'string' || typeof segment === 'number'
+        )
         .join('.')
     : ''
   const detail = typeof first.message === 'string' ? first.message : 'invalid'

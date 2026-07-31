@@ -1,6 +1,6 @@
 import type { Edge } from 'reactflow'
-import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
+import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import type { NodeMetadata } from '@/executor/dag/types'
 import type {
   BlockLog,

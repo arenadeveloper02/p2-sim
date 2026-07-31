@@ -52,7 +52,10 @@ function makeProvider(
   return {
     id: 'test',
     async *chatCompletionStream() {
-      const round = rounds[callIndex] ?? { text: 'done', usage: { inputTokens: 0, outputTokens: 0 } }
+      const round = rounds[callIndex] ?? {
+        text: 'done',
+        usage: { inputTokens: 0, outputTokens: 0 },
+      }
       callIndex += 1
       if (round.text) {
         yield { type: 'text', content: round.text }

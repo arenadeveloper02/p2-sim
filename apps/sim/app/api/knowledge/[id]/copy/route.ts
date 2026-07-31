@@ -6,14 +6,8 @@ import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import {
-  copyKnowledgeBaseToWorkspace,
-  KnowledgeBaseCopyError,
-} from '@/lib/knowledge/copy'
-import {
-  KnowledgeBaseConflictError,
-  KnowledgeBasePermissionError,
-} from '@/lib/knowledge/service'
+import { copyKnowledgeBaseToWorkspace, KnowledgeBaseCopyError } from '@/lib/knowledge/copy'
+import { KnowledgeBaseConflictError, KnowledgeBasePermissionError } from '@/lib/knowledge/service'
 import { checkKnowledgeBaseWriteAccess } from '@/app/api/knowledge/utils'
 
 const logger = createLogger('KnowledgeBaseCopyAPI')

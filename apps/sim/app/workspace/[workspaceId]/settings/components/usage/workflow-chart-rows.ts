@@ -1,6 +1,6 @@
+import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-utils'
 import type { CostShareBarRow } from '@/app/workspace/[workspaceId]/settings/components/usage/components/cost-share-bars'
 import { formatBillableWithCredits } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
-import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-utils'
 
 interface WorkflowUsageRow {
   workflowId: string | null
@@ -17,10 +17,7 @@ function workflowRowId(row: WorkflowUsageRow): string {
 }
 
 function workflowRowSecondary(row: WorkflowUsageRow): string {
-  const parts = [
-    row.workspaceName,
-    `${row.executionCount.toLocaleString()} runs`,
-  ].filter(Boolean)
+  const parts = [row.workspaceName, `${row.executionCount.toLocaleString()} runs`].filter(Boolean)
   return parts.join(' · ')
 }
 

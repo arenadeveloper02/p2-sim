@@ -1,5 +1,8 @@
 import { isUserFile } from '@/lib/core/utils/user-file'
-import { IMAGE_BLOCK_MODEL_IDS, reconcileImageProviderAndModel } from '@/lib/image-generation/block-model-config'
+import {
+  IMAGE_BLOCK_MODEL_IDS,
+  reconcileImageProviderAndModel,
+} from '@/lib/image-generation/block-model-config'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
 import { calculateHostedImageToolCost } from '@/lib/tools/image-pricing'
@@ -308,7 +311,10 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
     pricing: {
       type: 'custom',
       getCost: (params, output) => {
-        if (typeof output.__falaiCostDollars === 'number' && !Number.isNaN(output.__falaiCostDollars)) {
+        if (
+          typeof output.__falaiCostDollars === 'number' &&
+          !Number.isNaN(output.__falaiCostDollars)
+        ) {
           const providerCostDollars = output.__falaiCostDollars
           return {
             cost: providerCostDollars * FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,

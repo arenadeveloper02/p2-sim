@@ -162,10 +162,7 @@ describe('runLocalCopilotAgent billing turn id', () => {
   })
 
   it('does not reference undeclared turnMessageId after usageTurnId rename', () => {
-    const source = readFileSync(
-      new URL('./orchestrator.ts', import.meta.url),
-      'utf8'
-    )
+    const source = readFileSync(new URL('./orchestrator.ts', import.meta.url), 'utf8')
     expect(source).not.toMatch(/\bturnMessageId\b/)
     expect(source).toMatch(/\busageTurnId\b/)
     expect(source).toMatch(/messageId:\s*usageTurnId/)

@@ -2,8 +2,8 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { imageGenerateTool } from '@/tools/image/generate'
 import { nanoBananaTool } from '@/tools/google/nano-banana'
+import { imageGenerateTool } from '@/tools/image/generate'
 import { imageTool } from '@/tools/openai/image'
 
 describe('OpenAI/Gemini image hosting', () => {
@@ -14,9 +14,9 @@ describe('OpenAI/Gemini image hosting', () => {
 
     expect(enabled({ provider: 'openai', model: 'gpt-image-1.5' })).toBe(true)
     expect(enabled({ provider: 'falai', model: 'nano-banana-2' })).toBe(true)
-    expect(enabled({ provider: 'openai', model: 'gpt-image-2', __skipHostedKeyHandling: true })).toBe(
-      false
-    )
+    expect(
+      enabled({ provider: 'openai', model: 'gpt-image-2', __skipHostedKeyHandling: true })
+    ).toBe(false)
   })
 
   it('bills OpenAI image generation from billing metadata', () => {

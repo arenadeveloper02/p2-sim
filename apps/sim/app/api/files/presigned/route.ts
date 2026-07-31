@@ -15,7 +15,10 @@ import { generatePresignedUploadUrl, hasCloudStorage } from '@/lib/uploads/core/
 import { insertFileMetadata, recordKnowledgeBaseFileOwnership } from '@/lib/uploads/server/metadata'
 import { isImageFileType } from '@/lib/uploads/utils/file-utils'
 import { validateAttachmentFileType, validateFileType } from '@/lib/uploads/utils/validation'
-import { getUserEntityPermissions, isOrganizationAdminOrOwner } from '@/lib/workspaces/permissions/utils'
+import {
+  getUserEntityPermissions,
+  isOrganizationAdminOrOwner,
+} from '@/lib/workspaces/permissions/utils'
 import { createErrorResponse } from '@/app/api/files/utils'
 
 const logger = createLogger('PresignedUploadAPI')

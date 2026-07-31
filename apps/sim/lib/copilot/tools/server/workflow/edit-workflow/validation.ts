@@ -62,7 +62,8 @@ export function parseAgentMessagesValue(value: unknown): AgentMessage[] {
       return [
         {
           role: record.role,
-          content: typeof record.content === 'string' ? record.content : String(record.content ?? ''),
+          content:
+            typeof record.content === 'string' ? record.content : String(record.content ?? ''),
         },
       ]
     })
@@ -105,8 +106,8 @@ export function normalizeAgentLegacyPromptInputs(
       : next.userPrompt === undefined
         ? undefined
         : String(next.userPrompt)
-  delete next.systemPrompt
-  delete next.userPrompt
+  next.systemPrompt = undefined
+  next.userPrompt = undefined
 
   if (next.messages !== undefined) {
     return next
