@@ -8,10 +8,19 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ensureLedgerRunDir, ledgerRunDir, listConflictFiles, readState } from './config'
-import { formatUsageStepSummary, getUsageRecords, type AgentUsageRecord } from './usage'
+import {
+  formatUsageStepSummary,
+  getUsageRecords,
+  type AgentUsageRecord,
+} from './usage'
 import type { VerifyResult } from './verify'
 
-export type RunOutcomeKind = 'completed' | 'awaiting_input' | 'failed' | 'cancelled' | 'noop'
+export type RunOutcomeKind =
+  | 'completed'
+  | 'awaiting_input'
+  | 'failed'
+  | 'cancelled'
+  | 'noop'
 
 export interface RunOutcomeVerification {
   command: string
@@ -52,10 +61,7 @@ function truncate(text: string, max = 1200): string {
   return `${trimmed.slice(0, max)}\n…(truncated)`
 }
 
-export function writeRunOutcome(
-  runId: string,
-  outcome: Omit<RunOutcome, 'runId' | 'recordedAt'>
-): string {
+export function writeRunOutcome(runId: string, outcome: Omit<RunOutcome, 'runId' | 'recordedAt'>): string {
   const full: RunOutcome = {
     ...outcome,
     runId,
@@ -112,10 +118,7 @@ function resolveEffectiveKind(
   return 'failed'
 }
 
-function prUrl(
-  repository: string | null | undefined,
-  prNumber: number | null | undefined
-): string | null {
+function prUrl(repository: string | null | undefined, prNumber: number | null | undefined): string | null {
   if (!repository || !prNumber || prNumber <= 0) return null
   return `https://github.com/${repository}/pull/${prNumber}`
 }
@@ -247,13 +250,11 @@ export function formatRunJobSummary(ctx: JobSummaryContext): string {
     )
   }
 
-  return lines
-    .filter((line, idx, arr) => {
-      // Drop accidental double blank lines from optional fields
-      if (line !== '') return true
-      return idx === 0 || arr[idx - 1] !== ''
-    })
-    .join('\n')
+  return lines.filter((line, idx, arr) => {
+    // Drop accidental double blank lines from optional fields
+    if (line !== '') return true
+    return idx === 0 || arr[idx - 1] !== ''
+  }).join('\n')
 }
 
 /** Append the full run summary to `$GITHUB_STEP_SUMMARY`. */
@@ -276,7 +277,11 @@ export function publishRunJobSummary(ctx: JobSummaryContext): boolean {
 export function inferOutcomeFromEnvironment(runId: string, jobStatus?: string | null): RunOutcome {
   const state = readState()
   const kind: RunOutcomeKind =
-    jobStatus === 'cancelled' ? 'cancelled' : jobStatus === 'success' ? 'completed' : 'failed'
+    jobStatus === 'cancelled'
+      ? 'cancelled'
+      : jobStatus === 'success'
+        ? 'completed'
+        : 'failed'
 
   let remainingConflicts: string[] = []
   try {

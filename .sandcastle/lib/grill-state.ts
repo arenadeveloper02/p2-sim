@@ -84,7 +84,10 @@ export function hasResumeAnswerForPr(prNumber: number): boolean {
   )
 }
 
-export function shouldSkipParentGrill(options: { resume: boolean; prNumber: number }): boolean {
+export function shouldSkipParentGrill(options: {
+  resume: boolean
+  prNumber: number
+}): boolean {
   if (!options.resume || options.prNumber <= 0) return false
   return hasResumeAnswerForPr(options.prNumber)
 }

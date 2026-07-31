@@ -58,7 +58,10 @@ describe('forceWithLeasePushArgs', () => {
   })
 
   test('later push leases against the fetched remote SHA', () => {
-    const args = forceWithLeasePushArgs('upstream-sync/2026-07-31T07-40-03-wip', 'abc123def456')
+    const args = forceWithLeasePushArgs(
+      'upstream-sync/2026-07-31T07-40-03-wip',
+      'abc123def456'
+    )
     expect(args).toEqual([
       'push',
       '--force-with-lease=refs/heads/upstream-sync/2026-07-31T07-40-03-wip:abc123def456',

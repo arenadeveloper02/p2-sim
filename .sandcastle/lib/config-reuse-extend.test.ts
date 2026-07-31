@@ -97,7 +97,9 @@ describe('formatSyncPrTitle', () => {
         mergeBase: 'feat/github-merge-agent',
         runId: '2026-07-31',
       })
-    ).toBe('upstream-sync: merge simstudioai/sim main into feat/github-merge-agent (2026-07-31)')
+    ).toBe(
+      'upstream-sync: merge simstudioai/sim main into feat/github-merge-agent (2026-07-31)'
+    )
   })
 
   test('formats an extended sync title with sha8', () => {
