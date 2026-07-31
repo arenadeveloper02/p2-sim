@@ -5,6 +5,6 @@
   "status": "running",
   "openQuestions": [],
   "activeBranch": "upstream-sync/2026-07-31T19-15-38",
-  "activePrNumber": null,
+  "activePrNumber": 676,
   "activeMergeBase": "feat/github-merge-agent"
 }
