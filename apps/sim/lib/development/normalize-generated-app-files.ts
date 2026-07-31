@@ -1,5 +1,4 @@
 import { createLogger } from '@sim/logger'
-
 import { ensureArenaScaffoldFiles } from '@/lib/development/arena/scaffold'
 
 const logger = createLogger('NormalizeGeneratedApp')
@@ -673,7 +672,7 @@ function stripDirectToolingDependencies(pkg: {
       delete pkg.overrides[name]
     }
     if (Object.keys(pkg.overrides).length === 0) {
-      delete pkg.overrides
+      pkg.overrides = undefined
     }
   }
 }
@@ -1750,9 +1749,7 @@ export function normalizeGeneratedAppFiles(
   const withNextEnv = ensureNextEnvFile(withDatabase)
   const withReadme = ensureReadmeFile(withNextEnv, options)
   const withRepoSummary = ensureRepoSummaryFile(withReadme, options)
-  const withArena = options.arenaMode
-    ? ensureArenaScaffoldFiles(withRepoSummary)
-    : withRepoSummary
+  const withArena = options.arenaMode ? ensureArenaScaffoldFiles(withRepoSummary) : withRepoSummary
   const usedPackages = collectUsedNpmPackageNames(withArena)
 
   return withArena.map((file) => {

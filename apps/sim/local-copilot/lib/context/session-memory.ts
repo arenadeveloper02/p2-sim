@@ -116,7 +116,10 @@ export function parseSessionMemory(value: unknown): SessionMemory | null {
   const record = value as Record<string, unknown>
   if (record.version !== SESSION_MEMORY_VERSION) return null
   if (typeof record.updatedAt !== 'string' || !record.updatedAt.trim()) return null
-  if (typeof record.coveredThroughMessageId !== 'string' || !record.coveredThroughMessageId.trim()) {
+  if (
+    typeof record.coveredThroughMessageId !== 'string' ||
+    !record.coveredThroughMessageId.trim()
+  ) {
     return null
   }
 
@@ -144,7 +147,10 @@ export function parseSessionMemory(value: unknown): SessionMemory | null {
     },
     progress: toStringArray(record.progress),
     openQuestions: toStringArray(record.openQuestions),
-    notes: typeof record.notes === 'string' ? truncate(record.notes.trim(), SESSION_MEMORY_NOTES_MAX_CHARS, '') : '',
+    notes:
+      typeof record.notes === 'string'
+        ? truncate(record.notes.trim(), SESSION_MEMORY_NOTES_MAX_CHARS, '')
+        : '',
   }
 }
 
@@ -264,7 +270,6 @@ export function countHistoryTurns(messages: ChatMessage[]): number {
       turns += 1
       inTurn = true
     } else if (message.role === 'system') {
-      continue
     } else if (!inTurn) {
       turns += 1
       inTurn = true
@@ -317,7 +322,10 @@ export function selectUncoveredTurnsForSummary(params: {
 /**
  * Loads session memory from `copilot_chats.config.sessionMemory`.
  */
-export async function loadSessionMemory(chatId: string, userId: string): Promise<SessionMemory | null> {
+export async function loadSessionMemory(
+  chatId: string,
+  userId: string
+): Promise<SessionMemory | null> {
   const [chat] = await db
     .select({ config: copilotChats.config })
     .from(copilotChats)

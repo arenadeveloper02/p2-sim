@@ -3636,9 +3636,7 @@ export const usageLog = pgTable(
     chatIdIdx: index('usage_log_chat_id_idx')
       .on(table.chatId)
       .where(sql`${table.chatId} IS NOT NULL`),
-    runIdIdx: index('usage_log_run_id_idx')
-      .on(table.runId)
-      .where(sql`${table.runId} IS NOT NULL`),
+    runIdIdx: index('usage_log_run_id_idx').on(table.runId).where(sql`${table.runId} IS NOT NULL`),
     workspaceOccurredAtIdx: index('usage_log_workspace_occurred_at_idx').on(
       table.workspaceId,
       table.occurredAt

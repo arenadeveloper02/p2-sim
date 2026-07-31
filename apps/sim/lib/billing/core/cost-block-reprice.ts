@@ -1,16 +1,22 @@
 import { db } from '@sim/db'
-import { usageLog, workflow, workflowBlocks, workflowEdges, workflowExecutionLogs } from '@sim/db/schema'
+import {
+  usageLog,
+  workflow,
+  workflowBlocks,
+  workflowEdges,
+  workflowExecutionLogs,
+} from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { and, asc, eq, gt, gte, inArray, lt, sql } from 'drizzle-orm'
+import type { UsageEntry } from '@/lib/billing/core/usage-log'
+import { stableEventKey } from '@/lib/billing/core/usage-log'
+import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
+import type { TraceSpan } from '@/lib/logs/types'
 import { BlockType } from '@/executor/constants'
 import { CostBlockHandler } from '@/executor/handlers/cost/cost-handler'
 import type { BlockLog, BlockState, ExecutionContext } from '@/executor/types'
-import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
-import type { TraceSpan } from '@/lib/logs/types'
-import { stableEventKey } from '@/lib/billing/core/usage-log'
-import type { UsageEntry } from '@/lib/billing/core/usage-log'
 import type { SerializedBlock, SerializedConnection, SerializedWorkflow } from '@/serializer/types'
-import { and, asc, eq, gt, gte, inArray, lt, sql } from 'drizzle-orm'
 
 const logger = createLogger('CostBlockReprice')
 
@@ -121,7 +127,10 @@ export function collectTraceExecutionArtifacts(traceSpans: TraceSpanLike[] | und
   return { blockStates, blockLogs }
 }
 
-export function resolveExternalDescription(blockName: string, raw: Record<string, unknown>): string {
+export function resolveExternalDescription(
+  blockName: string,
+  raw: Record<string, unknown>
+): string {
   const label = typeof raw.label === 'string' ? raw.label.trim() : ''
   const vendor = typeof raw.vendor === 'string' ? raw.vendor.trim() : ''
   return blockName.trim() || label || vendor || 'external'
@@ -340,9 +349,7 @@ async function repriceCostBlocksForExecution(params: {
   return targets
 }
 
-export async function loadAlreadyBilledExternal(
-  executionId: string
-): Promise<Map<string, number>> {
+export async function loadAlreadyBilledExternal(executionId: string): Promise<Map<string, number>> {
   const rows = await db
     .select({
       description: usageLog.description,

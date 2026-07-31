@@ -111,7 +111,13 @@ async function scoreHallucinationWithLLM(
   providerCredentials: HallucinationValidationInput['providerCredentials'],
   workspaceId: string | undefined,
   requestId: string
-): Promise<{ score: number; reasoning: string; cost: number; inputTokens: number; outputTokens: number }> {
+): Promise<{
+  score: number
+  reasoning: string
+  cost: number
+  inputTokens: number
+  outputTokens: number
+}> {
   try {
     const contextText = ragContext.join('\n\n---\n\n')
 

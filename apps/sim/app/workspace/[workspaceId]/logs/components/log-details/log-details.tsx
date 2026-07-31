@@ -1,7 +1,6 @@
 'use client'
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { getErrorMessage } from '@sim/utils/errors'
 import {
   Badge,
   Button,
@@ -24,6 +23,7 @@ import {
   useCopyToClipboard,
 } from '@sim/emcn'
 import { Workflow, Wrench } from '@sim/emcn/icons'
+import { getErrorMessage } from '@sim/utils/errors'
 import { formatDuration } from '@sim/utils/formatting'
 import { ArrowDown, ArrowUp, Check, ChevronUp, Clipboard, Search, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'

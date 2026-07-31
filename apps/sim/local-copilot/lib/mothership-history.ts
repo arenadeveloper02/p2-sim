@@ -85,8 +85,7 @@ function assistantMessageToSessionMemoryText(message: PersistedMessage): string 
     .filter((name): name is string => Boolean(name))
 
   const uniqueTools = [...new Set(toolNames)]
-  const toolLine =
-    uniqueTools.length > 0 ? `Tools: ${uniqueTools.slice(0, 12).join(', ')}` : ''
+  const toolLine = uniqueTools.length > 0 ? `Tools: ${uniqueTools.slice(0, 12).join(', ')}` : ''
 
   if (prose && toolLine) return `${prose}\n${toolLine}`
   if (prose) return prose

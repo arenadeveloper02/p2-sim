@@ -4,8 +4,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   calculateHostedImageToolCost,
-  getImageModelPerImageCost,
   getHostedImageCost,
+  getImageModelPerImageCost,
 } from '@/lib/tools/image-pricing'
 
 vi.mock('@/lib/core/config/env-flags', () => ({

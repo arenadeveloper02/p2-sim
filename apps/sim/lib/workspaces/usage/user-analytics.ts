@@ -46,9 +46,9 @@ import {
   parseIntMetric,
   periodRange,
   type ResolvedPeriod,
+  resolvedActorUserIdExpr,
   resolveExplicitPeriod,
   resolvePeriodFromDateCandidates,
-  resolvedActorUserIdExpr,
   sortByBillableCostDesc,
   timeBucketExpr,
   usageMetricsSelect,
@@ -224,10 +224,12 @@ export async function getUserUsageAnalytics(
 
   try {
     const membershipRows = await listUserWorkspaces(userId)
-    const allWorkspaces: UserWorkspaceRef[] = membershipRows.map(({ workspaceId, workspaceName }) => ({
-      id: workspaceId,
-      name: workspaceName,
-    }))
+    const allWorkspaces: UserWorkspaceRef[] = membershipRows.map(
+      ({ workspaceId, workspaceName }) => ({
+        id: workspaceId,
+        name: workspaceName,
+      })
+    )
 
     if (allWorkspaces.length === 0) {
       return emptyUserAnalytics([], [], resolveExplicitPeriod(options))
@@ -440,12 +442,12 @@ export async function getUserUsageAnalytics(
         .from(copilotChats)
         .leftJoin(
           copilotRuns,
-          and(eq(copilotRuns.chatId, copilotChats.id), ...periodRange(copilotRuns.startedAt, period))
+          and(
+            eq(copilotRuns.chatId, copilotChats.id),
+            ...periodRange(copilotRuns.startedAt, period)
+          )
         )
-        .leftJoin(
-          usageLog,
-          and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions)
-        )
+        .leftJoin(usageLog, and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions))
         .where(
           and(
             chatMembershipScope,
@@ -474,12 +476,12 @@ export async function getUserUsageAnalytics(
         .from(copilotChats)
         .leftJoin(
           copilotRuns,
-          and(eq(copilotRuns.chatId, copilotChats.id), ...periodRange(copilotRuns.startedAt, period))
+          and(
+            eq(copilotRuns.chatId, copilotChats.id),
+            ...periodRange(copilotRuns.startedAt, period)
+          )
         )
-        .leftJoin(
-          usageLog,
-          and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions)
-        )
+        .leftJoin(usageLog, and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions))
         .where(
           and(
             chatMembershipScope,
@@ -617,9 +619,7 @@ export async function getUserUsageAnalytics(
               )
             )
             .leftJoin(copilotChats, eq(copilotChats.id, usageLog.chatId))
-            .where(
-              and(...executionConditions, isNotNull(workflowExecutionLogs.rootExecutionId))
-            )
+            .where(and(...executionConditions, isNotNull(workflowExecutionLogs.rootExecutionId)))
             .groupBy(workflowExecutionLogs.rootExecutionId)
         : Promise.resolve([]),
 
@@ -811,7 +811,8 @@ export async function getUserUsageAnalytics(
           count: parseIntMetric(row.count),
         }))
         .sort(
-          (a, b) => CHARGE_TYPE_ORDER.indexOf(a.chargeType) - CHARGE_TYPE_ORDER.indexOf(b.chargeType)
+          (a, b) =>
+            CHARGE_TYPE_ORDER.indexOf(a.chargeType) - CHARGE_TYPE_ORDER.indexOf(b.chargeType)
         ),
       embeddedToolSplit
     )
@@ -927,7 +928,9 @@ export async function getUserUsageAnalytics(
     const totalLedgerRows = parseIntMetric(dataHealthLedger?.totalRows)
     const missingActorRows = parseIntMetric(dataHealthLedger?.missingActorRows)
     const nullWorkspaceRows = parseIntMetric(dataHealthLedger?.nullWorkspaceRows)
-    const executionsWithCostNoLedger = parseIntMetric(dataHealthExecution?.executionsWithCostNoLedger)
+    const executionsWithCostNoLedger = parseIntMetric(
+      dataHealthExecution?.executionsWithCostNoLedger
+    )
     const costTotalDriftCount = parseIntMetric(dataHealthExecution?.costTotalDriftCount)
 
     const warnings: UserUsageAnalytics['dataHealth']['warnings'] = []
@@ -1077,7 +1080,7 @@ export async function getUserUsageAnalytics(
         ),
         byChat: mapExpensiveCopilotChatRows(
           expensiveChatRows.filter(
-            (row): row is (typeof row & { workspaceId: string }) => row.workspaceId !== null
+            (row): row is typeof row & { workspaceId: string } => row.workspaceId !== null
           )
         ).map((row) => ({
           workspaceId: row.workspaceId,
@@ -1107,9 +1110,7 @@ export async function getUserUsageAnalytics(
           byChat: sortByBillableCostDesc(
             triggeredWorkflowRows
               .filter(
-                (
-                  row
-                ): row is typeof row & { triggeringChatId: string; workspaceId: string } =>
+                (row): row is typeof row & { triggeringChatId: string; workspaceId: string } =>
                   row.triggeringChatId !== null && row.workspaceId !== null
               )
               .map((row) => ({

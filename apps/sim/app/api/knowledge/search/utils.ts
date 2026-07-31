@@ -2,8 +2,8 @@ import { db } from '@sim/db'
 import { document, embedding } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
-import { DEFAULT_RERANKER_MODEL } from '@/lib/knowledge/reranker-models'
 import { rerank } from '@/lib/knowledge/reranker'
+import { DEFAULT_RERANKER_MODEL } from '@/lib/knowledge/reranker-models'
 import type { StructuredFilter } from '@/lib/knowledge/types'
 
 const logger = createLogger('KnowledgeSearchUtils')
