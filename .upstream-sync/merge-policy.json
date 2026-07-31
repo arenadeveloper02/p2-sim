@@ -44,7 +44,8 @@
     "docker-compose.test-env.yml",
     "docker-compose.local-build.yml",
     "docker-compose.dev-env.yml",
-    "docker-compose.sandbox.yml"
+    "docker-compose.sandbox.yml",
+    "bunfig.toml"
   ],
   "upstreamFirst": [
     "apps/sim/lib/copilot/generated/"

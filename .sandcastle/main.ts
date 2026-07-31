@@ -20,6 +20,7 @@ import {
   commitsSinceBaseline,
   formatBaselineMetadata,
   resolveAnalysisBaseline,
+  resolveCappedUpstreamTip,
 } from './lib/analysis'
 import { assertAgentCredentials, resolveAgents } from './lib/agents'
 import {
@@ -66,9 +67,6 @@ import {
   syncGrillQaFromPr,
   todayRunId,
   updateDraftPr,
-  upstreamBranch,
-  upstreamHeadSha,
-  upstreamRemote,
   withExtendedBanner,
   writeClusterManifest,
   writeFbiReport,
@@ -591,13 +589,29 @@ async function main(): Promise<void> {
     }
 
     const baseline = resolveAnalysisBaseline(mergeBase, initialState)
-    const headSha = baseline.upstreamHeadSha
+    const tip = resolveCappedUpstreamTip(baseline)
+    const headSha = tip.tipSha
     const runId = todayRunId()
     activeRunId = runId
-    const upstreamCommits = commitsSinceBaseline(baseline)
+    // Cap FBI / release-notes / merge range to the resolved tip (smoke: max-commits=1).
+    const cappedBaseline = { ...baseline, upstreamHeadSha: headSha }
+    const upstreamCommits = commitsSinceBaseline(cappedBaseline)
+
+    if (tip.capped) {
+      console.log(
+        `Capping upstream merge tip to ${headSha.slice(0, 8)} (${tip.reason}; ${tip.commitCount} commit(s); full HEAD ${baseline.upstreamHeadSha.slice(0, 8)}).`
+      )
+    }
 
     appendRunLogSections(runId, {
-      'Sync topology': formatBaselineMetadata(baseline, upstreamCommits.length),
+      'Sync topology': [
+        formatBaselineMetadata(cappedBaseline, upstreamCommits.length),
+        tip.capped
+          ? `- **Merge tip cap:** ${tip.reason} (full upstream HEAD \`${baseline.upstreamHeadSha.slice(0, 8)}\`)`
+          : null,
+      ]
+        .filter(Boolean)
+        .join('\n'),
     })
 
     if (!FORCE_RUN && !RESUME && initialState.lastSyncedUpstreamSha === headSha) {
@@ -875,7 +889,8 @@ async function main(): Promise<void> {
     endGroup = startLogGroup('merge/bootstrap')
 
     try {
-      runGit(['merge', '--no-edit', `${upstreamRemote()}/${upstreamBranch()}`])
+      // Merge the (possibly capped) tip SHA — not always upstream/main HEAD.
+      runGit(['merge', '--no-edit', headSha])
     } catch {
       console.log('Merge conflicts detected — bootstrapping package manager before child agents.')
     }

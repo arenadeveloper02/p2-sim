@@ -50,6 +50,14 @@ on:
           - anthropic
           - openai
         default: anthropic
+      max_commits:
+        description: Cap upstream commits merged (0 = all; use 1 for smoke test)
+        type: string
+        default: '0'
+      until_sha:
+        description: Optional upstream SHA to merge through (overrides max_commits)
+        type: string
+        required: false
   issue_comment:
     types: [created]
 
@@ -83,6 +91,8 @@ jobs:
       force: ${{ steps.decide.outputs.force }}
       skip_agent: ${{ steps.decide.outputs.skip_agent }}
       agent_provider: ${{ steps.decide.outputs.agent_provider }}
+      max_commits: ${{ steps.decide.outputs.max_commits }}
+      until_sha: ${{ steps.decide.outputs.until_sha }}
     steps:
       - name: Decide trigger
         id: decide
@@ -94,12 +104,16 @@ jobs:
           force=false
           skip_agent=true
           agent_provider=anthropic
+          max_commits=0
+          until_sha=
 
           if [ "$EVENT" = "workflow_dispatch" ]; then
             force="${{ github.event.inputs.force == 'true' && 'true' || 'false' }}"
             resume="${{ github.event.inputs.resume == 'true' && 'true' || 'false' }}"
             skip_agent="${{ github.event.inputs.skip_agent == 'true' && 'true' || 'false' }}"
             agent_provider="${{ github.event.inputs.agent_provider || 'anthropic' }}"
+            max_commits="${{ github.event.inputs.max_commits || '0' }}"
+            until_sha="${{ github.event.inputs.until_sha || '' }}"
           fi
 
           if [ "$EVENT" = "issue_comment" ]; then
@@ -123,6 +137,8 @@ jobs:
           echo "force=$force" >> "$GITHUB_OUTPUT"
           echo "skip_agent=$skip_agent" >> "$GITHUB_OUTPUT"
           echo "agent_provider=$agent_provider" >> "$GITHUB_OUTPUT"
+          echo "max_commits=$max_commits" >> "$GITHUB_OUTPUT"
+          echo "until_sha=$until_sha" >> "$GITHUB_OUTPUT"
 
   sync:
     name: Upstream sync harness
@@ -254,6 +270,8 @@ jobs:
           UPSTREAM_SYNC_FORCE: ${{ needs.gate.outputs.force }}
           UPSTREAM_SYNC_RESUME: ${{ needs.gate.outputs.resume }}
           UPSTREAM_SYNC_SKIP_AGENT: ${{ needs.gate.outputs.skip_agent }}
+          UPSTREAM_SYNC_MAX_COMMITS: ${{ needs.gate.outputs.max_commits }}
+          UPSTREAM_SYNC_UNTIL_SHA: ${{ needs.gate.outputs.until_sha }}
           RESUME_PR_NUMBER: ${{ steps.resume_pr.outputs.pr_number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_HEAD_REF: ${{ github.head_ref || github.ref_name }}
@@ -279,7 +297,9 @@ jobs:
           bun .sandcastle/recover-usage.ts --commit || true
           branch=$(git branch --show-current 2>/dev/null || true)
           if [ -n "$branch" ] && [[ "$branch" == upstream-sync/* ]]; then
-            if ! git diff --quiet HEAD -- .upstream-sync 2>/dev/null || \
+            if [ -f .git/MERGE_HEAD ]; then
+              echo "Merge in progress — skipping usage commit (ledger left staged/uncommitted)"
+            elif ! git diff --quiet HEAD -- .upstream-sync 2>/dev/null || \
                ! git diff --cached --quiet -- .upstream-sync 2>/dev/null; then
               git add .upstream-sync || true
               git diff --cached --quiet || git commit -m "upstream-sync: recover agent usage after cancel/error" || true

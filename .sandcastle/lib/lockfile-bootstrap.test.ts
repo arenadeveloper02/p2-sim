@@ -26,9 +26,10 @@ describe('lockfile bootstrap helpers', () => {
     expect(hasLockfileConflict(conflicts)).toBe(true)
   })
 
-  test('prefers upstream for root package.json and fork for fork-first paths', () => {
+  test('prefers upstream for root package.json and fork for bunfig / fork-first paths', () => {
     expect(conflictResolutionSide('package.json')).toBe('theirs')
     expect(conflictResolutionSide('bun.lock')).toBe('theirs')
+    expect(conflictResolutionSide('bunfig.toml')).toBe('ours')
     expect(conflictResolutionSide('apps/sim/app/chat/hooks/use-chat-streaming.ts')).toBe('ours')
     expect(conflictResolutionSide('apps/sim/lib/copilot/generated/tool-schemas-v1.ts')).toBe(
       'theirs'

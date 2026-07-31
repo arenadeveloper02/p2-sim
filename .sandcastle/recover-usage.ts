@@ -113,15 +113,19 @@ publishRunJobSummary({
 })
 
 if (commit && records.length > 0) {
-  try {
-    runGit(['add', '.upstream-sync'])
-    if (hasStagedChanges()) {
-      runGit(['commit', '-m', `upstream-sync(${runId}): recover agent usage after cancel/error`])
-      console.log('[recover-usage] committed ledger usage files')
-    } else {
-      console.log('[recover-usage] no ledger changes to commit')
+  if (existsSync('.git/MERGE_HEAD')) {
+    console.log('[recover-usage] merge in progress — leaving usage files uncommitted')
+  } else {
+    try {
+      runGit(['add', '.upstream-sync'])
+      if (hasStagedChanges()) {
+        runGit(['commit', '-m', `upstream-sync(${runId}): recover agent usage after cancel/error`])
+        console.log('[recover-usage] committed ledger usage files')
+      } else {
+        console.log('[recover-usage] no ledger changes to commit')
+      }
+    } catch (error) {
+      console.warn('[recover-usage] commit skipped (likely mid-merge conflicts):', error)
     }
-  } catch (error) {
-    console.warn('[recover-usage] commit skipped (likely mid-merge conflicts):', error)
   }
 }

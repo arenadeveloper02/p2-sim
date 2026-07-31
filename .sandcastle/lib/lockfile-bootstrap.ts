@@ -8,7 +8,10 @@ import {
 
 const PACKAGE_MANIFEST_PATTERN = /(?:^|\/)package\.json$/
 const LOCKFILE_PATH = 'bun.lock'
+const BUNFIG_PATH = 'bunfig.toml'
 const CONFLICT_MARKER_PATTERN = /^<{7}|^={7}|^>{7}/m
+/** Mid-merge lockfile regen must not inherit upstream's 7-day release gate. */
+const BUN_INSTALL_ARGS = ['install', '--minimum-release-age=0'] as const
 
 interface MergePolicy {
   forkFirst?: string[]
@@ -45,6 +48,12 @@ export function conflictResolutionSide(filePath: string): 'ours' | 'theirs' {
     return 'theirs'
   }
 
+  // Fork keeps a disabled release-age gate so mid-merge `bun install` can resolve
+  // freshly published upstream pins (upstream bunfig defaults to 7 days).
+  if (filePath === BUNFIG_PATH) {
+    return 'ours'
+  }
+
   return 'ours'
 }
 
@@ -60,14 +69,23 @@ export function hasLockfileConflict(conflicts: string[]): boolean {
   return conflicts.includes(LOCKFILE_PATH)
 }
 
-/** True when bun.lock contains unresolved merge conflict markers. */
-export function lockfileHasConflictMarkers(path = LOCKFILE_PATH): boolean {
+export function hasBunfigConflict(conflicts: string[]): boolean {
+  return conflicts.includes(BUNFIG_PATH)
+}
+
+/** True when a file contains unresolved merge conflict markers. */
+export function fileHasConflictMarkers(path: string): boolean {
   if (!existsSync(path)) return false
   try {
     return CONFLICT_MARKER_PATTERN.test(readFileSync(path, 'utf8'))
   } catch {
     return false
   }
+}
+
+/** True when bun.lock contains unresolved merge conflict markers. */
+export function lockfileHasConflictMarkers(path = LOCKFILE_PATH): boolean {
+  return fileHasConflictMarkers(path)
 }
 
 export function mergeInProgress(): boolean {
@@ -79,8 +97,10 @@ export function needsPackageManagerBootstrap(): boolean {
   return (
     mergeInProgress() ||
     hasLockfileConflict(conflicts) ||
+    hasBunfigConflict(conflicts) ||
     listPackageManifestConflicts(conflicts).length > 0 ||
-    lockfileHasConflictMarkers()
+    lockfileHasConflictMarkers() ||
+    fileHasConflictMarkers(BUNFIG_PATH)
   )
 }
 
@@ -108,7 +128,7 @@ function removeLockfile(): void {
 }
 
 /**
- * Resolve package manifest conflicts and regenerate bun.lock so Sandcastle can start.
+ * Resolve package manifest / bunfig conflicts and regenerate bun.lock so Sandcastle can start.
  * Safe to call repeatedly — no-ops when the workspace is already installable.
  */
 export function ensureInstallableWorkspace(runId: string): boolean {
@@ -116,11 +136,13 @@ export function ensureInstallableWorkspace(runId: string): boolean {
 
   const conflicts = listConflictFiles()
   const manifestConflicts = listPackageManifestConflicts(conflicts)
+  const bunfigConflict = hasBunfigConflict(conflicts) || fileHasConflictMarkers(BUNFIG_PATH)
   const lockConflict = hasLockfileConflict(conflicts) || lockfileHasConflictMarkers()
 
   console.log(
     `[lockfile-bootstrap] Ensuring installable workspace` +
       `${manifestConflicts.length > 0 ? ` (${manifestConflicts.length} manifest conflict(s))` : ''}` +
+      `${bunfigConflict ? ' + bunfig.toml' : ''}` +
       `${lockConflict ? ' + bun.lock regenerate' : ''}.`
   )
 
@@ -128,13 +150,31 @@ export function ensureInstallableWorkspace(runId: string): boolean {
     checkoutConflictSide(file, conflictResolutionSide(file))
   }
 
+  if (bunfigConflict) {
+    if (conflicts.includes(BUNFIG_PATH)) {
+      checkoutConflictSide(BUNFIG_PATH, conflictResolutionSide(BUNFIG_PATH))
+    } else {
+      // Markers present but not listed as unmerged (rare) — prefer fork side.
+      try {
+        runGit(['checkout', '--ours', '--', BUNFIG_PATH])
+        runGit(['add', BUNFIG_PATH])
+      } catch {
+        console.warn('[lockfile-bootstrap] Could not reset bunfig.toml to ours')
+      }
+    }
+  }
+
   if (lockConflict) {
     removeLockfile()
   }
 
-  if (lockConflict || manifestConflicts.length > 0) {
-    execFileSync('bun', ['install'], { stdio: 'inherit' })
-    runGit(['add', LOCKFILE_PATH, ...manifestConflicts])
+  if (lockConflict || manifestConflicts.length > 0 || bunfigConflict) {
+    // Explicit CLI override: conflicted/upstream bunfig may still set a 7-day gate.
+    console.log(`[lockfile-bootstrap] Running bun ${BUN_INSTALL_ARGS.join(' ')}`)
+    execFileSync('bun', [...BUN_INSTALL_ARGS], { stdio: 'inherit' })
+    const stagedPaths = [LOCKFILE_PATH, ...manifestConflicts]
+    if (existsSync(BUNFIG_PATH)) stagedPaths.push(BUNFIG_PATH)
+    runGit(['add', ...stagedPaths])
 
     if (hasStagedChanges()) {
       if (mergeInProgress()) {
@@ -149,6 +189,11 @@ export function ensureInstallableWorkspace(runId: string): boolean {
 
   if (lockfileHasConflictMarkers()) {
     console.error('[lockfile-bootstrap] bun.lock still contains conflict markers after bootstrap.')
+    return false
+  }
+
+  if (fileHasConflictMarkers(BUNFIG_PATH)) {
+    console.error('[lockfile-bootstrap] bunfig.toml still contains conflict markers after bootstrap.')
     return false
   }
 
