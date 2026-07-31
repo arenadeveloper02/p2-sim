@@ -12,8 +12,8 @@ import { parseRequest } from '@/lib/api/server'
 import { resolveDeployedChatThreadAccess } from '@/lib/chat/deployed-chat-thread-auth'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { createErrorResponse } from '@/app/api/workflows/utils'
 import { addCorsHeaders } from '@/app/api/chat/utils'
+import { createErrorResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('DeployedChatThreadAPI')
 

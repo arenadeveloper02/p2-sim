@@ -2,8 +2,8 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { mergeOrgBrandConfig, resolveOrgFaviconUrl } from '@/ee/whitelabeling/org-branding-utils'
 import { defaultBrandConfig } from '@/lib/branding/defaults'
+import { mergeOrgBrandConfig, resolveOrgFaviconUrl } from '@/ee/whitelabeling/org-branding-utils'
 
 describe('resolveOrgFaviconUrl', () => {
   it('prefers dedicated favicon over logo and wordmark', () => {

@@ -8,15 +8,15 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { and, asc, eq, gt, gte, inArray, lt, sql } from 'drizzle-orm'
+import type { UsageEntry } from '@/lib/billing/core/usage-log'
+import { stableEventKey } from '@/lib/billing/core/usage-log'
+import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
+import type { TraceSpan } from '@/lib/logs/types'
 import { BlockType } from '@/executor/constants'
 import { CostBlockHandler } from '@/executor/handlers/cost/cost-handler'
 import type { BlockLog, BlockState, ExecutionContext } from '@/executor/types'
-import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
-import type { TraceSpan } from '@/lib/logs/types'
-import { stableEventKey } from '@/lib/billing/core/usage-log'
-import type { UsageEntry } from '@/lib/billing/core/usage-log'
 import type { SerializedBlock, SerializedConnection, SerializedWorkflow } from '@/serializer/types'
-import { and, asc, eq, gt, gte, inArray, lt, sql } from 'drizzle-orm'
 
 const logger = createLogger('CostBlockReprice')
 

@@ -8,8 +8,8 @@ import {
 } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import {
-  deleteDeployedChatThreadContract,
   type DeployedChatThreadRecord,
+  deleteDeployedChatThreadContract,
   listDeployedChatThreadsContract,
   updateDeployedChatThreadContract,
 } from '@/lib/api/contracts/deployed-chat-threads'

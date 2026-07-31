@@ -10,11 +10,11 @@ import {
   isSessionMemorySystemMessage,
   parseSessionMemory,
   parseSummarizerSessionMemory,
-  selectUncoveredTurnsForSummary,
   SESSION_MEMORY_VERSION,
-  shouldRefreshSessionMemory,
   type SessionMemory,
   type SessionMemoryTurn,
+  selectUncoveredTurnsForSummary,
+  shouldRefreshSessionMemory,
 } from '@/local-copilot/lib/context/session-memory'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 

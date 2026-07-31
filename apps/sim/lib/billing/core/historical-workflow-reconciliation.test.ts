@@ -98,20 +98,22 @@ vi.mock('@/lib/logs/execution/trace-store', () => ({
   TRACE_STORE_REF_KEY: 'traceStoreRef',
 }))
 
+import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import {
+  aggregateClassificationResults,
+  aggregateShadowDeltaReview,
   analyzeTraceSpans,
   applyHistoricalReconciliation,
-  aggregateShadowDeltaReview,
   backfillModelBreakdownMetadata,
   buildHistoricalAdjustmentEntries,
   classifyExecutionEvidence,
-  aggregateClassificationResults,
   computeTargetLedgerLines,
   dryRunHistoricalWorkflowReprices,
+  type ExecutionClassification,
+  type ExecutionEvidence,
   enrichTraceSpansForReprice,
   evaluateApplyRolloutGates,
   HISTORICAL_BREAKDOWN_BACKFILL_VERSION,
-  inferHistoricalUsageMultiplier,
   HISTORICAL_RECONCILE_DEFAULT_BATCH_SIZE,
   HISTORICAL_RECONCILE_DEFAULT_CONCURRENCY,
   HISTORICAL_RECONCILE_DEFAULT_EXECUTION_TIMEOUT_MS,
@@ -120,6 +122,8 @@ import {
   HISTORICAL_RECONCILE_PROGRESS_INTERVAL,
   HISTORICAL_RECONCILE_ROLLOUT_STEPS,
   HISTORICAL_RECONCILE_VERSION,
+  type HistoricalReconcileShadowRecord,
+  inferHistoricalUsageMultiplier,
   isReconcilePricedToolId,
   modelBreakdownAlreadyPresent,
   parseHistoricalReconcileShadowRecord,
@@ -128,14 +132,10 @@ import {
   resolveShadowArtifactWorkspaceScope,
   shadowRecordHasPricedToolEvidence,
   snapshotStateHasCostBlocks,
-  verifyLedgerProjection,
-  type ExecutionClassification,
-  type ExecutionEvidence,
-  type HistoricalReconcileShadowRecord,
   type TraceEvidenceSummary,
+  verifyLedgerProjection,
 } from '@/lib/billing/core/historical-workflow-reconciliation'
 import { calculateCostSummary } from '@/lib/logs/execution/logging-factory'
-import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import {
   FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,
   FALAI_IMAGE_FALLBACK_PROVIDER_COST_DOLLARS,
@@ -1702,7 +1702,7 @@ describe('buildHistoricalAdjustmentEntries', () => {
       expect(result.negativeDeltaTotal).toBe(0)
     } finally {
       if (previousMultiplier === undefined) {
-        delete process.env.USAGE_LOG_COST_MULTIPLIER
+        process.env.USAGE_LOG_COST_MULTIPLIER = undefined
       } else {
         process.env.USAGE_LOG_COST_MULTIPLIER = previousMultiplier
       }

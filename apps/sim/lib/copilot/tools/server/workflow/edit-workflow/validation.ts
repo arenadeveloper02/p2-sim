@@ -106,8 +106,8 @@ export function normalizeAgentLegacyPromptInputs(
       : next.userPrompt === undefined
         ? undefined
         : String(next.userPrompt)
-  delete next.systemPrompt
-  delete next.userPrompt
+  next.systemPrompt = undefined
+  next.userPrompt = undefined
 
   if (next.messages !== undefined) {
     return next

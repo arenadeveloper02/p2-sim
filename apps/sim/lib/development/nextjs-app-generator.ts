@@ -645,7 +645,7 @@ function augmentSystemPromptForReferenceImage(
   systemPrompt: string,
   referenceMedia?: DevelopmentReferenceMedia
 ): string {
-  let prompt = appendArenaSystemPrompt(systemPrompt, isArenaMode())
+  const prompt = appendArenaSystemPrompt(systemPrompt, isArenaMode())
   if (!referenceMedia) {
     return prompt
   }

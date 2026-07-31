@@ -57,7 +57,7 @@ export function DataHealthPanel({ data }: DataHealthPanelProps) {
                     <span className='text-[var(--text-muted)] text-xs'>{warning.detail}</span>
                   )}
                 </div>
-                <span className='shrink-0 tabular-nums text-[var(--text-secondary)]'>
+                <span className='shrink-0 text-[var(--text-secondary)] tabular-nums'>
                   {warning.count.toLocaleString()}
                 </span>
               </li>

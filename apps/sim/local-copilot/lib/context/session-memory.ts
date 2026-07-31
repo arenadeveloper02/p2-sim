@@ -270,7 +270,6 @@ export function countHistoryTurns(messages: ChatMessage[]): number {
       turns += 1
       inTurn = true
     } else if (message.role === 'system') {
-      continue
     } else if (!inTurn) {
       turns += 1
       inTurn = true

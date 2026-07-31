@@ -2,6 +2,7 @@
 
 import { ChipLink } from '@sim/emcn'
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
+import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 import {
   CostBreakdownTable,
   CostCell,
@@ -10,7 +11,6 @@ import {
   formatActorType,
   formatBillableWithCredits,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
-import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 
 interface LineagePanelProps {
   workspaceId: string

@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
-import type { BlockOutput } from '@/blocks/types'
 import { traverseObjectPath } from '@/lib/core/utils/response-format'
+import type { BlockOutput } from '@/blocks/types'
 import { BlockType, isUuid, normalizeName } from '@/executor/constants'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import { collectBlockData } from '@/executor/utils/block-data'

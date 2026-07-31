@@ -6,12 +6,12 @@ import { getWorkspaceUsageAnalyticsContract } from '@/lib/api/contracts/workspac
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
 import {
   getWorkspaceUsageAnalytics,
   InvalidUsageSourcesError,
   parseWorkspaceUsageSources,
 } from '@/lib/workspaces/usage/analytics'
-import { hasWorkspaceAdminAccess } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceUsageAnalyticsAPI')
 

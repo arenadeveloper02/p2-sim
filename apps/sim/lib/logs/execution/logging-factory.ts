@@ -1,18 +1,18 @@
 import { db, workflow } from '@sim/db'
 import { eq } from 'drizzle-orm'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
-import type {
-  ExecutionEnvironment,
-  ExecutionTrigger,
-  TraceSpan,
-  WorkflowState,
-} from '@/lib/logs/types'
 import {
   accumulateEmbeddedToolCosts,
   extractEmbeddedToolCostsFromSpan,
   normalizeEmbeddedToolCosts,
   resolveEmbeddedToolCostKey,
 } from '@/lib/logs/embedded-tool-costs'
+import type {
+  ExecutionEnvironment,
+  ExecutionTrigger,
+  TraceSpan,
+  WorkflowState,
+} from '@/lib/logs/types'
 import {
   loadDeployedWorkflowState,
   loadWorkflowFromNormalizedTables,

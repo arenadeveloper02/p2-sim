@@ -3,15 +3,15 @@ import {
   copilotChats,
   copilotRuns,
   usageLog,
-  workspace,
   workflow,
   workflowExecutionLogs,
+  workspace,
 } from '@sim/db/schema'
 import { and, eq, gte, inArray, isNotNull, lte, or, type SQL, sql } from 'drizzle-orm'
 import {
+  type UsageChargeTypeValue,
   usageActorTypeSchema,
   usageChargeTypeSchema,
-  type UsageChargeTypeValue,
 } from '@/lib/api/contracts/workspace-usage'
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
 import { COPILOT_USAGE_SOURCES } from '@/lib/billing/core/usage-log'

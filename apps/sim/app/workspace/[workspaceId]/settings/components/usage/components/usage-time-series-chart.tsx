@@ -1,12 +1,12 @@
 'use client'
 
 import { useMemo } from 'react'
+import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import {
   LineChart,
   type LineChartMultiSeries,
   type LineChartPoint,
 } from '@/app/workspace/[workspaceId]/logs/components/dashboard/components'
-import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 
 interface UsageTimeSeriesPoint {
   bucketStart: string

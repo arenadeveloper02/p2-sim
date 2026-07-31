@@ -3,16 +3,16 @@ import {
   copilotChats,
   copilotRuns,
   usageLog,
-  workspace,
   workflowExecutionLogs,
+  workspace,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, asc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm'
 import type { OrganizationUsageAnalytics } from '@/lib/api/contracts/organization-usage'
 import {
-  usageLogSourceSchema,
   type UsageChargeTypeValue,
+  usageLogSourceSchema,
 } from '@/lib/api/contracts/workspace-usage'
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
 import { COPILOT_USAGE_SOURCES } from '@/lib/billing/core/usage-log'
@@ -24,10 +24,10 @@ import {
   subtractEmbeddedFromBucketRows,
 } from '@/lib/workspaces/usage/embedded-tool-virtual-split'
 import {
+  buildCopilotByChatTypeQuery,
   buildExecutionConditions,
   buildExpensiveCopilotChatsQuery,
   buildExpensiveWorkflowsQuery,
-  buildCopilotByChatTypeQuery,
   buildLedgerConditions,
   buildLedgerJoinConditions,
   bySourceDisplayBucketExpr,
@@ -51,10 +51,10 @@ import {
   parseDecimal,
   periodRange,
   type ResolvedPeriod,
-  resolveExplicitPeriod,
-  resolvePeriodFromDateCandidates,
   resolvedActorTypeExpr,
   resolvedActorUserIdExpr,
+  resolveExplicitPeriod,
+  resolvePeriodFromDateCandidates,
   sortByBillableCostDesc,
   timeBucketExpr,
   usageMetricsSelect,

@@ -1,5 +1,4 @@
 import { createLogger } from '@sim/logger'
-
 import { ensureArenaScaffoldFiles } from '@/lib/development/arena/scaffold'
 
 const logger = createLogger('NormalizeGeneratedApp')
@@ -673,7 +672,7 @@ function stripDirectToolingDependencies(pkg: {
       delete pkg.overrides[name]
     }
     if (Object.keys(pkg.overrides).length === 0) {
-      delete pkg.overrides
+      pkg.overrides = undefined
     }
   }
 }

@@ -6,10 +6,10 @@ import { generateId } from '@sim/utils/id'
 import { and, asc, eq, gt, isNull, type SQL } from 'drizzle-orm'
 import { mapWithConcurrency } from '@/lib/core/utils/concurrency'
 import {
-  KnowledgeBaseConflictError,
-  KnowledgeBasePermissionError,
   deleteKnowledgeBase,
   getKnowledgeBaseById,
+  KnowledgeBaseConflictError,
+  KnowledgeBasePermissionError,
 } from '@/lib/knowledge/service'
 import type { ChunkingConfig, KnowledgeBaseWithCounts } from '@/lib/knowledge/types'
 import { generateKnowledgeBaseFileKey } from '@/lib/uploads/contexts/knowledge-base/knowledge-base-file-manager'

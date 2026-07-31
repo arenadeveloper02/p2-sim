@@ -38,10 +38,6 @@ import {
   resolveUsageSourceLabel,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 import {
-  buildWorkflowAverageCostChartRows,
-  buildWorkflowTotalCostChartRows,
-} from '@/app/workspace/[workspaceId]/settings/components/usage/workflow-chart-rows'
-import {
   isLegacyUnattributedChatId,
   LEGACY_UNATTRIBUTED_CHAT_ID,
   LEGACY_UNATTRIBUTED_CHAT_TITLE,
@@ -57,6 +53,10 @@ import {
   usageParsers,
   usageUrlKeys,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
+import {
+  buildWorkflowAverageCostChartRows,
+  buildWorkflowTotalCostChartRows,
+} from '@/app/workspace/[workspaceId]/settings/components/usage/workflow-chart-rows'
 import { useAdminOrganizations, useOrganizationRoster } from '@/hooks/queries/organization'
 import { useOrganizationUsageAnalytics } from '@/hooks/queries/organization-usage'
 import { useWorkspacePermissionsQuery, useWorkspaceSettings } from '@/hooks/queries/workspace'

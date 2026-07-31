@@ -7,14 +7,12 @@ import {
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import {
+  type DescribedError,
   describeError,
   getErrorMessage,
   getPostgresErrorCode,
-  type DescribedError,
 } from '@sim/utils/errors'
-import { BlockType } from '@/executor/constants'
-import { CostBlockHandler } from '@/executor/handlers/cost/cost-handler'
-import type { BlockLog, BlockState, ExecutionContext } from '@/executor/types'
+import { and, asc, desc, eq, gte, inArray, lt, lte, or, sql } from 'drizzle-orm'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import {
   collectTraceExecutionArtifacts,
@@ -56,8 +54,8 @@ import {
   normalizeEmbeddedToolCosts,
 } from '@/lib/logs/embedded-tool-costs'
 import {
-  calculateCostSummary,
   type CostSummaryExternalCharge,
+  calculateCostSummary,
 } from '@/lib/logs/execution/logging-factory'
 import { materializeExecutionData, TRACE_STORE_REF_KEY } from '@/lib/logs/execution/trace-store'
 import type { WorkflowState } from '@/lib/logs/types'
@@ -67,6 +65,9 @@ import {
   FALAI_VIDEO_FALLBACK_PROVIDER_COST_DOLLARS,
 } from '@/lib/tools/falai-pricing'
 import { calculateHostedImageToolCost } from '@/lib/tools/image-pricing'
+import { BlockType } from '@/executor/constants'
+import { CostBlockHandler } from '@/executor/handlers/cost/cost-handler'
+import type { BlockLog, BlockState, ExecutionContext } from '@/executor/types'
 import { resolveBlockModelCost, shouldBillModelUsage } from '@/providers/utils'
 import type { SerializedBlock, SerializedConnection, SerializedWorkflow } from '@/serializer/types'
 import { browserUseHosting, readBrowserUseTotalCostUsd } from '@/tools/browser_use/hosting'
@@ -75,7 +76,6 @@ import { semrushHosting } from '@/tools/semrush/hosting'
 import { searchTool as serperSearchTool } from '@/tools/serper/search'
 import type { ToolHostingPricing } from '@/tools/types'
 import { falaiVideoTool } from '@/tools/video/falai'
-import { and, asc, desc, eq, gte, inArray, lt, lte, or, sql } from 'drizzle-orm'
 
 const logger = createLogger('HistoricalWorkflowReconciliation')
 

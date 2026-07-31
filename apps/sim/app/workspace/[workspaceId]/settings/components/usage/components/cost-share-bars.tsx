@@ -81,7 +81,7 @@ export function CostShareBars({
                 {row.secondary && (
                   <span className='text-[var(--text-muted)] text-xs'>{row.secondary}</span>
                 )}
-                <span className='tabular-nums text-[var(--text-secondary)] text-small'>
+                <span className='text-[var(--text-secondary)] text-small tabular-nums'>
                   {formatBillableWithCredits(row.billableCost)}
                 </span>
               </div>

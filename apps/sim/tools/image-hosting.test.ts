@@ -2,8 +2,8 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { imageGenerateTool } from '@/tools/image/generate'
 import { nanoBananaTool } from '@/tools/google/nano-banana'
+import { imageGenerateTool } from '@/tools/image/generate'
 import { imageTool } from '@/tools/openai/image'
 
 describe('OpenAI/Gemini image hosting', () => {
