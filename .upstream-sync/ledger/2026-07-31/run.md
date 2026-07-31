@@ -68,21 +68,21 @@ This is a pre-existing fork divergence (disabled providers + fork-added hosted m
 ### parent-grill-analysis
 - **Model:** `claude-opus-4-8`
 - **Iterations:** 1
-- **Input tokens (direct):** 7
-- **Input tokens (cache read):** 142,886
-- **Input tokens (cache create):** 34,189
-- **Input tokens (total):** 177,082
-- **Output tokens:** 2,444
-- **Cost:** $0.347683 (provider-reported)
+- **Input tokens (direct):** 44
+- **Input tokens (cache read):** 1,713,469
+- **Input tokens (cache create):** 82,578
+- **Input tokens (total):** 1,796,091
+- **Output tokens:** 30,215
+- **Cost:** $2.129866 (provider-reported)
 
 ### Totals
-- **Total input tokens:** 177,082
-- **Total output tokens:** 2,444
+- **Total input tokens:** 1,796,091
+- **Total output tokens:** 30,215
 - **Primary models:** claude-opus-4-8
-- **Provider-reported cost:** $0.347683
+- **Provider-reported cost:** $2.129866
 
 ### Cost by agent
-- **parent-grill-analysis:** $0.347683 (provider-reported)
+- **parent-grill-analysis:** $2.129866 (provider-reported)
 
 ## Format
 
