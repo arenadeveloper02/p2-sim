@@ -25,6 +25,21 @@ export function runVerification(): VerifyResult[] {
   return results
 }
 
+/**
+ * Autofix Biome formatting after merge/agent edits so `bun run check` is not
+ * blocked by mechanical style drift (common with conflict resolutions).
+ */
+export function autofixFormat(): VerifyResult {
+  try {
+    const output = execSync('bun run format', { encoding: 'utf8', stdio: 'pipe' })
+    return { command: 'bun run format', success: true, output }
+  } catch (error) {
+    const err = error as { stdout?: string; stderr?: string; message?: string }
+    const output = [err.stdout, err.stderr, err.message].filter(Boolean).join('\n')
+    return { command: 'bun run format', success: false, output }
+  }
+}
+
 export function formatVerifyResults(results: VerifyResult[]): string {
   return results
     .map((r) => `### ${r.command}\n\n${r.success ? '✅ passed' : '❌ failed'}\n\n\`\`\`\n${r.output.slice(0, 4000)}\n\`\`\``)

@@ -94,7 +94,7 @@ import {
   recoverUsageFromLogDir,
   resetUsageRecords,
 } from './lib/usage'
-import { allVerificationPassed, formatVerifyResults, runVerification } from './lib/verify'
+import { allVerificationPassed, autofixFormat, formatVerifyResults, runVerification } from './lib/verify'
 
 const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'prompts')
 const SKIP_AGENT = process.env.UPSTREAM_SYNC_SKIP_AGENT === 'true'
@@ -1049,9 +1049,23 @@ async function main(): Promise<void> {
     endGroup()
     endGroup = startLogGroup('verify')
 
+    const formatResult = autofixFormat()
+    if (formatResult.success) {
+      runGit(['add', '-A'])
+      if (hasStagedChanges()) {
+        runGit(['commit', '-m', `upstream-sync(${runId}): format after merge`])
+      }
+    } else {
+      console.warn('[verify] bun run format failed — continuing to verification anyway')
+      console.warn(formatResult.output.slice(0, 2000))
+    }
+
     const verifyResults = runVerification()
     const usageSection = appendUsageToRunLog(runId)
     appendRunLogSections(runId, {
+      Format: formatResult.success
+        ? '✅ `bun run format` (pre-verify autofix)'
+        : `❌ \`bun run format\` failed\n\n\`\`\`\n${formatResult.output.slice(0, 2000)}\n\`\`\``,
       Verification: formatVerifyResults(verifyResults),
       'Merge policy': readFileSync(MERGE_POLICY_PATH, 'utf8').slice(0, 2000),
     })
