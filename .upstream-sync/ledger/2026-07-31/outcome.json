@@ -14,10 +14,14 @@
     },
     {
       "command": "bun run lint",
+      "success": true
+    },
+    {
+      "command": "bun run test",
       "success": false,
-      "detail": "• Packages in scope: @sim/audit, @sim/auth, @sim/db, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk\n   • Running lint in 21 packages\n   • Remote caching disabled\n\n::group::@sim/workflow-types:lint\ncache miss, executing 6903535170672abf\n$ biome check --write --unsafe .\nChecked 4 files in 57ms. No fixes applied.\n::endgroup::\n::group::simstudio:lint\ncache miss, executing 3b3448794fd8d67a\n$ biome check --write --unsafe .\nChecked 3 files in 57ms. No fixes applied.\n::endgroup::\n::group::@sim/realtime-protocol:lint\ncache miss, executing 0122da9ed0cc036d\n$ biome check --write --unsafe .\nChecked 5 files in 142ms. No fixes applied.\n::endgroup::\n::group::simstudio-ts-sdk:lint\ncache miss, executing c86521201f82f1d8\n$ biome check --write --unsafe .\nChecked 6 files in 230ms. No fixes applied.\n::endgroup::\n::group::@sim/security:lint\ncache miss, executing f0d899d639617b3d\n$ biome check --write --unsafe .\nChecked 13 files in 167ms. No fixes applied.\n::endgroup::\n::g\n…(truncated)"
+      "detail": "• Packages in scope: @sim/audit, @sim/auth, @sim/db, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk\n   • Running test in 21 packages\n   • Remote caching disabled\n\n::group::@sim/runtime-secrets:test\ncache miss, executing a11120aab80dea72\n$ vitest run\n\n\u001b[1m\u001b[30m\u001b[46m RUN \u001b[49m\u001b[39m\u001b[22m \u001b[36mv4.1.9 \u001b[39m\u001b[90m/home/runner/work/p2-sim/p2-sim/packages/runtime-secrets\u001b[39m\n\n \u001b[32m✓\u001b[39m src/index.test.ts \u001b[2m(\u001b[22m\u001b[2m7 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 89\u001b[2mms\u001b[22m\u001b[39m\n\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m1 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m7 passed\u001b[39m\u001b[22m\u001b[90m (7)\u001b[39m\n\u001b[2m   Start at \u001b[22m 13:51:58\n\u001b[2m   Duration \u001b[22m 1.94s\u001b[2m (transform 577ms, setup 0ms, import 736ms, tests 89ms, environment 0ms)\u001b[22m\n\n::endgroup::\n::group::@sim/logger:test\ncache miss, executing c31cae1e1a53a727\n$ vitest run\n\n\u001b[1m\u001b[30m\u001b[46m RUN \u001b[49m\u001b[39m\u001b[22m \u001b[36mv4.1.9 \u001b[39m\u001b[90m/home/runner/work/p2-sim/p2-sim/packages/logger\u001b[39m\n\n \u001b[32m✓\u001b[39m src/index.test.\n…(truncated)"
     }
   ],
   "runId": "2026-07-31",
-  "recordedAt": "2026-07-31T13:46:50.719Z"
+  "recordedAt": "2026-07-31T14:00:34.312Z"
 }
