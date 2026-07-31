@@ -3357,6 +3357,20 @@ export const bannerMessages = pgTable('banner_messages', {
   isActive: boolean('is_active').notNull(),
 })
 
+/**
+ * Arena agent department catalog (value stored on chat.department; label for display).
+ * Table is managed outside Drizzle migrations — keep schema aligned with the live table.
+ */
+export const agentDepartments = pgTable('agent_departments', {
+  id: text('id').primaryKey(),
+  value: text('value').notNull().unique(),
+  label: text('label').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
+
 export const workflowStatsDaily = pgTable(
   'workflow_stats_daily',
   {

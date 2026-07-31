@@ -192,15 +192,8 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
             combinedHtml: '',
           },
         },
-        error: data.error || 'Figma to HTML conversion failed',
+        error: errorMessage || 'Figma to HTML conversion failed',
       }
-    }
-
-    return {
-      success: true,
-      output: {
-        metadata: data.metadata,
-      },
     }
   },
 

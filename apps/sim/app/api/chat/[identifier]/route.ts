@@ -1208,15 +1208,13 @@ export const GET = withRouteHandler(
         // Continue without inputFormat - not critical for chat config
       }
       const goldenQueries = await fetchGoldenQueries(deployment.workflowId)
+      const departmentLabel = await getAgentDepartmentLabel(deployment.department ?? null)
 
       /**
        * Helper function to build chat config response with inputFormat always included.
        * When userWorkspaceIds is provided (logged-in user with workspace access), KB "View in Knowledge Base" links are shown.
        */
       const buildChatConfigData = (userWorkspaceIds?: string[]) => {
-        const departmentValue = deployment.department ?? null
-        const departmentLabel = getAgentDepartmentLabel(departmentValue)
-
         return {
           id: deployment.id,
           title: deployment.title,

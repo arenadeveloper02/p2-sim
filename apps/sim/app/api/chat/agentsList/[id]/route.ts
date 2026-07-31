@@ -77,7 +77,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       workflow_id: row.workflowId,
       workflow_name: row.workflowName,
       workspace_id: row.workspaceId,
-      department: getAgentDepartmentLabel(row.department),
+      department: await getAgentDepartmentLabel(row.department),
       created_at: row.createdAt.toISOString(),
       workflow_description: row.description,
       status: 'published',
