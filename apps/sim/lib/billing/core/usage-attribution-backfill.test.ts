@@ -107,9 +107,9 @@ describe('normalizeUsageLogRowForBackfill', () => {
 describe('parseUpdateCostBillingMessageId', () => {
   it('extracts message id from update-cost event keys', () => {
     expect(parseUpdateCostBillingMessageId('update-cost:msg-abc-billing')).toBe('msg-abc')
-    expect(parseUpdateCostBillingMessageId('update-cost:550e8400-e29b-41d4-a716-446655440000-billing')).toBe(
-      '550e8400-e29b-41d4-a716-446655440000'
-    )
+    expect(
+      parseUpdateCostBillingMessageId('update-cost:550e8400-e29b-41d4-a716-446655440000-billing')
+    ).toBe('550e8400-e29b-41d4-a716-446655440000')
   })
 
   it('returns null for non-matching keys', () => {

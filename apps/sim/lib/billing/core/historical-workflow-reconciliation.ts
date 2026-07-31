@@ -69,10 +69,7 @@ import {
 import { calculateHostedImageToolCost } from '@/lib/tools/image-pricing'
 import { resolveBlockModelCost, shouldBillModelUsage } from '@/providers/utils'
 import type { SerializedBlock, SerializedConnection, SerializedWorkflow } from '@/serializer/types'
-import {
-  browserUseHosting,
-  readBrowserUseTotalCostUsd,
-} from '@/tools/browser_use/hosting'
+import { browserUseHosting, readBrowserUseTotalCostUsd } from '@/tools/browser_use/hosting'
 import { exaHosting } from '@/tools/exa/hosting'
 import { semrushHosting } from '@/tools/semrush/hosting'
 import { searchTool as serperSearchTool } from '@/tools/serper/search'
@@ -298,9 +295,7 @@ export interface HistoricalReconcileProgress {
   done: boolean
 }
 
-export type HistoricalReconcileProgressCallback = (
-  progress: HistoricalReconcileProgress
-) => void
+export type HistoricalReconcileProgressCallback = (progress: HistoricalReconcileProgress) => void
 
 export interface HistoricalReconcileFailure {
   executionId: string
@@ -826,11 +821,7 @@ export function classifyExecutionEvidence(
 
   let primaryClass: ReconciliationClass
 
-  if (
-    !hasDrift &&
-    !evidence.billingReconciliationPending &&
-    secondaryClasses.length === 0
-  ) {
+  if (!hasDrift && !evidence.billingReconciliationPending && secondaryClasses.length === 0) {
     primaryClass = 'reconciled'
   } else if (
     !hasDrift &&
@@ -843,10 +834,7 @@ export function classifyExecutionEvidence(
     primaryClass = 'mothership_risk'
     confidence = 'low'
     blockers.push('manual_mothership_review_required')
-  } else if (
-    !trace.hasTraceSpans &&
-    (trace.traceStoreExpired || trace.traceStoreExternalized)
-  ) {
+  } else if (!trace.hasTraceSpans && (trace.traceStoreExpired || trace.traceStoreExternalized)) {
     primaryClass =
       hasDrift && evidence.ledgerSum > 0 ? 'ledger_projection_drift' : 'missing_trace_data'
     if (primaryClass === 'missing_trace_data') {
@@ -886,9 +874,7 @@ export function classifyExecutionEvidence(
     primaryClass = 'reconciled'
   }
 
-  const dedupedSecondary = uniqueClasses(
-    secondaryClasses.filter((item) => item !== primaryClass)
-  )
+  const dedupedSecondary = uniqueClasses(secondaryClasses.filter((item) => item !== primaryClass))
 
   const applyEligible =
     blockers.length === 0 &&
@@ -965,9 +951,7 @@ export function aggregateClassificationResults(
   const topRiskExamples = [...classifications]
     .filter(
       (item) =>
-        item.primaryClass !== 'reconciled' ||
-        item.warnings.length > 0 ||
-        item.blockers.length > 0
+        item.primaryClass !== 'reconciled' || item.warnings.length > 0 || item.blockers.length > 0
     )
     .sort((a, b) => Math.abs(b.drift) - Math.abs(a.drift))
     .slice(0, topRiskLimit)
@@ -1045,10 +1029,7 @@ class HistoricalReconcileExecutionTimeoutError extends Error {
   }
 }
 
-function resolveExecutionTimeoutMs(
-  filter: HistoricalExecutionFilter,
-  override?: number
-): number {
+function resolveExecutionTimeoutMs(filter: HistoricalExecutionFilter, override?: number): number {
   const requested = override ?? filter.executionTimeoutMs
   return requested != null && Number.isFinite(requested) && requested > 0
     ? Math.floor(requested)
@@ -1112,9 +1093,12 @@ function withReconcileDbRetry<T>(
  * Forces a round-trip so dead pooled sockets are discarded before the next page.
  */
 async function ensureDatabaseConnection(): Promise<void> {
-  await withReconcileDbRetry(async () => {
-    await db.execute(sql`select 1`)
-  }, { operation: 'db_keepalive' })
+  await withReconcileDbRetry(
+    async () => {
+      await db.execute(sql`select 1`)
+    },
+    { operation: 'db_keepalive' }
+  )
 }
 
 /**
@@ -1131,13 +1115,10 @@ export async function listHistoricalWorkflowExecutions(
   filter: HistoricalExecutionFilter = {},
   cursor?: HistoricalExecutionCursor | null
 ): Promise<HistoricalExecutionRow[]> {
-  return withReconcileDbRetry(
-    () => listHistoricalWorkflowExecutionsOnce(filter, cursor),
-    {
-      operation: 'listHistoricalWorkflowExecutions',
-      cursorExecutionId: cursor?.executionId,
-    }
-  )
+  return withReconcileDbRetry(() => listHistoricalWorkflowExecutionsOnce(filter, cursor), {
+    operation: 'listHistoricalWorkflowExecutions',
+    cursorExecutionId: cursor?.executionId,
+  })
 }
 
 async function listHistoricalWorkflowExecutionsOnce(
@@ -1279,10 +1260,7 @@ async function loadMothershipLedgerSum(executionId: string): Promise<number> {
     .select({ cost: sql<string>`COALESCE(SUM(${usageLog.cost}), 0)` })
     .from(usageLog)
     .where(
-      and(
-        eq(usageLog.parentExecutionId, executionId),
-        eq(usageLog.source, 'mothership_block')
-      )
+      and(eq(usageLog.parentExecutionId, executionId), eq(usageLog.source, 'mothership_block'))
     )
 
   return parseDecimal(row?.cost)
@@ -1292,7 +1270,9 @@ async function loadMothershipLedgerSum(executionId: string): Promise<number> {
  * Loads reconciliation evidence for a single workflow execution, including
  * materialized trace spans and snapshot cost-block presence.
  */
-export async function loadExecutionEvidence(executionId: string): Promise<ExecutionEvidence | null> {
+export async function loadExecutionEvidence(
+  executionId: string
+): Promise<ExecutionEvidence | null> {
   return withReconcileDbRetry(() => loadExecutionEvidenceOnce(executionId), {
     operation: 'loadExecutionEvidence',
     executionId,
@@ -2217,7 +2197,7 @@ export async function computeTargetLedgerLines(
   if (
     !evidence.trace.hasTraceSpans &&
     !evidence.snapshotHasCostBlocks &&
-  evidence.trace.traceStoreExpired
+    evidence.trace.traceStoreExpired
   ) {
     warnings.push('trace_store_unavailable')
     return { targets, warnings }
@@ -2244,9 +2224,8 @@ export async function computeTargetLedgerLines(
       modelData.tokens.output > 0
     if (!hasUsage) continue
 
-    const evidenceSource = evidence.trace.spansWithInlineCost > 0
-      ? 'legacy_span_cost'
-      : 'tokens_repriced'
+    const evidenceSource =
+      evidence.trace.spansWithInlineCost > 0 ? 'legacy_span_cost' : 'tokens_repriced'
 
     targets.push({
       category: 'model',
@@ -2260,8 +2239,7 @@ export async function computeTargetLedgerLines(
         ...(modelData.toolCost != null && modelData.toolCost > 0
           ? { toolCost: modelData.toolCost }
           : {}),
-        ...(modelData.embeddedToolCosts &&
-        Object.keys(modelData.embeddedToolCosts).length > 0
+        ...(modelData.embeddedToolCosts && Object.keys(modelData.embeddedToolCosts).length > 0
           ? { embeddedToolCosts: modelData.embeddedToolCosts }
           : {}),
       },
@@ -2275,18 +2253,17 @@ export async function computeTargetLedgerLines(
       description: normalizeUsageToolId(description),
       target: charge.total,
       reason: 'standalone_tool_charge',
-      evidenceSource: evidence.trace.spansWithHostedToolMetadata > 0
-        ? evidence.trace.hostedToolSignals[0] ?? 'hosted_tool'
-        : 'tool_output_cost',
+      evidenceSource:
+        evidence.trace.spansWithHostedToolMetadata > 0
+          ? (evidence.trace.hostedToolSignals[0] ?? 'hosted_tool')
+          : 'tool_output_cost',
       toolId: normalizeUsageToolId(description),
     })
   }
 
   for (const [description, charge] of Object.entries(costSummary.external)) {
     if (charge.total <= 0) continue
-    targets.push(
-      externalChargeToTargetLine(description, charge, 'legacy_span_cost')
-    )
+    targets.push(externalChargeToTargetLine(description, charge, 'legacy_span_cost'))
   }
 
   if (
@@ -2363,8 +2340,7 @@ function buildShadowRecord(params: {
     negativeDelta: adjustment.negativeDeltaTotal,
     confidence: params.classification.confidence,
     applyEligible:
-      params.classification.applyEligible &&
-      adjustment.positiveDeltaTotal > RECONCILIATION_EPSILON,
+      params.classification.applyEligible && adjustment.positiveDeltaTotal > RECONCILIATION_EPSILON,
     pricedToolScope: params.pricedToolScope,
     primaryClass: params.classification.primaryClass,
     warnings: [...new Set([...params.classification.warnings, ...params.warnings])],
@@ -2377,9 +2353,7 @@ function buildShadowRecord(params: {
 /**
  * Maps a shadow reprice record into the verify-costs API response shape.
  */
-export function toVerifyExecutionCostsResponse(
-  record: HistoricalReconcileShadowRecord
-): {
+export function toVerifyExecutionCostsResponse(record: HistoricalReconcileShadowRecord): {
   executionId: string
   workflowId: string | null
   workspaceId: string
@@ -2830,15 +2804,12 @@ export function parseHistoricalReconcileShadowRecord(
       positiveDelta: typeof parsed.positiveDelta === 'number' ? parsed.positiveDelta : 0,
       negativeDelta: typeof parsed.negativeDelta === 'number' ? parsed.negativeDelta : 0,
       confidence: parsed.confidence ?? 'low',
-      applyEligible:
-        parsed.applyEligible === true && typeof parsed.pricedToolScope === 'boolean',
+      applyEligible: parsed.applyEligible === true && typeof parsed.pricedToolScope === 'boolean',
       pricedToolScope: parsed.pricedToolScope === true,
       primaryClass: parsed.primaryClass ?? 'missing_trace_data',
       warnings: [
         ...(Array.isArray(parsed.warnings) ? parsed.warnings : []),
-        ...(typeof parsed.pricedToolScope === 'boolean'
-          ? []
-          : [MISSING_PRICED_TOOL_SCOPE_WARNING]),
+        ...(typeof parsed.pricedToolScope === 'boolean' ? [] : [MISSING_PRICED_TOOL_SCOPE_WARNING]),
       ],
       blockers: Array.isArray(parsed.blockers) ? parsed.blockers : [],
       targets: parsed.targets,
@@ -2906,10 +2877,7 @@ export async function applyHistoricalReconciliation(params: {
     }
   }
 
-  const billingContext = deriveBillingContext(
-    userId,
-    await getHighestPrioritySubscription(userId)
-  )
+  const billingContext = deriveBillingContext(userId, await getHighestPrioritySubscription(userId))
 
   const startedAt = new Date(record.startedAt)
   if (Number.isNaN(startedAt.getTime())) {
@@ -2980,8 +2948,7 @@ export async function applyHistoricalReconciliation(params: {
         .where(eq(workflowExecutionLogs.executionId, record.executionId))
     })
 
-    const status: HistoricalReconcileApplyStatus =
-      entriesInserted > 0 ? 'applied' : 'unchanged'
+    const status: HistoricalReconcileApplyStatus = entriesInserted > 0 ? 'applied' : 'unchanged'
 
     return {
       executionId: record.executionId,
@@ -3242,16 +3209,14 @@ export const HISTORICAL_RECONCILE_ROLLOUT_STEPS: HistoricalReconcileRolloutStep[
   {
     step: 8,
     name: 'post_pilot_verify',
-    description:
-      'Re-run drift audit and ledger projection verification for the pilot workspace.',
+    description: 'Re-run drift audit and ledger projection verification for the pilot workspace.',
     command:
       'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --verify --workspace-id=<workspace-id> --batch-size=1000',
   },
   {
     step: 9,
     name: 'production_apply',
-    description:
-      'Apply in small production batches only after pilot verification passes.',
+    description: 'Apply in small production batches only after pilot verification passes.',
     command:
       'bun --env-file=apps/sim/.env run scripts/reconcile-historical-workflow-costs.ts --apply --input=reconcile-shadow.ndjson --batch-size=500 --confirm-production --only-priced-tools',
   },
@@ -3359,9 +3324,7 @@ export interface PostApplyVerificationSummary {
 }
 
 function ledgerLinesToBilledMap(lines: LedgerLineSummary[]): Map<string, number> {
-  return new Map(
-    lines.map((line) => [ledgerLineKey(line.category, line.description), line.cost])
-  )
+  return new Map(lines.map((line) => [ledgerLineKey(line.category, line.description), line.cost]))
 }
 
 function upsertShadowDeltaBucket(
@@ -3460,11 +3423,7 @@ export function aggregateShadowDeltaReview(
     eligiblePositiveDelta += record.positiveDelta
     eligibleNegativeDelta += record.negativeDelta
     upsertShadowDeltaBucket(byWorkspace, record.workspaceId, record)
-    upsertShadowDeltaBucket(
-      byWorkflow,
-      record.workflowId ?? '(no-workflow)',
-      record
-    )
+    upsertShadowDeltaBucket(byWorkflow, record.workflowId ?? '(no-workflow)', record)
 
     const alreadyBilled = ledgerLinesToBilledMap(record.ledgerLines ?? [])
     for (const line of record.targets) {
@@ -4175,7 +4134,9 @@ export function evaluateApplyRolloutGates(params: {
   const hasPilotScope =
     Boolean(filter.workspaceId) ||
     Boolean(filter.executionId) ||
-    (filter.limit != null && filter.limit > 0 && filter.limit <= HISTORICAL_RECONCILE_PILOT_MAX_RECORDS)
+    (filter.limit != null &&
+      filter.limit > 0 &&
+      filter.limit <= HISTORICAL_RECONCILE_PILOT_MAX_RECORDS)
 
   const effectiveCount =
     filter.limit != null && filter.limit > 0

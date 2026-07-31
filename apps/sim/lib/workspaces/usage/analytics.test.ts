@@ -385,7 +385,13 @@ describe('getWorkspaceUsageAnalytics reconciliation', () => {
     })
 
     expect(analytics.bySource).toEqual([
-      expect.objectContaining({ source: 'workflow', label: 'Workflow', billableCost: 4, rawCost: 4, count: 1 }),
+      expect.objectContaining({
+        source: 'workflow',
+        label: 'Workflow',
+        billableCost: 4,
+        rawCost: 4,
+        count: 1,
+      }),
     ])
     expect(analytics.summary.billableCost).toBe(4)
   })

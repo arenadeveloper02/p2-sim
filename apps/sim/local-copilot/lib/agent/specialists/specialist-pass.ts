@@ -199,15 +199,15 @@ export async function executeSpecialistLoop(
         break
       }
 
-    if (roundInputTokens > 0 || roundOutputTokens > 0) {
-      // Accumulate into the parent turn ledger — do not call recordModelUsage
-      // here (that writes null chat_id rows and can double-count vs end-of-turn).
-      params.turnCost.addModelUsage({
-        model: params.model,
-        inputTokens: roundInputTokens,
-        outputTokens: roundOutputTokens,
-      })
-    }
+      if (roundInputTokens > 0 || roundOutputTokens > 0) {
+        // Accumulate into the parent turn ledger — do not call recordModelUsage
+        // here (that writes null chat_id rows and can double-count vs end-of-turn).
+        params.turnCost.addModelUsage({
+          model: params.model,
+          inputTokens: roundInputTokens,
+          outputTokens: roundOutputTokens,
+        })
+      }
       if (roundInputTokens > 0 || roundOutputTokens > 0) {
         await recordModelUsage({
           userId: params.userId,
@@ -226,7 +226,7 @@ export async function executeSpecialistLoop(
         depth: entered.depth,
         round,
         usageTurnId: params.usageTurnId,
-      toolCallCount: pendingToolCalls.length,
+        toolCallCount: pendingToolCalls.length,
         toolNames: pendingToolCalls.map((call) => call.name),
         budget: params.budget.snapshot(),
         memory: getLocalCopilotMemorySnapshot(),
@@ -334,10 +334,10 @@ export async function executeSpecialistLoop(
           ...(toolResult.resources?.length ? { resources: toolResult.resources } : {}),
         })
 
-      params.turnCost.addToolBilling({
-        toolName: call.name,
-        billing: toolResult.billing,
-      })
+        params.turnCost.addToolBilling({
+          toolName: call.name,
+          billing: toolResult.billing,
+        })
       }
     }
 

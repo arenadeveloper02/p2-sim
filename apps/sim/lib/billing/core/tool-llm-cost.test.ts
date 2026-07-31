@@ -76,7 +76,12 @@ describe('tool-llm-cost', () => {
         content: 'ok',
         model: 'gpt-4o',
         tokens: { input: 10, output: 20, total: 30 },
-        cost: { input: 0.01, output: 0.02, total: 0.03, pricing: { input: 1, output: 2, updatedAt: '' } },
+        cost: {
+          input: 0.01,
+          output: 0.02,
+          total: 0.03,
+          pricing: { input: 1, output: 2, updatedAt: '' },
+        },
       })
       expect(fields).toEqual({
         model: 'gpt-4o',

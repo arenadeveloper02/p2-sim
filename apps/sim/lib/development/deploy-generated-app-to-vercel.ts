@@ -540,10 +540,7 @@ async function waitForAutoDeployReady(
     const hasInFlight = listed.some((deployment) => {
       const state = (deployment.readyState ?? deployment.state)?.toUpperCase()
       return (
-        state === 'BUILDING' ||
-        state === 'QUEUED' ||
-        state === 'INITIALIZING' ||
-        state === 'READY'
+        state === 'BUILDING' || state === 'QUEUED' || state === 'INITIALIZING' || state === 'READY'
       )
     })
 
@@ -984,15 +981,12 @@ export async function deployPreparedVercelProject(
             resolvedCommitSha
           )
           if (recovered) {
-            logger.warn(
-              'Vercel deploy path errored, recovering from READY production deployment',
-              {
-                projectId: project.id,
-                commitSha: resolvedCommitSha,
-                recoveredDeploymentId: recovered.id,
-                error: message,
-              }
-            )
+            logger.warn('Vercel deploy path errored, recovering from READY production deployment', {
+              projectId: project.id,
+              commitSha: resolvedCommitSha,
+              recoveredDeploymentId: recovered.id,
+              error: message,
+            })
             return toDeploySuccessResult(recovered, project, input)
           }
         }

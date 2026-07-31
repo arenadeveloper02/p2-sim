@@ -27,9 +27,7 @@ export function CostBreakdownTable<T>({
   getRowKey,
 }: CostBreakdownTableProps<T>) {
   if (rows.length === 0) {
-    return (
-      <p className='py-6 text-center text-[var(--text-muted)] text-small'>{emptyMessage}</p>
-    )
+    return <p className='py-6 text-center text-[var(--text-muted)] text-small'>{emptyMessage}</p>
   }
 
   return (

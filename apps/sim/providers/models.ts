@@ -3516,7 +3516,10 @@ function matchesCatalogModelId(candidate: string, catalogId: string): boolean {
  */
 export function findCatalogModel(
   modelId: string
-): { providerId: string; model: (typeof PROVIDER_DEFINITIONS)[keyof typeof PROVIDER_DEFINITIONS]['models'][number] } | null {
+): {
+  providerId: string
+  model: (typeof PROVIDER_DEFINITIONS)[keyof typeof PROVIDER_DEFINITIONS]['models'][number]
+} | null {
   const trimmed = modelId.trim()
   if (!trimmed) return null
 

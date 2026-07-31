@@ -30,10 +30,7 @@ type LookupColumn = 'id' | 'executionId'
 
 type LedgerItem = CostLedger['items'][number]
 
-function mergeLedgerMetadata(
-  existing: LedgerItem,
-  metadata: ModelUsageMetadata
-): void {
+function mergeLedgerMetadata(existing: LedgerItem, metadata: ModelUsageMetadata): void {
   if (typeof metadata.inputTokens === 'number') {
     existing.inputTokens = Math.max(existing.inputTokens ?? 0, metadata.inputTokens)
   }
@@ -74,7 +71,10 @@ export function buildAdditiveCostLeaves(
   traceSpans?: TraceSpan[]
 ): AdditiveCostLeaf[] {
   const enrichedItems = items.map((item) => {
-    const copy = { ...item, embeddedTools: item.embeddedTools ? [...item.embeddedTools] : undefined }
+    const copy = {
+      ...item,
+      embeddedTools: item.embeddedTools ? [...item.embeddedTools] : undefined,
+    }
     enrichModelItemFromTrace(copy, traceSpans)
     return copy
   })
