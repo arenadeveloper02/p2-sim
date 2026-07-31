@@ -30,13 +30,28 @@ export function runVerification(): VerifyResult[] {
  * blocked by mechanical style drift (common with conflict resolutions).
  */
 export function autofixFormat(): VerifyResult {
+  const command = 'TURBO_FORCE=1 bun run format && bunx biome format --write .'
   try {
-    const output = execSync('bun run format', { encoding: 'utf8', stdio: 'pipe' })
-    return { command: 'bun run format', success: true, output }
+    const parts: string[] = []
+    parts.push(
+      execSync('TURBO_FORCE=1 bun run format', {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        cwd: process.cwd(),
+      })
+    )
+    parts.push(
+      execSync('bunx biome format --write .', {
+        encoding: 'utf8',
+        stdio: 'pipe',
+        cwd: process.cwd(),
+      })
+    )
+    return { command, success: true, output: parts.join('\n') }
   } catch (error) {
     const err = error as { stdout?: string; stderr?: string; message?: string }
     const output = [err.stdout, err.stderr, err.message].filter(Boolean).join('\n')
-    return { command: 'bun run format', success: false, output }
+    return { command, success: false, output }
   }
 }
 
