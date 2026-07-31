@@ -49,6 +49,20 @@ Grill analysis stands unchanged on resume. Two harness verification-failure noti
 
 No new open questions — no duplicate PR comment posted per resume-mode rules.
 
+### Resume note 2 (2026-07-31) — `bun run test` failure analysis
+
+A third harness verification-failure notice was logged after the first resume note: `bun run test` at 14:00:33Z (grill-log entry 5). This resolves mechanically (fork-first test alignment) and was already fixed on the sync branch by commit `86c4d824b` ("align utils.test with fork model catalog") at 14:09Z — no fork-vs-upstream product decision.
+
+**Root cause (verified, not #5559-related).** The failure was 11 assertions in `apps/sim/providers/utils.test.ts` (`supportsTemperature`, `getMaxTemperature`, `supportsReasoningEffort`, `supportsVerbosity`, the `MODELS_TEMP_RANGE_0_2` / `MODELS_WITH_REASONING_EFFORT` / `MODELS_WITH_VERBOSITY` constant checks, Azure GPT-5.2 reasoning/max-output, and `getHostedModels`). None stem from upstream #5559 — that commit only touches Gemini/Anthropic wire format and their catalog entries. Verified #5559's actual fixes DID land on HEAD: `ANTHROPIC_MIN_BUDGET_TOKENS = 1024` (`anthropic/core.ts:91`) and the Gemini 2.5-series `thinkingBudget` branch (`gemini/core.ts:957-973`); `7d1c927a` is an ancestor of HEAD.
+
+**Why it failed.** The assertions reference upstream models the fork has **intentionally disabled or diverged**, while the test was never updated to match:
+- `azure/*`, `deepseek-v3`/`deepseek-chat`, `mistral-*` are **commented out** in the fork's `models.ts` (confirmed pre-existing on target branch `feat/github-merge-agent`: `deepseek-v3` commented at its line 1936; active upstream at merge-base `e2fecc86` line 1864). A commented-out entry cannot appear in the derived capability arrays, so e.g. `MODELS_TEMP_RANGE_0_2.toContain('deepseek-v3')` deterministically fails.
+- `grok-4-latest` is a **fork-added hosted** model (active `models.ts:2040`), so the upstream assertion `getHostedModels()` should *not* include it fails.
+
+This is a pre-existing fork divergence (disabled providers + fork-added hosted models) whose stale test assertions surfaced during this run's verification. The fix commit `86c4d824b` removed exactly those stale references — aligning the fork's test to the fork's actual catalog. Confirmed: `bunx vitest run providers/utils.test.ts` now passes (151/151); reverting to the pre-fix test reproduces exactly the 11 failures.
+
+**Decision:** fork-first, mechanical. Keep `86c4d824b`. No PR question — codebase + policy fully resolve it. Follow-up hygiene (non-blocking, not a sync decision): the fork should keep `utils.test.ts` in sync whenever it comments providers out of `models.ts`, to prevent the test from going red on the next upstream merge.
+
 ## Usage
 
 ### parent-grill-analysis
