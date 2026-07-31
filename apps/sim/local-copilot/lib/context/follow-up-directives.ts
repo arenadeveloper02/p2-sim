@@ -6,7 +6,8 @@ export const DIRECTIVE_MAX_CHARS = 280
 /** Max constraints retained in session memory / prompt. */
 export const SESSION_CONSTRAINTS_MAX = 12
 
-export const ACTIVE_DIRECTIVE_SYSTEM_PREFIX = 'Active user directive (authoritative until superseded):'
+export const ACTIVE_DIRECTIVE_SYSTEM_PREFIX =
+  'Active user directive (authoritative until superseded):'
 
 export const SESSION_CONSTRAINTS_SYSTEM_PREFIX =
   'Session constraints (honor unless the user explicitly overrides):'
@@ -60,7 +61,14 @@ export function preferenceKeyFromText(text: string): string {
 }
 
 function cleanSnippet(raw: string): string {
-  return truncate(raw.replace(/\s+/g, ' ').trim().replace(/^[,:.\-\s]+/, ''), DIRECTIVE_MAX_CHARS, '')
+  return truncate(
+    raw
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^[,:.\-\s]+/, ''),
+    DIRECTIVE_MAX_CHARS,
+    ''
+  )
 }
 
 function uniqueStrings(items: string[]): string[] {

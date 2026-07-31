@@ -65,7 +65,10 @@ export const GET = withRouteHandler(
         workspaceId,
         error: message,
       })
-      return NextResponse.json({ error: 'Failed to compute workspace usage analytics' }, { status: 500 })
+      return NextResponse.json(
+        { error: 'Failed to compute workspace usage analytics' },
+        { status: 500 }
+      )
     }
   }
 )

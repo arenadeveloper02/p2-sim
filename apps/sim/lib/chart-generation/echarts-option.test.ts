@@ -214,7 +214,9 @@ describe('extractChartsFromData', () => {
   })
 
   it('returns an empty array for text-only / non-chart data', () => {
-    expect(extractChartsFromData({ content: 'no chart here', toolCalls: { list: [], count: 0 } })).toEqual([])
+    expect(
+      extractChartsFromData({ content: 'no chart here', toolCalls: { list: [], count: 0 } })
+    ).toEqual([])
     expect(extractChartsFromData('plain text')).toEqual([])
     expect(extractChartsFromData(null)).toEqual([])
   })

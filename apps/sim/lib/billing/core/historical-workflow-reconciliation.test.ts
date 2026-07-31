@@ -1747,10 +1747,7 @@ describe('applyHistoricalReconciliation', () => {
     alreadyBilled: Array<{ category: string; description: string; cost: string }>,
     ledgerSumAfter?: number
   ) {
-    const ledgerSumBefore = alreadyBilled.reduce(
-      (sum, row) => sum + Number.parseFloat(row.cost),
-      0
-    )
+    const ledgerSumBefore = alreadyBilled.reduce((sum, row) => sum + Number.parseFloat(row.cost), 0)
     const ledgerSumFinal = ledgerSumAfter ?? ledgerSumBefore
 
     const groupBy = vi.fn().mockResolvedValue(alreadyBilled)
@@ -2372,21 +2369,29 @@ describe('rollout sequence', () => {
 
   it('includes --only-priced-tools on audit, shadow, and apply steps', () => {
     const gated = HISTORICAL_RECONCILE_ROLLOUT_STEPS.filter((step) =>
-      ['evidence_audit', 'staging_shadow', 'delta_review', 'pilot_apply', 'production_apply'].includes(
-        step.name
-      )
+      [
+        'evidence_audit',
+        'staging_shadow',
+        'delta_review',
+        'pilot_apply',
+        'production_apply',
+      ].includes(step.name)
     )
     expect(gated.every((step) => step.command.includes('--only-priced-tools'))).toBe(true)
   })
 
   it('includes projection repair before evidence audit', () => {
-    const repair = HISTORICAL_RECONCILE_ROLLOUT_STEPS.find((step) => step.name === 'repair_projections')
+    const repair = HISTORICAL_RECONCILE_ROLLOUT_STEPS.find(
+      (step) => step.name === 'repair_projections'
+    )
     expect(repair?.command).toContain('--repair-projections')
     expect(repair?.command).toContain('--write')
   })
 
   it('includes metadata-only breakdown backfill after pilot apply', () => {
-    const step = HISTORICAL_RECONCILE_ROLLOUT_STEPS.find((item) => item.name === 'backfill_breakdowns')
+    const step = HISTORICAL_RECONCILE_ROLLOUT_STEPS.find(
+      (item) => item.name === 'backfill_breakdowns'
+    )
     expect(step?.command).toContain('--backfill-breakdowns')
     expect(step?.command).toContain('--write')
   })

@@ -115,9 +115,7 @@ export function LineagePanel({
               key: 'cost',
               header: 'Credits',
               align: 'right',
-              render: (row) => (
-                <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
-              ),
+              render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
             },
             {
               key: 'execution',
@@ -184,10 +182,7 @@ export function LineagePanel({
             header: 'Inclusive credits',
             align: 'right',
             render: (row) => (
-              <CostCell
-                billableCost={row.inclusiveBillableCost}
-                rawCost={row.inclusiveRawCost}
-              />
+              <CostCell billableCost={row.inclusiveBillableCost} rawCost={row.inclusiveRawCost} />
             ),
           },
           {

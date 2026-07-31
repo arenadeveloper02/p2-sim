@@ -18,7 +18,10 @@ import { addCorsHeaders } from '@/app/api/chat/utils'
 const logger = createLogger('DeployedChatThreadAPI')
 
 export const PATCH = withRouteHandler(
-  async (request: NextRequest, context: { params: Promise<{ identifier: string; chatId: string }> }) => {
+  async (
+    request: NextRequest,
+    context: { params: Promise<{ identifier: string; chatId: string }> }
+  ) => {
     const requestId = generateRequestId()
     const parsed = await parseRequest(updateDeployedChatThreadContract, request, context)
     if (!parsed.success) {
@@ -74,13 +77,20 @@ export const PATCH = withRouteHandler(
       return addCorsHeaders(createErrorResponse('Thread not found', 404), request)
     }
 
-    logger.info(`[${requestId}] Updated deployed chat thread`, { identifier, chatId, executingUserId })
+    logger.info(`[${requestId}] Updated deployed chat thread`, {
+      identifier,
+      chatId,
+      executingUserId,
+    })
     return addCorsHeaders(NextResponse.json({ success: true as const }), request)
   }
 )
 
 export const DELETE = withRouteHandler(
-  async (request: NextRequest, context: { params: Promise<{ identifier: string; chatId: string }> }) => {
+  async (
+    request: NextRequest,
+    context: { params: Promise<{ identifier: string; chatId: string }> }
+  ) => {
     const requestId = generateRequestId()
     const parsed = await parseRequest(deleteDeployedChatThreadContract, request, context)
     if (!parsed.success) {
@@ -123,7 +133,11 @@ export const DELETE = withRouteHandler(
       return addCorsHeaders(createErrorResponse('Thread not found', 404), request)
     }
 
-    logger.info(`[${requestId}] Archived deployed chat thread`, { identifier, chatId, executingUserId })
+    logger.info(`[${requestId}] Archived deployed chat thread`, {
+      identifier,
+      chatId,
+      executingUserId,
+    })
     return addCorsHeaders(NextResponse.json({ success: true as const }), request)
   }
 )

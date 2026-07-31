@@ -1,5 +1,11 @@
 import { db } from '@sim/db'
-import { usageLog, workflow, workflowBlocks, workflowEdges, workflowExecutionLogs } from '@sim/db/schema'
+import {
+  usageLog,
+  workflow,
+  workflowBlocks,
+  workflowEdges,
+  workflowExecutionLogs,
+} from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { BlockType } from '@/executor/constants'
@@ -121,7 +127,10 @@ export function collectTraceExecutionArtifacts(traceSpans: TraceSpanLike[] | und
   return { blockStates, blockLogs }
 }
 
-export function resolveExternalDescription(blockName: string, raw: Record<string, unknown>): string {
+export function resolveExternalDescription(
+  blockName: string,
+  raw: Record<string, unknown>
+): string {
   const label = typeof raw.label === 'string' ? raw.label.trim() : ''
   const vendor = typeof raw.vendor === 'string' ? raw.vendor.trim() : ''
   return blockName.trim() || label || vendor || 'external'
@@ -340,9 +349,7 @@ async function repriceCostBlocksForExecution(params: {
   return targets
 }
 
-export async function loadAlreadyBilledExternal(
-  executionId: string
-): Promise<Map<string, number>> {
+export async function loadAlreadyBilledExternal(executionId: string): Promise<Map<string, number>> {
   const rows = await db
     .select({
       description: usageLog.description,

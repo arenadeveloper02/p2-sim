@@ -1,10 +1,5 @@
 import { db } from '@sim/db'
-import {
-  document,
-  embedding,
-  knowledgeBase,
-  knowledgeBaseTagDefinitions,
-} from '@sim/db/schema'
+import { document, embedding, knowledgeBase, knowledgeBaseTagDefinitions } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage, getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'

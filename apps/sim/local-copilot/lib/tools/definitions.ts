@@ -96,7 +96,8 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
         blockNames: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Optional block display names (e.g. ["Writer","Reviewer"]) to return with full subBlock values',
+          description:
+            'Optional block display names (e.g. ["Writer","Reviewer"]) to return with full subBlock values',
         },
       },
       additionalProperties: false,

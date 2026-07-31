@@ -14,10 +14,7 @@ const logger = createLogger('DeployedChatAgentDetailAPI')
  * Returns a single agent (chat deployment) by id, using the same response shape
  * as one item from GET /api/chat/agentsList. Auth matches the list endpoint.
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const authError = verifyCronAuth(request, 'Schedule execution')
   if (authError) {
     return authError
