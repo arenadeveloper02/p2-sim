@@ -42,15 +42,6 @@ None. Everything resolves mechanically from `merge-policy.json` (fork-first on t
 
 ## Usage
 
-### parent-grill-analysis
-- **Model:** `claude-opus-4-8`
-- **Iterations:** 1
-- **Input tokens (direct):** 28
-- **Input tokens (cache read):** 733,325
-- **Input tokens (cache create):** 47,762
-- **Input tokens (total):** 781,115
-- **Output tokens:** 10,208
-- **Cost:** $0.921939 (provider-reported)
 ### child-cluster-1
 - **Model:** `claude-sonnet-4-6`
 - **Iterations:** 1
@@ -60,16 +51,25 @@ None. Everything resolves mechanically from `merge-policy.json` (fork-first on t
 - **Input tokens (total):** 795,370
 - **Output tokens:** 3,768
 - **Cost:** $0.492566 (provider-reported)
+### parent-grill-analysis
+- **Model:** `claude-opus-4-8`
+- **Iterations:** 1
+- **Input tokens (direct):** 28
+- **Input tokens (cache read):** 733,325
+- **Input tokens (cache create):** 47,762
+- **Input tokens (total):** 781,115
+- **Output tokens:** 10,208
+- **Cost:** $0.921939 (provider-reported)
 
 ### Totals
 - **Total input tokens:** 1,576,485
 - **Total output tokens:** 13,976
-- **Primary models:** claude-opus-4-8, claude-sonnet-4-6
+- **Primary models:** claude-sonnet-4-6, claude-opus-4-8
 - **Provider-reported cost:** $1.414505
 
 ### Cost by agent
-- **parent-grill-analysis:** $0.921939 (provider-reported)
 - **child-cluster-1:** $0.492566 (provider-reported)
+- **parent-grill-analysis:** $0.921939 (provider-reported)
 
 ## Format
 

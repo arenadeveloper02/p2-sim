@@ -1,0 +1,19 @@
+{
+  "kind": "awaiting_input",
+  "title": "Verification failed",
+  "detail": "Fix failures on `upstream-sync/2026-07-31T13-18-50`, then reply /upstream-sync resume.",
+  "syncBranch": "upstream-sync/2026-07-31T13-18-50",
+  "mergeBase": "feat/github-merge-agent",
+  "upstreamSha": "7d1c927ab14a921fb0f74963863abc8d99ddbeaf",
+  "prNumber": 674,
+  "commitCount": 1,
+  "verification": [
+    {
+      "command": "bun run check",
+      "success": false,
+      "detail": "• Packages in scope: @sim/audit, @sim/auth, @sim/db, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk\n   • Running format:check in 21 packages\n   • Remote caching disabled\n\n::group::@sim/platform-authz:format:check\ncache miss, executing 20bfbd17ba902713\n$ biome format .\nChecked 5 files in 35ms. No fixes applied.\n::endgroup::\n::group::simstudio:format:check\ncache miss, executing db888607b0259b5e\n$ biome format .\nChecked 3 files in 32ms. No fixes applied.\n::endgroup::\n::group::@sim/auth:format:check\ncache miss, executing 7b95f933c974b740\n$ biome format .\nChecked 3 files in 26ms. No fixes applied.\n::endgroup::\n::group::@sim/runtime-secrets:format:check\ncache miss, executing 54427b0fcf80d46c\n$ biome format .\nChecked 5 files in 26ms. No fixes applied.\n::endgroup::\n::group::@sim/realtime-protocol:format:check\ncache miss, executing 11ef7410ee5e5d5c\n$ biome format .\nChecked 5 files in 36ms. No fixes applied.\n::endgroup::\n::group::simstudio-ts-sdk:format:check\n\n…(truncated)"
+    }
+  ],
+  "runId": "2026-07-31",
+  "recordedAt": "2026-07-31T13:23:39.866Z"
+}
