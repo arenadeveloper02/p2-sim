@@ -21,14 +21,22 @@ import {
 import {
   usageActorTypeSchema,
   usageChargeTypeSchema,
+  usageLogSourceSchema,
   type UsageChargeTypeValue,
+  type UsageLogSourceValue,
 } from '@/lib/api/contracts/workspace-usage'
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
 import { COPILOT_USAGE_SOURCES } from '@/lib/billing/core/usage-log'
-import { parseDecimal, parseIntMetric, sortByBillableCostDesc } from '@/lib/workspaces/usage/ledger-utils'
+import {
+  normalizeBucketKey,
+  parseDecimal,
+  parseIntMetric,
+  sortByBillableCostDesc,
+} from '@/lib/workspaces/usage/ledger-utils'
 
 export {
   averageBillableCostPerRun,
+  normalizeBucketKey,
   parseDecimal,
   parseIntMetric,
   sortByAverageBillableCostPerRunDesc,
@@ -273,16 +281,65 @@ export function usageMetricsSelect() {
 }
 
 export function mapUsageMetrics(row: {
-  inputTokens?: number | string | null
-  outputTokens?: number | string | null
-  totalTokens?: number | string | null
-  invocationCount?: number | string | null
+  inputTokens?: number | string | bigint | null
+  outputTokens?: number | string | bigint | null
+  totalTokens?: number | string | bigint | null
+  invocationCount?: number | string | bigint | null
 }): UsageMetrics {
   return {
     inputTokens: parseIntMetric(row.inputTokens),
     outputTokens: parseIntMetric(row.outputTokens),
     totalTokens: parseIntMetric(row.totalTokens),
     invocationCount: parseIntMetric(row.invocationCount),
+  }
+}
+
+const SOURCE_LABEL_FALLBACK: Record<UsageLogSourceValue, string> = {
+  workflow: 'Workflow',
+  wand: 'Wand',
+  copilot: 'Copilot',
+  'workspace-chat': 'Mothership',
+  mcp_copilot: 'MCP copilot',
+  mothership_block: 'Mothership block',
+  'knowledge-base': 'Knowledge base',
+  'voice-input': 'Voice input',
+  enrichment: 'Enrichment',
+}
+
+/**
+ * Maps a bySource SQL row into a contract-safe bucket. Invalid ledger sources are
+ * skipped (logged by the caller) so a single bad enum value cannot 500 the page
+ * or fail client contract validation for the whole response.
+ */
+export function mapBySourceBucketRow(row: {
+  source: unknown
+  label?: string | null
+  billableCost: string | null | undefined
+  rawCost: string | null | undefined
+  count: number | string | bigint | null | undefined
+  inputTokens?: number | string | bigint | null
+  outputTokens?: number | string | bigint | null
+  totalTokens?: number | string | bigint | null
+  invocationCount?: number | string | bigint | null
+}): {
+  source: UsageLogSourceValue
+  label: string
+  billableCost: number
+  rawCost: number
+  count: number
+  usage: UsageMetrics
+} | null {
+  const parsed = usageLogSourceSchema.safeParse(row.source)
+  if (!parsed.success) return null
+
+  const source = parsed.data
+  return {
+    source,
+    label: normalizeBucketKey(row.label, SOURCE_LABEL_FALLBACK[source]),
+    billableCost: parseDecimal(row.billableCost),
+    rawCost: parseDecimal(row.rawCost),
+    count: parseIntMetric(row.count),
+    usage: mapUsageMetrics(row),
   }
 }
 
@@ -637,10 +694,10 @@ export function mapExpensiveCopilotChatRows(
       title: row.title,
       chatType: parseChatType(row.chatType),
       userId: row.userId,
-      runCount: row.runCount,
+      runCount: parseIntMetric(row.runCount),
       billableCost: parseDecimal(row.billableCost),
       rawCost: parseDecimal(row.rawCost),
-      count: row.count,
+      count: parseIntMetric(row.count),
     }))
   ).slice(0, limit)
 }
@@ -693,10 +750,10 @@ export function mapExpensiveWorkflowRows(
       workspaceName: row.workspaceName,
       workflowId: row.workflowId,
       workflowName: row.workflowName,
-      executionCount: row.executionCount,
+      executionCount: parseIntMetric(row.executionCount),
       billableCost: parseDecimal(row.billableCost),
       rawCost: parseDecimal(row.rawCost),
-      count: row.count,
+      count: parseIntMetric(row.count),
     }))
   ).slice(0, limit)
 }

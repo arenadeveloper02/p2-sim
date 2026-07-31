@@ -6,12 +6,29 @@ export function parseDecimal(value: string | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-export function parseIntMetric(value: string | number | null | undefined): number {
+export function parseIntMetric(value: string | number | bigint | null | undefined): number {
+  if (typeof value === 'bigint') {
+    if (value <= 0n) return 0
+    if (value > BigInt(Number.MAX_SAFE_INTEGER)) return Number.MAX_SAFE_INTEGER
+    return Number(value)
+  }
   if (typeof value === 'number') return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
-  if (!value) return 0
+  if (value == null || value === '') return 0
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return 0
   return Math.max(0, Math.min(Math.trunc(parsed), Number.MAX_SAFE_INTEGER))
+}
+
+/**
+ * Coerces a bucket key (model, vendor, provider, …) to a non-empty string.
+ * Null/blank keys must not reach `z.string()` response contracts.
+ */
+export function normalizeBucketKey(
+  value: string | null | undefined,
+  fallback = 'unknown'
+): string {
+  const trimmed = value?.trim()
+  return trimmed && trimmed.length > 0 ? trimmed : fallback
 }
 
 /** Sorts cost buckets highest billable cost first. */

@@ -2,6 +2,9 @@ import type { ReactNode } from 'react'
 import { cn } from '@sim/emcn'
 import { formatBillableWithCredits } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 
+/** Rows above this count get a capped, scrollable body so long tables stay compact. */
+const SCROLL_ROW_THRESHOLD = 8
+
 export interface CostBreakdownColumn<T> {
   key: string
   header: string
@@ -19,6 +22,8 @@ interface CostBreakdownTableProps<T> {
 
 /**
  * Simple aligned table for usage cost breakdown rows.
+ * Tables with more than {@link SCROLL_ROW_THRESHOLD} rows scroll vertically
+ * (~8 visible rows) with a sticky header.
  */
 export function CostBreakdownTable<T>({
   columns,
@@ -32,10 +37,17 @@ export function CostBreakdownTable<T>({
     )
   }
 
+  const scrollable = rows.length > SCROLL_ROW_THRESHOLD
+
   return (
-    <div className='overflow-x-auto'>
+    <div
+      className={cn(
+        'overflow-x-auto',
+        scrollable && 'max-h-[22rem] overflow-y-auto [scrollbar-gutter:stable]'
+      )}
+    >
       <table className='w-full min-w-[32rem] border-collapse text-small'>
-        <thead>
+        <thead className={cn(scrollable && 'sticky top-0 z-10 bg-[var(--bg)]')}>
           <tr className='border-[var(--border)] border-b'>
             {columns.map((column) => (
               <th
