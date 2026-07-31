@@ -388,11 +388,17 @@ export const editWorkflowServerTool: BaseServerTool<EditWorkflowParams, unknown>
     })
 
     const sanitizationWarnings = validation.warnings.length > 0 ? validation.warnings : undefined
+    const hasPartialApply =
+      Boolean(inputErrors?.length) || Boolean(genuineSkippedItems.length > 0)
 
     return {
       success: true,
       workflowId,
       workflowName: workflowName ?? 'Workflow',
+      message: hasPartialApply
+        ? 'Workflow saved with partial changes — some operations were skipped or inputs rejected. Review skippedItems/inputValidationErrors and call edit_workflow again with corrections.'
+        : 'Workflow updated successfully.',
+      partialApply: hasPartialApply,
       workflowState: { ...finalWorkflowState, blocks: layoutedBlocks },
       workflowLint,
       ...(workflowLintMessage && { workflowLintMessage }),

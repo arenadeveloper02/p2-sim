@@ -172,6 +172,8 @@ export function editWorkflowNeedsFollowUp(output: unknown): boolean {
   const record = asRecord(output)
   if (record.success === false) return true
 
+  if (record.partialApply === true) return true
+
   const skipped = record.skippedItems
   if (Array.isArray(skipped) && skipped.length > 0) return true
 

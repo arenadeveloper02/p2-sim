@@ -64,7 +64,14 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
     if (record.name === 'edit_workflow') {
       const payload = asRecord(record.result)
       const message = typeof payload.message === 'string' ? payload.message.trim() : ''
-      if (message) {
+      if (!record.success) {
+        parts.push(message || 'Could not update the workflow. Check the edit errors and retry.')
+      } else if (payload.partialApply === true || payload.needsFollowUpEdit === true) {
+        parts.push(
+          message ||
+            'Updated the workflow partially — some changes still need a follow-up edit.'
+        )
+      } else if (message) {
         parts.push(truncate(message, GENERIC_MESSAGE_MAX_CHARS))
       } else {
         parts.push('Updated the workflow with the requested blocks and connections.')

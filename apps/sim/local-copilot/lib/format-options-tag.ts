@@ -1,4 +1,5 @@
 import type { OptionsTagData } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags'
+import { normalizeSingleSelectJsonToOptionsTags } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/choice-blocks'
 
 /** Max clickable follow-ups shown in a single assistant reply. */
 export const MAX_SUGGESTED_FOLLOW_UPS = 3
@@ -33,10 +34,12 @@ export function stripOptionsTags(text: string): string {
 
 /**
  * Strips complete options tags and, while streaming, holds back an incomplete
- * trailing `<options` so raw markup never flashes.
+ * trailing `<options` so raw markup never flashes. Also rewrites leaked
+ * `single_select` JSON into `<options>` so choice UIs render correctly.
  */
 export function stripOptionsTagsForDisplay(text: string, isStreaming = false): string {
-  let result = stripOptionsTags(text)
+  let result = normalizeSingleSelectJsonToOptionsTags(text)
+  result = stripOptionsTags(result)
   if (isStreaming) {
     const incompleteIdx = result.search(/<options\b/i)
     if (incompleteIdx !== -1) {
@@ -48,10 +51,12 @@ export function stripOptionsTagsForDisplay(text: string, isStreaming = false): s
 
 /**
  * Extracts option titles from the last `<options>` tag in text (if any).
+ * Also recognizes leaked `single_select` JSON payloads.
  */
 export function extractOptionsTitles(text: string): string[] {
+  const normalized = normalizeSingleSelectJsonToOptionsTags(text)
   let lastBody: string | null = null
-  for (const match of text.matchAll(OPTIONS_TAG_PATTERN)) {
+  for (const match of normalized.matchAll(OPTIONS_TAG_PATTERN)) {
     lastBody = match[1] ?? null
   }
   if (!lastBody) return []
@@ -71,9 +76,12 @@ export function extractOptionsTitles(text: string): string[] {
 }
 
 /**
- * True when the text already contains a complete options tag.
+ * True when the text already contains a complete options tag or single_select JSON.
  */
 export function hasOptionsTag(text: string): boolean {
+  const normalized = normalizeSingleSelectJsonToOptionsTags(text)
   OPTIONS_TAG_PATTERN.lastIndex = 0
-  return OPTIONS_TAG_PATTERN.test(text)
+  return OPTIONS_TAG_PATTERN.test(normalized)
 }
+
+export { normalizeSingleSelectJsonToOptionsTags } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/choice-blocks'

@@ -141,15 +141,43 @@ const BRIDGING_NARRATION_PATTERN =
   /^(?:okay[,.]?\s+|ok[,.]?\s+|sure[,.]?\s+|alright[,.]?\s+)?(?:let me|i(?:'| a)?m going to|i(?:'| wi)?ll|i need to|now i(?:'| wi)?ll|one (?:sec|moment|second)|hang on|give me a (?:sec|moment|second))\b[\s\S]{0,160}$/i
 
 /**
+ * Model announced a mutation ("Now applying…") but produced no tool call.
+ * Treat as bridging so the turn does not settle on intent-only prose.
+ */
+const MUTATION_INTENT_NARRATION_PATTERN =
+  /^(?:okay[,.]?\s+|ok[,.]?\s+|sure[,.]?\s+|alright[,.]?\s+|now[,.]?\s+)?(?:(?:i(?:'| a)?m |i(?:'| wi)?ll |let me )+)?(?:now\s+)?(?:applying|editing|updating|fixing|redeploying|deploying|wiring|patching|saving)\b[\s\S]{0,220}$/i
+
+/**
  * True when prose is only a short bridge into more tool work, not a real answer.
  */
 export function isBridgingAssistantNarration(text: string): boolean {
   const normalized = text.replace(/\s+/g, ' ').trim()
   if (!normalized) return false
-  if (normalized.length > 180) return false
+  if (normalized.length > 220) return false
   if (BRIDGING_NARRATION_PATTERN.test(normalized)) return true
+  if (MUTATION_INTENT_NARRATION_PATTERN.test(normalized)) return true
   // Explicit retry / re-call lines without a substantive finding.
   return /^(?:retrying|re-?trying|trying again)\b[\s\S]{0,120}$/i.test(normalized)
+}
+
+/**
+ * True when the model narrated an imminent edit/deploy/run but did not call a tool.
+ */
+export function isUnfulfilledMutationIntentNarration(text: string): boolean {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  if (!normalized || normalized.length > 220) return false
+  return MUTATION_INTENT_NARRATION_PATTERN.test(normalized)
+}
+
+/**
+ * System nudge when the model described a mutation without issuing the tool call.
+ */
+export function buildUnfulfilledIntentContinuationMessage(): string {
+  return (
+    '[System] You described applying/editing/deploying changes but did not call a tool. ' +
+    'Call the required tool now (usually edit_workflow, or redeploy/deploy_chat if that was the next step). ' +
+    'Do not only narrate the plan.'
+  )
 }
 
 /**

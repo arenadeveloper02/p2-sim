@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { truncate } from '@sim/utils/string'
 import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
@@ -66,19 +67,22 @@ import {
   extractOptionsTitles,
   formatOptionsTag,
   hasOptionsTag,
+  normalizeSingleSelectJsonToOptionsTags,
   stripOptionsTagsForDisplay,
 } from '@/local-copilot/lib/format-options-tag'
 import { formatOAuthConnectCredentialTag } from '@/local-copilot/lib/oauth-connect-text'
 import {
   buildBlocksMetadataReuseSystemMessage,
+  buildUnfulfilledIntentContinuationMessage,
   buildWorkflowBuildCompleteSystemMessage,
   editResultNeedsFollowUp,
-  pendingFollowUpsAreOauthOnly,
-  type PostBuildToolMode,
   isBridgingAssistantNarration,
+  isUnfulfilledMutationIntentNarration,
+  pendingFollowUpsAreOauthOnly,
   shouldStreamAssistantRoundText,
   shouldSynthesizeAssistantSummary,
   stripIdsFromUserFacingText,
+  type PostBuildToolMode,
 } from '@/local-copilot/lib/user-facing-text'
 import {
   appendMessage,
@@ -120,6 +124,8 @@ import { MAX_TOOL_ITERATIONS } from '@/providers'
 const logger = createLogger('LocalCopilotAgent')
 
 const MAX_FORCED_FOLLOW_UP_ROUNDS = 5
+/** Cap for "I am applying…" prose with no tool call — avoid infinite nudge loops. */
+const MAX_INTENT_CONTINUATION_ROUNDS = 2
 
 const SYSTEM_PROMPT = `You are Arena Copilot — the in-app AI assistant for building, debugging, and understanding workflows in this workspace.
 
@@ -149,6 +155,7 @@ Response format:
 - Suggested follow-ups (CRITICAL — avoid spam):
   - Emit at most ONE \`<options>\` block, and only in your FINAL reply after all tool work is finished.
   - Never include \`<options>\` while you still plan to call tools, verify config, or continue working.
+  - Never emit raw JSON choice schemas (e.g. \`{"type":"single_select",...}\`). Always wrap choices in \`<options>...</options>\` using the format below.
   - Never restate the same completion summary or options block more than once in a turn.
   - At most 3 options. Omit the options block entirely when no follow-ups are needed.
   - Format (never use markdown bullet lists for suggestions):
@@ -667,6 +674,8 @@ export async function* runLocalCopilotAgent(
   let streamedCreateProgress = false
   let streamedEditProgress = false
   let workflowBuildCompleteNudgeSent = false
+  /** Only gate tools after create→populate this turn — not after ordinary prompt edits. */
+  let createdWorkflowThisTurn = false
   let postBuildToolMode: PostBuildToolMode = 'all'
   let endTurnAfterThisRound = false
   /** Full user-visible prose streamed this turn (survives per-round assistantText resets). */
@@ -675,6 +684,7 @@ export async function* runLocalCopilotAgent(
   const maxToolRounds = MAX_TOOL_ITERATIONS
   let pendingFollowUps: MandatoryFollowUp[] = []
   let forcedFollowUpRounds = 0
+  let forcedIntentContinuations = 0
   let turnInputTokens = 0
   let turnOutputTokens = 0
   const stagnationTracker = createToolStagnationTracker()
@@ -822,6 +832,32 @@ export async function* runLocalCopilotAgent(
           forcedFollowUpRounds,
           pendingFollowUpIds: pendingFollowUps.map((item) => item.id),
           postBuildToolMode,
+        })
+        continue
+      }
+
+      const intentDisplay =
+        stripIdsFromUserFacingText(stripOptionsTagsForDisplay(roundRawText, false)) || roundRawText
+      const canForceIntentContinuation =
+        postBuildToolMode === 'all' &&
+        forcedIntentContinuations < MAX_INTENT_CONTINUATION_ROUNDS &&
+        round < maxToolRounds - 1 &&
+        isUnfulfilledMutationIntentNarration(intentDisplay)
+
+      if (canForceIntentContinuation) {
+        forcedIntentContinuations += 1
+        if (intentDisplay.trim()) {
+          messages.push({ role: 'assistant', content: intentDisplay })
+          assistantText = ''
+        }
+        messages.push({
+          role: 'system',
+          content: buildUnfulfilledIntentContinuationMessage(),
+        })
+        logger.info('Arena Copilot forcing mutation-intent continuation', {
+          round,
+          forcedIntentContinuations,
+          preview: truncate(intentDisplay, 120),
         })
         continue
       }
@@ -1145,6 +1181,7 @@ export async function* runLocalCopilotAgent(
       if (
         call.name === 'edit_workflow' &&
         toolResult.success &&
+        createdWorkflowThisTurn &&
         !editResultNeedsFollowUp(formattedToolResult) &&
         (pendingFollowUps.length === 0 || pendingFollowUpsAreOauthOnly(pendingFollowUps)) &&
         !workflowBuildCompleteNudgeSent
@@ -1185,17 +1222,20 @@ export async function* runLocalCopilotAgent(
 
       // Mid-turn progress for create and a clean populate edit so the panel is
       // not left blank if the final model round is empty/aborted.
-      if (toolResult.success && call.name === 'create_workflow' && !streamedCreateProgress) {
-        const progress = synthesizeAssistantSummaryFromTools([
-          { name: call.name, success: true, result: toolResult.result },
-        ])
-        if (progress?.trim()) {
-          streamedCreateProgress = true
-          const safe = stripIdsFromUserFacingText(progress)
-          const chunk = assistantText ? `\n\n${safe}` : safe
-          assistantText += chunk
-          streamedUserFacingText += chunk
-          yield { type: 'text_delta', content: chunk }
+      if (toolResult.success && call.name === 'create_workflow') {
+        createdWorkflowThisTurn = true
+        if (!streamedCreateProgress) {
+          const progress = synthesizeAssistantSummaryFromTools([
+            { name: call.name, success: true, result: toolResult.result },
+          ])
+          if (progress?.trim()) {
+            streamedCreateProgress = true
+            const safe = stripIdsFromUserFacingText(progress)
+            const chunk = assistantText ? `\n\n${safe}` : safe
+            assistantText += chunk
+            streamedUserFacingText += chunk
+            yield { type: 'text_delta', content: chunk }
+          }
         }
       } else if (
         toolResult.success &&
@@ -1340,6 +1380,10 @@ export async function* runLocalCopilotAgent(
   if (streamedUserFacingText.trim().length > assistantText.trim().length) {
     assistantText = streamedUserFacingText
   }
+
+  // Rewrite leaked single_select JSON into canonical <options> before follow-ups / persist.
+  assistantText = normalizeSingleSelectJsonToOptionsTags(assistantText)
+  streamedUserFacingText = normalizeSingleSelectJsonToOptionsTags(streamedUserFacingText)
 
   // Tool-round / bridging narration is buffered (not streamed) to avoid repeated
   // Arena Copilot headers and empty-looking settles. If the UI never got a real
