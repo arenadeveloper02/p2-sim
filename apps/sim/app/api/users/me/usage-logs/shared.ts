@@ -1,6 +1,12 @@
-import type { UsageLogPeriod } from '@/lib/api/contracts/user'
+import type { UsageLogPeriod, UsageLogSourceGroup } from '@/lib/api/contracts/user'
+import { COPILOT_USAGE_SOURCES, type UsageLogSource } from '@/lib/billing/core/usage-log'
 
-const PERIOD_TO_DAYS: Record<'1d' | '7d' | '30d', number> = { '1d': 1, '7d': 7, '30d': 30 }
+const PERIOD_TO_DAYS: Record<'1d' | '7d' | '30d' | '90d', number> = {
+  '1d': 1,
+  '7d': 7,
+  '30d': 30,
+  '90d': 90,
+}
 
 interface ResolvedDateRange {
   startDate: Date | undefined
@@ -25,4 +31,18 @@ export function resolveDateRange(
   const startDate = new Date()
   startDate.setDate(startDate.getDate() - PERIOD_TO_DAYS[period])
   return { startDate, endDate: new Date() }
+}
+
+/**
+ * Expands Activity detail source tabs into ledger `source` values.
+ * Returns `undefined` when no source filter should be applied.
+ */
+export function resolveUsageLogSources(params: {
+  source?: UsageLogSource
+  sourceGroup?: UsageLogSourceGroup
+}): UsageLogSource[] | undefined {
+  if (params.sourceGroup === 'mothership') return [...COPILOT_USAGE_SOURCES]
+  if (params.sourceGroup === 'workflow') return ['workflow']
+  if (params.source) return [params.source]
+  return undefined
 }
