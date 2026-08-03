@@ -21,6 +21,7 @@ import {
   getReasoningEffortValuesForModel,
   getThinkingLevelsForModel,
   getVerbosityValuesForModel,
+  isAutoModel,
   supportsTemperature,
 } from '@/providers/models'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -520,7 +521,13 @@ Return ONLY the JSON array.`,
         if (!model) {
           throw new Error('No model selected')
         }
-        const tool = getBaseModelProviders()[model]
+        // sim-auto resolves to a concrete pool model at execution time, where
+        // the agent handler derives the provider from the resolved model and
+        // never reads this serialized value. Serialization still needs the
+        // same provider-id shape every other model stores, so look up the
+        // runtime fallback model's provider.
+        const lookupModel = isAutoModel(model) ? 'claude-sonnet-5' : model
+        const tool = getBaseModelProviders()[lookupModel]
         if (!tool) {
           throw new Error(`Invalid model selected: ${model}`)
         }

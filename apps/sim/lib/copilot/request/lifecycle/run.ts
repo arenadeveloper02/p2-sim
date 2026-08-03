@@ -68,6 +68,7 @@ import {
   isHosted,
 } from '@/lib/core/config/env-flags'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
+import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import { shouldRouteToLocalCopilot } from '@/local-copilot/lib/routing'
 
 const logger = createLogger('CopilotLifecycle')
@@ -104,6 +105,7 @@ export interface CopilotLifecycleOptions extends OrchestratorOptions {
   onGoTraceId?: (goTraceId: string) => void
   executionContext?: ExecutionContext
   billingAttribution?: BillingAttributionSnapshot
+  resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry
 }
 
 /**
@@ -170,6 +172,9 @@ export async function runCopilotLifecycle(
             abortSignal: options.abortSignal,
             billingAttribution:
               options.billingAttribution ?? options.executionContext.billingAttribution,
+            ...(options.resolvedSecretTraceRegistry
+              ? { resolvedSecretTraceRegistry: options.resolvedSecretTraceRegistry }
+              : {}),
           },
         }
       : {}),
@@ -186,6 +191,7 @@ export async function runCopilotLifecycle(
       runId: resolvedRunId,
       abortSignal: lifecycleOptions.abortSignal,
       billingAttribution: lifecycleOptions.billingAttribution,
+      resolvedSecretTraceRegistry: lifecycleOptions.resolvedSecretTraceRegistry,
     }))
   const shouldUseHostedBillingProtocol = isHosted && isCopilotBillingAttributionV1Enabled
   if (
@@ -1093,6 +1099,7 @@ async function buildExecutionContext(
     runId?: string
     abortSignal?: AbortSignal
     billingAttribution?: BillingAttributionSnapshot
+    resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry
   }
 ): Promise<ExecutionContext> {
   const {
@@ -1104,6 +1111,7 @@ async function buildExecutionContext(
     runId,
     abortSignal,
     billingAttribution,
+    resolvedSecretTraceRegistry,
   } = params
   const userTimezone =
     typeof requestPayload?.userTimezone === 'string' ? requestPayload.userTimezone : undefined
@@ -1139,6 +1147,9 @@ async function buildExecutionContext(
   execContext.runId = runId
   execContext.abortSignal = abortSignal
   if (billingAttribution) execContext.billingAttribution = billingAttribution
+  if (resolvedSecretTraceRegistry) {
+    execContext.resolvedSecretTraceRegistry = resolvedSecretTraceRegistry
+  }
   return execContext
 }
 

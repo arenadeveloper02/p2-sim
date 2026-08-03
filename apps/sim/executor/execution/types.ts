@@ -11,6 +11,10 @@ import type {
   StartBlockRunMetadata,
   StreamingExecution,
 } from '@/executor/types'
+import type {
+  ResolvedSecretTraceProvenanceV1,
+  ResolvedSecretTraceRegistry,
+} from '@/executor/utils/resolved-secret-trace-registry'
 import type { RunFromBlockContext } from '@/executor/utils/run-from-block'
 import type { SubflowType } from '@/stores/workflows/workflow/types'
 
@@ -98,6 +102,16 @@ export interface SerializableExecutionState {
   deactivatedEdges?: string[]
   nodesWithActivatedEdge?: string[]
   completedPauseContexts?: string[]
+  /** Server execution that produced this state; callers must still verify it against storage. */
+  sourceExecutionId?: string
+  /** Server-only closure authorizing offloaded values carried by trusted restored state. */
+  trustedLargeValueAccess?: {
+    executionIds: string[]
+    largeValueKeys: string[]
+    fileKeys: string[]
+  }
+  /** Encrypted-only provenance for Secrets-tab values resolved during this execution. */
+  resolvedSecretTraceProvenance?: ResolvedSecretTraceProvenanceV1
 }
 
 /**
@@ -154,6 +168,17 @@ export interface ChildWorkflowContext {
   depth: number
 }
 
+export interface BlockCompletionCallbackData {
+  input?: unknown
+  output: NormalizedBlockOutput
+  executionTime: number
+  startedAt: string
+  executionOrder: number
+  endedAt: string
+  /** Per-invocation unique ID linking this workflow block execution to its child block events. */
+  childWorkflowInstanceId?: string
+}
+
 export interface ExecutionCallbacks {
   onStream?: (streamingExec: StreamingExecution) => Promise<void>
   onBlockStart?: (
@@ -168,7 +193,7 @@ export interface ExecutionCallbacks {
     blockId: string,
     blockName: string,
     blockType: string,
-    output: any,
+    output: BlockCompletionCallbackData,
     iterationContext?: IterationContext,
     childWorkflowContext?: ChildWorkflowContext
   ) => Promise<void>
@@ -224,6 +249,7 @@ export interface ContextExtensions {
   }>
   dagIncomingEdges?: Record<string, string[]>
   snapshotState?: SerializableExecutionState
+  resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry
   metadata?: ExecutionMetadata
   /**
    * Trusted run metadata injected into the Start block output when its
@@ -257,16 +283,7 @@ export interface ContextExtensions {
     blockId: string,
     blockName: string,
     blockType: string,
-    output: {
-      input?: any
-      output: NormalizedBlockOutput
-      executionTime: number
-      startedAt: string
-      executionOrder: number
-      endedAt: string
-      /** Per-invocation unique ID linking this workflow block execution to its child block events. */
-      childWorkflowInstanceId?: string
-    },
+    output: BlockCompletionCallbackData,
     iterationContext?: IterationContext,
     childWorkflowContext?: ChildWorkflowContext
   ) => Promise<void>

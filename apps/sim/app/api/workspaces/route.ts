@@ -13,7 +13,10 @@ import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { createDefaultWorkspace, createWorkspace } from '@/lib/workspaces/create-workspace'
 import { listWorkspacesForViewer } from '@/lib/workspaces/list'
-import { getWorkspaceCreationPolicy } from '@/lib/workspaces/policy'
+import {
+  getWorkspaceCreationPolicy,
+  WorkspaceCreationContextChangedError,
+} from '@/lib/workspaces/policy'
 
 const logger = createLogger('Workspaces')
 
@@ -49,11 +52,35 @@ export const GET = withRouteHandler(async (request: Request) => {
       return NextResponse.json({ workspaces: [], lastActiveWorkspaceId, creationPolicy })
     }
 
-    const defaultWorkspace = await createDefaultWorkspace(
-      session.user.id,
-      session.user.name,
-      creationPolicy
-    )
+    let defaultWorkspace: Awaited<ReturnType<typeof createDefaultWorkspace>>
+    try {
+      defaultWorkspace = await createDefaultWorkspace(
+        session.user.id,
+        session.user.name,
+        creationPolicy
+      )
+    } catch (error) {
+      /**
+       * The user joined an organization between the empty list read and the
+       * default-workspace insert. Their workspaces (the join sweep's output)
+       * exist now — re-list and return that instead of failing the load.
+       */
+      if (error instanceof WorkspaceCreationContextChangedError) {
+        logger.info(
+          'Default workspace creation raced an organization membership change; re-listing',
+          {
+            userId: session.user.id,
+          }
+        )
+        const refreshedPayload = await listWorkspacesForViewer({
+          userId: session.user.id,
+          activeOrganizationId,
+          scope,
+        })
+        return NextResponse.json(refreshedPayload)
+      }
+      throw error
+    }
 
     await migrateExistingWorkflows(session.user.id, defaultWorkspace.id)
 
@@ -110,6 +137,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       workspaceMode: creationPolicy.workspaceMode,
       billedAccountUserId: creationPolicy.billedAccountUserId,
       isPersonal: creationPolicy.isPersonal,
+      observedOrganizationId: creationPolicy.observedOrganizationId,
     })
 
     captureServerEvent(
@@ -148,6 +176,15 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
     return NextResponse.json({ workspace: newWorkspace })
   } catch (error) {
+    if (error instanceof WorkspaceCreationContextChangedError) {
+      return NextResponse.json(
+        {
+          error:
+            'Your organization membership changed while this workspace was being created. Please try again.',
+        },
+        { status: 409 }
+      )
+    }
     logger.error('Error creating workspace:', error)
     return NextResponse.json({ error: 'Failed to create workspace' }, { status: 500 })
   }

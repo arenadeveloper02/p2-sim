@@ -18,7 +18,7 @@ import { useRouter } from 'next/navigation'
 import { useQueryStates } from 'nuqs'
 import type { UsageLogEntry, UsageLogPeriod } from '@/lib/api/contracts/user'
 import { formatApportionedCreditCost, formatCreditsLabel } from '@/lib/billing/credits/conversion'
-import { formatDateShort } from '@/app/workspace/[workspaceId]/logs/utils'
+import { formatDateShort } from '@/lib/core/utils/date-display'
 import {
   creditUsageParsers,
   creditUsageUrlKeys,

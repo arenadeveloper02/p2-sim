@@ -88,6 +88,7 @@ export type OAuthProvider =
   | 'calcom'
   | 'docusign'
   | 'facebook-ads'
+  | 'zoho-desk'
 
 export type OAuthService =
   | 'google'
@@ -148,6 +149,7 @@ export type OAuthService =
   | 'facebook-ads'
   | 'github'
   | 'monday'
+  | 'zoho-desk'
 
 export interface OAuthProviderConfig {
   name: string

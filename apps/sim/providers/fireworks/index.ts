@@ -9,10 +9,12 @@ import { formatMessagesForProvider } from '@/providers/attachments'
 import {
   checkForForcedToolUsage,
   createReadableStreamFromOpenAIStream,
+  resolveFireworksWireModel,
   supportsNativeStructuredOutputs,
 } from '@/providers/fireworks/utils'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
 import { createOpenAICompatAssistantHistory } from '@/providers/openai-compat/assistant-history'
+import { executeProviderTool } from '@/providers/runtime-context'
 import { createSettledAgentEventStream } from '@/providers/stream-events'
 import { createStreamingExecution } from '@/providers/streaming-execution'
 import { isAbortError, parseToolArguments } from '@/providers/streaming-tool-loop-shared'
@@ -34,7 +36,6 @@ import {
   prepareToolsWithUsageControl,
   sumToolCosts,
 } from '@/providers/utils'
-import { executeTool } from '@/tools'
 
 const logger = createLogger('FireworksProvider')
 
@@ -89,7 +90,7 @@ export const fireworksProvider: ProviderConfig = {
       baseURL: 'https://api.fireworks.ai/inference/v1',
     })
 
-    const requestedModel = request.model.replace(/^fireworks\//, '')
+    const requestedModel = resolveFireworksWireModel(request.model.replace(/^fireworks\//, ''))
 
     logger.info('Preparing Fireworks request', {
       model: requestedModel,
@@ -165,7 +166,10 @@ export const fireworksProvider: ProviderConfig = {
         )
 
         const streamingResult = createStreamingExecution({
-          model: requestedModel,
+          // Echo the catalog id, never the wire name: it is the billing and
+          // logging identity (cost policy, ledger row, trace span, model
+          // breakdown) the way every other Sim-hosted provider reports it.
+          model: request.model,
           providerStartTime,
           providerStartTimeISO,
           timing: { kind: 'simple', segmentName: request.model },
@@ -181,8 +185,10 @@ export const fireworksProvider: ProviderConfig = {
                 total: usage.total_tokens,
               }
 
+              // Pricing keys on the catalog id (fireworks/<name>), not the wire
+              // name — static hosted entries price; dynamic ids stay unpriced.
               const costResult = calculateCost(
-                requestedModel,
+                request.model,
                 usage.prompt_tokens,
                 usage.completion_tokens
               )
@@ -288,7 +294,7 @@ export const fireworksProvider: ProviderConfig = {
             }
 
             const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-            const result = await executeTool(toolName, executionParams, {
+            const result = await executeProviderTool(toolName, executionParams, {
               signal: request.abortSignal,
             })
             const toolCallEndTime = Date.now()
@@ -547,7 +553,8 @@ export const fireworksProvider: ProviderConfig = {
       }
 
       if (request.stream) {
-        const accumulatedCost = calculateCost(requestedModel, tokens.input, tokens.output)
+        // Pricing keys on the catalog id (fireworks/<name>), not the wire name.
+        const accumulatedCost = calculateCost(request.model, tokens.input, tokens.output)
         const toolCost = sumToolCosts(toolResults)
         const finalCost = {
           input: accumulatedCost.input,
@@ -557,7 +564,7 @@ export const fireworksProvider: ProviderConfig = {
         }
 
         const streamingResult = createStreamingExecution({
-          model: requestedModel,
+          model: request.model,
           providerStartTime,
           providerStartTimeISO,
           timing: {
@@ -591,7 +598,7 @@ export const fireworksProvider: ProviderConfig = {
 
       return {
         content,
-        model: requestedModel,
+        model: request.model,
         tokens,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
         toolResults: toolResults.length > 0 ? toolResults : undefined,

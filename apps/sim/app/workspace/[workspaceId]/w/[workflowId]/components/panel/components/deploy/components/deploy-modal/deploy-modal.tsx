@@ -678,6 +678,7 @@ export function DeployModal({
                   onRefetchChat={handleRefetchChat}
                   chatSubmitting={chatSubmitting}
                   setChatSubmitting={setChatSubmitting}
+                  canRevealPassword={userPermissions.canAdmin}
                   onValidationChange={setIsChatFormValid}
                   onDeploymentComplete={handleCloseModal}
                   onDeployed={handleChatDeployed}

@@ -14,6 +14,7 @@ import {
   AGENT_STREAM_PROTOCOL_V1,
 } from '@/lib/workflows/streaming/agent-stream-protocol'
 import type { InputFormatField } from '@/lib/workflows/types'
+import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
 import {
   ChatErrorState,
   ChatHeader,
@@ -1011,12 +1012,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }
 
   return (
-    <div className='light fixed inset-0 z-[100] flex flex-col bg-[var(--bg)] text-[var(--text-primary)]'>
+    <div className='light desktop-title-bar-page fixed inset-0 z-[100] flex flex-col bg-[var(--bg)] text-[var(--text-primary)]'>
       {isHistoryLoading && (
         <div className='absolute top-[72px] left-[276px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-286px)] items-center justify-center bg-white/60 pb-[6%]'>
           <LoadingAgentP2 size='lg' />
         </div>
       )}
+      <DesktopTitleBarLane />
       {/* Header component */}
       <ChatHeader chatConfig={chatConfig} starCount={starCount} />
 

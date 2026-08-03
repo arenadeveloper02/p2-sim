@@ -1864,3 +1864,40 @@ describe('transformBlockTool image generator agent tool', () => {
     expect(result?.parameters?.required).not.toEqual(expect.arrayContaining(['provider', 'model']))
   })
 })
+
+describe('prepareToolExecution invoker identity hand-off', () => {
+  const tool = { params: {}, parameters: {} }
+
+  /**
+   * A custom block invoked as an agent tool starts its own child execution, and
+   * correlates + cancels against the INVOKING run. That id only reaches it via
+   * `_context`, so this asserts the hand-off rather than any single hop — three
+   * separate fixes each repaired one hop and left the chain broken elsewhere.
+   */
+  it("puts the invoking run's execution id on tool _context", () => {
+    const { executionParams } = prepareToolExecution(
+      tool,
+      {},
+      {
+        workflowId: 'wf-1',
+        workspaceId: 'ws-1',
+        executionId: 'real-execution-id',
+      }
+    )
+
+    expect(executionParams._context.executionId).toBe('real-execution-id')
+  })
+
+  it('omits the execution id when the request carries none', () => {
+    const { executionParams } = prepareToolExecution(
+      tool,
+      {},
+      {
+        workflowId: 'wf-1',
+        workspaceId: 'ws-1',
+      }
+    )
+
+    expect(executionParams._context.executionId).toBeUndefined()
+  })
+})

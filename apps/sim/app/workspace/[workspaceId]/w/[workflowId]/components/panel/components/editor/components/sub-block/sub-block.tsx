@@ -786,6 +786,7 @@ function SubBlockComponent({
               dependsOn={config.dependsOn}
               searchable={config.searchable}
               clearable={config.clearable}
+              preserveLabelCase={config.preserveLabelCase}
             />
           </div>
         )

@@ -4,6 +4,7 @@ import { truncate } from '@sim/utils/string'
 import {
   AirtableIcon,
   AsanaIcon,
+  AtlassianIcon,
   AttioIcon,
   AzureIcon,
   BoxCompanyIcon,
@@ -56,6 +57,7 @@ import {
   WebflowIcon,
   WordpressIcon,
   xIcon,
+  ZohoDeskIcon,
   ZoomIcon,
 } from '@/components/icons'
 import { env } from '@/lib/core/config/env'
@@ -396,10 +398,30 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
       },
       outlook: {
         name: 'Outlook',
-        description: 'Connect to Outlook and manage emails.',
+        description: 'Connect to Outlook and manage emails and calendar events.',
         providerId: 'outlook',
         icon: OutlookIcon,
         baseProviderIcon: MicrosoftIcon,
+        /**
+         * `Calendars.ReadWrite` backs the Outlook calendar operations. Graph documents it
+         * as the sole accepted permission for creating and updating events and for
+         * accept / tentativelyAccept / decline ("Higher: Not available"), and it is
+         * supported for both work/school and personal Microsoft accounts.
+         *
+         * Do NOT add `Calendars.ReadWrite.Shared` here. This provider is shared by work
+         * and personal Outlook accounts, and the `.Shared` calendar scopes are not
+         * confirmed supported for personal Microsoft accounts — requesting one risks
+         * failing consent for personal users, which would take mail access down with it.
+         * That is the same reasoning that kept `findMeetingTimes` out of this integration.
+         * The consequence is that calendar operations target calendars the account owns;
+         * picking a calendar shared by another user may return 403 from Graph.
+         *
+         * Microsoft only grants newly-added scopes on a fresh authorization, so users who
+         * connected Outlook before `Calendars.ReadWrite` existed must reconnect
+         * (re-consent) before the calendar operations will work.
+         *
+         * @see https://learn.microsoft.com/en-us/graph/permissions-reference
+         */
         scopes: [
           'openid',
           'profile',
@@ -408,6 +430,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'Mail.ReadBasic',
           'Mail.Read',
           'Mail.Send',
+          'Calendars.ReadWrite',
           'offline_access',
         ],
       },
@@ -492,15 +515,15 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
   },
   atlassian: {
     name: 'Atlassian',
-    icon: JiraIcon,
+    icon: AtlassianIcon,
     services: {
       'atlassian-service-account': {
         name: 'Atlassian Service Account',
         description:
           'Authenticate as an Atlassian service account using a scoped API token from admin.atlassian.com.',
         providerId: 'atlassian-service-account',
-        icon: JiraIcon,
-        baseProviderIcon: JiraIcon,
+        icon: AtlassianIcon,
+        baseProviderIcon: AtlassianIcon,
         scopes: [],
         authType: 'service_account',
       },
@@ -1230,6 +1253,48 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'salesforce',
   },
+  'zoho-desk': {
+    name: 'Zoho Desk',
+    icon: ZohoDeskIcon,
+    services: {
+      'zoho-desk': {
+        name: 'Zoho Desk',
+        description:
+          'Manage Zoho Desk tickets, comments, threads, and contacts. Connecting with OAuth requires a Zoho account in the US data center; a Self Client also supports the EU, IN, and AU data centers.',
+        providerId: 'zoho-desk',
+        serviceAccountProviderId: 'zoho-desk-service-account',
+        icon: ZohoDeskIcon,
+        baseProviderIcon: ZohoDeskIcon,
+        // Kept to exactly what the tools and the webhook trigger exercise:
+        // tickets (incl. threads/comments), contacts (get_contact), basic
+        // (list_organizations), agents (the `assigneeId` picker lists agents),
+        // webhook create/delete (the trigger provisions and tears down its own
+        // subscription), and profile (OAuth getUserInfo).
+        // Desk.search.READ, Desk.webhooks.READ and Desk.webhooks.UPDATE were
+        // requested but unused - no tool searches, and the provider never lists
+        // or edits a subscription.
+        scopes: [
+          // READ + UPDATE rather than tickets.ALL: no tool creates or deletes a
+          // ticket, and ALL additionally grants ticket DELETE. Threads, comments
+          // and attachments live under the tickets module and are covered by
+          // these two. NOTE: Zoho publishes no scope line for the attachment
+          // content sub-path - verify attachment download against a live account
+          // before merge and widen here if it returns SCOPE_MISMATCH.
+          'Desk.tickets.READ',
+          'Desk.tickets.UPDATE',
+          'Desk.contacts.READ',
+          // READ only: the agent picker for `assigneeId` lists agents, and no
+          // tool creates, edits or deletes one.
+          'Desk.agents.READ',
+          'Desk.basic.READ',
+          'Desk.webhooks.CREATE',
+          'Desk.webhooks.DELETE',
+          'aaaserver.profile.READ',
+        ],
+      },
+    },
+    defaultService: 'zoho-desk',
+  },
   zoom: {
     name: 'Zoom',
     icon: ZoomIcon,
@@ -1814,6 +1879,21 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         supportsRefreshTokenRotation: false,
       }
     }
+    case 'zoho-desk': {
+      // Zoho's refresh_token grant returns a new access token but no new refresh
+      // token, so rotation stays off (the existing refresh token is preserved).
+      // The refresh must target the accounts server; a US/multi-DC-enabled client
+      // uses accounts.zoho.com. Data residency for API calls is honored separately
+      // via the persisted Desk base URL derived from the token response api_domain.
+      const { clientId, clientSecret } = getCredentials(env.ZOHO_CLIENT_ID, env.ZOHO_CLIENT_SECRET)
+      return {
+        tokenEndpoint: 'https://accounts.zoho.com/oauth/v2/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: false,
+      }
+    }
     default:
       throw new Error(`Unsupported provider: ${provider}`)
   }
@@ -2113,7 +2193,12 @@ export async function refreshOAuthToken(
     const expiresIn = data.expires_in || data.expiresIn || 3600
 
     if (!accessToken) {
-      logger.warn('No access token found in refresh response', { providerId, response: data })
+      // Log only the shape, never `data` itself - on a partial success it can
+      // carry live tokens.
+      logger.warn('No access token found in refresh response', {
+        providerId,
+        responseKeys: Object.keys(data ?? {}),
+      })
       return { ok: false, message: 'No access token in refresh response' }
     }
 

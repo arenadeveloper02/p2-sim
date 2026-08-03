@@ -2,20 +2,30 @@
  * @vitest-environment node
  */
 import { member, workspace } from '@sim/db/schema'
-import { queueTableRows, resetDbChainMock, resetEnvFlagsMock, setEnvFlags } from '@sim/testing'
+import {
+  dbChainMock,
+  queueTableRows,
+  resetDbChainMock,
+  resetEnvFlagsMock,
+  setEnvFlags,
+} from '@sim/testing'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { DbOrTx } from '@/lib/db/types'
 
 const {
+  mockAcquireOrganizationUserMutationLocks,
   mockGetUserOrganization,
   mockGetOrganizationSubscription,
   mockGetHighestPrioritySubscription,
 } = vi.hoisted(() => ({
+  mockAcquireOrganizationUserMutationLocks: vi.fn(),
   mockGetUserOrganization: vi.fn(),
   mockGetOrganizationSubscription: vi.fn(),
   mockGetHighestPrioritySubscription: vi.fn(),
 }))
 
 vi.mock('@/lib/billing/organizations/membership', () => ({
+  acquireOrganizationUserMutationLocks: mockAcquireOrganizationUserMutationLocks,
   getUserOrganization: mockGetUserOrganization,
 }))
 
@@ -28,14 +38,116 @@ vi.mock('@/lib/billing/core/plan', () => ({
 }))
 
 import {
+  getOrganizationOwnerId,
   getWorkspaceCreationPolicy,
   getWorkspaceInvitePolicy,
+  lockWorkspaceCreationContext,
   WORKSPACE_MODE,
+  WorkspaceCreationContextChangedError,
 } from '@/lib/workspaces/policy'
 
 afterAll(resetDbChainMock)
 
 afterAll(resetEnvFlagsMock)
+
+describe('getOrganizationOwnerId', () => {
+  it('uses the supplied transaction executor for the owner lookup', async () => {
+    const limit = vi.fn().mockResolvedValue([{ userId: 'owner-from-transaction' }])
+    const where = vi.fn().mockReturnValue({ limit })
+    const from = vi.fn().mockReturnValue({ where })
+    const select = vi.fn().mockReturnValue({ from })
+    const executor = { select } as unknown as DbOrTx
+
+    await expect(getOrganizationOwnerId('org-1', executor)).resolves.toBe('owner-from-transaction')
+    expect(select).toHaveBeenCalledWith({ userId: member.userId })
+    expect(from).toHaveBeenCalledWith(member)
+    expect(where).toHaveBeenCalledOnce()
+    expect(limit).toHaveBeenCalledWith(1)
+  })
+})
+
+describe('lockWorkspaceCreationContext', () => {
+  it('locks the destination organization and user before rejecting a stale org-mode policy', async () => {
+    vi.clearAllMocks()
+    mockAcquireOrganizationUserMutationLocks.mockResolvedValue(undefined)
+    mockGetUserOrganization.mockResolvedValue(null)
+    const tx = {} as DbOrTx
+
+    await expect(
+      lockWorkspaceCreationContext(tx, {
+        userId: 'user-1',
+        organizationId: 'org-1',
+        observedOrganizationId: 'org-1',
+      })
+    ).rejects.toBeInstanceOf(WorkspaceCreationContextChangedError)
+
+    expect(mockAcquireOrganizationUserMutationLocks).toHaveBeenCalledWith(tx, {
+      userId: 'user-1',
+      organizationIds: ['org-1'],
+    })
+    expect(mockGetUserOrganization).toHaveBeenCalledWith('user-1', tx)
+    expect(mockAcquireOrganizationUserMutationLocks.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGetUserOrganization.mock.invocationCallOrder[0]
+    )
+  })
+
+  it('uses the live owner after the org lock and row-locks the current entitlement', async () => {
+    vi.clearAllMocks()
+    resetDbChainMock()
+    setEnvFlags({ isBillingEnabled: true })
+    mockAcquireOrganizationUserMutationLocks.mockResolvedValue(undefined)
+    mockGetUserOrganization.mockResolvedValue({
+      organizationId: 'org-1',
+      role: 'admin',
+    })
+    mockGetOrganizationSubscription.mockResolvedValue({
+      id: 'sub-1',
+      referenceId: 'org-1',
+      plan: 'team_6000',
+      status: 'active',
+    })
+    queueTableRows(member, [{ userId: 'new-owner' }])
+    const tx = dbChainMock.db as unknown as DbOrTx
+
+    await expect(
+      lockWorkspaceCreationContext(tx, {
+        userId: 'creator-1',
+        organizationId: 'org-1',
+        observedOrganizationId: 'org-1',
+      })
+    ).resolves.toEqual({ billedAccountUserId: 'new-owner' })
+
+    expect(mockGetOrganizationSubscription).toHaveBeenCalledWith('org-1', {
+      executor: tx,
+      onError: 'throw',
+      forUpdate: true,
+    })
+    expect(mockAcquireOrganizationUserMutationLocks.mock.invocationCallOrder[0]).toBeLessThan(
+      mockGetOrganizationSubscription.mock.invocationCallOrder[0]
+    )
+  })
+
+  it('rejects when the paid org entitlement disappeared before insertion', async () => {
+    vi.clearAllMocks()
+    resetDbChainMock()
+    setEnvFlags({ isBillingEnabled: true })
+    mockAcquireOrganizationUserMutationLocks.mockResolvedValue(undefined)
+    mockGetUserOrganization.mockResolvedValue({
+      organizationId: 'org-1',
+      role: 'owner',
+    })
+    mockGetOrganizationSubscription.mockResolvedValue(null)
+    const tx = dbChainMock.db as unknown as DbOrTx
+
+    await expect(
+      lockWorkspaceCreationContext(tx, {
+        userId: 'creator-1',
+        organizationId: 'org-1',
+        observedOrganizationId: 'org-1',
+      })
+    ).rejects.toBeInstanceOf(WorkspaceCreationContextChangedError)
+  })
+})
 
 describe('getWorkspaceCreationPolicy', () => {
   beforeEach(() => {
@@ -47,9 +159,7 @@ describe('getWorkspaceCreationPolicy', () => {
     mockGetHighestPrioritySubscription.mockResolvedValue(null)
   })
 
-  it('blocks free users once they already own one non-organization workspace', async () => {
-    queueTableRows(workspace, [{ value: 1 }])
-
+  it('blocks users who do not belong to an organization', async () => {
     const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
 
     expect(result.canCreate).toBe(false)
@@ -58,7 +168,15 @@ describe('getWorkspaceCreationPolicy', () => {
   })
 
   it('creates a personal org workspace for new users with no existing workspaces', async () => {
-    mockDbResults.value = [[{ userId: 'owner-1' }], [], [{ value: 0 }]]
+    mockGetUserOrganization.mockResolvedValueOnce({
+      organizationId: 'org-1',
+      role: 'admin',
+      memberId: 'member-1',
+    })
+    // owner lookup → no personal workspace → org workspace count
+    queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [])
+    queueTableRows(workspace, [{ value: 0 }])
 
     const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
 
@@ -76,7 +194,9 @@ describe('getWorkspaceCreationPolicy', () => {
       role: 'admin',
       memberId: 'member-1',
     })
-    mockDbResults.value = [[{ userId: 'owner-1' }], [{ id: 'ws-personal' }], [{ value: 1 }]]
+    queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [{ id: 'ws-personal' }])
+    queueTableRows(workspace, [{ value: 1 }])
 
     const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
 
@@ -84,6 +204,59 @@ describe('getWorkspaceCreationPolicy', () => {
     expect(result.isPersonal).toBe(false)
     expect(result.maxWorkspaces).toBe(1)
     expect(result.currentWorkspaceCount).toBe(1)
+  })
+
+  it('allows a member of a free/lapsed org to create their first personal workspace', async () => {
+    mockGetUserOrganization.mockResolvedValue({
+      organizationId: 'org-1',
+      role: 'member',
+      memberId: 'member-1',
+    })
+    mockGetOrganizationSubscription.mockResolvedValue({
+      id: 'sub-1',
+      plan: 'team_6000',
+      status: 'canceled',
+      referenceId: 'org-1',
+    })
+    queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [])
+    queueTableRows(workspace, [{ value: 0 }])
+
+    const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
+
+    expect(result.canCreate).toBe(true)
+    expect(result.workspaceMode).toBe(WORKSPACE_MODE.ORGANIZATION)
+    expect(result.isPersonal).toBe(true)
+    expect(result.organizationId).toBe('org-1')
+  })
+
+  it('lets an owner of a lapsed organization create under their personal plan cap', async () => {
+    mockGetUserOrganization.mockResolvedValue({
+      organizationId: 'org-1',
+      role: 'owner',
+      memberId: 'member-1',
+    })
+    mockGetOrganizationSubscription.mockResolvedValue({
+      id: 'sub-1',
+      plan: 'team_6000',
+      status: 'canceled',
+      referenceId: 'org-1',
+    })
+    mockGetHighestPrioritySubscription.mockResolvedValue({
+      id: 'sub-2',
+      plan: 'pro_6000',
+      status: 'active',
+    })
+    queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [{ id: 'ws-personal' }])
+    queueTableRows(workspace, [{ value: 2 }])
+
+    const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
+
+    expect(result.canCreate).toBe(true)
+    expect(result.workspaceMode).toBe(WORKSPACE_MODE.ORGANIZATION)
+    expect(result.maxWorkspaces).toBe(3)
+    expect(result.observedOrganizationId).toBe('org-1')
   })
 
   it('allows pro org admins to create up to three workspaces', async () => {
@@ -97,6 +270,8 @@ describe('getWorkspaceCreationPolicy', () => {
       plan: 'pro_6000',
       status: 'active',
     })
+    queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [{ id: 'ws-personal' }])
     queueTableRows(workspace, [{ value: 2 }])
 
     const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
@@ -109,7 +284,14 @@ describe('getWorkspaceCreationPolicy', () => {
   })
 
   it('blocks non-admin org members from creating additional workspaces', async () => {
-    mockDbResults.value = [[{ userId: 'owner-1' }], [{ id: 'ws-personal' }], [{ value: 1 }]]
+    mockGetUserOrganization.mockResolvedValueOnce({
+      organizationId: 'org-1',
+      role: 'member',
+      memberId: 'member-1',
+    })
+    queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [{ id: 'ws-personal' }])
+    queueTableRows(workspace, [{ value: 1 }])
 
     const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
 
@@ -129,6 +311,8 @@ describe('getWorkspaceCreationPolicy', () => {
       plan: 'pro_25000',
       status: 'active',
     })
+    queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [{ id: 'ws-personal' }])
     queueTableRows(workspace, [{ value: 5 }])
 
     const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
@@ -136,6 +320,81 @@ describe('getWorkspaceCreationPolicy', () => {
     expect(result.canCreate).toBe(true)
     expect(result.maxWorkspaces).toBe(10)
     expect(result.currentWorkspaceCount).toBe(5)
+  })
+
+  // `isMaxTier` (not the old `isMax`) so team_25000 / enterprise get the Max cap.
+  it('gives the team plan at the Max credit tier the same ten workspaces as Max', async () => {
+    mockGetUserOrganization.mockResolvedValue({
+      organizationId: 'org-1',
+      role: 'owner',
+      memberId: 'member-1',
+    })
+    mockGetOrganizationSubscription.mockResolvedValue({
+      id: 'sub-1',
+      plan: 'team_25000',
+      status: 'past_due',
+    })
+    mockGetHighestPrioritySubscription.mockResolvedValueOnce({
+      id: 'sub-1',
+      plan: 'team_25000',
+      status: 'past_due',
+    })
+    queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [{ id: 'ws-personal' }])
+    queueTableRows(workspace, [{ value: 5 }])
+
+    const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
+
+    expect(result.canCreate).toBe(true)
+    expect(result.workspaceMode).toBe(WORKSPACE_MODE.ORGANIZATION)
+    expect(result.maxWorkspaces).toBe(10)
+  })
+
+  it('gives an enterprise payer ten workspaces when the org subscription is not usable', async () => {
+    mockGetUserOrganization.mockResolvedValueOnce({
+      organizationId: 'org-1',
+      role: 'owner',
+      memberId: 'member-1',
+    })
+    mockGetHighestPrioritySubscription.mockResolvedValueOnce({
+      id: 'sub-1',
+      plan: 'enterprise',
+      status: 'active',
+    })
+    queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [{ id: 'ws-personal' }])
+    queueTableRows(workspace, [{ value: 5 }])
+
+    const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
+
+    expect(result.canCreate).toBe(true)
+    expect(result.workspaceMode).toBe(WORKSPACE_MODE.ORGANIZATION)
+    expect(result.maxWorkspaces).toBe(10)
+  })
+
+  it('leaves enterprise organization workspaces uncapped for org admins', async () => {
+    mockGetUserOrganization.mockResolvedValueOnce({
+      organizationId: 'org-1',
+      role: 'owner',
+      memberId: 'member-1',
+    })
+    mockGetOrganizationSubscription.mockResolvedValueOnce({
+      id: 'sub-1',
+      plan: 'enterprise',
+      status: 'active',
+    })
+    queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [])
+    queueTableRows(workspace, [{ value: 0 }])
+
+    const result = await getWorkspaceCreationPolicy({
+      userId: 'user-1',
+      activeOrganizationId: 'org-1',
+    })
+
+    expect(result.canCreate).toBe(true)
+    expect(result.workspaceMode).toBe(WORKSPACE_MODE.ORGANIZATION)
+    expect(result.maxWorkspaces).toBeNull()
   })
 
   it('blocks max org admins once they already have ten workspaces', async () => {
@@ -149,6 +408,8 @@ describe('getWorkspaceCreationPolicy', () => {
       plan: 'pro_25000',
       status: 'active',
     })
+    queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [{ id: 'ws-personal' }])
     queueTableRows(workspace, [{ value: 10 }])
 
     const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
@@ -158,8 +419,15 @@ describe('getWorkspaceCreationPolicy', () => {
     expect(result.currentWorkspaceCount).toBe(10)
   })
 
-  it('allows unlimited personal workspaces when billing is disabled', async () => {
+  it('allows unlimited workspaces when billing is disabled', async () => {
     setEnvFlags({ isBillingEnabled: false })
+    mockGetUserOrganization.mockResolvedValueOnce({
+      organizationId: 'org-1',
+      role: 'admin',
+      memberId: 'member-1',
+    })
+    queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [{ id: 'ws-personal' }])
     queueTableRows(workspace, [{ value: 9 }])
 
     const result = await getWorkspaceCreationPolicy({ userId: 'user-1' })
@@ -179,6 +447,8 @@ describe('getWorkspaceCreationPolicy', () => {
       memberId: 'member-1',
     })
     queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [])
+    queueTableRows(workspace, [{ value: 0 }])
 
     const result = await getWorkspaceCreationPolicy({
       userId: 'user-1',
@@ -189,14 +459,13 @@ describe('getWorkspaceCreationPolicy', () => {
     expect(result.organizationId).toBe('user-org')
   })
 
-  it('pins to the source org: a personal source (null) stays personal regardless of caller org', async () => {
+  it('pins to null still requires an organization in the org-first regime', async () => {
     setEnvFlags({ isBillingEnabled: false })
     mockGetUserOrganization.mockResolvedValue({
       organizationId: 'user-org',
       role: 'admin',
       memberId: 'member-1',
     })
-    queueTableRows(workspace, [{ value: 0 }])
 
     const result = await getWorkspaceCreationPolicy({
       userId: 'user-1',
@@ -204,10 +473,9 @@ describe('getWorkspaceCreationPolicy', () => {
       pinOrganization: true,
     })
 
-    expect(result.canCreate).toBe(true)
-    expect(result.workspaceMode).toBe(WORKSPACE_MODE.PERSONAL)
+    expect(result.canCreate).toBe(false)
     expect(result.organizationId).toBeNull()
-    expect(result.billedAccountUserId).toBe('user-1')
+    expect(result.reason).toContain('organization')
   })
 
   it('allows org admins on a team plan to create organization workspaces', async () => {
@@ -222,6 +490,8 @@ describe('getWorkspaceCreationPolicy', () => {
       status: 'active',
     })
     queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [])
+    queueTableRows(workspace, [{ value: 0 }])
 
     const result = await getWorkspaceCreationPolicy({
       userId: 'user-1',
@@ -243,6 +513,8 @@ describe('getWorkspaceCreationPolicy', () => {
       memberId: 'member-1',
     })
     queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [])
+    queueTableRows(workspace, [{ value: 0 }])
 
     const result = await getWorkspaceCreationPolicy({
       userId: 'user-1',
@@ -264,6 +536,8 @@ describe('getWorkspaceCreationPolicy', () => {
       memberId: 'member-1',
     })
     queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [])
+    queueTableRows(workspace, [{ value: 0 }])
 
     const result = await getWorkspaceCreationPolicy({
       userId: 'user-1',
@@ -293,6 +567,8 @@ describe('getWorkspaceCreationPolicy', () => {
       status: 'active',
     })
     queueTableRows(member, [{ userId: 'owner-1' }])
+    queueTableRows(workspace, [])
+    queueTableRows(workspace, [{ value: 0 }])
 
     const result = await getWorkspaceCreationPolicy({
       userId: 'user-1',
@@ -402,7 +678,25 @@ describe('getWorkspaceInvitePolicy', () => {
     expect(result.upgradeRequired).toBe(true)
   })
 
+  it('blocks grandfathered workspaces (org-first invite regime)', async () => {
+    mockGetHighestPrioritySubscription.mockResolvedValueOnce({
+      id: 'sub-1',
+      plan: 'team_6000',
+      status: 'active',
+    })
+
+    const result = await getWorkspaceInvitePolicy({
+      ...baseState,
+      workspaceMode: WORKSPACE_MODE.GRANDFATHERED_SHARED,
+    })
+
+    expect(result.allowed).toBe(false)
+    expect(result.upgradeRequired).toBe(true)
+  })
+
   it('blocks legacy non-organization workspaces', async () => {
+    mockGetHighestPrioritySubscription.mockResolvedValueOnce(null)
+
     const result = await getWorkspaceInvitePolicy({
       ...baseState,
       workspaceMode: WORKSPACE_MODE.GRANDFATHERED_SHARED,

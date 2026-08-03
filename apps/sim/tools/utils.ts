@@ -93,6 +93,7 @@ export interface RequestParams {
   body?: string
   timeout?: number
   proxyUrl?: string
+  stripAuthOnRedirect?: boolean
 }
 
 /**
@@ -337,7 +338,15 @@ export async function formatRequestParams(
       ? params.proxyUrl.trim()
       : undefined
 
-  return { url, method, headers, body, timeout: validTimeout, proxyUrl }
+  return {
+    url,
+    method,
+    headers,
+    body,
+    timeout: validTimeout,
+    proxyUrl,
+    stripAuthOnRedirect: tool.request.stripAuthOnRedirect,
+  }
 }
 
 /**

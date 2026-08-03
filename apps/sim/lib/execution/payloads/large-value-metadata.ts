@@ -7,8 +7,8 @@ import {
   workflowExecutionLogs,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { chunkArray } from '@sim/utils/helpers'
 import { and, eq, inArray, notInArray, sql } from 'drizzle-orm'
-import { chunkArray } from '@/lib/cleanup/batch-delete'
 import { collectLargeValueKeys } from '@/lib/execution/payloads/large-execution-value'
 
 const logger = createLogger('LargeValueMetadata')
@@ -227,22 +227,6 @@ export async function registerLargeValueOwner(
   return true
 }
 
-export async function replaceLargeValueReferencesWithClient(
-  client: LargeValueMetadataClient,
-  scope: LargeValueReferenceScope,
-  value: unknown
-): Promise<void> {
-  if (!scope.workspaceId || !scope.executionId) {
-    return
-  }
-
-  await replaceLargeValueReferenceKeysWithClient(
-    client,
-    scope,
-    collectLargeValueReferenceKeys(value, scope.workspaceId)
-  )
-}
-
 export async function replaceLargeValueReferenceKeysWithClient(
   client: LargeValueMetadataClient,
   scope: LargeValueReferenceScope,
@@ -359,18 +343,6 @@ export async function addLargeValueReference(
     .onConflictDoNothing()
 }
 
-export async function replaceLargeValueReferences(
-  scope: LargeValueReferenceScope,
-  value: unknown
-): Promise<void> {
-  const referenceKeys = scope.workspaceId
-    ? collectLargeValueReferenceKeys(value, scope.workspaceId)
-    : []
-  await dbFor('exec').transaction(async (tx) => {
-    await replaceLargeValueReferenceKeysWithClient(tx, scope, referenceKeys)
-  })
-}
-
 export async function markLargeValuesDeleted(
   keys: string[],
   dbClient: LargeValueMetadataClient = db
@@ -390,9 +362,9 @@ async function pruneStaleReferences(
   batchSize: number,
   dbClient: LargeValueMetadataClient
 ): Promise<number> {
-  // `IN ()` is a syntax error; callers chunk a non-empty list, but never rely on that.
+  // Empty input is a valid no-op, and `IN ()` is a syntax error whose failure the
+  // cleanup job swallows — keep these total rather than relying on the caller.
   if (workspaceIds.length === 0) return 0
-
   const rows = await dbClient.execute<{ count: number }>(sql`
     WITH deleted AS (
       DELETE FROM ${executionLargeValueReferences} AS ref
@@ -434,9 +406,9 @@ async function pruneDeletedParentDependencies(
   batchSize: number,
   dbClient: LargeValueMetadataClient
 ): Promise<number> {
-  // `IN ()` is a syntax error; callers chunk a non-empty list, but never rely on that.
+  // Empty input is a valid no-op, and `IN ()` is a syntax error whose failure the
+  // cleanup job swallows — keep these total rather than relying on the caller.
   if (workspaceIds.length === 0) return 0
-
   const rows = await dbClient.execute<{ count: number }>(sql`
     WITH deleted AS (
       DELETE FROM ${executionLargeValueDependencies} AS dependency
@@ -472,9 +444,9 @@ async function pruneDeletedLargeValueTombstones(
   batchSize: number,
   dbClient: LargeValueMetadataClient
 ): Promise<number> {
-  // `IN ()` is a syntax error; callers chunk a non-empty list, but never rely on that.
+  // Empty input is a valid no-op, and `IN ()` is a syntax error whose failure the
+  // cleanup job swallows — keep these total rather than relying on the caller.
   if (workspaceIds.length === 0) return 0
-
   const rows = await dbClient.execute<{ count: number }>(sql`
     WITH deleted AS (
       DELETE FROM ${executionLargeValues} AS value
@@ -483,7 +455,7 @@ async function pruneDeletedLargeValueTombstones(
         FROM ${executionLargeValues} AS value
         WHERE value.workspace_id IN ${workspaceIds}
           AND value.deleted_at IS NOT NULL
-          AND value.deleted_at < ${deletedBefore}
+          AND value.deleted_at < ${sql.param(deletedBefore, executionLargeValues.deletedAt)}
           AND NOT EXISTS (
             SELECT 1
             FROM ${executionLargeValueDependencies} AS dependency

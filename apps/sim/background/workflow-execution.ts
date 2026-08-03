@@ -221,6 +221,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
           stackTrace: error instanceof Error ? error.stack : undefined,
         },
         traceSpans,
+        executionState: executionResult?.executionState,
       })
 
       throw error

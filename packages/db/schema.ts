@@ -33,6 +33,16 @@ export const tsvector = customType<{
   },
 })
 
+/** Raw binary column. Postgres `bytea` ↔ Node `Buffer` (the pg driver handles the encoding). */
+export const bytea = customType<{
+  data: Buffer
+  driverData: Buffer
+}>({
+  dataType() {
+    return 'bytea'
+  },
+})
+
 export const user = pgTable('user', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -151,8 +161,8 @@ export const folderResourceTypeEnum = pgEnum('folder_resource_type', [
 
 /**
  * Generic folder hierarchy shared by workflows, files, knowledge bases, and tables.
- * Supersedes the resource-specific `workflowFolder`/`workspaceFileFolder` tables (see
- * the deprecation notes on those below).
+ * Supersedes the resource-specific `workflow_folder` and `workspace_file_folders` tables,
+ * dropped in migration 0276 once the cutover was verified against production.
  *
  * `resourceType` is a real `pgEnum` here — unlike `pinnedItem.resourceType` — because the
  * set of folder-bearing resources is small and fixed. A folder may only parent a folder
@@ -165,7 +175,8 @@ export const folderResourceTypeEnum = pgEnum('folder_resource_type', [
  * `false` and no lock cascade reads it for them. Dropping the column would regress
  * shipped workflow-folder locking.
  *
- * `color` and `isExpanded` from `workflowFolder` are intentionally not carried over:
+ * `color` and `isExpanded` from the old `workflow_folder` table are intentionally not
+ * carried over:
  * `color` has no UI consumer, and `isExpanded`'s real state lives client-side in the
  * folders Zustand store and is never read back from the DB.
  */
@@ -203,9 +214,9 @@ export const folder = pgTable(
       .on(table.workspaceId, table.deletedAt)
       .where(sql`${table.deletedAt} IS NOT NULL`),
     /**
-     * Mirrors `workspace_file_folders_workspace_parent_name_active_unique`, which file
-     * folders already enforce today. Workflow folders gain it here — the backfill
-     * deduplicates the existing violations.
+     * Carries over the active-unique key the old `workspace_file_folders` table enforced,
+     * and extends it to workflow folders, which never had one — 0272's backfill deduplicated
+     * the 47 pre-existing violations it surfaced.
      */
     workspaceResourceParentNameActiveUnique: uniqueIndex(
       'folder_workspace_resource_parent_name_active_unique'
@@ -251,43 +262,6 @@ export const pinnedItem = pgTable(
   })
 )
 
-// DEPRECATED: superseded by the generic `folder` table (resourceType='workflow'). Kept
-// (unread, unwritten) until the generic-folders cutover is verified in production; dropped
-// in a follow-up contract migration.
-export const workflowFolder = pgTable(
-  'workflow_folder',
-  {
-    id: text('id').primaryKey(),
-    name: text('name').notNull(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    workspaceId: text('workspace_id')
-      .notNull()
-      .references(() => workspace.id, { onDelete: 'cascade' }),
-    parentId: text('parent_id'), // Self-reference will be handled by foreign key constraint
-    color: text('color').default('#6B7280'),
-    isExpanded: boolean('is_expanded').notNull().default(true),
-    locked: boolean('locked').notNull().default(false),
-    sortOrder: integer('sort_order').notNull().default(0),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    archivedAt: timestamp('archived_at'),
-  },
-  (table) => ({
-    userIdx: index('workflow_folder_user_idx').on(table.userId),
-    workspaceParentIdx: index('workflow_folder_workspace_parent_idx').on(
-      table.workspaceId,
-      table.parentId
-    ),
-    parentSortIdx: index('workflow_folder_parent_sort_idx').on(table.parentId, table.sortOrder),
-    archivedAtIdx: index('workflow_folder_archived_at_idx').on(table.archivedAt),
-    workspaceArchivedAtPartialIdx: index('workflow_folder_workspace_archived_partial_idx')
-      .on(table.workspaceId, table.archivedAt)
-      .where(sql`${table.archivedAt} IS NOT NULL`),
-  })
-)
-
 export const workflow = pgTable(
   'workflow',
   {
@@ -296,15 +270,7 @@ export const workflow = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
-    /**
-     * contract-pending: re-add `.references(() => folder.id, { onDelete: 'set null' })`
-     * once the generic-folders expand migration is fully deployed and no old-code pod can
-     * still write a workflow_folder-only id here. The expand migration only DROPs the old
-     * (now-wrong) FK target; adding the new one in the same deploy would reject writes from
-     * still-running old app code. The invariant is enforced in the application layer
-     * meanwhile.
-     */
-    folderId: text('folder_id'),
+    folderId: text('folder_id').references(() => folder.id, { onDelete: 'set null' }),
     sortOrder: integer('sort_order').notNull().default(0),
     name: text('name').notNull(),
     description: text('description'),
@@ -634,6 +600,12 @@ export const executionLargeValues = pgTable(
     tombstoneCleanupIdx: index('execution_large_values_tombstone_cleanup_idx')
       .on(table.workspaceId, table.deletedAt, table.key)
       .where(sql`${table.deletedAt} IS NOT NULL`),
+    /**
+     * Backs the `ON DELETE SET NULL` referential trigger, which runs
+     * `UPDATE ... WHERE workflow_id = $1` once per deleted workflow row and
+     * would otherwise sequentially scan this table each time.
+     */
+    workflowIdIdx: index('execution_large_values_workflow_id_idx').on(table.workflowId),
   })
 )
 
@@ -654,6 +626,8 @@ export const executionLargeValueReferences = pgTable(
     workspaceExecutionSourceIdx: index(
       'execution_large_value_references_workspace_execution_source_idx'
     ).on(table.workspaceId, table.executionId, table.source),
+    /** Backs the `ON DELETE SET NULL` referential trigger — see `executionLargeValues`. */
+    workflowIdIdx: index('execution_large_value_references_workflow_id_idx').on(table.workflowId),
   })
 )
 
@@ -2020,62 +1994,6 @@ export const workspaceFile = pgTable(
   })
 )
 
-/**
- * DEPRECATED: superseded by the generic `folder` table (`resource_type = 'file'`).
- *
- * As of the file-folder cutover the application no longer reads or writes this table —
- * every former query site now targets `folder` scoped to `resource_type = 'file'`. It is
- * retained as the rollback copy for that deploy, NOT because it is already unused history:
- * before the cutover it was the live table, and migration 0272's one-shot backfill did not
- * cover folders created after it ran (migration 0274 catches those up).
- *
- * Do NOT drop it in a contract migration until BOTH hold: the cutover has been running in
- * production long enough that a rollback is off the table, and a FULL-ROW comparison against
- * `folder WHERE resource_type = 'file'` confirms nothing was stranded. A row COUNT is not
- * sufficient — the pre-0274 divergence was in row contents (names, parents, `deleted_at`),
- * which a count check passes straight through. Dropping this on the strength of "no code
- * references it" alone destroys the only rollback path.
- */
-export const workspaceFileFolder = pgTable(
-  'workspace_file_folders',
-  {
-    id: text('id').primaryKey(),
-    name: text('name').notNull(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    workspaceId: text('workspace_id')
-      .notNull()
-      .references(() => workspace.id, { onDelete: 'cascade' }),
-    parentId: text('parent_id').references((): AnyPgColumn => workspaceFileFolder.id, {
-      onDelete: 'set null',
-    }),
-    sortOrder: integer('sort_order').notNull().default(0),
-    deletedAt: timestamp('deleted_at'),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    workspaceParentIdx: index('workspace_file_folders_workspace_parent_idx').on(
-      table.workspaceId,
-      table.parentId
-    ),
-    parentSortIdx: index('workspace_file_folders_parent_sort_idx').on(
-      table.parentId,
-      table.sortOrder
-    ),
-    deletedAtIdx: index('workspace_file_folders_deleted_at_idx').on(table.deletedAt),
-    workspaceDeletedAtPartialIdx: index('workspace_file_folders_workspace_deleted_partial_idx')
-      .on(table.workspaceId, table.deletedAt)
-      .where(sql`${table.deletedAt} IS NOT NULL`),
-    workspaceParentNameActiveUnique: uniqueIndex(
-      'workspace_file_folders_workspace_parent_name_active_unique'
-    )
-      .on(table.workspaceId, sql`coalesce(${table.parentId}, '')`, table.name)
-      .where(sql`${table.deletedAt} IS NULL`),
-  })
-)
-
 export const workspaceFiles = pgTable(
   'workspace_files',
   {
@@ -2085,15 +2003,7 @@ export const workspaceFiles = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     workspaceId: text('workspace_id').references(() => workspace.id, { onDelete: 'cascade' }),
-    /**
-     * contract-pending: re-add `.references(() => folder.id, { onDelete: 'set null' })`
-     * once the generic-folders expand migration is fully deployed and no old-code pod can
-     * still write a workspace_file_folders-only id here. The expand migration only DROPs the old
-     * (now-wrong) FK target; adding the new one in the same deploy would reject writes from
-     * still-running old app code. The invariant is enforced in the application layer
-     * meanwhile.
-     */
-    folderId: text('folder_id'),
+    folderId: text('folder_id').references(() => folder.id, { onDelete: 'set null' }),
     context: text('context').notNull(), // 'workspace', 'mothership', 'copilot', 'chat', 'knowledge-base', 'profile-pictures', 'general', 'execution'
     chatId: uuid('chat_id').references(() => copilotChats.id, { onDelete: 'cascade' }),
     /**
@@ -2122,6 +2032,17 @@ export const workspaceFiles = pgTable(
     deletedAt: timestamp('deleted_at'),
     uploadedAt: timestamp('uploaded_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    /**
+     * Content-scoped version: advances ONLY when the file's CONTENT changes (upload / content
+     * overwrite), never on metadata writes (rename, move, soft-delete, restore). It is the
+     * optimistic-concurrency validator the collaborative-document persist guards on (RFC 7232 `If-Match`
+     * semantics: validate the representation, not the row) — so a rename can't make a racing live-doc
+     * persist see a stale token, reconcile stale durable content, and clobber in-flight edits. NOT NULL
+     * with a `now()` default: Postgres applies this as a fast-default (no table rewrite), existing rows
+     * get a stable timestamp that — like every metadata write — never advances it, and every insert path
+     * is covered without per-call plumbing. Only a content write (upload / overwrite) advances it.
+     */
+    contentUpdatedAt: timestamp('content_updated_at').notNull().defaultNow(),
   },
   (table) => ({
     keyActiveUniqueIdx: uniqueIndex('workspace_files_key_active_unique')
@@ -2157,6 +2078,26 @@ export const workspaceFiles = pgTable(
       .where(sql`${table.deletedAt} IS NOT NULL`),
   })
 )
+
+/**
+ * Cached collaborative-document state for a workspace markdown file: the last-persisted Yjs binary and
+ * a hash of the markdown it was derived from. On a cold room open the seed loads this binary directly
+ * (the Hocuspocus load-document pattern) rather than re-converting markdown → Yjs — which avoids the
+ * "recreate the CRDT from a non-binary format" anti-pattern (fresh client ids / content duplication on
+ * reconnect) and the server-side headless-editor conversion. The row is STALE, and the seed re-converts
+ * from markdown, when `sourceHash` no longer matches the file's current markdown (edited externally by a
+ * copilot write or a direct save). One row per file; dropped by FK cascade when the file is deleted.
+ */
+export const workspaceFileCollabState = pgTable('workspace_file_collab_state', {
+  fileId: text('file_id')
+    .primaryKey()
+    .references(() => workspaceFiles.id, { onDelete: 'cascade' }),
+  /** `Y.encodeStateAsUpdate` of the collaborative doc at last persist — apply with `Y.applyUpdate`. */
+  docState: bytea('doc_state').notNull(),
+  /** sha256 (hex) of the markdown `docState` was derived from — the freshness tag for cold-start. */
+  sourceHash: text('source_hash').notNull(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
 
 /**
  * Public share links for workspace resources. Polymorphic on `resourceType` so a
@@ -4818,6 +4759,54 @@ export const userTableRows = pgTable(
 )
 
 /**
+ * Saved presets for a user-defined table — a named filter + sort + column layout.
+ * Workspace-shared: anyone who can read the table sees every view, and `write` is
+ * required to create, update, or delete one. The absence of a view is the built-in
+ * "All" state, so a table is always reachable unfiltered without a seeded row.
+ *
+ * A dedicated table rather than a key on `user_table_definitions.metadata`: that
+ * column is written read-modify-write with a shallow merge, so a stale snapshot
+ * from any concurrent column resize would silently drop a view saved in between.
+ * Per-view rows make each save an independent insert.
+ */
+export const tableViews = pgTable(
+  'table_views',
+  {
+    id: text('id').primaryKey(),
+    tableId: text('table_id')
+      .notNull()
+      .references(() => userTableDefinitions.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /**
+     * @remarks
+     * `TableViewConfig` — `{ filter, sort, hiddenColumns, columnOrder, columnWidths,
+     * pinnedColumns }`. Every column reference is keyed by stable column id, so a
+     * rename never touches a saved view; ids of deleted columns are pruned on read.
+     */
+    config: jsonb('config').notNull().default('{}'),
+    isDefault: boolean('is_default').notNull().default(false),
+    /**
+     * Nullable with `set null` rather than the `cascade` used for table ownership:
+     * a view is workspace-shared, so it must outlive the member who created it.
+     */
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    /** Covers the only read path: list a table's views in creation order. */
+    tableCreatedIdx: index('table_views_table_created_idx').on(table.tableId, table.createdAt),
+    /** At most one default view per table, enforced in the DB. */
+    defaultViewUnique: uniqueIndex('table_views_table_default_unique')
+      .on(table.tableId)
+      .where(sql`is_default = true`),
+  })
+)
+
+/**
  * Background data-mutation jobs on a user table (CSV import, bulk filtered delete). One row per
  * job. A detached worker streams progress into `rows_processed` and flips `status` to a terminal
  * state; cancel flips `status` to `'canceled'` and the worker bails at its next ownership check.
@@ -5241,5 +5230,88 @@ export const helpSupportIssue = pgTable(
     workflowIdIdx: index('help_support_issue_workflow_id_idx').on(table.workflowId),
     typeIdx: index('help_support_issue_type_idx').on(table.type),
     createdAtIdx: index('help_support_issue_created_at_idx').on(table.createdAt),
+  })
+)
+
+export const sandboxLanguageEnum = pgEnum('sandbox_language', ['javascript', 'python'])
+
+export type SandboxLanguageValue = (typeof sandboxLanguageEnum.enumValues)[number]
+
+export const sandboxImageStatusEnum = pgEnum('sandbox_image_status', [
+  'pending',
+  'building',
+  'ready',
+  'failed',
+])
+
+export type SandboxImageStatusValue = (typeof sandboxImageStatusEnum.enumValues)[number]
+
+/**
+ * A workspace's named library of dependency sets. Provider-agnostic: the same
+ * row drives a prebuilt E2B template and a Daytona runtime install, and only the
+ * materialization step differs. `specHash` is the content address shared with
+ * `sandboxImage`, so editing dependencies points the sandbox at a new build
+ * while the old one stays valid for in-flight executions.
+ */
+export const workspaceSandbox = pgTable(
+  'workspace_sandbox',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    language: sandboxLanguageEnum('language').notNull(),
+    dependencies: jsonb('dependencies').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    specHash: text('spec_hash').notNull(),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceNameUnique: uniqueIndex('workspace_sandbox_workspace_name_unique').on(
+      table.workspaceId,
+      table.name
+    ),
+    workspaceIdx: index('workspace_sandbox_workspace_idx').on(table.workspaceId),
+    specHashIdx: index('workspace_sandbox_spec_hash_idx').on(table.specHash),
+  })
+)
+
+/**
+ * Build registry for the prebuilt strategy, keyed by content address so two
+ * workspaces declaring the same dependency set share one build. Never written
+ * under a runtime-strategy provider.
+ */
+export const sandboxImage = pgTable(
+  'sandbox_image',
+  {
+    id: text('id').primaryKey(),
+    provider: text('provider').notNull(),
+    specHash: text('spec_hash').notNull(),
+    spec: jsonb('spec').notNull(),
+    status: sandboxImageStatusEnum('status').notNull().default('pending'),
+    /** Passed to the provider at create time once `status` is `ready`. */
+    imageRef: text('image_ref'),
+    /** Provider-side image identifier, when it differs from `imageRef`. */
+    providerImageId: text('provider_image_id'),
+    buildId: text('build_id'),
+    /** Classified taxonomy code; see lib/execution/remote-sandbox/build-errors.ts. */
+    errorCode: text('error_code'),
+    /** User-facing copy rendered from the code at classification time. */
+    errorMessage: text('error_message'),
+    /** Installer log tail, shown behind a disclosure. */
+    errorDetail: text('error_detail'),
+    lastUsedAt: timestamp('last_used_at'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    providerSpecUnique: uniqueIndex('sandbox_image_provider_spec_unique').on(
+      table.provider,
+      table.specHash
+    ),
+    statusIdx: index('sandbox_image_status_idx').on(table.status),
+    lastUsedIdx: index('sandbox_image_last_used_idx').on(table.lastUsedAt),
   })
 )

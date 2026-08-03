@@ -67,6 +67,8 @@ interface MothershipViewProps {
   previewSession?: FilePreviewSession | null
   isAgentResponding?: boolean
   genericResourceData?: GenericResourceData
+  /** Resolved server-side by the home page; forwarded to the embedded table. */
+  tableViewsEnabled?: boolean
 }
 
 export const MothershipView = memo(
@@ -81,6 +83,7 @@ export const MothershipView = memo(
       previewSession,
       isAgentResponding,
       genericResourceData,
+      tableViewsEnabled,
     }: MothershipViewProps,
     ref
   ) {
@@ -132,8 +135,12 @@ export const MothershipView = memo(
         // width means a divider drag pinned it, otherwise `w-1/2` governs.
         data-mothership-panel=''
         className={cn(
-          'relative z-10 flex h-full flex-col overflow-hidden border-[var(--border)] bg-[var(--bg)] transition-[width,min-width,border-width] duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)]',
+          'relative z-10 flex h-full flex-col overflow-hidden border-[var(--border)] bg-[var(--bg)] transition-[width,min-width,border-width] duration-200 [transition-timing-function:cubic-bezier(0.25,0.1,0.25,1)]',
           isCollapsed ? 'w-0 min-w-0 border-l-0' : 'w-1/2 border-l',
+          /* This panel is the right half of the pane, never under the traffic lights,
+             yet it embeds whole pages whose header bars reserve that lane. Zeroing the
+             inherited variable here keeps their top bars flush inside the panel. */
+          '[--workspace-content-title-bar-inset:0px]',
           className
         )}
       >
@@ -189,6 +196,7 @@ export const MothershipView = memo(
                 isAgentResponding={isAgentResponding}
                 genericResourceData={active.type === 'generic' ? genericResourceData : undefined}
                 previewContextKey={chatId}
+                tableViewsEnabled={tableViewsEnabled}
                 onNotFound={(resourceId) => removeResource('log', resourceId)}
               />
             )}

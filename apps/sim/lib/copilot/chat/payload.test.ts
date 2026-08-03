@@ -4,12 +4,17 @@
 import { workflowsUtilsMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCreateUserToolSchema, mockGetHighestPrioritySubscription, mockIsAdminWorkspace } =
-  vi.hoisted(() => ({
-    mockCreateUserToolSchema: vi.fn(() => ({ type: 'object', properties: {} })),
-    mockGetHighestPrioritySubscription: vi.fn(),
-    mockIsAdminWorkspace: vi.fn(() => false),
-  }))
+const {
+  mockCreateUserToolSchema,
+  mockGetHighestPrioritySubscription,
+  mockIsAdminWorkspace,
+  mockTrackChatUpload,
+} = vi.hoisted(() => ({
+  mockCreateUserToolSchema: vi.fn(() => ({ type: 'object', properties: {} })),
+  mockGetHighestPrioritySubscription: vi.fn(),
+  mockIsAdminWorkspace: vi.fn(() => false),
+  mockTrackChatUpload: vi.fn(),
+}))
 
 vi.mock('@/lib/billing/core/subscription', () => ({
   getHighestPrioritySubscription: mockGetHighestPrioritySubscription,
@@ -180,6 +185,9 @@ vi.mock('@/lib/workspaces/is-admin-workspace', () => ({
     toolId === 'zoom_list_account_recordings' ||
     toolId === 'zoom_get_account_recordings_with_transcript',
 }))
+vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
+  trackChatUpload: mockTrackChatUpload,
+}))
 
 import {
   buildCopilotRequestPayload,
@@ -332,6 +340,53 @@ describe('buildIntegrationToolSchemas', () => {
 describe('buildCopilotRequestPayload', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockTrackChatUpload.mockResolvedValue({ displayName: 'payroll.xlsx' })
+  })
+
+  describe('file attachment tracking', () => {
+    const attachmentParams = {
+      message: 'hi',
+      userId: 'mallory',
+      userMessageId: 'msg-1',
+      mode: 'agent',
+      model: 'claude-opus-4-8',
+      workspaceId: 'ws-1',
+      chatId: 'chat-1',
+      fileAttachments: [
+        { id: 'a1', key: 'workspace/ws-1/1731000000000-ab12cd34-payroll.xlsx', size: 1 },
+      ],
+    }
+
+    /**
+     * Tracking writes `workspace_files` rows. A read-only member reaching the
+     * chat endpoint must not gain that write through an attachment.
+     */
+    it.each(['read', undefined])('does not track attachments for permission %s', async (perm) => {
+      await buildCopilotRequestPayload(
+        { ...attachmentParams, userPermission: perm },
+        { selectedModel: 'claude-opus-4-8' }
+      )
+
+      expect(mockTrackChatUpload).not.toHaveBeenCalled()
+    })
+
+    it.each(['write', 'admin'])('tracks attachments for permission %s', async (perm) => {
+      await buildCopilotRequestPayload(
+        { ...attachmentParams, userPermission: perm },
+        { selectedModel: 'claude-opus-4-8' }
+      )
+
+      expect(mockTrackChatUpload).toHaveBeenCalledWith(
+        'ws-1',
+        'mallory',
+        'chat-1',
+        'workspace/ws-1/1731000000000-ab12cd34-payroll.xlsx',
+        expect.anything(),
+        expect.anything(),
+        1,
+        'msg-1'
+      )
+    })
   })
 
   it('passes workspaceContext through to the Go request payload', async () => {

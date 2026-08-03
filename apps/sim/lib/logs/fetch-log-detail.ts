@@ -22,7 +22,7 @@ import {
   pickLatestCompletedMarker,
   pickLatestStartedMarker,
 } from '@/lib/logs/execution/progress-markers'
-import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
+import { materializeExecutionDataForDisplay } from '@/lib/logs/execution/trace-store'
 import type { TraceSpan } from '@/lib/logs/types'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
@@ -305,9 +305,14 @@ export async function fetchLogDetail({
       (totalPauseCount > 0 && resumedCount < totalPauseCount) ||
       (log.pausedStatus !== null && log.pausedStatus !== 'fully_resumed')
 
-    const executionData = await materializeExecutionData(
+    const executionData = await materializeExecutionDataForDisplay(
       log.executionData as Record<string, unknown> | null,
-      { workspaceId, workflowId: log.workflowId, executionId: log.executionId }
+      {
+        workspaceId,
+        workflowId: log.workflowId,
+        executionId: log.executionId,
+        userId,
+      }
     )
 
     const traceSpans = (executionData as { traceSpans?: TraceSpan[] }).traceSpans
@@ -387,7 +392,15 @@ export async function fetchLogDetail({
   const jobLog = jobRows[0]
   if (!jobLog) return null
 
-  const execData = (jobLog.executionData as Record<string, unknown> | null) ?? {}
+  const execData = await materializeExecutionDataForDisplay(
+    jobLog.executionData as Record<string, unknown> | null,
+    {
+      workspaceId,
+      workflowId: null,
+      executionId: jobLog.executionId,
+      userId,
+    }
+  )
   return {
     id: jobLog.id,
     workflowId: null,

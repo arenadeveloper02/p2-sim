@@ -78,6 +78,18 @@ interface PersistedMessageContext {
   blockType?: string
   skillId?: string
   serverId?: string
+  /**
+   * Source names for `file_selection` / `table_selection` chips. Persisted
+   * because the rendered chip reads them — the label carries a location suffix
+   * (`notes.md:12-40`), so the file icon cannot derive an extension from it.
+   *
+   * The rest of a selection's payload (`text`, `rowIds`, `columnIds`, line
+   * numbers) is deliberately NOT persisted: it exists to resolve the selection
+   * server-side when the message is sent, is never read when re-rendering a past
+   * message, and would put a selection-sized blob in every stored message.
+   */
+  fileName?: string
+  tableName?: string
 }
 
 export interface PersistedMessage {
@@ -361,6 +373,8 @@ export function buildPersistedUserMessage(params: UserMessageParams): PersistedM
       ...(c.blockType ? { blockType: c.blockType } : {}),
       ...(c.skillId ? { skillId: c.skillId } : {}),
       ...(c.serverId ? { serverId: c.serverId } : {}),
+      ...(c.fileName ? { fileName: c.fileName } : {}),
+      ...(c.tableName ? { tableName: c.tableName } : {}),
     }))
   }
 
@@ -682,6 +696,8 @@ export function normalizeMessage(raw: Record<string, unknown>): PersistedMessage
       ...(c.blockType ? { blockType: c.blockType } : {}),
       ...(c.skillId ? { skillId: c.skillId } : {}),
       ...(c.serverId ? { serverId: c.serverId } : {}),
+      ...(c.fileName ? { fileName: c.fileName } : {}),
+      ...(c.tableName ? { tableName: c.tableName } : {}),
     }))
   }
 

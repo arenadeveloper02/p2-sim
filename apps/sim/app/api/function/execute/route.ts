@@ -36,6 +36,12 @@ import {
 import { compactExecutionPayload } from '@/lib/execution/payloads/serializer'
 import { materializeLargeValueRef } from '@/lib/execution/payloads/store'
 import {
+  PRIVATE_TOOL_METADATA_RESPONSE_HEADER,
+  RESOLVED_SECRET_NAMES_FIELD,
+  RESOLVED_SECRET_NAMES_METADATA_V1,
+  requestsPrivateToolMetadata,
+} from '@/lib/execution/private-tool-metadata'
+import {
   executeInSandbox,
   executeShellInSandbox,
   SIM_RESULT_PREFIX,
@@ -67,6 +73,8 @@ const E2B_JS_WRAPPER_LINES = 3
 const E2B_PYTHON_WRAPPER_LINES = 1
 const MAX_SANDBOX_OUTPUT_FILES = 20
 const MAX_SANDBOX_OUTPUT_BYTES = 50 * 1024 * 1024
+const MAX_PRIVATE_RESOLVED_SECRET_NAMES = 10_000
+const MAX_PRIVATE_RESOLVED_SECRET_NAMES_BYTES = 1024 * 1024
 
 /** Matches valid JS identifier names (letters, digits, underscore; no leading digit). */
 const SAFE_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/
@@ -548,11 +556,48 @@ function resolveWorkflowVariables(
   return resolvedCode
 }
 
+/**
+ * Narrows the secrets an execution can see, per the block's stored scope.
+ *
+ * | Stored value                | Behavior                                        |
+ * |-----------------------------|-------------------------------------------------|
+ * | unset (every block today)   | all secrets — the regression-safe default       |
+ * | `'all'`                     | all secrets, resolved now so later additions land |
+ * | `'selected'` + names        | only those                                      |
+ * | `'selected'` + empty list   | none — an explicit deny                         |
+ *
+ * Unset and `'all'` must both inject everything: agent-authored code already
+ * reads `{{MY_SECRET}}` and `environmentVariables['MY_SECRET']` today, so a
+ * default-deny would silently break prompts that work right now.
+ */
+function scopeEnvironmentVariables(
+  envVars: Record<string, string>,
+  scope: 'all' | 'selected' | undefined,
+  mountedSecrets: string[] | undefined
+): Record<string, string> {
+  if (scope !== 'selected') return envVars
+
+  const allowed = new Set(mountedSecrets ?? [])
+  const scoped: Record<string, string> = {}
+  const missing: string[] = []
+  for (const name of allowed) {
+    if (name in envVars) scoped[name] = envVars[name]
+    else missing.push(name)
+  }
+  if (missing.length > 0) {
+    // A secret that was renamed or deleted since the block was configured. Drop
+    // it rather than failing: the code's own error is clearer than ours.
+    logger.warn('Mounted secrets no longer exist in this workspace', { missing })
+  }
+  return scoped
+}
+
 function resolveEnvironmentVariables(
   code: string,
   params: Record<string, any>,
   envVars: Record<string, string>,
-  contextVariables: Record<string, any>
+  contextVariables: Record<string, any>,
+  onResolvedSecret?: (name: string) => void
 ): string {
   let resolvedCode = code
 
@@ -593,6 +638,9 @@ function resolveEnvironmentVariables(
 
     const safeVarName = `__var_${varName.replace(/[^a-zA-Z0-9_]/g, '_')}`
     contextVariables[safeVarName] = varValue
+    if (Object.hasOwn(envVars, varName) && envVars[varName] === varValue) {
+      onResolvedSecret?.(varName)
+    }
     resolvedCode =
       resolvedCode.slice(0, index) + safeVarName + resolvedCode.slice(index + matchStr.length)
   }
@@ -670,13 +718,20 @@ function resolveCodeVariables(
   blockNameMapping: Record<string, string> = {},
   blockOutputSchemas: Record<string, OutputSchema> = {},
   workflowVariables: Record<string, unknown> = {},
-  language = 'javascript'
+  language = 'javascript',
+  onResolvedSecret?: (name: string) => void
 ): { resolvedCode: string; contextVariables: Record<string, unknown> } {
   let resolvedCode = code
   const contextVariables: Record<string, unknown> = {}
 
   resolvedCode = resolveWorkflowVariables(resolvedCode, workflowVariables, contextVariables)
-  resolvedCode = resolveEnvironmentVariables(resolvedCode, params, envVars, contextVariables)
+  resolvedCode = resolveEnvironmentVariables(
+    resolvedCode,
+    params,
+    envVars,
+    contextVariables,
+    onResolvedSecret
+  )
   resolvedCode = resolveTagVariables(
     resolvedCode,
     blockData,
@@ -762,6 +817,8 @@ interface FunctionRouteExecutionContext {
   allowLargeValueWorkflowScope?: boolean
   userId?: string
   requestId: string
+  resolvedSecretNames: Set<string>
+  includePrivateResolvedSecretNames: boolean
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -897,7 +954,7 @@ async function functionJsonResponse<T>(
   context: FunctionRouteExecutionContext,
   init?: ResponseInit
 ) {
-  return NextResponse.json(
+  const response = NextResponse.json(
     await compactFunctionRouteBody(
       {
         ...body,
@@ -908,6 +965,52 @@ async function functionJsonResponse<T>(
     ),
     init
   )
+  return appendResolvedSecretNames(response, context)
+}
+
+function getPrivateResolvedSecretNames(context: FunctionRouteExecutionContext): string[] | null {
+  if (context.resolvedSecretNames.size > MAX_PRIVATE_RESOLVED_SECRET_NAMES) return null
+
+  const names = Array.from(context.resolvedSecretNames).sort()
+  let bytes = 0
+  for (const name of names) {
+    bytes += Buffer.byteLength(name, 'utf8')
+    if (bytes > MAX_PRIVATE_RESOLVED_SECRET_NAMES_BYTES) return null
+  }
+  return names
+}
+
+async function appendResolvedSecretNames(
+  response: NextResponse,
+  context: FunctionRouteExecutionContext
+): Promise<NextResponse> {
+  const names = context.includePrivateResolvedSecretNames
+    ? getPrivateResolvedSecretNames(context)
+    : null
+  return appendPrivateResolvedSecretNames(response, names)
+}
+
+async function appendPrivateResolvedSecretNames(
+  response: NextResponse,
+  names: string[] | null
+): Promise<NextResponse> {
+  if (!names) return response
+
+  try {
+    const body = (await response.clone().json()) as Record<string, unknown>
+    const headers = new Headers(response.headers)
+    headers.delete('content-length')
+    headers.set(PRIVATE_TOOL_METADATA_RESPONSE_HEADER, RESOLVED_SECRET_NAMES_METADATA_V1)
+    return NextResponse.json(
+      {
+        ...body,
+        [RESOLVED_SECRET_NAMES_FIELD]: names,
+      },
+      { status: response.status, statusText: response.statusText, headers }
+    )
+  } catch {
+    return response
+  }
 }
 
 /**
@@ -1377,6 +1480,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
   let resolvedCode = '' // Store resolved code for error reporting
   let sourceCodeForErrors: string | undefined
   let routeContext: FunctionRouteExecutionContext | undefined
+  let includePrivateResolvedSecretNames = false
 
   try {
     const auth = await checkInternalAuth(req)
@@ -1385,8 +1489,18 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 401 })
     }
 
+    includePrivateResolvedSecretNames = requestsPrivateToolMetadata(
+      req.headers,
+      RESOLVED_SECRET_NAMES_METADATA_V1
+    )
+
     const parsed = await parseRequest(functionExecuteContract, req, {})
-    if (!parsed.success) return parsed.response
+    if (!parsed.success) {
+      return appendPrivateResolvedSecretNames(
+        parsed.response,
+        includePrivateResolvedSecretNames ? [] : null
+      )
+    }
     const { body } = parsed.data
 
     const { DEFAULT_EXECUTION_TIMEOUT_MS } = await import('@/lib/execution/constants')
@@ -1403,7 +1517,10 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       outputSandboxPath,
       overwriteFileId,
       outputs,
-      envVars = {},
+      envVars: rawEnvVars = {},
+      secretScope,
+      mountedSecrets,
+      sandboxId: selectedSandboxId,
       blockData = {},
       blockNameMapping = {},
       blockOutputSchemas = {},
@@ -1419,6 +1536,10 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       isCustomTool = false,
       _sandboxFiles,
     } = body
+    // Scoped before {{VAR}} resolution so the `{{NAME}}` path and the
+    // `environmentVariables[...]` dict narrow together — filtering only the dict
+    // would leave `{{OTHER_SECRET}}` resolving, which is a hole, not a scope.
+    const envVars = scopeEnvironmentVariables(rawEnvVars, secretScope, mountedSecrets)
     sourceCodeForErrors = sourceCode
     const outputFiles = getOutputFileDeclarations({
       outputs,
@@ -1432,12 +1553,15 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       .map((file) => file.sandboxPath)
       .filter((path): path is string => Boolean(path))
     if (outputSandboxPaths.length > MAX_SANDBOX_OUTPUT_FILES) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `Too many sandbox output files requested (${outputSandboxPaths.length}). Maximum is ${MAX_SANDBOX_OUTPUT_FILES}.`,
-        },
-        { status: 400 }
+      return appendPrivateResolvedSecretNames(
+        NextResponse.json(
+          {
+            success: false,
+            error: `Too many sandbox output files requested (${outputSandboxPaths.length}). Maximum is ${MAX_SANDBOX_OUTPUT_FILES}.`,
+          },
+          { status: 400 }
+        ),
+        includePrivateResolvedSecretNames ? [] : null
       )
     }
 
@@ -1463,6 +1587,8 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       allowLargeValueWorkflowScope,
       userId: auth.userId,
       requestId,
+      resolvedSecretNames: new Set<string>(),
+      includePrivateResolvedSecretNames,
     }
 
     const lang = isValidCodeLanguage(language) ? language : DEFAULT_CODE_LANGUAGE
@@ -1471,7 +1597,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     if (lang === CodeLanguage.Shell) {
       // For shell, env vars are injected as OS env vars via shellEnvs.
       // Replace {{VAR}} placeholders with $VAR so the shell can access them natively.
-      resolvedCode = code.replace(/\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g, '$$$1')
+      resolvedCode = code.replace(/\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g, (_match, name) => {
+        if (Object.hasOwn(envVars, name)) {
+          routeContext?.resolvedSecretNames.add(name)
+        }
+        return `$${name}`
+      })
       // Carry pre-resolved block output variables (e.g. __blockRef_N) so they can be
       // injected as shell env vars below. The executor replaces block references in the
       // code with these names, so the values must be present at runtime.
@@ -1485,7 +1616,8 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         blockNameMapping,
         blockOutputSchemas,
         workflowVariables,
-        lang
+        lang,
+        (name) => routeContext?.resolvedSecretNames.add(name)
       )
       resolvedCode = codeResolution.resolvedCode
       // Merge pre-resolved block output variables from the executor. These take precedence
@@ -1549,6 +1681,8 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         sandboxFiles: _sandboxFiles,
         outputSandboxPath,
         outputSandboxPaths,
+        workspaceId,
+        sandboxId: selectedSandboxId,
       })
       const executionTime = Date.now() - execStart
 
@@ -1582,7 +1716,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           stdout: shellStdout,
           executionTime,
         })
-        if (fileExportResponse) return fileExportResponse
+        if (fileExportResponse) {
+          return appendResolvedSecretNames(fileExportResponse, routeContext)
+        }
       }
 
       return functionJsonResponse(
@@ -1708,6 +1844,8 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           sandboxFiles: _sandboxFiles,
           outputSandboxPath,
           outputSandboxPaths,
+          workspaceId,
+          sandboxId: selectedSandboxId,
         })
         const executionTime = Date.now() - execStart
         stdout += e2bStdout
@@ -1749,7 +1887,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
             stdout,
             executionTime,
           })
-          if (fileExportResponse) return fileExportResponse
+          if (fileExportResponse) {
+            return appendResolvedSecretNames(fileExportResponse, routeContext)
+          }
         }
 
         return functionJsonResponse(
@@ -1796,6 +1936,8 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         sandboxFiles: _sandboxFiles,
         outputSandboxPath,
         outputSandboxPaths,
+        workspaceId,
+        sandboxId: selectedSandboxId,
       })
       const executionTime = Date.now() - execStart
       stdout += e2bStdout
@@ -1837,7 +1979,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           stdout,
           executionTime,
         })
-        if (fileExportResponse) return fileExportResponse
+        if (fileExportResponse) {
+          return appendResolvedSecretNames(fileExportResponse, routeContext)
+        }
       }
 
       return functionJsonResponse(
@@ -1996,17 +2140,20 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           { status: error.statusCode }
         )
       }
-      return NextResponse.json(
-        {
-          success: false,
-          error: error.message,
-          output: {
-            result: null,
-            stdout: cleanStdout(stdout),
-            executionTime,
+      return appendPrivateResolvedSecretNames(
+        NextResponse.json(
+          {
+            success: false,
+            error: error.message,
+            output: {
+              result: null,
+              stdout: cleanStdout(stdout),
+              executionTime,
+            },
           },
-        },
-        { status: error.statusCode }
+          { status: error.statusCode }
+        ),
+        includePrivateResolvedSecretNames ? [] : null
       )
     }
 
@@ -2025,7 +2172,10 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       }
       return routeContext
         ? functionJsonResponse(killResponse, routeContext, { status: 500 })
-        : NextResponse.json(killResponse, { status: 500 })
+        : appendPrivateResolvedSecretNames(
+            NextResponse.json(killResponse, { status: 500 }),
+            includePrivateResolvedSecretNames ? [] : null
+          )
     }
 
     logger.error(`[${requestId}] Function execution failed`, {
@@ -2073,6 +2223,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       return functionJsonResponse(errorResponse, routeContext, { status: 500 })
     }
 
-    return NextResponse.json(errorResponse, { status: 500 })
+    return appendPrivateResolvedSecretNames(
+      NextResponse.json(errorResponse, { status: 500 }),
+      includePrivateResolvedSecretNames ? [] : null
+    )
   }
 })

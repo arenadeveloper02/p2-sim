@@ -135,6 +135,7 @@ import {
   LinkedInIcon,
   LinkupIcon,
   LinqIcon,
+  LogfireIcon,
   LoopsIcon,
   LumaIcon,
   MailchimpIcon,
@@ -253,6 +254,7 @@ import {
   ZendeskIcon,
   ZepIcon,
   ZeroBounceIcon,
+  ZohoDeskIcon,
   ZoomIcon,
   ZoomInfoIcon,
 } from '@/components/icons'
@@ -406,6 +408,7 @@ export const blockTypeToIconMap: Record<string, IconComponent> = {
   linkedin: LinkedInIcon,
   linkup: LinkupIcon,
   linq: LinqIcon,
+  logfire: LogfireIcon,
   logs_v2: Library,
   loops: LoopsIcon,
   luma: LumaIcon,
@@ -527,6 +530,7 @@ export const blockTypeToIconMap: Record<string, IconComponent> = {
   zendesk: ZendeskIcon,
   zep: ZepIcon,
   zerobounce: ZeroBounceIcon,
+  zoho_desk: ZohoDeskIcon,
   zoom: ZoomIcon,
   zoominfo: ZoomInfoIcon,
 }

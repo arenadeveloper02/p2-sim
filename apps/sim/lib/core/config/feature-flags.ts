@@ -104,6 +104,14 @@ const FEATURE_FLAGS = {
       'custom-block publish/list routes. Off-AppConfig falls back to DEPLOY_AS_BLOCK.',
     fallback: 'DEPLOY_AS_BLOCK',
   },
+  'tables-v2-api': {
+    description:
+      'Gate the v2 tables HTTP API — the public read API (GET /api/v2/tables, POST ' +
+      '/api/v2/tables/[tableId]/query) and the internal predicate-grammar query route (POST ' +
+      '/api/table/[tableId]/query). When off, those routes return 404 as if the surface does not ' +
+      'exist. Gated by userId/orgId/admins via AppConfig; off-AppConfig falls back to TABLES_V2_API.',
+    fallback: 'TABLES_V2_API',
+  },
   'table-locks': {
     description:
       'Per-table mutation locks (schema/insert/update/delete) an admin toggles to make a table ' +
@@ -112,6 +120,17 @@ const FEATURE_FLAGS = {
       'created unlocked and forks reset locks, an off flag means no table can become locked, so ' +
       'the woven-in asserts stay no-ops. Off-AppConfig falls back to TABLE_LOCKS.',
     fallback: 'TABLE_LOCKS',
+  },
+  'table-views': {
+    description:
+      'Saved table views (named filter/sort/column-visibility presets) plus the column show/hide ' +
+      'menu, in the table-detail options bar. UI-only gate: resolved in the table page (server) ' +
+      "and passed down, so the table falls back to today's Filter/Sort bar when off. The routes " +
+      'and the table_views table ship ungated — they are inert with no UI to call them, and a view ' +
+      'saved during a rollout must survive the flag being toggled back off. Embedded (mothership) ' +
+      'tables render without views regardless, since no server context resolves the flag there. ' +
+      'Off-AppConfig falls back to TABLE_VIEWS.',
+    fallback: 'TABLE_VIEWS',
   },
 } satisfies Record<string, FeatureFlagDefinition>
 
