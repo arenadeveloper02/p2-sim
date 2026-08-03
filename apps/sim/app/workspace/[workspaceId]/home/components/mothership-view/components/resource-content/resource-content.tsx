@@ -84,6 +84,9 @@ interface ResourceContentProps {
   isAgentResponding?: boolean
   genericResourceData?: GenericResourceData
   previewContextKey?: string
+  /** Resolved server-side by the home page — the embedded table can't read
+   *  AppConfig itself, so the flag is threaded down rather than looked up. */
+  tableViewsEnabled?: boolean
   onNotFound?: (resourceId: string) => void
   /**
    * Whether this resource is the one on screen. Only the persistent panels
@@ -153,6 +156,7 @@ export const ResourceContent = memo(function ResourceContent({
   isAgentResponding,
   genericResourceData,
   previewContextKey,
+  tableViewsEnabled,
   onNotFound,
   visible = true,
 }: ResourceContentProps) {
@@ -223,7 +227,15 @@ export const ResourceContent = memo(function ResourceContent({
 
   switch (resource.type) {
     case 'table':
-      return <Table key={resource.id} workspaceId={workspaceId} tableId={resource.id} embedded />
+      return (
+        <Table
+          key={resource.id}
+          workspaceId={workspaceId}
+          tableId={resource.id}
+          embedded
+          viewsEnabled={tableViewsEnabled}
+        />
+      )
 
     case 'file':
       return (
@@ -238,6 +250,7 @@ export const ResourceContent = memo(function ResourceContent({
           }
           isAgentEditing={isAgentEditing}
           streamIsIncremental={streamIsIncremental}
+          streamOperation={previewSession?.operation}
           disableStreamingAutoScroll={disableStreamingAutoScroll}
           previewContextKey={previewContextKey}
         />
@@ -651,6 +664,7 @@ interface EmbeddedFileProps {
   streamingContent?: string
   isAgentEditing?: boolean
   streamIsIncremental?: boolean
+  streamOperation?: string
   disableStreamingAutoScroll?: boolean
   previewContextKey?: string
 }
@@ -663,6 +677,7 @@ function EmbeddedFile({
   streamingContent,
   isAgentEditing,
   streamIsIncremental,
+  streamOperation,
   disableStreamingAutoScroll = false,
   previewContextKey,
 }: EmbeddedFileProps) {
@@ -706,8 +721,10 @@ function EmbeddedFile({
         streamingContent={streamingContent}
         isAgentEditing={isAgentEditing}
         streamIsIncremental={streamIsIncremental}
+        streamOperation={streamOperation}
         disableStreamingAutoScroll={disableStreamingAutoScroll}
         previewContextKey={previewContextKey}
+        collaborative
       />
     </div>
   )

@@ -15,6 +15,7 @@ import { canMutateWorkspaceSettingsSection } from '@/components/settings/navigat
 import type { WorkspacePermission } from '@/lib/api/contracts/workspaces'
 import { buildUpgradeHref } from '@/lib/billing/upgrade-reasons'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
+import { InviteModal } from '@/app/workspace/[workspaceId]/components/invite-modal'
 import {
   MemberRow,
   MemberSection,
@@ -22,7 +23,6 @@ import {
 import { RowActionsMenu } from '@/app/workspace/[workspaceId]/settings/components/row-actions-menu'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
 import { useSettingsSearch } from '@/app/workspace/[workspaceId]/settings/components/use-settings-search'
-import { InviteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/invite-modal'
 import {
   useCancelWorkspaceInvitation,
   usePendingInvitations,
@@ -56,6 +56,16 @@ interface Teammate {
   invitationId?: string
   token?: string
   roleSource?: WorkspaceRoleSource
+  isBilledAccount?: boolean
+}
+
+/**
+ * Marks collaborators who hold this workspace without belonging to its
+ * organization. Shown on the status line rather than the role chip, which
+ * carries the workspace permission — a separate axis from membership.
+ */
+function withExternalLabel(status: string, isExternal: boolean | undefined): string {
+  return isExternal ? `${status} \u00b7 External` : status
 }
 
 function copyToClipboard(text: string) {
@@ -124,10 +134,14 @@ export function Teammates() {
       name: member.name ?? member.email,
       image: member.image,
       role: member.permissionType,
-      status: `Joined ${formatDate(new Date(member.joinedAt))}`,
+      status: withExternalLabel(
+        `Joined ${formatDate(new Date(member.joinedAt))}`,
+        member.isExternal
+      ),
       isPending: false,
       userId: member.userId,
       roleSource: member.roleSource,
+      isBilledAccount: member.isBilledAccount,
     }))
 
     const pending: Teammate[] = (invitations ?? []).map((invitation) => ({
@@ -136,7 +150,7 @@ export function Teammates() {
       name: invitation.email,
       image: null,
       role: invitation.permissionType,
-      status: 'Invite pending',
+      status: withExternalLabel('Invite pending', invitation.isExternal),
       isPending: true,
       invitationId: invitation.invitationId,
       token: invitation.token,
@@ -204,7 +218,9 @@ export function Teammates() {
               roleControl={(() => {
                 const lockReason = teammate.isPending
                   ? null
-                  : workspaceRoleLockReason(teammate.roleSource)
+                  : workspaceRoleLockReason(teammate.roleSource, {
+                      isBilledAccount: teammate.isBilledAccount,
+                    })
                 return (
                   <RoleLockTooltip reason={lockReason}>
                     <ChipDropdown
@@ -304,9 +320,11 @@ export function Teammates() {
         <InviteModal
           open={isInviteModalOpen}
           onOpenChange={setIsInviteModalOpen}
+          workspaceId={workspaceId}
           workspaceName={activeWorkspace?.name ?? 'Workspace'}
           inviteDisabledReason={inviteDisabledReason}
           organizationId={activeWorkspace?.organizationId ?? null}
+          canInvite={canManage}
         />
       )}
     </>

@@ -26,6 +26,7 @@ import { Scan } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { createPortal } from 'react-dom'
+import { isChatEnabled } from '@/lib/core/config/env-flags'
 import { captureEvent } from '@/lib/posthog/client'
 import { hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
 import { useInvokeGlobalCommand } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
@@ -217,14 +218,16 @@ export function SearchModal({
       context: 'workflow',
       run: () => invokeCommand('run-workflow'),
     })
-    list.push({
-      id: 'new-chat',
-      name: 'New chat',
-      keywords: 'chat message ask sim assistant home',
-      icon: Home,
-      context: 'global',
-      run: () => routerRef.current.push(`/workspace/${workspaceId}/home`),
-    })
+    if (isChatEnabled) {
+      list.push({
+        id: 'new-chat',
+        name: 'New chat',
+        keywords: 'chat message ask sim assistant home',
+        icon: Home,
+        context: 'global',
+        run: () => routerRef.current.push(`/workspace/${workspaceId}/home`),
+      })
+    }
     if (canEdit && onCreateWorkflow) {
       list.push({
         id: 'create-workflow',
@@ -618,21 +621,44 @@ export function SearchModal({
   }, [isOnWorkflowPage, docs, deferredSearch])
 
   const filteredTables = useMemo(
-    () => filterAndCap(tables, (t) => t.name, deferredSearch),
+    () =>
+      filterAndCap(
+        tables,
+        (t) => t.name,
+        deferredSearch,
+        (t) => t.folderPath?.join(' ')
+      ),
     [tables, deferredSearch]
   )
   const filteredFiles = useMemo(
-    () => filterAndCap(files, (f) => `${f.name} ${f.folderPath?.join(' ') ?? ''}`, deferredSearch),
+    () =>
+      filterAndCap(
+        files,
+        (f) => f.name,
+        deferredSearch,
+        (f) => f.folderPath?.join(' ')
+      ),
     [files, deferredSearch]
   )
   const filteredKnowledgeBases = useMemo(
-    () => filterAndCap(knowledgeBases, (kb) => kb.name, deferredSearch),
+    () =>
+      filterAndCap(
+        knowledgeBases,
+        (kb) => kb.name,
+        deferredSearch,
+        (kb) => kb.folderPath?.join(' ')
+      ),
     [knowledgeBases, deferredSearch]
   )
 
   const filteredWorkflows = useMemo(
     () =>
-      filterAndCap(workflows, (w) => `${w.name} ${w.folderPath?.join(' ') ?? ''}`, deferredSearch),
+      filterAndCap(
+        workflows,
+        (w) => w.name,
+        deferredSearch,
+        (w) => w.folderPath?.join(' ')
+      ),
     [workflows, deferredSearch]
   )
   const filteredChats = useMemo(
@@ -666,7 +692,7 @@ export function SearchModal({
     <>
       <div
         className={cn(
-          'fixed inset-0 z-40 transition-opacity duration-100',
+          'fixed inset-0 z-[var(--z-modal)] transition-opacity duration-100',
           open ? 'opacity-100' : 'pointer-events-none opacity-0'
         )}
         onClick={handleOverlayClick}
@@ -679,7 +705,7 @@ export function SearchModal({
         aria-hidden={!open}
         aria-label='Search'
         className={cn(
-          '-translate-x-1/2 fixed top-[15%] z-50 w-[500px] rounded-xl border border-[var(--border-muted)] bg-[var(--surface-4)] p-[3px] shadow-[var(--shadow-overlay)] dark:bg-[var(--surface-5)]',
+          '-translate-x-1/2 fixed top-[15%] z-[var(--z-modal)] w-[500px] rounded-xl border border-[var(--border-muted)] bg-[var(--surface-4)] p-[3px] shadow-[var(--shadow-overlay)] dark:bg-[var(--surface-5)]',
           open ? 'visible opacity-100' : 'invisible opacity-0'
         )}
         style={{
