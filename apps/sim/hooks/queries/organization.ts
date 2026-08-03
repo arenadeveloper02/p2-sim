@@ -17,9 +17,11 @@ import {
 import {
   createOrganizationContract,
   getMemberRemovalImpactContract,
+  getMyMemberCreditsContract,
   getOrganizationMemberUsageLimitContract,
   getOrganizationRosterContract,
   listOrganizationMembersContract,
+  type MyMemberCreditsData,
   type OrganizationMembersResponse,
   type OrganizationMemberUsageLimitData,
   type OrganizationRoster,
@@ -59,6 +61,7 @@ export const ORGANIZATION_SUBSCRIPTION_STALE_TIME = 30 * 1000
 export const ORGANIZATION_BILLING_STALE_TIME = 30 * 1000
 export const ORGANIZATION_MEMBERS_STALE_TIME = 30 * 1000
 export const ORGANIZATION_MEMBER_USAGE_LIMIT_STALE_TIME = 30 * 1000
+export const ORGANIZATION_MY_MEMBER_CREDITS_STALE_TIME = 30 * 1000
 /**
  * Zero: removal impact is a consent disclosure, so every dialog open must
  * refetch — a cached list may omit credentials added moments ago, and the
@@ -129,6 +132,8 @@ export const organizationKeys = {
   roster: (id: string) => [...organizationKeys.detail(id), 'roster'] as const,
   removalImpact: (id: string, userId: string) =>
     [...organizationKeys.detail(id), 'removal-impact', userId] as const,
+  myMemberCredits: (workspaceId: string) =>
+    [...organizationKeys.all, 'my-member-credits', workspaceId] as const,
 }
 
 export type { CreatorOrganization }
@@ -575,6 +580,31 @@ export function useUpdateOrganizationMemberUsageLimit() {
         queryKey: organizationKeys.memberUsageLimit(variables.orgId, variables.userId),
       })
     },
+  })
+}
+
+async function fetchMyMemberCredits(
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<MyMemberCreditsData> {
+  const response = await requestJson(getMyMemberCreditsContract, {
+    query: { workspaceId },
+    signal,
+  })
+  return response.data
+}
+
+/**
+ * The caller's OWN per-member credit usage + cap for a workspace's organization.
+ * `creditLimit` is null when no per-member cap applies (non-hosted, non-org
+ * workspace, or no cap set) — callers then fall back to the plan-level view.
+ */
+export function useMyMemberCredits(workspaceId?: string) {
+  return useQuery({
+    queryKey: organizationKeys.myMemberCredits(workspaceId ?? ''),
+    queryFn: ({ signal }) => fetchMyMemberCredits(workspaceId as string, signal),
+    enabled: Boolean(workspaceId),
+    staleTime: ORGANIZATION_MY_MEMBER_CREDITS_STALE_TIME,
   })
 }
 

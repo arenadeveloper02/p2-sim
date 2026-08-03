@@ -73,9 +73,70 @@ export function resolveOrgMemberCreditDisplay(params: {
   }
 }
 
+export interface OrgPoolBarSegments {
+  /** Org pool remaining shown as the hero number (not allocation-capped). */
+  poolRemainingCredits: number | 'unlimited'
+  poolTotalCredits: number | 'unlimited'
+  usedByOrgCredits: number
+  usedByYouCredits: number
+  usedByOthersCredits: number
+  youPercent: number
+  othersPercent: number
+  remainingPercent: number
+}
+
+/**
+ * Segment percentages for the You / Organization / Remaining pool bar.
+ * "Organization" on the bar is other members' usage (org used − you).
+ */
+export function resolveOrgPoolBarSegments(params: {
+  orgPool: { totalCredits: number; usedCredits: number; isUnlimited: boolean }
+  memberUsedCredits: number
+}): OrgPoolBarSegments {
+  const { orgPool, memberUsedCredits } = params
+  const usedByYouCredits = Math.max(0, memberUsedCredits)
+  const usedByOrgCredits = Math.max(0, orgPool.usedCredits)
+  const usedByOthersCredits = Math.max(0, usedByOrgCredits - usedByYouCredits)
+
+  if (orgPool.isUnlimited || orgPool.totalCredits <= 0) {
+    return {
+      poolRemainingCredits: 'unlimited',
+      poolTotalCredits: 'unlimited',
+      usedByOrgCredits,
+      usedByYouCredits,
+      usedByOthersCredits,
+      youPercent: 0,
+      othersPercent: 0,
+      remainingPercent: 100,
+    }
+  }
+
+  const poolRemainingCredits = Math.max(0, orgPool.totalCredits - usedByOrgCredits)
+  const youPercent = clampPercent((usedByYouCredits / orgPool.totalCredits) * 100)
+  const othersPercent = clampPercent((usedByOthersCredits / orgPool.totalCredits) * 100)
+  const remainingPercent = clampPercent(100 - youPercent - othersPercent)
+
+  return {
+    poolRemainingCredits,
+    poolTotalCredits: orgPool.totalCredits,
+    usedByOrgCredits,
+    usedByYouCredits,
+    usedByOthersCredits,
+    youPercent,
+    othersPercent,
+    remainingPercent,
+  }
+}
+
 /** Format a credit count for display. */
 export function formatCreditCount(credits: number): string {
   return credits.toLocaleString()
+}
+
+/** Format a share of the pool as `X.X%`. */
+export function formatSharePercent(part: number, whole: number): string {
+  if (!Number.isFinite(part) || !Number.isFinite(whole) || whole <= 0) return '0.0%'
+  return `${clampPercent((part / whole) * 100).toFixed(1)}%`
 }
 
 /** Download member usage rows as a CSV file. */
