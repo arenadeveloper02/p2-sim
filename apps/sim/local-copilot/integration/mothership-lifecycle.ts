@@ -24,6 +24,11 @@ import type { LocalTurnCostSummary } from '@/local-copilot/lib/billing/turn-cost
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
+import {
+  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
+  isLocalCopilotCatalogId,
+  type LocalCopilotCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
 import type {
@@ -35,6 +40,14 @@ const logger = createLogger('LocalCopilotMothershipLifecycle')
 
 function extractString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function resolveCatalogIdFromPayload(requestPayload: Record<string, unknown>): LocalCopilotCatalogId {
+  const model = extractString(requestPayload.model)
+  if (!model || !isLocalCopilotCatalogId(model)) {
+    return DEFAULT_LOCAL_COPILOT_CATALOG_ID
+  }
+  return model
 }
 
 function extractContexts(value: unknown): CopilotContextEntry[] | undefined {
@@ -356,12 +369,14 @@ export async function runLocalCopilotMothershipLifecycle(
   try {
     let eventCount = 0
     let toolCallCount = 0
+    const catalogId = resolveCatalogIdFromPayload(requestPayload)
     const agent = runLocalCopilotAgent({
       userId,
       workspaceId,
       message,
       chatId: options.chatId,
       runId: options.runId ?? execContext.runId,
+      catalogId,
       ...(userMessageId ? { messageId: userMessageId } : {}),
       ...(isMothershipBlockExecute && (options.executionId ?? execContext.executionId)
         ? { parentExecutionId: options.executionId ?? execContext.executionId }

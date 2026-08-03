@@ -99,6 +99,8 @@ const GEO_PROFILE_UNSUPPORTED_MODEL_IDS = new Set([
   'amazon.titan-text-premier-v1:0',
   'cohere.command-r-v1:0',
   'cohere.command-r-plus-v1:0',
+  // Moonshot Kimi K2.5: model card lists Geo inference ID as "Not supported".
+  'moonshotai.kimi-k2.5',
 ])
 
 /**

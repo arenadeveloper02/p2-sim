@@ -35,7 +35,11 @@ import {
   LocalTurnCostAccumulator,
   type LocalTurnCostSummary,
 } from '@/local-copilot/lib/billing/turn-cost-accumulator'
-import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
+import { getLocalCopilotConfig, buildLocalCopilotConfigForCatalog, assertLocalCopilotEnabled } from '@/local-copilot/lib/config'
+import {
+  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
+  type LocalCopilotCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import {
   buildLocalCopilotContext,
   contextToPromptJson,
@@ -91,7 +95,7 @@ import {
   recordToolCall,
   savePatch,
 } from '@/local-copilot/lib/persistence/store'
-import { getLocalCopilotProvider } from '@/local-copilot/lib/providers/registry'
+import { createLocalCopilotProvider, getLocalCopilotProvider } from '@/local-copilot/lib/providers/registry'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import {
   stripLeakedToolMarkers,
@@ -326,13 +330,22 @@ export interface RunAgentParams {
   fileAttachments?: CopilotFileAttachmentRef[]
   /** Workspace markdown snapshot from mothership payload. */
   workspaceContext?: string
+  /**
+   * Allowlisted Local Copilot model catalog id. When set, builds a per-request
+   * provider config instead of using process-wide `COPILOT_*` env defaults.
+   */
+  catalogId?: LocalCopilotCatalogId
 }
 
 export async function* runLocalCopilotAgent(
   params: RunAgentParams
 ): AsyncGenerator<LocalCopilotStreamEvent, LocalTurnCostSummary | undefined, undefined> {
   const startedAt = Date.now()
-  const config = getLocalCopilotConfig()
+  const catalogId = params.catalogId ?? DEFAULT_LOCAL_COPILOT_CATALOG_ID
+  const config = params.catalogId
+    ? buildLocalCopilotConfigForCatalog(catalogId)
+    : getLocalCopilotConfig()
+  assertLocalCopilotEnabled(config)
   /**
    * Unique per user turn. Mothership Local has no local conversationId, and
    * round indexes reset each turn — without this, usage_log eventKeys collide
@@ -344,6 +357,7 @@ export async function* runLocalCopilotAgent(
     workflowId: params.workflowId ?? null,
     chatId: params.chatId ?? null,
     usageTurnId,
+    catalogId,
     provider: config.provider,
     model: config.model,
     specialistModel: config.specialistModel,
@@ -541,7 +555,9 @@ export async function* runLocalCopilotAgent(
     memory: getLocalCopilotMemorySnapshot(),
   })
 
-  const provider = getLocalCopilotProvider()
+  const provider = params.catalogId
+    ? createLocalCopilotProvider(config)
+    : getLocalCopilotProvider()
   const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
@@ -694,7 +710,12 @@ export async function* runLocalCopilotAgent(
     if (stagnationStopMessage) break
     if (postBuildToolMode === 'done') break
 
-    const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
+    const pendingToolCalls: Array<{
+      id: string
+      name: string
+      arguments: string
+      thoughtSignature?: string
+    }> = []
     let roundInputTokens = 0
     let roundOutputTokens = 0
     let roundCacheReadTokens: number | undefined

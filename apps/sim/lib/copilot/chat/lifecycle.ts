@@ -46,6 +46,7 @@ const copilotChatDetailColumns = {
   title: copilotChats.title,
   conversationId: copilotChats.conversationId,
   resources: copilotChats.resources,
+  model: copilotChats.model,
   createdAt: copilotChats.createdAt,
   updatedAt: copilotChats.updatedAt,
 } as const
@@ -100,6 +101,7 @@ export type CopilotChatDetailRow = Pick<
   | 'title'
   | 'conversationId'
   | 'resources'
+  | 'model'
   | 'createdAt'
   | 'updatedAt'
 > & {
