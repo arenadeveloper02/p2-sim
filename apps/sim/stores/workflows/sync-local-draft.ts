@@ -1,12 +1,18 @@
 import { createLogger } from '@sim/logger'
 import { sleep } from '@sim/utils/helpers'
+import { isEqual } from 'es-toolkit'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import { fetchWorkflowEnvelope } from '@/hooks/queries/utils/fetch-workflow-envelope'
 import { workflowKeys } from '@/hooks/queries/utils/workflow-keys'
 import { useOperationQueueStore } from '@/stores/operation-queue/store'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
-import { applyWorkflowStateToStores } from '@/stores/workflow-diff/utils'
+import {
+  applyWorkflowStateToStores,
+  persistWorkflowStateToServer,
+} from '@/stores/workflow-diff/utils'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
+import { mergeSubblockState } from '@/stores/workflows/utils'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('SyncLocalDraft')
