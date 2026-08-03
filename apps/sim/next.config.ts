@@ -226,6 +226,11 @@ const nextConfig: NextConfig = {
     '/api/internal/file-doc/seed': ['./node_modules/jsdom/**/*'],
     '/api/internal/file-doc/merge': ['./node_modules/jsdom/**/*'],
     '/api/internal/file-doc/persist': ['./node_modules/jsdom/**/*'],
+    // sharp@0.35+ needs both `@img/sharp-<platform>` and sibling
+    // `@img/sharp-libvips-<platform>` (the `.so` the addon dlopens). These
+    // globs help non-monorepo / Vercel traces; Docker still has to COPY the
+    // hoisted `/app/node_modules/{sharp,@img}` trees in `docker/app.Dockerfile`
+    // because these paths resolve against `apps/sim` and miss the root hoist.
     '/*': [
       './node_modules/sharp/**/*',
       './node_modules/@img/**/*',

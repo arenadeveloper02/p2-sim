@@ -198,6 +198,18 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/content ./apps/sim/conte
 # Copy isolated-vm native module (compiled for Node.js in deps stage)
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules/isolated-vm ./node_modules/isolated-vm
 
+# sharp@0.35+ splits the native addon (`@img/sharp-linux-*`) from the libvips
+# shared library (`@img/sharp-libvips-linux-*/lib/libvips-cpp.so.*`). The addon
+# dlopens libvips at runtime, so Next's standalone file tracer never sees the
+# `.so` and omits it — every route whose import graph reaches sharp then 500s
+# with `ERR_DLOPEN_FAILED: libvips-cpp.so.8.18.3`. Same monorepo-root hoist
+# problem as yjs/lib0 below: `outputFileTracingIncludes` globs resolve against
+# apps/sim and cannot reach `/app/node_modules`, so copy the full trees from
+# the deps install (which already has the correct linux/$TARGETARCH optional
+# packages because this stage builds on that platform).
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/sharp ./node_modules/sharp
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/@img ./node_modules/@img
+
 # The collab-doc seed/merge/persist routes run the converter (markdown <-> Yjs) server-side. `yjs` is a
 # serverExternalPackage, and the Next standalone tracer copies it only partially — it misses ESM subpath
 # files that `yjs/dist/yjs.mjs` imports through `lib0`'s exports map (e.g. `lib0/logging`), so the seed
