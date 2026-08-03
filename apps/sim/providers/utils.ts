@@ -55,7 +55,8 @@ import {
 } from '@/providers/models'
 import type { ProviderId, ProviderToolConfig } from '@/providers/types'
 import { useProvidersStore } from '@/stores/providers/store'
-import { mergeToolParameters, type SchemaProperty } from '@/tools/params'
+import { mergeToolParameters } from '@/tools/merge-params'
+import type { SchemaProperty } from '@/tools/params'
 import { SPYFU_DEFAULT_OPERATION_ID } from '@/tools/spyfu/operations'
 
 const logger = createLogger('ProviderUtils')
