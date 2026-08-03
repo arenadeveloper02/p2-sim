@@ -48,8 +48,30 @@ Use PR **#{{PR_NUMBER}}** for unanswered questions (see the grill skill). Do **n
 
 From `.agents/skills/<name>/SKILL.md`: `db-migrate`, `react-query-best-practices`, `validate-integration`, `memory-load-check`.
 
-## Completion
+## Completion (harness gate)
 
-When grill analysis is written to `.upstream-sync/ledger/{{RUN_ID}}/run.md` under `## Grill analysis`, and any **new** open questions are posted on PR #{{PR_NUMBER}}, output:
+The harness **will not start the merge** while `.upstream-sync/ledger/{{RUN_ID}}/open-questions.md` still lists unanswered questions.
+
+Always write that file before you finish:
+
+### When you have questions
+
+1. Write `.upstream-sync/ledger/{{RUN_ID}}/open-questions.md` starting with `<!-- upstream-sync-question -->` and the full question list.
+2. Post **one** PR comment on PR #{{PR_NUMBER}} with the same marker + questions.
+3. Output `<promise>UPSTREAM_SYNC_GRILL_COMPLETE</promise>` — do **not** guess ambiguous fork-vs-upstream product calls.
+
+### When you have no questions
+
+1. Write `.upstream-sync/ledger/{{RUN_ID}}/open-questions.md` as:
+
+```markdown
+# No open questions
+
+All decisions resolved from merge-policy / ledger.
+```
+
+2. Output `<promise>UPSTREAM_SYNC_GRILL_COMPLETE</promise>`.
+
+When grill analysis is written to `.upstream-sync/ledger/{{RUN_ID}}/run.md` under `## Grill analysis`, and the open-questions file is written as above, output:
 
 <promise>UPSTREAM_SYNC_GRILL_COMPLETE</promise>

@@ -33,14 +33,28 @@ Produce a written analysis (append to `.upstream-sync/ledger/<RUN_ID>/run.md` un
 - Upstream changes worth taking vs likely to skip (with rationale)
 - Open decisions that **cannot** be resolved from codebase or ledger alone
 
-## Asking humans (PR-based)
+## Asking humans (required harness gate)
+
+The harness **blocks merge** while `.upstream-sync/ledger/<RUN_ID>/open-questions.md` contains unanswered questions. That file is the source of truth.
 
 When you must ask:
 
-1. Post **one PR comment on PR #{{PR_NUMBER}}** containing `<!-- upstream-sync-question -->` with all unresolved questions grouped clearly.
-2. Log questions via the harness (they land in `grill-log.md` automatically when synced).
+1. **Write** `.upstream-sync/ledger/<RUN_ID>/open-questions.md` starting with `<!-- upstream-sync-question -->` and all unresolved questions grouped clearly.
+2. Post **one PR comment on PR #{{PR_NUMBER}}** containing the same marker + questions (for human visibility).
 3. Stop and output `<promise>UPSTREAM_SYNC_GRILL_COMPLETE</promise>` — do **not** guess on fork-first vs upstream-first for ambiguous conflicts.
 4. Tell the reviewer to reply with `/upstream-sync resume` and their answers on the same PR.
+
+When you have **no** questions:
+
+1. Write `.upstream-sync/ledger/<RUN_ID>/open-questions.md` as:
+
+```markdown
+# No open questions
+
+All decisions resolved from merge-policy / ledger.
+```
+
+2. Output `<promise>UPSTREAM_SYNC_GRILL_COMPLETE</promise>`.
 
 If the codebase or ledger answers the question, **do not ask** — record the decision in `run.md` instead.
 

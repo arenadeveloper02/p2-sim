@@ -462,6 +462,24 @@ export function runGit(args: string[], cwd = process.cwd()): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
 
+/**
+ * Commit harness-owned changes without husky / lint-staged.
+ * Merge commits stage thousands of files; parallel Biome OOMs the Actions runner.
+ * Quality is enforced by the advisory verify step after the merge lands.
+ */
+export function commitHarness(message: string, cwd = process.cwd()): string {
+  return execFileSync('git', ['commit', '--no-verify', '-m', message], {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, HUSKY: '0' },
+  }).trim()
+}
+
+/** Path to the grill open-questions ledger file for a run. */
+export function openQuestionsPath(runId: string): string {
+  return join(ledgerRunDir(runId), 'open-questions.md')
+}
+
 function resolveGhToken(): string | undefined {
   // Prefer GH_TOKEN (Actions github.token). Ignore GH_PAT / UPSTREAM_SYNC_GH_TOKEN so an
   // expired repo secret cannot override the working Actions token.
@@ -529,9 +547,13 @@ export function commitSyncBranchScaffold(options: {
   runGit(['add', SYNC_BRANCH_README_PATH])
   try {
     runGit(['diff', '--cached', '--quiet'])
-    runGit(['commit', '--allow-empty', '-m', `upstream-sync(${options.runId}): sync branch note`])
+    execFileSync(
+      'git',
+      ['commit', '--allow-empty', '--no-verify', '-m', `upstream-sync(${options.runId}): sync branch note`],
+      { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, HUSKY: '0' } }
+    )
   } catch {
-    runGit(['commit', '-m', `upstream-sync(${options.runId}): sync branch note`])
+    commitHarness(`upstream-sync(${options.runId}): sync branch note`)
   }
 }
 

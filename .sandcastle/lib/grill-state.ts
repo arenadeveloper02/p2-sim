@@ -1,8 +1,12 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import {
   findOpenSyncPr,
   isPrOpen,
   isSyncBranch,
+  openQuestionsPath,
+  QUESTION_MARKER,
   readQaHistory,
+  repoSlug,
   RESUME_COMMAND,
   runGh,
   runGit,
@@ -92,6 +96,63 @@ export function shouldSkipParentGrill(options: {
   return hasResumeAnswerForPr(options.prNumber)
 }
 
+/** True when the open-questions ledger explicitly says nothing is pending. */
+export function isNoneOpenQuestionsContent(content: string): boolean {
+  const stripped = content.replaceAll(QUESTION_MARKER, '').trim()
+  return /^#?\s*no open questions\b/i.test(stripped)
+}
+
+/** Read grill open-questions ledger content, or null when absent/empty. */
+export function readOpenQuestionsFile(runId: string): string | null {
+  const path = openQuestionsPath(runId)
+  if (!existsSync(path)) return null
+  const content = readFileSync(path, 'utf8').trim()
+  return content.length > 0 ? content : null
+}
+
+/**
+ * True when a PR issue comment still carries the question marker.
+ * Draft PR bodies also use the marker as a template — only comments count.
+ */
+export function prHasQuestionMarkerComment(prNumber: number): boolean {
+  if (prNumber <= 0) return false
+  try {
+    const { owner, repo } = repoSlug()
+    const raw = runGh([
+      'api',
+      `repos/${owner}/${repo}/issues/${prNumber}/comments`,
+      '--paginate',
+    ])
+    const comments = JSON.parse(raw) as Array<{ body?: string }>
+    return comments.some((comment) => comment.body?.includes(QUESTION_MARKER))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * True when grill left unanswered product questions in the ledger.
+ * Source of truth is `.upstream-sync/ledger/<runId>/open-questions.md`.
+ * Resume clears that file to "No open questions" before merge continues.
+ */
+export function hasUnansweredGrillQuestions(options: { runId: string }): boolean {
+  const file = readOpenQuestionsFile(options.runId)
+  return Boolean(file && !isNoneOpenQuestionsContent(file))
+}
+
+/** Mark open questions as resolved after a human resume answer. */
+export function clearOpenQuestionsFile(runId: string): void {
+  writeFileSync(
+    openQuestionsPath(runId),
+    [
+      '# No open questions',
+      '',
+      'Resolved via `/upstream-sync resume` — decisions recorded in `grill-log.md` / `qa-history.jsonl`.',
+      '',
+    ].join('\n')
+  )
+}
+
 /**
  * Pull PR comments into the ledger and clear open questions when a resume answer exists.
  */
@@ -102,6 +163,9 @@ export function ingestGrillQaFromPr(
 ): { added: number; state: SyncState } {
   const added = syncGrillQaFromPr(prNumber, runId)
   const answered = hasResumeAnswerForPr(prNumber)
+  if (answered) {
+    clearOpenQuestionsFile(runId)
+  }
   return {
     added,
     state: answered ? { ...state, openQuestions: [] } : state,

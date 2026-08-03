@@ -10,11 +10,12 @@ Sync parent repo `simstudioai/sim` `main` into the branch that triggered the run
 ## Skill workflow (run in order)
 
 1. **`/upstream-sync-grill`** — analysis + FBI risk (`.claude/skills/upstream-sync-grill/SKILL.md`)
-2. **Merge** — `git merge upstream/main` on the sync branch
-3. **Resolve conflicts** — fork-first per `.upstream-sync/merge-policy.json`; child agents per cluster
-4. **`/diagnosing-bugs`** — if verification fails or behavior regresses (`.claude/skills/diagnosing-bugs/SKILL.md`)
-5. **`/tdd`** — when adding regression tests for merge fixes (`.claude/skills/tdd/SKILL.md`)
-6. **`/review-upstream-merge`** — before marking draft PR ready (`.claude/skills/review-upstream-merge/SKILL.md`)
+2. **Await answers** — if `.upstream-sync/ledger/<RUN_ID>/open-questions.md` has questions, harness stops until `/upstream-sync resume`
+3. **Merge** — `git merge upstream/main` on the sync branch
+4. **Resolve conflicts** — fork-first per `.upstream-sync/merge-policy.json`; child agents per cluster; finalize child if leftovers remain
+5. **`/diagnosing-bugs`** — if verification fails or behavior regresses (`.claude/skills/diagnosing-bugs/SKILL.md`)
+6. **`/tdd`** — when adding regression tests for merge fixes (`.claude/skills/tdd/SKILL.md`)
+7. **`/review-upstream-merge`** — before marking draft PR ready (`.claude/skills/review-upstream-merge/SKILL.md`)
 
 ## Sim repo skills (invoke when relevant)
 
@@ -65,6 +66,7 @@ bun run build
 | `.upstream-sync/ledger/<RUN_ID>/fbi-report.md` | FBI commit list |
 | `.upstream-sync/ledger/<RUN_ID>/skipped.md` | Declined upstream changes |
 | `.upstream-sync/ledger/<RUN_ID>/grill-qa.md` | This run's Q&A |
+| `.upstream-sync/ledger/<RUN_ID>/open-questions.md` | Unanswered grill questions (harness merge gate) |
 | `.upstream-sync/ledger/<RUN_ID>/run.md` | Full run log |
 
 ## GitHub Actions

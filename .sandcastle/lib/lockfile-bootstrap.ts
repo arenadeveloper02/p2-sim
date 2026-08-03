@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import {
   MERGE_POLICY_PATH,
+  commitHarness,
   listConflictFiles,
   runGit,
 } from './config'
@@ -182,7 +183,7 @@ export function ensureInstallableWorkspace(runId: string): boolean {
           '[lockfile-bootstrap] Staged package manager files; merge still in progress — skipping commit until all conflicts resolve.'
         )
       } else {
-        runGit(['commit', '-m', `upstream-sync(${runId}): bootstrap package manager after merge`])
+        commitHarness(`upstream-sync(${runId}): bootstrap package manager after merge`)
       }
     }
   }

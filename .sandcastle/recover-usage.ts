@@ -13,6 +13,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   appendRunLogSections,
+  commitHarness,
   readState,
   runGit,
   todayRunId,
@@ -119,7 +120,7 @@ if (commit && records.length > 0) {
     try {
       runGit(['add', '.upstream-sync'])
       if (hasStagedChanges()) {
-        runGit(['commit', '-m', `upstream-sync(${runId}): recover agent usage after cancel/error`])
+        commitHarness(`upstream-sync(${runId}): recover agent usage after cancel/error`)
         console.log('[recover-usage] committed ledger usage files')
       } else {
         console.log('[recover-usage] no ledger changes to commit')

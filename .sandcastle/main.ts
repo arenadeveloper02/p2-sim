@@ -4,15 +4,17 @@
  * Phased pipeline:
  * 1. Detect upstream changes + scaffold ledger
  * 2. Early draft PR + parent grill agent (ledger analysis only)
- * 3. Git merge upstream/main
- * 4. Deterministic package-manager bootstrap
- * 5. Child agents per conflict cluster
- * 6. Verification (check, lint, test, build)
- * 7. Update draft PR body + final ledger commit
+ * 3. Gate on unanswered grill questions (await `/upstream-sync resume`)
+ * 4. Git merge upstream/main
+ * 5. Deterministic package-manager bootstrap
+ * 6. Child agents per conflict cluster (+ finalize child for leftovers)
+ * 7. Verification (check, lint, test, build) — advisory; merge commits skip husky
+ * 8. Update draft PR body + final ledger commit
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { getErrorMessage } from '@sim/utils/errors'
 import type { AgentStreamEvent, RunResult } from '@ai-hero/sandcastle'
 import { run } from '@ai-hero/sandcastle'
 import { noSandbox } from '@ai-hero/sandcastle/sandboxes/no-sandbox'
@@ -29,6 +31,7 @@ import {
   COMPLETION_SIGNAL,
   closeSupersededPr,
   commentOnPr,
+  commitHarness,
   commitSyncBranchScaffold,
   comparePullRequestUrl,
   decideSyncBranchAction,
@@ -76,6 +79,8 @@ import {
   writeState,
 } from './lib/config'
 import {
+  clearOpenQuestionsFile,
+  hasUnansweredGrillQuestions,
   ingestGrillQaFromPr,
   parseResumePrNumber,
   resolveActivePrNumber,
@@ -118,6 +123,46 @@ function hasStagedChanges(): boolean {
   } catch {
     return true
   }
+}
+
+/**
+ * Last-chance child agent for leftover unmerged paths or a failed merge commit.
+ */
+async function runFinalizeMergeAgent(options: {
+  runId: string
+  syncBranch: string
+  activePrNumber: number
+  agents: ReturnType<typeof resolveAgents>
+  remaining: string[]
+  reason: string
+  commitError?: string
+}): Promise<string[]> {
+  const fileList =
+    options.remaining.length > 0
+      ? options.remaining.map((f) => `- ${f}`).join('\n')
+      : '- (no unmerged paths listed — inspect commit error and search for conflict markers)'
+
+  const childPrompt = substitutePrompt(readPrompt('child-finalize-merge.md'), {
+    RUN_ID: options.runId,
+    SYNC_BRANCH: options.syncBranch,
+    PR_NUMBER: options.activePrNumber > 0 ? String(options.activePrNumber) : 'none',
+    FINALIZE_REASON: options.reason,
+    REMAINING_FILES: fileList,
+    COMMIT_ERROR: options.commitError?.slice(0, 4000) || '(none)',
+  })
+
+  await runAgentPrompt({
+    prompt: childPrompt,
+    name: 'child-finalize-merge',
+    branch: options.syncBranch,
+    runId: options.runId,
+    agent: options.agents.child,
+    agentKind: 'child',
+    provider: options.agents.provider,
+    maxIterations: 5,
+  })
+
+  return listConflictFiles()
 }
 
 function readPrompt(name: string): string {
@@ -389,7 +434,7 @@ function commitUpstreamLedger(message: string): boolean {
   try {
     runGit(['add', '.upstream-sync'])
     if (hasStagedChanges()) {
-      runGit(['commit', '-m', message])
+      commitHarness(message)
       return true
     }
   } catch (error) {
@@ -739,18 +784,17 @@ async function main(): Promise<void> {
 
     let workingState = branchState
     if (RESUME && activePrNumber > 0) {
-      const ingested = ingestGrillQaFromPr(
-        activePrNumber,
-        branchState.lastRunId ?? runId,
-        workingState
-      )
+      const ledgerRunId = branchState.lastRunId ?? runId
+      const ingested = ingestGrillQaFromPr(activePrNumber, ledgerRunId, workingState)
       workingState = ingested.state
       if (ingested.added > 0) {
         console.log(`Synced ${ingested.added} grill Q&A comment(s) from PR #${activePrNumber}.`)
       }
-      commitUpstreamLedger(
-        `upstream-sync(${branchState.lastRunId ?? runId}): log resume Q&A`
-      )
+      // ingest clears ledgerRunId when answered; also clear today's slot on cross-day resume.
+      if (runId !== ledgerRunId && !hasUnansweredGrillQuestions({ runId: ledgerRunId })) {
+        clearOpenQuestionsFile(runId)
+      }
+      commitUpstreamLedger(`upstream-sync(${ledgerRunId}): log resume Q&A`)
     }
 
     writeState({
@@ -891,6 +935,77 @@ async function main(): Promise<void> {
       console.log('[skip-agent] parent-grill-analysis')
     }
 
+    // Grill may leave product questions in open-questions.md — never merge until answered.
+    if (activePrNumber > 0) {
+      syncGrillQaFromPr(activePrNumber, runId)
+    }
+    const priorRunId = workingState.lastRunId
+    const unanswered =
+      hasUnansweredGrillQuestions({ runId }) ||
+      (Boolean(priorRunId) &&
+        priorRunId !== runId &&
+        hasUnansweredGrillQuestions({ runId: priorRunId as string }))
+    if (unanswered) {
+      const questionsRunId =
+        priorRunId && hasUnansweredGrillQuestions({ runId: priorRunId })
+          ? priorRunId
+          : runId
+      const usageSectionQuestions = appendUsageToRunLog(runId)
+      appendRunLogSections(runId, {
+        Status: 'awaiting_input',
+        'Open questions':
+          'Grill left unanswered product decisions in `open-questions.md`. Merge will not start until `/upstream-sync resume`.',
+      })
+      const questionsBody = [
+        QUESTION_MARKER,
+        `## Upstream sync awaiting answers (${runId})`,
+        '',
+        'Grill analysis found product decisions that need a human call before merge starts.',
+        '',
+        `See [.upstream-sync/ledger/${questionsRunId}/open-questions.md](.upstream-sync/ledger/${questionsRunId}/open-questions.md).`,
+        '',
+        `Reply with \`${RESUME_COMMAND}\` and your answers on this PR.`,
+        '',
+        '### Agent usage',
+        usageSectionQuestions,
+      ].join('\n')
+      const prNumber = ensureActiveDraftPr({
+        existingPrNumber: activePrNumber,
+        mergeBase,
+        syncBranch,
+        runId,
+        headSha,
+        title: syncPrTitle,
+        body: extendedBanner ? withExtendedBanner(questionsBody, extendedBanner) : questionsBody,
+      })
+      logHarnessQuestion(
+        runId,
+        prNumber,
+        'Grill open questions must be answered before merge starts.',
+        `.upstream-sync/ledger/${questionsRunId}/open-questions.md`
+      )
+      if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
+      commitUpstreamLedger(`upstream-sync(${runId}): await grill answers`)
+      try {
+        runGit(['push', 'origin', syncBranch])
+      } catch (error) {
+        console.warn(`Could not push ${syncBranch} after grill gate:`, error)
+      }
+      writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
+      writeRunOutcome(runId, {
+        kind: 'awaiting_input',
+        title: 'Awaiting grill answers before merge',
+        detail: `Answer questions in \`.upstream-sync/ledger/${questionsRunId}/open-questions.md\` and reply with ${RESUME_COMMAND}.`,
+        syncBranch,
+        mergeBase,
+        upstreamSha: headSha,
+        prNumber: prNumber || null,
+        commitCount: upstreamCommits.length,
+      })
+      process.exitCode = 1
+      return
+    }
+
     endGroup()
     endGroup = startLogGroup('merge/bootstrap')
 
@@ -988,7 +1103,29 @@ async function main(): Promise<void> {
       })
     }
 
-    const remaining = listConflictFiles()
+    const remainingAfterClusters = listConflictFiles()
+    let remaining = remainingAfterClusters
+    if (remaining.length > 0 && !SKIP_AGENT) {
+      console.log(
+        `${remaining.length} conflict(s) left after clusters — running finalize child agent.`
+      )
+      remaining = await runFinalizeMergeAgent({
+        runId,
+        syncBranch,
+        activePrNumber,
+        agents,
+        remaining,
+        reason:
+          'Cluster agents finished but unmerged paths remain. Resolve every leftover conflict.',
+      })
+      persistMergeWip({
+        syncBranch,
+        runId,
+        clusterId: 'finalize-after-clusters',
+        conflictSnapshot,
+      })
+    }
+
     if (remaining.length > 0) {
       persistMergeWip({
         syncBranch,
@@ -1006,7 +1143,7 @@ async function main(): Promise<void> {
         QUESTION_MARKER,
         `## Upstream sync blocked (${runId})`,
         '',
-        `${remaining.length} unresolved conflict(s). Review ledger at \`.upstream-sync/ledger/${runId}/\`.`,
+        `${remaining.length} unresolved conflict(s) after finalize agent. Review ledger at \`.upstream-sync/ledger/${runId}/\`.`,
         '',
         `Reply with \`${RESUME_COMMAND}\` after answering open questions.`,
         '',
@@ -1049,7 +1186,80 @@ async function main(): Promise<void> {
 
     runGit(['add', '-A'])
     if (hasStagedChanges()) {
-      runGit(['commit', '-m', `upstream-sync(${runId}): merge simstudioai/sim main`])
+      try {
+        commitHarness(`upstream-sync(${runId}): merge simstudioai/sim main`)
+      } catch (error) {
+        const commitError = getErrorMessage(error)
+        console.warn('Merge commit failed — invoking finalize child agent once.', commitError)
+        remaining = await runFinalizeMergeAgent({
+          runId,
+          syncBranch,
+          activePrNumber,
+          agents,
+          remaining: listConflictFiles(),
+          reason:
+            'The harness merge commit failed (often leftover unmerged paths or a broken hybrid). Fix the tree so `git commit` can succeed. Do not run husky/lint-staged.',
+          commitError,
+        })
+        persistMergeWip({
+          syncBranch,
+          runId,
+          clusterId: 'finalize-after-commit-fail',
+          conflictSnapshot,
+        })
+
+        if (remaining.length > 0) {
+          const usageSectionBlocked = appendUsageToRunLog(runId)
+          appendRunLogSections(runId, {
+            Status: 'blocked',
+            'Remaining conflicts': remaining.map((f) => `- ${f}`).join('\n'),
+            'Commit error': commitError.slice(0, 2000),
+          })
+          const prBody = [
+            QUESTION_MARKER,
+            `## Upstream sync blocked (${runId})`,
+            '',
+            `${remaining.length} unresolved conflict(s) after finalize agent (commit failed).`,
+            '',
+            `Reply with \`${RESUME_COMMAND}\` after fixing remaining paths.`,
+            '',
+            '### Agent usage',
+            usageSectionBlocked,
+          ].join('\n')
+          const prNumber = resolveDraftPr(
+            activePrNumber,
+            mergeBase,
+            syncBranch,
+            runId,
+            extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
+            headSha,
+            syncPrTitle
+          )
+          writeState({
+            ...readState(),
+            activePrNumber: prNumber || null,
+            status: 'awaiting_input',
+          })
+          writeRunOutcome(runId, {
+            kind: 'awaiting_input',
+            title: `${remaining.length} unresolved merge conflict(s) after commit failure`,
+            detail: commitError.slice(0, 500),
+            syncBranch,
+            mergeBase,
+            upstreamSha: headSha,
+            prNumber: prNumber || null,
+            commitCount: upstreamCommits.length,
+            remainingConflicts: remaining,
+          })
+          process.exitCode = 1
+          return
+        }
+
+        runGit(['add', '-A'])
+        if (hasStagedChanges()) {
+          commitHarness(`upstream-sync(${runId}): merge simstudioai/sim main`)
+        }
+      }
     }
 
     endGroup()
@@ -1059,7 +1269,7 @@ async function main(): Promise<void> {
     if (formatResult.success) {
       runGit(['add', '-A'])
       if (hasStagedChanges()) {
-        runGit(['commit', '-m', `upstream-sync(${runId}): format after merge`])
+        commitHarness(`upstream-sync(${runId}): format after merge`)
       }
     } else {
       console.warn('[verify] bun run format failed — continuing to verification anyway')
@@ -1092,7 +1302,7 @@ async function main(): Promise<void> {
 
     runGit(['add', '.upstream-sync'])
     if (hasStagedChanges()) {
-      runGit(['commit', '-m', `upstream-sync(${runId}): update ledger`])
+      commitHarness(`upstream-sync(${runId}): update ledger`)
     }
 
     const usageSectionFinal = appendUsageToRunLog(runId)
