@@ -277,7 +277,10 @@ export const usageLogSourceSchema = z.enum([
   'enrichment',
 ])
 
-export const usageLogPeriodSchema = z.enum(['1d', '7d', '30d', 'all', 'custom'])
+export const usageLogPeriodSchema = z.enum(['1d', '7d', '30d', '90d', 'all', 'custom'])
+
+/** UI bucket for Activity detail — expands to one or more ledger `source` values. */
+export const usageLogSourceGroupSchema = z.enum(['workflow', 'mothership'])
 
 /**
  * `Date`-constructor-parseable string — the {@link Calendar} range picker
@@ -290,15 +293,22 @@ const parseableDateSchema = z
   .refine((value) => !Number.isNaN(Date.parse(value)), { error: 'Invalid date' })
 
 /** Shared by the paginated list query and the export query — filters only, no pagination. */
-const usageLogsFilterSchema = z.object({
-  source: usageLogSourceSchema.optional(),
-  workspaceId: z.string().optional(),
-  period: usageLogPeriodSchema.optional().default('30d'),
-  /** Required when `period` is `'custom'`. */
-  startDate: parseableDateSchema.optional(),
-  /** Defaults to now when omitted for `'custom'`. */
-  endDate: parseableDateSchema.optional(),
-})
+const usageLogsFilterSchema = z
+  .object({
+    source: usageLogSourceSchema.optional(),
+    /** Mutually exclusive with `source` — prefer this for Workflows / Mothership tabs. */
+    sourceGroup: usageLogSourceGroupSchema.optional(),
+    workspaceId: z.string().optional(),
+    period: usageLogPeriodSchema.optional().default('30d'),
+    /** Required when `period` is `'custom'`. */
+    startDate: parseableDateSchema.optional(),
+    /** Defaults to now when omitted for `'custom'`. */
+    endDate: parseableDateSchema.optional(),
+  })
+  .refine((query) => !(query.source && query.sourceGroup), {
+    error: 'Pass either source or sourceGroup, not both',
+    path: ['sourceGroup'],
+  })
 
 /** Both the list and export query schemas require startDate whenever period is 'custom'. */
 const startDateRequiredForCustomPeriod = {
@@ -391,6 +401,7 @@ export const exportUsageLogsContract = defineRouteContract({
 
 export type UsageLogSource = z.output<typeof usageLogSourceSchema>
 export type UsageLogPeriod = z.output<typeof usageLogPeriodSchema>
+export type UsageLogSourceGroup = z.output<typeof usageLogSourceGroupSchema>
 export type UsageLogEntry = z.output<typeof usageLogEntrySchema>
 export type UsageLogsApiResponse = z.output<typeof usageLogsApiResponseSchema>
 export type ExportUsageLogsQuery = z.output<typeof exportUsageLogsQuerySchema>
