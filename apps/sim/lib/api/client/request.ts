@@ -181,6 +181,34 @@ function summarizeSchemaIssues(error: unknown): string {
   return summary ? `${summary}${extra}` : ''
 }
 
+function messageFromSchemaValidationError(error: unknown): string {
+  if (
+    !error ||
+    typeof error !== 'object' ||
+    !('issues' in error) ||
+    !Array.isArray((error as { issues?: unknown }).issues)
+  ) {
+    return 'Response failed contract validation'
+  }
+
+  const issues = (error as { issues: Array<{ path?: unknown; message?: unknown }> }).issues
+  const first = issues[0]
+  if (!first) return 'Response failed contract validation'
+
+  const path = Array.isArray(first.path)
+    ? first.path
+        .filter(
+          (segment): segment is string | number =>
+            typeof segment === 'string' || typeof segment === 'number'
+        )
+        .join('.')
+    : ''
+  const detail = typeof first.message === 'string' ? first.message : 'invalid'
+  return path
+    ? `Response failed contract validation (${path}: ${detail})`
+    : `Response failed contract validation (${detail})`
+}
+
 export async function requestJson<C extends AnyApiRouteContract>(
   contract: C,
   input: ApiClientRequest<C>
@@ -222,9 +250,7 @@ export async function requestJson<C extends AnyApiRouteContract>(
       const details = summarizeSchemaIssues(error)
       throw new ApiClientError({
         status: response.status,
-        message: details
-          ? `Response failed contract validation — ${details}`
-          : 'Response failed contract validation',
+        message: messageFromSchemaValidationError(error),
         body: parsed,
         rawBody: raw,
       })

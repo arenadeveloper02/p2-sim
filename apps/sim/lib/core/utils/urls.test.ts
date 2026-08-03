@@ -14,6 +14,7 @@ vi.mock('@/lib/core/config/env', () => ({
 }))
 
 import {
+  getArenaHubAgentsUrl,
   getBrowserOrigin,
   getSocketUrl,
   isLocalhostUrl,
@@ -82,6 +83,41 @@ describe('getSocketUrl', () => {
     mockGetEnv.mockImplementation((key) => (key === 'NEXT_PUBLIC_SOCKET_URL' ? '   ' : undefined))
     setLocation('https://app.example.com/')
     expect(getSocketUrl()).toBe('https://app.example.com')
+  })
+})
+
+describe('getArenaHubAgentsUrl', () => {
+  beforeEach(() => {
+    mockGetEnv.mockReset()
+    mockGetEnv.mockReturnValue(undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('prefers NEXT_PUBLIC_ARENA_FRONTEND_APP_URL when set', () => {
+    mockGetEnv.mockImplementation((key) =>
+      key === 'NEXT_PUBLIC_ARENA_FRONTEND_APP_URL' ? 'https://dev.thearena.ai/' : undefined
+    )
+    expect(getArenaHubAgentsUrl('dev-agent.thearena.ai')).toBe('https://dev.thearena.ai/hub/agents')
+  })
+
+  it('falls back to hostname mapping when env is unset', () => {
+    expect(getArenaHubAgentsUrl('dev-agent.thearena.ai')).toBe('https://dev.thearena.ai/hub/agents')
+    expect(getArenaHubAgentsUrl('test-agent.thearena.ai')).toBe(
+      'https://test.thearena.ai/hub/agents'
+    )
+    expect(getArenaHubAgentsUrl('agent.thearena.ai')).toBe('https://app.thearena.ai/hub/agents')
+  })
+
+  it('uses window.location.hostname when no hostname arg is passed', () => {
+    setLocation('https://dev-agent.thearena.ai/workspace')
+    expect(getArenaHubAgentsUrl()).toBe('https://dev.thearena.ai/hub/agents')
+  })
+
+  it('returns null for unknown hosts without env', () => {
+    expect(getArenaHubAgentsUrl('example.com')).toBeNull()
   })
 })
 

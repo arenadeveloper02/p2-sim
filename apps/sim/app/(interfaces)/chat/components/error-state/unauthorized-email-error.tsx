@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import Image from 'next/image'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { useBrandConfig } from '@/ee/whitelabeling/branding'
 
 interface UnauthorizedEmailErrorProps {
@@ -17,7 +17,6 @@ interface UnauthorizedEmailErrorProps {
 export function UnauthorizedEmailError({
   message = 'Email is not authorized for this chat',
 }: UnauthorizedEmailErrorProps) {
-  const router = useRouter()
   const [buttonClass, setButtonClass] = useState('auth-button-gradient')
   const brandConfig = useBrandConfig()
 
@@ -80,25 +79,15 @@ export function UnauthorizedEmailError({
       <div className='flex min-h-screen items-center justify-center px-4'>
         <div className='w-full max-w-[410px]'>
           <div className='flex flex-col items-center justify-center'>
-            {/* Brand logo */}
             <div className='mb-6 flex items-center justify-center'>
-              {brandConfig.logoUrlBlacktext && (
-                <Image
-                  src={brandConfig.logoUrlBlacktext}
-                  alt={`${brandConfig.name} Logo`}
-                  width={68}
-                  height={70}
-                />
-              )}
+              <Image src={arenaLogo} alt='Arena Logo' width={68} height={68} />
             </div>
 
-            {/* Error content */}
             <div className='space-y-1 text-center'>
               <h1 className='font-medium text-[32px] text-black tracking-tight'>Access Denied</h1>
               <p className='font-normal text-[16px] text-muted-foreground'>{message}</p>
             </div>
 
-            {/* Action button with exit icon */}
             <div className='mt-8 w-full'>
               <Button
                 type='button'

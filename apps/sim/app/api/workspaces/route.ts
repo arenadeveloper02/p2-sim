@@ -1,8 +1,7 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { permissions, type WorkspaceMode, workflow, workspace } from '@sim/db/schema'
+import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { generateId } from '@sim/utils/id'
 import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { listWorkspacesQuerySchema } from '@/lib/api/contracts'
@@ -10,19 +9,11 @@ import { createWorkspaceContract } from '@/lib/api/contracts/workspaces'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { getActiveOrganizationId } from '@/lib/auth/session-response'
-import { PlatformEvents } from '@/lib/core/telemetry'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
-import { buildDefaultWorkflowArtifacts } from '@/lib/workflows/defaults'
-import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
-import { getRandomWorkspaceColor } from '@/lib/workspaces/colors'
+import { createDefaultWorkspace, createWorkspace } from '@/lib/workspaces/create-workspace'
 import { listWorkspacesForViewer } from '@/lib/workspaces/list'
-import {
-  getWorkspaceCreationPolicy,
-  getWorkspaceInvitePolicy,
-  resolveInviteFlags,
-  WORKSPACE_MODE,
-} from '@/lib/workspaces/policy'
+import { getWorkspaceCreationPolicy } from '@/lib/workspaces/policy'
 
 const logger = createLogger('Workspaces')
 
@@ -161,167 +152,6 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     return NextResponse.json({ error: 'Failed to create workspace' }, { status: 500 })
   }
 })
-
-async function createDefaultWorkspace(
-  userId: string,
-  userName: string | null | undefined,
-  creationPolicy: {
-    organizationId: string | null
-    workspaceMode: WorkspaceMode
-    billedAccountUserId: string
-    isPersonal: boolean
-  }
-) {
-  const firstName = userName?.split(' ')[0] || null
-  const workspaceName = firstName ? `${firstName}'s Workspace` : 'My Workspace'
-  return createWorkspace({
-    userId,
-    name: workspaceName,
-    organizationId: creationPolicy.organizationId,
-    workspaceMode: creationPolicy.workspaceMode,
-    billedAccountUserId: creationPolicy.billedAccountUserId,
-    isPersonal: creationPolicy.isPersonal,
-  })
-}
-
-interface CreateWorkspaceParams {
-  userId: string
-  name: string
-  skipDefaultWorkflow?: boolean
-  explicitColor?: string
-  organizationId: string | null
-  workspaceMode: WorkspaceMode
-  billedAccountUserId: string
-  isPersonal: boolean
-}
-
-async function createWorkspace({
-  userId,
-  name,
-  skipDefaultWorkflow = false,
-  explicitColor,
-  organizationId,
-  workspaceMode,
-  billedAccountUserId,
-  isPersonal,
-}: CreateWorkspaceParams) {
-  const workspaceId = generateId()
-  const workflowId = generateId()
-  const now = new Date()
-  const color = explicitColor || getRandomWorkspaceColor()
-
-  try {
-    await db.transaction(async (tx) => {
-      await tx.insert(workspace).values({
-        id: workspaceId,
-        name,
-        color,
-        ownerId: userId,
-        organizationId,
-        workspaceMode,
-        isPersonal,
-        billedAccountUserId,
-        allowPersonalApiKeys: true,
-        createdAt: now,
-        updatedAt: now,
-      })
-
-      const permissionRows = [
-        {
-          id: generateId(),
-          entityType: 'workspace' as const,
-          entityId: workspaceId,
-          userId,
-          permissionType: 'admin' as const,
-          createdAt: now,
-          updatedAt: now,
-        },
-      ]
-
-      if (
-        workspaceMode === WORKSPACE_MODE.ORGANIZATION &&
-        billedAccountUserId &&
-        billedAccountUserId !== userId
-      ) {
-        permissionRows.push({
-          id: generateId(),
-          entityType: 'workspace' as const,
-          entityId: workspaceId,
-          userId: billedAccountUserId,
-          permissionType: 'admin' as const,
-          createdAt: now,
-          updatedAt: now,
-        })
-      }
-
-      await tx.insert(permissions).values(permissionRows)
-
-      if (!skipDefaultWorkflow) {
-        await tx.insert(workflow).values({
-          id: workflowId,
-          userId,
-          workspaceId,
-          folderId: null,
-          name: 'default-agent',
-          description: 'Your first workflow - start building here!',
-          lastSynced: now,
-          createdAt: now,
-          updatedAt: now,
-          isDeployed: false,
-          runCount: 0,
-          variables: {},
-        })
-
-        const { workflowState } = buildDefaultWorkflowArtifacts()
-        await saveWorkflowToNormalizedTables(workflowId, workflowState, tx)
-      }
-
-      logger.info(
-        skipDefaultWorkflow
-          ? `Created ${workspaceMode} workspace ${workspaceId} for user ${userId}`
-          : `Created ${workspaceMode} workspace ${workspaceId} with initial workflow ${workflowId} for user ${userId}`
-      )
-    })
-  } catch (error) {
-    logger.error(`Failed to create workspace ${workspaceId}:`, error)
-    throw error
-  }
-
-  try {
-    PlatformEvents.workspaceCreated({
-      workspaceId,
-      userId,
-      name,
-    })
-  } catch {
-    // Telemetry should not fail the operation
-  }
-
-  const invitePolicy = await getWorkspaceInvitePolicy({
-    organizationId,
-    workspaceMode,
-    billedAccountUserId,
-    ownerId: userId,
-  })
-
-  return {
-    id: workspaceId,
-    name,
-    color,
-    ownerId: userId,
-    organizationId,
-    workspaceMode,
-    isPersonal,
-    billedAccountUserId,
-    allowPersonalApiKeys: true,
-    createdAt: now,
-    updatedAt: now,
-    role: 'owner',
-    permissions: 'admin',
-    inviteDisabledReason: null,
-    ...resolveInviteFlags(invitePolicy, billedAccountUserId === userId),
-  }
-}
 
 async function migrateExistingWorkflows(userId: string, workspaceId: string) {
   const orphanedWorkflows = await db

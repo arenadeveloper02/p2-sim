@@ -22,9 +22,6 @@ import {
   humanizeToolName,
 } from '@/lib/copilot/tools/tool-display'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
-// HEAD trailing-live-status path superseded by upstream's shimmer tail:
-// import { shouldShowTrailingLiveStatus } from '@/app/workspace/[workspaceId]/home/hooks/stream/trailing-live-status'
-import { useOrgBrandConfig } from '@/ee/whitelabeling/components/branding-provider'
 import type { ContentBlock, OptionItem, ToolCallData } from '../../types'
 import { SUBAGENT_LABELS } from '../../types'
 import type { AgentGroupItem } from './components'
@@ -329,12 +326,12 @@ function toToolData(tc: NonNullable<ContentBlock['toolCall']>): ToolCallData {
 
 const SPAN_ROOT = 'main'
 
-function createAgentGroupSegment(name: string, id: string, brandName?: string): AgentGroupSegment {
+function createAgentGroupSegment(name: string, id: string): AgentGroupSegment {
   return {
     type: 'agent_group',
     id,
     agentName: name,
-    agentLabel: resolveAgentLabel(name, brandName),
+    agentLabel: resolveAgentLabel(name),
     items: [],
     isDelegating: false,
     isOpen: false,
@@ -363,7 +360,7 @@ function appendTextItem(group: AgentGroupSegment, content: string): void {
  * no name/tool-call reverse lookups. Delegation tool_calls are absorbed — the
  * subagent span is the canonical representation of the nested agent.
  */
-function parseBlocksWithSpanTree(blocks: ContentBlock[], brandName?: string): MessageSegment[] {
+function parseBlocksWithSpanTree(blocks: ContentBlock[]): MessageSegment[] {
   const segments: MessageSegment[] = []
   const groupsBySpanId = new Map<string, AgentGroupSegment>()
   // Stable per-run counters for React keys. The Nth top-level text run / Nth
@@ -402,11 +399,7 @@ function parseBlocksWithSpanTree(blocks: ContentBlock[], brandName?: string): Me
   const ensureMothership = (): AgentGroupSegment => {
     const existing = tailMothershipGroup()
     if (existing) return existing
-    const group = createAgentGroupSegment(
-      'mothership',
-      `agent-mothership-${mothershipRun++}`,
-      brandName
-    )
+    const group = createAgentGroupSegment('mothership', `agent-mothership-${mothershipRun++}`)
     segments.push(group)
     return group
   }
@@ -447,7 +440,7 @@ function parseBlocksWithSpanTree(blocks: ContentBlock[], brandName?: string): Me
     if (existing) return existing
     // Key by the dispatch tool call id (canonical, parser-stable) when known,
     // falling back to the spanId for spans with no dispatch tool (legacy/orphan).
-    const group = createAgentGroupSegment(name, spanGroupKey(spanId), brandName)
+    const group = createAgentGroupSegment(name, spanGroupKey(spanId))
     groupsBySpanId.set(spanId, group)
     attachSpanGroup(group, parentSpanId)
     return group
@@ -612,14 +605,14 @@ function parseBlocksWithSpanTree(blocks: ContentBlock[], brandName?: string): Me
  * legacy flat heuristics below are retained for transcripts persisted before
  * span identity existed.
  */
-export function parseBlocks(blocks: ContentBlock[], brandName?: string): MessageSegment[] {
+export function parseBlocks(blocks: ContentBlock[]): MessageSegment[] {
   if (blocks.some((block) => Boolean(block.spanId))) {
-    return parseBlocksWithSpanTree(blocks, brandName)
+    return parseBlocksWithSpanTree(blocks)
   }
-  return parseBlocksLegacy(blocks, brandName)
+  return parseBlocksLegacy(blocks)
 }
 
-function parseBlocksLegacy(blocks: ContentBlock[], brandName?: string): MessageSegment[] {
+function parseBlocksLegacy(blocks: ContentBlock[]): MessageSegment[] {
   const segments: MessageSegment[] = []
   const groupsByKey = new Map<string, AgentGroupSegment>()
   let activeGroupKey: string | null = null
@@ -666,7 +659,7 @@ function parseBlocksLegacy(blocks: ContentBlock[], brandName?: string): MessageS
           ? `agent-mothership-${mothershipRun++}`
           : `agent-${key}-${segments.length}`,
       agentName: name,
-      agentLabel: resolveAgentLabel(name, brandName),
+      agentLabel: resolveAgentLabel(name),
       items: [],
       isDelegating: false,
       isOpen: false,
@@ -956,11 +949,7 @@ function MessageContentInner({
   actions,
 }: MessageContentProps) {
   const { onWorkspaceResourceSelect } = useChatSurface()
-  const brand = useOrgBrandConfig()
-  const parsed = useMemo(
-    () => (blocks.length > 0 ? parseBlocks(blocks, brand.name) : []),
-    [blocks, brand.name]
-  )
+  const parsed = useMemo(() => (blocks.length > 0 ? parseBlocks(blocks) : []), [blocks])
 
   const [trailingRevealing, setTrailingRevealing] = useState(false)
   const handleTrailingRevealChange = useCallback((revealing: boolean) => {
@@ -997,6 +986,14 @@ function MessageContentInner({
     const timeout = setTimeout(() => setIsStreamIdle(true), STREAM_IDLE_DELAY_MS)
     return () => clearTimeout(timeout)
   }, [visibleStreamActivityKey, isStreaming])
+
+  let lastAgentGroupIndex = -1
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i]?.type === 'agent_group') {
+      lastAgentGroupIndex = i
+      break
+    }
+  }
 
   const lastSegment = segments[segments.length - 1]
   // The reveal tail is the last TEXT segment — a stopped block appends AFTER
@@ -1083,6 +1080,7 @@ function MessageContentInner({
                   onPendingTagChange={
                     i === revealTailIndex ? handleTrailingPendingTagChange : undefined
                   }
+                  isCurrentSection={i === lastAgentGroupIndex}
                 />
               )
             case 'agent_group': {

@@ -149,9 +149,17 @@ const nextConfig: NextConfig = {
     '@daytona/sdk',
     '@earendil-works/pi-ai',
     '@earendil-works/pi-coding-agent',
+    // Keep json-render out of the Turbopack RSC graph (react-email render pulls react-dom/server).
+    '@json-render/core',
+    '@json-render/react',
+    '@json-render/react-email',
   ],
   outputFileTracingIncludes: {
     '/api/tools/stagehand/*': ['./node_modules/ws/**/*'],
+    '/api/tools/generative_ui/*': [
+      './node_modules/@json-render/**/*',
+      './node_modules/@react-email/**/*',
+    ],
     '/*': [
       './node_modules/sharp/**/*',
       './node_modules/@img/**/*',

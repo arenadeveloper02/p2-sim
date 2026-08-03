@@ -10,6 +10,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm'
 import {
+  type UsageChargeTypeValue,
   usageLogSourceSchema,
   type WorkspaceUsageAnalytics,
 } from '@/lib/api/contracts/workspace-usage'
@@ -41,13 +42,16 @@ import {
   ledgerCostSelect,
   ledgerOccurredAt,
   ledgerPeriodBounds,
+  mapBySourceBucketRow,
   mapExpensiveCopilotChatRows,
   mapExpensiveWorkflowRows,
   mapUsageMetrics,
+  normalizeBucketKey,
   parseActorType,
   parseChargeType,
   parseChatType,
   parseDecimal,
+  parseIntMetric,
   periodRange,
   type ResolvedPeriod,
   resolvedActorTypeExpr,
@@ -614,14 +618,17 @@ export async function getWorkspaceUsageAnalytics(
     const embeddedToolSplit = computeEmbeddedToolVirtualSplit(modelMetadataRows)
 
     const bySource = sortByBillableCostDesc(
-      bySourceRows.map((row) => ({
-        source: usageLogSourceSchema.parse(row.source),
-        label: row.label,
-        billableCost: parseDecimal(row.billableCost),
-        rawCost: parseDecimal(row.rawCost),
-        count: row.count,
-        usage: mapUsageMetrics(row),
-      }))
+      bySourceRows.flatMap((row) => {
+        const mapped = mapBySourceBucketRow(row)
+        if (!mapped) {
+          logger.warn('Skipping bySource row with invalid ledger source', {
+            workspaceId,
+            source: row.source,
+          })
+          return []
+        }
+        return [mapped]
+      })
     )
 
     const CHARGE_TYPE_ORDER: UsageChargeTypeValue[] = [
@@ -638,7 +645,7 @@ export async function getWorkspaceUsageAnalytics(
           chargeType: parseChargeType(row.chargeType),
           billableCost: parseDecimal(row.billableCost),
           rawCost: parseDecimal(row.rawCost),
-          count: row.count,
+          count: parseIntMetric(row.count),
         }))
         .sort(
           (a, b) =>
@@ -661,14 +668,14 @@ export async function getWorkspaceUsageAnalytics(
     const executionCountByBucket = new Map(
       timeSeriesExecutionRows.map((row) => [
         coerceToDate(row.bucketStart)?.toISOString() ?? String(row.bucketStart),
-        row.executionCount,
+        parseIntMetric(row.executionCount),
       ])
     )
 
     const activeUserCountByBucket = new Map(
       activeUserBucketRows.map((row) => [
         coerceToDate(row.bucketStart)?.toISOString() ?? String(row.bucketStart),
-        row.activeUserCount,
+        parseIntMetric(row.activeUserCount),
       ])
     )
 
@@ -718,7 +725,7 @@ export async function getWorkspaceUsageAnalytics(
 
     const triggeredWorkflowTotal = triggeredWorkflowRows.reduce(
       (acc, row) => ({
-        executionCount: acc.executionCount + row.executionCount,
+        executionCount: acc.executionCount + parseIntMetric(row.executionCount),
         billableCost: acc.billableCost + parseDecimal(row.billableCost),
         rawCost: acc.rawCost + parseDecimal(row.rawCost),
       }),
@@ -811,10 +818,10 @@ export async function getWorkspaceUsageAnalytics(
         rawCost: totalRawCost,
         billableCostCredits: dollarsToCredits(totalBillableCost),
         ledgerEntryCount,
-        executionCount: workflowSummary?.total ?? 0,
-        chatCount: chatSummary?.total ?? 0,
-        runCount: runSummary?.total ?? 0,
-        activeUserCount: periodActiveUserCount,
+        executionCount: parseIntMetric(workflowSummary?.total),
+        chatCount: parseIntMetric(chatSummary?.total),
+        runCount: parseIntMetric(runSummary?.total),
+        activeUserCount: parseIntMetric(periodActiveUserCount),
         usage: summaryUsage,
       },
       bySource,
@@ -823,55 +830,55 @@ export async function getWorkspaceUsageAnalytics(
         missingChatId: {
           billableCost: parseDecimal(attribution?.missingChatIdCost),
           rawCost: parseDecimal(attribution?.missingChatIdRawCost),
-          count: attribution?.missingChatIdCount ?? 0,
+          count: parseIntMetric(attribution?.missingChatIdCount),
         },
         missingExecutionId: {
           billableCost: parseDecimal(attribution?.missingExecutionIdCost),
           rawCost: parseDecimal(attribution?.missingExecutionIdRawCost),
-          count: attribution?.missingExecutionIdCount ?? 0,
+          count: parseIntMetric(attribution?.missingExecutionIdCount),
         },
       },
       workflow: {
         executions: {
-          total: workflowSummary?.total ?? 0,
-          withProjectedCost: workflowSummary?.withProjectedCost ?? 0,
+          total: parseIntMetric(workflowSummary?.total),
+          withProjectedCost: parseIntMetric(workflowSummary?.withProjectedCost),
           totalProjectedCost: parseDecimal(workflowSummary?.totalProjectedCost),
           totalLedgerCost: parseDecimal(workflowLedger?.totalLedgerCost),
         },
         byTrigger: sortByBillableCostDesc(
           workflowByTriggerRows.map((row) => ({
-            trigger: row.trigger,
-            executionCount: row.executionCount,
+            trigger: normalizeBucketKey(row.trigger, 'unknown'),
+            executionCount: parseIntMetric(row.executionCount),
             billableCost: parseDecimal(row.billableCost),
             rawCost: parseDecimal(row.rawCost),
-            count: row.count,
+            count: parseIntMetric(row.count),
           }))
         ),
         byWorkflow: mapExpensiveWorkflowRows(expensiveWorkflowRows).map((row) => ({
           workflowId: row.workflowId,
           workflowName: row.workflowName,
-          executionCount: row.executionCount,
+          executionCount: parseIntMetric(row.executionCount),
           billableCost: row.billableCost,
           rawCost: row.rawCost,
-          count: row.count,
+          count: parseIntMetric(row.count),
         })),
       },
       copilot: {
         chats: {
-          total: chatSummary?.total ?? 0,
-          withLedgerCost: chatSummary?.withLedgerCost ?? 0,
+          total: parseIntMetric(chatSummary?.total),
+          withLedgerCost: parseIntMetric(chatSummary?.withLedgerCost),
         },
         runs: {
-          total: runSummary?.total ?? 0,
+          total: parseIntMetric(runSummary?.total),
         },
         byChatType: sortByBillableCostDesc(
           copilotByTypeRows.map((row) => ({
             chatType: parseChatType(row.chatType),
-            chatCount: row.chatCount,
-            runCount: row.runCount,
+            chatCount: parseIntMetric(row.chatCount),
+            runCount: parseIntMetric(row.runCount),
             billableCost: parseDecimal(row.billableCost),
             rawCost: parseDecimal(row.rawCost),
-            count: row.count,
+            count: parseIntMetric(row.count),
           }))
         ),
         byChat: mapExpensiveCopilotChatRows(copilotByChatRows).map((row) => ({
@@ -879,17 +886,17 @@ export async function getWorkspaceUsageAnalytics(
           title: row.title,
           chatType: row.chatType,
           userId: row.userId,
-          runCount: row.runCount,
+          runCount: parseIntMetric(row.runCount),
           billableCost: row.billableCost,
           rawCost: row.rawCost,
-          count: row.count,
+          count: parseIntMetric(row.count),
         })),
         byModel: sortByBillableCostDesc(
           copilotByModelRows.map((row) => ({
-            model: row.model,
+            model: normalizeBucketKey(row.model),
             billableCost: parseDecimal(row.billableCost),
             rawCost: parseDecimal(row.rawCost),
-            count: row.count,
+            count: parseIntMetric(row.count),
           }))
         ),
         triggeredWorkflows: {
@@ -904,7 +911,7 @@ export async function getWorkspaceUsageAnalytics(
               )
               .map((row) => ({
                 triggeringChatId: row.triggeringChatId,
-                executionCount: row.executionCount,
+                executionCount: parseIntMetric(row.executionCount),
                 billableCost: parseDecimal(row.billableCost),
                 rawCost: parseDecimal(row.rawCost),
               }))
@@ -916,7 +923,7 @@ export async function getWorkspaceUsageAnalytics(
           userId: row.userId,
           billableCost: parseDecimal(row.billableCost),
           rawCost: parseDecimal(row.rawCost),
-          count: row.count,
+          count: parseIntMetric(row.count),
         }))
       ),
       byActor: sortByBillableCostDesc(
@@ -925,17 +932,17 @@ export async function getWorkspaceUsageAnalytics(
           actorType: parseActorType(row.actorType),
           billableCost: parseDecimal(row.billableCost),
           rawCost: parseDecimal(row.rawCost),
-          count: row.count,
+          count: parseIntMetric(row.count),
           usage: mapUsageMetrics(row),
         }))
       ),
       byModel: sortByBillableCostDesc(
         subtractEmbeddedFromBucketRows(
           byModelRows.map((row) => ({
-            model: row.model,
+            model: normalizeBucketKey(row.model),
             billableCost: parseDecimal(row.billableCost),
             rawCost: parseDecimal(row.rawCost),
-            count: row.count,
+            count: parseIntMetric(row.count),
           })),
           (row) => row.model,
           embeddedToolSplit.byModelEmbedded
@@ -949,7 +956,7 @@ export async function getWorkspaceUsageAnalytics(
               provider: row.provider,
               billableCost: parseDecimal(row.billableCost),
               rawCost: parseDecimal(row.rawCost),
-              count: row.count,
+              count: parseIntMetric(row.count),
             })),
           (row) => row.provider,
           embeddedToolSplit.byProviderEmbedded
@@ -962,16 +969,16 @@ export async function getWorkspaceUsageAnalytics(
             toolId: row.toolId,
             billableCost: parseDecimal(row.billableCost),
             rawCost: parseDecimal(row.rawCost),
-            count: row.count,
+            count: parseIntMetric(row.count),
           })),
         embeddedToolSplit.byToolEmbedded
       ),
       byVendor: sortByBillableCostDesc(
         byVendorRows.map((row) => ({
-          vendor: row.vendor,
+          vendor: normalizeBucketKey(row.vendor),
           billableCost: parseDecimal(row.billableCost),
           rawCost: parseDecimal(row.rawCost),
-          count: row.count,
+          count: parseIntMetric(row.count),
         }))
       ),
       timeSeries: densifiedTimeSeries,

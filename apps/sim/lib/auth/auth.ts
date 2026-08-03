@@ -69,7 +69,7 @@ import {
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
 } from '@/lib/billing/webhooks/subscription'
-import { env } from '@/lib/core/config/env'
+import { env, getEnv } from '@/lib/core/config/env'
 import {
   isAuthDisabled,
   isBillingEnabled,
@@ -116,6 +116,7 @@ import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
 import { joinInstanceOrganization } from '@/lib/organizations/instance-org'
 import { captureServerEvent, getPostHogClient } from '@/lib/posthog/server'
 import { disableUserResources } from '@/lib/workflows/lifecycle'
+import { ensurePersonalWorkspaceOnEmailSignup } from '@/lib/workspaces/create-workspace'
 import { SSO_TRUSTED_PROVIDERS } from '@/ee/sso/constants'
 
 const logger = createLogger('Auth')
@@ -254,7 +255,7 @@ function resolveBetterAuthCrossSubdomainCookieDomain(): string | undefined {
 const betterAuthCrossSubdomainCookieDomain = resolveBetterAuthCrossSubdomainCookieDomain()
 
 function resolveArenaHubTrustedOrigin(): string | null {
-  const fromEnv = env.NEXT_PUBLIC_ARENA_FRONTEND_APP_URL?.trim()
+  const fromEnv = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')?.trim()
   if (fromEnv) {
     try {
       return new URL(fromEnv).origin
@@ -1133,6 +1134,40 @@ export const auth = betterAuth({
       }
 
       return
+    }),
+    after: createAuthMiddleware(async (ctx) => {
+      if (!ctx.path.startsWith('/sign-up/email')) {
+        return
+      }
+
+      const newSession = ctx.context.newSession
+      if (!newSession?.user?.id) {
+        return
+      }
+
+      try {
+        const body = ctx.body as Record<string, unknown> | undefined
+        const organizationIdRaw =
+          body?.organizationId ??
+          body?.organization_id ??
+          ctx.headers?.get('x-organization-id') ??
+          ctx.headers?.get('X-Organization-Id')
+        const organizationId =
+          typeof organizationIdRaw === 'string' && organizationIdRaw.trim().length > 0
+            ? organizationIdRaw.trim()
+            : null
+
+        await ensurePersonalWorkspaceOnEmailSignup({
+          userId: newSession.user.id,
+          userName: newSession.user.name,
+          organizationId,
+        })
+      } catch (error) {
+        logger.error('[hooks.after] Failed to create personal workspace after email signup', {
+          userId: newSession.user.id,
+          error,
+        })
+      }
     }),
   },
   plugins: [

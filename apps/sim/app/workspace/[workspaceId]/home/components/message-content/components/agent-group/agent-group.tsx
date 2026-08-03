@@ -79,17 +79,17 @@ export function AgentGroup({
   const resolved = isAgentGroupResolved(items)
   const isWorking = (isDelegating && !resolved) || (isStreaming && isLaneOpen)
 
-  // Expand while the turn is live and any of: the lane is open (the subagent is
-  // actively running), this is the current/latest section, or there is unresolved
-  // work. A finished group stays open until the NEXT section starts (it is no
-  // longer the latest), instead of collapsing the instant its own work resolves.
+  // Expand while this is the latest section, the lane is open, or work is still
+  // unresolved. Keeping `isCurrentSection` open after the turn settles is what
+  // leaves the tool trail visible — otherwise Arena Copilot settles looking like
+  // only a one-line caption ("Let me retry…") with the real flow collapsed.
   // Keying "still running" off the lane-open signal (not `resolved` alone) avoids
   // a collapse/reopen flicker on parallel siblings: a subagent's tools all
   // momentarily read "done" in the gap between its last search and its `respond`
   // ("Gathering thoughts") tool, transiently flipping `resolved` true; the open
-  // lane bridges that gap so the row never collapses mid-run. The turn ending
-  // (isStreaming false) collapses everything; a manual toggle pins the choice.
-  const autoExpanded = isStreaming && (isCurrentSection || isLaneOpen || !resolved)
+  // lane bridges that gap so the row never collapses mid-run. A manual toggle
+  // pins the choice.
+  const autoExpanded = isCurrentSection || (isStreaming && (isLaneOpen || !resolved))
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null)
   // An outstanding permission prompt overrides a manual collapse: the turn
   // cannot proceed until it is answered, so hiding it would deadlock the chat

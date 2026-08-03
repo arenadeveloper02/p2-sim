@@ -4,6 +4,9 @@ import { useMemo } from 'react'
 import { cn } from '@sim/emcn'
 import { formatBillableWithCredits } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 
+/** Rows above this count get a capped, scrollable list (~8 visible bars). */
+const SCROLL_ROW_THRESHOLD = 8
+
 export interface CostShareBarRow {
   id: string
   label: string
@@ -15,38 +18,23 @@ export interface CostShareBarRow {
 interface CostShareBarsProps {
   rows: CostShareBarRow[]
   emptyMessage?: string
-  /** Cap how many bars to show; remainder folds into an "Other" bucket. */
-  maxBars?: number
 }
 
 /**
  * Horizontal proportion bars for comparing billable cost across categories or workflows.
+ * Lists with more than {@link SCROLL_ROW_THRESHOLD} rows scroll vertically.
  */
 export function CostShareBars({
   rows,
   emptyMessage = 'No cost data for this period.',
-  maxBars = 8,
 }: CostShareBarsProps) {
-  const chartRows = useMemo(() => {
-    const sorted = [...rows]
-      .filter((row) => row.billableCost > 0)
-      .sort((a, b) => b.billableCost - a.billableCost)
-
-    if (sorted.length === 0) return []
-    if (sorted.length <= maxBars) return sorted
-
-    const visible = sorted.slice(0, maxBars - 1)
-    const remaining = sorted.slice(maxBars - 1)
-    const otherCost = remaining.reduce((sum, row) => sum + row.billableCost, 0)
-    return [
-      ...visible,
-      {
-        id: '__other__',
-        label: `Other (${remaining.length})`,
-        billableCost: otherCost,
-      },
-    ]
-  }, [maxBars, rows])
+  const chartRows = useMemo(
+    () =>
+      [...rows]
+        .filter((row) => row.billableCost > 0)
+        .sort((a, b) => b.billableCost - a.billableCost),
+    [rows]
+  )
 
   const maxCost = chartRows[0]?.billableCost ?? 0
 
@@ -54,8 +42,15 @@ export function CostShareBars({
     return <p className='py-6 text-center text-[var(--text-muted)] text-small'>{emptyMessage}</p>
   }
 
+  const scrollable = chartRows.length > SCROLL_ROW_THRESHOLD
+
   return (
-    <div className='flex flex-col gap-3'>
+    <div
+      className={cn(
+        'flex flex-col gap-3',
+        scrollable && 'max-h-[22rem] overflow-y-auto pr-1 [scrollbar-gutter:stable]'
+      )}
+    >
       {chartRows.map((row) => {
         const widthPercent = Math.max((row.billableCost / maxCost) * 100, 2)
         const label = (

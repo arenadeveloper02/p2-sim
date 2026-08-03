@@ -1711,14 +1711,6 @@ export class ExecutionLogger implements IExecutionLoggerService {
       }
 
       if (executionId) {
-        // Serialize concurrent completion boundaries for this execution so the
-        // read-then-insert reconciliation cannot race. pg_advisory_xact_lock is
-        // transaction-scoped (auto-released on commit/rollback, pool-safe) and
-        // bounded by lock_timeout. The critical section is one SELECT + one
-        // INSERT; the lock is uncontended in the normal (already-serialized)
-        // flow and only matters under a cross-process double-completion of the
-        // same execution, where it stops a stale already-billed read from
-        // dropping the larger delta.
         await db.transaction(async (tx) => {
           await tx.execute(
             sql`select set_config('lock_timeout', ${`${USAGE_RECONCILE_LOCK_TIMEOUT_MS}ms`}, true)`

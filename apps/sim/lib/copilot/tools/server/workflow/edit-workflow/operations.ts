@@ -14,6 +14,7 @@ import {
   normalizeTools,
   updateCanonicalModesForInputs,
 } from './builders'
+import { rewriteBlockNameReferencesInWorkflowBlocks } from './reference-normalization'
 import type { EditWorkflowOperation, OperationContext } from './types'
 import { logSkippedItem } from './types'
 import {
@@ -614,7 +615,16 @@ export function handleEditOperation(op: EditWorkflowOperation, ctx: OperationCon
           },
         })
       } else {
+        const previousName = typeof block.name === 'string' ? block.name : ''
         block.name = params.name
+        if (previousName && previousName !== params.name) {
+          rewriteBlockNameReferencesInWorkflowBlocks(
+            modifiedState.blocks,
+            block_id,
+            previousName,
+            params.name
+          )
+        }
       }
     }
   }

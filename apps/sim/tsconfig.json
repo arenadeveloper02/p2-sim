@@ -18,6 +18,8 @@
       "@/serializer/*": ["./serializer/*"],
       "@sim/db": ["../../packages/db"],
       "@sim/db/*": ["../../packages/db/*"],
+      "@sim/emcn": ["../../packages/emcn/src/index.ts"],
+      "@sim/emcn/*": ["../../packages/emcn/src/*"],
       "@/executor": ["./executor"],
       "@/executor/*": ["./executor/*"]
     }

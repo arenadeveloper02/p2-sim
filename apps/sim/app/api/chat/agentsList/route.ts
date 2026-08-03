@@ -12,7 +12,11 @@ import type { SQL } from 'drizzle-orm'
 import { and, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
-import { getAgentDepartmentLabel, resolveAgentDepartmentValue } from '@/lib/chat/arena-departments'
+import {
+  getAgentDepartmentLabelMap,
+  labelFromDepartmentMap,
+  resolveAgentDepartmentValue,
+} from '@/lib/chat/arena-departments'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 const logger = createLogger('DeployedChatAgentsListAPI')
@@ -53,7 +57,7 @@ function hasAllowedEmailStartingWithAtSymbol(
 }
 
 /** Maps a DB row to the response agent list item shape. */
-function toAgentListItem(row: AgentChatRow) {
+function toAgentListItem(row: AgentChatRow, departmentLabelMap: Map<string, string>) {
   const appRedirectUrl = row.deploymentType === 'app' && row.redirectUrl ? row.redirectUrl : null
   return {
     id: row.chatId,
@@ -62,7 +66,7 @@ function toAgentListItem(row: AgentChatRow) {
     workflow_id: row.workflowId,
     workflow_name: row.workflowName,
     workspace_id: row.workspaceId,
-    department: getAgentDepartmentLabel(row.department),
+    department: labelFromDepartmentMap(departmentLabelMap, row.department),
     created_at: row.createdAt.toISOString(),
     workflow_description: row.description,
     status: 'published',
@@ -244,8 +248,9 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
    */
   const accessibleChats = getAgentsListAllowedEmail(chats, emailId)
 
+  const departmentLabelMap = await getAgentDepartmentLabelMap()
   const agentList = await sortAgentListByRecentUsage(
-    accessibleChats.map((row) => toAgentListItem(row)),
+    accessibleChats.map((row) => toAgentListItem(row, departmentLabelMap)),
     creatorUserId
   )
 
@@ -303,7 +308,8 @@ async function getSharedWithMeAgentsList(emailId: string): Promise<NextResponse>
   }
 
   const sharedChats = await fetchSharedWithMeChats(emailId, userRecord[0].id)
-  const agentList = sharedChats.map((row) => toAgentListItem(row))
+  const departmentLabelMap = await getAgentDepartmentLabelMap()
+  const agentList = sharedChats.map((row) => toAgentListItem(row, departmentLabelMap))
 
   logger.info(
     `agentsList (sharedwithme): returning ${agentList.length} chats for ${emailId} (in allowedEmails, not created by user)`
@@ -345,12 +351,13 @@ async function getGlobalAgentsList(
   const userEmailDomain = `@${emailId.split('@')[1]}`
 
   const globalChats = await fetchAgentChats(globalWhereConditions)
+  const departmentLabelMap = await getAgentDepartmentLabelMap()
   const globalAgentList = globalChats
     .filter((row) => hasAllowedEmailStartingWithAtSymbol(row.allowedEmails, userEmailDomain))
-    .map((row) => toAgentListItem(row))
+    .map((row) => toAgentListItem(row, departmentLabelMap))
 
   const sharedChats = await fetchSharedWithMeChats(emailId, userId, departmentValue)
-  const sharedAgentList = sharedChats.map((row) => toAgentListItem(row))
+  const sharedAgentList = sharedChats.map((row) => toAgentListItem(row, departmentLabelMap))
 
   const mergedAgentList = mergeAgentListsById(globalAgentList, sharedAgentList)
   const agentList = await sortAgentListByRecentUsage(mergedAgentList, userId)
@@ -409,7 +416,7 @@ export async function GET(request: NextRequest) {
       }
 
       const departmentName = searchParams.get('departmentName')
-      const departmentValue = resolveAgentDepartmentValue(departmentName)
+      const departmentValue = await resolveAgentDepartmentValue(departmentName)
 
       return await getGlobalAgentsList(emailId.trim(), departmentValue)
     }

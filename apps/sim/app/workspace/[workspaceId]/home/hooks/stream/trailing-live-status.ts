@@ -1,6 +1,9 @@
 /**
  * Whether the chat trailing indicator should show during an in-flight turn.
- * When `liveStatus` is set, show even while tool rows are running.
+ *
+ * Always prefer server `liveStatus` when present. Otherwise keep a Thinking…
+ * pulse while tools are running or the turn has no trailing text yet — otherwise
+ * finished-looking tool rows make the chat feel stuck between model rounds.
  */
 export function shouldShowTrailingLiveStatus(opts: {
   isStreaming: boolean
@@ -10,5 +13,6 @@ export function shouldShowTrailingLiveStatus(opts: {
 }): boolean {
   if (!opts.isStreaming) return false
   if (opts.liveStatus?.trim()) return true
-  return !opts.hasTrailingContent && !opts.hasRunningWork
+  if (opts.hasRunningWork) return true
+  return !opts.hasTrailingContent
 }

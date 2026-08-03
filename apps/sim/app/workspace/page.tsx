@@ -173,7 +173,7 @@ async function handleWorkflowRedirect(
   } catch (error) {
     logger.error('Error fetching workflow for redirect:', error)
   }
-  router.replace(`/workspace/${fallbackWorkspaceId}/home`)
+  window.location.replace(`/workspace/${fallbackWorkspaceId}/home`)
 }
 
 async function handleNoWorkspaces(
@@ -197,7 +197,7 @@ async function handleNoWorkspaces(
     })
     if (data.workspace?.id) {
       logger.info(`Created default workspace: ${data.workspace.id}`)
-      router.replace(`/workspace/${data.workspace.id}/home`)
+      window.location.replace(`/workspace/${data.workspace.id}/home`)
       return
     }
     logger.error('Failed to create default workspace')

@@ -21,7 +21,11 @@ import { AlertCircle, ArrowUp, MoreVertical, Paperclip, Square, X } from 'lucide
 import { useParams } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import { useSession } from '@/lib/auth/auth-client'
-import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
+import {
+  formatChartDeployOutputForChat,
+  hasRenderableChartDeployOutput,
+} from '@/lib/chart-generation/echarts-option'
+import { resolveChartContentFromFinalOutput } from '@/lib/chart-generation/resolve-final-output-chart'
 import {
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
@@ -210,6 +214,20 @@ const formatOutputContent = (output: unknown): string => {
   }
   return ''
 }
+
+/**
+ * Normalizes chart output from the streaming `final` event so the floating chat
+ * renders ECharts like the deployed chat. Returns the formatted chart string, or
+ * null when no renderable chart is present (leaving the streamed text untouched).
+ *
+ * Delegates to the shared, shape-agnostic resolver so charts are recovered
+ * whether the `final` output is keyed by block id or is the workflow's
+ * aggregated terminal output (which carries top-level `charts`/`content`).
+ */
+const resolveStreamedChartContent = (
+  output: Record<string, unknown> | null,
+  selectedOutputs: string[]
+): string | null => resolveChartContentFromFinalOutput(output, selectedOutputs)
 
 const getImageUrlsFromOutput = (output: unknown): string[] => {
   const extractedUrls = extractGeneratedImagesFromData(output).map((image) => image.url)
@@ -656,6 +674,7 @@ export function Chat() {
       }
 
       let finalError: string | null = null
+      let finalOutput: Record<string, unknown> | null = null
       try {
         await readSSEEvents<{
           event?: string
@@ -672,6 +691,13 @@ export function Chat() {
             if (event === 'final' && eventData) {
               if ('success' in eventData && !eventData.success) {
                 finalError = eventData.error || 'Workflow execution failed'
+              }
+              if (
+                'output' in eventData &&
+                eventData.output &&
+                typeof eventData.output === 'object'
+              ) {
+                finalOutput = eventData.output as Record<string, unknown>
               }
               return true
             }
@@ -712,8 +738,24 @@ export function Chat() {
             responseMessageId,
             `${accumulatedContent ? '\n\n' : ''}Error: ${finalError}`
           )
+          finalizeMessageStream(responseMessageId)
+        } else {
+          const chartContent = resolveStreamedChartContent(finalOutput, selectedOutputs)
+          if (chartContent) {
+            const streamedText = accumulatedContent.trim()
+            // When the streamed answer already renders a chart (standalone Chart
+            // Generator block), replace it with the resolved chart. When there is
+            // separate answer text without a chart (Agent block that called Chart
+            // Generator as a tool), keep the text and append the chart below it.
+            const finalContent =
+              !streamedText || hasRenderableChartDeployOutput(streamedText)
+                ? chartContent
+                : `${streamedText}\n\n${chartContent}`
+            finalizeMessageStream(responseMessageId, finalContent)
+          } else {
+            finalizeMessageStream(responseMessageId)
+          }
         }
-        finalizeMessageStream(responseMessageId)
       } catch (error) {
         if ((error as Error)?.name !== 'AbortError') {
           logger.error('Error processing stream:', error)

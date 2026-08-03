@@ -229,6 +229,25 @@ async function executeDevelopmentEditAppDirect(params: Record<string, any>): Pro
   )
 }
 
+/**
+ * Server-only chart generation. Kept out of the ToolConfig so the client-bundled
+ * tools registry never pulls in run-chart-generate.server (and its Node deps).
+ */
+async function executeChartGenerateDirect(params: Record<string, any>): Promise<ToolResponse> {
+  const { runChartGenerate } = await import('@/lib/chart-generation/run-chart-generate.server')
+  const ctx = (params._context ?? {}) as {
+    userId?: string
+    workspaceId?: string
+    workflowId?: string
+  }
+  const result = await runChartGenerate(params as Record<string, unknown>, {
+    userId: ctx.userId,
+    workspaceId: ctx.workspaceId,
+    workflowId: ctx.workflowId,
+  })
+  return { success: true, output: result }
+}
+
 function resolveToolScope(
   params: Record<string, unknown>,
   executionContext?: ExecutionContext
@@ -2243,7 +2262,8 @@ async function executeToolRequest(
             }
           }
         } else {
-          const urlValidation = await validateUrlWithDNS(fullUrl, 'toolUrl')
+          const allowHttp = tool.request.allowHttp === true
+          const urlValidation = await validateUrlWithDNS(fullUrl, 'toolUrl', { allowHttp })
           if (!urlValidation.isValid) {
             throw new Error(`Invalid tool URL: ${urlValidation.error}`)
           }
@@ -2265,6 +2285,7 @@ async function executeToolRequest(
             maxResponseBytes: MAX_TOOL_RESPONSE_BODY_BYTES,
             signal,
             proxyUrl: proxyOption,
+            allowHttp,
           })
 
           const responseHeaders = new Headers(secureResponse.headers.toRecord())

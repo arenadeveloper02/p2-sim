@@ -16,7 +16,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { getArenaToken } from '@/lib/arena-utils/cookie-utils'
-import { env } from '@/lib/core/config/env'
+import { getEnv } from '@/lib/core/config/env'
 import { arenaSiblingSubBlockStoreKey } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/arena/arena-dependency-helpers'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'
@@ -527,7 +527,7 @@ export function ArenaCommentInput({
       setLoadingUsers(true)
       try {
         const v2Token = await getArenaToken()
-        const arenaBackendBaseUrl = env.NEXT_PUBLIC_ARENA_BACKEND_BASE_URL
+        const arenaBackendBaseUrl = getEnv('NEXT_PUBLIC_ARENA_BACKEND_BASE_URL')
         const url = `${arenaBackendBaseUrl}/sol/v1/users/list?cId=${clientId}&pId=${projectId}`
 
         const response = await axios.get(url, {
