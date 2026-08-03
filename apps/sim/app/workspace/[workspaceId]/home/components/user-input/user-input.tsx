@@ -13,12 +13,13 @@ import {
 import {
   Button,
   ChipSwitch,
-  chipVariants,
   cn,
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Paperclip,
   Plus,
@@ -57,7 +58,6 @@ import {
   getLocalCopilotCatalogEntry,
   isLocalCopilotCatalogId,
   type LocalCopilotCatalogId,
-  type LocalCopilotProviderGroup,
   LOCAL_COPILOT_PROVIDER_GROUPS,
 } from '@/local-copilot/lib/model-catalog'
 import { useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
@@ -67,91 +67,59 @@ export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/ty
 
 const logger = createLogger('UserInput')
 
-function localCopilotGroupSegmentClass(isActive: boolean): string {
-  return cn(
-    chipVariants({
-      variant: isActive ? 'border-shadow' : 'default',
-      flush: true,
-    }),
-    'justify-center gap-0.5',
-    isActive
-      ? 'text-[var(--text-primary)] shadow-none hover-hover:bg-[var(--surface-2)] dark:bg-[var(--surface-6)] dark:shadow-none dark:hover-hover:bg-[var(--surface-6)]'
-      : 'text-[var(--text-muted)] hover-hover:bg-transparent hover-hover:text-[var(--text-primary)]'
-  )
-}
-
 interface LocalCopilotModelPickerProps {
   catalogId: LocalCopilotCatalogId
   onCatalogIdChange: (id: LocalCopilotCatalogId) => void
 }
 
 /**
- * Claude / Gemini / Bedrock picker for Local Copilot. Claude selects immediately;
- * Gemini and Bedrock open a leaf-model dropdown.
+ * Single Local Copilot model dropdown with Claude / Gemini / Bedrock section headers.
  */
 function LocalCopilotModelPicker({ catalogId, onCatalogIdChange }: LocalCopilotModelPickerProps) {
-  const activeGroup =
-    getLocalCopilotCatalogEntry(catalogId)?.providerGroup ?? ('claude' satisfies LocalCopilotProviderGroup)
+  const selectedLabel = getLocalCopilotCatalogEntry(catalogId)?.label ?? 'Claude'
 
   return (
-    <div
-      role='radiogroup'
-      aria-label='Local Copilot model'
-      className='ml-1 inline-flex items-center rounded-[10px] bg-[var(--surface-5)] p-[2px] dark:bg-[var(--surface-4)]'
-    >
-      {LOCAL_COPILOT_PROVIDER_GROUPS.map((group) => {
-        const isActive = activeGroup === group.id
-        if (group.id === 'claude') {
-          return (
-            <button
-              key={group.id}
-              type='button'
-              role='radio'
-              aria-checked={isActive}
-              data-state={isActive ? 'on' : 'off'}
-              className={localCopilotGroupSegmentClass(isActive)}
-              onClick={() => onCatalogIdChange('claude')}
-            >
-              {group.label}
-            </button>
-          )
-        }
-
-        const entries = getLocalCopilotCatalogEntriesForGroup(group.id)
-        return (
-          <DropdownMenu key={group.id}>
-            <DropdownMenuTrigger asChild>
-              <button
-                type='button'
-                role='radio'
-                aria-checked={isActive}
-                data-state={isActive ? 'on' : 'off'}
-                className={localCopilotGroupSegmentClass(isActive)}
-              >
-                {group.label}
-                <ChevronDown className='size-[12px] text-current' />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align='start' side='top' className='min-w-[12rem]'>
-              <DropdownMenuRadioGroup
-                value={isActive ? catalogId : undefined}
-                onValueChange={(value) => {
-                  if (isLocalCopilotCatalogId(value)) {
-                    onCatalogIdChange(value)
-                  }
-                }}
-              >
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type='button'
+          aria-label='Local Copilot model'
+          className={cn(
+            'ml-1 inline-flex h-7 items-center gap-0.5 rounded-[10px] bg-[var(--surface-5)] px-2.5',
+            'text-[var(--text-primary)] text-sm dark:bg-[var(--surface-4)]',
+            'hover-hover:bg-[var(--surface-2)] dark:hover-hover:bg-[var(--surface-6)]'
+          )}
+        >
+          {selectedLabel}
+          <ChevronDown className='size-[12px] text-[var(--text-muted)]' />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align='start' side='top' className='min-w-[14rem]'>
+        <DropdownMenuRadioGroup
+          value={catalogId}
+          onValueChange={(value) => {
+            if (isLocalCopilotCatalogId(value)) {
+              onCatalogIdChange(value)
+            }
+          }}
+        >
+          {LOCAL_COPILOT_PROVIDER_GROUPS.map((group, groupIndex) => {
+            const entries = getLocalCopilotCatalogEntriesForGroup(group.id)
+            return (
+              <div key={group.id}>
+                {groupIndex > 0 ? <DropdownMenuSeparator /> : null}
+                <DropdownMenuLabel>{group.label}</DropdownMenuLabel>
                 {entries.map((entry) => (
                   <DropdownMenuRadioItem key={entry.id} value={entry.id}>
                     {entry.label}
                   </DropdownMenuRadioItem>
                 ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )
-      })}
-    </div>
+              </div>
+            )
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

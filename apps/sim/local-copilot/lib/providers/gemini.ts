@@ -201,110 +201,95 @@ export function createGeminiProvider(config: LocalCopilotConfig): LocalCopilotPr
       }
 
       try {
-        if (!hasTools) {
-          const stream = await ai.models.generateContentStream({
+        if (hasTools) {
+          logger.info('Gemini tool-enabled request', {
             model,
-            contents,
-            config: generateConfig,
+            toolCount: functionDeclarations!.length,
+            toolNames: functionDeclarations!.map((tool) => tool.name),
           })
-
-          let inputTokens = 0
-          let outputTokens = 0
-
-          for await (const chunk of stream) {
-            if (request.signal?.aborted) {
-              throw new Error('Request aborted')
-            }
-
-            if (chunk.usageMetadata) {
-              inputTokens = chunk.usageMetadata.promptTokenCount ?? inputTokens
-              outputTokens = chunk.usageMetadata.candidatesTokenCount ?? outputTokens
-            }
-
-            const parts = chunk.candidates?.[0]?.content?.parts ?? []
-            for (const part of parts) {
-              if (part.thought === true) continue
-              if (part.text) {
-                yield { type: 'text', content: part.text }
-              }
-            }
-          }
-
-          yield {
-            type: 'done',
-            finishReason: 'stop',
-            usage: { inputTokens, outputTokens },
-          }
-          return
         }
 
-        logger.info('Gemini tool-enabled request', {
-          model,
-          toolCount: functionDeclarations!.length,
-          toolNames: functionDeclarations!.map((tool) => tool.name),
-        })
-
-        // Tool-enabled turns: non-streaming generateContent, synthetic chunks.
-        const response = await ai.models.generateContent({
+        // Always stream — Local Copilot agent rounds attach tools on nearly
+        // every turn, so a non-streaming tool path would appear as "no
+        // streaming" in chat. generateContentStream supports functionCall
+        // parts alongside text deltas.
+        const stream = await ai.models.generateContentStream({
           model,
           contents,
           config: generateConfig,
         })
 
-        const candidate = response.candidates?.[0]
-        const parts = candidate?.content?.parts ?? []
-        const apiFinishReason = candidate?.finishReason
+        let inputTokens = 0
+        let outputTokens = 0
         let yieldedToolCall = false
+        let apiFinishReason: string | undefined
+        let partCount = 0
+
+        for await (const chunk of stream) {
+          if (request.signal?.aborted) {
+            throw new Error('Request aborted')
+          }
+
+          if (chunk.usageMetadata) {
+            inputTokens = chunk.usageMetadata.promptTokenCount ?? inputTokens
+            outputTokens = chunk.usageMetadata.candidatesTokenCount ?? outputTokens
+          }
+
+          const candidate = chunk.candidates?.[0]
+          if (candidate?.finishReason) {
+            apiFinishReason = String(candidate.finishReason)
+          }
+
+          const parts = candidate?.content?.parts ?? []
+          partCount += parts.length
+
+          for (const part of parts) {
+            // Thought / reasoning parts must not be treated as user-facing text.
+            if (part.thought === true) continue
+
+            if (part.text) {
+              yield { type: 'text', content: part.text }
+            }
+
+            if (part.functionCall?.name) {
+              yieldedToolCall = true
+              const thoughtSignature =
+                typeof part.thoughtSignature === 'string' && part.thoughtSignature.length > 0
+                  ? part.thoughtSignature
+                  : undefined
+              yield {
+                type: 'tool_call',
+                toolCall: {
+                  id: part.functionCall.id || generateShortId(),
+                  name: part.functionCall.name,
+                  arguments: JSON.stringify(part.functionCall.args ?? {}),
+                  ...(thoughtSignature ? { thoughtSignature } : {}),
+                },
+              }
+            }
+          }
+        }
 
         if (apiFinishReason === 'MALFORMED_FUNCTION_CALL') {
           logger.warn('Gemini returned MALFORMED_FUNCTION_CALL', {
             model,
-            toolCount: functionDeclarations!.length,
+            toolCount: functionDeclarations?.length ?? 0,
           })
-        }
-
-        for (const part of parts) {
-          // Thought / reasoning parts must not be treated as user-facing text.
-          if (part.thought === true) continue
-
-          if (part.text) {
-            yield { type: 'text', content: part.text }
-          }
-          if (part.functionCall?.name) {
-            yieldedToolCall = true
-            const thoughtSignature =
-              typeof part.thoughtSignature === 'string' && part.thoughtSignature.length > 0
-                ? part.thoughtSignature
-                : undefined
-            yield {
-              type: 'tool_call',
-              toolCall: {
-                id: part.functionCall.id || generateShortId(),
-                name: part.functionCall.name,
-                arguments: JSON.stringify(part.functionCall.args ?? {}),
-                ...(thoughtSignature ? { thoughtSignature } : {}),
-              },
-            }
-          }
         }
 
         if (hasTools && !yieldedToolCall) {
           logger.warn('Gemini returned no function calls on a tool-enabled turn', {
             model,
             finishReason: apiFinishReason,
-            partCount: parts.length,
+            partCount,
             toolCount: functionDeclarations!.length,
           })
         }
 
-        const usage = response.usageMetadata
         yield {
           type: 'done',
           finishReason: yieldedToolCall ? 'tool_calls' : 'stop',
-          usage: {
-            inputTokens: usage?.promptTokenCount ?? 0,
-            outputTokens: usage?.candidatesTokenCount ?? 0,
-          },
+          usage: { inputTokens, outputTokens },
         }
       } catch (error) {
         logger.error('Gemini request failed', { error: toError(error).message })

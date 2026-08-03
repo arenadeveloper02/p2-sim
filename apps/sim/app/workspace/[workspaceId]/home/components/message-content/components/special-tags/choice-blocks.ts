@@ -17,6 +17,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Applies common LLM JSON repairs so near-valid `single_select` payloads still render.
+ * Models (especially local) often emit stray `>` after strings or trailing commas.
+ */
+export function repairSingleSelectJson(json: string): string {
+  return (
+    json
+      // `"value">,` / `"value">}` — model mixed JSON with XML-ish closers
+      .replace(/("(?:\\.|[^"\\])*")\s*>\s*(?=[,}\]])/g, '$1')
+      // trailing commas before } or ]
+      .replace(/,\s*(?=[}\]])/g, '')
+  )
+}
+
+/**
+ * Parses a balanced JSON object, retrying after common LLM syntax repairs.
+ */
+function parseSingleSelectPayload(json: string): unknown | null {
+  try {
+    return JSON.parse(json) as unknown
+  } catch {
+    try {
+      return JSON.parse(repairSingleSelectJson(json)) as unknown
+    } catch {
+      return null
+    }
+  }
+}
+
+/**
  * Extracts a balanced `{...}` JSON object starting at `startIdx`.
  */
 export function extractBalancedJsonObject(text: string, startIdx: number): string | null {
@@ -99,22 +128,20 @@ export function findSingleSelectJson(text: string): SingleSelectSplit | null {
   const json = extractBalancedJsonObject(text, match.index)
   if (!json) return null
 
-  try {
-    const parsed: unknown = JSON.parse(json)
-    const options = singleSelectToOptionsTagData(parsed)
-    if (!options) return null
-    const prompt =
-      isRecord(parsed) && typeof parsed.prompt === 'string' ? parsed.prompt.trim() : ''
-    return {
-      before: text.slice(0, match.index),
-      options,
-      prompt,
-      after: text.slice(match.index + json.length),
-      json,
-      startIndex: match.index,
-    }
-  } catch {
-    return null
+  const parsed = parseSingleSelectPayload(json)
+  if (parsed === null) return null
+
+  const options = singleSelectToOptionsTagData(parsed)
+  if (!options) return null
+  const prompt =
+    isRecord(parsed) && typeof parsed.prompt === 'string' ? parsed.prompt.trim() : ''
+  return {
+    before: text.slice(0, match.index),
+    options,
+    prompt,
+    after: text.slice(match.index + json.length),
+    json,
+    startIndex: match.index,
   }
 }
 
