@@ -1574,6 +1574,8 @@ export async function executeJobInline(payload: JobExecutionPayload) {
        * when the owner is not on the local-copilot allowlist.
        */
       copilotBackend: 'local',
+      secretScope: jobRecord.secretScope,
+      mountedSecrets: jobRecord.mountedSecrets,
       ...(jobRecord.contexts && jobRecord.contexts.length > 0
         ? { contexts: jobRecord.contexts }
         : {}),

@@ -35,7 +35,11 @@ import { adaptAnthropicToolSchema } from '@/providers/tool-schema-adapter'
 import { enrichLastModelSegment } from '@/providers/trace-enrichment'
 import type { ProviderRequest, ProviderResponse, TimeSegment } from '@/providers/types'
 import { ProviderError } from '@/providers/types'
-import { prepareToolExecution, prepareToolsWithUsageControl } from '@/providers/utils'
+import {
+  describeModelLevel,
+  prepareToolExecution,
+  prepareToolsWithUsageControl,
+} from '@/providers/utils'
 
 /**
  * Configuration for creating an Anthropic provider instance.
@@ -403,7 +407,7 @@ export async function executeAnthropicProviderRequest(
       )
     } else {
       logger.warn(
-        `Thinking level "${request.thinkingLevel}" not supported for model: ${modelId}, ignoring`
+        `Thinking level "${describeModelLevel(request.thinkingLevel)}" not supported for model: ${modelId}, ignoring`
       )
     }
   }

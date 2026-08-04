@@ -36,20 +36,46 @@ import { resolveMessageImagesAndProse } from '@/app/workspace/[workspaceId]/w/[w
 
 const logger = createLogger('UseChatStreaming')
 
-interface VoiceSettings {
-  isVoiceEnabled: boolean
-  voiceId: string
-  autoPlayResponses: boolean
-  voiceFirstMode?: boolean
-  textStreamingInVoiceMode?: 'hidden' | 'synced' | 'normal'
-  conversationMode?: boolean
+function extractFilesFromData(
+  data: any,
+  files: ChatFile[] = [],
+  seenIds = new Set<string>()
+): ChatFile[] {
+  if (!data || typeof data !== 'object') {
+    return files
+  }
+
+  if (isUserFileWithMetadata(data)) {
+    if (!seenIds.has(data.id)) {
+      seenIds.add(data.id)
+      files.push({
+        id: data.id,
+        name: data.name,
+        url: data.url,
+        key: data.key,
+        size: data.size,
+        type: data.type,
+        context: data.context,
+      })
+    }
+    return files
+  }
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      extractFilesFromData(item, files, seenIds)
+    }
+    return files
+  }
+
+  for (const value of Object.values(data)) {
+    extractFilesFromData(value, files, seenIds)
+  }
+
+  return files
 }
 
 export interface StreamingOptions {
-  voiceSettings?: VoiceSettings
-  onAudioStart?: () => void
-  onAudioEnd?: () => void
-  audioStreamHandler?: (text: string) => Promise<void>
   outputConfigs?: Array<{ blockId: string; path?: string }>
   /**
    * Shared AbortController for fetch + SSE body reads. When provided (preferred),
@@ -82,9 +108,6 @@ export function useChatStreaming() {
   const accumulatedTextRef = useRef<string>('')
   const accumulatedThinkingRef = useRef<string>('')
   const accumulatedToolCallsRef = useRef<ChatToolCall[]>([])
-  const lastStreamedPositionRef = useRef<number>(0)
-  const audioStreamingActiveRef = useRef<boolean>(false)
-  const lastDisplayedPositionRef = useRef<number>(0)
 
   const stopStreaming = (setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>) => {
     if (abortControllerRef.current) {
@@ -127,9 +150,6 @@ export function useChatStreaming() {
       accumulatedTextRef.current = ''
       accumulatedThinkingRef.current = ''
       accumulatedToolCallsRef.current = []
-      lastStreamedPositionRef.current = 0
-      lastDisplayedPositionRef.current = 0
-      audioStreamingActiveRef.current = false
     }
   }
 
@@ -143,17 +163,11 @@ export function useChatStreaming() {
     logger.info('[useChatStreaming] handleStreamedResponse called')
     setIsStreamingResponse(true)
 
-    // Prefer a shared controller from the caller (fetch + reader). Otherwise create one.
     if (streamingOptions?.abortController) {
       abortControllerRef.current = streamingOptions.abortController
     } else if (!abortControllerRef.current) {
       abortControllerRef.current = new AbortController()
     }
-
-    const shouldPlayAudio =
-      streamingOptions?.voiceSettings?.isVoiceEnabled &&
-      streamingOptions?.voiceSettings?.autoPlayResponses &&
-      streamingOptions?.audioStreamHandler
 
     if (!response.body) {
       setIsLoading(false)
@@ -176,7 +190,6 @@ export function useChatStreaming() {
     }
     let accumulatedThinking = ''
     let isThinkingStreaming = false
-    let lastAudioPosition = 0
     let pendingKnowledgeResults: ChatMessage['knowledgeResults']
     const toolCallsMap = new Map<string, ChatToolCall>()
     const toolCallOrder: string[] = []
@@ -185,7 +198,6 @@ export function useChatStreaming() {
       accumulatedToolCallsRef.current = snapshotToolCalls(toolCallOrder, toolCallsMap) ?? []
     }
 
-    const messageIdMap = new Map<string, string>()
     const messageId = generateId()
 
     const UI_BATCH_MAX_MS = 50
@@ -338,9 +350,6 @@ export function useChatStreaming() {
           }
 
           if (isChatThinkingFrame(json)) {
-            if (!messageIdMap.has(json.blockId)) {
-              messageIdMap.set(json.blockId, messageId)
-            }
             accumulatedThinking += json.data
             accumulatedThinkingRef.current = accumulatedThinking
             isThinkingStreaming = true
@@ -351,9 +360,6 @@ export function useChatStreaming() {
 
           if (isChatToolFrame(json)) {
             const { blockId } = json
-            if (!messageIdMap.has(blockId)) {
-              messageIdMap.set(blockId, messageId)
-            }
             // Tools starting means the turn's thinking phase is over — settle
             // the thinking chrome (it re-opens if more thinking streams later).
             if (json.phase === 'start' && isThinkingStreaming) {
@@ -422,9 +428,6 @@ export function useChatStreaming() {
             accumulatedTextRef.current = ''
             accumulatedThinkingRef.current = ''
             accumulatedToolCallsRef.current = []
-            lastStreamedPositionRef.current = 0
-            lastDisplayedPositionRef.current = 0
-            audioStreamingActiveRef.current = false
 
             terminated = true
             return true
@@ -444,8 +447,6 @@ export function useChatStreaming() {
                 blockTextOrder.splice(orderIndex, 1)
               }
               recomputeAccumulatedText()
-              // Spoken audio cannot be unplayed; clamp so slicing stays valid.
-              lastAudioPosition = Math.min(lastAudioPosition, accumulatedText.length)
               uiDirty = true
               scheduleUIFlush()
             }
@@ -455,9 +456,6 @@ export function useChatStreaming() {
           // Answer text only — never append thinking/tool/unknown chunk frames blindly.
           if (isChatChunkFrame(json)) {
             const { blockId, chunk: contentChunk } = json
-            if (!messageIdMap.has(blockId)) {
-              messageIdMap.set(blockId, messageId)
-            }
 
             // First answer chunk settles thinking chrome (still visible, no longer “live”).
             if (isThinkingStreaming) {
@@ -479,32 +477,6 @@ export function useChatStreaming() {
             })
             uiDirty = true
             scheduleUIFlush()
-
-            if (shouldPlayAudio && streamingOptions?.audioStreamHandler) {
-              const newText = accumulatedText.substring(lastAudioPosition)
-              const sentenceEndings = ['. ', '! ', '? ', '.\n', '!\n', '?\n', '.', '!', '?']
-              let sentenceEnd = -1
-
-              for (const ending of sentenceEndings) {
-                const index = newText.indexOf(ending)
-                if (index > 0) {
-                  sentenceEnd = index + ending.length
-                  break
-                }
-              }
-
-              if (sentenceEnd > 0) {
-                const sentence = newText.substring(0, sentenceEnd).trim()
-                if (sentence && sentence.length >= 3) {
-                  try {
-                    await streamingOptions.audioStreamHandler(sentence)
-                    lastAudioPosition += sentenceEnd
-                  } catch (error) {
-                    logger.error('TTS error:', error)
-                  }
-                }
-              }
-            }
           }
         },
       })
@@ -544,25 +516,10 @@ export function useChatStreaming() {
             }
           })
         )
-        if (
-          !wasAborted &&
-          shouldPlayAudio &&
-          streamingOptions?.audioStreamHandler &&
-          accumulatedText.length > lastAudioPosition
-        ) {
-          const remainingText = accumulatedText.substring(lastAudioPosition).trim()
-          if (remainingText) {
-            try {
-              await streamingOptions.audioStreamHandler(remainingText)
-            } catch (error) {
-              logger.error('TTS error for remaining text:', error)
-            }
-          }
-        }
       }
     } catch (error) {
       // Stop / timeout abort the shared fetch controller; body read then throws AbortError.
-      // Match chat.tsx + use-audio-streaming: expected cancel, not a hard failure.
+      // Expected cancel, not a hard failure.
       if (error instanceof Error && error.name === 'AbortError') {
         logger.info('Stream aborted by user or timeout')
         settleRunningToolCalls(toolCallsMap, 'cancelled')
@@ -597,16 +554,11 @@ export function useChatStreaming() {
       setTimeout(() => {
         scrollToBottom()
       }, 300)
-
-      if (shouldPlayAudio) {
-        streamingOptions?.onAudioEnd?.()
-      }
     }
   }
 
   return {
     isStreamingResponse,
-    setIsStreamingResponse,
     abortControllerRef,
     stopStreaming,
     handleStreamedResponse,

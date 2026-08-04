@@ -1,5 +1,9 @@
 import { z } from 'zod'
 import { scheduleContextSchema } from '@/lib/api/contracts/schedules'
+import {
+  mountedSecretNamesSchema,
+  secretMountScopeSchema,
+} from '@/lib/api/contracts/secret-mount-policy'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 
 const dateStringSchema = z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
@@ -132,6 +136,8 @@ export const mothershipExecuteBodySchema = z.object({
    * users still fall back to the cloud mothership regardless of this value.
    */
   copilotBackend: z.enum(['local', 'external']).optional(),
+  secretScope: secretMountScopeSchema.optional(),
+  mountedSecrets: mountedSecretNamesSchema.optional(),
   userMetadata: z
     .object({
       name: z.string().optional(),

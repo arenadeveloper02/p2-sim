@@ -5,6 +5,7 @@ import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import {
   getAgentModelOptions,
+  getModelCapabilityCondition,
   getProviderCredentialSubBlocks,
   RESPONSE_FORMAT_WAND_CONFIG,
 } from '@/blocks/utils'
@@ -165,8 +166,8 @@ Return ONLY the JSON array.`,
     {
       id: 'reasoningEffort',
       title: 'Reasoning Effort',
-      type: 'dropdown',
-      placeholder: 'Select reasoning effort...',
+      type: 'combobox',
+      placeholder: 'Type or select reasoning effort...',
       options: [
         { label: 'auto', id: 'auto' },
         { label: 'low', id: 'low' },
@@ -213,16 +214,13 @@ Return ONLY the JSON array.`,
         return [autoOption, ...validOptions.map((opt) => ({ label: opt, id: opt }))]
       },
       mode: 'advanced',
-      condition: {
-        field: 'model',
-        value: MODELS_WITH_REASONING_EFFORT,
-      },
+      condition: getModelCapabilityCondition(MODELS_WITH_REASONING_EFFORT),
     },
     {
       id: 'verbosity',
       title: 'Verbosity',
-      type: 'dropdown',
-      placeholder: 'Select verbosity...',
+      type: 'combobox',
+      placeholder: 'Type or select verbosity...',
       options: [
         { label: 'auto', id: 'auto' },
         { label: 'low', id: 'low' },
@@ -269,16 +267,13 @@ Return ONLY the JSON array.`,
         return [autoOption, ...validOptions.map((opt) => ({ label: opt, id: opt }))]
       },
       mode: 'advanced',
-      condition: {
-        field: 'model',
-        value: MODELS_WITH_VERBOSITY,
-      },
+      condition: getModelCapabilityCondition(MODELS_WITH_VERBOSITY),
     },
     {
       id: 'thinkingLevel',
       title: 'Thinking Level',
-      type: 'dropdown',
-      placeholder: 'Select thinking level...',
+      type: 'combobox',
+      placeholder: 'Type or select thinking level...',
       options: [
         { label: 'none', id: 'none' },
         { label: 'minimal', id: 'minimal' },
@@ -312,10 +307,7 @@ Return ONLY the JSON array.`,
         return [noneOption, ...validOptions.map((opt) => ({ label: opt, id: opt }))]
       },
       mode: 'advanced',
-      condition: {
-        field: 'model',
-        value: MODELS_WITH_THINKING,
-      },
+      condition: getModelCapabilityCondition(MODELS_WITH_THINKING),
     },
     {
       id: 'promptCaching',

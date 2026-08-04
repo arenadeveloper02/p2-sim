@@ -206,6 +206,7 @@ export class LoggingSession {
     initialInput?: string
   }
   private correlation?: NonNullable<ExecutionTrigger['data']>['correlation']
+  private trustedExecutionCorrelation?: NonNullable<ExecutionTrigger['data']>['correlation']
   private actorUserId: string | null = null
   private billingAttribution?: BillingAttributionSnapshot
   private isResume = false
@@ -244,6 +245,13 @@ export class LoggingSession {
   /** Installs the run-scoped provenance used only at the terminal TraceSpan boundary. */
   setResolvedSecretTraceRegistry(registry: ResolvedSecretTraceRegistry): void {
     this.resolvedSecretTraceRegistry = registry
+  }
+
+  /** Adds server-validated lifecycle correlation without exposing it to executor metadata. */
+  setTrustedExecutionCorrelation(
+    correlation: NonNullable<NonNullable<ExecutionTrigger['data']>['correlation']>
+  ): void {
+    this.trustedExecutionCorrelation = { ...correlation }
   }
 
   /** Adds the trusted execution-ref scope needed to rewrite offloaded trace content. */
@@ -663,8 +671,11 @@ export class LoggingSession {
     }
 
     try {
-      this.trigger = createTriggerObject(this.triggerType, triggerData)
-      this.correlation = triggerData?.correlation
+      const effectiveTriggerData = this.trustedExecutionCorrelation
+        ? { ...triggerData, correlation: this.trustedExecutionCorrelation }
+        : triggerData
+      this.trigger = createTriggerObject(this.triggerType, effectiveTriggerData)
+      this.correlation = effectiveTriggerData?.correlation
       this.environment = createEnvironmentObject(
         this.workflowId,
         this.executionId,
@@ -1220,8 +1231,11 @@ export class LoggingSession {
           lineage,
           executionActor,
         } = params
-        this.trigger = createTriggerObject(this.triggerType, triggerData)
-        this.correlation = triggerData?.correlation
+        const effectiveTriggerData = this.trustedExecutionCorrelation
+          ? { ...triggerData, correlation: this.trustedExecutionCorrelation }
+          : triggerData
+        this.trigger = createTriggerObject(this.triggerType, effectiveTriggerData)
+        this.correlation = effectiveTriggerData?.correlation
         this.environment = createEnvironmentObject(
           this.workflowId,
           this.executionId,

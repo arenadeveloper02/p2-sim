@@ -5,8 +5,7 @@
 
 import { stripOptionsTagsForDisplay } from '@/local-copilot/lib/format-options-tag'
 
-const UUID_PATTERN =
-  /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi
 
 /** After a successful populate, restrict which tools the model may still call. */
 export type PostBuildToolMode = 'all' | 'oauth_only' | 'final_only' | 'done'

@@ -35,11 +35,11 @@ import {
   LocalTurnCostAccumulator,
   type LocalTurnCostSummary,
 } from '@/local-copilot/lib/billing/turn-cost-accumulator'
-import { getLocalCopilotConfig, buildLocalCopilotConfigForCatalog, assertLocalCopilotEnabled } from '@/local-copilot/lib/config'
 import {
-  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
-  type LocalCopilotCatalogId,
-} from '@/local-copilot/lib/model-catalog'
+  assertLocalCopilotEnabled,
+  buildLocalCopilotConfigForCatalog,
+  getLocalCopilotConfig,
+} from '@/local-copilot/lib/config'
 import {
   buildLocalCopilotContext,
   contextToPromptJson,
@@ -77,6 +77,10 @@ import {
   normalizeSingleSelectJsonToOptionsTags,
   stripOptionsTagsForDisplay,
 } from '@/local-copilot/lib/format-options-tag'
+import {
+  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
+  type LocalCopilotCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import { formatOAuthConnectCredentialTag } from '@/local-copilot/lib/oauth-connect-text'
 import {
   appendMessage,
@@ -85,7 +89,10 @@ import {
   recordToolCall,
   savePatch,
 } from '@/local-copilot/lib/persistence/store'
-import { createLocalCopilotProvider, getLocalCopilotProvider } from '@/local-copilot/lib/providers/registry'
+import {
+  createLocalCopilotProvider,
+  getLocalCopilotProvider,
+} from '@/local-copilot/lib/providers/registry'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import {
   stripLeakedToolMarkers,
@@ -111,15 +118,14 @@ import {
   buildBlocksMetadataReuseSystemMessage,
   buildUnfulfilledIntentContinuationMessage,
   buildWorkflowBuildCompleteSystemMessage,
+  createAssistantRoundTextStreamer,
   editResultNeedsFollowUp,
   isBridgingAssistantNarration,
   isUnfulfilledMutationIntentNarration,
   type PostBuildToolMode,
   pendingFollowUpsAreOauthOnly,
-  shouldStreamAssistantRoundText,
   shouldSynthesizeAssistantSummary,
   stripIdsFromUserFacingText,
-  createAssistantRoundTextStreamer
 } from '@/local-copilot/lib/user-facing-text'
 import {
   buildLocalCopilotUserTurn,
@@ -559,9 +565,7 @@ export async function* runLocalCopilotAgent(
     memory: getLocalCopilotMemorySnapshot(),
   })
 
-  const provider = params.catalogId
-    ? createLocalCopilotProvider(config)
-    : getLocalCopilotProvider()
+  const provider = params.catalogId ? createLocalCopilotProvider(config) : getLocalCopilotProvider()
   const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,

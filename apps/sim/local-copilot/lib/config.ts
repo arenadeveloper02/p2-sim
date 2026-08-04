@@ -93,7 +93,11 @@ function resolveApiKey(provider: LocalCopilotProviderId): string | undefined {
 }
 
 function resolveBedrockRegion(): string {
-  return process.env.AWS_REGION?.trim() || process.env.AWS_DEFAULT_REGION?.trim() || DEFAULT_BEDROCK_REGION
+  return (
+    process.env.AWS_REGION?.trim() ||
+    process.env.AWS_DEFAULT_REGION?.trim() ||
+    DEFAULT_BEDROCK_REGION
+  )
 }
 
 function hasBedrockCredentials(): boolean {
@@ -101,7 +105,9 @@ function hasBedrockCredentials(): boolean {
   const secretKey = process.env.AWS_SECRET_ACCESS_KEY?.trim()
   if (accessKey && secretKey) return true
   // Default credential chain (instance role, profile, etc.) may still work.
-  return Boolean(process.env.AWS_PROFILE?.trim() || process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI)
+  return Boolean(
+    process.env.AWS_PROFILE?.trim() || process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
+  )
 }
 
 export function getLocalCopilotConfig(): LocalCopilotConfig {

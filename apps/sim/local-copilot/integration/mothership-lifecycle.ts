@@ -23,12 +23,12 @@ import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
 import type { LocalTurnCostSummary } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
-import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
 import {
   DEFAULT_LOCAL_COPILOT_CATALOG_ID,
   isLocalCopilotCatalogId,
   type LocalCopilotCatalogId,
 } from '@/local-copilot/lib/model-catalog'
+import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
 import type {
@@ -42,7 +42,9 @@ function extractString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
-function resolveCatalogIdFromPayload(requestPayload: Record<string, unknown>): LocalCopilotCatalogId {
+function resolveCatalogIdFromPayload(
+  requestPayload: Record<string, unknown>
+): LocalCopilotCatalogId {
   const model = extractString(requestPayload.model)
   if (!model || !isLocalCopilotCatalogId(model)) {
     return DEFAULT_LOCAL_COPILOT_CATALOG_ID

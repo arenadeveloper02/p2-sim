@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChipConfirmModal,
+  ChipEmailsInput,
   ChipInput,
   cn,
   Input,
@@ -10,21 +11,18 @@ import {
   Loader,
   Skeleton,
   Switch,
-  TagInput,
-  type TagItem,
   Textarea,
   Tooltip,
 } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { normalizeEmail } from '@sim/utils/string'
 import { AlertTriangle, Check } from 'lucide-react'
 import { GeneratedPasswordInput } from '@/components/ui'
 import { CustomSelect } from '@/components/ui/native-select'
 import { useSession } from '@/lib/auth/auth-client'
 import { isSsoEnabled } from '@/lib/core/config/env-flags'
 import { getBaseUrl, getEmailDomain } from '@/lib/core/utils/urls'
-import { quickValidateEmail } from '@/lib/messaging/email/validation'
+import { validateAllowlistEntry } from '@/lib/messaging/email/validation'
 import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/output-select/output-select'
 import {
   type AuthType,
@@ -61,14 +59,6 @@ function dedupeStrings(values: readonly string[]): string[] {
     }
   }
   return result
-}
-
-function stringLookup(values: readonly string[]): Record<string, true> {
-  const lookup: Record<string, true> = {}
-  for (let i = 0; i < values.length; i++) {
-    lookup[values[i]] = true
-  }
-  return lookup
 }
 
 const IDENTIFIER_PATTERN = /^[a-z0-9-]+$/
@@ -203,7 +193,6 @@ export function ChatDeploy({
   const updateChatMutation = useUpdateChat()
   const deleteChatMutation = useDeleteChat()
   const [isIdentifierValid, setIsIdentifierValid] = useState(false)
-  const [hasInvalidEmails, setHasInvalidEmails] = useState(false)
   const hasInitializedFormRef = useRef(false)
   const existingPassword = hasExistingPassword(existingChat)
 
@@ -290,8 +279,7 @@ export function ChatDeploy({
     (formData.authType !== 'password' || !isWhitespaceOnlyPassword(formData.password)) &&
     ((formData.authType !== 'email' && formData.authType !== 'sso') ||
       formData.emails.length > 0) &&
-    (!isAppMode || isValidRedirectUrl(formData.redirectUrl.trim())) &&
-    !hasInvalidEmails
+    (!isAppMode || isValidRedirectUrl(formData.redirectUrl.trim()))
 
   useEffect(() => {
     onValidationChange?.(isFormValid)
@@ -511,12 +499,7 @@ export function ChatDeploy({
 
   return (
     <>
-      <form
-        id={formId}
-        ref={formRef}
-        onSubmit={handleSubmit}
-        className='-mx-1 space-y-4 overflow-y-auto px-1'
-      >
+      <form id={formId} ref={formRef} onSubmit={handleSubmit} className='-mx-1 space-y-4 px-1'>
         {errors.general && (
           <div className='flex items-center gap-2 rounded-md border border-[color-mix(in_srgb,var(--text-error)_20%,transparent)] bg-[color-mix(in_srgb,var(--text-error)_10%,transparent)] px-3 py-2 text-[var(--text-error)] text-small'>
             <AlertTriangle className='size-4 flex-shrink-0' />
@@ -608,9 +591,10 @@ export function ChatDeploy({
               <OutputSelect
                 workflowId={workflowId}
                 selectedOutputs={formData.selectedOutputBlocks}
-                onOutputSelect={handleOutputSelect}
+                onOutputSelect={(values) => updateField('selectedOutputBlocks', values)}
                 placeholder='Select which block outputs to use'
                 disabled={chatSubmitting}
+                size='md'
                 className='w-full'
               />
               {errors.outputBlocks && (
@@ -661,7 +645,6 @@ export function ChatDeploy({
             onAuthTypeChange={(type) => updateField('authType', type)}
             onPasswordChange={(password) => updateField('password', password)}
             onEmailsChange={(emails) => updateField('emails', emails)}
-            onInvalidEmailsChange={setHasInvalidEmails}
             disabled={chatSubmitting}
             hasExistingPassword={existingPassword}
             error={errors.password || errors.emails}
@@ -908,18 +891,11 @@ interface AuthSelectorProps {
   onAuthTypeChange: (type: AuthType) => void
   onPasswordChange: (password: string) => void
   onEmailsChange: (emails: string[]) => void
-  onInvalidEmailsChange?: (hasInvalidEmails: boolean) => void
   disabled?: boolean
   hasExistingPassword?: boolean
   error?: string
+  /** When false (create mode), prefill the signed-in user's email once. */
   isExistingChat?: boolean
-}
-
-const AUTH_LABELS: Record<AuthType, string> = {
-  public: 'Public',
-  password: 'Password',
-  email: 'Email',
-  sso: 'SSO',
 }
 
 function AuthSelector({
@@ -932,20 +908,14 @@ function AuthSelector({
   onAuthTypeChange,
   onPasswordChange,
   onEmailsChange,
-  onInvalidEmailsChange,
   disabled = false,
   hasExistingPassword = false,
   error,
   isExistingChat = false,
 }: AuthSelectorProps) {
   const { data: session } = useSession()
-  const [emailError, setEmailError] = useState('')
-  const [invalidEmailItems, setInvalidEmailItems] = useState<TagItem[]>([])
   const hasPrefilledSessionEmailRef = useRef(false)
   const revealPasswordMutation = useRevealChatPassword()
-
-  const emailsRef = useRef(emails)
-  const invalidEmailItemsRef = useRef(invalidEmailItems)
 
   /**
    * Editing or regenerating the password clears a failed reveal. The mutation
@@ -956,241 +926,6 @@ function AuthSelector({
     if (revealPasswordMutation.isError) revealPasswordMutation.reset()
     onPasswordChange(value)
   }
-
-  useEffect(() => {
-    emailsRef.current = emails
-  }, [emails])
-
-  useEffect(() => {
-    onInvalidEmailsChange?.(invalidEmailItems.length > 0)
-  }, [invalidEmailItems, onInvalidEmailsChange])
-
-  const [emailItems, setEmailItems] = useState<TagItem[]>(() =>
-    emails.map((email) => ({ value: email, isValid: true }))
-  )
-
-  // Sync emailItems with emails prop and deduplicate
-  // Keep invalid items in emailItems even if not in emails (to show red badges)
-  useEffect(() => {
-    const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
-    const uniqueEmails = dedupeStrings(normalizedEmails)
-    const currentValues = stringLookup(emailItems.map((item) => item.value.toLowerCase().trim()))
-
-    const existingItemsMap: Record<string, TagItem> = {}
-    for (let i = 0; i < emailItems.length; i++) {
-      const item = emailItems[i]
-      existingItemsMap[item.value.toLowerCase().trim()] = item
-    }
-
-    const invalidEmailNormalized = invalidEmailItems.map((item) => item.value.toLowerCase().trim())
-    const invalidEmailValues = stringLookup(invalidEmailNormalized)
-    const allEmailValues = dedupeStrings(uniqueEmails.concat(invalidEmailNormalized))
-    const allEmailValuesLookup = stringLookup(allEmailValues)
-
-    const needsUpdate =
-      allEmailValues.length !== emailItems.length ||
-      !allEmailValues.every((email) => currentValues[email]) ||
-      !emailItems.every((item) => allEmailValuesLookup[item.value.toLowerCase().trim()])
-
-    if (needsUpdate) {
-      setEmailItems(
-        allEmailValues.map((email) => {
-          const existing = existingItemsMap[email]
-          const isInvalid = Boolean(invalidEmailValues[email])
-          return existing
-            ? { ...existing, isValid: isInvalid ? false : existing.isValid }
-            : { value: email, isValid: !isInvalid }
-        })
-      )
-    }
-  }, [emails, invalidEmailItems])
-
-  const addEmail = async (email: string): Promise<boolean> => {
-    if (!email.trim()) return false
-
-    const normalized = normalizeEmail(email)
-    const isDomainPattern = normalized.startsWith('@')
-    const validation = quickValidateEmail(normalized)
-    const isValid = validation.isValid || isDomainPattern
-
-    if (
-      emailsRef.current.includes(normalized) ||
-      invalidEmailItemsRef.current.some((item) => item.value === normalized)
-    ) {
-      return false
-    }
-
-    if (isValid) {
-      setEmailError('')
-      emailsRef.current = [...emailsRef.current, normalized]
-      onEmailsChange(emailsRef.current)
-    } else {
-      invalidEmailItemsRef.current = [
-        ...invalidEmailItemsRef.current,
-        { value: normalized, isValid, error: validation.reason ?? 'Invalid email format' },
-      ]
-      setInvalidEmailItems(invalidEmailItemsRef.current)
-    }
-
-    // Skip validation for domain emails (starting with @)
-    if (normalized.startsWith('@')) {
-      setEmailError('')
-      onEmailsChange([...emails, normalized])
-      return true
-    }
-
-    // Validate email using API
-    try {
-      const response = await fetch('/api/users/validate-emails', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ emails: [normalized] }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to validate email')
-      }
-
-      const data = await response.json()
-
-      // If validation fails, mark email as invalid and show error
-      if (data.valid === false) {
-        // Remove from emails state
-        onEmailsChange(emails.filter((e) => e !== normalized))
-
-        // Update emailItems to mark as invalid (red badge)
-        setEmailItems((prev) =>
-          prev.map((item) => (item.value === normalized ? { ...item, isValid: false } : item))
-        )
-
-        // Show error message with email address
-        const errorMessage =
-          data.missingEmails?.includes(normalized) ||
-          (data.missingEmails && data.missingEmails.length > 0)
-            ? `The user "${normalized}" does not exist in the system. Please add a user that exists.`
-            : `The user "${normalized}" does not have access to Agentic AI.`
-
-        setEmailError(errorMessage)
-        setInvalidEmailItems((prev) => {
-          if (prev.some((item) => item.value === normalized)) {
-            return prev
-          }
-          return [...prev, { value: normalized, isValid: false }]
-        })
-        return false
-      }
-
-      // Email is valid and exists
-      if (data.valid && data.existingEmails.includes(normalized)) {
-        setEmailError('')
-        // Remove from invalidEmails if it was there
-        setInvalidEmailItems((prev) => prev.filter((item) => item.value !== normalized))
-        // Update emailItems to mark as valid
-        setEmailItems((prev) =>
-          prev.map((item) => (item.value === normalized ? { ...item, isValid: true } : item))
-        )
-        onEmailsChange([...emails, normalized])
-        return true
-      }
-
-      // If valid is true but email not in existingEmails, still keep it
-      if (data.valid) {
-        setEmailError('')
-        setInvalidEmailItems((prev) => prev.filter((item) => item.value !== normalized))
-        setEmailItems((prev) =>
-          prev.map((item) => (item.value === normalized ? { ...item, isValid: true } : item))
-        )
-        onEmailsChange([...emails, normalized])
-        return true
-      }
-
-      // Fallback: mark as invalid
-      onEmailsChange(emails.filter((e) => e !== normalized))
-      setEmailItems((prev) =>
-        prev.map((item) => (item.value === normalized ? { ...item, isValid: false } : item))
-      )
-      setEmailError(
-        `The user "${normalized}" does not exist in the system. Please add a user that exists.`
-      )
-      setInvalidEmailItems((prev) => {
-        if (prev.some((item) => item.value === normalized)) {
-          return prev
-        }
-        return [...prev, { value: normalized, isValid: false }]
-      })
-      return false
-    } catch (error) {
-      logger.error('Error validating email', { error, email: normalized })
-      // On error, remove from emails and mark as invalid
-      onEmailsChange(emails.filter((e) => e !== normalized))
-      setEmailItems((prev) =>
-        prev.map((item) => (item.value === normalized ? { ...item, isValid: false } : item))
-      )
-      setEmailError(
-        `Failed to validate "${normalized}". Please verify the email exists and try again.`
-      )
-      setInvalidEmailItems((prev) => {
-        if (prev.some((item) => item.value === normalized)) {
-          return prev
-        }
-        return [...prev, { value: normalized, isValid: false }]
-      })
-      return false
-    }
-  }
-
-  const handleRemoveEmailItem = (_value: string, index: number) => {
-    setEmailError('')
-    const itemToRemove = emailItems[index]
-    if (!itemToRemove) return
-
-    if (itemToRemove.isValid) {
-      emailsRef.current = emailsRef.current.filter((e) => e !== itemToRemove.value)
-      onEmailsChange(emailsRef.current)
-    } else {
-      invalidEmailItemsRef.current = invalidEmailItemsRef.current.filter(
-        (item) => item.value !== itemToRemove.value
-      )
-      setInvalidEmailItems(invalidEmailItemsRef.current)
-    }
-  }
-
-  /** Reset prefill ref when in edit mode so create mode can prefill again on next open. */
-  useEffect(() => {
-    if (isExistingChat) {
-      hasPrefilledSessionEmailRef.current = false
-    }
-  }, [isExistingChat])
-
-  /**
-   * Prefill session email once when in create mode and list is empty.
-   * Skip re-adding after user has cleared the list (use ref so we only prefill once per create session).
-   */
-  useEffect(() => {
-    if (!session?.user?.email || isExistingChat || hasPrefilledSessionEmailRef.current) return
-
-    const sessionEmail = session.user.email.toLowerCase().trim()
-    const normalizedEmails = emails.map((e) => e.toLowerCase().trim())
-    const normalizedInvalidEmails = invalidEmailItems.map((item) => item.value.toLowerCase().trim())
-    const normalizedEmailItems = emailItems.map((item) => item.value.toLowerCase().trim())
-
-    const alreadyInList =
-      normalizedEmails.includes(sessionEmail) ||
-      normalizedInvalidEmails.includes(sessionEmail) ||
-      normalizedEmailItems.includes(sessionEmail)
-    if (alreadyInList) return
-
-    addEmail(sessionEmail)
-      .then(() => {
-        hasPrefilledSessionEmailRef.current = true
-      })
-      .catch((error) => {
-        logger.error('Error prefilling session email', { error })
-      })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.user?.email, isExistingChat, emails, emailItems])
 
   const { config: permissionConfig } = usePermissionConfig()
   const allowedAuthTypes = permissionConfig.allowedChatDeployAuthTypes
@@ -1211,9 +946,33 @@ function AuthSelector({
     }
   }, [authOptions, authType, onAuthTypeChange])
 
+  /** Reset prefill ref when editing so create mode can prefill again on next open. */
+  useEffect(() => {
+    if (isExistingChat) {
+      hasPrefilledSessionEmailRef.current = false
+    }
+  }, [isExistingChat])
+
+  /**
+   * Prefill the signed-in user's email once in create mode when the allowlist is empty.
+   * ChipEmailsInput owns chip UX; we only lift the accepted list via onEmailsChange.
+   */
+  useEffect(() => {
+    if (!session?.user?.email || isExistingChat || hasPrefilledSessionEmailRef.current) return
+    if (emails.length > 0) return
+
+    const sessionEmail = session.user.email.toLowerCase().trim()
+    const validationError = validateAllowlistEntry(sessionEmail)
+    if (validationError) return
+
+    hasPrefilledSessionEmailRef.current = true
+    onEmailsChange([sessionEmail])
+  }, [session?.user?.email, isExistingChat, emails, onEmailsChange])
+
   return (
     <div className='space-y-[16px]'>
-      {/* <div>
+      {/* Access control selector intentionally commented — Arena deploy UX hides it.
+      <div>
         <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
           Access control
         </Label>
@@ -1224,11 +983,12 @@ function AuthSelector({
         >
           {authOptions.map((type) => (
             <ButtonGroupItem key={type} value={type}>
-              {AUTH_LABELS[type]}
+              {type}
             </ButtonGroupItem>
           ))}
         </ButtonGroup>
-      </div>*/}
+      </div>
+      */}
 
       {authType === 'password' && (
         <div>
@@ -1263,24 +1023,17 @@ function AuthSelector({
           <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
             {authType === 'email' ? 'Allowed emails' : 'Allowed SSO emails'}
           </Label>
-          <TagInput
-            items={emailItems}
-            onAdd={(value) => {
-              void addEmail(value)
-              return true
-            }}
-            onRemove={handleRemoveEmailItem}
+          <ChipEmailsInput
+            value={emails}
+            onChange={onEmailsChange}
+            validate={validateAllowlistEntry}
+            allowDomains
             placeholder={
-              emails.length > 0 || invalidEmailItems.length > 0
-                ? 'Add another email'
-                : 'Enter emails or domains (@example.com)'
+              emails.length > 0 ? 'Add another email' : 'Enter emails or domains (@example.com)'
             }
-            placeholderWithTags='Add email'
+            placeholderWithTags='Add email or domain'
             disabled={disabled}
           />
-          {emailError && (
-            <p className='mt-[6.5px] text-[var(--text-error)] text-caption'>{emailError}</p>
-          )}
           <p className='mt-[6.5px] text-[var(--text-secondary)] text-xs'>
             {authType === 'email'
               ? 'Add specific emails or entire domains (@example.com)'

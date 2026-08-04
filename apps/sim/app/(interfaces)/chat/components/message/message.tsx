@@ -1,8 +1,8 @@
 'use client'
 
 import { memo, useState } from 'react'
-import { Button, cn, Duplicate, Tooltip } from '@sim/emcn'
-import { Check, File as FileIcon, FileText, Image as ImageIcon } from 'lucide-react'
+import { Button, Check, cn, Duplicate, handleKeyboardActivation, Tooltip } from '@sim/emcn'
+import { File as FileIcon, FileText, Image as ImageIcon } from 'lucide-react'
 import {
   AgentStreamThinkingChrome,
   AgentStreamToolCallsChrome,
@@ -210,11 +210,7 @@ export const ClientChatMessage = memo(
                         }}
                         onKeyDown={(e) => {
                           if (!isInteractive) return
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            handleOpenPreview()
-                          }
+                          handleKeyboardActivation(e, handleOpenPreview, { stopPropagation: true })
                         }}
                       >
                         {isImage && attachmentUrl ? (
@@ -247,7 +243,7 @@ export const ClientChatMessage = memo(
               </div>
             )}
 
-            {/* Only render message bubble if there's actual text content (not just file count message) */}
+            {/* `Sent N file(s)` is a placeholder for attachment-only sends, not user text. */}
             {message.content && !String(message.content).startsWith('Sent') && (
               <div className='flex justify-end'>
                 <div className='max-w-[80%] rounded-3xl bg-[var(--surface-3)] px-4 py-3'>

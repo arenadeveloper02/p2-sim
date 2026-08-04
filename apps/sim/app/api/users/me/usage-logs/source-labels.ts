@@ -16,6 +16,7 @@ export const USAGE_LOG_SOURCE_LABELS: Record<UsageLogSource, string> = {
   'knowledge-base': 'Knowledge Base',
   'voice-input': 'Voice input',
   enrichment: 'Enrichment',
+  'voice-output': 'Voice output',
 }
 
 /** Local mothership ledger rows stamp metadata.backend = local. */

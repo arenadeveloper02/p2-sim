@@ -1370,7 +1370,7 @@ export const Sidebar = memo(function Sidebar({
       <div className='relative h-full'>
         <aside
           className={cn(
-            'sidebar-container relative h-full overflow-hidden bg-[var(--surface-1)]',
+            'sidebar-container relative h-full overflow-hidden bg-[var(--surface-1)] [&_.group.cursor-pointer]:duration-0',
             hideSidebarForArenaV3 && 'hidden'
           )}
           data-collapsed={isCollapsed || undefined}
