@@ -135,30 +135,25 @@ export function resolvePackageJsonConflict(filePath: string): void {
   console.log(`[lockfile-bootstrap] union-merged ${filePath}`)
 }
 
-/** Pick merge side for deterministic conflict resolution before agent work. */
+/** Pick merge side for deterministic paths only. Throws if the path needs agent review. */
 export function conflictResolutionSide(filePath: string): 'ours' | 'theirs' {
-  const policy = readMergePolicy()
-  if (isForkFirstPath(filePath, policy)) return 'ours'
-  if (isUpstreamFirstPath(filePath, policy)) return 'theirs'
-
-  // package.json is union-merged — callers must use resolvePackageJsonConflict.
-  // bun.lock is regenerated after manifests settle.
-  if (filePath === LOCKFILE_PATH) {
-    return 'theirs'
+  const side = tryDeterministicConflictSide(filePath)
+  if (!side) {
+    throw new Error(
+      `No deterministic merge side for ${filePath} — path is not in forkFirst/upstreamFirst and is not a harness special-case (package.json / bun.lock / bunfig). Leave for agent review.`
+    )
   }
-
-  // Fork keeps a disabled release-age gate so mid-merge `bun install` can resolve
-  // freshly published upstream pins (upstream bunfig defaults to 7 days).
-  if (filePath === BUNFIG_PATH) {
-    return 'ours'
-  }
-
-  return 'ours'
+  return side
 }
 
 /**
- * Side to apply without an agent, or `null` when the path needs semantic merge.
- * Unlike {@link conflictResolutionSide}, this does **not** default ambiguous paths to ours.
+ * Side to apply without an agent, or `null` when the path needs agent review.
+ *
+ * Deterministic only for:
+ * - `forkFirst` / `upstreamFirst` prefixes in merge-policy
+ * - harness special-cases: package.json (union, returns null), bun.lock (regen), bunfig.toml (ours)
+ *
+ * Everything else — including paths not listed in `manualReview` — is agent-reviewed.
  */
 export function tryDeterministicConflictSide(filePath: string): 'ours' | 'theirs' | null {
   const policy = readMergePolicy()
@@ -174,6 +169,7 @@ export function tryDeterministicConflictSide(filePath: string): 'ours' | 'theirs
     return 'theirs'
   }
 
+  // Defense in depth if bunfig is ever removed from forkFirst — fork disables release-age gate.
   if (filePath === BUNFIG_PATH) {
     return 'ours'
   }

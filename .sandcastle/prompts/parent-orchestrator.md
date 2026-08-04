@@ -53,6 +53,7 @@ Use PR **#{{PR_NUMBER}}** for unanswered questions (see the grill skill). Do **n
 
 - Analyze only the **{{COMMIT_COUNT}}** commits in this sync range — do not expand scope to full upstream history.
 - Resolve mechanically from merge policy + ledger whenever possible; ask humans only for genuine fork-vs-upstream product decisions.
+- When grill establishes a recurring path rule, **propose / apply an update to `.upstream-sync/merge-policy.json`** (`forkFirst` / `upstreamFirst` / `manualReview` / `packageJson`) so child agents inherit it next run. Unlisted paths are always agent-reviewed — do not invent a default `--ours`.
 - Post **one** PR comment with all unresolved questions — never duplicate questions already answered on the PR or in `qa-history.jsonl`.
 - Do not recommend re-running grill on resume; the harness skips you when answers exist.
 

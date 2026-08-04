@@ -31,19 +31,21 @@ describe('lockfile bootstrap helpers', () => {
   test('prefers upstream lockfile regen and fork bunfig / fork-first paths', () => {
     expect(conflictResolutionSide('bun.lock')).toBe('theirs')
     expect(conflictResolutionSide('bunfig.toml')).toBe('ours')
-    expect(conflictResolutionSide('apps/sim/app/chat/hooks/use-chat-streaming.ts')).toBe('ours')
     expect(conflictResolutionSide('apps/sim/lib/copilot/generated/tool-schemas-v1.ts')).toBe(
       'theirs'
     )
+    expect(conflictResolutionSide('apps/sim/tools/arena/foo.ts')).toBe('ours')
+    expect(() => conflictResolutionSide('apps/sim/lib/billing/usage.ts')).toThrow(/agent review/)
   })
 
-  test('tryDeterministicConflictSide leaves package.json for union merge', () => {
+  test('tryDeterministicConflictSide leaves unlisted paths for agent review', () => {
     expect(tryDeterministicConflictSide('package.json')).toBe(null)
     expect(tryDeterministicConflictSide('apps/sim/package.json')).toBe(null)
     expect(tryDeterministicConflictSide('bun.lock')).toBe('theirs')
     expect(tryDeterministicConflictSide('apps/sim/lib/copilot/generated/x.ts')).toBe('theirs')
     expect(tryDeterministicConflictSide('apps/sim/lib/billing/usage.ts')).toBe(null)
     expect(tryDeterministicConflictSide('packages/db/schema.ts')).toBe(null)
+    expect(tryDeterministicConflictSide('apps/sim/app/chat/hooks/use-chat-streaming.ts')).toBe(null)
   })
 
   test('mergePackageJsonUnion keeps fork-only scripts and deps on upstream base', () => {
