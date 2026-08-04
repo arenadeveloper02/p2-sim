@@ -31,6 +31,7 @@ If adding a test for the fix: **`.claude/skills/tdd/SKILL.md`**
 ## Deterministic rules (do these before asking humans)
 
 - **Never hand-edit `bun.lock`.** If it appears here, the harness should have regenerated it — focus on source manifests and code conflicts only.
+- **`package.json` is harness-union-merged** (upstream base + fork-only scripts/deps per `merge-policy.json` `packageJson`). Do **not** `checkout --theirs` on manifests — that drops fork CI scripts (`check:secrets`, `upstream-sync`, …). If a manifest still has conflict markers, union-merge scripts/deps the same way.
 - For generated contracts/registries, prefer upstream structure + re-register fork entries over keeping the fork's old layout.
 - Read `.upstream-sync/grill-log.md` and `.upstream-sync/qa-history.jsonl` — human resume answers on PR #{{PR_NUMBER}} are final; do not re-open settled decisions.
 

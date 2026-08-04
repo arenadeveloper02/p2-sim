@@ -1,11 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, unlinkSync } from 'node:fs'
-import {
-  MERGE_POLICY_PATH,
-  commitHarness,
-  listConflictFiles,
-  runGit,
-} from './config'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { commitHarness, listConflictFiles, MERGE_POLICY_PATH, runGit } from './config'
 
 const PACKAGE_MANIFEST_PATTERN = /(?:^|\/)package\.json$/
 const LOCKFILE_PATH = 'bun.lock'
@@ -14,9 +9,22 @@ const CONFLICT_MARKER_PATTERN = /^<{7}|^={7}|^>{7}/m
 /** Mid-merge lockfile regen must not inherit upstream's 7-day release gate. */
 const BUN_INSTALL_ARGS = ['install', '--minimum-release-age=0'] as const
 
+/** Object fields union-merged: upstream values win on key collisions; fork-only keys are kept. */
+const PACKAGE_JSON_UNION_FIELDS = [
+  'scripts',
+  'dependencies',
+  'devDependencies',
+  'optionalDependencies',
+  'peerDependencies',
+] as const
+
 interface MergePolicy {
   forkFirst?: string[]
   upstreamFirst?: string[]
+  packageJson?: {
+    strategy?: 'union' | 'upstream'
+    dropScripts?: string[]
+  }
 }
 
 function readMergePolicy(): MergePolicy {
@@ -35,17 +43,107 @@ function isUpstreamFirstPath(filePath: string, policy: MergePolicy): boolean {
   return policy.upstreamFirst?.some((prefix) => filePath.startsWith(prefix)) ?? false
 }
 
+function isPackageJsonPath(filePath: string): boolean {
+  return filePath === 'package.json' || filePath.endsWith('/package.json')
+}
+
+function packageJsonStrategy(policy: MergePolicy): 'union' | 'upstream' {
+  return policy.packageJson?.strategy === 'upstream' ? 'upstream' : 'union'
+}
+
+function dropScriptsFromPolicy(policy: MergePolicy): Set<string> {
+  return new Set(policy.packageJson?.dropScripts ?? [])
+}
+
+/**
+ * Union-merge two package.json objects: start from upstream, keep fork-only keys
+ * in scripts/deps, and drop scripts listed in merge-policy `packageJson.dropScripts`.
+ */
+export function mergePackageJsonUnion(
+  ours: Record<string, unknown>,
+  theirs: Record<string, unknown>,
+  dropScripts: Iterable<string> = []
+): Record<string, unknown> {
+  const drop = new Set(dropScripts)
+  const result: Record<string, unknown> = { ...theirs }
+
+  for (const [key, value] of Object.entries(ours)) {
+    if (!(key in theirs)) {
+      result[key] = value
+    }
+  }
+
+  for (const field of PACKAGE_JSON_UNION_FIELDS) {
+    const oursField = asStringRecord(ours[field])
+    const theirsField = asStringRecord(theirs[field])
+    if (!oursField && !theirsField) continue
+
+    const merged: Record<string, string> = { ...(theirsField ?? {}) }
+    for (const [key, value] of Object.entries(oursField ?? {})) {
+      if (field === 'scripts' && drop.has(key)) continue
+      if (!(key in merged)) {
+        merged[key] = value
+      }
+    }
+    result[field] = merged
+  }
+
+  return result
+}
+
+function asStringRecord(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const out: Record<string, string> = {}
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry === 'string') out[key] = entry
+  }
+  return out
+}
+
+function readGitStage(filePath: string, stage: 2 | 3): Record<string, unknown> | null {
+  try {
+    const raw = runGit(['show', `:${stage}:${filePath}`])
+    return JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Resolve a conflicted package.json via upstream∪fork union (or upstream-only when configured).
+ */
+export function resolvePackageJsonConflict(filePath: string): void {
+  const policy = readMergePolicy()
+  if (packageJsonStrategy(policy) === 'upstream') {
+    checkoutConflictSide(filePath, 'theirs')
+    return
+  }
+
+  const ours = readGitStage(filePath, 2)
+  const theirs = readGitStage(filePath, 3)
+  if (!ours || !theirs) {
+    console.warn(
+      `[lockfile-bootstrap] Could not read both stages for ${filePath}; falling back to upstream.`
+    )
+    checkoutConflictSide(filePath, 'theirs')
+    return
+  }
+
+  const merged = mergePackageJsonUnion(ours, theirs, dropScriptsFromPolicy(policy))
+  writeFileSync(filePath, `${JSON.stringify(merged, null, 2)}\n`)
+  runGit(['add', filePath])
+  console.log(`[lockfile-bootstrap] union-merged ${filePath}`)
+}
+
 /** Pick merge side for deterministic conflict resolution before agent work. */
 export function conflictResolutionSide(filePath: string): 'ours' | 'theirs' {
   const policy = readMergePolicy()
   if (isForkFirstPath(filePath, policy)) return 'ours'
   if (isUpstreamFirstPath(filePath, policy)) return 'theirs'
 
-  if (
-    filePath === LOCKFILE_PATH ||
-    filePath === 'package.json' ||
-    filePath.endsWith('/package.json')
-  ) {
+  // package.json is union-merged — callers must use resolvePackageJsonConflict.
+  // bun.lock is regenerated after manifests settle.
+  if (filePath === LOCKFILE_PATH) {
     return 'theirs'
   }
 
@@ -67,11 +165,12 @@ export function tryDeterministicConflictSide(filePath: string): 'ours' | 'theirs
   if (isForkFirstPath(filePath, policy)) return 'ours'
   if (isUpstreamFirstPath(filePath, policy)) return 'theirs'
 
-  if (
-    filePath === LOCKFILE_PATH ||
-    filePath === 'package.json' ||
-    filePath.endsWith('/package.json')
-  ) {
+  // package.json needs union merge (handled in ensureInstallableWorkspace), not a side checkout.
+  if (isPackageJsonPath(filePath)) {
+    return null
+  }
+
+  if (filePath === LOCKFILE_PATH) {
     return 'theirs'
   }
 
@@ -84,7 +183,7 @@ export function tryDeterministicConflictSide(filePath: string): 'ours' | 'theirs
 
 /**
  * Checkout `--ours`/`--theirs` for every unmerged path with a deterministic policy side.
- * Returns the files that still need an agent.
+ * package.json conflicts are union-merged (not a side checkout). Returns files that still need an agent.
  */
 export function resolveDeterministicPolicyConflicts(conflictFiles?: string[]): {
   resolved: string[]
@@ -95,6 +194,20 @@ export function resolveDeterministicPolicyConflicts(conflictFiles?: string[]): {
   const remaining: string[] = []
 
   for (const file of conflicts) {
+    if (isPackageJsonPath(file)) {
+      try {
+        resolvePackageJsonConflict(file)
+        resolved.push(file)
+      } catch (error) {
+        console.warn(
+          `[policy-resolve] package.json union failed for ${file}; leaving for agent:`,
+          error
+        )
+        remaining.push(file)
+      }
+      continue
+    }
+
     const side = tryDeterministicConflictSide(file)
     if (!side) {
       remaining.push(file)
@@ -203,7 +316,7 @@ export function ensureInstallableWorkspace(runId: string): boolean {
   )
 
   for (const file of manifestConflicts) {
-    checkoutConflictSide(file, conflictResolutionSide(file))
+    resolvePackageJsonConflict(file)
   }
 
   if (bunfigConflict) {
@@ -249,7 +362,9 @@ export function ensureInstallableWorkspace(runId: string): boolean {
   }
 
   if (fileHasConflictMarkers(BUNFIG_PATH)) {
-    console.error('[lockfile-bootstrap] bunfig.toml still contains conflict markers after bootstrap.')
+    console.error(
+      '[lockfile-bootstrap] bunfig.toml still contains conflict markers after bootstrap.'
+    )
     return false
   }
 
