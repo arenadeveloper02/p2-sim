@@ -43,7 +43,45 @@ High-signal upstream themes, by area:
 - **Regenerate, don't hand-merge:** `lib/copilot/generated/` via `mship:generate`.
 - **Nothing deliberately skipped** — `skipped.md` stays empty unless a child conflict agent finds an upstream change that overrides a fork-owned path (then it records the skip).
 
+### Verified merge-surface findings (second grill pass, measured against `1b9e0f25`)
+
+Re-run of grill on the widened range (480 → 518 commits; delta = v0.7.53–v0.7.55, 38 commits). The delta adds nothing that changes the dispositions above (`#6196` browser/terminal driver, `#6229`/`#6231` execution event-buffer fixes, `#6203` auth connector extraction, `#6225` self-host/Helm alignment, `#6235`→`#6242` next 16.3.0 bump-and-revert — all upstream-owned, additive or shared-infra). What follows are facts measured against the working tree that the previous pass did not have; they are directives for the Luna conflict children.
+
+**Conflict surface, measured.** `git diff --name-only e2fecc86..HEAD` = 1,532 files; `e2fecc86..1b9e0f25` = 4,903 files; **intersection = 428 files** — that is the real conflict candidate set. Top clusters: `app/workspace` (80), `app/api` (46), `lib/copilot` (34, of which only 2 are under `generated/`), `lib/api` (16), `blocks/blocks` (16), `lib/workflows` (14), `app/(interfaces)` (14).
+
+**F1 — drizzle journal collision is a timestamp problem, not a numbering problem (HIGH).**
+`packages/db/scripts/migrate.ts` uses stock drizzle `migrate()`, which gates strictly on `folderMillis > created_at of the most recently applied row`. Fork journal = 262 entries ending at idx 261 (`0261_local_copilot_user_memory`, `when` 1784346920598 = 2026-07-18); upstream journal = 281 entries ending at `0281_fixed_madame_web` (`when` 1785776917545 = 2026-08-03). Six upstream migrations carry `when` values **earlier** than the fork's last applied migration and are therefore **silently skipped on any fork database already migrated past fork-0261**:
+
+| idx | tag | adds |
+|---|---|---|
+| 258 | `gigantic_lady_mastermind` | `webhook_tiktok_credential_id_idx` |
+| 259 | `slack_native_routing` | `webhook.routing_key`, drops `webhook.path` NOT NULL |
+| 260 | `unknown_sinister_six` | `paused_executions.automatic_resume_retry_count`, `workspace.storage_used_bytes` (+CHECK), `workspace.organization_assigned_at`, 3 index rebuilds |
+| 261 | `tranquil_donald_blake` | tables `webhook_path_claim`, `workflow_deployment_operation` |
+| 262 | `strong_storm` | `workspace_files.message_id` |
+| 263 | `workflow_fork_sync_excluded` | `workflow.fork_sync_excluded` |
+
+Merged upstream app code reads all of these, so the skip is a runtime break on the existing DB, not a cosmetic drift. Compounding facts: fork's `0258`/`0259`/`0260` are **not idempotent** (bare `ADD COLUMN` / `CREATE TABLE` / `CREATE UNIQUE INDEX`), so re-timestamping them to the journal tail would fail on replay; and if they are moved to the tail while **keeping** their original `when`, a **fresh** database skips them instead (the fresh-install path applies strictly in ascending timestamp order). File-level renumbering is still required regardless — fork and upstream both own `0258/0259/0260_snapshot.json`. Escalated as Q1.
+
+**F2 — the deployed-chat glob in merge-policy points at a path that does not exist (HIGH).**
+`merge-policy.json` protects `apps/sim/app/chat/`, which is absent from the fork. The fork's deployed chat actually lives at **`apps/sim/app/(interfaces)/chat/`** — 67 files, `+9,171/−532` vs baseline, i.e. a flagship fork surface with **zero** policy protection. Upstream changed 23 files there in this range (`+1,572/−2,138`), including a **full deletion of voice mode** (`#6215`/`#6218`: `voice-interface/`, `voice-input.tsx`, `use-audio-streaming.ts`, `hooks/queries/voice-settings.ts`, `lib/speech/config.ts`, and the `/api/proxy/tts/stream` + `/api/speech/token` server side). The fork touched exactly one voice file (`voice-interface.tsx`, 3 lines, cosmetic), so git surfaces a delete/modify conflict on that one file while the entire server side deletes cleanly — a naive fork-first resolution keeps fork voice UI whose imports upstream just deleted, i.e. a broken build. Voice is all-or-nothing. Escalated as Q2.
+
+**F3 — registry split already landed in the fork; re-add list is fixed.** `apps/sim/blocks/registry-maps.ts` exists on both sides, so `#6083` is not a structural conflict. Fork entries to preserve in `BLOCK_REGISTRY`: `arena`, `facebook_ads`, `p2_docs`, `unipile`, `arena_development`; `presentation` is commented out — **leave it commented**. `BLOCK_META_REGISTRY` carries `unipile: UnipileBlockMeta`. 16 `blocks/blocks/*.ts` files conflict (agent, exa, firecrawl, gmail, google_*, hubspot, image_generator, knowledge, shopify, slack, telegram, video_generator, zoom) — these are upstream-owned block files the fork edited; per-hunk merge, fork wins only on fork-specific additions.
+
+**F4 — `lib/copilot` conflicts are mostly hand-written, not generated.** Only 2 of the 34 conflicting files sit under `generated/`; the rest are `tools/` (13), `chat/` (9), `request/` (8), `resources/` (2). `bun run mship:generate` fixes the generated pair only — the other 32 need real per-hunk resolution.
+
+**F5 — `bunfig.toml` (forkFirst) deliberately disables the supply-chain gate.** Fork sets `minimumReleaseAge = 0`; upstream `#5523` restored a 7-day gate with scoped excludes. Policy is fork-first on this file → **keep the fork's `minimumReleaseAge = 0`**, do not take upstream's block. Noted so no child "fixes" it and wedges `bun install`.
+
+**F6 — legacy-folder drop (`#6051` / `0276`) is low risk for fork code.** `0276_drop_legacy_folder_tables` drops `workflow_folder` and `workspace_file_folders`; no reference to those tables exists in any fork-owned path (`app/api/admin`, `tools/arena`, `app/api/arena`, `lib/arena-utils`). Its prerequisites (`0272`, `0274`) post-date the fork's last migration, so they apply normally.
+
+**F7 — fork carries orphan migration SQL not in the journal.** `0116_populate_user_knowledge_base`, `0148_prompt_config`, `0239_help_support_issue`, `0248_local_copilot`, `0248_workspace_is_personal`, `0249_local_copilot_user_access`, `0250_local_copilot_user_access_trigger`, `0251_local_copilot_user_access_local_only`, `0252_chat_deployment_type` exist on disk but have no `_journal.json` entry — a pre-existing fork pattern (applied out-of-band or dropped from the journal in an earlier sync). Children must **not** try to reconcile these into the journal during conflict resolution; leave them exactly as they are.
+
 ### Open decisions requiring a human
 
-None that policy/ledger cannot resolve. Every conflict surface above maps to an existing rule: fork-first on the listed prefixes, upstream-first on shared infra (auth/deps/CI/security), manualReview handled mechanically (registry re-add, migration renumber, `mship:generate`). The desktop app (#5998) and Slack v2 preview block are additive and upstream-owned; taken by default under the fork-first strategy's "upstream wins on shared infra unless ledger says otherwise" clause — no product tension since neither overrides a fork path. No genuine fork-vs-upstream product call is left ambiguous.
+Two, both escalated to PR #678 and mirrored in `open-questions.md`:
+
+- **Q1 — DB migration reconciliation strategy** (from F1). Not resolvable from policy: the correct remedy depends on the migration state of the fork's deployed databases, which the repo does not record.
+- **Q2 — deployed-chat voice mode** (from F2). A genuine product call on a fork-flagship surface that `merge-policy.json` does not cover, where fork-first and upstream-first both produce a broken intermediate unless chosen wholesale.
+
+Everything else maps to an existing rule: fork-first on the listed prefixes, upstream-first on shared infra (auth/deps/CI/security), manualReview handled mechanically (registry re-add per F3, `mship:generate` per F4). The desktop app (#5998), Slack v2 preview block, browser/terminal driver (#6196) and the ~20 new integrations are additive and upstream-owned — taken by default, no fork-path override, no product tension.
 
