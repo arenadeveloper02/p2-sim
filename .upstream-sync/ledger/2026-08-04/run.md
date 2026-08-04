@@ -85,3 +85,33 @@ Two, both escalated to PR #678 and mirrored in `open-questions.md`:
 
 Everything else maps to an existing rule: fork-first on the listed prefixes, upstream-first on shared infra (auth/deps/CI/security), manualReview handled mechanically (registry re-add per F3, `mship:generate` per F4). The desktop app (#5998), Slack v2 preview block, browser/terminal driver (#6196) and the ~20 new integrations are additive and upstream-owned — taken by default, no fork-path override, no product tension.
 
+## Usage
+
+### parent-grill-analysis
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 1,534
+- **Input tokens (cache read):** 2,470,911
+- **Input tokens (cache create):** 98,136
+- **Input tokens (total):** 2,570,581
+- **Output tokens:** 29,775
+- **Cost:** $2.604340 (provider-reported)
+
+### Totals
+- **Total input tokens:** 2,570,581
+- **Total output tokens:** 29,775
+- **Primary models:** claude-opus-5
+- **Total cost:** $2.604340
+- **Provider-reported cost:** $2.604340
+
+### Cost by agent
+- **parent-grill-analysis:** $2.604340 (provider-reported)
+
+## Status
+
+awaiting_input
+
+## Open questions
+
+Grill left unanswered product decisions in `open-questions.md`. Merge will not start until `/upstream-sync resume`.
+
