@@ -158,7 +158,8 @@ export const allNavigationItems: NavigationItem[] = [
   {
     id: 'usage',
     label: 'Usage',
-    description: 'View remaining credits, usage by source, and activity detail.',
+    description:
+      'View remaining credits and token/cost analytics for your activity, workspace, or organization.',
     icon: Credit,
     section: 'subscription',
   },
