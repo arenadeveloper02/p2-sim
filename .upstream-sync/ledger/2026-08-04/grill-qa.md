@@ -60,3 +60,7 @@ The fork has touched exactly one voice file — `voice-interface.tsx`, 3 cosmeti
 **Q** (2026-08-04T08:27:33.848Z, upstream-sync[bot]): Grill open questions must be answered before merge starts.
 _Context: .upstream-sync/ledger/2026-08-04/open-questions.md_
 
+## 2026-08-04 · PR #678
+
+**A** (2026-08-04T08:36:34Z, utcarshsrivastava-collab): /upstream-sync resume
+
