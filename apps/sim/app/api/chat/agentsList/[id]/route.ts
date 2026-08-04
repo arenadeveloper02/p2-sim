@@ -14,10 +14,7 @@ const logger = createLogger('DeployedChatAgentDetailAPI')
  * Returns a single agent (chat deployment) by id, using the same response shape
  * as one item from GET /api/chat/agentsList. Auth matches the list endpoint.
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const authError = verifyCronAuth(request, 'Schedule execution')
   if (authError) {
     return authError
@@ -80,7 +77,7 @@ export async function GET(
       workflow_id: row.workflowId,
       workflow_name: row.workflowName,
       workspace_id: row.workspaceId,
-      department: getAgentDepartmentLabel(row.department),
+      department: await getAgentDepartmentLabel(row.department),
       created_at: row.createdAt.toISOString(),
       workflow_description: row.description,
       status: 'published',

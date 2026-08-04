@@ -536,6 +536,7 @@ async function executeWorkflowCoreImpl(
         'NEXT_PUBLIC_FIRECRAWL_API_KEY',
         'FIRECRAWL_API_KEY',
         'BROWSER_USE_API_KEY',
+        'SKYVERN_API_KEY',
         'SPYFU_API_PASSWORD',
         'SPYFU_API_USER_ID',
         'CHROMEDRIVER_PATH',

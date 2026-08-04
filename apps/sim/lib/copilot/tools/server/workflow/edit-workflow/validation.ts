@@ -62,7 +62,8 @@ export function parseAgentMessagesValue(value: unknown): AgentMessage[] {
       return [
         {
           role: record.role,
-          content: typeof record.content === 'string' ? record.content : String(record.content ?? ''),
+          content:
+            typeof record.content === 'string' ? record.content : String(record.content ?? ''),
         },
       ]
     })
@@ -83,6 +84,10 @@ export function parseAgentMessagesValue(value: unknown): AgentMessage[] {
  * Maps legacy `systemPrompt` / `userPrompt` agent fields onto `messages`.
  * Models often emit the old field names; without this alias the edit is rejected
  * as an unknown input and the workflow appears unchanged.
+ *
+ * When both `messages` and legacy prompt fields are present, legacy fields still
+ * win for their roles — models frequently send a stale `messages` array alongside
+ * the intended `systemPrompt`/`userPrompt` updates.
  */
 export function normalizeAgentLegacyPromptInputs(
   inputs: Record<string, any>,
@@ -105,14 +110,13 @@ export function normalizeAgentLegacyPromptInputs(
       : next.userPrompt === undefined
         ? undefined
         : String(next.userPrompt)
-  delete next.systemPrompt
-  delete next.userPrompt
+  next.systemPrompt = undefined
+  next.userPrompt = undefined
 
-  if (next.messages !== undefined) {
-    return next
-  }
-
-  const messages = parseAgentMessagesValue(existingMessagesValue)
+  const messages =
+    next.messages !== undefined
+      ? parseAgentMessagesValue(next.messages)
+      : parseAgentMessagesValue(existingMessagesValue)
 
   if (systemPrompt !== undefined) {
     const systemIndex = messages.findIndex((message) => message.role === 'system')
@@ -596,6 +600,39 @@ export function validateValueForSubBlockType(
         }
       }
       return { valid: true, value }
+    }
+
+    case 'messages-input': {
+      if (Array.isArray(value)) {
+        const messages = parseAgentMessagesValue(value)
+        if (messages.length === 0 && value.length > 0) {
+          return {
+            valid: false,
+            error: {
+              blockId,
+              blockType,
+              field: fieldName,
+              value,
+              error: `Invalid messages value for field "${fieldName}" - expected an array of { role, content } objects`,
+            },
+          }
+        }
+        return { valid: true, value: messages }
+      }
+      if (typeof value === 'string') {
+        const messages = parseAgentMessagesValue(value)
+        return { valid: true, value: messages }
+      }
+      return {
+        valid: false,
+        error: {
+          blockId,
+          blockType,
+          field: fieldName,
+          value,
+          error: `Invalid messages value for field "${fieldName}" - expected an array of { role, content } objects`,
+        },
+      }
     }
 
     case 'response-format': {

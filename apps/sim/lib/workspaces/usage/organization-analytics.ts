@@ -3,17 +3,14 @@ import {
   copilotChats,
   copilotRuns,
   usageLog,
-  workspace,
   workflowExecutionLogs,
+  workspace,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, asc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm'
 import type { OrganizationUsageAnalytics } from '@/lib/api/contracts/organization-usage'
-import {
-  usageLogSourceSchema,
-  type UsageChargeTypeValue,
-} from '@/lib/api/contracts/workspace-usage'
+import type { UsageChargeTypeValue } from '@/lib/api/contracts/workspace-usage'
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
 import { COPILOT_USAGE_SOURCES } from '@/lib/billing/core/usage-log'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
@@ -24,10 +21,10 @@ import {
   subtractEmbeddedFromBucketRows,
 } from '@/lib/workspaces/usage/embedded-tool-virtual-split'
 import {
+  buildCopilotByChatTypeQuery,
   buildExecutionConditions,
   buildExpensiveCopilotChatsQuery,
   buildExpensiveWorkflowsQuery,
-  buildCopilotByChatTypeQuery,
   buildLedgerConditions,
   buildLedgerJoinConditions,
   bySourceDisplayBucketExpr,
@@ -42,19 +39,22 @@ import {
   ledgerCostSelect,
   ledgerOccurredAt,
   ledgerPeriodBounds,
+  mapBySourceBucketRow,
   mapExpensiveCopilotChatRows,
   mapExpensiveWorkflowRows,
   mapUsageMetrics,
+  normalizeBucketKey,
   parseActorType,
   parseChargeType,
   parseChatType,
   parseDecimal,
+  parseIntMetric,
   periodRange,
   type ResolvedPeriod,
-  resolveExplicitPeriod,
-  resolvePeriodFromDateCandidates,
   resolvedActorTypeExpr,
   resolvedActorUserIdExpr,
+  resolveExplicitPeriod,
+  resolvePeriodFromDateCandidates,
   sortByBillableCostDesc,
   timeBucketExpr,
   usageMetricsSelect,
@@ -310,7 +310,11 @@ export async function getOrganizationUsageAnalytics(
         })
         .from(usageLog)
         .where(and(...ledgerConditions))
-        .groupBy(bySourceDisplayBucketExpr(), bySourceLedgerSourceExpr(), bySourceDisplayLabelExpr()),
+        .groupBy(
+          bySourceDisplayBucketExpr(),
+          bySourceLedgerSourceExpr(),
+          bySourceDisplayLabelExpr()
+        ),
 
       dbReplica
         .select({
@@ -411,7 +415,10 @@ export async function getOrganizationUsageAnalytics(
         .from(copilotChats)
         .leftJoin(
           copilotRuns,
-          and(eq(copilotRuns.chatId, copilotChats.id), ...periodRange(copilotRuns.startedAt, period))
+          and(
+            eq(copilotRuns.chatId, copilotChats.id),
+            ...periodRange(copilotRuns.startedAt, period)
+          )
         )
         .leftJoin(usageLog, and(eq(usageLog.chatId, copilotChats.id), ...ledgerJoinConditions))
         .where(
@@ -431,7 +438,10 @@ export async function getOrganizationUsageAnalytics(
         })
         .from(copilotRuns)
         .where(
-          and(inArray(copilotRuns.workspaceId, workspaceIds), ...periodRange(copilotRuns.startedAt, period))
+          and(
+            inArray(copilotRuns.workspaceId, workspaceIds),
+            ...periodRange(copilotRuns.startedAt, period)
+          )
         ),
 
       buildCopilotByChatTypeQuery({
@@ -657,19 +667,24 @@ export async function getOrganizationUsageAnalytics(
         metadata: usageLog.metadata,
       })
       .from(usageLog)
-      .where(and(...ledgerConditions, eq(usageLog.category, 'model'), isNotNull(usageLog.executionId)))
+      .where(
+        and(...ledgerConditions, eq(usageLog.category, 'model'), isNotNull(usageLog.executionId))
+      )
 
     const embeddedToolSplit = computeEmbeddedToolVirtualSplit(modelMetadataRows)
 
     const bySource = sortByBillableCostDesc(
-      bySourceRows.map((row) => ({
-        source: usageLogSourceSchema.parse(row.source),
-        label: row.label,
-        billableCost: parseDecimal(row.billableCost),
-        rawCost: parseDecimal(row.rawCost),
-        count: row.count,
-        usage: mapUsageMetrics(row),
-      }))
+      bySourceRows.flatMap((row) => {
+        const mapped = mapBySourceBucketRow(row)
+        if (!mapped) {
+          logger.warn('Skipping bySource row with invalid ledger source', {
+            organizationId,
+            source: row.source,
+          })
+          return []
+        }
+        return [mapped]
+      })
     )
 
     const CHARGE_TYPE_ORDER: UsageChargeTypeValue[] = [
@@ -686,10 +701,11 @@ export async function getOrganizationUsageAnalytics(
           chargeType: parseChargeType(row.chargeType),
           billableCost: parseDecimal(row.billableCost),
           rawCost: parseDecimal(row.rawCost),
-          count: row.count,
+          count: parseIntMetric(row.count),
         }))
         .sort(
-          (a, b) => CHARGE_TYPE_ORDER.indexOf(a.chargeType) - CHARGE_TYPE_ORDER.indexOf(b.chargeType)
+          (a, b) =>
+            CHARGE_TYPE_ORDER.indexOf(a.chargeType) - CHARGE_TYPE_ORDER.indexOf(b.chargeType)
         ),
       embeddedToolSplit
     )
@@ -713,7 +729,7 @@ export async function getOrganizationUsageAnalytics(
           {
             billableCost: parseDecimal(row.billableCost),
             rawCost: parseDecimal(row.rawCost),
-            count: row.count,
+            count: parseIntMetric(row.count),
             usage: mapUsageMetrics(row),
           },
         ])
@@ -896,7 +912,7 @@ export async function getOrganizationUsageAnalytics(
             executionCount: row.executionCount,
             billableCost: parseDecimal(row.billableCost),
             rawCost: parseDecimal(row.rawCost),
-            count: row.count,
+            count: parseIntMetric(row.count),
           }))
         ),
         byWorkflow: mapExpensiveWorkflowRows(expensiveWorkflowRows).map((row) => ({
@@ -908,7 +924,7 @@ export async function getOrganizationUsageAnalytics(
           executionCount: row.executionCount,
           billableCost: row.billableCost,
           rawCost: row.rawCost,
-          count: row.count,
+          count: parseIntMetric(row.count),
         })),
       },
       copilot: {
@@ -926,12 +942,12 @@ export async function getOrganizationUsageAnalytics(
             runCount: row.runCount,
             billableCost: parseDecimal(row.billableCost),
             rawCost: parseDecimal(row.rawCost),
-            count: row.count,
+            count: parseIntMetric(row.count),
           }))
         ),
         byChat: mapExpensiveCopilotChatRows(
           expensiveChatRows.filter(
-            (row): row is (typeof row & { workspaceId: string }) => row.workspaceId !== null
+            (row): row is typeof row & { workspaceId: string } => row.workspaceId !== null
           )
         ).map((row) => ({
           workspaceId: row.workspaceId,
@@ -944,14 +960,14 @@ export async function getOrganizationUsageAnalytics(
           runCount: row.runCount,
           billableCost: row.billableCost,
           rawCost: row.rawCost,
-          count: row.count,
+          count: parseIntMetric(row.count),
         })),
         byModel: sortByBillableCostDesc(
           copilotByModelRows.map((row) => ({
-            model: row.model,
+            model: normalizeBucketKey(row.model),
             billableCost: parseDecimal(row.billableCost),
             rawCost: parseDecimal(row.rawCost),
-            count: row.count,
+            count: parseIntMetric(row.count),
           }))
         ),
         triggeredWorkflows: {
@@ -961,9 +977,7 @@ export async function getOrganizationUsageAnalytics(
           byChat: sortByBillableCostDesc(
             triggeredWorkflowRows
               .filter(
-                (
-                  row
-                ): row is typeof row & { triggeringChatId: string; workspaceId: string } =>
+                (row): row is typeof row & { triggeringChatId: string; workspaceId: string } =>
                   row.triggeringChatId !== null && row.workspaceId !== null
               )
               .map((row) => ({
@@ -983,7 +997,7 @@ export async function getOrganizationUsageAnalytics(
           actorType: parseActorType(row.actorType),
           billableCost: parseDecimal(row.billableCost),
           rawCost: parseDecimal(row.rawCost),
-          count: row.count,
+          count: parseIntMetric(row.count),
           usage: mapUsageMetrics(row),
         }))
       ),
@@ -992,17 +1006,17 @@ export async function getOrganizationUsageAnalytics(
           userId: row.userId,
           billableCost: parseDecimal(row.billableCost),
           rawCost: parseDecimal(row.rawCost),
-          count: row.count,
+          count: parseIntMetric(row.count),
         }))
       ),
       bySource,
       byModel: sortByBillableCostDesc(
         subtractEmbeddedFromBucketRows(
           byModelRows.map((row) => ({
-            model: row.model,
+            model: normalizeBucketKey(row.model),
             billableCost: parseDecimal(row.billableCost),
             rawCost: parseDecimal(row.rawCost),
-            count: row.count,
+            count: parseIntMetric(row.count),
           })),
           (row) => row.model,
           embeddedToolSplit.byModelEmbedded
@@ -1016,7 +1030,7 @@ export async function getOrganizationUsageAnalytics(
               provider: row.provider,
               billableCost: parseDecimal(row.billableCost),
               rawCost: parseDecimal(row.rawCost),
-              count: row.count,
+              count: parseIntMetric(row.count),
             })),
           (row) => row.provider,
           embeddedToolSplit.byProviderEmbedded
@@ -1029,25 +1043,23 @@ export async function getOrganizationUsageAnalytics(
             toolId: row.toolId,
             billableCost: parseDecimal(row.billableCost),
             rawCost: parseDecimal(row.rawCost),
-            count: row.count,
+            count: parseIntMetric(row.count),
           })),
         embeddedToolSplit.byToolEmbedded
       ),
       byVendor: sortByBillableCostDesc(
         byVendorRows.map((row) => ({
-          vendor: row.vendor,
+          vendor: normalizeBucketKey(row.vendor),
           billableCost: parseDecimal(row.billableCost),
           rawCost: parseDecimal(row.rawCost),
-          count: row.count,
+          count: parseIntMetric(row.count),
         }))
       ),
       timeSeries: densifiedTimeSeries,
       lineage: {
         roots: lineageRootRows
           .filter(
-            (
-              row
-            ): row is typeof row & { rootExecutionId: string; workspaceId: string } =>
+            (row): row is typeof row & { rootExecutionId: string; workspaceId: string } =>
               row.rootExecutionId !== null && row.workspaceId !== null
           )
           .map((row) => ({

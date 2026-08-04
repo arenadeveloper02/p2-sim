@@ -87,10 +87,10 @@ describe('HostedKeyRateLimiter', () => {
       mockAdapter.consumeTokens.mockResolvedValue(allowedResult)
 
       process.env.EXA_API_KEY_COUNT = undefined
-      delete process.env.EXA_API_KEY
-      delete process.env.EXA_API_KEY_1
-      delete process.env.EXA_API_KEY_2
-      delete process.env.EXA_API_KEY_3
+      process.env.EXA_API_KEY = undefined
+      process.env.EXA_API_KEY_1 = undefined
+      process.env.EXA_API_KEY_2 = undefined
+      process.env.EXA_API_KEY_3 = undefined
 
       const result = await rateLimiter.acquireKey(
         testProvider,

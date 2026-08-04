@@ -94,6 +94,26 @@ describe('UsageTimeSeriesChart', () => {
     unmount()
   })
 
+  it('hides the active-users chart when showActiveUsers is false', () => {
+    const timeSeries = [
+      {
+        bucketStart: '2026-07-01T00:00:00.000Z',
+        billableCost: 1.25,
+        executionCount: 3,
+        activeUserCount: 2,
+      },
+    ]
+
+    const { unmount, container } = renderChart(
+      <UsageTimeSeriesChart timeSeries={timeSeries} showActiveUsers={false} />
+    )
+
+    expect(container.textContent).toContain('Cost & activity over time')
+    expect(container.textContent).not.toContain('Active users over time')
+    expect(mockLineChart).toHaveBeenCalledTimes(1)
+    unmount()
+  })
+
   it('shows empty copy when there are no buckets', () => {
     const { unmount, container } = renderChart(<UsageTimeSeriesChart timeSeries={[]} />)
     expect(container.textContent).toContain('No time-series data for this period.')

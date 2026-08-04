@@ -27,6 +27,8 @@ export interface LocalCopilotConfig {
   specialistModel: string
   apiKey?: string
   baseUrl?: string
+  /** AWS region for Bedrock (defaults to `AWS_REGION` / `us-east-1`). */
+  region?: string
 }
 
 export interface LocalCopilotWorkspaceContext {

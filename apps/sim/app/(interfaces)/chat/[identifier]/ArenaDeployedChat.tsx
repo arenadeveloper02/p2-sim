@@ -1242,7 +1242,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       const params = new URLSearchParams(window.location.search)
       params.set('chatId', newChatId)
       const newUrl = `/chat/${identifier}?${params.toString()}`
-      router.push(newUrl)
+      // Replace so browser Back leaves the deployed chat (e.g. to Arena hub),
+      // matching Exit Agent — do not push a chatId-only history entry.
+      router.replace(newUrl)
     },
     [router, identifier]
   )

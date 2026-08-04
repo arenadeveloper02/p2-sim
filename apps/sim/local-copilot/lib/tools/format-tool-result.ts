@@ -1,8 +1,21 @@
 import { truncate } from '@sim/utils/string'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
+import { getBlock } from '@/blocks/registry'
 import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
 
 const FUNCTION_EXECUTE_STDOUT_MAX = 12_000
+
+/**
+ * Compact JSON for LLM tool results. Falls back to a tiny error payload on failure.
+ * Does not truncate — large list/search/KB/table payloads are kept intact.
+ */
+export function compactStringifyForLlm(value: unknown): string {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return JSON.stringify({ success: false, error: 'tool result omitted' })
+  }
+}
 
 const TOOL_EXECUTION_ORDER: Record<string, number> = {
   create_workflow: 0,
@@ -39,11 +52,127 @@ export interface MandatoryFollowUp {
 }
 
 /**
+ * True when a missing required field label maps to an OAuth credential control
+ * (or its advanced manual credential twin) on the given block type.
+ */
+function isOAuthCredentialField(blockType: string | undefined, fieldLabel: string): boolean {
+  if (!blockType || !fieldLabel.trim()) return false
+  const blockConfig = getBlock(blockType)
+  if (!blockConfig?.subBlocks?.length) {
+    // Fallback when registry is unavailable in tests: common OAuth field titles.
+    return /\b(account|credential|oauth)\b/i.test(fieldLabel)
+  }
+
+  const label = fieldLabel.trim().toLowerCase()
+  return blockConfig.subBlocks.some((subBlock) => {
+    const title = (subBlock.title ?? '').trim().toLowerCase()
+    const id = subBlock.id.trim().toLowerCase()
+    if (title !== label && id !== label) return false
+    if (subBlock.type === 'oauth-input') return true
+    const canonical = subBlock.canonicalParamId?.toLowerCase() ?? ''
+    return (
+      canonical === 'oauthcredential' ||
+      canonical.includes('credential') ||
+      id === 'credential' ||
+      id === 'manualcredential'
+    )
+  })
+}
+
+/**
+ * True when the only remaining workflow lint is missing OAuth credentials the
+ * user must connect — edits cannot clear these.
+ */
+export function isOAuthOnlyEditResult(output: unknown): boolean {
+  const record = asRecord(output)
+  if (record.success === false) return false
+
+  const skipped = record.skippedItems
+  if (Array.isArray(skipped) && skipped.length > 0) return false
+
+  const inputErrors = record.inputValidationErrors
+  if (Array.isArray(inputErrors) && inputErrors.length > 0) return false
+
+  const lint = asRecord(record.workflowLint)
+  const hasLintObject = Object.keys(lint).length > 0
+
+  if (hasLintObject) {
+    const orphanBlocks = Array.isArray(lint.orphanBlocks) ? lint.orphanBlocks : []
+    const emptyOutgoingPorts = Array.isArray(lint.emptyOutgoingPorts) ? lint.emptyOutgoingPorts : []
+    const invalidBranchPorts = Array.isArray(lint.invalidBranchPorts) ? lint.invalidBranchPorts : []
+    const invalidConnectionTargets = Array.isArray(lint.invalidConnectionTargets)
+      ? lint.invalidConnectionTargets
+      : []
+    if (
+      orphanBlocks.length > 0 ||
+      emptyOutgoingPorts.length > 0 ||
+      invalidBranchPorts.length > 0 ||
+      invalidConnectionTargets.length > 0
+    ) {
+      return false
+    }
+
+    const unresolved = Array.isArray(lint.unresolvedReferences) ? lint.unresolvedReferences : []
+    if (
+      unresolved.some((ref) => {
+        const kind = asRecord(ref).kind
+        return kind !== 'credential'
+      })
+    ) {
+      return false
+    }
+
+    const fieldIssues = Array.isArray(lint.fieldIssues) ? lint.fieldIssues : []
+    let oauthFieldCount = 0
+    for (const issue of fieldIssues) {
+      const row = asRecord(issue)
+      const inactive = Array.isArray(row.inactiveModeValues) ? row.inactiveModeValues : []
+      if (inactive.length > 0) return false
+
+      const missing = Array.isArray(row.missingRequiredFields)
+        ? row.missingRequiredFields.filter((value): value is string => typeof value === 'string')
+        : []
+      if (missing.length === 0) continue
+
+      const blockType = typeof row.blockType === 'string' ? row.blockType : undefined
+      for (const field of missing) {
+        if (!isOAuthCredentialField(blockType, field)) return false
+        oauthFieldCount += 1
+      }
+    }
+
+    return oauthFieldCount > 0 || unresolved.some((ref) => asRecord(ref).kind === 'credential')
+  }
+
+  // Message-only fallback when workflowLint was stripped from the payload.
+  const message =
+    typeof record.workflowLintMessage === 'string' ? record.workflowLintMessage.trim() : ''
+  if (!message) return false
+  if (
+    /orphan|unconnected|invalid (condition|router|branch)|connections pointing|inactive field mode|tool\/skill references/i.test(
+      message
+    )
+  ) {
+    return false
+  }
+  return (
+    /blocks missing required fields/i.test(message) &&
+    /\b(account|credential|oauth)\b/i.test(message) &&
+    !/\b(query|prompt|model|to|subject|body|url)\b/i.test(
+      message.replace(/\b(gmail account|google account|slack account)\b/gi, '')
+    )
+  )
+}
+
+/**
  * Returns true when edit_workflow applied partially and the agent should retry with fixes.
+ * OAuth/credential-only lint is excluded — that requires user authorization, not another edit.
  */
 export function editWorkflowNeedsFollowUp(output: unknown): boolean {
   const record = asRecord(output)
   if (record.success === false) return true
+
+  if (record.partialApply === true) return true
 
   const skipped = record.skippedItems
   if (Array.isArray(skipped) && skipped.length > 0) return true
@@ -52,6 +181,7 @@ export function editWorkflowNeedsFollowUp(output: unknown): boolean {
   if (Array.isArray(inputErrors) && inputErrors.length > 0) return true
 
   if (typeof record.workflowLintMessage === 'string' && record.workflowLintMessage.trim()) {
+    if (isOAuthOnlyEditResult(record)) return false
     return true
   }
 
@@ -156,34 +286,31 @@ function enrichInvokeIntegrationResultForLlm(
 }
 
 /**
- * Shapes tool output for the LLM — omits heavy workflowState, keeps repair signals.
+ * Shapes tool output for the LLM — omits heavy workflowState, keeps repair signals,
+ * and compact-serializes without truncating payload content.
  */
 export function formatToolResultForLlm(toolName: string, result: unknown): string {
+  let formatted: unknown = result
+
   if (toolName === 'function_execute') {
-    const record = enrichCodeExecutionResultForLlm(asRecord(result))
-    return JSON.stringify(record)
-  }
-
-  if (toolName === 'invoke_integration_tool') {
-    return JSON.stringify(enrichInvokeIntegrationResultForLlm(asRecord(result)))
-  }
-
-  if (toolName === 'create_file') {
+    formatted = enrichCodeExecutionResultForLlm(asRecord(result))
+  } else if (toolName === 'invoke_integration_tool') {
+    formatted = enrichInvokeIntegrationResultForLlm(asRecord(result))
+  } else if (toolName === 'create_file') {
     const record = asRecord(result)
     const data = asRecord(record.data)
     const size = typeof data.size === 'number' ? data.size : 0
     if (size === 0 && record.success !== false) {
-      return JSON.stringify({
+      formatted = {
         ...record,
         needsFollowUpWrite: true,
         followUpHint:
           'File is empty. For markdown/text, call create_file again with `content`, or call workspace_file operation=update on data.vfsPath then edit_content with the full body in the next step.',
-      })
+      }
+    } else {
+      formatted = record
     }
-    return JSON.stringify(record)
-  }
-
-  if (toolName === 'workspace_file') {
+  } else if (toolName === 'workspace_file') {
     const record = asRecord(result)
     const data = asRecord(record.data)
     const operation = typeof data.operation === 'string' ? data.operation : ''
@@ -195,69 +322,71 @@ export function formatToolResultForLlm(toolName: string, result: unknown): strin
         (typeof data.name === 'string' && data.name) ||
         (typeof data.vfsPath === 'string' && data.vfsPath) ||
         'the file'
-      return JSON.stringify({
+      formatted = {
         ...record,
         needsFollowUpEditContent: true,
         followUpHint:
           typeof record.message === 'string' && record.message.trim()
             ? record.message.trim()
             : `Call edit_content in the next step with the content to write to "${fileName}". Do not call edit_content in parallel with workspace_file.`,
-      })
+      }
+    } else {
+      formatted = record
     }
-    return JSON.stringify(record)
+  } else if (toolName === 'edit_workflow' || toolName === 'create_workflow') {
+    const record = asRecord(result)
+    if (toolName === 'create_workflow' && record.useRunWorkflowInstead) {
+      formatted = {
+        ...record,
+        needsFollowUpRun: true,
+        followUpHint:
+          typeof record.followUpHint === 'string'
+            ? record.followUpHint
+            : 'Use get_workflow_run_options then run_workflow on the existing workflow instead of creating a new one.',
+      }
+    } else {
+      const { workflowState, workflowLint: _workflowLint, ...rest } = record
+      const next: Record<string, unknown> = { ...rest }
+
+      if (workflowState && typeof workflowState === 'object') {
+        const state = workflowState as WorkflowState
+        next.copilotSanitizedWorkflowState = sanitizeForCopilot({
+          blocks: state.blocks ?? {},
+          edges: state.edges ?? [],
+          loops: state.loops ?? {},
+          parallels: state.parallels ?? {},
+        })
+      } else if (record.copilotSanitizedWorkflowState) {
+        next.copilotSanitizedWorkflowState = record.copilotSanitizedWorkflowState
+      }
+
+      if (editWorkflowNeedsFollowUp(record)) {
+        next.needsFollowUpEdit = true
+        next.followUpHint =
+          'Some operations were skipped, inputs rejected, or lint issues remain. Call edit_workflow again with corrected operations before finishing.'
+      } else if (isOAuthOnlyEditResult(record)) {
+        next.needsOAuthConnect = true
+        next.followUpHint =
+          'Workflow structure is complete. The only remaining lint is a missing OAuth credential — call oauth_get_auth_link once, share the link, then STOP. Do not re-edit; edits cannot clear credential lint.'
+      }
+
+      if (
+        toolName === 'create_workflow' &&
+        record.success !== false &&
+        !record.useRunWorkflowInstead &&
+        typeof record.workflowId === 'string' &&
+        record.workflowId.trim()
+      ) {
+        next.needsFollowUpPopulate = true
+        next.followUpHint =
+          'New workflow created. Call get_blocks_metadata ONCE with every type you need (e.g. { blockIds: ["agent","start_trigger","gmail"] }), then ONE edit_workflow to add blocks and wire Start → downstream via connections on the Start block (startBlockId). Do not re-fetch metadata or validate after a clean edit.'
+      }
+
+      formatted = next
+    }
   }
 
-  if (toolName !== 'edit_workflow' && toolName !== 'create_workflow') {
-    return JSON.stringify(result)
-  }
-
-  const record = asRecord(result)
-  if (toolName === 'create_workflow' && record.useRunWorkflowInstead) {
-    return JSON.stringify({
-      ...record,
-      needsFollowUpRun: true,
-      followUpHint:
-        typeof record.followUpHint === 'string'
-          ? record.followUpHint
-          : 'Use get_workflow_run_options then run_workflow on the existing workflow instead of creating a new one.',
-    })
-  }
-
-  const { workflowState, workflowLint: _workflowLint, ...rest } = record
-
-  const formatted: Record<string, unknown> = { ...rest }
-
-  if (workflowState && typeof workflowState === 'object') {
-    const state = workflowState as WorkflowState
-    formatted.copilotSanitizedWorkflowState = sanitizeForCopilot({
-      blocks: state.blocks ?? {},
-      edges: state.edges ?? [],
-      loops: state.loops ?? {},
-      parallels: state.parallels ?? {},
-    })
-  } else if (record.copilotSanitizedWorkflowState) {
-    formatted.copilotSanitizedWorkflowState = record.copilotSanitizedWorkflowState
-  }
-
-  if (editWorkflowNeedsFollowUp(record)) {
-    formatted.needsFollowUpEdit = true
-    formatted.followUpHint =
-      'Some operations were skipped, inputs rejected, or lint issues remain. Call edit_workflow again with corrected operations before finishing.'
-  }
-
-  if (
-    toolName === 'create_workflow' &&
-    record.success !== false &&
-    !record.useRunWorkflowInstead &&
-    typeof record.workflowId === 'string' &&
-    record.workflowId.trim()
-  ) {
-    formatted.needsFollowUpPopulate = true
-    formatted.followUpHint =
-      'New workflow created. Call get_blocks_metadata(["agent","start_trigger"]) then edit_workflow: add blocks and wire Start → downstream via connections on the Start block (startBlockId). Example: edit start block with connections: { source: "<agent-block-id>" }.'
-  }
-
-  return JSON.stringify(formatted)
+  return compactStringifyForLlm(formatted)
 }
 
 /**
@@ -304,6 +433,16 @@ export function detectMandatoryFollowUp(
         hint ??
         'Workflow edits were incomplete. Call edit_workflow again with corrected operations.',
       resolveWith: ['edit_workflow'],
+    }
+  }
+
+  if (parsed.needsOAuthConnect === true) {
+    return {
+      id: 'edit_workflow:oauth',
+      hint:
+        hint ??
+        'Missing OAuth credential. Call oauth_get_auth_link once, share the link, then stop.',
+      resolveWith: ['oauth_get_auth_link'],
     }
   }
 
@@ -359,6 +498,10 @@ export function resolveMandatoryFollowUps(
     next = next.filter(
       (item) => item.id !== 'create_workflow:populate' && !item.id.endsWith(':edit-repair')
     )
+  }
+
+  if (toolName === 'oauth_get_auth_link') {
+    next = next.filter((item) => item.id !== 'edit_workflow:oauth')
   }
 
   if (toolName === 'run_workflow') {

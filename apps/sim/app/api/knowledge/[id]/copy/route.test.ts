@@ -5,13 +5,16 @@
  *
  * @vitest-environment node
  */
-import { auditMock, auditMockFns, authMockFns, createMockRequest, knowledgeApiUtilsMock } from '@sim/testing'
+import {
+  auditMock,
+  auditMockFns,
+  authMockFns,
+  createMockRequest,
+  knowledgeApiUtilsMock,
+} from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const {
-  mockCopyKnowledgeBaseToWorkspace,
-  KnowledgeBaseCopyError,
-} = vi.hoisted(() => {
+const { mockCopyKnowledgeBaseToWorkspace, KnowledgeBaseCopyError } = vi.hoisted(() => {
   class KnowledgeBaseCopyError extends Error {
     readonly code = 'KNOWLEDGE_BASE_COPY_FAILED' as const
   }
@@ -39,10 +42,7 @@ vi.mock('@/lib/knowledge/service', async (importOriginal) => {
 
 vi.mock('@/app/api/knowledge/utils', () => knowledgeApiUtilsMock)
 
-import {
-  KnowledgeBaseConflictError,
-  KnowledgeBasePermissionError,
-} from '@/lib/knowledge/service'
+import { KnowledgeBaseConflictError, KnowledgeBasePermissionError } from '@/lib/knowledge/service'
 import { POST } from '@/app/api/knowledge/[id]/copy/route'
 import { checkKnowledgeBaseWriteAccess } from '@/app/api/knowledge/utils'
 

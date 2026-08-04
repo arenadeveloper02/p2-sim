@@ -1,12 +1,12 @@
 'use client'
 
 import { useMemo } from 'react'
+import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import {
   LineChart,
   type LineChartMultiSeries,
   type LineChartPoint,
 } from '@/app/workspace/[workspaceId]/logs/components/dashboard/components'
-import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 
 interface UsageTimeSeriesPoint {
   bucketStart: string
@@ -19,6 +19,8 @@ interface UsageTimeSeriesChartProps {
   timeSeries: UsageTimeSeriesPoint[]
   /** Distinct human actors across the full selected period (not a sum of daily counts). */
   periodActiveUserCount?: number
+  /** When false, hides the active-users chart (e.g. user-scoped usage). Defaults to true. */
+  showActiveUsers?: boolean
 }
 
 /**
@@ -32,6 +34,7 @@ interface UsageTimeSeriesChartProps {
 export function UsageTimeSeriesChart({
   timeSeries,
   periodActiveUserCount,
+  showActiveUsers = true,
 }: UsageTimeSeriesChartProps) {
   const billableData = useMemo((): LineChartPoint[] => {
     return timeSeries.map((bucket) => ({
@@ -58,11 +61,12 @@ export function UsageTimeSeriesChart({
   }, [timeSeries])
 
   const activeUserData = useMemo((): LineChartPoint[] => {
+    if (!showActiveUsers) return []
     return timeSeries.map((bucket) => ({
       timestamp: bucket.bucketStart,
       value: bucket.activeUserCount,
     }))
-  }, [timeSeries])
+  }, [showActiveUsers, timeSeries])
 
   if (timeSeries.length === 0) {
     return (
@@ -112,17 +116,25 @@ export function UsageTimeSeriesChart({
         </div>
       </div>
 
-      <div className='overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-2)]'>
-        <div className='flex flex-wrap items-center justify-between gap-2 border-[var(--border)] border-b bg-[var(--surface-3)] px-4 py-2'>
-          <p className='font-medium text-[var(--text-primary)] text-small'>Active users over time</p>
-          {activeUserTotalLabel && (
-            <span className='text-[var(--text-muted)] text-micro'>{activeUserTotalLabel}</span>
-          )}
+      {showActiveUsers && (
+        <div className='overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-2)]'>
+          <div className='flex flex-wrap items-center justify-between gap-2 border-[var(--border)] border-b bg-[var(--surface-3)] px-4 py-2'>
+            <p className='font-medium text-[var(--text-primary)] text-small'>
+              Active users over time
+            </p>
+            {activeUserTotalLabel && (
+              <span className='text-[var(--text-muted)] text-micro'>{activeUserTotalLabel}</span>
+            )}
+          </div>
+          <div className='px-3.5 py-2.5'>
+            <LineChart
+              data={activeUserData}
+              label=''
+              color='var(--brand-primary-hex, var(--brand-400))'
+            />
+          </div>
         </div>
-        <div className='px-3.5 py-2.5'>
-          <LineChart data={activeUserData} label='' color='var(--brand-primary-hex, var(--brand-400))' />
-        </div>
-      </div>
+      )}
     </div>
   )
 }

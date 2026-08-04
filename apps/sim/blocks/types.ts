@@ -398,6 +398,8 @@ export interface SubBlockConfig {
     | 'linkedin_comment_mentions'
     | 'linkedin_profile_sections'
     | 'linkedin_search_filters'
+    | 'skyvern_workflow_parameters'
+    | 'skyvern_run_parameters'
   /** Optional per-block overrides for `input-format` labels/placeholders/options. */
   inputFormatConfig?: {
     title?: string

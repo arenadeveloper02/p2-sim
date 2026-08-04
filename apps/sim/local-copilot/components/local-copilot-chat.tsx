@@ -48,7 +48,7 @@ export function LocalCopilotChat({
 }: LocalCopilotChatProps) {
   return (
     <div className={cn('flex h-full min-h-0 flex-col', className)}>
-      <div className='flex flex-wrap gap-2 border-b border-[var(--border-subtle)] px-3 py-2'>
+      <div className='flex flex-wrap gap-2 border-[var(--border-subtle)] border-b px-3 py-2'>
         <Chip onClick={onGenerateWorkflow} leftIcon={Sparkles}>
           Generate workflow
         </Chip>
@@ -68,7 +68,7 @@ export function LocalCopilotChat({
       <div className='flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3'>
         {messages.length === 0 ? (
           <div className='flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center'>
-            <p className='text-[14px] font-medium text-[var(--text-body)]'>Arena Copilot</p>
+            <p className='font-medium text-[14px] text-[var(--text-body)]'>Arena Copilot</p>
             <p className='text-[13px] text-[var(--text-muted)]'>
               Build, debug, and understand workflows using natural language. Changes require your
               confirmation before applying.
@@ -121,7 +121,7 @@ export function LocalCopilotChat({
         ) : null}
       </div>
 
-      <div className='border-t border-[var(--border-subtle)] p-3'>
+      <div className='border-[var(--border-subtle)] border-t p-3'>
         <div className='flex gap-2'>
           <ChipTextarea
             value={input}

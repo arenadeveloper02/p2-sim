@@ -21,7 +21,6 @@ import { AlertTriangle, Check } from 'lucide-react'
 import { GeneratedPasswordInput } from '@/components/ui'
 import { CustomSelect } from '@/components/ui/native-select'
 import { useSession } from '@/lib/auth/auth-client'
-import { AGENT_DEPARTMENTS } from '@/lib/chat/arena-departments'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { getBaseUrl, getEmailDomain } from '@/lib/core/utils/urls'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
@@ -29,6 +28,7 @@ import { OutputSelect } from '@/app/workspace/[workspaceId]/w/[workflowId]/compo
 import {
   type AuthType,
   type ChatFormData,
+  useAgentDepartments,
   useCreateChat,
   useDeleteChat,
   useUpdateChat,
@@ -152,6 +152,15 @@ export function ChatDeploy({
   const isAppMode = mode === 'app'
   const formId = isAppMode ? 'app-deploy-form' : 'chat-deploy-form'
   const initialFormData = createInitialFormData(mode)
+  const { data: departmentsData } = useAgentDepartments()
+  const departmentOptions = useMemo(
+    () =>
+      (departmentsData?.departments ?? []).map((department) => ({
+        value: department.value,
+        label: department.label,
+      })),
+    [departmentsData?.departments]
+  )
 
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [internalShowDeleteConfirmation, setInternalShowDeleteConfirmation] = useState(false)
@@ -516,7 +525,7 @@ export function ChatDeploy({
               onChange={(value) => updateField('department', value)}
               disabled={chatSubmitting}
               placeholder='Select category'
-              options={AGENT_DEPARTMENTS.map((cat) => ({ value: cat.value, label: cat.label }))}
+              options={departmentOptions}
             />
           </div>
           {errors.department && (

@@ -119,7 +119,8 @@ export function classifyLocalCopilotIntent(message: string): LocalCopilotIntent 
   }
 
   const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1])
-  if (ranked.length === 0) return { primary: 'general', secondary: [], useFullCatalog: true }
+  // Weak / ambiguous intents stay on ALWAYS_ON ∪ specialists (not the full ~86-tool catalog).
+  if (ranked.length === 0) return { primary: 'general', secondary: [], useFullCatalog: false }
 
   const [topDomain, topScore] = ranked[0]
   const secondaries = ranked
@@ -128,10 +129,10 @@ export function classifyLocalCopilotIntent(message: string): LocalCopilotIntent 
     .map(([domain]) => domain)
 
   if (topScore < 2 && secondaries.length === 0) {
-    return { primary: 'general', secondary: [], useFullCatalog: true }
+    return { primary: 'general', secondary: [], useFullCatalog: false }
   }
   if (secondaries.length >= 3) {
-    return { primary: 'general', secondary: [], useFullCatalog: true }
+    return { primary: 'general', secondary: [], useFullCatalog: false }
   }
 
   return { primary: topDomain, secondary: secondaries, useFullCatalog: false }

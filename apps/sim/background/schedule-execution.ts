@@ -24,8 +24,8 @@ import {
   getExecutionTimeout,
   getTimeoutErrorMessage,
 } from '@/lib/core/execution-limits'
-import { preprocessExecution } from '@/lib/execution/preprocessing'
 import type { ExecutionActor } from '@/lib/execution/actor-resolution'
+import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import { cleanupExecutionBase64Cache } from '@/lib/uploads/utils/user-file-base64.server'
@@ -345,6 +345,7 @@ const SERVER_ENV_VARS = new Set([
   'NEXT_PUBLIC_FIRECRAWL_API_KEY',
   'FIRECRAWL_API_KEY',
   'BROWSER_USE_API_KEY',
+  'SKYVERN_API_KEY',
   'SPYFU_API_PASSWORD',
   'SPYFU_API_USER_ID',
   'CHROMEDRIVER_PATH',
