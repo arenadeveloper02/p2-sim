@@ -1250,7 +1250,6 @@ export const Sidebar = memo(function Sidebar({
     captureEvent(posthog, 'slack_community_opened', { source: 'help_menu' })
   }, [posthog])
 
-
   const handleChatRenameBlur = useCallback(
     () => void chatFlyoutRename.saveRename(),
     [chatFlyoutRename.saveRename]

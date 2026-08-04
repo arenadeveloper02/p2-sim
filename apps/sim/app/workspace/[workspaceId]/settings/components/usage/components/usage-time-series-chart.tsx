@@ -114,13 +114,19 @@ export function UsageTimeSeriesChart({
 
       <div className='overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-2)]'>
         <div className='flex flex-wrap items-center justify-between gap-2 border-[var(--border)] border-b bg-[var(--surface-3)] px-4 py-2'>
-          <p className='font-medium text-[var(--text-primary)] text-small'>Active users over time</p>
+          <p className='font-medium text-[var(--text-primary)] text-small'>
+            Active users over time
+          </p>
           {activeUserTotalLabel && (
             <span className='text-[var(--text-muted)] text-micro'>{activeUserTotalLabel}</span>
           )}
         </div>
         <div className='px-3.5 py-2.5'>
-          <LineChart data={activeUserData} label='' color='var(--brand-primary-hex, var(--brand-400))' />
+          <LineChart
+            data={activeUserData}
+            label=''
+            color='var(--brand-primary-hex, var(--brand-400))'
+          />
         </div>
       </div>
     </div>

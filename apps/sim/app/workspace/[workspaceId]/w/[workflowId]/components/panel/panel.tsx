@@ -322,7 +322,6 @@ export const Panel = memo(function Panel() {
     })
     if (isUsageGateLoading) return
 
-
     if (usageExceeded) {
       const action = getWorkspaceUsageLimitAction(hostContext, session?.user?.id, {
         message: usageLimitMessage,

@@ -820,7 +820,12 @@ export const ToolInput = memo(function ToolInput({
 
       if (isToolAlreadySelected(toolId, toolBlock.type)) return
 
-      const toolParams = getToolParametersConfig(toolId, toolBlock.type, { operation: defaultOperation }, toolBlock)
+      const toolParams = getToolParametersConfig(
+        toolId,
+        toolBlock.type,
+        { operation: defaultOperation },
+        toolBlock
+      )
       if (!toolParams) return
 
       const initialParams = buildInitialAgentToolParams(

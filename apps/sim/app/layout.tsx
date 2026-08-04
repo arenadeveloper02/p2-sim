@@ -47,9 +47,7 @@ const GA_ID = 'G-DR7YBE70VS' as const
  */
 function useRuntimePublicEnvScript(): boolean {
   const appUrl = getEnv('NEXT_PUBLIC_APP_URL')
-  return (
-    appUrl !== 'https://www.sim.ai' && appUrl !== 'https://www.staging.sim.ai'
-  )
+  return appUrl !== 'https://www.sim.ai' && appUrl !== 'https://www.staging.sim.ai'
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

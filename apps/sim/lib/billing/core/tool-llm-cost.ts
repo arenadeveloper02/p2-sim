@@ -121,12 +121,15 @@ export function extractProviderToolCostFields(
   if (response.tokens && typeof response.tokens === 'object') {
     const input = typeof response.tokens.input === 'number' ? response.tokens.input : 0
     const output = typeof response.tokens.output === 'number' ? response.tokens.output : 0
-    const total =
-      typeof response.tokens.total === 'number' ? response.tokens.total : input + output
+    const total = typeof response.tokens.total === 'number' ? response.tokens.total : input + output
     fields.tokens = { input, output, total }
   }
 
-  if (response.cost && typeof response.cost === 'object' && typeof response.cost.total === 'number') {
+  if (
+    response.cost &&
+    typeof response.cost === 'object' &&
+    typeof response.cost.total === 'number'
+  ) {
     fields.cost = {
       input: typeof response.cost.input === 'number' ? response.cost.input : 0,
       output: typeof response.cost.output === 'number' ? response.cost.output : 0,

@@ -317,7 +317,6 @@ export const PATCH = withRouteHandler(
       // Partial updates keep the stored value; a row predating the column reads false.
       updateData.includeToolCalls = includeToolCalls ?? existingChatRecord.includeToolCalls ?? false
 
-
       const emailCount = Array.isArray(updateData.allowedEmails)
         ? updateData.allowedEmails.length
         : undefined

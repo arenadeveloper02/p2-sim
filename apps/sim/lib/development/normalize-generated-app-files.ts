@@ -1750,9 +1750,7 @@ export function normalizeGeneratedAppFiles(
   const withNextEnv = ensureNextEnvFile(withDatabase)
   const withReadme = ensureReadmeFile(withNextEnv, options)
   const withRepoSummary = ensureRepoSummaryFile(withReadme, options)
-  const withArena = options.arenaMode
-    ? ensureArenaScaffoldFiles(withRepoSummary)
-    : withRepoSummary
+  const withArena = options.arenaMode ? ensureArenaScaffoldFiles(withRepoSummary) : withRepoSummary
   const usedPackages = collectUsedNpmPackageNames(withArena)
 
   return withArena.map((file) => {

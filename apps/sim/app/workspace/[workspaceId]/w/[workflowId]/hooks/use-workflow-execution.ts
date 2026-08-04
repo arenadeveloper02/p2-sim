@@ -118,7 +118,6 @@ function getExecutionDisplayError(data: unknown): {
   }
 }
 
-
 async function persistExecutionPointerProgress(
   workflowId: string,
   executionId: string,

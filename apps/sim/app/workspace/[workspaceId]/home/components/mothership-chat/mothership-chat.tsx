@@ -217,7 +217,6 @@ const AssistantMessageRow = memo(function AssistantMessageRow({
     return <PendingTagIndicator label={message.liveStatus ?? 'Thinking…'} />
   }
 
-
   const hasRenderableAssistant = assistantMessageHasRenderableContent(blocks, message.content ?? '')
   if (!hasRenderableAssistant && !trimmedContent && !isStreaming) {
     return null

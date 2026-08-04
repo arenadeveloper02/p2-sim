@@ -492,7 +492,6 @@ export function parseQuestionTagBody(body: string): QuestionTagData | null {
   }
 }
 
-
 export function parseJsonTagBody<T>(
   body: string,
   isExpectedShape: (value: unknown) => value is T

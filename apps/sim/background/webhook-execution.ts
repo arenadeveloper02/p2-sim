@@ -441,7 +441,8 @@ async function executeWebhookJobInternal(
     throw new Error(preprocessResult.error?.message || 'Preprocessing failed in background job')
   }
 
-  const { actorUserId, billingAttribution, workflowRecord, executionTimeout, executionActor } = preprocessResult
+  const { actorUserId, billingAttribution, workflowRecord, executionTimeout, executionActor } =
+    preprocessResult
   if (!workflowRecord) {
     throw new Error(`Workflow ${payload.workflowId} not found during preprocessing`)
   }

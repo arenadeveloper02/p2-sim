@@ -115,7 +115,8 @@ export function getImageModelPerImageCost(dimensions: ImageBillingDimensions): n
   const imageCount = Math.max(1, dimensions.numImages ?? 1)
 
   if (dimensions.provider === 'openai') {
-    const modelPricing = IMAGE_MODEL_PRICING.openai[model as keyof typeof IMAGE_MODEL_PRICING.openai]
+    const modelPricing =
+      IMAGE_MODEL_PRICING.openai[model as keyof typeof IMAGE_MODEL_PRICING.openai]
     if (!modelPricing) return null
 
     const sizeBucket = normalizeOpenAISizeBucket(model, dimensions.size)
@@ -130,7 +131,8 @@ export function getImageModelPerImageCost(dimensions: ImageBillingDimensions): n
   }
 
   if (dimensions.provider === 'gemini') {
-    const modelPricing = IMAGE_MODEL_PRICING.gemini[model as keyof typeof IMAGE_MODEL_PRICING.gemini]
+    const modelPricing =
+      IMAGE_MODEL_PRICING.gemini[model as keyof typeof IMAGE_MODEL_PRICING.gemini]
     if (!modelPricing) return null
 
     if ('default' in modelPricing && !('1K' in modelPricing)) {
@@ -141,7 +143,11 @@ export function getImageModelPerImageCost(dimensions: ImageBillingDimensions): n
     const resolutionPricing =
       modelPricing[resolution as keyof typeof modelPricing] ??
       ('default' in modelPricing ? modelPricing.default : null)
-    if (!resolutionPricing || typeof resolutionPricing !== 'object' || !('perImage' in resolutionPricing)) {
+    if (
+      !resolutionPricing ||
+      typeof resolutionPricing !== 'object' ||
+      !('perImage' in resolutionPricing)
+    ) {
       return null
     }
 

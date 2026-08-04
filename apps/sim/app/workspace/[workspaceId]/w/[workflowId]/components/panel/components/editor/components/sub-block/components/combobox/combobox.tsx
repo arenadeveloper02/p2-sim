@@ -328,7 +328,14 @@ export const ComboBox = memo(function ComboBox({
     }
 
     return undefined
-  }, [defaultValue, evaluatedOptions, subBlockId, getOptionValue, config.clearable, config.emptyIsValid])
+  }, [
+    defaultValue,
+    evaluatedOptions,
+    subBlockId,
+    getOptionValue,
+    config.clearable,
+    config.emptyIsValid,
+  ])
 
   /**
    * Resolve the user-facing text for the current stored value.

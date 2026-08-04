@@ -125,8 +125,7 @@ export function normalizeUsageEntry(entry: UsageEntry): UsageEntry {
       ...normalized,
       description: canonicalTool,
       toolId: canonicalTool,
-      pricingSnapshot:
-        entry.pricingSnapshot ?? buildToolPricingSnapshot(canonicalTool, multiplier),
+      pricingSnapshot: entry.pricingSnapshot ?? buildToolPricingSnapshot(canonicalTool, multiplier),
     }
   }
 
