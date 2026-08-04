@@ -1,12 +1,34 @@
 {
-  "kind": "awaiting_input",
-  "title": "Awaiting grill answers before merge",
-  "detail": "Answer questions in `.upstream-sync/ledger/2026-08-04/open-questions.md` and reply with /upstream-sync resume.",
+  "kind": "completed",
+  "title": "Upstream sync completed (verification warnings)",
+  "detail": "Merged simstudioai/sim@1b9e0f25 into `feat/github-merge-agent` (518 commit(s)). Advisory verification reported failures — see ledger / PR / job summary; they did not fail the workflow.",
   "syncBranch": "upstream-sync/2026-08-03T10-08-54",
   "mergeBase": "feat/github-merge-agent",
   "upstreamSha": "1b9e0f254af3d93bf3e17d8c1cde1f26891d4ff0",
   "prNumber": 678,
   "commitCount": 518,
+  "verification": [
+    {
+      "command": "bun run check",
+      "success": false,
+      "detail": "• Packages in scope: @sim/audit, @sim/auth, @sim/browser-protocol, @sim/db, @sim/desktop, @sim/desktop-bridge, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/terminal-protocol, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk\n   • Running format:check in 25 packages\n   • Remote caching disabled\n\n::group::@sim/browser-protocol:format:check\ncache miss, executing 4843a62c2a478709\n$ biome format .\nChecked 3 files in 14ms. No fixes applied.\n::endgroup::\n::group::simstudio:format:check\ncache miss, executing 1a315830226ea3e8\n$ biome format .\nChecked 3 files in 10ms. No fixes applied.\n::endgroup::\n::group::@sim/workflow-persistence:format:check\ncache miss, executing 276d5109e80f2ab0\n$ biome format .\nChecked 10 files in 22ms. No fixes applied.\n::endgroup::\n::group::@sim/runtime-secrets:format:check\ncache miss, executing fa96e3d91d14beaf\n$ biome format .\nChecked 5 files in 25ms. No fixes applied.\n::endgroup::\n::group::simstudio-ts-sdk:format:check\ncache miss, executing 69fe2c650ec4955a\n$ biome format .\n\n…(truncated)"
+    },
+    {
+      "command": "bun run lint",
+      "success": false,
+      "detail": "• Packages in scope: @sim/audit, @sim/auth, @sim/browser-protocol, @sim/db, @sim/desktop, @sim/desktop-bridge, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/terminal-protocol, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk\n   • Running lint in 25 packages\n   • Remote caching disabled\n\n::group::simstudio:lint\ncache miss, executing 4a2920c8f26f22f6\n$ biome check --write --unsafe .\nChecked 3 files in 19ms. No fixes applied.\n::endgroup::\n::group::@sim/browser-protocol:lint\ncache miss, executing 52da34b84e837968\n$ biome check --write --unsafe .\nChecked 3 files in 24ms. No fixes applied.\n::endgroup::\n::group::@sim/realtime-protocol:lint\ncache miss, executing e213ba8139dd6f59\n$ biome check --write --unsafe .\nChecked 11 files in 72ms. No fixes applied.\n::endgroup::\n::group::simstudio-ts-sdk:lint\ncache miss, executing 635d23e726585b7d\n$ biome check --write --unsafe .\nChecked 6 files in 106ms. No fixes applied.\n::endgroup::\n::group::@sim/workflow-types:lint\ncache miss, executing 4094c95cfbad3dce\n$ bi\n…(truncated)"
+    },
+    {
+      "command": "bun run test",
+      "success": false,
+      "detail": "• Packages in scope: @sim/audit, @sim/auth, @sim/browser-protocol, @sim/db, @sim/desktop, @sim/desktop-bridge, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/terminal-protocol, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk\n   • Running test in 25 packages\n   • Remote caching disabled\n\n\u001b[;31m@sim/db:test\u001b[;0m\ncache miss, executing 63181e6cac6942a9\n$ vitest run\n/usr/bin/bash: line 1: vitest: command not found\nerror: script \"test\" exited with code 127\n::group::@sim/audit:test\ncache miss, executing 6c37cfb71f4ab302\n::endgroup::\n::group::@sim/workflow-persistence:test\ncache miss, executing 99c24dc26410f451\n::endgroup::\n::group::@sim/logger:test\ncache miss, executing dfaa973b139c131f\n$ vitest run\n::endgroup::\n::group::@sim/desktop:test\ncache miss, executing ac91fabd88f3e650\n$ vitest run\n::endgroup::\n::group::@sim/emcn:test\ncache miss, executing 5b53501084edb728\n$ vitest run\n::endgroup::\n::group::@sim/runtime-secrets:test\ncache miss, executing 72e78c533572b708\n$ vitest run\n::endgroup::\n::group::@s\n…(truncated)"
+    },
+    {
+      "command": "bun run build",
+      "success": false,
+      "detail": "• Packages in scope: @sim/audit, @sim/auth, @sim/browser-protocol, @sim/db, @sim/desktop, @sim/desktop-bridge, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/terminal-protocol, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk\n   • Running build in 25 packages\n   • Remote caching disabled\n\n\u001b[;31msim:build\u001b[;0m\ncache miss, executing 72aaf3722f231fa2\n$ bun run build:sandbox-bundles && NODE_OPTIONS='--max-old-space-size=8192' next build\n$ bun run ./lib/execution/sandbox/bundles/build.ts\n[2026-08-04T08:40:35.899Z] [ERROR] [SandboxBundleBuild] sandbox bundle build failed {\n  \"message\": \"Bundle failed\",\n  \"name\": \"AggregateError\"\n}\nerror: script \"build:sandbox-bundles\" exited with code 1\nerror: script \"build\" exited with code 1\n::group::simstudio:build\ncache miss, executing e7361d873ddfd3dc\n$ tsc\n::endgroup::\n::group::docs:build\ncache miss, executing 94f016f5c37a23cf\n$ fumadocs-mdx && NODE_OPTIONS='--max-old-space-size=8192' next build\n::endgroup::\n::group::@sim/desktop:build\ncache miss, executing 49\n…(truncated)"
+    }
+  ],
   "runId": "2026-08-04",
-  "recordedAt": "2026-08-04T08:27:35.406Z"
+  "recordedAt": "2026-08-04T08:40:39.658Z"
 }
