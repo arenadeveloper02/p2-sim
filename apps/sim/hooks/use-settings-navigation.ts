@@ -40,11 +40,11 @@ export function resolveSettingsHref({
   if (!workspaceId) return '/workspace'
   const section = options?.section || 'general'
   if (
-    section === 'billing' &&
+    (section === 'billing' || section === 'arena-billing') &&
     hostContext &&
     !canManageWorkspaceBilling(hostContext, viewerUserId)
   ) {
-    return `/workspace/${workspaceId}/upgrade`
+    return `/workspace/${workspaceId}/settings/usage`
   }
 
   const searchParams = new URLSearchParams()

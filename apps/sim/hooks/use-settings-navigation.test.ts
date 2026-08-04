@@ -55,7 +55,7 @@ describe('resolveSettingsHref unified settings navigation', () => {
     ).toBe('/workspace/workspace-b/settings/mcp?mcpServerId=server%2Fa')
   })
 
-  it('sends external workspace admins to the workspace contact-admin upgrade state', () => {
+  it('sends viewers who cannot manage billing to the usage settings section', () => {
     expect(
       resolveSettingsHref({
         options: { section: 'billing' },
@@ -63,7 +63,18 @@ describe('resolveSettingsHref unified settings navigation', () => {
         hostContext: HOST_CONTEXT,
         viewerUserId: 'external-a',
       })
-    ).toBe('/workspace/workspace-b/upgrade')
+    ).toBe('/workspace/workspace-b/settings/usage')
+  })
+
+  it('sends non-admin org members away from arena billing to usage', () => {
+    expect(
+      resolveSettingsHref({
+        options: { section: 'arena-billing' },
+        workspaceId: 'workspace-b',
+        hostContext: HOST_CONTEXT,
+        viewerUserId: 'external-a',
+      })
+    ).toBe('/workspace/workspace-b/settings/usage')
   })
 
   it('keeps host organization admins in the unified workspace settings shell', () => {

@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
+import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
 import { captureEvent } from '@/lib/posthog/client'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { General } from '@/app/workspace/[workspaceId]/settings/components/general/general'
@@ -145,14 +146,23 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const isAdminRole = session?.user?.role === 'admin'
   const normalizedSection: SettingsSection =
     (section as string) === 'subscription' ? 'billing' : section
+
+  const isBillingSection =
+    normalizedSection === 'billing' || normalizedSection === 'arena-billing'
+  const canManageBilling = canManageWorkspaceBilling(hostContext, session?.user?.id)
+  const billingRedirectToUsage =
+    isBillingEnabled && isBillingSection && !sessionLoading && !canManageBilling
+
   const effectiveSection =
     !isBillingEnabled && (normalizedSection === 'billing' || normalizedSection === 'organization')
       ? 'general'
-      : normalizedSection === 'admin' && !sessionLoading && !isAdminRole
-        ? 'general'
-        : normalizedSection === 'mothership' && !sessionLoading && !isAdminRole
+      : billingRedirectToUsage
+        ? 'usage'
+        : normalizedSection === 'admin' && !sessionLoading && !isAdminRole
           ? 'general'
-          : normalizedSection
+          : normalizedSection === 'mothership' && !sessionLoading && !isAdminRole
+            ? 'general'
+            : normalizedSection
   const organizationId = hostContext.hostOrganizationId
   const meta = getSettingsSectionMeta(effectiveSection)
 

@@ -106,7 +106,10 @@ export function SettingsSidebar({
         return false
       }
 
-      if (item.id === 'billing' && !canManageWorkspaceBilling(hostContext, userId)) {
+      if (
+        (item.id === 'billing' || item.id === 'arena-billing') &&
+        !canManageWorkspaceBilling(hostContext, userId)
+      ) {
         return false
       }
 
