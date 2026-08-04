@@ -53,3 +53,7 @@ place are shared files the fork rebranded or rewrote: branding assets, `email-fo
 `ArenaDeployedChat.tsx`. Prefer `manualReview` over `forkFirst` for any shared file where
 upstream improvements might still be worth taking (this is why `.github/workflows/ci.yml` and
 `ee/whitelabeling/` went to `manualReview`, not `forkFirst`).
+
+## 2026-08-04
+
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
