@@ -178,37 +178,62 @@ jobs:
         run: |
           set -euo pipefail
 
-          token_repo_ok() {
+          # Returns 0 when token can read the repo, push to it, and (for classic PATs) has workflow scope.
+          token_push_ok() {
             local token="$1"
+            local source="$2"
+            local login perms scopes_header
             [ -n "$token" ] || return 1
-            GH_TOKEN="$token" gh api "repos/${GITHUB_REPOSITORY}" --jq .full_name >/dev/null 2>&1
+            if ! GH_TOKEN="$token" gh api "repos/${GITHUB_REPOSITORY}" --jq .full_name >/dev/null 2>&1; then
+              echo "${source}: cannot read ${GITHUB_REPOSITORY}"
+              return 1
+            fi
+            login="$(GH_TOKEN="$token" gh api user --jq .login 2>/dev/null || echo unknown)"
+            perms="$(GH_TOKEN="$token" gh api "repos/${GITHUB_REPOSITORY}" --jq '.permissions // {}' 2>/dev/null || echo '{}')"
+            if ! echo "$perms" | grep -q '"push": *true'; then
+              echo "${source}: identity ${login} lacks push on ${GITHUB_REPOSITORY} (permissions=${perms})"
+              return 1
+            fi
+            # Classic PATs advertise scopes; fine-grained tokens omit the header (git probe covers them).
+            scopes_header=$(GH_TOKEN="$token" gh api -i user 2>&1 | tr -d '\r' | grep -i '^x-oauth-scopes:' || true)
+            if [ -n "$scopes_header" ] && ! echo "$scopes_header" | grep -qi 'workflow'; then
+              echo "${source}: identity ${login} missing workflow scope (${scopes_header})"
+              return 1
+            fi
+            echo "${source}: ok (login=${login})"
+            return 0
           }
 
           selected_source=""
           selected_token=""
+          rejection_notes=""
 
-          if token_repo_ok "$CANDIDATE_GH_PAT"; then
-            selected_source=GH_PAT
-            selected_token="$CANDIDATE_GH_PAT"
-          elif token_repo_ok "$CANDIDATE_UPSTREAM_SYNC_GH_TOKEN"; then
-            selected_source=UPSTREAM_SYNC_GH_TOKEN
-            selected_token="$CANDIDATE_UPSTREAM_SYNC_GH_TOKEN"
-          else
-            if [ -n "$CANDIDATE_GH_PAT" ] || [ -n "$CANDIDATE_UPSTREAM_SYNC_GH_TOKEN" ]; then
-              echo "::error::GH_PAT / UPSTREAM_SYNC_GH_TOKEN is set but invalid or expired."
-            else
-              echo "::error::Missing GH_PAT / UPSTREAM_SYNC_GH_TOKEN."
+          for candidate in \
+            "GH_PAT:${CANDIDATE_GH_PAT}" \
+            "UPSTREAM_SYNC_GH_TOKEN:${CANDIDATE_UPSTREAM_SYNC_GH_TOKEN}"
+          do
+            source="${candidate%%:*}"
+            token="${candidate#*:}"
+            if [ -z "$token" ]; then
+              rejection_notes="${rejection_notes}${source}: not set"$'\n'
+              continue
             fi
-            echo "GITHUB_TOKEN cannot push updates under .github/workflows/ (platform rule)."
-            echo "Add a classic ghp_* PAT with repo + workflow scopes as GH_PAT under Settings → Secrets → Actions."
-            exit 1
-          fi
+            if note=$(token_push_ok "$token" "$source"); then
+              echo "$note"
+              selected_source="$source"
+              selected_token="$token"
+              break
+            else
+              rejection_notes="${rejection_notes}${note}"$'\n'
+            fi
+          done
 
-          # Classic PATs advertise scopes; fine-grained tokens omit the header (probe covers them).
-          scopes_header=$(GH_TOKEN="$selected_token" gh api -i user 2>&1 | tr -d '\r' | grep -i '^x-oauth-scopes:' || true)
-          if [ -n "$scopes_header" ] && ! echo "$scopes_header" | grep -qi 'workflow'; then
-            echo "::error::${selected_source} is missing the workflow scope (required to push .github/workflows/*)."
-            echo "Recreate the classic PAT with repo + workflow, update the secret, then re-run."
+          if [ -z "$selected_token" ]; then
+            echo "::error::No usable push token for upstream-sync."
+            echo "Tried GH_PAT then UPSTREAM_SYNC_GH_TOKEN. Need a classic ghp_* with repo+workflow"
+            echo "(or fine-grained Contents+Workflows write) from an account with push on this repo."
+            echo "GITHUB_TOKEN cannot push updates under .github/workflows/ (platform rule)."
+            printf '%s' "$rejection_notes"
             exit 1
           fi
 
@@ -229,7 +254,8 @@ jobs:
           done < <(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true)
           rm -f "${RUNNER_TEMP}"/git-credentials-*.config || true
 
-          # Ensure origin has no embedded credentials (URL userinfo + extraheader = duplicate auth).
+          # Prefer a clean origin URL + single extraheader (no URL userinfo; avoids log leaks
+          # and duplicate Authorization if anything else injects a header).
           origin_url="$(git remote get-url origin)"
           origin_url="${origin_url#https://}"
           origin_url="${origin_url#*@}"
@@ -315,9 +341,13 @@ jobs:
             > .github/workflows/.upstream-sync-perm-probe.yml
           git add .github/workflows/.upstream-sync-perm-probe.yml
           git commit --no-verify -m "chore: probe workflows push permission"
-          if ! git push -u origin "HEAD:${probe_branch}"; then
+          push_err="$(mktemp)"
+          if ! git push -u origin "HEAD:${probe_branch}" 2>"$push_err"; then
             echo "::error::Push token cannot update workflow files under .github/workflows/."
-            echo "Use a classic GH_PAT (repo + workflow scopes) or a fine-grained PAT with Workflows: Read and write."
+            echo "Use a classic GH_PAT (repo + workflow scopes) or a fine-grained PAT with Workflows: Read and write,"
+            echo "from an account with push access to ${GITHUB_REPOSITORY}."
+            echo "git push stderr:"
+            cat "$push_err" || true
             echo "Failing now so agents do not burn tokens on a push that will be rejected."
             exit 1
           fi
