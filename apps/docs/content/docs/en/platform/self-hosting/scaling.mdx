@@ -84,7 +84,7 @@ For anything beyond a handful of replicas, put **PgBouncer** in transaction pool
 Heavy read paths — log listing, audit logs, dashboard aggregations — can be offloaded:
 
 ```bash
-DATABASE_REPLICA_URL=postgresql://user:pass@replica-host:5432/simstudio
+DATABASE_REPLICA_URL=postgresql://user:pass@hostname:5432/simstudio
 ```
 
 Reads fall back to the primary when unset. Per-role overrides exist if different components should use different replicas:

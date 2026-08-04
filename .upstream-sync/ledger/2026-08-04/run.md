@@ -617,3 +617,7 @@ error: script "build" exited with code 1
     "scripts/deploy-ec2-local-build.sh",
     "scripts/deploy-ec2-local-build-sequent
 
+## Post-merge CI fix (2026-08-04)
+
+Merge commit `484a3c3f48` took upstream root `package.json` and dropped fork scripts required by D11 / CI (`check:secrets`, `check:credentials`, `upstream-sync`, `vendor-pricing:*`, `repair:workflow-room-redis-keys`) plus harness deps (`@ai-hero/sandcastle`, `yaml`). Restored those entries and normalized the upstream docs replica URL example so the fork secret scanner accepts the placeholder host.
+

@@ -31,6 +31,8 @@
     "check:api-validation:strict": "bun run scripts/check-api-validation-contracts.ts --check --enforce-boundary-baseline",
     "check:realtime-prune": "bun run scripts/check-realtime-prune-graph.ts",
     "check:tool-registry-boundary": "bun run scripts/check-tool-registry-boundary.ts",
+    "check:credentials": "bun run scripts/check-committed-secrets.ts",
+    "check:secrets": "bun run scripts/check-committed-secrets.ts",
     "check:zustand-v5": "bun run scripts/check-zustand-v5-selectors.ts",
     "check:react-query": "bun run scripts/check-react-query-patterns.ts --check",
     "check:client-boundary": "bun run scripts/check-client-boundary-imports.ts --check",
@@ -41,6 +43,7 @@
     "check:desktop-bridge": "bun run scripts/check-desktop-bridge-contract.ts --check",
     "check:desktop-ipc": "bun run scripts/check-desktop-ipc-contract.ts",
     "desktop-bridge-contract:update": "bun run scripts/check-desktop-bridge-contract.ts --update",
+    "repair:workflow-room-redis-keys": "bun run scripts/repair-workflow-room-redis-keys.ts",
     "mship-contracts:generate": "bun run scripts/sync-mothership-stream-contract.ts",
     "mship-contracts:check": "bun run scripts/sync-mothership-stream-contract.ts --check",
     "billing-protocol-contract:generate": "bun run scripts/sync-billing-protocol-contract.ts",
@@ -67,6 +70,8 @@
     "library:covers:check": "bun run scripts/generate-library-covers.tsx --check",
     "skills:sync": "bun run scripts/sync-skills.ts",
     "skills:check": "bun run scripts/sync-skills.ts --check",
+    "vendor-pricing:check": "bun run scripts/sync-vendor-pricing-from-models.ts --check",
+    "vendor-pricing:sync": "bun run scripts/sync-vendor-pricing-from-models.ts --write",
     "setup": "bun install && bun run scripts/setup/index.ts setup",
     "sim": "bun install && bun run scripts/setup/index.ts",
     "doctor": "bun run scripts/setup/index.ts doctor",
@@ -74,7 +79,8 @@
     "agent-stream-docs:check": "bun run scripts/sync-agent-stream-docs.ts --check",
     "prepare": "bun husky",
     "type-check": "turbo run type-check",
-    "release": "bun run scripts/create-single-release.ts"
+    "release": "bun run scripts/create-single-release.ts",
+    "upstream-sync": "bun run .sandcastle/main.ts"
   },
   "overrides": {
     "react": "19.2.4",
@@ -95,6 +101,7 @@
     "@next/swc-linux-x64-gnu": "16.2.12"
   },
   "devDependencies": {
+    "@ai-hero/sandcastle": "0.10.0",
     "@biomejs/biome": "2.0.0-beta.5",
     "@clack/prompts": "1.7.0",
     "@octokit/rest": "^21.0.0",
@@ -108,7 +115,8 @@
     "lint-staged": "16.0.0",
     "opentype.js": "1.3.4",
     "sharp": "0.35.3",
-    "turbo": "2.9.14"
+    "turbo": "2.9.14",
+    "yaml": "^2.8.1"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,css,scss}": [
