@@ -104,20 +104,21 @@ function pushLegacyEnvKeys(names: string[], prefix: string): void {
  */
 function resolveEnvKeys(prefix: string): string[] {
   const countValue = process.env[`${prefix}_COUNT`]
-  if (countValue === undefined) {
-    return process.env[prefix] ? [prefix] : []
-  }
-
-  const count = Number.parseInt(countValue, 10)
   const names: string[] = []
 
-  if (count > 0) {
-    for (let i = 1; i <= count; i++) {
-      pushUniqueEnvVar(names, `${prefix}_${i}`)
+  // Numbered pool: `{PREFIX}_COUNT=N` + `{PREFIX}_1..N`
+  if (countValue !== undefined) {
+    const count = Number.parseInt(countValue, 10)
+    if (count > 0) {
+      for (let i = 1; i <= count; i++) {
+        pushUniqueEnvVar(names, `${prefix}_${i}`)
+      }
+      return names
     }
-    return names
   }
 
+  // No count / count 0: legacy singular + `_1..3` (filtered later by availability).
+  // Google image tools also accept the Gemini key namespace used by older env files.
   pushLegacyEnvKeys(names, prefix)
 
   if (prefix === 'GOOGLE_API_KEY') {
@@ -188,7 +189,9 @@ export class HostedKeyRateLimiter {
     for (let i = 0; i < envKeys.length; i++) {
       const envVarName = envKeys[i]
       const key = process.env[envVarName]
-      if (key) {
+      // Bun/Node can stringify `process.env.X = undefined` to the literal
+      // "undefined"; treat that as unset so Gemini fallback can run.
+      if (key && key !== 'undefined' && key.trim().length > 0) {
         keys.push({ key, keyIndex: i, envVarName })
       }
     }

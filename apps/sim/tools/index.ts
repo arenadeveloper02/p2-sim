@@ -1926,7 +1926,7 @@ export async function executeTool(
                   : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
-      const result = await tool.directExecution(contextParams, effectiveSignal)
+      const result = await directExecution(contextParams, effectiveSignal)
 
       // Apply post-processing if available and not skipped
       let finalResult = result
