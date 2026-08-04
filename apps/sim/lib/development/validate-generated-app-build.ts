@@ -61,8 +61,7 @@ const NPM_INSTALL_ARGS = [
 ] as const
 
 /** Shared E2B install flags — omit --prefer-offline so stale sandbox packuments cannot ETARGET new transitive versions. */
-const E2B_NPM_INSTALL =
-  'npm install --include=dev --legacy-peer-deps --no-audit --no-fund 2>&1'
+const E2B_NPM_INSTALL = 'npm install --include=dev --legacy-peer-deps --no-audit --no-fund 2>&1'
 
 /**
  * NODE_ENV must be 'production' (never 'development'): `next build` under a

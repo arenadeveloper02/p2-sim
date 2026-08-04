@@ -20,10 +20,7 @@ const logger = createLogger('VerifyExecutionCostsAPI')
  * Always gates to the priced-tool allowlist (`onlyPricedTools: true`).
  */
 export const POST = withRouteHandler(
-  async (
-    request: NextRequest,
-    context: { params: Promise<{ executionId: string }> }
-  ) => {
+  async (request: NextRequest, context: { params: Promise<{ executionId: string }> }) => {
     const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
     if (!authResult.success || !authResult.userId) {
       return NextResponse.json(

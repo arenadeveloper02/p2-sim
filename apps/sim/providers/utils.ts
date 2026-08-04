@@ -6,7 +6,11 @@ import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { CompletionUsage } from 'openai/resources/completions'
 import { formatCreditCost } from '@/lib/billing/credits/conversion'
 import { env } from '@/lib/core/config/env'
-import { getBlacklistedProvidersFromEnv, getCostMultiplier, isHosted } from '@/lib/core/config/env-flags'
+import {
+  getBlacklistedProvidersFromEnv,
+  getCostMultiplier,
+  isHosted,
+} from '@/lib/core/config/env-flags'
 import {
   normalizeRecord,
   normalizeStringRecord,
@@ -1028,8 +1032,7 @@ export function normalizeProviderCost(cost: unknown): BlockModelCost | null {
 
   return {
     input: typeof record.input === 'number' && Number.isFinite(record.input) ? record.input : 0,
-    output:
-      typeof record.output === 'number' && Number.isFinite(record.output) ? record.output : 0,
+    output: typeof record.output === 'number' && Number.isFinite(record.output) ? record.output : 0,
     total: record.total,
   }
 }

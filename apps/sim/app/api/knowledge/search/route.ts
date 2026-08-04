@@ -504,9 +504,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
         if (rerankResult.searchUnits > 0) {
           const pricing = getRerankModelPricing(rerankResult.model)
-          rerankerCost = pricing
-            ? pricing.perSearchUnit * rerankResult.searchUnits
-            : undefined
+          rerankerCost = pricing ? pricing.perSearchUnit * rerankResult.searchUnits : undefined
 
           if (shouldMeter && workspaceId) {
             await recordSearchRerankUsage({

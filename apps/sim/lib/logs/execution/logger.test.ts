@@ -551,9 +551,7 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
         from: () => chain,
         where: () => chain,
         limit: () =>
-          Promise.resolve(
-            isLineageSelect ? [] : [{ id: 'workflow-1', workspaceId: 'ws-1' }]
-          ),
+          Promise.resolve(isLineageSelect ? [] : [{ id: 'workflow-1', workspaceId: 'ws-1' }]),
         groupBy: () => Promise.resolve(billedRows),
       }
       return chain
@@ -615,7 +613,10 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
 
     const ledgerSum = vi
       .mocked(recordUsage)
-      .mock.calls[0][0].entries.reduce((sum: number, entry: { cost: number }) => sum + entry.cost, 0)
+      .mock.calls[0][0].entries.reduce(
+        (sum: number, entry: { cost: number }) => sum + entry.cost,
+        0
+      )
     expect(ledgerSum).toBeCloseTo(2.525, 8)
     expect(txUpdateSetMock).toHaveBeenCalledWith({ costTotal: ledgerSum.toString() })
   })

@@ -1615,7 +1615,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
             ...(line.category === 'external' && line.unit ? { unit: line.unit } : {}),
             ...(line.category === 'model' && line.metadata
               ? {
-                  quantity: (line.metadata as ModelUsageMetadata).inputTokens +
+                  quantity:
+                    (line.metadata as ModelUsageMetadata).inputTokens +
                     (line.metadata as ModelUsageMetadata).outputTokens,
                   unit: 'tokens',
                 }

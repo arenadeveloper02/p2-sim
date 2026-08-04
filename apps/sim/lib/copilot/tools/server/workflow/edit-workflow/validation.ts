@@ -62,7 +62,8 @@ export function parseAgentMessagesValue(value: unknown): AgentMessage[] {
       return [
         {
           role: record.role,
-          content: typeof record.content === 'string' ? record.content : String(record.content ?? ''),
+          content:
+            typeof record.content === 'string' ? record.content : String(record.content ?? ''),
         },
       ]
     })

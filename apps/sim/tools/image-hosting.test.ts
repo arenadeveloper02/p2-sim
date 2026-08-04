@@ -14,9 +14,9 @@ describe('OpenAI/Gemini image hosting', () => {
 
     expect(enabled({ provider: 'openai', model: 'gpt-image-1.5' })).toBe(true)
     expect(enabled({ provider: 'falai', model: 'nano-banana-2' })).toBe(true)
-    expect(enabled({ provider: 'openai', model: 'gpt-image-2', __skipHostedKeyHandling: true })).toBe(
-      false
-    )
+    expect(
+      enabled({ provider: 'openai', model: 'gpt-image-2', __skipHostedKeyHandling: true })
+    ).toBe(false)
   })
 
   it('bills OpenAI image generation from billing metadata', () => {

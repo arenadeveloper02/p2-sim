@@ -380,8 +380,7 @@ export const ChatInput: React.FC<{
           <div
             className={cn(
               'w-full',
-              useDeployedChrome &&
-                'rounded-[29px] border border-solid border-transparent p-0',
+              useDeployedChrome && 'rounded-[29px] border border-solid border-transparent p-0',
               useDeployedChrome && !hasDeployedExtras && DEPLOYED_CHAT_INPUT_HEIGHT_CLASS
             )}
             style={
