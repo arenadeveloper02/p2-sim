@@ -31,7 +31,17 @@ Read from `.agents/skills/<name>/SKILL.md` when the merge touches that area:
 
 ## Fork-first policy
 
-Preserve fork behavior in paths listed in `merge-policy.json`. Upstream wins on shared infra unless ledger overrides.
+Read `.upstream-sync/merge-policy.json`:
+
+| List | Meaning |
+|------|---------|
+| `forkFirst` | Auto `--ours` (no agent) |
+| `upstreamFirst` | Auto `--theirs` (no agent) |
+| `manualReview` | Hint list of known hard shared paths — **not** a closed set |
+| *(unlisted)* | **Agent-reviewed** — do not auto-pick a side |
+| `packageJson` | Union-merge manifests (upstream base + fork-only scripts/deps) |
+
+After resolving a conflict with a clear recurring rule, **extend `merge-policy.json`** (add a prefix to `forkFirst` / `upstreamFirst` / `manualReview`, or a `packageJson.dropScripts` entry) and `git add` it so the next sync is cheaper.
 
 ## Skipped upstream ledger
 

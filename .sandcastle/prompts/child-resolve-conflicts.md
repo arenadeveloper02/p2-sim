@@ -25,7 +25,8 @@ If adding a test for the fix: **`.claude/skills/tdd/SKILL.md`**
 
 - Resolve **only** the files listed above. Do not wander into other unmerged paths.
 - **Do not use the Task / Agent / background-agent tools.** Work sequentially in this session. The harness will spawn **child clusters** for leftovers — you must not fan out.
-- Prefer `git checkout --ours/--theirs` when merge-policy clearly picks a side; otherwise merge markers carefully.
+- Prefer `git checkout --ours/--theirs` **only** when the path is under `forkFirst` / `upstreamFirst` (or grill ledger explicitly picked a side). Paths not listed in merge-policy are **agent-reviewed** — merge markers carefully; never default to `--ours` just because the path is unlisted.
+- If this cluster establishes a recurring rule (always keep fork / always take upstream / always manual), **extend `.upstream-sync/merge-policy.json`** with the new prefix and `git add` it.
 - If the cluster is too large to finish cleanly, resolve what you can, `git add` those files, and exit with the completion signal. The harness dynamically re-clusters remaining files under this id.
 
 ## Deterministic rules (do these before asking humans)

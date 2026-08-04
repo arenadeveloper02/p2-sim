@@ -25,16 +25,17 @@ You clean up **leftover merge problems** so the harness can finish the merge com
 ## Deterministic rules
 
 - **Never hand-edit `bun.lock`.**
-- Resolve real merge conflicts (`UU` / conflict markers) with fork-first policy.
+- Resolve real merge conflicts (`UU` / conflict markers) per merge-policy: `forkFirst`/`upstreamFirst` are auto sides; **unlisted paths are agent-reviewed** (do not default `--ours`).
 - Fix broken hybrids left by earlier clusters (e.g. redeclared variables, use-before-declare, duplicated imports) so the tree is coherent.
 - Read grill answers — do not re-open settled product decisions.
 - Prefer `git checkout --ours/--theirs` only when the whole file clearly belongs to one side per policy; otherwise merge carefully.
 - For each upstream hunk you reject, append to `.upstream-sync/ledger/{{RUN_ID}}/skipped.md`.
+- If you learned a recurring path rule, **extend `.upstream-sync/merge-policy.json`** (`forkFirst` / `upstreamFirst` / `manualReview` / `packageJson.dropScripts`) and `git add` it.
 
 ## Done
 
 1. Resolve every remaining conflict / broken merge artifact listed above.
-2. `git add` the fixed files (and any intentional skipped.md updates).
+2. `git add` the fixed files (and any intentional skipped.md / merge-policy.json updates).
 3. **Do not `git commit`.** The harness commits with hooks disabled after you finish.
 
 Output:
