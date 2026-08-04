@@ -328,3 +328,34 @@ Nothing is being deliberately skipped wholesale. Behavior changes to document as
 Two, both on the Arena deployed-chat surface, written to
 `.upstream-sync/ledger/2026-08-04/open-questions.md` and posted on PR #679. Everything else above is
 resolved from `merge-policy.json`, the codebase, or upstream's own migration paths.
+
+## Usage
+
+### parent-grill-analysis
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 125
+- **Input tokens (cache read):** 9,785,879
+- **Input tokens (cache create):** 222,596
+- **Input tokens (total):** 10,008,600
+- **Output tokens:** 65,516
+- **Cost:** $7.926178 (provider-reported)
+
+### Totals
+- **Total input tokens:** 10,008,600
+- **Total output tokens:** 65,516
+- **Primary models:** claude-opus-5
+- **Total cost:** $7.926178
+- **Provider-reported cost:** $7.926178
+
+### Cost by agent
+- **parent-grill-analysis:** $7.926178 (provider-reported)
+
+## Status
+
+awaiting_input
+
+## Open questions
+
+Grill left unanswered product decisions in `open-questions.md`. Merge will not start until `/upstream-sync resume`.
+
