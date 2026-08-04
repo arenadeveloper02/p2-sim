@@ -1,0 +1,17 @@
+{
+  "runId": "2026-08-04",
+  "recordedAt": "2026-08-04T11:34:58.333Z",
+  "agents": [
+    {
+      "agentName": "parent-grill-analysis",
+      "model": "claude-opus-5",
+      "iterations": 1,
+      "inputTokens": 160,
+      "outputTokens": 74561,
+      "cacheReadInputTokens": 11063713,
+      "cacheCreationInputTokens": 194005,
+      "estimatedCostUsd": 8.612785749999999,
+      "costSource": "provider"
+    }
+  ]
+}
