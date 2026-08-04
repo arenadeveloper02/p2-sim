@@ -1,3 +1,6 @@
+import { mkdirSync, renameSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { AgentProvider } from '@ai-hero/sandcastle'
 import { claudeCode, codex } from '@ai-hero/sandcastle'
 
@@ -38,10 +41,43 @@ export const DEFAULT_OPENAI_PARENT_MODEL = 'gpt-5.6-luna'
 /** Codex effort including GPT-5.6 `max` (Sandcastle's CodexOptions type still stops at xhigh). */
 type CodexEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
+export interface EnsureCodexApiKeyAuthOptions {
+  /** Override `$CODEX_HOME` (defaults to env or `~/.codex`). */
+  codexHome?: string
+  /** Override `OPENAI_API_KEY` (defaults to env). */
+  apiKey?: string
+}
+
 function resolveMode(): UpstreamSyncAgentMode {
   const raw = (process.env.UPSTREAM_SYNC_AGENT ?? 'dual').trim().toLowerCase()
   if (raw === 'openai' || raw === 'anthropic' || raw === 'dual') return raw
   return 'dual'
+}
+
+/**
+ * Codex CLI 0.122+ ignores `OPENAI_API_KEY` in the environment and reads only
+ * `$CODEX_HOME/auth.json`. Without that file, `/v1/responses` returns 401
+ * "Missing bearer or basic authentication" even when the Actions secret is set.
+ *
+ * @returns Path to `auth.json` when written, otherwise `null`.
+ */
+export function ensureCodexApiKeyAuth(options: EnsureCodexApiKeyAuthOptions = {}): string | null {
+  const apiKey = (options.apiKey ?? process.env.OPENAI_API_KEY)?.trim()
+  if (!apiKey) return null
+
+  const mode = resolveMode()
+  if (mode === 'anthropic') return null
+
+  const codexHome =
+    options.codexHome?.trim() || process.env.CODEX_HOME?.trim() || join(homedir(), '.codex')
+  mkdirSync(codexHome, { recursive: true, mode: 0o700 })
+
+  const authPath = join(codexHome, 'auth.json')
+  const tmpPath = `${authPath}.tmp`
+  // Apikey-mode shape used by Codex 0.122+ (see paperclipai/paperclip#5276).
+  writeFileSync(tmpPath, `${JSON.stringify({ OPENAI_API_KEY: apiKey })}\n`, { mode: 0o600 })
+  renameSync(tmpPath, authPath)
+  return authPath
 }
 
 export function resolveParentModel(mode: UpstreamSyncAgentMode = resolveMode()): string {
@@ -109,6 +145,7 @@ export function assertAgentCredentials(): void {
         'OPENAI_API_KEY is required for agent runs. Add it under Settings → Secrets → Actions on the fork repo.'
       )
     }
+    ensureCodexApiKeyAuth()
     return
   }
 
@@ -130,6 +167,7 @@ export function assertAgentCredentials(): void {
       `Dual agent mode requires both Anthropic (Opus parent) and OpenAI (Luna children). Missing: ${missing.join(', ')}. Add under Settings → Secrets → Actions.`
     )
   }
+  ensureCodexApiKeyAuth()
 }
 
 export function resolveAgents(): AgentBundle {

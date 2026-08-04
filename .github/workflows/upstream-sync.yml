@@ -385,6 +385,36 @@ jobs:
         if: needs.gate.outputs.skip_agent != 'true' && (needs.gate.outputs.agent_provider == 'openai' || needs.gate.outputs.agent_provider == 'dual')
         run: bun add -g @openai/codex
 
+      # Codex CLI 0.122+ ignores OPENAI_API_KEY env and requires $CODEX_HOME/auth.json.
+      # Without this, child agents 401 on /v1/responses with "Missing bearer...".
+      - name: Materialize Codex auth.json
+        if: needs.gate.outputs.skip_agent != 'true' && (needs.gate.outputs.agent_provider == 'openai' || needs.gate.outputs.agent_provider == 'dual')
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "::error::OPENAI_API_KEY secret is empty"
+            exit 1
+          fi
+          export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+          mkdir -p "$CODEX_HOME"
+          chmod 700 "$CODEX_HOME"
+          # Write via Python so the key is not exposed on the process argv.
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          home = Path(os.environ['CODEX_HOME'])
+          auth = home / 'auth.json'
+          tmp = home / 'auth.json.tmp'
+          tmp.write_text(json.dumps({'OPENAI_API_KEY': os.environ['OPENAI_API_KEY']}) + '\n')
+          tmp.chmod(0o600)
+          tmp.replace(auth)
+          print(f'Wrote Codex apikey auth to {auth}')
+          PY
+
       - name: Diagnose GitHub token
         run: |
           echo "::group::Diagnose GitHub token"
