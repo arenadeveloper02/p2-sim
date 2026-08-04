@@ -11,6 +11,7 @@ import {
   lockfileHasConflictMarkers,
   mergeInProgress,
   needsPackageManagerBootstrap,
+  tryDeterministicConflictSide,
 } from './lockfile-bootstrap'
 
 describe('lockfile bootstrap helpers', () => {
@@ -34,6 +35,15 @@ describe('lockfile bootstrap helpers', () => {
     expect(conflictResolutionSide('apps/sim/lib/copilot/generated/tool-schemas-v1.ts')).toBe(
       'theirs'
     )
+  })
+
+  test('tryDeterministicConflictSide is null for ambiguous paths', () => {
+    expect(tryDeterministicConflictSide('apps/sim/app/chat/hooks/use-chat-streaming.ts')).toBe(
+      'ours'
+    )
+    expect(tryDeterministicConflictSide('apps/sim/lib/copilot/generated/x.ts')).toBe('theirs')
+    expect(tryDeterministicConflictSide('apps/sim/lib/billing/usage.ts')).toBe(null)
+    expect(tryDeterministicConflictSide('packages/db/schema.ts')).toBe(null)
   })
 
   test('detects conflict markers in lockfile content', () => {

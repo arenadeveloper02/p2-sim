@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import type { ConflictCluster } from './clusters'
+import { countClusterFiles, leafConflictClusters } from './clusters'
 
 export const UPSTREAM_SYNC_ROOT = '.upstream-sync'
 export const LEDGER_DIR = join(UPSTREAM_SYNC_ROOT, 'ledger')
@@ -130,11 +132,21 @@ export interface UpstreamCommit {
   prNumber: number | null
 }
 
-export interface ConflictCluster {
-  id: string
-  prefix: string
-  files: string[]
-}
+export type {
+  ClusterOptions,
+  ConflictCluster,
+  ResolvedClusterOptions,
+} from './clusters'
+export {
+  countClusterFiles,
+  groupConflictClusters,
+  leafConflictClusters,
+  pathPrefix,
+  resolveClusterOptions,
+  serializeClusterForest,
+  splitLeftoverCluster,
+  walkConflictClusters,
+} from './clusters'
 
 export interface GrillQaEntry {
   id: string
@@ -884,31 +896,6 @@ export function commitsSince(baseSha: string | null, headSha: string): UpstreamC
   })
 }
 
-export function groupConflictClusters(conflictFiles: string[]): ConflictCluster[] {
-  const buckets = new Map<string, string[]>()
-
-  for (const file of conflictFiles) {
-    const parts = file.split('/')
-    const prefix =
-      parts.length >= 3
-        ? `${parts[0]}/${parts[1]}/${parts[2]}/`
-        : parts.length >= 2
-          ? `${parts[0]}/${parts[1]}/`
-          : `${parts[0]}/`
-    const existing = buckets.get(prefix) ?? []
-    existing.push(file)
-    buckets.set(prefix, existing)
-  }
-
-  return [...buckets.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([prefix, files], index) => ({
-      id: `cluster-${index + 1}`,
-      prefix,
-      files: files.sort(),
-    }))
-}
-
 export function listConflictFiles(): string[] {
   try {
     const out = runGit(['diff', '--name-only', '--diff-filter=U'])
@@ -1185,7 +1172,21 @@ export function appendExtensibilityNote(runId: string, note: string): void {
 
 export function writeClusterManifest(runId: string, clusters: ConflictCluster[]): void {
   const dir = ensureLedgerRunDir(runId)
-  writeFileSync(join(dir, 'conflict-clusters.json'), `${JSON.stringify(clusters, null, 2)}\n`)
+  const leaves = leafConflictClusters(clusters)
+  writeFileSync(
+    join(dir, 'conflict-clusters.json'),
+    `${JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        rootCount: clusters.length,
+        leafCount: leaves.length,
+        fileCount: countClusterFiles(clusters),
+        forest: clusters,
+      },
+      null,
+      2
+    )}\n`
+  )
 }
 
 export function fetchReleaseNotesForVersion(version: string): string {

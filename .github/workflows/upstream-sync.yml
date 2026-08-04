@@ -9,7 +9,9 @@ name: Upstream Sync
 # `gh workflow run upstream-sync.yml --ref <branch>` works off default branch).
 #
 # Repo Variables (Settings → Variables → Actions): UPSTREAM_REMOTE, UPSTREAM_REPO,
-# UPSTREAM_BRANCH, UPSTREAM_SYNC_TARGET_BRANCH, UPSTREAM_SYNC_PR_REVIEWERS.
+# UPSTREAM_BRANCH, UPSTREAM_SYNC_TARGET_BRANCH, UPSTREAM_SYNC_PR_REVIEWERS,
+# UPSTREAM_SYNC_CLUSTER_MIN_SEGMENTS (default 4), UPSTREAM_SYNC_CLUSTER_MAX_FILES (12),
+# UPSTREAM_SYNC_CLUSTER_MAX_DEPTH (5), UPSTREAM_SYNC_CLUSTER_MAX_DYNAMIC_ROUNDS (2).
 # Secrets (Settings → Secrets → Actions): GH_PAT or UPSTREAM_SYNC_GH_TOKEN (classic
 # ghp_* with `repo` + `workflow` scopes — required to push `.github/workflows/*`);
 # ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN) / OPENAI_API_KEY when agents run.
@@ -46,12 +48,13 @@ on:
         type: boolean
         default: false
       agent_provider:
-        description: Agent provider (anthropic or openai)
+        description: Agent mode — dual (Opus parent + Luna children), anthropic, or openai
         type: choice
         options:
+          - dual
           - anthropic
           - openai
-        default: anthropic
+        default: dual
       max_commits:
         description: Cap upstream commits merged (0 = all; use 1 for smoke test)
         type: string
@@ -105,7 +108,7 @@ jobs:
           resume=false
           force=false
           skip_agent=true
-          agent_provider=anthropic
+          agent_provider=dual
           max_commits=0
           until_sha=
 
@@ -113,7 +116,7 @@ jobs:
             force="${{ github.event.inputs.force == 'true' && 'true' || 'false' }}"
             resume="${{ github.event.inputs.resume == 'true' && 'true' || 'false' }}"
             skip_agent="${{ github.event.inputs.skip_agent == 'true' && 'true' || 'false' }}"
-            agent_provider="${{ github.event.inputs.agent_provider || 'anthropic' }}"
+            agent_provider="${{ github.event.inputs.agent_provider || 'dual' }}"
             max_commits="${{ github.event.inputs.max_commits || '0' }}"
             until_sha="${{ github.event.inputs.until_sha || '' }}"
           fi
@@ -297,6 +300,19 @@ jobs:
               echo "Missing OPENAI_API_KEY. Add it under Settings → Secrets → Actions."
               exit 1
             fi
+          elif [ "$AGENT_PROVIDER" = "dual" ]; then
+            missing=""
+            if [ "$HAS_ANTHROPIC_API_KEY" != "true" ] && [ "$HAS_CLAUDE_CODE_OAUTH_TOKEN" != "true" ]; then
+              missing="${missing}ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN) "
+            fi
+            if [ "$HAS_OPENAI_API_KEY" != "true" ]; then
+              missing="${missing}OPENAI_API_KEY "
+            fi
+            if [ -n "$missing" ]; then
+              echo "Dual mode needs both Anthropic (Opus parent) and OpenAI (Luna children). Missing: $missing"
+              echo "Add under Settings → Secrets → Actions."
+              exit 1
+            fi
           elif [ "$HAS_ANTHROPIC_API_KEY" != "true" ] && [ "$HAS_CLAUDE_CODE_OAUTH_TOKEN" != "true" ]; then
             echo "Missing ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN. Add one under Settings → Secrets → Actions."
             exit 1
@@ -362,11 +378,11 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Install Claude Code CLI
-        if: needs.gate.outputs.skip_agent != 'true' && needs.gate.outputs.agent_provider == 'anthropic'
+        if: needs.gate.outputs.skip_agent != 'true' && (needs.gate.outputs.agent_provider == 'anthropic' || needs.gate.outputs.agent_provider == 'dual')
         run: bun add -g @anthropic-ai/claude-code
 
       - name: Install Codex CLI
-        if: needs.gate.outputs.skip_agent != 'true' && needs.gate.outputs.agent_provider == 'openai'
+        if: needs.gate.outputs.skip_agent != 'true' && (needs.gate.outputs.agent_provider == 'openai' || needs.gate.outputs.agent_provider == 'dual')
         run: bun add -g @openai/codex
 
       - name: Diagnose GitHub token
@@ -392,6 +408,12 @@ jobs:
           UPSTREAM_SYNC_SKIP_AGENT: ${{ needs.gate.outputs.skip_agent }}
           UPSTREAM_SYNC_MAX_COMMITS: ${{ needs.gate.outputs.max_commits }}
           UPSTREAM_SYNC_UNTIL_SHA: ${{ needs.gate.outputs.until_sha }}
+          # Hierarchical clusters: deeper prefixes + max files/leaf + dynamic leftover re-split.
+          # Override via repo Variables if needed.
+          UPSTREAM_SYNC_CLUSTER_MIN_SEGMENTS: ${{ vars.UPSTREAM_SYNC_CLUSTER_MIN_SEGMENTS || '4' }}
+          UPSTREAM_SYNC_CLUSTER_MAX_FILES: ${{ vars.UPSTREAM_SYNC_CLUSTER_MAX_FILES || '12' }}
+          UPSTREAM_SYNC_CLUSTER_MAX_DEPTH: ${{ vars.UPSTREAM_SYNC_CLUSTER_MAX_DEPTH || '5' }}
+          UPSTREAM_SYNC_CLUSTER_MAX_DYNAMIC_ROUNDS: ${{ vars.UPSTREAM_SYNC_CLUSTER_MAX_DYNAMIC_ROUNDS || '2' }}
           RESUME_PR_NUMBER: ${{ steps.resume_pr.outputs.pr_number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_HEAD_REF: ${{ github.head_ref || github.ref_name }}
@@ -407,8 +429,10 @@ jobs:
 
       # Always publish a detailed Summary tab (status, sync context, conflicts,
       # verification, agent usage) — including cancelled / failed runs.
+      # Always publish the job Summary tab (status + full run cost) — even when
+      # skip_agent / cancel / mid-merge — so dual Opus+Luna totals are never lost.
       - name: Publish run summary
-        if: always() && needs.gate.outputs.skip_agent != 'true'
+        if: always()
         env:
           UPSTREAM_SYNC_JOB_STATUS: ${{ job.status }}
           GITHUB_SERVER_URL: ${{ github.server_url }}

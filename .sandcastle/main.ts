@@ -6,8 +6,8 @@
  * 2. Early draft PR + parent grill agent (ledger analysis only)
  * 3. Gate on unanswered grill questions (await `/upstream-sync resume`)
  * 4. Git merge upstream/main
- * 5. Deterministic package-manager bootstrap
- * 6. Child agents per conflict cluster (+ finalize child for leftovers)
+ * 5. Deterministic package-manager bootstrap + policy path pre-resolve
+ * 6. Hierarchical child agents per conflict cluster (nested + dynamic leftovers)
  * 7. Verification (check, lint, test, build) — advisory; merge commits skip husky
  * 8. Update draft PR body + final ledger commit
  */
@@ -52,6 +52,7 @@ import {
   isPrOpen,
   isSyncBranch,
   applyMergeWip,
+  leafConflictClusters,
   listConflictFiles,
   logHarnessQuestion,
   MERGE_POLICY_PATH,
@@ -66,12 +67,14 @@ import {
   resolvePrHeadBranch,
   runGh,
   runGit,
+  splitLeftoverCluster,
   substitutePrompt,
   syncGrillQaFromPr,
   throwIfRemotePushAuthError,
   todayRunId,
   updateDraftPr,
   withExtendedBanner,
+  walkConflictClusters,
   writeClusterManifest,
   writeFbiReport,
   writeReleaseNotesReport,
@@ -79,6 +82,7 @@ import {
   writeSkippedReport,
   writeState,
 } from './lib/config'
+import type { ConflictCluster } from './lib/clusters'
 import {
   clearOpenQuestionsFile,
   hasUnansweredGrillQuestions,
@@ -88,7 +92,10 @@ import {
   resolveResumeSyncBranch,
   shouldSkipParentGrill,
 } from './lib/grill-state'
-import { ensureInstallableWorkspace } from './lib/lockfile-bootstrap'
+import {
+  ensureInstallableWorkspace,
+  resolveDeterministicPolicyConflicts,
+} from './lib/lockfile-bootstrap'
 import {
   verificationToOutcome,
   writeRunOutcome,
@@ -159,11 +166,125 @@ async function runFinalizeMergeAgent(options: {
     runId: options.runId,
     agent: options.agents.child,
     agentKind: 'child',
-    provider: options.agents.provider,
+    agents: options.agents,
     maxIterations: 5,
   })
 
   return listConflictFiles()
+}
+
+function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (raw === undefined || raw === '') return fallback
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0) return fallback
+  return Math.floor(n)
+}
+
+/**
+ * Run a conflict-cluster forest: structural parents recurse into children;
+ * leaves invoke a child agent; leftovers are dynamically re-clustered.
+ */
+async function runConflictClusterForest(options: {
+  roots: ConflictCluster[]
+  runId: string
+  syncBranch: string
+  activePrNumber: number
+  agents: ReturnType<typeof resolveAgents>
+  conflictSnapshot: string[]
+}): Promise<void> {
+  const maxDynamicRounds = readPositiveIntEnv('UPSTREAM_SYNC_CLUSTER_MAX_DYNAMIC_ROUNDS', 2)
+
+  async function runNode(cluster: ConflictCluster, dynamicRound: number): Promise<void> {
+    if (cluster.children.length > 0) {
+      console.log(
+        `[cluster] ${cluster.id} structural (${cluster.children.length} children, prefix=${cluster.prefix})`
+      )
+      for (const child of cluster.children) {
+        await runNode(child, dynamicRound)
+      }
+      return
+    }
+
+    if (cluster.files.length === 0) {
+      console.log(`[cluster] ${cluster.id} empty leaf — skipping`)
+      return
+    }
+
+    // Skip files already resolved by a sibling / policy pass.
+    const stillUnmerged = new Set(listConflictFiles())
+    const assigned = cluster.files.filter((f) => stillUnmerged.has(f))
+    if (assigned.length === 0) {
+      console.log(`[cluster] ${cluster.id} already resolved — skipping`)
+      return
+    }
+
+    console.log(
+      `[cluster] ${cluster.id} leaf depth=${cluster.depth} files=${assigned.length} prefix=${cluster.prefix}`
+    )
+
+    const childPrompt = substitutePrompt(readPrompt('child-resolve-conflicts.md'), {
+      RUN_ID: options.runId,
+      SYNC_BRANCH: options.syncBranch,
+      CLUSTER_ID: cluster.id,
+      CLUSTER_PARENT_ID: cluster.parentId ?? '(root)',
+      CLUSTER_DEPTH: String(cluster.depth),
+      CLUSTER_PREFIX: cluster.prefix,
+      CLUSTER_FILE_COUNT: String(assigned.length),
+      CLUSTER_FILES: assigned.map((f) => `- ${f}`).join('\n'),
+      PR_NUMBER: options.activePrNumber > 0 ? String(options.activePrNumber) : 'none',
+    })
+
+    await runAgentPrompt({
+      prompt: childPrompt,
+      name: `child-${cluster.id}`,
+      branch: options.syncBranch,
+      runId: options.runId,
+      agent: options.agents.child,
+      agentKind: 'child',
+      agents: options.agents,
+      maxIterations: 5,
+    })
+
+    persistMergeWip({
+      syncBranch: options.syncBranch,
+      runId: options.runId,
+      clusterId: cluster.id,
+      conflictSnapshot: options.conflictSnapshot,
+    })
+
+    if (dynamicRound >= maxDynamicRounds) return
+
+    const after = new Set(listConflictFiles())
+    const leftovers = assigned.filter((f) => after.has(f))
+    if (leftovers.length === 0) return
+    if (leftovers.length === assigned.length) {
+      console.warn(
+        `[cluster] ${cluster.id} made no progress on ${leftovers.length} file(s) — skipping dynamic re-split`
+      )
+      return
+    }
+
+    const nextRound = dynamicRound + 1
+    const childRoots = splitLeftoverCluster(cluster, leftovers, { round: nextRound })
+    if (childRoots.length === 0) {
+      console.log(
+        `[cluster] ${cluster.id} ${leftovers.length} leftover(s) — cannot usefully re-split`
+      )
+      return
+    }
+
+    console.log(
+      `[cluster] ${cluster.id} dynamic round ${nextRound}: ${leftovers.length} leftover(s) → ${leafConflictClusters(childRoots).length} child leaf(ves)`
+    )
+    for (const child of childRoots) {
+      await runNode(child, nextRound)
+    }
+  }
+
+  for (const root of options.roots) {
+    await runNode(root, 0)
+  }
 }
 
 function readPrompt(name: string): string {
@@ -187,14 +308,9 @@ function checkoutSyncBranch(syncBranch: string, reuseExisting: boolean): void {
 
 function resolveAgentModel(
   agentKind: 'parent' | 'child',
-  provider: ReturnType<typeof resolveAgents>['provider']
+  agents: ReturnType<typeof resolveAgents>
 ): string {
-  if (provider === 'openai') {
-    return process.env.UPSTREAM_SYNC_OPENAI_MODEL ?? 'gpt-5.5'
-  }
-  return agentKind === 'parent'
-    ? (process.env.UPSTREAM_SYNC_ANTHROPIC_PARENT_MODEL ?? 'claude-opus-4-8')
-    : (process.env.UPSTREAM_SYNC_ANTHROPIC_CHILD_MODEL ?? 'claude-sonnet-4-6')
+  return agentKind === 'parent' ? agents.parentModel : agents.childModel
 }
 
 const SKIP_SANDCASTLE_INSTALL_HOOKS = {
@@ -209,7 +325,7 @@ async function runAgentPrompt(options: {
   runId: string
   agent: ReturnType<typeof resolveAgents>['parent']
   agentKind: 'parent' | 'child'
-  provider: ReturnType<typeof resolveAgents>['provider']
+  agents: ReturnType<typeof resolveAgents>
   maxIterations?: number
   completionSignal?: string
 }): Promise<RunResult | null> {
@@ -232,6 +348,7 @@ async function runAgentPrompt(options: {
   const logPath = join(logDir, `${safeName}.log`)
   const rawNdjsonLines: string[] = []
   let result: RunResult | null = null
+  const model = resolveAgentModel(options.agentKind, options.agents)
 
   try {
     result = await run({
@@ -269,12 +386,7 @@ async function runAgentPrompt(options: {
         // best-effort
       }
     }
-    recordAgentUsage(
-      options.name,
-      resolveAgentModel(options.agentKind, options.provider),
-      result,
-      streamNdjson
-    )
+    recordAgentUsage(options.name, model, result, streamNdjson)
   }
 }
 
@@ -919,7 +1031,14 @@ async function main(): Promise<void> {
         RELEASE_NOTES_SUMMARY: releaseNotesMarkdown.slice(0, 4000),
         PR_NUMBER: activePrNumber > 0 ? String(activePrNumber) : 'none',
         RESUME_MODE: RESUME ? 'yes' : 'no',
+        AGENT_MODE: agents.provider,
+        PARENT_MODEL: agents.parentModel,
+        CHILD_MODEL: agents.childModel,
       })
+
+      console.log(
+        `[agents] mode=${agents.provider} parent=${agents.parentModel} child=${agents.childModel}`
+      )
 
       await runAgentPrompt({
         prompt: parentPrompt,
@@ -928,7 +1047,7 @@ async function main(): Promise<void> {
         runId,
         agent: agents.parent,
         agentKind: 'parent',
-        provider: agents.provider,
+        agents,
         maxIterations: 1,
         completionSignal: GRILL_COMPLETION_SIGNAL,
       })
@@ -1075,38 +1194,37 @@ async function main(): Promise<void> {
     endGroup()
     endGroup = startLogGroup('child clusters')
 
-    const conflicts = listConflictFiles()
-    const clusters = groupConflictClusters(conflicts)
-    writeClusterManifest(runId, clusters)
-
-    for (const cluster of clusters) {
-      const childPrompt = substitutePrompt(readPrompt('child-resolve-conflicts.md'), {
-        RUN_ID: runId,
-        SYNC_BRANCH: syncBranch,
-        CLUSTER_ID: cluster.id,
-        CLUSTER_PREFIX: cluster.prefix,
-        CLUSTER_FILES: cluster.files.map((f) => `- ${f}`).join('\n'),
-        PR_NUMBER: activePrNumber > 0 ? String(activePrNumber) : 'none',
-      })
-
-      await runAgentPrompt({
-        prompt: childPrompt,
-        name: `child-${cluster.id}`,
-        branch: syncBranch,
-        runId,
-        agent: agents.child,
-        agentKind: 'child',
-        provider: agents.provider,
-        maxIterations: 5,
-      })
-
+    const conflictsBeforePolicy = listConflictFiles()
+    const policy = resolveDeterministicPolicyConflicts(conflictsBeforePolicy)
+    if (policy.resolved.length > 0) {
+      console.log(
+        `[policy-resolve] Deterministically resolved ${policy.resolved.length} path(s); ${policy.remaining.length} remain for agents.`
+      )
       persistMergeWip({
         syncBranch,
         runId,
-        clusterId: cluster.id,
+        clusterId: 'policy-deterministic',
         conflictSnapshot,
       })
     }
+
+    const conflicts = listConflictFiles()
+    const clusters = groupConflictClusters(conflicts)
+    writeClusterManifest(runId, clusters)
+    const leaves = leafConflictClusters(clusters)
+    const allNodes = walkConflictClusters(clusters)
+    console.log(
+      `[cluster] forest: ${clusters.length} root(s), ${allNodes.length} node(s), ${leaves.length} leaf(ves), ${conflicts.length} file(s)`
+    )
+
+    await runConflictClusterForest({
+      roots: clusters,
+      runId,
+      syncBranch,
+      activePrNumber,
+      agents,
+      conflictSnapshot,
+    })
 
     const remainingAfterClusters = listConflictFiles()
     let remaining = remainingAfterClusters

@@ -14,6 +14,7 @@ import {
   loadUsageRecordsFromJson,
   parseCostFromStdout,
   parseUsageFromClaudeStream,
+  parseUsageFromCodexStream,
   persistUsageArtifacts,
   publishUsageJobSummary,
   recordAgentUsage,
@@ -48,6 +49,7 @@ describe('usage reporting', () => {
     expect(markdown).toContain('Total input tokens:** 1,300')
     expect(markdown).toContain('Total output tokens:** 50')
     expect(markdown).toContain('Provider-reported cost:** $1.500000')
+    expect(markdown).toContain('Total cost:** $1.500000')
     expect(markdown).toContain('Cost:** $1.500000 (provider-reported)')
   })
 
@@ -67,8 +69,97 @@ describe('usage reporting', () => {
     ])
 
     expect(markdown).toContain('Estimated cost (fallback):** $4.500000')
+    expect(markdown).toContain('Total cost:** $4.500000')
     expect(markdown).toContain('Cost:** $4.500000 (estimated fallback)')
     expect(markdown).not.toContain('Total cost:** unavailable')
+  })
+
+  test('formatUsageMarkdown dual run totals provider Opus + estimated Luna', () => {
+    const markdown = formatUsageMarkdown([
+      {
+        agentName: 'parent-grill-analysis',
+        model: 'claude-opus-5',
+        iterations: 1,
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        estimatedCostUsd: 1.25,
+        costSource: 'provider',
+      },
+      {
+        agentName: 'child-cluster-0',
+        model: 'gpt-5.6-luna',
+        iterations: 1,
+        inputTokens: 1_000_000,
+        outputTokens: 100_000,
+        cacheReadInputTokens: 500_000,
+        cacheCreationInputTokens: 0,
+        estimatedCostUsd: 0.33,
+        costSource: 'estimated',
+      },
+    ])
+
+    expect(markdown).toContain('Total cost:** $1.580000')
+    expect(markdown).toContain('Provider-reported cost:** $1.250000')
+    expect(markdown).toContain('Estimated cost (fallback):** $0.330000')
+  })
+
+  test('parseUsageFromCodexStream reads turn.completed and estimates Luna cost', () => {
+    const ndjson = [
+      '{"type":"thread.started","thread_id":"t1"}',
+      '{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":200,"output_tokens":100}}',
+      '{"type":"turn.completed","usage":{"input_tokens":5000,"cached_input_tokens":1000,"output_tokens":400}}',
+    ].join('\n')
+
+    const parsed = parseUsageFromCodexStream(ndjson)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.costUsd).toBeNull()
+    // Largest cumulative footprint wins; billable input = 5000-1000
+    expect(parsed?.tokens.inputTokens).toBe(4000)
+    expect(parsed?.tokens.cacheReadInputTokens).toBe(1000)
+    expect(parsed?.tokens.outputTokens).toBe(400)
+
+    resetUsageRecords()
+    const record = recordAgentUsage('child-cluster-3', 'gpt-5.6-luna', null, ndjson)
+    expect(record?.costSource).toBe('estimated')
+    // Per-million: (4000*0.2 + 400*1.2 + 1000*0.02) / 1e6 = 0.0013
+    expect(record?.estimatedCostUsd).toBe(0.0013)
+  })
+
+  test('recordAgentUsage estimates Luna cost for million-token Codex children', () => {
+    const ndjson =
+      '{"type":"turn.completed","usage":{"input_tokens":1500000,"cached_input_tokens":500000,"output_tokens":200000}}'
+    const record = recordAgentUsage('child-cluster-big', 'gpt-5.6-luna', null, ndjson)
+    // billable input 1M @ $0.20 + cache 0.5M @ $0.02 + output 0.2M @ $1.20 = 0.2+0.01+0.24 = 0.45
+    expect(record?.inputTokens).toBe(1_000_000)
+    expect(record?.cacheReadInputTokens).toBe(500_000)
+    expect(record?.estimatedCostUsd).toBe(0.45)
+    expect(record?.costSource).toBe('estimated')
+  })
+
+  test('dual recover totals Opus provider cost + Luna estimated from mixed logs', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'usage-dual-'))
+    try {
+      writeFileSync(
+        join(tempDir, 'parent-grill-analysis.log'),
+        '{"type":"result","session_id":"p","total_cost_usd":2.5,"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}\n'
+      )
+      writeFileSync(
+        join(tempDir, 'child-cluster-0.log'),
+        '{"type":"turn.completed","usage":{"input_tokens":1000000,"cached_input_tokens":0,"output_tokens":100000}}\n'
+      )
+      process.env.UPSTREAM_SYNC_AGENT = 'dual'
+      const recovered = recoverUsageFromLogDir(tempDir)
+      expect(recovered).toHaveLength(2)
+      const summary = formatUsageStepSummary(getUsageRecords())
+      expect(summary).toContain('**Total cost:** $2.8200')
+      expect(summary).toContain('provider $2.5000')
+      expect(summary).toContain('estimated $0.3200')
+    } finally {
+      delete process.env.UPSTREAM_SYNC_AGENT
+      rmSync(tempDir, { recursive: true, force: true })
+    }
   })
 
   test('formatUsageMarkdown shows unavailable when tokens and cost are missing', () => {
@@ -215,14 +306,13 @@ describe('usage reporting', () => {
     expect(record?.costSource).toBe('estimated')
   })
 
-  test('recordAgentUsage marks cost unavailable when tokens are zero and stdout has no cost', () => {
+  test('recordAgentUsage returns null when tokens are zero and stdout has no cost', () => {
     const record = recordAgentUsage('empty-agent', 'claude-opus-4-8', {
       stdout: '',
       iterations: [{ usage: { inputTokens: 0, outputTokens: 0 } }],
     } as never)
 
-    expect(record?.estimatedCostUsd).toBeNull()
-    expect(record?.costSource).toBe('unavailable')
+    expect(record).toBeNull()
   })
 
   test('recordAgentUsage recovers from stream NDJSON when result is null (cancel/error)', () => {
@@ -287,9 +377,19 @@ describe('usage reporting', () => {
     }
   })
 
-  test('inferModelForAgentName picks parent vs child defaults', () => {
+  test('inferModelForAgentName picks dual defaults (Opus parent, Luna children)', () => {
+    delete process.env.UPSTREAM_SYNC_AGENT
     expect(inferModelForAgentName('parent-grill-analysis')).toContain('opus')
-    expect(inferModelForAgentName('child-cluster-3')).toContain('sonnet')
+    expect(inferModelForAgentName('child-cluster-3')).toContain('luna')
+  })
+
+  test('inferModelForAgentName uses sonnet children in anthropic mode', () => {
+    process.env.UPSTREAM_SYNC_AGENT = 'anthropic'
+    try {
+      expect(inferModelForAgentName('child-cluster-3')).toContain('sonnet')
+    } finally {
+      delete process.env.UPSTREAM_SYNC_AGENT
+    }
   })
 
   test('publishUsageJobSummary writes the agent usage table to GITHUB_STEP_SUMMARY', () => {
@@ -343,6 +443,8 @@ describe('usage reporting', () => {
   test('estimateCostFromTokens uses Opus/Sonnet/GPT price table', () => {
     expect(resolveModelPricing('claude-opus-4-8').inputPerMTok).toBe(5)
     expect(resolveModelPricing('claude-sonnet-4-6').inputPerMTok).toBe(3)
+    expect(resolveModelPricing('gpt-5.6-luna').inputPerMTok).toBe(0.2)
+    expect(resolveModelPricing('gpt-5.6-luna').outputPerMTok).toBe(1.2)
     expect(resolveModelPricing('gpt-5.5').outputPerMTok).toBe(30)
 
     expect(
