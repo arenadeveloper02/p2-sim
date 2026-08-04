@@ -158,9 +158,12 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
-          # Always checkout with GITHUB_TOKEN so an expired PAT secret cannot break clone.
-          # Fail-fast then swaps git HTTP auth to a validated PAT for pushes.
+          # Clone with GITHUB_TOKEN so an expired PAT secret cannot break checkout.
+          # persist-credentials:false — checkout@v6 otherwise keeps GITHUB_TOKEN auth in
+          # $RUNNER_TEMP/git-credentials-*.config via includeIf; Fail-fast adding a second
+          # Authorization header then fails git fetch/push with HTTP 400 "Duplicate header".
           token: ${{ github.token }}
+          persist-credentials: false
 
       - name: Fail fast credentials
         env:
@@ -173,6 +176,8 @@ jobs:
           HAS_CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
         run: |
+          set -euo pipefail
+
           token_repo_ok() {
             local token="$1"
             [ -n "$token" ] || return 1
@@ -215,8 +220,21 @@ jobs:
             echo "UPSTREAM_SYNC_GH_TOKEN=$selected_token" >> "$GITHUB_ENV"
           fi
 
-          # Replace checkout's GITHUB_TOKEN auth so git push uses the PAT.
-          git config --unset-all http.https://github.com/.extraheader || true
+          # Drop any leftover checkout auth (local extraheader + v6 includeIf credential files)
+          # so only the PAT Authorization header is sent.
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          while IFS= read -r key; do
+            [ -n "$key" ] || continue
+            git config --local --unset-all "$key" || true
+          done < <(git config --local --name-only --get-regexp '^includeif\.gitdir:.*\.path$' || true)
+          rm -f "${RUNNER_TEMP}"/git-credentials-*.config || true
+
+          # Ensure origin has no embedded credentials (URL userinfo + extraheader = duplicate auth).
+          origin_url="$(git remote get-url origin)"
+          origin_url="${origin_url#https://}"
+          origin_url="${origin_url#*@}"
+          git remote set-url origin "https://${origin_url}"
+
           basic_auth="$(printf 'x-access-token:%s' "$selected_token" | base64 | tr -d '\n')"
           git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ${basic_auth}"
 
@@ -244,6 +262,7 @@ jobs:
           COMMENT_PR_NUMBER: ${{ github.event.issue.number }}
           DISPATCH_PR_NUMBER: ${{ github.event.inputs.resume_pr }}
         run: |
+          set -euo pipefail
           pr_number="${COMMENT_PR_NUMBER:-$DISPATCH_PR_NUMBER}"
           if [ -z "$pr_number" ]; then
             echo "resume=true requires resume_pr when using workflow_dispatch"
@@ -251,8 +270,13 @@ jobs:
           fi
           # REST — `gh pr view` uses GraphQL and often fails with Actions GITHUB_TOKEN.
           branch=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq .head.ref)
+          if [ -z "$branch" ] || [ "$branch" = "null" ]; then
+            echo "::error::Could not resolve head.ref for PR #${pr_number}"
+            exit 1
+          fi
+          echo "Resuming PR #${pr_number} on branch ${branch}"
           git fetch origin "$branch"
-          git checkout "$branch"
+          git checkout -B "$branch" "origin/$branch"
           echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
 
       - name: Restore harness (resume)
