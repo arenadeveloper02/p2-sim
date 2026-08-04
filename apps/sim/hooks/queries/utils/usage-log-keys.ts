@@ -8,31 +8,23 @@
  * resolve to client-reference stubs on the server.
  */
 
-import type { UsageLogPeriod, UsageLogSource, UsageLogSourceGroup } from '@/lib/api/contracts/user'
+import type { UsageLogPeriod, UsageLogSource } from '@/lib/api/contracts/user'
 
 export interface UsageLogDateRange {
   startDate?: string
   endDate?: string
 }
 
-export interface UsageLogListFilters extends UsageLogDateRange {
-  source?: UsageLogSource
-  sourceGroup?: UsageLogSourceGroup
-  workspaceId?: string
-}
-
 export const usageLogKeys = {
   all: ['usage-logs'] as const,
   lists: () => [...usageLogKeys.all, 'list'] as const,
-  list: (period: UsageLogPeriod, filters: UsageLogListFilters = {}) =>
+  list: (period: UsageLogPeriod, source?: UsageLogSource, dateRange?: UsageLogDateRange) =>
     [
       ...usageLogKeys.lists(),
       period,
-      filters.source ?? '',
-      filters.sourceGroup ?? '',
-      filters.workspaceId ?? '',
-      filters.startDate ?? '',
-      filters.endDate ?? '',
+      source ?? '',
+      dateRange?.startDate ?? '',
+      dateRange?.endDate ?? '',
     ] as const,
   summaries: () => [...usageLogKeys.all, 'summary'] as const,
   summary: (period: UsageLogPeriod) => [...usageLogKeys.summaries(), period] as const,

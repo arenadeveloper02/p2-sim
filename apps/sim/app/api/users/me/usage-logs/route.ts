@@ -3,10 +3,14 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getUsageLogsContract } from '@/lib/api/contracts/user'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { getUsageCreditsByLogId, getUserUsageLogs } from '@/lib/billing/core/usage-log'
+import {
+  getUsageCreditsByLogId,
+  getUserUsageLogs,
+  type UsageLogSource,
+} from '@/lib/billing/core/usage-log'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { resolveDateRange, resolveUsageLogSources } from '@/app/api/users/me/usage-logs/shared'
+import { resolveDateRange } from '@/app/api/users/me/usage-logs/shared'
 import { resolveUsageLogSourceLabel } from '@/app/api/users/me/usage-logs/source-labels'
 
 const logger = createLogger('UsageLogsAPI')
@@ -23,23 +27,13 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
   const parsed = await parseRequest(getUsageLogsContract, request, {})
   if (!parsed.success) return parsed.response
-  const {
-    source,
-    sourceGroup,
-    workspaceId,
-    period,
-    startDate,
-    endDate,
-    limit,
-    cursor,
-    includeCredits,
-  } = parsed.data.query
+  const { source, workspaceId, period, startDate, endDate, limit, cursor, includeCredits } =
+    parsed.data.query
 
   const dateRange = resolveDateRange(period, startDate, endDate)
-  const sources = resolveUsageLogSources({ source, sourceGroup })
 
   const filter = {
-    sources,
+    source: source as UsageLogSource | undefined,
     workspaceId,
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
@@ -72,7 +66,6 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   logger.debug('Retrieved usage logs', {
     userId: auth.userId,
     source,
-    sourceGroup,
     period,
     logCount: logs.length,
     hasMore: result.pagination.hasMore,

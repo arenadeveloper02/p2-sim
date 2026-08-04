@@ -1006,8 +1006,6 @@ export async function recordCumulativeUsage(
 
 interface UsageLogFilter {
   source?: UsageLogSource
-  /** When set, filters to any of these sources (takes precedence over `source`). */
-  sources?: UsageLogSource[]
   workspaceId?: string
   startDate?: Date
   endDate?: Date
@@ -1015,11 +1013,7 @@ interface UsageLogFilter {
 
 function buildUsageLogConditions(userId: string, filter: UsageLogFilter) {
   const conditions = [eq(usageLog.userId, userId)]
-  if (filter.sources && filter.sources.length > 0) {
-    conditions.push(inArray(usageLog.source, filter.sources))
-  } else if (filter.source) {
-    conditions.push(eq(usageLog.source, filter.source))
-  }
+  if (filter.source) conditions.push(eq(usageLog.source, filter.source))
   if (filter.workspaceId) conditions.push(eq(usageLog.workspaceId, filter.workspaceId))
   if (filter.startDate) conditions.push(gte(usageLog.createdAt, filter.startDate))
   if (filter.endDate) conditions.push(lte(usageLog.createdAt, filter.endDate))
@@ -1053,10 +1047,8 @@ export async function getUsageCreditsByLogId(
  * Options for querying usage logs
  */
 export interface GetUsageLogsOptions {
-  /** Filter by a single source */
+  /** Filter by source */
   source?: UsageLogSource
-  /** Filter by any of these sources (takes precedence over `source`) */
-  sources?: UsageLogSource[]
   /** Filter by workspace */
   workspaceId?: string
   /** Start date (inclusive) */
@@ -1126,7 +1118,6 @@ export async function getUserUsageLogs(
 ): Promise<UsageLogsResult> {
   const {
     source,
-    sources,
     workspaceId,
     startDate,
     endDate,
@@ -1137,13 +1128,7 @@ export async function getUserUsageLogs(
   } = options
 
   try {
-    const conditions = buildUsageLogConditions(userId, {
-      source,
-      sources,
-      workspaceId,
-      startDate,
-      endDate,
-    })
+    const conditions = buildUsageLogConditions(userId, { source, workspaceId, startDate, endDate })
 
     if (cursor) {
       let resolvedCursorCreatedAt = cursorCreatedAt
@@ -1212,7 +1197,6 @@ export async function getUserUsageLogs(
     if (includeSummary) {
       const summaryConditions = buildUsageLogConditions(userId, {
         source,
-        sources,
         workspaceId,
         startDate,
         endDate,

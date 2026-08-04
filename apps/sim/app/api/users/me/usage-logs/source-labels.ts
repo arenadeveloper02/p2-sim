@@ -19,7 +19,10 @@ export const USAGE_LOG_SOURCE_LABELS: Record<UsageLogSource, string> = {
 }
 
 /** Local mothership ledger rows stamp metadata.backend = local. */
-export function resolveUsageLogSourceLabel(source: UsageLogSource, metadata?: unknown): string {
+export function resolveUsageLogSourceLabel(
+  source: UsageLogSource,
+  metadata?: unknown
+): string {
   if (
     source === 'copilot' &&
     metadata &&
