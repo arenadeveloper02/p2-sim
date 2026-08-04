@@ -35,7 +35,11 @@ import {
   LocalTurnCostAccumulator,
   type LocalTurnCostSummary,
 } from '@/local-copilot/lib/billing/turn-cost-accumulator'
-import { getLocalCopilotConfig, buildLocalCopilotConfigForCatalog, assertLocalCopilotEnabled } from '@/local-copilot/lib/config'
+import {
+  getLocalCopilotConfig,
+  buildLocalCopilotConfigForCatalog,
+  assertLocalCopilotEnabled,
+} from '@/local-copilot/lib/config'
 import {
   DEFAULT_LOCAL_COPILOT_CATALOG_ID,
   type LocalCopilotCatalogId,
@@ -53,7 +57,10 @@ import {
   LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
-import { applyMicrocompactInPlace, microcompactMessages } from '@/local-copilot/lib/context/microcompact'
+import {
+  applyMicrocompactInPlace,
+  microcompactMessages,
+} from '@/local-copilot/lib/context/microcompact'
 import {
   extractFollowUpDirectives,
   formatActiveDirectiveSystemMessage,
@@ -95,7 +102,10 @@ import {
   recordToolCall,
   savePatch,
 } from '@/local-copilot/lib/persistence/store'
-import { createLocalCopilotProvider, getLocalCopilotProvider } from '@/local-copilot/lib/providers/registry'
+import {
+  createLocalCopilotProvider,
+  getLocalCopilotProvider,
+} from '@/local-copilot/lib/providers/registry'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import {
   stripLeakedToolMarkers,
@@ -555,9 +565,7 @@ export async function* runLocalCopilotAgent(
     memory: getLocalCopilotMemorySnapshot(),
   })
 
-  const provider = params.catalogId
-    ? createLocalCopilotProvider(config)
-    : getLocalCopilotProvider()
+  const provider = params.catalogId ? createLocalCopilotProvider(config) : getLocalCopilotProvider()
   const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,

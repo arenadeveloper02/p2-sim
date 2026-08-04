@@ -131,11 +131,7 @@ export function rewriteNormalizedBlockNameInValue(
   if (value !== null && typeof value === 'object') {
     const result: Record<string, unknown> = {}
     for (const [key, nested] of Object.entries(value)) {
-      result[key] = rewriteNormalizedBlockNameInValue(
-        nested,
-        oldNormalizedName,
-        newNormalizedName
-      )
+      result[key] = rewriteNormalizedBlockNameInValue(nested, oldNormalizedName, newNormalizedName)
     }
     return result
   }

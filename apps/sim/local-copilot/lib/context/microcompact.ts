@@ -23,8 +23,7 @@ export function microcompactMessages(
   messages: ChatMessage[],
   options: MicrocompactOptions = {}
 ): MicrocompactResult {
-  const keepRecentRounds =
-    options.keepRecentRounds ?? LOCAL_COPILOT_MICROCOMPACT_KEEP_RECENT_ROUNDS
+  const keepRecentRounds = options.keepRecentRounds ?? LOCAL_COPILOT_MICROCOMPACT_KEEP_RECENT_ROUNDS
 
   const rounds = findToolRoundIndices(messages)
   if (rounds.length <= keepRecentRounds) {
@@ -47,9 +46,7 @@ export function microcompactMessages(
     const content = typeof message.content === 'string' ? message.content : ''
     if (content.startsWith(CLEARED_PREFIX)) return message
 
-    const toolName = message.toolCallId
-      ? toolNameByCallId.get(message.toolCallId)
-      : undefined
+    const toolName = message.toolCallId ? toolNameByCallId.get(message.toolCallId) : undefined
     const fingerprint = fingerprintToolResult(toolName, content)
     if (fingerprint === content) return message
 

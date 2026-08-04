@@ -42,7 +42,9 @@ function extractString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
-function resolveCatalogIdFromPayload(requestPayload: Record<string, unknown>): LocalCopilotCatalogId {
+function resolveCatalogIdFromPayload(
+  requestPayload: Record<string, unknown>
+): LocalCopilotCatalogId {
   const model = extractString(requestPayload.model)
   if (!model || !isLocalCopilotCatalogId(model)) {
     return DEFAULT_LOCAL_COPILOT_CATALOG_ID

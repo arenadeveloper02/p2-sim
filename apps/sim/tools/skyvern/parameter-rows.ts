@@ -177,6 +177,8 @@ export function toSkyvernApiWorkflowParameters(
   }))
 }
 
-export function isSkyvernWorkflowParameterType(value: string): value is SkyvernWorkflowParameterType {
+export function isSkyvernWorkflowParameterType(
+  value: string
+): value is SkyvernWorkflowParameterType {
   return SKYVERN_WORKFLOW_PARAMETER_TYPES.has(value as SkyvernWorkflowParameterType)
 }

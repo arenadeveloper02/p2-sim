@@ -68,8 +68,7 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
         parts.push(message || 'Could not update the workflow. Check the edit errors and retry.')
       } else if (payload.partialApply === true || payload.needsFollowUpEdit === true) {
         parts.push(
-          message ||
-            'Updated the workflow partially — some changes still need a follow-up edit.'
+          message || 'Updated the workflow partially — some changes still need a follow-up edit.'
         )
       } else if (message) {
         parts.push(truncate(message, GENERIC_MESSAGE_MAX_CHARS))
