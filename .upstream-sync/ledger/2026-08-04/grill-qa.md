@@ -145,3 +145,9 @@ _Context: .upstream-sync/ledger/2026-08-04/open-questions.md_
 
 **A** (2026-08-04T12:44:30Z, utcarshsrivastava-collab): /upstream-sync resume
 
+## 2026-08-04 · PR #680
+
+**A** (2026-08-04T12:44:09Z, utcarshsrivastava-collab): /upstream-sync resume
+1. Remove all the fork migrations as that have already been provided manually to the db. We never run migrations container - and those migrations are only kept as part of a documentation. They can be removed. 
+2. Drop voice mode.
+
