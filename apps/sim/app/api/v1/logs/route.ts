@@ -5,15 +5,16 @@ import { generateId } from '@sim/utils/id'
 import { eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { v1ListLogsContract } from '@/lib/api/contracts/v1/logs'
-import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
+import { parseRequest } from '@/lib/api/server'
 import { MATERIALIZE_CONCURRENCY, mapWithConcurrency } from '@/lib/core/utils/concurrency'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
+import { materializeExecutionDataForDisplay } from '@/lib/logs/execution/trace-store'
 import { buildLogFilters, getOrderBy } from '@/app/api/v1/logs/filters'
 import { createApiResponse, getUserLimits } from '@/app/api/v1/logs/meta'
 import {
   checkRateLimit,
   createRateLimitResponse,
+  v1ValidationErrorResponse,
   validateWorkspaceAccess,
 } from '@/app/api/v1/middleware'
 
@@ -54,14 +55,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       request,
       {},
       {
-        validationErrorResponse: (error) =>
-          NextResponse.json(
-            {
-              error: getValidationErrorMessage(error, 'Invalid parameters'),
-              details: error.issues,
-            },
-            { status: 400 }
-          ),
+        validationErrorResponse: (error) => v1ValidationErrorResponse(error, 'Invalid parameters'),
       }
     )
     if (!parsed.success) return parsed.response
@@ -174,12 +168,13 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       ? await mapWithConcurrency(data, MATERIALIZE_CONCURRENCY, async (log) => {
           const result = buildBase(log)
           if (log.executionData) {
-            const execData = (await materializeExecutionData(
+            const execData = (await materializeExecutionDataForDisplay(
               log.executionData as Record<string, unknown> | null,
               {
                 workspaceId: log.workspaceId,
                 workflowId: log.workflowId,
                 executionId: log.executionId,
+                userId,
               }
             )) as any
             if (params.includeFinalOutput && execData.finalOutput) {

@@ -61,7 +61,9 @@
     "apps/sim/public/favicon/",
     "apps/sim/public/icon.svg",
     "apps/sim/components/emails/components/email-footer.tsx",
-    "apps/sim/app/(interfaces)/chat/[identifier]/ArenaDeployedChat.tsx"
+    "apps/sim/app/(interfaces)/chat/[identifier]/ArenaDeployedChat.tsx",
+    "apps/sim/app/workspace/[workspaceId]/home/hooks/stream/turn-model-serialize.test.ts",
+    "apps/sim/app/workspace/[workspaceId]/home/hooks/use-chat.test.ts"
   ],
   "upstreamFirst": [
     "apps/sim/lib/copilot/generated/",

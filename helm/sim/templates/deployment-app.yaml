@@ -17,7 +17,12 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/secret: {{ include (print $.Template.BasePath "/secrets-app.yaml") . | sha256sum }}
+        {{- /* Hash the inline Secret AND the ExternalSecret manifest so spec
+          changes under externalSecrets.remoteRefs.app roll the pods (with ESO
+          enabled the inline Secret renders empty and would hash to a constant).
+          Rotated values inside the external store still can't be detected at
+          render time — ESO's own reconciliation handles those. */}}
+        checksum/secret: {{ printf "%s%s" (include (print $.Template.BasePath "/secrets-app.yaml") .) (include (print $.Template.BasePath "/external-secret-app.yaml") .) | sha256sum }}
         {{- if .Values.branding.enabled }}
         checksum/config: {{ include (print $.Template.BasePath "/configmap-branding.yaml") . | sha256sum }}
         {{- end }}
@@ -138,6 +143,12 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           envFrom:
+            # Bundled Redis URL. Listed FIRST so any operator-supplied REDIS_URL
+            # in a later source overrides it — see templates/configmap-redis.yaml.
+            {{- if include "sim.chartManagesRedis" . }}
+            - configMapRef:
+                name: {{ include "sim.fullname" . }}-redis
+            {{- end }}
             # App secrets (authentication, encryption keys)
             - secretRef:
                 name: {{ include "sim.appSecretName" . }}

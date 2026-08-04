@@ -29,11 +29,15 @@ export const SELECTOR_CONTEXT_FIELDS = new Set<keyof SelectorContext>([
   'serviceDeskId',
   'impersonateUserEmail',
   'boardId',
+  'spaceId',
+  'listSpaceId',
+  'folderId',
   'awsAccessKeyId',
   'awsSecretAccessKey',
   'awsRegion',
   'logGroupName',
   'tableId',
+  'orgId',
 ])
 
 /**

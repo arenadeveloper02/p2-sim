@@ -2,7 +2,6 @@
 
 import { type ComponentType, useCallback, useMemo, useRef } from 'react'
 import {
-  ArrowRight,
   ChevronDown,
   ChipInput,
   chipVariants,
@@ -12,16 +11,15 @@ import {
   DropdownMenuTrigger,
   Search,
 } from '@sim/emcn'
-import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { debounce, useQueryStates } from 'nuqs'
+import { useQueryStates } from 'nuqs'
 import {
   blockTypeToIconMap,
   formatIntegrationType,
   INTEGRATIONS,
   type Integration,
+  resolveCredentialDisplay,
 } from '@/lib/integrations'
-import { getServiceConfigByProviderId } from '@/lib/oauth'
 import { IntegrationSection } from '@/app/workspace/[workspaceId]/integrations/components/integration-section'
 import { IntegrationTabsHeader } from '@/app/workspace/[workspaceId]/integrations/components/integration-tabs-header'
 import { IntegrationTile } from '@/app/workspace/[workspaceId]/integrations/components/integrations-showcase'
@@ -34,19 +32,13 @@ import {
   integrationsParsers,
   integrationsUrlKeys,
 } from '@/app/workspace/[workspaceId]/integrations/search-params'
+import { SettingsEmptyState } from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
+import { SettingsResourceRow } from '@/app/workspace/[workspaceId]/settings/components/settings-resource-row'
 import { useWorkspaceCredentials, type WorkspaceCredential } from '@/hooks/queries/credentials'
-
-/** Debounce window for `search` URL writes; the input itself stays instant. */
-const SEARCH_DEBOUNCE_MS = 300 as const
+import { useDebouncedSearchSetter } from '@/hooks/use-debounced-search-setter'
 
 /** Slugs surfaced in the pinned Featured section, in display order. */
 const FEATURED_SLUGS = ['slack', 'gmail', 'jira', 'github', 'google-sheets', 'hubspot'] as const
-
-const LINK_ROW_CLASSES =
-  'flex items-center gap-2.5 rounded-lg p-2 text-left transition-colors hover-hover:bg-[var(--surface-active)]'
-const LINK_ROW_TITLE_CLASSES = 'truncate text-[14px] text-[var(--text-body)]'
-const LINK_ROW_SUBTITLE_CLASSES = 'truncate text-[12px] text-[var(--text-muted)]'
-const LINK_ROW_ARROW_CLASSES = 'size-4 flex-shrink-0 text-[var(--text-icon)]'
 
 const FEATURED_INTEGRATIONS: readonly Integration[] = (() => {
   const bySlug = new Map(INTEGRATIONS.map((i) => [i.slug, i]))
@@ -54,11 +46,6 @@ const FEATURED_INTEGRATIONS: readonly Integration[] = (() => {
     (i): i is Integration => i !== undefined
   )
 })()
-
-/** Lookup integration metadata by OAuth service display name (case-insensitive). */
-const INTEGRATION_BY_LOWER_NAME: ReadonlyMap<string, Integration> = new Map(
-  INTEGRATIONS.map((i) => [i.name.toLowerCase(), i])
-)
 
 const ALL_CATEGORY_SECTIONS: readonly { label: string; integrations: Integration[] }[] = (() => {
   const grouped = new Map<string, Integration[]>()
@@ -92,14 +79,15 @@ function IntegrationItem({
   icon: Icon,
 }: IntegrationItemProps) {
   return (
-    <Link href={`/workspace/${workspaceId}/integrations/${slug}`} className={LINK_ROW_CLASSES}>
-      <IntegrationTile blockType={blockType} icon={Icon} />
-      <div className='flex min-w-0 flex-1 flex-col'>
-        <span className={LINK_ROW_TITLE_CLASSES}>{name}</span>
-        {description && <span className={LINK_ROW_SUBTITLE_CLASSES}>{description}</span>}
-      </div>
-      <ArrowRight className={LINK_ROW_ARROW_CLASSES} />
-    </Link>
+    <SettingsResourceRow
+      iconVariant='custom'
+      icon={<IntegrationTile blockType={blockType} icon={Icon} />}
+      title={name}
+      description={description || undefined}
+      href={`/workspace/${workspaceId}/integrations/${slug}`}
+      clickLabel={`Open ${name}`}
+      navigable
+    />
   )
 }
 
@@ -107,7 +95,12 @@ interface ConnectedDisplayItem {
   credential: WorkspaceCredential
   name: string
   description: string
-  serviceName: string
+  /**
+   * Extra haystack for the search box: the service name plus every integration
+   * the credential authenticates, so searching "jira" surfaces an Atlassian
+   * service account even when the user has replaced its description.
+   */
+  searchText: string
   integrationType: string | null
   blockType: string
   slug: string
@@ -124,14 +117,15 @@ interface ConnectedItemProps {
 
 function ConnectedItem({ href, blockType, name, description, icon: Icon }: ConnectedItemProps) {
   return (
-    <Link href={href} className={LINK_ROW_CLASSES}>
-      <IntegrationTile blockType={blockType} icon={Icon} />
-      <div className='flex min-w-0 flex-1 flex-col'>
-        <span className={LINK_ROW_TITLE_CLASSES}>{name}</span>
-        <span className={LINK_ROW_SUBTITLE_CLASSES}>{description}</span>
-      </div>
-      <ArrowRight className={LINK_ROW_ARROW_CLASSES} />
-    </Link>
+    <SettingsResourceRow
+      iconVariant='custom'
+      icon={<IntegrationTile blockType={blockType} icon={Icon} />}
+      title={name}
+      description={description}
+      href={href}
+      clickLabel={`Open ${name}`}
+      navigable
+    />
   )
 }
 
@@ -145,19 +139,12 @@ export function Integrations() {
 
   /**
    * The input is controlled directly by the instant nuqs value; only the URL
-   * write is debounced. Filtering below is cheap in-memory over a static list,
-   * so it reads the instant value too.
+   * write is debounced. The raw value is written (trimming happens on read in
+   * the filters below) so trailing spaces stay typable mid-word. Filtering is
+   * cheap in-memory over a static list, so it reads the instant value too.
    */
-  const setSearchTerm = useCallback(
-    (value: string) => {
-      const trimmed = value.trim()
-      const next = trimmed.length > 0 ? trimmed : null
-      setIntegrationFilters(
-        { search: next },
-        next === null ? undefined : { limitUrlUpdates: debounce(SEARCH_DEBOUNCE_MS) }
-      )
-    },
-    [setIntegrationFilters]
+  const setSearchTerm = useDebouncedSearchSetter((value, options) =>
+    setIntegrationFilters({ search: value }, options)
   )
 
   const { data: credentials = [], isPending: credentialsLoading } = useWorkspaceCredentials({
@@ -174,20 +161,24 @@ export function Integrations() {
 
   const connectedItems = useMemo<ConnectedDisplayItem[]>(() => {
     return oauthCredentials.flatMap((credential) => {
-      if (!credential.providerId) return []
-      const service = getServiceConfigByProviderId(credential.providerId)
-      if (!service) return []
-      const integration = INTEGRATION_BY_LOWER_NAME.get(service.name.toLowerCase())
+      const display = resolveCredentialDisplay(credential)
+      if (!display.service || !display.icon) return []
       return [
         {
           credential,
           name: credential.displayName,
-          description: credential.description || `${service.name} integration`,
-          serviceName: service.name,
-          integrationType: integration?.integrationType ?? null,
-          blockType: integration?.type ?? '',
-          slug: integration?.slug ?? '',
-          icon: service.icon as ComponentType<{ className?: string }>,
+          description: credential.description || display.subtitle,
+          searchText: [
+            display.familyName,
+            display.service.name,
+            ...display.coveredIntegrations.map((i) => i.name),
+          ]
+            .filter(Boolean)
+            .join(' '),
+          integrationType: display.integration?.integrationType ?? null,
+          blockType: display.blockType,
+          slug: display.integration?.slug ?? '',
+          icon: display.icon,
         },
       ]
     })
@@ -273,7 +264,7 @@ export function Integrations() {
       return (
         item.name.toLowerCase().includes(normalizedSearch) ||
         item.description.toLowerCase().includes(normalizedSearch) ||
-        item.serviceName.toLowerCase().includes(normalizedSearch)
+        item.searchText.toLowerCase().includes(normalizedSearch)
       )
     })
   }, [
@@ -366,11 +357,11 @@ export function Integrations() {
             ))}
 
             {showNoResults && (
-              <div className='py-4 text-center text-[var(--text-muted)] text-sm'>
+              <SettingsEmptyState variant='inline'>
                 {urlSearchTerm.trim()
                   ? `No integrations found matching “${urlSearchTerm}”`
                   : 'No integrations in this category'}
-              </div>
+              </SettingsEmptyState>
             )}
           </div>
         </div>

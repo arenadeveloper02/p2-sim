@@ -12,6 +12,7 @@ import {
   WORKFLOW_OPERATIONS,
 } from '@sim/realtime-protocol/constants'
 import { generateId } from '@sim/utils/id'
+import { getWorkflowBlockNameConflict } from '@sim/workflow-types/workflow'
 import { useQueryClient } from '@tanstack/react-query'
 import { isEqual } from 'es-toolkit'
 import type { Edge } from 'reactflow'
@@ -31,7 +32,6 @@ import { isSyntheticToolSubBlockId } from '@/lib/workflows/tool-input/synthetic-
 import { useSocket } from '@/app/workspace/providers/socket-provider'
 import { getBlock } from '@/blocks'
 import { getSubBlocksDependingOnChange } from '@/blocks/utils'
-import { normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
 import { invalidateDeploymentQueries } from '@/hooks/queries/deployments'
 import { useUndoRedo } from '@/hooks/use-undo-redo'
 import {
@@ -58,7 +58,11 @@ import type {
   Position,
   WorkflowState,
 } from '@/stores/workflows/workflow/types'
-import { findAllDescendantNodes, isBlockProtected } from '@/stores/workflows/workflow/utils'
+import {
+  filterAcyclicEdges,
+  findAllDescendantNodes,
+  isBlockProtected,
+} from '@/stores/workflows/workflow/utils'
 
 const logger = createLogger('CollaborativeWorkflow')
 
@@ -153,6 +157,7 @@ export function useCollaborativeWorkflow() {
     onSubblockUpdate,
     onVariableUpdate,
     onWorkflowDeleted,
+    onAccessRevoked,
     onWorkflowReverted,
     onWorkflowUpdated,
     onWorkflowDeployed,
@@ -527,6 +532,19 @@ export function useCollaborativeWorkflow() {
             }
           }
         }
+
+        /**
+         * Per-frame `update-position` broadcasts are not applied by this
+         * handler (positions land via BATCH_UPDATE_POSITIONS commits), so they
+         * must not count as applied remote state changes — a collaborator's
+         * drag would otherwise exhaust sync refetch attempts for nothing.
+         */
+        const isUnappliedPositionFrame =
+          target === OPERATION_TARGETS.BLOCK && operation === BLOCK_OPERATIONS.UPDATE_POSITION
+        const appliedWorkflowId = metadata?.workflowId || activeWorkflowId
+        if (!isUnappliedPositionFrame && appliedWorkflowId) {
+          useOperationQueueStore.getState().markRemoteApplied(appliedWorkflowId)
+        }
       } catch (error) {
         logger.error('Error applying remote operation:', error)
       } finally {
@@ -559,6 +577,11 @@ export function useCollaborativeWorkflow() {
         if (activeWorkflowId && blockType === 'function' && subblockId === 'code') {
           useCodeUndoRedoStore.getState().clear(activeWorkflowId, blockId, subblockId)
         }
+
+        const appliedWorkflowId = workflowId || activeWorkflowId
+        if (appliedWorkflowId) {
+          useOperationQueueStore.getState().markRemoteApplied(appliedWorkflowId)
+        }
       } catch (error) {
         logger.error('Error applying remote subblock update:', error)
       } finally {
@@ -585,12 +608,18 @@ export function useCollaborativeWorkflow() {
       isApplyingRemoteChange.current = true
 
       try {
+        const isKnownField = field === 'name' || field === 'value' || field === 'type'
         if (field === 'name') {
           useVariablesStore.getState().updateVariable(variableId, { name: value })
         } else if (field === 'value') {
           useVariablesStore.getState().updateVariable(variableId, { value })
         } else if (field === 'type') {
           useVariablesStore.getState().updateVariable(variableId, { type: value })
+        }
+
+        const appliedWorkflowId = workflowId || activeWorkflowId
+        if (isKnownField && appliedWorkflowId) {
+          useOperationQueueStore.getState().markRemoteApplied(appliedWorkflowId)
         }
       } catch (error) {
         logger.error('Error applying remote variable update:', error)
@@ -606,6 +635,22 @@ export function useCollaborativeWorkflow() {
       if (activeWorkflowId === workflowId) {
         logger.info(
           `Currently active workflow ${workflowId} was deleted, stopping collaborative operations`
+        )
+
+        const currentUserId = session?.user?.id || 'unknown'
+        useUndoRedoStore.getState().clear(workflowId, currentUserId)
+
+        isApplyingRemoteChange.current = false
+      }
+    }
+
+    const handleAccessRevoked = (data: any) => {
+      const { workflowId } = data
+      logger.warn(`Access to workflow ${workflowId} has been revoked`)
+
+      if (activeWorkflowId === workflowId) {
+        logger.info(
+          `Access to currently active workflow ${workflowId} was revoked, stopping collaborative operations`
         )
 
         const currentUserId = session?.user?.id || 'unknown'
@@ -889,6 +934,7 @@ export function useCollaborativeWorkflow() {
     onSubblockUpdate(handleSubblockUpdate)
     onVariableUpdate(handleVariableUpdate)
     onWorkflowDeleted(handleWorkflowDeleted)
+    onAccessRevoked(handleAccessRevoked)
     onWorkflowReverted(handleWorkflowReverted)
     onWorkflowUpdated(handleWorkflowUpdated)
     onWorkflowDeployed(handleWorkflowDeployed)
@@ -911,6 +957,7 @@ export function useCollaborativeWorkflow() {
     onSubblockUpdate,
     onVariableUpdate,
     onWorkflowDeleted,
+    onAccessRevoked,
     onWorkflowReverted,
     onWorkflowUpdated,
     onWorkflowDeployed,
@@ -1032,27 +1079,26 @@ export function useCollaborativeWorkflow() {
       }
 
       const trimmedName = name.trim()
-      const normalizedNewName = normalizeName(trimmedName)
+      const currentBlocks = useWorkflowStore.getState().blocks
+      const siblingNamesById = Object.fromEntries(
+        Object.entries(currentBlocks).map(([blockId, b]) => [blockId, b.name])
+      )
+      const conflict = getWorkflowBlockNameConflict(id, trimmedName, siblingNamesById)
 
-      if (!normalizedNewName) {
+      if (conflict?.reason === 'empty') {
         logger.error('Cannot rename block to empty name')
         toast.error('Block name cannot be empty')
         return { success: false, error: 'Block name cannot be empty' }
       }
 
-      if ((RESERVED_BLOCK_NAMES as readonly string[]).includes(normalizedNewName)) {
+      if (conflict?.reason === 'reserved') {
         logger.error(`Cannot rename block to reserved name: "${trimmedName}"`)
         toast.error(`"${trimmedName}" is a reserved name and cannot be used`)
         return { success: false, error: `"${trimmedName}" is a reserved name` }
       }
 
-      const currentBlocks = useWorkflowStore.getState().blocks
-      const conflictingBlock = Object.entries(currentBlocks).find(
-        ([blockId, block]) => blockId !== id && normalizeName(block.name) === normalizedNewName
-      )
-
-      if (conflictingBlock) {
-        const conflictName = conflictingBlock[1].name
+      if (conflict?.reason === 'duplicate') {
+        const conflictName = currentBlocks[conflict.conflictingBlockId as string].name
         logger.error(`Cannot rename block to "${trimmedName}" - conflicts with "${conflictName}"`)
         toast.error(`Block name "${trimmedName}" already exists`)
         return { success: false, error: `Block name "${trimmedName}" already exists` }
@@ -1427,7 +1473,12 @@ export function useCollaborativeWorkflow() {
       const currentEdges = useWorkflowStore.getState().edges
       const validEdges = filterValidEdges(edges, blocks)
       const newEdges = filterNewEdges(validEdges, currentEdges)
-      if (newEdges.length === 0) return false
+      // Reject cyclic edges here, before they are queued for realtime/DB
+      // persistence — the local store also runs this check, but only after
+      // an unfiltered payload would already be enqueued. Filtering once
+      // here keeps the queued payload and the local store in agreement.
+      const acyclicEdges = filterAcyclicEdges(newEdges, currentEdges)
+      if (acyclicEdges.length === 0) return false
 
       const operationId = generateId()
 
@@ -1436,16 +1487,16 @@ export function useCollaborativeWorkflow() {
         operation: {
           operation: EDGES_OPERATIONS.BATCH_ADD_EDGES,
           target: OPERATION_TARGETS.EDGES,
-          payload: { edges: newEdges },
+          payload: { edges: acyclicEdges },
         },
         workflowId: activeWorkflowId || '',
         userId: session?.user?.id || 'unknown',
       })
 
-      useWorkflowStore.getState().batchAddEdges(newEdges, { skipValidation: true })
+      useWorkflowStore.getState().batchAddEdges(acyclicEdges, { skipValidation: true })
 
       if (!options?.skipUndoRedo) {
-        newEdges.forEach((edge) => undoRedo.recordAddEdge(edge.id))
+        acyclicEdges.forEach((edge) => undoRedo.recordAddEdge(edge.id))
       }
 
       return true
@@ -1709,6 +1760,7 @@ export function useCollaborativeWorkflow() {
 
       // Apply locally first (immediate UI feedback)
       useSubBlockStore.getState().setValue(blockId, subblockId, value)
+      useWorkflowStore.getState().syncDynamicHandleSubblockValue(blockId, subblockId, value)
 
       if (isSyntheticToolSubBlockId(subblockId)) return
 

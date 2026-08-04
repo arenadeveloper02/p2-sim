@@ -1,5 +1,9 @@
 import type { BlockTokens, IterationToolCall, ProviderTimingSegment } from '@/executor/types'
-import { calculateCost } from '@/providers/utils'
+import { LIST_PRICE_POLICY, priceModelUsage } from '@/providers/cost-policy'
+import {
+  getOpenRouterReasoningDetailText,
+  type OpenRouterReasoningDetail,
+} from '@/providers/openrouter/reasoning'
 
 /**
  * Minimal structural shape shared by OpenAI Chat Completions and every
@@ -12,7 +16,12 @@ interface ChatCompletionLike {
   choices: Array<{
     message?: {
       content?: string | null
-      tool_calls?: Array<ChatCompletionToolCallLike> | null
+      /** Loose on purpose — the raw SDK response is passed here; only the separate
+       * `toolCallsInResponse` argument is required to be narrowed. */
+      tool_calls?: Array<{ id: string; function?: { name: string; arguments: string } }> | null
+      reasoning_content?: string | null
+      reasoning?: string | null
+      reasoning_details?: OpenRouterReasoningDetail[] | null
     } | null
     finish_reason?: string | null
   } | null>
@@ -27,6 +36,13 @@ interface ChatCompletionLike {
   } | null
 }
 
+/**
+ * `function` stays required on purpose. The SDK's `ChatCompletionMessageToolCall` union gained a
+ * `custom` variant with no `function` in v5, and callers narrow that away with
+ * `isFunctionToolCall` before enriching. Making this optional to accept the raw union would let
+ * the custom shape satisfy this interface structurally, and every enrich call site would then
+ * type-check whether or not it narrowed — silently turning the guard into unenforced convention.
+ */
 interface ChatCompletionToolCallLike {
   id: string
   function: { name: string; arguments: string }
@@ -104,6 +120,12 @@ export function enrichLastModelSegment(
  * returns the raw string if it is not valid JSON.
  */
 function parseToolCallArguments(rawArguments: string): Record<string, unknown> | string {
+  /**
+   * `isFunctionToolCall` only proves `function` is present, not that it is well formed — a
+   * gateway can send `function: {}`. Without this the JSON parse below receives `undefined` and
+   * this returns it, breaking the declared return type.
+   */
+  if (typeof rawArguments !== 'string') return ''
   try {
     const parsed = JSON.parse(rawArguments)
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -126,22 +148,17 @@ function extractChatCompletionsReasoning(
   message: NonNullable<ChatCompletionLike['choices'][number]>['message']
 ): string | undefined {
   if (!message) return undefined
-  const msg = message as unknown as {
-    reasoning_content?: string | null
-    reasoning?: string | null
-    reasoning_details?: Array<{ text?: string | null; summary?: string | null } | null> | null
-  }
 
-  if (typeof msg.reasoning_content === 'string' && msg.reasoning_content.length > 0) {
-    return msg.reasoning_content
+  if (typeof message.reasoning_content === 'string' && message.reasoning_content.length > 0) {
+    return message.reasoning_content
   }
-  if (typeof msg.reasoning === 'string' && msg.reasoning.length > 0) {
-    return msg.reasoning
+  if (typeof message.reasoning === 'string' && message.reasoning.length > 0) {
+    return message.reasoning
   }
-  if (Array.isArray(msg.reasoning_details)) {
-    const joined = msg.reasoning_details
-      .map((d) => d?.text ?? d?.summary ?? '')
-      .filter((s): s is string => typeof s === 'string' && s.length > 0)
+  if (Array.isArray(message.reasoning_details)) {
+    const joined = message.reasoning_details
+      .map(getOpenRouterReasoningDetailText)
+      .filter((text) => text.length > 0)
       .join('\n')
     if (joined.length > 0) return joined
   }
@@ -178,7 +195,7 @@ export function enrichLastModelSegmentFromChatCompletions(
 
   const toolCalls: IterationToolCall[] = (toolCallsInResponse ?? []).map((tc) => ({
     id: tc.id,
-    name: tc.function.name,
+    name: tc.function.name ?? '',
     arguments: parseToolCallArguments(tc.function.arguments),
   }))
 
@@ -192,7 +209,17 @@ export function enrichLastModelSegmentFromChatCompletions(
 
   let derivedCost = extras?.cost
   if (!derivedCost && extras?.model && promptTokens != null && completionTokens != null) {
-    const full = calculateCost(extras.model, promptTokens, completionTokens, cacheRead > 0)
+    // OpenAI-compatible vendors report cached tokens as a subset of the prompt
+    // total, so the uncached remainder is the subtraction.
+    const full = priceModelUsage(
+      extras.model,
+      {
+        input: Math.max(0, promptTokens - cacheRead),
+        output: completionTokens,
+        cacheRead,
+      },
+      LIST_PRICE_POLICY
+    )
     derivedCost = { input: full.input, output: full.output, total: full.total }
   }
 

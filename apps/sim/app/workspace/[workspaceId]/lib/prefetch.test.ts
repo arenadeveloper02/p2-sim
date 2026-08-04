@@ -20,9 +20,11 @@ import { prefetchFilesBrowser } from '@/app/workspace/[workspaceId]/files/prefet
 import { prefetchHomeLists } from '@/app/workspace/[workspaceId]/home/prefetch'
 import { prefetchKnowledgeBases } from '@/app/workspace/[workspaceId]/knowledge/prefetch'
 import { prefetchTables } from '@/app/workspace/[workspaceId]/tables/prefetch'
-import { knowledgeKeys } from '@/hooks/queries/kb/knowledge'
 import { folderKeys } from '@/hooks/queries/utils/folder-keys'
+import { knowledgeKeys } from '@/hooks/queries/utils/knowledge-keys'
+import { pinnedItemKeys } from '@/hooks/queries/utils/pinned-item-keys'
 import { tableKeys } from '@/hooks/queries/utils/table-keys'
+import { workspaceKeys } from '@/hooks/queries/workspace'
 import { workspaceFileFolderKeys } from '@/hooks/queries/workspace-file-folders'
 import { workspaceFilesKeys } from '@/hooks/queries/workspace-files'
 
@@ -102,6 +104,52 @@ describe('workspace list prefetches', () => {
     })
   })
 
+  describe('resource-list chrome', () => {
+    /**
+     * Pinned ids are the list's primary sort key, so a page that paints without them renders
+     * the whole list in the wrong order and then visibly re-sorts. Members back the Owner
+     * column. Both must be primed on every foldered page, under the exact client keys.
+     */
+    const chromeCases = [
+      { name: 'files', run: prefetchFilesBrowser, resourceType: 'file' as const },
+      { name: 'tables', run: prefetchTables, resourceType: 'table' as const },
+      { name: 'knowledge', run: prefetchKnowledgeBases, resourceType: 'knowledge_base' as const },
+    ]
+
+    for (const { name, run, resourceType } of chromeCases) {
+      it(`primes pinned ids (${resourceType} + folder) and members for ${name}`, async () => {
+        const pinnedItems = [{ id: 'p-1', resourceId: 'r-1' }]
+        const members = [{ userId: 'u-1', name: 'Ada' }]
+        mockPrefetchInternalJson.mockImplementation(async (path: string) => {
+          if (path.startsWith('/api/pinned-items')) return { pinnedItems }
+          if (path.endsWith('/members')) return { members }
+          if (path.includes('/folders')) return { folders: [] }
+          return { success: true, files: [], data: { tables: [] } }
+        })
+        const client = makeClient()
+
+        await run(client, WORKSPACE_ID)
+
+        expect(mockPrefetchInternalJson).toHaveBeenCalledWith(
+          `/api/pinned-items?workspaceId=${WORKSPACE_ID}&resourceType=${resourceType}`
+        )
+        expect(mockPrefetchInternalJson).toHaveBeenCalledWith(
+          `/api/pinned-items?workspaceId=${WORKSPACE_ID}&resourceType=folder`
+        )
+        expect(mockPrefetchInternalJson).toHaveBeenCalledWith(
+          `/api/workspaces/${WORKSPACE_ID}/members`
+        )
+        expect(client.getQueryData(pinnedItemKeys.list(WORKSPACE_ID, resourceType))).toEqual(
+          pinnedItems
+        )
+        expect(client.getQueryData(pinnedItemKeys.list(WORKSPACE_ID, 'folder'))).toEqual(
+          pinnedItems
+        )
+        expect(client.getQueryData(workspaceKeys.members(WORKSPACE_ID))).toEqual(members)
+      })
+    }
+  })
+
   describe('prefetchHomeLists', () => {
     it('primes folder + file keys, mapping folder rows to the client shape', async () => {
       const folderRow = {
@@ -110,13 +158,12 @@ describe('workspace list prefetches', () => {
         userId: 'u-1',
         workspaceId: WORKSPACE_ID,
         parentId: null,
-        color: null,
-        isExpanded: true,
+        resourceType: 'workflow',
         locked: false,
         sortOrder: 0,
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-02T00:00:00.000Z',
-        archivedAt: null,
+        deletedAt: null,
       }
       const files = [{ id: 'f-1' }]
       mockPrefetchInternalJson.mockImplementation(async (path: string) =>
@@ -127,15 +174,16 @@ describe('workspace list prefetches', () => {
       await prefetchHomeLists(client, WORKSPACE_ID)
 
       expect(mockPrefetchInternalJson).toHaveBeenCalledWith(
-        `/api/folders?workspaceId=${WORKSPACE_ID}&scope=active`
+        `/api/folders?workspaceId=${WORKSPACE_ID}&scope=active&resourceType=workflow`
       )
       const cachedFolders = client.getQueryData(folderKeys.list(WORKSPACE_ID, 'active')) as Array<{
         id: string
-        color: string
+        resourceType: string
         createdAt: Date
       }>
       expect(cachedFolders).toHaveLength(1)
-      expect(cachedFolders[0].color).toBe('#6B7280')
+      expect(cachedFolders[0].resourceType).toBe('workflow')
+      // The wire shape carries ISO strings; the client shape carries Dates.
       expect(cachedFolders[0].createdAt).toBeInstanceOf(Date)
       expect(client.getQueryData(workspaceFilesKeys.list(WORKSPACE_ID, 'active'))).toEqual(files)
     })

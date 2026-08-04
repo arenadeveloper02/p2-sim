@@ -85,6 +85,11 @@ Realtime selector labels
 app.kubernetes.io/component: realtime
 {{- end }}
 
+{{- define "sim.redis.selectorLabels" -}}
+{{ include "sim.selectorLabels" . }}
+app.kubernetes.io/component: redis
+{{- end }}
+
 {{/*
 PostgreSQL specific labels
 */}}
@@ -131,14 +136,6 @@ PII (Presidio) selector labels
 {{- define "sim.pii.selectorLabels" -}}
 {{ include "sim.selectorLabels" . }}
 app.kubernetes.io/component: pii
-{{- end }}
-
-{{/*
-Migrations specific labels
-*/}}
-{{- define "sim.migrations.labels" -}}
-{{ include "sim.labels" . }}
-app.kubernetes.io/component: migrations
 {{- end }}
 
 {{/*
@@ -394,18 +391,6 @@ Returns the name of the secret containing PostgreSQL password
 {{- end }}
 
 {{/*
-Get the PostgreSQL password key name
-Returns the key name in the secret that contains the password
-*/}}
-{{- define "sim.postgresqlPasswordKey" -}}
-{{- if and .Values.postgresql.auth.existingSecret .Values.postgresql.auth.existingSecret.enabled -}}
-{{- .Values.postgresql.auth.existingSecret.passwordKey | default "POSTGRES_PASSWORD" -}}
-{{- else -}}
-{{- print "POSTGRES_PASSWORD" -}}
-{{- end -}}
-{{- end }}
-
-{{/*
 Get the external database secret name
 Returns the name of the secret containing external database password
 */}}
@@ -414,18 +399,6 @@ Returns the name of the secret containing external database password
 {{- .Values.externalDatabase.existingSecret.name -}}
 {{- else -}}
 {{- printf "%s-external-db-secret" (include "sim.fullname" .) -}}
-{{- end -}}
-{{- end }}
-
-{{/*
-Get the external database password key name
-Returns the key name in the secret that contains the password
-*/}}
-{{- define "sim.externalDbPasswordKey" -}}
-{{- if and .Values.externalDatabase.existingSecret .Values.externalDatabase.existingSecret.enabled -}}
-{{- .Values.externalDatabase.existingSecret.passwordKey | default "EXTERNAL_DB_PASSWORD" -}}
-{{- else -}}
-{{- print "EXTERNAL_DB_PASSWORD" -}}
 {{- end -}}
 {{- end }}
 
@@ -489,6 +462,22 @@ PII (Presidio) service URL
 {{- else }}
 {{- .Values.app.env.PII_URL | default "http://localhost:5001" }}
 {{- end }}
+{{- end }}
+
+{{/*
+Whether the chart owns Redis for this release.
+
+False only when the operator points app.env.REDIS_URL at their own instance —
+then deploying a bundled one would leave an unused pod. Secret-manager modes do
+NOT suppress it: the bundled URL ships as a ConfigMap listed before the app
+Secret in envFrom, so any operator-supplied REDIS_URL (chart Secret, pre-created
+Secret, or ESO-synced) overrides it without the chart needing to see the value.
+See templates/configmap-redis.yaml.
+*/}}
+{{- define "sim.chartManagesRedis" -}}
+{{- if and .Values.redis.enabled (not (.Values.app.env.REDIS_URL | default "")) -}}
+true
+{{- end -}}
 {{- end }}
 
 {{/*

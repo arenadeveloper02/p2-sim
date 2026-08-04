@@ -32,7 +32,8 @@ import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getMothershipAttachmentPreviewUrl } from '@/lib/copilot/chat/attachment-preview'
 import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
+import { MOTHERSHIP_ADD_CONTEXT_EVENT } from '@/lib/mothership/events'
+import { MOTHERSHIP_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
 import {
   AnimatedPlaceholderEffect,
@@ -43,6 +44,7 @@ import {
   SendButton,
   usePromptEditor,
 } from '@/app/workspace/[workspaceId]/home/components/user-input/components'
+import { handleMothershipAddContextEvent } from '@/app/workspace/[workspaceId]/home/components/user-input/mothership-context-event'
 import type {
   FileAttachmentForApi,
   MothershipResource,
@@ -220,6 +222,21 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   editorRef.current = editor
   const textareaRef = editor.textareaRef
 
+  /**
+   * Attaches context chips pushed from elsewhere in the app (browser/terminal
+   * selection actions, the highlight-to-chat action in the file/table
+   * viewers). `preventDefault` claims the event so the producer knows a live
+   * input consumed it and skips its persist-and-navigate fallback.
+   */
+  useEffect(() => {
+    const handleAddContext = (event: Event) => {
+      handleMothershipAddContextEvent(event, editorRef.current)
+    }
+
+    window.addEventListener(MOTHERSHIP_ADD_CONTEXT_EVENT, handleAddContext)
+    return () => window.removeEventListener(MOTHERSHIP_ADD_CONTEXT_EVENT, handleAddContext)
+  }, [])
+
   const draftScopeKeyRef = useRef(draftScopeKey)
   draftScopeKeyRef.current = draftScopeKey
 
@@ -318,7 +335,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       }
     }
     const removed = prev.filter((p) => !curr.some((c) => contextId(c) === contextId(p)))
-    if (removed.length > 0) removed.forEach((ctx) => onContextRemoveRef.current?.(ctx))
+    if (removed.length > 0) removed.forEach((ctx) => onContextRemoveRef.current?.(ctx, curr))
     prevSelectedContextsRef.current = curr
   }, [editor.contexts])
 
@@ -548,10 +565,11 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     // getPlainValue restores skill chips' EM SPACE sentinel to a literal '/'
     // so the message reads as clean `/skill-name` (skills travel via contexts
     // regardless). Only the submitted copy is converted; the live input is not.
+    const activeContexts = currentEditor.getActiveContexts()
     onSubmit(
       currentEditor.getPlainValue(),
       fileAttachmentsForApi.length > 0 ? fileAttachmentsForApi : undefined,
-      currentEditor.contexts.length > 0 ? currentEditor.contexts : undefined
+      activeContexts.length > 0 ? activeContexts : undefined
     )
     currentEditor.clear()
     sttPrefixRef.current = ''
@@ -722,7 +740,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         type='file'
         onChange={handleFileChange}
         className='hidden'
-        accept={CHAT_ACCEPT_ATTRIBUTE}
+        accept={MOTHERSHIP_ACCEPT_ATTRIBUTE}
         multiple
       />
 

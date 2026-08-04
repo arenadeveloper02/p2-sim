@@ -1,0 +1,5 @@
+dist/
+release/
+build/generated-icon.icon
+playwright-report/
+test-results/

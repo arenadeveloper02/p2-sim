@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { cn } from '@sim/emcn'
 import Link from 'next/link'
+import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
 import { LogoMark, SimWordmark } from '@/app/(landing)/components/navbar/components'
 
 /**
@@ -39,7 +40,8 @@ export function LogoShell({
   logoLabel = 'Sim home',
 }: LogoShellProps) {
   return (
-    <div className='light relative flex min-h-screen flex-col bg-[var(--bg)] text-[var(--text-primary)]'>
+    <div className='light desktop-title-bar-page relative flex flex-col bg-[var(--bg)] text-[var(--text-primary)]'>
+      <DesktopTitleBarLane />
       <header>
         <nav className='mx-auto flex w-full max-w-[1460px] items-center px-20 py-4 max-sm:px-5 max-lg:px-8'>
           <Link href={logoHref} aria-label={logoLabel} className='flex h-[30px] items-center'>

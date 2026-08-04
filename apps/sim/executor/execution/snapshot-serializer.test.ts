@@ -6,6 +6,7 @@ import type { DAG, DAGNode } from '@/executor/dag/builder'
 import { EdgeManager } from '@/executor/execution/edge-manager'
 import { serializePauseSnapshot } from '@/executor/execution/snapshot-serializer'
 import type { ExecutionContext } from '@/executor/types'
+import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 
 function createContext(overrides: Partial<ExecutionContext> = {}): ExecutionContext {
   return {
@@ -38,6 +39,45 @@ function createContext(overrides: Partial<ExecutionContext> = {}): ExecutionCont
 }
 
 describe('serializePauseSnapshot', () => {
+  it('persists encrypted resolved-secret provenance and the source execution id', () => {
+    const registry = new ResolvedSecretTraceRegistry([
+      { name: 'TOKEN', plaintext: 'raw-secret', encryptedValue: 'ciphertext' },
+    ])
+    registry.recordResolved('TOKEN', 'raw-secret')
+    const context = createContext({ resolvedSecretTraceRegistry: registry })
+
+    const snapshot = serializePauseSnapshot(context, ['next-block'])
+    const serialized = JSON.parse(snapshot.snapshot)
+
+    expect(serialized.state.sourceExecutionId).toBe('execution-1')
+    expect(serialized.state.resolvedSecretTraceProvenance).toEqual({
+      version: 1,
+      complete: true,
+      entries: [{ name: 'TOKEN', encryptedValue: 'ciphertext' }],
+    })
+    expect(snapshot.snapshot).not.toContain('raw-secret')
+  })
+
+  it('persists a complete zero-entry provenance state for a fresh execution', () => {
+    const registry = new ResolvedSecretTraceRegistry([], {
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+    })
+
+    const snapshot = serializePauseSnapshot(
+      createContext({ resolvedSecretTraceRegistry: registry }),
+      ['next-block']
+    )
+    const serialized = JSON.parse(snapshot.snapshot)
+
+    expect(serialized.state.resolvedSecretTraceProvenance).toEqual({
+      version: 1,
+      complete: true,
+      entries: [],
+      scope: { userId: 'user-1', workspaceId: 'workspace-1' },
+    })
+  })
+
   it('serializes batched parallel accumulated outputs for cross-process resume', () => {
     const context = createContext({
       parallelExecutions: new Map([
@@ -162,5 +202,57 @@ describe('serializePauseSnapshot', () => {
     const serialized = JSON.parse(snapshot.snapshot)
 
     expect(serialized.metadata.useDraftState).toBe(true)
+  })
+
+  it('serializes billing attribution for an exact-payer resume', () => {
+    const billingAttribution = {
+      actorUserId: 'external-actor',
+      workspaceId: 'workspace-1',
+      organizationId: 'org-1',
+      billedAccountUserId: 'owner-1',
+      billingEntity: { type: 'organization' as const, id: 'org-1' },
+      billingPeriod: {
+        start: '2026-07-01T00:00:00.000Z',
+        end: '2026-08-01T00:00:00.000Z',
+      },
+      payerSubscription: null,
+    }
+    const context = createContext({
+      metadata: {
+        ...createContext().metadata,
+        billingAttribution,
+      },
+    })
+
+    const snapshot = serializePauseSnapshot(context, ['next-block'])
+    const serialized = JSON.parse(snapshot.snapshot)
+
+    expect(serialized.metadata.billingAttribution).toEqual(billingAttribution)
+  })
+
+  it('preserves independent chat event policies across pause and resume', () => {
+    const context = createContext({
+      metadata: {
+        ...createContext().metadata,
+        includeThinking: true,
+        includeToolCalls: false,
+        executionMode: 'stream',
+      },
+    })
+
+    const snapshot = serializePauseSnapshot(context, ['next-block'])
+    const serialized = JSON.parse(snapshot.snapshot)
+
+    expect(serialized.metadata.includeThinking).toBe(true)
+    expect(serialized.metadata.includeToolCalls).toBe(false)
+    expect(serialized.metadata.executionMode).toBe('stream')
+  })
+
+  it('omits chat event policies when the live run did not enable them', () => {
+    const snapshot = serializePauseSnapshot(createContext(), ['next-block'])
+    const serialized = JSON.parse(snapshot.snapshot)
+
+    expect(serialized.metadata.includeThinking).toBeUndefined()
+    expect(serialized.metadata.includeToolCalls).toBeUndefined()
   })
 })

@@ -4,6 +4,11 @@ import { generateId } from '@sim/utils/id'
 import { create } from 'zustand'
 import { devtools, type PersistStorage } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
+import {
+  type AgentStreamToolTerminalStatus,
+  settleRunningToolCallList,
+} from '@/components/agent-stream/tool-call-lifecycle'
+import { isChatEnabled } from '@/lib/core/config/env-flags'
 import { redactApiKeys } from '@/lib/core/security/redaction'
 import { sendMothershipMessage } from '@/lib/mothership/events'
 import { getQueryClient } from '@/app/_shell/providers/query-provider'
@@ -11,7 +16,11 @@ import { truncateLargeBase64Data } from '@/app/workspace/[workspaceId]/w/[workfl
 import type { NormalizedBlockOutput } from '@/executor/types'
 import { type GeneralSettings, generalSettingsKeys } from '@/hooks/queries/general-settings'
 import { useExecutionStore } from '@/stores/execution'
-import { consolePersistence, loadConsoleData } from '@/stores/terminal/console/storage'
+import {
+  CONSOLE_STORAGE_VERSION,
+  consolePersistence,
+  loadConsoleData,
+} from '@/stores/terminal/console/storage'
 import type {
   ConsoleEntry,
   ConsoleEntryLocation,
@@ -138,6 +147,27 @@ const shouldSkipEntry = (output: any): boolean => {
 
 const getBlockExecutionKey = (blockId: string, executionId?: string): string =>
   `${executionId ?? 'no-execution'}:${blockId}`
+
+/**
+ * Clears live thinking/tool chrome and settles any still-running tool chips.
+ * Failures often skip stream:done, so terminal paths must settle chrome here.
+ */
+const settleAgentStreamChrome = (
+  entry: ConsoleEntry,
+  status: AgentStreamToolTerminalStatus
+): Pick<ConsoleEntry, 'agentStreamActive' | 'agentStreamToolCalls'> => ({
+  agentStreamActive: false,
+  agentStreamToolCalls: settleRunningToolCallList(entry.agentStreamToolCalls, status),
+})
+
+const resolveAgentStreamSettleStatus = (
+  entry: ConsoleEntry,
+  update?: ConsoleUpdate
+): AgentStreamToolTerminalStatus => {
+  if (update?.isCanceled === true || entry.isCanceled) return 'cancelled'
+  if (update?.success === false || entry.success === false) return 'error'
+  return 'success'
+}
 
 const matchesEntryForUpdate = (
   entry: ConsoleEntry,
@@ -349,10 +379,12 @@ const notifyBlockError = ({
 
     toast.error(displayName, {
       description: errorMessage,
-      action: {
-        label: 'Fix in Chat',
-        onClick: () => sendMothershipMessage(copilotMessage),
-      },
+      action: isChatEnabled
+        ? {
+            label: 'Fix in Chat',
+            onClick: () => sendMothershipMessage(copilotMessage),
+          }
+        : undefined,
     })
   } catch (notificationError) {
     logger.error('Failed to create block error notification', {
@@ -682,6 +714,39 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
             updatedEntry.childWorkflowInstanceId = update.childWorkflowInstanceId
           }
 
+          if (update.agentStreamThinking !== undefined) {
+            updatedEntry.agentStreamThinking = update.agentStreamThinking
+          }
+
+          if (update.clearAgentStreamThinking) {
+            updatedEntry.agentStreamThinking = undefined
+          }
+
+          if (update.agentStreamToolCalls !== undefined) {
+            updatedEntry.agentStreamToolCalls = update.agentStreamToolCalls
+          }
+
+          if (update.agentStreamActive !== undefined) {
+            updatedEntry.agentStreamActive = update.agentStreamActive
+          }
+
+          // Settle live chrome whenever an entry stops running or stream activity ends.
+          // block:error / timeouts often skip stream:done and only flip isRunning.
+          const shouldSettleAgentStream =
+            update.isRunning === false ||
+            update.agentStreamActive === false ||
+            update.isCanceled === true
+          if (shouldSettleAgentStream) {
+            const settled = settleAgentStreamChrome(
+              updatedEntry,
+              resolveAgentStreamSettleStatus(updatedEntry, update)
+            )
+            updatedEntry.agentStreamActive = settled.agentStreamActive
+            if (update.agentStreamToolCalls === undefined) {
+              updatedEntry.agentStreamToolCalls = settled.agentStreamToolCalls
+            }
+          }
+
           nextEntries[location.index] = updatedEntry
         }
 
@@ -734,6 +799,7 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
               : entry.durationMs
             return {
               ...entry,
+              ...settleAgentStreamChrome(entry, 'cancelled'),
               isRunning: false,
               isCanceled: true,
               endedAt: now.toISOString(),
@@ -766,6 +832,7 @@ export const useTerminalConsoleStore = create<ConsoleStore>()(
               : entry.durationMs
             return {
               ...entry,
+              ...settleAgentStreamChrome(entry, 'success'),
               isRunning: false,
               isCanceled: false,
               endedAt: now.toISOString(),
@@ -863,6 +930,7 @@ if (typeof window !== 'undefined') {
   consolePersistence.bind(() => {
     const state = useTerminalConsoleStore.getState()
     return {
+      storageVersion: CONSOLE_STORAGE_VERSION,
       workflowEntries: state.workflowEntries,
       isOpen: state.isOpen,
     }

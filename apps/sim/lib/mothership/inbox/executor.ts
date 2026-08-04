@@ -4,6 +4,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, sql } from 'drizzle-orm'
 import { getActivelyBannedUserIds, isEmailBlocked } from '@/lib/auth/ban'
+import { resolveBillingAttribution } from '@/lib/billing/core/billing-attribution'
 import { resolveOrCreateChat } from '@/lib/copilot/chat/lifecycle'
 import { appendCopilotChatMessages } from '@/lib/copilot/chat/messages-store'
 import { buildIntegrationToolSchemas } from '@/lib/copilot/chat/payload'
@@ -13,18 +14,19 @@ import {
 } from '@/lib/copilot/chat/persisted-message'
 import { generateWorkspaceContext } from '@/lib/copilot/chat/workspace-context'
 import { chatPubSub } from '@/lib/copilot/chat-status'
+import { computeWorkspaceEntitlements } from '@/lib/copilot/entitlements'
 import { runHeadlessCopilotLifecycle } from '@/lib/copilot/request/lifecycle/headless'
 import { requestChatTitle } from '@/lib/copilot/request/lifecycle/start'
 import type { OrchestratorResult } from '@/lib/copilot/request/types'
-import { isE2BDocEnabled, isHosted } from '@/lib/core/config/env-flags'
+import { normalizeSecretMountPolicy } from '@/lib/copilot/secret-mount-policy'
+import { isDocSandboxEnabled, isHosted } from '@/lib/core/config/env-flags'
 import * as agentmail from '@/lib/mothership/inbox/agentmail-client'
 import { formatEmailAsMessage } from '@/lib/mothership/inbox/format'
 import { sendInboxResponse } from '@/lib/mothership/inbox/response'
 import type { AgentMailAttachment } from '@/lib/mothership/inbox/types'
-import { buildUserSkillTool } from '@/lib/mothership/skills'
 import { uploadFile } from '@/lib/uploads/core/storage-service'
 import { createFileContent, type MessageContent } from '@/lib/uploads/utils/file-utils'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
 import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
 
 const logger = createLogger('InboxExecutor')
@@ -63,6 +65,8 @@ export async function executeInboxTask(taskId: string): Promise<void> {
       id: workspace.id,
       ownerId: workspace.ownerId,
       inboxProviderId: workspace.inboxProviderId,
+      inboxSecretScope: workspace.inboxSecretScope,
+      inboxMountedSecrets: workspace.inboxMountedSecrets,
     })
     .from(workspace)
     .where(eq(workspace.id, inboxTask.workspaceId))
@@ -81,14 +85,15 @@ export async function executeInboxTask(taskId: string): Promise<void> {
   let responseSent = false
 
   try {
-    const [[claimed], userId] = await Promise.all([
+    const [[claimed], actor] = await Promise.all([
       db
         .update(mothershipInboxTask)
         .set({ status: 'processing', processingStartedAt: new Date() })
         .where(and(eq(mothershipInboxTask.id, taskId), eq(mothershipInboxTask.status, 'received')))
         .returning({ id: mothershipInboxTask.id }),
-      resolveUserId(inboxTask.fromEmail, ws),
+      resolveInboxExecutionActor(inboxTask.fromEmail, ws),
     ])
+    const userId = actor.executionUserId
 
     if (!claimed) {
       logger.info('Task already claimed by another execution, skipping', { taskId })
@@ -152,6 +157,7 @@ export async function executeInboxTask(taskId: string): Promise<void> {
         message: titleInput,
         model: 'claude-opus-4-8',
         userId,
+        workspaceId: ws.id,
       })
         .then(async (title) => {
           if (title && chatId) {
@@ -208,13 +214,15 @@ export async function executeInboxTask(taskId: string): Promise<void> {
       return { attachments, ...downloaded }
     }
 
-    const [attachmentResult, workspaceContext, integrationTools, userSkillTool, userPermission] =
+    const workspaceAccess = await checkWorkspaceAccess(ws.id, userId)
+    const userPermission = workspaceAccess.permission
+    const [attachmentResult, workspaceContext, integrationTools, billingAttribution, entitlements] =
       await Promise.all([
         fetchAttachments(),
-        generateWorkspaceContext(ws.id, userId),
+        generateWorkspaceContext(ws.id, userId, { workspaceAccess }),
         buildIntegrationToolSchemas(userId, undefined, undefined, ws.id),
-        buildUserSkillTool(ws.id),
-        getUserEntityPermissions(userId, 'workspace', ws.id).catch(() => null),
+        resolveBillingAttribution({ actorUserId: userId, workspaceId: ws.id }),
+        computeWorkspaceEntitlements(ws.id, userId),
       ])
     const { attachments, fileAttachments, storedAttachments } = attachmentResult
 
@@ -233,10 +241,10 @@ export async function executeInboxTask(taskId: string): Promise<void> {
       messageId: userMessageId,
       isHosted,
       workspaceContext,
-      ...(isE2BDocEnabled ? { docCompiler: 'python' } : {}),
+      ...(isDocSandboxEnabled ? { docCompiler: 'python' } : {}),
       ...(integrationTools.length > 0 ? { integrationTools } : {}),
-      ...(userSkillTool ? { mothershipTools: [userSkillTool] } : {}),
       ...(userPermission ? { userPermission } : {}),
+      ...(entitlements.length > 0 ? { entitlements } : {}),
       ...(fileAttachments.length > 0 ? { fileAttachments } : {}),
     }
 
@@ -247,6 +255,13 @@ export async function executeInboxTask(taskId: string): Promise<void> {
       goRoute: '/api/mothership/execute',
       autoExecuteTools: true,
       interactive: false,
+      billingAttribution,
+      ...(userPermission ? { userPermission } : {}),
+      secretActorUserId: actor.secretActorUserId,
+      secretMountPolicy: normalizeSecretMountPolicy({
+        secretScope: ws.inboxSecretScope,
+        mountedSecrets: ws.inboxMountedSecrets,
+      }),
     })
 
     const cleanContent = stripThinkingTags(result.content || '')
@@ -323,13 +338,19 @@ export async function executeInboxTask(taskId: string): Promise<void> {
 }
 
 /**
- * Resolve which user ID to use for execution.
- * Match sender email to a workspace member, fallback to workspace owner.
+ * Resolve the execution and raw-secret actors independently. Workspace members
+ * execute and mount secrets as themselves. External senders retain the existing
+ * owner execution fallback but receive no raw-secret actor.
  */
-async function resolveUserId(
+interface InboxExecutionActor {
+  executionUserId: string
+  secretActorUserId: string | null
+}
+
+async function resolveInboxExecutionActor(
   senderEmail: string,
   ws: { id: string; ownerId: string }
-): Promise<string> {
+): Promise<InboxExecutionActor> {
   const [matchedUser] = await db
     .select({ id: user.id })
     .from(user)
@@ -340,11 +361,11 @@ async function resolveUserId(
   if (matchedUser) {
     const permission = await getUserEntityPermissions(matchedUser.id, 'workspace', ws.id)
     if (permission !== null) {
-      return matchedUser.id
+      return { executionUserId: matchedUser.id, secretActorUserId: matchedUser.id }
     }
   }
 
-  return ws.ownerId
+  return { executionUserId: ws.ownerId, secretActorUserId: null }
 }
 
 /**

@@ -25,6 +25,7 @@ export const handleCompleteEvent: StreamHandler = async (event, context, execCon
     }
   }
 
+  context.completionStatus = event.payload.status
   context.streamComplete = true
 
   const cumulativeCost = context.cost?.total ?? 0

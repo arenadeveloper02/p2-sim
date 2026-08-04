@@ -20,7 +20,7 @@ app:
   # Image configuration
   image:
     repository: simstudioai/simstudio
-    # tag defaults to Chart.AppVersion. Override with a release tag (e.g. "0.6.73") or pin via image.digest.
+    # tag defaults to Chart.AppVersion. Override with a release tag (e.g. "v0.7.44") or pin via image.digest.
     tag: ""
     # Optional image digest pin: "sha256:..." — when set, overrides tag.
     digest: ""
@@ -61,17 +61,11 @@ app:
     existingSecret:
       # Set to true to use an existing secret instead of creating one from values
       enabled: false
-      # Name of the existing Kubernetes secret containing app credentials
+      # Name of the existing Kubernetes secret containing app credentials.
+      # The secret is consumed wholesale via envFrom, so its keys must use the
+      # standard names (BETTER_AUTH_SECRET, ENCRYPTION_KEY, INTERNAL_API_SECRET,
+      # CRON_SECRET, ...) — key remapping is not supported.
       name: ""
-      # Key mappings - specify the key names in your existing secret
-      # Only needed if your secret uses different key names than the defaults
-      keys:
-        BETTER_AUTH_SECRET: "BETTER_AUTH_SECRET"
-        ENCRYPTION_KEY: "ENCRYPTION_KEY"
-        INTERNAL_API_SECRET: "INTERNAL_API_SECRET"
-        CRON_SECRET: "CRON_SECRET"
-        API_ENCRYPTION_KEY: "API_ENCRYPTION_KEY"
-        REDIS_URL: "REDIS_URL"
 
   # Environment variables
   env:
@@ -85,6 +79,11 @@ app:
     # TRUSTED_ORIGINS: comma-separated extra public origins to trust for auth (e.g. apex+www, alias hostnames).
     # Merged into Better Auth `trustedOrigins` alongside NEXT_PUBLIC_APP_URL. Leave empty when serving from a single origin.
     TRUSTED_ORIGINS: ""
+    # AUTH_TRUSTED_PROXIES: comma-separated reverse-proxy IPs or CIDR ranges in front of the app
+    # (ingress controller, load balancer). Better Auth walks x-forwarded-for right to left, skips
+    # these hops, and uses the first untrusted address as the client IP. Required for correct
+    # session IPs and rate-limit keying behind a multi-hop proxy chain (e.g. "10.0.0.0/16").
+    AUTH_TRUSTED_PROXIES: ""
     # SOCKET_SERVER_URL: Auto-detected when realtime.enabled=true (uses internal service)
     # NEXT_PUBLIC_SOCKET_URL: public WebSocket URL for browsers. Leave empty to default to the
     # page's own origin (assumes the ingress/reverse proxy routes /socket.io to the realtime service).
@@ -107,11 +106,11 @@ app:
     # Optional: API Key Encryption (RECOMMENDED for production)
     # Generate with: openssl rand -hex 32 (produces the required 64-hex-char / 32-byte value).
     API_ENCRYPTION_KEY: ""  # OPTIONAL - encrypts API keys at rest; if unset, keys are stored in plain text
-    REDIS_URL: ""           # OPTIONAL - Redis connection string for caching/sessions; can also come from app secret or External Secrets
+    REDIS_URL: ""           # OPTIONAL - external Redis connection string. Overrides the bundled Redis (see the `redis:` section) and suppresses its Deployment. A REDIS_URL from a pre-created Secret or External Secrets also wins, without needing to be repeated here.
     
     # Email & Communication
     # Configure one provider — the mailer auto-detects in priority order:
-    # Resend → AWS SES → SMTP → Azure Communication Services.
+    # Resend → AWS SES → SMTP → Azure Communication Services → Gmail.
     EMAIL_VERIFICATION_ENABLED: ""                        # Set to "true" to enable email verification for user registration and login (default "false" via envDefaults)
     RESEND_API_KEY: ""                                    # Resend API key for transactional emails
     FROM_EMAIL_ADDRESS: ""                                # Complete from address (e.g., "Sim <noreply@domain.com>" or "DoNotReply@domain.com")
@@ -123,6 +122,8 @@ app:
     SMTP_USER: ""                                         # SMTP username (optional — omit for unauthenticated relays like MailHog)
     SMTP_PASS: ""                                         # SMTP password (optional — omit for unauthenticated relays)
     SMTP_SECURE: ""                                       # Set to "true" to force TLS on connect; defaults to true when SMTP_PORT=465
+    GMAIL_CREDENTIALS_JSON: ""                            # Inline Google service-account JSON with domain-wide delegation for the Gmail API mail provider
+    GMAIL_SENDER: ""                                      # Google Workspace user the Gmail service account impersonates when sending (e.g., noreply@yourdomain.com)
 
 
     # OAuth Integration Credentials (leave empty if not using)
@@ -200,7 +201,18 @@ app:
     # Admin API Configuration
     ADMIN_API_KEY: ""                                    # Admin API key for organization/user management (generate with: openssl rand -hex 32)
 
-    # Organizations & Permission Groups (defaults to "false" via envDefaults — set "true" here to enable)
+    # Enterprise feature set (defaults to "false" via envDefaults — set "true" here to enable)
+    # ENTERPRISE_ENABLED turns on every enterprise feature; the per-feature flags
+    # below override it either way. See docs: /platform/enterprise/self-hosted
+    ENTERPRISE_ENABLED: ""                               # Enable all enterprise features ("true" to enable)
+    NEXT_PUBLIC_ENTERPRISE_ENABLED: ""                   # Show all enterprise UI ("true" to enable)
+
+    # Instance-tier organization — every user auto-joins this one org at signup
+    INSTANCE_ORG_NAME: ""                                # Organization name; setting it turns instance-org mode on
+    INSTANCE_ORG_SLUG: ""                                # Optional slug (derived from the name when empty)
+    INSTANCE_ORG_OWNER_EMAIL: ""                         # Optional owner email (defaults to the first user to sign up)
+
+    # Organizations & Permission Groups (per-feature overrides)
     ACCESS_CONTROL_ENABLED: ""                           # Enable permission groups feature ("true" to enable)
     ORGANIZATIONS_ENABLED: ""                            # Enable organizations feature ("true" to enable)
     NEXT_PUBLIC_ACCESS_CONTROL_ENABLED: ""               # Show permission groups UI ("true" to enable)
@@ -292,6 +304,20 @@ app:
     AZURE_STORAGE_OG_IMAGES_CONTAINER_NAME: ""            # Azure container for OpenGraph preview images
     AZURE_STORAGE_WORKSPACE_LOGOS_CONTAINER_NAME: ""      # Azure container for workspace logos
 
+    # Google Cloud Storage Configuration (optional - for file storage)
+    # If configured, files will be stored in GCS instead of local storage
+    # Note: used when neither Azure Blob nor S3 is configured
+    GCS_PROJECT_ID: ""                                    # GCP project ID (optional — inferred from credentials/ADC when unset)
+    GCS_CREDENTIALS_JSON: ""                              # Inline service-account JSON. Leave empty to use Workload Identity / Application Default Credentials
+    GCS_BUCKET_NAME: ""                                   # GCS bucket for workspace files (all other GCS buckets fall back to it)
+    GCS_KB_BUCKET_NAME: ""                                # GCS bucket for knowledge base files
+    GCS_EXECUTION_FILES_BUCKET_NAME: ""                   # GCS bucket for workflow execution files
+    GCS_CHAT_BUCKET_NAME: ""                              # GCS bucket for deployed chat files
+    GCS_COPILOT_BUCKET_NAME: ""                           # GCS bucket for copilot files
+    GCS_PROFILE_PICTURES_BUCKET_NAME: ""                  # GCS bucket for user profile pictures
+    GCS_OG_IMAGES_BUCKET_NAME: ""                         # GCS bucket for OpenGraph preview images
+    GCS_WORKSPACE_LOGOS_BUCKET_NAME: ""                   # GCS bucket for workspace logos
+
   # Operational tunables shipped with the chart. These are rendered as inline `env:` on the
   # app container — NOT written into the chart-managed Secret and NOT required to be mapped
   # when externalSecrets.enabled=true. Override any key by setting `app.envDefaults.KEY` in
@@ -315,34 +341,48 @@ app:
     NEXT_PUBLIC_BRAND_NAME: "Sim"
     NEXT_PUBLIC_SUPPORT_EMAIL: "help@sim.ai"
 
-    # Feature flags (default off — set "true" in app.env or app.envDefaults to enable)
-    ACCESS_CONTROL_ENABLED: "false"
-    ORGANIZATIONS_ENABLED: "false"
-    NEXT_PUBLIC_ACCESS_CONTROL_ENABLED: "false"
-    NEXT_PUBLIC_ORGANIZATIONS_ENABLED: "false"
+    # Feature flags — left EMPTY, not "false", on purpose.
+    # A per-feature flag set to "false" is an explicit override that wins over
+    # ENTERPRISE_ENABLED, so hardcoding "false" here would silently prevent the
+    # master switch from ever enabling these. Empty means "unset", which lets
+    # ENTERPRISE_ENABLED decide. Set "true"/"false" in app.env to override.
+    ACCESS_CONTROL_ENABLED: ""
+    ORGANIZATIONS_ENABLED: ""
+    NEXT_PUBLIC_ACCESS_CONTROL_ENABLED: ""
+    NEXT_PUBLIC_ORGANIZATIONS_ENABLED: ""
 
     # Admission Gate
     ADMISSION_GATE_MAX_INFLIGHT: "500"                    # Max concurrent in-flight execution requests per pod
 
     # Rate Limiting (per minute)
     RATE_LIMIT_WINDOW_MS: "60000"                         # Rate limit window duration (1 minute)
-    RATE_LIMIT_FREE_SYNC: "50"                            # Sync API executions per minute
-    RATE_LIMIT_FREE_ASYNC: "200"                          # Async API executions per minute
+    # Free-tier limits are OPT-IN on a billing-disabled (self-hosted) install:
+    # leaving a key unset means unlimited, and setting it opts that limit back in.
+    # They are deliberately NOT preset here — a chart default would silently
+    # impose hosted-plan caps on self-hosters and diverge from Docker Compose.
+    # RATE_LIMIT_FREE_SYNC: "50"                          # Sync API executions per minute
+    # RATE_LIMIT_FREE_ASYNC: "200"                        # Async API executions per minute
+
+    # Billing concurrency limits (in-flight executions per billing account)
+    BILLING_CONCURRENCY_LIMIT_FREE: "10"
+    BILLING_CONCURRENCY_LIMIT_PRO: "50"                   # Pro tier (Pro and Pro for Teams)
+    BILLING_CONCURRENCY_LIMIT_TEAM: "200"                 # Max tier (Max and Max for Teams)
+    BILLING_CONCURRENCY_LIMIT_ENTERPRISE: "1000"          # Default; Enterprise subscription metadata can override
 
     # Execution Timeouts (seconds) — sync timeouts apply to synchronous API calls
-    EXECUTION_TIMEOUT_FREE: "300"                         # Free tier sync timeout (5 minutes)
+    # EXECUTION_TIMEOUT_FREE: "300"                       # Opt-in; unset means untimed on a self-host
     EXECUTION_TIMEOUT_PRO: "3000"                         # Pro tier sync timeout (50 minutes)
     EXECUTION_TIMEOUT_TEAM: "3000"                        # Team tier sync timeout (50 minutes)
     EXECUTION_TIMEOUT_ENTERPRISE: "3000"                  # Enterprise tier sync timeout (50 minutes)
     # Async timeouts apply to async/background job executions
-    EXECUTION_TIMEOUT_ASYNC_FREE: "5400"                  # Free tier async timeout (90 minutes)
+    # EXECUTION_TIMEOUT_ASYNC_FREE: "5400"                # Opt-in; unset means untimed on a self-host
     EXECUTION_TIMEOUT_ASYNC_PRO: "5400"                   # Pro tier async timeout (90 minutes)
     EXECUTION_TIMEOUT_ASYNC_TEAM: "5400"                  # Team tier async timeout (90 minutes)
     EXECUTION_TIMEOUT_ASYNC_ENTERPRISE: "5400"            # Enterprise tier async timeout (90 minutes)
 
     # Table Feature Limits (per workspace, per plan)
-    FREE_TABLES_LIMIT: "3"                                # Max user tables per workspace on free tier
-    FREE_TABLE_ROWS_LIMIT: "1000"                         # Max rows per table on free tier
+    # FREE_TABLES_LIMIT: "3"                              # Opt-in; unset means no cap on a self-host
+    # FREE_TABLE_ROWS_LIMIT: "1000"                       # Opt-in; unset means no cap on a self-host
     PRO_TABLES_LIMIT: "25"                                # Max user tables per workspace on pro tier
     PRO_TABLE_ROWS_LIMIT: "5000"                          # Max rows per table on pro tier
     TEAM_TABLES_LIMIT: "100"                              # Max user tables per workspace on team tier
@@ -519,9 +559,53 @@ realtime:
   extraVolumes: []
   extraVolumeMounts: []
 
-# Database migrations job configuration
+# Redis — pub/sub, the Socket.IO adapter, and the idempotency/progress stores.
+# Bundled by default so a chart install matches the Docker Compose stack.
+# REQUIRED once app.replicaCount or realtime.replicaCount exceeds 1: without it
+# cross-pod events are silently dropped. For production prefer a managed
+# instance (ElastiCache, Memorystore, Azure Cache) — set enabled: false and put
+# its connection string in app.env.REDIS_URL, which then takes over.
+redis:
+  enabled: true
+
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+
+  # No persistence is configured: Redis holds coordination state and short-lived
+  # keys, so a restart costs in-flight live updates, not committed data.
+  maxmemory: "512mb"
+  maxmemoryPolicy: "noeviction"
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 768Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+  nodeSelector: {}
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+# Database migrations configuration (runs as an init container on the app pods)
 migrations:
-  # Enable/disable migrations job
+  # Enable/disable the migrations init container
   enabled: true
   
   # Image configuration
@@ -569,8 +653,9 @@ postgresql:
     # This enables integration with External Secrets Operator, HashiCorp Vault, etc.
     existingSecret:
       enabled: false
-      name: ""           # Name of existing Kubernetes secret
-      passwordKey: "POSTGRES_PASSWORD"  # Key in the secret containing the password
+      name: ""           # Name of existing Kubernetes secret. Must contain the
+                         # password under the key POSTGRES_PASSWORD — key
+                         # remapping is not supported.
   
   # Node selector for database pod scheduling (leave empty to allow scheduling on any node)
   nodeSelector: {}
@@ -688,8 +773,9 @@ externalDatabase:
   # This enables integration with External Secrets Operator, HashiCorp Vault, etc.
   existingSecret:
     enabled: false
-    name: ""           # Name of existing Kubernetes secret
-    passwordKey: "EXTERNAL_DB_PASSWORD"  # Key in the secret containing the password
+    name: ""           # Name of existing Kubernetes secret. Must contain the
+                       # password under the key EXTERNAL_DB_PASSWORD — key
+                       # remapping is not supported.
 
 # Ollama local AI models configuration
 ollama:
@@ -833,18 +919,6 @@ pii:
     tag: ""          # defaults to Chart.AppVersion
     digest: ""       # sha256: pin overrides tag
     pullPolicy: IfNotPresent
-
-  # NER engine: "spacy" (default) or "gliner" (opt-in zero-shot transformer NER
-  # for PERSON/LOCATION/NRP/DATE_TIME; regex/checksum recognizers are identical
-  # on both engines). The image ships both engines, so this is a pure env flip
-  # — no image change needed. Note: gliner on CPU is orders of magnitude slower
-  # than spacy; it is intended for GPU nodes.
-  engine: "spacy"
-
-  # Torch device for the gliner engine: "cpu", "cuda", or "cuda:N". Empty
-  # auto-detects (cuda when a GPU is visible, else cpu). GPU resource requests
-  # (nvidia.com/gpu) are not wired yet — GPU scheduling is an infra follow-up.
-  device: ""
 
   # Number of replicas
   replicaCount: 1
@@ -1005,6 +1079,14 @@ serviceAccount:
 # if you use customMetrics) installed in the cluster.
 autoscaling:
   enabled: false
+  # Also scale the realtime Deployment with the same HPA settings. Multi-replica
+  # realtime REQUIRES Redis past one replica (Socket.IO adapter) — without it,
+  # cross-pod collaboration events are silently dropped. The chart bundles Redis
+  # by default, so this is satisfied unless you set redis.enabled=false without
+  # supplying app.env.REDIS_URL. Set false to
+  # keep realtime pinned at realtime.replicaCount while the app still scales.
+  realtime:
+    enabled: true
   minReplicas: 1
   maxReplicas: 10
   targetCPUUtilizationPercentage: 80
@@ -1116,6 +1198,17 @@ networkPolicy:
   egressExceptCidrs:
     - "169.254.169.254/32"
     - "169.254.170.2/32"
+
+  # Allow egress to any destination and port instead of the default
+  # HTTPS-only rule set (cloud metadata endpoints stay blocked either way).
+  #
+  # Off by default: this chart is deliberately stricter than the common chart
+  # default, which permits unrestricted egress. Leave it false and enumerate
+  # what you need under `egress` below. Turn it on when you run managed
+  # datastores on non-443 ports (Redis, Postgres) and would rather not maintain
+  # CIDR lists — the bundled Postgres and Redis are already allowed by pod
+  # selector and do not need it.
+  allowExternalEgress: false
 
 # Shared storage for enterprise workflows requiring data sharing between pods
 sharedStorage:
@@ -1346,6 +1439,18 @@ cronjobs:
       successfulJobsHistoryLimit: 3
       failedJobsHistoryLimit: 1
 
+    # Deletes prebuilt sandbox images that no workspace sandbox references and that
+    # have gone unused past the retention window, from the provider and locally.
+    # A no-op on deployments whose sandbox provider installs at run time.
+    cleanupSandboxImages:
+      enabled: true
+      name: cleanup-sandbox-images
+      schedule: "30 4 * * *"
+      path: "/api/cron/cleanup-sandbox-images"
+      concurrencyPolicy: Forbid
+      successfulJobsHistoryLimit: 3
+      failedJobsHistoryLimit: 1
+
     # Processes the transactional outbox (deployment side-effects retry / dead-letter)
     # and reaps stale workspace-fork background-work rows. Both are safety nets behind
     # the immediate post-commit processing, so frequent runs keep retries timely.
@@ -1424,7 +1529,9 @@ telemetry:
   # Jaeger tracing backend
   jaeger:
     enabled: false
-    endpoint: "http://jaeger-collector:14250"
+    # Jaeger's OTLP gRPC endpoint (Jaeger >=1.35 accepts OTLP natively; the
+    # legacy jaeger exporter was removed from the collector-contrib image)
+    endpoint: "jaeger-collector:4317"
     tls:
       enabled: false
   
@@ -1669,9 +1776,10 @@ copilot:
     secretKey: DATABASE_URL
     url: ""
   
-  # Migration job configuration
+  # Migration job configuration (Copilot migrations run as a Helm-hook Job,
+  # unlike the app migrations which run as an init container)
   migrations:
-    # Enable/disable migrations job
+    # Enable/disable the Copilot migrations Job
     enabled: true
     
     # Image configuration (same as server)
@@ -1713,9 +1821,10 @@ externalSecrets:
   enabled: false
 
   # ESO API version. Default "v1beta1" — supported by every ESO release from
-  # v0.7+ (mid-2023) through current. Set to "v1" only when targeting ESO
-  # v0.17+ clusters where the v1 API has graduated.
-  apiVersion: "v1beta1"
+  # Current ESO releases serve only external-secrets.io/v1 (the v1beta1
+  # compatibility path was removed in 2026). Set to "v1beta1" only for
+  # clusters still running ESO < 0.17.
+  apiVersion: "v1"
 
   # How often to sync secrets from the external store
   refreshInterval: "1h"

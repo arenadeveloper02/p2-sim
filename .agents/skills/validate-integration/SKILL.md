@@ -1,6 +1,7 @@
 ---
 name: validate-integration
-description: Audit an existing Sim integration against the service API docs and repository conventions, then report and fix issues across tools, blocks, outputs, OAuth scopes, triggers, and registry entries. Use when validating or repairing a service integration under `apps/sim/tools`, `apps/sim/blocks`, or `apps/sim/triggers`.
+description: Validate an existing Sim integration (tools, block, registry) against the service's API docs
+argument-hint: <service-name> [api-docs-url]
 ---
 
 # Validate Integration Skill
@@ -24,7 +25,7 @@ Read **every** file for the integration — do not skip any:
 apps/sim/tools/{service}/          # All tool files, types.ts, index.ts
 apps/sim/blocks/blocks/{service}.ts # Block definition
 apps/sim/tools/registry.ts          # Tool registry entries for this service
-apps/sim/blocks/registry.ts         # Block registry entry for this service
+apps/sim/blocks/registry-maps.ts    # Block + meta registry entry (BLOCK_REGISTRY / BLOCK_META_REGISTRY)
 apps/sim/components/icons.tsx        # Icon definition
 apps/sim/lib/auth/auth.ts           # OAuth config — should use getCanonicalScopesForProvider()
 apps/sim/lib/oauth/oauth.ts         # OAuth provider config — single source of truth for scopes
@@ -205,12 +206,15 @@ For **each tool** in `tools.access`:
 - [ ] `bgColor` uses the service's brand color hex
 - [ ] `icon` references the correct icon component from `@/components/icons`
 - [ ] `authMode` is set correctly (`AuthMode.OAuth` or `AuthMode.ApiKey`)
-- [ ] Block is registered in `blocks/registry.ts` alphabetically
+- [ ] Block + meta are registered in `blocks/registry-maps.ts` (`BLOCK_REGISTRY` / `BLOCK_META_REGISTRY`) alphabetically
 
-### BlockMeta Skills (catalog)
-- [ ] `{Service}BlockMeta.skills` is present (3–5 for mainstream services, 2–3 for niche/low-level)
-- [ ] **Every skill is grounded** — its steps only use operations the block exposes in `tools.access`; flag any skill that implies an unsupported action (e.g. "receive messages" when the block only sends)
-- [ ] **Every skill is real, not hallucinated** — web-search the service and confirm each skill maps to a popular use case attested online (vendor use-case/solutions pages, official docs describing the workflow, reputable "top automations for X" articles). Rewrite or remove any skill you cannot source as something people genuinely do with the service.
+### BlockMeta
+- [ ] `{Service}BlockMeta` is exported in the same file as the block
+- [ ] Has at least 7 templates, each with `icon`, `title`, `prompt`, `modules`, `category`, and `tags`
+- [ ] Prompts describe concrete use cases, not generic descriptions of what the service does
+- [ ] `alsoIntegrations` is set on any template whose prompt references another service
+- [ ] `skills` present (3–5 mainstream, 2–3 niche), each grounded in `tools.access` — flag any skill implying an unsupported action
+- [ ] **Each skill is real, not hallucinated** — web-search and confirm it maps to a popular use case attested online (vendor use-case pages, official docs describing the workflow, reputable "top automations" articles); rewrite/remove any you cannot source
 - [ ] Each skill has a kebab-case `name` (≤64 chars, unique), a one-line `description`, and markdown `content` with `# Title` + `## Steps` + an output/guidance section
 
 ### Block Inputs
@@ -291,13 +295,31 @@ Group findings by severity:
 
 After reporting, fix every **critical** and **warning** issue. Apply **suggestions** where they don't add unnecessary complexity.
 
+### Regenerate Derived Artifacts
+
+Several files are generated from tool and block definitions. Editing a tool or block WITHOUT regenerating them fails CI, so run these before pushing:
+
+```bash
+bun run tool-metadata:generate       # repo root — apps/sim/tools/generated/*
+cd apps/sim && bun run generate-docs # docs .mdx + lib/integrations/integrations.json + docs icons
+```
+
+- **`tool-metadata:generate`** — required whenever a tool's `outputs`, `params`, or descriptions change. CI enforces this with `bun run tool-metadata:check`, which fails with *"Generated tool metadata is stale"*. This is the easiest gate to miss, because nothing in the tool file hints that a generated artifact mirrors it.
+- **`generate-docs`** — required whenever block metadata changes (`bgColor`, `name`, `description`, operations, outputs). Regenerates the integration `.mdx`, `integrations.json`, and the docs copy of `components/icons.tsx`.
+
+**Always diff the regen output before committing.** These generators rewrite every file they own, so they will also sweep in unrelated drift that accumulated on the base branch — pages losing sections, unrelated icons appearing. Keep only the hunks belonging to the integration under validation and `git checkout --` the rest, otherwise an unrelated doc regression rides along in the PR. Verify no page was silently dropped by comparing the directory listing before and after.
+
+If an icon changed, `apps/sim/components/icons.tsx` is the source of truth and `apps/docs/components/icons.tsx` is its generated mirror — they must end up byte-identical for that component.
+
 ### Validation Output
 
 After fixing, confirm:
 1. `bun run lint` passes with no fixes needed
-2. TypeScript compiles clean (no type errors)
-3. Re-read all modified files to verify fixes are correct
-4. Any remaining unknown response schemas were explicitly reported to the user instead of guessed
+2. TypeScript compiles clean (no type errors) — check the error list is empty for the files you touched; pre-existing unrelated errors in a worktree usually mean workspace packages resolve to the main checkout
+3. The integration's tests pass, and any test you added actually fails without its fix (revert it once and watch it go red)
+4. Derived artifacts regenerated and their diffs reviewed (see above)
+5. Re-read all modified files to verify fixes are correct
+6. Any remaining unknown response schemas were explicitly reported to the user instead of guessed
 
 ## Checklist Summary
 
@@ -315,7 +337,11 @@ After fixing, confirm:
 - [ ] Validated memory load safety using `.agents/skills/memory-load-check/SKILL.md` when tools list/search/download/import/export/batch data
 - [ ] Validated error handling (error checks, meaningful messages)
 - [ ] Validated registry entries (tools and block, alphabetical, correct imports)
+- [ ] Validated `{Service}BlockMeta` exported with at least 7 templates
 - [ ] Reported all issues grouped by severity
 - [ ] Fixed all critical and warning issues
+- [ ] Ran `bun run tool-metadata:generate` if any tool outputs/params changed, and confirmed `bun run tool-metadata:check` passes
+- [ ] Ran `bun run generate-docs` if any block metadata changed, and reverted unrelated drift the generator swept in
 - [ ] Ran `bun run lint` after fixes
 - [ ] Verified TypeScript compiles clean
+- [ ] Verified added tests fail without their fix
