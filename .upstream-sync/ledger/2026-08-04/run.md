@@ -14,25 +14,25 @@ Skipped on resume. Human answers were recorded in `grill-log.md` / `qa-history.j
 
 ## Usage
 
-### parent-grill-analysis
-- **Model:** `claude-opus-5`
+### child-cluster-1
+- **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
-- **Input tokens (direct):** 125
-- **Input tokens (cache read):** 9,785,879
-- **Input tokens (cache create):** 222,596
-- **Input tokens (total):** 10,008,600
-- **Output tokens:** 65,516
-- **Cost:** $7.926178 (provider-reported)
+- **Input tokens (direct):** 102,935
+- **Input tokens (cache read):** 1,823,079
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 1,926,014
+- **Output tokens:** 18,499
+- **Cost:** $0.079247 (estimated fallback)
 
 ### Totals
-- **Total input tokens:** 10,008,600
-- **Total output tokens:** 65,516
-- **Primary models:** claude-opus-5
-- **Total cost:** $7.926178
-- **Provider-reported cost:** $7.926178
+- **Total input tokens:** 1,926,014
+- **Total output tokens:** 18,499
+- **Primary models:** gpt-5.6-luna
+- **Total cost:** $0.079247
+- **Estimated cost (fallback):** $0.079247
 
 ### Cost by agent
-- **parent-grill-analysis:** $7.926178 (provider-reported)
+- **child-cluster-1:** $0.079247 (estimated fallback)
 
 ## Status
 

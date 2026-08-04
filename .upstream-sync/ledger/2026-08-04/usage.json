@@ -1,17 +1,17 @@
 {
   "runId": "2026-08-04",
-  "recordedAt": "2026-08-04T10:06:03.533Z",
+  "recordedAt": "2026-08-04T10:36:48.005Z",
   "agents": [
     {
-      "agentName": "parent-grill-analysis",
-      "model": "claude-opus-5",
+      "agentName": "child-cluster-1",
+      "model": "gpt-5.6-luna",
       "iterations": 1,
-      "inputTokens": 125,
-      "outputTokens": 65516,
-      "cacheReadInputTokens": 9785879,
-      "cacheCreationInputTokens": 222596,
-      "estimatedCostUsd": 7.926178499999999,
-      "costSource": "provider"
+      "inputTokens": 102935,
+      "outputTokens": 18499,
+      "cacheReadInputTokens": 1823079,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.079247,
+      "costSource": "estimated"
     }
   ]
 }
