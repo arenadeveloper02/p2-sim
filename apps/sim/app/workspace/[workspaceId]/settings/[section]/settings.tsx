@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect } from 'react'
+import { isOrgAdminRole } from '@sim/platform-authz/predicates'
 import dynamic from 'next/dynamic'
+import { useParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
 import { captureEvent } from '@/lib/posthog/client'
@@ -10,6 +12,7 @@ import { SettingsSectionProvider } from '@/app/workspace/[workspaceId]/settings/
 import { useSettingsBeforeUnload } from '@/app/workspace/[workspaceId]/settings/hooks/use-settings-before-unload'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { isBillingEnabled } from '@/app/workspace/[workspaceId]/settings/navigation'
+import { useSubscriptionData } from '@/hooks/queries/subscription'
 
 const Admin = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/admin/admin').then((m) => m.Admin)
@@ -109,6 +112,7 @@ interface SettingsPageProps {
 }
 
 export function SettingsPage({ section }: SettingsPageProps) {
+  const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data: session, isPending: sessionLoading } = useSession()
   const posthog = usePostHog()
 
@@ -117,14 +121,32 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const isAdminRole = session?.user?.role === 'admin'
   const normalizedSection: SettingsSection =
     (section as string) === 'subscription' ? 'billing' : section
+
+  const isBillingSection = normalizedSection === 'billing'
+  const { data: subscriptionData, isPending: subscriptionLoading } = useSubscriptionData({
+    enabled: isBillingEnabled && isBillingSection,
+    includeOrg: true,
+    workspaceId,
+  })
+  const isOrgScoped = Boolean(subscriptionData?.data?.isOrgScoped)
+  const isOrgAdminOrOwner = isOrgAdminRole(subscriptionData?.data?.organization?.role)
+  const billingRedirectToUsage =
+    isBillingEnabled &&
+    isBillingSection &&
+    !subscriptionLoading &&
+    isOrgScoped &&
+    !isOrgAdminOrOwner
+
   const effectiveSection =
     !isBillingEnabled && (normalizedSection === 'billing' || normalizedSection === 'organization')
       ? 'general'
-      : normalizedSection === 'admin' && !sessionLoading && !isAdminRole
-        ? 'general'
-        : normalizedSection === 'mothership' && !sessionLoading && !isAdminRole
+      : billingRedirectToUsage
+        ? 'usage'
+        : normalizedSection === 'admin' && !sessionLoading && !isAdminRole
           ? 'general'
-          : normalizedSection
+          : normalizedSection === 'mothership' && !sessionLoading && !isAdminRole
+            ? 'general'
+            : normalizedSection
 
   useEffect(() => {
     if (sessionLoading) return
@@ -139,7 +161,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
       {effectiveSection === 'custom-blocks' && <CustomBlocks />}
       {effectiveSection === 'audit-logs' && <AuditLogs />}
       {effectiveSection === 'apikeys' && <ApiKeys />}
-      {isBillingEnabled && effectiveSection === 'billing' && <Billing />}
+      {isBillingEnabled && effectiveSection === 'billing' && !subscriptionLoading && <Billing />}
       {effectiveSection === 'usage' && <Usage />}
       {effectiveSection === 'teammates' && <Teammates />}
       {isBillingEnabled && effectiveSection === 'organization' && <TeamManagement />}
