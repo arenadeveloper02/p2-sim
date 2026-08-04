@@ -68,6 +68,7 @@ import {
   runGit,
   substitutePrompt,
   syncGrillQaFromPr,
+  throwIfRemotePushAuthError,
   todayRunId,
   updateDraftPr,
   withExtendedBanner,
@@ -589,6 +590,7 @@ function ensureActiveDraftPr(options: {
   try {
     runGit(['push', '-u', 'origin', options.syncBranch])
   } catch (error) {
+    throwIfRemotePushAuthError(error, `Push ${options.syncBranch} before opening draft PR`)
     console.warn(`Could not push ${options.syncBranch} before opening draft PR:`, error)
   }
 
@@ -769,6 +771,7 @@ async function main(): Promise<void> {
       try {
         runGit(['push', 'origin', syncBranch])
       } catch (error) {
+        throwIfRemotePushAuthError(error, `Push bootstrapped ${syncBranch}`)
         console.warn(`Could not push bootstrapped ${syncBranch}:`, error)
       }
     }
@@ -989,6 +992,7 @@ async function main(): Promise<void> {
       try {
         runGit(['push', 'origin', syncBranch])
       } catch (error) {
+        throwIfRemotePushAuthError(error, `Push ${syncBranch} after grill gate`)
         console.warn(`Could not push ${syncBranch} after grill gate:`, error)
       }
       writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
@@ -1064,6 +1068,7 @@ async function main(): Promise<void> {
     try {
       runGit(['push', 'origin', syncBranch])
     } catch (error) {
+      throwIfRemotePushAuthError(error, `Push ${syncBranch} after package bootstrap`)
       console.warn(`Could not push ${syncBranch} after package bootstrap:`, error)
     }
 

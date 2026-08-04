@@ -306,10 +306,42 @@ export function explainPrCreateFailure(
   }
 
   if (message.includes('403') || message.includes('Resource not accessible')) {
-    return 'GitHub API denied PR creation — check Actions permissions (contents + pull-requests write).'
+    return 'GitHub API denied PR creation — check Actions permissions (need write-all, including pull-requests + contents).'
   }
 
   return message
+}
+
+/**
+ * True when `git push` was rejected for missing GITHUB_TOKEN / App scopes
+ * (e.g. workflows). These must fail the harness immediately — never warn-and-continue
+ * into expensive agent runs that cannot be pushed afterward.
+ */
+export function isRemotePushAuthError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/refusing to allow a GitHub App/i.test(message)) return true
+  if (/without [`']?workflows[`']? permission/i.test(message)) return true
+  if (/remote rejected/i.test(message) && /workflow/i.test(message)) return true
+  if (/Permission denied/i.test(message) && /workflow/i.test(message)) return true
+  if (/protected branch hook declined/i.test(message)) return true
+  return false
+}
+
+/**
+ * Re-throw push auth/permission errors with an actionable message; otherwise return false
+ * so callers can soft-warn for transient failures.
+ */
+export function throwIfRemotePushAuthError(error: unknown, context: string): void {
+  if (!isRemotePushAuthError(error)) return
+  const original = error instanceof Error ? error.message : String(error)
+  throw new Error(
+    [
+      `${context}: git push rejected for missing GitHub permissions.`,
+      'Set upstream-sync.yml to `permissions: write-all` (workflows required when syncing `.github/workflows/*`).',
+      'Do not re-run agents until push works — prior runs wasted tokens on an unpushable result.',
+      `Original: ${original}`,
+    ].join(' ')
+  )
 }
 
 interface PrComment {
@@ -1019,6 +1051,7 @@ export function persistMergeWip(options: {
     removeWipWorktree(worktreePath)
     return resolved.length
   } catch (error) {
+    throwIfRemotePushAuthError(error, `WIP persist after ${options.clusterId}`)
     console.warn(`[wip] Failed to persist merge WIP after ${options.clusterId}:`, error)
     try {
       removeWipWorktree(wipWorktreePath())

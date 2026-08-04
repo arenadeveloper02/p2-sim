@@ -65,10 +65,10 @@ concurrency:
   group: upstream-sync
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+# write-all: sync pushes branches that may update workflows, create PRs/comments,
+# request reviewers, and must not die mid-run on a missing GITHUB_TOKEN scope
+# after agents have already spent tokens.
+permissions: write-all
 
 env:
   UPSTREAM_REMOTE: ${{ vars.UPSTREAM_REMOTE || 'upstream' }}
@@ -146,12 +146,9 @@ jobs:
     if: needs.gate.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+    permissions: write-all
     env:
-      # Same-repo sync PRs: Actions GITHUB_TOKEN is enough (contents + pull-requests write).
+      # Same-repo sync PRs: Actions GITHUB_TOKEN with write-all (incl. workflows).
       # Do not prefer GH_PAT — an expired secret would override and break the run.
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -223,6 +220,36 @@ jobs:
         run: |
           git config user.name "upstream-sync[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # Fail before agents spend tokens if GITHUB_TOKEN cannot push workflow files.
+      - name: Probe workflows push permission
+        if: needs.gate.outputs.skip_agent != 'true'
+        run: |
+          set -euo pipefail
+          probe_branch="upstream-sync/perm-probe-${GITHUB_RUN_ID}"
+          start_ref="$(git rev-parse HEAD)"
+          start_branch="$(git branch --show-current)"
+          cleanup() {
+            git push origin --delete "$probe_branch" >/dev/null 2>&1 || true
+            git reset --hard "$start_ref" >/dev/null 2>&1 || true
+            if [ -n "${start_branch}" ]; then
+              git checkout "$start_branch" >/dev/null 2>&1 || true
+            fi
+            rm -f .github/workflows/.upstream-sync-perm-probe.yml
+          }
+          trap cleanup EXIT
+          mkdir -p .github/workflows
+          printf '# upstream-sync GITHUB_TOKEN workflows permission probe\n' \
+            > .github/workflows/.upstream-sync-perm-probe.yml
+          git add .github/workflows/.upstream-sync-perm-probe.yml
+          git commit --no-verify -m "chore: probe GITHUB_TOKEN workflows permission"
+          if ! git push -u origin "HEAD:${probe_branch}"; then
+            echo "::error::GITHUB_TOKEN cannot push workflow file updates."
+            echo "Set workflow permissions to write-all (or at least workflows: write), then re-run."
+            echo "Failing now so agents do not burn tokens on a push that will be rejected."
+            exit 1
+          fi
+          echo "Workflows push permission OK (probe branch ${probe_branch})."
 
       - name: Add upstream remote
         run: |
