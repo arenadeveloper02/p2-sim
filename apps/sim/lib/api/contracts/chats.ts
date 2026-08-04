@@ -346,3 +346,23 @@ export const deleteChatContract = defineRouteContract({
     schema: deleteChatResponseSchema,
   },
 })
+
+export const agentDepartmentSchema = z.object({
+  value: z.string().min(1),
+  label: z.string().min(1),
+})
+export type AgentDepartment = z.output<typeof agentDepartmentSchema>
+
+export const listAgentDepartmentsResponseSchema = z.object({
+  departments: z.array(agentDepartmentSchema),
+})
+export type ListAgentDepartmentsResponse = z.output<typeof listAgentDepartmentsResponseSchema>
+
+export const listAgentDepartmentsContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/chat/departments',
+  response: {
+    mode: 'json',
+    schema: listAgentDepartmentsResponseSchema,
+  },
+})

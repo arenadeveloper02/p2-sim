@@ -59,6 +59,21 @@ export function estimateChatMessagesTokens(
 }
 
 /**
+ * Estimates tokens for tool definitions sent alongside the prompt (not counted by message budget).
+ */
+export function estimateToolDefinitionTokens(
+  tools: Array<{ name: string; description: string; parameters: Record<string, unknown> }>,
+  model: string = DEFAULT_TOKEN_COUNT_MODEL
+): number {
+  if (tools.length === 0) return 0
+  try {
+    return getAccurateTokenCount(JSON.stringify(tools), model)
+  } catch {
+    return Math.ceil(JSON.stringify(tools).length / 4)
+  }
+}
+
+/**
  * Keeps the last K turns verbatim with full message bodies.
  * Older turns are omitted here — structured session memory (injected by the
  * orchestrator) is the summary for aged conversational + technical context.
@@ -185,7 +200,9 @@ export function buildContextPromptPayload(
       userMemories: context.userMemories,
       execution: context.execution,
       availableIntegrations: context.availableIntegrations,
-      availableBlocks: context.availableBlocks,
+      // Full ~300-block catalog omitted — use get_available_blocks / get_blocks_metadata.
+      availableBlocksNote:
+        'Block catalog omitted to save tokens. Call get_available_blocks or get_blocks_metadata for the types you need.',
       selectedBlockId: context.selectedBlockId,
     }),
     null,
@@ -342,4 +359,3 @@ function groupHistoryTurns(messages: ChatMessage[]): HistoryTurn[] {
 
   return turns
 }
-

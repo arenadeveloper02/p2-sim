@@ -489,9 +489,7 @@ function resolveNestedChartOutput(
   const existingSignatures = new Set(
     extractChartsFromData(selectedValue).map((option) => JSON.stringify(option))
   )
-  const newCharts = allCharts.filter(
-    (option) => !existingSignatures.has(JSON.stringify(option))
-  )
+  const newCharts = allCharts.filter((option) => !existingSignatures.has(JSON.stringify(option)))
 
   return formatChartsForChat(newCharts)
 }

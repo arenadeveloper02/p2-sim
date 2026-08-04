@@ -2,6 +2,7 @@
 
 import { ChipLink } from '@sim/emcn'
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
+import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 import {
   CostBreakdownTable,
   CostCell,
@@ -10,7 +11,6 @@ import {
   formatActorType,
   formatBillableWithCredits,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
-import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 
 interface LineagePanelProps {
   workspaceId: string
@@ -115,9 +115,7 @@ export function LineagePanel({
               key: 'cost',
               header: 'Credits',
               align: 'right',
-              render: (row) => (
-                <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
-              ),
+              render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
             },
             {
               key: 'execution',
@@ -184,10 +182,7 @@ export function LineagePanel({
             header: 'Inclusive credits',
             align: 'right',
             render: (row) => (
-              <CostCell
-                billableCost={row.inclusiveBillableCost}
-                rawCost={row.inclusiveRawCost}
-              />
+              <CostCell billableCost={row.inclusiveBillableCost} rawCost={row.inclusiveRawCost} />
             ),
           },
           {

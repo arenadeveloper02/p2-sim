@@ -10,6 +10,7 @@ import { createReferencePattern } from '@/executor/utils/reference-validation'
 interface ReferenceableBlock {
   name?: string
   type?: string
+  subBlocks?: Record<string, { value?: unknown } | undefined>
 }
 
 /**
@@ -97,4 +98,74 @@ export function normalizeBlockReferencesInInputs<T extends Record<string, unknow
 ): T {
   const idToName = buildBlockIdToNormalizedNameMap(blocks)
   return normalizeBlockReferencesInValue(inputs, idToName) as T
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Rewrites `<oldNormalizedName.…>` tags to `<newNormalizedName.…>` (UI rename parity).
+ */
+export function rewriteNormalizedBlockNameInValue(
+  value: unknown,
+  oldNormalizedName: string,
+  newNormalizedName: string
+): unknown {
+  if (!oldNormalizedName || oldNormalizedName === newNormalizedName) return value
+
+  if (typeof value === 'string') {
+    const pattern = new RegExp(
+      `${REFERENCE.START}${escapeRegExp(oldNormalizedName)}(?=${escapeRegExp(REFERENCE.PATH_DELIMITER)}|${escapeRegExp(REFERENCE.END)})`,
+      'g'
+    )
+    return value.replace(pattern, `${REFERENCE.START}${newNormalizedName}`)
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) =>
+      rewriteNormalizedBlockNameInValue(item, oldNormalizedName, newNormalizedName)
+    )
+  }
+
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {}
+    for (const [key, nested] of Object.entries(value)) {
+      result[key] = rewriteNormalizedBlockNameInValue(
+        nested,
+        oldNormalizedName,
+        newNormalizedName
+      )
+    }
+    return result
+  }
+
+  return value
+}
+
+/**
+ * After a block rename, rewrite name-based refs in every other block's subBlocks.
+ * Matches the canvas `updateBlockName` behavior so merge/function code stays valid.
+ */
+export function rewriteBlockNameReferencesInWorkflowBlocks(
+  blocks: Record<string, ReferenceableBlock | undefined>,
+  renamedBlockId: string,
+  oldDisplayName: string,
+  newDisplayName: string
+): void {
+  const oldNormalizedName = normalizeName(oldDisplayName)
+  const newNormalizedName = normalizeName(newDisplayName)
+  if (!oldNormalizedName || oldNormalizedName === newNormalizedName) return
+
+  for (const [blockId, block] of Object.entries(blocks)) {
+    if (!block || blockId === renamedBlockId || !block.subBlocks) continue
+    for (const subBlock of Object.values(block.subBlocks)) {
+      if (!subBlock || typeof subBlock !== 'object') continue
+      subBlock.value = rewriteNormalizedBlockNameInValue(
+        subBlock.value,
+        oldNormalizedName,
+        newNormalizedName
+      )
+    }
+  }
 }

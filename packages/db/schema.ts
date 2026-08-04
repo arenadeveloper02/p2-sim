@@ -3357,6 +3357,20 @@ export const bannerMessages = pgTable('banner_messages', {
   isActive: boolean('is_active').notNull(),
 })
 
+/**
+ * Arena agent department catalog (value stored on chat.department; label for display).
+ * Table is managed outside Drizzle migrations — keep schema aligned with the live table.
+ */
+export const agentDepartments = pgTable('agent_departments', {
+  id: text('id').primaryKey(),
+  value: text('value').notNull().unique(),
+  label: text('label').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
+
 export const workflowStatsDaily = pgTable(
   'workflow_stats_daily',
   {
@@ -3636,9 +3650,7 @@ export const usageLog = pgTable(
     chatIdIdx: index('usage_log_chat_id_idx')
       .on(table.chatId)
       .where(sql`${table.chatId} IS NOT NULL`),
-    runIdIdx: index('usage_log_run_id_idx')
-      .on(table.runId)
-      .where(sql`${table.runId} IS NOT NULL`),
+    runIdIdx: index('usage_log_run_id_idx').on(table.runId).where(sql`${table.runId} IS NOT NULL`),
     workspaceOccurredAtIdx: index('usage_log_workspace_occurred_at_idx').on(
       table.workspaceId,
       table.occurredAt

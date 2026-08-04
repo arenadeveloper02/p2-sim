@@ -39,6 +39,10 @@ import { createBadRequestResponse, createUnauthorizedResponse } from '@/lib/copi
 import { createSSEStream, SSE_RESPONSE_HEADERS } from '@/lib/copilot/request/lifecycle/start'
 import { startCopilotOtelRoot, withCopilotSpan } from '@/lib/copilot/request/otel'
 import {
+  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
+  isLocalCopilotCatalogId,
+} from '@/local-copilot/lib/model-catalog'
+import {
   acquirePendingChatStream,
   getPendingChatStreamId,
   releasePendingChatStream,
@@ -572,6 +576,8 @@ async function resolveBranch(params: {
   model?: string
   mode?: UnifiedChatRequest['mode']
   provider?: string
+  /** When Local, workspace branch embeds this catalog id in the request payload. */
+  localCatalogId?: string
 }): Promise<UnifiedChatBranch | NextResponse> {
   const {
     authenticatedUserId,
@@ -581,6 +587,7 @@ async function resolveBranch(params: {
     model,
     mode,
     provider,
+    localCatalogId,
   } = params
 
   if (providedWorkflowId || workflowName) {
@@ -668,9 +675,9 @@ async function resolveBranch(params: {
     kind: 'workspace',
     workspaceId: requestedWorkspaceId,
     workspacePermission,
-    effectiveModel: DEFAULT_MODEL,
+    effectiveModel: localCatalogId || DEFAULT_MODEL,
     goRoute: '/api/mothership',
-    titleModel: DEFAULT_MODEL,
+    titleModel: localCatalogId || DEFAULT_MODEL,
     notifyWorkspaceStatus: true,
     buildPayload: async (payloadParams) =>
       buildCopilotRequestPayload(
@@ -680,7 +687,7 @@ async function resolveBranch(params: {
           userId: payloadParams.userId,
           userMessageId: payloadParams.userMessageId,
           mode: 'agent',
-          model: '',
+          model: localCatalogId || '',
           contexts: payloadParams.contexts,
           fileAttachments: payloadParams.fileAttachments,
           chatId: payloadParams.chatId,
@@ -691,7 +698,7 @@ async function resolveBranch(params: {
           userMetadata: payloadParams.userMetadata,
           includeMothershipTools: true,
         },
-        { selectedModel: '' }
+        { selectedModel: localCatalogId || '' }
       ),
     buildExecutionContext: async ({ userId, chatId, userTimezone, messageId }) =>
       buildInitialExecutionContext({
@@ -750,6 +757,19 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           : userAllowedForLocal
             ? 'local'
             : 'external'
+
+    let localCatalogId: string | undefined
+    if (copilotBackend === 'local') {
+      const requestedModel = body.model?.trim()
+      if (!requestedModel || requestedModel === DEFAULT_MODEL) {
+        localCatalogId = DEFAULT_LOCAL_COPILOT_CATALOG_ID
+      } else if (isLocalCopilotCatalogId(requestedModel)) {
+        localCatalogId = requestedModel
+      } else {
+        return createBadRequestResponse(`Unknown local copilot model: ${requestedModel}`)
+      }
+    }
+
     const userMetadata = {
       ...(authenticatedUserName ? { name: authenticatedUserName } : {}),
       ...(authenticatedUserEmail ? { email: authenticatedUserEmail } : {}),
@@ -801,6 +821,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
             model: body.model,
             mode: body.mode,
             provider: body.provider,
+            ...(localCatalogId ? { localCatalogId } : {}),
           }),
         activeOtelRoot.context
       )
@@ -842,6 +863,20 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         conversationHistory = Array.isArray(chatResult.conversationHistory)
           ? chatResult.conversationHistory
           : []
+
+        if (
+          localCatalogId &&
+          actualChatId &&
+          !chatIsNew &&
+          currentChat &&
+          'model' in currentChat &&
+          currentChat.model !== localCatalogId
+        ) {
+          await db
+            .update(copilotChats)
+            .set({ model: localCatalogId, updatedAt: new Date() })
+            .where(eq(copilotChats.id, actualChatId))
+        }
 
         if (body.chatId && !currentChat) {
           activeOtelRoot.span.setAttribute(TraceAttr.HttpStatusCode, 404)

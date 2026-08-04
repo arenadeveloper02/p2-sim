@@ -46,9 +46,9 @@
  * 8. Returns the Figma file URL
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'fs'
 import fs from 'fs/promises'
-import { AsyncLocalStorage } from 'node:async_hooks'
 import Anthropic from '@anthropic-ai/sdk'
 import { Builder, By, Key, until, type WebDriver } from 'selenium-webdriver'
 import chrome from 'selenium-webdriver/chrome'

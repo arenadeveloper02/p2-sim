@@ -3526,6 +3526,12 @@ import {
   sixtyfourFindPhoneTool,
 } from '@/tools/sixtyfour'
 import {
+  skyvernCreateWorkflowTool,
+  skyvernGetRunTool,
+  skyvernListWorkflowsTool,
+  skyvernRunWorkflowTool,
+} from '@/tools/skyvern'
+import {
   slackAddReactionTool,
   slackArchiveConversationTool,
   slackCanvasTool,
@@ -5621,6 +5627,10 @@ export const tools: Record<string, ToolConfig> = {
   sixtyfour_find_email: sixtyfourFindEmailTool,
   sixtyfour_enrich_lead: sixtyfourEnrichLeadTool,
   sixtyfour_enrich_company: sixtyfourEnrichCompanyTool,
+  skyvern_create_workflow: skyvernCreateWorkflowTool,
+  skyvern_get_run: skyvernGetRunTool,
+  skyvern_list_workflows: skyvernListWorkflowsTool,
+  skyvern_run_workflow: skyvernRunWorkflowTool,
   tavily_search: tavilySearchTool,
   tavily_extract: tavilyExtractTool,
   tavily_crawl: tavilyCrawlTool,

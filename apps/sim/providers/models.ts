@@ -3492,7 +3492,10 @@ function matchesCatalogModelId(candidate: string, catalogId: string): boolean {
  */
 export function findCatalogModel(
   modelId: string
-): { providerId: string; model: (typeof PROVIDER_DEFINITIONS)[keyof typeof PROVIDER_DEFINITIONS]['models'][number] } | null {
+): {
+  providerId: string
+  model: (typeof PROVIDER_DEFINITIONS)[keyof typeof PROVIDER_DEFINITIONS]['models'][number]
+} | null {
   const trimmed = modelId.trim()
   if (!trimmed) return null
 
@@ -3848,8 +3851,8 @@ export function getRerankModelPricing(
 }
 
 export {
-  IMAGE_MODEL_PRICING,
   getImageModelPerImageCost,
+  IMAGE_MODEL_PRICING,
   type ImageBillingDimensions,
   type ImageBillingMetadata,
 } from '@/lib/tools/image-pricing'

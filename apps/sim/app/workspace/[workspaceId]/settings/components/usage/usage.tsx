@@ -44,10 +44,6 @@ import {
   resolveUsageSourceLabel,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 import {
-  buildWorkflowAverageCostChartRows,
-  buildWorkflowTotalCostChartRows,
-} from '@/app/workspace/[workspaceId]/settings/components/usage/workflow-chart-rows'
-import {
   isLegacyUnattributedChatId,
   LEGACY_UNATTRIBUTED_CHAT_ID,
   LEGACY_UNATTRIBUTED_CHAT_TITLE,
@@ -63,6 +59,10 @@ import {
   usageParsers,
   usageUrlKeys,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
+import {
+  buildWorkflowAverageCostChartRows,
+  buildWorkflowTotalCostChartRows,
+} from '@/app/workspace/[workspaceId]/settings/components/usage/workflow-chart-rows'
 import { useAdminOrganizations, useOrganizationRoster } from '@/hooks/queries/organization'
 import { useOrganizationUsageAnalytics } from '@/hooks/queries/organization-usage'
 import { useUserUsageAnalytics } from '@/hooks/queries/user-usage'
@@ -146,16 +146,18 @@ function UsageDashboardContent({
 
   const workflowChartRows = useMemo(
     () =>
-      buildWorkflowTotalCostChartRows(data.workflow.byWorkflow, (workflowId) =>
-        `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
+      buildWorkflowTotalCostChartRows(
+        data.workflow.byWorkflow,
+        (workflowId) => `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
       ),
     [data.workflow.byWorkflow, workspaceId]
   )
 
   const workflowAverageChartRows = useMemo(
     () =>
-      buildWorkflowAverageCostChartRows(data.workflow.byWorkflow, (workflowId) =>
-        `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
+      buildWorkflowAverageCostChartRows(
+        data.workflow.byWorkflow,
+        (workflowId) => `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
       ),
     [data.workflow.byWorkflow, workspaceId]
   )
@@ -766,9 +768,7 @@ export function Usage() {
   const showScopeToggle = availableScopes.length > 1
 
   const isUserAllWorkspaces = isUserScope && userWorkspaceId === USER_WORKSPACE_FILTER_ALL
-  const resolvedUserWorkspaceId = isUserAllWorkspaces
-    ? undefined
-    : (userWorkspaceId ?? workspaceId)
+  const resolvedUserWorkspaceId = isUserAllWorkspaces ? undefined : (userWorkspaceId ?? workspaceId)
   const userLineageWorkspaceId = isUserAllWorkspaces ? null : (resolvedUserWorkspaceId ?? null)
 
   const analyticsQuery = useMemo(() => {
@@ -831,9 +831,7 @@ export function Usage() {
   )
 
   const userAnalyticsQuery = useMemo(() => {
-    const withWorkspace = resolvedUserWorkspaceId
-      ? { workspaceId: resolvedUserWorkspaceId }
-      : {}
+    const withWorkspace = resolvedUserWorkspaceId ? { workspaceId: resolvedUserWorkspaceId } : {}
     const withLineage =
       userLineageWorkspaceId && rootExecutionId && (tab === 'workflow' || tab === 'all')
         ? { rootExecutionId }

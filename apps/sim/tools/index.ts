@@ -1493,34 +1493,38 @@ export async function executeTool(
     // Check for direct execution (no HTTP request needed)
     const wrapperBaseToolId = getImageGenerationWrapperBaseToolId(normalizedToolId)
     const directExecution =
-    normalizedToolId === 'google_nano_banana'
-      ? executeNanoBananaDirect
-      : normalizedToolId === 'image_generate'
-        ? executeImageGenerateDirect
-        : normalizedToolId === 'openai_image'
-          ? executeOpenAIImageDirect
-          : wrapperBaseToolId
-            ? (params: Record<string, any>) =>
-                executeImageGenerationWrapperV2Direct(normalizedToolId, params)
-      : normalizedToolId === 'development_generate_app' ||
-          normalizedToolId === 'arena_development_generate_app'
-        ? (params: Record<string, any>) =>
-            executeDevelopmentGenerateAppDirect({
-              ...params,
-              arenaMode:
-                normalizedToolId === 'arena_development_generate_app' ? true : params.arenaMode,
-            })
-        : normalizedToolId === 'development_edit_app' ||
-            normalizedToolId === 'arena_development_edit_app'
-          ? (params: Record<string, any>) =>
-              executeDevelopmentEditAppDirect({
-                ...params,
-                arenaMode:
-                  normalizedToolId === 'arena_development_edit_app' ? true : params.arenaMode,
-              })
-          : normalizedToolId === 'chart_generate'
-            ? executeChartGenerateDirect
-            : tool.directExecution
+      normalizedToolId === 'google_nano_banana'
+        ? executeNanoBananaDirect
+        : normalizedToolId === 'image_generate'
+          ? executeImageGenerateDirect
+          : normalizedToolId === 'openai_image'
+            ? executeOpenAIImageDirect
+            : wrapperBaseToolId
+              ? (params: Record<string, any>) =>
+                  executeImageGenerationWrapperV2Direct(normalizedToolId, params)
+              : normalizedToolId === 'development_generate_app' ||
+                  normalizedToolId === 'arena_development_generate_app'
+                ? (params: Record<string, any>) =>
+                    executeDevelopmentGenerateAppDirect({
+                      ...params,
+                      arenaMode:
+                        normalizedToolId === 'arena_development_generate_app'
+                          ? true
+                          : params.arenaMode,
+                    })
+                : normalizedToolId === 'development_edit_app' ||
+                    normalizedToolId === 'arena_development_edit_app'
+                  ? (params: Record<string, any>) =>
+                      executeDevelopmentEditAppDirect({
+                        ...params,
+                        arenaMode:
+                          normalizedToolId === 'arena_development_edit_app'
+                            ? true
+                            : params.arenaMode,
+                      })
+                  : normalizedToolId === 'chart_generate'
+                    ? executeChartGenerateDirect
+                    : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams)
@@ -2102,7 +2106,8 @@ async function executeToolRequest(
             }
           }
         } else {
-          const urlValidation = await validateUrlWithDNS(fullUrl, 'toolUrl')
+          const allowHttp = tool.request.allowHttp === true
+          const urlValidation = await validateUrlWithDNS(fullUrl, 'toolUrl', { allowHttp })
           if (!urlValidation.isValid) {
             throw new Error(`Invalid tool URL: ${urlValidation.error}`)
           }
@@ -2114,6 +2119,7 @@ async function executeToolRequest(
             timeout: requestParams.timeout,
             maxResponseBytes: MAX_TOOL_RESPONSE_BODY_BYTES,
             signal,
+            allowHttp,
           })
 
           const responseHeaders = new Headers(secureResponse.headers.toRecord())

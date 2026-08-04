@@ -23,10 +23,7 @@ export function parseIntMetric(value: string | number | bigint | null | undefine
  * Coerces a bucket key (model, vendor, provider, …) to a non-empty string.
  * Null/blank keys must not reach `z.string()` response contracts.
  */
-export function normalizeBucketKey(
-  value: string | null | undefined,
-  fallback = 'unknown'
-): string {
+export function normalizeBucketKey(value: string | null | undefined, fallback = 'unknown'): string {
   const trimmed = value?.trim()
   return trimmed && trimmed.length > 0 ? trimmed : fallback
 }
@@ -39,10 +36,7 @@ export function sortByBillableCostDesc<T extends { billableCost: number }>(
 }
 
 /** Average billable credits per workflow run; zero when inputs are non-positive. */
-export function averageBillableCostPerRun(
-  billableCost: number,
-  executionCount: number
-): number {
+export function averageBillableCostPerRun(billableCost: number, executionCount: number): number {
   if (executionCount <= 0 || billableCost <= 0) return 0
   return billableCost / executionCount
 }

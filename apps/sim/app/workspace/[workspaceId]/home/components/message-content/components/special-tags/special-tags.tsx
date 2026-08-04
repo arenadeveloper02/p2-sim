@@ -19,6 +19,10 @@ import { isSafeHttpUrl } from '@/lib/core/utils/urls'
 import { OAUTH_PROVIDERS } from '@/lib/oauth/oauth'
 import { ContextMentionIcon } from '@/app/workspace/[workspaceId]/home/components/context-mention-icon'
 import { ChartDisplay } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/chart-display'
+import {
+  findSingleSelectJson,
+  hasIncompleteSingleSelectJson,
+} from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/choice-blocks'
 import type {
   ChatMessageContext,
   MothershipResource,
@@ -422,10 +426,33 @@ export function parseSpecialTags(content: string, isStreaming: boolean): ParsedS
             hasPendingTag = true
           }
         }
+
+        if (hasIncompleteSingleSelectJson(remaining)) {
+          const match = remaining.match(/\{\s*"type"\s*:\s*"single_select"/)
+          if (match?.index !== undefined) {
+            remaining = remaining.slice(0, match.index)
+            hasPendingTag = true
+          }
+        }
       }
 
-      if (remaining.trim()) {
-        segments.push({ type: 'text', content: remaining })
+      while (remaining.length > 0) {
+        const singleSelect = findSingleSelectJson(remaining)
+        if (!singleSelect) {
+          if (remaining.trim()) {
+            segments.push({ type: 'text', content: remaining })
+          }
+          break
+        }
+
+        if (singleSelect.before.trim()) {
+          segments.push({ type: 'text', content: singleSelect.before })
+        } else if (singleSelect.prompt) {
+          segments.push({ type: 'text', content: `${singleSelect.prompt}\n\n` })
+        }
+
+        segments.push({ type: 'options', data: singleSelect.options })
+        remaining = singleSelect.after
       }
       break
     }

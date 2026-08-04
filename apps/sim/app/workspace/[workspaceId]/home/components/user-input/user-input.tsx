@@ -10,7 +10,24 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Button, ChipSwitch, cn, Paperclip, Plus, Slash, Tooltip, toast } from '@sim/emcn'
+import {
+  Button,
+  ChipSwitch,
+  cn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Paperclip,
+  Plus,
+  Slash,
+  Tooltip,
+  toast,
+} from '@sim/emcn'
+import { ChevronDown } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getMothershipAttachmentPreviewUrl } from '@/lib/copilot/chat/attachment-preview'
@@ -36,12 +53,75 @@ import type { AttachedFile } from '@/app/workspace/[workspaceId]/w/[workflowId]/
 import { mentionifyIntegrations } from '@/blocks/integration-matcher'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useSpeechToText } from '@/hooks/use-speech-to-text'
+import {
+  getLocalCopilotCatalogEntriesForGroup,
+  getLocalCopilotCatalogEntry,
+  isLocalCopilotCatalogId,
+  type LocalCopilotCatalogId,
+  LOCAL_COPILOT_PROVIDER_GROUPS,
+} from '@/local-copilot/lib/model-catalog'
 import { useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
 import type { ChatContext } from '@/stores/panel'
 
 export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 
 const logger = createLogger('UserInput')
+
+interface LocalCopilotModelPickerProps {
+  catalogId: LocalCopilotCatalogId
+  onCatalogIdChange: (id: LocalCopilotCatalogId) => void
+}
+
+/**
+ * Single Local Copilot model dropdown with Claude / Gemini / Bedrock section headers.
+ */
+function LocalCopilotModelPicker({ catalogId, onCatalogIdChange }: LocalCopilotModelPickerProps) {
+  const selectedLabel = getLocalCopilotCatalogEntry(catalogId)?.label ?? 'Claude'
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type='button'
+          aria-label='Local Copilot model'
+          className={cn(
+            'ml-1 inline-flex h-7 items-center gap-0.5 rounded-[10px] bg-[var(--surface-5)] px-2.5',
+            'text-[var(--text-primary)] text-sm dark:bg-[var(--surface-4)]',
+            'hover-hover:bg-[var(--surface-2)] dark:hover-hover:bg-[var(--surface-6)]'
+          )}
+        >
+          {selectedLabel}
+          <ChevronDown className='size-[12px] text-[var(--text-muted)]' />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align='start' side='top' className='min-w-[14rem]'>
+        <DropdownMenuRadioGroup
+          value={catalogId}
+          onValueChange={(value) => {
+            if (isLocalCopilotCatalogId(value)) {
+              onCatalogIdChange(value)
+            }
+          }}
+        >
+          {LOCAL_COPILOT_PROVIDER_GROUPS.map((group, groupIndex) => {
+            const entries = getLocalCopilotCatalogEntriesForGroup(group.id)
+            return (
+              <div key={group.id}>
+                {groupIndex > 0 ? <DropdownMenuSeparator /> : null}
+                <DropdownMenuLabel>{group.label}</DropdownMenuLabel>
+                {entries.map((entry) => (
+                  <DropdownMenuRadioItem key={entry.id} value={entry.id}>
+                    {entry.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </div>
+            )
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
 
 interface UserInputProps {
   defaultValue?: string
@@ -95,7 +175,15 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     canSwitchCopilotBackend,
     copilotBackend,
     setCopilotBackend,
+    localCopilotCatalogId,
+    setLocalCopilotCatalogId,
   } = useChatSurface()
+
+  const showLocalModelPicker =
+    Boolean(canSwitchCopilotBackend) &&
+    copilotBackend === 'local' &&
+    localCopilotCatalogId !== undefined &&
+    setLocalCopilotCatalogId !== undefined
 
   const [initialValue] = useState(() => {
     if (defaultValue) return defaultValue
@@ -610,6 +698,12 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
                 Local runs Arena Copilot in your deployment. Cloud uses external Mothership.
               </Tooltip.Content>
             </Tooltip.Root>
+          ) : null}
+          {showLocalModelPicker && localCopilotCatalogId && setLocalCopilotCatalogId ? (
+            <LocalCopilotModelPicker
+              catalogId={localCopilotCatalogId}
+              onCatalogIdChange={setLocalCopilotCatalogId}
+            />
           ) : null}
         </div>
         <div className='flex items-center gap-1.5'>

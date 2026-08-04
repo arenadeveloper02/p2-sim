@@ -11,7 +11,7 @@ async function fetchArenaDevelopmentRepos(): Promise<Array<{ label: string; id: 
     return _inflightRepoFetch
   }
 
-  _inflightRepoFetch = (
+  _inflightRepoFetch =
     // boundary-raw-fetch: internal JSON GET for Arena Development block repo dropdown hydration
     fetch('/api/tools/development/repos', { credentials: 'same-origin' })
       .then((response) => response.json())
@@ -30,7 +30,6 @@ async function fetchArenaDevelopmentRepos(): Promise<Array<{ label: string; id: 
         _inflightRepoFetch = null
         return []
       })
-  )
 
   return _inflightRepoFetch
 }
@@ -51,6 +50,7 @@ export const ArenaDevelopmentBlock: BlockConfig<DevelopmentGenerateAppResponse> 
   - Set Repository Name (generate mode) to control the folder name under generated-apps/ (kebab-case).
   - Generated apps are always pushed to GitHub and deployed to Vercel (requires DEVELOPMENT_GITHUB_TOKEN and DEVELOPMENT_VERCEL_TOKEN in .env).
   - Neon Postgres is always provisioned per app on Generate when configured.
+  - **NOTE: dont remove updatedAt in any tables ** — never drop or omit updatedAt on Prisma models during generate or edit.
   `,
   docsLink: 'https://docs.sim.ai/blocks/development',
   category: 'blocks',

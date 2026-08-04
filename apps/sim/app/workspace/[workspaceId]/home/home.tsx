@@ -42,11 +42,17 @@ import { useFolders } from '@/hooks/queries/folders'
 import {
   useMarkMothershipChatRead,
   useMothershipChatHistory,
+  useUpdateMothershipChatModel,
 } from '@/hooks/queries/mothership-chats'
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
 import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
+import {
+  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
+  isLocalCopilotCatalogId,
+  type LocalCopilotCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 import {
   ChatSurfaceProvider,
@@ -193,8 +199,9 @@ export function Home({ chatId, userName, userId }: HomeProps) {
 
   const wasSendingRef = useRef(false)
 
-  const { isPending: isChatHistoryPending } = useMothershipChatHistory(chatId)
+  const { data: chatHistory, isPending: isChatHistoryPending } = useMothershipChatHistory(chatId)
   const { mutate: markRead } = useMarkMothershipChatRead(workspaceId)
+  const { mutate: updateChatModel } = useUpdateMothershipChatModel(workspaceId)
 
   const { mothershipRef, handleResizePointerDown, clearWidth } = useMothershipResize()
 
@@ -215,6 +222,25 @@ export function Home({ chatId, userName, userId }: HomeProps) {
   }
 
   const { canSwitchBackend, copilotBackend, setCopilotBackend } = useCopilotBackendPreference()
+  const [localCopilotCatalogId, setLocalCopilotCatalogIdState] = useState<LocalCopilotCatalogId>(
+    DEFAULT_LOCAL_COPILOT_CATALOG_ID
+  )
+  const hydratedLocalCatalogChatIdRef = useRef<string | undefined>(undefined)
+
+  useEffect(() => {
+    if (!chatId) {
+      hydratedLocalCatalogChatIdRef.current = undefined
+      setLocalCopilotCatalogIdState(DEFAULT_LOCAL_COPILOT_CATALOG_ID)
+      return
+    }
+    if (!chatHistory || chatHistory.id !== chatId) return
+    if (hydratedLocalCatalogChatIdRef.current === chatId) return
+    hydratedLocalCatalogChatIdRef.current = chatId
+    const model = chatHistory.model
+    setLocalCopilotCatalogIdState(
+      model && isLocalCopilotCatalogId(model) ? model : DEFAULT_LOCAL_COPILOT_CATALOG_ID
+    )
+  }, [chatId, chatHistory])
 
   const {
     messages,
@@ -247,6 +273,7 @@ export function Home({ chatId, userName, userId }: HomeProps) {
       activeResourceState,
       resolveWorkspaceBeforeSend: false,
       getCopilotBackend: () => copilotBackend,
+      getLocalCopilotCatalogId: () => localCopilotCatalogId,
       onRequestStarted: ({ requestId, userMessageId }) => {
         captureEvent(posthogRef.current, 'task_request_started', {
           workspace_id: workspaceId,
@@ -256,6 +283,17 @@ export function Home({ chatId, userName, userId }: HomeProps) {
         })
       },
     })
+  )
+
+  const setLocalCopilotCatalogId = useCallback(
+    (id: LocalCopilotCatalogId) => {
+      setLocalCopilotCatalogIdState(id)
+      const targetChatId = resolvedChatId ?? chatId
+      if (targetChatId) {
+        updateChatModel({ chatId: targetChatId, model: id })
+      }
+    },
+    [resolvedChatId, chatId, updateChatModel]
   )
 
   useEffect(() => {
@@ -468,6 +506,8 @@ export function Home({ chatId, userName, userId }: HomeProps) {
               canSwitchCopilotBackend={canSwitchBackend}
               copilotBackend={copilotBackend}
               setCopilotBackend={setCopilotBackend}
+              localCopilotCatalogId={localCopilotCatalogId}
+              setLocalCopilotCatalogId={setLocalCopilotCatalogId}
             >
               <UserInput
                 ref={initialViewUserInputRef}
@@ -514,6 +554,8 @@ export function Home({ chatId, userName, userId }: HomeProps) {
           canSwitchCopilotBackend={canSwitchBackend}
           copilotBackend={copilotBackend}
           setCopilotBackend={setCopilotBackend}
+          localCopilotCatalogId={localCopilotCatalogId}
+          setLocalCopilotCatalogId={setLocalCopilotCatalogId}
           draftScopeKey={draftScopeKey}
           animateInput={isInputEntering}
           onInputAnimationEnd={isInputEntering ? () => setIsInputEntering(false) : undefined}

@@ -3,7 +3,7 @@ import { chat, user, webhook, workflow, workflowSchedule } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { getAgentDepartmentLabel } from '@/lib/chat/arena-departments'
+import { getAgentDepartmentLabelMap, labelFromDepartmentMap } from '@/lib/chat/arena-departments'
 
 const logger = createLogger('ChatAgentsAPI')
 
@@ -136,6 +136,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Step 4: Format response
+    const departmentLabelMap = await getAgentDepartmentLabelMap()
     const agentList = accessibleChats.map((chatRecord) => ({
       title: chatRecord.name,
       author_email: chatRecord.authorEmail,
@@ -144,7 +145,7 @@ export async function GET(request: NextRequest) {
       workflow_name: chatRecord.name,
       workflow_description: chatRecord.templateDescription || chatRecord.workflowDescription,
       workspace_id: chatRecord.workspaceId,
-      department: getAgentDepartmentLabel(chatRecord.department),
+      department: labelFromDepartmentMap(departmentLabelMap, chatRecord.department),
       created_at: chatRecord.createdAt.toISOString(),
     }))
 

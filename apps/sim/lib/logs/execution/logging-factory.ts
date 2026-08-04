@@ -1,18 +1,18 @@
 import { db, workflow } from '@sim/db'
 import { eq } from 'drizzle-orm'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
-import type {
-  ExecutionEnvironment,
-  ExecutionTrigger,
-  TraceSpan,
-  WorkflowState,
-} from '@/lib/logs/types'
 import {
   accumulateEmbeddedToolCosts,
   extractEmbeddedToolCostsFromSpan,
   normalizeEmbeddedToolCosts,
   resolveEmbeddedToolCostKey,
 } from '@/lib/logs/embedded-tool-costs'
+import type {
+  ExecutionEnvironment,
+  ExecutionTrigger,
+  TraceSpan,
+  WorkflowState,
+} from '@/lib/logs/types'
 import {
   loadDeployedWorkflowState,
   loadWorkflowFromNormalizedTables,
@@ -178,8 +178,7 @@ function extractExternalChargeFromSpan(span: BillableTraceSpan): {
   metadata: CostSummaryExternalCharge['metadata']
 } {
   const raw = (span.output?.raw ?? {}) as CostBlockRawOutput
-  const description =
-    span.name?.trim() || raw.label?.trim() || raw.vendor?.trim() || 'external'
+  const description = span.name?.trim() || raw.label?.trim() || raw.vendor?.trim() || 'external'
 
   return {
     description,
@@ -323,7 +322,8 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
       }
     } else if ((span.cost.total || 0) > 0) {
       if (span.type === 'cost') {
-        const { description, vendor, quantity, unit, metadata } = extractExternalChargeFromSpan(span)
+        const { description, vendor, quantity, unit, metadata } =
+          extractExternalChargeFromSpan(span)
         if (!external[description]) {
           external[description] = { total: 0, vendor, quantity, unit, metadata }
         }

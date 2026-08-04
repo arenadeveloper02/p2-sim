@@ -293,7 +293,11 @@ export function ensureArenaEmailProviderInLayout(content: string): string {
     )
   }
 
-  if (next.includes('poppins') && /<body([^>]*)>/.test(next) && !next.includes('poppins.className')) {
+  if (
+    next.includes('poppins') &&
+    /<body([^>]*)>/.test(next) &&
+    !next.includes('poppins.className')
+  ) {
     next = next.replace(/<body([^>]*)>/, '<body$1 className={poppins.className}>')
   }
 
@@ -344,7 +348,13 @@ export function ensureArenaScaffoldFiles(files: GeneratedAppFile[]): GeneratedAp
 
   const globalsIndex = result.findIndex((file) => normalizePath(file.path) === paths.globalsCss)
   if (globalsIndex === -1) {
-    result = upsertFile(result, paths.globalsCss, ensureArenaDsTokensImportInGlobals('@tailwind base;\n@tailwind components;\n@tailwind utilities;\n'))
+    result = upsertFile(
+      result,
+      paths.globalsCss,
+      ensureArenaDsTokensImportInGlobals(
+        '@tailwind base;\n@tailwind components;\n@tailwind utilities;\n'
+      )
+    )
   } else {
     const patchedGlobals = ensureArenaDsTokensImportInGlobals(result[globalsIndex].content)
     result = upsertFile(result, paths.globalsCss, patchedGlobals)
