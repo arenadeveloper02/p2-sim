@@ -5,25 +5,42 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { mothershipExecuteContract } from '@/lib/api/contracts/mothership-chats'
 import { parseRequest } from '@/lib/api/server'
 import { checkInternalAuth } from '@/lib/auth/hybrid'
-import { checkMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import { requireBillingAttributionHeader } from '@/lib/billing/core/billing-attribution'
 import { buildIntegrationToolSchemas } from '@/lib/copilot/chat/payload'
 import { processContextsServer } from '@/lib/copilot/chat/process-contents'
 import { generateWorkspaceContext } from '@/lib/copilot/chat/workspace-context'
+import { computeWorkspaceEntitlements } from '@/lib/copilot/entitlements'
+import {
+  type CopilotEnvironmentContext,
+  createCopilotEnvironmentContext,
+} from '@/lib/copilot/environment-context'
 import {
   MothershipStreamV1EventType,
   MothershipStreamV1TextChannel,
 } from '@/lib/copilot/generated/mothership-stream-v1'
+import { buildSelectedMcpToolSchemas, buildTaggedMcpToolSchemas } from '@/lib/copilot/mcp-tools'
 import { runHeadlessCopilotLifecycle } from '@/lib/copilot/request/lifecycle/headless'
 import { requestExplicitStreamAbort } from '@/lib/copilot/request/session/explicit-abort'
 import type { StreamEvent } from '@/lib/copilot/request/types'
-import { isE2BDocEnabled } from '@/lib/core/config/env-flags'
+import { normalizeSecretMountPolicy } from '@/lib/copilot/secret-mount-policy'
+import { isDocSandboxEnabled } from '@/lib/core/config/env-flags'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { buildUserSkillTool } from '@/lib/mothership/skills'
+import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
+import {
+  PRIVATE_TOOL_METADATA_RESPONSE_HEADER,
+  RESOLVED_SECRET_PROVENANCE_FIELD,
+  RESOLVED_SECRET_PROVENANCE_METADATA_V1,
+  requestsPrivateToolMetadata,
+} from '@/lib/execution/private-tool-metadata'
 import {
   assertActiveWorkspaceAccess,
-  getUserEntityPermissions,
   isWorkspaceAccessDeniedError,
 } from '@/lib/workspaces/permissions/utils'
+import {
+  createIncompleteResolvedSecretTraceRegistry,
+  ResolvedSecretTraceProvenanceAccumulator,
+  type ResolvedSecretTraceRegistry,
+} from '@/executor/utils/resolved-secret-trace-registry'
 import type { ChatContext } from '@/stores/panel'
 
 export const maxDuration = 3600
@@ -34,6 +51,28 @@ const MOTHERSHIP_EXECUTE_STREAM_VALUE = 'ndjson'
 const MOTHERSHIP_EXECUTE_STREAM_CONTENT_TYPE = 'application/x-ndjson'
 const MOTHERSHIP_EXECUTE_HEARTBEAT_INTERVAL_MS = 15_000
 const ndjsonEncoder = new TextEncoder()
+
+function withPrivateProvenance<T extends Record<string, unknown>>(
+  payload: T,
+  registry: ResolvedSecretTraceRegistry | undefined,
+  include: boolean
+): T & Partial<Record<typeof RESOLVED_SECRET_PROVENANCE_FIELD, unknown>> {
+  return {
+    ...payload,
+    ...(include && registry
+      ? { [RESOLVED_SECRET_PROVENANCE_FIELD]: registry.exportProvenance() }
+      : {}),
+  }
+}
+
+function privateResponseHeaders(
+  registry: ResolvedSecretTraceRegistry | undefined,
+  include: boolean
+): Record<string, string> {
+  return include && registry
+    ? { [PRIVATE_TOOL_METADATA_RESPONSE_HEADER]: RESOLVED_SECRET_PROVENANCE_METADATA_V1 }
+    : {}
+}
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError'
@@ -50,14 +89,26 @@ function encodeNdjson(value: unknown): Uint8Array {
   return ndjsonEncoder.encode(`${JSON.stringify(value)}\n`)
 }
 
-function buildExecuteResponsePayload(
+/**
+ * Server-owned tools whose invocation the CALLER must see, even though they are
+ * not client/integration tools. The scheduled-task runner branches on whether
+ * the agent called complete_scheduled_task; filtering it out of the response
+ * made that check permanently false, so a completed job was rescheduled by the
+ * runner's own post-run bookkeeping.
+ */
+export const CALLER_VISIBLE_SERVER_TOOLS = new Set(['complete_scheduled_task'])
+
+export function buildExecuteResponsePayload(
   result: Awaited<ReturnType<typeof runHeadlessCopilotLifecycle>>,
   effectiveChatId: string,
   integrationTools: Array<{ name: string }>
 ) {
   const clientToolNames = new Set(integrationTools.map((t) => t.name))
   const clientToolCalls = (result.toolCalls || []).filter(
-    (tc: { name: string }) => clientToolNames.has(tc.name) || tc.name.startsWith('mcp-')
+    (tc: { name: string }) =>
+      clientToolNames.has(tc.name) ||
+      tc.name.startsWith('mcp-') ||
+      CALLER_VISIBLE_SERVER_TOOLS.has(tc.name)
   )
 
   return {
@@ -87,6 +138,12 @@ function buildExecuteResponsePayload(
 export const POST = withRouteHandler(async (req: NextRequest) => {
   let messageId: string | undefined
   let requestId: string | undefined
+  let resolvedSecretTraceRegistry: ResolvedSecretTraceRegistry | undefined
+  let environmentContext: CopilotEnvironmentContext | undefined
+  const includePrivateProvenance = requestsPrivateToolMetadata(
+    req.headers,
+    RESOLVED_SECRET_PROVENANCE_METADATA_V1
+  )
 
   try {
     const auth = await checkInternalAuth(req, { requireWorkflowId: false })
@@ -106,17 +163,21 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       requestId: providedRequestId,
       fileAttachments,
       contexts,
+      mcpTools,
       workflowId,
       executionId,
       copilotBackend,
       userMetadata,
+      secretScope,
+      mountedSecrets,
     } = validation.data.body
+    const secretMountPolicy = normalizeSecretMountPolicy({ secretScope, mountedSecrets })
 
-    // Bind the billing actor to the authenticated identity. The executor mints
-    // the internal JWT with the workflow owner's userId, so a token issued for
-    // one user must never be used to attribute mothership-block cost to another
-    // user via a forged body.userId. When the token carries a userId we require
-    // the body to match it; the JWT userId is authoritative.
+    /**
+     * Bind actor attribution to the authenticated identity. The executor mints
+     * the internal JWT with its principal, so the request body cannot forge a
+     * different actor. Workspace billing is resolved independently downstream.
+     */
     if (auth.userId && auth.userId !== bodyUserId) {
       logger.warn('Mothership execute userId does not match authenticated identity', {
         tokenUserId: auth.userId,
@@ -129,7 +190,38 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     }
     const userId = auth.userId ?? bodyUserId
 
-    await assertActiveWorkspaceAccess(workspaceId, userId)
+    const workspaceAccess = await assertActiveWorkspaceAccess(workspaceId, userId)
+    const billingAttribution = requireBillingAttributionHeader(req.headers, {
+      actorUserId: userId,
+      workspaceId,
+    })
+    if (includePrivateProvenance) {
+      const scope = { userId, workspaceId }
+      try {
+        const environment = await getPersonalAndWorkspaceEnv(userId, workspaceId, {
+          workspaceAccess,
+        })
+        environmentContext = await createCopilotEnvironmentContext(userId, workspaceId, environment)
+        resolvedSecretTraceRegistry = environmentContext.resolvedSecretTraceRegistry
+      } catch (error) {
+        logger.warn('Failed to build Mothership trace secret catalog', {
+          error: getErrorMessage(error),
+          userId,
+          workspaceId,
+        })
+        resolvedSecretTraceRegistry = createIncompleteResolvedSecretTraceRegistry(scope)
+      }
+    }
+    const activeResolvedSecretTraceRegistry = resolvedSecretTraceRegistry
+    const mcpDiscoveryProvenance = new ResolvedSecretTraceProvenanceAccumulator({
+      userId,
+      workspaceId,
+    })
+    const recordMcpDiscoveryProvenance = includePrivateProvenance
+      ? (provenance: unknown): void => {
+          mcpDiscoveryProvenance.record(provenance)
+        }
+      : undefined
 
     const usage = await checkMothershipUsageLimits(userId, workspaceId)
     if (usage.isExceeded) {
@@ -154,14 +246,46 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     const lastUserMessage = messages.filter((m) => m.role === 'user').at(-1)?.content
     // double-cast-allowed: the contract validates contexts as open kind/label objects; processContextsServer narrows on `kind` at runtime
     const agentMentions = contexts as unknown as ChatContext[] | undefined
-    const [workspaceContext, integrationTools, userSkillTool, userPermission, agentContexts] =
+    const taggedMcpServerIds = (agentMentions ?? []).flatMap((context) =>
+      context.kind === 'mcp' && context.serverId ? [context.serverId] : []
+    )
+    const nonMcpAgentMentions = agentMentions?.filter((context) => context.kind !== 'mcp')
+    const userPermission = workspaceAccess.permission
+    const mothershipToolsPromise = Promise.allSettled([
+      buildSelectedMcpToolSchemas(
+        userId,
+        workspaceId,
+        mcpTools ?? [],
+        recordMcpDiscoveryProvenance
+      ),
+      buildTaggedMcpToolSchemas(
+        userId,
+        workspaceId,
+        taggedMcpServerIds,
+        recordMcpDiscoveryProvenance
+      ),
+    ]).then(async (results) => {
+      if (activeResolvedSecretTraceRegistry) {
+        await activeResolvedSecretTraceRegistry.importProvenance(
+          mcpDiscoveryProvenance.exportProvenance(),
+          { trusted: true }
+        )
+      }
+      const groups = results.map((result) => {
+        if (result.status === 'rejected') throw result.reason
+        return result.value
+      })
+      const byName = new Map(groups.flat().map((tool) => [tool.name, tool]))
+      return [...byName.values()]
+    })
+    const [workspaceContext, integrationTools, mothershipTools, entitlements, agentContexts] =
       await Promise.all([
-        generateWorkspaceContext(workspaceId, userId),
+        generateWorkspaceContext(workspaceId, userId, { workspaceAccess }),
         buildIntegrationToolSchemas(userId, messageId, undefined, workspaceId),
-        buildUserSkillTool(workspaceId),
-        getUserEntityPermissions(userId, 'workspace', workspaceId).catch(() => null),
+        mothershipToolsPromise,
+        computeWorkspaceEntitlements(workspaceId, userId),
         processContextsServer(
-          agentMentions,
+          nonMcpAgentMentions,
           userId,
           lastUserMessage,
           workspaceId,
@@ -188,13 +312,34 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       messageId,
       isHosted: true,
       workspaceContext,
-      ...(isE2BDocEnabled ? { docCompiler: 'python' } : {}),
+      ...(isDocSandboxEnabled ? { docCompiler: 'python' } : {}),
       ...(userMetadata ? { userMetadata } : {}),
       ...(fileAttachments && fileAttachments.length > 0 ? { fileAttachments } : {}),
-      ...(agentContexts.length > 0 ? { contexts: agentContexts } : {}),
+      ...(agentContexts.length > 0 || mothershipTools.length > 0
+        ? {
+            contexts: [
+              ...agentContexts,
+              ...(mothershipTools.length > 0
+                ? [
+                    {
+                      type: 'mcp',
+                      content: [
+                        'The following MCP tools are explicitly enabled for this request and are callable directly by the exact name shown — there is no loading step.',
+                        'Do not narrate discovery, tool-name selection, or retries. Call the tool first, then respond once with the result. Never claim the server works before a successful tool result. Do not automatically retry a timed-out or abandoned MCP call.',
+                        ...mothershipTools.map(
+                          (tool) => `- ${tool.name}: ${tool.description || tool.name}`
+                        ),
+                      ].join('\n'),
+                    },
+                  ]
+                : []),
+            ],
+          }
+        : {}),
       ...(integrationTools.length > 0 ? { integrationTools } : {}),
-      ...(userSkillTool ? { mothershipTools: [userSkillTool] } : {}),
+      ...(mothershipTools.length > 0 ? { mothershipTools } : {}),
       ...(userPermission ? { userPermission } : {}),
+      ...(entitlements.length > 0 ? { entitlements } : {}),
     }
 
     let allowExplicitAbort = true
@@ -245,6 +390,14 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         autoExecuteTools: true,
         interactive: false,
         abortSignal: lifecycleAbortController.signal,
+        billingAttribution,
+        ...(userPermission ? { userPermission } : {}),
+        secretActorUserId: userId,
+        secretMountPolicy,
+        environmentContext,
+        ...(!environmentContext && resolvedSecretTraceRegistry
+          ? { resolvedSecretTraceRegistry }
+          : {}),
         onEvent,
       })
 
@@ -289,7 +442,13 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
               allowExplicitAbort = false
 
               if (lifecycleAbortController.signal.aborted) {
-                send({ type: 'error', error: 'Sim execution aborted' })
+                send(
+                  withPrivateProvenance(
+                    { type: 'error', error: 'Sim execution aborted' },
+                    resolvedSecretTraceRegistry,
+                    includePrivateProvenance
+                  )
+                )
                 return
               }
 
@@ -306,17 +465,27 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
                     errors: result.errors,
                   }
                 )
-                send({
-                  type: 'error',
-                  error: result.error || 'Sim execution failed',
-                  content: result.content || '',
-                })
+                send(
+                  withPrivateProvenance(
+                    {
+                      type: 'error',
+                      error: result.error || 'Sim execution failed',
+                      content: result.content || '',
+                    },
+                    resolvedSecretTraceRegistry,
+                    includePrivateProvenance
+                  )
+                )
                 return
               }
 
               send({
                 type: 'final',
-                data: buildExecuteResponsePayload(result, effectiveChatId, integrationTools),
+                data: withPrivateProvenance(
+                  buildExecuteResponsePayload(result, effectiveChatId, integrationTools),
+                  resolvedSecretTraceRegistry,
+                  includePrivateProvenance
+                ),
               })
             } catch (error) {
               if (
@@ -330,7 +499,13 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
                     : 'Mothership execute aborted',
                   { requestId }
                 )
-                send({ type: 'error', error: 'Sim execution aborted' })
+                send(
+                  withPrivateProvenance(
+                    { type: 'error', error: 'Sim execution aborted' },
+                    resolvedSecretTraceRegistry,
+                    includePrivateProvenance
+                  )
+                )
                 return
               }
 
@@ -343,10 +518,16 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
                   error: getErrorMessage(error, 'Unknown error'),
                 }
               )
-              send({
-                type: 'error',
-                error: getErrorMessage(error, 'Internal server error'),
-              })
+              send(
+                withPrivateProvenance(
+                  {
+                    type: 'error',
+                    error: getErrorMessage(error, 'Internal server error'),
+                  },
+                  resolvedSecretTraceRegistry,
+                  includePrivateProvenance
+                )
+              )
             } finally {
               allowExplicitAbort = false
               if (heartbeatId) {
@@ -373,6 +554,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         headers: {
           'Content-Type': `${MOTHERSHIP_EXECUTE_STREAM_CONTENT_TYPE}; charset=utf-8`,
           'Cache-Control': 'no-cache, no-transform',
+          ...privateResponseHeaders(resolvedSecretTraceRegistry, includePrivateProvenance),
         },
       })
     }
@@ -384,7 +566,17 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
 
       if (lifecycleAbortController.signal.aborted || req.signal.aborted) {
         reqLogger.info('Mothership execute aborted after lifecycle completion')
-        return NextResponse.json({ error: 'Sim execution aborted' }, { status: 499 })
+        return NextResponse.json(
+          withPrivateProvenance(
+            { error: 'Sim execution aborted' },
+            resolvedSecretTraceRegistry,
+            includePrivateProvenance
+          ),
+          {
+            status: 499,
+            headers: privateResponseHeaders(resolvedSecretTraceRegistry, includePrivateProvenance),
+          }
+        )
       }
 
       if (!result.success) {
@@ -401,16 +593,30 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           }
         )
         return NextResponse.json(
+          withPrivateProvenance(
+            {
+              error: result.error || 'Sim execution failed',
+              content: result.content || '',
+            },
+            resolvedSecretTraceRegistry,
+            includePrivateProvenance
+          ),
           {
-            error: result.error || 'Sim execution failed',
-            content: result.content || '',
-          },
-          { status: 500 }
+            status: 500,
+            headers: privateResponseHeaders(resolvedSecretTraceRegistry, includePrivateProvenance),
+          }
         )
       }
 
       return NextResponse.json(
-        buildExecuteResponsePayload(result, effectiveChatId, integrationTools)
+        withPrivateProvenance(
+          buildExecuteResponsePayload(result, effectiveChatId, integrationTools),
+          resolvedSecretTraceRegistry,
+          includePrivateProvenance
+        ),
+        {
+          headers: privateResponseHeaders(resolvedSecretTraceRegistry, includePrivateProvenance),
+        }
       )
     } finally {
       allowExplicitAbort = false
@@ -428,7 +634,17 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         }
       )
 
-      return NextResponse.json({ error: 'Sim execution aborted' }, { status: 499 })
+      return NextResponse.json(
+        withPrivateProvenance(
+          { error: 'Sim execution aborted' },
+          resolvedSecretTraceRegistry,
+          includePrivateProvenance
+        ),
+        {
+          status: 499,
+          headers: privateResponseHeaders(resolvedSecretTraceRegistry, includePrivateProvenance),
+        }
+      )
     }
 
     if (isWorkspaceAccessDeniedError(error)) {
@@ -444,8 +660,15 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     )
 
     return NextResponse.json(
-      { error: getErrorMessage(error, 'Internal server error') },
-      { status: 500 }
+      withPrivateProvenance(
+        { error: getErrorMessage(error, 'Internal server error') },
+        resolvedSecretTraceRegistry,
+        includePrivateProvenance
+      ),
+      {
+        status: 500,
+        headers: privateResponseHeaders(resolvedSecretTraceRegistry, includePrivateProvenance),
+      }
     )
   }
 })

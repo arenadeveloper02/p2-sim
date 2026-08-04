@@ -65,9 +65,9 @@ export function Features() {
         <FeatureCard
           eyebrow='Build'
           title='Build agents that solve real problems.'
-          description='Wire blocks, models, and integrations into agent logic on a visual builder, from one agent to many working in parallel.'
+          description="Wire blocks, models, and integrations into agent logic on Sim's visual builder, from one agent to many working in parallel."
           href='/workflows'
-          linkLabel='Explore the workflow builder'
+          linkLabel='Explore the AI workflow builder'
         >
           <BuildCallout />
         </FeatureCard>
@@ -76,7 +76,7 @@ export function Features() {
         <FeatureCard
           eyebrow='Monitor'
           title='Watch every run, end to end.'
-          description='Trace each run block by block, with full logs and the real cost, so you always know what ran and why.'
+          description='Sim traces each run block by block, with full logs and the real cost.'
           backdropSrc='/landing/feature-monitor-backdrop.jpg'
           mediaSide='right'
           flushBottom

@@ -7,9 +7,11 @@
  * keymap's `isSuggestionMenuOpen` guard reads flips on when a menu opens.
  */
 import { Editor } from '@tiptap/core'
+import { GapCursor } from '@tiptap/pm/gapcursor'
 import { AllSelection, NodeSelection } from '@tiptap/pm/state'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMarkdownEditorExtensions } from './editor-extensions'
+import { postProcessSerializedMarkdown } from './markdown-fidelity'
 import { MENTION_PLUGIN_KEY } from './mention'
 import { SLASH_COMMAND_PLUGIN_KEY } from './slash-command/slash-command'
 
@@ -165,6 +167,22 @@ describe('divider Backspace', () => {
     expect(selection.to).toBe(doc.content.size)
     editor.destroy()
   })
+
+  it('only paints a divider inside a range selection while the editor has focus', () => {
+    const editor = editorWith('<p>a</p><hr><p>b</p>')
+    const divider = editor.view.dom.querySelector('hr')
+    editor.commands.selectAll()
+
+    expect(divider?.classList.contains('rich-leaf-in-selection')).toBe(false)
+
+    editor.view.dom.dispatchEvent(new FocusEvent('focus'))
+    expect(divider?.classList.contains('rich-leaf-in-selection')).toBe(true)
+
+    editor.view.dom.dispatchEvent(new FocusEvent('blur'))
+    expect(editor.state.selection.empty).toBe(false)
+    expect(divider?.classList.contains('rich-leaf-in-selection')).toBe(false)
+    editor.destroy()
+  })
 })
 
 describe('empty wrapped-block Backspace', () => {
@@ -175,13 +193,11 @@ describe('empty wrapped-block Backspace', () => {
   it.each([
     ['bullet middle', '- one\n- two\n- three', 'two', '- one\n- three'],
     ['bullet first', '- one\n- two\n- three', 'one', '- two\n- three'],
-    ['bullet last', '- one\n- two', 'two', '- one'],
     ['ordered middle', '1. one\n2. two\n3. three', 'two', '1. one\n2. three'],
     ['task middle', '- [ ] one\n- [ ] two\n- [ ] three', 'two', '- [ ] one\n- [ ] three'],
     ['blockquote middle', '> one\n>\n> two\n>\n> three', 'two', '> one\n>\n> three'],
-    ['nested item', '- one\n  - two\n- three', 'two', '- one\n- three'],
   ])(
-    'removes the emptied %s cleanly — one container, no stray paragraph, round-trips',
+    'removes an emptied non-trailing %s cleanly — one container, no stray paragraph, round-trips',
     (_label, markdown, word, expected) => {
       const editor = editorWith('')
       editor.commands.setContent(markdown, { contentType: 'markdown' })
@@ -195,6 +211,296 @@ describe('empty wrapped-block Backspace', () => {
       editor.destroy()
     }
   )
+
+  it('clears a lone empty bullet before an image to a paragraph and never destroys the image', () => {
+    // Regression: an earlier delete-and-jump path silently NodeSelected the following image, so a
+    // second Backspace while "clearing the bullet" deleted it. The lone empty bullet now lifts into an
+    // empty paragraph in place, the image is untouched, and no repeated Backspace destroys it.
+    const editor = editorWith({
+      type: 'doc',
+      content: [
+        { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }] },
+        { type: 'image', attrs: { src: '/api/files/view/wf_img', alt: 'photo' } },
+      ],
+    })
+    editor.commands.setTextSelection(3)
+    pressBackspace(editor)
+
+    expect(blockShape(editor)).toEqual(['paragraph', 'image', 'paragraph'])
+    expect(editor.state.selection).not.toBeInstanceOf(NodeSelection)
+
+    pressBackspace(editor)
+    expect(blockShape(editor)).toContain('image')
+    editor.destroy()
+  })
+
+  it('does not crash on Backspace from a gap cursor (top-level selection, depth 0)', () => {
+    // Regression: `$from.before($from.depth)` with a gap cursor's depth of 0 threw
+    // "RangeError: There is no position before the top-level node" — reachable whenever a gap
+    // cursor sits between two leaves (the `data-gap-between-leaves` state) and Backspace is pressed.
+    const editor = editorWith('<hr><hr>')
+    const gapPos = editor.state.doc.firstChild ? editor.state.doc.firstChild.nodeSize : 1
+    editor.view.dispatch(
+      editor.state.tr.setSelection(new GapCursor(editor.state.doc.resolve(gapPos)))
+    )
+    expect(editor.state.selection).toBeInstanceOf(GapCursor)
+
+    expect(() => pressBackspace(editor)).not.toThrow()
+    // TipTap appends a trailing paragraph after the final leaf; the dividers must both survive.
+    expect(blockShape(editor)).toEqual(['horizontalRule', 'horizontalRule', 'paragraph'])
+    editor.destroy()
+  })
+
+  it('clears a lone empty bullet after an image to a paragraph without selecting the image', () => {
+    // With an image directly before the emptied bullet, clearing the bullet must not silently select
+    // (and so endanger) the image. The bullet lifts into an empty paragraph in place; the image is
+    // untouched and no repeated Backspace destroys it.
+    const editor = editorWith({
+      type: 'doc',
+      content: [
+        { type: 'image', attrs: { src: '/api/files/view/wf_img', alt: 'photo' } },
+        { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }] },
+      ],
+    })
+    editor.commands.setTextSelection(4)
+    expect(editor.state.selection.$from.parent.type.name).toBe('paragraph')
+    pressBackspace(editor)
+
+    expect(blockShape(editor)).toEqual(['image', 'paragraph', 'paragraph'])
+    expect(editor.state.selection).not.toBeInstanceOf(NodeSelection)
+
+    pressBackspace(editor)
+    expect(blockShape(editor)).toContain('image')
+    editor.destroy()
+  })
+
+  it('does not crash on Backspace from a gap cursor at the very start of the doc', () => {
+    // Depth-0 + offset-0 is the worst case: our old code threw before(0), and TipTap's blockquote
+    // handler crashes on $from.node(-1) if the key falls through — so it must be consumed.
+    const editor = editorWith({
+      type: 'doc',
+      content: [{ type: 'image', attrs: { src: '/api/files/view/wf_img', alt: 'photo' } }],
+    })
+    editor.view.dispatch(editor.state.tr.setSelection(new GapCursor(editor.state.doc.resolve(0))))
+    expect(editor.state.selection).toBeInstanceOf(GapCursor)
+
+    expect(() => pressBackspace(editor)).not.toThrow()
+    expect(blockShape(editor)).toEqual(['image', 'paragraph'])
+    editor.destroy()
+  })
+
+  it('clears a lone empty bullet between a paragraph and an image to a paragraph, leaving the image', () => {
+    const editor = editorWith({
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'hello' }] },
+        { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }] },
+        { type: 'image', attrs: { src: '/api/files/view/wf_img', alt: 'photo' } },
+      ],
+    })
+    editor.commands.setTextSelection(10)
+    pressBackspace(editor)
+
+    expect(blockShape(editor)).toEqual(['paragraph', 'paragraph', 'image', 'paragraph'])
+    expect(editor.state.selection.empty).toBe(true)
+    expect(editor.state.selection).not.toBeInstanceOf(NodeSelection)
+    // The cleared bullet is now an empty paragraph, and 'hello' is untouched above it.
+    expect(editor.state.doc.firstChild?.textContent).toBe('hello')
+    editor.destroy()
+  })
+})
+
+describe('list Backspace (clear / outdent)', () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn()
+  })
+
+  /** Puts the caret at the very start of the item text `word`. */
+  function caretAtStartOf(editor: Editor, word: string): void {
+    editor.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === word) editor.commands.setTextSelection(pos)
+    })
+  }
+
+  it('lifts a top-level bullet WITH TEXT into a paragraph, keeping the text (round-trips)', () => {
+    const editor = editorWith('')
+    editor.commands.setContent('- one\n- two', { contentType: 'markdown' })
+    editor.commands.focus()
+    caretAtStartOf(editor, 'two')
+    pressBackspace(editor)
+
+    // A bulletList (just 'one') followed by the lifted 'two' paragraph (+ TipTap's trailing filler).
+    expect(blockShape(editor).slice(0, 2)).toEqual(['bulletList', 'paragraph'])
+    const { md, reparsed } = markdownRoundTrip(editor)
+    expect(md.trim()).toBe('- one\n\ntwo')
+    expect(reparsed).toBe(md)
+    editor.destroy()
+  })
+
+  it('clears an empty TRAILING bullet to a paragraph in place — no delete, caret stays on the line', () => {
+    const editor = editorWith('')
+    editor.commands.setContent('- one\n- two', { contentType: 'markdown' })
+    editor.commands.focus()
+    emptyItem(editor, 'two')
+    pressBackspace(editor)
+
+    // The bullet becomes a paragraph; the list keeps only 'one'. The caret sits in the new empty
+    // paragraph rather than jumping back into the 'one' bullet.
+    const list = editor.getJSON().content?.find((node) => node.type === 'bulletList')
+    expect(list?.content).toHaveLength(1)
+    expect(editor.state.selection.empty).toBe(true)
+    expect(editor.state.selection.$from.parent.type.name).toBe('paragraph')
+    expect(editor.state.selection.$from.parent.textContent).toBe('')
+    expect(editor.getMarkdown().trim()).toBe('- one')
+    editor.destroy()
+  })
+
+  it('clears a lone empty bullet to an empty paragraph (whole doc)', () => {
+    const editor = editorWith('')
+    editor.commands.setContent('- one', { contentType: 'markdown' })
+    editor.commands.focus()
+    emptyItem(editor, 'one')
+    pressBackspace(editor)
+
+    expect(editor.getJSON().content?.some((n) => n.type === 'bulletList')).toBe(false)
+    expect(editor.state.selection.$from.parent.type.name).toBe('paragraph')
+    editor.destroy()
+  })
+
+  it('outdents a nested bullet WITH TEXT one level instead of merging it (round-trips)', () => {
+    const editor = editorWith('')
+    editor.commands.setContent('- one\n  - two', { contentType: 'markdown' })
+    editor.commands.focus()
+    caretAtStartOf(editor, 'two')
+    pressBackspace(editor)
+
+    const { md, reparsed } = markdownRoundTrip(editor)
+    expect(md.trim()).toBe('- one\n- two')
+    expect(reparsed).toBe(md)
+    editor.destroy()
+  })
+
+  it('outdents an empty nested bullet one level (round-trips)', () => {
+    const editor = editorWith('')
+    editor.commands.setContent('- one\n  - two\n- three', { contentType: 'markdown' })
+    editor.commands.focus()
+    emptyItem(editor, 'two')
+    pressBackspace(editor)
+
+    const { md, reparsed } = markdownRoundTrip(editor)
+    expect(md.trim()).toBe('- one\n- \n- three')
+    expect(reparsed).toBe(md)
+    editor.destroy()
+  })
+
+  it('clears a checklist item the same way (task item → paragraph)', () => {
+    const editor = editorWith('')
+    editor.commands.setContent('- [ ] one\n- [ ] two', { contentType: 'markdown' })
+    editor.commands.focus()
+    caretAtStartOf(editor, 'two')
+    pressBackspace(editor)
+
+    expect(blockShape(editor).slice(0, 2)).toEqual(['taskList', 'paragraph'])
+    expect(editor.getMarkdown().trim()).toBe('- [ ] one\n\ntwo')
+    editor.destroy()
+  })
+
+  it('does not delete a non-trailing item whose block holds only a non-text atom', () => {
+    // Emptiness is the caret block's content.size, not its text: a bullet holding only an inline atom
+    // (image/mention — here a hardBreak stand-in) is NOT block-empty, so Backspace clears it to a
+    // paragraph (content preserved) instead of removeEmptyWrappedBlock deleting the whole row.
+    const editor = editorWith('')
+    editor.commands.setContent({
+      type: 'doc',
+      content: [
+        {
+          type: 'bulletList',
+          content: [
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'hardBreak' }] }],
+            },
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'two' }] }],
+            },
+          ],
+        },
+      ],
+    })
+    const atomPos = firstPosOf(editor, 'hardBreak')
+    editor.commands.setTextSelection(atomPos)
+    pressBackspace(editor)
+
+    // The atom survives (not deleted) and 'two' is untouched.
+    expect(firstPosOf(editor, 'hardBreak')).toBeGreaterThanOrEqual(0)
+    expect(editor.state.doc.textContent).toContain('two')
+    editor.destroy()
+  })
+
+  it('removes only the empty first block of a multi-block item, not the whole item', () => {
+    // An empty first block whose item has sibling blocks must not lift the whole item out of the list;
+    // only that empty block is removed, the rest of the item (and the list) stays intact.
+    const editor = editorWith('')
+    editor.commands.setContent({
+      type: 'doc',
+      content: [
+        {
+          type: 'bulletList',
+          content: [
+            {
+              type: 'listItem',
+              content: [
+                { type: 'paragraph' },
+                { type: 'paragraph', content: [{ type: 'text', text: 'more' }] },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    // Caret at the start of the empty first paragraph (position 3: doc>bulletList>listItem>paragraph).
+    editor.commands.setTextSelection(3)
+    pressBackspace(editor)
+
+    // Still a list (item was NOT lifted out to a top-level paragraph), and 'more' survives.
+    expect(blockShape(editor)[0]).toBe('bulletList')
+    expect(editor.state.doc.textContent).toBe('more')
+    const list = editor.getJSON().content?.find((n) => n.type === 'bulletList')
+    expect(list?.content).toHaveLength(1)
+    editor.destroy()
+  })
+})
+
+describe('empty nested bullet does not corrupt its parent (Enter → Tab)', () => {
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn()
+  })
+
+  it('serializes a stranded empty sub-bullet away instead of turning the parent into a heading', () => {
+    // Repro: type a bullet, Enter for a new bullet, Tab to indent it into an empty sub-bullet, then
+    // leave it. The serialized `- one\n  - ` would re-parse as `- ## one` (Setext underline). The
+    // serialize step must strip the empty sub-bullet so the parent stays a bullet and round-trips.
+    const editor = editorWith('')
+    editor.commands.setContent('- one', { contentType: 'markdown' })
+    editor.commands.focus()
+    let end = -1
+    editor.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === 'one') end = pos + 3
+    })
+    editor.commands.setTextSelection(end)
+    pressKey(editor, 'Enter')
+    pressKey(editor, 'Tab')
+
+    const saved = postProcessSerializedMarkdown(editor.getMarkdown())
+    expect(saved).toBe('- one\n')
+
+    // Reloading the saved markdown keeps a bullet — never a heading.
+    editor.commands.setContent(saved, { contentType: 'markdown' })
+    expect(blockShape(editor)).not.toContain('heading')
+    expect(blockShape(editor)).toContain('bulletList')
+    editor.destroy()
+  })
 })
 
 describe('empty list-item Enter', () => {
@@ -225,6 +531,52 @@ describe('empty list-item Enter', () => {
     const list = editor.getJSON().content?.find((node) => node.type === 'bulletList')
     expect(list?.content).toHaveLength(1)
     expect(editor.getJSON().content?.some((node) => node.type === 'paragraph')).toBe(true)
+    editor.destroy()
+  })
+
+  it('outdents an empty NESTED item one level instead of removing it', () => {
+    const editor = editorWith('')
+    editor.commands.setContent('- one\n  - two', { contentType: 'markdown' })
+    editor.commands.focus()
+    emptyItem(editor, 'two')
+    pressKey(editor, 'Enter')
+
+    // The emptied nested item outdents to a second top-level bullet rather than being deleted.
+    const list = editor.getJSON().content?.find((node) => node.type === 'bulletList')
+    expect(list?.content).toHaveLength(2)
+    expect(list?.content?.every((item) => item.type === 'listItem')).toBe(true)
+    editor.destroy()
+  })
+
+  it('removes only the empty first block of a multi-block item, matching Backspace (keeps the list)', () => {
+    // Symmetry with the Backspace multi-block case: an empty first block whose item has sibling blocks
+    // is removed in place — the continuation and the list stay intact — rather than exiting the list.
+    const editor = editorWith('')
+    editor.commands.setContent({
+      type: 'doc',
+      content: [
+        {
+          type: 'bulletList',
+          content: [
+            {
+              type: 'listItem',
+              content: [
+                { type: 'paragraph' },
+                { type: 'paragraph', content: [{ type: 'text', text: 'more' }] },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    // Caret at the start of the empty first paragraph (doc>bulletList>listItem>paragraph).
+    editor.commands.setTextSelection(3)
+    pressKey(editor, 'Enter')
+
+    expect(blockShape(editor)[0]).toBe('bulletList')
+    expect(editor.state.doc.textContent).toBe('more')
+    const list = editor.getJSON().content?.find((n) => n.type === 'bulletList')
+    expect(list?.content).toHaveLength(1)
     editor.destroy()
   })
 })

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { toast } from '@sim/emcn'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
+import { GENERATED_DOCUMENT_SOURCE_TYPES } from '@/lib/uploads/utils/file-utils'
 import {
   useUpdateWorkspaceFileContent,
   useWorkspaceFileContent,
@@ -20,13 +21,26 @@ import {
  * editable text is the source program, not the compiled artifact. The serve route
  * returns that source only when asked for the raw representation.
  */
-const GENERATED_SOURCE_FILE_TYPES = new Set([
-  'text/x-pptxgenjs',
-  'text/x-docxjs',
-  'text/x-pdflibjs',
-  'text/x-python-pdf',
-  'text/x-python-xlsx',
-])
+const GENERATED_SOURCE_FILE_TYPES = GENERATED_DOCUMENT_SOURCE_TYPES
+
+/**
+ * Poll cadence for the content query while the post-stream reconcile waits for a fetch showing the
+ * server content advanced past the pre-stream baseline. Only active during `reconciling` — a short
+ * window ending the moment a fetch advances — so the cost is a few small GETs after an agent edit.
+ */
+export const RECONCILING_REFETCH_INTERVAL_MS = 1500
+
+/**
+ * How long the reconcile polls at the fast cadence after a stream settles. A write that hasn't
+ * landed within this window has almost certainly failed or is badly delayed, so polling degrades
+ * to {@link RECONCILING_REFETCH_SLOW_INTERVAL_MS} — never stopping outright, so the editor can't
+ * end up locked read-only with no automatic recovery (react-query pauses interval refetches in
+ * background tabs by default, so a wedged doc left open does not poll unattended).
+ */
+export const RECONCILING_REFETCH_WINDOW_MS = 45_000
+
+/** Slow-poll cadence once the fast window has elapsed without the server content advancing. */
+export const RECONCILING_REFETCH_SLOW_INTERVAL_MS = 15_000
 
 interface UseEditableFileContentOptions {
   file: WorkspaceFileRecord
@@ -47,6 +61,13 @@ interface UseEditableFileContentOptions {
    * the at-rest baseline, never while an agent stream is in flight. Stable reference required.
    */
   normalizeBaseline?: (raw: string) => string
+  /**
+   * Extra gate on autosave (and draft persistence). When `false`, saving is
+   * suppressed even when otherwise eligible — the collaborative editor uses it to
+   * hold saves until the shared document is synced AND seeded, so an empty or
+   * partially-synced doc can never overwrite the real file. Defaults to `true`.
+   */
+  canAutosave?: boolean
 }
 
 interface EditableFileContent {
@@ -99,6 +120,7 @@ function useFileContentState(options: SyncTextEditorContentStateOptions) {
     savedContent: state.savedContent,
     isInitialized: state.phase !== 'uninitialized',
     isStreamInteractionLocked: state.phase === 'streaming' || state.phase === 'reconciling',
+    isReconciling: state.phase === 'reconciling',
     setDraftContent,
     markSavedContent,
   }
@@ -121,11 +143,31 @@ export function useEditableFileContent({
   saveRef,
   discardRef,
   normalizeBaseline,
+  canAutosave = true,
 }: UseEditableFileContentOptions): EditableFileContent {
   const onDirtyChangeRef = useRef(onDirtyChange)
   const onSaveStatusChangeRef = useRef(onSaveStatusChange)
   onDirtyChangeRef.current = onDirtyChange
   onSaveStatusChangeRef.current = onSaveStatusChange
+
+  /**
+   * Mirrors the reducer's `reconciling` phase (assigned below the reducer hook; read here through a
+   * stable function that react-query re-evaluates after every fetch and options pass, so polling
+   * starts and stops with the phase, no extra re-render required). While reconciling — the stream
+   * ended but no fetch has shown the server content advancing past the pre-stream baseline yet —
+   * the content query polls. The reconcile's exit is data-driven and this is its only retry: a
+   * single refetch that races the agent's write (or an invalidation that never reaches this
+   * surface) would otherwise leave the editor read-only until a window refocus or a full reload.
+   */
+  const isReconcilingRef = useRef(false)
+  const reconcilingSinceRef = useRef(0)
+  const reconcileRefetchInterval = useCallback(() => {
+    if (!isReconcilingRef.current) return false
+    if (Date.now() - reconcilingSinceRef.current >= RECONCILING_REFETCH_WINDOW_MS) {
+      return RECONCILING_REFETCH_SLOW_INTERVAL_MS
+    }
+    return RECONCILING_REFETCH_INTERVAL_MS
+  }, [])
 
   const {
     data: fetchedContent,
@@ -135,7 +177,8 @@ export function useEditableFileContent({
     workspaceId,
     file.id,
     file.key,
-    GENERATED_SOURCE_FILE_TYPES.has(file.type)
+    GENERATED_SOURCE_FILE_TYPES.has(file.type),
+    { refetchInterval: reconcileRefetchInterval }
   )
 
   /**
@@ -165,6 +208,7 @@ export function useEditableFileContent({
     savedContent,
     isInitialized,
     isStreamInteractionLocked: isStreamPhaseLocked,
+    isReconciling,
     setDraftContent,
     markSavedContent,
   } = useFileContentState({
@@ -172,6 +216,8 @@ export function useEditableFileContent({
     fetchedContent: baselineContent,
     streamingContent,
   })
+  if (isReconciling && !isReconcilingRef.current) reconcilingSinceRef.current = Date.now()
+  isReconcilingRef.current = isReconciling
 
   const isStreamInteractionLocked = isStreamPhaseLocked || Boolean(isAgentEditing)
 
@@ -196,7 +242,7 @@ export function useEditableFileContent({
     [workspaceId, file.id, markSavedContent]
   )
 
-  const autosaveEnabled = canEdit && isInitialized && !isStreamInteractionLocked
+  const autosaveEnabled = canEdit && isInitialized && !isStreamInteractionLocked && canAutosave
 
   const { saveStatus, saveImmediately, isDirty, discard } = useAutosave({
     content,
@@ -211,9 +257,16 @@ export function useEditableFileContent({
       ),
   })
 
+  // When the client can't autosave it isn't the durability owner: the collaborative editor holds
+  // `canAutosave` permanently false because the relay persists the doc server-side (debounced + on
+  // last-disconnect), so `savedContent` never advances and raw `isDirty` would latch true after any
+  // local OR remote keystroke — surfacing a spurious "Unsaved changes" navigation prompt whose
+  // "Discard" discards nothing real. With nothing the user can save, there is nothing to warn about.
+  const isDirtyForCaller = canAutosave && isDirty
+
   useEffect(() => {
-    onDirtyChangeRef.current?.(isDirty)
-  }, [isDirty])
+    onDirtyChangeRef.current?.(isDirtyForCaller)
+  }, [isDirtyForCaller])
 
   useEffect(() => {
     onSaveStatusChangeRef.current?.(
@@ -261,6 +314,6 @@ export function useEditableFileContent({
     hasContentError: streamingContent === undefined && Boolean(error) && !isInitialized,
     saveStatus,
     saveImmediately,
-    isDirty,
+    isDirty: isDirtyForCaller,
   }
 }

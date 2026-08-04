@@ -90,10 +90,10 @@ describe('persisted-message', () => {
     const persisted = buildPersistedAssistantMessage(result)
 
     expect(persisted.content).not.toContain('sk-sim-secret-123')
-    expect(persisted.content).toContain('"redacted":true')
+    expect(persisted.content).toContain('{"type":"sim_key"}')
     const textBlock = persisted.contentBlocks?.find((b) => b.type === 'text')
     expect(textBlock?.content).not.toContain('sk-sim-secret-123')
-    expect(textBlock?.content).toContain('"redacted":true')
+    expect(textBlock?.content).toContain('{"type":"sim_key"}')
   })
 
   it('redacts sim_key credential tags split across streamed text chunks', () => {
@@ -119,7 +119,7 @@ describe('persisted-message', () => {
     expect(persisted.contentBlocks).toBeDefined()
     const joined = (persisted.contentBlocks ?? []).map((b) => b.content ?? '').join('')
     expect(joined).not.toContain('sk-sim-secret-12345')
-    expect(joined).toContain('"redacted":true')
+    expect(joined).toContain('{"type":"sim_key"}')
   })
 
   it('redacts the api key from a persisted generate_api_key tool result output', () => {
@@ -234,6 +234,101 @@ describe('persisted-message', () => {
     })
     expect(msg.fileAttachments).toBeUndefined()
     expect(msg.contexts).toBeUndefined()
+  })
+
+  it('persists the source names a selection chip renders from, but not its payload', () => {
+    const msg = buildPersistedUserMessage({
+      id: 'user-1',
+      content: 'explain this',
+      contexts: [
+        {
+          kind: 'file_selection',
+          label: 'notes.md:12-40',
+          fileId: 'f1',
+          fileName: 'notes.md',
+          // Send-time payload: resolved server-side, never re-read for display.
+          text: 'the exact passage',
+          startLine: 12,
+          endLine: 40,
+        },
+        {
+          kind: 'table_selection',
+          label: 'Sales (2 rows)',
+          tableId: 't1',
+          tableName: 'Sales',
+          rowIds: ['r1', 'r2'],
+        },
+      ],
+    })
+
+    // fileName must survive: the label carries a `:12-40` suffix, so the chip's
+    // icon cannot recover an extension from it after a reload.
+    expect(msg.contexts?.[0]).toEqual({
+      kind: 'file_selection',
+      label: 'notes.md:12-40',
+      fileId: 'f1',
+      fileName: 'notes.md',
+    })
+    expect(msg.contexts?.[1]).toEqual({
+      kind: 'table_selection',
+      label: 'Sales (2 rows)',
+      tableId: 't1',
+      tableName: 'Sales',
+    })
+  })
+
+  it('round-trips browser and terminal selection snapshots', () => {
+    const persisted = buildPersistedUserMessage({
+      id: 'user-selection',
+      content: '@Docs @Terminal',
+      contexts: [
+        {
+          kind: 'browser_tab',
+          label: 'Docs',
+          tabId: 'tab-1',
+          selection: {
+            text: 'Selected browser text',
+            url: 'https://example.com/docs',
+            title: 'Example docs',
+          },
+        },
+        {
+          kind: 'terminal_tab',
+          label: 'Terminal',
+          terminalId: 'terminal-1',
+          selection: {
+            text: 'bun test',
+            startLine: 12,
+            endLine: 13,
+          },
+        },
+      ],
+    })
+
+    const normalized = normalizeMessage(persisted as unknown as Record<string, unknown>)
+
+    expect(normalized.contexts).toEqual([
+      {
+        kind: 'browser_tab',
+        label: 'Docs',
+        tabId: 'tab-1',
+        selection: {
+          text: 'Selected browser text',
+          url: 'https://example.com/docs',
+          title: 'Example docs',
+        },
+      },
+      {
+        kind: 'terminal_tab',
+        label: 'Terminal',
+        terminalId: 'terminal-1',
+        selection: {
+          text: 'bun test',
+          startLine: 12,
+          endLine: 13,
+        },
+      },
+    ])
   })
 })
 

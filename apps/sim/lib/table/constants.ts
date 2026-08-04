@@ -15,6 +15,17 @@ export const TABLE_LIMITS = {
   MAX_DESCRIPTION_LENGTH: 500,
   DEFAULT_QUERY_LIMIT: 100,
   MAX_QUERY_LIMIT: 1000,
+  /**
+   * Byte budget for one query response. `queryRows` drains rows in bounded
+   * batches; an UNBOUNDED query (no limit) that outgrows the budget fails fast
+   * (the whole result was promised — a partial page would be silent truncation),
+   * while a BOUNDED page cuts early and returns the partial list with
+   * `nextCursor` set. At least one row is always returned on a bounded page.
+   * Measured against serialized row `data` only, not the full HTTP envelope.
+   */
+  MAX_QUERY_RESULT_BYTES: 5 * 1024 * 1024, // 5MB
+  /** Hard row cap per internal fetch batch inside queryRows' bounded drain loop. */
+  QUERY_BATCH_MAX_ROWS: 10000,
   /** Batch size for bulk update operations */
   UPDATE_BATCH_SIZE: 100,
   /** Batch size for bulk delete operations */
@@ -38,8 +49,9 @@ export const TABLE_LIMITS = {
 
 /**
  * Default plan-based table limits. Each value can be overridden via env vars
- * (see `getTablePlanLimits`) so self-hosted deployments can raise the free-tier
- * caps that apply when billing is disabled.
+ * (see `getTablePlanLimits`). Billing-disabled deployments are unlimited
+ * unless the free-tier env vars are explicitly set (see
+ * `getBillingDisabledTableLimits`).
  */
 export const DEFAULT_TABLE_PLAN_LIMITS = {
   free: {
@@ -61,10 +73,14 @@ export const DEFAULT_TABLE_PLAN_LIMITS = {
 } as const
 
 /**
- * Byte budget for one page of row reads, or null when disabled (the default).
- * Dev-preview of the byte-bounded pagination follow-up: set `TABLE_MAX_PAGE_BYTES`
- * to cut pages early once their serialized row data exceeds the budget. The
- * production version moves the cut into SQL — see the pagination-hardening plan.
+ * Byte budget at which a **bounded** page (one with an explicit `limit`) is cut
+ * short, or `null` when disabled — the default. Opt in with `TABLE_MAX_PAGE_BYTES`.
+ *
+ * Off by default because a short page is only safe for a client that terminates
+ * on `nextCursor === null`; a pre-existing v1 pager terminating on
+ * `rows.length < limit` would read the cut as end-of-data and silently truncate.
+ * Unbounded queries (no `limit`) are unaffected — they always fail fast at
+ * `TABLE_LIMITS.MAX_QUERY_RESULT_BYTES` rather than return a partial result.
  */
 export function getMaxPageBytes(): number | null {
   const value = envNumber(env.TABLE_MAX_PAGE_BYTES, 0, { min: 0, integer: true })
@@ -88,6 +104,20 @@ export type PlanName = keyof typeof DEFAULT_TABLE_PLAN_LIMITS
 export interface TablePlanLimits {
   maxTables: number
   maxRowsPerTable: number
+}
+
+/**
+ * Table limits for billing-disabled deployments: unlimited by default, with
+ * each cap opting back in only when its free-tier env var is explicitly set
+ * to a valid positive integer.
+ */
+export function getBillingDisabledTableLimits(): TablePlanLimits {
+  const tablesOverride = envNumber(env.FREE_TABLES_LIMIT, 0, { min: 1, integer: true })
+  const rowsOverride = envNumber(env.FREE_TABLE_ROWS_LIMIT, 0, { min: 1, integer: true })
+  return {
+    maxTables: tablesOverride > 0 ? tablesOverride : Number.MAX_SAFE_INTEGER,
+    maxRowsPerTable: rowsOverride > 0 ? rowsOverride : Number.MAX_SAFE_INTEGER,
+  }
 }
 
 export type TablePlanLimitsByPlan = Record<PlanName, TablePlanLimits>
@@ -133,7 +163,49 @@ export function getTablePlanLimits(): TablePlanLimitsByPlan {
   }
 }
 
-export const COLUMN_TYPES = ['string', 'number', 'boolean', 'date', 'json'] as const
+/**
+ * Re-exported from the column-type module, which is the single source of truth.
+ * Kept here because this is where callers already import it from — restating
+ * the list would let the two drift, which is the class of bug the registry
+ * exists to remove.
+ *
+ * Points at `types` rather than `registry` on purpose: this module is re-
+ * exported by the `@/lib/table` barrel that 44 server modules import, and the
+ * registry pulls in `@sim/emcn/icons`.
+ */
+export { COLUMN_TYPES } from '@/lib/table/column-types/types'
+
+/** Maximum number of options a `select`/`multiselect` column may declare. */
+export const MAX_SELECT_OPTIONS = 100
+
+/**
+ * The v2 filter operators, as a runtime tuple so both the `FilterOp` type and
+ * the boundary Zod enum derive from one source. Order is not significant.
+ */
+export const FILTER_OPS = [
+  'eq',
+  'ne',
+  'gt',
+  'gte',
+  'lt',
+  'lte',
+  'in',
+  'nin',
+  'contains',
+  'ncontains',
+  'startsWith',
+  'endsWith',
+  'like',
+  'ilike',
+  'nlike',
+  'nilike',
+  'isEmpty',
+  'isNotEmpty',
+  'isNull',
+  'isNotNull',
+] as const
+
+export const SORT_DIRECTIONS = ['asc', 'desc'] as const
 
 export const NAME_PATTERN = /^[a-z_][a-z0-9_]*$/i
 

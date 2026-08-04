@@ -3,6 +3,7 @@ import { asanaSelectors } from '@/hooks/selectors/providers/asana/selectors'
 import { attioSelectors } from '@/hooks/selectors/providers/attio/selectors'
 import { bigquerySelectors } from '@/hooks/selectors/providers/bigquery/selectors'
 import { calcomSelectors } from '@/hooks/selectors/providers/calcom/selectors'
+import { clickupSelectors } from '@/hooks/selectors/providers/clickup/selectors'
 import { cloudwatchSelectors } from '@/hooks/selectors/providers/cloudwatch/selectors'
 import { confluenceSelectors } from '@/hooks/selectors/providers/confluence/selectors'
 import { googleSelectors } from '@/hooks/selectors/providers/google/selectors'
@@ -20,6 +21,7 @@ import { slackSelectors } from '@/hooks/selectors/providers/slack/selectors'
 import { trelloSelectors } from '@/hooks/selectors/providers/trello/selectors'
 import { wealthboxSelectors } from '@/hooks/selectors/providers/wealthbox/selectors'
 import { webflowSelectors } from '@/hooks/selectors/providers/webflow/selectors'
+import { zohoDeskSelectors } from '@/hooks/selectors/providers/zoho-desk/selectors'
 import { zoomSelectors } from '@/hooks/selectors/providers/zoom/selectors'
 import type {
   SelectorDefinition,
@@ -42,6 +44,7 @@ export const selectorRegistry = {
   ...pipedriveSelectors,
   ...sharepointSelectors,
   ...trelloSelectors,
+  ...zohoDeskSelectors,
   ...zoomSelectors,
   ...slackSelectors,
   ...wealthboxSelectors,
@@ -50,6 +53,7 @@ export const selectorRegistry = {
   ...linearSelectors,
   ...knowledgeSelectors,
   ...webflowSelectors,
+  ...clickupSelectors,
   ...cloudwatchSelectors,
   ...simSelectors,
 } satisfies Record<SelectorKey, SelectorDefinition>

@@ -58,6 +58,61 @@ export function conflictResolutionSide(filePath: string): 'ours' | 'theirs' {
   return 'ours'
 }
 
+/**
+ * Side to apply without an agent, or `null` when the path needs semantic merge.
+ * Unlike {@link conflictResolutionSide}, this does **not** default ambiguous paths to ours.
+ */
+export function tryDeterministicConflictSide(filePath: string): 'ours' | 'theirs' | null {
+  const policy = readMergePolicy()
+  if (isForkFirstPath(filePath, policy)) return 'ours'
+  if (isUpstreamFirstPath(filePath, policy)) return 'theirs'
+
+  if (
+    filePath === LOCKFILE_PATH ||
+    filePath === 'package.json' ||
+    filePath.endsWith('/package.json')
+  ) {
+    return 'theirs'
+  }
+
+  if (filePath === BUNFIG_PATH) {
+    return 'ours'
+  }
+
+  return null
+}
+
+/**
+ * Checkout `--ours`/`--theirs` for every unmerged path with a deterministic policy side.
+ * Returns the files that still need an agent.
+ */
+export function resolveDeterministicPolicyConflicts(conflictFiles?: string[]): {
+  resolved: string[]
+  remaining: string[]
+} {
+  const conflicts = conflictFiles ?? listConflictFiles()
+  const resolved: string[] = []
+  const remaining: string[] = []
+
+  for (const file of conflicts) {
+    const side = tryDeterministicConflictSide(file)
+    if (!side) {
+      remaining.push(file)
+      continue
+    }
+    try {
+      checkoutConflictSide(file, side)
+      resolved.push(file)
+      console.log(`[policy-resolve] ${side} ← ${file}`)
+    } catch (error) {
+      console.warn(`[policy-resolve] failed for ${file}; leaving for agent:`, error)
+      remaining.push(file)
+    }
+  }
+
+  return { resolved, remaining }
+}
+
 export function isPackageManifest(filePath: string): boolean {
   return PACKAGE_MANIFEST_PATTERN.test(filePath)
 }

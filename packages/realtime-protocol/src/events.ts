@@ -1,4 +1,5 @@
 import type { OperationTarget, SocketOperation } from './constants'
+import type { RoomRef } from './rooms'
 
 /**
  * Wire types for the broadcast/confirmation events the realtime Socket.IO server
@@ -107,6 +108,40 @@ export interface WorkflowDeployedBroadcast {
   workflowId: string
   timestamp: number
 }
+
+/**
+ * `access-revoked` broadcast. Emitted to a single socket when its owner's live
+ * read access to the workflow has been revoked (workspace permission removed or
+ * downgraded to no access), forcing that client to leave the room and clear its
+ * editor state. Unlike the lifecycle broadcasts above, this targets one socket
+ * rather than the whole room — only the revoked user is evicted.
+ */
+export interface AccessRevokedBroadcast {
+  workflowId: string
+  message: string
+  timestamp: number
+}
+
+/**
+ * `room-access-revoked` broadcast — the non-workflow counterpart of
+ * {@link AccessRevokedBroadcast}. Emitted to a single socket when its owner's
+ * workspace permission no longer satisfies the room it occupies (removed, or
+ * downgraded below the room's required level), after the server has already
+ * evicted it. Carries the generic {@link RoomRef} rather than a workflow id
+ * because one socket can hold several rooms of different types at once, so the
+ * client must be told exactly which one it lost.
+ *
+ * Kept as a separate event from `access-revoked` so existing workflow clients —
+ * which read `data.workflowId` — are never handed a payload they would misparse.
+ */
+export interface RoomAccessRevokedBroadcast {
+  room: RoomRef
+  message: string
+  timestamp: number
+}
+
+/** Wire event name carrying a {@link RoomAccessRevokedBroadcast}. */
+export const ROOM_ACCESS_REVOKED_EVENT = 'room-access-revoked'
 
 /** `operation-confirmed` ack for a previously-emitted operation. */
 export interface OperationConfirmedBroadcast {

@@ -30,11 +30,14 @@ import { useParams, useRouter } from 'next/navigation'
 import { useQueryState } from 'nuqs'
 import { createPortal } from 'react-dom'
 import type { VerifyExecutionCostsResponse, WorkflowLogRow } from '@/lib/api/contracts/logs'
+import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
 import {
   apportionCredits,
+  dollarsToCredits,
   formatApportionedCreditCost,
   formatCreditCost,
 } from '@/lib/billing/credits/conversion'
+import { isChatEnabled } from '@/lib/core/config/env-flags'
 import { MothershipHandoffStorage } from '@/lib/core/utils/browser-storage'
 import { filterHiddenOutputKeys } from '@/lib/logs/execution/trace-spans/trace-spans'
 import type { TraceSpan } from '@/lib/logs/types'
@@ -407,7 +410,7 @@ export function LogDetailsContent({ log, onActiveTabChange }: LogDetailsContentP
    * mothership-triggered logs are excluded — `isLikelyExecution` already encodes
    * "has an executionId and isn't a mothership run".
    */
-  const canTroubleshoot = log.status === 'failed' && isLikelyExecution
+  const canTroubleshoot = isChatEnabled && log.status === 'failed' && isLikelyExecution
 
   /**
    * Hands the failed run to Chat. When a chat is already mounted (e.g. the run

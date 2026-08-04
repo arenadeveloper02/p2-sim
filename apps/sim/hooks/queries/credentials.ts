@@ -21,7 +21,10 @@ import {
 } from '@/lib/api/contracts'
 import { environmentKeys } from '@/hooks/queries/environment'
 import { workspaceCredentialKeys } from '@/hooks/queries/utils/credential-keys'
-import { fetchWorkspaceCredentialList } from '@/hooks/queries/utils/fetch-workspace-credentials'
+import {
+  fetchWorkspaceCredentialList,
+  WORKSPACE_CREDENTIAL_LIST_STALE_TIME,
+} from '@/hooks/queries/utils/fetch-workspace-credentials'
 
 /**
  * Key prefix for OAuth credential queries.
@@ -29,7 +32,6 @@ import { fetchWorkspaceCredentialList } from '@/hooks/queries/utils/fetch-worksp
  */
 const OAUTH_CREDENTIALS_KEY = ['oauthCredentials'] as const
 
-export const WORKSPACE_CREDENTIAL_LIST_STALE_TIME = 60 * 1000
 export const WORKSPACE_CREDENTIAL_DETAIL_STALE_TIME = 60 * 1000
 export const WORKSPACE_CREDENTIAL_MEMBER_LIST_STALE_TIME = 30 * 1000
 
@@ -92,6 +94,10 @@ export function useWorkspaceCredential(credentialId?: string, enabled = true) {
     },
     enabled: Boolean(credentialId) && enabled,
     staleTime: WORKSPACE_CREDENTIAL_DETAIL_STALE_TIME,
+    // The credential-detail form seeds editable name/description fields from
+    // this data, so a background focus refetch during an edit could clobber
+    // an unsaved draft. Off the desktop focus-refetch default; no-op on web.
+    refetchOnWindowFocus: false,
   })
 }
 
@@ -136,6 +142,14 @@ export function useUpdateWorkspaceCredential() {
           displayName: payload.displayName,
           description: payload.description,
           serviceAccountJson: payload.serviceAccountJson,
+          signingSecret: payload.signingSecret,
+          botToken: payload.botToken,
+          apiToken: payload.apiToken,
+          domain: payload.domain,
+          clientId: payload.clientId,
+          clientSecret: payload.clientSecret,
+          orgId: payload.orgId,
+          dataCenter: payload.dataCenter,
         },
       })
     },

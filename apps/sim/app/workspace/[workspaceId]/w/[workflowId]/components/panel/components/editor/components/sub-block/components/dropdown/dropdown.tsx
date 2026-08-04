@@ -87,6 +87,8 @@ interface DropdownProps {
   searchable?: boolean
   /** When true, empty is intentional and defaults must not be re-seeded on hydration */
   clearable?: boolean
+  /** Render option labels verbatim instead of lowercasing them */
+  preserveLabelCase?: boolean
 }
 
 /**
@@ -115,6 +117,7 @@ export const Dropdown = memo(function Dropdown({
   dependsOn,
   searchable = false,
   clearable = false,
+  preserveLabelCase = false,
 }: DropdownProps) {
   const activeSearchTarget = useActiveSearchTarget()
   const { isToolAllowed } = usePermissionConfig()
@@ -268,18 +271,19 @@ export const Dropdown = memo(function Dropdown({
   }, [subBlockId, blockConfig, allOptions, isToolAllowed])
 
   const comboboxOptions = useMemo((): ComboboxOption[] => {
+    const toLabel = (raw: string) => (preserveLabelCase ? raw : raw.toLowerCase())
     return allOptions.map((opt) => {
       if (typeof opt === 'string') {
-        return { label: opt.toLowerCase(), value: opt, hidden: deniedOperationIds.has(opt) }
+        return { label: toLabel(opt), value: opt, hidden: deniedOperationIds.has(opt) }
       }
       return {
-        label: opt.label.toLowerCase(),
+        label: toLabel(opt.label),
         value: opt.id,
         icon: 'icon' in opt ? opt.icon : undefined,
         hidden: opt.hidden || deniedOperationIds.has(opt.id),
       }
     })
-  }, [allOptions, deniedOperationIds])
+  }, [allOptions, deniedOperationIds, preserveLabelCase])
 
   const optionMap = useMemo(() => {
     return new Map(comboboxOptions.map((opt) => [opt.value, opt.label]))
@@ -565,7 +569,8 @@ export const Dropdown = memo(function Dropdown({
     return (
       <div className='flex items-center gap-1 overflow-hidden whitespace-nowrap'>
         {visibleValues.map((selectedValue: string, index) => {
-          const label = (optionMap.get(selectedValue) || selectedValue).toLowerCase()
+          const rawLabel = optionMap.get(selectedValue) || selectedValue
+          const label = preserveLabelCase ? rawLabel : rawLabel.toLowerCase()
           const workflowSearchHighlight = getWorkflowSearchLabelHighlight({
             activeSearchTarget,
             blockId,
@@ -574,7 +579,7 @@ export const Dropdown = memo(function Dropdown({
             label,
           })
           return (
-            <ChipTag key={selectedValue} variant='mono' className='min-w-0 shrink'>
+            <ChipTag key={selectedValue} variant='field' className='min-w-0 shrink'>
               <span className='truncate'>
                 {formatDisplayText(label, { workflowSearchHighlight })}
               </span>
@@ -582,13 +587,21 @@ export const Dropdown = memo(function Dropdown({
           )
         })}
         {overflowCount > 0 && (
-          <ChipTag variant='mono' className='shrink-0'>
+          <ChipTag variant='field' className='shrink-0'>
             +{overflowCount}
           </ChipTag>
         )}
       </div>
     )
-  }, [activeSearchTarget, blockId, multiSelect, multiValues, optionMap, subBlockId])
+  }, [
+    activeSearchTarget,
+    blockId,
+    multiSelect,
+    multiValues,
+    optionMap,
+    preserveLabelCase,
+    subBlockId,
+  ])
 
   const singleSelectOverlay = useMemo(() => {
     if (multiSelect || !singleValue) return undefined

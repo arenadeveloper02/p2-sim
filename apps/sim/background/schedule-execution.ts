@@ -9,11 +9,18 @@ import {
 import { createLogger, runWithRequestContext } from '@sim/logger'
 import { describeError, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { backoffWithJitter } from '@sim/utils/retry'
+import { isPlainRecord } from '@sim/utils/object'
 import { task } from '@trigger.dev/sdk'
 import { Cron } from 'croner'
-import { and, eq, isNull, type SQL, sql } from 'drizzle-orm'
-import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
+import { and, eq, isNull, ne, type SQL, sql } from 'drizzle-orm'
+import {
+  assertBillingAttributionSnapshot,
+  BILLING_ATTRIBUTION_HEADER,
+  type BillingAttributionSnapshot,
+  resolveBillingAttribution,
+  serializeBillingAttributionHeader,
+} from '@/lib/billing/core/billing-attribution'
+import { classifyTransientAdmissionFailure } from '@/lib/core/admission/transient-failure'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
 import {
   describeRetryableInfrastructureError,
@@ -24,10 +31,19 @@ import {
   getExecutionTimeout,
   getTimeoutErrorMessage,
 } from '@/lib/core/execution-limits'
+import type { DbOrTx } from '@/lib/db/types'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import type { ExecutionActor } from '@/lib/execution/actor-resolution'
+import {
+  PRIVATE_TOOL_METADATA_REQUEST_HEADER,
+  RESOLVED_SECRET_PROVENANCE_FIELD,
+  RESOLVED_SECRET_PROVENANCE_METADATA_V1,
+  responseHasPrivateToolMetadata,
+} from '@/lib/execution/private-tool-metadata'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
+import { projectTraceSpansForSecrets } from '@/lib/logs/execution/trace-secret-projection'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
+import type { TraceSpan } from '@/lib/logs/types'
 import { cleanupExecutionBase64Cache } from '@/lib/uploads/utils/user-file-base64.server'
 import {
   executeWorkflowCore,
@@ -35,13 +51,14 @@ import {
 } from '@/lib/workflows/executor/execution-core'
 import { handlePostExecutionPauseState } from '@/lib/workflows/executor/pause-persistence'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
+import { notifyScheduleAutoDisabled } from '@/lib/workflows/schedules/disable-notifications'
+import type { ScheduleDisableReason } from '@/lib/workflows/schedules/disable-reasons'
 import {
   SCHEDULE_EXECUTION_CONCURRENCY_LIMIT,
   SCHEDULE_EXECUTION_QUEUE_NAME,
-  SCHEDULE_INFRA_RETRY_BASE_MS,
   SCHEDULE_INFRA_RETRY_MAX_ATTEMPTS,
-  SCHEDULE_INFRA_RETRY_MAX_MS,
 } from '@/lib/workflows/schedules/execution-limits'
+import { calculateScheduleInfraRetryDelayMs } from '@/lib/workflows/schedules/retry'
 import {
   type BlockState,
   calculateNextRunTime as calculateNextTime,
@@ -54,6 +71,7 @@ import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionMetadata } from '@/executor/execution/types'
 import { hasExecutionResult } from '@/executor/utils/errors'
 import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
+import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import { MAX_CONSECUTIVE_FAILURES } from '@/triggers/constants'
 
 const logger = createLogger('ScheduleExecution')
@@ -65,6 +83,12 @@ type WorkflowScheduleUpdate = Partial<Omit<WorkflowScheduleInsert, 'failedCount'
   status?: WorkflowScheduleInsert['status'] | SQL
 }
 type ExecutionCoreResult = Awaited<ReturnType<typeof executeWorkflowCore>>
+
+/** Result of a guarded schedule UPDATE. `status` is the row's value after the write. */
+type ScheduleUpdateOutcome = {
+  updated: boolean
+  status: string | null
+}
 
 function incrementScheduleFailedCount(): SQL {
   return sql`COALESCE(${workflowSchedule.failedCount}, 0) + 1`
@@ -137,8 +161,23 @@ async function applyScheduleUpdate(
   updates: WorkflowScheduleUpdate,
   requestId: string,
   context: string,
-  options: { expectedLastQueuedAt?: Date | null } = {}
-): Promise<boolean> {
+  options: {
+    expectedLastQueuedAt?: Date | null
+    allowCompleted?: boolean
+    /**
+     * Set at call sites that can transition the row to `disabled`. Presence both
+     * opts the site into the auto-disable email and adds a `status <> 'disabled'`
+     * guard, so the transition fires exactly once per disable.
+     */
+    disableReason?: ScheduleDisableReason
+    /** Required inside a transaction, where mail must wait for commit. */
+    deferNotification?: boolean
+    /** Join a caller's transaction instead of using the pooled client. */
+    executor?: DbOrTx
+  } = {}
+): Promise<ScheduleUpdateOutcome> {
+  let outcome: ScheduleUpdateOutcome
+
   try {
     const claimGuard =
       options.expectedLastQueuedAt === undefined
@@ -147,19 +186,58 @@ async function applyScheduleUpdate(
           ? isNull(workflowSchedule.lastQueuedAt)
           : eq(workflowSchedule.lastQueuedAt, options.expectedLastQueuedAt)
 
-    const updatedRows = await db
+    // A run that completes itself mid-execution (complete_scheduled_task, or a
+    // manage_scheduled_task update) sets status='completed'. The post-run
+    // bookkeeping that follows would otherwise write status='active' and a
+    // fresh nextRunAt straight back over it — the claim guard does not catch
+    // this, because completing the job does not touch lastQueuedAt. Terminal
+    // means terminal: only callers that explicitly opt in may move a completed
+    // row.
+    const notCompletedGuard = options.allowCompleted
+      ? undefined
+      : ne(workflowSchedule.status, 'completed')
+
+    /**
+     * `RETURNING` yields the NEW row, so `status === 'disabled'` alone only means
+     * "is disabled". Excluding rows that were already disabled makes a returned
+     * row a true `active -> disabled` edge. Scoped to disable-capable call sites
+     * so lock releases on already-disabled rows still work.
+     */
+    const notAlreadyDisabled = options.disableReason
+      ? ne(workflowSchedule.status, 'disabled')
+      : undefined
+
+    const updatedRows = await (options.executor ?? db)
       .update(workflowSchedule)
       .set(updates)
       .where(
-        and(eq(workflowSchedule.id, scheduleId), isNull(workflowSchedule.archivedAt), claimGuard)
+        and(
+          eq(workflowSchedule.id, scheduleId),
+          isNull(workflowSchedule.archivedAt),
+          claimGuard,
+          notCompletedGuard,
+          notAlreadyDisabled
+        )
       )
-      .returning({ id: workflowSchedule.id })
+      .returning({ id: workflowSchedule.id, status: workflowSchedule.status })
 
-    return updatedRows.length > 0
+    const row = updatedRows[0]
+    outcome = { updated: Boolean(row), status: row?.status ?? null }
   } catch (error) {
     logger.error(`[${requestId}] ${context}`, error, { cause: describeError(error) })
     throw error
   }
+
+  // Outside the try: a mail failure must never surface as a schedule-tick fault.
+  if (options.disableReason && !options.deferNotification && outcome.status === 'disabled') {
+    await notifyScheduleAutoDisabled({
+      scheduleId,
+      reason: options.disableReason,
+      requestId,
+    })
+  }
+
+  return outcome
 }
 
 export async function releaseScheduleLock(
@@ -179,7 +257,41 @@ export async function releaseScheduleLock(
     updates.nextRunAt = nextRunAt
   }
 
-  return applyScheduleUpdate(scheduleId, updates, requestId, context, options)
+  const outcome = await applyScheduleUpdate(scheduleId, updates, requestId, context, options)
+  return outcome.updated
+}
+
+/**
+ * Applies {@link buildScheduleFailureUpdate} through the same guarded write the
+ * trigger.dev path uses, and reports whether the row just transitioned to
+ * `disabled`. Callers own the notification so an in-transaction caller can defer
+ * it until after commit.
+ */
+export async function applyScheduleFailureUpdate(params: {
+  scheduleId: string
+  now: Date
+  nextRunAt: Date | null
+  expectedLastQueuedAt: Date
+  requestId: string
+  context: string
+  executor?: DbOrTx
+}): Promise<{ updated: boolean; disabled: boolean }> {
+  const { scheduleId, now, nextRunAt, expectedLastQueuedAt, requestId, context, executor } = params
+
+  const outcome = await applyScheduleUpdate(
+    scheduleId,
+    buildScheduleFailureUpdate(now, nextRunAt),
+    requestId,
+    context,
+    {
+      expectedLastQueuedAt,
+      disableReason: 'consecutive_failures',
+      deferNotification: true,
+      executor,
+    }
+  )
+
+  return { updated: outcome.updated, disabled: outcome.status === 'disabled' }
 }
 
 function getScheduleClaimedAt(payload: ScheduleExecutionPayload): Date | null {
@@ -219,20 +331,12 @@ async function retryScheduleAfterInfraFailure({
       buildScheduleFailureUpdate(now, nextRunAt),
       requestId,
       `Error updating schedule ${payload.scheduleId} after exhausted infrastructure retries`,
-      { expectedLastQueuedAt: claimedAt }
+      { expectedLastQueuedAt: claimedAt, disableReason: 'consecutive_failures' }
     )
     return
   }
 
-  const retryDelayMs = Math.min(
-    SCHEDULE_INFRA_RETRY_MAX_MS,
-    Math.round(
-      backoffWithJitter(retryAttempt, null, {
-        baseMs: SCHEDULE_INFRA_RETRY_BASE_MS,
-        maxMs: SCHEDULE_INFRA_RETRY_MAX_MS,
-      })
-    )
-  )
+  const retryDelayMs = calculateScheduleInfraRetryDelayMs(retryAttempt)
   const nextRetryAt = new Date(now.getTime() + retryDelayMs)
   const failureCause = cause ?? describeRetryableInfrastructureError(error)
   const errorMessage = message ?? (error ? toError(error).message : undefined)
@@ -385,17 +489,23 @@ async function isScheduleDeploymentVersionActive(
 
 async function isScheduleClaimCurrent(
   scheduleId: string,
-  claimedAt: Date | null
+  claimedAt: Date | null,
+  deploymentOperationId?: string
 ): Promise<boolean> {
-  if (!claimedAt) return true
+  if (!claimedAt && !deploymentOperationId) return true
 
   const [scheduleRecord] = await db
-    .select({ lastQueuedAt: workflowSchedule.lastQueuedAt })
+    .select({
+      lastQueuedAt: workflowSchedule.lastQueuedAt,
+      deploymentOperationId: workflowSchedule.deploymentOperationId,
+    })
     .from(workflowSchedule)
     .where(and(eq(workflowSchedule.id, scheduleId), isNull(workflowSchedule.archivedAt)))
     .limit(1)
 
-  return scheduleRecord?.lastQueuedAt?.getTime() === claimedAt.getTime()
+  if (!scheduleRecord) return false
+  if (claimedAt && scheduleRecord.lastQueuedAt?.getTime() !== claimedAt.getTime()) return false
+  return scheduleRecord.deploymentOperationId === (deploymentOperationId ?? null)
 }
 
 async function runWorkflowExecution({
@@ -404,6 +514,7 @@ async function runWorkflowExecution({
   workflowRecord,
   actorUserId,
   executionActor,
+  billingAttribution,
   loggingSession,
   requestId,
   executionId,
@@ -414,6 +525,7 @@ async function runWorkflowExecution({
   workflowRecord: WorkflowRecord
   actorUserId: string
   executionActor?: ExecutionActor
+  billingAttribution: BillingAttributionSnapshot
   loggingSession: LoggingSession
   requestId: string
   executionId: string
@@ -476,6 +588,7 @@ async function runWorkflowExecution({
       workflowId: payload.workflowId,
       workspaceId,
       userId: actorUserId,
+      billingAttribution,
       sessionUserId: undefined,
       workflowUserId: workflowRecord.userId,
       triggerType: 'schedule',
@@ -523,7 +636,13 @@ async function runWorkflowExecution({
       }
 
       const claimedAt = getScheduleClaimedAt(payload)
-      if (!(await isScheduleClaimCurrent(payload.scheduleId, claimedAt))) {
+      if (
+        !(await isScheduleClaimCurrent(
+          payload.scheduleId,
+          claimedAt,
+          payload.deploymentOperationId
+        ))
+      ) {
         logger.info(
           `[${requestId}] Schedule claim changed before workflow core started, skipping`,
           {
@@ -619,6 +738,7 @@ async function runWorkflowExecution({
         stackTrace: error instanceof Error ? error.stack : undefined,
       },
       traceSpans,
+      executionState: executionResult?.executionState,
     })
 
     throw error
@@ -630,12 +750,14 @@ async function runWorkflowExecution({
 export type ScheduleExecutionPayload = {
   scheduleId: string
   workflowId: string
-  workspaceId?: string
+  workspaceId: string
+  billingAttribution: BillingAttributionSnapshot
   executionId?: string
   requestId?: string
   correlation?: AsyncExecutionCorrelation
   blockId?: string
   deploymentVersionId?: string
+  deploymentOperationId?: string
   cronExpression?: string
   timezone?: string
   lastRanAt?: string
@@ -671,6 +793,10 @@ function calculateNextRunTime(
 }
 
 export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
+  const payloadBillingAttribution = assertBillingAttributionSnapshot(payload.billingAttribution)
+  if (payloadBillingAttribution.workspaceId !== payload.workspaceId) {
+    throw new Error('Schedule job billing attribution does not match its workspace')
+  }
   const correlation = buildScheduleCorrelation(payload)
   const executionId = correlation.executionId
   const requestId = correlation.requestId
@@ -698,10 +824,12 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
 
     const updateClaimedSchedule = (
       updates: WorkflowScheduleUpdate,
-      context: string
-    ): Promise<boolean> =>
+      context: string,
+      disableReason?: ScheduleDisableReason
+    ): Promise<ScheduleUpdateOutcome> =>
       applyScheduleUpdate(payload.scheduleId, updates, requestId, context, {
         expectedLastQueuedAt: claimedAt,
+        disableReason,
       })
 
     try {
@@ -795,10 +923,24 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
         checkDeployment: true,
         loggingSession,
         triggerData: { correlation },
+        billingAttribution: payloadBillingAttribution,
       })
 
       if (!preprocessResult.success) {
-        const statusCode = preprocessResult.error?.statusCode || 500
+        const preprocessingError = preprocessResult.error
+        const statusCode = preprocessingError.statusCode
+        const transientAdmissionFailure = classifyTransientAdmissionFailure(preprocessingError)
+
+        if (transientAdmissionFailure) {
+          await retryScheduleAfterInfraFailure({
+            payload,
+            requestId,
+            claimedAt,
+            message: preprocessingError.message,
+            cause: preprocessingError.cause,
+          })
+          return
+        }
 
         switch (statusCode) {
           case 401: {
@@ -813,14 +955,15 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
                 status: 'disabled',
                 ...resetScheduleInfraRetryCount(),
               },
-              `Failed to disable schedule ${payload.scheduleId} after authentication error`
+              `Failed to disable schedule ${payload.scheduleId} after authentication error`,
+              'authentication_error'
             )
             return
           }
 
           case 403: {
             logger.warn(
-              `[${requestId}] Authorization error during preprocessing, disabling schedule: ${preprocessResult.error?.message}`
+              `[${requestId}] Authorization error during preprocessing, disabling schedule: ${preprocessingError.message}`
             )
             await updateClaimedSchedule(
               {
@@ -830,7 +973,8 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
                 status: 'disabled',
                 ...resetScheduleInfraRetryCount(),
               },
-              `Failed to disable schedule ${payload.scheduleId} after authorization error`
+              `Failed to disable schedule ${payload.scheduleId} after authorization error`,
+              'authorization_error'
             )
             return
           }
@@ -844,7 +988,8 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
                 status: 'disabled',
                 ...resetScheduleInfraRetryCount(),
               },
-              `Failed to disable schedule ${payload.scheduleId} after missing workflow`
+              `Failed to disable schedule ${payload.scheduleId} after missing workflow`,
+              'workflow_not_found'
             )
             return
           }
@@ -883,37 +1028,39 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
             })
             await updateClaimedSchedule(
               buildScheduleFailureUpdate(now, nextRunAt),
-              `Error updating schedule ${payload.scheduleId} after usage limit check`
+              `Error updating schedule ${payload.scheduleId} after usage limit check`,
+              'consecutive_failures'
             )
             return
           }
 
           default: {
-            if (statusCode >= 500 && preprocessResult.error?.retryable) {
+            if (statusCode >= 500 && preprocessingError.retryable) {
               await retryScheduleAfterInfraFailure({
                 payload,
                 requestId,
                 claimedAt,
-                message: preprocessResult.error.message,
-                cause: preprocessResult.error.cause,
+                message: preprocessingError.message,
+                cause: preprocessingError.cause,
               })
               return
             }
 
-            logger.error(`[${requestId}] Preprocessing failed: ${preprocessResult.error?.message}`)
+            logger.error(`[${requestId}] Preprocessing failed: ${preprocessingError.message}`)
             const nextRunAt = await determineNextRunAfterError(payload, now, requestId)
 
             await updateClaimedSchedule(
               buildScheduleFailureUpdate(now, nextRunAt),
-              `Error updating schedule ${payload.scheduleId} after preprocessing failure`
+              `Error updating schedule ${payload.scheduleId} after preprocessing failure`,
+              'consecutive_failures'
             )
             return
           }
         }
       }
 
-      const { actorUserId, workflowRecord, executionActor } = preprocessResult
-      if (!actorUserId || !workflowRecord) {
+      const { actorUserId, billingAttribution, workflowRecord, executionActor } = preprocessResult
+      if (!actorUserId || !billingAttribution || !workflowRecord) {
         logger.error(`[${requestId}] Missing required preprocessing data`)
         await releaseClaim(
           now,
@@ -935,10 +1082,11 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
           workflowRecord,
           actorUserId,
           executionActor,
+          billingAttribution,
           loggingSession,
           requestId,
           executionId,
-          asyncTimeout: preprocessResult.executionTimeout?.async,
+          asyncTimeout: preprocessResult.executionTimeout.async,
         })
 
         if (executionResult.status === 'retryable_setup_failure') {
@@ -973,7 +1121,8 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
               nextRunAt: null,
               ...resetScheduleInfraRetryCount(),
             },
-            `Failed to disable schedule ${payload.scheduleId} after skip`
+            `Failed to disable schedule ${payload.scheduleId} after skip`,
+            'invalid_schedule'
           )
           return
         }
@@ -1003,7 +1152,8 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
 
         await updateClaimedSchedule(
           buildScheduleFailureUpdate(now, nextRunAt),
-          `Error updating schedule ${payload.scheduleId} after failure`
+          `Error updating schedule ${payload.scheduleId} after failure`,
+          'consecutive_failures'
         )
       } catch (error: unknown) {
         logger.error(
@@ -1015,7 +1165,8 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
 
         await updateClaimedSchedule(
           buildScheduleFailureUpdate(now, nextRunAt),
-          `Error updating schedule ${payload.scheduleId} after execution error`
+          `Error updating schedule ${payload.scheduleId} after execution error`,
+          'consecutive_failures'
         )
       }
     } catch (error: unknown) {
@@ -1136,14 +1287,94 @@ function buildJobPrompt(jobRecord: {
   return parts.join('\n')
 }
 
+async function consumeJobTraceProvenance(
+  response: Response,
+  payload: Record<string, unknown>,
+  registry: ResolvedSecretTraceRegistry
+): Promise<boolean> {
+  const hasProvenance = Object.hasOwn(payload, RESOLVED_SECRET_PROVENANCE_FIELD)
+  const provenance = payload[RESOLVED_SECRET_PROVENANCE_FIELD]
+  delete payload[RESOLVED_SECRET_PROVENANCE_FIELD]
+
+  if (
+    !responseHasPrivateToolMetadata(response.headers, RESOLVED_SECRET_PROVENANCE_METADATA_V1) ||
+    !hasProvenance
+  ) {
+    registry.markIncomplete()
+    return false
+  }
+
+  return registry.importProvenance(provenance, { trusted: true })
+}
+
+/** Reads and validates a scheduled Mothership JSON response without changing its size contract. */
+export async function readScheduledMothershipJsonResponse(
+  response: Response
+): Promise<Record<string, unknown>> {
+  let payload: unknown
+
+  try {
+    payload = await response.json()
+  } catch {
+    throw new Error('Sim execution returned an invalid response')
+  }
+
+  if (!isPlainRecord(payload)) {
+    throw new Error('Sim execution returned an invalid response')
+  }
+  return payload
+}
+
+/** Reads the functional error body and strips private provenance metadata when present. */
+export async function readScheduledMothershipErrorResponse(
+  response: Response,
+  registry: ResolvedSecretTraceRegistry
+): Promise<string> {
+  const responseText = await response.text()
+  const hasPrivateMarker = responseHasPrivateToolMetadata(
+    response.headers,
+    RESOLVED_SECRET_PROVENANCE_METADATA_V1
+  )
+  const mayContainPrivateProvenance = responseText.includes(`"${RESOLVED_SECRET_PROVENANCE_FIELD}"`)
+
+  if (!hasPrivateMarker && !mayContainPrivateProvenance) {
+    registry.markIncomplete()
+    return responseText
+  }
+
+  let payload: unknown
+
+  try {
+    payload = JSON.parse(responseText)
+  } catch {
+    registry.markIncomplete()
+    return responseText
+  }
+
+  if (!isPlainRecord(payload)) {
+    registry.markIncomplete()
+    return responseText
+  }
+
+  const hadPrivateProvenance = Object.hasOwn(payload, RESOLVED_SECRET_PROVENANCE_FIELD)
+  try {
+    await consumeJobTraceProvenance(response, payload, registry)
+  } catch {
+    registry.markIncomplete()
+  }
+  return hadPrivateProvenance ? JSON.stringify(payload) : responseText
+}
+
 async function createJobLogEntry(params: {
   scheduleId: string
   workspaceId: string
+  userId: string
   jobTitle: string | null
   startTime: Date
   endTime: Date
   durationMs: number
   success: boolean
+  resolvedSecretTraceRegistry: ResolvedSecretTraceRegistry
   responseBody?: Record<string, any>
   errorMessage?: string
 }): Promise<void> {
@@ -1151,14 +1382,17 @@ async function createJobLogEntry(params: {
     const {
       scheduleId,
       workspaceId,
+      userId,
       jobTitle,
       startTime,
       endTime,
       durationMs,
       success,
+      resolvedSecretTraceRegistry,
       responseBody,
     } = params
     const name = jobTitle || 'Sim Job'
+    const executionId = generateId()
 
     const toolCallsList = (responseBody?.toolCalls || []).map((tc: Record<string, unknown>) => ({
       name: tc.name,
@@ -1175,7 +1409,7 @@ async function createJobLogEntry(params: {
       status: tc.error ? 'error' : 'success',
     }))
 
-    const traceSpan = {
+    const traceSpan: TraceSpan = {
       id: generateId(),
       name,
       type: 'mothership',
@@ -1192,12 +1426,20 @@ async function createJobLogEntry(params: {
       cost: responseBody?.cost || undefined,
       tokens: responseBody?.tokens || undefined,
     }
+    const [projectedTraceSpan] = await projectTraceSpansForSecrets([traceSpan], {
+      registry: resolvedSecretTraceRegistry,
+      store: {
+        workspaceId,
+        executionId,
+        userId,
+      },
+    })
 
     await db.insert(jobExecutionLogs).values({
       id: generateId(),
       scheduleId,
       workspaceId,
-      executionId: generateId(),
+      executionId,
       level: success ? 'info' : 'error',
       status: success ? 'completed' : 'failed',
       trigger: 'mothership',
@@ -1206,8 +1448,11 @@ async function createJobLogEntry(params: {
       totalDurationMs: durationMs,
       executionData: {
         enhanced: true,
-        traceSpans: [traceSpan],
+        traceSpans: [projectedTraceSpan],
         finalOutput: responseBody?.content ? { content: responseBody.content } : undefined,
+        executionState: {
+          resolvedSecretTraceProvenance: resolvedSecretTraceRegistry.exportProvenance(),
+        },
         trigger: {
           type: 'mothership',
           source: name,
@@ -1298,12 +1543,24 @@ export async function executeJobInline(payload: JobExecutionPayload) {
   }
 
   const promptText = buildJobPrompt(jobRecord)
+  const resolvedSecretTraceRegistry = new ResolvedSecretTraceRegistry([], {
+    userId: jobRecord.sourceUserId,
+    workspaceId: jobRecord.sourceWorkspaceId,
+  })
 
   try {
-    const userSubscription = await getHighestPrioritySubscription(jobRecord.sourceUserId)
-    const mothershipJobTimeoutMs = getExecutionTimeout(userSubscription?.plan, 'sync')
+    const billingAttribution = await resolveBillingAttribution({
+      actorUserId: jobRecord.sourceUserId,
+      workspaceId: jobRecord.sourceWorkspaceId,
+    })
+    const mothershipJobTimeoutMs = getExecutionTimeout(
+      billingAttribution.payerSubscription?.plan,
+      'sync'
+    )
     const url = buildAPIUrl('/api/mothership/execute')
     const headers = await buildAuthHeaders(jobRecord.sourceUserId)
+    headers[BILLING_ATTRIBUTION_HEADER] = serializeBillingAttributionHeader(billingAttribution)
+    headers[PRIVATE_TOOL_METADATA_REQUEST_HEADER] = RESOLVED_SECRET_PROVENANCE_METADATA_V1
 
     const body = {
       messages: [{ role: 'user', content: promptText }],
@@ -1316,6 +1573,8 @@ export async function executeJobInline(payload: JobExecutionPayload) {
        * when the owner is not on the local-copilot allowlist.
        */
       copilotBackend: 'local',
+      secretScope: jobRecord.secretScope,
+      mountedSecrets: jobRecord.mountedSecrets,
       ...(jobRecord.contexts && jobRecord.contexts.length > 0
         ? { contexts: jobRecord.contexts }
         : {}),
@@ -1332,7 +1591,11 @@ export async function executeJobInline(payload: JobExecutionPayload) {
       })
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => {
+        const errorText = await readScheduledMothershipErrorResponse(
+          response,
+          resolvedSecretTraceRegistry
+        ).catch(() => {
+          resolvedSecretTraceRegistry.markIncomplete()
           if (timeoutController.isTimedOut()) {
             throw new Error(getTimeoutErrorMessage(null, timeoutController.timeoutMs))
           }
@@ -1344,11 +1607,13 @@ export async function executeJobInline(payload: JobExecutionPayload) {
         await createJobLogEntry({
           scheduleId: payload.scheduleId,
           workspaceId: jobRecord.sourceWorkspaceId,
+          userId: jobRecord.sourceUserId,
           jobTitle: jobRecord.jobTitle,
           startTime,
           endTime,
           durationMs,
           success: false,
+          resolvedSecretTraceRegistry,
           errorMessage: errorText,
         })
 
@@ -1358,10 +1623,17 @@ export async function executeJobInline(payload: JobExecutionPayload) {
       let responseBody: Record<string, any> = {}
       let wasCompletedByTool = false
       try {
-        responseBody = await response.json()
+        const payload = await readScheduledMothershipJsonResponse(response)
+        responseBody = payload
+        try {
+          await consumeJobTraceProvenance(response, payload, resolvedSecretTraceRegistry)
+        } catch {
+          resolvedSecretTraceRegistry.markIncomplete()
+        }
         const toolCalls = responseBody?.toolCalls as Array<{ name?: string }> | undefined
         wasCompletedByTool = toolCalls?.some((tc) => tc.name === 'complete_scheduled_task') ?? false
       } catch {
+        resolvedSecretTraceRegistry.markIncomplete()
         if (timeoutController.isTimedOut()) {
           throw new Error(getTimeoutErrorMessage(null, timeoutController.timeoutMs))
         }
@@ -1372,11 +1644,13 @@ export async function executeJobInline(payload: JobExecutionPayload) {
       await createJobLogEntry({
         scheduleId: payload.scheduleId,
         workspaceId: jobRecord.sourceWorkspaceId,
+        userId: jobRecord.sourceUserId,
         jobTitle: jobRecord.jobTitle,
         startTime,
         endTime,
         durationMs,
         success: true,
+        resolvedSecretTraceRegistry,
         responseBody,
       })
 
@@ -1400,7 +1674,9 @@ export async function executeJobInline(payload: JobExecutionPayload) {
           },
           requestId,
           `Error updating job ${payload.scheduleId} after completion`,
-          { expectedLastQueuedAt: now }
+          // The tool already set status='completed'; this is bookkeeping on a
+          // deliberately terminal row, so it opts past the not-completed guard.
+          { expectedLastQueuedAt: now, allowCompleted: true }
         )
         return
       }
@@ -1485,14 +1761,17 @@ export async function executeJobInline(payload: JobExecutionPayload) {
       },
       requestId,
       `Error updating job ${payload.scheduleId} after failure`,
-      { expectedLastQueuedAt: now }
+      {
+        expectedLastQueuedAt: now,
+        disableReason: shouldDisable ? 'consecutive_failures' : undefined,
+      }
     )
   }
 }
 
 export const scheduleExecutionTaskOptions = {
   id: 'schedule-execution',
-  machine: 'medium-1x' as const,
+  machine: 'medium-2x' as const,
   retry: {
     maxAttempts: 1,
   },

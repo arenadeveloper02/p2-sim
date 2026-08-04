@@ -782,6 +782,7 @@ function SubBlockComponent({
               dependsOn={config.dependsOn}
               searchable={config.searchable}
               clearable={config.clearable}
+              preserveLabelCase={config.preserveLabelCase}
             />
           </div>
         )
@@ -1039,6 +1040,7 @@ function SubBlockComponent({
             allowStartFilesReference={config.allowStartFilesReference}
             conversationFileMode={config.conversationFileMode}
             defaultValue={config.defaultValue}
+            requiresCloudStorage={config.requiresCloudStorage === true}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}

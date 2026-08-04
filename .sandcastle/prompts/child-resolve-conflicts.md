@@ -2,6 +2,8 @@
 
 You resolve merge conflicts for **one cluster** on branch `{{SYNC_BRANCH}}`.
 
+You are a **Codex / GPT child agent** (typically `gpt-5.6-luna` at max effort). Follow merge-policy and grill ledger decisions from the Opus parent — do not re-open settled fork-vs-upstream calls.
+
 ## Skills (read first)
 
 1. **`.claude/skills/upstream-sync/SKILL.md`** — fork-first policy, skipped-upstream ledger, verification
@@ -13,9 +15,18 @@ If adding a test for the fix: **`.claude/skills/tdd/SKILL.md`**
 ## Cluster
 
 - ID: {{CLUSTER_ID}}
+- Parent: {{CLUSTER_PARENT_ID}}
+- Depth: {{CLUSTER_DEPTH}}
 - Prefix: {{CLUSTER_PREFIX}}
-- Files:
+- Files ({{CLUSTER_FILE_COUNT}}):
 {{CLUSTER_FILES}}
+
+## Cost / scope rules (mandatory)
+
+- Resolve **only** the files listed above. Do not wander into other unmerged paths.
+- **Do not use the Task / Agent / background-agent tools.** Work sequentially in this session. The harness will spawn **child clusters** for leftovers — you must not fan out.
+- Prefer `git checkout --ours/--theirs` when merge-policy clearly picks a side; otherwise merge markers carefully.
+- If the cluster is too large to finish cleanly, resolve what you can, `git add` those files, and exit with the completion signal. The harness dynamically re-clusters remaining files under this id.
 
 ## Deterministic rules (do these before asking humans)
 

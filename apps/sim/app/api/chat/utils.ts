@@ -65,6 +65,7 @@ export async function canAccessAgentGeneratedImageViaDeployedChat(
 
   return false
 }
+
 /**
  * A first-party origin is the app itself or any `*.sim.ai` host (chat subdomains
  * + apex). Anything else is a third-party embed. Malformed origins are treated

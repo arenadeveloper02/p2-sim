@@ -58,8 +58,27 @@ const MODEL_PRICING: Array<{ match: RegExp; pricing: ModelTokenPricing }> = [
       cacheWritePerMTok: 1.25,
     },
   },
+  // GPT-5.6 Luna (must precede generic /gpt/ match)
   {
-    match: /gpt/i,
+    match: /luna/i,
+    pricing: {
+      inputPerMTok: 0.2,
+      outputPerMTok: 1.2,
+      cacheReadPerMTok: 0.02,
+      cacheWritePerMTok: 0.25,
+    },
+  },
+  {
+    match: /terra/i,
+    pricing: {
+      inputPerMTok: 2,
+      outputPerMTok: 12,
+      cacheReadPerMTok: 0.2,
+      cacheWritePerMTok: 2.5,
+    },
+  },
+  {
+    match: /sol|gpt-5\.6(?!-luna|-terra)|gpt-5\.5|gpt/i,
     pricing: {
       inputPerMTok: 5,
       outputPerMTok: 30,
@@ -204,6 +223,11 @@ function readUsageObject(value: unknown): StreamTokenTotals | null {
   }
 }
 
+export interface ParsedStreamUsage {
+  costUsd: number | null
+  tokens: StreamTokenTotals
+}
+
 /**
  * Parse Claude Code stream-json / session NDJSON for provider cost + token totals.
  *
@@ -212,10 +236,7 @@ function readUsageObject(value: unknown): StreamTokenTotals | null {
  * `session_id`, then sum across sessions so multi-iteration Sandcastle runs
  * are not under-counted.
  */
-export function parseUsageFromClaudeStream(ndjson: string): {
-  costUsd: number | null
-  tokens: StreamTokenTotals
-} | null {
+export function parseUsageFromClaudeStream(ndjson: string): ParsedStreamUsage | null {
   if (!ndjson.trim()) return null
 
   const bySession = new Map<string, SessionUsageAccumulator>()
@@ -282,6 +303,108 @@ export function parseUsageFromClaudeStream(ndjson: string): {
   return { costUsd: sawCost ? costUsd : null, tokens }
 }
 
+/**
+ * Map Codex usage objects to Sandcastle-style counters.
+ * Codex reports `input_tokens` inclusive of cache hits; billable input is the non-cached share.
+ */
+function readCodexUsageObject(value: unknown): StreamTokenTotals | null {
+  if (!value || typeof value !== 'object') return null
+  const u = value as Record<string, unknown>
+  const inputRaw = u.input_tokens ?? u.inputTokens
+  const outputRaw = u.output_tokens ?? u.outputTokens
+  const cachedRaw =
+    u.cached_input_tokens ?? u.cache_read_input_tokens ?? u.cacheReadInputTokens ?? 0
+  if (typeof inputRaw !== 'number' || typeof outputRaw !== 'number') return null
+  if (typeof cachedRaw !== 'number') return null
+  const cached = Math.max(0, Math.min(cachedRaw, inputRaw))
+  return {
+    inputTokens: Math.max(0, inputRaw - cached),
+    outputTokens: outputRaw,
+    cacheReadInputTokens: cached,
+    cacheCreationInputTokens: 0,
+  }
+}
+
+/**
+ * Parse Codex `codex exec --json` NDJSON for token totals.
+ *
+ * Codex does not emit USD in the stream — callers estimate via {@link estimateCostFromTokens}.
+ * Prefer the largest `turn.completed` usage footprint (session-cumulative), matching
+ * Sandcastle's last-wins behavior without double-counting turns.
+ */
+export function parseUsageFromCodexStream(ndjson: string): ParsedStreamUsage | null {
+  if (!ndjson.trim()) return null
+
+  let best: StreamTokenTotals | null = null
+  let bestScore = -1
+
+  for (const rawLine of ndjson.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line.startsWith('{')) continue
+    let obj: Record<string, unknown>
+    try {
+      obj = JSON.parse(line) as Record<string, unknown>
+    } catch {
+      continue
+    }
+
+    let candidate: StreamTokenTotals | null = null
+
+    if (obj.type === 'turn.completed') {
+      candidate = readCodexUsageObject(obj.usage)
+    } else if (obj.type === 'event_msg' && obj.payload && typeof obj.payload === 'object') {
+      const payload = obj.payload as Record<string, unknown>
+      if (payload.type === 'token_count' && payload.info && typeof payload.info === 'object') {
+        const info = payload.info as Record<string, unknown>
+        candidate =
+          readCodexUsageObject(info.total_token_usage) ??
+          readCodexUsageObject(info.last_token_usage)
+      }
+    } else if (obj.type === 'token_count') {
+      // Some wrappers flatten the event_msg envelope.
+      const info =
+        obj.info && typeof obj.info === 'object' ? (obj.info as Record<string, unknown>) : null
+      if (info) {
+        candidate =
+          readCodexUsageObject(info.total_token_usage) ??
+          readCodexUsageObject(info.last_token_usage)
+      }
+    }
+
+    if (!candidate) continue
+    const score = tokenTotal(candidate)
+    if (score >= bestScore) {
+      best = candidate
+      bestScore = score
+    }
+  }
+
+  if (!best || bestScore <= 0) return null
+  return { costUsd: null, tokens: best }
+}
+
+/**
+ * Parse Claude and/or Codex agent stream NDJSON. Claude provider cost wins when present;
+ * otherwise tokens alone are returned for estimated pricing (typical for Codex/Luna).
+ */
+export function parseUsageFromAgentStream(ndjson: string): ParsedStreamUsage | null {
+  const claude = parseUsageFromClaudeStream(ndjson)
+  const codex = parseUsageFromCodexStream(ndjson)
+
+  if (!claude && !codex) return null
+  if (claude && !codex) return claude
+  if (codex && !claude) return codex
+
+  // Prefer the larger token footprint; keep Claude provider USD when available.
+  const claudeScore = tokenTotal(claude!.tokens)
+  const codexScore = tokenTotal(codex!.tokens)
+  const tokens = codexScore > claudeScore ? codex!.tokens : claude!.tokens
+  return {
+    costUsd: claude!.costUsd,
+    tokens,
+  }
+}
+
 function formatCostLabel(costUsd: number | null, source: CostSource): string {
   if (source === 'unavailable' || costUsd === null) {
     return 'unavailable'
@@ -330,11 +453,14 @@ export function recordAgentUsage(
   // Sandcastle's Claude parser does not emit usage events and `result.stdout` is
   // agent text only — fall back to raw stream-json NDJSON when iteration usage
   // is missing or under-counts (session parse often keeps only the last turn).
-  // On cancel/error, `result` is often null but stream NDJSON still has cost.
-  const fromStream = parseUsageFromClaudeStream(streamNdjson ?? result?.stdout ?? '')
+  // Codex children emit `turn.completed` usage (no USD) — estimate via price table.
+  // On cancel/error, `result` is often null but stream NDJSON still has tokens/cost.
+  const fromStream = parseUsageFromAgentStream(streamNdjson ?? result?.stdout ?? '')
   const streamTokens = fromStream?.tokens
-  const hasStreamUsage = fromStream !== null
-  const hasIterationUsage = tokenTotal(fromIterations) > 0 || (result?.iterations?.length ?? 0) > 0
+  const hasStreamUsage =
+    fromStream !== null &&
+    (tokenTotal(fromStream.tokens) > 0 || fromStream.costUsd !== null)
+  const hasIterationUsage = tokenTotal(fromIterations) > 0
 
   if (!hasStreamUsage && !hasIterationUsage) return null
 
@@ -374,14 +500,31 @@ function upsertUsageRecord(record: AgentUsageRecord): void {
 
 /** Infer parent vs child model defaults from an agent / log basename. */
 export function inferModelForAgentName(agentName: string): string {
-  const provider = (process.env.UPSTREAM_SYNC_AGENT ?? 'anthropic').toLowerCase()
-  if (provider === 'openai') {
-    return process.env.UPSTREAM_SYNC_OPENAI_MODEL ?? 'gpt-5.5'
+  const mode = (process.env.UPSTREAM_SYNC_AGENT ?? 'dual').toLowerCase()
+  const isParent = agentName.startsWith('parent') || agentName.includes('grill')
+
+  if (mode === 'openai') {
+    return (
+      process.env.UPSTREAM_SYNC_OPENAI_CHILD_MODEL ??
+      process.env.UPSTREAM_SYNC_OPENAI_MODEL ??
+      'gpt-5.6-luna'
+    )
   }
-  if (agentName.startsWith('parent') || agentName.includes('grill')) {
-    return process.env.UPSTREAM_SYNC_ANTHROPIC_PARENT_MODEL ?? 'claude-opus-4-8'
+
+  if (isParent) {
+    return process.env.UPSTREAM_SYNC_ANTHROPIC_PARENT_MODEL ?? 'claude-opus-5'
   }
-  return process.env.UPSTREAM_SYNC_ANTHROPIC_CHILD_MODEL ?? 'claude-sonnet-4-6'
+
+  if (mode === 'anthropic') {
+    return process.env.UPSTREAM_SYNC_ANTHROPIC_CHILD_MODEL ?? 'claude-sonnet-5'
+  }
+
+  // dual (default): Luna children
+  return (
+    process.env.UPSTREAM_SYNC_OPENAI_CHILD_MODEL ??
+    process.env.UPSTREAM_SYNC_OPENAI_MODEL ??
+    'gpt-5.6-luna'
+  )
 }
 
 /**
@@ -425,6 +568,18 @@ export function getUsageRecords(): readonly AgentUsageRecord[] {
   return usageRecords
 }
 
+/** Sum USD across records that have a numeric cost (provider or estimated). */
+export function sumUsageCostUsd(records: readonly AgentUsageRecord[]): number | null {
+  let total = 0
+  let saw = false
+  for (const record of records) {
+    if (record.estimatedCostUsd === null) continue
+    total += record.estimatedCostUsd
+    saw = true
+  }
+  return saw ? Number(total.toFixed(6)) : null
+}
+
 function formatTotalsCostLines(records: readonly AgentUsageRecord[]): string[] {
   const providerTotal = records
     .filter((r) => r.costSource === 'provider' && r.estimatedCostUsd !== null)
@@ -434,19 +589,20 @@ function formatTotalsCostLines(records: readonly AgentUsageRecord[]): string[] {
     .reduce((sum, r) => sum + (r.estimatedCostUsd ?? 0), 0)
   const hasProvider = records.some((r) => r.costSource === 'provider')
   const hasEstimated = records.some((r) => r.costSource === 'estimated')
-  const allUnavailable = records.every((r) => r.costSource === 'unavailable')
+  const runTotal = sumUsageCostUsd(records)
 
   const lines: string[] = []
+  // Always lead with a single run total so dual (provider Opus + estimated Luna) is obvious.
+  lines.push(
+    runTotal === null
+      ? '- **Total cost:** unavailable'
+      : `- **Total cost:** $${runTotal.toFixed(6)}`
+  )
   if (hasProvider) {
     lines.push(`- **Provider-reported cost:** $${providerTotal.toFixed(6)}`)
   }
   if (hasEstimated) {
     lines.push(`- **Estimated cost (fallback):** $${estimatedTotal.toFixed(6)}`)
-  }
-  if (allUnavailable || (!hasProvider && !hasEstimated)) {
-    lines.push('- **Total cost:** unavailable')
-  } else if (hasProvider && hasEstimated) {
-    lines.push(`- **Combined cost:** $${(providerTotal + estimatedTotal).toFixed(6)}`)
   }
   return lines
 }
@@ -512,16 +668,17 @@ export function formatUsageStepSummary(records: readonly AgentUsageRecord[]): st
     return `| ${record.agentName} | \`${record.model}\` | ${totalInputTokens(record).toLocaleString()} | ${record.outputTokens.toLocaleString()} | ${cost} | ${record.costSource} |`
   })
 
+  const runTotal = sumUsageCostUsd(records)
   const providerTotal = records
-    .filter((r) => r.costSource === 'provider')
+    .filter((r) => r.costSource === 'provider' && r.estimatedCostUsd !== null)
     .reduce((sum, r) => sum + (r.estimatedCostUsd ?? 0), 0)
   const estimatedTotal = records
-    .filter((r) => r.costSource === 'estimated')
+    .filter((r) => r.costSource === 'estimated' && r.estimatedCostUsd !== null)
     .reduce((sum, r) => sum + (r.estimatedCostUsd ?? 0), 0)
-  const hasAnyCost = records.some((r) => r.estimatedCostUsd !== null)
-  const totalLabel = hasAnyCost
-    ? `$${(providerTotal + estimatedTotal).toFixed(4)}`
-    : 'unavailable'
+  const totalLabel = runTotal === null ? 'unavailable' : `$${runTotal.toFixed(4)}`
+  const breakdown: string[] = []
+  if (providerTotal > 0) breakdown.push(`provider $${providerTotal.toFixed(4)}`)
+  if (estimatedTotal > 0) breakdown.push(`estimated $${estimatedTotal.toFixed(4)}`)
 
   return [
     '## Agent usage',
@@ -531,6 +688,7 @@ export function formatUsageStepSummary(records: readonly AgentUsageRecord[]): st
     ...rows,
     '',
     `**Total cost:** ${totalLabel}`,
+    ...(breakdown.length > 1 ? [`**Cost breakdown:** ${breakdown.join(' + ')}`] : []),
   ].join('\n')
 }
 
@@ -657,9 +815,9 @@ export function loadUsageRecordsFromJson(runId: string): AgentUsageRecord[] {
 }
 
 /**
- * Best-effort parse of Claude Code cost JSON embedded in agent stdout/NDJSON.
- * Uses max `total_cost_usd` per session (cumulative), summed across sessions.
+ * Best-effort parse of provider USD from agent stdout/NDJSON (Claude only —
+ * Codex streams have tokens but no USD).
  */
 export function parseCostFromStdout(stdout: string): number | null {
-  return parseUsageFromClaudeStream(stdout)?.costUsd ?? null
+  return parseUsageFromAgentStream(stdout)?.costUsd ?? null
 }

@@ -8,7 +8,9 @@
 #   - EKS cluster (Kubernetes 1.25+)
 #   - EBS CSI driver add-on (aws eks create-addon --addon-name aws-ebs-csi-driver)
 #   - AWS Load Balancer Controller (for ALB ingress)
-#   - (recommended) cert-manager OR an ACM certificate ARN for the ingress
+#   - An ACM certificate for your domains (ALB auto-discovers it from the ingress
+#     hosts, or pin it with alb.ingress.kubernetes.io/certificate-arn). cert-manager
+#     does not work with ALB — ALB cannot serve Kubernetes TLS Secrets
 #
 # Install:
 #   helm install sim ./helm/sim \
@@ -114,7 +116,10 @@ app:
 # Realtime service
 realtime:
   enabled: true
-  replicaCount: 2
+  # Safe to scale past 1: Socket.IO bridges cross-pod events through its Redis
+  # adapter, and the chart bundles Redis by default. Only keep this at 1 if you
+  # set redis.enabled=false without supplying app.env.REDIS_URL.
+  replicaCount: 1
 
   # Node selector for realtime pods
   # Uncomment and customize based on your EKS node labels:
@@ -175,7 +180,7 @@ postgresql:
   # Persistent storage using AWS EBS volumes
   persistence:
     enabled: true
-    storageClass: "gp2"  # Use gp2 (default) or create gp3 StorageClass
+    storageClass: "gp3"  # Matches the global gp3 StorageClass above
     size: 50Gi
     accessModes:
       - ReadWriteOnce
@@ -226,7 +231,7 @@ ollama:
   # High-performance storage for AI models
   persistence:
     enabled: true
-    storageClass: "gp2"  # Use gp2 (default) or create gp3 StorageClass
+    storageClass: "gp3"  # Matches the global gp3 StorageClass above
     size: 100Gi
     accessModes:
       - ReadWriteOnce
@@ -243,7 +248,6 @@ ingress:
   className: alb
   
   annotations:
-    kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/ssl-redirect: "443"
@@ -288,7 +292,7 @@ affinity:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: ["simstudio"]
+                values: ["sim"]
           topologyKey: kubernetes.io/hostname
       - weight: 50
         podAffinityTerm:
@@ -296,7 +300,7 @@ affinity:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
-                values: ["simstudio"]
+                values: ["sim"]
           topologyKey: topology.kubernetes.io/zone
 
 # Service Account with IAM roles for service account (IRSA) integration

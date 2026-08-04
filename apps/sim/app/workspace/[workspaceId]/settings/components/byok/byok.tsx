@@ -7,6 +7,7 @@ import {
   BasetenIcon,
   BrandfetchIcon,
   BrowserUseIcon,
+  ContextDevIcon,
   DatagmaIcon,
   DropcontactIcon,
   EnrowIcon,
@@ -20,6 +21,7 @@ import {
   HunterIOIcon,
   IcypeasIcon,
   JinaAIIcon,
+  KimiIcon,
   LeadMagicIcon,
   LinkupIcon,
   MillionVerifierIcon,
@@ -35,9 +37,12 @@ import {
   SerperIcon,
   TogetherIcon,
   WizaIcon,
+  xAIIcon,
   ZeroBounceIcon,
 } from '@/components/icons'
+import { canMutateWorkspaceSettingsSection } from '@/components/settings/navigation'
 import { MAX_BYOK_KEYS_PER_PROVIDER } from '@/lib/api/contracts/byok-keys'
+import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import {
   BYOKKeyManager,
   type BYOKManagerKey,
@@ -45,6 +50,7 @@ import {
   type BYOKProviderSection,
 } from '@/app/workspace/[workspaceId]/settings/components/byok/byok-key-manager'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
+import { useSettingsSearch } from '@/app/workspace/[workspaceId]/settings/components/use-settings-search'
 import { useBYOKKeys, useDeleteBYOKKey, useUpsertBYOKKey } from '@/hooks/queries/byok-keys'
 import type { BYOKProviderId } from '@/tools/types'
 
@@ -76,6 +82,20 @@ const PROVIDERS: (BYOKManagerProvider & { id: BYOKProviderId })[] = [
     icon: MistralIcon,
     description: 'LLM calls and Knowledge Base OCR',
     placeholder: 'Enter your API key',
+  },
+  {
+    id: 'xai',
+    name: 'xAI',
+    icon: xAIIcon,
+    description: 'LLM calls',
+    placeholder: 'xai-...',
+  },
+  {
+    id: 'kimi',
+    name: 'Kimi',
+    icon: KimiIcon,
+    description: 'LLM calls',
+    placeholder: 'sk-...',
   },
   {
     id: 'fireworks',
@@ -139,6 +159,13 @@ const PROVIDERS: (BYOKManagerProvider & { id: BYOKProviderId })[] = [
     icon: BrowserUseIcon,
     description: 'AI browser automation tasks',
     placeholder: 'Enter your Browser Use API key',
+  },
+  {
+    id: 'context_dev',
+    name: 'Context.dev',
+    icon: ContextDevIcon,
+    description: 'Web scraping, crawling, search, and brand intelligence',
+    placeholder: 'Enter your Context.dev API key',
   },
   {
     id: 'serper',
@@ -295,6 +322,8 @@ const PROVIDER_SECTIONS: BYOKProviderSection[] = [
       'anthropic',
       'google',
       'mistral',
+      'xai',
+      'kimi',
       'fireworks',
       'together',
       'baseten',
@@ -309,6 +338,7 @@ const PROVIDER_SECTIONS: BYOKProviderSection[] = [
       'exa',
       'semrush',
       'browser_use',
+      'context_dev',
       'serper',
       'linkup',
       'parallel_ai',
@@ -341,6 +371,9 @@ const PROVIDER_SECTIONS: BYOKProviderSection[] = [
 export function BYOK() {
   const params = useParams()
   const workspaceId = (params?.workspaceId as string) || ''
+  const workspacePermissions = useUserPermissionsContext()
+  const canManage = canMutateWorkspaceSettingsSection('byok', workspacePermissions)
+  const [searchTerm, setSearchTerm] = useSettingsSearch()
 
   const { data, isLoading } = useBYOKKeys(workspaceId)
   const upsertKey = useUpsertBYOKKey()
@@ -367,6 +400,9 @@ export function BYOK() {
         isLoading={isLoading}
         isSaving={upsertKey.isPending}
         isDeleting={deleteKey.isPending}
+        readOnly={!canManage}
+        searchTerm={searchTerm}
+        onSearchTermChange={setSearchTerm}
         onSaveKey={async ({ providerId, apiKey, keyId, name }) => {
           await upsertKey.mutateAsync({
             workspaceId,

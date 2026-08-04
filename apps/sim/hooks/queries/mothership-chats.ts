@@ -16,8 +16,10 @@ import {
   getMothershipChatContract,
   listMothershipChatsContract,
   type MothershipChat,
+  type MothershipChatScope,
   removeMothershipChatResourceContract,
   reorderMothershipChatResourcesContract,
+  restoreMothershipChatContract,
   updateMothershipChatContract,
 } from '@/lib/api/contracts/mothership-chats'
 import type { PersistedMessage } from '@/lib/copilot/chat/persisted-message'
@@ -28,6 +30,7 @@ import {
 } from '@/lib/copilot/request/session/file-preview-session-contract'
 import { isStreamBatchEvent, type StreamBatchEvent } from '@/lib/copilot/request/session/types'
 import { type MothershipResource, MothershipResourceType } from '@/lib/copilot/resources/types'
+import { suspendDesktopChatScopes } from '@/lib/desktop/chat-scope'
 import { useMothershipQueueStore } from '@/stores/mothership-queue/store'
 
 export interface MothershipChatMetadata {
@@ -37,6 +40,7 @@ export interface MothershipChatMetadata {
   isActive: boolean
   isUnread: boolean
   isPinned: boolean
+  deletedAt: Date | null
 }
 
 export interface MothershipChatHistory {
@@ -55,8 +59,11 @@ export interface MothershipChatHistory {
 export const mothershipChatKeys = {
   all: ['mothership-chats'] as const,
   lists: () => [...mothershipChatKeys.all, 'list'] as const,
-  list: (workspaceId: string | undefined) =>
+  /** Prefix covering both the active and archived lists of one workspace. */
+  workspaceLists: (workspaceId: string | undefined) =>
     [...mothershipChatKeys.lists(), workspaceId ?? ''] as const,
+  list: (workspaceId: string | undefined, scope: MothershipChatScope = 'active') =>
+    [...mothershipChatKeys.workspaceLists(workspaceId), scope] as const,
   details: () => [...mothershipChatKeys.all, 'detail'] as const,
   detail: (chatId: string | undefined) => [...mothershipChatKeys.details(), chatId ?? ''] as const,
 }
@@ -198,15 +205,17 @@ export function mapChat(chat: MothershipChat): MothershipChatMetadata {
       chat.activeStreamId === null &&
       (chat.lastSeenAt === null || updatedAt > new Date(chat.lastSeenAt)),
     isPinned: chat.pinned,
+    deletedAt: chat.deletedAt ? new Date(chat.deletedAt) : null,
   }
 }
 
 export async function fetchMothershipChats(
   workspaceId: string,
+  scope: MothershipChatScope = 'active',
   signal?: AbortSignal
 ): Promise<MothershipChatMetadata[]> {
   const data = await requestJson(listMothershipChatsContract, {
-    query: { workspaceId },
+    query: { workspaceId, scope },
     signal,
   })
   return data.data.map(mapChat)
@@ -214,12 +223,20 @@ export async function fetchMothershipChats(
 
 /**
  * Fetches mothership chat chats for a workspace.
- * These are workspace-scoped conversations from the Home page.
+ * These are workspace-scoped conversations from the Home page. Pass
+ * `scope: 'archived'` for soft-deleted chats (Recently Deleted).
  */
-export function useMothershipChats(workspaceId?: string) {
+export function useMothershipChats(
+  workspaceId?: string,
+  options?: { scope?: MothershipChatScope; enabled?: boolean }
+) {
+  const scope = options?.scope ?? 'active'
   return useQuery({
-    queryKey: mothershipChatKeys.list(workspaceId),
-    queryFn: workspaceId ? ({ signal }) => fetchMothershipChats(workspaceId, signal) : skipToken,
+    queryKey: mothershipChatKeys.list(workspaceId, scope),
+    queryFn: workspaceId
+      ? ({ signal }) => fetchMothershipChats(workspaceId, scope, signal)
+      : skipToken,
+    enabled: options?.enabled ?? true,
     placeholderData: keepPreviousData,
     staleTime: MOTHERSHIP_CHAT_LIST_STALE_TIME,
   })
@@ -274,16 +291,41 @@ async function deleteChat(chatId: string): Promise<void> {
 }
 
 /**
- * Deletes a mothership chat chat and invalidates the chat list.
+ * Soft-deletes a mothership chat and invalidates both the active and archived
+ * chat lists — the chat moves from the sidebar into Recently Deleted.
  */
 export function useDeleteMothershipChat(workspaceId?: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: deleteChat,
+    onSuccess: async (_data, chatId) => {
+      await suspendDesktopChatScopes(chatId)
+    },
     onSettled: (_data, _error, chatId) => {
-      queryClient.invalidateQueries({ queryKey: mothershipChatKeys.list(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: mothershipChatKeys.workspaceLists(workspaceId) })
       queryClient.removeQueries({ queryKey: mothershipChatKeys.detail(chatId) })
       useMothershipQueueStore.getState().clearChat(chatId)
+    },
+  })
+}
+
+async function restoreChat(chatId: string): Promise<void> {
+  await requestJson(restoreMothershipChatContract, {
+    params: { chatId },
+  })
+}
+
+/**
+ * Restores a soft-deleted mothership chat and invalidates both the active and
+ * archived chat lists — the chat moves from Recently Deleted back into the
+ * sidebar.
+ */
+export function useRestoreMothershipChat(workspaceId?: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: restoreChat,
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: mothershipChatKeys.workspaceLists(workspaceId) })
     },
   })
 }
@@ -295,10 +337,19 @@ export function useDeleteMothershipChats(workspaceId?: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (chatIds: string[]) => {
-      await Promise.all(chatIds.map(deleteChat))
+      // Couple each successful DELETE to its own native suspension. If one
+      // sibling request fails, Promise.all rejects but the independently
+      // successful tasks still stop their pages and PTYs instead of being
+      // stranded live behind the aggregate onSuccess callback.
+      await Promise.all(
+        chatIds.map(async (chatId) => {
+          await deleteChat(chatId)
+          await suspendDesktopChatScopes(chatId)
+        })
+      )
     },
     onSettled: (_data, _error, chatIds) => {
-      queryClient.invalidateQueries({ queryKey: mothershipChatKeys.list(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: mothershipChatKeys.workspaceLists(workspaceId) })
       const queueStore = useMothershipQueueStore.getState()
       for (const chatId of chatIds) {
         queryClient.removeQueries({ queryKey: mothershipChatKeys.detail(chatId) })
@@ -656,6 +707,7 @@ export function useCreateMothershipChat(workspaceId?: string) {
         isActive: false,
         isUnread: false,
         isPinned: false,
+        deletedAt: null,
       }
       const pinnedCount = existing.findIndex((chat) => !chat.isPinned)
       const insertAt = pinnedCount === -1 ? existing.length : pinnedCount
@@ -675,12 +727,12 @@ export function useCreateMothershipChat(workspaceId?: string) {
 async function forkChat(params: {
   chatId: string
   upToMessageId: string
-}): Promise<{ id: string }> {
+}): Promise<{ id: string; failedFileCopies?: number }> {
   const data = await requestJson(forkMothershipChatContract, {
     params: { chatId: params.chatId },
     body: { upToMessageId: params.upToMessageId },
   })
-  return { id: data.id }
+  return { id: data.id, failedFileCopies: data.failedFileCopies }
 }
 
 export function useForkMothershipChat(workspaceId?: string) {
@@ -703,6 +755,7 @@ export function useForkMothershipChat(workspaceId?: string) {
           isActive: false,
           isUnread: false,
           isPinned: false,
+          deletedAt: null,
         }
         const pinnedCount = existing.findIndex((chat) => !chat.isPinned)
         const insertAt = pinnedCount === -1 ? existing.length : pinnedCount

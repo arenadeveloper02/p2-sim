@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import type { ConflictCluster } from './clusters'
+import { countClusterFiles, leafConflictClusters } from './clusters'
 
 export const UPSTREAM_SYNC_ROOT = '.upstream-sync'
 export const LEDGER_DIR = join(UPSTREAM_SYNC_ROOT, 'ledger')
@@ -130,11 +132,21 @@ export interface UpstreamCommit {
   prNumber: number | null
 }
 
-export interface ConflictCluster {
-  id: string
-  prefix: string
-  files: string[]
-}
+export type {
+  ClusterOptions,
+  ConflictCluster,
+  ResolvedClusterOptions,
+} from './clusters'
+export {
+  countClusterFiles,
+  groupConflictClusters,
+  leafConflictClusters,
+  pathPrefix,
+  resolveClusterOptions,
+  serializeClusterForest,
+  splitLeftoverCluster,
+  walkConflictClusters,
+} from './clusters'
 
 export interface GrillQaEntry {
   id: string
@@ -306,10 +318,43 @@ export function explainPrCreateFailure(
   }
 
   if (message.includes('403') || message.includes('Resource not accessible')) {
-    return 'GitHub API denied PR creation — check Actions permissions (contents + pull-requests write).'
+    return 'GitHub API denied PR creation — check Actions permissions (need write-all, including pull-requests + contents).'
   }
 
   return message
+}
+
+/**
+ * True when `git push` was rejected for missing GITHUB_TOKEN / App scopes
+ * (e.g. workflows). These must fail the harness immediately — never warn-and-continue
+ * into expensive agent runs that cannot be pushed afterward.
+ */
+export function isRemotePushAuthError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/refusing to allow a GitHub App/i.test(message)) return true
+  if (/without [`']?workflows[`']? permission/i.test(message)) return true
+  if (/remote rejected/i.test(message) && /workflow/i.test(message)) return true
+  if (/Permission denied/i.test(message) && /workflow/i.test(message)) return true
+  if (/protected branch hook declined/i.test(message)) return true
+  return false
+}
+
+/**
+ * Re-throw push auth/permission errors with an actionable message; otherwise return false
+ * so callers can soft-warn for transient failures.
+ */
+export function throwIfRemotePushAuthError(error: unknown, context: string): void {
+  if (!isRemotePushAuthError(error)) return
+  const original = error instanceof Error ? error.message : String(error)
+  throw new Error(
+    [
+      `${context}: git push rejected for missing GitHub permissions.`,
+      'GITHUB_TOKEN cannot push `.github/workflows/*`. Use a classic GH_PAT with repo + workflow scopes',
+      '(or fine-grained Workflows: Read and write) as the GH_PAT Actions secret, then re-run.',
+      'Do not re-run agents until push works — prior runs wasted tokens on an unpushable result.',
+      `Original: ${original}`,
+    ].join(' ')
+  )
 }
 
 interface PrComment {
@@ -481,10 +526,13 @@ export function openQuestionsPath(runId: string): string {
 }
 
 function resolveGhToken(): string | undefined {
-  // Prefer GH_TOKEN (Actions github.token). Ignore GH_PAT / UPSTREAM_SYNC_GH_TOKEN so an
-  // expired repo secret cannot override the working Actions token.
-  const value = process.env.GH_TOKEN?.trim()
-  return value || undefined
+  // Prefer validated PAT env vars (set by CI fail-fast). GITHUB_TOKEN alone cannot
+  // push `.github/workflows/*` — that requires a PAT with the workflow scope.
+  for (const key of ['GH_PAT', 'UPSTREAM_SYNC_GH_TOKEN', 'GH_TOKEN'] as const) {
+    const value = process.env[key]?.trim()
+    if (value) return value
+  }
+  return undefined
 }
 
 export function runGh(args: string[]): string {
@@ -848,31 +896,6 @@ export function commitsSince(baseSha: string | null, headSha: string): UpstreamC
   })
 }
 
-export function groupConflictClusters(conflictFiles: string[]): ConflictCluster[] {
-  const buckets = new Map<string, string[]>()
-
-  for (const file of conflictFiles) {
-    const parts = file.split('/')
-    const prefix =
-      parts.length >= 3
-        ? `${parts[0]}/${parts[1]}/${parts[2]}/`
-        : parts.length >= 2
-          ? `${parts[0]}/${parts[1]}/`
-          : `${parts[0]}/`
-    const existing = buckets.get(prefix) ?? []
-    existing.push(file)
-    buckets.set(prefix, existing)
-  }
-
-  return [...buckets.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([prefix, files], index) => ({
-      id: `cluster-${index + 1}`,
-      prefix,
-      files: files.sort(),
-    }))
-}
-
 export function listConflictFiles(): string[] {
   try {
     const out = runGit(['diff', '--name-only', '--diff-filter=U'])
@@ -1019,6 +1042,7 @@ export function persistMergeWip(options: {
     removeWipWorktree(worktreePath)
     return resolved.length
   } catch (error) {
+    throwIfRemotePushAuthError(error, `WIP persist after ${options.clusterId}`)
     console.warn(`[wip] Failed to persist merge WIP after ${options.clusterId}:`, error)
     try {
       removeWipWorktree(wipWorktreePath())
@@ -1148,7 +1172,21 @@ export function appendExtensibilityNote(runId: string, note: string): void {
 
 export function writeClusterManifest(runId: string, clusters: ConflictCluster[]): void {
   const dir = ensureLedgerRunDir(runId)
-  writeFileSync(join(dir, 'conflict-clusters.json'), `${JSON.stringify(clusters, null, 2)}\n`)
+  const leaves = leafConflictClusters(clusters)
+  writeFileSync(
+    join(dir, 'conflict-clusters.json'),
+    `${JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        rootCount: clusters.length,
+        leafCount: leaves.length,
+        fileCount: countClusterFiles(clusters),
+        forest: clusters,
+      },
+      null,
+      2
+    )}\n`
+  )
 }
 
 export function fetchReleaseNotesForVersion(version: string): string {

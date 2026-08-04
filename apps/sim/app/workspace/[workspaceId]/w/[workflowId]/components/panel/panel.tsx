@@ -40,6 +40,8 @@ import {
 } from '@/lib/api/contracts/copilot'
 import { getWorkflowNormalizedStateContract } from '@/lib/api/contracts/workflows'
 import { useSession } from '@/lib/auth/auth-client'
+import { getWorkspaceUsageLimitAction } from '@/lib/billing/workspace-permissions'
+import { isChatEnabled } from '@/lib/core/config/env-flags'
 import {
   MOTHERSHIP_SEND_MESSAGE_EVENT,
   type MothershipSendMessageDetail,
@@ -58,6 +60,7 @@ import { MothershipChat } from '@/app/workspace/[workspaceId]/home/components'
 import { getWorkflowCopilotUseChatOptions, useChat } from '@/app/workspace/[workspaceId]/home/hooks'
 import type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
+import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
 import {
@@ -209,11 +212,15 @@ export const Panel = memo(function Panel() {
 
   const panelRef = useRef<HTMLElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const { activeTab, setActiveTab, panelWidth, _hasHydrated, setHasHydrated } = usePanelStore(
+  const {
+    activeTab: storedActiveTab,
+    setActiveTab,
+    _hasHydrated,
+    setHasHydrated,
+  } = usePanelStore(
     useShallow((state) => ({
       activeTab: state.activeTab,
       setActiveTab: state.setActiveTab,
-      panelWidth: state.panelWidth,
       _hasHydrated: state._hasHydrated,
       setHasHydrated: state.setHasHydrated,
     }))
@@ -222,6 +229,7 @@ export const Panel = memo(function Panel() {
     focusSearch: () => void
   } | null>(null)
   const { data: session } = useSession()
+  const hostContext = useWorkspaceHostContext()
 
   // State
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -233,17 +241,21 @@ export const Panel = memo(function Panel() {
   // Hooks
   const userPermissions = useUserPermissionsContext()
   const { config: permissionConfig } = usePermissionConfig()
+
+  /**
+   * The Chat tab is hidden when the deployment has Chat off, or when the user's
+   * permission group hides it. Tab bodies stay mounted and are toggled with
+   * `hidden`, so a persisted `activeTab: 'copilot'` would hide all three and
+   * paint an empty panel — resolve it to the toolbar instead.
+   */
+  const isCopilotTabAvailable = isChatEnabled && !permissionConfig.hideCopilot
+  const activeTab: PanelTab =
+    storedActiveTab === 'copilot' && !isCopilotTabAvailable ? 'toolbar' : storedActiveTab
   const { isImporting, handleFileChange } = useImportWorkflow({ workspaceId })
   const duplicateWorkflowMutation = useDuplicateWorkflowMutation()
   const { data: workflows = {} } = useWorkflowMap(workspaceId)
   const { data: folders = {} } = useFolderMap(workspaceId)
-  const { activeWorkflowId, hydration } = useWorkflowRegistry(
-    useShallow((state) => ({
-      activeWorkflowId: state.activeWorkflowId,
-      hydration: state.hydration,
-    }))
-  )
-  const isRegistryLoading = hydration.phase === 'idle' || hydration.phase === 'state-loading'
+  const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
   const { data: workspaceData } = useWorkspaceSettings(workspaceId)
   // API returns { workspace: { name, ... } }, and hook returns { settings, permissions }
   const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
@@ -273,16 +285,18 @@ export const Panel = memo(function Panel() {
   })
 
   // Usage limits hook
-  const { usageExceeded } = useUsageLimits({
-    context: 'user',
-    autoRefresh: !isRegistryLoading,
-  })
+  const {
+    usageExceeded,
+    message: usageLimitMessage,
+    scope: usageLimitScope,
+    isLoading: isUsageGateLoading,
+  } = useUsageLimits({ workspaceId })
 
   // Workflow execution hook
   const { handleRunWorkflow, handleCancelExecution, isExecuting } = useWorkflowExecution()
 
   // Panel resize hook
-  const { handleMouseDown } = usePanelResize()
+  const { handlePointerDown } = usePanelResize()
 
   /**
    * Opens subscription settings modal
@@ -306,12 +320,33 @@ export const Panel = memo(function Panel() {
       'Workspace Name': workspaceName || '',
       'Workspace ID': workspaceId || '',
     })
+    if (isUsageGateLoading) return
+
+
     if (usageExceeded) {
-      openSubscriptionSettings()
+      const action = getWorkspaceUsageLimitAction(hostContext, session?.user?.id, {
+        message: usageLimitMessage,
+        scope: usageLimitScope,
+      })
+      if (action.type === 'manage-billing') {
+        openSubscriptionSettings()
+      } else {
+        toast.error(action.message)
+      }
       return
     }
     await handleRunWorkflow()
-  }, [usageExceeded, handleRunWorkflow])
+  }, [
+    usageExceeded,
+    usageLimitMessage,
+    usageLimitScope,
+    isUsageGateLoading,
+    hostContext,
+    session?.user?.id,
+    workspaceName,
+    workspaceId,
+    handleRunWorkflow,
+  ])
 
   // Chat state
   const { isChatOpen, setIsChatOpen } = useChatStore(
@@ -337,7 +372,7 @@ export const Panel = memo(function Panel() {
   )
 
   const { data: copilotChatList = EMPTY_COPILOT_CHATS } = useCopilotChats(
-    activeWorkflowId ?? undefined
+    isCopilotTabAvailable ? (activeWorkflowId ?? undefined) : undefined
   )
   const [isCopilotHistoryOpen, setIsCopilotHistoryOpen] = useState(false)
 
@@ -358,7 +393,10 @@ export const Panel = memo(function Panel() {
   // chat was deleted in another tab).
   const autoSelectAttemptedForRef = useRef<Set<string>>(new Set())
   useEffect(() => {
-    if (!activeWorkflowId) return
+    // The list query is skipped when the tab is unavailable, so an empty list
+    // there means "not fetched", not "deleted elsewhere" — clearing on it would
+    // discard the selection and latch the ref against ever restoring it.
+    if (!activeWorkflowId || !isCopilotTabAvailable) return
 
     if (copilotChatId && !copilotChatList.find((c) => c.id === copilotChatId)) {
       setCopilotChatId(undefined)
@@ -370,7 +408,7 @@ export const Panel = memo(function Panel() {
     if (copilotChatList.length === 0) return
     autoSelectAttemptedForRef.current.add(activeWorkflowId)
     setCopilotChatId(copilotChatList[0].id)
-  }, [copilotChatList, copilotChatId, activeWorkflowId, setCopilotChatId])
+  }, [copilotChatList, copilotChatId, activeWorkflowId, isCopilotTabAvailable, setCopilotChatId])
 
   useEffect(() => {
     posthogRef.current = posthog
@@ -539,16 +577,25 @@ export const Panel = memo(function Panel() {
     setHasHydrated(true)
   }, [setHasHydrated])
 
+  /**
+   * Only claims handoffs while the Chat tab can actually receive them. The
+   * handler's `preventDefault()` is what tells `sendMothershipMessage` a host
+   * consumed the message, so listening with the tab hidden would swallow it and
+   * skip the caller's own fallback.
+   */
   useEffect(() => {
+    if (!isCopilotTabAvailable) return
+
     const handler = (e: Event) => {
-      const message = (e as CustomEvent<MothershipSendMessageDetail>).detail?.message
-      if (!message) return
+      const detail = (e as CustomEvent<MothershipSendMessageDetail>).detail
+      if (!detail?.message) return
+      e.preventDefault()
       setActiveTab('copilot')
-      copilotSendMessage(message)
+      copilotSendMessage(detail.message, undefined, detail.contexts)
     }
     window.addEventListener(MOTHERSHIP_SEND_MESSAGE_EVENT, handler)
     return () => window.removeEventListener(MOTHERSHIP_SEND_MESSAGE_EVENT, handler)
-  }, [setActiveTab, copilotSendMessage])
+  }, [isCopilotTabAvailable, setActiveTab, copilotSendMessage])
 
   useEffect(() => {
     if (activeTab !== 'copilot') return
@@ -709,7 +756,8 @@ export const Panel = memo(function Panel() {
   const isLoadingPermissions = userPermissions.isLoading
   const hasValidationErrors = false // TODO: Add validation logic if needed
   const isWorkflowBlocked = isExecuting || hasValidationErrors
-  const isButtonDisabled = !isExecuting && (isWorkflowBlocked || (!canRun && !isLoadingPermissions))
+  const isButtonDisabled =
+    !isExecuting && (isUsageGateLoading || isWorkflowBlocked || (!canRun && !isLoadingPermissions))
 
   /**
    * Register global keyboard shortcuts using the central commands registry.
@@ -752,7 +800,7 @@ export const Panel = memo(function Panel() {
         className='panel-container relative shrink-0 overflow-hidden bg-[var(--bg)]'
         aria-label='Workflow panel'
       >
-        <div className='flex h-full flex-col border-[var(--border)] border-l pt-3.5 dark:border-[var(--border)]'>
+        <div className='flex h-full flex-col border-[var(--border)] border-l pt-3.5'>
           {/* Header */}
           <div className='flex flex-shrink-0 items-center justify-between px-2'>
             {/* More and Chat */}
@@ -873,7 +921,7 @@ export const Panel = memo(function Panel() {
           {/* Tabs */}
           <div className='flex flex-shrink-0 items-center justify-between px-2 pt-3.5'>
             <div className='flex gap-1'>
-              {!permissionConfig.hideCopilot && (
+              {isCopilotTabAvailable && (
                 <Button
                   className={`h-[28px] truncate rounded-md border px-2 py-[5px] text-[12.5px] ${
                     _hasHydrated && activeTab === 'copilot'
@@ -916,7 +964,7 @@ export const Panel = memo(function Panel() {
 
           {/* Tab Content - Keep all tabs mounted but hidden to preserve state */}
           <div className='flex-1 overflow-hidden pt-3'>
-            {!permissionConfig.hideCopilot && (
+            {isCopilotTabAvailable && (
               <div
                 className={
                   _hasHydrated && activeTab === 'copilot'
@@ -1055,7 +1103,7 @@ export const Panel = memo(function Panel() {
         {/* Resize Handle */}
         <div
           className='absolute top-0 bottom-0 left-[-4px] z-20 w-[8px] cursor-ew-resize'
-          onMouseDown={handleMouseDown}
+          onPointerDown={handlePointerDown}
           role='separator'
           aria-orientation='vertical'
           aria-label='Resize panel'

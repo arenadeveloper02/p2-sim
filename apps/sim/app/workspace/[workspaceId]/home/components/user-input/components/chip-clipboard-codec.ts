@@ -33,6 +33,7 @@ const PORTABLE_KIND_TO_ID_FIELD = {
   workflow: 'workflowId',
   logs: 'executionId',
   skill: 'skillId',
+  mcp: 'serverId',
   integration: 'blockType',
   slash_command: 'command',
 } as const satisfies Partial<Record<ChatContext['kind'], string>>
@@ -160,6 +161,31 @@ export function serializeSelectionForClipboard(
 }
 
 /**
+ * Finds the selection-scoped chips (`file_selection` / `table_selection`) whose
+ * highlighted token falls inside `selectedText` — the chips the copy/cut path
+ * must route through the custom clipboard MIME rather than a portable link.
+ *
+ * Uses the overlay's exact tokenization so a label that is a substring of
+ * another never false-matches.
+ */
+export function selectionContextsInText(
+  selectedText: string,
+  contexts: ChatContext[]
+): ChatContext[] {
+  const ranges = computeMentionHighlightRanges(selectedText, extractContextTokens(contexts))
+  if (ranges.length === 0) return []
+  const found: ChatContext[] = []
+  for (const range of ranges) {
+    const label = stripMentionTrigger(range.token)
+    const matched = contexts.find((c) => c.label === label)
+    if (matched && (matched.kind === 'file_selection' || matched.kind === 'table_selection')) {
+      found.push(matched)
+    }
+  }
+  return found
+}
+
+/**
  * Parses all portable chip markdown links from a string, in source order.
  *
  * Pure string→data: never fetches or executes. Matches whose kind is not a
@@ -220,6 +246,8 @@ export function chipLinkToContext(link: ParsedChipLink): ChatContext {
       return { kind: 'logs', executionId: link.id, label: link.label }
     case 'skill':
       return { kind: 'skill', skillId: link.id, label: link.label }
+    case 'mcp':
+      return { kind: 'mcp', serverId: link.id, label: link.label }
     case 'integration':
       return { kind: 'integration', blockType: link.id, label: link.label }
     case 'slash_command':

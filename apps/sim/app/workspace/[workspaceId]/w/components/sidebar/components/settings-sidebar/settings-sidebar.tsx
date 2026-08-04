@@ -4,11 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChipConfirmModal, chipVariants, cn } from '@sim/emcn'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams, usePathname, useRouter } from 'next/navigation'
+import type { DesktopSettingsSurface } from '@/components/settings/navigation'
+import { ORGANIZATION_PLANE_UNIFIED_SECTIONS } from '@/components/settings/navigation'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client'
-import { isEnterprise } from '@/lib/billing/plan-helpers'
+import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
 import { isHosted } from '@/lib/core/config/env-flags'
-import { getUserRole } from '@/lib/workspaces/organization'
+import { hasBrowserAgent, hasDesktopSettings, hasTerminal } from '@/lib/desktop'
+import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 import {
@@ -26,8 +29,6 @@ import { useForkingAvailable } from '@/ee/workspace-forking/hooks/use-forking-av
 import { prefetchWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { prefetchGeneralSettings, useGeneralSettings } from '@/hooks/queries/general-settings'
 import { useInboxConfig } from '@/hooks/queries/inbox'
-import { useOrganizations } from '@/hooks/queries/organization'
-import { prefetchSubscriptionData, useSubscriptionData } from '@/hooks/queries/subscription'
 import { useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
@@ -59,39 +60,33 @@ export function SettingsSidebar({
   const showDiscardDialog = pendingLeave !== null
 
   const [hasOverflowTop, setHasOverflowTop] = useState(false)
+  const [desktopSurfaces, setDesktopSurfaces] = useState<Record<DesktopSettingsSurface, boolean>>({
+    settings: false,
+    browser: false,
+    terminal: false,
+  })
 
   const { data: session } = useSession()
-  const { data: organizationsData } = useOrganizations()
+  const hostContext = useWorkspaceHostContext()
   const { data: generalSettings } = useGeneralSettings()
-  const { data: subscriptionData } = useSubscriptionData({
-    enabled: isBillingEnabled,
-    staleTime: 5 * 60 * 1000,
-  })
   const { data: workspacePermissions } = useWorkspacePermissionsQuery(workspaceId)
   const { data: inboxConfig } = useInboxConfig(workspaceId)
   const { data: ssoProvidersData, isLoading: isLoadingSSO } = useSSOProviders({
     enabled: !isHosted,
   })
 
-  const activeOrganization = organizationsData?.activeOrganization
   const { config: permissionConfig } = usePermissionConfig()
-  // Mirrors the fork EE gate: the WORKSPACE's plan (not the viewer's) plus
-  // workspace admin - matching the Forks page's own gate and the server check.
   const forkingAvailable = useForkingAvailable(workspaceId)
   const { canAdmin: canAdminWorkspace } = useUserPermissionsContext()
 
-  const userEmail = session?.user?.email
   const userId = session?.user?.id
 
-  const userRole = getUserRole(activeOrganization, userEmail)
-  const isOwner = userRole === 'owner'
-  const isAdmin = userRole === 'admin'
-  const isOrgAdminOrOwner = isOwner || isAdmin
-  const subscriptionAccess = getSubscriptionAccessState(subscriptionData?.data)
+  const isOrgAdminOrOwner = hostContext.viewer.isHostOrganizationAdmin
+  const subscriptionAccess = getSubscriptionAccessState(hostContext.ownerBilling)
   const inboxEntitled = inboxConfig?.entitled ?? false
   const hasTeamPlan = subscriptionAccess.hasUsableTeamAccess
   const hasEnterprisePlan = subscriptionAccess.hasUsableEnterpriseAccess
-  const isEnterprisePlan = isEnterprise(subscriptionData?.data?.plan)
+  const isEnterprisePlan = subscriptionAccess.isEnterprise
 
   const isSuperUser = session?.user?.role === 'admin'
 
@@ -103,7 +98,15 @@ export function SettingsSidebar({
 
   const navigationItems = useMemo(() => {
     return allNavigationItems.filter((item) => {
+      if (item.requiresDesktopSurface && !desktopSurfaces[item.requiresDesktopSurface]) {
+        return false
+      }
+
       if (item.hideWhenBillingDisabled && !isBillingEnabled) {
+        return false
+      }
+
+      if (item.id === 'billing' && !canManageWorkspaceBilling(hostContext, userId)) {
         return false
       }
 
@@ -131,6 +134,15 @@ export function SettingsSidebar({
       }
 
       if (item.selfHostedOverride && !isHosted) {
+        /**
+         * Org-plane sections route through the organization gate in
+         * `settings/[section]/page.tsx` (host organization + org-admin viewer),
+         * which 404s other viewers — mirror it here so the item never links to
+         * a dead page.
+         */
+        if (ORGANIZATION_PLANE_UNIFIED_SECTIONS.has(item.id) && !isOrgAdminOrOwner) {
+          return false
+        }
         if (item.id === 'sso') {
           const hasProviders = (ssoProvidersData?.providers?.length ?? 0) > 0
           return !hasProviders || isSSOProviderOwner === true
@@ -181,6 +193,8 @@ export function SettingsSidebar({
     hasEnterprisePlan,
     isEnterprisePlan,
     subscriptionAccess.hasUsableMaxAccess,
+    hostContext,
+    userId,
     isOrgAdminOrOwner,
     isSSOProviderOwner,
     ssoProvidersData?.providers?.length,
@@ -190,6 +204,7 @@ export function SettingsSidebar({
     workspacePermissions?.viewer?.isAdmin,
     forkingAvailable,
     canAdminWorkspace,
+    desktopSurfaces,
   ])
 
   const activeSection = useMemo(() => {
@@ -213,11 +228,19 @@ export function SettingsSidebar({
           void import('@/app/workspace/[workspaceId]/settings/components/secrets/secrets')
           break
         case 'billing':
-          prefetchSubscriptionData(queryClient)
           void import('@/app/workspace/[workspaceId]/settings/components/billing/billing')
           break
         case 'usage':
           void import('@/app/workspace/[workspaceId]/settings/components/usage/usage')
+          break
+        case 'desktop':
+          void import('@/app/workspace/[workspaceId]/settings/components/desktop/desktop')
+          break
+        case 'browser':
+          void import('@/app/workspace/[workspaceId]/settings/components/browser/browser')
+          break
+        case 'terminal':
+          void import('@/app/workspace/[workspaceId]/settings/components/terminal/terminal')
           break
       }
     },
@@ -228,7 +251,7 @@ export function SettingsSidebar({
 
   const handleBack = useCallback(() => {
     requestLeave(() => {
-      router.push(popSettingsReturnUrl(`/workspace/${workspaceId}/home`))
+      router.push(popSettingsReturnUrl(`/workspace/${workspaceId}`))
     })
   }, [requestLeave, router, popSettingsReturnUrl, workspaceId])
 
@@ -239,6 +262,14 @@ export function SettingsSidebar({
   const handleCancelDiscard = useCallback(() => {
     cancelLeave()
   }, [cancelLeave])
+
+  useEffect(() => {
+    setDesktopSurfaces({
+      settings: hasDesktopSettings(),
+      browser: hasBrowserAgent(),
+      terminal: hasTerminal(),
+    })
+  }, [])
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -286,7 +317,7 @@ export function SettingsSidebar({
       <div
         ref={isCollapsed ? undefined : scrollContainerRef}
         className={cn(
-          'flex flex-1 flex-col overflow-y-auto overflow-x-hidden border-t pt-1.5 transition-colors duration-150',
+          'flex flex-1 flex-col overflow-y-auto overflow-x-hidden border-t pt-1.5 pb-2 transition-colors duration-150',
           !hasOverflowTop && 'border-transparent'
         )}
       >
@@ -295,7 +326,9 @@ export function SettingsSidebar({
             .map(({ key, title }) => ({
               key,
               title,
-              items: navigationItems.filter((item) => item.section === key),
+              items: navigationItems
+                .filter((item) => item.section === key)
+                .sort((left, right) => left.order - right.order),
             }))
             .filter(({ items }) => items.length > 0)
             .map(({ key, title, items: sectionItems }, index) => (

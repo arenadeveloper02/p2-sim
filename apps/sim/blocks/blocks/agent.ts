@@ -5,6 +5,7 @@ import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import {
   getAgentModelOptions,
+  getModelCapabilityCondition,
   getProviderCredentialSubBlocks,
   RESPONSE_FORMAT_WAND_CONFIG,
 } from '@/blocks/utils'
@@ -14,12 +15,14 @@ import {
   getMaxTemperature,
   getModelsWithDeepResearch,
   getModelsWithoutMemory,
+  getModelsWithPromptCaching,
   getModelsWithReasoningEffort,
   getModelsWithThinking,
   getModelsWithVerbosity,
   getReasoningEffortValuesForModel,
   getThinkingLevelsForModel,
   getVerbosityValuesForModel,
+  isAutoModel,
   supportsTemperature,
 } from '@/providers/models'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -31,6 +34,7 @@ const MODELS_WITHOUT_AGENT_TOOLS = ['gpt-4o-search-preview'] as const
 const MODELS_WITH_REASONING_EFFORT = getModelsWithReasoningEffort()
 const MODELS_WITH_VERBOSITY = getModelsWithVerbosity()
 const MODELS_WITH_THINKING = getModelsWithThinking()
+const MODELS_WITH_PROMPT_CACHING = getModelsWithPromptCaching()
 const MODELS_WITH_DEEP_RESEARCH = getModelsWithDeepResearch()
 const MODELS_WITHOUT_MEMORY = getModelsWithoutMemory()
 
@@ -162,8 +166,8 @@ Return ONLY the JSON array.`,
     {
       id: 'reasoningEffort',
       title: 'Reasoning Effort',
-      type: 'dropdown',
-      placeholder: 'Select reasoning effort...',
+      type: 'combobox',
+      placeholder: 'Type or select reasoning effort...',
       options: [
         { label: 'auto', id: 'auto' },
         { label: 'low', id: 'low' },
@@ -210,16 +214,13 @@ Return ONLY the JSON array.`,
         return [autoOption, ...validOptions.map((opt) => ({ label: opt, id: opt }))]
       },
       mode: 'advanced',
-      condition: {
-        field: 'model',
-        value: MODELS_WITH_REASONING_EFFORT,
-      },
+      condition: getModelCapabilityCondition(MODELS_WITH_REASONING_EFFORT),
     },
     {
       id: 'verbosity',
       title: 'Verbosity',
-      type: 'dropdown',
-      placeholder: 'Select verbosity...',
+      type: 'combobox',
+      placeholder: 'Type or select verbosity...',
       options: [
         { label: 'auto', id: 'auto' },
         { label: 'low', id: 'low' },
@@ -266,16 +267,13 @@ Return ONLY the JSON array.`,
         return [autoOption, ...validOptions.map((opt) => ({ label: opt, id: opt }))]
       },
       mode: 'advanced',
-      condition: {
-        field: 'model',
-        value: MODELS_WITH_VERBOSITY,
-      },
+      condition: getModelCapabilityCondition(MODELS_WITH_VERBOSITY),
     },
     {
       id: 'thinkingLevel',
       title: 'Thinking Level',
-      type: 'dropdown',
-      placeholder: 'Select thinking level...',
+      type: 'combobox',
+      placeholder: 'Type or select thinking level...',
       options: [
         { label: 'none', id: 'none' },
         { label: 'minimal', id: 'minimal' },
@@ -309,9 +307,19 @@ Return ONLY the JSON array.`,
         return [noneOption, ...validOptions.map((opt) => ({ label: opt, id: opt }))]
       },
       mode: 'advanced',
+      condition: getModelCapabilityCondition(MODELS_WITH_THINKING),
+    },
+    {
+      id: 'promptCaching',
+      title: 'Prompt Caching',
+      type: 'switch',
+      description:
+        'Cache the system prompt and tool definitions so repeat runs reuse them at a reduced rate. Writing the cache costs more than a normal request, so this pays off when the same prompt runs repeatedly.',
+      defaultValue: false,
+      mode: 'advanced',
       condition: {
         field: 'model',
-        value: MODELS_WITH_THINKING,
+        value: MODELS_WITH_PROMPT_CACHING,
       },
     },
 
@@ -505,7 +513,13 @@ Return ONLY the JSON array.`,
         if (!model) {
           throw new Error('No model selected')
         }
-        const tool = getBaseModelProviders()[model]
+        // sim-auto resolves to a concrete pool model at execution time, where
+        // the agent handler derives the provider from the resolved model and
+        // never reads this serialized value. Serialization still needs the
+        // same provider-id shape every other model stores, so look up the
+        // runtime fallback model's provider.
+        const lookupModel = isAutoModel(model) ? 'claude-sonnet-5' : model
+        const tool = getBaseModelProviders()[lookupModel]
         if (!tool) {
           throw new Error(`Invalid model selected: ${model}`)
         }
@@ -649,6 +663,10 @@ Return ONLY the JSON array.`,
     thinkingLevel: {
       type: 'string',
       description: 'Thinking level for models with extended thinking (Anthropic Claude, Gemini 3)',
+    },
+    promptCaching: {
+      type: 'boolean',
+      description: 'Cache the system prompt and tool definitions on models that support it',
     },
     tools: { type: 'json', description: 'Available tools configuration' },
     skills: { type: 'json', description: 'Selected skills configuration' },
