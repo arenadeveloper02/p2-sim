@@ -1,8 +1,8 @@
 {
-  "lastSyncedUpstreamSha": null,
-  "lastSyncedAt": null,
+  "lastSyncedUpstreamSha": "1b9e0f254af3d93bf3e17d8c1cde1f26891d4ff0",
+  "lastSyncedAt": "2026-08-04T13:09:13.530Z",
   "lastRunId": "2026-08-04",
-  "status": "running",
+  "status": "completed",
   "openQuestions": [],
   "activeBranch": "upstream-sync/2026-08-04T11-16-45",
   "activePrNumber": 680,

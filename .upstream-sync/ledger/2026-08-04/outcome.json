@@ -1,12 +1,33 @@
 {
-  "kind": "awaiting_input",
-  "title": "Awaiting grill answers before merge",
-  "detail": "Answer questions in `.upstream-sync/ledger/2026-08-04/open-questions.md` and reply with /upstream-sync resume.",
+  "kind": "completed",
+  "title": "Upstream sync completed (verification warnings)",
+  "detail": "Merged simstudioai/sim@1b9e0f25 into `feat/github-merge-agent` (518 commit(s)). Advisory verification reported failures — see ledger / PR / job summary; they did not fail the workflow.",
   "syncBranch": "upstream-sync/2026-08-04T11-16-45",
   "mergeBase": "feat/github-merge-agent",
   "upstreamSha": "1b9e0f254af3d93bf3e17d8c1cde1f26891d4ff0",
   "prNumber": 680,
   "commitCount": 518,
+  "verification": [
+    {
+      "command": "bun run check",
+      "success": true
+    },
+    {
+      "command": "bun run lint",
+      "success": false,
+      "detail": "• Packages in scope: @sim/audit, @sim/auth, @sim/browser-protocol, @sim/db, @sim/desktop, @sim/desktop-bridge, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/terminal-protocol, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk\n   • Running lint in 25 packages\n   • Remote caching disabled\n\n::group::@sim/workflow-types:lint\ncache miss, executing 61a028a177563755\n$ biome check --write --unsafe .\nChecked 4 files in 42ms. No fixes applied.\n::endgroup::\n::group::@sim/browser-protocol:lint\ncache miss, executing 4aae527a21ee6176\n$ biome check --write --unsafe .\nChecked 3 files in 27ms. No fixes applied.\n::endgroup::\n::group::@sim/terminal-protocol:lint\ncache miss, executing 91c9f5fdafcf1830\n$ biome check --write --unsafe .\nChecked 3 files in 85ms. No fixes applied.\n::endgroup::\n::group::@sim/realtime-protocol:lint\ncache miss, executing 2c95d2342e6de82a\n$ biome check --write --unsafe .\nChecked 11 files in 143ms. No fixes applied.\n::endgroup::\n::group::simstudio-ts-sdk:lint\ncache miss, executing 41793bc7\n…(truncated)"
+    },
+    {
+      "command": "bun run test",
+      "success": false,
+      "detail": "• Packages in scope: @sim/audit, @sim/auth, @sim/browser-protocol, @sim/db, @sim/desktop, @sim/desktop-bridge, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/terminal-protocol, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk\n   • Running test in 25 packages\n   • Remote caching disabled\n\n\u001b[;31m@sim/db:test\u001b[;0m\ncache miss, executing 44e2af4807877cbd\n$ vitest run\n/usr/bin/bash: line 1: vitest: command not found\nerror: script \"test\" exited with code 127\n::group::@sim/workflow-persistence:test\ncache miss, executing 4807f8421681162f\n::endgroup::\n::group::simstudio-ts-sdk:test\ncache miss, executing 8263bffcaa397a26\n::endgroup::\n::group::@sim/runtime-secrets:test\ncache miss, executing 817c46839fa6b1f4\n::endgroup::\n::group::@sim/logger:test\ncache miss, executing c0ea2ee57a81889c\n::endgroup::\n::group::@sim/audit:test\ncache miss, executing c554ca230e86b28d\n::endgroup::\n::group::@sim/emcn:test\ncache miss, executing a7d068bf40cafcb7\n$ vitest run\n::endgroup::\n::group::@sim/security:test\ncache miss, execut\n…(truncated)"
+    },
+    {
+      "command": "bun run build",
+      "success": false,
+      "detail": "• Packages in scope: @sim/audit, @sim/auth, @sim/browser-protocol, @sim/db, @sim/desktop, @sim/desktop-bridge, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/terminal-protocol, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk\n   • Running build in 25 packages\n   • Remote caching disabled\n\n\u001b[;31msim:build\u001b[;0m\ncache miss, executing 6cfbabf3ad0b904b\n$ bun run build:sandbox-bundles && NODE_OPTIONS='--max-old-space-size=8192' next build\n$ bun run ./lib/execution/sandbox/bundles/build.ts\n[2026-08-04T13:09:09.639Z] [ERROR] [SandboxBundleBuild] sandbox bundle build failed {\n  \"message\": \"Bundle failed\",\n  \"name\": \"AggregateError\"\n}\nerror: script \"build:sandbox-bundles\" exited with code 1\nerror: script \"build\" exited with code 1\n::group::@sim/desktop:build\ncache miss, executing c5ff5d9ec9a01dfc\n$ bun run scripts/ensure-pty-prebuilds.ts && bun run scripts/build.ts\n• Fetching node-pty prebuild: darwin-arm64@1.2.0-beta.12\n::endgroup::\n::group::docs:build\ncache miss, executing 250f90d5b4cf5ad1\n$ fumadocs-\n…(truncated)"
+    }
+  ],
   "runId": "2026-08-04",
-  "recordedAt": "2026-08-04T11:35:01.552Z"
+  "recordedAt": "2026-08-04T13:09:13.530Z"
 }
