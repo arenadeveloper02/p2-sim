@@ -108,12 +108,50 @@ function parseAIResponse(aiResponse: any): GAQLResponse {
 }
 
 /**
+ * Resources Google rejects `segments.date` on. change_event is filtered by
+ * change_event.change_date_time instead; campaign_budget carries no date
+ * segmentation at all.
+ */
+const DATE_UNSUPPORTED_RESOURCES = new Set(['change_event', 'campaign_budget'])
+
+/**
+ * Fields that mark a query as a configuration lookup rather than a performance
+ * report. url_custom_parameters returns current UTM/tracking state, which is not
+ * date-segmented and must not be merged with metrics.
+ */
+const DATE_UNSUPPORTED_FIELDS = ['url_custom_parameters']
+
+/**
+ * Determines whether a query can carry a `segments.date` filter.
+ *
+ * @param query - GAQL query string
+ * @returns False when the default date filter would produce invalid GAQL
+ */
+function supportsDateFiltering(query: string): boolean {
+  const resource = query.match(/\bFROM\s+([a-z_]+)/i)?.[1]?.toLowerCase()
+
+  if (resource && DATE_UNSUPPORTED_RESOURCES.has(resource)) {
+    return false
+  }
+
+  return !DATE_UNSUPPORTED_FIELDS.some((field) => query.includes(field))
+}
+
+/**
  * Validates and fixes GAQL query date filtering
  *
  * @param response - Parsed GAQL response
  * @returns Response with validated/fixed date filtering
  */
 function validateDateFiltering(response: GAQLResponse): GAQLResponse {
+  if (!supportsDateFiltering(response.gaql_query)) {
+    logger.info('Skipping default date filter for query that does not support segments.date', {
+      query: response.gaql_query,
+    })
+
+    return response
+  }
+
   const hasDateFilter =
     response.gaql_query.includes('segments.date') && response.gaql_query.includes('BETWEEN')
 
