@@ -12,6 +12,7 @@ import {
 import { noop } from '@sim/utils/helpers'
 import type { MothershipResource } from '@/app/workspace/[workspaceId]/home/types'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
+import type { LocalCopilotCatalogId } from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 
 /**
@@ -40,6 +41,9 @@ interface ChatSurfaceContextValue {
   canSwitchCopilotBackend?: boolean
   copilotBackend?: CopilotBackendPreference
   setCopilotBackend?: (value: CopilotBackendPreference) => void
+  /** Selected Local Copilot catalog model id for this conversation. */
+  localCopilotCatalogId?: LocalCopilotCatalogId
+  setLocalCopilotCatalogId?: (id: LocalCopilotCatalogId) => void
 }
 
 const ChatSurfaceContext = createContext<ChatSurfaceContextValue>({
@@ -57,6 +61,8 @@ interface ChatSurfaceProviderProps {
   canSwitchCopilotBackend?: boolean
   copilotBackend?: CopilotBackendPreference
   setCopilotBackend?: (value: CopilotBackendPreference) => void
+  localCopilotCatalogId?: LocalCopilotCatalogId
+  setLocalCopilotCatalogId?: (id: LocalCopilotCatalogId) => void
   children: ReactNode
 }
 
@@ -75,6 +81,8 @@ export function ChatSurfaceProvider({
   canSwitchCopilotBackend,
   copilotBackend,
   setCopilotBackend,
+  localCopilotCatalogId,
+  setLocalCopilotCatalogId,
   children,
 }: ChatSurfaceProviderProps) {
   const onContextAddRef = useRef(onContextAdd)
@@ -107,6 +115,8 @@ export function ChatSurfaceProvider({
       canSwitchCopilotBackend,
       copilotBackend,
       setCopilotBackend,
+      localCopilotCatalogId,
+      setLocalCopilotCatalogId,
     }),
     [
       chatId,
@@ -117,6 +127,8 @@ export function ChatSurfaceProvider({
       canSwitchCopilotBackend,
       copilotBackend,
       setCopilotBackend,
+      localCopilotCatalogId,
+      setLocalCopilotCatalogId,
     ]
   )
 

@@ -124,6 +124,7 @@ export const GET = withRouteHandler(
         chat: {
           id: chat.id,
           title: chat.title,
+          model: chat.model,
           messages: effectiveMessages,
           activeStreamId: liveStreamId,
           resources: Array.isArray(chat.resources) ? chat.resources : [],
@@ -162,7 +163,7 @@ export const PATCH = withRouteHandler(
       const parsed = await parseRequest(updateMothershipChatContract, request, context)
       if (!parsed.success) return parsed.response
       const { chatId } = parsed.data.params
-      const { title, isUnread, pinned } = parsed.data.body
+      const { title, isUnread, pinned, model } = parsed.data.body
 
       const updates: Record<string, unknown> = {}
 
@@ -179,6 +180,10 @@ export const PATCH = withRouteHandler(
       }
       if (pinned !== undefined) {
         updates.pinned = pinned
+      }
+      if (model !== undefined) {
+        updates.model = model
+        updates.updatedAt = new Date()
       }
 
       const [updatedChat] = await db

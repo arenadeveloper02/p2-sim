@@ -23,9 +23,15 @@ export const updateMothershipChatBodySchema = z
     title: z.string().trim().min(1).max(200).optional(),
     isUnread: z.boolean().optional(),
     pinned: z.boolean().optional(),
+    /** Local Copilot catalog id (e.g. `claude`, `gemini-2.5-pro`). */
+    model: z.string().trim().min(1).max(100).optional(),
   })
   .refine(
-    (data) => data.title !== undefined || data.isUnread !== undefined || data.pinned !== undefined,
+    (data) =>
+      data.title !== undefined ||
+      data.isUnread !== undefined ||
+      data.pinned !== undefined ||
+      data.model !== undefined,
     {
       message: 'At least one field must be provided',
     }
@@ -396,6 +402,7 @@ export const getMothershipChatResponseSchema = z.object({
     .object({
       id: z.string(),
       title: z.string().nullable(),
+      model: z.string().optional(),
       messages: z.array(z.unknown()),
       activeStreamId: z.string().nullable(),
       resources: z.array(z.unknown()),

@@ -3,7 +3,10 @@
  * after a successful workflow build.
  */
 
-const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi
+import { stripOptionsTagsForDisplay } from '@/local-copilot/lib/format-options-tag'
+
+const UUID_PATTERN =
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi
 
 /** After a successful populate, restrict which tools the model may still call. */
 export type PostBuildToolMode = 'all' | 'oauth_only' | 'final_only' | 'done'
@@ -200,6 +203,117 @@ export function shouldStreamAssistantRoundText(options: {
     return false
   }
   return true
+}
+
+export interface AssistantRoundTextStreamerOptions {
+  /** When true, hold short bridging narration until it grows into a real reply. */
+  toolsAvailable: boolean
+  /** User-visible prose already streamed in earlier rounds of this turn. */
+  contentBeforeRound: string
+}
+
+export interface AssistantRoundTextStreamer {
+  /** Raw model text accumulated this round (including options tags). */
+  readonly roundRawText: string
+  /** True after a tool_call chunk was observed — further text stays transcript-only. */
+  readonly sawToolCall: boolean
+  /** Append a cleaned text chunk; returns a UI delta when live streaming is allowed. */
+  pushText: (cleaned: string) => string | null
+  /** Stop live streaming for the rest of the round (tool call observed). */
+  markToolCall: () => void
+  /**
+   * Final display text + any remainder delta after options tags resolve.
+   * `remainder` is null when the round should not show user-facing prose.
+   */
+  finalize: () => { display: string; remainder: string | null }
+}
+
+/**
+ * Incremental assistant-text emitter for one model round.
+ *
+ * Streams token deltas live for real replies (holding incomplete `<options>` and
+ * short bridging narration when tools are still available). Stops emitting once a
+ * tool call appears so tool batches do not open repeated mothership headers.
+ */
+export function createAssistantRoundTextStreamer(
+  options: AssistantRoundTextStreamerOptions
+): AssistantRoundTextStreamer {
+  let roundRawText = ''
+  let emittedDisplay = ''
+  let sawToolCall = false
+
+  const toDisplay = (raw: string, isStreaming: boolean) =>
+    stripIdsFromUserFacingText(stripOptionsTagsForDisplay(raw, isStreaming))
+
+  const deltaFrom = (display: string): string | null => {
+    if (!display) return null
+    if (display === emittedDisplay) return null
+    if (display.startsWith(emittedDisplay)) {
+      const delta = display.slice(emittedDisplay.length)
+      if (!delta) return null
+      emittedDisplay = display
+      return delta
+    }
+    // Display rewrite shortened/replaced an earlier prefix (rare); emit the new tail only
+    // when the previous emission is empty, otherwise skip to avoid duplicated prose.
+    if (!emittedDisplay) {
+      emittedDisplay = display
+      return display
+    }
+    emittedDisplay = display
+    return null
+  }
+
+  const streamer: AssistantRoundTextStreamer = {
+    get roundRawText() {
+      return roundRawText
+    },
+    get sawToolCall() {
+      return sawToolCall
+    },
+    pushText(cleaned: string) {
+      if (!cleaned) return null
+      roundRawText += cleaned
+      if (sawToolCall) return null
+
+      const display = toDisplay(roundRawText, true)
+      if (!display) return null
+
+      // With tools available, hold "Let me…" scaffolding until it is clearly a real reply.
+      if (options.toolsAvailable && isBridgingAssistantNarration(display)) {
+        return null
+      }
+
+      if (
+        options.contentBeforeRound.trim().length > 120 &&
+        isNearDuplicateCompletion(options.contentBeforeRound, display)
+      ) {
+        return null
+      }
+
+      return deltaFrom(display)
+    },
+    markToolCall() {
+      sawToolCall = true
+    },
+    finalize() {
+      const display = toDisplay(roundRawText, false)
+      if (
+        !shouldStreamAssistantRoundText({
+          hasToolCalls: sawToolCall,
+          contentBeforeRound: options.contentBeforeRound,
+          display,
+        })
+      ) {
+        return { display, remainder: null }
+      }
+
+      const remainder = deltaFrom(display)
+      return { display, remainder }
+    },
+  }
+
+  return streamer
 }
 
 /**

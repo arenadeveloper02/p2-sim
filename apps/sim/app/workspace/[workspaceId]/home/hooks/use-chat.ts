@@ -1082,6 +1082,8 @@ export interface UseChatOptions {
   onRequestStarted?: (info: { requestId: string; userMessageId: string }) => void
   /** Home chat: user-selected local vs external copilot backend. */
   getCopilotBackend?: () => 'local' | 'external'
+  /** Local Copilot catalog id to send when backend is local. */
+  getLocalCopilotCatalogId?: () => string
 }
 
 interface ActiveStreamRecovery {
@@ -1106,6 +1108,8 @@ export function getMothershipUseChatOptions(
     | 'isEmbedPage'
     | 'activeResourceState'
     | 'onRequestStarted'
+    | 'getCopilotBackend'
+    | 'getLocalCopilotCatalogId'
   > = {}
 ): UseChatOptions {
   return {
@@ -1124,6 +1128,7 @@ export function getWorkflowCopilotUseChatOptions(
     | 'onStreamEnd'
     | 'onRequestStarted'
     | 'getCopilotBackend'
+    | 'getLocalCopilotCatalogId'
   > = {}
 ): UseChatOptions {
   return {
@@ -1184,8 +1189,10 @@ export function useChat(
   onStreamEndRef.current = options?.onStreamEnd
   const onRequestStartedRef = useRef(options?.onRequestStarted)
   const getCopilotBackendRef = useRef(options?.getCopilotBackend)
+  const getLocalCopilotCatalogIdRef = useRef(options?.getLocalCopilotCatalogId)
   onRequestStartedRef.current = options?.onRequestStarted
   getCopilotBackendRef.current = options?.getCopilotBackend
+  getLocalCopilotCatalogIdRef.current = options?.getLocalCopilotCatalogId
 
   const getCurrentRequestId = useCallback(() => {
     const traceId = streamTraceparentRef.current?.split('-')[1] ?? ''
@@ -3569,6 +3576,11 @@ export function useChat(
               effectiveWorkspaceId,
               ...(getCopilotBackendRef.current
                 ? { copilotBackend: getCopilotBackendRef.current() }
+                : {}),
+              ...(getCopilotBackendRef.current?.() === 'local'
+                ? {
+                    model: getLocalCopilotCatalogIdRef.current?.() ?? 'claude',
+                  }
                 : {}),
             }),
             signal: abortController.signal,

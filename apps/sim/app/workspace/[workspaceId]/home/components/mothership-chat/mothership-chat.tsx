@@ -39,6 +39,7 @@ import type {
   QueuedMessage,
 } from '@/app/workspace/[workspaceId]/home/types'
 import { useAutoScroll } from '@/hooks/use-auto-scroll'
+import type { LocalCopilotCatalogId } from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 import { MothershipChatSkeleton } from './components/mothership-chat-skeleton'
 import { shouldShowAssistantMessageActions } from './message-actions-visibility'
@@ -74,6 +75,8 @@ interface MothershipChatProps {
   canSwitchCopilotBackend?: boolean
   copilotBackend?: 'local' | 'external'
   setCopilotBackend?: (value: 'local' | 'external') => void
+  localCopilotCatalogId?: LocalCopilotCatalogId
+  setLocalCopilotCatalogId?: (id: LocalCopilotCatalogId) => void
   draftScopeKey?: string
   layout?: 'mothership-view' | 'copilot-view'
   initialScrollBlocked?: boolean
@@ -295,6 +298,8 @@ export function MothershipChat({
   canSwitchCopilotBackend,
   copilotBackend,
   setCopilotBackend,
+  localCopilotCatalogId,
+  setLocalCopilotCatalogId,
   draftScopeKey,
   layout = 'mothership-view',
   initialScrollBlocked = false,
@@ -628,6 +633,8 @@ export function MothershipChat({
       canSwitchCopilotBackend={canSwitchCopilotBackend}
       copilotBackend={copilotBackend}
       setCopilotBackend={setCopilotBackend}
+      localCopilotCatalogId={localCopilotCatalogId}
+      setLocalCopilotCatalogId={setLocalCopilotCatalogId}
     >
       <div className={cn('flex h-full min-h-0 flex-col', className)}>
         <div ref={setScrollElement} className={styles.scrollContainer}>

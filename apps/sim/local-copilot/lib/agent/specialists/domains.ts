@@ -50,6 +50,10 @@ export const ALWAYS_ON_TOOL_NAMES = new Set<string>([
   'get_available_blocks',
   'get_available_integrations',
   'get_blocks_metadata',
+  // Core mutation tools — always available so Bedrock/Gemini can edit without
+  // depending solely on the `workflow` specialist entry tool.
+  'create_workflow',
+  'edit_workflow',
   'list_integration_tools',
   'invoke_integration_tool',
   'open_resource',

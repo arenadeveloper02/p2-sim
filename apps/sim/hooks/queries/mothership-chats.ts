@@ -45,6 +45,8 @@ export interface MothershipChatMetadata {
 export interface MothershipChatHistory {
   id: string
   title: string | null
+  /** Persisted model string — Local Copilot catalog id when on Local. */
+  model?: string
   messages: PersistedMessage[]
   activeStreamId: string | null
   resources: MothershipResource[]
@@ -178,6 +180,7 @@ function parseChatHistory(value: unknown): MothershipChatHistory {
   return {
     id: chat.id,
     title: chat.title,
+    model: typeof chat.model === 'string' ? chat.model : undefined,
     messages: normalizeMessages(chat.messages),
     activeStreamId: chat.activeStreamId,
     resources: parseResources(chat.resources, `${chatContext}.resources`),
@@ -350,6 +353,51 @@ async function renameChat({ chatId, title }: { chatId: string; title: string }):
   await requestJson(updateMothershipChatContract, {
     params: { chatId },
     body: { title },
+  })
+}
+
+async function updateChatModel({
+  chatId,
+  model,
+}: {
+  chatId: string
+  model: string
+}): Promise<void> {
+  await requestJson(updateMothershipChatContract, {
+    params: { chatId },
+    body: { model },
+  })
+}
+
+/**
+ * Updates the persisted chat model (Local Copilot catalog id) with an
+ * optimistic detail-cache write.
+ */
+export function useUpdateMothershipChatModel(_workspaceId?: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: updateChatModel,
+    onMutate: async ({ chatId, model }) => {
+      await queryClient.cancelQueries({ queryKey: mothershipChatKeys.detail(chatId) })
+      const previous = queryClient.getQueryData<MothershipChatHistory>(
+        mothershipChatKeys.detail(chatId)
+      )
+      if (previous) {
+        queryClient.setQueryData<MothershipChatHistory>(mothershipChatKeys.detail(chatId), {
+          ...previous,
+          model,
+        })
+      }
+      return { previous }
+    },
+    onError: (_err, variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(mothershipChatKeys.detail(variables.chatId), context.previous)
+      }
+    },
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({ queryKey: mothershipChatKeys.detail(variables.chatId) })
+    },
   })
 }
 
