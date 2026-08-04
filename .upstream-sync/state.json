@@ -1,10 +1,10 @@
 {
-  "lastSyncedUpstreamSha": "2cfa040f23add39f66e96af3c33b62465297be8c",
-  "lastSyncedAt": "2026-07-09T22:54:46.000Z",
+  "lastSyncedUpstreamSha": null,
+  "lastSyncedAt": null,
   "lastRunId": null,
-  "status": "failed",
+  "status": "idle",
   "openQuestions": [],
-  "activeBranch": "upstream-sync/2026-07-31T07-40-03",
-  "activePrNumber": 668,
+  "activeBranch": null,
+  "activePrNumber": null,
   "activeMergeBase": "feat/github-merge-agent"
 }
