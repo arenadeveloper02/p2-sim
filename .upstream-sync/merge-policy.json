@@ -53,9 +53,25 @@
     "docker-compose.local-build.yml",
     "docker-compose.dev-env.yml",
     "docker-compose.sandbox.yml",
-    "bunfig.toml"
+    "bunfig.toml",
+    "apps/sim/local-copilot/",
+    "apps/sim/app/api/local-copilot/",
+    "apps/sim/config/",
+    "apps/sim/utilities/",
+    "apps/sim/public/favicon/",
+    "apps/sim/public/icon.svg",
+    "apps/sim/components/emails/components/email-footer.tsx",
+    "apps/sim/app/(interfaces)/chat/[identifier]/ArenaDeployedChat.tsx"
   ],
-  "upstreamFirst": ["apps/sim/lib/copilot/generated/"],
+  "upstreamFirst": [
+    "apps/sim/lib/copilot/generated/",
+    "apps/sim/tools/generated/",
+    "apps/sim/providers/pi-model-catalog.generated.ts",
+    "apps/desktop/",
+    "docker/crontab",
+    "docker/cron.Dockerfile",
+    "docker/cron-entrypoint.sh"
+  ],
   "manualReview": [
     "packages/db/migrations/",
     "packages/db/schema/",
@@ -63,19 +79,34 @@
     "apps/sim/blocks/registry.ts",
     "apps/sim/blocks/registry-maps.ts",
     "apps/sim/tools/registry.ts",
+    "apps/sim/tools/index.ts",
     "apps/sim/lib/permission-groups/",
     "apps/sim/app/api/permission-groups/",
     "apps/sim/lib/mothership/",
     "apps/sim/app/api/mothership/",
     "apps/sim/blocks/blocks/mothership.ts",
     "apps/sim/hooks/queries/mothership-admin.ts",
+    "apps/sim/app/workspace/[workspaceId]/home/",
     "apps/sim/providers/models.ts",
     "apps/sim/blocks/blocks/hubspot.ts",
     "apps/sim/tools/hubspot/",
     "apps/sim/app/(interfaces)/chat/",
-    "apps/sim/app/api/chat/"
+    "apps/sim/app/api/chat/",
+    "apps/sim/lib/billing/",
+    "apps/sim/lib/logs/execution/",
+    "apps/sim/lib/workflows/streaming/",
+    "apps/sim/lib/api/contracts/",
+    "apps/sim/ee/whitelabeling/",
+    "apps/realtime/src/rooms/",
+    "apps/sim/next.config.ts",
+    ".github/workflows/ci.yml",
+    ".github/workflows/test-build.yml"
   ],
-  "regenerateAfterMerge": ["bun run mship:generate"],
+  "regenerateAfterMerge": [
+    "bun run mship:generate",
+    "bun run tool-metadata:generate",
+    "bun run skills:sync"
+  ],
   "prReviewers": ["utcarshsrivastava-collab"],
   "prReviewerNotes": "GitHub usernames only. utcarshsrivastava-collab ↔ utcarsh.srivastava@position2.com. Override via UPSTREAM_SYNC_PR_REVIEWERS."
 }
