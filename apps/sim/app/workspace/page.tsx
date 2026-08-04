@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { Chip } from '@sim/emcn'
 import { CircleAlert } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useRouter } from 'next/navigation'
@@ -9,7 +10,7 @@ import { requestJson } from '@/lib/api/client/request'
 import { getWorkflowStateContract } from '@/lib/api/contracts/workflows'
 import { createWorkspaceContract } from '@/lib/api/contracts/workspaces'
 import { useSession } from '@/lib/auth/auth-client'
-import { recoverFromStaleSession } from '@/lib/auth/stale-session-recovery'
+// import { recoverFromStaleSession } from '@/lib/auth/stale-session-recovery'
 import {
   buildUpgradeHref,
   isUpgradeReason,
@@ -24,17 +25,6 @@ const logger = createLogger('WorkspacePage')
 
 /** Bounds the one-shot reload after a creation-vs-membership 409. */
 const WORKSPACE_RACE_RETRY_KEY = 'workspaceRaceRetry'
-
-/**
- * A 401 while the session claims we're authenticated means the auth cookies
- * are stale or inconsistent (e.g. after an impersonation session expired or
- * was switched). The only reliable recovery is a full sign-out, which clears
- * every auth cookie server-side — matching what "clear browser cache" did
- * manually — followed by a clean login.
- */
-function isStaleSessionError(error: unknown): boolean {
-  return isApiClientError(error) && error.status === 401
-}
 
 interface WorkspaceStatusCardProps {
   title: string
@@ -64,7 +54,6 @@ function WorkspaceStatusCard({
           <Chip variant='primary' onClick={onPrimary}>
             {primaryLabel}
           </Chip>
-          {/* <Chip onClick={() => void recoverFromStaleSession()}>Sign out</Chip> */}
         </div>
       </div>
     </main>
@@ -76,7 +65,6 @@ export default function WorkspacePage() {
   const { data: session, isPending: isSessionPending, error: sessionError } = useSession()
   const isAuthenticated = !isSessionPending && !!session?.user
   const hasRedirectedRef = useRef(false)
-  const isRecoveringRef = useRef(false)
   const blockedLoggedRef = useRef(false)
   const [recoveryFailed, setRecoveryFailed] = useState(false)
 
@@ -86,16 +74,9 @@ export default function WorkspacePage() {
     error: workspacesError,
   } = useWorkspacesWithMetadata(isAuthenticated)
 
-  useEffect(() => {
-    if (!isAuthenticated || !isStaleSessionError(workspacesError) || isRecoveringRef.current) return
-    isRecoveringRef.current = true
-    logger.warn('Session cookies are stale (authenticated session but 401 API); signing out')
-    void recoverFromStaleSession().then((recovered) => {
-      if (recovered) return
-      isRecoveringRef.current = false
-      setRecoveryFailed(true)
-    })
-  }, [isAuthenticated, workspacesError])
+  // Do not auto sign-out on stale/401 session here — that races AutoLoginProvider
+  // when profile/session briefly fails. Auto-login already recovers via the email cookie.
+  // Previously: recoverFromStaleSession() on authenticated+401 workspaces errors.
 
   useEffect(() => {
     fetchUserProfileSetPeopleMP()
@@ -105,20 +86,10 @@ export default function WorkspacePage() {
     if (isSessionPending || hasRedirectedRef.current) return
 
     if (!session?.user) {
-      // Indeterminate auth (errored session query, no cached identity): show
-      // the error card — /login would bounce back while a session cookie exists.
-      if (sessionError) return
-      // A clean null session can still have stale auth cookies behind it (an
-      // expired impersonation session's cookies are never cleared server-side),
-      // and the middleware bounces /login back here while any session cookie
-      // exists — a bare replace('/login') loops forever on the spinner. Recover
-      // the same way as the 401 path: sign out (clears the cookies without
-      // needing a live session), then navigate.
-      hasRedirectedRef.current = true
-      logger.info('User not authenticated, signing out stale cookies and redirecting to login')
-      void recoverFromStaleSession().then((recovered) => {
-        if (!recovered) setRecoveryFailed(true)
-      })
+      // Match prior working behavior: soft-redirect to login and let AutoLoginProvider
+      // recover. Do not sign out — that clears cookies and races auto-login.
+      logger.info('User not authenticated, redirecting to login')
+      router.replace('/login')
       return
     }
 
@@ -178,7 +149,7 @@ export default function WorkspacePage() {
 
     logger.info(`Redirecting to workspace: ${targetWorkspace.id}`)
     router.replace(destinationFor(targetWorkspace.id))
-  }, [session, isSessionPending, sessionError, isWorkspacesLoading, workspacesError, data, router])
+  }, [session, isSessionPending, isWorkspacesLoading, workspacesError, data, router])
 
   const blockedPolicy =
     isAuthenticated &&
@@ -209,7 +180,7 @@ export default function WorkspacePage() {
   const failedToLoad =
     recoveryFailed ||
     (Boolean(sessionError) && !session?.user) ||
-    (isAuthenticated && Boolean(workspacesError) && !isStaleSessionError(workspacesError))
+    (isAuthenticated && Boolean(workspacesError))
 
   if (failedToLoad) {
     return (
