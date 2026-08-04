@@ -14,25 +14,7 @@ Skipped on resume. Human answers were recorded in `grill-log.md` / `qa-history.j
 
 ## Usage
 
-### parent-grill-analysis
-- **Model:** `claude-opus-5`
-- **Iterations:** 1
-- **Input tokens (direct):** 1,534
-- **Input tokens (cache read):** 2,470,911
-- **Input tokens (cache create):** 98,136
-- **Input tokens (total):** 2,570,581
-- **Output tokens:** 29,775
-- **Cost:** $2.604340 (provider-reported)
-
-### Totals
-- **Total input tokens:** 2,570,581
-- **Total output tokens:** 29,775
-- **Primary models:** claude-opus-5
-- **Total cost:** $2.604340
-- **Provider-reported cost:** $2.604340
-
-### Cost by agent
-- **parent-grill-analysis:** $2.604340 (provider-reported)
+_No agent usage captured (agents skipped or provider did not report tokens)._
 
 ## Status
 
