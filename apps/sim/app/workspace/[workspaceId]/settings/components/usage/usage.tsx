@@ -33,6 +33,7 @@ import { CostShareBars } from '@/app/workspace/[workspaceId]/settings/components
 import { DataHealthPanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/data-health-panel'
 import { LineagePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/lineage-panel'
 import { OrganizationUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/organization-usage-content'
+import { UsageBillingStats } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-billing-stats'
 import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
 import { UserUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/user-usage-content'
 import {
@@ -996,6 +997,8 @@ export function Usage() {
                 Refresh
               </button>
             </div>
+
+            <UsageBillingStats />
 
             <div className='flex flex-wrap items-center gap-3'>
               {showScopeToggle && (

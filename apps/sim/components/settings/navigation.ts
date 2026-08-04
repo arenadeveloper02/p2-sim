@@ -411,7 +411,8 @@ const arenaAgentsUsage: SettingsSectionRegistryEntry = {
   icon: Credit,
   unified: {
     id: 'usage',
-    description: 'View token and cost analytics for your activity, workspace, or organization.',
+    description:
+      'View remaining credits and token/cost analytics for your activity, workspace, or organization.',
     group: 'subscription',
     order: 2,
   },
