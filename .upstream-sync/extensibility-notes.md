@@ -55,3 +55,7 @@ Structural lessons for shrinking future conflict surface:
 4. **Test deletions come back.** The fork deleted two upstream tests (`home/hooks/use-chat.test.ts`,
    `home/hooks/stream/turn-model-serialize.test.ts`); upstream then modified both, producing
    modify/delete conflicts. Adapt upstream tests instead of deleting them.
+
+## 2026-08-04
+
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
