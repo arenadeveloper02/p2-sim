@@ -141,3 +141,7 @@ upstream's measurements.
 **Q** (2026-08-04T11:34:59.911Z, upstream-sync[bot]): Grill open questions must be answered before merge starts.
 _Context: .upstream-sync/ledger/2026-08-04/open-questions.md_
 
+## 2026-08-04 · PR #680
+
+**A** (2026-08-04T12:44:30Z, utcarshsrivastava-collab): /upstream-sync resume
+
