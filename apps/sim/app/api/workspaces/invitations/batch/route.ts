@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import { permissions, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { normalizeEmail } from '@sim/utils/string'
 import { and, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -59,7 +60,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     const { body } = parsed.data
 
     const context = await prepareWorkspaceInvitationContext({
-      workspaceId: body.workspaceId,
+      workspaceIds: body.workspaceIds,
       inviterId: session.user.id,
       inviterName: session.user.name || session.user.email || 'A user',
       inviterEmail: session.user.email,
@@ -71,8 +72,8 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     const invitations: WorkspaceInvitationResult[] = []
     const seenEmails = new Set<string>()
 
-    for (const item of body.invitations) {
-      const normalizedEmail = normalizeEmail(item.email)
+    for (const rawEmail of body.emails) {
+      const normalizedEmail = normalizeEmail(rawEmail)
       if (seenEmails.has(normalizedEmail)) {
         failed.push({
           email: normalizedEmail,
@@ -148,8 +149,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       try {
         const invitation = await createWorkspaceInvitation({
           context,
-          email: item.email,
-          permission: item.permission,
+          email: rawEmail,
+          permission: body.permission,
+          membership: body.membership,
           request: req,
         })
         if (invitation.instantAdd) {
@@ -166,11 +168,19 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           continue
         }
 
+        /**
+         * One bad address must not discard the invitations that already
+         * succeeded, so unexpected failures are reported per email rather than
+         * aborting the batch.
+         */
         logger.error('Unexpected workspace invitation batch item failure:', {
           email: normalizedEmail,
           error,
         })
-        throw error
+        failed.push({
+          email: normalizedEmail,
+          error: getErrorMessage(error, 'Failed to create invitation'),
+        })
       }
     }
 

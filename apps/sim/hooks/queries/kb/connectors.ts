@@ -15,7 +15,7 @@ import {
   triggerKnowledgeConnectorSyncContract,
   updateKnowledgeConnectorContract,
 } from '@/lib/api/contracts/knowledge'
-import { knowledgeKeys } from '@/hooks/queries/kb/knowledge'
+import { knowledgeKeys } from '@/hooks/queries/utils/knowledge-keys'
 
 const logger = createLogger('KnowledgeConnectorQueries')
 
@@ -204,11 +204,18 @@ export function useDeleteConnector() {
 interface TriggerSyncParams {
   knowledgeBaseId: string
   connectorId: string
+  /** Force re-hydration + re-index of rendered content (the "Full resync" action). */
+  rehydrate?: boolean
 }
 
-async function triggerSync({ knowledgeBaseId, connectorId }: TriggerSyncParams): Promise<void> {
+async function triggerSync({
+  knowledgeBaseId,
+  connectorId,
+  rehydrate,
+}: TriggerSyncParams): Promise<void> {
   await requestJson(triggerKnowledgeConnectorSyncContract, {
     params: { id: knowledgeBaseId, connectorId },
+    query: rehydrate ? { rehydrate: true } : {},
   })
 }
 

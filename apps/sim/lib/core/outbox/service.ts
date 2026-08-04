@@ -3,11 +3,23 @@ import { outboxEvent } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm'
+import { truncate } from '@sim/utils/string'
+import { and, asc, desc, eq, inArray, lte, sql } from 'drizzle-orm'
 
 const logger = createLogger('OutboxService')
 
 const DEFAULT_MAX_ATTEMPTS = 10
+const MAX_PERSISTED_ERROR_LENGTH = 500
+
+/**
+ * Bounds a handler failure before persisting it to `last_error`. Driver
+ * errors ("Failed query: ...\nparams: ...") embed every bound parameter,
+ * which can include user credentials from handler payloads — the parameter
+ * tail is dropped and the rest is capped.
+ */
+function toPersistedHandlerError(error: unknown): string {
+  return truncate(toError(error).message.split(/\nparams: /)[0], MAX_PERSISTED_ERROR_LENGTH)
+}
 const STUCK_PROCESSING_THRESHOLD_MS = 10 * 60 * 1000 // 10 minutes
 const MAX_BACKOFF_MS = 60 * 60 * 1000 // 1 hour
 const BASE_BACKOFF_MS = 1000 // 1 second, doubled per attempt
@@ -32,11 +44,29 @@ class OutboxHandlerTimeoutError extends Error {
  * lands on the same Stripe invoice id / charge id rather than creating
  * a duplicate. The outbox lease CAS handles our DB side.
  */
-interface OutboxEventContext {
+export interface OutboxEventContext {
   eventId: string
   eventType: string
   /** How many times this event has been attempted (zero on first run). */
   attempts: number
+  /** Maximum attempts before this event is dead-lettered. */
+  maxAttempts: number
+  /**
+   * Aborted when the handler exceeds its lease-bound execution window.
+   * External-operation handlers must stop before performing another side effect.
+   */
+  signal: AbortSignal
+  /**
+   * Durably shallow-merge fields into this event's JSON payload while the
+   * current processing lease is still held. Long-running handlers can
+   * checkpoint externally-created IDs so
+   * a crash/retry resumes from the durable outbox operation instead of needing
+   * a second job-state table.
+   *
+   * Throws if the row was reaped and reclaimed by another worker. Callers must
+   * stop processing immediately in that case; the newer lease owns the event.
+   */
+  checkpointPayload(patch: Record<string, unknown>): Promise<void>
 }
 
 /**
@@ -111,6 +141,103 @@ export async function enqueueOutboxEvent<T>(
   })
   logger.info('Enqueued outbox event', { id, eventType })
   return id
+}
+
+export interface CoalescedOutboxEnqueueOptions extends EnqueueOptions {
+  /**
+   * One scalar payload field that identifies the subject of this event.
+   *
+   * Callers must already serialize writers for this subject with their domain
+   * lock. The helper row-locks an existing pending event against the worker,
+   * then extends its delivery deadline instead of creating another row.
+   */
+  coalesceOn: {
+    payloadKey: string
+    payloadValue: string
+  }
+}
+
+/**
+ * Enqueues an outbox event or extends the settle window of the pending event
+ * for the same subject.
+ *
+ * This is for coalescing a burst of transactional mutations into one eventual
+ * side effect (for example, several workspace moves that all update the same
+ * surviving invitation). It intentionally coalesces only `pending` rows:
+ * processing/completed work already crossed the external-side-effect boundary
+ * and must not be rewritten.
+ *
+ * Concurrency between domain writers is supplied by the caller's existing
+ * subject lock. `FOR UPDATE` covers the outbox-worker race so a due row cannot
+ * be claimed while its `availableAt` is being extended.
+ */
+export async function enqueueOrReschedulePendingOutboxEvent<T>(
+  executor: Pick<typeof db, 'select' | 'insert' | 'update'>,
+  eventType: string,
+  payload: T,
+  options: CoalescedOutboxEnqueueOptions
+): Promise<string> {
+  const [existing] = await executor
+    .select({ id: outboxEvent.id, availableAt: outboxEvent.availableAt })
+    .from(outboxEvent)
+    .where(
+      and(
+        eq(outboxEvent.eventType, eventType),
+        eq(outboxEvent.status, 'pending'),
+        sql`${outboxEvent.payload} ->> ${options.coalesceOn.payloadKey} = ${options.coalesceOn.payloadValue}`
+      )
+    )
+    .orderBy(desc(outboxEvent.createdAt), desc(outboxEvent.id))
+    .for('update')
+    .limit(1)
+
+  if (!existing) {
+    return enqueueOutboxEvent(executor, eventType, payload, options)
+  }
+
+  const requestedAvailableAt = options.availableAt ?? new Date()
+  const availableAt =
+    existing.availableAt > requestedAvailableAt ? existing.availableAt : requestedAvailableAt
+  const [rescheduled] = await executor
+    .update(outboxEvent)
+    .set({ availableAt })
+    .where(and(eq(outboxEvent.id, existing.id), eq(outboxEvent.status, 'pending')))
+    .returning({ id: outboxEvent.id })
+
+  if (rescheduled) {
+    logger.info('Rescheduled pending outbox event', {
+      id: rescheduled.id,
+      eventType,
+      availableAt,
+    })
+    return rescheduled.id
+  }
+
+  // A worker won the status transition before this row lock was acquired.
+  // Preserve the requested side effect with a fresh event rather than losing it.
+  return enqueueOutboxEvent(executor, eventType, payload, options)
+}
+
+/**
+ * Atomically shallow-merge fields into an outbox payload. This is intended for
+ * the transactional consumer of an external callback (for example a Stripe
+ * webhook) that needs to acknowledge application of an operation in the same
+ * transaction as its canonical state change. Callers are responsible for
+ * taking their domain lock before touching the outbox row.
+ */
+export async function patchOutboxEventPayload(
+  executor: Pick<typeof db, 'update'>,
+  eventId: string,
+  patch: Record<string, unknown>
+): Promise<boolean> {
+  const result = await executor
+    .update(outboxEvent)
+    .set({
+      payload: sql`(coalesce(${outboxEvent.payload}::jsonb, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb)::json`,
+    })
+    .where(eq(outboxEvent.id, eventId))
+    .returning({ id: outboxEvent.id })
+  return result.length > 0
 }
 
 /** Cap on how many dead-lettered rows a single reconciler scan materializes. */
@@ -340,6 +467,7 @@ async function runHandler(
     await runHandlerWithTimeout(handler, event)
     const updated = await updateIfLeaseHeld(event, {
       status: 'completed',
+      lastError: null,
       processedAt: new Date(),
       lockedAt: null,
     })
@@ -363,7 +491,7 @@ async function runHandler(
 
     const nextAttempts = event.attempts + 1
     const isDead = nextAttempts >= event.maxAttempts
-    const errMsg = toError(error).message
+    const errMsg = toPersistedHandlerError(error)
 
     if (isDead) {
       const updated = await updateIfLeaseHeld(event, {
@@ -524,14 +652,30 @@ function runHandlerWithTimeout(
   event: typeof outboxEvent.$inferSelect,
   timeoutMs: number = DEFAULT_HANDLER_TIMEOUT_MS
 ): Promise<void> {
+  const controller = new AbortController()
   const context: OutboxEventContext = {
     eventId: event.id,
     eventType: event.eventType,
     attempts: event.attempts,
+    maxAttempts: event.maxAttempts,
+    signal: controller.signal,
+    checkpointPayload: async (patch) => {
+      controller.signal.throwIfAborted()
+      const updated = await mergePayloadIfLeaseHeld(event, patch)
+      if (!updated) {
+        controller.abort()
+        throw new Error(`Outbox lease lost while checkpointing event ${event.id}`)
+      }
+      event.payload = {
+        ...(event.payload as Record<string, unknown>),
+        ...patch,
+      } as never
+    },
   }
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
+      controller.abort()
       reject(new OutboxHandlerTimeoutError(timeoutMs))
     }, timeoutMs)
 
@@ -545,6 +689,26 @@ function runHandlerWithTimeout(
         reject(err)
       })
   })
+}
+
+async function mergePayloadIfLeaseHeld(
+  event: typeof outboxEvent.$inferSelect,
+  patch: Record<string, unknown>
+): Promise<boolean> {
+  const whereClauses = [eq(outboxEvent.id, event.id), eq(outboxEvent.status, 'processing')]
+  if (event.lockedAt) {
+    whereClauses.push(eq(outboxEvent.lockedAt, event.lockedAt))
+  }
+
+  const result = await db
+    .update(outboxEvent)
+    .set({
+      payload: sql`(coalesce(${outboxEvent.payload}::jsonb, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb)::json`,
+    })
+    .where(and(...whereClauses))
+    .returning({ id: outboxEvent.id })
+
+  return result.length > 0
 }
 
 /**

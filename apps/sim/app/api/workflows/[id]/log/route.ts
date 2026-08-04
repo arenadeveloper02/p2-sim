@@ -5,14 +5,20 @@ import { eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { workflowLogContract } from '@/lib/api/contracts/workflows'
 import { parseRequest } from '@/lib/api/server'
+import {
+  assertBillingAttributionSnapshot,
+  type BillingAttributionSnapshot,
+} from '@/lib/billing/core/billing-attribution'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
-import { getWorkspaceBilledAccountUserId } from '@/lib/workspaces/utils'
+import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
 import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
+import type { SerializableExecutionState } from '@/executor/execution/types'
 import type { ExecutionResult } from '@/executor/types'
+import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 
 const logger = createLogger('WorkflowLogAPI')
 
@@ -44,16 +50,68 @@ export const POST = withRouteHandler(
         }
 
         const [existingLog] = await db
-          .select({ workflowId: workflowExecutionLogs.workflowId })
+          .select({
+            workflowId: workflowExecutionLogs.workflowId,
+            workspaceId: workflowExecutionLogs.workspaceId,
+            executionData: workflowExecutionLogs.executionData,
+          })
           .from(workflowExecutionLogs)
           .where(eq(workflowExecutionLogs.executionId, executionId))
           .limit(1)
 
-        if (existingLog && existingLog.workflowId !== id) {
+        if (!existingLog) {
+          logger.warn(`[${requestId}] No persisted start found for execution ${executionId}`)
+          return createErrorResponse('Execution not found', 404)
+        }
+
+        if (existingLog.workflowId !== id) {
           logger.warn(
             `[${requestId}] executionId ${executionId} belongs to workflow ${existingLog.workflowId}, not ${id}`
           )
           return createErrorResponse('Execution not found', 404)
+        }
+
+        const storedBillingAttributionValue =
+          existingLog.executionData &&
+          typeof existingLog.executionData === 'object' &&
+          'billingAttribution' in existingLog.executionData &&
+          existingLog.executionData.billingAttribution
+            ? existingLog.executionData.billingAttribution
+            : undefined
+        if (!storedBillingAttributionValue) {
+          logger.error(
+            `[${requestId}] Existing execution ${executionId} is missing immutable billing attribution`
+          )
+          return createErrorResponse('Execution billing attribution is unavailable', 500)
+        }
+
+        let billingAttribution: BillingAttributionSnapshot
+        try {
+          billingAttribution = assertBillingAttributionSnapshot(storedBillingAttributionValue)
+        } catch (error) {
+          logger.error(
+            `[${requestId}] Existing execution ${executionId} has invalid immutable billing attribution`,
+            { error }
+          )
+          return createErrorResponse('Execution billing attribution is unavailable', 500)
+        }
+
+        if (
+          !existingLog.workspaceId ||
+          billingAttribution.workspaceId !== existingLog.workspaceId
+        ) {
+          logger.error(
+            `[${requestId}] Existing execution ${executionId} has inconsistent workspace attribution`
+          )
+          return createErrorResponse('Execution billing attribution is unavailable', 500)
+        }
+
+        const actorUserId = accessValidation.auth?.userId
+        if (!actorUserId || actorUserId !== billingAttribution.actorUserId) {
+          logger.warn(
+            `[${requestId}] Authenticated actor does not match execution ${executionId} attribution`
+          )
+          return createErrorResponse('Execution is not authorized for this caller', 403)
         }
 
         logger.info(`[${requestId}] Persisting execution result for workflow: ${id}`, {
@@ -62,27 +120,41 @@ export const POST = withRouteHandler(
         })
 
         const isChatExecution = result.metadata?.source === 'chat'
-
         const triggerType = isChatExecution ? 'chat' : 'manual'
         const loggingSession = new LoggingSession(id, executionId, triggerType, requestId)
-
-        const workspaceId = accessValidation.workflow.workspaceId
-        if (!workspaceId) {
-          logger.error(`[${requestId}] Workflow ${id} has no workspaceId`)
-          return createErrorResponse('Workflow has no associated workspace', 500)
+        const resolvedSecretTraceRegistry = new ResolvedSecretTraceRegistry([], {
+          userId: actorUserId,
+          workspaceId: existingLog.workspaceId,
+        })
+        const trustedExecutionData = await materializeExecutionData(
+          existingLog.executionData as Record<string, unknown>,
+          {
+            workspaceId: existingLog.workspaceId,
+            workflowId: existingLog.workflowId,
+            executionId,
+          }
+        )
+        const trustedExecutionState =
+          trustedExecutionData.executionState &&
+          typeof trustedExecutionData.executionState === 'object' &&
+          !Array.isArray(trustedExecutionData.executionState)
+            ? (trustedExecutionData.executionState as SerializableExecutionState)
+            : undefined
+        const trustedProvenance = trustedExecutionState?.resolvedSecretTraceProvenance
+        if (trustedProvenance === undefined) {
+          resolvedSecretTraceRegistry.markIncomplete()
+        } else {
+          await resolvedSecretTraceRegistry.importProvenance(trustedProvenance, { trusted: true })
         }
-        const billedAccountUserId = await getWorkspaceBilledAccountUserId(workspaceId)
-        if (!billedAccountUserId) {
-          logger.error(
-            `[${requestId}] Unable to resolve billed account for workspace ${workspaceId}`
-          )
-          return createErrorResponse('Unable to resolve billing account for this workspace', 500)
-        }
+        loggingSession.setResolvedSecretTraceRegistry(resolvedSecretTraceRegistry)
 
-        await loggingSession.safeStart({
-          userId: billedAccountUserId,
-          workspaceId,
+        await loggingSession.start({
+          userId: actorUserId,
+          actorUserId,
+          billingAttribution,
+          workspaceId: existingLog.workspaceId,
           variables: {},
+          skipLogCreation: true,
         })
 
         const resultWithOutput = {
@@ -99,6 +171,7 @@ export const POST = withRouteHandler(
             totalDurationMs: totalDuration || result.metadata?.duration || 0,
             error: { message },
             traceSpans,
+            executionState: trustedExecutionState,
           })
         } else {
           await loggingSession.safeComplete({
@@ -106,6 +179,7 @@ export const POST = withRouteHandler(
             totalDurationMs: totalDuration || result.metadata?.duration || 0,
             finalOutput: result.output || {},
             traceSpans,
+            executionState: trustedExecutionState,
           })
         }
 

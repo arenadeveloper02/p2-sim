@@ -13,10 +13,21 @@ export default {
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
     './app/**/*.{js,ts,jsx,tsx,mdx}',
+    /**
+     * `lib/content/mdx.tsx` styles rendered blog/library markdown, so it emits
+     * classes like any component does. Without this glob Tailwind only
+     * generates the ones that happen to appear in a scanned file too, and a
+     * class unique to this directory silently resolves to nothing.
+     */
+    './lib/**/*.{js,ts,jsx,tsx,mdx}',
     '../../packages/emcn/src/**/*.{js,ts,jsx,tsx}',
     '../../packages/workflow-renderer/src/**/*.{js,ts,jsx,tsx}',
     '!./app/node_modules/**',
     '!**/node_modules/**',
+    // Tests are not production styling sources. Keeping them out also avoids
+    // Tailwind's watcher trying to stat a stale path while a test is replaced.
+    '!./**/*.test.{js,ts,jsx,tsx,mdx}',
+    '!./**/*.spec.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
     extend: {

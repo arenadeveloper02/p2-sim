@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
 import { copilotChats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import {
   addCopilotChatResourceContract,
@@ -16,22 +16,15 @@ import {
   createNotFoundResponse,
   createUnauthorizedResponse,
 } from '@/lib/copilot/request/http'
-import type { ChatResource, ResourceType } from '@/lib/copilot/resources/persistence'
-import { GENERIC_RESOURCE_TITLES } from '@/lib/copilot/resources/types'
+import type { ChatResource } from '@/lib/copilot/resources/persistence'
+import {
+  canonicalizeDesktopSessionResource,
+  canonicalizeDesktopSessionResources,
+  GENERIC_RESOURCE_TITLES,
+} from '@/lib/copilot/resources/types'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('CopilotChatResourcesAPI')
-
-const VALID_RESOURCE_TYPES = new Set<ResourceType>([
-  'table',
-  'file',
-  'workflow',
-  'knowledgebase',
-  'folder',
-  'scheduledtask',
-  'log',
-  'integration',
-])
 
 export const POST = withRouteHandler(async (req: NextRequest) => {
   try {
@@ -50,28 +43,33 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       }
     )
     if (!parsed.success) return parsed.response
-    const { chatId, resource } = parsed.data.body
+    const { chatId, resource: requestedResource } = parsed.data.body
+    const resource = canonicalizeDesktopSessionResource(requestedResource)
 
     // Ephemeral UI tab (client does not POST this; guard for old clients / bugs).
     if (resource.id === 'streaming-file') {
       return NextResponse.json({ success: true })
     }
 
-    if (!VALID_RESOURCE_TYPES.has(resource.type)) {
-      return createBadRequestResponse(`Invalid resource type: ${resource.type}`)
-    }
-
     const [chat] = await db
       .select({ resources: copilotChats.resources })
       .from(copilotChats)
-      .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+      .where(
+        and(
+          eq(copilotChats.id, chatId),
+          eq(copilotChats.userId, userId),
+          isNull(copilotChats.deletedAt)
+        )
+      )
       .limit(1)
 
     if (!chat) {
       return createNotFoundResponse('Chat not found or unauthorized')
     }
 
-    const existing = Array.isArray(chat.resources) ? (chat.resources as ChatResource[]) : []
+    const existing = canonicalizeDesktopSessionResources(
+      Array.isArray(chat.resources) ? (chat.resources as ChatResource[]) : []
+    )
     const key = `${resource.type}:${resource.id}`
     const prev = existing.find((r) => `${r.type}:${r.id}` === key)
 
@@ -91,7 +89,13 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     await db
       .update(copilotChats)
       .set({ resources: sql`${JSON.stringify(merged)}::jsonb`, updatedAt: new Date() })
-      .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+      .where(
+        and(
+          eq(copilotChats.id, chatId),
+          eq(copilotChats.userId, userId),
+          isNull(copilotChats.deletedAt)
+        )
+      )
 
     logger.info('Added resource to chat', { chatId, resource })
 
@@ -124,16 +128,25 @@ export const PATCH = withRouteHandler(async (req: NextRequest) => {
     const [chat] = await db
       .select({ resources: copilotChats.resources })
       .from(copilotChats)
-      .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+      .where(
+        and(
+          eq(copilotChats.id, chatId),
+          eq(copilotChats.userId, userId),
+          isNull(copilotChats.deletedAt)
+        )
+      )
       .limit(1)
 
     if (!chat) {
       return createNotFoundResponse('Chat not found or unauthorized')
     }
 
-    const existing = Array.isArray(chat.resources) ? (chat.resources as ChatResource[]) : []
+    const existing = canonicalizeDesktopSessionResources(
+      Array.isArray(chat.resources) ? (chat.resources as ChatResource[]) : []
+    )
+    const canonicalOrder = canonicalizeDesktopSessionResources(newOrder)
     const existingKeys = new Set(existing.map((r) => `${r.type}:${r.id}`))
-    const newKeys = new Set(newOrder.map((r) => `${r.type}:${r.id}`))
+    const newKeys = new Set(canonicalOrder.map((r) => `${r.type}:${r.id}`))
 
     if (existingKeys.size !== newKeys.size || ![...existingKeys].every((k) => newKeys.has(k))) {
       return createBadRequestResponse('Reordered resources must match existing resources')
@@ -141,12 +154,18 @@ export const PATCH = withRouteHandler(async (req: NextRequest) => {
 
     await db
       .update(copilotChats)
-      .set({ resources: sql`${JSON.stringify(newOrder)}::jsonb`, updatedAt: new Date() })
-      .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+      .set({ resources: sql`${JSON.stringify(canonicalOrder)}::jsonb`, updatedAt: new Date() })
+      .where(
+        and(
+          eq(copilotChats.id, chatId),
+          eq(copilotChats.userId, userId),
+          isNull(copilotChats.deletedAt)
+        )
+      )
 
-    logger.info('Reordered resources for chat', { chatId, count: newOrder.length })
+    logger.info('Reordered resources for chat', { chatId, count: canonicalOrder.length })
 
-    return NextResponse.json({ success: true, resources: newOrder })
+    return NextResponse.json({ success: true, resources: canonicalOrder })
   } catch (error) {
     logger.error('Error reordering chat resources:', error)
     return createInternalServerErrorResponse('Failed to reorder resources')
@@ -172,17 +191,31 @@ export const DELETE = withRouteHandler(async (req: NextRequest) => {
     if (!parsed.success) return parsed.response
     const { chatId, resourceType, resourceId } = parsed.data.body
 
+    // Old builds could persist an inner browser/terminal tab id. Closing the
+    // singleton panel removes every legacy row of that type so it cannot be
+    // canonicalized back into view on the next hydration.
+    const removePredicate =
+      resourceType === 'browser' || resourceType === 'terminal'
+        ? sql`elem->>'type' = ${resourceType}`
+        : sql`elem->>'type' = ${resourceType} AND elem->>'id' = ${resourceId}`
+
     const [updated] = await db
       .update(copilotChats)
       .set({
         resources: sql`COALESCE((
           SELECT jsonb_agg(elem)
           FROM jsonb_array_elements(${copilotChats.resources}) elem
-          WHERE NOT (elem->>'type' = ${resourceType} AND elem->>'id' = ${resourceId})
+          WHERE NOT (${removePredicate})
         ), '[]'::jsonb)`,
         updatedAt: new Date(),
       })
-      .where(and(eq(copilotChats.id, chatId), eq(copilotChats.userId, userId)))
+      .where(
+        and(
+          eq(copilotChats.id, chatId),
+          eq(copilotChats.userId, userId),
+          isNull(copilotChats.deletedAt)
+        )
+      )
       .returning({ resources: copilotChats.resources })
 
     if (!updated) {

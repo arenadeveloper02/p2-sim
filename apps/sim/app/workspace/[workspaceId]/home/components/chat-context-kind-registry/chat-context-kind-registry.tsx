@@ -6,13 +6,15 @@ import {
   Library,
   Table as TableIcon,
   Task,
+  TerminalWindow,
   Workflow,
 } from '@sim/emcn/icons'
-import { AgentSkillsIcon } from '@/components/icons'
+import { Globe } from 'lucide-react'
+import { AgentSkillsIcon, McpIcon } from '@/components/icons'
 import { getDocumentIcon } from '@/components/icons/document-icons'
 import type { ChatContextKind, ChatMessageContext } from '@/app/workspace/[workspaceId]/home/types'
-import { getBareIconStyle } from '@/blocks/icon-color'
-import { registry as blockRegistry } from '@/blocks/registry'
+import { getBareIconStyle } from '@/blocks/brand-icon-style'
+import { getBlockRegistry } from '@/blocks/registry'
 
 interface RenderIconArgs {
   context: ChatMessageContext
@@ -39,7 +41,7 @@ function renderWorkflowIcon({ className }: RenderIconArgs): ReactNode | null {
 function renderIntegrationTile({ context, className }: RenderIconArgs): ReactNode | null {
   if (context.kind !== 'integration') return null
   if (!context.blockType) return null
-  const block = blockRegistry[context.blockType]
+  const block = getBlockRegistry()[context.blockType]
   if (!block) return null
   const Icon = block.icon
   return <Icon className={className} style={getBareIconStyle(Icon)} />
@@ -53,6 +55,14 @@ function renderIntegrationTile({ context, className }: RenderIconArgs): ReactNod
  * without an icon.
  */
 export const CHAT_CONTEXT_KIND_REGISTRY: Record<ChatContextKind, ChatContextKindConfig> = {
+  browser_tab: {
+    label: 'Browser tab',
+    renderIcon: ({ className }) => <Globe className={className} />,
+  },
+  terminal_tab: {
+    label: 'Terminal',
+    renderIcon: ({ className }) => <TerminalWindow className={className} />,
+  },
   workflow: { label: 'Workflow', renderIcon: renderWorkflowIcon },
   current_workflow: { label: 'Current workflow', renderIcon: renderWorkflowIcon },
   workflow_block: { label: 'Block', renderIcon: renderWorkflowIcon },
@@ -65,10 +75,23 @@ export const CHAT_CONTEXT_KIND_REGISTRY: Record<ChatContextKind, ChatContextKind
     label: 'Table',
     renderIcon: ({ className }) => <TableIcon className={className} />,
   },
+  table_selection: {
+    label: 'Table selection',
+    renderIcon: ({ className }) => <TableIcon className={className} />,
+  },
   file: {
     label: 'File',
     renderIcon: ({ context, className }) => {
       const FileDocIcon = getDocumentIcon('', context.label)
+      return <FileDocIcon className={className} />
+    },
+  },
+  file_selection: {
+    label: 'File selection',
+    renderIcon: ({ context, className }) => {
+      // The label carries a `:line` suffix, so read the extension off the file
+      // name the context carries — `getDocumentIcon` needs `md`, not `md:12-40`.
+      const FileDocIcon = getDocumentIcon('', context.fileName ?? context.label)
       return <FileDocIcon className={className} />
     },
   },
@@ -98,5 +121,9 @@ export const CHAT_CONTEXT_KIND_REGISTRY: Record<ChatContextKind, ChatContextKind
   skill: {
     label: 'Skill',
     renderIcon: ({ className }) => <AgentSkillsIcon className={className} />,
+  },
+  mcp: {
+    label: 'MCP server',
+    renderIcon: ({ className }) => <McpIcon className={className} />,
   },
 }

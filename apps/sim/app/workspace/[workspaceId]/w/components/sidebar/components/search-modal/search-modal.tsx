@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import { cn, Library } from '@sim/emcn'
+import { cn, Library, useNativeSurfaceOcclusionReady } from '@sim/emcn'
 import {
   Calendar,
   Database,
@@ -26,6 +26,8 @@ import { Scan } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { createPortal } from 'react-dom'
+import { supportsAtomicBrowserPanelOcclusion } from '@/lib/browser-agent/transport'
+import { isChatEnabled } from '@/lib/core/config/env-flags'
 import { captureEvent } from '@/lib/posthog/client'
 import { hasTriggerCapability } from '@/lib/workflows/triggers/trigger-utils'
 // import { searchItems } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/search-modal/search-utils'
@@ -41,6 +43,7 @@ import { useSearchModalStore } from '@/stores/modals/search/store'
 import type {
   SearchBlockItem,
   SearchDocItem,
+  SearchSection,
   SearchToolOperationItem,
 } from '@/stores/modals/search/types'
 import {
@@ -70,7 +73,7 @@ import type {
   WorkflowItem,
   WorkspaceItem,
 } from './utils'
-import { filterAndSort } from './utils'
+import { filterAndCap, filterAndSort } from './utils'
 
 const logger = createLogger('SearchModal')
 
@@ -97,8 +100,16 @@ export function SearchModal({
   const params = useParams()
   const router = useRouter()
   const workspaceId = params.workspaceId as string
+  const currentWorkflowId = params.workflowId as string | undefined
   const inputRef = useRef<HTMLInputElement>(null)
   const [mounted, setMounted] = useState(false)
+  const atomicBrowserOcclusion = supportsAtomicBrowserPanelOcclusion()
+  const nativeSurfaceReady = useNativeSurfaceOcclusionReady(open, 'modal')
+  const visuallyOpen = open && nativeSurfaceReady
+  const focusReady = atomicBrowserOcclusion ? visuallyOpen : open
+  const [retainNativeSurfaceOcclusion, setRetainNativeSurfaceOcclusion] = useState(open)
+  const nativeSurfaceOcclusionActive =
+    open || (atomicBrowserOcclusion && retainNativeSurfaceOcclusion)
   const { navigateToSettings } = useSettingsNavigation()
   const { config: permissionConfig } = usePermissionConfig()
   const invokeCommand = useInvokeGlobalCommand()
@@ -115,9 +126,24 @@ export function SearchModal({
     setMounted(true)
   }, [])
 
+  useEffect(() => {
+    if (!atomicBrowserOcclusion) return
+    if (open) {
+      setRetainNativeSurfaceOcclusion(true)
+      return
+    }
+    // Transition-end normally releases this first. The fallback covers
+    // reduced-motion/user-agent cases where no transition event is emitted.
+    const timeout = window.setTimeout(() => setRetainNativeSurfaceOcclusion(false), 200)
+    return () => window.clearTimeout(timeout)
+  }, [atomicBrowserOcclusion, open])
+
   const { blocks, tools, triggers, toolOperations, docs } = useSearchModalStore(
     (state) => state.data
   )
+
+  const sections = useSearchModalStore((state) => state.sections)
+  const showSection = (key: SearchSection) => !sections || sections.includes(key)
 
   const openHelpModal = useCallback(() => {
     window.dispatchEvent(new CustomEvent('open-help-modal'))
@@ -213,14 +239,16 @@ export function SearchModal({
       context: 'workflow',
       run: () => invokeCommand('run-workflow'),
     })
-    list.push({
-      id: 'new-chat',
-      name: 'New chat',
-      keywords: 'chat message ask sim assistant home',
-      icon: Home,
-      context: 'global',
-      run: () => routerRef.current.push(`/workspace/${workspaceId}/home`),
-    })
+    if (isChatEnabled) {
+      list.push({
+        id: 'new-chat',
+        name: 'New chat',
+        keywords: 'chat message ask sim assistant home',
+        icon: Home,
+        context: 'global',
+        run: () => routerRef.current.push(`/workspace/${workspaceId}/home`),
+      })
+    }
     if (canEdit && onCreateWorkflow) {
       list.push({
         id: 'create-workflow',
@@ -299,7 +327,7 @@ export function SearchModal({
   }
 
   useEffect(() => {
-    if (!open || !inputRef.current) return
+    if (!focusReady || !inputRef.current) return
     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
       window.HTMLInputElement.prototype,
       'value'
@@ -309,7 +337,7 @@ export function SearchModal({
       inputRef.current.dispatchEvent(new Event('input', { bubbles: true }))
     }
     inputRef.current.focus()
-  }, [open])
+  }, [focusReady])
 
   const deferredSearch = useDeferredValue(search)
   const deferredSearchRef = useRef(deferredSearch)
@@ -348,6 +376,7 @@ export function SearchModal({
           detail: {
             type: block.type,
             enableTriggerMode,
+            pendingConnect: useSearchModalStore.getState().pendingConnect,
           },
         })
       )
@@ -365,7 +394,11 @@ export function SearchModal({
     (op: SearchToolOperationItem) => {
       window.dispatchEvent(
         new CustomEvent('add-block-from-toolbar', {
-          detail: { type: op.blockType, presetOperation: op.operationId },
+          detail: {
+            type: op.blockType,
+            presetOperation: op.operationId,
+            pendingConnect: useSearchModalStore.getState().pendingConnect,
+          },
         })
       )
       captureEvent(posthogRef.current, 'search_result_selected', {
@@ -567,60 +600,94 @@ export function SearchModal({
   }, [actions, isOnWorkflowPage, isOnIntegrationsPage, deferredSearch])
 
   /**
-   * Ranking matches against clean, human-meaningful text only (names, types,
-   * aliases, folder paths) — never the structural `<type>-<id>`/uuid tokens used
-   * for cmdk row identity. Those tokens carry letters (e.g. "block", "tool") that
-   * would otherwise let short fuzzy queries scatter-match unrelated items.
+   * Blocks and tools rank by name first, with `searchValue` (type + option
+   * labels) as a lower-tier fallback, so an exact name match wins while a block
+   * stays findable by an option label.
    */
   const filteredBlocks = useMemo(() => {
     if (!isOnWorkflowPage) return []
-    return filterAndSort(blocks, (b) => b.searchValue ?? b.name, deferredSearch)
-  }, [isOnWorkflowPage, blocks, deferredSearch])
+    // A custom block is hidden on its own source workflow's canvas — placing it
+    // there recurses (same exclusion as the toolbar).
+    return filterAndCap(
+      blocks.filter((b) => !b.sourceWorkflowId || b.sourceWorkflowId !== currentWorkflowId),
+      (b) => b.name,
+      deferredSearch,
+      (b) => b.searchValue
+    )
+  }, [isOnWorkflowPage, blocks, deferredSearch, currentWorkflowId])
 
   const filteredTools = useMemo(() => {
     if (!isOnWorkflowPage) return []
-    return filterAndSort(tools, (t) => t.searchValue ?? t.name, deferredSearch)
-  }, [isOnWorkflowPage, tools, deferredSearch])
+    return filterAndCap(
+      tools.filter((t) => !t.sourceWorkflowId || t.sourceWorkflowId !== currentWorkflowId),
+      (t) => t.name,
+      deferredSearch,
+      (t) => t.searchValue
+    )
+  }, [isOnWorkflowPage, tools, deferredSearch, currentWorkflowId])
 
   const filteredTriggers = useMemo(() => {
     if (!isOnWorkflowPage) return []
-    return filterAndSort(triggers, (t) => `${t.name} ${t.id}`, deferredSearch)
+    return filterAndCap(triggers, (t) => `${t.name} ${t.id}`, deferredSearch)
   }, [isOnWorkflowPage, triggers, deferredSearch])
 
   const filteredToolOps = useMemo(() => {
     if (!isOnWorkflowPage) return []
-    return filterAndSort(toolOperations, (op) => op.searchValue, deferredSearch)
+    return filterAndCap(toolOperations, (op) => op.searchValue, deferredSearch)
   }, [isOnWorkflowPage, toolOperations, deferredSearch])
 
   const filteredDocs = useMemo(() => {
     if (!isOnWorkflowPage) return []
-    return filterAndSort(docs, (d) => `${d.name} docs documentation`, deferredSearch)
+    return filterAndCap(docs, (d) => `${d.name} docs documentation`, deferredSearch)
   }, [isOnWorkflowPage, docs, deferredSearch])
 
   const filteredTables = useMemo(
-    () => filterAndSort(tables, (t) => t.name, deferredSearch),
+    () =>
+      filterAndCap(
+        tables,
+        (t) => t.name,
+        deferredSearch,
+        (t) => t.folderPath?.join(' ')
+      ),
     [tables, deferredSearch]
   )
   const filteredFiles = useMemo(
-    () => filterAndSort(files, (f) => `${f.name} ${f.folderPath?.join(' ') ?? ''}`, deferredSearch),
+    () =>
+      filterAndCap(
+        files,
+        (f) => f.name,
+        deferredSearch,
+        (f) => f.folderPath?.join(' ')
+      ),
     [files, deferredSearch]
   )
   const filteredKnowledgeBases = useMemo(
-    () => filterAndSort(knowledgeBases, (kb) => kb.name, deferredSearch),
+    () =>
+      filterAndCap(
+        knowledgeBases,
+        (kb) => kb.name,
+        deferredSearch,
+        (kb) => kb.folderPath?.join(' ')
+      ),
     [knowledgeBases, deferredSearch]
   )
 
   const filteredWorkflows = useMemo(
     () =>
-      filterAndSort(workflows, (w) => `${w.name} ${w.folderPath?.join(' ') ?? ''}`, deferredSearch),
+      filterAndCap(
+        workflows,
+        (w) => w.name,
+        deferredSearch,
+        (w) => w.folderPath?.join(' ')
+      ),
     [workflows, deferredSearch]
   )
   const filteredChats = useMemo(
-    () => filterAndSort(chats, (t) => t.name, deferredSearch),
+    () => filterAndCap(chats, (t) => t.name, deferredSearch),
     [chats, deferredSearch]
   )
   const filteredWorkspaces = useMemo(
-    () => filterAndSort(workspaces, (w) => w.name, deferredSearch),
+    () => filterAndCap(workspaces, (w) => w.name, deferredSearch),
     [workspaces, deferredSearch]
   )
   const filteredPages = useMemo(
@@ -631,13 +698,13 @@ export function SearchModal({
   /** Connected accounts: visible on the integrations page even with empty input. */
   const filteredConnectedAccounts = useMemo(() => {
     if (!isOnIntegrationsPage) return []
-    return filterAndSort(connectedAccounts, (a) => a.name, deferredSearch)
+    return filterAndCap(connectedAccounts, (a) => a.name, deferredSearch)
   }, [isOnIntegrationsPage, connectedAccounts, deferredSearch])
 
   /** Catalog integrations: only shown once the user has typed something. */
   const filteredIntegrations = useMemo(() => {
-    if (!isOnIntegrationsPage || !deferredSearch) return []
-    return filterAndSort(integrations, (i) => i.name, deferredSearch)
+    if (!isOnIntegrationsPage || !deferredSearch.trim()) return []
+    return filterAndCap(integrations, (i) => i.name, deferredSearch)
   }, [isOnIntegrationsPage, deferredSearch, integrations])
 
   if (!mounted) return null
@@ -646,21 +713,33 @@ export function SearchModal({
     <>
       <div
         className={cn(
-          'fixed inset-0 z-40 transition-opacity duration-100',
-          open ? 'opacity-100' : 'pointer-events-none opacity-0'
+          'fixed inset-0 z-[var(--z-modal)] transition-opacity duration-100',
+          visuallyOpen ? 'opacity-100' : !open && 'pointer-events-none opacity-0',
+          open && !visuallyOpen && 'opacity-0'
         )}
         onClick={handleOverlayClick}
-        aria-hidden={!open}
+        onTransitionEnd={(event) => {
+          if (
+            atomicBrowserOcclusion &&
+            !open &&
+            event.target === event.currentTarget &&
+            event.propertyName === 'opacity'
+          ) {
+            setRetainNativeSurfaceOcclusion(false)
+          }
+        }}
+        aria-hidden={!visuallyOpen}
+        data-native-surface-occlusion={nativeSurfaceOcclusionActive ? 'modal' : undefined}
       />
 
       <div
         role='dialog'
-        aria-modal={open}
-        aria-hidden={!open}
+        aria-modal={visuallyOpen}
+        aria-hidden={!visuallyOpen}
         aria-label='Search'
         className={cn(
-          '-translate-x-1/2 fixed top-[15%] z-50 w-[500px] rounded-xl border border-[var(--border-muted)] bg-[var(--surface-4)] p-[3px] shadow-[var(--shadow-overlay)] dark:bg-[var(--surface-5)]',
-          open ? 'visible opacity-100' : 'invisible opacity-0'
+          '-translate-x-1/2 fixed top-[15%] z-[var(--z-modal)] w-[500px] rounded-xl border border-[var(--border-muted)] bg-[var(--surface-4)] p-[3px] shadow-[var(--shadow-overlay)] dark:bg-[var(--surface-5)]',
+          visuallyOpen ? 'visible opacity-100' : 'invisible opacity-0'
         )}
         style={{
           left: isOnWorkflowPage
@@ -674,7 +753,7 @@ export function SearchModal({
               <Search className='size-[14px] flex-shrink-0 text-[var(--text-muted)]' />
               <Command.Input
                 ref={inputRef}
-                autoFocus
+                autoFocus={!atomicBrowserOcclusion}
                 onValueChange={handleSearchChange}
                 placeholder='Search anything...'
                 className='h-full w-full bg-transparent text-[var(--text-body)] text-sm outline-none placeholder:text-[var(--text-muted)] focus:outline-none'
@@ -691,77 +770,55 @@ export function SearchModal({
                 No results found.
               </Command.Empty>
 
-              <ActionsGroup
-                items={filteredActions}
-                onSelect={handleActionSelect}
-                query={deferredSearch}
-              />
-              <ConnectedAccountsGroup
-                items={filteredConnectedAccounts}
-                onSelect={handleConnectedAccountSelect}
-                query={deferredSearch}
-              />
-              <IntegrationsGroup
-                items={filteredIntegrations}
-                onSelect={handleIntegrationSelect}
-                query={deferredSearch}
-              />
-              <BlocksGroup
-                items={filteredBlocks}
-                onSelect={handleBlockSelectAsBlock}
-                query={deferredSearch}
-              />
-              <ToolsGroup
-                items={filteredTools}
-                onSelect={handleBlockSelectAsTool}
-                query={deferredSearch}
-              />
-              <TriggersGroup
-                items={filteredTriggers}
-                onSelect={handleBlockSelectAsTrigger}
-                query={deferredSearch}
-              />
-              <ChatsGroup
-                items={filteredChats}
-                onSelect={handleChatSelect}
-                query={deferredSearch}
-              />
-              <WorkflowsGroup
-                items={filteredWorkflows}
-                onSelect={handleWorkflowSelect}
-                query={deferredSearch}
-              />
-              <TablesGroup
-                items={filteredTables}
-                onSelect={handleTableSelect}
-                query={deferredSearch}
-              />
-              <FilesGroup
-                items={filteredFiles}
-                onSelect={handleFileSelect}
-                query={deferredSearch}
-              />
-              <KnowledgeBasesGroup
-                items={filteredKnowledgeBases}
-                onSelect={handleKbSelect}
-                query={deferredSearch}
-              />
-              <ToolOpsGroup
-                items={filteredToolOps}
-                onSelect={handleToolOperationSelect}
-                query={deferredSearch}
-              />
-              <WorkspacesGroup
-                items={filteredWorkspaces}
-                onSelect={handleWorkspaceSelect}
-                query={deferredSearch}
-              />
-              <DocsGroup items={filteredDocs} onSelect={handleDocSelect} query={deferredSearch} />
-              <PagesGroup
-                items={filteredPages}
-                onSelect={handlePageSelect}
-                query={deferredSearch}
-              />
+              {showSection('actions') && (
+                <ActionsGroup items={filteredActions} onSelect={handleActionSelect} />
+              )}
+              {showSection('connectedAccounts') && (
+                <ConnectedAccountsGroup
+                  items={filteredConnectedAccounts}
+                  onSelect={handleConnectedAccountSelect}
+                />
+              )}
+              {showSection('integrations') && (
+                <IntegrationsGroup
+                  items={filteredIntegrations}
+                  onSelect={handleIntegrationSelect}
+                />
+              )}
+              {showSection('blocks') && (
+                <BlocksGroup items={filteredBlocks} onSelect={handleBlockSelectAsBlock} />
+              )}
+              {showSection('tools') && (
+                <ToolsGroup items={filteredTools} onSelect={handleBlockSelectAsTool} />
+              )}
+              {showSection('triggers') && (
+                <TriggersGroup items={filteredTriggers} onSelect={handleBlockSelectAsTrigger} />
+              )}
+              {showSection('chats') && (
+                <ChatsGroup items={filteredChats} onSelect={handleChatSelect} />
+              )}
+              {showSection('workflows') && (
+                <WorkflowsGroup items={filteredWorkflows} onSelect={handleWorkflowSelect} />
+              )}
+              {showSection('tables') && (
+                <TablesGroup items={filteredTables} onSelect={handleTableSelect} />
+              )}
+              {showSection('files') && (
+                <FilesGroup items={filteredFiles} onSelect={handleFileSelect} />
+              )}
+              {showSection('knowledgeBases') && (
+                <KnowledgeBasesGroup items={filteredKnowledgeBases} onSelect={handleKbSelect} />
+              )}
+              {showSection('toolOperations') && (
+                <ToolOpsGroup items={filteredToolOps} onSelect={handleToolOperationSelect} />
+              )}
+              {showSection('workspaces') && (
+                <WorkspacesGroup items={filteredWorkspaces} onSelect={handleWorkspaceSelect} />
+              )}
+              {showSection('docs') && <DocsGroup items={filteredDocs} onSelect={handleDocSelect} />}
+              {showSection('pages') && (
+                <PagesGroup items={filteredPages} onSelect={handlePageSelect} />
+              )}
             </Command.List>
           </Command>
         </div>

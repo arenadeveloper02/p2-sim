@@ -10,6 +10,7 @@ import {
 } from '@sim/platform-authz/workspace'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { HttpError } from '@/lib/core/utils/http-error'
+import type { DbOrTx } from '@/lib/db/types'
 import { getOrgAdminWorkspaceRows } from '@/lib/workspaces/utils'
 
 export type { PermissionType }
@@ -83,10 +84,10 @@ export async function getWorkspaceById(
  */
 export async function getWorkspaceWithOwner(
   workspaceId: string,
-  options?: { includeArchived?: boolean }
+  options?: { includeArchived?: boolean; executor?: DbOrTx; forUpdate?: boolean }
 ): Promise<WorkspaceWithOwner | null> {
-  const { includeArchived = false } = options ?? {}
-  const [ws] = await db
+  const { includeArchived = false, executor = db, forUpdate = false } = options ?? {}
+  const query = executor
     .select({
       id: workspace.id,
       name: workspace.name,
@@ -102,7 +103,7 @@ export async function getWorkspaceWithOwner(
         ? eq(workspace.id, workspaceId)
         : and(eq(workspace.id, workspaceId), isNull(workspace.archivedAt))
     )
-    .limit(1)
+  const [ws] = forUpdate ? await query.for('update').limit(1) : await query.limit(1)
 
   return ws || null
 }
@@ -122,9 +123,10 @@ export async function getWorkspaceWithOwner(
  */
 export async function getEffectiveWorkspacePermission(
   userId: string,
-  ws: Pick<WorkspaceWithOwner, 'id' | 'organizationId'>
+  ws: Pick<WorkspaceWithOwner, 'id' | 'organizationId'>,
+  executor: DbOrTx = db
 ): Promise<PermissionType | null> {
-  return resolveEffectiveWorkspacePermission(userId, ws.id, ws.organizationId)
+  return resolveEffectiveWorkspacePermission(userId, ws.id, ws.organizationId, executor)
 }
 
 /**
@@ -161,6 +163,21 @@ export async function checkWorkspaceAccess(
   const canAdmin = permissionSatisfies(permission, 'admin')
 
   return { exists: true, hasAccess, canWrite, canAdmin, workspace: ws, permission }
+}
+
+/**
+ * Returns `provided` when it was resolved for this exact workspace, otherwise
+ * resolves fresh. The id match is what keeps a caller from authorizing against
+ * another workspace's cached access - every access-reuse path must go through
+ * this rather than hand-rolling the comparison.
+ */
+export async function resolveWorkspaceAccess(
+  workspaceId: string,
+  userId: string,
+  provided?: WorkspaceAccess
+): Promise<WorkspaceAccess> {
+  if (provided && provided.workspace?.id === workspaceId) return provided
+  return checkWorkspaceAccess(workspaceId, userId)
 }
 
 /**
@@ -246,6 +263,7 @@ export async function getUserEntityPermissions(
  * the UI tag matches how the member actually joined.
  *
  * @param workspaceId - The ID of the workspace to retrieve user permissions for.
+ * @param resolvedWorkspace - An already-authorized workspace row that avoids a duplicate lookup.
  * @returns A promise that resolves to an array of user objects, each containing user details and their permission type.
  */
 export type MemberRoleSource = 'owner' | 'explicit' | 'org-admin'
@@ -263,12 +281,18 @@ export interface WorkspaceMemberWithRole {
    * derived and cannot be changed through the member UI.
    */
   roleSource: MemberRoleSource
+  /**
+   * The account the workspace bills to. Its role is pinned to `admin` by the
+   * workspace-permissions route, so the member UI must not offer to change it.
+   */
+  isBilledAccount: boolean
 }
 
 export async function getUsersWithPermissions(
-  workspaceId: string
+  workspaceId: string,
+  resolvedWorkspace?: WorkspaceWithOwner
 ): Promise<WorkspaceMemberWithRole[]> {
-  const ws = await getWorkspaceWithOwner(workspaceId)
+  const ws = resolvedWorkspace ?? (await getWorkspaceWithOwner(workspaceId))
   if (!ws) return []
 
   const explicitRows = await db
@@ -299,6 +323,7 @@ export async function getUsersWithPermissions(
       isExternal: !isOwner && row.userOrganizationId !== ws.organizationId,
       joinedAt: row.joinedAt.toISOString(),
       roleSource: isOwner ? 'owner' : 'explicit',
+      isBilledAccount: row.userId === ws.billedAccountUserId,
     })
   }
 
@@ -339,6 +364,7 @@ export async function getUsersWithPermissions(
           isExternal: false,
           joinedAt: row.joinedAt.toISOString(),
           roleSource: isOwner ? 'owner' : 'org-admin',
+          isBilledAccount: row.userId === ws.billedAccountUserId,
         })
       }
     }
@@ -392,6 +418,30 @@ export interface WorkspacePermissionsForViewer {
 }
 
 /**
+ * Builds the workspace-permissions payload after the caller has already
+ * authorized the viewer against the same workspace resource.
+ *
+ * This avoids repeating the workspace and effective-permission reads in
+ * server-render prefetch paths. Callers must pass the permission returned by
+ * {@link checkWorkspaceAccess}; API boundaries should use
+ * {@link getWorkspacePermissionsForViewer} instead.
+ */
+export async function getWorkspacePermissionsForAuthorizedViewer(
+  workspaceId: string,
+  userId: string,
+  permission: PermissionType,
+  resolvedWorkspace?: WorkspaceWithOwner
+): Promise<WorkspacePermissionsForViewer> {
+  const users = await getUsersWithPermissions(workspaceId, resolvedWorkspace)
+
+  return {
+    users,
+    total: users.length,
+    viewer: { userId, isAdmin: permission === 'admin', permissionType: permission },
+  }
+}
+
+/**
  * Builds the workspace permissions payload for a viewer: the full member list plus
  * the viewer's own resolved permission. Shared by `GET /api/workspaces/[id]/permissions`
  * and the sidebar prefetch so the two never drift.
@@ -410,13 +460,7 @@ export async function getWorkspacePermissionsForViewer(
   const permission = await getEffectiveWorkspacePermission(userId, ws)
   if (permission === null) return null
 
-  const users = await getUsersWithPermissions(workspaceId)
-
-  return {
-    users,
-    total: users.length,
-    viewer: { userId, isAdmin: permission === 'admin', permissionType: permission },
-  }
+  return getWorkspacePermissionsForAuthorizedViewer(workspaceId, userId, permission, ws)
 }
 
 /**

@@ -1,11 +1,14 @@
+import { isBrowserToolName } from '@sim/browser-protocol'
 import { createLogger } from '@sim/logger'
+import { isTerminalToolName } from '@sim/terminal-protocol'
 import { getErrorMessage, toError } from '@sim/utils/errors'
-import { ASYNC_TOOL_CONFIRMATION_STATUS } from '@/lib/copilot/async-runs/lifecycle'
-import { markAsyncToolDelivered, upsertAsyncToolCall } from '@/lib/copilot/async-runs/repository'
+import type { AsyncCompletionSignal } from '@/lib/copilot/async-runs/lifecycle'
+import { upsertAsyncToolCall } from '@/lib/copilot/async-runs/repository'
 import { STREAM_TIMEOUT_MS } from '@/lib/copilot/constants'
 import {
   MothershipStreamV1AsyncToolRecordStatus,
   type MothershipStreamV1ToolCallDescriptor,
+  MothershipStreamV1ToolExecutor,
   MothershipStreamV1ToolOutcome,
   type MothershipStreamV1ToolResultPayload,
 } from '@/lib/copilot/generated/mothership-stream-v1'
@@ -20,7 +23,17 @@ import {
 } from '@/lib/copilot/request/session'
 import { markToolResultSeen, wasToolResultSeen } from '@/lib/copilot/request/sse-utils'
 import { setTerminalToolCallState } from '@/lib/copilot/request/tool-call-state'
-import { executeToolAndReport, waitForToolCompletion } from '@/lib/copilot/request/tools/executor'
+import {
+  waitForClientToolCompletion,
+  waitForWorkflowToolCompletion,
+} from '@/lib/copilot/request/tools/client'
+import { sealClientToolContext } from '@/lib/copilot/request/tools/client-completion-seal.server'
+import { executeToolAndReport } from '@/lib/copilot/request/tools/executor'
+import {
+  runGatedToolExecution,
+  TOOL_AWAITING_APPROVAL_STATUS,
+  toolCallNeedsApproval,
+} from '@/lib/copilot/request/tools/permission'
 import type {
   ExecutionContext,
   OrchestratorOptions,
@@ -30,8 +43,11 @@ import type {
 } from '@/lib/copilot/request/types'
 import { getToolEntry, isSimExecuted } from '@/lib/copilot/tool-executor'
 import { isToolHiddenInUi } from '@/lib/copilot/tools/client/hidden-tools'
+import { isUserLocalVfsToolCall } from '@/lib/copilot/tools/local-filesystem'
+import { extractStreamingStringArgument } from '@/lib/copilot/tools/streaming-args'
 import { getToolDisplayTitle } from '@/lib/copilot/tools/tool-display'
-import { isWorkflowToolName } from '@/lib/copilot/tools/workflow-tools'
+import { isWorkflowToolName, resolveWorkflowToolTargetId } from '@/lib/copilot/tools/workflow-tools'
+import { getBlockByToolName } from '@/blocks/registry'
 import type { ToolScope } from './types'
 import {
   abortPendingToolIfStreamDead,
@@ -53,22 +69,110 @@ const logger = createLogger('CopilotToolHandler')
 
 function applyToolDisplay(toolCall: ToolCallState | undefined): void {
   if (!toolCall?.name) return
+  // Integration rows show only the model-authored activity phrase; the trusted
+  // integration branding is the icon, derived client-side from the operation
+  // name (or streamed toolId) via the block registry. With no description yet,
+  // fall back to the integration name so the humanized gateway name never
+  // renders.
+  if (toolCall.name === INTEGRATION_GATEWAY_TOOL) {
+    const toolId = toolCall.params?.toolId
+    const description = toolCall.params?.description
+    if (typeof description === 'string' && description.trim()) {
+      toolCall.displayTitle = description.trim()
+      return
+    }
+    if (typeof toolId === 'string') {
+      const integration = getBlockByToolName(toolId)
+      if (integration) {
+        toolCall.displayTitle = integration.name
+        return
+      }
+    }
+  }
+  if (toolCall.integrationDescription) {
+    toolCall.displayTitle = toolCall.integrationDescription
+    return
+  }
   toolCall.displayTitle = getToolDisplayTitle(
     toolCall.name,
     toolCall.params as Record<string, unknown> | undefined
   )
 }
 
+const INTEGRATION_GATEWAY_TOOL = 'call_integration_tool'
+
+function handleToolArgsDelta(
+  data: { argumentsDelta: string; toolCallId: string; toolName: string },
+  context: StreamingContext
+): void {
+  const toolCall = context.toolCalls.get(data.toolCallId)
+  if (!toolCall) return
+  toolCall.streamingArgs = `${toolCall.streamingArgs ?? ''}${data.argumentsDelta}`
+  if (toolCall.name !== INTEGRATION_GATEWAY_TOOL) return
+
+  const toolId = extractStreamingStringArgument(toolCall.streamingArgs, 'toolId')
+  const description = extractStreamingStringArgument(toolCall.streamingArgs, 'description')
+  if (toolId || description) {
+    toolCall.params = {
+      ...toolCall.params,
+      ...(toolId ? { toolId } : {}),
+      ...(description ? { description } : {}),
+    }
+    applyToolDisplay(toolCall)
+  }
+}
+
+/**
+ * The model first streams the stable gateway call. Once Go resolves its exact
+ * server-owned operation, a second authoritative frame with the same call id
+ * carries the real executable tool name and arguments. Rebind atomically so
+ * execution, persistence, branding, and results all use that operation while
+ * retaining only the model-authored activity description for presentation.
+ */
+function rebindResolvedIntegrationCall(
+  toolCall: ToolCallState | undefined,
+  toolName: string,
+  args: Record<string, unknown> | undefined
+): boolean {
+  if (!toolCall || toolCall.name !== INTEGRATION_GATEWAY_TOOL) {
+    return false
+  }
+  // Gateway arguments may arrive over several generating/final frames. Keep
+  // the newest complete snapshot so the eventual authoritative operation frame
+  // can retain the model-authored presentation description.
+  if (toolName === INTEGRATION_GATEWAY_TOOL) {
+    if (args) toolCall.params = args
+    return true
+  }
+  const description = toolCall.params?.description
+  if (typeof description === 'string' && description.trim()) {
+    toolCall.integrationDescription = description.trim()
+  }
+  toolCall.name = toolName
+  toolCall.params = args
+  applyToolDisplay(toolCall)
+  return true
+}
+
 /**
  * Upsert the durable `async_tool_calls` row before the authoritative tool-call
- * SSE frame is forwarded to the client, so `/api/copilot/confirm` can never
- * race ahead of the row that identifies the call. This is the sole
- * persistence point for client-executable tools; gating mirrors the
- * client-wait branch in `dispatchToolExecution`.
+ * SSE frame is forwarded to the client, so `/api/copilot/confirm` and
+ * `/api/copilot/tool-permission` can never race ahead of the row that
+ * identifies the call. This is the sole persistence point for client-executable
+ * tools; gating mirrors the client-wait branch in `dispatchToolExecution`.
+ *
+ * A tool awaiting user approval is also persisted here whatever its route,
+ * because the prompt has to outlive the page: the row is what a reloaded tab's
+ * decision posts against.
+ *
+ * Also stamps `awaiting_approval` onto the outgoing frame so the browser and
+ * the persisted content block both record that the call is gated.
  */
 export async function prePersistClientExecutableToolCall(
   event: StreamEvent,
-  context: StreamingContext
+  context: StreamingContext,
+  options?: OrchestratorOptions,
+  execContext?: ExecutionContext
 ): Promise<void> {
   if (event.type !== 'tool') return
   if (!isToolCallStreamEvent(event)) return
@@ -79,23 +183,81 @@ export async function prePersistClientExecutableToolCall(
   if (isPartial) return
 
   const ui = getToolCallUI(data)
-  if (!ui.clientExecutable) return
-
   const catalogEntry = getToolEntry(data.toolName)
   const isInternal = ui.internal === true || catalogEntry?.internal === true
+
+  // Go stamps this for resolved integration operations; Sim stamps it below for
+  // catalog-declared tools. Normalizing here means the dispatch path only ever
+  // has to read the frame.
+  //
+  // Resolved before the internal short-circuit on purpose: a stamp that
+  // survives to the client with nothing gating it behind renders a card whose
+  // buttons answer into the void.
+  const frameRequestsApproval = data.status === TOOL_AWAITING_APPROVAL_STATUS
+  const gated =
+    !isInternal &&
+    toolCallNeedsApproval(
+      data.toolName,
+      context,
+      options ?? {},
+      frameRequestsApproval,
+      data.arguments
+    )
+  if (gated) {
+    data.status = TOOL_AWAITING_APPROVAL_STATUS
+  } else if (frameRequestsApproval) {
+    // Go asked for a prompt this surface will not hold — the feature is off,
+    // the tool is internal, or the user already allowed it for good. Clear the
+    // stamp so the row renders as an ordinary call.
+    data.status = undefined
+  }
+
   if (isInternal) return
 
-  const delegateWorkflowRunToClient = isWorkflowToolName(data.toolName)
-  if (isSimExecuted(data.toolName) && !delegateWorkflowRunToClient) return
+  if (!gated) {
+    if (!ui.clientExecutable) return
+
+    const delegateWorkflowRunToClient = isWorkflowToolName(data.toolName)
+    const userLocalVfsCall = isUserLocalVfsToolCall(data.toolName, data.arguments)
+    if (isSimExecuted(data.toolName) && !delegateWorkflowRunToClient && !userLocalVfsCall) return
+  }
 
   if (!context.runId) return
+
+  let sealedContext: Awaited<ReturnType<typeof sealClientToolContext>> | undefined
+  if (execContext?.resolvedSecretTraceRegistry) {
+    try {
+      sealedContext = await sealClientToolContext({
+        toolCallId: data.toolCallId,
+        runId: context.runId,
+        userId: execContext.userId,
+        registry: execContext.resolvedSecretTraceRegistry,
+      })
+    } catch (error) {
+      execContext.resolvedSecretTraceRegistry.markIncomplete()
+      logger.warn('Failed to seal client tool provenance', {
+        toolCallId: data.toolCallId,
+        error: getErrorMessage(error),
+      })
+    }
+  }
 
   await upsertAsyncToolCall({
     runId: context.runId,
     toolCallId: data.toolCallId,
     toolName: data.toolName,
     args: data.arguments,
-    status: MothershipStreamV1AsyncToolRecordStatus.running,
+    sealedContext,
+    // Browser and terminal actions cross a second, native authorization
+    // boundary. Leave those rows pending until Electron atomically claims
+    // them — the authorize endpoint only hands over a pending call, so a row
+    // that arrives already running can never be executed natively. All other
+    // client tools retain the established "already dispatched" running state.
+    // A gated tool is likewise pending: nothing has been dispatched yet.
+    status:
+      gated || isBrowserToolName(data.toolName) || isTerminalToolName(data.toolName)
+        ? MothershipStreamV1AsyncToolRecordStatus.pending
+        : MothershipStreamV1AsyncToolRecordStatus.running,
   }).catch((err) => {
     logger.warn('Failed to pre-persist async tool row before forwarding call frame', {
       toolCallId: data.toolCallId,
@@ -131,6 +293,7 @@ export async function handleToolEvent(
   }
 
   if (isToolArgsDeltaStreamEvent(event)) {
+    handleToolArgsDelta(event.payload, context)
     return
   }
 
@@ -258,10 +421,21 @@ async function handleCallPhase(
 
   if (isPartial && shouldDelayVfsPlaceholder(toolName, args)) return
 
+  if (
+    existing &&
+    (context.pendingToolPromises.has(toolCallId) ||
+      existing.status === 'awaiting_approval' ||
+      existing.status === 'executing')
+  ) {
+    applyToolDisplay(existing)
+    return
+  }
+
   if (isSubagent) {
     if (wasToolResultSeen(toolCallId) || existing?.endTime) {
-      if (existing && !existing.name && toolName) existing.name = toolName
-      if (existing && !existing.params && args) existing.params = args
+      if (!rebindResolvedIntegrationCall(existing, toolName, args)) {
+        if (existing) updateToolCallFromFrame(existing, toolName, args, !isPartial)
+      }
       applyToolDisplay(existing)
       return
     }
@@ -270,8 +444,9 @@ async function handleCallPhase(
       existing?.endTime ||
       (existing && existing.status !== 'pending' && existing.status !== 'executing')
     ) {
-      if (!existing.name && toolName) existing.name = toolName
-      if (!existing.params && args) existing.params = args
+      if (!rebindResolvedIntegrationCall(existing, toolName, args)) {
+        updateToolCallFromFrame(existing, toolName, args, !isPartial)
+      }
       applyToolDisplay(existing)
       return
     }
@@ -285,10 +460,11 @@ async function handleCallPhase(
       args,
       parentToolCallId!,
       ui,
-      spanIdentity
+      spanIdentity,
+      !isPartial
     )
   } else {
-    registerMainToolCall(context, toolCallId, toolName, args, existing, ui)
+    registerMainToolCall(context, toolCallId, toolName, args, existing, ui, !isPartial)
   }
 
   if (isPartial) return
@@ -340,7 +516,9 @@ async function handleCallPhase(
     execContext,
     options,
     clientExecutable,
-    scope
+    scope,
+    isToolHiddenInUi(toolName) || ui.hidden === true,
+    data.status === TOOL_AWAITING_APPROVAL_STATUS
   )
 }
 
@@ -360,6 +538,16 @@ function removeToolCallContentBlock(context: StreamingContext, toolCallId: strin
   }
 }
 
+function updateToolCallFromFrame(
+  toolCall: ToolCallState,
+  toolName: string,
+  args: Record<string, unknown> | undefined,
+  finalized: boolean
+): void {
+  if (!toolCall.name && toolName) toolCall.name = toolName
+  if (finalized || args !== undefined) toolCall.params = args
+}
+
 function registerSubagentToolCall(
   context: StreamingContext,
   toolCallId: string,
@@ -367,7 +555,8 @@ function registerSubagentToolCall(
   args: Record<string, unknown> | undefined,
   parentToolCallId: string,
   ui: { title?: string; phaseLabel?: string; hidden?: boolean },
-  spanIdentity: { spanId?: string; parentSpanId?: string }
+  spanIdentity: { spanId?: string; parentSpanId?: string },
+  finalized: boolean
 ): void {
   if (!context.subAgentToolCalls[parentToolCallId]) {
     context.subAgentToolCalls[parentToolCallId] = []
@@ -375,8 +564,9 @@ function registerSubagentToolCall(
   const hideFromUi = isToolHiddenInUi(toolName) || ui.hidden === true
   let toolCall = context.toolCalls.get(toolCallId)
   if (toolCall) {
-    if (!toolCall.name && toolName) toolCall.name = toolName
-    if (args && !toolCall.params) toolCall.params = args
+    if (!rebindResolvedIntegrationCall(toolCall, toolName, args)) {
+      updateToolCallFromFrame(toolCall, toolName, args, finalized)
+    }
     applyToolDisplay(toolCall)
     if (hideFromUi) removeToolCallContentBlock(context, toolCallId)
   } else {
@@ -404,8 +594,9 @@ function registerSubagentToolCall(
   const subagentToolCalls = context.subAgentToolCalls[parentToolCallId]
   const existingSubagentToolCall = subagentToolCalls.find((tc) => tc.id === toolCallId)
   if (existingSubagentToolCall) {
-    if (!existingSubagentToolCall.name && toolName) existingSubagentToolCall.name = toolName
-    if (args && !existingSubagentToolCall.params) existingSubagentToolCall.params = args
+    if (!rebindResolvedIntegrationCall(existingSubagentToolCall, toolName, args)) {
+      updateToolCallFromFrame(existingSubagentToolCall, toolName, args, finalized)
+    }
     applyToolDisplay(existingSubagentToolCall)
   } else {
     subagentToolCalls.push(toolCall)
@@ -418,11 +609,14 @@ function registerMainToolCall(
   toolName: string,
   args: Record<string, unknown> | undefined,
   existing: ToolCallState | undefined,
-  ui: { title?: string; phaseLabel?: string; hidden?: boolean }
+  ui: { title?: string; phaseLabel?: string; hidden?: boolean },
+  finalized: boolean
 ): void {
   const hideFromUi = isToolHiddenInUi(toolName) || ui.hidden === true
   if (existing) {
-    if (args && !existing.params) existing.params = args
+    if (!rebindResolvedIntegrationCall(existing, toolName, args)) {
+      updateToolCallFromFrame(existing, toolName, args, finalized)
+    }
     applyToolDisplay(existing)
     if (hideFromUi) {
       removeToolCallContentBlock(context, toolCallId)
@@ -459,12 +653,14 @@ async function dispatchToolExecution(
   execContext: ExecutionContext,
   options: OrchestratorOptions,
   clientExecutable: boolean,
-  scope: ToolScope
+  scope: ToolScope,
+  hiddenInUi = false,
+  frameRequestsApproval = false
 ): Promise<void> {
   const scopeLabel = scope === 'subagent' ? 'subagent ' : ''
 
-  const fireToolExecution = () => {
-    const pendingPromise = (async () => {
+  const fireToolExecution = (): Promise<AsyncCompletionSignal> => {
+    return (async () => {
       return executeToolAndReport(toolCallId, context, execContext, options)
     })().catch((err) => {
       logger.error(`Parallel ${scopeLabel}tool execution failed`, {
@@ -478,83 +674,113 @@ async function dispatchToolExecution(
         data: { error: 'Tool execution failed' },
       }
     })
-    registerPendingToolPromise(context, toolCallId, pendingPromise)
   }
 
-  if (options.interactive === false) {
-    if (options.autoExecuteTools !== false) {
-      if (!abortPendingToolIfStreamDead(toolCall, toolCallId, options, context)) {
-        fireToolExecution()
-      }
+  // Returns the promise instead of registering it, so the permission gate can
+  // wrap the whole thing in one pending promise that stays unsettled until the
+  // tool has actually run. Null means nothing was dispatched.
+  const startExecution = (): Promise<AsyncCompletionSignal> | null => {
+    if (options.interactive === false) {
+      if (options.autoExecuteTools === false) return null
+      if (abortPendingToolIfStreamDead(toolCall, toolCallId, options, context)) return null
+      return fireToolExecution()
     }
+
+    if (clientExecutable) {
+      const delegateWorkflowRunToClient = isWorkflowToolName(toolName)
+      const userLocalVfsCall = isUserLocalVfsToolCall(toolName, args)
+      if (isSimExecuted(toolName) && !delegateWorkflowRunToClient && !userLocalVfsCall) {
+        if (abortPendingToolIfStreamDead(toolCall, toolCallId, options, context)) return null
+        return fireToolExecution()
+      }
+      return waitForClientExecution()
+    }
+
+    if (options.autoExecuteTools === false) return null
+    if (abortPendingToolIfStreamDead(toolCall, toolCallId, options, context)) return null
+    return fireToolExecution()
+  }
+
+  if (toolCallNeedsApproval(toolName, context, options, frameRequestsApproval, args)) {
+    registerPendingToolPromise(
+      context,
+      toolCallId,
+      runGatedToolExecution(
+        toolCall,
+        toolCallId,
+        toolName,
+        args,
+        clientExecutable
+          ? MothershipStreamV1ToolExecutor.client
+          : MothershipStreamV1ToolExecutor.sim,
+        context,
+        options,
+        startExecution,
+        !hiddenInUi
+      )
+    )
     return
   }
 
-  if (clientExecutable) {
-    const delegateWorkflowRunToClient = isWorkflowToolName(toolName)
-    if (isSimExecuted(toolName) && !delegateWorkflowRunToClient) {
-      if (!abortPendingToolIfStreamDead(toolCall, toolCallId, options, context)) {
-        fireToolExecution()
-      }
-    } else {
-      toolCall.status = 'executing'
-      const pendingPromise = withCopilotSpan(
-        TraceSpan.CopilotToolWaitForClientResult,
-        {
-          [TraceAttr.ToolName]: toolName,
-          [TraceAttr.ToolCallId]: toolCallId,
-          [TraceAttr.ToolTimeoutMs]: options.timeout || STREAM_TIMEOUT_MS,
-          ...(context.runId ? { [TraceAttr.RunId]: context.runId } : {}),
-        },
-        async (span) => {
-          const completion = await waitForToolCompletion(
-            toolCallId,
-            options.timeout || STREAM_TIMEOUT_MS,
-            options.abortSignal
-          )
-          span.setAttribute(TraceAttr.ToolCompletionReceived, completion !== undefined)
-          if (completion) {
-            span.setAttribute(TraceAttr.ToolOutcome, completion.status)
-          }
-          handleClientCompletion(toolCall, toolCallId, completion)
-          if (completion?.status === ASYNC_TOOL_CONFIRMATION_STATUS.background) {
-            await markAsyncToolDelivered(toolCallId).catch((err) => {
-              logger.warn(`Failed to mark background ${scopeLabel}tool delivered`, {
-                toolCallId,
-                toolName,
-                error: toError(err).message,
-              })
+  const pending = startExecution()
+  if (pending) registerPendingToolPromise(context, toolCallId, pending)
+
+  /**
+   * A client-executed tool runs in the browser or desktop app; this side only
+   * waits for it to report back through `/api/copilot/confirm`.
+   */
+  function waitForClientExecution(): Promise<AsyncCompletionSignal> {
+    toolCall.status = 'executing'
+    return withCopilotSpan(
+      TraceSpan.CopilotToolWaitForClientResult,
+      {
+        [TraceAttr.ToolName]: toolName,
+        [TraceAttr.ToolCallId]: toolCallId,
+        [TraceAttr.ToolTimeoutMs]: options.timeout || STREAM_TIMEOUT_MS,
+        ...(context.runId ? { [TraceAttr.RunId]: context.runId } : {}),
+      },
+      async (span) => {
+        const completion = isWorkflowToolName(toolName)
+          ? await waitForWorkflowToolCompletion({
+              toolCallId,
+              workflowId: resolveWorkflowToolTargetId(args, execContext.workflowId),
+              timeoutMs: options.timeout || STREAM_TIMEOUT_MS,
+              abortSignal: options.abortSignal,
+              registry: execContext.resolvedSecretTraceRegistry,
             })
+          : await waitForClientToolCompletion({
+              toolCallId,
+              runId: context.runId,
+              userId: execContext.userId,
+              timeoutMs: options.timeout || STREAM_TIMEOUT_MS,
+              abortSignal: options.abortSignal,
+              registry: execContext.resolvedSecretTraceRegistry,
+            })
+        span.setAttribute(TraceAttr.ToolCompletionReceived, completion !== undefined)
+        if (completion) {
+          span.setAttribute(TraceAttr.ToolOutcome, completion.status)
+        }
+        handleClientCompletion(toolCall, toolCallId, completion)
+        await emitSyntheticToolResult(toolCallId, toolCall.name, completion, options)
+        return (
+          completion ?? {
+            status: MothershipStreamV1ToolOutcome.error,
+            message: 'Tool completion missing',
+            data: { error: 'Tool completion missing' },
           }
-          await emitSyntheticToolResult(toolCallId, toolCall.name, completion, options)
-          return (
-            completion ?? {
-              status: MothershipStreamV1ToolOutcome.error,
-              message: 'Tool completion missing',
-              data: { error: 'Tool completion missing' },
-            }
-          )
-        }
-      ).catch((err) => {
-        logger.error(`Client-executable ${scopeLabel}tool wait failed`, {
-          toolCallId,
-          toolName,
-          error: toError(err).message,
-        })
-        return {
-          status: MothershipStreamV1ToolOutcome.error,
-          message: 'Tool wait failed',
-          data: { error: 'Tool wait failed' },
-        }
+        )
+      }
+    ).catch((err) => {
+      logger.error(`Client-executable ${scopeLabel}tool wait failed`, {
+        toolCallId,
+        toolName,
+        error: toError(err).message,
       })
-      registerPendingToolPromise(context, toolCallId, pendingPromise)
-    }
-    return
-  }
-
-  if (options.autoExecuteTools !== false) {
-    if (!abortPendingToolIfStreamDead(toolCall, toolCallId, options, context)) {
-      fireToolExecution()
-    }
+      return {
+        status: MothershipStreamV1ToolOutcome.error,
+        message: 'Tool wait failed',
+        data: { error: 'Tool wait failed' },
+      }
+    })
   }
 }

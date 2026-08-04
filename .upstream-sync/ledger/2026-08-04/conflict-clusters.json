@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-08-04T10:32:09.645Z",
+  "rootCount": 1,
+  "leafCount": 1,
+  "fileCount": 2,
+  "forest": [
+    {
+      "id": "cluster-1",
+      "prefix": "apps/sim/app/workspace/",
+      "files": [
+        "apps/sim/app/workspace/[workspaceId]/home/hooks/stream/turn-model-serialize.test.ts",
+        "apps/sim/app/workspace/[workspaceId]/home/hooks/use-chat.test.ts"
+      ],
+      "depth": 0,
+      "parentId": null,
+      "children": []
+    }
+  ]
+}

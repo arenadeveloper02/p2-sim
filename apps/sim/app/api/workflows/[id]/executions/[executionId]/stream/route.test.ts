@@ -1,29 +1,17 @@
 /**
  * @vitest-environment node
  */
-import { createMockRequest } from '@sim/testing'
+import { authMockFns, createMockRequest, workflowAuthzMockFns } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExecutionEventEntry } from '@/lib/execution/event-buffer'
 
-const {
-  mockAuthorizeWorkflowByWorkspacePermission,
-  mockGetSession,
-  mockReadExecutionEventsState,
-  mockReadExecutionMetaState,
-} = vi.hoisted(() => ({
-  mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
-  mockGetSession: vi.fn(),
+const { mockReadExecutionEventsState, mockReadExecutionMetaState } = vi.hoisted(() => ({
   mockReadExecutionEventsState: vi.fn(),
   mockReadExecutionMetaState: vi.fn(),
 }))
 
-vi.mock('@/lib/auth', () => ({
-  getSession: mockGetSession,
-}))
-
-vi.mock('@sim/platform-authz/workflow', () => ({
-  authorizeWorkflowByWorkspacePermission: mockAuthorizeWorkflowByWorkspacePermission,
-}))
+const mockAuthorizeWorkflowByWorkspacePermission =
+  workflowAuthzMockFns.mockAuthorizeWorkflowByWorkspacePermission
 
 vi.mock('@/lib/execution/event-buffer', () => ({
   readExecutionEventsState: mockReadExecutionEventsState,
@@ -31,6 +19,8 @@ vi.mock('@/lib/execution/event-buffer', () => ({
 }))
 
 import { GET } from './route'
+
+const mockGetSession = authMockFns.mockGetSession
 
 function completedEntry(eventId: number): ExecutionEventEntry {
   return {
@@ -100,7 +90,7 @@ describe('execution stream reconnect route', () => {
     expect(mockReadExecutionEventsState).toHaveBeenNthCalledWith(2, 'exec-1', 3)
   })
 
-  it('errors when terminal metadata has no terminal event to replay', async () => {
+  it('ends the stream cleanly when terminal metadata has no terminal event to replay', async () => {
     mockReadExecutionMetaState
       .mockResolvedValueOnce({
         status: 'found',
@@ -125,9 +115,7 @@ describe('execution stream reconnect route', () => {
     })
 
     expect(response.status).toBe(200)
-    await expect(response.text()).rejects.toThrow(
-      'Execution reached terminal metadata without a terminal event'
-    )
+    await expect(response.text()).resolves.toContain('data: [DONE]')
   })
 
   it('allows replay event id gaps from reserved but unused writer ids', async () => {

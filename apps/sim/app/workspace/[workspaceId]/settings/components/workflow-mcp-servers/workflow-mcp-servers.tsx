@@ -19,19 +19,35 @@ import {
   Code,
   type ComboboxOption,
   Label,
+  useCopyToClipboard,
 } from '@sim/emcn'
 import { ArrowLeft } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { Check, Clipboard, Plus, Server } from 'lucide-react'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useParams } from 'next/navigation'
+import { useQueryState } from 'nuqs'
+import { McpIcon } from '@/components/icons'
+import { canMutateWorkspaceSettingsSection } from '@/components/settings/navigation'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
+import {
+  mcpServerIdParam,
+  mcpServerIdUrlKeys,
+  serverTabParam,
+  serverTabUrlKeys,
+} from '@/app/workspace/[workspaceId]/settings/[section]/search-params'
 import { CreateApiKeyModal } from '@/app/workspace/[workspaceId]/settings/components/api-keys/components'
 import { RowActionsMenu } from '@/app/workspace/[workspaceId]/settings/components/row-actions-menu'
 import { SettingsEmptyState } from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
+import { SettingsField } from '@/app/workspace/[workspaceId]/settings/components/settings-field'
 import type { SettingsAction } from '@/app/workspace/[workspaceId]/settings/components/settings-header/settings-header'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
+import {
+  RESOURCE_LIST_STACK,
+  SettingsResourceRow,
+} from '@/app/workspace/[workspaceId]/settings/components/settings-resource-row'
+import { useSettingsSearch } from '@/app/workspace/[workspaceId]/settings/components/use-settings-search'
 import { CreateWorkflowMcpServerModal } from '@/app/workspace/[workspaceId]/settings/components/workflow-mcp-servers/components'
 import { useApiKeys } from '@/hooks/queries/api-keys'
 import { useCreateMcpServer } from '@/hooks/queries/mcp'
@@ -47,19 +63,30 @@ import {
   type WorkflowMcpServer,
   type WorkflowMcpTool,
 } from '@/hooks/queries/workflow-mcp-servers'
-import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 const logger = createLogger('WorkflowMcpServers')
 
 interface ServerDetailViewProps {
+  canManage: boolean
   workspaceId: string
   serverId: string
   onBack: () => void
+  /** Opens the parent's delete confirmation — the modal lives with the mutation.
+   *  Absent until the parent's list resolves, so a deep link never shows an inert Delete. */
+  onDelete?: () => void
+  isDeleting: boolean
 }
 
 type McpClientType = 'sim' | 'cursor' | 'claude-code' | 'claude-desktop' | 'vscode'
 
-function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewProps) {
+function ServerDetailView({
+  canManage,
+  workspaceId,
+  serverId,
+  onBack,
+  onDelete,
+  isDeleting,
+}: ServerDetailViewProps) {
   const { data, isLoading, error } = useWorkflowMcpServer(workspaceId, serverId)
   const { data: deployedWorkflows = [], isLoading: isLoadingWorkflows } =
     useDeployedWorkflows(workspaceId)
@@ -68,19 +95,13 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
   const updateToolMutation = useUpdateWorkflowMcpTool()
   const updateServerMutation = useUpdateWorkflowMcpServer()
 
-  const { data: apiKeysData } = useApiKeys(workspaceId)
-  const { data: workspaceSettingsData } = useWorkspaceSettings(workspaceId)
-  const userPermissions = useUserPermissionsContext()
+  const { data: apiKeysData } = useApiKeys(workspaceId, 'workspace')
   const [showCreateApiKeyModal, setShowCreateApiKeyModal] = useState(false)
 
-  const existingKeyNames = [
-    ...(apiKeysData?.workspaceKeys ?? []),
-    ...(apiKeysData?.personalKeys ?? []),
-  ].map((k) => k.name)
-  const allowPersonalApiKeys =
-    workspaceSettingsData?.settings?.workspace?.allowPersonalApiKeys ?? true
-  const canManageWorkspaceKeys = userPermissions.canAdmin
-  const defaultKeyType = allowPersonalApiKeys ? 'personal' : 'workspace'
+  const existingKeyNames = (apiKeysData?.workspaceKeys ?? []).map((key) => key.name)
+  const allowPersonalApiKeys = false
+  const canManageWorkspaceKeys = canManage
+  const defaultKeyType = 'workspace'
 
   const addToWorkspaceMutation = useCreateMcpServer()
   const [addedToWorkspace, setAddedToWorkspace] = useState(false)
@@ -94,7 +115,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
     }
   }, [])
 
-  const [copiedConfig, setCopiedConfig] = useState(false)
+  const { copied: copiedConfig, copy: copyConfig } = useCopyToClipboard()
   const [activeConfigTab, setActiveConfigTab] = useState<McpClientType>('cursor')
   const [toolToDelete, setToolToDelete] = useState<WorkflowMcpTool | null>(null)
   const [toolToView, setToolToView] = useState<WorkflowMcpTool | null>(null)
@@ -107,7 +128,10 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
   const [editServerName, setEditServerName] = useState('')
   const [editServerDescription, setEditServerDescription] = useState('')
   const [editServerIsPublic, setEditServerIsPublic] = useState(false)
-  const [activeServerTab, setActiveServerTab] = useState<'workflows' | 'details'>('details')
+  const [activeServerTab, setActiveServerTab] = useQueryState(serverTabParam.key, {
+    ...serverTabParam.parser,
+    ...serverTabUrlKeys,
+  })
 
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null)
 
@@ -302,12 +326,9 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
 
   const handleCopyConfig = useCallback(
     (isPublic: boolean, serverName: string) => {
-      const snippet = getConfigSnippet(activeConfigTab, isPublic, serverName)
-      navigator.clipboard.writeText(snippet)
-      setCopiedConfig(true)
-      setTimeout(() => setCopiedConfig(false), 2000)
+      void copyConfig(getConfigSnippet(activeConfigTab, isPublic, serverName))
     },
-    [activeConfigTab, getConfigSnippet]
+    [activeConfigTab, getConfigSnippet, copyConfig]
   )
 
   const handleOpenEditServer = useCallback(() => {
@@ -359,11 +380,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
   if (error || !data) {
     return (
       <SettingsPanel back={{ text: 'MCP servers', icon: ArrowLeft, onSelect: onBack }}>
-        <div className='flex min-h-0 flex-1 items-center justify-center'>
-          <p className='text-[var(--text-error)] text-xs leading-tight'>
-            Failed to load server details
-          </p>
-        </div>
+        <SettingsEmptyState tone='error'>Failed to load server details</SettingsEmptyState>
       </SettingsPanel>
     )
   }
@@ -375,19 +392,33 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
       <SettingsPanel
         back={{ text: 'MCP servers', icon: ArrowLeft, onSelect: onBack }}
         title={server.name}
-        actions={[
-          { text: 'Edit server', onSelect: handleOpenEditServer },
-          {
-            text: 'Add workflows',
-            icon: Plus,
-            variant: 'primary',
-            onSelect: () => setShowAddWorkflow(true),
-            disabled: !canAddWorkflow,
-            tooltip: showAddDisabledTooltip
-              ? 'All deployed workflows have been added to this server.'
-              : undefined,
-          },
-        ]}
+        actions={
+          canManage
+            ? [
+                { text: 'Edit server', onSelect: handleOpenEditServer },
+                {
+                  text: 'Add workflows',
+                  icon: Plus,
+                  variant: 'primary',
+                  onSelect: () => setShowAddWorkflow(true),
+                  disabled: !canAddWorkflow,
+                  tooltip: showAddDisabledTooltip
+                    ? 'All deployed workflows have been added to this server.'
+                    : undefined,
+                },
+                ...(onDelete
+                  ? [
+                      {
+                        id: 'delete',
+                        text: isDeleting ? 'Deleting...' : 'Delete',
+                        onSelect: onDelete,
+                        disabled: isDeleting,
+                      },
+                    ]
+                  : []),
+              ]
+            : []
+        }
       >
         <div className='flex min-h-0 flex-1 flex-col'>
           <ChipModalTabs
@@ -396,50 +427,47 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
               { value: 'workflows', label: 'Workflows' },
             ]}
             value={activeServerTab}
-            onChange={(value) => setActiveServerTab(value as 'workflows' | 'details')}
+            onChange={(value) => void setActiveServerTab(value as 'workflows' | 'details')}
           />
 
           <div className='min-h-[300px] pt-4'>
             {activeServerTab === 'workflows' && (
               <div className='flex flex-col gap-4.5'>
-                <span className='font-medium text-[var(--text-primary)] text-sm'>Workflows</span>
-
                 {tools.length === 0 ? (
                   <p className='text-[var(--text-muted)] text-sm'>
                     No workflows added yet. Click &quot;Add Workflow&quot; to add a deployed
                     workflow.
                   </p>
                 ) : (
-                  <div className='flex flex-col gap-2'>
+                  <div className={RESOURCE_LIST_STACK}>
                     {tools.map((tool) => (
-                      <div key={tool.id} className='flex items-center justify-between gap-3'>
-                        <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
-                          <span className='text-[var(--text-body)] text-sm'>{tool.toolName}</span>
-                          <p className='truncate text-[var(--text-muted)] text-caption'>
-                            {tool.toolDescription || 'No description'}
-                          </p>
-                        </div>
-                        <div className='flex flex-shrink-0 items-center gap-1'>
-                          <RowActionsMenu
-                            label='Tool actions'
-                            actions={[
-                              { label: 'Edit', onSelect: () => handleOpenToolEdit(tool) },
-                              {
-                                label: 'Remove',
-                                destructive: true,
-                                disabled: deleteToolMutation.isPending,
-                                onSelect: () => setToolToDelete(tool),
-                              },
-                            ]}
-                          />
-                        </div>
-                      </div>
+                      <SettingsResourceRow
+                        key={tool.id}
+                        title={tool.toolName}
+                        description={tool.toolDescription || 'No description'}
+                        trailing={
+                          canManage ? (
+                            <RowActionsMenu
+                              label='Tool actions'
+                              actions={[
+                                { label: 'Edit', onSelect: () => handleOpenToolEdit(tool) },
+                                {
+                                  label: 'Remove',
+                                  destructive: true,
+                                  disabled: deleteToolMutation.isPending,
+                                  onSelect: () => setToolToDelete(tool),
+                                },
+                              ]}
+                            />
+                          ) : undefined
+                        }
+                      />
                     ))}
                   </div>
                 )}
 
                 {deployedWorkflows.length === 0 && !isLoadingWorkflows && (
-                  <p className='mt-1 text-[var(--text-muted)] text-xs'>
+                  <p className='mt-1 text-[var(--text-muted)] text-caption'>
                     Deploy a workflow first to add it to this server.
                   </p>
                 )}
@@ -449,43 +477,24 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
             {activeServerTab === 'details' && (
               <div className='flex flex-col gap-4.5'>
                 <div className='grid grid-cols-[1fr_1fr_1fr] gap-x-6 gap-y-3.5'>
-                  <div className='flex flex-col gap-1'>
-                    <span className='font-medium text-[var(--text-primary)] text-sm'>
-                      Server Name
-                    </span>
-                    <p className='text-[var(--text-secondary)] text-base'>{server.name}</p>
-                  </div>
-                  <div className='flex flex-col gap-1'>
-                    <span className='font-medium text-[var(--text-primary)] text-sm'>
-                      Transport
-                    </span>
-                    <p className='text-[var(--text-secondary)] text-base'>Streamable-HTTP</p>
-                  </div>
-                  <div className='flex flex-col gap-1'>
-                    <span className='font-medium text-[var(--text-primary)] text-sm'>Access</span>
-                    <p className='text-[var(--text-secondary)] text-base'>
-                      {server.isPublic ? 'Public' : 'API Key'}
-                    </p>
-                  </div>
+                  <SettingsField label='Server Name'>{server.name}</SettingsField>
+                  <SettingsField label='Transport'>Streamable-HTTP</SettingsField>
+                  <SettingsField label='Access'>
+                    {server.isPublic ? 'Public' : 'API Key'}
+                  </SettingsField>
                 </div>
 
                 {server.description?.trim() && (
-                  <div className='flex flex-col gap-1'>
-                    <span className='font-medium text-[var(--text-primary)] text-sm'>
-                      Description
-                    </span>
-                    <p className='text-[var(--text-secondary)] text-base'>{server.description}</p>
-                  </div>
+                  <SettingsField label='Description'>{server.description}</SettingsField>
                 )}
 
-                <div className='flex flex-col gap-1'>
-                  <span className='font-medium text-[var(--text-primary)] text-sm'>URL</span>
-                  <p className='break-all text-[var(--text-secondary)] text-base'>{mcpServerUrl}</p>
-                </div>
+                <SettingsField label='URL' breakAll>
+                  {mcpServerUrl}
+                </SettingsField>
 
                 <div>
                   <div className='mb-[6.5px] flex items-center justify-between'>
-                    <span className='block pl-0.5 font-medium text-[var(--text-primary)] text-sm'>
+                    <span className='block pl-0.5 text-[var(--text-muted)] text-small'>
                       MCP Client
                     </span>
                   </div>
@@ -553,7 +562,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
                         )}
                       </Button>
                       {addToWorkspaceMutation.isError && (
-                        <p className='text-[var(--text-error)] text-xs'>
+                        <p className='text-[var(--text-error)] text-caption'>
                           {addToWorkspaceMutation.error?.message || 'Failed to add server'}
                         </p>
                       )}
@@ -567,6 +576,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
                       </span>
                       <Button
                         variant='ghost'
+                        aria-label={copiedConfig ? 'Configuration copied' : 'Copy configuration'}
                         onClick={() => handleCopyConfig(server.isPublic, server.name)}
                         className='!p-1.5 -my-1.5'
                       >
@@ -598,15 +608,20 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
                       )}
                     </div>
                     {!server.isPublic && (
-                      <p className='mt-2 text-[var(--text-muted)] text-xs'>
-                        Replace $SIM_API_KEY with your API key, or{' '}
-                        <button
-                          type='button'
-                          onClick={() => setShowCreateApiKeyModal(true)}
-                          className='underline hover-hover:text-[var(--text-secondary)]'
-                        >
-                          create one now
-                        </button>
+                      <p className='mt-2 text-[var(--text-muted)] text-caption'>
+                        Replace $SIM_API_KEY with your API key
+                        {canManage && (
+                          <>
+                            , or{' '}
+                            <button
+                              type='button'
+                              onClick={() => setShowCreateApiKeyModal(true)}
+                              className='underline hover-hover:text-[var(--text-secondary)]'
+                            >
+                              create one now
+                            </button>
+                          </>
+                        )}
                       </p>
                     )}
                   </div>
@@ -616,7 +631,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
           </div>
         </div>
       </SettingsPanel>
-
+      canManage && (
       <ChipConfirmModal
         open={!!toolToDelete}
         onOpenChange={(open) => !open && setToolToDelete(null)}
@@ -634,7 +649,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
           pendingLabel: 'Removing...',
         }}
       />
-
+      )canManage && (
       <ChipModal
         open={!!toolToView}
         onOpenChange={(open) => {
@@ -685,7 +700,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
                       </div>
                       <div className='rounded-b-[4px] border-[var(--border-1)] border-t bg-[var(--surface-2)] px-2.5 pt-1.5 pb-2.5'>
                         <div className='flex flex-col gap-1.5'>
-                          <Label className='text-sm'>Description</Label>
+                          <Label>Description</Label>
                           <ChipInput
                             value={editingParameterDescriptions[name] || ''}
                             onChange={(e) =>
@@ -718,7 +733,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
           }}
         />
       </ChipModal>
-
+      )canManage && (
       <ChipModal
         open={showAddWorkflow}
         onOpenChange={(open) => {
@@ -775,7 +790,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
           }}
         />
       </ChipModal>
-
+      )canManage && (
       <ChipModal
         open={showEditServer}
         onOpenChange={(open) => {
@@ -812,7 +827,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
                 <ButtonGroupItem value='private'>API Key</ButtonGroupItem>
                 <ButtonGroupItem value='public'>Public</ButtonGroupItem>
               </ButtonGroup>
-              <p className='text-[var(--text-muted)] text-xs'>
+              <p className='text-[var(--text-muted)] text-caption'>
                 {editServerIsPublic
                   ? 'Anyone with the URL can call this server without authentication'
                   : 'Requests must include your Sim API key in the X-API-Key header'}
@@ -834,7 +849,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
           }}
         />
       </ChipModal>
-
+      )canManage && (
       <CreateApiKeyModal
         open={showCreateApiKeyModal}
         onOpenChange={setShowCreateApiKeyModal}
@@ -844,6 +859,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
         canManageWorkspaceKeys={canManageWorkspaceKeys}
         defaultKeyType={defaultKeyType}
       />
+      )
     </>
   )
 }
@@ -855,19 +871,26 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
 export function WorkflowMcpServers() {
   const params = useParams()
   const workspaceId = params.workspaceId as string
-  const searchParams = useSearchParams()
+  const workspacePermissions = useUserPermissionsContext()
+  const canAdmin = canMutateWorkspaceSettingsSection('workflow-mcp-servers', workspacePermissions)
 
   const { data: servers = [], isLoading, error } = useWorkflowMcpServers(workspaceId)
   const { data: deployedWorkflows = [] } = useDeployedWorkflows(workspaceId)
   const deleteServerMutation = useDeleteWorkflowMcpServer()
 
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchTerm, setSearchTerm] = useSettingsSearch()
   const [showAddModal, setShowAddModal] = useState(false)
-  const [selectedServerId, setSelectedServerId] = useState<string | null>(() =>
-    searchParams.get('mcpServerId')
-  )
+  const [selectedServerId, setSelectedServerId] = useQueryState(mcpServerIdParam.key, {
+    ...mcpServerIdParam.parser,
+    ...mcpServerIdUrlKeys,
+  })
   const [serverToDelete, setServerToDelete] = useState<WorkflowMcpServer | null>(null)
   const [deletingServers, setDeletingServers] = useState<Set<string>>(() => new Set())
+  /** Cleared alongside the server id on close so the tab never lingers on the list URL. */
+  const [, setServerTab] = useQueryState(serverTabParam.key, {
+    ...serverTabParam.parser,
+    ...serverTabUrlKeys,
+  })
 
   const filteredServers = useMemo(() => {
     if (!searchTerm.trim()) return servers
@@ -893,6 +916,12 @@ export function WorkflowMcpServers() {
         workspaceId,
         serverId: serverToDelete.id,
       })
+      // Deleting from the detail view leaves a dead id in the URL; on reload the
+      // detail branch mounts against a server that no longer exists.
+      if (selectedServerId === serverToDelete.id) {
+        void setServerTab(null, { history: 'replace' })
+        void setSelectedServerId(null, { history: 'replace' })
+      }
     } catch (err) {
       logger.error('Failed to delete server:', err)
     } finally {
@@ -907,25 +936,65 @@ export function WorkflowMcpServers() {
   const hasServers = servers.length > 0
   const showNoResults = searchTerm.trim() && filteredServers.length === 0 && hasServers
 
-  if (selectedServerId) {
+  /**
+   * Render the detail view only while the id can still resolve — while the
+   * list loads (a fresh deep link) or when the server exists in it. A stale id
+   * (deleted server restored from an old history entry or a dead link) falls
+   * back to the list instead of a failed detail view; the lingering param is
+   * harmless and gets overwritten by the next selection. Closing replaces the
+   * URL so Back leaves the section rather than reopening the detail view.
+   */
+  const selectedServerResolves =
+    selectedServerId !== null && (isLoading || servers.some((s) => s.id === selectedServerId))
+
+  // Delete is reachable from both the list and the detail header, so the confirm
+  // modal has to render in whichever branch is mounted.
+  const deleteConfirmModal = canAdmin ? (
+    <ChipConfirmModal
+      open={!!serverToDelete}
+      onOpenChange={(open) => !open && setServerToDelete(null)}
+      srTitle='Delete MCP Server'
+      title='Delete MCP Server'
+      text={[
+        'Are you sure you want to delete ',
+        { text: serverToDelete?.name ?? 'this server', bold: true },
+        '? This action cannot be undone.',
+      ]}
+      confirm={{ label: 'Delete', onClick: handleDeleteServer }}
+    />
+  ) : null
+
+  if (selectedServerId && selectedServerResolves) {
+    const selectedServer = servers.find((s) => s.id === selectedServerId)
     return (
-      <ServerDetailView
-        workspaceId={workspaceId}
-        serverId={selectedServerId}
-        onBack={() => setSelectedServerId(null)}
-      />
+      <>
+        <ServerDetailView
+          canManage={canAdmin}
+          workspaceId={workspaceId}
+          serverId={selectedServerId}
+          onBack={() => {
+            void setServerTab(null, { history: 'replace' })
+            void setSelectedServerId(null, { history: 'replace' })
+          }}
+          onDelete={selectedServer ? () => setServerToDelete(selectedServer) : undefined}
+          isDeleting={deletingServers.has(selectedServerId)}
+        />
+        {deleteConfirmModal}
+      </>
     )
   }
 
-  const actions: SettingsAction[] = [
-    {
-      text: 'Add server',
-      icon: Plus,
-      variant: 'primary',
-      onSelect: () => setShowAddModal(true),
-      disabled: isLoading,
-    },
-  ]
+  const actions: SettingsAction[] = canAdmin
+    ? [
+        {
+          text: 'Add server',
+          icon: Plus,
+          variant: 'primary',
+          onSelect: () => setShowAddModal(true),
+          disabled: isLoading,
+        },
+      ]
+    : []
 
   return (
     <>
@@ -939,51 +1008,42 @@ export function WorkflowMcpServers() {
       >
         <div className='min-h-0 flex-1'>
           {error ? (
-            <div className='flex h-full flex-col items-center justify-center gap-2'>
-              <p className='text-[var(--text-error)] text-sm leading-tight'>
-                {getErrorMessage(error, 'Failed to load MCP servers')}
-              </p>
-            </div>
+            <SettingsEmptyState tone='error'>
+              {getErrorMessage(error, 'Failed to load MCP servers')}
+            </SettingsEmptyState>
           ) : isLoading ? null : !hasServers ? (
             <SettingsEmptyState>
-              Click &quot;Add server&quot; above to get started
+              {canAdmin ? 'Click "Add server" above to get started' : 'No MCP servers configured'}
             </SettingsEmptyState>
           ) : (
-            <div className='flex flex-col gap-2'>
+            <div className={RESOURCE_LIST_STACK}>
               {filteredServers.map((server) => {
                 const count = server.toolCount || 0
                 const toolsLabel = `${count} tool${count !== 1 ? 's' : ''}`
-                const isDeleting = deletingServers.has(server.id)
                 return (
-                  <div key={server.id} className='flex items-center justify-between gap-3'>
-                    <div className='flex min-w-0 flex-col justify-center gap-[1px]'>
-                      <div className='flex items-center gap-1.5'>
-                        <span className='max-w-[200px] truncate text-[var(--text-body)] text-sm'>
-                          {server.name}
-                        </span>
-                        {server.isPublic && (
-                          <Badge variant='outline' size='sm'>
-                            Public
-                          </Badge>
-                        )}
-                      </div>
-                      <p className='truncate text-[var(--text-muted)] text-caption'>{toolsLabel}</p>
-                    </div>
-                    <div className='flex flex-shrink-0 items-center gap-1'>
-                      <RowActionsMenu
-                        label='Server actions'
-                        actions={[
-                          { label: 'Details', onSelect: () => setSelectedServerId(server.id) },
-                          {
-                            label: 'Delete',
-                            destructive: true,
-                            disabled: isDeleting,
-                            onSelect: () => setServerToDelete(server),
-                          },
-                        ]}
-                      />
-                    </div>
-                  </div>
+                  <SettingsResourceRow
+                    key={server.id}
+                    icon={<McpIcon className='text-[var(--text-icon)]' />}
+                    iconFilled
+                    title={server.name}
+                    description={toolsLabel}
+                    onClick={() => {
+                      // A lingering ?server-tab= (dead deep link) must not re-target the next open — reset it in the same batched push.
+                      void setServerTab(null)
+                      void setSelectedServerId(server.id)
+                    }}
+                    clickLabel={`Open ${server.name}`}
+                    navigable
+                    // The badge sits at the row's end, not beside the name — the
+                    // title truncates, so a long name would clip it out of view.
+                    badge={
+                      server.isPublic ? (
+                        <Badge variant='outline' size='sm'>
+                          Public
+                        </Badge>
+                      ) : undefined
+                    }
+                  />
                 )
               })}
               {showNoResults && (
@@ -996,25 +1056,16 @@ export function WorkflowMcpServers() {
         </div>
       </SettingsPanel>
 
-      <CreateWorkflowMcpServerModal
-        open={showAddModal}
-        onOpenChange={setShowAddModal}
-        workspaceId={workspaceId}
-        workflowOptions={workflowOptions}
-      />
+      {canAdmin && (
+        <CreateWorkflowMcpServerModal
+          open={showAddModal}
+          onOpenChange={setShowAddModal}
+          workspaceId={workspaceId}
+          workflowOptions={workflowOptions}
+        />
+      )}
 
-      <ChipConfirmModal
-        open={!!serverToDelete}
-        onOpenChange={(open) => !open && setServerToDelete(null)}
-        srTitle='Delete MCP Server'
-        title='Delete MCP Server'
-        text={[
-          'Are you sure you want to delete ',
-          { text: serverToDelete?.name ?? 'this server', bold: true },
-          '? This action cannot be undone.',
-        ]}
-        confirm={{ label: 'Delete', onClick: handleDeleteServer }}
-      />
+      {deleteConfirmModal}
     </>
   )
 }

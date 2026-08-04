@@ -5,13 +5,13 @@ import {
   Button,
   Chip,
   ChipConfirmModal,
+  ChipInput,
   ChipModal,
   ChipModalBody,
   ChipModalError,
   ChipModalField,
   ChipModalFooter,
   ChipModalHeader,
-  cn,
 } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
@@ -21,9 +21,11 @@ import {
   CHIP_FIELD_SHELL,
 } from '@/app/workspace/[workspaceId]/components/credential-detail/components/chip-field'
 import { BYOKProviderKeysModal } from '@/app/workspace/[workspaceId]/settings/components/byok/byok-provider-keys-modal'
-import { BYOKKeySkeleton } from '@/app/workspace/[workspaceId]/settings/components/byok/byok-skeleton'
 import { SettingsEmptyState } from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
-import { SettingsResourceRow } from '@/app/workspace/[workspaceId]/settings/components/settings-resource-row'
+import {
+  RESOURCE_LIST_STACK,
+  SettingsResourceRow,
+} from '@/app/workspace/[workspaceId]/settings/components/settings-resource-row'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 
 const logger = createLogger('BYOKKeyManager')
@@ -59,12 +61,20 @@ interface BYOKKeyManagerBaseProps {
   isLoading: boolean
   isSaving?: boolean
   isDeleting?: boolean
+  readOnly?: boolean
   /** Labeled provider groups. When omitted, renders a single flat list. */
   sections?: BYOKProviderSection[]
   /** Optional subtitle shown above the provider list. */
   description?: string
   /** Show the provider search box (hidden when there are only a couple). */
   showSearch?: boolean
+  /**
+   * Controlled search value + setter. The BYOK settings page passes the shared
+   * `?search=` binding (`useSettingsSearch`) so the search is deep-linkable;
+   * modal/embedded consumers omit both and keep local state.
+   */
+  searchTerm?: string
+  onSearchTermChange?: (value: string) => void
 }
 
 /** One key per provider; saving replaces the stored key. */
@@ -131,12 +141,15 @@ export function BYOKKeyManager(props: BYOKKeyManagerProps) {
     isLoading,
     isSaving = false,
     isDeleting = false,
+    readOnly = false,
     sections,
     description,
     showSearch = true,
   } = props
 
-  const [searchTerm, setSearchTerm] = useState('')
+  const [localSearchTerm, setLocalSearchTerm] = useState('')
+  const searchTerm = props.searchTerm ?? localSearchTerm
+  const setSearchTerm = props.onSearchTermChange ?? setLocalSearchTerm
   const [editing, setEditing] = useState<EditingState | null>(null)
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [nameInput, setNameInput] = useState('')
@@ -248,6 +261,7 @@ export function BYOKKeyManager(props: BYOKKeyManagerProps) {
 
   const renderActions = (provider: BYOKManagerProvider) => {
     if (!hasStoredKey(provider.id)) {
+      if (readOnly) return null
       return (
         <Chip variant='primary' onClick={() => openEditModal(provider.id)}>
           Add Key
@@ -258,17 +272,20 @@ export function BYOKKeyManager(props: BYOKKeyManagerProps) {
     if (props.multiKey) {
       const keyCount = getProviderKeys(provider.id).length
       return (
-        <div className='flex flex-shrink-0 items-center gap-2'>
+        <div className='flex items-center gap-2'>
           <span className='text-[var(--text-muted)] text-caption'>
             {keyCount} {keyCount === 1 ? 'key' : 'keys'}
           </span>
-          <Chip onClick={() => setManagingProviderId(provider.id)}>Manage</Chip>
+          <Chip onClick={() => setManagingProviderId(provider.id)}>
+            {readOnly ? 'View' : 'Manage'}
+          </Chip>
         </div>
       )
     }
 
+    if (readOnly) return null
     return (
-      <div className='flex flex-shrink-0 items-center gap-2'>
+      <div className='flex items-center gap-2'>
         <Chip onClick={() => openEditModal(provider.id)}>Update</Chip>
         <Chip onClick={() => openDeleteConfirm(provider.id)}>Delete</Chip>
       </div>
@@ -293,31 +310,20 @@ export function BYOKKeyManager(props: BYOKKeyManagerProps) {
     <>
       <div className='flex flex-col gap-4.5'>
         {showSearch && (
-          <div className={CHIP_FIELD_SHELL}>
-            <Search
-              className='size-[14px] flex-shrink-0 text-[var(--text-tertiary)]'
-              strokeWidth={2}
-            />
-            <input
-              aria-label='Search providers'
-              placeholder='Search providers...'
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              disabled={isLoading}
-              className={cn(CHIP_FIELD_INPUT, 'disabled:cursor-not-allowed disabled:opacity-60')}
-            />
-          </div>
+          <ChipInput
+            icon={Search}
+            aria-label='Search providers'
+            placeholder='Search providers...'
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            disabled={isLoading}
+            className='w-full'
+          />
         )}
 
         {description && <p className='text-[var(--text-secondary)] text-sm'>{description}</p>}
 
-        {isLoading ? (
-          <div className='flex flex-col gap-2'>
-            {providers.map((p) => (
-              <BYOKKeySkeleton key={p.id} />
-            ))}
-          </div>
-        ) : showNoResults ? (
+        {isLoading ? null : showNoResults ? (
           <SettingsEmptyState variant='inline'>
             No providers found matching "{searchTerm}"
           </SettingsEmptyState>
@@ -331,13 +337,13 @@ export function BYOKKeyManager(props: BYOKKeyManagerProps) {
 
               return (
                 <SettingsSection key={section.label} label={section.label}>
-                  <div className='flex flex-col gap-2'>{rows.map(renderRow)}</div>
+                  <div className={RESOURCE_LIST_STACK}>{rows.map(renderRow)}</div>
                 </SettingsSection>
               )
             })}
           </div>
         ) : (
-          <div className='flex flex-col gap-2'>{filteredProviders.map(renderRow)}</div>
+          <div className={RESOURCE_LIST_STACK}>{filteredProviders.map(renderRow)}</div>
         )}
       </div>
 
@@ -350,6 +356,7 @@ export function BYOKKeyManager(props: BYOKKeyManagerProps) {
           provider={managingMeta}
           keys={managingProviderId ? getProviderKeys(managingProviderId) : NO_KEYS}
           maxKeys={props.maxKeysPerProvider}
+          readOnly={readOnly}
           onAddKey={() => managingProviderId && openEditModal(managingProviderId)}
           onUpdateKey={(key) => managingProviderId && openEditModal(managingProviderId, key)}
           onDeleteKey={(key) => managingProviderId && openDeleteConfirm(managingProviderId, key.id)}

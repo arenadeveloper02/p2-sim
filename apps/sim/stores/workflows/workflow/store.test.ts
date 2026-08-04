@@ -334,6 +334,86 @@ describe('workflow store', () => {
       const state = useWorkflowStore.getState()
       expectEdgeCount(state, 1)
     })
+
+    it('should not add duplicate connections that appear twice within the same batch', () => {
+      const { batchAddEdges } = useWorkflowStore.getState()
+
+      addBlock('block-1', 'starter', 'Start', { x: 0, y: 0 })
+      addBlock('block-2', 'function', 'End', { x: 200, y: 0 })
+
+      batchAddEdges([
+        { id: 'e1', source: 'block-1', target: 'block-2' },
+        { id: 'e2', source: 'block-1', target: 'block-2' },
+      ])
+
+      const state = useWorkflowStore.getState()
+      expectEdgeCount(state, 1)
+      expect(state.edges.some((e) => e.id === 'e1')).toBe(true)
+      expect(state.edges.some((e) => e.id === 'e2')).toBe(false)
+    })
+
+    it('should treat an empty-string handle as equivalent to no handle when deduping', () => {
+      const { batchAddEdges } = useWorkflowStore.getState()
+
+      addBlock('block-1', 'starter', 'Start', { x: 0, y: 0 })
+      addBlock('block-2', 'function', 'End', { x: 200, y: 0 })
+
+      batchAddEdges([
+        { id: 'e1', source: 'block-1', target: 'block-2', sourceHandle: '' },
+        { id: 'e2', source: 'block-1', target: 'block-2' },
+      ])
+
+      const state = useWorkflowStore.getState()
+      expectEdgeCount(state, 1)
+      expect(state.edges.some((e) => e.id === 'e1')).toBe(true)
+      expect(state.edges.some((e) => e.id === 'e2')).toBe(false)
+    })
+
+    it('should not add a self-loop edge', () => {
+      const { batchAddEdges } = useWorkflowStore.getState()
+
+      addBlock('block-1', 'starter', 'Start', { x: 0, y: 0 })
+
+      batchAddEdges([{ id: 'e1', source: 'block-1', target: 'block-1' }])
+
+      const state = useWorkflowStore.getState()
+      expectEdgeCount(state, 0)
+    })
+
+    it('should reject an edge that would create a cycle', () => {
+      const { batchAddEdges } = useWorkflowStore.getState()
+
+      addBlock('block-1', 'starter', 'Start', { x: 0, y: 0 })
+      addBlock('block-2', 'function', 'Middle', { x: 200, y: 0 })
+      addBlock('block-3', 'function', 'End', { x: 400, y: 0 })
+
+      batchAddEdges([{ id: 'e1', source: 'block-1', target: 'block-2' }])
+      batchAddEdges([{ id: 'e2', source: 'block-2', target: 'block-3' }])
+      // block-3 -> block-1 would close the loop back to block-1
+      batchAddEdges([{ id: 'e3', source: 'block-3', target: 'block-1' }])
+
+      const state = useWorkflowStore.getState()
+      expectEdgeCount(state, 2)
+      expect(state.edges.some((e) => e.id === 'e3')).toBe(false)
+    })
+
+    it('should reject a cyclic edge within the same batch', () => {
+      const { batchAddEdges } = useWorkflowStore.getState()
+
+      addBlock('block-1', 'starter', 'Start', { x: 0, y: 0 })
+      addBlock('block-2', 'function', 'Middle', { x: 200, y: 0 })
+      addBlock('block-3', 'function', 'End', { x: 400, y: 0 })
+
+      batchAddEdges([
+        { id: 'e1', source: 'block-1', target: 'block-2' },
+        { id: 'e2', source: 'block-2', target: 'block-3' },
+        { id: 'e3', source: 'block-3', target: 'block-1' },
+      ])
+
+      const state = useWorkflowStore.getState()
+      expectEdgeCount(state, 2)
+      expect(state.edges.some((e) => e.id === 'e3')).toBe(false)
+    })
   })
 
   describe('batchRemoveEdges', () => {
@@ -411,6 +491,75 @@ describe('workflow store', () => {
         expect(blocks[duplicatedId].name).toContain('Original Agent')
         expect(blocks[duplicatedId].position.x).not.toBe(0)
       }
+    })
+  })
+
+  describe('duplicateBlock cloned webhook path', () => {
+    /**
+     * `duplicateBlock` is not currently reachable from the canvas (the context-menu Duplicate goes
+     * through `preparePasteData` → `regenerateBlockIds`), but it is part of the store's public API,
+     * so the clone it produces must not inherit the source's deployed webhook identity either.
+     */
+    it('clears triggerPath when duplicating a webhook trigger block', () => {
+      const { duplicateBlock } = useWorkflowStore.getState()
+      useWorkflowRegistry.setState({ activeWorkflowId: 'wf-1' })
+      useWorkflowStore.setState({ currentWorkflowId: 'wf-1' })
+
+      addBlock('original', 'generic_webhook', 'Webhook 1', { x: 0, y: 0 })
+      useWorkflowStore.setState((state) => ({
+        blocks: {
+          ...state.blocks,
+          original: {
+            ...state.blocks.original,
+            subBlocks: {
+              triggerPath: { id: 'triggerPath', type: 'short-input', value: 'original' },
+              webhookId: { id: 'webhookId', type: 'short-input', value: 'wh_original' },
+            },
+          },
+        },
+      }))
+      useSubBlockStore.setState({
+        workflowValues: {
+          'wf-1': { original: { triggerPath: 'original', webhookId: 'wh_original' } },
+        },
+      })
+
+      duplicateBlock('original')
+
+      const { blocks } = useWorkflowStore.getState()
+      const duplicatedId = Object.keys(blocks).find((id) => id !== 'original')
+      expect(duplicatedId).toBeDefined()
+      if (!duplicatedId) return
+
+      // Both sources must be cleared: the value map overrides the structure in mergeSubblockState.
+      expect(blocks[duplicatedId].subBlocks.triggerPath?.value).toBeNull()
+      const values = useSubBlockStore.getState().workflowValues['wf-1']
+      expect(values[duplicatedId].triggerPath).toBeNull()
+      // webhookId is user-entered action config on some blocks and is deliberately preserved.
+      expect(values[duplicatedId].webhookId).toBe('wh_original')
+      // The source keeps its own identity.
+      expect(values.original.triggerPath).toBe('original')
+    })
+
+    it('preserves a user-entered webhookId when duplicating an action block', () => {
+      const { duplicateBlock } = useWorkflowStore.getState()
+      useWorkflowRegistry.setState({ activeWorkflowId: 'wf-1' })
+      useWorkflowStore.setState({ currentWorkflowId: 'wf-1' })
+
+      addBlock('original', 'discord', 'Discord 1', { x: 0, y: 0 })
+      useSubBlockStore.setState({
+        workflowValues: { 'wf-1': { original: { webhookId: '1234567890' } } },
+      })
+
+      duplicateBlock('original')
+
+      const { blocks } = useWorkflowStore.getState()
+      const duplicatedId = Object.keys(blocks).find((id) => id !== 'original')
+      expect(duplicatedId).toBeDefined()
+      if (!duplicatedId) return
+
+      const values = useSubBlockStore.getState().workflowValues['wf-1']
+      expect(values[duplicatedId].webhookId).toBe('1234567890')
     })
   })
 
@@ -1590,6 +1739,18 @@ describe('workflow store', () => {
       const state = useWorkflowStore.getState()
       expect(state.blocks.block1.name).toBe('Column AD')
       expect(state.blocks.block2.name).toBe('Employee Length')
+    })
+
+    it('should reject reserved names (loop, parallel, variable)', () => {
+      const { updateBlockName } = useWorkflowStore.getState()
+
+      for (const reserved of ['loop', 'Parallel', 'VARIABLE']) {
+        const result = updateBlockName('block1', reserved)
+        expect(result.success).toBe(false)
+      }
+
+      const state = useWorkflowStore.getState()
+      expect(state.blocks.block1.name).toBe('Column AD')
     })
 
     it('should return false when trying to rename a non-existent block', () => {

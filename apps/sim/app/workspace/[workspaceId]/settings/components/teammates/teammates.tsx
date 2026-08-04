@@ -6,26 +6,23 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { formatDate } from '@sim/utils/formatting'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams, useRouter } from 'next/navigation'
-import { debounce, useQueryState } from 'nuqs'
 import {
   RoleLockTooltip,
   type WorkspaceRoleSource,
   workspaceRoleLockReason,
 } from '@/components/permissions'
+import { canMutateWorkspaceSettingsSection } from '@/components/settings/navigation'
 import type { WorkspacePermission } from '@/lib/api/contracts/workspaces'
 import { buildUpgradeHref } from '@/lib/billing/upgrade-reasons'
+import { isBillingEnabled } from '@/lib/core/config/env-flags'
+import { InviteModal } from '@/app/workspace/[workspaceId]/components/invite-modal'
 import {
   MemberRow,
   MemberSection,
 } from '@/app/workspace/[workspaceId]/settings/components/member-list'
 import { RowActionsMenu } from '@/app/workspace/[workspaceId]/settings/components/row-actions-menu'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
-import {
-  teammatesSearchParam,
-  teammatesUrlKeys,
-} from '@/app/workspace/[workspaceId]/settings/components/teammates/search-params'
-import { isBillingEnabled } from '@/app/workspace/[workspaceId]/settings/navigation'
-import { InviteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/invite-modal'
+import { useSettingsSearch } from '@/app/workspace/[workspaceId]/settings/components/use-settings-search'
 import {
   useCancelWorkspaceInvitation,
   usePendingInvitations,
@@ -59,6 +56,16 @@ interface Teammate {
   invitationId?: string
   token?: string
   roleSource?: WorkspaceRoleSource
+  isBilledAccount?: boolean
+}
+
+/**
+ * Marks collaborators who hold this workspace without belonging to its
+ * organization. Shown on the status line rather than the role chip, which
+ * carries the workspace permission — a separate axis from membership.
+ */
+function withExternalLabel(status: string, isExternal: boolean | undefined): string {
+  return isExternal ? `${status} \u00b7 External` : status
 }
 
 function copyToClipboard(text: string) {
@@ -73,11 +80,7 @@ export function Teammates() {
   const params = useParams()
   const workspaceId = (params?.workspaceId as string) || ''
 
-  const [searchTerm, setSearchTerm] = useQueryState(teammatesSearchParam.key, {
-    ...teammatesSearchParam.parser,
-    ...teammatesUrlKeys,
-    limitUrlUpdates: debounce(300),
-  })
+  const [searchTerm, setSearchTerm] = useSettingsSearch()
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
 
   const { data: permissions, isPending: permissionsLoading } =
@@ -95,7 +98,10 @@ export function Teammates() {
   const updatePermissions = useUpdateWorkspacePermissions()
 
   const viewer = permissions?.viewer
-  const canManage = Boolean(viewer?.isAdmin)
+  const canManage = canMutateWorkspaceSettingsSection('teammates', {
+    canEdit: viewer?.permissionType === 'write' || viewer?.permissionType === 'admin',
+    canAdmin: Boolean(viewer?.isAdmin),
+  })
 
   const activeWorkspace = workspaces?.find((workspace) => workspace.id === workspaceId)
   const inviteDisabledReason = activeWorkspace?.inviteDisabledReason ?? null
@@ -128,10 +134,14 @@ export function Teammates() {
       name: member.name ?? member.email,
       image: member.image,
       role: member.permissionType,
-      status: `Joined ${formatDate(new Date(member.joinedAt))}`,
+      status: withExternalLabel(
+        `Joined ${formatDate(new Date(member.joinedAt))}`,
+        member.isExternal
+      ),
       isPending: false,
       userId: member.userId,
       roleSource: member.roleSource,
+      isBilledAccount: member.isBilledAccount,
     }))
 
     const pending: Teammate[] = (invitations ?? []).map((invitation) => ({
@@ -140,7 +150,7 @@ export function Teammates() {
       name: invitation.email,
       image: null,
       role: invitation.permissionType,
-      status: 'Invite pending',
+      status: withExternalLabel('Invite pending', invitation.isExternal),
       isPending: true,
       invitationId: invitation.invitationId,
       token: invitation.token,
@@ -173,19 +183,23 @@ export function Teammates() {
       <SettingsPanel
         search={{
           value: searchTerm,
-          onChange: (value) => void setSearchTerm(value),
+          onChange: setSearchTerm,
           placeholder: 'Search teammates...',
         }}
-        actions={[
-          {
-            text: 'Invite',
-            icon: Plus,
-            variant: 'primary',
-            onSelect: handleInvite,
-            tooltip: inviteDisabledReason ?? undefined,
-            onPrefetch: isInvitationsDisabled ? prefetchUpgrade : undefined,
-          },
-        ]}
+        actions={
+          canManage
+            ? [
+                {
+                  text: 'Invite',
+                  icon: Plus,
+                  variant: 'primary',
+                  onSelect: handleInvite,
+                  tooltip: inviteDisabledReason ?? undefined,
+                  onPrefetch: isInvitationsDisabled ? prefetchUpgrade : undefined,
+                },
+              ]
+            : []
+        }
       >
         <MemberSection
           label={`Teammates (${teammates.length})`}
@@ -204,7 +218,9 @@ export function Teammates() {
               roleControl={(() => {
                 const lockReason = teammate.isPending
                   ? null
-                  : workspaceRoleLockReason(teammate.roleSource)
+                  : workspaceRoleLockReason(teammate.roleSource, {
+                      isBilledAccount: teammate.isBilledAccount,
+                    })
                 return (
                   <RoleLockTooltip reason={lockReason}>
                     <ChipDropdown
@@ -300,13 +316,17 @@ export function Teammates() {
         </MemberSection>
       </SettingsPanel>
 
-      <InviteModal
-        open={isInviteModalOpen}
-        onOpenChange={setIsInviteModalOpen}
-        workspaceName={activeWorkspace?.name ?? 'Workspace'}
-        inviteDisabledReason={inviteDisabledReason}
-        organizationId={activeWorkspace?.organizationId ?? null}
-      />
+      {canManage && (
+        <InviteModal
+          open={isInviteModalOpen}
+          onOpenChange={setIsInviteModalOpen}
+          workspaceId={workspaceId}
+          workspaceName={activeWorkspace?.name ?? 'Workspace'}
+          inviteDisabledReason={inviteDisabledReason}
+          organizationId={activeWorkspace?.organizationId ?? null}
+          canInvite={canManage}
+        />
+      )}
     </>
   )
 }

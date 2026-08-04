@@ -12,30 +12,40 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
-  mockHandleVectorOnlySearch,
-  mockHandleTagOnlySearch,
-  mockHandleTagAndVectorSearch,
-  mockGetQueryStrategy,
+  mockExecuteKnowledgeSearch,
   mockGenerateSearchEmbedding,
   mockGetDocumentMetadataByIds,
   mockAuthenticateRequest,
   mockValidateWorkspaceAccess,
+  mockResolveBillingAttribution,
+  mockResolveSystemBillingAttribution,
+  mockRecordSearchEmbeddingUsage,
 } = vi.hoisted(() => ({
-  mockHandleVectorOnlySearch: vi.fn(),
-  mockHandleTagOnlySearch: vi.fn(),
-  mockHandleTagAndVectorSearch: vi.fn(),
-  mockGetQueryStrategy: vi.fn(),
+  mockExecuteKnowledgeSearch: vi.fn(),
   mockGenerateSearchEmbedding: vi.fn(),
   mockGetDocumentMetadataByIds: vi.fn(),
   mockAuthenticateRequest: vi.fn(),
   mockValidateWorkspaceAccess: vi.fn(),
+  mockResolveBillingAttribution: vi.fn(),
+  mockResolveSystemBillingAttribution: vi.fn(),
+  mockRecordSearchEmbeddingUsage: vi.fn(),
 }))
 
+const SYSTEM_BILLING_ATTRIBUTION = {
+  actorUserId: 'owner-after-transfer',
+  workspaceId: 'ws-1',
+  organizationId: 'org-after-transfer',
+  billedAccountUserId: 'owner-after-transfer',
+  billingEntity: { type: 'organization' as const, id: 'org-after-transfer' },
+  billingPeriod: {
+    start: '2026-07-01T00:00:00.000Z',
+    end: '2026-08-01T00:00:00.000Z',
+  },
+  payerSubscription: null,
+}
+
 vi.mock('@/app/api/knowledge/search/utils', () => ({
-  handleVectorOnlySearch: mockHandleVectorOnlySearch,
-  handleTagOnlySearch: mockHandleTagOnlySearch,
-  handleTagAndVectorSearch: mockHandleTagAndVectorSearch,
-  getQueryStrategy: mockGetQueryStrategy,
+  executeKnowledgeSearch: mockExecuteKnowledgeSearch,
   generateSearchEmbedding: mockGenerateSearchEmbedding,
   getDocumentMetadataByIds: mockGetDocumentMetadataByIds,
 }))
@@ -46,9 +56,21 @@ vi.mock('@/lib/billing/calculations/usage-monitor', () => ({
   checkActorUsageLimits: vi.fn().mockResolvedValue({ isExceeded: false }),
 }))
 
+vi.mock('@/lib/billing/core/billing-attribution', () => ({
+  resolveBillingAttribution: mockResolveBillingAttribution,
+  resolveSystemBillingAttribution: mockResolveSystemBillingAttribution,
+  checkAttributedUsageLimits: vi.fn().mockResolvedValue({ isExceeded: false }),
+}))
+
+vi.mock('@/lib/knowledge/embeddings', () => ({
+  recordSearchEmbeddingUsage: mockRecordSearchEmbeddingUsage,
+}))
+
 vi.mock('@/app/api/v1/middleware', () => ({
   authenticateRequest: mockAuthenticateRequest,
   validateWorkspaceAccess: mockValidateWorkspaceAccess,
+  v1ValidationErrorResponse: (e: { issues: unknown[] }) =>
+    NextResponse.json({ error: 'Validation error', details: e.issues }, { status: 400 }),
 }))
 
 vi.mock('@/app/api/v1/knowledge/utils', () => ({
@@ -84,10 +106,22 @@ describe('v1 knowledge search route — per-KB embedding model', () => {
       rateLimit: {},
     })
     mockValidateWorkspaceAccess.mockResolvedValue(null)
-    mockGetQueryStrategy.mockReturnValue({ distanceThreshold: 0.5 })
-    mockGenerateSearchEmbedding.mockResolvedValue([0.1, 0.2, 0.3])
-    mockHandleVectorOnlySearch.mockResolvedValue([])
+    mockGenerateSearchEmbedding.mockResolvedValue({
+      embedding: [0.1, 0.2, 0.3],
+      isBYOK: false,
+    })
+    mockExecuteKnowledgeSearch.mockResolvedValue([])
     mockGetDocumentMetadataByIds.mockResolvedValue({})
+    mockResolveBillingAttribution.mockImplementation(
+      ({ actorUserId, workspaceId }: { actorUserId: string; workspaceId: string }) =>
+        Promise.resolve({
+          actorUserId,
+          workspaceId,
+          billingEntity: { type: 'organization', id: 'org-1' },
+        })
+    )
+    mockResolveSystemBillingAttribution.mockResolvedValue(SYSTEM_BILLING_ATTRIBUTION)
+    mockRecordSearchEmbeddingUsage.mockResolvedValue(undefined)
   })
 
   it('passes the KB embedding model into generateSearchEmbedding', async () => {
@@ -108,6 +142,42 @@ describe('v1 knowledge search route — per-KB embedding model', () => {
       'hello',
       'gemini-embedding-001',
       'ws-1'
+    )
+    expect(mockResolveBillingAttribution).toHaveBeenCalledWith({
+      actorUserId: 'user-1',
+      workspaceId: 'ws-1',
+    })
+    expect(mockResolveSystemBillingAttribution).not.toHaveBeenCalled()
+  })
+
+  it('uses one atomic system actor and payer snapshot for a workspace API key', async () => {
+    mockAuthenticateRequest.mockResolvedValue({
+      requestId: 'req-1',
+      userId: 'key-creator',
+      rateLimit: { keyType: 'workspace' },
+    })
+    mockCheckKnowledgeBaseAccess.mockResolvedValueOnce({
+      hasAccess: true,
+      knowledgeBase: baseKb('kb-workspace-key', 'text-embedding-3-small'),
+    })
+
+    const res = await POST(
+      createMockRequest('POST', {
+        workspaceId: 'ws-1',
+        knowledgeBaseIds: 'kb-workspace-key',
+        query: 'hello',
+      })
+    )
+
+    expect(res.status).toBe(200)
+    expect(mockResolveSystemBillingAttribution).toHaveBeenCalledWith('ws-1')
+    expect(mockResolveBillingAttribution).not.toHaveBeenCalled()
+    expect(mockRecordSearchEmbeddingUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'owner-after-transfer',
+        workspaceId: 'ws-1',
+        billingAttribution: SYSTEM_BILLING_ATTRIBUTION,
+      })
     )
   })
 
@@ -138,7 +208,7 @@ describe('v1 knowledge search route — per-KB embedding model', () => {
       hasAccess: true,
       knowledgeBase: baseKb('kb-confluence', 'text-embedding-3-small'),
     })
-    mockHandleVectorOnlySearch.mockResolvedValue([
+    mockExecuteKnowledgeSearch.mockResolvedValue([
       {
         documentId: 'doc-confluence',
         knowledgeBaseId: 'kb-confluence',
@@ -170,7 +240,7 @@ describe('v1 knowledge search route — per-KB embedding model', () => {
   })
 
   it('allows tag-only search across mixed embedding models', async () => {
-    mockHandleTagOnlySearch.mockResolvedValue([])
+    mockExecuteKnowledgeSearch.mockResolvedValue([])
     mockCheckKnowledgeBaseAccess.mockResolvedValueOnce({
       hasAccess: true,
       knowledgeBase: baseKb('kb-mixed', 'text-embedding-3-small'),

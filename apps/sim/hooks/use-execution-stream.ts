@@ -14,7 +14,10 @@ import type {
   ExecutionPausedData,
   ExecutionStartedData,
   StreamChunkData,
+  StreamChunkResetData,
   StreamDoneData,
+  StreamThinkingData,
+  StreamToolData,
 } from '@/lib/workflows/executor/execution-events'
 import type { SerializableExecutionState } from '@/executor/execution/types'
 
@@ -121,8 +124,17 @@ export async function processSSEStream(
             case 'stream:chunk':
               await callbacks.onStreamChunk?.(event.data)
               break
+            case 'stream:chunk_reset':
+              await callbacks.onStreamChunkReset?.(event.data)
+              break
             case 'stream:done':
               await callbacks.onStreamDone?.(event.data)
+              break
+            case 'stream:thinking':
+              await callbacks.onStreamThinking?.(event.data)
+              break
+            case 'stream:tool':
+              await callbacks.onStreamTool?.(event.data)
               break
             default:
               logger.warn('Unknown event type:', (event as any).type)
@@ -164,7 +176,10 @@ export interface ExecutionStreamCallbacks {
   onBlockError?: (data: BlockErrorData) => void | Promise<void>
   onBlockChildWorkflowStarted?: (data: BlockChildWorkflowStartedData) => void | Promise<void>
   onStreamChunk?: (data: StreamChunkData) => void | Promise<void>
+  onStreamChunkReset?: (data: StreamChunkResetData) => void | Promise<void>
   onStreamDone?: (data: StreamDoneData) => void | Promise<void>
+  onStreamThinking?: (data: StreamThinkingData) => void | Promise<void>
+  onStreamTool?: (data: StreamToolData) => void | Promise<void>
   onEventId?: (eventId: number) => void | Promise<void>
 }
 
@@ -195,7 +210,8 @@ export interface ExecuteStreamOptions {
 export interface ExecuteFromBlockOptions {
   workflowId: string
   startBlockId: string
-  sourceSnapshot: SerializableExecutionState
+  sourceSnapshot?: SerializableExecutionState
+  sourceExecutionId?: string
   input?: any
   onExecutionId?: (executionId: string) => void
   callbacks?: ExecutionStreamCallbacks
@@ -333,6 +349,7 @@ export function useExecutionStream() {
       workflowId,
       startBlockId,
       sourceSnapshot,
+      sourceExecutionId,
       input,
       onExecutionId,
       callbacks = {},
@@ -355,7 +372,11 @@ export function useExecutionStream() {
         body: JSON.stringify({
           stream: true,
           input,
-          runFromBlock: { startBlockId, sourceSnapshot },
+          runFromBlock: {
+            startBlockId,
+            ...(sourceExecutionId ? { executionId: sourceExecutionId } : {}),
+            ...(sourceSnapshot ? { sourceSnapshot } : {}),
+          },
         }),
         signal: abortController.signal,
       })

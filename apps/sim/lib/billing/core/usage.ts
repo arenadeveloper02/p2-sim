@@ -3,19 +3,18 @@ import { member, organization, settings, user, userStats } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/workspace'
 import { generateId } from '@sim/utils/id'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import {
   getEmailSubject,
+  getLimitEmailSubject,
   renderCreditsExhaustedEmail,
   renderFreeTierUpgradeEmail,
+  renderUsageLimitReachedEmail,
   renderUsageThresholdEmail,
 } from '@/components/emails'
 import { getEffectiveBillingStatus } from '@/lib/billing/core/access'
 import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
-import {
-  getHighestPrioritySubscription,
-  type HighestPrioritySubscription,
-} from '@/lib/billing/core/plan'
+import { getHighestPrioritySubscription } from '@/lib/billing/core/plan'
 import { getBillingPeriodUsageCost } from '@/lib/billing/core/usage-log'
 import {
   computeDailyRefreshConsumed,
@@ -45,6 +44,15 @@ const logger = createLogger('UsageManagement')
 export interface OrgUsageLimitResult {
   limit: number
   minimum: number
+}
+
+export interface UsageLimitSubscription {
+  referenceId: string
+  plan: string
+  status: string | null
+  seats: number | null
+  periodStart: Date | null
+  periodEnd: Date | null
 }
 
 /**
@@ -507,13 +515,14 @@ export async function updateUserUsageLimit(
  * Org-scoped members carry a null `currentUsageLimit` by design (see
  * `syncUsageLimitsFromSubscription`). A user whose subscription stops being
  * org-scoped without a resync would otherwise stay null and fail closed on
- * every execution, so a null limit self-heals to the plan default here. The
- * write-back is best-effort: a limit written concurrently wins, and a failed
- * write still resolves to the fallback instead of blocking execution.
+ * every execution, so a null limit self-heals to the plan/free base plus the
+ * exact prepaid balance here. The write-back is best-effort: a limit written
+ * concurrently wins, and a failed write still resolves to the fallback
+ * instead of blocking execution.
  */
 export async function getUserUsageLimit(
   userId: string,
-  preloadedSubscription?: HighestPrioritySubscription
+  preloadedSubscription?: UsageLimitSubscription | null
 ): Promise<number> {
   const subscription =
     preloadedSubscription !== undefined
@@ -540,7 +549,10 @@ export async function getUserUsageLimit(
   }
 
   const userStatsQuery = await db
-    .select({ currentUsageLimit: userStats.currentUsageLimit })
+    .select({
+      currentUsageLimit: userStats.currentUsageLimit,
+      creditBalance: userStats.creditBalance,
+    })
     .from(userStats)
     .where(eq(userStats.userId, userId))
     .limit(1)
@@ -552,10 +564,11 @@ export async function getUserUsageLimit(
   }
 
   if (!userStatsQuery[0].currentUsageLimit) {
-    const fallbackLimit =
+    const baseLimit =
       subscription && hasPaidSubscriptionStatus(subscription.status)
         ? getPerUserMinimumLimit(subscription)
         : getFreeTierLimit()
+    const fallbackLimit = toDecimal(baseLimit).plus(toDecimal(userStatsQuery[0].creditBalance))
 
     try {
       const healed = await db
@@ -582,13 +595,17 @@ export async function getUserUsageLimit(
       logger.warn('Healed null usage limit to plan default', {
         userId,
         plan: subscription?.plan || 'free',
-        fallbackLimit,
+        fallbackLimit: toNumber(fallbackLimit),
       })
     } catch (error) {
-      logger.error('Failed to heal null usage limit', { userId, fallbackLimit, error })
+      logger.error('Failed to heal null usage limit', {
+        userId,
+        fallbackLimit: toNumber(fallbackLimit),
+        error,
+      })
     }
 
-    return fallbackLimit
+    return toNumber(fallbackLimit)
   }
 
   return toNumber(toDecimal(userStatsQuery[0].currentUsageLimit))
@@ -653,37 +670,34 @@ export async function syncUsageLimitsFromSubscription(userId: string): Promise<v
     }
     return
   }
-  const defaultLimit = getPerUserMinimumLimit(subscription)
-  const currentLimit = currentStats.currentUsageLimit
-    ? toNumber(toDecimal(currentStats.currentUsageLimit))
-    : 0
-
-  if (!subscription || !hasPaidSubscriptionStatus(subscription.status)) {
-    // Downgraded to free
-    await db
-      .update(userStats)
-      .set({
-        currentUsageLimit: getFreeTierLimit().toString(),
-        usageLimitUpdatedAt: new Date(),
-      })
-      .where(eq(userStats.userId, userId))
-
-    logger.info('Set limit to free tier', { userId })
-  } else if (currentLimit < defaultLimit) {
-    await db
-      .update(userStats)
-      .set({
-        currentUsageLimit: defaultLimit.toString(),
-        usageLimitUpdatedAt: new Date(),
-      })
-      .where(eq(userStats.userId, userId))
-
-    logger.info('Raised limit to plan minimum', {
-      userId,
-      newLimit: defaultLimit,
+  const baseLimit = toDecimal(getPerUserMinimumLimit(subscription)).toString()
+  const hasEntitledPersonalSubscription =
+    subscription !== null && hasPaidSubscriptionStatus(subscription.status)
+  const liveMinimum = sql`${baseLimit}::numeric + ${userStats.creditBalance}`
+  await db
+    .update(userStats)
+    .set({
+      currentUsageLimit: hasEntitledPersonalSubscription
+        ? sql`greatest(coalesce(${userStats.currentUsageLimit}, 0), ${liveMinimum})`
+        : liveMinimum,
+      usageLimitUpdatedAt: new Date(),
     })
-  }
-  // Keep higher custom limits unchanged
+    .where(
+      and(
+        eq(userStats.userId, userId),
+        hasEntitledPersonalSubscription
+          ? sql`coalesce(${userStats.currentUsageLimit}, 0) < ${liveMinimum}`
+          : sql`${userStats.currentUsageLimit} is distinct from ${liveMinimum}`
+      )
+    )
+
+  logger.info(
+    hasEntitledPersonalSubscription
+      ? 'Synchronized plan-plus-prepaid minimum'
+      : 'Reset limit to free-plus-prepaid minimum',
+    { userId, baseLimit: Number(baseLimit) }
+  )
+  // Keep higher custom limits unchanged only while personal billing is entitled.
 }
 
 /**
@@ -850,22 +864,62 @@ export async function maybeSendUsageThresholdEmail(params: {
     const upgradeCreditsLink = params.workspaceId
       ? `${baseUrl}${buildUpgradeHref(params.workspaceId, 'credits')}`
       : `${baseUrl}/workspace`
-    const billingSettingsLink = params.workspaceId
-      ? `${baseUrl}/workspace/${params.workspaceId}/settings/billing`
-      : `${baseUrl}/workspace`
+    const billingSettingsLink =
+      params.scope === 'organization' && params.organizationId
+        ? `${baseUrl}/organization/${params.organizationId}/settings/billing`
+        : `${baseUrl}/account/settings/billing`
 
     // Check for 80% threshold crossing — used for paid users (budget warning) and free users (upgrade nudge)
     const crosses80 = params.percentBefore < 80 && params.percentAfter >= 80
-    // Check for 100% threshold (free users only — credits exhausted)
+    // Check for 100% threshold — every plan and scope (usage limit reached)
     const crosses100 = params.percentBefore < 100 && params.percentAfter >= 100
 
     // Skip if no thresholds crossed
     if (!crosses80 && !crosses100) return
 
-    // For 80% threshold email (paid users only)
-    if (crosses80 && !isFreeUser) {
+    /**
+     * Delivers to the account's notification recipients: the payer for personal
+     * scope, every org admin/owner for organization scope. Honors the per-user
+     * billing-notification toggle in both.
+     */
+    const deliverToScope = async (send: (email: string, name?: string) => Promise<void>) => {
+      if (params.scope === 'user' && params.userId && params.userEmail) {
+        const rows = await db
+          .select({ enabled: settings.billingUsageNotificationsEnabled })
+          .from(settings)
+          .where(eq(settings.userId, params.userId))
+          .limit(1)
+        if (rows.length > 0 && rows[0].enabled === false) return
+        await send(params.userEmail, params.userName)
+        return
+      }
+
+      if (params.scope === 'organization' && params.organizationId) {
+        const admins = await db
+          .select({
+            email: user.email,
+            name: user.name,
+            enabled: settings.billingUsageNotificationsEnabled,
+            role: member.role,
+          })
+          .from(member)
+          .innerJoin(user, eq(member.userId, user.id))
+          .leftJoin(settings, eq(settings.userId, member.userId))
+          .where(eq(member.organizationId, params.organizationId))
+
+        for (const a of admins) {
+          if (!isOrgAdminRole(a.role)) continue
+          if (a.enabled === false) continue
+          if (!a.email) continue
+          await send(a.email, a.name || undefined)
+        }
+      }
+    }
+
+    // !crosses100: one "reached" email, not a "nearing" and a "reached" in the same moment
+    if (crosses80 && !isFreeUser && !crosses100) {
       const ctaLink = billingSettingsLink
-      const sendTo = async (email: string, name?: string) => {
+      await deliverToScope(async (email, name) => {
         const prefs = await getEmailPreferences(email)
         if (prefs?.unsubscribeAll || prefs?.unsubscribeNotifications) return
 
@@ -884,43 +938,13 @@ export async function maybeSendUsageThresholdEmail(params: {
           html,
           emailType: 'notifications',
         })
-      }
-
-      if (params.scope === 'user' && params.userId && params.userEmail) {
-        const rows = await db
-          .select({ enabled: settings.billingUsageNotificationsEnabled })
-          .from(settings)
-          .where(eq(settings.userId, params.userId))
-          .limit(1)
-        if (rows.length > 0 && rows[0].enabled === false) return
-        await sendTo(params.userEmail, params.userName)
-      } else if (params.scope === 'organization' && params.organizationId) {
-        const admins = await db
-          .select({
-            email: user.email,
-            name: user.name,
-            enabled: settings.billingUsageNotificationsEnabled,
-            role: member.role,
-          })
-          .from(member)
-          .innerJoin(user, eq(member.userId, user.id))
-          .leftJoin(settings, eq(settings.userId, member.userId))
-          .where(eq(member.organizationId, params.organizationId))
-
-        for (const a of admins) {
-          const isAdmin = isOrgAdminRole(a.role)
-          if (!isAdmin) continue
-          if (a.enabled === false) continue
-          if (!a.email) continue
-          await sendTo(a.email, a.name || undefined)
-        }
-      }
+      })
     }
 
     // For 80% threshold email (free users only — skip if they also crossed 100% in same call)
     if (crosses80 && isFreeUser && !crosses100) {
       const upgradeLink = upgradeCreditsLink
-      const sendFreeTierEmail = async (email: string, name?: string) => {
+      await deliverToScope(async (email, name) => {
         const prefs = await getEmailPreferences(email)
         if (prefs?.unsubscribeAll || prefs?.unsubscribeNotifications) return
 
@@ -945,56 +969,49 @@ export async function maybeSendUsageThresholdEmail(params: {
           currentUsage: params.currentUsageAfter,
           limit: params.limit,
         })
-      }
-
-      // Free users are always individual scope (not organization)
-      if (params.scope === 'user' && params.userId && params.userEmail) {
-        const rows = await db
-          .select({ enabled: settings.billingUsageNotificationsEnabled })
-          .from(settings)
-          .where(eq(settings.userId, params.userId))
-          .limit(1)
-        if (rows.length > 0 && rows[0].enabled === false) return
-        await sendFreeTierEmail(params.userEmail, params.userName)
-      }
+      })
     }
 
-    // For 100% threshold email (free users only — credits exhausted)
-    if (crosses100 && isFreeUser) {
-      const upgradeLink = upgradeCreditsLink
-      const sendExhaustedEmail = async (email: string, name?: string) => {
+    // Paid and org accounts get raise-your-limit copy — upgrading is not their remedy
+    if (crosses100) {
+      const useFreeCopy = isFreeUser && params.scope === 'user'
+
+      await deliverToScope(async (email, name) => {
         const prefs = await getEmailPreferences(email)
         if (prefs?.unsubscribeAll || prefs?.unsubscribeNotifications) return
 
-        const html = await renderCreditsExhaustedEmail({
-          userName: name,
-          limit: params.limit,
-          upgradeLink,
-        })
+        const html = useFreeCopy
+          ? await renderCreditsExhaustedEmail({
+              userName: name,
+              limit: params.limit,
+              upgradeLink: upgradeCreditsLink,
+            })
+          : await renderUsageLimitReachedEmail({
+              userName: name,
+              planName: params.planName,
+              scope: params.scope,
+              currentUsage: params.currentUsageAfter,
+              limit: params.limit,
+              ctaLink: billingSettingsLink,
+            })
 
         await sendEmail({
           to: email,
-          subject: getEmailSubject('free-tier-exhausted'),
+          subject: useFreeCopy
+            ? getEmailSubject('free-tier-exhausted')
+            : getLimitEmailSubject('credits', 'reached'),
           html,
           emailType: 'notifications',
         })
 
-        logger.info('Free tier credits exhausted email sent', {
+        logger.info('Usage limit reached email sent', {
           email,
+          scope: params.scope,
+          planName: params.planName,
           currentUsage: params.currentUsageAfter,
           limit: params.limit,
         })
-      }
-
-      if (params.scope === 'user' && params.userId && params.userEmail) {
-        const rows = await db
-          .select({ enabled: settings.billingUsageNotificationsEnabled })
-          .from(settings)
-          .where(eq(settings.userId, params.userId))
-          .limit(1)
-        if (rows.length > 0 && rows[0].enabled === false) return
-        await sendExhaustedEmail(params.userEmail, params.userName)
-      }
+      })
     }
   } catch (error) {
     logger.error('Failed to send usage threshold email', {

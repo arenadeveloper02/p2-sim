@@ -8,13 +8,13 @@ import {
   DropdownMenuTrigger,
   useCopyToClipboard,
 } from '@sim/emcn'
-import type { JSONContent } from '@tiptap/core'
-import { CodeBlock } from '@tiptap/extension-code-block'
 import type { ReactNodeViewProps } from '@tiptap/react'
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react'
 import { Check, ChevronDown, Code, Copy, Eye, WrapText } from 'lucide-react'
 import { looksLikeMermaid, MermaidDiagram } from '../mermaid-diagram'
+import { MarkdownCodeBlock } from './code-block-schema'
 import { detectLanguage } from './detect-language'
+import { useEditorEditable } from './use-editor-editable'
 
 const PLAIN = 'plain'
 const MERMAID = 'mermaid'
@@ -59,6 +59,7 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactNodeView
   const [editingInline, setEditingInline] = useState(false)
   const [peekSource, setPeekSource] = useState(false)
   const { copied, copy } = useCopyToClipboard({ resetMs: 1500 })
+  const editable = useEditorEditable(editor)
 
   const explicitLanguage = node.attrs.language as string | null
   const text = node.textContent
@@ -68,7 +69,7 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactNodeView
   // diagram on blur (the Linear/GitHub model). The Show source / Show diagram control drives this by
   // focusing into / blurring the block; read-only uses {@link peekSource} since there is no caret.
   useEffect(() => {
-    if (!isMermaid || !editor.isEditable) {
+    if (!isMermaid || !editable) {
       setEditingInline(false)
       return
     }
@@ -91,9 +92,9 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactNodeView
       editor.off('focus', sync)
       editor.off('blur', sync)
     }
-  }, [editor, getPos, isMermaid])
+  }, [editor, getPos, isMermaid, editable])
 
-  const showSource = editor.isEditable ? editingInline : peekSource
+  const showSource = editable ? editingInline : peekSource
   const showDiagram = isMermaid && text.trim().length > 0 && !showSource
 
   // Skip language detection on the mermaid path — the picker/label never render there.
@@ -104,7 +105,7 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactNodeView
     'Plain text'
 
   const toggleSource = () => {
-    if (!editor.isEditable) {
+    if (!editable) {
       setPeekSource((value) => !value)
       return
     }
@@ -144,7 +145,7 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactNodeView
           </button>
         )}
         {!isMermaid &&
-          (editor.isEditable ? (
+          (editable ? (
             // Editable: a language picker. Read-only: a static label — selecting a language calls
             // updateAttributes, which would mutate a doc that must not change.
             <DropdownMenu onOpenChange={setMenuOpen}>
@@ -179,7 +180,7 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactNodeView
               {label}
             </span>
           ))}
-        {!isMermaid && editor.isEditable && (
+        {!isMermaid && editable && (
           <button
             type='button'
             aria-label='Toggle line wrap'
@@ -225,30 +226,6 @@ function CodeBlockView({ node, updateAttributes, editor, getPos }: ReactNodeView
     </NodeViewWrapper>
   )
 }
-
-function codeBlockText(node: JSONContent): string {
-  return (node.content ?? []).map((child) => child.text ?? '').join('')
-}
-
-/** Fence sized to one backtick longer than the longest run inside the code (CommonMark rule). */
-function fenceFor(text: string): string {
-  const longestRun = Math.max(0, ...[...text.matchAll(/`+/g)].map((match) => match[0].length))
-  return '`'.repeat(Math.max(3, longestRun + 1))
-}
-
-/**
- * Code block whose markdown serializer sizes the fence to the interior backtick runs, so a code
- * block that itself contains a ``` line round-trips instead of shattering. Shared by the test
- * (plain) and live ({@link CodeBlockWithLanguage}) paths.
- */
-export const MarkdownCodeBlock = CodeBlock.extend({
-  renderMarkdown: (node: JSONContent) => {
-    const language = typeof node.attrs?.language === 'string' ? node.attrs.language : ''
-    const text = codeBlockText(node)
-    const fence = fenceFor(text)
-    return `${fence}${language}\n${text}\n${fence}`
-  },
-})
 
 /**
  * Code block with hover-revealed controls (language picker, line-wrap toggle, copy). The

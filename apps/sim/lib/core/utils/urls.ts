@@ -1,9 +1,13 @@
+import { isLoopbackHostname } from '@sim/security/hostnames'
 import { env, getEnv } from '@/lib/core/config/env'
 import { isProd } from '@/lib/core/config/env-flags'
 
 /** Canonical base URL for the public-facing marketing site. No trailing slash. */
 // export const SITE_URL = 'https://www.sim.ai'
 export const SITE_URL = 'https://thearena.ai'
+
+/** Host of the canonical marketing site, e.g. `www.sim.ai`. */
+export const CANONICAL_SITE_HOST = new URL(SITE_URL).host
 
 function hasHttpProtocol(url: string): boolean {
   return /^https?:\/\//i.test(url)
@@ -21,6 +25,14 @@ function normalizeBaseUrl(url: string): string {
 /**
  * Returns the base URL of the application from NEXT_PUBLIC_APP_URL
  * This ensures webhooks, callbacks, and other integrations always use the correct public URL
+ *
+ * Deliberately has no browser fallback to `window.location.origin`. The value is
+ * injected before hydration by `<PublicEnvScript>`, so an empty read means the
+ * deployment is misconfigured — and a same-origin guess would hide that. It also
+ * would not be safe to guess: an opaque origin (a sandboxed iframe, and `/chat/*`
+ * is embeddable) serializes to the string `'null'`, which is truthy and would
+ * silently produce `null/api/...` at every call site.
+ *
  * @returns The base URL string (e.g., 'http://localhost:3000' or 'https://example.com')
  * @throws Error if NEXT_PUBLIC_APP_URL is not configured
  */
@@ -97,14 +109,36 @@ export function getBaseDomain(): string {
   }
 }
 
+/** Drops a leading `www.` label, e.g. `www.sim.ai` -> `sim.ai`. */
+function stripWwwPrefix(host: string): string {
+  return host.startsWith('www.') ? host.slice(4) : host
+}
+
+/**
+ * True for a sim.ai host that is not the canonical marketing site — dev.sim.ai,
+ * staging.sim.ai, and their www variants serve the same build as www.sim.ai, so
+ * search engines treat them as duplicates unless told otherwise.
+ *
+ * `sim.ai` and `www.sim.ai` are both canonical. Self-hosted domains return
+ * false, as do lookalikes such as `notsim.ai`.
+ *
+ * Takes the first entry of a comma-joined forwarded host so a chained proxy
+ * can't make the canonical site look non-canonical via a trailing entry.
+ */
+export function isNonCanonicalSimHost(host: string): boolean {
+  const first = host.split(',')[0]?.trim() ?? ''
+  const hostname = stripWwwPrefix(first.toLowerCase().split(':')[0])
+  const canonical = stripWwwPrefix(CANONICAL_SITE_HOST)
+  return hostname !== canonical && hostname.endsWith(`.${canonical}`)
+}
+
 /**
  * Returns the domain for email addresses, stripping www subdomain for Resend compatibility
  * @returns The email domain (e.g., 'sim.ai' instead of 'www.sim.ai')
  */
 export function getEmailDomain(): string {
   try {
-    const baseDomain = getBaseDomain()
-    return baseDomain.startsWith('www.') ? baseDomain.substring(4) : baseDomain
+    return stripWwwPrefix(getBaseDomain())
   } catch (_e) {
     return isProd ? 'sim.ai' : 'localhost:3000'
   }
@@ -146,17 +180,6 @@ export function getLoginRedirectUrl(hostname: string): string {
 
 const DEFAULT_SOCKET_URL = 'http://localhost:3002'
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
-export const LOCALHOST_HOSTNAMES: ReadonlySet<string> = new Set([
-  'localhost',
-  '127.0.0.1',
-  '[::1]',
-  '::1',
-])
-
-export function isLoopbackHostname(hostname: string): boolean {
-  return LOCALHOST_HOSTNAMES.has(hostname)
-}
-
 /**
  * Arena hub "agents" URL for the sidebar back-link.
  *
@@ -235,7 +258,7 @@ export function parseOriginList(
 export function isLocalhostUrl(url: string): boolean {
   try {
     const { hostname } = new URL(url)
-    return LOCALHOST_HOSTNAMES.has(hostname)
+    return isLoopbackHostname(hostname)
   } catch {
     return false
   }
@@ -291,7 +314,7 @@ export function getSocketUrl(): string {
   if (explicit) return explicit
 
   const browserOrigin = getBrowserOrigin()
-  if (browserOrigin && !LOCALHOST_HOSTNAMES.has(new URL(browserOrigin).hostname)) {
+  if (browserOrigin && !isLoopbackHostname(new URL(browserOrigin).hostname)) {
     return browserOrigin
   }
 

@@ -12,13 +12,11 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@sim/emcn'
-import { Workflow } from '@sim/emcn/icons'
 import {
-  buildFileFolderTree,
-  buildWorkflowFolderTree,
-  FileFolderTreeItems,
-  type useAvailableResources,
-  WorkflowFolderTreeItems,
+  FOLDERED_RESOURCE_TYPES,
+  ResourceTreeSections,
+  useAvailableResources,
+  useResourceTreeSections,
 } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/add-resource-dropdown'
 import { getResourceConfig } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-registry'
 import type { PlusMenuHandle } from '@/app/workspace/[workspaceId]/home/components/user-input/components/constants'
@@ -27,17 +25,29 @@ import type {
   MothershipResourceType,
 } from '@/app/workspace/[workspaceId]/home/types'
 
-export type AvailableResourceGroup = ReturnType<typeof useAvailableResources>[number]
-
 /**
  * Resource types that are only offered via `@`-mention autocomplete and hidden
  * from the `+` browse menu. Integrations are searchable inline (e.g. typing
  * `@sla` surfaces Slack) but should not clutter the explicit attach menu.
+ *
+ * Filtered here rather than via the hook's `excludeTypes` because the exclusion
+ * is mode-dependent (`isMention`) — one fetch serves both modes. The resource
+ * tab bar, whose exclusion is static, uses `excludeTypes` instead
+ * (`ADD_RESOURCE_EXCLUDED_TYPES` in `resource-tabs`).
  */
 const MENTION_ONLY_RESOURCE_TYPES = new Set<MothershipResourceType>(['integration'])
+const NON_ATTACHABLE_RESOURCE_TYPES = new Set<MothershipResourceType>(['browser'])
 
 interface PlusMenuDropdownProps {
-  availableResources: AvailableResourceGroup[]
+  workspaceId: string
+  /**
+   * Starts hydrating the resource lists before the menu opens. The editor sets
+   * this on focus: `@`-mention confirmation reads the candidate list
+   * synchronously on Enter, and an empty list falls through to submitting the
+   * message with the mention unresolved. Focus is the earliest reliable signal
+   * that a mention may be coming, and still keeps these lists off page load.
+   */
+  warm?: boolean
   onResourceSelect: (resource: MothershipResource) => void
   onClose: () => void
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
@@ -48,7 +58,7 @@ interface PlusMenuDropdownProps {
 
 export const PlusMenuDropdown = React.memo(
   React.forwardRef<PlusMenuHandle, PlusMenuDropdownProps>(function PlusMenuDropdown(
-    { availableResources, onResourceSelect, onClose, textareaRef, pendingCursorRef, mentionQuery },
+    { workspaceId, warm, onResourceSelect, onClose, textareaRef, pendingCursorRef, mentionQuery },
     ref
   ) {
     const [open, setOpen] = useState(false)
@@ -58,6 +68,15 @@ export const PlusMenuDropdown = React.memo(
     const [activeIndex, setActiveIndex] = useState(0)
     const searchRef = useRef<HTMLInputElement>(null)
     const contentRef = useRef<HTMLDivElement>(null)
+
+    // Gated so an idle chat surface never fetches the workspace lists.
+    const {
+      groups: availableResources,
+      structureFolders,
+      isHydrating,
+    } = useAvailableResources(workspaceId, {
+      enabled: open || !!warm,
+    })
 
     const doOpen = useCallback(
       (anchor: { left: number; top: number }, options?: { mention?: boolean }) => {
@@ -76,25 +95,19 @@ export const PlusMenuDropdown = React.memo(
 
     // The `+` browse menu hides mention-only resource types; `@`-mention mode
     // exposes the full catalog so integrations remain searchable inline.
-    const visibleResources = useMemo(
-      () =>
-        isMention
-          ? availableResources
-          : availableResources.filter(({ type }) => !MENTION_ONLY_RESOURCE_TYPES.has(type)),
-      [isMention, availableResources]
-    )
+    const visibleResources = useMemo(() => {
+      const attachable = availableResources.filter(
+        ({ type }) => !NON_ATTACHABLE_RESOURCE_TYPES.has(type)
+      )
+      return isMention
+        ? attachable
+        : attachable.filter(({ type }) => !MENTION_ONLY_RESOURCE_TYPES.has(type))
+    }, [isMention, availableResources])
 
-    const workflowTree = useMemo(() => {
-      const workflowGroup = visibleResources.find((g) => g.type === 'workflow')
-      const folderGroup = visibleResources.find((g) => g.type === 'folder')
-      return buildWorkflowFolderTree(workflowGroup?.items ?? [], folderGroup?.items ?? [])
-    }, [visibleResources])
-
-    const fileFolderTree = useMemo(() => {
-      const fileGroup = visibleResources.find((g) => g.type === 'file')
-      const fileFolderGroup = visibleResources.find((g) => g.type === 'filefolder')
-      return buildFileFolderTree(fileGroup?.items ?? [], fileFolderGroup?.items ?? [])
-    }, [visibleResources])
+    const treeSections = useResourceTreeSections({
+      groups: visibleResources,
+      structureFolders,
+    })
 
     const filteredItems = useMemo(() => {
       const rawQuery = isMention ? (mentionQuery ?? '') : search
@@ -115,6 +128,8 @@ export const PlusMenuDropdown = React.memo(
     activeIndexRef.current = activeIndex
     const isMentionRef = useRef(isMention)
     isMentionRef.current = isMention
+    const isHydratingRef = useRef(isHydrating)
+    isHydratingRef.current = isHydrating
 
     // Reset highlight to the top whenever the mention query changes so the user always
     // sees the best match selected as they type.
@@ -149,15 +164,14 @@ export const PlusMenuDropdown = React.memo(
         },
         selectActive: () => {
           const items = filteredItemsRef.current
-          if (!items || items.length === 0) return false
-          const target = items[activeIndexRef.current] ?? items[0]
-          if (!target) return false
+          const target = items?.length ? (items[activeIndexRef.current] ?? items[0]) : undefined
+          if (!target) return isHydratingRef.current ? 'hydrating' : 'empty'
           handleSelectRef.current({
             type: target.type,
             id: target.item.id,
             title: target.item.name,
           })
-          return true
+          return 'selected'
         },
       }),
       [doOpen, doClose]
@@ -291,39 +305,13 @@ export const PlusMenuDropdown = React.memo(
             {/* Always-mounted; swapping this subtree with filtered results makes Radix's
                   menu FocusScope steal focus from the search input back to the content root. */}
             <div hidden={filteredItems !== null}>
-              {workflowTree.length > 0 && (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    <Workflow className='size-[14px]' />
-                    <span>Workflows</span>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className='max-w-[min(300px,calc(100vw-32px))]'>
-                    <WorkflowFolderTreeItems nodes={workflowTree} onSelect={handleSelect} />
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              )}
-              {fileFolderTree.length > 0 && (
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    {(() => {
-                      const Icon = getResourceConfig('file').icon
-                      return <Icon className='size-[14px]' />
-                    })()}
-                    <span>Files</span>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className='max-w-[min(300px,calc(100vw-32px))]'>
-                    <FileFolderTreeItems nodes={fileFolderTree} onSelect={handleSelect} />
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              )}
+              <ResourceTreeSections
+                sections={treeSections}
+                onSelect={handleSelect}
+                subContentClassName='max-w-[min(300px,calc(100vw-32px))]'
+              />
               {visibleResources
-                .filter(
-                  ({ type }) =>
-                    type !== 'workflow' &&
-                    type !== 'folder' &&
-                    type !== 'file' &&
-                    type !== 'filefolder'
-                )
+                .filter(({ type }) => !FOLDERED_RESOURCE_TYPES.has(type))
                 .map(({ type, items }) => {
                   if (items.length === 0) return null
                   const config = getResourceConfig(type)
