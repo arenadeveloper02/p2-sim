@@ -6,12 +6,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
+  assertAgentCredentials,
   CHILD_CLAUDE_COST_ENV,
+  DEFAULT_CAPACITY_RETRY_ATTEMPTS,
+  DEFAULT_CAPACITY_RETRY_BASE_MS,
+  DEFAULT_CAPACITY_RETRY_MAX_MS,
   DEFAULT_OPENAI_CHILD_MODEL,
   DEFAULT_PARENT_MODEL,
-  assertAgentCredentials,
   ensureCodexApiKeyAuth,
+  isTransientModelCapacityError,
   resolveAgents,
+  resolveCapacityRetryConfig,
   resolveChildModel,
   resolveParentModel,
 } from './agents'
@@ -20,16 +25,16 @@ describe('resolveAgents', () => {
   let codexHome: string | undefined
 
   afterEach(() => {
-    delete process.env.UPSTREAM_SYNC_AGENT
-    delete process.env.UPSTREAM_SYNC_ANTHROPIC_PARENT_MODEL
-    delete process.env.UPSTREAM_SYNC_ANTHROPIC_CHILD_MODEL
-    delete process.env.UPSTREAM_SYNC_OPENAI_MODEL
-    delete process.env.UPSTREAM_SYNC_OPENAI_CHILD_MODEL
-    delete process.env.OPENAI_API_KEY
-    delete process.env.ANTHROPIC_API_KEY
-    delete process.env.CLAUDE_CODE_OAUTH_TOKEN
-    delete process.env.UPSTREAM_SYNC_SKIP_AGENT
-    delete process.env.CODEX_HOME
+    process.env.UPSTREAM_SYNC_AGENT = undefined
+    process.env.UPSTREAM_SYNC_ANTHROPIC_PARENT_MODEL = undefined
+    process.env.UPSTREAM_SYNC_ANTHROPIC_CHILD_MODEL = undefined
+    process.env.UPSTREAM_SYNC_OPENAI_MODEL = undefined
+    process.env.UPSTREAM_SYNC_OPENAI_CHILD_MODEL = undefined
+    process.env.OPENAI_API_KEY = undefined
+    process.env.ANTHROPIC_API_KEY = undefined
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = undefined
+    process.env.UPSTREAM_SYNC_SKIP_AGENT = undefined
+    process.env.CODEX_HOME = undefined
     if (codexHome) {
       rmSync(codexHome, { recursive: true, force: true })
       codexHome = undefined
@@ -100,5 +105,73 @@ describe('resolveAgents', () => {
     process.env.UPSTREAM_SYNC_AGENT = 'anthropic'
     process.env.OPENAI_API_KEY = 'sk-proj-test'
     expect(ensureCodexApiKeyAuth({ codexHome: '/tmp/unused-codex-home' })).toBeNull()
+  })
+})
+
+describe('isTransientModelCapacityError', () => {
+  test('matches Codex capacity messages', () => {
+    expect(
+      isTransientModelCapacityError(
+        new Error(
+          'AgentError: codex exited with code 1:\nSelected model is at capacity. Please try a different model.'
+        )
+      )
+    ).toBe(true)
+    expect(
+      isTransientModelCapacityError(new Error('No available serving slot for the selected model'))
+    ).toBe(true)
+  })
+
+  test('matches nested cause', () => {
+    const cause = new Error('Selected model is at capacity. Please try a different model.')
+    expect(isTransientModelCapacityError(new Error('Agent invocation failed', { cause }))).toBe(
+      true
+    )
+  })
+
+  test('rejects token/auth/quota style failures', () => {
+    expect(isTransientModelCapacityError(new Error('context length exceeded'))).toBe(false)
+    expect(isTransientModelCapacityError(new Error('401 Missing bearer'))).toBe(false)
+    expect(isTransientModelCapacityError(new Error('insufficient_quota'))).toBe(false)
+    expect(isTransientModelCapacityError(new Error('merge conflict unresolved'))).toBe(false)
+  })
+})
+
+describe('resolveCapacityRetryConfig', () => {
+  afterEach(() => {
+    process.env.UPSTREAM_SYNC_CAPACITY_RETRIES = undefined
+    process.env.UPSTREAM_SYNC_CAPACITY_RETRY_BASE_MS = undefined
+    process.env.UPSTREAM_SYNC_CAPACITY_RETRY_MAX_MS = undefined
+  })
+
+  test('defaults to multi-minute serving-slot backoff', () => {
+    expect(resolveCapacityRetryConfig({})).toEqual({
+      maxAttempts: DEFAULT_CAPACITY_RETRY_ATTEMPTS,
+      baseMs: DEFAULT_CAPACITY_RETRY_BASE_MS,
+      maxMs: DEFAULT_CAPACITY_RETRY_MAX_MS,
+    })
+  })
+
+  test('honors env overrides and clamps maxMs to baseMs', () => {
+    expect(
+      resolveCapacityRetryConfig({
+        UPSTREAM_SYNC_CAPACITY_RETRIES: '6',
+        UPSTREAM_SYNC_CAPACITY_RETRY_BASE_MS: '45000',
+        UPSTREAM_SYNC_CAPACITY_RETRY_MAX_MS: '10000',
+      })
+    ).toEqual({ maxAttempts: 6, baseMs: 45_000, maxMs: 45_000 })
+  })
+
+  test('falls back on invalid values', () => {
+    expect(
+      resolveCapacityRetryConfig({
+        UPSTREAM_SYNC_CAPACITY_RETRIES: '0',
+        UPSTREAM_SYNC_CAPACITY_RETRY_BASE_MS: 'nope',
+      })
+    ).toEqual({
+      maxAttempts: DEFAULT_CAPACITY_RETRY_ATTEMPTS,
+      baseMs: DEFAULT_CAPACITY_RETRY_BASE_MS,
+      maxMs: DEFAULT_CAPACITY_RETRY_MAX_MS,
+    })
   })
 })

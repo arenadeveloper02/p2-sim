@@ -14,20 +14,29 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { getErrorMessage } from '@sim/utils/errors'
 import type { AgentStreamEvent, RunResult } from '@ai-hero/sandcastle'
 import { run } from '@ai-hero/sandcastle'
 import { noSandbox } from '@ai-hero/sandcastle/sandboxes/no-sandbox'
+import { getErrorMessage } from '@sim/utils/errors'
+import { sleep } from '@sim/utils/helpers'
+import { backoffWithJitter } from '@sim/utils/retry'
+import {
+  assertAgentCredentials,
+  isTransientModelCapacityError,
+  resolveAgents,
+  resolveCapacityRetryConfig,
+} from './lib/agents'
 import {
   commitsSinceBaseline,
   formatBaselineMetadata,
   resolveAnalysisBaseline,
   resolveCappedUpstreamTip,
 } from './lib/analysis'
-import { assertAgentCredentials, resolveAgents } from './lib/agents'
+import type { ConflictCluster } from './lib/clusters'
 import {
   appendExtensibilityNote,
   appendRunLogSections,
+  applyMergeWip,
   COMPLETION_SIGNAL,
   closeSupersededPr,
   commentOnPr,
@@ -51,16 +60,15 @@ import {
   groupConflictClusters,
   isPrOpen,
   isSyncBranch,
-  applyMergeWip,
   leafConflictClusters,
   listConflictFiles,
   logHarnessQuestion,
   MERGE_POLICY_PATH,
   persistMergeWip,
   QUESTION_MARKER,
-  remoteBranchExists,
   RESUME_COMMAND,
   readState,
+  remoteBranchExists,
   repoSlug,
   requestPrReviewers,
   resolveMergeBase,
@@ -73,8 +81,8 @@ import {
   throwIfRemotePushAuthError,
   todayRunId,
   updateDraftPr,
-  withExtendedBanner,
   walkConflictClusters,
+  withExtendedBanner,
   writeClusterManifest,
   writeFbiReport,
   writeReleaseNotesReport,
@@ -82,7 +90,6 @@ import {
   writeSkippedReport,
   writeState,
 } from './lib/config'
-import type { ConflictCluster } from './lib/clusters'
 import {
   clearOpenQuestionsFile,
   hasUnansweredGrillQuestions,
@@ -92,14 +99,11 @@ import {
   resolveResumeSyncBranch,
   shouldSkipParentGrill,
 } from './lib/grill-state'
+import { verificationToOutcome, writeRunOutcome } from './lib/job-summary'
 import {
   ensureInstallableWorkspace,
   resolveDeterministicPolicyConflicts,
 } from './lib/lockfile-bootstrap'
-import {
-  verificationToOutcome,
-  writeRunOutcome,
-} from './lib/job-summary'
 import {
   getUsageRecords,
   persistUsageArtifacts,
@@ -346,48 +350,81 @@ async function runAgentPrompt(options: {
   mkdirSync(logDir, { recursive: true })
   const safeName = options.name.replace(/[^a-zA-Z0-9_-]+/g, '_')
   const logPath = join(logDir, `${safeName}.log`)
-  const rawNdjsonLines: string[] = []
-  let result: RunResult | null = null
   const model = resolveAgentModel(options.agentKind, options.agents)
+  const capacityRetry = resolveCapacityRetryConfig()
 
-  try {
-    result = await run({
-      agent: options.agent,
-      prompt: options.prompt,
-      name: options.name,
-      maxIterations: options.maxIterations ?? 3,
-      completionSignal: options.completionSignal ?? COMPLETION_SIGNAL,
-      sandbox: noSandbox(),
-      branchStrategy: { type: 'head' },
-      hooks: SKIP_SANDCASTLE_INSTALL_HOOKS,
-      idleTimeoutSeconds: Number(process.env.UPSTREAM_SYNC_IDLE_TIMEOUT_SECONDS ?? 7200),
-      completionTimeoutSeconds: 120,
-      logging: {
-        type: 'file',
-        path: logPath,
-        verbose: true,
-        onAgentStreamEvent: (event: AgentStreamEvent) => {
-          if (event.type !== 'raw') return
-          rawNdjsonLines.push(event.line)
-          // Mirror into Actions logs (parity with previous stdout verbose mode).
-          console.log(event.line)
+  let lastError: unknown
+  for (let attempt = 1; attempt <= capacityRetry.maxAttempts; attempt++) {
+    const rawNdjsonLines: string[] = []
+    let result: RunResult | null = null
+    try {
+      result = await run({
+        agent: options.agent,
+        prompt: options.prompt,
+        name: options.name,
+        maxIterations: options.maxIterations ?? 3,
+        completionSignal: options.completionSignal ?? COMPLETION_SIGNAL,
+        sandbox: noSandbox(),
+        branchStrategy: { type: 'head' },
+        hooks: SKIP_SANDCASTLE_INSTALL_HOOKS,
+        idleTimeoutSeconds: Number(process.env.UPSTREAM_SYNC_IDLE_TIMEOUT_SECONDS ?? 7200),
+        completionTimeoutSeconds: 120,
+        logging: {
+          type: 'file',
+          path: logPath,
+          verbose: true,
+          onAgentStreamEvent: (event: AgentStreamEvent) => {
+            if (event.type !== 'raw') return
+            rawNdjsonLines.push(event.line)
+            // Mirror into Actions logs (parity with previous stdout verbose mode).
+            console.log(event.line)
+          },
         },
-      },
-    })
-    return result
-  } finally {
-    // Always record usage — including cancelled / errored runs — from captured
-    // stream NDJSON (or the verbose log file if the callback buffer is empty).
-    let streamNdjson = rawNdjsonLines.join('\n')
-    if (!streamNdjson.trim() && existsSync(logPath)) {
-      try {
-        streamNdjson = readFileSync(logPath, 'utf8')
-      } catch {
-        // best-effort
-      }
+      })
+      recordAttemptUsage(options.name, model, result, rawNdjsonLines, logPath)
+      return result
+    } catch (error) {
+      lastError = error
+      recordAttemptUsage(options.name, model, result, rawNdjsonLines, logPath)
+
+      const canRetry = isTransientModelCapacityError(error) && attempt < capacityRetry.maxAttempts
+      if (!canRetry) throw error
+
+      const delayMs = backoffWithJitter(attempt, null, {
+        baseMs: capacityRetry.baseMs,
+        maxMs: capacityRetry.maxMs,
+      })
+      console.warn(
+        `[${options.name}] model capacity error (attempt ${attempt}/${capacityRetry.maxAttempts}); ` +
+          `retrying in ${Math.round(delayMs / 1000)}s — ${getErrorMessage(error)}`
+      )
+      await sleep(delayMs)
     }
-    recordAgentUsage(options.name, model, result, streamNdjson)
   }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError))
+}
+
+/**
+ * Always record usage — including cancelled / errored runs — from captured
+ * stream NDJSON (or the verbose log file if the callback buffer is empty).
+ */
+function recordAttemptUsage(
+  agentName: string,
+  model: string,
+  result: RunResult | null,
+  rawNdjsonLines: string[],
+  logPath: string
+): void {
+  let streamNdjson = rawNdjsonLines.join('\n')
+  if (!streamNdjson.trim() && existsSync(logPath)) {
+    try {
+      streamNdjson = readFileSync(logPath, 'utf8')
+    } catch {
+      // best-effort
+    }
+  }
+  recordAgentUsage(agentName, model, result, streamNdjson)
 }
 
 function createDraftPrViaApi(
@@ -587,13 +624,15 @@ function appendUsageToRunLog(runId: string): string {
  */
 function flushUsageBestEffort(reason: string): string | null {
   if (usageFlushCompleted) return null
-  const runId = activeRunId ?? (() => {
-    try {
-      return readState().lastRunId ?? todayRunId()
-    } catch {
-      return todayRunId()
-    }
-  })()
+  const runId =
+    activeRunId ??
+    (() => {
+      try {
+        return readState().lastRunId ?? todayRunId()
+      } catch {
+        return todayRunId()
+      }
+    })()
 
   try {
     if (getUsageRecords().length === 0) {
@@ -677,8 +716,7 @@ function ensureActiveDraftPr(options: {
   title?: string
 }): number {
   const title =
-    options.title ??
-    formatSyncPrTitle({ mergeBase: options.mergeBase, runId: options.runId })
+    options.title ?? formatSyncPrTitle({ mergeBase: options.mergeBase, runId: options.runId })
 
   if (options.existingPrNumber > 0 && isPrOpen(options.existingPrNumber)) {
     try {
@@ -813,20 +851,12 @@ async function main(): Promise<void> {
       syncBranch = resolveResumeSyncBranch(initialState)
     } else {
       let candidateBranch = initialState.activeBranch
-      const prOpen = Boolean(
-        initialState.activePrNumber && isPrOpen(initialState.activePrNumber)
-      )
-      if (
-        !candidateBranch &&
-        initialState.activePrNumber &&
-        prOpen
-      ) {
+      const prOpen = Boolean(initialState.activePrNumber && isPrOpen(initialState.activePrNumber))
+      if (!candidateBranch && initialState.activePrNumber && prOpen) {
         candidateBranch = resolvePrHeadBranch(initialState.activePrNumber)
       }
 
-      const branchExistsOnRemote = candidateBranch
-        ? remoteBranchExists(candidateBranch)
-        : false
+      const branchExistsOnRemote = candidateBranch ? remoteBranchExists(candidateBranch) : false
       const decision = decideSyncBranchAction({
         force: FORCE_RUN,
         activePrNumber: initialState.activePrNumber,
@@ -838,8 +868,7 @@ async function main(): Promise<void> {
       if (decision.action === 'reuse') {
         syncBranch = decision.branch
         extending = true
-        previousUpstreamSha =
-          initialState.lastSyncedUpstreamSha ?? baseline.baselineSha
+        previousUpstreamSha = initialState.lastSyncedUpstreamSha ?? baseline.baselineSha
         console.log(
           `Reusing open sync PR #${decision.prNumber} on \`${syncBranch}\` (extend to ${headSha.slice(0, 8)}).`
         )
@@ -1069,9 +1098,7 @@ async function main(): Promise<void> {
         hasUnansweredGrillQuestions({ runId: priorRunId as string }))
     if (unanswered) {
       const questionsRunId =
-        priorRunId && hasUnansweredGrillQuestions({ runId: priorRunId })
-          ? priorRunId
-          : runId
+        priorRunId && hasUnansweredGrillQuestions({ runId: priorRunId }) ? priorRunId : runId
       const usageSectionQuestions = appendUsageToRunLog(runId)
       appendRunLogSections(runId, {
         Status: 'awaiting_input',
@@ -1525,7 +1552,7 @@ main().catch((error) => {
           return []
         }
       })(),
-      errorMessage: error instanceof Error ? error.stack ?? error.message : String(error),
+      errorMessage: error instanceof Error ? (error.stack ?? error.message) : String(error),
     })
     writeState({ ...state, status: 'failed' })
   } catch {

@@ -38,6 +38,64 @@ export const DEFAULT_ANTHROPIC_CHILD_MODEL = 'claude-sonnet-5'
 export const DEFAULT_OPENAI_CHILD_MODEL = 'gpt-5.6-luna'
 export const DEFAULT_OPENAI_PARENT_MODEL = 'gpt-5.6-luna'
 
+/**
+ * Capacity retries wait longer than ordinary API backoff — OpenAI serving-slot
+ * shortages often clear in tens of seconds to a few minutes, not sub-second.
+ */
+export const DEFAULT_CAPACITY_RETRY_ATTEMPTS = 4
+export const DEFAULT_CAPACITY_RETRY_BASE_MS = 30_000
+export const DEFAULT_CAPACITY_RETRY_MAX_MS = 300_000
+
+/** Matches Codex / Anthropic overload messages that are safe to retry. */
+const TRANSIENT_CAPACITY_RE =
+  /selected model is at capacity|no available serving slot|model is (?:currently )?at capacity|overloaded_error|api.?overload|temporarily overloaded/i
+
+/**
+ * True when the agent failed because the provider has no serving capacity for
+ * the selected model — not account quota and not a context/token limit.
+ */
+export function isTransientModelCapacityError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  if (TRANSIENT_CAPACITY_RE.test(message)) return true
+  const cause =
+    error instanceof Error && 'cause' in error ? (error as { cause?: unknown }).cause : undefined
+  if (cause != null && cause !== error) return isTransientModelCapacityError(cause)
+  return false
+}
+
+export interface CapacityRetryConfig {
+  /** Total attempts including the first try. `1` disables retries. */
+  maxAttempts: number
+  baseMs: number
+  maxMs: number
+}
+
+/** Resolve capacity-retry knobs from env (`UPSTREAM_SYNC_CAPACITY_RETRIES*`). */
+export function resolveCapacityRetryConfig(
+  env: NodeJS.ProcessEnv = process.env
+): CapacityRetryConfig {
+  const maxAttempts = parsePositiveInt(
+    env.UPSTREAM_SYNC_CAPACITY_RETRIES,
+    DEFAULT_CAPACITY_RETRY_ATTEMPTS
+  )
+  const baseMs = parsePositiveInt(
+    env.UPSTREAM_SYNC_CAPACITY_RETRY_BASE_MS,
+    DEFAULT_CAPACITY_RETRY_BASE_MS
+  )
+  const maxMs = parsePositiveInt(
+    env.UPSTREAM_SYNC_CAPACITY_RETRY_MAX_MS,
+    DEFAULT_CAPACITY_RETRY_MAX_MS
+  )
+  return { maxAttempts, baseMs, maxMs: Math.max(maxMs, baseMs) }
+}
+
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  if (raw == null || raw.trim() === '') return fallback
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 1) return fallback
+  return Math.floor(n)
+}
+
 /** Codex effort including GPT-5.6 `max` (Sandcastle's CodexOptions type still stops at xhigh). */
 type CodexEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
