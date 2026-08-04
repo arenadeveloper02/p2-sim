@@ -106,3 +106,7 @@ Reply here with **Q1: A or B** and **Q2: confirmed (or your split)**, then comme
 **Q** (2026-08-04T10:06:01.970Z, upstream-sync[bot]): Grill open questions must be answered before merge starts.
 _Context: .upstream-sync/ledger/2026-08-04/open-questions.md_
 
+## 2026-08-04 · PR #679
+
+**A** (2026-08-04T10:16:04Z, SaitejaSankoji): /upstream-sync resume
+
