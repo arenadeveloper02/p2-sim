@@ -337,7 +337,8 @@ export function throwIfRemotePushAuthError(error: unknown, context: string): voi
   throw new Error(
     [
       `${context}: git push rejected for missing GitHub permissions.`,
-      'Set upstream-sync.yml to `permissions: write-all` (workflows required when syncing `.github/workflows/*`).',
+      'GITHUB_TOKEN cannot push `.github/workflows/*`. Use a classic GH_PAT with repo + workflow scopes',
+      '(or fine-grained Workflows: Read and write) as the GH_PAT Actions secret, then re-run.',
       'Do not re-run agents until push works — prior runs wasted tokens on an unpushable result.',
       `Original: ${original}`,
     ].join(' ')
@@ -513,10 +514,13 @@ export function openQuestionsPath(runId: string): string {
 }
 
 function resolveGhToken(): string | undefined {
-  // Prefer GH_TOKEN (Actions github.token). Ignore GH_PAT / UPSTREAM_SYNC_GH_TOKEN so an
-  // expired repo secret cannot override the working Actions token.
-  const value = process.env.GH_TOKEN?.trim()
-  return value || undefined
+  // Prefer validated PAT env vars (set by CI fail-fast). GITHUB_TOKEN alone cannot
+  // push `.github/workflows/*` — that requires a PAT with the workflow scope.
+  for (const key of ['GH_PAT', 'UPSTREAM_SYNC_GH_TOKEN', 'GH_TOKEN'] as const) {
+    const value = process.env[key]?.trim()
+    if (value) return value
+  }
+  return undefined
 }
 
 export function runGh(args: string[]): string {

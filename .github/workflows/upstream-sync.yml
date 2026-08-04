@@ -10,8 +10,10 @@ name: Upstream Sync
 #
 # Repo Variables (Settings → Variables → Actions): UPSTREAM_REMOTE, UPSTREAM_REPO,
 # UPSTREAM_BRANCH, UPSTREAM_SYNC_TARGET_BRANCH, UPSTREAM_SYNC_PR_REVIEWERS.
-# Secrets (Settings → Secrets → Actions): ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN)
-# / OPENAI_API_KEY when agents run. GitHub auth uses Actions GITHUB_TOKEN only.
+# Secrets (Settings → Secrets → Actions): GH_PAT or UPSTREAM_SYNC_GH_TOKEN (classic
+# ghp_* with `repo` + `workflow` scopes — required to push `.github/workflows/*`);
+# ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN) / OPENAI_API_KEY when agents run.
+# Note: Actions GITHUB_TOKEN can never push workflow file updates (platform rule).
 
 on:
   push:
@@ -148,29 +150,75 @@ jobs:
     timeout-minutes: 360
     permissions: write-all
     env:
-      # Same-repo sync PRs: Actions GITHUB_TOKEN with write-all (incl. workflows).
-      # Do not prefer GH_PAT — an expired secret would override and break the run.
+      # Default GH_TOKEN for early steps. Fail-fast overrides GITHUB_ENV with a
+      # validated PAT (required to push `.github/workflows/*` — GITHUB_TOKEN cannot).
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+          # Always checkout with GITHUB_TOKEN so an expired PAT secret cannot break clone.
+          # Fail-fast then swaps git HTTP auth to a validated PAT for pushes.
           token: ${{ github.token }}
 
       - name: Fail fast credentials
         env:
           SKIP_AGENT: ${{ needs.gate.outputs.skip_agent }}
           AGENT_PROVIDER: ${{ needs.gate.outputs.agent_provider }}
+          CANDIDATE_GH_PAT: ${{ secrets.GH_PAT }}
+          CANDIDATE_UPSTREAM_SYNC_GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_GH_TOKEN }}
+          CANDIDATE_GITHUB_TOKEN: ${{ github.token }}
           HAS_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
           HAS_CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
         run: |
-          if ! gh api "repos/${GITHUB_REPOSITORY}" --jq .full_name >/dev/null 2>&1; then
-            echo "github.token cannot access ${GITHUB_REPOSITORY}."
+          token_repo_ok() {
+            local token="$1"
+            [ -n "$token" ] || return 1
+            GH_TOKEN="$token" gh api "repos/${GITHUB_REPOSITORY}" --jq .full_name >/dev/null 2>&1
+          }
+
+          selected_source=""
+          selected_token=""
+
+          if token_repo_ok "$CANDIDATE_GH_PAT"; then
+            selected_source=GH_PAT
+            selected_token="$CANDIDATE_GH_PAT"
+          elif token_repo_ok "$CANDIDATE_UPSTREAM_SYNC_GH_TOKEN"; then
+            selected_source=UPSTREAM_SYNC_GH_TOKEN
+            selected_token="$CANDIDATE_UPSTREAM_SYNC_GH_TOKEN"
+          else
+            if [ -n "$CANDIDATE_GH_PAT" ] || [ -n "$CANDIDATE_UPSTREAM_SYNC_GH_TOKEN" ]; then
+              echo "::error::GH_PAT / UPSTREAM_SYNC_GH_TOKEN is set but invalid or expired."
+            else
+              echo "::error::Missing GH_PAT / UPSTREAM_SYNC_GH_TOKEN."
+            fi
+            echo "GITHUB_TOKEN cannot push updates under .github/workflows/ (platform rule)."
+            echo "Add a classic ghp_* PAT with repo + workflow scopes as GH_PAT under Settings → Secrets → Actions."
             exit 1
           fi
-          echo "GitHub token source: github.token"
+
+          # Classic PATs advertise scopes; fine-grained tokens omit the header (probe covers them).
+          scopes_header=$(GH_TOKEN="$selected_token" gh api -i user 2>&1 | tr -d '\r' | grep -i '^x-oauth-scopes:' || true)
+          if [ -n "$scopes_header" ] && ! echo "$scopes_header" | grep -qi 'workflow'; then
+            echo "::error::${selected_source} is missing the workflow scope (required to push .github/workflows/*)."
+            echo "Recreate the classic PAT with repo + workflow, update the secret, then re-run."
+            exit 1
+          fi
+
+          echo "GitHub token source: $selected_source"
+          echo "GH_TOKEN=$selected_token" >> "$GITHUB_ENV"
+          if [ "$selected_source" = "GH_PAT" ]; then
+            echo "GH_PAT=$selected_token" >> "$GITHUB_ENV"
+          else
+            echo "UPSTREAM_SYNC_GH_TOKEN=$selected_token" >> "$GITHUB_ENV"
+          fi
+
+          # Replace checkout's GITHUB_TOKEN auth so git push uses the PAT.
+          git config --unset-all http.https://github.com/.extraheader || true
+          basic_auth="$(printf 'x-access-token:%s' "$selected_token" | base64 | tr -d '\n')"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ${basic_auth}"
 
           if [ "$SKIP_AGENT" = "true" ]; then
             exit 0
@@ -221,7 +269,7 @@ jobs:
           git config user.name "upstream-sync[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      # Fail before agents spend tokens if GITHUB_TOKEN cannot push workflow files.
+      # Fail before agents spend tokens if the push token cannot update workflow files.
       - name: Probe workflows push permission
         if: needs.gate.outputs.skip_agent != 'true'
         run: |
@@ -239,13 +287,13 @@ jobs:
           }
           trap cleanup EXIT
           mkdir -p .github/workflows
-          printf '# upstream-sync GITHUB_TOKEN workflows permission probe\n' \
+          printf '# upstream-sync workflows permission probe\n' \
             > .github/workflows/.upstream-sync-perm-probe.yml
           git add .github/workflows/.upstream-sync-perm-probe.yml
-          git commit --no-verify -m "chore: probe GITHUB_TOKEN workflows permission"
+          git commit --no-verify -m "chore: probe workflows push permission"
           if ! git push -u origin "HEAD:${probe_branch}"; then
-            echo "::error::GITHUB_TOKEN cannot push workflow file updates."
-            echo "Set workflow permissions to write-all (or at least workflows: write), then re-run."
+            echo "::error::Push token cannot update workflow files under .github/workflows/."
+            echo "Use a classic GH_PAT (repo + workflow scopes) or a fine-grained PAT with Workflows: Read and write."
             echo "Failing now so agents do not burn tokens on a push that will be rejected."
             exit 1
           fi
@@ -280,9 +328,9 @@ jobs:
         run: |
           echo "::group::Diagnose GitHub token"
           if gh api user --jq '{login: .login, type: .type}' 2>/dev/null; then
-            gh api -i user 2>&1 | grep -i '^x-oauth-scopes:' || echo "No x-oauth-scopes header (fine-grained or GITHUB_TOKEN)"
+            gh api -i user 2>&1 | grep -i '^x-oauth-scopes:' || echo "No x-oauth-scopes header (fine-grained PAT)"
           else
-            echo "Token has no /user identity (expected for github.token)"
+            echo "Token has no /user identity"
           fi
           gh api "repos/${GITHUB_REPOSITORY}" --jq '{full_name, permissions: .permissions}'
           echo "::endgroup::"
@@ -292,7 +340,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          # Job-level GH_TOKEN is github.token. Do not inject GH_PAT here.
+          # GH_TOKEN / GH_PAT come from Fail fast credentials via GITHUB_ENV.
           UPSTREAM_SYNC_AGENT: ${{ needs.gate.outputs.agent_provider }}
           UPSTREAM_SYNC_FORCE: ${{ needs.gate.outputs.force }}
           UPSTREAM_SYNC_RESUME: ${{ needs.gate.outputs.resume }}

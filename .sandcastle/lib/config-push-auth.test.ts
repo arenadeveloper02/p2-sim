@@ -26,7 +26,7 @@ describe('throwIfRemotePushAuthError', () => {
         new Error('refusing to allow a GitHub App without `workflows` permission'),
         'Push sync branch'
       )
-    ).toThrow(/write-all/)
+    ).toThrow(/GH_PAT/)
   })
 
   it('does nothing for non-auth errors', () => {
