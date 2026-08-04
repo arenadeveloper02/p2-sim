@@ -9,7 +9,6 @@ import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { client } from '@/lib/auth/auth-client'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
-import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 import {
@@ -23,7 +22,6 @@ import {
   PasswordAuth,
   // SSOAuth,
   UnauthorizedEmailError,
-  VoiceInterface,
 } from '@/app/(interfaces)/chat/components'
 import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
@@ -35,11 +33,7 @@ import {
   DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
   DEPLOYED_CHAT_INPUT_PLACEHOLDER,
 } from '@/app/(interfaces)/chat/constants'
-import {
-  useAudioStreaming,
-  useChatKeyboardShortcuts,
-  useChatStreaming,
-} from '@/app/(interfaces)/chat/hooks'
+import { useChatKeyboardShortcuts, useChatStreaming } from '@/app/(interfaces)/chat/hooks'
 import { downloadTextFile, exportChatAsMarkdown } from '@/app/(interfaces)/chat/utils/export-chat'
 // import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import {
@@ -78,15 +72,6 @@ interface ChatConfig {
   inputFormat?: InputFormatField[]
   /** Workspace IDs the current user can access; when set, "View in Knowledge Base" links are shown for KB refs in that workspace */
   userWorkspaceIds?: string[]
-}
-
-interface AudioStreamingOptions {
-  voiceId: string
-  onError: (error: Error) => void
-}
-
-const DEFAULT_VOICE_SETTINGS = {
-  voiceId: 'EXAVITQu4vr4xnSDxMaL', // Default ElevenLabs voice (Bella)
 }
 
 interface ChatFilePayload {
@@ -143,30 +128,6 @@ function fileToBase64(file: File): Promise<string> {
     reader.onerror = reject
     reader.readAsDataURL(file)
   })
-}
-
-/**
- * Creates an audio stream handler for text-to-speech conversion
- * @param streamTextToAudio - Function to stream text to audio
- * @param voiceId - The voice ID to use for TTS
- * @returns Audio stream handler function or undefined
- */
-function createAudioStreamHandler(
-  streamTextToAudio: (text: string, options: AudioStreamingOptions) => Promise<void>,
-  voiceId: string
-) {
-  return async (text: string) => {
-    try {
-      await streamTextToAudio(text, {
-        voiceId,
-        onError: (error: Error) => {
-          logger.error('Audio streaming error:', error)
-        },
-      })
-    } catch (error) {
-      logger.error('TTS error:', error)
-    }
-  }
 }
 
 function throttle<T extends (...args: any[]) => any>(func: T, delay: number): T {
@@ -256,11 +217,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     [messages]
   )
 
-  const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
-  const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
-    useChatStreaming()
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const { isPlayingAudio, streamTextToAudio, stopAudio } = useAudioStreaming(audioContextRef)
+  const { isStreamingResponse, stopStreaming, handleStreamedResponse } = useChatStreaming()
 
   const [chatDepartment, setChatDepartment] = useState<string | null>('Default')
 
@@ -759,7 +716,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   // Handle sending a message
   const handleSendMessage = async (
     messageParam?: string,
-    isVoiceInput = false,
+    _isVoiceInput = false,
     files?: Array<{
       id: string
       name: string
@@ -785,7 +742,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
     logger.info('Sending message:', {
       messageToSend,
-      isVoiceInput,
       conversationId,
       filesCount: (files?.length ?? 0) + effectiveGeneratedImages.length,
     })
@@ -924,34 +880,16 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         throw new Error('Response body is missing')
       }
 
-      // Use the streaming hook with audio support
-      const shouldPlayAudio = isVoiceInput || isVoiceFirstMode
-      const audioHandler = shouldPlayAudio
-        ? createAudioStreamHandler(streamTextToAudio, DEFAULT_VOICE_SETTINGS.voiceId)
-        : undefined
-
-      logger.info('Starting to handle streamed response:', { shouldPlayAudio })
+      logger.info('Starting to handle streamed response')
       setIsConversationFinished(true)
 
-      await handleStreamedResponse(
-        response,
-        setMessages,
-        setIsLoading,
-        scrollToBottom,
-        userHasScrolled,
-        {
-          voiceSettings: {
-            isVoiceEnabled: shouldPlayAudio,
-            voiceId: DEFAULT_VOICE_SETTINGS.voiceId,
-            autoPlayResponses: shouldPlayAudio,
-          },
-          audioStreamHandler: audioHandler,
-          outputConfigs: chatConfig?.outputConfigs,
-        }
-      )
+      await handleStreamedResponse(response, setMessages, setIsLoading, scrollToBottom, {
+        outputConfigs: chatConfig?.outputConfigs,
+        abortController,
+      })
       deployedChatPromptSentEvent({
         'Prompt Content': messageToSend,
-        'Prompt Type': isVoiceInput ? `Voice` : `Text`,
+        'Prompt Type': 'Text',
         'Conversation ID': conversationId,
         'Attachment Used': combinedFiles.length > 0 ? 'True' : 'False',
       })
@@ -1032,46 +970,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       }
     },
     [identifier]
-  )
-
-  // Stop audio when component unmounts or when streaming is stopped
-  useEffect(() => {
-    return () => {
-      stopAudio()
-      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        audioContextRef.current.close()
-      }
-    }
-  }, [stopAudio])
-
-  // Voice interruption - stop audio when user starts speaking
-  const handleVoiceInterruption = useCallback(() => {
-    stopAudio()
-
-    // Stop any ongoing streaming response
-    if (isStreamingResponse) {
-      stopStreaming(setMessages)
-    }
-  }, [isStreamingResponse, stopStreaming, setMessages, stopAudio])
-
-  // Handle voice mode activation
-  const handleVoiceStart = useCallback(() => {
-    setIsVoiceFirstMode(true)
-  }, [])
-
-  // Handle exiting voice mode
-  const handleExitVoiceMode = useCallback(() => {
-    setIsVoiceFirstMode(false)
-    stopAudio() // Stop any playing audio when exiting
-  }, [stopAudio])
-
-  // Handle voice transcript from voice-first interface
-  const handleVoiceTranscript = useCallback(
-    (transcript: string) => {
-      logger.info('Received voice transcript:', transcript)
-      handleSendMessage(transcript, true)
-    },
-    [handleSendMessage]
   )
 
   // Get custom fields from inputFormat (excluding reserved fields: input, conversationId, files)
@@ -1594,27 +1492,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     return <ChatLoadingState />
   }
 
-  // Voice-first mode interface
-  if (isVoiceFirstMode) {
-    return (
-      <VoiceInterface
-        onCallEnd={handleExitVoiceMode}
-        onVoiceTranscript={handleVoiceTranscript}
-        onVoiceStart={noop}
-        onVoiceEnd={noop}
-        onInterrupt={handleVoiceInterruption}
-        isStreaming={isStreamingResponse}
-        isPlayingAudio={isPlayingAudio}
-        audioContextRef={audioContextRef}
-        messages={messages.map((msg) => ({
-          content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-          type: msg.type,
-        }))}
-      />
-    )
-  }
-
-  // Standard text-based chat interface
   return (
     <ToastProvider>
       <div
@@ -1717,11 +1594,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                   isLoading={isLoading}
                   insertText={askInChatText}
                   onInsertConsumed={() => setAskInChatText('')}
-                  onSubmit={(value, isVoiceInput, files) => {
-                    void handleSendMessage(value, isVoiceInput, files)
+                  onSubmit={(value, _isVoiceInput, files) => {
+                    void handleSendMessage(value, false, files)
                   }}
                   onStopStreaming={() => stopStreaming(setMessages)}
-                  onVoiceStart={handleVoiceStart}
                   selectedGeneratedImages={effectiveGeneratedImages}
                   onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
                   inputWrapperRef={chatInputWrapperRef}
@@ -1765,7 +1641,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                         onInsertConsumed={() => setAskInChatText('')}
                         onSubmit={(
                           value: string,
-                          isVoiceInput?: boolean,
+                          _isVoiceInput?: boolean,
                           files?: Array<{
                             id: string
                             name: string
@@ -1775,11 +1651,10 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                             dataUrl?: string
                           }>
                         ) => {
-                          void handleSendMessage(value, isVoiceInput, files)
+                          void handleSendMessage(value, false, files)
                         }}
                         isStreaming={isLoading || isStreamingResponse}
                         onStopStreaming={() => stopStreaming(setMessages)}
-                        onVoiceStart={handleVoiceStart}
                         selectedGeneratedImages={effectiveGeneratedImages}
                         onRemoveSelectedGeneratedImage={removeSelectedGeneratedImage}
                       />
