@@ -8,6 +8,7 @@ import {
   formatBuildLogForFixAgent,
   formatVerifyResults,
   formatVerifyStatusLine,
+  runShellCommandStreaming,
   type VerifyResult,
 } from './verify'
 
@@ -34,6 +35,20 @@ const buildPassedAdvisoryFailed: VerifyResult[] = [
   { command: 'bun run test', success: true, output: 'ok', blocking: false },
   { command: 'bun run build', success: true, output: 'compiled', blocking: true },
 ]
+
+describe('runShellCommandStreaming', () => {
+  test('captures stdout and success', () => {
+    const result = runShellCommandStreaming('printf hello', { heartbeatMs: 60_000 })
+    expect(result.success).toBe(true)
+    expect(result.output).toContain('hello')
+  })
+
+  test('captures non-zero exit', () => {
+    const result = runShellCommandStreaming('printf fail-out; exit 7', { heartbeatMs: 60_000 })
+    expect(result.success).toBe(false)
+    expect(result.output).toContain('fail-out')
+  })
+})
 
 describe('advisory verification formatting', () => {
   test('status line shows per-command pass/fail', () => {

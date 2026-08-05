@@ -74,8 +74,11 @@ on:
     types: [created]
 
 concurrency:
-  group: upstream-sync
-  cancel-in-progress: false
+  # Push only registers workflow_dispatch on the branch (gate exits should_run=false).
+  # Keep those out of the harness group so a sandcastle fix push cannot queue behind /
+  # visually freeze a live agent run.
+  group: ${{ github.event_name == 'push' && format('upstream-sync-push-{0}', github.ref) || 'upstream-sync' }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 # write-all: sync pushes branches that may update workflows, create PRs/comments,
 # request reviewers, and must not die mid-run on a missing GITHUB_TOKEN scope
@@ -92,6 +95,16 @@ env:
   # GitHub usernames (comma-separated). Set repo variable UPSTREAM_SYNC_PR_REVIEWERS
   # to the GitHub login for utcarsh.srivastava@position2.com (emails cannot be used).
   UPSTREAM_SYNC_PR_REVIEWERS: ${{ vars.UPSTREAM_SYNC_PR_REVIEWERS }}
+  # Codex/`git`/`gh` must never block on `less` in CI (pager stall = silent hang).
+  CI: 'true'
+  PAGER: cat
+  GIT_PAGER: cat
+  GH_PAGER: cat
+  MANPAGER: cat
+  LESS: FRX
+  GIT_TERMINAL_PROMPT: '0'
+  UPSTREAM_SYNC_CHILD_IDLE_TIMEOUT_SECONDS: '1800'
+  UPSTREAM_SYNC_IDLE_TIMEOUT_SECONDS: '3600'
 
 jobs:
   gate:
@@ -459,11 +472,9 @@ jobs:
           GITHUB_REF_NAME: ${{ github.ref_name }}
           TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
         run: |
-          echo "::group::Upstream sync harness"
           set +e
           bun run upstream-sync
           status=$?
-          echo "::endgroup::"
           exit $status
 
       # Always publish a detailed Summary tab (status, sync context, conflicts,

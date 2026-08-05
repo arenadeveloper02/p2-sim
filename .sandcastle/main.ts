@@ -23,7 +23,9 @@ import { sleep } from '@sim/utils/helpers'
 import { backoffWithJitter } from '@sim/utils/retry'
 import {
   assertAgentCredentials,
+  ensureNonInteractivePagers,
   isTransientModelCapacityError,
+  resolveAgentIdleTimeoutSeconds,
   resolveAgents,
   resolveCapacityRetryConfig,
 } from './lib/agents'
@@ -543,6 +545,10 @@ async function runAgentPrompt(options: {
   const logPath = join(logDir, `${safeName}.log`)
   const model = resolveAgentModel(options.agentKind, options.agents)
   const capacityRetry = resolveCapacityRetryConfig()
+  const idleTimeoutSeconds = resolveAgentIdleTimeoutSeconds(options.agentKind)
+  console.log(
+    `[agent] starting ${options.name} (${options.agentKind}, model=${model}, idleTimeout=${idleTimeoutSeconds}s)`
+  )
 
   let lastError: unknown
   for (let attempt = 1; attempt <= capacityRetry.maxAttempts; attempt++) {
@@ -558,7 +564,7 @@ async function runAgentPrompt(options: {
         sandbox: noSandbox(),
         branchStrategy: { type: 'head' },
         hooks: SKIP_SANDCASTLE_INSTALL_HOOKS,
-        idleTimeoutSeconds: Number(process.env.UPSTREAM_SYNC_IDLE_TIMEOUT_SECONDS ?? 7200),
+        idleTimeoutSeconds,
         completionTimeoutSeconds: 120,
         logging: {
           type: 'file',
@@ -934,6 +940,14 @@ function startLogGroup(name: string): () => void {
   }
 }
 
+/** Visible outside collapsed log groups — shows up in the job Annotations list. */
+function logHarnessPhase(phase: string, detail: string): void {
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    console.log(`::notice title=upstream-sync ${phase}::${detail}`)
+  }
+  console.log(`[phase] ${phase} — ${detail}`)
+}
+
 function ensureActiveDraftPr(options: {
   existingPrNumber: number
   mergeBase: string
@@ -991,6 +1005,7 @@ async function main(): Promise<void> {
   let endGroup = startLogGroup('detect/baseline')
   try {
     ensureUpstreamSyncScaffold()
+    ensureNonInteractivePagers()
     assertAgentCredentials()
     ensureSandcastleEnvFile()
     fetchUpstream()
@@ -1663,11 +1678,12 @@ async function main(): Promise<void> {
 
     let remaining = listConflictFiles()
     if (!SKIP_AGENT) {
-      console.log(
+      const finalizeDetail =
         remaining.length > 0
           ? `${remaining.length} conflict(s) left after clusters — running finalize/coherence agent.`
           : 'Conflicts clear — running always-on finalize/coherence agent.'
-      )
+      console.log(finalizeDetail)
+      logHarnessPhase('finalize', finalizeDetail)
       remaining = await runFinalizeMergeAgent({
         runId,
         syncBranch,
@@ -1748,6 +1764,7 @@ async function main(): Promise<void> {
       return
     }
 
+    logHarnessPhase('merge-commit', 'Conflicts cleared — creating merge commit')
     runGit(['add', '-A'])
     if (hasStagedChanges()) {
       try {
@@ -1828,6 +1845,10 @@ async function main(): Promise<void> {
     }
 
     endGroup()
+    logHarnessPhase(
+      'verify',
+      'format + check / lint / test / build (streamed; heartbeats every 60s)'
+    )
     endGroup = startLogGroup('verify')
 
     const formatResult = autofixFormat()

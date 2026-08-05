@@ -8,13 +8,18 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import {
   assertAgentCredentials,
   CHILD_CLAUDE_COST_ENV,
+  CODEX_CI_ENV,
   DEFAULT_CAPACITY_RETRY_ATTEMPTS,
   DEFAULT_CAPACITY_RETRY_BASE_MS,
   DEFAULT_CAPACITY_RETRY_MAX_MS,
+  DEFAULT_CHILD_IDLE_TIMEOUT_SECONDS,
   DEFAULT_OPENAI_CHILD_MODEL,
+  DEFAULT_PARENT_IDLE_TIMEOUT_SECONDS,
   DEFAULT_PARENT_MODEL,
   ensureCodexApiKeyAuth,
+  ensureNonInteractivePagers,
   isTransientModelCapacityError,
+  resolveAgentIdleTimeoutSeconds,
   resolveAgents,
   resolveCapacityRetryConfig,
   resolveChildModel,
@@ -48,6 +53,16 @@ describe('resolveAgents', () => {
     expect(bundle.childModel).toBe(DEFAULT_OPENAI_CHILD_MODEL)
     expect(resolveParentModel()).toBe('claude-opus-5')
     expect(resolveChildModel()).toBe('gpt-5.6-luna')
+  })
+
+  test('Codex children disable interactive pagers', () => {
+    const bundle = resolveAgents()
+    const childEnv = (bundle.child as { env?: Record<string, string> }).env
+    expect(childEnv?.PAGER).toBe(CODEX_CI_ENV.PAGER)
+    expect(childEnv?.GIT_PAGER).toBe(CODEX_CI_ENV.GIT_PAGER)
+    expect(childEnv?.GH_PAGER).toBe(CODEX_CI_ENV.GH_PAGER)
+    expect(childEnv?.CI).toBe(CODEX_CI_ENV.CI)
+    expect(childEnv?.GIT_TERMINAL_PROMPT).toBe(CODEX_CI_ENV.GIT_TERMINAL_PROMPT)
   })
 
   test('child Claude agent disables background Task fan-out via env', () => {
@@ -134,6 +149,53 @@ describe('isTransientModelCapacityError', () => {
     expect(isTransientModelCapacityError(new Error('401 Missing bearer'))).toBe(false)
     expect(isTransientModelCapacityError(new Error('insufficient_quota'))).toBe(false)
     expect(isTransientModelCapacityError(new Error('merge conflict unresolved'))).toBe(false)
+  })
+})
+
+describe('resolveAgentIdleTimeoutSeconds', () => {
+  afterEach(() => {
+    process.env.UPSTREAM_SYNC_IDLE_TIMEOUT_SECONDS = undefined
+    process.env.UPSTREAM_SYNC_CHILD_IDLE_TIMEOUT_SECONDS = undefined
+  })
+
+  test('defaults child to 30 minutes and parent to 1 hour', () => {
+    expect(resolveAgentIdleTimeoutSeconds('child', {})).toBe(DEFAULT_CHILD_IDLE_TIMEOUT_SECONDS)
+    expect(resolveAgentIdleTimeoutSeconds('parent', {})).toBe(DEFAULT_PARENT_IDLE_TIMEOUT_SECONDS)
+    expect(DEFAULT_CHILD_IDLE_TIMEOUT_SECONDS).toBe(1800)
+    expect(DEFAULT_PARENT_IDLE_TIMEOUT_SECONDS).toBe(3600)
+  })
+
+  test('honors env overrides', () => {
+    expect(
+      resolveAgentIdleTimeoutSeconds('child', { UPSTREAM_SYNC_CHILD_IDLE_TIMEOUT_SECONDS: '120' })
+    ).toBe(120)
+    expect(
+      resolveAgentIdleTimeoutSeconds('parent', { UPSTREAM_SYNC_IDLE_TIMEOUT_SECONDS: '900' })
+    ).toBe(900)
+  })
+})
+
+describe('ensureNonInteractivePagers', () => {
+  test('forces pager env and shadows less with cat', () => {
+    const previousPath = process.env.PATH
+    const previousPager = process.env.PAGER
+    try {
+      const binDir = ensureNonInteractivePagers()
+      expect(process.env.PAGER).toBe('cat')
+      expect(process.env.GIT_PAGER).toBe('cat')
+      expect(process.env.GH_PAGER).toBe('cat')
+      expect(process.env.PATH?.startsWith(`${binDir}:`)).toBe(true)
+      const result = Bun.spawnSync([join(binDir, 'less')], {
+        stdin: new TextEncoder().encode('pager-body\n'),
+        stdout: 'pipe',
+        stderr: 'pipe',
+      })
+      expect(result.exitCode).toBe(0)
+      expect(new TextDecoder().decode(result.stdout)).toBe('pager-body\n')
+    } finally {
+      process.env.PATH = previousPath
+      process.env.PAGER = previousPager
+    }
   })
 })
 

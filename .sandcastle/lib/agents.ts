@@ -1,5 +1,5 @@
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { chmodSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentProvider } from '@ai-hero/sandcastle'
 import { claudeCode, codex } from '@ai-hero/sandcastle'
@@ -33,7 +33,23 @@ export const CHILD_CLAUDE_COST_ENV = {
   CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS: '1',
 } as const
 
+/**
+ * Codex (and git subprocesses it spawns) will sit forever on `less` in CI.
+ * Force a non-interactive pager so a `git log`/`gh` call cannot stall the job.
+ */
+export const CODEX_CI_ENV = {
+  CI: '1',
+  PAGER: 'cat',
+  GIT_PAGER: 'cat',
+  GH_PAGER: 'cat',
+  MANPAGER: 'cat',
+  LESS: 'FRX',
+  GIT_TERMINAL_PROMPT: '0',
+} as const
+
 export const DEFAULT_PARENT_MODEL = 'claude-opus-5'
+export const DEFAULT_PARENT_IDLE_TIMEOUT_SECONDS = 3600
+export const DEFAULT_CHILD_IDLE_TIMEOUT_SECONDS = 1800
 export const DEFAULT_ANTHROPIC_CHILD_MODEL = 'claude-sonnet-5'
 export const DEFAULT_OPENAI_CHILD_MODEL = 'gpt-5.6-luna'
 export const DEFAULT_OPENAI_PARENT_MODEL = 'gpt-5.6-luna'
@@ -94,6 +110,26 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
   const n = Number(raw)
   if (!Number.isFinite(n) || n < 1) return fallback
   return Math.floor(n)
+}
+
+/**
+ * Sandcastle kills an agent that emits no output for this many seconds.
+ * Children default to 30 minutes; parent grill/finalize defaults to 1 hour.
+ */
+export function resolveAgentIdleTimeoutSeconds(
+  agentKind: 'parent' | 'child',
+  env: NodeJS.ProcessEnv = process.env
+): number {
+  if (agentKind === 'child') {
+    return parsePositiveInt(
+      env.UPSTREAM_SYNC_CHILD_IDLE_TIMEOUT_SECONDS,
+      DEFAULT_CHILD_IDLE_TIMEOUT_SECONDS
+    )
+  }
+  return parsePositiveInt(
+    env.UPSTREAM_SYNC_IDLE_TIMEOUT_SECONDS,
+    DEFAULT_PARENT_IDLE_TIMEOUT_SECONDS
+  )
 }
 
 /** Codex effort including GPT-5.6 `max` (Sandcastle's CodexOptions type still stops at xhigh). */
@@ -178,13 +214,41 @@ function createClaudeChild(model: string): AgentProvider {
   return claudeCode(model, {
     permissionMode: 'bypassPermissions',
     effort: 'medium',
-    env: { ...CHILD_CLAUDE_COST_ENV },
+    env: { ...CODEX_CI_ENV, ...CHILD_CLAUDE_COST_ENV },
   })
+}
+
+/**
+ * Force every pager in this process (and child agents) to `cat`.
+ * Also shadows `less`/`more` on PATH so a hardcoded pager binary cannot block CI.
+ */
+export function ensureNonInteractivePagers(): string {
+  for (const [key, value] of Object.entries(CODEX_CI_ENV)) {
+    process.env[key] = value
+  }
+
+  const binDir = join(tmpdir(), 'upstream-sync-pager-bin')
+  mkdirSync(binDir, { recursive: true })
+  const shim = `#!/bin/sh\nexec cat "$@"\n`
+  for (const name of ['less', 'more']) {
+    const path = join(binDir, name)
+    writeFileSync(path, shim, { mode: 0o755 })
+    chmodSync(path, 0o755)
+  }
+
+  const pathValue = process.env.PATH ?? ''
+  if (!pathValue.split(':').includes(binDir)) {
+    process.env.PATH = `${binDir}:${pathValue}`
+  }
+  return binDir
 }
 
 function createCodexAgent(model: string, effort: CodexEffort): AgentProvider {
   // double-cast-allowed: Sandcastle CodexOptions lag GPT-5.6 `max` effort
-  return codex(model, { effort } as { effort: 'xhigh' })
+  return codex(model, {
+    effort,
+    env: { ...CODEX_CI_ENV },
+  } as { effort: 'xhigh'; env: Record<string, string> })
 }
 
 /**
