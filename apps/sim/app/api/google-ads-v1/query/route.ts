@@ -17,20 +17,18 @@ const logger = createLogger('GoogleAdsV1API')
 
 /**
  * Resolves account input to account key (supports both keys and numeric IDs)
- * Updated: Added numeric ID support for better account resolution
  */
 function resolveAccountKey(
   accountInput: string,
   googleAdsAccounts: Record<string, ChannelAccount>
 ): string {
-  // Try direct key match first (gentle_dental)
   if (googleAdsAccounts[accountInput]) {
     return accountInput
   }
 
-  // If not found, search by numeric ID
+  const normalizedInput = accountInput.replace(/-/g, '')
   const foundAccount = Object.entries(googleAdsAccounts).find(
-    ([key, account]) => account.id === accountInput
+    ([, account]) => account.id === accountInput || account.id === normalizedInput
   )
 
   if (foundAccount) {
@@ -38,8 +36,21 @@ function resolveAccountKey(
     return foundAccount[0]
   }
 
-  // Return original if not found (will show error in validation)
   return accountInput
+}
+
+/**
+ * Picks the first non-empty account identifier from the request body.
+ * Agents may pass `accounts`, `accountId`, or `customerId`.
+ */
+function resolveAccountInput(body: GoogleAdsV1Request): string | undefined {
+  for (const value of [body.accounts, body.accountId, body.customerId]) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      if (trimmed) return trimmed
+    }
+  }
+  return undefined
 }
 
 /**
@@ -49,7 +60,7 @@ function resolveAccountKey(
  *
  * Request body:
  * - query: Natural language query (e.g., "show campaign performance last 7 days")
- * - accounts: Account key from GOOGLE_ADS_ACCOUNTS
+ * - accounts | accountId | customerId: Account key or numeric Google Ads account ID
  *
  * Response:
  * - success: boolean
@@ -71,15 +82,27 @@ export async function POST(request: NextRequest) {
     const body: GoogleAdsV1Request = await request.json()
     logger.info(`[${requestId}] Request body received`, { body })
 
-    const { query, accounts, workspaceId: bodyWorkspaceId } = body
+    const { query, workspaceId: bodyWorkspaceId } = body
     const workspaceId =
       bodyWorkspaceId ?? request.nextUrl.searchParams.get('workspaceId') ?? undefined
     const userId = request.nextUrl.searchParams.get('userId') ?? undefined
+    const accounts = resolveAccountInput(body)
 
     // Validate query
     if (!query) {
       logger.error(`[${requestId}] No query provided in request`)
       return NextResponse.json({ error: 'No query provided' }, { status: 400 })
+    }
+
+    if (!accounts) {
+      logger.error(`[${requestId}] No account identifier provided in request`)
+      return NextResponse.json(
+        {
+          error:
+            'Google Ads account is required. Pass accounts, accountId, or customerId (account key or numeric ID).',
+        },
+        { status: 400 }
+      )
     }
 
     const googleAdsAccounts = await getGoogleAdsAccounts(workspaceId, userId)

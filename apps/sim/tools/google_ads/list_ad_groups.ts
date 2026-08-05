@@ -2,7 +2,11 @@ import type {
   GoogleAdsListAdGroupsParams,
   GoogleAdsListAdGroupsResponse,
 } from '@/tools/google_ads/types'
-import { validateNumericId, validateStatus } from '@/tools/google_ads/types'
+import {
+  resolveGoogleAdsCustomerId,
+  validateNumericId,
+  validateStatus,
+} from '@/tools/google_ads/types'
 import type { ToolConfig } from '@/tools/types'
 
 export const googleAdsListAdGroupsTool: ToolConfig<
@@ -30,7 +34,7 @@ export const googleAdsListAdGroupsTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Google Ads customer ID (numeric, no dashes)',
+      description: 'Google Ads customer ID / account ID (numeric, no dashes)',
     },
     developerToken: {
       type: 'string',
@@ -66,7 +70,7 @@ export const googleAdsListAdGroupsTool: ToolConfig<
 
   request: {
     url: (params) => {
-      const customerId = validateNumericId(params.customerId, 'customerId')
+      const customerId = resolveGoogleAdsCustomerId(params)
       return `https://googleads.googleapis.com/v24/customers/${customerId}/googleAds:search`
     },
     method: 'POST',
