@@ -12,6 +12,8 @@ export interface WorkflowAttachmentInput {
   size: number
   type: string
   file: File
+  dataUrl?: string
+  url?: string
 }
 
 export interface UploadedWorkflowAttachment {
@@ -21,7 +23,7 @@ export interface UploadedWorkflowAttachment {
   size: number
   type: string
   key?: string
-  context: 'execution'
+  context: 'execution' | 'agent-generated-images' | 'workspace'
   uploadedAt?: string
   expiresAt?: string
 }
@@ -66,6 +68,44 @@ function normalizeFallbackUpload(
   }
 }
 
+function inferStoredAttachmentContext(key: string): UploadedWorkflowAttachment['context'] {
+  if (key.startsWith('agent-generated-images/')) return 'agent-generated-images'
+  if (key.startsWith('workspace/')) return 'workspace'
+  return 'execution'
+}
+
+/**
+ * Reuses an image already stored in app file serving instead of uploading an empty File.
+ */
+export function reuseStoredWorkflowAttachment(
+  fileData: WorkflowAttachmentInput
+): UploadedWorkflowAttachment | null {
+  const candidate = [fileData.url, fileData.dataUrl].find(
+    (value): value is string => typeof value === 'string' && value.includes('/api/files/serve/')
+  )
+  if (!candidate) return null
+
+  const servePathMatch = candidate.match(/\/api\/files\/serve\/([^?#]+)/)
+  if (!servePathMatch) return null
+
+  let key = servePathMatch[1].replace(/\/+$/, '')
+  try {
+    key = decodeURIComponent(key)
+  } catch {
+    // Keep the encoded key when it is not valid URI encoding.
+  }
+
+  return {
+    id: `file_${Date.now()}_${generateShortId(7)}`,
+    name: fileData.name,
+    url: candidate,
+    size: fileData.size > 0 ? fileData.size : 1,
+    type: fileData.type,
+    key,
+    context: inferStoredAttachmentContext(key),
+  }
+}
+
 /**
  * Uploads every explicit workflow attachment before execution may begin.
  *
@@ -81,6 +121,12 @@ export async function uploadWorkflowAttachments({
   const presignedEndpoint = `/api/files/presigned?type=execution&workflowId=${encodeURIComponent(workflowId)}&executionId=${encodeURIComponent(executionId)}&workspaceId=${encodeURIComponent(workspaceId)}`
 
   for (const fileData of files) {
+    const reusedAttachment = reuseStoredWorkflowAttachment(fileData)
+    if (reusedAttachment) {
+      uploadedFiles.push(reusedAttachment)
+      continue
+    }
+
     try {
       const result = await runUploadStrategy({
         file: fileData.file,
@@ -94,8 +140,8 @@ export async function uploadWorkflowAttachments({
         id: `file_${Date.now()}_${generateShortId(7)}`,
         name: fileData.file.name,
         url: result.path,
-        size: fileData.file.size,
-        type: fileData.file.type,
+        size: fileData.file.size > 0 ? fileData.file.size : fileData.size,
+        type: fileData.file.type || fileData.type,
         key: result.key,
         context: 'execution',
       })

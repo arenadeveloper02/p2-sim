@@ -13,7 +13,6 @@ export interface ImageGenerationParams {
   outputFormat?: string
   moderation?: string
   safetyTolerance?: string
-  numImages?: number
   seed?: number
   enableSafetyChecker?: boolean
   enableWebSearch?: boolean

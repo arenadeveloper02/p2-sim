@@ -25,6 +25,8 @@ describe('ImageGeneratorV2Block', () => {
     expect(schema.properties).toHaveProperty('prompt')
     expect(schema.properties).toHaveProperty('aspectRatio')
     expect(schema.properties).not.toHaveProperty('apiKey')
+    expect(schema.properties).not.toHaveProperty('numImages')
+    expect(schema.properties).not.toHaveProperty('inputImage')
     expect(schema.required).toEqual(expect.arrayContaining(['prompt']))
     expect(schema.required).not.toEqual(expect.arrayContaining(['provider', 'model']))
   })

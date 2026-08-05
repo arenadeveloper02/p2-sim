@@ -1,6 +1,7 @@
 import type { StoredTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/types'
 import type { BlockConfig } from '@/blocks/types'
 import { AGENT_TOOL_BLOCK_TYPES } from '@/blocks/utils'
+import { START_FILES_REF } from '@/executor/constants'
 import type { ToolParameterConfig } from '@/tools/params'
 
 /** Agent tools whose LLM-facing params should not be locked by block UI defaults on add. */
@@ -19,7 +20,7 @@ export function buildInitialAgentToolParams(
   const initialParams: Record<string, unknown> = {}
 
   for (const param of userInputParameters) {
-    if (skipLlmDefaultSeeding && param.visibility === 'user-or-llm') {
+    if (skipLlmDefaultSeeding && param.visibility === 'user-or-llm' && param.id !== 'inputImage') {
       continue
     }
     if (param.uiComponent?.value && initialParams[param.id] === undefined) {
@@ -29,6 +30,13 @@ export function buildInitialAgentToolParams(
           : param.uiComponent.value
       initialParams[param.id] = defaultValue
     }
+  }
+
+  if (
+    (blockType === 'image_generator_v2' || blockType === 'image_generator') &&
+    initialParams.inputImage === undefined
+  ) {
+    initialParams.inputImage = START_FILES_REF
   }
 
   return initialParams

@@ -97,7 +97,7 @@ async function buildChatFilePayload(file: {
   const normalizedSize = file.size > 0 ? file.size : 1
   const dataUrl = file.dataUrl?.trim() ?? ''
   const directUrl = file.url?.trim() ?? ''
-  const serveUrl = [dataUrl, directUrl].find((value) => value.includes('/api/files/serve/'))
+  const serveUrl = [directUrl, dataUrl].find((value) => value.includes('/api/files/serve/'))
   if (serveUrl) {
     const url = serveUrl.startsWith('http')
       ? serveUrl
@@ -767,6 +767,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
           type: image.type,
           file: image.file,
           dataUrl: image.dataUrl,
+          url: image.url,
         })),
       ]
 

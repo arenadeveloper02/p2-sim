@@ -6,7 +6,10 @@ import { sleep } from '@sim/utils/helpers'
 import { truncate } from '@sim/utils/string'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { normalizeStringRecord, normalizeWorkflowVariables } from '@/lib/core/utils/records'
-import { normalizeReferenceFileParams } from '@/lib/image-generation/reference-files'
+import {
+  applyAgentChatFilesToImageGeneratorTools,
+  normalizeReferenceFileParams,
+} from '@/lib/image-generation/reference-files'
 import { createMcpToolId } from '@/lib/mcp/utils'
 import {
   type AutoMediaKind,
@@ -150,7 +153,7 @@ export class AgentBlockHandler implements BlockHandler {
 
     const filteredInputs = {
       ...inputs,
-      tools: filteredTools,
+      tools: applyAgentChatFilesToImageGeneratorTools(filteredTools, inputs.files),
       memoryType,
       conversationId: conversationId,
     }
