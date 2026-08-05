@@ -164,6 +164,35 @@ describe('HostedKeyRateLimiter', () => {
       expect(result.envVarName).toBe('GEMINI_API_KEY')
     })
 
+    it('prefers GEMINI_API_KEY over an invalid leftover GOOGLE_API_KEY', async () => {
+      mockAdapter.consumeTokens.mockResolvedValue({
+        allowed: true,
+        tokensRemaining: 9,
+        resetAt: new Date(Date.now() + 60000),
+      } satisfies ConsumeResult)
+
+      process.env.GOOGLE_API_KEY_COUNT = undefined
+      process.env.GOOGLE_API_KEY = 'stale-invalid-google-key'
+      process.env.GOOGLE_API_KEY_1 = undefined
+      process.env.GOOGLE_API_KEY_2 = undefined
+      process.env.GOOGLE_API_KEY_3 = undefined
+      process.env.GEMINI_API_KEY = 'valid-gemini-key'
+      process.env.GEMINI_API_KEY_1 = undefined
+      process.env.GEMINI_API_KEY_2 = undefined
+      process.env.GEMINI_API_KEY_3 = undefined
+
+      const result = await rateLimiter.acquireKey(
+        'google',
+        'GOOGLE_API_KEY',
+        perRequestRateLimit,
+        'workspace-google-prefer'
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.key).toBe('valid-gemini-key')
+      expect(result.envVarName).toBe('GEMINI_API_KEY')
+    })
+
     it('uses a singular hosted key when no numbered pool count is configured', async () => {
       mockAdapter.consumeTokens.mockResolvedValue({
         allowed: true,

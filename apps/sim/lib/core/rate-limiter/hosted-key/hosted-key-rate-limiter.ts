@@ -96,36 +96,47 @@ function pushLegacyEnvKeys(names: string[], prefix: string): void {
  * For backward compatibility with older self-hosted env files, when `_COUNT`
  * is unset or zero we also fall back to singular and `_1..3` names.
  * Google-hosted image tools additionally accept the Gemini key namespace.
- *
- *
- * Resolves env var names for a hosted-key prefix. Numbered pools use a
- * `{PREFIX}_COUNT` env var. Deployments that still provide one legacy singular
- * `{PREFIX}` key remain supported when no count is configured.
  */
 function resolveEnvKeys(prefix: string): string[] {
-  const countValue = process.env[`${prefix}_COUNT`]
+  const count = Number.parseInt(process.env[`${prefix}_COUNT`] || '0', 10)
   const names: string[] = []
 
-  // Numbered pool: `{PREFIX}_COUNT=N` + `{PREFIX}_1..N`
-  if (countValue !== undefined) {
-    const count = Number.parseInt(countValue, 10)
-    if (count > 0) {
-      for (let i = 1; i <= count; i++) {
-        pushUniqueEnvVar(names, `${prefix}_${i}`)
-      }
-      return names
+  if (count > 0) {
+    // Arena ships `GEMINI_API_KEY*` for Generative Language. Include that
+    // namespace even when a GOOGLE_API_KEY_COUNT pool is declared.
+    if (prefix === 'GOOGLE_API_KEY') {
+      pushLegacyEnvKeys(names, 'GEMINI_API_KEY')
     }
+    for (let i = 1; i <= count; i++) {
+      pushUniqueEnvVar(names, `${prefix}_${i}`)
+    }
+    return names
   }
 
-  // No count / count 0: legacy singular + `_1..3` (filtered later by availability).
-  // Google image tools also accept the Gemini key namespace used by older env files.
-  pushLegacyEnvKeys(names, prefix)
-
+  // Prefer GEMINI_* ahead of GOOGLE_* so Arena's GEMINI_API_KEY wins when both exist.
   if (prefix === 'GOOGLE_API_KEY') {
     pushLegacyEnvKeys(names, 'GEMINI_API_KEY')
   }
+  pushLegacyEnvKeys(names, prefix)
 
   return names
+}
+
+/**
+ * When acquiring keys for Google tools, prefer the GEMINI_API_KEY namespace if any
+ * of those env vars are set. Agents already rotate via GEMINI_*; image tools must
+ * not pick a leftover invalid GOOGLE_API_KEY / NEXT_PUBLIC Maps key ahead of Gemini.
+ */
+function preferGeminiKeysForGoogle(
+  envKeyPrefix: string,
+  availableKeys: AvailableKey[]
+): AvailableKey[] {
+  if (envKeyPrefix !== 'GOOGLE_API_KEY' || availableKeys.length === 0) {
+    return availableKeys
+  }
+
+  const geminiKeys = availableKeys.filter((entry) => entry.envVarName.startsWith('GEMINI_API_KEY'))
+  return geminiKeys.length > 0 ? geminiKeys : availableKeys
 }
 
 /** Dimension name for per-billing-actor request rate limiting */
@@ -417,7 +428,10 @@ export class HostedKeyRateLimiter {
       }
 
       const envKeys = resolveEnvKeys(envKeyPrefix)
-      const availableKeys = this.getAvailableKeys(envKeys)
+      const availableKeys = preferGeminiKeysForGoogle(
+        envKeyPrefix,
+        this.getAvailableKeys(envKeys)
+      )
 
       if (availableKeys.length === 0) {
         logger.warn(`No hosted keys configured for provider ${provider}`)

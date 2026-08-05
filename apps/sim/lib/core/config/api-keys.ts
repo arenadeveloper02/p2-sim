@@ -47,6 +47,7 @@ export function getRotatingApiKey(provider: string): string {
     if (env.XAI_API_KEY_2) keys.push(env.XAI_API_KEY_2)
     if (env.XAI_API_KEY_3) keys.push(env.XAI_API_KEY_3)
   } else if (provider === 'gemini' || provider === 'google' || provider === 'vertex') {
+    // Arena custom: Generative Language uses GEMINI_API_KEY*, never NEXT_PUBLIC_GOOGLE_API_KEY
     if (env.GEMINI_API_KEY) keys.push(env.GEMINI_API_KEY)
     if (env.GEMINI_API_KEY_1) keys.push(env.GEMINI_API_KEY_1)
     if (env.GEMINI_API_KEY_2) keys.push(env.GEMINI_API_KEY_2)
@@ -77,9 +78,9 @@ export function getRotatingApiKey(provider: string): string {
   }
 
   if (keys.length === 0) {
-    if (provider === 'google' || provider === 'vertex') {
+    if (provider === 'google' || provider === 'gemini' || provider === 'vertex') {
       throw new Error(
-        `No API keys configured for rotation. Please configure NEXT_PUBLIC_GOOGLE_API_KEY.`
+        'No API keys configured for rotation. Please configure GEMINI_API_KEY (or GEMINI_API_KEY_1..3).'
       )
     }
 
