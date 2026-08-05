@@ -14,6 +14,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 
 const logger = createLogger('SandboxBundleBuild')
 
@@ -46,11 +47,11 @@ interface BundleSpec {
   entry: string
 }
 
-const POLYFILLS_PATH = join(HERE, '_polyfills.ts')
 const POLYFILL_PRELUDE = `
 // Isolate-side polyfills must execute BEFORE any other import (process/browser
 // captures setTimeout at module-init time). Keep this as the first import.
-import '${POLYFILLS_PATH}'
+// Relative to .entries/<name>.entry.ts — never bake an absolute host path in.
+import '../_polyfills'
 import { Buffer as __BufferPolyfill } from 'buffer'
 import * as __processPolyfill from 'process/browser'
 if (typeof globalThis.Buffer === 'undefined') globalThis.Buffer = __BufferPolyfill
@@ -129,6 +130,19 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logger.error('sandbox bundle build failed', err)
+  // Bun.build throws AggregateError("Bundle failed") whose useful detail lives
+  // in `.errors` — the default logger metadata only surfaces message/name.
+  const nested =
+    err instanceof AggregateError ? err.errors.map((e) => getErrorMessage(e)) : undefined
+  logger.error('sandbox bundle build failed', {
+    message: getErrorMessage(err),
+    name: err instanceof Error ? err.name : typeof err,
+    nested,
+  })
+  if (nested) {
+    for (const message of nested) {
+      logger.error(message)
+    }
+  }
   process.exit(1)
 })

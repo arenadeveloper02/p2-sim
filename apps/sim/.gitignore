@@ -47,3 +47,7 @@ next-env.d.ts
 /uploads
 
 .trigger
+
+# Transient entrypoints written by `build:sandbox-bundles` (must not be committed —
+# they previously leaked host-absolute polyfill import paths into git).
+/lib/execution/sandbox/bundles/.entries/
