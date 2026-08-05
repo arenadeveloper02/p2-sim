@@ -92,7 +92,7 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
       title: 'Google Ads Account',
       type: 'short-input',
       canonicalParamId: 'accounts',
-      placeholder: 'Enter account key (e.g., ami, heartland)',
+      placeholder: 'Enter account key or numeric account ID',
       required: true,
       mode: 'advanced',
     },
@@ -166,7 +166,10 @@ Generate a clear, specific prompt for what the user wants to query from Google A
       type: 'string',
       description: 'Natural language description of what data you want',
     },
-    accounts: { type: 'string', description: 'Selected Google Ads account' },
+    accounts: {
+      type: 'string',
+      description: 'Google Ads account key or numeric account ID',
+    },
   },
   outputs: {
     success: { type: 'boolean', description: 'Whether the query succeeded' },

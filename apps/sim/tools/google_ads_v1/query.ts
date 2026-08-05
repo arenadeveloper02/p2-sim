@@ -19,17 +19,13 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> =
     'Simplified Google Ads query tool that generates GAQL queries using AI (Grok with GPT-5 fallback). Just provide a natural language prompt and let AI handle the rest.',
   version: '1.0.0',
 
-  oauth: {
-    required: true,
-    provider: 'google-ads',
-  },
-
   params: {
     accounts: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-or-llm',
-      description: 'Google Ads account key (admin workspaces only)',
+      description:
+        'Google Ads account key or numeric account ID (e.g. "ami", "gentle_dental", or "2497090182")',
     },
     prompt: {
       type: 'string',
@@ -42,43 +38,7 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> =
       type: 'string',
       required: false,
       visibility: 'hidden',
-      description: 'Workspace ID for admin vs user credential routing',
-    },
-    oauthCredential: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'Google Ads OAuth credential (non-admin workspaces)',
-    },
-    accessToken: {
-      type: 'string',
-      required: false,
-      visibility: 'hidden',
-      description: 'OAuth access token for the Google Ads API',
-    },
-    accountId: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'Google Ads account ID (non-admin workspaces)',
-    },
-    customerId: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'Google Ads customer ID (non-admin workspaces)',
-    },
-    developerToken: {
-      type: 'string',
-      required: false,
-      visibility: 'user-only',
-      description: 'Google Ads API developer token (non-admin workspaces)',
-    },
-    managerCustomerId: {
-      type: 'string',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Manager account customer ID (non-admin workspaces, optional)',
+      description: 'Workspace ID for account catalog routing',
     },
   },
 
@@ -90,7 +50,7 @@ export const googleAdsV1QueryTool: ToolConfig<GoogleAdsV1QueryParams, unknown> =
     }),
     body: (params: GoogleAdsV1QueryParams) => ({
       query: params.prompt,
-      accounts: params.accounts,
+      accounts: typeof params.accounts === 'string' ? params.accounts.trim() : params.accounts,
       workspaceId: params._context?.workspaceId,
     }),
   },

@@ -55,9 +55,29 @@ export function validateDateRange(value: string): string {
 
 interface GoogleAdsBaseParams {
   accessToken: string
-  customerId: string
+  customerId?: string
+  /** Agent-friendly alias for customerId. */
+  accountId?: string
   developerToken: string
   managerCustomerId?: string
+}
+
+/**
+ * Resolves the Google Ads customer/account ID from tool params.
+ * Agents may pass either `customerId` or `accountId`.
+ */
+export function resolveGoogleAdsCustomerId(params: {
+  customerId?: string
+  accountId?: string
+}): string {
+  const raw =
+    (typeof params.customerId === 'string' && params.customerId.trim()) ||
+    (typeof params.accountId === 'string' && params.accountId.trim()) ||
+    ''
+  if (!raw) {
+    throw new Error('customerId or accountId is required')
+  }
+  return validateNumericId(raw, 'customerId')
 }
 
 export interface GoogleAdsListCustomersParams {
