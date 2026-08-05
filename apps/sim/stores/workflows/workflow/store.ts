@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { getWorkflowBlockNameConflict } from '@sim/workflow-types/workflow'
 import type { Edge } from 'reactflow'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
@@ -9,7 +10,7 @@ import {
   isDynamicHandleSubblock,
 } from '@/lib/workflows/dynamic-handle-topology'
 import { getBlock } from '@/blocks'
-import { normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
+import { normalizeName } from '@/executor/constants'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import {
   filterNewEdges,
@@ -26,11 +27,11 @@ import type {
 } from '@/stores/workflows/workflow/types'
 import {
   clampParallelBatchSize,
+  filterAcyclicEdges,
   findAllDescendantNodes,
   generateLoopBlocks,
   generateParallelBlocks,
   isBlockProtected,
-  wouldCreateCycle,
 } from '@/stores/workflows/workflow/utils'
 import { normalizeWorkflowState } from '@/stores/workflows/workflow/validation'
 
@@ -402,11 +403,10 @@ export const useWorkflowStore = create<WorkflowStore>()(
         // Skip validation if already validated by caller (e.g., collaborative layer)
         const validEdges = options?.skipValidation ? edges : filterValidEdges(edges, blocks)
         const filtered = filterNewEdges(validEdges, currentEdges)
-        const newEdges = [...currentEdges]
-
-        for (const edge of filtered) {
-          if (wouldCreateCycle([...newEdges], edge.source, edge.target)) continue
-          newEdges.push({
+        const acyclicEdges = filterAcyclicEdges(filtered, currentEdges)
+        const newEdges = [
+          ...currentEdges,
+          ...acyclicEdges.map((edge) => ({
             id: edge.id || generateId(),
             source: edge.source,
             target: edge.target,
@@ -414,8 +414,8 @@ export const useWorkflowStore = create<WorkflowStore>()(
             targetHandle: edge.targetHandle,
             type: edge.type || 'default',
             data: edge.data || {},
-          })
-        }
+          })),
+        ]
 
         set({
           blocks: { ...blocks },
@@ -658,26 +658,26 @@ export const useWorkflowStore = create<WorkflowStore>()(
         const oldBlock = get().blocks[id]
         if (!oldBlock) return { success: false, changedSubblocks: [] }
 
-        const normalizedNewName = normalizeName(name)
+        const currentBlocks = get().blocks
+        const siblingNamesById = Object.fromEntries(
+          Object.entries(currentBlocks).map(([blockId, block]) => [blockId, block.name])
+        )
+        const conflict = getWorkflowBlockNameConflict(id, name, siblingNamesById)
 
-        if (!normalizedNewName) {
+        if (conflict?.reason === 'empty') {
           logger.error(`Cannot rename block to empty name`)
           return { success: false, changedSubblocks: [] }
         }
 
-        const currentBlocks = get().blocks
-        const conflictingBlock = Object.entries(currentBlocks).find(
-          ([blockId, block]) => blockId !== id && normalizeName(block.name) === normalizedNewName
-        )
-
-        if (conflictingBlock) {
+        if (conflict?.reason === 'duplicate') {
+          const conflictingBlock = currentBlocks[conflict.conflictingBlockId as string]
           logger.error(
-            `Cannot rename block to "${name}" - conflicts with "${conflictingBlock[1].name}"`
+            `Cannot rename block to "${name}" - conflicts with "${conflictingBlock.name}"`
           )
           return { success: false, changedSubblocks: [] }
         }
 
-        if ((RESERVED_BLOCK_NAMES as readonly string[]).includes(normalizedNewName)) {
+        if (conflict?.reason === 'reserved') {
           logger.error(`Cannot rename block to reserved name: "${name}"`)
           return { success: false, changedSubblocks: [] }
         }

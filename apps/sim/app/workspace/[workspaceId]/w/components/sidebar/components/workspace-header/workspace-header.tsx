@@ -123,6 +123,7 @@ function WorkspaceHeaderImpl({
     organizationsData?.activeOrganization,
     session?.user?.email
   )
+  const renameInputRef = useRef<HTMLInputElement | null>(null)
 
   /**
    * Check if current user is a platform admin
@@ -450,6 +451,7 @@ function WorkspaceHeaderImpl({
                             )}
                             <input
                               ref={(el) => {
+                                renameInputRef.current = el
                                 if (el && !hasInputFocusedRef.current) {
                                   hasInputFocusedRef.current = true
                                   el.focus()
@@ -687,6 +689,7 @@ function WorkspaceHeaderImpl({
             menuRef={contextMenuRef}
             onClose={closeContextMenu}
             onRename={handleRenameAction}
+            renameInputRef={renameInputRef}
             onDelete={handleDeleteAction}
             onLeave={handleLeaveAction}
             onUploadLogo={handleUploadLogoAction}
