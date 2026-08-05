@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -134,6 +135,13 @@ export const VERIFY_COMMANDS = [
 ] as const
 
 export const WIP_META_RELATIVE_PATH = join(UPSTREAM_SYNC_ROOT, 'wip-meta.json')
+
+const LEDGER_WIP_BASENAMES = [
+  'merge-plan.json',
+  'merge-plan.draft.json',
+  'merge-directives.json',
+  'run.md',
+] as const
 
 export interface SyncState {
   lastSyncedUpstreamSha: string | null
@@ -1129,6 +1137,8 @@ export function persistMergeWip(options: {
       runGit(['add', '--', file], worktreePath)
     }
 
+    snapshotLedgerIntoWip(repoRoot, worktreePath, options.runId)
+
     for (const file of newlyDeleted) {
       try {
         runGit(['rm', '-f', '--', file], worktreePath)
@@ -1189,6 +1199,33 @@ export function persistMergeWip(options: {
       // Ignore cleanup failures.
     }
     return 0
+  }
+}
+
+/**
+ * Copy mid-merge ledger artifacts (final plan, directives, cluster reports)
+ * from the WIP sidecar into the working tree. Safe during an in-progress merge
+ * because these paths are not conflicted product files.
+ *
+ * Must run before `computeRunDecisionHash` on resume so the hash sees the
+ * locked plan instead of falling back to the draft.
+ */
+export function restoreWipLedger(syncBranch: string): boolean {
+  try {
+    assertUpstreamSyncRef(syncBranch)
+    const wipBranch = wipBranchName(syncBranch)
+    try {
+      runGit(['fetch', 'origin', wipBranch])
+    } catch {
+      return false
+    }
+    const storedMeta = readWipMetaFromRef(`origin/${wipBranch}`)
+    const runId = storedMeta?.runId
+    if (!runId) return false
+    return restoreLedgerFromWip(`origin/${wipBranch}`, runId)
+  } catch (error) {
+    console.warn('[wip] Failed to restore ledger snapshot:', error)
+    return false
   }
 }
 
@@ -1265,6 +1302,55 @@ export function applyMergeWip(options: {
     console.warn(`[wip] Failed to apply merge WIP:`, error)
     return { applied: 0, deleted: 0, skipped: true, reason: 'error' }
   }
+}
+
+function snapshotLedgerIntoWip(repoRoot: string, worktreePath: string, runId: string): void {
+  const relDir = ledgerRunDir(runId)
+  const srcDir = join(repoRoot, relDir)
+  if (!existsSync(srcDir)) return
+
+  mkdirSync(join(worktreePath, relDir), { recursive: true })
+  for (const name of LEDGER_WIP_BASENAMES) {
+    const src = join(srcDir, name)
+    if (!existsSync(src)) continue
+    copyFileSync(src, join(worktreePath, relDir, name))
+    runGit(['add', '--', join(relDir, name)], worktreePath)
+  }
+
+  const clustersRel = join(relDir, 'clusters')
+  const clustersSrc = join(repoRoot, clustersRel)
+  if (!existsSync(clustersSrc)) return
+  cpSync(clustersSrc, join(worktreePath, clustersRel), { recursive: true })
+  runGit(['add', '--', clustersRel], worktreePath)
+}
+
+function restoreLedgerFromWip(wipRef: string, runId: string): boolean {
+  const relDir = ledgerRunDir(runId)
+  let restored = false
+  for (const name of LEDGER_WIP_BASENAMES) {
+    const rel = join(relDir, name)
+    try {
+      runGit(['cat-file', '-e', `${wipRef}:${rel}`])
+      runGit(['checkout', wipRef, '--', rel])
+      restored = true
+    } catch {
+      // Path not present on WIP tip.
+    }
+  }
+  const clustersRel = join(relDir, 'clusters')
+  try {
+    const listing = runGit(['ls-tree', '--name-only', '-r', wipRef, '--', clustersRel])
+    if (listing.trim()) {
+      runGit(['checkout', wipRef, '--', clustersRel])
+      restored = true
+    }
+  } catch {
+    // No cluster reports on WIP tip.
+  }
+  if (restored) {
+    console.log(`[wip] Restored ledger snapshot from ${wipRef} for run ${runId}`)
+  }
+  return restored
 }
 
 function readWipMetaFile(path: string): MergeWipMeta | null {

@@ -13,6 +13,7 @@ import {
   listResolvedConflictFiles,
   parseMergeWipMeta,
   persistMergeWip,
+  restoreWipLedger,
   shouldSkipStaleWip,
   WIP_META_RELATIVE_PATH,
   wipBranchName,
@@ -189,6 +190,12 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     git(repo, ['add', '--', 'keep.ts'])
     git(repo, ['rm', '-f', '--', 'gone.ts'])
 
+    mkdirSync(join(repo, '.upstream-sync/ledger/2026-08-05'), { recursive: true })
+    writeFileSync(
+      join(repo, '.upstream-sync/ledger/2026-08-05/merge-plan.json'),
+      `${JSON.stringify({ version: 1, runId: '2026-08-05', kind: 'final', childClusters: [{ id: 'cluster-1' }] })}\n`
+    )
+
     process.chdir(repo)
     const persisted = persistMergeWip({
       syncBranch: 'upstream-sync/2026-08-05T00-00-00',
@@ -206,11 +213,17 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     expect(meta?.deleted).toEqual(['gone.ts'])
 
     git(repo, ['merge', '--abort'])
+    rmSync(join(repo, '.upstream-sync/ledger/2026-08-05/merge-plan.json'), { force: true })
     try {
       git(repo, ['merge', 'upstream-side'])
     } catch {
       // conflicts again
     }
+
+    expect(restoreWipLedger('upstream-sync/2026-08-05T00-00-00')).toBe(true)
+    expect(
+      readFileSync(join(repo, '.upstream-sync/ledger/2026-08-05/merge-plan.json'), 'utf8')
+    ).toContain('"kind":"final"')
 
     const skipped = applyMergeWip({
       syncBranch: 'upstream-sync/2026-08-05T00-00-00',

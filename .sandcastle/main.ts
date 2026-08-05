@@ -84,6 +84,7 @@ import {
   requestPrReviewers,
   resolveMergeBase,
   resolvePrHeadBranch,
+  restoreWipLedger,
   runGh,
   runGit,
   splitLeftoverCluster,
@@ -1458,6 +1459,7 @@ async function main(): Promise<void> {
 
     // Re-apply prior mid-merge resolutions from the WIP sidecar (resume / crashed runs).
     const conflictSnapshot = listConflictFiles()
+    restoreWipLedger(syncBranch)
     let decisionHash = computeRunDecisionHash(runId)
     const wipResult = applyMergeWip({ syncBranch, expectedDecisionHash: decisionHash })
     if (wipResult.skipped) {
@@ -1551,6 +1553,14 @@ async function main(): Promise<void> {
           .join('\n'),
       })
     }
+
+    persistMergeWip({
+      syncBranch,
+      runId,
+      clusterId: 'parent-finalize',
+      conflictSnapshot,
+      decisionHash,
+    })
 
     endGroup()
     endGroup = startLogGroup('child clusters')
