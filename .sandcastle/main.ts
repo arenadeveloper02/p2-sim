@@ -1476,7 +1476,11 @@ async function main(): Promise<void> {
     const conflictSnapshot = listConflictFiles()
     restoreWipLedger(syncBranch)
     let decisionHash = computeRunDecisionHash(runId)
-    const wipResult = applyMergeWip({ syncBranch, expectedDecisionHash: decisionHash })
+    const wipResult = applyMergeWip({
+      syncBranch,
+      expectedDecisionHash: decisionHash,
+      runId,
+    })
     if (wipResult.skipped) {
       console.log(
         `[wip] overlay skipped (${wipResult.reason ?? 'unknown'}); leaving conflicts for finalize/agents`

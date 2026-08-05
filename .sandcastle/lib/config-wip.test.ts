@@ -108,6 +108,7 @@ describe('WIP decisionHash + tombstones', () => {
       })
     ).toEqual({
       decisionHash: 'deadbeef',
+      stabilityHash: null,
       deleted: ['apps/sim/lib/voice/tts.ts'],
       updatedAt: '2026-08-05T00:00:00.000Z',
       clusterId: 'chat-voice',
@@ -115,6 +116,7 @@ describe('WIP decisionHash + tombstones', () => {
     })
     expect(parseMergeWipMeta({ deleted: 'nope' })).toEqual({
       decisionHash: null,
+      stabilityHash: null,
       deleted: [],
       updatedAt: expect.any(String),
     })
@@ -145,7 +147,7 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     }
   })
 
-  test('stores deletion tombstones and skips stale decisionHash overlays', () => {
+  test('stores deletion tombstones and reuses WIP when only directive hash drifts', () => {
     tempRoot = mkdtempSync(join(tmpdir(), 'wip-roundtrip-'))
     const origin = join(tempRoot, 'origin.git')
     const repo = join(tempRoot, 'work')
@@ -225,9 +227,30 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
       readFileSync(join(repo, '.upstream-sync/ledger/2026-08-05/merge-plan.json'), 'utf8')
     ).toContain('"kind":"final"')
 
+    const reused = applyMergeWip({
+      syncBranch: 'upstream-sync/2026-08-05T00-00-00',
+      expectedDecisionHash: 'hash-v2',
+      runId: '2026-08-05',
+    })
+    expect(reused.skipped).toBe(false)
+    expect(reused.applied).toBeGreaterThanOrEqual(1)
+    expect(readFileSync(join(repo, 'keep.ts'), 'utf8')).toBe('fork-keep\n')
+
+    git(repo, ['merge', '--abort'])
+    try {
+      git(repo, ['merge', 'upstream-side'])
+    } catch {
+      // conflicts again
+    }
+    mkdirSync(join(repo, '.upstream-sync'), { recursive: true })
+    writeFileSync(
+      join(repo, '.upstream-sync/merge-policy.json'),
+      '{"forkFirst":["apps/changed/"]}\n'
+    )
     const skipped = applyMergeWip({
       syncBranch: 'upstream-sync/2026-08-05T00-00-00',
       expectedDecisionHash: 'hash-v2',
+      runId: '2026-08-05',
     })
     expect(skipped).toEqual({
       applied: 0,
@@ -237,9 +260,11 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     })
     expect(readFileSync(join(repo, 'keep.ts'), 'utf8')).toContain('<<<<<<<')
 
+    writeFileSync(join(repo, '.upstream-sync/merge-policy.json'), '{}\n')
     const applied = applyMergeWip({
       syncBranch: 'upstream-sync/2026-08-05T00-00-00',
       expectedDecisionHash: 'hash-v1',
+      runId: '2026-08-05',
     })
     expect(applied.skipped).toBe(false)
     expect(applied.applied).toBeGreaterThanOrEqual(1)

@@ -9,6 +9,7 @@ import {
   readQaHistory,
   runGit,
 } from './config'
+import { wipGrillAnswerKeys } from './wip-stability'
 
 export const MERGE_PLAN_DRAFT_FILENAME = 'merge-plan.draft.json'
 export const MERGE_PLAN_FINAL_FILENAME = 'merge-plan.json'
@@ -340,20 +341,7 @@ export function loadFinalDirectives(runId: string): MergeDirectives | null {
 export function collectGrillAnswerIds(
   entries?: ReadonlyArray<{ id: string; answer?: string; source?: string }>
 ): string[] {
-  const source = entries ?? readQaHistory()
-  const keys: string[] = []
-  for (const entry of source) {
-    const answer = entry.answer?.trim()
-    if (!answer) continue
-    if (entry.source === 'resume') {
-      const body = answer.replace(/\/upstream-sync\s+resume/gi, '').trim()
-      if (!body || !/\bQ\d+\b/i.test(body)) continue
-      keys.push(`resume:${body}`)
-      continue
-    }
-    keys.push(entry.id)
-  }
-  return [...new Set(keys)]
+  return wipGrillAnswerKeys(entries ?? readQaHistory())
 }
 
 /**
