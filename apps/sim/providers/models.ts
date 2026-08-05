@@ -921,26 +921,26 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         releaseDate: '2025-08-05',
         deprecated: true,
       },
-      {
-        id: 'claude-opus-4-0',
-        pricing: {
-          input: 15.0,
-          cachedInput: 1.5,
-          output: 75.0,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          maxOutputTokens: 32000,
-          thinking: {
-            levels: ['low', 'medium', 'high'],
-            default: 'high',
-          },
-        },
-        contextWindow: 200000,
-        releaseDate: '2025-05-22',
-        deprecated: true,
-      },
+      // {
+      //   id: 'claude-opus-4-0',
+      //   pricing: {
+      //     input: 15.0,
+      //     cachedInput: 1.5,
+      //     output: 75.0,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //     maxOutputTokens: 32000,
+      //     thinking: {
+      //       levels: ['low', 'medium', 'high'],
+      //       default: 'high',
+      //     },
+      //   },
+      //   contextWindow: 200000,
+      //   releaseDate: '2025-05-22',
+      //   deprecated: true,
+      // },
       {
         id: 'claude-3-7-sonnet-latest',
         pricing: {
@@ -982,26 +982,26 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 200000,
         releaseDate: '2025-09-29',
       },
-      {
-        id: 'claude-sonnet-4-0',
-        pricing: {
-          input: 3.0,
-          cachedInput: 0.3,
-          output: 15.0,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          temperature: { min: 0, max: 1 },
-          maxOutputTokens: 64000,
-          thinking: {
-            levels: ['low', 'medium', 'high'],
-            default: 'high',
-          },
-        },
-        contextWindow: 200000,
-        releaseDate: '2025-05-22',
-        deprecated: true,
-      },
+      // {
+      //   id: 'claude-sonnet-4-0',
+      //   pricing: {
+      //     input: 3.0,
+      //     cachedInput: 0.3,
+      //     output: 15.0,
+      //     updatedAt: '2026-06-11',
+      //   },
+      //   capabilities: {
+      //     temperature: { min: 0, max: 1 },
+      //     maxOutputTokens: 64000,
+      //     thinking: {
+      //       levels: ['low', 'medium', 'high'],
+      //       default: 'high',
+      //     },
+      //   },
+      //   contextWindow: 200000,
+      //   releaseDate: '2025-05-22',
+      //   deprecated: true,
+      // },
       {
         id: 'claude-haiku-4-5',
         pricing: {
@@ -2354,6 +2354,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       //   capabilities: {},
       //   contextWindow: 131072,
       //   releaseDate: '2025-04-29',
+      //   deprecated: true,
       // },
       // {
       //   id: 'groq/llama-3.1-8b-instant',
@@ -2387,6 +2388,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       //   capabilities: {},
       //   contextWindow: 131072,
       //   releaseDate: '2025-04-05',
+      //   deprecated: true,
       // },
       // {
       //   id: 'groq/moonshotai/kimi-k2-instruct-0905',
@@ -2398,64 +2400,8 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
       //   capabilities: {},
       //   contextWindow: 262144,
       //   releaseDate: '2025-09-05',
+      //   deprecated: true,
       // },
-      {
-        id: 'groq/openai/gpt-oss-120b',
-        pricing: {
-          input: 0.15,
-          cachedInput: 0.075,
-          output: 0.6,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          maxOutputTokens: 65536,
-        },
-        contextWindow: 131072,
-        releaseDate: '2025-08-05',
-        recommended: true,
-      },
-      {
-        id: 'groq/openai/gpt-oss-20b',
-        pricing: {
-          input: 0.075,
-          cachedInput: 0.0375,
-          output: 0.3,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          maxOutputTokens: 65536,
-        },
-        contextWindow: 131072,
-        releaseDate: '2025-08-05',
-      },
-      {
-        id: 'groq/openai/gpt-oss-safeguard-20b',
-        pricing: {
-          input: 0.075,
-          cachedInput: 0.0375,
-          output: 0.3,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          maxOutputTokens: 65536,
-        },
-        contextWindow: 131072,
-        releaseDate: '2025-10-29',
-      },
-      {
-        id: 'groq/qwen/qwen3-32b',
-        pricing: {
-          input: 0.29,
-          output: 0.59,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          maxOutputTokens: 40960,
-        },
-        contextWindow: 131072,
-        releaseDate: '2025-04-29',
-        deprecated: true,
-      },
       {
         id: 'groq/qwen/qwen3.6-27b',
         pricing: {
@@ -2468,59 +2414,6 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 131072,
         releaseDate: '2026-04-21',
-      },
-      {
-        id: 'groq/llama-3.1-8b-instant',
-        pricing: {
-          input: 0.05,
-          output: 0.08,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          maxOutputTokens: 131072,
-        },
-        contextWindow: 131072,
-        releaseDate: '2024-07-23',
-        speedOptimized: true,
-      },
-      {
-        id: 'groq/llama-3.3-70b-versatile',
-        pricing: {
-          input: 0.59,
-          output: 0.79,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          maxOutputTokens: 32768,
-        },
-        contextWindow: 131072,
-        releaseDate: '2024-12-06',
-      },
-      {
-        id: 'groq/meta-llama/llama-4-scout-17b-16e-instruct',
-        pricing: {
-          input: 0.11,
-          output: 0.34,
-          updatedAt: '2026-06-11',
-        },
-        capabilities: {
-          maxOutputTokens: 8192,
-        },
-        contextWindow: 131072,
-        releaseDate: '2025-04-05',
-        deprecated: true,
-      },
-      {
-        id: 'groq/moonshotai/kimi-k2-instruct-0905',
-        pricing: {
-          input: 1.0,
-          output: 3.0,
-          updatedAt: '2026-04-01',
-        },
-        capabilities: {},
-        contextWindow: 262144,
-        releaseDate: '2025-09-05',
-        deprecated: true,
       },
     ],
   },
@@ -3990,9 +3883,7 @@ function matchesCatalogModelId(candidate: string, catalogId: string): boolean {
  * Finds a catalog model entry for a runtime label, including date-suffixed IDs
  * returned by provider APIs (e.g. `claude-sonnet-4-5-20250514`).
  */
-export function findCatalogModel(
-  modelId: string
-): {
+export function findCatalogModel(modelId: string): {
   providerId: string
   model: (typeof PROVIDER_DEFINITIONS)[keyof typeof PROVIDER_DEFINITIONS]['models'][number]
 } | null {

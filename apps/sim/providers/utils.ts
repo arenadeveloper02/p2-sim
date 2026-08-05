@@ -1136,6 +1136,7 @@ export function getApiKey(
       isGeminiModel ||
       isSambaNovaModel ||
       isXaiModel ||
+      isOpenRouterModel ||
       isZaiModel)
   ) {
     // Only use server key if model is explicitly in our hosted list
