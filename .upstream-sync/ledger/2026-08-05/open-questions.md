@@ -1,3 +1,3 @@
 # No open questions
 
-All decisions resolved from merge-policy / ledger.
+Resolved via `/upstream-sync resume` — decisions recorded in `grill-log.md` / `qa-history.jsonl`.
