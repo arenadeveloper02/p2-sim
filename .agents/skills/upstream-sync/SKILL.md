@@ -18,11 +18,13 @@ Sync parent repo `simstudioai/sim` `main` into the branch that triggered the run
 
 ## Skills workflow (run in order)
 
-1. `/upstream-sync-grill` → `.claude/skills/upstream-sync-grill/SKILL.md`
-2. `/upstream-sync` → `.claude/skills/upstream-sync/SKILL.md`
-3. `/diagnosing-bugs` → `.claude/skills/diagnosing-bugs/SKILL.md` (when investigating regressions; verify is advisory and does not fail the workflow)
+1. `/upstream-sync-grill` → `.claude/skills/upstream-sync-grill/SKILL.md` (Phase A draft plan)
+2. `/upstream-sync` → `.claude/skills/upstream-sync/SKILL.md` (merge + Phase B finalize + planned children)
+3. `/diagnosing-bugs` → `.claude/skills/diagnosing-bugs/SKILL.md` (when investigating regressions)
 4. `/tdd` → `.claude/skills/tdd/SKILL.md` (regression tests)
 5. `/review-upstream-merge` → `.claude/skills/review-upstream-merge/SKILL.md`
+
+One Actions run = one upstream release tip. Resume skips grill re-ask but still finalizes `merge-plan.json`.
 
 ## Ledger files
 
@@ -32,10 +34,11 @@ Sync parent repo `simstudioai/sim` `main` into the branch that triggered the run
 | `.upstream-sync/qa-history.jsonl` | Machine-readable Q&A |
 | `.upstream-sync/ledger/<RUN_ID>/release-notes.md` | All upstream release notes in range |
 | `.upstream-sync/ledger/<RUN_ID>/skipped.md` | Declined upstream changes |
+| `.upstream-sync/ledger/<RUN_ID>/merge-plan.json` | Locked parent plan + child clusters |
 
-## Verification (advisory)
+## Verification
 
-`check` / `lint` / `test` / `build` run after merge and are published to the ledger, draft PR, and Actions summary. Failures do **not** fail the workflow.
+`check` / `lint` / `test` are advisory. **`bun run build` is blocking** (`child-fix-build`, max 2 rounds). Red build → `blocked`, not completed.
 
 ## Commands
 

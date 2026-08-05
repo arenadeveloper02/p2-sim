@@ -20,7 +20,14 @@ export interface ConflictCluster {
   depth: number
   parentId: string | null
   children: ConflictCluster[]
+  /** Parent-plan strategy when spawned from `merge-plan.json`. */
+  strategy?: ChildClusterStrategyHint
+  /** Parent-plan notes passed through to the child prompt. */
+  notes?: string
 }
+
+/** Strategy string from the merge plan; fallback clustering leaves this unset. */
+export type ChildClusterStrategyHint = string
 
 export interface ClusterOptions {
   /** Minimum path segments for the first bucket key. Default 4 (`apps/sim/app/workspace/`). */
@@ -289,7 +296,10 @@ export function splitLeftoverCluster(
     minPrefixSegments: Math.max(
       options?.minPrefixSegments ??
         readPositiveInt('UPSTREAM_SYNC_CLUSTER_MIN_SEGMENTS', DEFAULTS.minPrefixSegments),
-      parent.prefix.replace(/#chunk-\d+\/$/, '/').split('/').filter(Boolean).length + 1
+      parent.prefix
+        .replace(/#chunk-\d+\/$/, '/')
+        .split('/')
+        .filter(Boolean).length + 1
     ),
     idPrefix: `${parent.id}.r${round}`,
   })
@@ -317,7 +327,9 @@ function relabelRoots(
   parentId: string,
   depthBase: number
 ): ConflictCluster[] {
-  return roots.map((root, index) => relabelNode(root, `${idBase}.${index + 1}`, parentId, depthBase))
+  return roots.map((root, index) =>
+    relabelNode(root, `${idBase}.${index + 1}`, parentId, depthBase)
+  )
 }
 
 function relabelNode(

@@ -7,15 +7,18 @@ description: Merge simstudioai/sim main into the current branch with fork-first 
 
 Sync parent repo `simstudioai/sim` `main` into the branch that triggered the run (current branch / `GITHUB_HEAD_REF`). Set `TARGET_BRANCH` to override.
 
+Each Actions run merges **one upstream release** (`vX.Y.Z:` tip) by default — not all of `main`. After a successful complete, the harness dispatches the next release slice. `until_sha` / positive `max_commits` are smoke escapes only (`max_commits=0` means next-release).
+
 ## Skill workflow (run in order)
 
-1. **`/upstream-sync-grill`** — analysis + FBI risk (`.claude/skills/upstream-sync-grill/SKILL.md`)
+1. **`/upstream-sync-grill`** — Phase A parent grill: analysis + FBI risk + **draft merge plan** (`.claude/skills/upstream-sync-grill/SKILL.md`)
 2. **Await answers** — if `.upstream-sync/ledger/<RUN_ID>/open-questions.md` has questions, harness stops until `/upstream-sync resume`
-3. **Merge** — `git merge upstream/main` on the sync branch
-4. **Resolve conflicts** — fork-first per `.upstream-sync/merge-policy.json`; child agents per cluster; finalize child if leftovers remain
-5. **`/diagnosing-bugs`** — if verification fails or behavior regresses (`.claude/skills/diagnosing-bugs/SKILL.md`)
-6. **`/tdd`** — when adding regression tests for merge fixes (`.claude/skills/tdd/SKILL.md`)
-7. **`/review-upstream-merge`** — before marking draft PR ready (`.claude/skills/review-upstream-merge/SKILL.md`)
+3. **Merge** — `git merge` the resolved release tip on the sync branch
+4. **Phase B finalize** — parent locks `merge-plan.json` + `merge-directives.json` from answers + real conflicts (resume does **not** skip this)
+5. **Resolve conflicts** — apply directives, then fork-first per `.upstream-sync/merge-policy.json`; Luna children per **planned clusters** (not naive prefix grouping unless the plan is missing); always-on coherence pass
+6. **`/diagnosing-bugs`** — if verification fails or behavior regresses (`.claude/skills/diagnosing-bugs/SKILL.md`)
+7. **`/tdd`** — when adding regression tests for merge fixes (`.claude/skills/tdd/SKILL.md`)
+8. **`/review-upstream-merge`** — before marking draft PR ready (`.claude/skills/review-upstream-merge/SKILL.md`)
 
 ## Sim repo skills (invoke when relevant)
 
@@ -35,13 +38,22 @@ Read `.upstream-sync/merge-policy.json`:
 
 | List | Meaning |
 |------|---------|
-| `forkFirst` | Auto `--ours` (no agent) |
+| `forkFirst` | Auto `--ours` (no agent) unless overridden by grill directives |
 | `upstreamFirst` | Auto `--theirs` (no agent) |
+| `unionPaths` | Agent-reviewed union — keep fork-only **and** upstream additions; never auto-side |
 | `manualReview` | Hint list of known hard shared paths — **not** a closed set |
 | *(unlisted)* | **Agent-reviewed** — do not auto-pick a side |
 | `packageJson` | Union-merge manifests (upstream base + fork-only scripts/deps) |
 
-After resolving a conflict with a clear recurring rule, **extend `merge-policy.json`** (add a prefix to `forkFirst` / `upstreamFirst` / `manualReview`, or a `packageJson.dropScripts` entry) and `git add` it so the next sync is cheaper.
+Locked merge directives (`delete` / `checkoutOurs` / `checkoutTheirs` / `mustEdit` / `overrideForkFirst`) win over `forkFirst` and stale WIP overlays.
+
+After resolving a conflict with a clear recurring rule, **extend `merge-policy.json`** (add a prefix to `forkFirst` / `upstreamFirst` / `manualReview` / `unionPaths`, or a `packageJson.dropScripts` entry) and `git add` it so the next sync is cheaper.
+
+## Parent plan (control plane)
+
+- Phase A writes `.upstream-sync/ledger/<RUN_ID>/merge-plan.draft.json` (self-resolutions, open questions, area-level child plan, option-mapped proposed directives) and a `## Parent plan` section in `run.md`.
+- Phase B (after merge) writes `merge-plan.json` + `merge-directives.json`. The harness instantiates one Luna child per planned cluster.
+- Fallback prefix clustering (`groupConflictClusters`) runs only when the final plan is missing or has empty `childClusters`.
 
 ## Skipped upstream ledger
 
@@ -54,10 +66,18 @@ Every declined upstream change → `.upstream-sync/ledger/<RUN_ID>/skipped.md`:
 - **What we miss:** …
 ```
 
-## Verification (advisory)
+## Verification
 
-Runs after merge and is published to the ledger, draft PR, and Actions job summary.
-Failures are recorded but **do not** fail the workflow (known repo-level test/check issues must not block sync).
+Runs after merge + coherence and is published to the ledger, draft PR, and Actions job summary.
+
+| Step | Gate |
+|------|------|
+| `bun run check` | Advisory |
+| `bun run lint` | Advisory |
+| `bun run test` | Advisory |
+| `bun run build` | **Blocking** |
+
+Build failures invoke `child-fix-build` (max 2 rounds). The run is marked `completed` only when blocking verification passes. Otherwise status is `blocked` (never “completed with verification warnings” on a red build). Known repo-level lint/test noise must not false-block sync.
 
 ```bash
 bun run check
@@ -77,10 +97,14 @@ bun run build
 | `.upstream-sync/ledger/<RUN_ID>/skipped.md` | Declined upstream changes |
 | `.upstream-sync/ledger/<RUN_ID>/grill-qa.md` | This run's Q&A |
 | `.upstream-sync/ledger/<RUN_ID>/open-questions.md` | Unanswered grill questions (harness merge gate) |
+| `.upstream-sync/ledger/<RUN_ID>/merge-plan.draft.json` | Phase A parent plan |
+| `.upstream-sync/ledger/<RUN_ID>/merge-plan.json` | Phase B locked plan + child clusters |
+| `.upstream-sync/ledger/<RUN_ID>/merge-directives.json` | Locked harness directives |
+| `.upstream-sync/ledger/<RUN_ID>/clusters/<id>.json` | Per-cluster ours/theirs/manual/deleted report |
 | `.upstream-sync/ledger/<RUN_ID>/run.md` | Full run log |
 
 ## GitHub Actions
 
-- Daily 06:00 UTC + manual dispatch
-- Resume: `/upstream-sync resume` on the draft PR
+- Daily 06:00 UTC + manual dispatch — one unpaid upstream release per run
+- Resume: `/upstream-sync resume` on the draft PR (skips grill re-ask, still finalizes the plan)
 - Reuse: open sync PR/branch is extended when upstream advances (`FORCE_RUN` still opens a fresh PR)

@@ -1,6 +1,13 @@
 name: Upstream Sync
 
 # Merges simstudioai/sim main into the branch that triggered the run via the Sandcastle harness.
+# Cron/dispatch default: one upstream release (`vX.Y.Z:` commit) per run — not all of main.
+# After a successful complete, the harness dispatches another run if more releases remain
+# (`gh workflow run upstream-sync.yml`; concurrency group `upstream-sync` serializes).
+# Smoke escapes: workflow_dispatch `until_sha` or positive `max_commits` (0 = next-release default).
+# Parent: grill writes a draft merge plan; resume skips re-ask but finalizes the plan post-merge,
+# then Luna children run from merge-plan.json (prefix clustering is fallback only).
+# Build is blocking (`child-fix-build`, max 2 rounds); check/lint/test stay advisory.
 # Polls daily; resumes when a reviewer replies `/upstream-sync resume` on the draft PR.
 # Note: issue_comment events only run workflows present on the repository default branch.
 # While validating this workflow from a feature branch, use workflow_dispatch with resume=true.
@@ -56,11 +63,11 @@ on:
           - openai
         default: dual
       max_commits:
-        description: Cap upstream commits merged (0 = all; use 1 for smoke test)
+        description: Positive integer caps commit count (smoke). 0 = next upstream release only, not all of main
         type: string
         default: '0'
       until_sha:
-        description: Optional upstream SHA to merge through (overrides max_commits)
+        description: Optional upstream SHA to merge through (overrides max_commits and next-release default)
         type: string
         required: false
   issue_comment:
@@ -98,6 +105,7 @@ jobs:
       agent_provider: ${{ steps.decide.outputs.agent_provider }}
       max_commits: ${{ steps.decide.outputs.max_commits }}
       until_sha: ${{ steps.decide.outputs.until_sha }}
+      # 0 / empty → harness next-release default (not "merge all of main")
     steps:
       - name: Decide trigger
         id: decide
@@ -109,6 +117,7 @@ jobs:
           force=false
           skip_agent=true
           agent_provider=dual
+          # 0 = next upstream release (harness default). Positive = smoke commit cap.
           max_commits=0
           until_sha=
 

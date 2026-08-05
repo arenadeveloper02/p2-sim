@@ -3,13 +3,14 @@
  *
  * Phased pipeline:
  * 1. Detect upstream changes + scaffold ledger
- * 2. Early draft PR + parent grill agent (ledger analysis only)
+ * 2. Early draft PR + parent grill (Phase A: resolutions + draft child plan)
  * 3. Gate on unanswered grill questions (await `/upstream-sync resume`)
- * 4. Git merge upstream/main
- * 5. Deterministic package-manager bootstrap + policy path pre-resolve
- * 6. Hierarchical child agents per conflict cluster (nested + dynamic leftovers)
- * 7. Verification (check, lint, test, build) — advisory; merge commits skip husky
- * 8. Update draft PR body + final ledger commit
+ * 4. Git merge next upstream release tip (until_sha / max_commits are smoke escapes)
+ * 5. Package bootstrap → WIP overlay (decisionHash) → parent finalize (Phase B)
+ * 6. Apply merge directives + deterministic policy (forkFirst overrides / mustEdit)
+ * 7. Luna children from merge-plan.json clusters (fallback prefix grouping if plan missing)
+ * 8. Always-on coherence pass; blocking `bun run build` (+ child-fix-build, max 2 rounds)
+ * 9. Update draft PR body + final ledger commit; chain next release on success
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -31,7 +32,15 @@ import {
   formatBaselineMetadata,
   resolveAnalysisBaseline,
   resolveCappedUpstreamTip,
+  resolveNextReleaseTip,
+  WAITING_FOR_NEXT_RELEASE,
 } from './lib/analysis'
+import {
+  clusterReportPath,
+  formatClusterReportTable,
+  readClusterReport,
+  validateClusterReport,
+} from './lib/cluster-report'
 import type { ConflictCluster } from './lib/clusters'
 import {
   appendExtensibilityNote,
@@ -45,6 +54,7 @@ import {
   comparePullRequestUrl,
   decideSyncBranchAction,
   detectReleaseVersions,
+  dispatchUpstreamSyncWorkflow,
   ensureSandcastleEnvFile,
   ensureUpstreamSyncScaffold,
   explainPrCreateFailure,
@@ -105,6 +115,19 @@ import {
   resolveDeterministicPolicyConflicts,
 } from './lib/lockfile-bootstrap'
 import {
+  applyMergeDirectives,
+  clustersFromMergePlan,
+  collectGrillAnswerIds,
+  computeDecisionHashFromDisk,
+  computeRunDecisionHash,
+  emptyMergeDirectives,
+  formatMergePlanSlice,
+  formatParentPlanSummary,
+  loadFinalDirectives,
+  readMergePlanDraft,
+  readMergePlanFinal,
+} from './lib/merge-plan'
+import {
   getUsageRecords,
   persistUsageArtifacts,
   recordAgentUsage,
@@ -112,17 +135,25 @@ import {
   resetUsageRecords,
 } from './lib/usage'
 import {
+  allBlockingVerificationPassed,
   allVerificationPassed,
   autofixFormat,
+  formatBuildLogForFixAgent,
   formatVerifyResults,
   formatVerifyStatusLine,
+  getVerifyResult,
   runVerification,
+  runVerificationStep,
+  type VerifyResult,
 } from './lib/verify'
 
 const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'prompts')
 const SKIP_AGENT = process.env.UPSTREAM_SYNC_SKIP_AGENT === 'true'
 const FORCE_RUN = process.env.UPSTREAM_SYNC_FORCE === 'true'
 const RESUME = process.env.UPSTREAM_SYNC_RESUME === 'true'
+const MAX_BUILD_FIX_ROUNDS = 2
+const COHERENCE_REASON =
+  'Always-on coherence pass after conflicts cleared (or none existed): verify import graph, restore missing upstream exports on fork-kept / union files, and honor grill directives (`delete` / `mustEdit` / `overrideForkFirst`). Do not no-op just because `git diff --diff-filter=U` is empty.'
 
 /** Active ledger run id for cancel/error flush handlers. */
 let activeRunId: string | null = null
@@ -196,6 +227,7 @@ async function runConflictClusterForest(options: {
   activePrNumber: number
   agents: ReturnType<typeof resolveAgents>
   conflictSnapshot: string[]
+  decisionHash: string
 }): Promise<void> {
   const maxDynamicRounds = readPositiveIntEnv('UPSTREAM_SYNC_CLUSTER_MAX_DYNAMIC_ROUNDS', 2)
 
@@ -227,6 +259,7 @@ async function runConflictClusterForest(options: {
       `[cluster] ${cluster.id} leaf depth=${cluster.depth} files=${assigned.length} prefix=${cluster.prefix}`
     )
 
+    const sliceCluster: ConflictCluster = { ...cluster, files: assigned }
     const childPrompt = substitutePrompt(readPrompt('child-resolve-conflicts.md'), {
       RUN_ID: options.runId,
       SYNC_BRANCH: options.syncBranch,
@@ -234,6 +267,9 @@ async function runConflictClusterForest(options: {
       CLUSTER_PARENT_ID: cluster.parentId ?? '(root)',
       CLUSTER_DEPTH: String(cluster.depth),
       CLUSTER_PREFIX: cluster.prefix,
+      CLUSTER_STRATEGY: cluster.strategy ?? 'manual',
+      CLUSTER_NOTES: cluster.notes?.trim() || '_No parent notes._',
+      MERGE_PLAN_SLICE: formatMergePlanSlice(sliceCluster),
       CLUSTER_FILE_COUNT: String(assigned.length),
       CLUSTER_FILES: assigned.map((f) => `- ${f}`).join('\n'),
       PR_NUMBER: options.activePrNumber > 0 ? String(options.activePrNumber) : 'none',
@@ -255,7 +291,10 @@ async function runConflictClusterForest(options: {
       runId: options.runId,
       clusterId: cluster.id,
       conflictSnapshot: options.conflictSnapshot,
+      decisionHash: options.decisionHash,
     })
+    recordClusterReport(options.runId, cluster.id)
+    stageMergePolicyIfPresent()
 
     if (dynamicRound >= maxDynamicRounds) return
 
@@ -282,6 +321,8 @@ async function runConflictClusterForest(options: {
       `[cluster] ${cluster.id} dynamic round ${nextRound}: ${leftovers.length} leftover(s) → ${leafConflictClusters(childRoots).length} child leaf(ves)`
     )
     for (const child of childRoots) {
+      child.strategy = cluster.strategy
+      child.notes = cluster.notes
       await runNode(child, nextRound)
     }
   }
@@ -289,6 +330,140 @@ async function runConflictClusterForest(options: {
   for (const root of options.roots) {
     await runNode(root, 0)
   }
+}
+
+function recordParentPlanFromDraft(runId: string): void {
+  const draft = readMergePlanDraft(runId)
+  if (!draft) {
+    console.warn(`[merge-plan] No draft plan at merge-plan.draft.json after grill (${runId})`)
+    return
+  }
+  appendRunLogSections(runId, { 'Parent plan': formatParentPlanSummary(draft) })
+}
+
+async function runParentFinalizePlan(options: {
+  runId: string
+  syncBranch: string
+  upstreamSha: string
+  activePrNumber: number
+  agents: ReturnType<typeof resolveAgents>
+}): Promise<void> {
+  const unmerged = listConflictFiles()
+  const prompt = substitutePrompt(readPrompt('parent-finalize-plan.md'), {
+    RUN_ID: options.runId,
+    SYNC_BRANCH: options.syncBranch,
+    UPSTREAM_SHA: options.upstreamSha,
+    PR_NUMBER: options.activePrNumber > 0 ? String(options.activePrNumber) : 'none',
+    UNMERGED_PATHS:
+      unmerged.length > 0
+        ? unmerged.map((file) => `- ${file}`).join('\n')
+        : '- (none — still write a final plan with empty childClusters and locked directives)',
+    DRAFT_PLAN_PATH: `.upstream-sync/ledger/${options.runId}/merge-plan.draft.json`,
+    OPEN_QUESTIONS_PATH: `.upstream-sync/ledger/${options.runId}/open-questions.md`,
+    GRILL_QA_PATH: `.upstream-sync/ledger/${options.runId}/grill-qa.md`,
+    QA_HISTORY_PATH: '.upstream-sync/qa-history.jsonl',
+  })
+
+  await runAgentPrompt({
+    prompt,
+    name: 'parent-finalize-plan',
+    branch: options.syncBranch,
+    runId: options.runId,
+    agent: options.agents.parent,
+    agentKind: 'parent',
+    agents: options.agents,
+    maxIterations: 2,
+    completionSignal: GRILL_COMPLETION_SIGNAL,
+  })
+
+  commitUpstreamLedger(`upstream-sync(${options.runId}): finalize merge plan`)
+}
+
+function recordClusterReport(runId: string, clusterId: string): void {
+  const report = readClusterReport(runId, clusterId)
+  if (report) {
+    appendRunLogSections(runId, {
+      [`Cluster ${clusterId}`]: formatClusterReportTable(report),
+    })
+    return
+  }
+
+  const path = clusterReportPath(runId, clusterId)
+  if (!existsSync(path)) {
+    console.warn(`[cluster] ${clusterId} did not write a cluster report`)
+    return
+  }
+
+  try {
+    const parsed = validateClusterReport(JSON.parse(readFileSync(path, 'utf8')))
+    if (!parsed.ok) {
+      console.warn(`[cluster] ${clusterId} report invalid: ${parsed.error}`)
+    }
+  } catch (error) {
+    console.warn(`[cluster] ${clusterId} report could not be parsed:`, error)
+  }
+}
+
+function stageMergePolicyIfPresent(): void {
+  try {
+    runGit(['add', '--', MERGE_POLICY_PATH])
+  } catch {
+    // merge-policy may be unchanged or unreadable mid-merge
+  }
+}
+
+function replaceVerifyResult(results: VerifyResult[], next: VerifyResult): VerifyResult[] {
+  const existing = results.findIndex((result) => result.command === next.command)
+  if (existing === -1) return [...results, next]
+  return results.map((result, index) => (index === existing ? next : result))
+}
+
+async function runBuildFixLoop(options: {
+  runId: string
+  syncBranch: string
+  activePrNumber: number
+  agents: ReturnType<typeof resolveAgents>
+  verifyResults: VerifyResult[]
+}): Promise<VerifyResult[]> {
+  let results = options.verifyResults
+  let build = getVerifyResult(results, 'build')
+  if (build?.success || SKIP_AGENT) return results
+
+  for (let round = 1; round <= MAX_BUILD_FIX_ROUNDS; round++) {
+    if (build?.success) break
+    console.log(
+      `[verify] build failed — invoking child-fix-build round ${round}/${MAX_BUILD_FIX_ROUNDS}`
+    )
+    const prompt = substitutePrompt(readPrompt('child-fix-build.md'), {
+      RUN_ID: options.runId,
+      SYNC_BRANCH: options.syncBranch,
+      FIX_ROUND: String(round),
+      PR_NUMBER: options.activePrNumber > 0 ? String(options.activePrNumber) : 'none',
+      BUILD_LOG: formatBuildLogForFixAgent(build),
+      CHECK_LOG: formatBuildLogForFixAgent(getVerifyResult(results, 'check')),
+    })
+
+    await runAgentPrompt({
+      prompt,
+      name: `child-fix-build-${round}`,
+      branch: options.syncBranch,
+      runId: options.runId,
+      agent: options.agents.child,
+      agentKind: 'child',
+      agents: options.agents,
+      maxIterations: 5,
+    })
+
+    runGit(['add', '-A'])
+    if (hasStagedChanges()) {
+      commitHarness(`upstream-sync(${options.runId}): build-fix round ${round}`)
+    }
+
+    build = runVerificationStep('build')
+    results = replaceVerifyResult(results, build)
+  }
+
+  return results
 }
 
 function readPrompt(name: string): string {
@@ -598,6 +773,7 @@ function persistActiveSyncState(options: {
   syncBranch: string
   mergeBase: string
   activePrNumber: number | null
+  activeUpstreamSha: string | null
 }): void {
   writeState({
     ...readState(),
@@ -606,8 +782,44 @@ function persistActiveSyncState(options: {
     activeBranch: options.syncBranch,
     activeMergeBase: options.mergeBase,
     activePrNumber: options.activePrNumber,
+    activeUpstreamSha: options.activeUpstreamSha,
   })
   commitUpstreamLedger(`upstream-sync(${options.runId}): active sync state`)
+}
+
+function maybeDispatchNextReleaseSlice(options: {
+  syncedSha: string
+  upstreamHeadSha: string
+  tipReason: string
+}): void {
+  if (
+    !options.tipReason.startsWith('next-release') &&
+    !options.tipReason.startsWith('active-upstream-sha')
+  ) {
+    return
+  }
+
+  try {
+    const remaining = resolveNextReleaseTip({
+      baselineSha: options.syncedSha,
+      upstreamHeadSha: options.upstreamHeadSha,
+    })
+    if (remaining.kind !== 'release') {
+      console.log('No further upstream releases to chain.')
+      return
+    }
+
+    if (process.env.GITHUB_ACTIONS !== 'true') {
+      console.log(
+        `Further upstream release ${remaining.version} (${remaining.tipSha.slice(0, 8)}) remains; skip workflow dispatch outside Actions.`
+      )
+      return
+    }
+
+    dispatchUpstreamSyncWorkflow()
+  } catch (error) {
+    console.warn('Could not dispatch next upstream-sync release slice:', error)
+  }
 }
 
 function appendUsageToRunLog(runId: string): string {
@@ -792,29 +1004,47 @@ async function main(): Promise<void> {
     }
 
     const baseline = resolveAnalysisBaseline(mergeBase, initialState)
-    const tip = resolveCappedUpstreamTip(baseline)
-    const headSha = tip.tipSha
+    const tip = resolveCappedUpstreamTip(baseline, {
+      activeUpstreamSha: FORCE_RUN ? null : initialState.activeUpstreamSha,
+    })
     const runId = todayRunId()
     activeRunId = runId
-    // Cap FBI / release-notes / merge range to the resolved tip (smoke: max-commits=1).
+
+    if (tip.kind === 'noop' && !RESUME) {
+      console.log(`No upstream release to merge (${tip.reason}).`)
+      writeRunOutcome(runId, {
+        kind: 'noop',
+        title: 'Waiting for next upstream release',
+        detail: tip.reason,
+        mergeBase,
+        upstreamSha: initialState.lastSyncedUpstreamSha ?? baseline.upstreamHeadSha,
+        commitCount: 0,
+      })
+      return
+    }
+
+    const headSha =
+      tip.kind === 'merge'
+        ? tip.tipSha
+        : (initialState.activeUpstreamSha ?? baseline.upstreamHeadSha)
+    const tipReason = tip.kind === 'merge' ? tip.reason : WAITING_FOR_NEXT_RELEASE
+    const tipCommitCount = tip.kind === 'merge' ? tip.commitCount : 0
+    const tipCapped = tip.kind === 'merge' ? tip.capped : headSha !== baseline.upstreamHeadSha
+    // Cap FBI / release-notes / merge range to the resolved tip (default: next release).
     const cappedBaseline = { ...baseline, upstreamHeadSha: headSha }
     const upstreamCommits = commitsSinceBaseline(cappedBaseline)
 
-    if (tip.capped) {
-      console.log(
-        `Capping upstream merge tip to ${headSha.slice(0, 8)} (${tip.reason}; ${tip.commitCount} commit(s); full HEAD ${baseline.upstreamHeadSha.slice(0, 8)}).`
-      )
-    }
+    console.log(
+      `Upstream merge tip ${headSha.slice(0, 8)} (${tipReason}; ${tipCommitCount} commit(s); full HEAD ${baseline.upstreamHeadSha.slice(0, 8)}).`
+    )
 
     appendRunLogSections(runId, {
       'Sync topology': [
         formatBaselineMetadata(cappedBaseline, upstreamCommits.length),
-        tip.capped
-          ? `- **Merge tip cap:** ${tip.reason} (full upstream HEAD \`${baseline.upstreamHeadSha.slice(0, 8)}\`)`
-          : null,
-      ]
-        .filter(Boolean)
-        .join('\n'),
+        `- **Merge tip:** ${tipReason} (\`${headSha.slice(0, 8)}\`${
+          tipCapped ? `; full upstream HEAD \`${baseline.upstreamHeadSha.slice(0, 8)}\`` : ''
+        })`,
+      ].join('\n'),
     })
 
     if (!FORCE_RUN && !RESUME && initialState.lastSyncedUpstreamSha === headSha) {
@@ -948,6 +1178,7 @@ async function main(): Promise<void> {
       activeBranch: syncBranch,
       activeMergeBase: mergeBase,
       activePrNumber: activePrNumber || null,
+      activeUpstreamSha: headSha,
     })
 
     writeFbiReport(
@@ -1031,6 +1262,7 @@ async function main(): Promise<void> {
       syncBranch,
       mergeBase,
       activePrNumber: activePrNumber || null,
+      activeUpstreamSha: headSha,
     })
 
     endGroup()
@@ -1041,11 +1273,11 @@ async function main(): Promise<void> {
 
     if (skipParentGrill) {
       console.log(
-        `Skipping parent grill — resume answer found on PR #${activePrNumber}. Proceeding to merge.`
+        `Skipping parent grill re-ask — resume answer found on PR #${activePrNumber}. Finalize plan runs after merge.`
       )
       appendRunLogSections(runId, {
         'Grill analysis':
-          'Skipped on resume. Human answers were recorded in `grill-log.md` / `qa-history.jsonl` — do not re-ask the same decisions.',
+          'Skipped re-ask on resume. Human answers were recorded in `grill-log.md` / `qa-history.jsonl`. Parent finalize still runs after merge.',
       })
     } else if (!SKIP_AGENT) {
       const parentPrompt = substitutePrompt(readPrompt('parent-orchestrator.md'), {
@@ -1081,9 +1313,11 @@ async function main(): Promise<void> {
         completionSignal: GRILL_COMPLETION_SIGNAL,
       })
 
+      recordParentPlanFromDraft(runId)
       commitUpstreamLedger(`upstream-sync(${runId}): grill analysis`)
     } else {
       console.log('[skip-agent] parent-grill-analysis')
+      recordParentPlanFromDraft(runId)
     }
 
     // Grill may leave product questions in open-questions.md — never merge until answered.
@@ -1160,7 +1394,7 @@ async function main(): Promise<void> {
     endGroup = startLogGroup('merge/bootstrap')
 
     try {
-      // Merge the (possibly capped) tip SHA — not always upstream/main HEAD.
+      // Merge the resolved tip (next release, until_sha, or max_commits) — not always upstream/main HEAD.
       runGit(['merge', '--no-edit', headSha])
     } catch {
       console.log('Merge conflicts detected — bootstrapping package manager before child agents.')
@@ -1209,7 +1443,17 @@ async function main(): Promise<void> {
 
     // Re-apply prior mid-merge resolutions from the WIP sidecar (resume / crashed runs).
     const conflictSnapshot = listConflictFiles()
-    applyMergeWip({ syncBranch })
+    let decisionHash = computeRunDecisionHash(runId)
+    const wipResult = applyMergeWip({ syncBranch, expectedDecisionHash: decisionHash })
+    if (wipResult.skipped) {
+      console.log(
+        `[wip] overlay skipped (${wipResult.reason ?? 'unknown'}); leaving conflicts for finalize/agents`
+      )
+    } else {
+      console.log(
+        `[wip] overlay applied=${wipResult.applied} deleted=${wipResult.deleted} (hash ${decisionHash.slice(0, 12)})`
+      )
+    }
 
     try {
       runGit(['push', 'origin', syncBranch])
@@ -1219,10 +1463,75 @@ async function main(): Promise<void> {
     }
 
     endGroup()
+    endGroup = startLogGroup('parent finalize')
+
+    if (!SKIP_AGENT) {
+      await runParentFinalizePlan({
+        runId,
+        syncBranch,
+        upstreamSha: headSha,
+        activePrNumber,
+        agents,
+      })
+    } else {
+      console.log('[skip-agent] parent-finalize-plan')
+    }
+
+    const finalPlan = readMergePlanFinal(runId)
+    const directives = loadFinalDirectives(runId)
+    if (!finalPlan || !directives) {
+      console.warn(
+        '[merge-plan] Finalize did not write merge-plan.json / merge-directives.json — falling back to empty directives and prefix clustering if needed.'
+      )
+    } else {
+      appendRunLogSections(runId, { 'Parent plan': formatParentPlanSummary(finalPlan) })
+    }
+
+    const lockedDirectives = directives ?? emptyMergeDirectives()
+    decisionHash = computeDecisionHashFromDisk({
+      directives: lockedDirectives,
+      grillAnswerIds: collectGrillAnswerIds(),
+    })
+
+    const directiveResult = applyMergeDirectives(lockedDirectives)
+    if (
+      directiveResult.deleted.length +
+        directiveResult.checkoutOurs.length +
+        directiveResult.checkoutTheirs.length +
+        directiveResult.failed.length >
+      0
+    ) {
+      console.log(
+        `[merge-directives] ours=${directiveResult.checkoutOurs.length} theirs=${directiveResult.checkoutTheirs.length} delete=${directiveResult.deleted.length} failed=${directiveResult.failed.length}`
+      )
+      appendRunLogSections(runId, {
+        'Merge directives': [
+          lockedDirectives.notes || '_No directive notes._',
+          '',
+          `- checkoutOurs: ${directiveResult.checkoutOurs.length}`,
+          `- checkoutTheirs: ${directiveResult.checkoutTheirs.length}`,
+          `- delete: ${directiveResult.deleted.length}`,
+          `- failed: ${directiveResult.failed.length}`,
+          lockedDirectives.mustEdit.length
+            ? `- mustEdit: ${lockedDirectives.mustEdit.map((path) => `\`${path}\``).join(', ')}`
+            : '',
+          lockedDirectives.overrideForkFirst.length
+            ? `- overrideForkFirst: ${lockedDirectives.overrideForkFirst.map((path) => `\`${path}\``).join(', ')}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      })
+    }
+
+    endGroup()
     endGroup = startLogGroup('child clusters')
 
     const conflictsBeforePolicy = listConflictFiles()
-    const policy = resolveDeterministicPolicyConflicts(conflictsBeforePolicy)
+    const policy = resolveDeterministicPolicyConflicts(conflictsBeforePolicy, {
+      overrideForkFirst: lockedDirectives.overrideForkFirst,
+      mustEdit: lockedDirectives.mustEdit,
+    })
     if (policy.resolved.length > 0) {
       console.log(
         `[policy-resolve] Deterministically resolved ${policy.resolved.length} path(s); ${policy.remaining.length} remain for agents.`
@@ -1232,32 +1541,94 @@ async function main(): Promise<void> {
         runId,
         clusterId: 'policy-deterministic',
         conflictSnapshot,
+        decisionHash,
       })
     }
 
     const conflicts = listConflictFiles()
-    const clusters = groupConflictClusters(conflicts)
+    const plannedClusters = clustersFromMergePlan(finalPlan, conflicts)
+    const clusters = plannedClusters ?? groupConflictClusters(conflicts)
+    const clusterSource = plannedClusters ? 'merge-plan' : 'fallback-prefix'
     writeClusterManifest(runId, clusters)
     const leaves = leafConflictClusters(clusters)
     const allNodes = walkConflictClusters(clusters)
     console.log(
-      `[cluster] forest: ${clusters.length} root(s), ${allNodes.length} node(s), ${leaves.length} leaf(ves), ${conflicts.length} file(s)`
+      `[cluster] source=${clusterSource} forest: ${clusters.length} root(s), ${allNodes.length} node(s), ${leaves.length} leaf(ves), ${conflicts.length} file(s)`
     )
 
-    await runConflictClusterForest({
-      roots: clusters,
-      runId,
-      syncBranch,
-      activePrNumber,
-      agents,
-      conflictSnapshot,
-    })
+    try {
+      await runConflictClusterForest({
+        roots: clusters,
+        runId,
+        syncBranch,
+        activePrNumber,
+        agents,
+        conflictSnapshot,
+        decisionHash,
+      })
+    } catch (error) {
+      persistMergeWip({
+        syncBranch,
+        runId,
+        clusterId: 'capacity-or-error',
+        conflictSnapshot,
+        decisionHash,
+      })
+      if (isTransientModelCapacityError(error)) {
+        const usageSectionBlocked = appendUsageToRunLog(runId)
+        appendRunLogSections(runId, {
+          Status: 'blocked',
+          'Capacity exhaustion': getErrorMessage(error),
+          'Remaining conflicts': listConflictFiles()
+            .map((file) => `- ${file}`)
+            .join('\n'),
+        })
+        const prBody = [
+          QUESTION_MARKER,
+          `## Upstream sync blocked (${runId})`,
+          '',
+          'Model capacity was exhausted while resolving conflict clusters. WIP was persisted; resume after capacity recovers.',
+          '',
+          `Remaining conflicts: ${listConflictFiles().length}.`,
+          '',
+          `Reply with \`${RESUME_COMMAND}\` to continue.`,
+          '',
+          '### Agent usage',
+          usageSectionBlocked,
+        ].join('\n')
+        const prNumber = resolveDraftPr(
+          activePrNumber,
+          mergeBase,
+          syncBranch,
+          runId,
+          extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
+          headSha,
+          syncPrTitle
+        )
+        writeState({ ...readState(), activePrNumber: prNumber || null, status: 'blocked' })
+        writeRunOutcome(runId, {
+          kind: 'blocked',
+          title: 'Blocked on model capacity during cluster resolution',
+          detail: getErrorMessage(error),
+          syncBranch,
+          mergeBase,
+          upstreamSha: headSha,
+          prNumber: prNumber || null,
+          commitCount: upstreamCommits.length,
+          remainingConflicts: listConflictFiles(),
+        })
+        process.exitCode = 1
+        return
+      }
+      throw error
+    }
 
-    const remainingAfterClusters = listConflictFiles()
-    let remaining = remainingAfterClusters
-    if (remaining.length > 0 && !SKIP_AGENT) {
+    let remaining = listConflictFiles()
+    if (!SKIP_AGENT) {
       console.log(
-        `${remaining.length} conflict(s) left after clusters — running finalize child agent.`
+        remaining.length > 0
+          ? `${remaining.length} conflict(s) left after clusters — running finalize/coherence agent.`
+          : 'Conflicts clear — running always-on finalize/coherence agent.'
       )
       remaining = await runFinalizeMergeAgent({
         runId,
@@ -1266,14 +1637,18 @@ async function main(): Promise<void> {
         agents,
         remaining,
         reason:
-          'Cluster agents finished but unmerged paths remain. Resolve every leftover conflict.',
+          remaining.length > 0
+            ? 'Cluster agents finished but unmerged paths remain. Resolve every leftover conflict, then run the coherence checklist.'
+            : COHERENCE_REASON,
       })
       persistMergeWip({
         syncBranch,
         runId,
         clusterId: 'finalize-after-clusters',
         conflictSnapshot,
+        decisionHash,
       })
+      stageMergePolicyIfPresent()
     }
 
     if (remaining.length > 0) {
@@ -1282,6 +1657,7 @@ async function main(): Promise<void> {
         runId,
         clusterId: 'blocked-final',
         conflictSnapshot,
+        decisionHash,
       })
       const usageSectionBlocked = appendUsageToRunLog(runId)
       appendRunLogSections(runId, {
@@ -1356,6 +1732,7 @@ async function main(): Promise<void> {
           runId,
           clusterId: 'finalize-after-commit-fail',
           conflictSnapshot,
+          decisionHash,
         })
 
         if (remaining.length > 0) {
@@ -1426,8 +1803,19 @@ async function main(): Promise<void> {
       console.warn(formatResult.output.slice(0, 2000))
     }
 
-    const verifyResults = runVerification()
+    const advisoryResults = runVerification({ steps: ['check', 'lint', 'test'] })
+    const buildResult = runVerificationStep('build')
+    let verifyResults = [...advisoryResults, buildResult]
+    verifyResults = await runBuildFixLoop({
+      runId,
+      syncBranch,
+      activePrNumber,
+      agents,
+      verifyResults,
+    })
+
     const verifyPassed = allVerificationPassed(verifyResults)
+    const blockingPassed = allBlockingVerificationPassed(verifyResults)
     appendRunLogSections(runId, {
       Format: formatResult.success
         ? '✅ `bun run format` (pre-verify autofix)'
@@ -1436,9 +1824,94 @@ async function main(): Promise<void> {
       'Merge policy': readFileSync(MERGE_POLICY_PATH, 'utf8').slice(0, 2000),
     })
 
+    if (!blockingPassed) {
+      const failedBuild = getVerifyResult(verifyResults, 'build')
+      const usageSectionBlocked = appendUsageToRunLog(runId)
+      const buildLog = formatBuildLogForFixAgent(failedBuild)
+      appendRunLogSections(runId, {
+        Status: 'blocked',
+        'Blocking verification': 'Build failed after coherence and build-fix rounds.',
+      })
+
+      const prBody = [
+        QUESTION_MARKER,
+        `## Upstream sync blocked (${runId})`,
+        '',
+        'Merge finished but **build failed** (blocking). The sync is not completed.',
+        '',
+        formatVerifyStatusLine(verifyResults),
+        '',
+        formatVerifyResults(verifyResults),
+        '',
+        '### Build log',
+        '',
+        '```',
+        buildLog,
+        '```',
+        '',
+        `Reply with \`${RESUME_COMMAND}\` after fixing compile errors, or re-run the workflow.`,
+        '',
+        '### Agent usage',
+        usageSectionBlocked,
+      ].join('\n')
+
+      const prNumber = resolveDraftPr(
+        activePrNumber,
+        mergeBase,
+        syncBranch,
+        runId,
+        extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
+        headSha,
+        syncPrTitle
+      )
+      if (prNumber > 0) {
+        try {
+          commentOnPr(
+            prNumber,
+            [
+              '## Upstream sync blocked — build failed',
+              '',
+              'Blocking verification did not pass. Status is `blocked`, not completed.',
+              '',
+              formatVerifyStatusLine(verifyResults),
+              '',
+              '```',
+              buildLog.slice(0, 6000),
+              '```',
+            ].join('\n')
+          )
+        } catch (error) {
+          console.warn(`Could not comment build failure on PR #${prNumber}:`, error)
+        }
+        syncGrillQaFromPr(prNumber, runId)
+      }
+      commitUpstreamLedger(`upstream-sync(${runId}): blocked on build`)
+      try {
+        runGit(['push', 'origin', syncBranch])
+      } catch (error) {
+        throwIfRemotePushAuthError(error, `Push ${syncBranch} after blocked build`)
+        console.warn(`Could not push ${syncBranch} after blocked build:`, error)
+      }
+      writeState({ ...readState(), activePrNumber: prNumber || null, status: 'blocked' })
+      writeRunOutcome(runId, {
+        kind: 'blocked',
+        title: 'Blocked — build failed',
+        detail:
+          'bun run build failed after coherence and child-fix-build rounds. Sync is not marked completed.',
+        syncBranch,
+        mergeBase,
+        upstreamSha: headSha,
+        prNumber: prNumber || null,
+        commitCount: upstreamCommits.length,
+        verification: verificationToOutcome(verifyResults),
+      })
+      process.exitCode = 1
+      return
+    }
+
     if (!verifyPassed) {
       console.warn(
-        '[verify] One or more advisory checks failed — continuing to finalize. Results are in the ledger / PR / job summary.'
+        '[verify] Advisory check/lint/test failed — build passed, completing with advisory warnings.'
       )
     }
 
@@ -1470,9 +1943,12 @@ async function main(): Promise<void> {
       `- [.upstream-sync/ledger/${runId}/grill-qa.md](.upstream-sync/ledger/${runId}/grill-qa.md) — **grill Q&A for this run**`,
       `- [.upstream-sync/grill-log.md](.upstream-sync/grill-log.md) — **rolling grill Q&A across all runs**`,
       `- [.upstream-sync/ledger/${runId}/skipped.md](.upstream-sync/ledger/${runId}/skipped.md) — **upstream changes we declined**`,
+      `- [.upstream-sync/ledger/${runId}/merge-plan.json](.upstream-sync/ledger/${runId}/merge-plan.json) — **final parent plan**`,
       '',
-      '### Verification (advisory — does not block the sync)',
+      '### Verification',
       formatVerifyStatusLine(verifyResults),
+      '',
+      '_Build is blocking. Check / lint / test are advisory._',
       '',
       formatVerifyResults(verifyResults),
       '',
@@ -1507,16 +1983,23 @@ async function main(): Promise<void> {
       activeBranch: syncBranch,
       activePrNumber: prNumber,
       activeMergeBase: mergeBase,
+      activeUpstreamSha: null,
+    })
+
+    maybeDispatchNextReleaseSlice({
+      syncedSha: headSha,
+      upstreamHeadSha: baseline.upstreamHeadSha,
+      tipReason,
     })
 
     writeRunOutcome(runId, {
       kind: 'completed',
       title: verifyPassed
         ? 'Upstream sync completed'
-        : 'Upstream sync completed (verification warnings)',
+        : 'Upstream sync completed (advisory verification warnings)',
       detail: verifyPassed
         ? `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Draft PR ready for review.`
-        : `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Advisory verification reported failures — see ledger / PR / job summary; they did not fail the workflow.`,
+        : `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Build passed; advisory check/lint/test reported failures — see ledger / PR / job summary.`,
       syncBranch,
       mergeBase,
       upstreamSha: headSha,

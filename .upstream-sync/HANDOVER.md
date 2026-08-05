@@ -21,6 +21,16 @@ An automated harness that periodically merges `simstudioai/sim` `main` into our 
 
 Goal: stop hand-merging hundreds of upstream commits and keep fork-owned product (Arena, Unipile, P2 docs, mothership admin, deploy scripts, etc.) intact.
 
+### Control plane (2026-08-05)
+
+The harness is **release-sliced** and **plan-driven**:
+
+1. Each Actions run merges the next upstream `vX.Y.Z:` tip (not full `main`). Success may dispatch the next slice.
+2. Parent Phase A (grill) writes `merge-plan.draft.json` + `## Parent plan`. Resume skips re-ask only — Phase B still finalizes `merge-plan.json` / `merge-directives.json` after merge.
+3. Harness applies directives (`mustEdit` / `overrideForkFirst` beat `forkFirst`), then spawns Luna children from the plan. Cluster reports land under `ledger/<runId>/clusters/`.
+4. WIP overlays carry a `decisionHash` (directives + grill answers + merge-policy) and are skipped when stale. Capacity exhaustion mid-cluster → `status: blocked`, not completed.
+5. **Build is blocking.** Coherence always runs; `child-fix-build` gets two rounds. Red build → `blocked`, never “completed with verification warnings.”
+
 ---
 
 ## 2. Current status (as of 2026-07-31)

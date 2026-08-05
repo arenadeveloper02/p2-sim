@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { commitHarness, listConflictFiles, MERGE_POLICY_PATH, runGit } from './config'
+import { pathMatchesPrefixes } from './merge-plan'
 
 const PACKAGE_MANIFEST_PATTERN = /(?:^|\/)package\.json$/
 const LOCKFILE_PATH = 'bun.lock'
@@ -21,10 +22,19 @@ const PACKAGE_JSON_UNION_FIELDS = [
 interface MergePolicy {
   forkFirst?: string[]
   upstreamFirst?: string[]
+  unionPaths?: string[]
   packageJson?: {
     strategy?: 'union' | 'upstream'
     dropScripts?: string[]
   }
+}
+
+/** Skip auto `--ours`/`--theirs` for grill directives and unionPaths. */
+export interface DeterministicConflictOptions {
+  overrideForkFirst?: readonly string[]
+  mustEdit?: readonly string[]
+  /** Override merge-policy `unionPaths` when provided. */
+  unionPaths?: readonly string[]
 }
 
 function readMergePolicy(): MergePolicy {
@@ -136,8 +146,11 @@ export function resolvePackageJsonConflict(filePath: string): void {
 }
 
 /** Pick merge side for deterministic paths only. Throws if the path needs agent review. */
-export function conflictResolutionSide(filePath: string): 'ours' | 'theirs' {
-  const side = tryDeterministicConflictSide(filePath)
+export function conflictResolutionSide(
+  filePath: string,
+  options?: DeterministicConflictOptions
+): 'ours' | 'theirs' {
+  const side = tryDeterministicConflictSide(filePath, options)
   if (!side) {
     throw new Error(
       `No deterministic merge side for ${filePath} — path is not in forkFirst/upstreamFirst and is not a harness special-case (package.json / bun.lock / bunfig). Leave for agent review.`
@@ -155,8 +168,16 @@ export function conflictResolutionSide(filePath: string): 'ours' | 'theirs' {
  *
  * Everything else — including paths not listed in `manualReview` — is agent-reviewed.
  */
-export function tryDeterministicConflictSide(filePath: string): 'ours' | 'theirs' | null {
+export function tryDeterministicConflictSide(
+  filePath: string,
+  options?: DeterministicConflictOptions
+): 'ours' | 'theirs' | null {
   const policy = readMergePolicy()
+  const unionPaths = options?.unionPaths ?? policy.unionPaths
+  if (pathMatchesPrefixes(filePath, options?.overrideForkFirst)) return null
+  if (pathMatchesPrefixes(filePath, options?.mustEdit)) return null
+  if (pathMatchesPrefixes(filePath, unionPaths)) return null
+
   if (isForkFirstPath(filePath, policy)) return 'ours'
   if (isUpstreamFirstPath(filePath, policy)) return 'theirs'
 
@@ -181,7 +202,10 @@ export function tryDeterministicConflictSide(filePath: string): 'ours' | 'theirs
  * Checkout `--ours`/`--theirs` for every unmerged path with a deterministic policy side.
  * package.json conflicts are union-merged (not a side checkout). Returns files that still need an agent.
  */
-export function resolveDeterministicPolicyConflicts(conflictFiles?: string[]): {
+export function resolveDeterministicPolicyConflicts(
+  conflictFiles?: string[],
+  options?: DeterministicConflictOptions
+): {
   resolved: string[]
   remaining: string[]
 } {
@@ -204,7 +228,7 @@ export function resolveDeterministicPolicyConflicts(conflictFiles?: string[]): {
       continue
     }
 
-    const side = tryDeterministicConflictSide(file)
+    const side = tryDeterministicConflictSide(file, options)
     if (!side) {
       remaining.push(file)
       continue

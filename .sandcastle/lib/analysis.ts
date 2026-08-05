@@ -1,13 +1,16 @@
 import {
   commitsSince,
+  detectReleaseVersions,
   readState,
   runGit,
+  type SyncState,
+  type UpstreamCommit,
   upstreamBranch,
   upstreamHeadSha,
   upstreamRemote,
-  type SyncState,
-  type UpstreamCommit,
 } from './config'
+
+export const WAITING_FOR_NEXT_RELEASE = 'waiting for next upstream release'
 
 export type BaselineSource = 'lastSyncedUpstreamSha' | 'merge-base'
 
@@ -100,68 +103,203 @@ export function commitsSinceBaseline(baseline: AnalysisBaseline): UpstreamCommit
   return commitsSince(baseline.baselineSha, baseline.upstreamHeadSha)
 }
 
+export type NextReleaseTip =
+  | {
+      kind: 'release'
+      tipSha: string
+      version: string
+      commitCount: number
+    }
+  | {
+      kind: 'noop'
+      reason: string
+    }
+
 /**
- * Cap the upstream merge tip for smoke tests / incremental syncs.
+ * First upstream release commit after baseline (`vX.Y.Z:` title convention).
+ * No release in range → noop (do not advance to full HEAD).
+ */
+export function resolveNextReleaseTip(
+  baseline: Pick<AnalysisBaseline, 'baselineSha' | 'upstreamHeadSha'>,
+  commits: UpstreamCommit[] = commitsSince(baseline.baselineSha, baseline.upstreamHeadSha)
+): NextReleaseTip {
+  const releases = detectReleaseVersions(commits)
+  const first = releases[0]
+  if (!first?.releaseCommitSha) {
+    return { kind: 'noop', reason: WAITING_FOR_NEXT_RELEASE }
+  }
+
+  const tipIndex = commits.findIndex((commit) => commit.sha === first.releaseCommitSha)
+  const commitCount =
+    tipIndex >= 0 ? tipIndex + 1 : commitsSince(baseline.baselineSha, first.releaseCommitSha).length
+
+  return {
+    kind: 'release',
+    tipSha: first.releaseCommitSha,
+    version: first.version,
+    commitCount,
+  }
+}
+
+export type CappedUpstreamTip =
+  | {
+      kind: 'merge'
+      tipSha: string
+      capped: boolean
+      commitCount: number
+      reason: string
+      version?: string
+    }
+  | {
+      kind: 'noop'
+      tipSha: null
+      commitCount: 0
+      reason: string
+    }
+
+export interface ResolveCappedUpstreamTipOptions {
+  untilSha?: string | null
+  maxCommits?: number | null
+  /** Resume lock: stay on this release tip instead of a newer one. */
+  activeUpstreamSha?: string | null
+  /** Injected commit list (oldest → newest). Skips git log / ancestor checks. */
+  commits?: UpstreamCommit[]
+}
+
+/**
+ * Cap the upstream merge tip to the next release by default.
  *
- * Env (checked in order):
- * - `UPSTREAM_SYNC_UNTIL_SHA` — exact upstream commit to merge through
- * - `UPSTREAM_SYNC_MAX_COMMITS` — positive integer; take the Nth commit after baseline
+ * Escapes (checked in order, override next-release):
+ * - `untilSha` / `UPSTREAM_SYNC_UNTIL_SHA` — exact upstream commit to merge through
+ * - `maxCommits` / `UPSTREAM_SYNC_MAX_COMMITS` — positive integer; take the Nth commit after baseline
+ * - `activeUpstreamSha` — persisted tip for resume (same release, not a newer one)
  *
- * Returns the full upstream HEAD when unset / invalid / zero.
+ * `maxCommits` 0 / unset is **not** "merge all of main" — it uses the next release tip.
+ * No new release and no escape → noop (`waiting for next upstream release`).
  */
 export function resolveCappedUpstreamTip(
   baseline: AnalysisBaseline,
-  options?: { untilSha?: string | null; maxCommits?: number | null }
-): { tipSha: string; capped: boolean; commitCount: number; reason: string } {
-  const untilSha = (options?.untilSha ?? process.env.UPSTREAM_SYNC_UNTIL_SHA ?? '').trim()
+  options?: ResolveCappedUpstreamTipOptions
+): CappedUpstreamTip {
+  const untilSha = (
+    options && 'untilSha' in options
+      ? (options.untilSha ?? '')
+      : (process.env.UPSTREAM_SYNC_UNTIL_SHA ?? '')
+  ).trim()
   const maxCommitsRaw =
-    options?.maxCommits ??
-    (process.env.UPSTREAM_SYNC_MAX_COMMITS
-      ? Number(process.env.UPSTREAM_SYNC_MAX_COMMITS)
-      : 0)
+    options && 'maxCommits' in options
+      ? options.maxCommits
+      : process.env.UPSTREAM_SYNC_MAX_COMMITS
+        ? Number(process.env.UPSTREAM_SYNC_MAX_COMMITS)
+        : 0
   const maxCommits =
     typeof maxCommitsRaw === 'number' && Number.isFinite(maxCommitsRaw)
       ? Math.floor(maxCommitsRaw)
       : 0
+  const activeUpstreamSha = (
+    options && 'activeUpstreamSha' in options ? (options.activeUpstreamSha ?? '') : ''
+  ).trim()
 
   const fullTip = baseline.upstreamHeadSha
-  const commits = commitsSince(baseline.baselineSha, fullTip)
+  const commits = options?.commits ?? commitsSince(baseline.baselineSha, fullTip)
 
   if (untilSha) {
-    if (!isAncestor(baseline.baselineSha, untilSha) && untilSha !== baseline.baselineSha) {
-      throw new Error(
-        `UPSTREAM_SYNC_UNTIL_SHA ${untilSha.slice(0, 8)} is not a descendant of baseline ${baseline.baselineSha.slice(0, 8)}`
-      )
+    if (!options?.commits) {
+      if (!isAncestor(baseline.baselineSha, untilSha) && untilSha !== baseline.baselineSha) {
+        throw new Error(
+          `UPSTREAM_SYNC_UNTIL_SHA ${untilSha.slice(0, 8)} is not a descendant of baseline ${baseline.baselineSha.slice(0, 8)}`
+        )
+      }
+      if (!isAncestor(untilSha, fullTip) && untilSha !== fullTip) {
+        throw new Error(
+          `UPSTREAM_SYNC_UNTIL_SHA ${untilSha.slice(0, 8)} is not an ancestor of upstream HEAD ${fullTip.slice(0, 8)}`
+        )
+      }
+    } else {
+      const known = new Set([baseline.baselineSha, fullTip, ...commits.map((commit) => commit.sha)])
+      if (!known.has(untilSha)) {
+        throw new Error(
+          `UPSTREAM_SYNC_UNTIL_SHA ${untilSha.slice(0, 8)} is not in the provided commit range`
+        )
+      }
     }
-    if (!isAncestor(untilSha, fullTip) && untilSha !== fullTip) {
-      throw new Error(
-        `UPSTREAM_SYNC_UNTIL_SHA ${untilSha.slice(0, 8)} is not an ancestor of upstream HEAD ${fullTip.slice(0, 8)}`
-      )
-    }
-    const cappedCommits = commitsSince(baseline.baselineSha, untilSha)
+
+    const untilIndex = commits.findIndex((commit) => commit.sha === untilSha)
+    const commitCount =
+      untilSha === baseline.baselineSha
+        ? 0
+        : untilIndex >= 0
+          ? untilIndex + 1
+          : untilSha === fullTip
+            ? commits.length
+            : options?.commits
+              ? 0
+              : commitsSince(baseline.baselineSha, untilSha).length
+
     return {
+      kind: 'merge',
       tipSha: untilSha,
       capped: untilSha !== fullTip,
-      commitCount: cappedCommits.length,
+      commitCount,
       reason: `until-sha ${untilSha.slice(0, 8)}`,
     }
   }
 
-  if (maxCommits > 0 && commits.length > maxCommits) {
-    const tipSha = commits[maxCommits - 1].sha
+  if (maxCommits > 0 && commits.length > 0) {
+    const count = Math.min(maxCommits, commits.length)
+    const tipSha = commits[count - 1].sha
     return {
+      kind: 'merge',
       tipSha,
-      capped: true,
-      commitCount: maxCommits,
+      capped: tipSha !== fullTip,
+      commitCount: count,
       reason: `max-commits=${maxCommits}`,
     }
   }
 
+  if (activeUpstreamSha) {
+    const activeIndex = commits.findIndex((commit) => commit.sha === activeUpstreamSha)
+    if (
+      activeIndex >= 0 ||
+      activeUpstreamSha === fullTip ||
+      activeUpstreamSha === baseline.baselineSha
+    ) {
+      const commitCount =
+        activeUpstreamSha === baseline.baselineSha
+          ? 0
+          : activeIndex >= 0
+            ? activeIndex + 1
+            : commits.length
+      return {
+        kind: 'merge',
+        tipSha: activeUpstreamSha,
+        capped: activeUpstreamSha !== fullTip,
+        commitCount,
+        reason: `active-upstream-sha ${activeUpstreamSha.slice(0, 8)}`,
+      }
+    }
+    console.warn(
+      `activeUpstreamSha ${activeUpstreamSha.slice(0, 8)} is not in baseline..upstream HEAD — falling back to next release.`
+    )
+  }
+
+  const next = resolveNextReleaseTip(baseline, commits)
+  if (next.kind === 'noop') {
+    return {
+      kind: 'noop',
+      tipSha: null,
+      commitCount: 0,
+      reason: next.reason,
+    }
+  }
+
   return {
-    tipSha: fullTip,
-    capped: false,
-    commitCount: commits.length,
-    reason: 'full upstream HEAD',
+    kind: 'merge',
+    tipSha: next.tipSha,
+    capped: next.tipSha !== fullTip,
+    commitCount: next.commitCount,
+    reason: `next-release ${next.version}`,
+    version: next.version,
   }
 }
 

@@ -48,6 +48,30 @@ describe('lockfile bootstrap helpers', () => {
     expect(tryDeterministicConflictSide('apps/sim/app/chat/hooks/use-chat-streaming.ts')).toBe(null)
   })
 
+  test('tryDeterministicConflictSide skips overrideForkFirst, mustEdit, and unionPaths', () => {
+    expect(
+      tryDeterministicConflictSide('apps/sim/tools/arena/foo.ts', {
+        overrideForkFirst: ['apps/sim/tools/arena/'],
+      })
+    ).toBe(null)
+    expect(
+      tryDeterministicConflictSide('apps/sim/tools/arena/foo.ts', {
+        mustEdit: ['apps/sim/tools/arena/foo.ts'],
+      })
+    ).toBe(null)
+    expect(
+      tryDeterministicConflictSide('packages/db/schema.ts', {
+        unionPaths: ['packages/db/schema.ts'],
+      })
+    ).toBe(null)
+    expect(
+      tryDeterministicConflictSide('apps/sim/lib/copilot/generated/x.ts', {
+        unionPaths: ['apps/sim/lib/copilot/generated/'],
+      })
+    ).toBe(null)
+    expect(tryDeterministicConflictSide('apps/sim/tools/arena/foo.ts')).toBe('ours')
+  })
+
   test('mergePackageJsonUnion keeps fork-only scripts and deps on upstream base', () => {
     const ours = {
       name: 'simstudio',

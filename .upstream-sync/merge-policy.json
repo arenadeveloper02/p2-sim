@@ -1,6 +1,6 @@
 {
   "strategy": "fork-first",
-  "description": "Only paths listed in forkFirst (auto --ours) or upstreamFirst (auto --theirs) are resolved without an agent. Everything else — whether or not it appears in manualReview — is agent-reviewed. manualReview is a non-exhaustive hint list of known hard shared hotspots, not a closed set. package.json is union-merged (upstream base + fork-only scripts/deps). bun.lock is regenerated after manifests. Agents SHOULD extend this file when they learn a recurring rule (add a forkFirst/upstreamFirst/manualReview prefix or packageJson.dropScripts entry) so the next sync is cheaper.",
+  "description": "Only paths listed in forkFirst (auto --ours) or upstreamFirst (auto --theirs) are resolved without an agent. Everything else — whether or not it appears in manualReview — is agent-reviewed. manualReview is a non-exhaustive hint list of known hard shared hotspots, not a closed set. unionPaths are agent-reviewed: keep fork-only symbols and take upstream additions; never drop upstream exports that in-tree consumers import. package.json is union-merged (upstream base + fork-only scripts/deps). bun.lock is regenerated after manifests. Agents SHOULD extend this file when they learn a recurring rule (add a forkFirst/upstreamFirst/manualReview/unionPaths prefix or packageJson.dropScripts entry) so the next sync is cheaper.",
   "packageJson": {
     "strategy": "union",
     "dropScripts": ["dev:full:minimal-registry"]
@@ -37,7 +37,6 @@
     "apps/sim/lib/figma-design-generator.ts",
     "apps/sim/app/api/admin/mothership/",
     "apps/sim/app/api/client-channel-mapping/",
-    "apps/sim/lib/chat/",
     "apps/sim/lib/branding/",
     "apps/sim/lib/auth/session-cookie-domain.ts",
     "apps/sim/lib/auth/legacy-session-cookie-clears.ts",
@@ -56,9 +55,18 @@
     "bunfig.toml"
   ],
   "upstreamFirst": ["apps/sim/lib/copilot/generated/"],
+  "unionPaths": [
+    "packages/db/schema.ts",
+    "apps/sim/tools/registry.ts",
+    "apps/sim/blocks/registry-maps.ts",
+    "apps/sim/lib/core/config/env-flags.ts",
+    "apps/sim/lib/billing/organizations/membership.ts",
+    "apps/sim/lib/oauth/types.ts",
+    "apps/sim/providers/models.ts"
+  ],
   "manualReview": [
     "packages/db/migrations/",
-    "packages/db/schema/",
+    "packages/db/schema.ts",
     "apps/sim/lib/auth/",
     "apps/sim/blocks/registry.ts",
     "apps/sim/blocks/registry-maps.ts",
@@ -72,7 +80,9 @@
     "apps/sim/providers/models.ts",
     "apps/sim/blocks/blocks/hubspot.ts",
     "apps/sim/tools/hubspot/",
+    "apps/sim/lib/chat/",
     "apps/sim/app/(interfaces)/chat/",
+    "apps/sim/app/(interfaces)/chat/[identifier]/ArenaDeployedChat.tsx",
     "apps/sim/app/api/chat/"
   ],
   "regenerateAfterMerge": ["bun run mship:generate"],

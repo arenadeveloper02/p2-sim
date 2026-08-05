@@ -1,5 +1,12 @@
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { ConflictCluster } from './clusters'
 import { countClusterFiles, leafConflictClusters } from './clusters'
@@ -112,17 +119,33 @@ export function withExtendedBanner(body: string, banner: string): string {
   return `${trimmedBanner}\n\n${body}`
 }
 
-export const VERIFY_COMMANDS = ['bun run check', 'bun run lint', 'bun run test', 'bun run build'] as const
+export const VERIFY_STEP_COMMANDS = {
+  check: 'bun run check',
+  lint: 'bun run lint',
+  test: 'bun run test',
+  build: 'bun run build',
+} as const
+
+export const VERIFY_COMMANDS = [
+  VERIFY_STEP_COMMANDS.check,
+  VERIFY_STEP_COMMANDS.lint,
+  VERIFY_STEP_COMMANDS.test,
+  VERIFY_STEP_COMMANDS.build,
+] as const
+
+export const WIP_META_RELATIVE_PATH = join(UPSTREAM_SYNC_ROOT, 'wip-meta.json')
 
 export interface SyncState {
   lastSyncedUpstreamSha: string | null
   lastSyncedAt: string | null
   lastRunId: string | null
-  status: 'idle' | 'running' | 'awaiting_input' | 'completed' | 'failed'
+  status: 'idle' | 'running' | 'awaiting_input' | 'blocked' | 'completed' | 'failed'
   openQuestions: Array<{ id: string; question: string; context?: string }>
   activeBranch: string | null
   activePrNumber: number | null
   activeMergeBase: string | null
+  /** Upstream SHA this open sync run is merging through (one release tip). Null when idle/complete. */
+  activeUpstreamSha: string | null
 }
 
 export interface UpstreamCommit {
@@ -208,9 +231,7 @@ export function findOpenSyncPr(mergeBase: string, branch: string): number {
       const prs = JSON.parse(raw) as Array<{ number: number }>
       const prNumber = prs[0]?.number ?? 0
       if (prNumber > 0) return prNumber
-    } catch {
-      continue
-    }
+    } catch {}
   }
   return 0
 }
@@ -252,7 +273,10 @@ export function appendGrillQa(entry: GrillQaEntry): void {
     parts.push('')
   }
 
-  writeFileSync(GRILL_LOG_PATH, `${readFileSync(GRILL_LOG_PATH, 'utf8').trim()}\n\n${parts.join('\n')}\n`)
+  writeFileSync(
+    GRILL_LOG_PATH,
+    `${readFileSync(GRILL_LOG_PATH, 'utf8').trim()}\n\n${parts.join('\n')}\n`
+  )
 
   const runGrillPath = join(ensureLedgerRunDir(entry.runId), 'grill-qa.md')
   const existing = (() => {
@@ -281,11 +305,7 @@ export function comparePullRequestUrl(mergeBase: string, branch: string): string
 }
 
 /** Actionable hint when `gh pr create` fails — usually not an auth issue. */
-export function explainPrCreateFailure(
-  error: unknown,
-  mergeBase: string,
-  branch: string
-): string {
+export function explainPrCreateFailure(error: unknown, mergeBase: string, branch: string): string {
   const message = error instanceof Error ? error.message : String(error)
 
   if (isSyncBranch(mergeBase)) {
@@ -303,14 +323,20 @@ export function explainPrCreateFailure(
     ].join(' ')
   }
 
-  if (message.includes('Head ref must be a branch') || message.includes("Head sha can't be blank")) {
+  if (
+    message.includes('Head ref must be a branch') ||
+    message.includes("Head sha can't be blank")
+  ) {
     return [
       `Head branch "${branch}" was not found on GitHub after push.`,
       'Confirm `git push -u origin` succeeded and the branch name has no remote/ prefix.',
     ].join(' ')
   }
 
-  if (message.includes('Base ref must be a branch') || message.includes("Base sha can't be blank")) {
+  if (
+    message.includes('Base ref must be a branch') ||
+    message.includes("Base sha can't be blank")
+  ) {
     return [
       `Base branch "${mergeBase}" was not found on GitHub.`,
       'Push the target branch to origin or set TARGET_BRANCH to an existing remote branch.',
@@ -369,11 +395,7 @@ interface PrComment {
  */
 export function syncGrillQaFromPr(prNumber: number, runId: string): number {
   const { owner, repo } = repoSlug()
-  const raw = runGh([
-    'api',
-    `repos/${owner}/${repo}/issues/${prNumber}/comments`,
-    '--paginate',
-  ])
+  const raw = runGh(['api', `repos/${owner}/${repo}/issues/${prNumber}/comments`, '--paginate'])
   const comments = JSON.parse(raw) as PrComment[]
   const logged = readLoggedCommentIds()
   let added = 0
@@ -381,8 +403,7 @@ export function syncGrillQaFromPr(prNumber: number, runId: string): number {
   for (const comment of comments) {
     if (logged.has(comment.id)) continue
     const isQuestion = comment.body.includes(QUESTION_MARKER)
-    const isResume =
-      comment.body.includes(RESUME_COMMAND) && !comment.user.login.includes('[bot]')
+    const isResume = comment.body.includes(RESUME_COMMAND) && !comment.user.login.includes('[bot]')
 
     if (isQuestion) {
       const question = comment.body
@@ -449,6 +470,7 @@ export function defaultSyncState(): SyncState {
     activeBranch: null,
     activePrNumber: null,
     activeMergeBase: null,
+    activeUpstreamSha: null,
   }
 }
 
@@ -484,12 +506,16 @@ export function ensureSandcastleEnvFile(): void {
     .filter(([, value]) => Boolean(value?.trim()))
     .map(([key, value]) => `${key}=${value}`)
   if (lines.length === 0) return
-  writeFileSync(SANDCASTLE_ENV_PATH, `# Generated by upstream-sync harness — do not commit\n${lines.join('\n')}\n`)
+  writeFileSync(
+    SANDCASTLE_ENV_PATH,
+    `# Generated by upstream-sync harness — do not commit\n${lines.join('\n')}\n`
+  )
 }
 
 export function readState(): SyncState {
   try {
-    return JSON.parse(readFileSync(STATE_PATH, 'utf8')) as SyncState
+    const parsed = JSON.parse(readFileSync(STATE_PATH, 'utf8')) as Partial<SyncState>
+    return { ...defaultSyncState(), ...parsed }
   } catch {
     return defaultSyncState()
   }
@@ -541,9 +567,32 @@ export function runGh(args: string[]): string {
   if (token) {
     env.GH_TOKEN = token
   } else {
-    delete env.GH_TOKEN
+    env.GH_TOKEN = undefined
   }
   return execFileSync('gh', args, { encoding: 'utf8', env }).trim()
+}
+
+/**
+ * Dispatch another upstream-sync workflow run (release-by-release catch-up).
+ * Concurrency group `upstream-sync` serializes overlapping jobs.
+ */
+export function dispatchUpstreamSyncWorkflow(options?: { ref?: string | null }): void {
+  const args = ['workflow', 'run', 'upstream-sync.yml']
+  const ref = (
+    options?.ref ??
+    process.env.GITHUB_REF_NAME ??
+    process.env.GITHUB_HEAD_REF ??
+    ''
+  ).trim()
+  if (ref) {
+    args.push('--ref', ref)
+  }
+  const { owner, repo } = repoSlug()
+  args.push('--repo', `${owner}/${repo}`)
+  console.log(
+    `Dispatching upstream-sync.yml${ref ? ` --ref ${ref}` : ''} for the next release slice.`
+  )
+  runGh(args)
 }
 
 /**
@@ -597,7 +646,13 @@ export function commitSyncBranchScaffold(options: {
     runGit(['diff', '--cached', '--quiet'])
     execFileSync(
       'git',
-      ['commit', '--allow-empty', '--no-verify', '-m', `upstream-sync(${options.runId}): sync branch note`],
+      [
+        'commit',
+        '--allow-empty',
+        '--no-verify',
+        '-m',
+        `upstream-sync(${options.runId}): sync branch note`,
+      ],
       { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, HUSKY: '0' } }
     )
   } catch {
@@ -611,10 +666,7 @@ export function updateDraftPrBody(prNumber: number, body: string): void {
 }
 
 /** Update draft PR title and/or body via REST (avoids GraphQL UpdatePullRequest). */
-export function updateDraftPr(
-  prNumber: number,
-  options: { title?: string; body?: string }
-): void {
+export function updateDraftPr(prNumber: number, options: { title?: string; body?: string }): void {
   const { owner, repo } = repoSlug()
   const args = ['api', '-X', 'PATCH', `repos/${owner}/${repo}/pulls/${prNumber}`]
   if (options.title !== undefined) {
@@ -641,12 +693,7 @@ export function remoteBranchExists(branch: string): boolean {
 export function resolvePrHeadBranch(prNumber: number): string | null {
   try {
     const { owner, repo } = repoSlug()
-    const branch = runGh([
-      'api',
-      `repos/${owner}/${repo}/pulls/${prNumber}`,
-      '--jq',
-      '.head.ref',
-    ])
+    const branch = runGh(['api', `repos/${owner}/${repo}/pulls/${prNumber}`, '--jq', '.head.ref'])
     return branch.trim() || null
   } catch {
     return null
@@ -699,12 +746,7 @@ export function isPrOpen(prNumber: number): boolean {
   try {
     // REST — `gh pr view` uses GraphQL and often fails with Actions GITHUB_TOKEN.
     const { owner, repo } = repoSlug()
-    const state = runGh([
-      'api',
-      `repos/${owner}/${repo}/pulls/${prNumber}`,
-      '--jq',
-      '.state',
-    ])
+    const state = runGh(['api', `repos/${owner}/${repo}/pulls/${prNumber}`, '--jq', '.state'])
     return state.trim().toLowerCase() === 'open'
   } catch {
     return false
@@ -734,14 +776,7 @@ export function closeSupersededPr(
 
   commentOnPr(prNumber, comment)
   const { owner, repo } = repoSlug()
-  runGh([
-    'api',
-    '-X',
-    'PATCH',
-    `repos/${owner}/${repo}/pulls/${prNumber}`,
-    '-f',
-    'state=closed',
-  ])
+  runGh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/pulls/${prNumber}`, '-f', 'state=closed'])
   console.log(`Closed superseded sync PR #${prNumber}.`)
 }
 
@@ -812,7 +847,9 @@ function releaseBodyFromCommit(entry: ReleaseNotesEntry): string | null {
     const first = lines[0]?.trim() ?? ''
     if (first.startsWith(`${entry.version}:`)) {
       const rest = lines.slice(1).join('\n').trim()
-      return rest || `_Release ${entry.version} — no release body on GitHub; commit has no details._`
+      return (
+        rest || `_Release ${entry.version} — no release body on GitHub; commit has no details._`
+      )
     }
   } catch {
     // commit may not exist locally
@@ -914,6 +951,72 @@ export function listResolvedConflictFiles(originalConflicts: string[]): string[]
   return originalConflicts.filter((file) => !stillUnmerged.has(file))
 }
 
+export interface MergeWipMeta {
+  decisionHash: string | null
+  deleted: string[]
+  updatedAt: string
+  clusterId?: string
+  runId?: string
+}
+
+export type ApplyMergeWipSkipReason = 'hash-mismatch' | 'no-wip' | 'no-conflicts' | 'error'
+
+export interface ApplyMergeWipResult {
+  applied: number
+  deleted: number
+  skipped: boolean
+  reason?: ApplyMergeWipSkipReason
+}
+
+/**
+ * Skip stale WIP when the caller supplies an expected hash that does not match
+ * the sidecar meta. Missing expected hash keeps legacy apply behavior.
+ */
+export function shouldSkipStaleWip(
+  storedHash: string | null | undefined,
+  expectedHash: string | null | undefined
+): boolean {
+  if (expectedHash === undefined || expectedHash === null || expectedHash === '') return false
+  if (!storedHash) return true
+  return storedHash !== expectedHash
+}
+
+export function parseMergeWipMeta(value: unknown): MergeWipMeta | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  const deleted = Array.isArray(record.deleted)
+    ? record.deleted.filter(
+        (entry): entry is string => typeof entry === 'string' && entry.length > 0
+      )
+    : []
+  const decisionHash =
+    typeof record.decisionHash === 'string' && record.decisionHash.length > 0
+      ? record.decisionHash
+      : null
+  return {
+    decisionHash,
+    deleted,
+    updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : new Date().toISOString(),
+    clusterId: typeof record.clusterId === 'string' ? record.clusterId : undefined,
+    runId: typeof record.runId === 'string' ? record.runId : undefined,
+  }
+}
+
+/** Resolved conflict snapshot split into still-present files vs upstream-delete tombstones. */
+export function collectResolvedWipPaths(originalConflicts: string[]): {
+  existing: string[]
+  deleted: string[]
+} {
+  const resolved = listResolvedConflictFiles(originalConflicts)
+  const existing: string[] = []
+  const deleted: string[] = []
+  for (const file of resolved) {
+    if (existsSync(join(process.cwd(), file))) existing.push(file)
+    else deleted.push(file)
+  }
+  return { existing, deleted }
+}
+
 /** WIP sidecar branch for a sync branch (`upstream-sync/<stamp>-wip`). */
 export function wipBranchName(syncBranch: string): string {
   assertUpstreamSyncRef(syncBranch)
@@ -984,13 +1087,13 @@ export function persistMergeWip(options: {
   clusterId: string
   /** Conflict paths captured when the merge first produced conflicts. */
   conflictSnapshot: string[]
+  /** Hash of locked directives + grill answers + merge-policy. */
+  decisionHash?: string | null
 }): number {
   try {
     assertUpstreamSyncRef(options.syncBranch)
-    const resolved = listResolvedConflictFiles(options.conflictSnapshot).filter((file) =>
-      existsSync(join(process.cwd(), file))
-    )
-    if (resolved.length === 0) {
+    const { existing, deleted: newlyDeleted } = collectResolvedWipPaths(options.conflictSnapshot)
+    if (existing.length === 0 && newlyDeleted.length === 0 && options.decisionHash === undefined) {
       console.log(`[wip] No newly resolved files to persist after ${options.clusterId}`)
       return 0
     }
@@ -1013,7 +1116,12 @@ export function persistMergeWip(options: {
 
     runGit(['worktree', 'add', '-B', wipBranch, worktreePath, startPoint])
 
-    for (const file of resolved) {
+    const previousMeta = readWipMetaFile(join(worktreePath, WIP_META_RELATIVE_PATH))
+    const deletedSet = new Set(previousMeta?.deleted ?? [])
+    for (const file of newlyDeleted) deletedSet.add(file)
+    for (const file of existing) deletedSet.delete(file)
+
+    for (const file of existing) {
       const src = join(repoRoot, file)
       const dest = join(worktreePath, file)
       mkdirSync(dirname(dest), { recursive: true })
@@ -1021,6 +1129,37 @@ export function persistMergeWip(options: {
       runGit(['add', '--', file], worktreePath)
     }
 
+    for (const file of newlyDeleted) {
+      try {
+        runGit(['rm', '-f', '--', file], worktreePath)
+      } catch {
+        const dest = join(worktreePath, file)
+        if (existsSync(dest)) {
+          try {
+            unlinkSync(dest)
+            runGit(['add', '-u', '--', file], worktreePath)
+          } catch {
+            // Tombstone is still recorded in meta even if the blob was absent.
+          }
+        }
+      }
+    }
+
+    const meta: MergeWipMeta = {
+      decisionHash:
+        options.decisionHash !== undefined
+          ? options.decisionHash
+          : (previousMeta?.decisionHash ?? null),
+      deleted: [...deletedSet].sort(),
+      updatedAt: new Date().toISOString(),
+      clusterId: options.clusterId,
+      runId: options.runId,
+    }
+    mkdirSync(join(worktreePath, UPSTREAM_SYNC_ROOT), { recursive: true })
+    writeFileSync(join(worktreePath, WIP_META_RELATIVE_PATH), `${JSON.stringify(meta, null, 2)}\n`)
+    runGit(['add', '--', WIP_META_RELATIVE_PATH], worktreePath)
+
+    const persistedCount = existing.length + newlyDeleted.length
     try {
       runGit(['diff', '--cached', '--quiet'], worktreePath)
       console.log(`[wip] Resolved files unchanged on ${wipBranch} after ${options.clusterId}`)
@@ -1029,18 +1168,18 @@ export function persistMergeWip(options: {
         [
           'commit',
           '-m',
-          `upstream-sync(wip): ${options.clusterId} (${resolved.length} files) [${options.runId}]`,
+          `upstream-sync(wip): ${options.clusterId} (${persistedCount} files) [${options.runId}]`,
         ],
         worktreePath
       )
       runGit(forceWithLeasePushArgs(wipBranch, expectedRemoteSha), worktreePath)
       console.log(
-        `[wip] Persisted ${resolved.length} resolved file(s) to ${wipBranch} after ${options.clusterId}`
+        `[wip] Persisted ${existing.length} file(s) + ${newlyDeleted.length} deletion(s) to ${wipBranch} after ${options.clusterId}`
       )
     }
 
     removeWipWorktree(worktreePath)
-    return resolved.length
+    return persistedCount
   } catch (error) {
     throwIfRemotePushAuthError(error, `WIP persist after ${options.clusterId}`)
     console.warn(`[wip] Failed to persist merge WIP after ${options.clusterId}:`, error)
@@ -1056,9 +1195,12 @@ export function persistMergeWip(options: {
 /**
  * Re-apply resolved file overlays from the WIP sidecar onto the current merge.
  * Call after `git merge` recreates conflicts (fresh run or resume).
- * @returns Number of conflicted paths replaced from WIP
+ * Skips the overlay when `expectedDecisionHash` does not match stored WIP meta.
  */
-export function applyMergeWip(options: { syncBranch: string }): number {
+export function applyMergeWip(options: {
+  syncBranch: string
+  expectedDecisionHash?: string | null
+}): ApplyMergeWipResult {
   try {
     assertUpstreamSyncRef(options.syncBranch)
     const wipBranch = wipBranchName(options.syncBranch)
@@ -1066,14 +1208,27 @@ export function applyMergeWip(options: { syncBranch: string }): number {
       runGit(['fetch', 'origin', wipBranch])
     } catch {
       console.log(`[wip] No remote WIP branch ${wipBranch} — nothing to apply`)
-      return 0
+      return { applied: 0, deleted: 0, skipped: true, reason: 'no-wip' }
+    }
+
+    const storedMeta = readWipMetaFromRef(`origin/${wipBranch}`)
+    if (shouldSkipStaleWip(storedMeta?.decisionHash, options.expectedDecisionHash)) {
+      console.warn(
+        `[wip] Skipping WIP overlay — decisionHash mismatch (stored=${storedMeta?.decisionHash ?? 'none'} expected=${options.expectedDecisionHash})`
+      )
+      return { applied: 0, deleted: 0, skipped: true, reason: 'hash-mismatch' }
     }
 
     const conflicts = listConflictFiles()
-    if (conflicts.length === 0) return 0
+    if (conflicts.length === 0 && !storedMeta?.deleted.length) {
+      return { applied: 0, deleted: 0, skipped: true, reason: 'no-conflicts' }
+    }
 
+    const conflictSet = new Set(conflicts)
+    const deletedSet = new Set(storedMeta?.deleted ?? [])
     let applied = 0
     for (const file of conflicts) {
+      if (deletedSet.has(file)) continue
       try {
         runGit(['cat-file', '-e', `origin/${wipBranch}:${file}`])
         runGit(['checkout', `origin/${wipBranch}`, '--', file])
@@ -1083,11 +1238,49 @@ export function applyMergeWip(options: { syncBranch: string }): number {
       }
     }
 
-    console.log(`[wip] Applied ${applied} resolved file(s) from ${wipBranch}`)
-    return applied
+    let deleted = 0
+    for (const file of storedMeta?.deleted ?? []) {
+      if (!conflictSet.has(file) && !existsSync(join(process.cwd(), file))) continue
+      try {
+        runGit(['rm', '-f', '--', file])
+        deleted++
+      } catch {
+        try {
+          if (existsSync(join(process.cwd(), file))) {
+            unlinkSync(join(process.cwd(), file))
+          }
+          runGit(['add', '-u', '--', file])
+          deleted++
+        } catch (error) {
+          console.warn(`[wip] Failed to apply tombstone delete for ${file}:`, error)
+        }
+      }
+    }
+
+    console.log(
+      `[wip] Applied ${applied} resolved file(s) + ${deleted} deletion(s) from ${wipBranch}`
+    )
+    return { applied, deleted, skipped: false }
   } catch (error) {
     console.warn(`[wip] Failed to apply merge WIP:`, error)
-    return 0
+    return { applied: 0, deleted: 0, skipped: true, reason: 'error' }
+  }
+}
+
+function readWipMetaFile(path: string): MergeWipMeta | null {
+  try {
+    return parseMergeWipMeta(JSON.parse(readFileSync(path, 'utf8')))
+  } catch {
+    return null
+  }
+}
+
+function readWipMetaFromRef(treeish: string): MergeWipMeta | null {
+  try {
+    const raw = runGit(['show', `${treeish}:${WIP_META_RELATIVE_PATH}`])
+    return parseMergeWipMeta(JSON.parse(raw))
+  } catch {
+    return null
   }
 }
 
@@ -1267,7 +1460,11 @@ export function formatReleaseNotesMarkdown(entries: ReleaseNotesEntry[]): string
     .join('\n\n---\n\n')
 }
 
-export function writeReleaseNotesReport(runId: string, content: string, versionCount: number): void {
+export function writeReleaseNotesReport(
+  runId: string,
+  content: string,
+  versionCount: number
+): void {
   const dir = ensureLedgerRunDir(runId)
   writeFileSync(
     join(dir, 'release-notes.md'),

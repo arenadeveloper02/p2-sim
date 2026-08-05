@@ -6,5 +6,6 @@
   "openQuestions": [],
   "activeBranch": null,
   "activePrNumber": null,
-  "activeMergeBase": "feat/github-merge-agent"
+  "activeMergeBase": "feat/github-merge-agent",
+  "activeUpstreamSha": null
 }
