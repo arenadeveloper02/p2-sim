@@ -82,11 +82,13 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       id: 'authMethod',
       title: 'Authentication Method',
       type: 'dropdown',
+      description:
+        'Sim Bot uses the workspace OAuth bot token (bot/app actions). Custom Bot uses a user token (user-level actions). If the task is “as a user” (DMs, user conversations), prefer Custom Bot; otherwise prefer Sim Bot.',
       options: [
-        { label: 'Sim Bot', id: 'oauth' },
-        { label: 'Custom Bot', id: 'bot_token' },
+        { label: 'Sim Bot (bot token)', id: 'oauth' },
+        { label: 'Custom Bot (user token)', id: 'bot_token' },
       ],
-      value: () => 'oauth',
+      value: () => 'bot_token',
       required: true,
     },
     {
@@ -112,11 +114,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       serviceId: 'slack',
       requiredScopes: getScopesForService('slack'),
       placeholder: 'Select Slack workspace',
-      dependsOn: ['authMethod'],
-      condition: {
-        field: 'authMethod',
-        value: 'oauth',
-      },
       required: true,
     },
     {
@@ -126,24 +123,6 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       canonicalParamId: 'oauthCredential',
       mode: 'advanced',
       placeholder: 'Enter credential ID',
-      dependsOn: ['authMethod'],
-      condition: {
-        field: 'authMethod',
-        value: 'oauth',
-      },
-      required: true,
-    },
-    {
-      id: 'botToken',
-      title: 'Bot Token',
-      type: 'short-input',
-      placeholder: 'Enter your Slack bot token (xoxb-...)',
-      password: true,
-      dependsOn: ['authMethod'],
-      condition: {
-        field: 'authMethod',
-        value: 'bot_token',
-      },
       required: true,
     },
     {
@@ -2102,6 +2081,9 @@ Return ONLY the integer Unix timestamp - no explanations, no quotes, no extra te
             baseParams.credential = botCredential
           } else if (botToken) {
             baseParams.accessToken = botToken
+          } else {
+            baseParams.credential = oauthCredential
+            baseParams.useUserToken = true
           }
         } else {
           // Default to OAuth

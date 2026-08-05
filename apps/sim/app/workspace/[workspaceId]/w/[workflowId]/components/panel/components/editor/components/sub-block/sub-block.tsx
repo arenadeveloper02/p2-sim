@@ -74,7 +74,7 @@ const SLACK_OVERRIDES: SelectorOverrides = {
     const authMethod = deps.authMethod as string
     const oauthCredential =
       authMethod === 'bot_token'
-        ? String(deps.customBotCredential ?? deps.botToken ?? '')
+        ? String(deps.customBotCredential ?? deps.botToken ?? deps.credential ?? '')
         : String(deps.credential ?? deps.customBotCredential ?? deps.triggerCredentials ?? '')
     return { ...context, oauthCredential }
   },
