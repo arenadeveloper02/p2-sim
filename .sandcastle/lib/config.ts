@@ -1037,7 +1037,11 @@ function showRefFile(ref: string, relativePath: string): string | null {
 
 /**
  * Draft-vs-final directive hashes differ on the same run. Overlay is still valid
- * when grill answers + merge-policy (and run id) match the WIP sidecar.
+ * when the sidecar belongs to this run and grill answers have not changed.
+ *
+ * Do not compare working-tree merge-policy to the WIP blob here: overlay runs
+ * mid-merge (policy may be conflicted), and `runGit` trims `git show` output so
+ * a trailing newline makes a byte-equal file look different.
  */
 export function canReuseWipDespiteDecisionHashMismatch(options: {
   storedMeta: MergeWipMeta | null | undefined
@@ -1046,19 +1050,22 @@ export function canReuseWipDespiteDecisionHashMismatch(options: {
 }): boolean {
   const stored = options.storedMeta
   if (!stored) return false
-  if (options.runId && stored.runId && stored.runId !== options.runId) return false
-
-  const now = currentWipStabilityHash()
-  if (stored.stabilityHash) return stored.stabilityHash === now
-
-  const wipPolicy = showRefFile(options.wipRef, MERGE_POLICY_PATH)
-  const localPolicy = existsSync(MERGE_POLICY_PATH) ? readFileSync(MERGE_POLICY_PATH, 'utf8') : ''
-  if ((wipPolicy ?? '') !== localPolicy) return false
+  if (options.runId && stored.runId && stored.runId !== options.runId) {
+    console.warn(
+      `[wip] overlay reuse blocked: runId mismatch stored=${stored.runId} current=${options.runId}`
+    )
+    return false
+  }
 
   const wipQaRaw = showRefFile(options.wipRef, QA_HISTORY_PATH)
   const thenKeys = wipGrillAnswerKeys(wipQaRaw ? parseQaHistoryJsonl(wipQaRaw) : []).sort()
   const nowKeys = wipGrillAnswerKeys(readQaHistory()).sort()
-  return thenKeys.join('\n') === nowKeys.join('\n')
+  if (thenKeys.length > 0 && thenKeys.join('\n') !== nowKeys.join('\n')) {
+    console.warn('[wip] overlay reuse blocked: grill answers changed since WIP snapshot')
+    return false
+  }
+
+  return true
 }
 
 /** Resolved conflict snapshot split into still-present files vs upstream-delete tombstones. */
@@ -1189,6 +1196,7 @@ export function persistMergeWip(options: {
     }
 
     snapshotLedgerIntoWip(repoRoot, worktreePath, options.runId)
+    snapshotSyncMetaIntoWip(repoRoot, worktreePath)
 
     for (const file of newlyDeleted) {
       try {
@@ -1312,7 +1320,7 @@ export function applyMergeWip(options: {
         })
       ) {
         console.warn(
-          `[wip] decisionHash mismatch (stored=${storedMeta?.decisionHash ?? 'none'} expected=${options.expectedDecisionHash}) but grill/policy stability matches — applying overlay`
+          `[wip] decisionHash mismatch (stored=${storedMeta?.decisionHash ?? 'none'} expected=${options.expectedDecisionHash}) but same run/grill — applying overlay`
         )
       } else {
         console.warn(
@@ -1367,6 +1375,17 @@ export function applyMergeWip(options: {
   } catch (error) {
     console.warn(`[wip] Failed to apply merge WIP:`, error)
     return { applied: 0, deleted: 0, skipped: true, reason: 'error' }
+  }
+}
+
+function snapshotSyncMetaIntoWip(repoRoot: string, worktreePath: string): void {
+  for (const rel of [QA_HISTORY_PATH, MERGE_POLICY_PATH]) {
+    const src = join(repoRoot, rel)
+    if (!existsSync(src)) continue
+    const dest = join(worktreePath, rel)
+    mkdirSync(dirname(dest), { recursive: true })
+    copyFileSync(src, dest)
+    runGit(['add', '--', rel], worktreePath)
   }
 }
 

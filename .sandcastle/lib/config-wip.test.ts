@@ -178,6 +178,17 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     git(repo, ['checkout', '-b', 'upstream-sync/2026-08-05T00-00-00'])
     writeFileSync(join(repo, 'keep.ts'), 'fork-keep\n')
     writeFileSync(join(repo, 'gone.ts'), 'fork-gone\n')
+    mkdirSync(join(repo, '.upstream-sync'), { recursive: true })
+    writeFileSync(join(repo, '.upstream-sync/merge-policy.json'), '{}\n')
+    writeFileSync(
+      join(repo, '.upstream-sync/qa-history.jsonl'),
+      `${JSON.stringify({
+        id: 'q-keep',
+        runId: '2026-08-05',
+        answer: 'keep fork branding',
+        source: 'pr-comment',
+      })}\n`
+    )
     git(repo, ['add', '.'])
     git(repo, ['commit', '-m', 'fork'])
     git(repo, ['push', '-u', 'origin', 'upstream-sync/2026-08-05T00-00-00'])
@@ -242,10 +253,54 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     } catch {
       // conflicts again
     }
-    mkdirSync(join(repo, '.upstream-sync'), { recursive: true })
     writeFileSync(
       join(repo, '.upstream-sync/merge-policy.json'),
       '{"forkFirst":["apps/changed/"]}\n'
+    )
+    const policyDrift = applyMergeWip({
+      syncBranch: 'upstream-sync/2026-08-05T00-00-00',
+      expectedDecisionHash: 'hash-v2',
+      runId: '2026-08-05',
+    })
+    expect(policyDrift.skipped).toBe(false)
+    expect(readFileSync(join(repo, 'keep.ts'), 'utf8')).toBe('fork-keep\n')
+
+    git(repo, ['merge', '--abort'])
+    try {
+      git(repo, ['merge', 'upstream-side'])
+    } catch {
+      // conflicts again
+    }
+    writeFileSync(
+      join(repo, '.upstream-sync/qa-history.jsonl'),
+      `${readFileSync(join(repo, '.upstream-sync/qa-history.jsonl'), 'utf8')}${JSON.stringify({
+        id: 'a-resume',
+        runId: '2026-08-05',
+        answer: '/upstream-sync resume\n\nContinue after pager stall.',
+        source: 'resume',
+      })}\n`
+    )
+    const resumeOnly = applyMergeWip({
+      syncBranch: 'upstream-sync/2026-08-05T00-00-00',
+      expectedDecisionHash: 'hash-v2',
+      runId: '2026-08-05',
+    })
+    expect(resumeOnly.skipped).toBe(false)
+
+    git(repo, ['merge', '--abort'])
+    try {
+      git(repo, ['merge', 'upstream-side'])
+    } catch {
+      // conflicts again
+    }
+    writeFileSync(
+      join(repo, '.upstream-sync/qa-history.jsonl'),
+      `${readFileSync(join(repo, '.upstream-sync/qa-history.jsonl'), 'utf8')}${JSON.stringify({
+        id: 'q-new',
+        runId: '2026-08-05',
+        answer: 'take upstream oauth',
+        source: 'pr-comment',
+      })}\n`
     )
     const skipped = applyMergeWip({
       syncBranch: 'upstream-sync/2026-08-05T00-00-00',
@@ -260,7 +315,6 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     })
     expect(readFileSync(join(repo, 'keep.ts'), 'utf8')).toContain('<<<<<<<')
 
-    writeFileSync(join(repo, '.upstream-sync/merge-policy.json'), '{}\n')
     const applied = applyMergeWip({
       syncBranch: 'upstream-sync/2026-08-05T00-00-00',
       expectedDecisionHash: 'hash-v1',
