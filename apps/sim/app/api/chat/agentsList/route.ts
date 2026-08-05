@@ -1,15 +1,8 @@
 import { db } from '@sim/db'
-import {
-  chat,
-  user,
-  webhook,
-  workflow,
-  workflowExecutionLogs,
-  workflowSchedule,
-} from '@sim/db/schema'
+import { chat, user, workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import type { SQL } from 'drizzle-orm'
-import { and, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
 import {
@@ -176,9 +169,9 @@ const getAgentsListAllowedEmail = (chats: AgentChatRow[], emailId: string) => {
 /**
  * Fetches active chats with their workflow and author metadata.
  *
- * This is intentionally shared across tabs to keep the same join strategy:
- * - Joins workflow + author email
- * - Excludes chats tied to active webhooks or active schedules
+ * Shared across tabs: joins workflow + author email. Chat deployments remain
+ * listable even when the same workflow also has an active schedule or webhook,
+ * since chat runs use triggerType=chat independently of those automations.
  */
 async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promise<AgentChatRow[]> {
   /**
@@ -205,11 +198,6 @@ async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promi
     .from(chat)
     .innerJoin(workflow, eq(chat.workflowId, workflow.id))
     .innerJoin(user, eq(workflow.userId, user.id))
-    .leftJoin(webhook, and(eq(webhook.workflowId, workflow.id), eq(webhook.isActive, true)))
-    .leftJoin(
-      workflowSchedule,
-      and(eq(workflowSchedule.workflowId, workflow.id), eq(workflowSchedule.status, 'active'))
-    )
     .where(whereConditions)
     .orderBy(desc(chat.updatedAt))
 }
@@ -233,12 +221,7 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
   const creatorUserId = userRecord[0].id
 
   const chats = await fetchAgentChats(
-    and(
-      eq(chat.isActive, true),
-      eq(workflow.userId, creatorUserId),
-      isNull(webhook.id),
-      isNull(workflowSchedule.id)
-    )
+    and(eq(chat.isActive, true), eq(workflow.userId, creatorUserId))
   )
 
   /**
@@ -275,16 +258,9 @@ async function fetchSharedWithMeChats(
       ? and(
           eq(chat.isActive, true),
           eq(chat.department, departmentValue),
-          ne(workflow.userId, userId),
-          isNull(webhook.id),
-          isNull(workflowSchedule.id)
+          ne(workflow.userId, userId)
         )
-      : and(
-          eq(chat.isActive, true),
-          ne(workflow.userId, userId),
-          isNull(webhook.id),
-          isNull(workflowSchedule.id)
-        )
+      : and(eq(chat.isActive, true), ne(workflow.userId, userId))
 
   const chats = await fetchAgentChats(sharedWhereConditions)
 
@@ -341,13 +317,8 @@ async function getGlobalAgentsList(
 
   const globalWhereConditions =
     departmentValue !== undefined
-      ? and(
-          eq(chat.isActive, true),
-          eq(chat.department, departmentValue),
-          isNull(webhook.id),
-          isNull(workflowSchedule.id)
-        )
-      : and(eq(chat.isActive, true), isNull(webhook.id), isNull(workflowSchedule.id))
+      ? and(eq(chat.isActive, true), eq(chat.department, departmentValue))
+      : eq(chat.isActive, true)
   const userEmailDomain = `@${emailId.split('@')[1]}`
 
   const globalChats = await fetchAgentChats(globalWhereConditions)
