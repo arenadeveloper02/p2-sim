@@ -7,13 +7,13 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getValidationErrorMessage, parseJsonBody } from '@/lib/api/server'
 import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
-import {
-  checkAttributedUsageLimits,
-  requireBillingAttributionHeader,
-  resolveBillingAttribution,
-  // toBillingContext, // applied inside recordSearchEmbeddingUsage
-} from '@/lib/billing/core/billing-attribution'
+// import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+// import {
+//   checkAttributedUsageLimits,
+//   requireBillingAttributionHeader,
+//   resolveBillingAttribution,
+//   // toBillingContext, // applied inside recordSearchEmbeddingUsage
+// } from '@/lib/billing/core/billing-attribution'
 // Threshold billing runs inside recordSearchEmbeddingUsage, so the route no
 // longer calls it directly.
 // import {
@@ -361,48 +361,37 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
-      /**
-       * Resolved once here and threaded into `recordSearchEmbeddingUsage` below,
-       * which rejects workspace-scoped usage that arrives without attribution.
-       */
-      const billingAttribution =
-        hasQuery && workspaceId
-          ? auth.authType === AuthType.INTERNAL_JWT
-            ? requireBillingAttributionHeader(request.headers, {
-                actorUserId: userId,
-                workspaceId,
-              })
-            : shouldMeter
-              ? await resolveBillingAttribution({
-                  actorUserId: userId,
-                  workspaceId,
-                })
-              : undefined
-          : undefined
-
-      // Upstream pre-warms the embedding here; each search branch below generates
-      // it instead so the BYOK flag can be captured per strategy.
-      // const queryEmbeddingPromise = hasQuery
-      //   ? generateSearchEmbedding(validatedData.query!, queryEmbeddingModel, workspaceId)
-      //   : Promise.resolve(null)
-
-      /**
-       * Gate the workspace payer and actor before hosted embedding cost. Internal
-       * workflow tools were gated during preprocessing, and tag-only search is free.
-       */
-      if (shouldMeter && hasQuery) {
-        const usage = billingAttribution
-          ? await checkAttributedUsageLimits(billingAttribution)
-          : await checkActorUsageLimits(userId)
-        if (usage.isExceeded) {
-          return NextResponse.json(
-            {
-              error: usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.',
-            },
-            { status: 402 }
-          )
-        }
-      }
+      // Billing attribution is disabled for Arena — the header/scope check fails when a
+      // workflow searches a KB outside its own workspace. Keep the upstream path here
+      // so it can be restored without reconstructing it.
+      // const billingAttribution =
+      //   hasQuery && workspaceId
+      //     ? auth.authType === AuthType.INTERNAL_JWT
+      //       ? requireBillingAttributionHeader(request.headers, {
+      //           actorUserId: userId,
+      //           workspaceId,
+      //         })
+      //       : shouldMeter
+      //         ? await resolveBillingAttribution({
+      //             actorUserId: userId,
+      //             workspaceId,
+      //           })
+      //         : undefined
+      //     : undefined
+      //
+      // if (shouldMeter && hasQuery) {
+      //   const usage = billingAttribution
+      //     ? await checkAttributedUsageLimits(billingAttribution)
+      //     : await checkActorUsageLimits(userId)
+      //   if (usage.isExceeded) {
+      //     return NextResponse.json(
+      //       {
+      //         error: usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.',
+      //       },
+      //       { status: 402 }
+      //     )
+      //   }
+      // }
 
       // if (workflowId) {
       // const authorization = await authorizeWorkflowByWorkspacePermission({
@@ -488,37 +477,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
-      // Upstream records the embedding charge inline here. This fork routes it
-      // through `recordSearchEmbeddingUsage` below, which already performs the
-      // same `recordUsage` write plus the payer overage check, so keeping both
-      // would bill the same search twice.
-      // if (shouldMeter && cost && cost.total > 0) {
-      //   const { recordUsage } = await import('@/lib/billing/core/usage-log')
-      //   try {
-      //     await recordUsage({
-      //       userId,
-      //       workspaceId: workspaceId ?? undefined,
-      //       ...(billingAttribution ? toBillingContext(billingAttribution) : {}),
-      //       entries: [
-      //         {
-      //           category: 'model',
-      //           source: 'knowledge-base',
-      //           description: queryEmbeddingModel,
-      //           cost: cost.total,
-      //           sourceReference: `kb-search:${requestId}`,
-      //         },
-      //       ],
-      //     })
-      //     if (billingAttribution) {
-      //       await checkAndBillPayerOverageThreshold(billingAttribution.billingEntity)
-      //     } else {
-      //       await checkAndBillOverageThreshold(userId)
-      //     }
-      //   } catch (billingError) {
-      //     logger.error(`[${requestId}] Failed to record KB search usage`, { error: billingError })
-      //   }
-      // }
-
       // Calculate cost for the embedding (with fallback if calculation fails)
       let cost = null
       let tokenCount = null
@@ -541,7 +499,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             query: validatedData.query!,
             isBYOK: queryEmbeddingIsBYOK,
             sourceReference: `kb-search:${requestId}`,
-            billingAttribution,
+            // billingAttribution,
           })
         }
       }

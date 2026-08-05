@@ -12,13 +12,14 @@ import {
 } from '@/lib/api/contracts/knowledge'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
-import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
-import {
-  checkAttributedUsageLimits,
-  requireBillingAttributionHeader,
-  resolveBillingAttribution,
-} from '@/lib/billing/core/billing-attribution'
+// import { AuthType } from '@/lib/auth/hybrid'
+// import {
+//   checkAttributedUsageLimits,
+//   requireBillingAttributionHeader,
+//   resolveBillingAttribution,
+// } from '@/lib/billing/core/billing-attribution'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   bulkDocumentOperation,
@@ -42,13 +43,13 @@ export const GET = withRouteHandler(
     const { id: knowledgeBaseId } = await params
 
     try {
-      const session = await getSession()
-      if (!session?.user?.id) {
+      const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
+      if (!auth.success || !auth.userId) {
         logger.warn(`[${requestId}] Unauthorized documents access attempt`)
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      const accessCheck = await checkKnowledgeBaseAccess(knowledgeBaseId, session.user.id)
+      const accessCheck = await checkKnowledgeBaseAccess(knowledgeBaseId, auth.userId)
 
       if (!accessCheck.hasAccess) {
         if ('notFound' in accessCheck && accessCheck.notFound) {
@@ -56,7 +57,7 @@ export const GET = withRouteHandler(
           return NextResponse.json({ error: 'Knowledge base not found' }, { status: 404 })
         }
         logger.warn(
-          `[${requestId}] User ${session.user.id} attempted to access unauthorized knowledge base documents ${knowledgeBaseId}`
+          `[${requestId}] User ${auth.userId} attempted to access unauthorized knowledge base documents ${knowledgeBaseId}`
         )
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
@@ -181,26 +182,30 @@ export const POST = withRouteHandler(
       }
 
       const kbWorkspaceId = accessCheck.knowledgeBase?.workspaceId
-      const billingAttribution = kbWorkspaceId
-        ? auth.authType === AuthType.INTERNAL_JWT
-          ? requireBillingAttributionHeader(req.headers, {
-              actorUserId: userId,
-              workspaceId: kbWorkspaceId,
-            })
-          : await resolveBillingAttribution({
-              actorUserId: userId,
-              workspaceId: kbWorkspaceId,
-            })
-        : undefined
+      // Billing attribution is disabled for Arena — the header/scope check fails when a
+      // workflow creates a document in a KB outside its own workspace.
+      // const billingAttribution = kbWorkspaceId
+      //   ? auth.authType === AuthType.INTERNAL_JWT
+      //     ? requireBillingAttributionHeader(req.headers, {
+      //         actorUserId: userId,
+      //         workspaceId: kbWorkspaceId,
+      //       })
+      //     : await resolveBillingAttribution({
+      //         actorUserId: userId,
+      //         workspaceId: kbWorkspaceId,
+      //       })
+      //   : undefined
+      const billingAttribution = undefined
 
       /**
        * Gate the workspace payer and uploader before accepting indexing work.
        * Legacy workspace-less KBs retain account-only enforcement; asynchronous
        * connector, cron, and retry paths apply the same backstop.
        */
-      const usage = billingAttribution
-        ? await checkAttributedUsageLimits(billingAttribution)
-        : await checkActorUsageLimits(userId)
+      // const usage = billingAttribution
+      //   ? await checkAttributedUsageLimits(billingAttribution)
+      //   : await checkActorUsageLimits(userId)
+      const usage = await checkActorUsageLimits(userId)
       if (usage.isExceeded) {
         return NextResponse.json(
           {
