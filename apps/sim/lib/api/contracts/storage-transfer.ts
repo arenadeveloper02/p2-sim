@@ -353,6 +353,7 @@ export const presignedUploadTypes = [
   'profile-pictures',
   'mothership',
   'workspace-logos',
+  'org-logos',
   'execution',
 ] as const
 
