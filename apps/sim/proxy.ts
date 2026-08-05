@@ -3,7 +3,7 @@ import { getSessionCookie } from 'better-auth/cookies'
 import { type NextRequest, NextResponse } from 'next/server'
 import { sendToProfound } from './lib/analytics/profound'
 import { getEnv } from './lib/core/config/env'
-import { isAuthDisabled, isDev, isHosted } from './lib/core/config/env-flags'
+import { isAuthDisabled, isDev } from './lib/core/config/env-flags'
 import { apiCorsPatch } from './lib/core/security/api-cors'
 import { generateRuntimeCSP } from './lib/core/security/csp'
 import { getClientIp } from './lib/core/utils/request'
@@ -191,14 +191,6 @@ function handleRootPathRedirects(
 
   if (url.pathname !== '/') {
     return null
-  }
-
-  if (!isHosted && !isDev) {
-    // Self-hosted production: Always redirect based on session.
-    if (hasActiveSession) {
-      return NextResponse.redirect(new URL('/workspace', request.url))
-    }
-    return NextResponse.redirect(new URL('/login', request.url))
   }
 
   // Always redirect root path to workspace
