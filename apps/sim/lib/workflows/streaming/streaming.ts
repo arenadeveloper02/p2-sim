@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { isRecordLike, omit } from '@sim/utils/object'
 import {
   extractChartsFromData,
   hasRenderableChartDeployOutput,
@@ -411,6 +412,71 @@ function attachToolCallCharts(
       }
     }
   }
+}
+
+/** Tool-call payload keys that must never ride a public `final` envelope. */
+const TOOL_PAYLOAD_KEYS = ['arguments', 'input', 'result', 'output'] as const
+
+function redactToolCallPayloads(toolCall: unknown): unknown {
+  if (!toolCall || typeof toolCall !== 'object') return toolCall
+  return omit(toolCall as Record<string, unknown>, [...TOOL_PAYLOAD_KEYS])
+}
+
+/**
+ * Strips model internals from an output before it rides a simple-SSE `final`
+ * envelope.
+ *
+ * `thinkingContent`, intermediate `assistantContent`, and tool-call arguments
+ * inside `providerTiming.timeSegments` would otherwise reach clients wholesale,
+ * bypassing the independently gated thinking/tool frames. Timing numbers and
+ * tool names stay — they carry no model internals.
+ *
+ * With `redactToolPayloads` (public chat, where the caller is an anonymous end
+ * user rather than the workflow owner), the block's own top-level `toolCalls`
+ * are reduced the same way. Without it, the authenticated workflow API keeps
+ * returning tool results, which callers legitimately consume.
+ */
+function sanitizeOutputForEnvelope(
+  output: Record<string, unknown>,
+  options: { redactToolPayloads: boolean }
+): Record<string, unknown> {
+  let sanitized = output
+
+  const providerTiming = output.providerTiming as { timeSegments?: unknown } | undefined
+  if (providerTiming && Array.isArray(providerTiming.timeSegments)) {
+    sanitized = {
+      ...sanitized,
+      providerTiming: {
+        ...providerTiming,
+        timeSegments: providerTiming.timeSegments.map((segment) => {
+          if (!segment || typeof segment !== 'object') return segment
+          const { toolCalls, ...rest } = omit(segment as Record<string, unknown>, [
+            'thinkingContent',
+            'assistantContent',
+          ]) as Record<string, unknown> & { toolCalls?: unknown }
+          return {
+            ...rest,
+            ...(Array.isArray(toolCalls)
+              ? { toolCalls: toolCalls.map(redactToolCallPayloads) }
+              : {}),
+          }
+        }),
+      },
+    }
+  }
+
+  const blockToolCalls = sanitized.toolCalls as { list?: unknown } | undefined
+  if (options.redactToolPayloads && blockToolCalls && Array.isArray(blockToolCalls.list)) {
+    sanitized = {
+      ...sanitized,
+      toolCalls: {
+        ...blockToolCalls,
+        list: blockToolCalls.list.map(redactToolCallPayloads),
+      },
+    }
+  }
+
+  return sanitized
 }
 
 async function buildMinimalResult(
