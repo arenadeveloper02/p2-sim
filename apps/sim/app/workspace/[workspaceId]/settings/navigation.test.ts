@@ -38,30 +38,23 @@ describe('unified settings navigation', () => {
       { id: 'terminal', label: 'Terminal', section: 'account' },
       { id: 'access-control', label: 'Permission groups', section: 'organization' },
       { id: 'audit-logs', label: 'Audit logs', section: 'organization' },
-      { id: 'forks', label: 'Workspace forks', section: 'organization' },
       { id: 'billing', label: 'Subscription', section: 'account' },
-      { id: 'usage', label: 'Usage', section: 'subscription' },
+      { id: 'usage', label: 'Usage', section: 'account' },
       { id: 'teammates', label: 'Teammates', section: 'workspace' },
       { id: 'organization', label: 'Members', section: 'organization' },
-      { id: 'oauth-apps', label: 'Custom OAuth Apps', section: 'subscription' },
+      { id: 'oauth-apps', label: 'Custom OAuth Apps', section: 'organization' },
       { id: 'secrets', label: 'Secrets', section: 'workspace' },
       { id: 'custom-tools', label: 'Custom tools', section: 'workspace' },
       { id: 'mcp', label: 'MCP tools', section: 'workspace' },
       { id: 'apikeys', label: 'Sim API keys', section: 'workspace' },
       { id: 'workflow-mcp-servers', label: 'MCP servers', section: 'workspace' },
-      { id: 'byok', label: 'BYOK', section: 'workspace' },
       { id: 'sandboxes', label: 'Sandboxes', section: 'workspace' },
-      { id: 'inbox', label: 'Sim Mailer', section: 'workspace' },
       { id: 'recently-deleted', label: 'Recently deleted', section: 'workspace' },
       { id: 'self-host', label: 'Self hosting', section: 'platform' },
-      { id: 'sso', label: 'Single sign-on', section: 'organization' },
       { id: 'sessions', label: 'Session policies', section: 'organization' },
       { id: 'data-retention', label: 'Data retention', section: 'organization' },
-      { id: 'data-drains', label: 'Data drains', section: 'organization' },
       { id: 'whitelabeling', label: 'White-labeling', section: 'organization' },
-      { id: 'custom-blocks', label: 'Custom blocks', section: 'organization' },
       { id: 'admin', label: 'Admin', section: 'platform' },
-      { id: 'mothership', label: 'Mothership', section: 'platform' },
     ])
   })
 
@@ -75,6 +68,7 @@ describe('unified settings navigation', () => {
     expect(idsForSection('account')).toEqual([
       'general',
       'billing',
+      'usage',
       'desktop',
       'browser',
       'terminal',
@@ -84,8 +78,6 @@ describe('unified settings navigation', () => {
       'secrets',
       'mcp',
       'custom-tools',
-      'byok',
-      'inbox',
       'workflow-mcp-servers',
       'apikeys',
       'sandboxes',
@@ -93,17 +85,27 @@ describe('unified settings navigation', () => {
     ])
     expect(idsForSection('organization')).toEqual([
       'organization',
-      'custom-blocks',
-      'forks',
+      'oauth-apps',
       'access-control',
       'audit-logs',
       'whitelabeling',
-      'sso',
       'sessions',
       'data-retention',
-      'data-drains',
     ])
-    expect(idsForSection('platform')).toEqual(['admin', 'mothership', 'self-host'])
+    expect(idsForSection('platform')).toEqual(['admin', 'self-host'])
+  })
+
+  it('only places unified items in sidebar sections that are rendered', () => {
+    const sectionKeys = new Set(sectionConfig.map(({ key }) => key))
+    for (const item of allNavigationItems) {
+      expect(sectionKeys.has(item.section)).toBe(true)
+    }
+  })
+
+  it('keeps Usage visible to every workspace member', () => {
+    const usage = allNavigationItems.find(({ id }) => id === 'usage')
+    expect(usage?.section).toBe('account')
+    expect(usage).not.toHaveProperty('requiresWorkspaceAdmin')
   })
 
   it('derives every unified item from exactly one registry entry', () => {
