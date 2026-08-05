@@ -262,7 +262,7 @@ export interface SubBlockConfig {
   id: string
   title?: string
   type: SubBlockType
-  mode?: 'basic' | 'advanced' | 'both' | 'trigger' | 'trigger-advanced' // Default is 'both' if not specified. 'trigger' means only shown in trigger mode. 'trigger-advanced' is for advanced canonical pair members shown in trigger mode
+  mode?: 'basic' | 'advanced' | 'both' | 'trigger' | 'trigger-advanced' // Default is 'both' if not specified. 'trigger' means only shown in trigger mode. 'trigger-advanced' is the advanced side of a trigger field — either a canonical pair member or a standalone field shown under the block-level advanced toggle
   canonicalParamId?: string
   /** Controls parameter visibility in agent/tool-input context */
   paramVisibility?: 'user-or-llm' | 'user-only' | 'llm-only' | 'hidden'
@@ -374,6 +374,12 @@ export interface SubBlockConfig {
     label: string
     serviceId: string
   }>
+  /**
+   * Narrows an `oauth-input` selector to a specific credential kind. `'custom-bot'`
+   * lists only reusable custom Slack bot credentials (service-account type) and its
+   * connect row opens the custom-bot setup modal instead of the OAuth flow.
+   */
+  credentialKind?: 'custom-bot'
   // Selector properties — declarative mapping to a SelectorKey
   selectorKey?: SelectorKey
   selectorAllowSearch?: boolean

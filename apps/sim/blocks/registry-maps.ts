@@ -284,7 +284,7 @@ import { SimWorkspaceEventBlock } from '@/blocks/blocks/sim_workspace_event'
 import { SimilarwebBlock, SimilarwebBlockMeta } from '@/blocks/blocks/similarweb'
 import { SixtyfourBlock, SixtyfourBlockMeta } from '@/blocks/blocks/sixtyfour'
 import { SkyvernBlock, SkyvernBlockMeta } from '@/blocks/blocks/skyvern'
-import { SlackBlock, SlackBlockMeta } from '@/blocks/blocks/slack'
+import { SlackBlock, SlackBlockMeta, SlackV2Block } from '@/blocks/blocks/slack'
 import { SmtpBlock, SmtpBlockMeta } from '@/blocks/blocks/smtp'
 import { SportmonksBlock, SportmonksBlockMeta } from '@/blocks/blocks/sportmonks'
 import { SpotifyBlock, SpotifyBlockMeta } from '@/blocks/blocks/spotify'
@@ -307,6 +307,7 @@ import { TemporalBlock, TemporalBlockMeta } from '@/blocks/blocks/temporal'
 import { TextractBlock, TextractBlockMeta, TextractV2Block } from '@/blocks/blocks/textract'
 import { ThinkingBlock } from '@/blocks/blocks/thinking'
 import { ThriveBlock, ThriveBlockMeta } from '@/blocks/blocks/thrive'
+import { TikTokBlock, TikTokBlockMeta } from '@/blocks/blocks/tiktok'
 import { TinybirdBlock, TinybirdBlockMeta } from '@/blocks/blocks/tinybird'
 import { TranslateBlock } from '@/blocks/blocks/translate'
 import { TrelloBlock, TrelloBlockMeta } from '@/blocks/blocks/trello'
@@ -375,8 +376,8 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   api: ApiBlock,
   api_trigger: ApiTriggerBlock,
   apify: ApifyBlock,
-  appconfig: AppConfigBlock,
   apollo: ApolloBlock,
+  appconfig: AppConfigBlock,
   arena_development: ArenaDevelopmentBlock,
   arxiv: ArxivBlock,
   asana: AsanaBlock,
@@ -446,9 +447,6 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   file_v4: FileV4Block,
   file_v5: FileV5Block,
   findymail: FindymailBlock,
-  zerobounce: ZeroBounceBlock,
-  neverbounce: NeverBounceBlock,
-  millionverifier: MillionVerifierBlock,
   firecrawl: FirecrawlBlock,
   fireflies: FirefliesBlock,
   fireflies_v2: FirefliesV2Block,
@@ -540,6 +538,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   microsoft_excel_v2: MicrosoftExcelV2Block,
   microsoft_planner: MicrosoftPlannerBlock,
   microsoft_teams: MicrosoftTeamsBlock,
+  millionverifier: MillionVerifierBlock,
   mistral_parse: MistralParseBlock,
   mistral_parse_v2: MistralParseV2Block,
   mistral_parse_v3: MistralParseV3Block,
@@ -548,6 +547,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   mothership: MothershipBlock,
   mysql: MySQLBlock,
   neo4j: Neo4jBlock,
+  neverbounce: NeverBounceBlock,
   new_relic: NewRelicBlock,
   note: NoteBlock,
   notion: NotionBlock,
@@ -613,6 +613,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   sixtyfour: SixtyfourBlock,
   skyvern: SkyvernBlock,
   slack: SlackBlock,
+  slack_v2: SlackV2Block,
   smtp: SmtpBlock,
   sportmonks: SportmonksBlock,
   spotify: SpotifyBlock,
@@ -636,6 +637,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   textract_v2: TextractV2Block,
   thinking: ThinkingBlock,
   thrive: ThriveBlock,
+  tiktok: TikTokBlock,
   tinybird: TinybirdBlock,
   translate: TranslateBlock,
   trello: TrelloBlock,
@@ -669,6 +671,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   youtube: YouTubeBlock,
   zendesk: ZendeskBlock,
   zep: ZepBlock,
+  zerobounce: ZeroBounceBlock,
   zoom: ZoomBlock,
   zoominfo: ZoomInfoBlock,
   ...ARENA_CUSTOM_BLOCK_REGISTRY,
@@ -702,8 +705,8 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   algolia: AlgoliaBlockMeta,
   amplitude: AmplitudeBlockMeta,
   apify: ApifyBlockMeta,
-  appconfig: AppConfigBlockMeta,
   apollo: ApolloBlockMeta,
+  appconfig: AppConfigBlockMeta,
   arxiv: ArxivBlockMeta,
   asana: AsanaBlockMeta,
   ashby: AshbyBlockMeta,
@@ -911,6 +914,7 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   temporal: TemporalBlockMeta,
   textract: TextractBlockMeta,
   thrive: ThriveBlockMeta,
+  tiktok: TikTokBlockMeta,
   tinybird: TinybirdBlockMeta,
   trello: TrelloBlockMeta,
   trigger_dev: TriggerDevBlockMeta,
