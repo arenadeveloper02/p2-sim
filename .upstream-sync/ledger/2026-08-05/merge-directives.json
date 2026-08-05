@@ -1,0 +1,15 @@
+{
+  "delete": [
+    "apps/sim/app/(landing)/hubspot-page-view-tracker.tsx"
+  ],
+  "checkoutTheirs": [],
+  "checkoutOurs": [],
+  "mustEdit": [
+    "apps/sim/app/(landing)/layout.tsx",
+    "packages/db/migrations/0258_gigantic_lady_mastermind.sql",
+    "packages/db/migrations/0259_slack_native_routing.sql",
+    "packages/db/migrations/meta/_journal.json"
+  ],
+  "overrideForkFirst": [],
+  "notes": "ZERO unmerged paths remain — the WIP overlay (applied=27) resolved every conflict, so no child clusters are instantiated. These directives are NOT conflict resolutions; they are two UNAPPLIED grill decisions for the always-on coherence pass, which is explicitly told not to no-op on an empty `git diff --diff-filter=U`. The harness will drop all four paths from the mechanical apply via restrictMergeDirectivesToUnmerged and log them as 'skipped already-resolved' — that label is WRONG for these paths; they are unfinished work, not finished work. Read them as instructions, not as history. (1) SR1 IS BROKEN AND SHIPS A DEAD MIGRATION: meta/_journal.json already has entries idx 262 tag `0262_tiktok_credential_id_idx` and idx 263 tag `0263_slack_native_routing`, but no such .sql files exist — the SQL is still sitting at the upstream filenames 0258_gigantic_lady_mastermind.sql and 0259_slack_native_routing.sql, which additionally collide with the fork's own 0258/0259. Fix with two `git mv`s to 0262_tiktok_credential_id_idx.sql and 0263_slack_native_routing.sql, byte-identical contents. THE TWO SQL PATHS ARE LISTED UNDER mustEdit, DELIBERATELY NOT UNDER delete — `git rm` on them destroys the TikTok partial index and the webhook.path/routing_key migration, because the 0262/0263 targets do not exist yet. Do not run drizzle-kit generate (pre-existing snapshot gap at idx 261). Do not trust `bun run check:migrations`: it prints '✓ No new migrations to check.' and exits 0 in this broken state; verify instead that every journal tag has a matching <tag>.sql on disk. (2) SR7 IS NOT APPLIED: the HubSpot loader is still live in apps/sim/app/(landing)/layout.tsx (import line 8, HUBSPOT_SCRIPT_SRC line 10, Script line 39, <HubspotPageViewTracker /> line 41) and hubspot-page-view-tracker.tsx still exists. Strip the loader block and its now-unused Suspense/Script/isHosted imports AND delete the tracker in the same change — layout.tsx is the tracker's only consumer, so doing only the delete breaks the build. Keep upstream's csp.ts HubSpot host allowances (already in, permit-only). Then fix the ledger: skipped.md still says 'No upstream changes skipped' and must record the #5565 skip with its re-enable recipe. No checkoutOurs/checkoutTheirs are re-issued this run — every previously planned side-checkout already landed (verified SR2, SR3, SR4, SR5, SR6, SR8, SR9, SR10 in tree) and re-issuing them would overwrite WIP resolutions."
+}

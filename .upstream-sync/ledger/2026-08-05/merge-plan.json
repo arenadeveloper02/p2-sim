@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "runId": "2026-08-05",
+  "kind": "final",
+  "selfResolutions": [
+    {
+      "decision": "SR1 — renumber upstream migrations to 0262/0263, keep fork journal and colliding snapshots",
+      "paths": [
+        "packages/db/migrations/0258_gigantic_lady_mastermind.sql",
+        "packages/db/migrations/0259_slack_native_routing.sql",
+        "packages/db/migrations/meta/0258_snapshot.json",
+        "packages/db/migrations/meta/0259_snapshot.json",
+        "packages/db/migrations/meta/_journal.json"
+      ],
+      "prefixes": [],
+      "strategy": "mustEdit",
+      "rationale": "STATUS AT FINALIZE: PARTIALLY APPLIED — BROKEN, MUST BE FINISHED. Verified in tree: step (1) and step (3) are done (meta/_journal.json is ours plus two appended entries idx 262 tag `0262_tiktok_credential_id_idx` when 1784346920599 and idx 263 tag `0263_slack_native_routing` when 1784346920600; meta/0258_snapshot.json and meta/0259_snapshot.json are ours). Step (2), the SQL rename, was NEVER done: packages/db/migrations/0262_tiktok_credential_id_idx.sql and 0263_slack_native_routing.sql DO NOT EXIST, while the two upstream filenames 0258_gigantic_lady_mastermind.sql and 0259_slack_native_routing.sql are still staged as adds and now collide with the fork's own 0258_deployed_chat_thread_metadata.sql / 0259_organization_oauth_apps.sql. The journal therefore points at two files that do not exist — drizzle migrate would fail. REMAINING WORK: `git mv packages/db/migrations/0258_gigantic_lady_mastermind.sql packages/db/migrations/0262_tiktok_credential_id_idx.sql` and `git mv packages/db/migrations/0259_slack_native_routing.sql packages/db/migrations/0263_slack_native_routing.sql` — a pure rename, byte-identical contents, do not touch the SQL. NEVER `git rm` these two files: the 0262/0263 targets do not exist yet, so deleting them destroys the TikTok partial index and the whole webhook.path/routing_key migration. Original SR1 reasoning, still valid: both sides added 0258 and 0259; fork 0258-0261 are already applied in fork environments and upstream's two are applied nowhere in the fork, so the unapplied side gets renumbered. Both SQL files already carry COMMIT; breakpoints + CREATE INDEX CONCURRENTLY, and ALTER COLUMN path DROP NOT NULL is a relaxing change that check-migrations-safety.ts does not gate — do not rewrite the SQL. DO NOT run drizzle-kit generate: the fork has a pre-existing snapshot gap (journal records idx 261 but meta/ stops at 0260_snapshot.json), so a regenerate would diff against 0260 and re-emit 0261 as a spurious migration. VERIFICATION WARNING: `bun run check:migrations` reports '✓ No new migrations to check.' and exits 0 in this state — it diffs against the base branch and does NOT catch a journal-tag-to-filename mismatch. Verify by asserting every _journal.json entry tag has a matching <tag>.sql on disk, not by trusting that gate.",
+      "cite": "FBI #5504 / #5323 / db-migrate skill / merge-policy manualReview packages/db/migrations/"
+    },
+    {
+      "decision": "SR2 — union packages/db/schema.ts",
+      "paths": ["packages/db/schema.ts"],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "STATUS AT FINALIZE: APPLIED — verified webhook routingKey present, webhookCredentialIdExpression() defined at schema.ts:819 and used by the partial index at :878, and all three fork table groups (deployed chat thread metadata, organization OAuth apps, local copilot user memory) still present. Keep fork tables and take upstream's webhook.routingKey, nullable webhook.path, webhookCredentialIdExpression(), the two new partial indexes, and customBlock.inputs `required?`. Non-overlapping regions of the same file. Follow-up for the build gate: webhook.path is now `string | null`, so fork-only readers in apps/sim/lib/webhooks/ (utils.server.ts, processor.ts) may need explicit null handling.",
+      "cite": "merge-policy unionPaths packages/db/schema.ts / FBI #5323 #5504 #5575"
+    },
+    {
+      "decision": "SR3 — take Slack #5323 in full; union slack.ts",
+      "paths": ["apps/sim/blocks/blocks/slack.ts"],
+      "prefixes": [
+        "apps/sim/triggers/slack/",
+        "apps/sim/lib/webhooks/providers/slack",
+        "apps/sim/app/api/webhooks/slack/",
+        "apps/sim/lib/webhooks/slack-dispatch.ts"
+      ],
+      "strategy": "union",
+      "rationale": "STATUS AT FINALIZE: APPLIED — verified SlackV2Block present in blocks/blocks/slack.ts and registered as `slack_v2: SlackV2Block` in registry-maps.ts:617. Fork never touched apps/sim/triggers/slack/**, lib/webhooks/providers/slack.ts, or app/api/webhooks/slack/** (absent on the fork) — the native OAuth trigger, slack-dispatch, and custom-bot webhook route landed as clean adds. SlackV2Block is appended inside blocks/blocks/slack.ts (there is no slack_v2.ts) and is preview-gated, so it stays hidden until revealed. Union kept the fork's 834 lines of added Slack operations/subBlocks alongside upstream's SubBlockConfig import, dependsOn/credential edits, and the appended SlackV2Block + triggers export.",
+      "cite": "simstudioai/sim#5323"
+    },
+    {
+      "decision": "SR4 — keep fork custom-OAuth-app plumbing, add upstream slack-custom-bot and google-service-account",
+      "paths": [
+        "apps/sim/lib/oauth/oauth.ts",
+        "apps/sim/lib/oauth/types.ts",
+        "apps/sim/lib/oauth/utils.ts",
+        "apps/sim/app/api/auth/oauth/utils.ts",
+        "apps/sim/app/api/auth/oauth/token/route.ts",
+        "apps/sim/app/api/credentials/route.ts"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "STATUS AT FINALIZE: APPLIED — verified lib/oauth/oauth.ts carries upstream's slack-custom-bot provider id, 6 tiktok references, and 16 references to fork-only providers (zoom-admin, facebook-ads, unipile). Upstream's SLACK_CUSTOM_BOT_PROVIDER_ID is a service_account-type credential, orthogonal to the fork's org-level custom OAuth apps (lib/oauth/custom-apps.ts, custom-app-config.ts, migrations 0259/0260). Both sides edit OAUTH_PROVIDERS, the ProviderAuthConfig interface, getProviderAuthConfig(), and refreshAccessTokenIfNeeded(). Every fork symbol was kept and upstream's tiktok provider, Slack custom-bot branch, Google service-account token exchange, and new ProviderAuthConfig field added. Never drop an upstream export — in-tree consumers import them.",
+      "cite": "merge-policy unionPaths apps/sim/lib/oauth/types.ts / simstudioai/sim#5323"
+    },
+    {
+      "decision": "SR5 — fork brand assets win on conflict",
+      "paths": ["apps/sim/public/icon.svg"],
+      "prefixes": ["apps/sim/public/favicon/", "apps/sim/public/logo/"],
+      "strategy": "ours",
+      "rationale": "STATUS AT FINALIZE: APPLIED — verified apps/sim/public/icon.svg is unmodified (ours, green Arena mark). The only modified assets are favicon-96x96.png, favicon.svg, web-app-manifest-192x192.png, web-app-manifest-512x512.png and logo/426-240/reverse/small.png, which is exactly the never-rebranded set that already shipped Sim art before this merge — taking upstream there is not a regression. #5587 swapped these for the Sim wordmark upstream. These prefixes were added to merge-policy forkFirst this run so binary conflicts auto-resolve to ours in future syncs. Completing the favicon rebrand is a fork task, not a merge decision.",
+      "cite": "simstudioai/sim#5587 / merge-policy forkFirst (added this run)"
+    },
+    {
+      "decision": "SR6 — keep ArenaWordmark and fork hero copy, take upstream's Enterprise footer link",
+      "paths": [
+        "apps/sim/app/(landing)/components/footer/footer.tsx",
+        "apps/sim/app/(landing)/components/hero/hero.tsx"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "STATUS AT FINALIZE: APPLIED — verified footer.tsx keeps 2 ArenaWordmark references (import + usage) and gained upstream's Enterprise PRODUCT_LINKS entry. Fork renamed the import/usage to ArenaWordmark and rewrote the hero headline + sr-only copy; upstream only prepends { label: 'Enterprise', href: '/enterprise' } to PRODUCT_LINKS and adjusts hero layout. Different regions — union kept every fork branding string. The new /enterprise page arrives Sim-branded, consistent with every other landing route the fork already ships un-rebranded (/models, /integrations, blog); rebranding it is a fork follow-up.",
+      "cite": "simstudioai/sim#5535 #5582 #5585"
+    },
+    {
+      "decision": "SR7 — drop the HubSpot marketing loader and pageview tracker; keep the CSP host allowances",
+      "paths": [
+        "apps/sim/app/(landing)/layout.tsx",
+        "apps/sim/app/(landing)/hubspot-page-view-tracker.tsx",
+        "apps/sim/lib/core/security/csp.ts"
+      ],
+      "prefixes": [],
+      "strategy": "mustEdit",
+      "rationale": "STATUS AT FINALIZE: NOT APPLIED — THE LOADER IS STILL LIVE. Verified in tree: apps/sim/app/(landing)/hubspot-page-view-tracker.tsx still exists (staged as an add), and apps/sim/app/(landing)/layout.tsx still carries the import at line 8, HUBSPOT_SCRIPT_SRC = 'https://js-na2.hs-scripts.com/246720681.js' at line 10, the <Script id='hs-script-loader'> at line 39, and <HubspotPageViewTracker /> at line 41. Only the csp.ts half of SR7 landed (hs-scripts.com / hs-analytics.net / hs-banner.com host allowances present and matching upstream — keep them, they are permit-only and keeping them stops this file re-conflicting every sync). REMAINING WORK, both halves together in one edit so no import dangles: (a) strip the isHosted HubSpot block from apps/sim/app/(landing)/layout.tsx — the Script tag, the Suspense wrapper, <HubspotPageViewTracker />, the HUBSPOT_SCRIPT_SRC constant, and the now-unused Suspense/Script/isHosted imports it introduced; (b) delete apps/sim/app/(landing)/hubspot-page-view-tracker.tsx. Grep confirms layout.tsx is the tracker's only consumer, so nothing else breaks. WHY: upstream gates the loader on isHosted, but the fork redefined isHosted in apps/sim/lib/core/config/env-flags.ts to include agent.thearena.ai, dev-/test-/sandbox-agent.thearena.ai and localhost:3000, so the loader WOULD fire on the fork's production landing site and pump leads into Sim's HubSpot portal 246720681. The loader injects hscollectedforms.js, which scrapes form submissions — third-party lead/PII capture, not just pageview telemetry. LEDGER GAP TO CLOSE: .upstream-sync/ledger/2026-08-05/skipped.md currently reads 'No upstream changes skipped' — it must record this #5565 skip plus the re-enable recipe (one Script tag with the fork's own HubSpot portal id).",
+      "cite": "simstudioai/sim#5565 / apps/sim/lib/core/config/env-flags.ts"
+    },
+    {
+      "decision": "SR8 — append-only unions for registries, icons, integrations manifest, and providers",
+      "paths": [
+        "apps/sim/tools/registry.ts",
+        "apps/sim/blocks/registry-maps.ts",
+        "apps/sim/components/icons.tsx",
+        "apps/sim/lib/integrations/integrations.json",
+        "apps/sim/blocks/types.ts",
+        "apps/sim/tools/types.ts",
+        "apps/sim/blocks/blocks.test.ts"
+      ],
+      "prefixes": ["apps/sim/providers/"],
+      "strategy": "union",
+      "rationale": "STATUS AT FINALIZE: APPLIED — verified 7 tiktok_* tool ids in tools/registry.ts, TikTokBlock + slack_v2 registered in blocks/registry-maps.ts, 7 fork block registrations (arena/unipile/p2_docs) still present, and 27 nvidia/zai/glm references in providers/models.ts. Both sides only append. Upstream's tiktok_* tool ids, TikTokBlock/TikTokBlockMeta, slack_v2: SlackV2Block, new icons, and the NVIDIA NIM / Z.ai (GLM) / Groq / Cerebras model + provider entries are in; every fork tool, block, icon, and provider was kept. No upstream removals to reconcile: context_dev tools and the Icypeas block/tools are still registered at 6c3d11b2 — #5572 only removed Icypeas enrichment providers, which the fork never modified. Separately verified that context_dev/get_brand_simplified.ts, prefetch_by_email.ts and prefetch_domain.ts are correctly absent: #5576 modified them but a later commit in the range deleted them, and they do not exist at tip 6c3d11b2. Keep BLOCK_REGISTRY / BLOCK_META_REGISTRY alphabetical per CLAUDE.md.",
+      "cite": "merge-policy unionPaths tools/registry.ts, blocks/registry-maps.ts, providers/models.ts / FBI #5504 #5559-#5561 #5569 #5572 #5576"
+    },
+    {
+      "decision": "SR9 — take the /landing-preview deletion together with the SandboxWorkspacePermissionsProvider removal",
+      "paths": [
+        "apps/sim/app/workspace/[workspaceId]/providers/workspace-permissions-provider.tsx"
+      ],
+      "prefixes": ["apps/sim/app/landing-preview/"],
+      "strategy": "theirs",
+      "rationale": "STATUS AT FINALIZE: APPLIED — verified apps/sim/app/landing-preview/ no longer exists and a repo-wide grep for SandboxWorkspacePermissionsProvider returns zero hits, so both halves moved together and no dangling import remains. #5565 deletes apps/sim/app/landing-preview/** and removes SandboxWorkspacePermissionsProvider, its only consumer. The fork carried the four landing-preview files unmodified so the delete applied cleanly.",
+      "cite": "simstudioai/sim#5565"
+    },
+    {
+      "decision": "SR10 — union env flags, CSP, proxy, next.config, byok, and auth",
+      "paths": [
+        "apps/sim/lib/core/config/env.ts",
+        "apps/sim/lib/core/config/api-keys.ts",
+        "apps/sim/next.config.ts",
+        "apps/sim/proxy.ts",
+        "apps/sim/.env.example",
+        "apps/sim/lib/api-key/byok.ts",
+        "apps/sim/lib/api/contracts/byok-keys.ts",
+        "apps/sim/lib/auth/auth.ts"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "STATUS AT FINALIZE: APPLIED — verified TIKTOK env keys and 10 fork-only env entries (ARENA/UNIPILE/HUBSPOT) coexist in lib/core/config/env.ts, 27 fork references survive in lib/auth/auth.ts, and Context.dev hosted-key rotation landed where #5576 actually puts it: apps/sim/tools/context_dev/hosting.ts (CONTEXT_DEV_API_KEY_PREFIX, CONTEXT_DEV_CREDIT_USD, byokProviderId 'context_dev') plus the 'context_dev' entry in lib/api/contracts/byok-keys.ts. Note api-keys.ts has zero CONTEXT_DEV references and that is correct — the draft's mention of api-keys.ts as the rotation-pool site was imprecise, nothing is missing. Additive on both sides; every fork entry kept and upstream's added.",
+      "cite": "merge-policy unionPaths env-flags.ts, manualReview apps/sim/lib/auth/ / FBI #5576 #5565 #5504"
+    }
+  ],
+  "openQuestions": [],
+  "childClusters": [],
+  "directives": {
+    "delete": ["apps/sim/app/(landing)/hubspot-page-view-tracker.tsx"],
+    "checkoutTheirs": [],
+    "checkoutOurs": [],
+    "mustEdit": [
+      "apps/sim/app/(landing)/layout.tsx",
+      "packages/db/migrations/0258_gigantic_lady_mastermind.sql",
+      "packages/db/migrations/0259_slack_native_routing.sql",
+      "packages/db/migrations/meta/_journal.json"
+    ],
+    "overrideForkFirst": [],
+    "notes": "ZERO unmerged paths remain — the WIP overlay (applied=27) resolved every conflict, so no child clusters are instantiated. These directives are NOT conflict resolutions; they are two UNAPPLIED grill decisions for the always-on coherence pass, which is explicitly told not to no-op on an empty `git diff --diff-filter=U`. The harness will drop all four paths from the mechanical apply via restrictMergeDirectivesToUnmerged and log them as 'skipped already-resolved' — that label is WRONG for these paths; they are unfinished work, not finished work. Read them as instructions, not as history. (1) SR1 IS BROKEN AND SHIPS A DEAD MIGRATION: meta/_journal.json already has entries idx 262 tag `0262_tiktok_credential_id_idx` and idx 263 tag `0263_slack_native_routing`, but no such .sql files exist — the SQL is still sitting at the upstream filenames 0258_gigantic_lady_mastermind.sql and 0259_slack_native_routing.sql, which additionally collide with the fork's own 0258/0259. Fix with two `git mv`s to 0262_tiktok_credential_id_idx.sql and 0263_slack_native_routing.sql, byte-identical contents. THE TWO SQL PATHS ARE LISTED UNDER mustEdit, DELIBERATELY NOT UNDER delete — `git rm` on them destroys the TikTok partial index and the webhook.path/routing_key migration, because the 0262/0263 targets do not exist yet. Do not run drizzle-kit generate (pre-existing snapshot gap at idx 261). Do not trust `bun run check:migrations`: it prints '✓ No new migrations to check.' and exits 0 in this broken state; verify instead that every journal tag has a matching <tag>.sql on disk. (2) SR7 IS NOT APPLIED: the HubSpot loader is still live in apps/sim/app/(landing)/layout.tsx (import line 8, HUBSPOT_SCRIPT_SRC line 10, Script line 39, <HubspotPageViewTracker /> line 41) and hubspot-page-view-tracker.tsx still exists. Strip the loader block and its now-unused Suspense/Script/isHosted imports AND delete the tracker in the same change — layout.tsx is the tracker's only consumer, so doing only the delete breaks the build. Keep upstream's csp.ts HubSpot host allowances (already in, permit-only). Then fix the ledger: skipped.md still says 'No upstream changes skipped' and must record the #5565 skip with its re-enable recipe. No checkoutOurs/checkoutTheirs are re-issued this run — every previously planned side-checkout already landed (verified SR2, SR3, SR4, SR5, SR6, SR8, SR9, SR10 in tree) and re-issuing them would overwrite WIP resolutions."
+  },
+  "notes": "Phase B finalize, continuation (not a greenfield replan). Release slice v0.7.29 (6c3d11b2), 23 commits, merge-base e2fecc86. Zero unmerged paths: `git diff --diff-filter=U` is empty and MERGE_HEAD is still 6c3d11b2, so the WIP overlay (applied=27, deleted=0) carried every conflict to a resolution. childClusters is empty per the zero-conflict rule — clustersFromMergePlan filters cluster files to still-unmerged paths anyway, so no child would spawn regardless. No grill questions were asked or answered this run: the single qa-history entry (a-5191520648) is the `/upstream-sync resume` command itself, not a product answer, so there is nothing to map onto proposedDirectives and no settled decision to revisit. The draft's `default` proposedDirectives bundle is therefore locked as-is minus everything already applied. COMPLETED (verified in tree at finalize, not assumed): the draft's seven planned areas all landed — db-schema-migrations (schema.ts union per SR2; migrations partially, see below), oauth-credentials (SR4), slack-registries-blocks (SR3+SR8), providers-models (SR8), env-csp-proxy-byok (SR10), workflow-editor-executor, branding-landing (SR5+SR6+SR9+csp half of SR7). REMAINING, carried in directives for the coherence pass: (1) SR1's SQL rename was never performed, leaving meta/_journal.json idx 262/263 pointing at nonexistent 0262/0263 files while the upstream 0258/0259 filenames persist and collide with the fork's — this is a live migration breakage that `bun run check:migrations` does not detect; (2) SR7's HubSpot loader and tracker component are still in the tree, so the fork's production landing site would ship third-party form/PII capture into Sim's HubSpot portal, and skipped.md does not yet record the skip. Build remains blocking — expect webhook.path nullability fallout in fork-only apps/sim/lib/webhooks/ (utils.server.ts, processor.ts) now that SR2 made the column `string | null`. Two pre-existing fork follow-ups surfaced during analysis, out of scope for this merge: apps/sim/app/layout.tsx still carries upstream's GTM-T7PHSRX5 / G-DR7YBE70VS analytics IDs verbatim under the fork-widened isHosted gate, and packages/db/migrations/meta/ has a snapshot gap (journal at idx 261+, snapshots stop at 0260). merge-policy.json was updated earlier this run: forkFirst += apps/sim/public/favicon/, apps/sim/public/icon.svg, apps/sim/public/logo/; unionPaths += lib/oauth/oauth.ts, app/api/auth/oauth/utils.ts, providers/utils.ts, components/icons.tsx, blocks/blocks/slack.ts, lib/core/security/csp.ts, proxy.ts, lib/auth/auth.ts; manualReview += packages/db/migrations/meta/, apps/sim/app/(landing)/components/, apps/sim/lib/oauth/."
+}
