@@ -52,7 +52,10 @@
     "docker-compose.local-build.yml",
     "docker-compose.dev-env.yml",
     "docker-compose.sandbox.yml",
-    "bunfig.toml"
+    "bunfig.toml",
+    "apps/sim/public/favicon/",
+    "apps/sim/public/icon.svg",
+    "apps/sim/public/logo/"
   ],
   "upstreamFirst": ["apps/sim/lib/copilot/generated/"],
   "unionPaths": [
@@ -62,11 +65,22 @@
     "apps/sim/lib/core/config/env-flags.ts",
     "apps/sim/lib/billing/organizations/membership.ts",
     "apps/sim/lib/oauth/types.ts",
-    "apps/sim/providers/models.ts"
+    "apps/sim/lib/oauth/oauth.ts",
+    "apps/sim/app/api/auth/oauth/utils.ts",
+    "apps/sim/providers/models.ts",
+    "apps/sim/providers/utils.ts",
+    "apps/sim/components/icons.tsx",
+    "apps/sim/blocks/blocks/slack.ts",
+    "apps/sim/lib/core/security/csp.ts",
+    "apps/sim/proxy.ts",
+    "apps/sim/lib/auth/auth.ts"
   ],
   "manualReview": [
     "packages/db/migrations/",
+    "packages/db/migrations/meta/",
     "packages/db/schema.ts",
+    "apps/sim/app/(landing)/components/",
+    "apps/sim/lib/oauth/",
     "apps/sim/lib/auth/",
     "apps/sim/blocks/registry.ts",
     "apps/sim/blocks/registry-maps.ts",
