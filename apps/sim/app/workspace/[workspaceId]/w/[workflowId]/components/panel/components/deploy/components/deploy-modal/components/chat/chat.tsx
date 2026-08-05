@@ -109,7 +109,17 @@ function isValidRedirectUrl(value: string): boolean {
   }
 }
 
-function createInitialFormData(mode: 'chat' | 'app'): ChatFormData {
+function normalizeSessionEmail(email: string | null | undefined): string | null {
+  const normalized = email?.toLowerCase().trim()
+  if (!normalized || validateAllowlistEntry(normalized)) return null
+  return normalized
+}
+
+function createInitialFormData(
+  mode: 'chat' | 'app',
+  sessionEmail?: string | null
+): ChatFormData {
+  const email = normalizeSessionEmail(sessionEmail)
   return {
     identifier: '',
     title: '',
@@ -117,7 +127,7 @@ function createInitialFormData(mode: 'chat' | 'app'): ChatFormData {
     department: '',
     authType: 'email',
     password: '',
-    emails: [],
+    emails: email ? [email] : [],
     welcomeMessage:
       "How can I help you today? I'm here to answer your questions and assist you with anything you need.",
     goldenQueries: [],
@@ -150,7 +160,9 @@ export function ChatDeploy({
 }: ChatDeployProps) {
   const isAppMode = mode === 'app'
   const formId = isAppMode ? 'app-deploy-form' : 'chat-deploy-form'
-  const initialFormData = createInitialFormData(mode)
+  const { data: session } = useSession()
+  const sessionEmail = normalizeSessionEmail(session?.user?.email)
+  const initialFormData = createInitialFormData(mode, sessionEmail)
   const { data: departmentsData } = useAgentDepartments()
   const departmentOptions = useMemo(
     () =>
@@ -203,14 +215,18 @@ export function ChatDeploy({
       prevWorkflowIdForFormRef.current !== null &&
       prevWorkflowIdForFormRef.current !== workflowId
     ) {
-      setFormData({ ...createInitialFormData(mode), identifier: workflowId || '' })
+      setFormData({
+        ...createInitialFormData(mode, sessionEmail),
+        identifier: workflowId || '',
+      })
       setImageUrl(null)
       hasInitializedFormRef.current = false
       hasSetDefaultKnowledgeOutputs.current = false
       setErrors({})
+      setFormInitCounter((c) => c + 1)
     }
     prevWorkflowIdForFormRef.current = workflowId
-  }, [workflowId, mode])
+  }, [workflowId, mode, sessionEmail])
 
   const updateField = <K extends keyof ChatFormData>(field: K, value: ChatFormData[K]) => {
     setFormData((prev) => ({
@@ -328,13 +344,28 @@ export function ChatDeploy({
       }
 
       hasInitializedFormRef.current = true
-    } else if (!existingChat && !isLoadingChat) {
-      setFormData(createInitialFormData(mode))
+    } else if (!existingChat && !isLoadingChat && !hasInitializedFormRef.current) {
+      setFormData(createInitialFormData(mode, sessionEmail))
       setImageUrl(null)
-      hasInitializedFormRef.current = false
+      hasInitializedFormRef.current = true
       hasSetDefaultKnowledgeOutputs.current = false
+      setFormInitCounter((c) => c + 1)
     }
-  }, [existingChat, isLoadingChat, mode, isAppMode, workflowId])
+  }, [existingChat, isLoadingChat, mode, isAppMode, workflowId, sessionEmail])
+
+  /**
+   * Ensure the signed-in user is always on the allowlist for new email/SSO
+   * deployments — even if the session resolved after the form first mounted.
+   */
+  useEffect(() => {
+    if (existingChat || isLoadingChat || !sessionEmail) return
+    if (formData.authType !== 'email' && formData.authType !== 'sso') return
+
+    setFormData((prev) => {
+      if (prev.emails.includes(sessionEmail)) return prev
+      return { ...prev, emails: [sessionEmail, ...prev.emails] }
+    })
+  }, [existingChat, isLoadingChat, sessionEmail, formData.authType])
 
   useEffect(() => {
     if (
@@ -956,10 +987,14 @@ function AuthSelector({
   /**
    * Prefill the signed-in user's email once in create mode when the allowlist is empty.
    * ChipEmailsInput owns chip UX; we only lift the accepted list via onEmailsChange.
+   * Re-run if the parent resets emails to [] (e.g. form re-init before session was ready).
    */
   useEffect(() => {
-    if (!session?.user?.email || isExistingChat || hasPrefilledSessionEmailRef.current) return
-    if (emails.length > 0) return
+    if (!session?.user?.email || isExistingChat) return
+    if (emails.length > 0) {
+      hasPrefilledSessionEmailRef.current = true
+      return
+    }
 
     const sessionEmail = session.user.email.toLowerCase().trim()
     const validationError = validateAllowlistEntry(sessionEmail)
