@@ -1,13 +1,13 @@
-import { cn } from '@sim/emcn'
-import Image from 'next/image'
-import { LandingHeroHeader } from '@/app/(landing)/components/hero/components/hero-header'
-import { HeroPlatformLoop } from '@/app/(landing)/components/hero/components/hero-platform-loop'
+import { cn } from "@sim/emcn";
+import Image from "next/image";
+import { LandingHeroHeader } from "@/app/(landing)/components/hero/components/hero-header";
+import { HeroPlatformLoop } from "@/app/(landing)/components/hero/components/hero-platform-loop";
 import {
   LANDING_CONTENT_WIDTH,
   LANDING_GUTTER,
   LANDING_HERO_TOP_PADDING,
-} from '@/app/(landing)/components/landing-layout'
-import { TrustedBy } from '@/app/(landing)/components/trusted-by'
+} from "@/app/(landing)/components/landing-layout";
+import { TrustedBy } from "@/app/(landing)/components/trusted-by";
 
 /**
  * Landing hero - the only `<h1>` on the page.
@@ -66,62 +66,63 @@ import { TrustedBy } from '@/app/(landing)/components/trusted-by'
 export function Hero() {
   return (
     <section
-      id='hero'
-      aria-labelledby='hero-heading'
+      id="hero"
+      aria-labelledby="hero-heading"
       className={cn(
-        'flex flex-col items-start gap-[22px] text-left',
+        "flex flex-col items-start gap-[22px] text-left",
         LANDING_CONTENT_WIDTH,
         LANDING_GUTTER,
-        LANDING_HERO_TOP_PADDING
+        LANDING_HERO_TOP_PADDING,
       )}
     >
-      <p className='sr-only'>
-        Arena is the open-source AI workspace where teams build, deploy, and manage AI agents.
-        Connect 1,000+ integrations and every major LLM to create agents that automate real work,
-        visually, conversationally, or with code. Trusted by over 100,000 builders, SOC2 compliant,
-        and production-ready for teams of every size.
+      <p className="sr-only">
+        Arena is the open-source AI workspace where teams build, deploy, and
+        manage AI agents. Connect 1,000+ integrations and every major LLM to
+        create agents that automate real work, visually, conversationally, or
+        with code. Trusted by over 100,000 builders, SOC2 compliant, and
+        production-ready for teams of every size.
       </p>
 
       <LandingHeroHeader
-        headingId='hero-heading'
+        headingId="hero-heading"
         heading={
           <>
             Arena is the AI workspace <br />
             for building agentic workflows.
           </>
         }
-        description='The open-source workspace where teams build, deploy, and manage AI agents.'
+        description="The open-source workspace where teams build, deploy, and manage AI agents."
       />
 
       <div
-        aria-hidden='true'
-        className='relative mt-[34px] aspect-[1300/720] w-full overflow-hidden rounded-lg bg-[var(--surface-3)] max-sm:aspect-[4/3]'
+        aria-hidden="true"
+        className="relative mt-[34px] aspect-[1300/720] w-full overflow-hidden rounded-lg bg-[var(--surface-3)] max-sm:aspect-[4/3]"
       >
         <Image
-          src='/landing/hero-backdrop.jpg'
-          alt=''
+          src="/landing/hero-backdrop.jpg"
+          alt=""
           fill
           priority
           quality={90}
-          sizes='(max-width: 1460px) 100vw, 1300px'
-          className='object-cover'
+          sizes="(max-width: 1460px) 100vw, 1300px"
+          className="object-cover"
         />
-        <div className='-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 flex aspect-[1080/620] w-[83.08%] flex-col overflow-hidden rounded-[10px] bg-[var(--surface-1)] shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_2px_6px_0_rgba(0,0,0,0.05),0_4px_42px_0_rgba(0,0,0,0.06)]'>
-          <div className='relative flex-1'>
+        <div className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 flex aspect-[1080/620] w-[83.08%] flex-col overflow-hidden rounded-[10px] bg-[var(--surface-1)] shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_2px_6px_0_rgba(0,0,0,0.05),0_4px_42px_0_rgba(0,0,0,0.06)]">
+          <div className="relative flex-1">
             <Image
-              src='/landing/hero-platform-ui.png'
-              alt=''
+              src="/landing/hero-platform-ui.png"
+              alt=""
               fill
               priority
-              sizes='(max-width: 1460px) 83vw, 1080px'
-              className='object-cover object-left-top'
+              sizes="(max-width: 1460px) 83vw, 1080px"
+              className="object-cover object-left-top"
             />
             <HeroPlatformLoop />
           </div>
         </div>
       </div>
 
-      <TrustedBy layout='row' className='mt-[42px] w-full max-sm:mt-6' />
+      <TrustedBy layout="row" className="mt-[42px] w-full max-sm:mt-6" />
     </section>
-  )
+  );
 }
