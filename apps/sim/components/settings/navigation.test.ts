@@ -282,7 +282,7 @@ describe('settings navigation boundaries', () => {
       },
       {
         id: 'billing',
-        label: 'Subscription',
+        label: 'Billing',
         description: 'Manage your personal plan, usage, and invoices.',
         group: 'account',
       },

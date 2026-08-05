@@ -384,6 +384,54 @@ export const WORKSPACE_SETTINGS_GROUPS = [
   { key: 'enterprise', title: 'Enterprise' },
 ] as const
 
+/**
+ * Arena Agents billing nav — lives under the Account sidebar group.
+ * Uses the Arena BillingPageShell (plan UI + credit-usage panel).
+ */
+const arenaAgentsBilling: SettingsSectionRegistryEntry = {
+  label: 'Billing',
+  icon: ClipboardList,
+  unified: {
+    id: 'billing',
+    description: 'Manage your plan, pricing, and invoices.',
+    group: 'account',
+    order: 1,
+    hideWhenBillingDisabled: true,
+  },
+  planes: {
+    account: {
+      id: 'billing',
+      description: 'Manage your personal plan, usage, and invoices.',
+      group: 'account',
+      order: 1,
+    },
+    selfhost: {
+      id: 'billing',
+      description: 'Manage your personal plan, usage, and invoices.',
+      group: 'account',
+      order: 1,
+    },
+    organization: {
+      id: 'billing',
+      description: 'Manage the organization plan, usage, and invoices.',
+      group: 'organization',
+      order: 1,
+    },
+  },
+}
+
+/** Arena Agents usage analytics — paired with billing under Account. */
+const arenaAgentsUsage: SettingsSectionRegistryEntry = {
+  label: 'Usage',
+  icon: Credit,
+  unified: {
+    id: 'usage',
+    description: 'View token and cost analytics for your activity, workspace, or organization.',
+    group: 'account',
+    order: 2,
+  },
+}
+
 export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] = [
   {
     label: 'General',
@@ -480,47 +528,49 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
   //     workspace: { id: 'forks', group: 'enterprise', order: 10 },
   //   },
   // },
-  {
-    label: 'Subscription',
-    icon: ClipboardList,
-    unified: {
-      id: 'billing',
-      description: 'Manage your plan, pricing, and invoices.',
-      group: 'account',
-      order: 1,
-      hideWhenBillingDisabled: true,
-    },
-    planes: {
-      account: {
-        id: 'billing',
-        description: 'Manage your personal plan, usage, and invoices.',
-        group: 'account',
-        order: 1,
-      },
-      selfhost: {
-        id: 'billing',
-        description: 'Manage your personal plan, usage, and invoices.',
-        group: 'account',
-        order: 1,
-      },
-      organization: {
-        id: 'billing',
-        description: 'Manage the organization plan, usage, and invoices.',
-        group: 'organization',
-        order: 1,
-      },
-    },
-  },
-  {
-    label: 'Usage',
-    icon: Credit,
-    unified: {
-      id: 'usage',
-      description: 'View token and cost analytics for your activity, workspace, or organization.',
-      group: 'account',
-      order: 2,
-    },
-  },
+  // {
+  //   label: 'Subscription',
+  //   icon: ClipboardList,
+  //   unified: {
+  //     id: 'billing',
+  //     description: 'Manage your plan, pricing, and invoices.',
+  //     group: 'account',
+  //     order: 1,
+  //     hideWhenBillingDisabled: true,
+  //   },
+  //   planes: {
+  //     account: {
+  //       id: 'billing',
+  //       description: 'Manage your personal plan, usage, and invoices.',
+  //       group: 'account',
+  //       order: 1,
+  //     },
+  //     selfhost: {
+  //       id: 'billing',
+  //       description: 'Manage your personal plan, usage, and invoices.',
+  //       group: 'account',
+  //       order: 1,
+  //     },
+  //     organization: {
+  //       id: 'billing',
+  //       description: 'Manage the organization plan, usage, and invoices.',
+  //       group: 'organization',
+  //       order: 1,
+  //     },
+  //   },
+  // },
+  // {
+  //   label: 'Usage',
+  //   icon: Credit,
+  //   unified: {
+  //     id: 'usage',
+  //     description: 'View token and cost analytics for your activity, workspace, or organization.',
+  //     group: 'account',
+  //     order: 2,
+  //   },
+  // },
+  arenaAgentsBilling,
+  arenaAgentsUsage,
   {
     label: 'Teammates',
     icon: User,

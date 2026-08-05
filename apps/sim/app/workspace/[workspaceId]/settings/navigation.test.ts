@@ -38,7 +38,7 @@ describe('unified settings navigation', () => {
       { id: 'terminal', label: 'Terminal', section: 'account' },
       { id: 'access-control', label: 'Permission groups', section: 'organization' },
       { id: 'audit-logs', label: 'Audit logs', section: 'organization' },
-      { id: 'billing', label: 'Subscription', section: 'account' },
+      { id: 'billing', label: 'Billing', section: 'account' },
       { id: 'usage', label: 'Usage', section: 'account' },
       { id: 'teammates', label: 'Teammates', section: 'workspace' },
       { id: 'organization', label: 'Members', section: 'organization' },

@@ -64,7 +64,7 @@ const SelfHost = dynamic(() =>
   )
 )
 const Billing = dynamic(() =>
-  import('@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-page-shell').then(
+  import('@/app/workspace/[workspaceId]/settings/components/billing-usage').then(
     (m) => m.BillingPageShell
   )
 )
