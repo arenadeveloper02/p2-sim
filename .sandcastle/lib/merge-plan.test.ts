@@ -19,6 +19,7 @@ import {
   parseMergePlanFinal,
   pathMatchesPrefixes,
   resolveDirectivesForDecisionHash,
+  restrictMergeDirectivesToUnmerged,
   validateMergeDirectives,
   validateMergePlanDraft,
   validateMergePlanFinal,
@@ -295,6 +296,37 @@ describe('resolveDirectivesForDecisionHash', () => {
     process.chdir(tempDir)
     writeMergePlanDraft('2026-08-05', sampleDraft)
     expect(resolveDirectivesForDecisionHash('2026-08-05')).toEqual(emptyMergeDirectives())
+  })
+})
+
+describe('restrictMergeDirectivesToUnmerged', () => {
+  test('keeps only still-unmerged directive targets', () => {
+    const { directives, dropped } = restrictMergeDirectivesToUnmerged(
+      {
+        delete: ['gone.ts', 'already-gone.ts'],
+        checkoutTheirs: ['theirs.ts', 'resolved-theirs.ts'],
+        checkoutOurs: ['ours.ts'],
+        mustEdit: ['edit-me.ts', 'resolved-edit.ts'],
+        overrideForkFirst: ['override.ts'],
+        notes: 'locked from Q2-B',
+      },
+      ['gone.ts', 'theirs.ts', 'ours.ts', 'edit-me.ts']
+    )
+
+    expect(directives).toEqual({
+      delete: ['gone.ts'],
+      checkoutTheirs: ['theirs.ts'],
+      checkoutOurs: ['ours.ts'],
+      mustEdit: ['edit-me.ts'],
+      overrideForkFirst: [],
+      notes: 'locked from Q2-B',
+    })
+    expect(dropped).toEqual([
+      'already-gone.ts',
+      'override.ts',
+      'resolved-edit.ts',
+      'resolved-theirs.ts',
+    ])
   })
 })
 

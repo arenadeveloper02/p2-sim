@@ -14,7 +14,7 @@ Each Actions run merges **one upstream release** (`vX.Y.Z:` tip) by default — 
 1. **`/upstream-sync-grill`** — Phase A parent grill: analysis + FBI risk + **draft merge plan** (`.claude/skills/upstream-sync-grill/SKILL.md`)
 2. **Await answers** — if `.upstream-sync/ledger/<RUN_ID>/open-questions.md` has questions, harness stops until `/upstream-sync resume`
 3. **Merge** — `git merge` the resolved release tip on the sync branch
-4. **Phase B finalize** — parent locks `merge-plan.json` + `merge-directives.json` from answers + real conflicts (resume does **not** skip this)
+4. **Phase B finalize** — parent locks `merge-plan.json` + `merge-directives.json` from answers + real conflicts + completed cluster reports / prior plan (resume continues, does not undo; does **not** skip this)
 5. **Resolve conflicts** — apply directives, then fork-first per `.upstream-sync/merge-policy.json`; Luna children per **planned clusters** (not naive prefix grouping unless the plan is missing); always-on coherence pass
 6. **`/diagnosing-bugs`** — if verification fails or behavior regresses (`.claude/skills/diagnosing-bugs/SKILL.md`)
 7. **`/tdd`** — when adding regression tests for merge fixes (`.claude/skills/tdd/SKILL.md`)
@@ -52,7 +52,7 @@ After resolving a conflict with a clear recurring rule, **extend `merge-policy.j
 ## Parent plan (control plane)
 
 - Phase A writes `.upstream-sync/ledger/<RUN_ID>/merge-plan.draft.json` (self-resolutions, open questions, area-level child plan, option-mapped proposed directives) and a `## Parent plan` section in `run.md`.
-- Phase B (after merge) writes `merge-plan.json` + `merge-directives.json`. The harness instantiates one Luna child per planned cluster.
+- Phase B (after merge / on resume) writes `merge-plan.json` + `merge-directives.json`. On resume it ingests completed `clusters/*.json` + the prior final plan and only assigns still-unmerged paths. The harness drops directives targeting already-resolved files and instantiates one Luna child per remaining planned cluster.
 - Fallback prefix clustering (`groupConflictClusters`) runs only when the final plan is missing or has empty `childClusters`.
 
 ## Skipped upstream ledger
@@ -106,5 +106,5 @@ bun run build
 ## GitHub Actions
 
 - Daily 06:00 UTC + manual dispatch — one unpaid upstream release per run
-- Resume: `/upstream-sync resume` on the draft PR (skips grill re-ask, still finalizes the plan)
+- Resume: `/upstream-sync resume` on the draft PR (skips grill re-ask, finalizes as a continuation from cluster reports + WIP)
 - Reuse: open sync PR/branch is extended when upstream advances (`FORCE_RUN` still opens a fresh PR)

@@ -22,7 +22,7 @@ The harness creates a **draft PR before grill analysis**. Use that PR for all hu
 3. Read `.upstream-sync/ledger/<RUN_ID>/release-notes.md` — **all** versions in the **bounded sync range** (merge-base → upstream HEAD), not full upstream history when `lastSyncedUpstreamSha` is null.
 4. Read `.upstream-sync/ledger/<RUN_ID>/fbi-report.md`.
 
-**Never re-ask** a question already answered in those files. On resume (`/upstream-sync resume`), the harness skips the parent **grill re-ask** when a resume answer exists, then still runs **Phase B finalize** after merge — treat PR answers as authoritative and lock them into `merge-plan.json` instead of posting duplicates.
+**Never re-ask** a question already answered in those files. On resume (`/upstream-sync resume`), the harness skips the parent **grill re-ask** when a resume answer exists, then still runs **Phase B finalize** after merge — treat PR answers as authoritative, ingest completed cluster reports / prior plan, and lock remaining work into `merge-plan.json` instead of posting duplicates or undoing finished clusters.
 
 ## Analysis output
 

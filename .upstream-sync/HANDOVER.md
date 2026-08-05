@@ -26,7 +26,7 @@ Goal: stop hand-merging hundreds of upstream commits and keep fork-owned product
 The harness is **release-sliced** and **plan-driven**:
 
 1. Each Actions run merges the next upstream `vX.Y.Z:` tip (not full `main`). Success may dispatch the next slice.
-2. Parent Phase A (grill) writes `merge-plan.draft.json` + `## Parent plan`. Resume skips re-ask only — Phase B still finalizes `merge-plan.json` / `merge-directives.json` after merge.
+2. Parent Phase A (grill) writes `merge-plan.draft.json` + `## Parent plan`. Resume skips re-ask only — Phase B still finalizes after merge, **continuing from cluster reports + prior plan + WIP** (does not re-issue resolved work).
 3. Harness applies directives (`mustEdit` / `overrideForkFirst` beat `forkFirst`), then spawns Luna children from the plan. Cluster reports land under `ledger/<runId>/clusters/`.
 4. WIP overlays carry a `decisionHash` (directives + grill answers + merge-policy) and are skipped when stale. Capacity exhaustion mid-cluster → `status: blocked`, not completed.
 5. **Build is blocking.** Coherence always runs; `child-fix-build` gets two rounds. Red build → `blocked`, never “completed with verification warnings.”

@@ -115,6 +115,37 @@ export function emptyMergeDirectives(): MergeDirectives {
   }
 }
 
+/**
+ * Drop checkout/delete/mustEdit/override entries for paths that are no longer
+ * unmerged. Prevents Phase B resume from overwriting child/WIP resolutions.
+ */
+export function restrictMergeDirectivesToUnmerged(
+  directives: MergeDirectives,
+  unmergedFiles: readonly string[]
+): { directives: MergeDirectives; dropped: string[] } {
+  const unmerged = new Set(unmergedFiles)
+  const dropped: string[] = []
+
+  const keep = (paths: readonly string[]): string[] =>
+    paths.filter((path) => {
+      if (unmerged.has(path)) return true
+      dropped.push(path)
+      return false
+    })
+
+  return {
+    directives: {
+      delete: keep(directives.delete),
+      checkoutTheirs: keep(directives.checkoutTheirs),
+      checkoutOurs: keep(directives.checkoutOurs),
+      mustEdit: keep(directives.mustEdit),
+      overrideForkFirst: keep(directives.overrideForkFirst),
+      notes: directives.notes,
+    },
+    dropped: [...new Set(dropped)].sort(),
+  }
+}
+
 export function mergePlanDraftPath(runId: string): string {
   return join(ledgerRunDir(runId), MERGE_PLAN_DRAFT_FILENAME)
 }

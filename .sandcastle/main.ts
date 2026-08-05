@@ -6,7 +6,7 @@
  * 2. Early draft PR + parent grill (Phase A: resolutions + draft child plan)
  * 3. Gate on unanswered grill questions (await `/upstream-sync resume`)
  * 4. Git merge next upstream release tip (until_sha / max_commits are smoke escapes)
- * 5. Package bootstrap → WIP overlay (decisionHash) → parent finalize (Phase B)
+ * 5. Package bootstrap → WIP overlay (decisionHash) → parent finalize (Phase B; resume continues from cluster reports)
  * 6. Apply merge directives + deterministic policy (forkFirst overrides / mustEdit)
  * 7. Luna children from merge-plan.json clusters (fallback prefix grouping if plan missing)
  * 8. Always-on coherence pass; blocking `bun run build` (+ child-fix-build, max 2 rounds)
@@ -38,6 +38,7 @@ import {
 import {
   clusterReportPath,
   formatClusterReportTable,
+  formatCompletedClusterProgress,
   readClusterReport,
   validateClusterReport,
 } from './lib/cluster-report'
@@ -126,6 +127,7 @@ import {
   loadFinalDirectives,
   readMergePlanDraft,
   readMergePlanFinal,
+  restrictMergeDirectivesToUnmerged,
 } from './lib/merge-plan'
 import {
   getUsageRecords,
@@ -347,8 +349,11 @@ async function runParentFinalizePlan(options: {
   upstreamSha: string
   activePrNumber: number
   agents: ReturnType<typeof resolveAgents>
+  wipOverlayStatus: string
 }): Promise<void> {
   const unmerged = listConflictFiles()
+  const priorFinal = readMergePlanFinal(options.runId)
+  const completedProgress = formatCompletedClusterProgress(options.runId)
   const prompt = substitutePrompt(readPrompt('parent-finalize-plan.md'), {
     RUN_ID: options.runId,
     SYNC_BRANCH: options.syncBranch,
@@ -358,6 +363,16 @@ async function runParentFinalizePlan(options: {
       unmerged.length > 0
         ? unmerged.map((file) => `- ${file}`).join('\n')
         : '- (none — still write a final plan with empty childClusters and locked directives)',
+    WIP_OVERLAY_STATUS: options.wipOverlayStatus,
+    COMPLETED_CLUSTER_PROGRESS:
+      completedProgress ||
+      '- (none yet — first finalize this run, or children have not written reports)',
+    PRIOR_FINAL_PLAN_PATH: priorFinal
+      ? `.upstream-sync/ledger/${options.runId}/merge-plan.json`
+      : '(none — first finalize this run)',
+    PRIOR_FINAL_PLAN_SUMMARY: priorFinal
+      ? formatParentPlanSummary(priorFinal)
+      : '- (none — first finalize this run)',
     DRAFT_PLAN_PATH: `.upstream-sync/ledger/${options.runId}/merge-plan.draft.json`,
     OPEN_QUESTIONS_PATH: `.upstream-sync/ledger/${options.runId}/open-questions.md`,
     GRILL_QA_PATH: `.upstream-sync/ledger/${options.runId}/grill-qa.md`,
@@ -1472,6 +1487,9 @@ async function main(): Promise<void> {
         upstreamSha: headSha,
         activePrNumber,
         agents,
+        wipOverlayStatus: wipResult.skipped
+          ? `skipped (${wipResult.reason ?? 'unknown'}) — conflicts left as-is`
+          : `applied=${wipResult.applied} deleted=${wipResult.deleted}`,
       })
     } else {
       console.log('[skip-agent] parent-finalize-plan')
@@ -1488,17 +1506,24 @@ async function main(): Promise<void> {
     }
 
     const lockedDirectives = directives ?? emptyMergeDirectives()
+    const restricted = restrictMergeDirectivesToUnmerged(lockedDirectives, listConflictFiles())
+    if (restricted.dropped.length > 0) {
+      console.log(
+        `[merge-directives] dropped ${restricted.dropped.length} already-resolved path(s) from finalize directives`
+      )
+    }
     decisionHash = computeDecisionHashFromDisk({
       directives: lockedDirectives,
       grillAnswerIds: collectGrillAnswerIds(),
     })
 
-    const directiveResult = applyMergeDirectives(lockedDirectives)
+    const directiveResult = applyMergeDirectives(restricted.directives)
     if (
       directiveResult.deleted.length +
         directiveResult.checkoutOurs.length +
         directiveResult.checkoutTheirs.length +
-        directiveResult.failed.length >
+        directiveResult.failed.length +
+        restricted.dropped.length >
       0
     ) {
       console.log(
@@ -1517,6 +1542,9 @@ async function main(): Promise<void> {
             : '',
           lockedDirectives.overrideForkFirst.length
             ? `- overrideForkFirst: ${lockedDirectives.overrideForkFirst.map((path) => `\`${path}\``).join(', ')}`
+            : '',
+          restricted.dropped.length
+            ? `- skipped already-resolved: ${restricted.dropped.map((path) => `\`${path}\``).join(', ')}`
             : '',
         ]
           .filter(Boolean)
