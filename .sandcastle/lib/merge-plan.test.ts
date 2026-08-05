@@ -211,6 +211,30 @@ describe('collectGrillAnswerIds', () => {
       ])
     ).toEqual(['q1', 'q4'])
   })
+
+  test('ignores operational resume comments that would otherwise churn WIP hashes', () => {
+    expect(
+      collectGrillAnswerIds([
+        {
+          id: 'a-5191520648',
+          source: 'resume',
+          answer:
+            '/upstream-sync resume\n\nContinuing after cancelling the hung child. Re-apply WIP.',
+        },
+        { id: 'q1', answer: 'drop voice', source: 'pr-comment' },
+      ])
+    ).toEqual(['q1'])
+  })
+
+  test('counts resume comments that still answer a named grill question, stably', () => {
+    const answer = '/upstream-sync resume\n\nQ2: drop voice\nKeep fork migrations.'
+    expect(
+      collectGrillAnswerIds([
+        { id: 'a-1', source: 'resume', answer },
+        { id: 'a-2', source: 'resume', answer },
+      ])
+    ).toEqual(['resume:Q2: drop voice\nKeep fork migrations.'])
+  })
 })
 
 describe('formatParentPlanSummary', () => {

@@ -330,12 +330,30 @@ export function loadFinalDirectives(runId: string): MergeDirectives | null {
 /**
  * Answered grill entry ids for WIP `decisionHash`.
  * Pass `entries` in tests to avoid reading `.upstream-sync/qa-history.jsonl`.
+ *
+ * Resume comments are control-plane (`/upstream-sync resume`). Including every
+ * new comment id would invalidate WIP after a hung-child continue. Only count a
+ * resume entry when it still names a grill question (`Q1`, `Q2`, …); use the
+ * stripped answer text as a stable key so a later identical resume does not
+ * churn the hash.
  */
 export function collectGrillAnswerIds(
-  entries?: ReadonlyArray<{ id: string; answer?: string }>
+  entries?: ReadonlyArray<{ id: string; answer?: string; source?: string }>
 ): string[] {
   const source = entries ?? readQaHistory()
-  return source.filter((entry) => Boolean(entry.answer?.trim())).map((entry) => entry.id)
+  const keys: string[] = []
+  for (const entry of source) {
+    const answer = entry.answer?.trim()
+    if (!answer) continue
+    if (entry.source === 'resume') {
+      const body = answer.replace(/\/upstream-sync\s+resume/gi, '').trim()
+      if (!body || !/\bQ\d+\b/i.test(body)) continue
+      keys.push(`resume:${body}`)
+      continue
+    }
+    keys.push(entry.id)
+  }
+  return [...new Set(keys)]
 }
 
 /**
