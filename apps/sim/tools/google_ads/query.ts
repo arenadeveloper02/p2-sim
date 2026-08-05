@@ -215,7 +215,8 @@ export const googleAdsQueryTool: ToolConfig<GoogleAdsQueryParams, any> = {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Google Ads account key to query',
+      description:
+        'Google Ads account key or numeric account ID (e.g. "gentle_dental" or "2497090182")',
     },
     question: {
       type: 'string',
@@ -265,7 +266,7 @@ export const googleAdsQueryTool: ToolConfig<GoogleAdsQueryParams, any> = {
           output_format: params.output_format || 'detailed',
           sort_by: params.sort_by || 'cost_desc',
         }),
-      accounts: params.accounts,
+      accounts: typeof params.accounts === 'string' ? params.accounts.trim() : params.accounts,
       // Don't pass period_type - let AI detect it from the question
       output_format: params.output_format || 'detailed',
       sort_by: params.sort_by || 'cost_desc',

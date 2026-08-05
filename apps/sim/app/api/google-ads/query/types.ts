@@ -1,6 +1,11 @@
 export interface GoogleAdsRequest {
   query: string
-  accounts: string
+  /** Account key or numeric Google Ads account ID. */
+  accounts?: string
+  /** Numeric Google Ads account ID (agent-friendly alias). */
+  accountId?: string
+  /** Customer ID alias for accountId. */
+  customerId?: string
   workspaceId?: string
   period_type?: string
   output_format?: string

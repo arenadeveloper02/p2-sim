@@ -1,5 +1,5 @@
 import type { GoogleAdsSearchParams, GoogleAdsSearchResponse } from '@/tools/google_ads/types'
-import { validateNumericId } from '@/tools/google_ads/types'
+import { resolveGoogleAdsCustomerId, validateNumericId } from '@/tools/google_ads/types'
 import type { ToolConfig } from '@/tools/types'
 
 export const googleAdsSearchTool: ToolConfig<GoogleAdsSearchParams, GoogleAdsSearchResponse> = {
@@ -24,7 +24,7 @@ export const googleAdsSearchTool: ToolConfig<GoogleAdsSearchParams, GoogleAdsSea
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Google Ads customer ID (numeric, no dashes)',
+      description: 'Google Ads customer ID / account ID (numeric, no dashes)',
     },
     developerToken: {
       type: 'string',
@@ -54,7 +54,7 @@ export const googleAdsSearchTool: ToolConfig<GoogleAdsSearchParams, GoogleAdsSea
 
   request: {
     url: (params) => {
-      const customerId = validateNumericId(params.customerId, 'customerId')
+      const customerId = resolveGoogleAdsCustomerId(params)
       return `https://googleads.googleapis.com/v24/customers/${customerId}/googleAds:search`
     },
     method: 'POST',

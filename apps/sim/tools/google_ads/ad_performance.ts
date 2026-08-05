@@ -2,7 +2,12 @@ import type {
   GoogleAdsAdPerformanceParams,
   GoogleAdsAdPerformanceResponse,
 } from '@/tools/google_ads/types'
-import { validateDate, validateDateRange, validateNumericId } from '@/tools/google_ads/types'
+import {
+  resolveGoogleAdsCustomerId,
+  validateDate,
+  validateDateRange,
+  validateNumericId,
+} from '@/tools/google_ads/types'
 import type { ToolConfig } from '@/tools/types'
 
 export const googleAdsAdPerformanceTool: ToolConfig<
@@ -30,7 +35,7 @@ export const googleAdsAdPerformanceTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Google Ads customer ID (numeric, no dashes)',
+      description: 'Google Ads customer ID / account ID (numeric, no dashes)',
     },
     developerToken: {
       type: 'string',
@@ -85,7 +90,7 @@ export const googleAdsAdPerformanceTool: ToolConfig<
 
   request: {
     url: (params) => {
-      const customerId = validateNumericId(params.customerId, 'customerId')
+      const customerId = resolveGoogleAdsCustomerId(params)
       return `https://googleads.googleapis.com/v24/customers/${customerId}/googleAds:search`
     },
     method: 'POST',
