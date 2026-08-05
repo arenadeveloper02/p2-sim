@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { userStats } from '@sim/db/schema'
+import { userStats, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { eq } from 'drizzle-orm'
@@ -23,6 +23,7 @@ import {
 } from '@/lib/billing/credits/daily-refresh'
 import {
   getOrgMemberUsageForBillingPeriod,
+  getOrgMemberUsageForCurrentPeriod,
   getOrgMemberUsageLimit,
 } from '@/lib/billing/organizations/member-limits'
 import { getPlanTierDollars, isPaid } from '@/lib/billing/plan-helpers'
@@ -588,18 +589,70 @@ async function evaluateOrganizationMemberUsageLimit(
 }
 
 /**
- * Account-scoped usage gate for operations without a workspace payer.
+ * Per-member usage cap for the organization that owns the given workspace.
  *
- * Workspace-hosted operations must resolve a billing attribution snapshot and
- * use `checkAttributedUsageLimits` so the workspace payer pool and exact
- * `(organizationId, actorUserId)` member cap are enforced.
+ * Arena/mothership surfaces resolve by workspace id; looks up the workspace's
+ * organization then evaluates the current-period member cap. No-ops when the
+ * workspace is not org-owned or the actor has no per-member cap.
+ *
+ * Fails open on unexpected error: this is a secondary, additive gate.
+ */
+export async function checkOrgMemberUsageLimit(
+  userId: string,
+  workspaceId: string
+): Promise<OrganizationMemberUsageLimitResult> {
+  try {
+    if (!isHosted || !isBillingEnabled || !workspaceId) {
+      return { isExceeded: false, currentUsage: 0, limit: null }
+    }
+
+    const [workspaceRow] = await db
+      .select({ organizationId: workspace.organizationId })
+      .from(workspace)
+      .where(eq(workspace.id, workspaceId))
+      .limit(1)
+
+    const organizationId = workspaceRow?.organizationId
+    if (!organizationId) {
+      return { isExceeded: false, currentUsage: 0, limit: null }
+    }
+
+    return await evaluateOrganizationMemberUsageLimit(organizationId, userId, () =>
+      getOrgMemberUsageForCurrentPeriod(organizationId, userId)
+    )
+  } catch (error) {
+    logger.error('Error checking per-member org usage limit', {
+      error: toError(error).message,
+      userId,
+      workspaceId,
+    })
+    return { isExceeded: false, currentUsage: 0, limit: null }
+  }
+}
+
+/**
+ * Unified usage gate for an actor: the pooled/personal cap first
+ * ({@link checkServerSideUsageLimits}), then the per-member org-workspace cap
+ * ({@link checkOrgMemberUsageLimit}) when a workspace is in scope.
+ *
+ * Workspace-attributed operations that already hold a billing snapshot should
+ * prefer {@link checkAttributedUsageLimits}. `workspaceId` remains optional for
+ * Arena call sites that still gate by workspace without a full attribution.
  */
 export async function checkActorUsageLimits(
-  userId: string
+  userId: string,
+  workspaceId?: string | null
 ): Promise<{ isExceeded: boolean; message?: string; scope?: 'pooled' | 'member' }> {
   const pooled = await checkServerSideUsageLimits(userId)
   if (pooled.isExceeded) {
     return { isExceeded: true, message: pooled.message, scope: 'pooled' }
+  }
+
+  if (workspaceId) {
+    const member = await checkOrgMemberUsageLimit(userId, workspaceId)
+    if (member.isExceeded) {
+      return { isExceeded: true, message: member.message, scope: 'member' }
+    }
   }
 
   return { isExceeded: false }
