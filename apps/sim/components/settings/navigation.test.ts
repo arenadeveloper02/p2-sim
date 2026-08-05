@@ -52,6 +52,7 @@ describe('settings navigation boundaries', () => {
       'access-control',
       'audit-logs',
       'billing',
+      'arena-billing',
       'usage',
       'teammates',
       'organization',
@@ -282,7 +283,7 @@ describe('settings navigation boundaries', () => {
       },
       {
         id: 'billing',
-        label: 'Billing',
+        label: 'Subscription',
         description: 'Manage your personal plan, usage, and invoices.',
         group: 'account',
       },

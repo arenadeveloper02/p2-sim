@@ -43,8 +43,7 @@ import {
 } from '@/lib/billing/subscriptions/utils'
 import { buildUpgradeHref } from '@/lib/billing/upgrade-reasons'
 import { getBaseUrl } from '@/lib/core/utils/urls'
-// Arena uses BillingCreditUsagePanel via BillingPageShell instead of this compact glance.
-// import { CreditUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing/components/credit-usage-section/credit-usage-section'
+import { CreditUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing/components/credit-usage-section/credit-usage-section'
 import { UsageLimitField } from '@/app/workspace/[workspaceId]/settings/components/billing/components/usage-limit-field/usage-limit-field'
 import { getSubscriptionPermissions } from '@/app/workspace/[workspaceId]/settings/components/billing/subscription-permissions'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
@@ -105,13 +104,16 @@ interface BillingProps {
   organizationId?: string
   creditUsageHref?: string
   governingWorkspaceName?: string
+  /** When true, skip the compact credit-usage glance (Arena shell renders BillingCreditUsagePanel instead). */
+  hideCreditUsageSection?: boolean
 }
 
 export function Billing({
   scope,
   organizationId,
-  creditUsageHref: _creditUsageHref,
+  creditUsageHref,
   governingWorkspaceName,
+  hideCreditUsageSection = false,
 }: BillingProps) {
   const router = useRouter()
   const isOrganizationScope = scope === 'organization'
@@ -678,11 +680,9 @@ export function Billing({
         </SettingsSection>
       )}
 
-      {/* Arena: credit usage is rendered by BillingCreditUsagePanel in BillingPageShell.
-      {!isOrganizationScope && !subscription.isEnterprise && (
-        <CreditUsageSection href={_creditUsageHref} />
+      {!hideCreditUsageSection && !isOrganizationScope && !subscription.isEnterprise && (
+        <CreditUsageSection href={creditUsageHref} />
       )}
-      */}
     </SettingsPanel>
   )
 }

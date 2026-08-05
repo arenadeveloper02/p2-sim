@@ -16,6 +16,7 @@ export const isBillingEnabled = SETTINGS_NAVIGATION_BILLING_ENABLED
 
 export const sectionConfig: { key: NavigationSection; title: string }[] = [
   { key: 'account', title: 'Account' },
+  { key: 'subscription', title: 'Subscription' },
   { key: 'workspace', title: 'Workspace' },
   { key: 'organization', title: 'Organization' },
   { key: 'platform', title: 'Platform' },

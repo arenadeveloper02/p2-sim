@@ -106,6 +106,7 @@ export type UnifiedSettingsSection =
   | 'apikeys'
   | 'byok'
   | 'billing'
+  | 'arena-billing'
   | 'usage'
   | 'teammates'
   | 'organization'
@@ -126,7 +127,12 @@ export type UnifiedSettingsSection =
   | 'recently-deleted'
   | 'self-host'
 
-export type UnifiedNavigationSection = 'account' | 'workspace' | 'organization' | 'platform'
+export type UnifiedNavigationSection =
+  | 'account'
+  | 'subscription'
+  | 'workspace'
+  | 'organization'
+  | 'platform'
 
 /**
  * A bridge surface the desktop shell must expose for a section to be worth
@@ -385,49 +391,28 @@ export const WORKSPACE_SETTINGS_GROUPS = [
 ] as const
 
 /**
- * Arena Agents billing nav — lives under the Account sidebar group.
- * Uses the Arena BillingPageShell (plan UI + credit-usage panel).
+ * Arena Agents billing — Subscription sidebar entry that opens billing-usage.
+ * Visible to every workspace member (no billing-disabled or payer gates).
  */
 const arenaAgentsBilling: SettingsSectionRegistryEntry = {
   label: 'Billing',
   icon: ClipboardList,
   unified: {
-    id: 'billing',
+    id: 'arena-billing',
     description: 'Manage your plan, pricing, and invoices.',
-    group: 'account',
+    group: 'subscription',
     order: 1,
-    hideWhenBillingDisabled: true,
-  },
-  planes: {
-    account: {
-      id: 'billing',
-      description: 'Manage your personal plan, usage, and invoices.',
-      group: 'account',
-      order: 1,
-    },
-    selfhost: {
-      id: 'billing',
-      description: 'Manage your personal plan, usage, and invoices.',
-      group: 'account',
-      order: 1,
-    },
-    organization: {
-      id: 'billing',
-      description: 'Manage the organization plan, usage, and invoices.',
-      group: 'organization',
-      order: 1,
-    },
   },
 }
 
-/** Arena Agents usage analytics — paired with billing under Account. */
+/** Arena Agents usage analytics — paired with Arena billing under Subscription. */
 const arenaAgentsUsage: SettingsSectionRegistryEntry = {
   label: 'Usage',
   icon: Credit,
   unified: {
     id: 'usage',
     description: 'View token and cost analytics for your activity, workspace, or organization.',
-    group: 'account',
+    group: 'subscription',
     order: 2,
   },
 }
@@ -528,37 +513,37 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
   //     workspace: { id: 'forks', group: 'enterprise', order: 10 },
   //   },
   // },
-  // {
-  //   label: 'Subscription',
-  //   icon: ClipboardList,
-  //   unified: {
-  //     id: 'billing',
-  //     description: 'Manage your plan, pricing, and invoices.',
-  //     group: 'account',
-  //     order: 1,
-  //     hideWhenBillingDisabled: true,
-  //   },
-  //   planes: {
-  //     account: {
-  //       id: 'billing',
-  //       description: 'Manage your personal plan, usage, and invoices.',
-  //       group: 'account',
-  //       order: 1,
-  //     },
-  //     selfhost: {
-  //       id: 'billing',
-  //       description: 'Manage your personal plan, usage, and invoices.',
-  //       group: 'account',
-  //       order: 1,
-  //     },
-  //     organization: {
-  //       id: 'billing',
-  //       description: 'Manage the organization plan, usage, and invoices.',
-  //       group: 'organization',
-  //       order: 1,
-  //     },
-  //   },
-  // },
+  {
+    label: 'Subscription',
+    icon: ClipboardList,
+    unified: {
+      id: 'billing',
+      description: 'Manage your plan, pricing, and invoices.',
+      group: 'account',
+      order: 1,
+      hideWhenBillingDisabled: true,
+    },
+    planes: {
+      account: {
+        id: 'billing',
+        description: 'Manage your personal plan, usage, and invoices.',
+        group: 'account',
+        order: 1,
+      },
+      selfhost: {
+        id: 'billing',
+        description: 'Manage your personal plan, usage, and invoices.',
+        group: 'account',
+        order: 1,
+      },
+      organization: {
+        id: 'billing',
+        description: 'Manage the organization plan, usage, and invoices.',
+        group: 'organization',
+        order: 1,
+      },
+    },
+  },
   // {
   //   label: 'Usage',
   //   icon: Credit,

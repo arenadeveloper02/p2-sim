@@ -24,6 +24,7 @@ describe('unified settings navigation', () => {
   it('groups settings by the scope they affect', () => {
     expect(sectionConfig).toEqual([
       { key: 'account', title: 'Account' },
+      { key: 'subscription', title: 'Subscription' },
       { key: 'workspace', title: 'Workspace' },
       { key: 'organization', title: 'Organization' },
       { key: 'platform', title: 'Platform' },
@@ -38,8 +39,9 @@ describe('unified settings navigation', () => {
       { id: 'terminal', label: 'Terminal', section: 'account' },
       { id: 'access-control', label: 'Permission groups', section: 'organization' },
       { id: 'audit-logs', label: 'Audit logs', section: 'organization' },
-      { id: 'billing', label: 'Billing', section: 'account' },
-      { id: 'usage', label: 'Usage', section: 'account' },
+      { id: 'billing', label: 'Subscription', section: 'account' },
+      { id: 'arena-billing', label: 'Billing', section: 'subscription' },
+      { id: 'usage', label: 'Usage', section: 'subscription' },
       { id: 'teammates', label: 'Teammates', section: 'workspace' },
       { id: 'organization', label: 'Members', section: 'organization' },
       { id: 'oauth-apps', label: 'Custom OAuth Apps', section: 'organization' },
@@ -68,11 +70,11 @@ describe('unified settings navigation', () => {
     expect(idsForSection('account')).toEqual([
       'general',
       'billing',
-      'usage',
       'desktop',
       'browser',
       'terminal',
     ])
+    expect(idsForSection('subscription')).toEqual(['arena-billing', 'usage'])
     expect(idsForSection('workspace')).toEqual([
       'teammates',
       'secrets',
@@ -104,8 +106,15 @@ describe('unified settings navigation', () => {
 
   it('keeps Usage visible to every workspace member', () => {
     const usage = allNavigationItems.find(({ id }) => id === 'usage')
-    expect(usage?.section).toBe('account')
+    expect(usage?.section).toBe('subscription')
     expect(usage).not.toHaveProperty('requiresWorkspaceAdmin')
+  })
+
+  it('keeps Arena billing visible without billing-disabled or payer gates', () => {
+    const arenaBilling = allNavigationItems.find(({ id }) => id === 'arena-billing')
+    expect(arenaBilling?.section).toBe('subscription')
+    expect(arenaBilling).not.toHaveProperty('hideWhenBillingDisabled')
+    expect(arenaBilling).not.toHaveProperty('requiresWorkspaceAdmin')
   })
 
   it('derives every unified item from exactly one registry entry', () => {

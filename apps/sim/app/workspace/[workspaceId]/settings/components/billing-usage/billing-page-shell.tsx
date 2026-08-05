@@ -35,6 +35,7 @@ export function BillingPageShell({
               organizationId={organizationId}
               creditUsageHref={creditUsageHref}
               governingWorkspaceName={governingWorkspaceName}
+              hideCreditUsageSection
             />
           </div>
           <BillingCreditUsagePanel />
