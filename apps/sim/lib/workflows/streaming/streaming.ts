@@ -389,9 +389,7 @@ function attachToolCallCharts(
     const existingSignatures = new Set(
       extractChartsFromData(existing).map((chart) => JSON.stringify(chart))
     )
-    const newCharts = allCharts.filter(
-      (chart) => !existingSignatures.has(JSON.stringify(chart))
-    )
+    const newCharts = allCharts.filter((chart) => !existingSignatures.has(JSON.stringify(chart)))
     if (newCharts.length === 0) {
       continue
     }
