@@ -24,7 +24,7 @@ Sync parent repo `simstudioai/sim` `main` into the branch that triggered the run
 4. `/tdd` → `.claude/skills/tdd/SKILL.md` (regression tests)
 5. `/review-upstream-merge` → `.claude/skills/review-upstream-merge/SKILL.md`
 
-One Actions run = one upstream release tip. Resume skips grill re-ask but still finalizes `merge-plan.json`.
+One Actions run = up to 6 upstream release tips (or fewer if that is all remaining). Resume skips grill re-ask but still finalizes `merge-plan.json`.
 
 ## Ledger files
 
