@@ -7,6 +7,9 @@ export interface TriggerOption {
   color: string
 }
 
+/** Display label for copilot / mothership runs in the logs Trigger column. */
+export const ARENA_AGENT_TRIGGER_LABEL = 'Arena Agent'
+
 let cachedTriggerOptions: TriggerOption[] | null = null
 let cachedTriggerMetadataMap: Map<string, { label: string; color: string }> | null = null
 
@@ -23,6 +26,15 @@ export function resetTriggerOptionsCache() {
  * Results are cached after first call for performance (~98% faster on subsequent calls).
  */
 export function getTriggerOptions(): TriggerOption[] {
+  // Fast Refresh can preserve module-level cache across edits; drop stale labels.
+  if (
+    cachedTriggerOptions &&
+    cachedTriggerOptions.find((option) => option.value === 'copilot')?.label !==
+      ARENA_AGENT_TRIGGER_LABEL
+  ) {
+    resetTriggerOptionsCache()
+  }
+
   if (cachedTriggerOptions) {
     return cachedTriggerOptions
   }
@@ -37,8 +49,8 @@ export function getTriggerOptions(): TriggerOption[] {
     { value: 'chat', label: 'Chat', color: '#7c3aed' },
     { value: 'webhook', label: 'Webhook', color: '#ea580c' },
     { value: 'mcp', label: 'MCP', color: '#dc2626' },
-    { value: 'copilot', label: 'Arena agent', color: '#ec4899' },
-    { value: 'mothership', label: 'Arena agent', color: '#ec4899' },
+    { value: 'copilot', label: ARENA_AGENT_TRIGGER_LABEL, color: '#ec4899' },
+    { value: 'mothership', label: ARENA_AGENT_TRIGGER_LABEL, color: '#ec4899' },
     { value: 'workflow', label: 'Workflow', color: '#0369a1' },
     { value: 'custom_block', label: 'Custom block', color: '#0369a1' },
   ]
