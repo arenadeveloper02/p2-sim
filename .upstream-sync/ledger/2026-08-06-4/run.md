@@ -237,3 +237,22 @@ Resolved the assigned seven files only. The email footer was already settled by 
 
 Verified root package scripts retain vendor-pricing:check/vendor-pricing:sync and include skills:sync/skills:check. Regenerated bun.lock with bun install --lockfile-only; no additional lockfile delta was produced. Recorded the rejected upstream #5640 timeout/default hunk in skipped.md.
 
+## Cluster uploads-editor
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/deploy-modal.tsx` | manual | Applied upstream's deploy-upgrade-gate removal while retaining the fork's App deployment tab and Arena instrumentation. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/file-upload/file-upload.tsx` | manual | Kept fork uploadContext, Start-file references, conversationFileMode, and defaults; added upstream requiresCloudStorage gating and warning. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/sub-block.tsx` | manual | Passed both fork upload-mode props and upstream requiresCloudStorage through to FileUpload. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/panel.tsx` | manual | Kept fork Arena analytics, external chat, and local Copilot surfaces while adopting upstream workspace usage-limit loading and scoped messaging. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution.ts` | manual | Adopted upstream's typed pre-stream attachment upload path and removed the obsolete duplicate in-stream uploader; no billing attribution rewiring was introduced. |
+| `apps/sim/executor/utils/file-tool-processor.test.ts` | manual | Unioned the add/add fork URL/invalid-output coverage with upstream byte limits and MIME-sniffing coverage. |
+| `apps/sim/lib/uploads/client/api-fallback.ts` | manual | Adopted upstream normalized metadata and workflow/execution options while preserving the fork's organizationId compatibility wrapper. |
+| `apps/sim/lib/uploads/core/storage-service.ts` | manual | Unioned persistMetadata and all upstream Blob provider paths with fork dedicated agent-image S3 and regional presign behavior. |
+
+Policy proposals:
+
+- `unionPaths` `apps/sim/lib/uploads/` — Upload/storage paths require fork compatibility plus additive upstream provider and metadata changes. Applied to merge-policy.json.
+
+Resolved all eight assigned files under the locked union plan. Focused upload and file-processor tests pass; Biome check passes for all eight files.
+

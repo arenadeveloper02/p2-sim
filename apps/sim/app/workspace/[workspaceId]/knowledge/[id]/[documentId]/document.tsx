@@ -6,8 +6,8 @@ import { Database } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { truncate } from '@sim/utils/string'
 import { ChevronDown, ChevronUp, FileText, Pencil, Tag } from 'lucide-react'
-import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useQueryStates } from 'nuqs'
+import { useParams, useRouter } from 'next/navigation'
+import { parseAsInteger, useQueryState, useQueryStates } from 'nuqs'
 import { SearchHighlight } from '@/components/ui/search-highlight'
 import type { ChunkData } from '@/lib/knowledge/types'
 import { formatTokenCount } from '@/lib/tokenization'
@@ -34,6 +34,7 @@ import {
   DocumentTagsModal,
 } from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/components'
 import {
+  documentChunkSortParams,
   documentParsers,
   documentUrlKeys,
 } from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/search-params'
@@ -52,9 +53,18 @@ import {
   useUpdateDocument,
 } from '@/hooks/queries/kb/knowledge'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useDebouncedSearchSetter } from '@/hooks/use-debounced-search-setter'
 import { useInlineRename } from '@/hooks/use-inline-rename'
+import { useUrlSort } from '@/hooks/use-url-sort'
 
 const logger = createLogger('Document')
+
+/**
+ * Debounce window for chunk-search URL writes and the query feed; the input
+ * itself stays instant. Intentionally shorter than the shared
+ * `SEARCH_DEBOUNCE_MS` (300) to match the chunk search's snappier feel.
+ */
+const CHUNK_SEARCH_DEBOUNCE_MS = 200 as const
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -120,6 +130,12 @@ const CHUNK_COLUMNS: ResourceColumn[] = [
   { id: 'status', header: 'Status', widthMultiplier: 0.75 },
 ]
 
+const CHUNK_PAGE_SIZE = 50 as const
+
+function pageForChunkIndex(index: number): number {
+  return Math.floor(index / CHUNK_PAGE_SIZE) + 1
+}
+
 export function Document({
   knowledgeBaseId,
   documentId,
@@ -128,15 +144,11 @@ export function Document({
 }: DocumentProps) {
   const { workspaceId } = useParams()
   const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const CHUNK_PAGE_SIZE = 50
-  const chunkIdFromUrl = searchParams.get('chunk')
-  const chunkIndexFromUrl = searchParams.get('chunkIndex')
-  const [{ page: currentPageFromURL, chunk: chunkFromURL }, setDocumentParams] = useQueryStates(
-    documentParsers,
-    documentUrlKeys
-  )
+  const [
+    { page: currentPageFromURL, chunk: chunkFromURL, search: searchQuery },
+    setDocumentParams,
+  ] = useQueryStates(documentParsers, documentUrlKeys)
+  const [chunkIndexFromUrl, setChunkIndexFromUrl] = useQueryState('chunkIndex', parseAsInteger)
   const userPermissions = useUserPermissionsContext()
 
   const { knowledgeBase } = useKnowledgeBase(knowledgeBaseId)
@@ -144,13 +156,25 @@ export function Document({
 
   const [showTagsModal, setShowTagsModal] = useState(false)
 
-  const [searchQuery, setSearchQuery] = useState('')
-  const debouncedSearchQuery = useDebounce(searchQuery, 200)
+  /**
+   * The input is controlled directly by the instant nuqs value; only the URL
+   * write is debounced. The chunk search query below reads a debounced value so
+   * it doesn't refetch on every keystroke. Changing the search resets `page` in
+   * the same write — a search started from a later page must land on the first
+   * page of matches, and a shared search link must open there too.
+   */
+  const handleSearchChange = useDebouncedSearchSetter(
+    (value, options) => void setDocumentParams({ search: value, page: null }, options),
+    { debounceMs: CHUNK_SEARCH_DEBOUNCE_MS }
+  )
+  /** Raw URL value drives the input; the chunk search query always sees it trimmed. */
+  const debouncedSearchQuery = useDebounce(searchQuery, CHUNK_SEARCH_DEBOUNCE_MS).trim()
   const [enabledFilter, setEnabledFilter] = useState<string[]>([])
-  const [activeSort, setActiveSort] = useState<{
-    column: string
-    direction: 'asc' | 'desc'
-  } | null>(null)
+  const {
+    activeSort,
+    onSort: onSortColumn,
+    onClear: onClearSort,
+  } = useUrlSort(documentChunkSortParams, documentUrlKeys)
 
   const enabledFilterParam = useMemo(
     () => (enabledFilter.length === 1 ? (enabledFilter[0] as 'enabled' | 'disabled') : 'all'),
@@ -187,12 +211,12 @@ export function Document({
       search: debouncedSearchQuery,
     },
     {
-      enabled: Boolean(debouncedSearchQuery.trim()),
+      enabled: Boolean(debouncedSearchQuery),
     }
   )
 
-  const { data: chunkByIdData } = useChunkById(knowledgeBaseId, documentId, chunkIdFromUrl, {
-    enabled: Boolean(chunkIdFromUrl),
+  const { data: chunkByIdData } = useChunkById(knowledgeBaseId, documentId, chunkFromURL, {
+    enabled: Boolean(chunkFromURL),
   })
 
   const searchError = searchQueryError instanceof Error ? searchQueryError.message : null
@@ -209,8 +233,11 @@ export function Document({
   const setSelectedChunkId = useCallback(
     (chunkId: string | null) => {
       void setDocumentParams({ chunk: chunkId }, chunkId !== null ? { history: 'push' } : undefined)
+      if (chunkIndexFromUrl !== null) {
+        void setChunkIndexFromUrl(null)
+      }
     },
-    [setDocumentParams]
+    [chunkIndexFromUrl, setChunkIndexFromUrl, setDocumentParams]
   )
   const [isCreatingNewChunk, setIsCreatingNewChunk] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
@@ -221,7 +248,7 @@ export function Document({
   const saveStatusRef = useRef<SaveStatus>('idle')
   saveStatusRef.current = saveStatus
 
-  const isSearching = debouncedSearchQuery.trim().length > 0
+  const isSearching = debouncedSearchQuery.length > 0
   const showingSearch = isSearching && searchQuery.trim().length > 0 && searchResults.length > 0
   const SEARCH_PAGE_SIZE = 50
   const maxSearchPages = Math.ceil(searchResults.length / SEARCH_PAGE_SIZE)
@@ -244,70 +271,38 @@ export function Document({
     return initialChunks ?? []
   }, [showingSearch, searchResults, searchCurrentPage, initialChunks])
 
-  const pageForChunkIndex = (index: number) => Math.floor(Number(index) / CHUNK_PAGE_SIZE) + 1
-
   useEffect(() => {
-    if (!chunkIndexFromUrl || chunkIdFromUrl || showingSearch) return
-    const desiredPage = pageForChunkIndex(Number(chunkIndexFromUrl))
+    if (chunkIndexFromUrl === null || chunkFromURL !== null || showingSearch) return
+    const desiredPage = pageForChunkIndex(chunkIndexFromUrl)
     if (currentPageFromURL === desiredPage) return
-    const params = new URLSearchParams(searchParams.toString())
-    if (desiredPage > 1) {
-      params.set('page', String(desiredPage))
-    } else {
-      params.delete('page')
-    }
-    params.set('chunkIndex', chunkIndexFromUrl)
-    router.replace(`${pathname}?${params.toString()}`)
-  }, [
-    chunkIndexFromUrl,
-    chunkIdFromUrl,
-    showingSearch,
-    currentPageFromURL,
-    pathname,
-    searchParams,
-    router,
-  ])
+    void setDocumentParams({ page: desiredPage })
+  }, [chunkFromURL, chunkIndexFromUrl, currentPageFromURL, setDocumentParams, showingSearch])
 
   useEffect(() => {
-    if (chunkIdFromUrl) {
-      const inList = displayChunks.find((c: ChunkData) => c.id === chunkIdFromUrl)
-      if (inList) {
-        setSelectedChunkId(inList.id)
-        return
-      }
-      if (chunkByIdData?.id === chunkIdFromUrl) {
-        setSelectedChunkId(chunkByIdData.id)
+    if (chunkFromURL !== null) {
+      if (chunkByIdData?.id === chunkFromURL) {
         const desiredPage = pageForChunkIndex(chunkByIdData.chunkIndex)
         if (currentPageFromURL !== desiredPage) {
-          const params = new URLSearchParams(searchParams.toString())
-          params.set('chunk', chunkIdFromUrl)
-          params.set('chunkIndex', String(chunkByIdData.chunkIndex))
-          if (desiredPage > 1) params.set('page', String(desiredPage))
-          else params.delete('page')
-          router.replace(`${pathname}?${params.toString()}`)
+          void setDocumentParams({ page: desiredPage })
         }
       }
       return
     }
-    if (chunkIndexFromUrl !== null && chunkIndexFromUrl !== '') {
-      const indexNum = Number(chunkIndexFromUrl)
-      if (!Number.isNaN(indexNum)) {
-        const chunk = displayChunks.find((c: ChunkData) => c.chunkIndex === indexNum)
-        if (chunk) {
-          setSelectedChunkId(chunk.id)
-        }
-      }
+
+    if (chunkIndexFromUrl === null || showingSearch) return
+    const chunk = displayChunks.find((item) => item.chunkIndex === chunkIndexFromUrl)
+    if (chunk) {
+      setSelectedChunkId(chunk.id)
     }
   }, [
-    chunkIdFromUrl,
-    chunkIndexFromUrl,
-    displayChunks,
     chunkByIdData,
+    chunkFromURL,
+    chunkIndexFromUrl,
     currentPageFromURL,
-    pathname,
-    searchParams,
-    router,
+    displayChunks,
     setSelectedChunkId,
+    setDocumentParams,
+    showingSearch,
   ])
 
   const currentPage = showingSearch ? searchCurrentPage : initialPage
@@ -667,7 +662,7 @@ export function Document({
   const searchConfig: SearchConfig | undefined = isCompleted
     ? {
         value: searchQuery,
-        onChange: (value: string) => setSearchQuery(value),
+        onChange: handleSearchChange,
         placeholder: 'Search chunks...',
       }
     : undefined
@@ -732,24 +727,6 @@ export function Document({
         },
       })),
     [enabledFilter, goToPage]
-  )
-
-  const getDocumentUrl = useCallback(
-    (chunkId: string | null, chunkIndex?: number) => {
-      const params = new URLSearchParams(searchParams.toString())
-      if (chunkId != null && chunkId !== '') {
-        params.set('chunk', chunkId)
-        if (chunkIndex !== undefined) {
-          params.set('chunkIndex', String(chunkIndex))
-        }
-      } else {
-        params.delete('chunk')
-        params.delete('chunkIndex')
-      }
-      const qs = params.toString()
-      return qs ? `${pathname}?${qs}` : pathname
-    },
-    [pathname, searchParams]
   )
 
   const handleChunkClick = useCallback(
@@ -955,16 +932,17 @@ export function Document({
         { id: 'status', label: 'Status' },
       ],
       active: activeSort,
+      /** Sorting (or clearing the sort) resets pagination to the first page. */
       onSort: (column, direction) => {
-        setActiveSort({ column, direction })
+        onSortColumn(column, direction)
         void goToPage(1)
       },
       onClear: () => {
-        setActiveSort(null)
+        onClearSort()
         void goToPage(1)
       },
     }),
-    [activeSort, goToPage]
+    [activeSort, onSortColumn, onClearSort, goToPage]
   )
 
   const chunkRows: ResourceRow[] = useMemo(() => {
@@ -1331,7 +1309,6 @@ export function Document({
       <ChunkContextMenu
         isOpen={isContextMenuOpen}
         position={contextMenuPosition}
-        // menuRef={menuRef}
         onClose={handleContextMenuClose}
         hasChunk={contextMenuChunk !== null}
         isChunkEnabled={contextMenuChunk?.enabled ?? true}
@@ -1341,9 +1318,10 @@ export function Document({
         onOpenInNewTab={
           contextMenuChunk
             ? () => {
-                const params = new URLSearchParams()
-                params.set('chunk', contextMenuChunk.id)
-                params.set('chunkIndex', String(contextMenuChunk.chunkIndex))
+                const params = new URLSearchParams({
+                  chunk: contextMenuChunk.id,
+                  chunkIndex: String(contextMenuChunk.chunkIndex),
+                })
                 const url = `/workspace/${workspaceId}/knowledge/${knowledgeBaseId}/${documentId}?${params.toString()}`
                 window.open(url, '_blank')
               }
@@ -1353,7 +1331,6 @@ export function Document({
           contextMenuChunk
             ? () => {
                 setSelectedChunkId(contextMenuChunk.id)
-                router.replace(getDocumentUrl(contextMenuChunk.id, contextMenuChunk.chunkIndex))
               }
             : undefined
         }
@@ -1387,11 +1364,13 @@ export function Document({
         onAddChunk={handleNewChunk}
         disableToggleEnabled={!userPermissions.canEdit || isConnectorDocument}
         disableDelete={!userPermissions.canEdit || isConnectorDocument}
+        disableEdit={!userPermissions.canEdit || isConnectorDocument}
         disableAddChunk={
           !userPermissions.canEdit ||
           documentData?.processingStatus === 'failed' ||
           isConnectorDocument
         }
+        isConnectorDocument={isConnectorDocument}
       />
     </>
   )
