@@ -513,37 +513,37 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
   //     workspace: { id: 'forks', group: 'enterprise', order: 10 },
   //   },
   // },
-  {
-    label: 'Subscription',
-    icon: ClipboardList,
-    unified: {
-      id: 'billing',
-      description: 'Manage your plan, pricing, and invoices.',
-      group: 'account',
-      order: 1,
-      hideWhenBillingDisabled: true,
-    },
-    planes: {
-      account: {
-        id: 'billing',
-        description: 'Manage your personal plan, usage, and invoices.',
-        group: 'account',
-        order: 1,
-      },
-      selfhost: {
-        id: 'billing',
-        description: 'Manage your personal plan, usage, and invoices.',
-        group: 'account',
-        order: 1,
-      },
-      organization: {
-        id: 'billing',
-        description: 'Manage the organization plan, usage, and invoices.',
-        group: 'organization',
-        order: 1,
-      },
-    },
-  },
+  // {
+  //   label: 'Subscription',
+  //   icon: ClipboardList,
+  //   unified: {
+  //     id: 'billing',
+  //     description: 'Manage your plan, pricing, and invoices.',
+  //     group: 'account',
+  //     order: 1,
+  //     hideWhenBillingDisabled: true,
+  //   },
+  //   planes: {
+  //     account: {
+  //       id: 'billing',
+  //       description: 'Manage your personal plan, usage, and invoices.',
+  //       group: 'account',
+  //       order: 1,
+  //     },
+  //     selfhost: {
+  //       id: 'billing',
+  //       description: 'Manage your personal plan, usage, and invoices.',
+  //       group: 'account',
+  //       order: 1,
+  //     },
+  //     organization: {
+  //       id: 'billing',
+  //       description: 'Manage the organization plan, usage, and invoices.',
+  //       group: 'organization',
+  //       order: 1,
+  //     },
+  //   },
+  // },
   // {
   //   label: 'Usage',
   //   icon: Credit,
