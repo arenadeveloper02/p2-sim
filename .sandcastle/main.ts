@@ -9,10 +9,11 @@
  * 5. Package bootstrap → WIP overlay (decisionHash) → parent finalize (Phase B; resume continues from cluster reports)
  * 6. Apply merge directives + deterministic policy (forkFirst overrides / mustEdit)
  * 7. Luna children from merge-plan.json clusters (fallback prefix grouping if plan missing)
- * 8. Always-on coherence pass; advisory check/lint/test (full build left to CI)
+ * 8. Always-on coherence pass; advisory check/lint (test + build left to CI)
  * 9. Update draft PR body + final ledger commit; chain next release as a stacked PR on success
  */
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { AgentStreamEvent, RunResult } from '@ai-hero/sandcastle'
@@ -74,6 +75,7 @@ import {
   getPrReviewers,
   groupConflictClusters,
   isPrOpen,
+  isSyncBranch,
   isTipSliceCompleted,
   leafConflictClusters,
   listConflictFiles,
@@ -91,12 +93,16 @@ import {
   restoreWipLedger,
   runGh,
   runGit,
+  STACK_PATH,
+  STATE_PATH,
   type SyncStackEntry,
+  type SyncState,
   splitLeftoverCluster,
   substitutePrompt,
   syncGrillQaFromPr,
   throwIfRemotePushAuthError,
   todayRunId,
+  UPSTREAM_SYNC_ROOT,
   updateDraftPr,
   upsertStackTip,
   walkConflictClusters,
@@ -165,9 +171,9 @@ const COHERENCE_REASON =
 let activeRunId: string | null = null
 let usageFlushCompleted = false
 
-function hasStagedChanges(): boolean {
+function hasStagedChanges(cwd = process.cwd()): boolean {
   try {
-    runGit(['diff', '--cached', '--quiet'])
+    runGit(['diff', '--cached', '--quiet'], cwd)
     return false
   } catch {
     return true
@@ -788,6 +794,8 @@ function maybeDispatchNextReleaseSlice(options: {
   syncedSha: string
   upstreamHeadSha: string
   tipReason: string
+  /** Land-target ref so the chained job reads mirrored tip pointers. */
+  workflowRef?: string | null
 }): void {
   if (
     !options.tipReason.startsWith('next-release') &&
@@ -813,9 +821,84 @@ function maybeDispatchNextReleaseSlice(options: {
       return
     }
 
-    dispatchUpstreamSyncWorkflow()
+    dispatchUpstreamSyncWorkflow({ ref: options.workflowRef })
   } catch (error) {
     console.warn('Could not dispatch next upstream-sync release slice:', error)
+  }
+}
+
+/**
+ * Commit tip completion state, push the tip branch, then mirror tip pointers onto
+ * the land-target branch so auto-chained runs can stack-on-tip without a manual seed.
+ */
+function persistCompletedTipPointersOnLandTarget(options: {
+  landTarget: string
+  tipBranch: string
+  tipState: SyncState
+  runId: string
+}): void {
+  const { landTarget, tipBranch, tipState, runId } = options
+
+  writeState(tipState)
+  commitUpstreamLedger(`upstream-sync(${runId}): completed tip state`)
+  try {
+    runGit(['push', 'origin', tipBranch])
+  } catch (error) {
+    throwIfRemotePushAuthError(error, `Push completed tip ${tipBranch}`)
+    console.warn(`Could not push completed tip ${tipBranch}:`, error)
+  }
+
+  if (!landTarget || landTarget === tipBranch || isSyncBranch(landTarget)) {
+    console.log(`Skipping land-target tip mirror (land=\`${landTarget}\`, tip=\`${tipBranch}\`).`)
+    return
+  }
+
+  const worktreeDir = mkdtempSync(join(tmpdir(), 'upstream-sync-land-'))
+  try {
+    runGit(['fetch', 'origin', landTarget])
+    runGit(['worktree', 'add', '--force', '-B', landTarget, worktreeDir, `origin/${landTarget}`])
+
+    mkdirSync(join(worktreeDir, UPSTREAM_SYNC_ROOT), { recursive: true })
+    writeFileSync(join(worktreeDir, STATE_PATH), `${JSON.stringify(tipState, null, 2)}\n`)
+    writeFileSync(
+      join(worktreeDir, STACK_PATH),
+      `${JSON.stringify(
+        {
+          updatedAt: new Date().toISOString(),
+          stack: tipState.stack,
+        },
+        null,
+        2
+      )}\n`
+    )
+
+    runGit(['add', '--', STATE_PATH, STACK_PATH], worktreeDir)
+    if (!hasStagedChanges(worktreeDir)) {
+      console.log(`Land-target tip pointers already current on \`${landTarget}\`.`)
+      return
+    }
+
+    commitHarness(
+      `upstream-sync(${runId}): mirror tip pointers (PR #${tipState.activePrNumber ?? 0})`,
+      worktreeDir
+    )
+    runGit(['push', 'origin', `HEAD:${landTarget}`], worktreeDir)
+    console.log(
+      `Mirrored tip pointers onto \`${landTarget}\` (PR #${tipState.activePrNumber}, branch \`${tipState.activeBranch}\`).`
+    )
+  } catch (error) {
+    throwIfRemotePushAuthError(error, `Mirror tip pointers onto ${landTarget}`)
+    console.warn(`Could not mirror tip pointers onto ${landTarget}:`, error)
+  } finally {
+    try {
+      runGit(['worktree', 'remove', '--force', worktreeDir])
+    } catch {
+      try {
+        rmSync(worktreeDir, { recursive: true, force: true })
+      } catch {
+        // ignore cleanup failures
+      }
+    }
   }
 }
 
@@ -1924,7 +2007,7 @@ async function main(): Promise<void> {
     endGroup()
     logHarnessPhase(
       'verify',
-      'format + advisory check / lint / test (full build left to CI; streamed; heartbeats every 60s)'
+      'format + advisory check / lint (test + build left to CI; streamed; heartbeats every 60s)'
     )
     endGroup = startLogGroup('verify')
 
@@ -1958,7 +2041,7 @@ async function main(): Promise<void> {
 
     if (!verifyPassed) {
       console.warn(
-        '[verify] Advisory check/lint/test failed — completing anyway (full bun run build is left to CI).'
+        '[verify] Advisory check/lint failed — completing anyway (bun run test + full bun run build are left to CI).'
       )
     }
 
@@ -2009,7 +2092,7 @@ async function main(): Promise<void> {
       '### Verification',
       formatVerifyStatusLine(verifyResults),
       '',
-      '_Check / lint / test are advisory. Full build is left to CI._',
+      '_Check / lint are advisory. Test and full build are left to CI._',
       '',
       formatVerifyResults(verifyResults),
       '',
@@ -2040,7 +2123,7 @@ async function main(): Promise<void> {
     commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
     runGit(['push', 'origin', syncBranch])
 
-    writeState({
+    const completedState: SyncState = {
       lastSyncedUpstreamSha: headSha,
       lastSyncedAt: new Date().toISOString(),
       lastRunId: runId,
@@ -2051,12 +2134,22 @@ async function main(): Promise<void> {
       activeMergeBase: mergeBase,
       activeUpstreamSha: null,
       stack: workingStack,
+    }
+
+    // Mirror tip pointers onto the land target BEFORE chaining so the next
+    // Actions job (checked out from TARGET) stacks on this tip PR.
+    persistCompletedTipPointersOnLandTarget({
+      landTarget,
+      tipBranch: syncBranch,
+      tipState: completedState,
+      runId,
     })
 
     maybeDispatchNextReleaseSlice({
       syncedSha: headSha,
       upstreamHeadSha: baseline.upstreamHeadSha,
       tipReason,
+      workflowRef: landTarget,
     })
 
     writeRunOutcome(runId, {
@@ -2065,8 +2158,8 @@ async function main(): Promise<void> {
         ? 'Upstream sync completed'
         : 'Upstream sync completed (advisory verification warnings)',
       detail: verifyPassed
-        ? `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Draft PR ready for review. Full build is left to CI.`
-        : `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Advisory check/lint/test reported failures — see ledger / PR / job summary. Full build is left to CI.`,
+        ? `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Draft PR ready for review. Test and full build are left to CI.`
+        : `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Advisory check/lint reported failures — see ledger / PR / job summary. Test and full build are left to CI.`,
       syncBranch,
       mergeBase,
       upstreamSha: headSha,

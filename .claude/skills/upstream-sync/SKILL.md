@@ -74,15 +74,14 @@ Runs after merge + coherence and is published to the ledger, draft PR, and Actio
 |------|------|
 | `bun run check` | Advisory |
 | `bun run lint` | Advisory |
-| `bun run test` | Advisory |
+| `bun run test` | **Skipped in harness** — CI owns tests |
 | `bun run build` | **Skipped in harness** — CI (`.github/workflows/images.yml`) owns full builds (7GB runner OOM) |
 
-The run can be marked `completed` with advisory verification warnings. Do not run `bun run build` from agents during sync — leave it to CI.
+The run can be marked `completed` with advisory verification warnings. Do not run `bun run test` or `bun run build` from agents during sync — leave both to CI.
 
 ```bash
 bun run check
 bun run lint
-bun run test
 ```
 
 ## Ledger files
@@ -108,4 +107,5 @@ bun run test
 - Resume: `/upstream-sync resume` on the draft PR (skips grill re-ask, finalizes as a continuation from cluster reports + WIP)
 - Stack: each completed release opens a **new** draft PR based on the previous tip (`FORCE_RUN` starts a fresh stack and closes open stack PRs)
 - Tip-only landing: merge the tip PR into the target branch; lower stack PRs are review artifacts and close as superseded
+- After each complete, tip pointers are mirrored onto the land-target branch so auto-chained runs keep stacking
 - Usage rollup on PR bodies / job summary: this slice / prior stack / whole stack

@@ -38,7 +38,7 @@ One Actions run = one upstream release tip. Resume skips grill re-ask but still 
 
 ## Verification
 
-`check` / `lint` / `test` are advisory. **`bun run build` is skipped in the harness** — CI (`.github/workflows/images.yml`) owns full builds (7GB runner OOM).
+`check` / `lint` are advisory. **`bun run test` and `bun run build` are skipped in the harness** — CI owns both (build OOMs the 7GB Actions runner).
 
 ## Commands
 
@@ -53,6 +53,7 @@ UPSTREAM_SYNC_FORCE=true bun run upstream-sync
 - Daily 06:00 UTC + manual dispatch
 - Resume: `/upstream-sync resume` on the draft PR
 - Stack: each completed release opens a **new** draft PR based on the previous tip (`FORCE_RUN` / `UPSTREAM_SYNC_FORCE=true` starts a fresh stack and closes open stack PRs)
+- After each complete, tip pointers (`active*` + `stack` + `lastSyncedUpstreamSha`) are mirrored onto the land-target branch so the auto-chained next release can stack
 - Tip-only landing: merge the tip; lower stack PRs close as superseded
 - Usage rollup: this slice / prior stack / whole stack on PR bodies and the Actions job summary
 - Reviewer: `utcarshsrivastava-collab` (see `merge-policy.json`)

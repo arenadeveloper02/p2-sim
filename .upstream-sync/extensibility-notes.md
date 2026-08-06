@@ -19,4 +19,4 @@ Rolling log of structural improvements that reduce merge conflict surface with `
 - **Usage rollup:** PR bodies and the Actions job summary show this slice / prior stack / whole stack (ledger `usage.json` + `stack-usage.json`).
 - **Parent control plane:** grill writes `merge-plan.draft.json`; resume finalizes `merge-plan.json` + `merge-directives.json` from Q&A + completed cluster reports + prior plan (continue, don’t undo); the harness restricts directives to still-unmerged paths and instantiates Luna children from the plan (prefix clustering is fallback only).
 - **Directives + WIP integrity:** `delete` / `mustEdit` / `overrideForkFirst` beat `forkFirst`. WIP sidecars store `decisionHash` + deletion tombstones and are skipped when answers/policy/directives change.
-- **Build:** Full `bun run build` is left to CI (`.github/workflows/images.yml`). Harness only runs advisory check/lint/test — dual Next builds OOM the 7GB Actions runner.
+- **Build/test:** `bun run test` and full `bun run build` are left to CI (`.github/workflows/images.yml`). Harness only runs advisory check/lint — dual Next builds OOM the 7GB Actions runner.

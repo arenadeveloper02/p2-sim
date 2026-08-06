@@ -10,7 +10,9 @@ name: Upstream Sync
 # Smoke escapes: workflow_dispatch `until_sha` or positive `max_commits` (0 = next-release default).
 # Parent: grill writes a draft merge plan; resume skips re-ask but finalizes the plan post-merge,
 # then Luna children run from merge-plan.json (prefix clustering is fallback only).
-# Build is blocking (`child-fix-build`, max 2 rounds); check/lint/test stay advisory.
+# Build is left to CI; check/lint stay advisory (test is also left to CI).
+# After each successful complete, tip pointers are mirrored onto TARGET so the
+# auto-chained next release stacks on the latest tip PR.
 # Polls daily; resumes when a reviewer replies `/upstream-sync resume` on the draft PR.
 # Note: issue_comment events only run workflows present on the repository default branch.
 # While validating this workflow from a feature branch, use workflow_dispatch with resume=true.
