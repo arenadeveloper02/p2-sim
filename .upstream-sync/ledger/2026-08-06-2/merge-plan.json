@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "runId": "2026-08-06-2",
+  "kind": "final",
+  "selfResolutions": [
+    {
+      "decision": "Keep Arena brand assets over upstream's Sim logo re-export",
+      "paths": ["apps/sim/public/logo/426-240/reverse/small.png"],
+      "prefixes": ["apps/sim/public/logo/", "apps/sim/public/favicon/", "apps/sim/public/icon.svg"],
+      "strategy": "ours",
+      "status": "resolved",
+      "rationale": "Binary assets have no sane three-way merge and the fork ships Arena artwork. Already covered by merge-policy forkFirst.",
+      "cite": "merge-policy.forkFirst / extensibility-notes 2026-08-05 'Brand assets belong in forkFirst'"
+    },
+    {
+      "decision": "xAI server-side key rotation is already a fork superset — keep ours",
+      "paths": [
+        "apps/sim/providers/models.ts",
+        "apps/sim/providers/utils.ts",
+        "apps/sim/lib/core/config/api-keys.ts",
+        "apps/sim/lib/core/config/env.ts"
+      ],
+      "prefixes": [],
+      "strategy": "ours",
+      "status": "partial",
+      "statusNote": "models.ts, api-keys.ts and env.ts are resolved and no longer unmerged. providers/utils.ts IS still unmerged and stays mustEdit — 'ours' applies to the hosted-gate semantics (keep the fork's wider guard list), NOT to a whole-file --ours checkout.",
+      "rationale": "Audited per the 'isHosted is fork-redefined' rule. The fork already declares XAI_API_KEY plus _1.._3, already has the xai branch in getRotatingApiKey (plus vertex/sambanova/google), already has isXaiModel inside getApiKey's isHosted gate, and already includes getProviderModels('xai') in getHostedModels. Upstream #5574's server-side half is a strict subset — taking theirs would REMOVE fork capability.",
+      "cite": "simstudioai/sim#5574 / extensibility-notes 2026-08-05 'isHosted is fork-redefined'"
+    },
+    {
+      "decision": "Take upstream's new xAI BYOK surface, union with fork-only BYOK providers",
+      "paths": [
+        "apps/sim/tools/types.ts",
+        "apps/sim/lib/api/contracts/byok-keys.ts",
+        "apps/sim/lib/api-key/byok.ts",
+        "apps/sim/app/workspace/[workspaceId]/settings/components/byok/byok.tsx"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "status": "resolved",
+      "rationale": "Purely additive and safe: xAIIcon already exists at apps/sim/components/icons.tsx:1269, and the fork's getRotatingApiKey already supports 'xai'.",
+      "cite": "simstudioai/sim#5574"
+    },
+    {
+      "decision": "Take every upstream security fix in this slice unconditionally",
+      "paths": [
+        "apps/sim/app/api/files/upload/route.ts",
+        "apps/sim/app/api/files/upload/route.test.ts",
+        "apps/sim/app/api/help/route.ts",
+        "apps/sim/app/workspace/[workspaceId]/files/components/file-viewer/docx-preview.tsx"
+      ],
+      "prefixes": [
+        "apps/sim/lib/core/security/",
+        "apps/sim/app/api/chat/[identifier]/otp/",
+        "apps/sim/lib/workflows/custom-blocks/"
+      ],
+      "strategy": "union",
+      "status": "partial",
+      "statusNote": "files/upload (+test), docx-preview, otp and custom-blocks are resolved. help/route.ts is the only path from this resolution still unmerged — see cluster api-routes-security.",
+      "rationale": "#5604 closes a real authz hole (mothership uploads previously needed only a session, not workspace permission). #5601, #5599, #5600, #5613 are body-bound, XSS, auth-cookie, and iconUrl hardening.",
+      "cite": "simstudioai/sim#5604, #5601, #5599, #5600, #5613 / merge-policy 'Upstream wins on shared infra (deps, CI, security)'"
+    },
+    {
+      "decision": "Take upstream generated copilot contracts, then re-apply the fork's Superagent addendum",
+      "paths": [
+        "apps/sim/lib/copilot/generated/tool-catalog-v1.ts",
+        "apps/sim/lib/copilot/generated/tool-schemas-v1.ts"
+      ],
+      "prefixes": ["apps/sim/lib/copilot/generated/"],
+      "strategy": "mustEdit",
+      "status": "resolved",
+      "statusNote": "No longer unmerged. Coherence/verify MUST still grep for 'Drive handles GFM import' in BOTH generated files — if it is missing, the fork's Superagent prompt behavior was silently dropped and has to be re-applied by hand (`bun run mship:generate` cannot regenerate here).",
+      "rationale": "The fork's sentence exists in NO generator source, only in the generated output, and scripts/sync-tool-catalog.ts reads a sibling repo absent from this checkout.",
+      "cite": "merge-policy.upstreamFirst + regenerateAfterMerge / scripts/sync-tool-catalog.ts:8"
+    },
+    {
+      "decision": "Take upstream's Cmd-K search modal wholesale; drop the fork's dead commented import",
+      "paths": [
+        "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/search-modal/search-modal.tsx"
+      ],
+      "prefixes": [],
+      "strategy": "theirs",
+      "status": "resolved",
+      "rationale": "The fork's ONLY delta vs baseline was a commented-out import; upstream rewrites 139/91 lines for the result-group cap plus pendingConnect auto-connect wiring.",
+      "cite": "simstudioai/sim#5597, #5586"
+    },
+    {
+      "decision": "Keep the fork's quoting on the identical highlight.ts change",
+      "paths": [
+        "apps/sim/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/highlight.ts"
+      ],
+      "prefixes": [],
+      "strategy": "ours",
+      "status": "pending",
+      "statusNote": "Still unmerged; locked as directives.checkoutOurs. Verified in-tree: the only difference is `'(?:[^=]|=(?!=))+?'` (ours) vs a backtick template with no interpolation (theirs).",
+      "rationale": "Both sides made the same semantic change and differ only in quote style. The fork's single-quoted form is what biome enforces, so ours avoids a lint fixup.",
+      "cite": "simstudioai/sim#5590"
+    },
+    {
+      "decision": "Take upstream's CWV/perf next.config changes including productionBrowserSourceMaps",
+      "paths": ["apps/sim/next.config.ts"],
+      "prefixes": [],
+      "strategy": "union",
+      "status": "resolved",
+      "rationale": "Verified arenadeveloper02/p2-sim is PUBLIC, so sourcemaps expose nothing the repo does not already publish. Reviewer note: one-line revert if the EC2 build cost matters.",
+      "cite": "simstudioai/sim#5605 / merge-policy 'Upstream wins on shared infra'"
+    },
+    {
+      "decision": "Union landing + llms.txt: upstream structure, fork Arena branding",
+      "paths": [
+        "apps/sim/app/(landing)/components/hero/hero.tsx",
+        "apps/docs/app/llms.txt/route.ts",
+        "apps/sim/app/llms-full.txt/route.ts"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "status": "resolved",
+      "rationale": "Additive-both-sides in disjoint regions. Upstream's Mothership->Chat rename matches the fork's own constitution rule.",
+      "cite": "simstudioai/sim#5605 / .claude/rules/constitution.md"
+    },
+    {
+      "decision": "Take the landing CTA-constants refactor as-is (no routing change for the fork)",
+      "paths": [],
+      "prefixes": ["apps/sim/app/(landing)/"],
+      "strategy": "theirs",
+      "status": "resolved",
+      "rationale": "Not a customer-facing reroute — those CTAs already point at /demo in the fork; upstream only swaps the literal for DEMO_HREF.",
+      "cite": "simstudioai/sim#5602, #5616"
+    },
+    {
+      "decision": "Take the 80 upstream files outside the 32-file overlap unmodified",
+      "paths": [],
+      "prefixes": [
+        "apps/docs/",
+        "apps/sim/lib/mcp/",
+        "apps/sim/lib/copilot/tools/handlers/deployment/",
+        "apps/sim/lib/pptx-renderer/",
+        "apps/sim/stores/modals/search/",
+        "packages/emcn/src/components/wizard/",
+        "packages/workflow-renderer/"
+      ],
+      "strategy": "theirs",
+      "status": "resolved",
+      "rationale": "Upstream touched 112 files, the fork touched 1608 since the same baseline, intersection exactly 32. The remaining 80 merged without conflict.",
+      "cite": "FBI 2026-08-06-2 / simstudioai/sim#5599, #5614, #5532"
+    }
+  ],
+  "openQuestions": [],
+  "childClusters": [
+    {
+      "id": "xai-byok-providers",
+      "prefix": "apps/sim/providers/",
+      "files": ["apps/sim/providers/utils.ts", "apps/sim/providers/utils.test.ts"],
+      "strategy": "union",
+      "notes": "BUILD BREAK TO FIX FIRST — apps/sim/providers/utils.ts declares `const isXaiModel = provider === 'xai'` TWICE (line ~1128 ours, ~1131 theirs) OUTSIDE the conflict markers; git merged both sides of an adjacent-line addition. Delete one. Then resolve the single hunk at ~1133 by KEEPING THE FORK SIDE: `if (isHosted && (isOpenAIModel || isClaudeModel || isGeminiModel || isSambaNovaModel || isXaiModel || isOpenRouterModel || isZaiModel))` plus the '// Only use server key if model is explicitly in our hosted list' comment. Upstream's narrower list drops sambanova + openrouter, which the fork's getRotatingApiKey and getHostedModels already support — taking theirs SILENTLY REMOVES fork capability. Nothing in upstream's #5574 hunk is new to the fork. utils.test.ts has 2 hunks, both union: (1) keep BOTH `shouldBillModelUsage('grok-4-latest')` (ours) and `shouldBillModelUsage('grok-4.5')` (theirs) — verified both ids exist in providers/models.ts:2014 and :2042; (2) KEEP the fork-only `expect(shouldBillModelUsage('mothership')).toBe(false)` assertion — upstream simply does not have the mothership pseudo-model. Verify with `bunx vitest run apps/sim/providers/utils.test.ts`. Related files from this area (models.ts, tools/types.ts, lib/core/config/{env,api-keys}.ts, lib/api-key/byok.ts, lib/api/contracts/byok-keys.ts, settings byok.tsx) are already resolved — do NOT reopen them.",
+      "completedNote": "completed outside this cluster: providers/models.ts, lib/core/config/api-keys.ts, lib/core/config/env.ts, tools/types.ts, lib/api-key/byok.ts, lib/api/contracts/byok-keys.ts, settings/components/byok/byok.tsx"
+    },
+    {
+      "id": "api-routes-security",
+      "prefix": "apps/sim/app/api/",
+      "files": ["apps/sim/app/api/help/route.ts"],
+      "strategy": "union",
+      "notes": "One hunk, import block only (lines 8-23) — the whole body below it already merged clean and is UPSTREAM's shape. Confirmed by grep: the body calls `readFormDataWithLimit` (line 47), `MAX_WORKSPACE_FORMDATA_FILE_SIZE + MAX_MULTIPART_OVERHEAD_BYTES` (line 33), `isPayloadSizeLimitError` (line 159), AND the fork's `getHelpInboxEmail()` (line 110). So the union import block is: keep `import { getHelpInboxEmail } from '@/lib/core/utils/urls'`, take upstream's `{ isPayloadSizeLimitError, MAX_MULTIPART_OVERHEAD_BYTES, readFormDataWithLimit } from '@/lib/core/utils/stream-limits'` and `MAX_WORKSPACE_FORMDATA_FILE_SIZE from '@/lib/uploads/shared/types'`, and DROP `getHelpEmailAddress` from the '@/lib/messaging/email/utils' import (fork replaced it with getHelpInboxEmail — leaving it in is an unused-import lint failure). Result: `import { getFromEmailAddress } from '@/lib/messaging/email/utils'`. Keep biome import ordering. #5601's 413 branch is mandatory and already present. files/upload/route.ts(+test) and mothership/execute/route.ts are already resolved — do NOT reopen them.",
+      "completedNote": "completed outside this cluster: app/api/files/upload/route.ts, app/api/files/upload/route.test.ts, app/api/mothership/execute/route.ts, app/api/chat/[identifier]/otp/route.ts(+test), app/api/speech/token/route.ts(+test), app/api/knowledge/[id]/documents/[documentId]/chunks/route.ts"
+    },
+    {
+      "id": "workspace-ui",
+      "prefix": "apps/sim/app/workspace/",
+      "files": [
+        "apps/sim/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/highlight.ts",
+        "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/agent-group.tsx",
+        "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/tool-call-item.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/selector-combobox/selector-combobox.tsx"
+      ],
+      "strategy": "union",
+      "notes": "highlight.ts is resolved by directive (checkoutOurs) — the child only verifies no markers remain, it does not re-decide. The other three are hand-merges of upstream #5612 (ShimmerText) and #5614 (multi-select) against fork-only UI. agent-group.tsx (3 hunks): (1) import block — keep the fork's `@sim/emcn/icons` subpath with BOTH `ChevronDown` and the fork-only `PillsRing`, keep `resolveAssistantDisplayLabel` from '@/lib/chat/assistant-display-name', keep `{ cn, Expandable, ExpandableContent } from '@sim/emcn'`, and ADD upstream's `{ ShimmerText } from '@/components/ui'`. Do not adopt upstream's barrel-import of ChevronDown (both resolve — packages/emcn/src/index.ts:26 re-exports icons — but the subpath is the repo convention). (2)+(3) are the same edit in the button and non-button branches: take upstream's `isWorking ? <ShimmerText className='text-sm'>{...}</ShimmerText> : <span className='text-[var(--text-body)] text-sm'>{...}</span>` but render `resolvedAgentLabel` in BOTH slots, never `agentLabel` — dropping resolveAssistantDisplayLabel regresses the fork's assistant naming. Also preserve the fork's autoExpanded expression `isCurrentSection || (isStreaming && (isLaneOpen || !resolved))` if any adjacent edit touches it. tool-call-item.tsx (2 hunks): union — keep the fork's `const resolvedTitle = liveWorkspaceFileTitle || displayTitle` and `const hasMultipleLines = resolvedTitle.includes('\\n')` AND add upstream's `const isExecuting = resolveToolDisplayState(status) === 'spinner'` (drop upstream's duplicate `title` const, it is resolvedTitle renamed). In the JSX take upstream's isExecuting ternary but feed it `resolvedTitle` and keep the fork's `whitespace-pre-line font-base` classes on the non-shimmer span; add `whitespace-pre-line` to the ShimmerText className too so multi-line titles do not regress (the outer div already switches items-start/items-center off hasMultipleLines). Confirm `resolveToolDisplayState` and `ShimmerText` imports survived the clean-merged import block. selector-combobox.tsx (1 hunk): pure union — take upstream's `selectedValues` useMemo and `handleMultiChange` useCallback verbatim, then keep the FORK's guard on the last line: `const showClearButton = clearable && Boolean(activeValue) && !disabled && !readOnly` (upstream drops `clearable &&`, which would force the clear button onto every selector). `clearable` and `multiSelect` gate independent behavior; both props stay. Verify with `bunx tsc --noEmit` scoped to apps/sim and a biome check on the three files. search-modal.tsx, workflow.tsx and the other file-viewer files are already resolved — do NOT reopen them.",
+      "completedNote": "completed outside this cluster: sidebar/.../search-modal/search-modal.tsx, w/[workflowId]/workflow.tsx, files/.../file-viewer/{docx-preview,image-preview,preview-shared,rich-markdown-editor/code-block}.tsx"
+    }
+  ],
+  "completedClusters": [
+    {
+      "id": "copilot-payload-generated",
+      "prefix": "apps/sim/lib/copilot/",
+      "note": "No unmerged paths remain. chat/payload.ts, chat/payload.test.ts, chat/post.ts and generated/* are resolved. Verification carry-over: grep 'Drive handles GFM import' in BOTH generated/tool-catalog-v1.ts and generated/tool-schemas-v1.ts — the fork's Superagent addendum has no generator source and cannot be regenerated in this checkout."
+    },
+    {
+      "id": "landing-branding-config",
+      "prefix": "apps/sim/app/(landing)/",
+      "note": "No unmerged paths remain. hero.tsx, next.config.ts, apps/docs/app/llms.txt/route.ts and apps/sim/app/llms-full.txt/route.ts are resolved. Verification carry-over: every 'Arena' string must still be present in the llms routes and the hero headline."
+    }
+  ],
+  "directives": {
+    "delete": [],
+    "checkoutTheirs": [],
+    "checkoutOurs": [
+      "apps/sim/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/highlight.ts"
+    ],
+    "mustEdit": [
+      "apps/sim/app/api/help/route.ts",
+      "apps/sim/providers/utils.ts",
+      "apps/sim/providers/utils.test.ts",
+      "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/agent-group.tsx",
+      "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/tool-call-item.tsx",
+      "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/selector-combobox/selector-combobox.tsx"
+    ],
+    "overrideForkFirst": [],
+    "notes": "Locked from self-resolutions; no human answers were pending this run (open-questions.md records zero blockers). Scope is ONLY the 7 paths still unmerged after the harness merge — the draft's other proposedDirectives (search-modal.tsx and lib/copilot/generated/* checkoutTheirs; logo png / providers/models.ts / lib/core/config/{api-keys,env}.ts checkoutOurs; next.config.ts / hero.tsx / files-upload / mothership-execute mustEdit) are DELIBERATELY OMITTED because those paths merged clean or were already resolved. Re-issuing them would overwrite good resolutions. checkoutOurs on highlight.ts is exact-locked: both sides made the identical semantic change and differ only in quote style; the fork's single-quoted form is what biome enforces. providers/utils.ts stays mustEdit (never --ours): the merged file currently declares `const isXaiModel` TWICE (utils.ts:1128 ours, :1131 theirs) OUTSIDE the conflict markers — that is a hard TS build break the child must dedupe on top of resolving the hunk."
+  },
+  "notes": "Phase B finalize. 7 of the original 32 overlap files remain unmerged; 25 are resolved. No grill questions were asked or answered this run — open-questions.md records zero blockers and qa-history.jsonl has no product answers for 2026-08-06-2, so all 11 draft self-resolutions carry over unchanged (annotated with status: resolved/partial/pending). Two draft clusters (copilot-payload-generated, landing-branding-config) are fully done and moved to completedClusters with verification carry-overs. Three clusters stay active. Highest-risk item is providers/utils.ts: a duplicate `const isXaiModel` outside the conflict markers is a hard TS build break that the merge left behind, and the hunk itself is the classic 'upstream guard list is narrower than the fork's' trap. Second-highest is the ShimmerText pair in agent-group.tsx/tool-call-item.tsx, where a naive --theirs drops resolveAssistantDisplayLabel and the fork's multi-line title handling."
+}
