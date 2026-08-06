@@ -133,6 +133,7 @@ export const localCopilotPatchParamsSchema = z.object({
 
 export const applyLocalCopilotPatchBodySchema = z.object({
   workflowId: workflowIdSchema,
+  expectedRevision: z.string().min(1).optional(),
 })
 
 export type ApplyLocalCopilotPatchBody = z.input<typeof applyLocalCopilotPatchBodySchema>
@@ -147,6 +148,7 @@ export const applyLocalCopilotPatchContract = defineRouteContract({
     schema: z.object({
       success: z.boolean(),
       errors: z.array(z.string()).optional(),
+      revision: z.string().optional(),
     }),
   },
 })

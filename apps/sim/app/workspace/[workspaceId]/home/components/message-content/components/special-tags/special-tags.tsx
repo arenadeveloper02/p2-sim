@@ -41,6 +41,8 @@ import {
   findSingleSelectJson,
   hasIncompleteSingleSelectJson,
 } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/choice-blocks'
+import { ToolConfirmationDisplay } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/tool-confirmation-display'
+import { WorkflowPatchDisplay } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/workflow-patch-display'
 import type {
   ChatMessageContext,
   MothershipResource,
@@ -201,6 +203,22 @@ export interface WorkspaceResourceTagData {
   title?: string
 }
 
+export interface ToolConfirmationTagData {
+  toolCallId: string
+  toolName: string
+  category: 'destructive' | 'production' | 'credential' | 'costly' | 'external_write'
+  summary: string
+  target?: string
+  estimatedCostUsd?: number
+  estimatedCostLabel?: string
+}
+
+export interface WorkflowPatchTagData {
+  patchId: string
+  summary: string
+  workflowId: string
+}
+
 export type ContentSegment =
   | { type: 'text'; content: string }
   | { type: 'thinking'; content: string }
@@ -211,6 +229,8 @@ export type ContentSegment =
   | { type: 'workspace_resource'; data: WorkspaceResourceTagData }
   | { type: 'chart'; data: ChartTagData }
   | { type: 'question'; data: QuestionTagData }
+  | { type: 'tool_confirmation'; data: ToolConfirmationTagData }
+  | { type: 'workflow_patch'; data: WorkflowPatchTagData }
 
 export type RuntimeSpecialTagName =
   | 'thinking'
@@ -221,6 +241,8 @@ export type RuntimeSpecialTagName =
   | 'workspace_resource'
   | 'chart'
   | 'question'
+  | 'tool_confirmation'
+  | 'workflow_patch'
 
 export interface ParsedSpecialContent {
   segments: ContentSegment[]
@@ -236,6 +258,8 @@ const RUNTIME_SPECIAL_TAG_NAMES = [
   'workspace_resource',
   'chart',
   'question',
+  'tool_confirmation',
+  'workflow_patch',
 ] as const
 
 /**
@@ -252,6 +276,8 @@ export const SPECIAL_TAG_NAMES = [
   'workspace_resource',
   'chart',
   'question',
+  'tool_confirmation',
+  'workflow_patch',
 ] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -328,6 +354,36 @@ function isCredentialTagData(value: unknown): value is CredentialTagData {
   // type (e.g. link) needs a string value to render.
   if (value.type === 'sim_key') return true
   return typeof value.value === 'string'
+}
+
+function isToolConfirmationTagData(value: unknown): value is ToolConfirmationTagData {
+  if (!isRecord(value)) return false
+  const categories = ['destructive', 'production', 'credential', 'costly', 'external_write']
+  return (
+    typeof value.toolCallId === 'string' &&
+    value.toolCallId.trim().length > 0 &&
+    typeof value.toolName === 'string' &&
+    value.toolName.trim().length > 0 &&
+    typeof value.category === 'string' &&
+    categories.includes(value.category) &&
+    typeof value.summary === 'string' &&
+    value.summary.trim().length > 0 &&
+    (value.target === undefined || typeof value.target === 'string') &&
+    (value.estimatedCostUsd === undefined || typeof value.estimatedCostUsd === 'number') &&
+    (value.estimatedCostLabel === undefined || typeof value.estimatedCostLabel === 'string')
+  )
+}
+
+function isWorkflowPatchTagData(value: unknown): value is WorkflowPatchTagData {
+  if (!isRecord(value)) return false
+  return (
+    typeof value.patchId === 'string' &&
+    value.patchId.trim().length > 0 &&
+    typeof value.summary === 'string' &&
+    value.summary.trim().length > 0 &&
+    typeof value.workflowId === 'string' &&
+    value.workflowId.trim().length > 0
+  )
 }
 
 function isMothershipErrorTagData(value: unknown): value is MothershipErrorTagData {
@@ -573,6 +629,8 @@ function parseSpecialTagData(
   | { type: 'workspace_resource'; data: WorkspaceResourceTagData }
   | { type: 'chart'; data: ChartTagData }
   | { type: 'question'; data: QuestionTagData }
+  | { type: 'tool_confirmation'; data: ToolConfirmationTagData }
+  | { type: 'workflow_patch'; data: WorkflowPatchTagData }
   | null {
   if (tagName === 'thinking') {
     const content = parseTextTagBody(body)
@@ -613,6 +671,16 @@ function parseSpecialTagData(
     if (data) return { type: 'question', data }
     const recovered = recoverQuestionPrompts(body)
     return recovered ? { type: 'text', content: recovered } : null
+  }
+
+  if (tagName === 'tool_confirmation') {
+    const data = parseJsonTagBody(body, isToolConfirmationTagData)
+    return data ? { type: 'tool_confirmation', data } : null
+  }
+
+  if (tagName === 'workflow_patch') {
+    const data = parseJsonTagBody(body, isWorkflowPatchTagData)
+    return data ? { type: 'workflow_patch', data } : null
   }
 
   return null
@@ -1449,6 +1517,10 @@ export function SpecialTags({
           onDismiss={onQuestionDismiss}
         />
       )
+    case 'tool_confirmation':
+      return <ToolConfirmationDisplay data={segment.data} />
+    case 'workflow_patch':
+      return <WorkflowPatchDisplay data={segment.data} />
     default:
       return null
   }

@@ -50,6 +50,7 @@ export const ALWAYS_ON_TOOL_NAMES = new Set<string>([
   'get_available_blocks',
   'get_available_integrations',
   'get_blocks_metadata',
+  'load_copilot_artifact',
   // Core mutation tools — always available so Bedrock/Gemini can edit without
   // depending solely on the `workflow` specialist entry tool.
   'create_workflow',
@@ -157,6 +158,8 @@ const AGENT_TOOLS = [
 
 const RESEARCH_TOOLS = [
   'search_online',
+  'list_integration_tools',
+  'invoke_integration_tool',
   'search_docs',
   'search_documentation',
   'function_execute',
@@ -258,7 +261,7 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'agent':
       return 'Focus on integration tools, MCP tools, skills, and function_execute.'
     case 'research':
-      return 'Focus on research (search_online, search_docs, search_documentation, user_memory).'
+      return 'Focus on research. For live/current facts use invoke_integration_tool with exa_answer (or exa_search); search_online is a convenience wrapper. Also search_docs, search_documentation, user_memory.'
     case 'media':
       return 'Focus on image/audio/video generation and ffmpeg.'
     case 'file':

@@ -4,6 +4,7 @@
  */
 
 import { stripOptionsTagsForDisplay } from '@/local-copilot/lib/format-options-tag'
+import { stripUntrustedSecurityControls } from '@/local-copilot/lib/security/trusted-controls'
 
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi
 
@@ -148,6 +149,67 @@ const BRIDGING_NARRATION_PATTERN =
 const MUTATION_INTENT_NARRATION_PATTERN =
   /^(?:okay[,.]?\s+|ok[,.]?\s+|sure[,.]?\s+|alright[,.]?\s+|now[,.]?\s+)?(?:(?:i(?:'| a)?m |i(?:'| wi)?ll |let me )+)?(?:now\s+)?(?:applying|editing|updating|fixing|redeploying|deploying|wiring|patching|saving)\b[\s\S]{0,220}$/i
 
+const POLITE_BRIDGING_PREFIX = /^(?:okay[,.]?\s+|ok[,.]?\s+|sure[,.]?\s+|alright[,.]?\s+|now[,.]?\s+)/i
+const BARE_POLITE_TOKEN = /^(?:okay|ok|sure|alright|now)[,.]?$/i
+
+/**
+ * Known openers for tool-bridging narration. Used to hold incomplete streaming
+ * prefixes (e.g. "Let") before the full "Let me…" phrase exists.
+ */
+const BRIDGING_OPENERS = [
+  'let me',
+  "i'm going to",
+  'i am going to',
+  "i'll",
+  'i will',
+  'i need to',
+  "now i'll",
+  'now i will',
+  'one sec',
+  'one moment',
+  'one second',
+  'hang on',
+  'give me a sec',
+  'give me a moment',
+  'give me a second',
+  'retrying',
+  're-trying',
+  'trying again',
+  'applying',
+  'editing',
+  'updating',
+  'fixing',
+  'redeploying',
+  'deploying',
+  'wiring',
+  'patching',
+  'saving',
+] as const
+
+/**
+ * True when text is only a partial opener for bridging narration (e.g. "Let").
+ * Streaming these before tools creates orphan mothership bubbles.
+ */
+export function isIncompleteBridgingPrefix(text: string): boolean {
+  const normalized = text.replace(/\s+/g, ' ').trim().toLowerCase()
+  if (!normalized || normalized.length > 48) return false
+  if (BARE_POLITE_TOKEN.test(normalized)) return true
+
+  const body = normalized.replace(POLITE_BRIDGING_PREFIX, '').trim()
+  if (!body) return true
+
+  return BRIDGING_OPENERS.some((opener) => opener.startsWith(body))
+}
+
+/**
+ * True for a single short token that is almost certainly mid-stream scaffolding
+ * ("I", "So", "I'll") rather than a finished reply.
+ */
+export function isLikelyMidStreamToken(text: string): boolean {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  return /^[A-Za-z][A-Za-z']{0,11}$/.test(normalized)
+}
+
 /**
  * True when prose is only a short bridge into more tool work, not a real answer.
  */
@@ -155,6 +217,7 @@ export function isBridgingAssistantNarration(text: string): boolean {
   const normalized = text.replace(/\s+/g, ' ').trim()
   if (!normalized) return false
   if (normalized.length > 220) return false
+  if (isIncompleteBridgingPrefix(normalized)) return true
   if (BRIDGING_NARRATION_PATTERN.test(normalized)) return true
   if (MUTATION_INTENT_NARRATION_PATTERN.test(normalized)) return true
   // Explicit retry / re-call lines without a substantive finding.
@@ -242,7 +305,9 @@ export function createAssistantRoundTextStreamer(
   let sawToolCall = false
 
   const toDisplay = (raw: string, isStreaming: boolean) =>
-    stripIdsFromUserFacingText(stripOptionsTagsForDisplay(raw, isStreaming))
+    stripIdsFromUserFacingText(
+      stripOptionsTagsForDisplay(stripUntrustedSecurityControls(raw, isStreaming), isStreaming)
+    )
 
   const deltaFrom = (display: string): string | null => {
     if (!display) return null
@@ -278,8 +343,13 @@ export function createAssistantRoundTextStreamer(
       const display = toDisplay(roundRawText, true)
       if (!display) return null
 
-      // With tools available, hold "Let me…" scaffolding until it is clearly a real reply.
-      if (options.toolsAvailable && isBridgingAssistantNarration(display)) {
+      // With tools available, hold "Let me…" scaffolding (and incomplete prefixes
+      // like "Let" / "I" / "So") until it is clearly a real reply — otherwise
+      // mothership opens orphan bubbles when tools interrupt mid-sentence.
+      if (
+        options.toolsAvailable &&
+        (isBridgingAssistantNarration(display) || isLikelyMidStreamToken(display))
+      ) {
         return null
       }
 

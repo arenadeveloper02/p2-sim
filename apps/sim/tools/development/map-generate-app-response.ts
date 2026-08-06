@@ -125,11 +125,13 @@ export function mapGenerateAppResultToToolResponse(
       : ''
 
   const actionLabel = data.mode === 'edit' ? 'Updated' : 'Generated'
+  const appNameLabel = data.appName?.trim() || 'app'
+  const fileCountLabel = typeof data.fileCount === 'number' ? data.fileCount : 0
 
   return {
     success: true,
     output: {
-      content: `${actionLabel} "${data.appName}" (${data.fileCount} files)${pathLabel}.${buildLabel}${gitLabel}${vercelLabel}${databaseLabel}${cleanupLabel}`,
+      content: `${actionLabel} "${appNameLabel}" (${fileCountLabel} files)${pathLabel}.${buildLabel}${gitLabel}${vercelLabel}${databaseLabel}${cleanupLabel}`,
       appName: data.appName ?? null,
       repoName: data.repoName ?? null,
       description: data.description ?? null,

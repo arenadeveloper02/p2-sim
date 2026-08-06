@@ -92,6 +92,7 @@ export function LocalCopilotPanel({
           void copilot.sendMessage(text)
           setInput('')
         }}
+        onStop={copilot.stop}
         onClear={copilot.clearChat}
         onDebugLastRun={copilot.debugLastRun}
         onExplainBlock={copilot.explainSelectedBlock}

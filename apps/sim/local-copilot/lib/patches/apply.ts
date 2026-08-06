@@ -6,6 +6,8 @@ import { eq } from 'drizzle-orm'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { validateWorkflowPatch } from '@/local-copilot/lib/patches/validate'
 import type { WorkflowPatch } from '@/local-copilot/lib/types'
+import { assertExpectedRevision } from '@/local-copilot/lib/writes/revision'
+import { loadWorkflowRevision } from '@/local-copilot/lib/writes/workflow-access'
 
 const logger = createLogger('LocalCopilotPatchApply')
 
@@ -14,16 +16,21 @@ export interface ApplyPatchParams {
   userId: string
   workflowId: string
   currentState: WorkflowState
+  /** Authenticated workspace — used for tenancy + optional CAS. */
+  workspaceId?: string
+  /** Optional CAS token from workflow.updatedAt. */
+  expectedRevision?: string
 }
 
 export interface ApplyPatchResult {
   success: boolean
   state?: WorkflowState
   errors?: string[]
+  revision?: string
 }
 
 export async function applyWorkflowPatch(params: ApplyPatchParams): Promise<ApplyPatchResult> {
-  const { patchId, userId, workflowId, currentState } = params
+  const { patchId, userId, workflowId, currentState, workspaceId, expectedRevision } = params
 
   const [patchRow] = await db
     .select()
@@ -44,6 +51,23 @@ export async function applyWorkflowPatch(params: ApplyPatchParams): Promise<Appl
     return { success: false, errors: [`Patch is ${patchRow.status}`] }
   }
 
+  let currentRevision: string | undefined
+  if (workspaceId) {
+    const loaded = await loadWorkflowRevision(workflowId, workspaceId)
+    if (!loaded) {
+      return { success: false, errors: ['Workflow not found in this workspace'] }
+    }
+    currentRevision = loaded.revision
+    const revisionCheck = assertExpectedRevision({
+      expectedRevision,
+      currentRevision,
+      requireExpected: Boolean(expectedRevision),
+    })
+    if (!revisionCheck.ok) {
+      return { success: false, errors: [revisionCheck.error] }
+    }
+  }
+
   const patch = patchRow.patch as WorkflowPatch
   const validation = validateWorkflowPatch(patch, currentState)
   if (!validation.valid) {
@@ -60,7 +84,17 @@ export async function applyWorkflowPatch(params: ApplyPatchParams): Promise<Appl
 
   logger.info('Applied Arena Copilot patch', { patchId, workflowId, userId })
 
-  return { success: true, state: nextState }
+  let revision = currentRevision
+  if (workspaceId) {
+    const loaded = await loadWorkflowRevision(workflowId, workspaceId)
+    if (loaded) revision = loaded.revision
+  }
+
+  return {
+    success: true,
+    state: nextState,
+    ...(revision ? { revision } : {}),
+  }
 }
 
 export async function rejectWorkflowPatch(patchId: string, userId: string): Promise<boolean> {

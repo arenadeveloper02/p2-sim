@@ -42,6 +42,7 @@ import { shareFileServerTool } from '@/lib/copilot/tools/server/files/share-file
 import { workspaceFileServerTool } from '@/lib/copilot/tools/server/files/workspace-file'
 import { validateGeneratedToolPayload } from '@/lib/copilot/tools/server/generated-schema'
 import { generateImageServerTool } from '@/lib/copilot/tools/server/image/generate-image'
+import { normalizeGenerateImageArgs } from '@/lib/copilot/tools/server/image/normalize-args'
 import { getJobLogsServerTool } from '@/lib/copilot/tools/server/jobs/get-job-logs'
 import { knowledgeBaseServerTool } from '@/lib/copilot/tools/server/knowledge/knowledge-base'
 import { searchKnowledgeBaseServerTool } from '@/lib/copilot/tools/server/knowledge/search-knowledge-base'
@@ -240,6 +241,15 @@ export async function routeExecution(
       const nested = raw.args as Record<string, unknown>
       normalizedPayload = { ...nested, ...raw, args: undefined }
     }
+  }
+
+  if (
+    toolName === GenerateImage.id &&
+    normalizedPayload &&
+    typeof normalizedPayload === 'object' &&
+    !Array.isArray(normalizedPayload)
+  ) {
+    normalizedPayload = normalizeGenerateImageArgs(normalizedPayload as Record<string, unknown>)
   }
 
   const args = tool.inputSchema

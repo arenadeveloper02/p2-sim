@@ -140,6 +140,8 @@ const GEO_PROFILE_UNSUPPORTED_MODEL_IDS = new Set([
   'cohere.command-r-plus-v1:0',
   // Moonshot Kimi K2.5: model card lists Geo inference ID as "Not supported".
   'moonshotai.kimi-k2.5',
+  // NVIDIA Nemotron 3 Super: docs invoke the bare on-demand model ID.
+  'nvidia.nemotron-super-3-120b',
 ])
 
 /** Cross-region inference profile prefixes Bedrock prepends to a base model ID. */

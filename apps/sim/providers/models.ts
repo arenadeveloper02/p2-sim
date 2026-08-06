@@ -3617,6 +3617,40 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     },
     models: [
       {
+        id: 'bedrock/anthropic.claude-opus-5',
+        pricing: {
+          input: 5.0,
+          cachedInput: 0.5,
+          output: 25.0,
+          updatedAt: '2026-07-24',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-07-24',
+        recommended: true,
+      },
+      {
+        id: 'bedrock/anthropic.claude-sonnet-5',
+        pricing: {
+          input: 2.0,
+          cachedInput: 0.2,
+          output: 10.0,
+          updatedAt: '2026-06-30',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-06-25',
+        recommended: true,
+      },
+      {
         id: 'bedrock/anthropic.claude-opus-4-5-20251101-v1:0',
         pricing: {
           input: 5.0,
@@ -4045,6 +4079,20 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 128000,
         sunset: { status: 'legacy' },
       },
+      {
+        id: 'bedrock/nvidia.nemotron-super-3-120b',
+        pricing: {
+          input: 0.15,
+          output: 0.65,
+          updatedAt: '2026-03-18',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          maxOutputTokens: 131072,
+        },
+        contextWindow: 262144,
+        releaseDate: '2026-03-18',
+      },
     ],
   },
 }
@@ -4174,7 +4222,24 @@ export function resolveCanonicalModelId(modelId: string): string {
 function matchesCatalogModelId(candidate: string, catalogId: string): boolean {
   const normalizedCandidate = candidate.toLowerCase()
   const baseId = catalogId.toLowerCase()
-  return normalizedCandidate === baseId || normalizedCandidate.startsWith(`${baseId}-`)
+  if (normalizedCandidate === baseId || normalizedCandidate.startsWith(`${baseId}-`)) {
+    return true
+  }
+
+  // Local Copilot Bedrock routes use bare model IDs (`anthropic.claude-opus-5`)
+  // while the pricing catalog stores `bedrock/<id>`.
+  const slashIdx = baseId.indexOf('/')
+  if (slashIdx > 0) {
+    const withoutProvider = baseId.slice(slashIdx + 1)
+    if (
+      normalizedCandidate === withoutProvider ||
+      normalizedCandidate.startsWith(`${withoutProvider}-`)
+    ) {
+      return true
+    }
+  }
+
+  return false
 }
 
 /**

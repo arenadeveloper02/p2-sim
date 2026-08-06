@@ -215,7 +215,35 @@ async function executeCopilotServerTool(
 const VARIATION_INTENT_PATTERN =
   /\b(?:variations?|versions?|options?|alternatives?|[1-5]|one|two|three|four|five)\b/i
 
+/**
+ * Remaps common generate_image aliases to `prompt`, falls back to the latest
+ * user message when the model omits a prompt, and restores variation counts
+ * stripped from the tool args.
+ */
 function enrichGenerateImagePrompt(args: Record<string, unknown>, lastUserMessage?: string): void {
+  if (typeof args.prompt !== 'string' || !args.prompt.trim()) {
+    for (const key of [
+      'description',
+      'text',
+      'query',
+      'content',
+      'caption',
+      'message',
+      'image_prompt',
+      'imagePrompt',
+    ] as const) {
+      const value = args[key]
+      if (typeof value === 'string' && value.trim()) {
+        args.prompt = value.trim()
+        break
+      }
+    }
+  }
+
+  if ((typeof args.prompt !== 'string' || !args.prompt.trim()) && lastUserMessage?.trim()) {
+    args.prompt = lastUserMessage.trim()
+  }
+
   const prompt = args.prompt
   if (typeof prompt !== 'string' || !lastUserMessage?.trim()) return
   if (VARIATION_INTENT_PATTERN.test(prompt)) return

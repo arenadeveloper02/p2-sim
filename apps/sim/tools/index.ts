@@ -213,31 +213,71 @@ async function executeImageGenerationWrapperV2Direct(
 async function executeDevelopmentGenerateAppDirect(
   params: Record<string, any>
 ): Promise<ToolResponse> {
-  const [{ generateNextjsApp }, { mapGenerateAppResultToToolResponse }] = await Promise.all([
+  const [
+    { generateNextjsApp },
+    { mapGenerateAppResultToToolResponse },
+    { resolveDevelopmentToolReferenceImage },
+    { generateRequestId },
+  ] = await Promise.all([
     import('@/lib/development/nextjs-app-generator'),
     import('@/tools/development/map-generate-app-response'),
+    import('@/lib/development/resolve-development-tool-reference-image'),
+    import('@/lib/core/utils/request'),
   ])
+
+  const resolvedReference = await resolveDevelopmentToolReferenceImage({
+    referenceImage: params.referenceImage,
+    userId: params._context?.userId,
+    requestId: generateRequestId(),
+  })
+  if (!resolvedReference.ok) {
+    return mapGenerateAppResultToToolResponse({
+      success: false,
+      error: resolvedReference.error,
+    })
+  }
+
   return mapGenerateAppResultToToolResponse(
     await generateNextjsApp({
       userInput: params.userInput,
       repoName: params.repoName,
       privateRepo: params.privateRepo,
-      referenceImage: params.referenceImage,
+      referenceImage: resolvedReference.referenceImage,
       arenaMode: params.arenaMode === true,
     })
   )
 }
 
 async function executeDevelopmentEditAppDirect(params: Record<string, any>): Promise<ToolResponse> {
-  const [{ editNextjsApp }, { mapGenerateAppResultToToolResponse }] = await Promise.all([
+  const [
+    { editNextjsApp },
+    { mapGenerateAppResultToToolResponse },
+    { resolveDevelopmentToolReferenceImage },
+    { generateRequestId },
+  ] = await Promise.all([
     import('@/lib/development/nextjs-app-generator'),
     import('@/tools/development/map-generate-app-response'),
+    import('@/lib/development/resolve-development-tool-reference-image'),
+    import('@/lib/core/utils/request'),
   ])
+
+  const resolvedReference = await resolveDevelopmentToolReferenceImage({
+    referenceImage: params.referenceImage,
+    userId: params._context?.userId,
+    requestId: generateRequestId(),
+  })
+  if (!resolvedReference.ok) {
+    return mapGenerateAppResultToToolResponse({
+      success: false,
+      error: resolvedReference.error,
+    })
+  }
+
   return mapGenerateAppResultToToolResponse(
     await editNextjsApp({
       userInput: params.userInput,
       repoName: params.repoName,
-      referenceImage: params.referenceImage,
+      referenceImage: resolvedReference.referenceImage,
       arenaMode: params.arenaMode === true,
     })
   )

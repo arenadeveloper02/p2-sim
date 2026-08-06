@@ -168,9 +168,6 @@ export const MessageActions = memo(function MessageActions({
 
   const hasContent = Boolean(content)
   const canSubmitFeedback = Boolean(chatId && userQuery)
-  // A live (just-streamed) assistant message carries a synthetic id that the
-  // persisted transcript doesn't know — forking it would 400. The button
-  // appears once the transcript refetch swaps in the persisted message id.
   const canFork = Boolean(chatId && messageId && !isLiveAssistantMessageId(messageId))
   if (!hasContent && !canSubmitFeedback && !canFork) return null
 

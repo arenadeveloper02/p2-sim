@@ -1,9 +1,13 @@
+export interface OAuthConnectControl {
+  type: 'credential_link'
+  provider: string
+  url: string
+}
+
 /**
- * Builds the user-visible Connect control after oauth_get_auth_link succeeds.
- * Uses the chat `<credential type="link">` tag so the Connect button always renders,
- * even when model narration is buffered during the tool round.
+ * Builds validated structured control data after oauth_get_auth_link succeeds.
  */
-export function formatOAuthConnectCredentialTag(result: unknown): string | null {
+export function buildOAuthConnectControl(result: unknown): OAuthConnectControl | null {
   const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : null
   if (!record) return null
 
@@ -12,7 +16,13 @@ export function formatOAuthConnectCredentialTag(result: unknown): string | null 
     (typeof record.url === 'string' && record.url.trim()) ||
     (typeof record.authorizationUrl === 'string' && record.authorizationUrl.trim()) ||
     ''
-  if (!url || !/^https?:\/\//i.test(url)) return null
+  if (!url) return null
+
+  try {
+    if (new URL(url).protocol !== 'https:') return null
+  } catch {
+    return null
+  }
 
   const provider =
     (typeof record.provider === 'string' && record.provider.trim()) ||
@@ -20,11 +30,22 @@ export function formatOAuthConnectCredentialTag(result: unknown): string | null 
     (typeof record.serviceName === 'string' && record.serviceName.trim()) ||
     'account'
 
+  return {
+    type: 'credential_link',
+    provider,
+    url,
+  }
+}
+
+/**
+ * Converts trusted OAuth control data into the legacy chat tag representation.
+ */
+export function formatOAuthConnectCredentialTag(control: OAuthConnectControl): string {
   const tag = `<credential>${JSON.stringify({
     type: 'link',
-    provider,
-    value: url,
+    provider: control.provider,
+    value: control.url,
   })}</credential>`
 
-  return `Connect ${provider} to finish setup:\n\n${tag}`
+  return `Connect ${control.provider} to finish setup:\n\n${tag}`
 }

@@ -30,7 +30,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'edit_workflow',
     description:
-      'Applies block operations to a workflow (add, edit, delete). Requires workflowId from create_workflow or an open workflow. CONNECTIONS: never add edges as separate operations or type "edge". Wire on the SOURCE block via params.connections — e.g. { source: "<target-block-id>" } on the Start block to connect Start → Agent. Call get_blocks_metadata ONCE with every block type you need before the first edit. Prefer one edit_workflow for all adds + Start connections. Do not validate_workflow after a clean success. Always pass operations as a non-empty array.',
+      'Applies block operations to a workflow (add, edit, delete). Requires workflowId from create_workflow or an open workflow. CONNECTIONS: never add edges as separate operations or type "edge". Wire on the SOURCE block via params.connections — e.g. { source: "<target-block-id>" } on the Start block to connect Start → Agent. Call get_blocks_metadata ONCE with every block type you need before the first edit. Prefer one edit_workflow for all adds + Start connections. App-owned verification may run after success — do not claim verified yourself. Always pass operations as a non-empty array.',
     parameters: {
       type: 'object',
       properties: {
@@ -104,9 +104,25 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
     },
   },
   {
+    name: 'load_copilot_artifact',
+    description:
+      'Loads a full tool result previously offloaded as an artifact (when the inline tool result included artifactId + truncated: true).',
+    parameters: {
+      type: 'object',
+      properties: {
+        artifactId: {
+          type: 'string',
+          description: 'Artifact id from a truncated tool result stub',
+        },
+      },
+      required: ['artifactId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'get_available_blocks',
     description:
-      'Lists all block types available in this Sim deployment with categories and descriptions.',
+      'Lists all block types available in this Arena deployment with categories and descriptions.',
     parameters: {
       type: 'object',
       properties: {
@@ -124,7 +140,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'invoke_integration_tool',
     description:
-      'Runs a Sim integration tool directly (no workflow). Use list_integration_tools first to get the exact toolId (e.g. exa_search, firecrawl_scrape). For E2B-backed web apps when e2b.enabled is true, use development_generate_app or development_edit_app. Workspace env keys and hosted keys are applied automatically.',
+      'Runs a Arena integration tool directly (no workflow). Use list_integration_tools first to get the exact toolId (e.g. exa_search, exa_answer, firecrawl_scrape). For live/current web data prefer exa_answer (factual Q&A with citations) or exa_search (result lists) — same as the Exa block. For E2B-backed web apps when e2b.enabled is true, use development_generate_app or development_edit_app. Workspace env keys, BYOK, and hosted keys are applied automatically.',
     parameters: {
       type: 'object',
       properties: {
@@ -144,7 +160,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'validate_workflow',
     description:
-      'Validates the current workflow for structural issues. Only use when edit_workflow reported errors/lint issues or the user asked to validate — never as a routine step after a clean successful build.',
+      'Validates the current workflow for structural issues. Prefer letting app-owned post-mutation verification run this automatically. Call manually only when the user asks to validate or when repairing reported lint/errors.',
     parameters: {
       type: 'object',
       properties: {
@@ -195,7 +211,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   },
   {
     name: 'search_docs',
-    description: 'Searches Sim block and integration documentation for relevant guidance.',
+    description: 'Searches Arena block and integration documentation for relevant guidance.',
     parameters: {
       type: 'object',
       properties: {

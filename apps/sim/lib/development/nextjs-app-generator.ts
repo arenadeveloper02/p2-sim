@@ -360,9 +360,16 @@ function parseAppSpecJson(text: string): LlmAppSpec {
   const jsonText = extractJsonFromLlmText(text)
 
   try {
-    return JSON.parse(jsonText) as LlmAppSpec
+    const parsed = JSON.parse(jsonText) as LlmAppSpec | null
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Model returned null or non-object JSON for app generation')
+    }
+    return parsed
   } catch (error) {
     const message = toError(error).message
+    if (message.includes('null or non-object JSON')) {
+      throw error
+    }
     if (!jsonText.trimStart().startsWith('{')) {
       const preview = text.trim().slice(0, 120).replace(/\s+/g, ' ')
       throw new Error(
@@ -520,11 +527,14 @@ function getMaxOutputTokens(modelId: string): number {
 }
 
 function getMessageText(message: Anthropic.Messages.Message): string {
-  const textBlock = message.content.find((block) => block.type === 'text')
-  if (!textBlock || textBlock.type !== 'text') {
+  const text = message.content
+    .filter((block): block is Anthropic.Messages.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('')
+  if (!text.trim()) {
     throw new Error('LLM did not return text content for app generation')
   }
-  return textBlock.text
+  return text
 }
 
 function chunkArray<T>(items: T[], size: number): T[][] {
@@ -913,7 +923,13 @@ ${
     FILE_BATCH_SYSTEM_PROMPT,
     userPrompt,
     FILE_BATCH_JSON_SCHEMA,
-    (text) => JSON.parse(extractJsonFromLlmText(text)) as { files: GeneratedAppFile[] },
+    (text) => {
+      const parsed = JSON.parse(extractJsonFromLlmText(text)) as { files?: GeneratedAppFile[] } | null
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('LLM file batch response was null or not an object')
+      }
+      return parsed
+    },
     referenceImage
   )
 
@@ -1383,6 +1399,10 @@ async function writeAppFiles(outputDir: string, files: GeneratedAppFile[]): Prom
     const safePath = sanitizeRelativeFilePath(file.path)
     if (!safePath) {
       logger.warn('Skipping unsafe generated file path', { path: file.path })
+      continue
+    }
+    if (typeof file.content !== 'string') {
+      logger.warn('Skipping generated file with non-string content', { path: file.path })
       continue
     }
 

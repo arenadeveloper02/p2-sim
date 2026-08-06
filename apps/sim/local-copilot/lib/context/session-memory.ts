@@ -53,6 +53,9 @@ Return ONLY valid JSON matching this shape (no markdown fences):
   "entities": { "workflows": string[], "blocks": string[], "files": string[], "runs": string[] },
   "progress": string[],
   "openQuestions": string[],
+  "approvals": string[],
+  "failures": string[],
+  "verification": string[],
   "notes": string
 }
 Rules:
@@ -62,7 +65,9 @@ Rules:
 - Never store secrets (API keys, passwords, tokens, credentials).
 - constraints = durable user rules/corrections ("always use X", "don't create a new workflow", "use webhook not schedule").
 - activeDirective = the latest outstanding user instruction/correction the assistant must honor next (empty string if none).
-- openQuestions = unresolved user asks; progress = work already done.`
+- openQuestions = unresolved user asks; progress = work already done.
+- approvals = user confirmations of risky actions; failures = failed tools/mutations; verification = validate/check outcomes.
+- Resource facts (workflow/file/table IDs, deploy status, names) in entities may lag — the live Workspace snapshot wins when they conflict.`
 
 export interface SessionMemoryEntities {
   workflows: string[]
@@ -84,6 +89,12 @@ export interface SessionMemory {
   entities: SessionMemoryEntities
   progress: string[]
   openQuestions: string[]
+  /** User approvals of gated high-risk tools. */
+  approvals: string[]
+  /** Notable tool/mutation failures this session. */
+  failures: string[]
+  /** Verification outcomes (validate/check tools). */
+  verification: string[]
   notes: string
 }
 
@@ -147,6 +158,9 @@ export function parseSessionMemory(value: unknown): SessionMemory | null {
     },
     progress: toStringArray(record.progress),
     openQuestions: toStringArray(record.openQuestions),
+    approvals: toStringArray(record.approvals),
+    failures: toStringArray(record.failures),
+    verification: toStringArray(record.verification),
     notes:
       typeof record.notes === 'string'
         ? truncate(record.notes.trim(), SESSION_MEMORY_NOTES_MAX_CHARS, '')
@@ -198,6 +212,9 @@ export function parseSummarizerSessionMemory(
     },
     progress: toStringArray(record.progress, previous?.progress),
     openQuestions: toStringArray(record.openQuestions, previous?.openQuestions),
+    approvals: toStringArray(record.approvals, previous?.approvals),
+    failures: toStringArray(record.failures, previous?.failures),
+    verification: toStringArray(record.verification, previous?.verification),
     notes:
       typeof record.notes === 'string'
         ? truncate(record.notes.trim(), SESSION_MEMORY_NOTES_MAX_CHARS, '')
@@ -225,8 +242,32 @@ export function clampSessionMemory(memory: SessionMemory): SessionMemory {
     },
     progress: memory.progress.slice(-8),
     openQuestions: memory.openQuestions.slice(-8),
+    approvals: memory.approvals.slice(-8),
+    failures: memory.failures.slice(-8),
+    verification: memory.verification.slice(-8),
     notes: truncate(memory.notes, SESSION_MEMORY_NOTES_MAX_CHARS, ''),
   }
+}
+
+/**
+ * Merges turn evidence (approvals / failures / verification) into session memory.
+ */
+export function mergeSessionMemoryEvidence(
+  previous: SessionMemory | null,
+  evidence: {
+    approvals?: string[]
+    failures?: string[]
+    verification?: string[]
+  }
+): SessionMemory | null {
+  if (!previous) return null
+  return clampSessionMemory({
+    ...previous,
+    updatedAt: new Date().toISOString(),
+    approvals: [...previous.approvals, ...(evidence.approvals ?? [])],
+    failures: [...previous.failures, ...(evidence.failures ?? [])],
+    verification: [...previous.verification, ...(evidence.verification ?? [])],
+  })
 }
 
 /**
@@ -241,6 +282,9 @@ export function formatSessionMemorySystemMessage(memory: SessionMemory): ChatMes
     entities: memory.entities,
     progress: memory.progress,
     openQuestions: memory.openQuestions,
+    approvals: memory.approvals,
+    failures: memory.failures,
+    verification: memory.verification,
     notes: memory.notes,
   }
   let json = JSON.stringify(payload, null, 2)
@@ -396,6 +440,9 @@ export async function mergeFollowUpDirectivesIntoSessionMemory(params: {
       entities: { workflows: [], blocks: [], files: [], runs: [] },
       progress: [],
       openQuestions: [],
+      approvals: [],
+      failures: [],
+      verification: [],
       notes: '',
     } satisfies SessionMemory)
 
