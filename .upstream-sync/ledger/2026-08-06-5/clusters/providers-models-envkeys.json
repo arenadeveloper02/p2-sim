@@ -1,0 +1,44 @@
+{
+  "clusterId": "providers-models-envkeys",
+  "runId": "2026-08-06-5",
+  "files": [
+    {
+      "path": "apps/sim/providers/models.ts",
+      "resolution": "manual",
+      "notes": "Unioned every fork model entry with upstream Kimi, Gemini 3.6 Flash, Gemini 3.5 Flash-Lite, and sunset metadata; retained fork hosted providers and restored the two fork-only Bedrock entries with sunset metadata."
+    },
+    {
+      "path": "apps/sim/providers/models.test.ts",
+      "resolution": "manual",
+      "notes": "Kept upstream catalog and sunset coverage while retaining fork coverage for hosted gaps and fork providers."
+    },
+    {
+      "path": "apps/sim/providers/utils.ts",
+      "resolution": "manual",
+      "notes": "Kept the fork SambaNova/OpenRouter hosted-gate TSDoc and eligibility, adding only the upstream Kimi branch."
+    },
+    {
+      "path": "apps/sim/providers/utils.test.ts",
+      "resolution": "manual",
+      "notes": "Retained fork date-suffixed hosted-model coverage alongside upstream versioned-model coverage."
+    },
+    {
+      "path": "apps/sim/lib/core/config/env.ts",
+      "resolution": "manual",
+      "notes": "Kept the single existing fork XAI key declarations and added only KIMI_API_KEY_1/2/3."
+    },
+    {
+      "path": "apps/sim/lib/core/config/api-keys.ts",
+      "resolution": "manual",
+      "notes": "Kept the single existing fork xAI guard and branch, adding only the Kimi rotation branch."
+    }
+  ],
+  "policyProposals": [
+    {
+      "kind": "unionPaths",
+      "prefix": "apps/sim/providers/models.ts",
+      "notes": "Keep fork model entries and hosted providers while taking upstream Kimi, Gemini additions, and sunset metadata."
+    }
+  ],
+  "notes": "Resolved the union dedupe hazard by retaining existing fork xAI symbols and adding only genuinely new Kimi symbols."
+}

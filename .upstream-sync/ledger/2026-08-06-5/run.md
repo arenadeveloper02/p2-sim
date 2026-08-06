@@ -335,3 +335,17 @@ Upstream-only governing-helper assertions were skipped per the locked Q&A; see s
 
 Union cluster resolved and staged. Focused Biome validation passes; broader type-check/test gates are blocked by unrelated unresolved clusters and a missing @next/env dependency.
 
+## Cluster auth-oauth-credentials
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/lib/auth/auth.ts` | manual | Kept Arena trusted origins and cross-subdomain cookies, added upstream trustedProxies, and wrapped the guarded adapter without duplicating advanced options. |
+| `apps/sim/app/api/auth/oauth/utils.ts` | manual | Retained upstream Slack chain coalescing and version guards while threading the fork's five refreshOAuthToken arguments and account_tokens writes. |
+| `apps/sim/lib/oauth/terminal-errors.ts` | manual | Unioned custom_app_not_configured and token_revoked terminal errors. |
+| `apps/sim/lib/credentials/connect-draft.ts` | manual | Adopted upstream reconnect fields and display-name deduplication/auto-numbering. |
+| `apps/sim/lib/credentials/access.test.ts` | manual | Kept fork billed-account membership coverage and upstream credential actor access coverage on the shared DB mock. |
+| `apps/sim/blocks/blocks/zoom.ts` | manual | Kept fork Zoom credential wording and functionality while taking upstream's service-account me caveat. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/credential-selector.tsx` | manual | Adopted service-account/any picker behavior and re-applied fork admin-gated Unipile/HubSpot options, reconnect, and additional connect targets. |
+
+All seven paths were manually union-resolved; no new merge-policy prefix was needed because the existing unionPaths entries already cover these files.
+
