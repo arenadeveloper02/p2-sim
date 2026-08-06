@@ -96,10 +96,20 @@ async function insertFileMetadataHelper(
  * Upload a file to the configured storage provider with context-aware configuration
  */
 export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> {
-  const { file, fileName, contentType, context, preserveKey, customKey, metadata } = options
+  const {
+    file,
+    fileName,
+    contentType,
+    context,
+    preserveKey,
+    customKey,
+    metadata,
+    persistMetadata = true,
+  } = options
 
   logger.info(`Uploading file to ${context} storage: ${fileName}`)
 
+  const config = getStorageConfig(context)
   const keyToUse = customKey || fileName
 
   if (
@@ -139,7 +149,7 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
       preserveKey,
       metadata
     )
-    if (metadata) {
+    if (metadata && persistMetadata) {
       await insertFileMetadataHelper(
         uploadResult.key,
         metadata,
@@ -157,10 +167,34 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
     return uploadResult
   }
 
-  const config = getStorageConfig(context)
-
   const useS3ForThisUpload =
     USE_S3_STORAGE || (context === 'agent-generated-images' && !!config.bucket && !!config.region)
+
+  if (USE_BLOB_STORAGE) {
+    const { uploadToBlob } = await import('@/lib/uploads/providers/blob/client')
+    const uploadResult = await uploadToBlob(
+      file,
+      keyToUse,
+      contentType,
+      createBlobConfig(config),
+      file.length,
+      preserveKey,
+      metadata
+    )
+
+    if (metadata && persistMetadata) {
+      await insertFileMetadataHelper(
+        uploadResult.key,
+        metadata,
+        context,
+        fileName,
+        contentType,
+        file.length
+      )
+    }
+
+    return uploadResult
+  }
 
   if (useS3ForThisUpload && config.bucket && config.region) {
     logger.info('Uploading to S3', {
@@ -186,7 +220,7 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
       servePath: uploadResult.path,
     })
 
-    if (metadata) {
+    if (metadata && persistMetadata) {
       await insertFileMetadataHelper(
         uploadResult.key,
         metadata,
@@ -212,7 +246,7 @@ export async function uploadFile(options: UploadFileOptions): Promise<FileInfo> 
 
   await writeFile(filesystemPath, file)
 
-  if (metadata) {
+  if (metadata && persistMetadata) {
     await insertFileMetadataHelper(
       storageKey,
       metadata,
@@ -517,6 +551,11 @@ export async function deleteFile(options: DeleteFileOptions): Promise<void> {
   if (context) {
     const config = getStorageConfig(context)
 
+    if (USE_BLOB_STORAGE) {
+      const { deleteFromBlob } = await import('@/lib/uploads/providers/blob/client')
+      return deleteFromBlob(key, createBlobConfig(config))
+    }
+
     const useS3ForThisDelete =
       USE_S3_STORAGE || (context === 'agent-generated-images' && !!config.bucket && !!config.region)
 
@@ -648,6 +687,10 @@ export async function generatePresignedUploadUrl(
       config,
       expirationSeconds
     )
+  }
+
+  if (USE_BLOB_STORAGE) {
+    return generateBlobPresignedUrl(key, contentType, allMetadata, config, expirationSeconds)
   }
 
   throw new Error('Cloud storage not configured. Cannot generate presigned URL for local storage.')
@@ -813,6 +856,11 @@ export async function generatePresignedDownloadUrl(
     return getPresignedUrlWithConfig(key, createS3Config(config), expirationSeconds)
   }
 
+  if (USE_BLOB_STORAGE) {
+    const { getPresignedUrlWithConfig } = await import('@/lib/uploads/providers/blob/client')
+    return getPresignedUrlWithConfig(key, createBlobConfig(config), expirationSeconds)
+  }
+
   const { getBaseUrl } = await import('@/lib/core/utils/urls')
   const baseUrl = getBaseUrl()
   return `${baseUrl}/api/files/serve/${encodeURIComponent(key)}`
@@ -822,7 +870,7 @@ export async function generatePresignedDownloadUrl(
  * Check if cloud storage is available
  */
 export function hasCloudStorage(): boolean {
-  return USE_S3_STORAGE
+  return USE_BLOB_STORAGE || USE_S3_STORAGE
 }
 
 /**

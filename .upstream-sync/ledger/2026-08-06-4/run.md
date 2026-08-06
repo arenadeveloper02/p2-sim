@@ -228,3 +228,12 @@ No upstream hunks were rejected; the existing unionPaths policy already covers t
 
 Resolved the assigned seven files only. The email footer was already settled by the locked checkoutOurs directive and was verified without reintroducing social links.
 
+## Cluster config-env
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/.env.example` | manual | Unioned the fork's Development/Microsoft OAuth block with upstream's self-hosted limits documentation. |
+| `apps/sim/lib/core/config/env.ts` | manual | Kept fork rate-limit bypass and defaults plus all EXECUTION_TIMEOUT_* defaults of 60000; added upstream's RATE_LIMIT_FREE_API_ENDPOINT and Copilot billing flags as optional unset variables, and retained COPILOT_API_KEY_2 with upstream's COPILOT_API_KEY wording. |
+
+Verified root package scripts retain vendor-pricing:check/vendor-pricing:sync and include skills:sync/skills:check. Regenerated bun.lock with bun install --lockfile-only; no additional lockfile delta was produced. Recorded the rejected upstream #5640 timeout/default hunk in skipped.md.
+

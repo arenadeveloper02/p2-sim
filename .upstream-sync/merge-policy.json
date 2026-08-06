@@ -97,7 +97,8 @@
     "apps/sim/hooks/queries/workspace.ts",
     "apps/sim/tools/hubspot/index.ts",
     "apps/sim/tools/hubspot/types.ts",
-    "apps/sim/blocks/blocks/hubspot.ts"
+    "apps/sim/blocks/blocks/hubspot.ts",
+    "apps/sim/lib/uploads/"
   ],
   "manualReview": [
     "packages/db/migrations/",
