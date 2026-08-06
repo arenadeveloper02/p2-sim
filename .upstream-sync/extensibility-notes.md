@@ -89,3 +89,7 @@ Rolling log of structural improvements that reduce merge conflict surface with `
 - **Pre-existing fork gap surfaced (not sync-caused):**
   `(landing)/demo/.../demo-scheduler.tsx` defaults `CAL_LINK` to `'team/sim/demo'` — Sim's
   calendar. Set `NEXT_PUBLIC_CAL_LINK` for Arena.
+
+## 2026-08-06-2
+
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.

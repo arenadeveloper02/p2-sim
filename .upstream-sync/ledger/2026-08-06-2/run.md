@@ -236,3 +236,291 @@ The route body already contained both fork and upstream behavior, including the 
 
 All assigned conflict markers are resolved. Biome passes on the three files. The scoped TypeScript check reports unrelated pre-existing repository errors and exits nonzero.
 
+## Format
+
+✅ `bun run format` (pre-verify autofix)
+
+## Verification
+
+Advisory verification failed (lint/test/check). These do not block the sync. Full `bun run build` is left to CI. Review and fix on the draft PR as needed.
+
+### bun run check
+
+✅ passed
+
+```
+$ turbo run format:check
+
+   • Packages in scope: @sim/audit, @sim/auth, @sim/db, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk
+   • Running format:check in 21 packages
+   • Remote caching disabled
+
+::group::@sim/workflow-persistence:format:check
+cache miss, executing 6a2f322f646254f4
+$ biome format .
+Checked 8 files in 36ms. No fixes applied.
+::endgroup::
+::group::@sim/auth:format:check
+cache miss, executing 7b95f933c974b740
+$ biome format .
+Checked 3 files in 26ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-types:format:check
+cache miss, executing d343ec897a7b120b
+$ biome format .
+Checked 4 files in 28ms. No fixes applied.
+::endgroup::
+::group::simstudio-ts-sdk:format:check
+cache miss, executing e723f477a2f513f3
+$ biome format .
+Checked 6 files in 72ms. No fixes applied.
+::endgroup::
+::group::@sim/platform-authz:format:check
+cache miss, executing 20bfbd17ba902713
+$ biome format .
+Checked 5 files in 41ms. No fixes applied.
+::endgroup::
+::group::@sim/runtime-secrets:format:check
+cache miss, executing 54427b0fcf80d46c
+$ biome format .
+Checked 5 files in 44ms. No fixes applied.
+::endgroup::
+::group::@sim/audit:format:check
+cache miss, executing 435b10fd6837457b
+$ biome format .
+Checked 7 files in 84ms. No fixes applied.
+::endgroup::
+::group::@sim/testing:format:check
+cache miss, executing 6754342b8949f5f1
+$ biome format .
+Checked 66 files in 475ms. No fixes applied.
+::endgroup::
+::group::simstudio:format:check
+cache miss, executing db888607b0259b5e
+$ biome format .
+Checked 3 files in 38ms. No fixes applied.
+::endgroup::
+::group::@sim/security:format:check
+cache miss, executing fc2410243714aad2
+$ biome format .
+Checked 13 files in 73ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime:format:check
+cache miss, executing 5
+```
+
+### bun run lint
+
+❌ failed (advisory)
+
+```
+$ turbo run lint
+
+   • Packages in scope: @sim/audit, @sim/auth, @sim/db, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk
+   • Running lint in 21 packages
+   • Remote caching disabled
+
+::group::@sim/runtime-secrets:lint
+cache miss, executing 0affd3cfd3a3ca22
+$ biome check --write --unsafe .
+Checked 5 files in 34ms. No fixes applied.
+::endgroup::
+::group::simstudio:lint
+cache miss, executing 3b3448794fd8d67a
+$ biome check --write --unsafe .
+Checked 3 files in 69ms. No fixes applied.
+::endgroup::
+::group::@sim/security:lint
+cache miss, executing f0d899d639617b3d
+$ biome check --write --unsafe .
+Checked 13 files in 113ms. No fixes applied.
+::endgroup::
+::group::simstudio-ts-sdk:lint
+cache miss, executing c86521201f82f1d8
+$ biome check --write --unsafe .
+Checked 6 files in 125ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime-protocol:lint
+cache miss, executing 0122da9ed0cc036d
+$ biome check --write --unsafe .
+Checked 5 files in 103ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-types:lint
+cache miss, executing c5a2ba3ebbfce6a3
+$ biome check --write --unsafe .
+Checked 4 files in 72ms. No fixes applied.
+::endgroup::
+::group::@sim/logger:lint
+cache miss, executing 101959f903fffb42
+$ biome check --write --unsafe .
+Checked 6 files in 151ms. No fixes applied.
+::endgroup::
+::group::@sim/utils:lint
+cache miss, executing 07ed1635ff1bad02
+$ biome check --write --unsafe .
+Checked 22 files in 303ms. No fixes applied.
+::endgroup::
+::group::@sim/platform-authz:lint
+cache miss, executing 5c043a9e7804d1fa
+$ biome check --write --unsafe .
+Checked 5 files in 66ms. No fixes applied.
+::endgroup::
+::group::@sim/audit:lint
+cache miss, executing 176f393c5252970e
+$ biome check --write --unsafe .
+Checked 7 files in 140ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-renderer:lint
+cache miss, executing 766887a777f1bb1f
+$ biome check --write --unsafe .
+Checked 13 files in 176ms. No fixes applied.
+::endgroup::
+::group::@sim/auth:lint
+cache miss, executing 9430b4cb7b0f5ea1
+$ biome check --write --unsafe .
+Checked 3 files in 37ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-persistence:lint
+cache miss, executing a6585cd84bdc79fc
+$ biome check --write --unsafe .
+Checked 8 files in 127ms. No fixes applied.
+::endgroup::
+::group::@sim/testing:lint
+cache miss, executing 3e85379ba14ee220
+$ biome check --write --unsafe .
+Checked 66 files in 721ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime:lint
+cache miss, executing ed2fe0202e342b01
+$ biome check --write --unsafe .
+Checked 32 files in 577ms. No fixes applied.
+::endgroup::
+::group::@sim/emcn:lint
+cache miss, executing ac892d7173f5ca3a
+$ biome check --write --unsafe .
+Checked 189 files in 1666ms. No fixes applied.
+::endgroup::
+::group::docs:lint
+cache miss, executing 3ca2b0f772ab34ad
+$ biome check --write --unsafe .
+Checked 101 files in 1747ms. No fixes applied.
+::endgroup::
+::group::@sim/db:lint
+cache miss, executing 5be67c93d969bd53
+$ biome check --write --unsafe .
+Checked 284 files in 7s. No fixes applied.
+::endgroup::
+[;31msim:lint[;0m
+cache miss, executing 560d0558709dc093
+$ biome check --write --unsafe .
+app/workspace/[workspaceId]/home/components/message-content/components/special-tags/choice-blocks.ts:56:7 lint/suspicious/noShadowRestrictedNames ━━━━━━━━━━
+
+  × Do not shadow the global "escape" property.
+  
+    54 │   let depth = 0
+    55 │   let inString = false
+  > 56 │   let escape = false
+       │       ^^^^^^
+    57 │ 
+    58 │   for (let i = startIdx; i < text.length; i++) {
+  
+  i Consider renaming this variable. It's easy to confuse the origin of variables when they're named after a known global.
+  
+
+Checked 11373 files in 35s. Fixed 9 files.
+Found 1 error.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+
+error: script "lint" exited with code 1
+::error::sim#lint: command (/home/runner/work/p2-sim/p2-sim/apps/sim) /home/runner/.bun/bin/bun run lint exited (1)
+ ERROR  sim#lint: command (/home/runner/work/p2-sim/p2-sim/apps/sim) /home/runner/.bun/bin/bun run lint exited (1)
+
+ Tasks:    18 successful, 19 total
+Cached:    0 cached, 19 total
+  Time:    36.657s 
+Failed:    sim#lint
+
+ ERROR  run failed: command  exited (1)
+error: script "lint" exited with code 1
+
+```
+
+### bun run test
+
+❌ failed (advisory)
+
+```
+T_KEY in your environment.%0A ❯ getBlobServiceClient lib/uploads/providers/blob/client.ts:97:11%0A ❯ Module.uploadToBlob lib/uploads/providers/blob/client.ts:142:29%0A ❯ lib/uploads/providers/blob/client.test.ts:130:22%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/lib/uploads/providers/blob/client.ts,title=lib/uploads/providers/blob/client.test.ts > Azure Blob Storage Client > downloadFromBlob > should download a file from Azure Blob Storage,line=97,column=11::Error: Azure Blob Storage credentials are missing – set AZURE_STORAGE_CONNECTION_STRING or both AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY in your environment.%0A ❯ getBlobServiceClient lib/uploads/providers/blob/client.ts:97:11%0A ❯ Module.downloadFromBlob lib/uploads/providers/blob/client.ts:315:25%0A ❯ lib/uploads/providers/blob/client.test.ts:158:22%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/lib/uploads/providers/blob/client.test.ts,title=lib/uploads/providers/blob/client.test.ts > Azure Blob Storage Client > downloadFromBlob > should destroy the opened stream when content length exceeds the limit,line=177,column=69::AssertionError: expected [Function] to throw error including 'storage download exceeds maximum size' but got 'Azure Blob Storage credentials are mi…'%0A%0AExpected: "storage download exceeds maximum size"%0AReceived: "Azure Blob Storage credentials are missing – set AZURE_STORAGE_CONNECTION_STRING or both AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY in your environment."%0A%0A ❯ lib/uploads/providers/blob/client.test.ts:177:69%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/lib/uploads/providers/blob/client.ts,title=lib/uploads/providers/blob/client.test.ts > Azure Blob Storage Client > deleteFromBlob > should delete a file from Azure Blob Storage,line=97,column=11::Error: Azure Blob Storage credentials are missing – set AZURE_STORAGE_CONNECTION_STRING or both AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY in your environment.%0A ❯ getBlobServiceClient lib/uploads/providers/blob/client.ts:97:11%0A ❯ Module.deleteFromBlob lib/uploads/providers/blob/client.ts:483:25%0A ❯ lib/uploads/providers/blob/client.test.ts:190:7%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/lib/uploads/providers/blob/client.ts,title=lib/uploads/providers/blob/client.test.ts > Azure Blob Storage Client > getPresignedUrl > should generate a presigned URL for Azure Blob Storage,line=97,column=11::Error: Azure Blob Storage credentials are missing – set AZURE_STORAGE_CONNECTION_STRING or both AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_ACCOUNT_KEY in your environment.%0A ❯ getBlobServiceClient lib/uploads/providers/blob/client.ts:97:11%0A ❯ Module.getPresignedUrl lib/uploads/providers/blob/client.ts:183:29%0A ❯ lib/uploads/providers/blob/client.test.ts:202:22%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/app/api/auth/oauth/token/route.test.ts,title=app/api/auth/oauth/token/route.test.ts > OAuth Token API Routes > POST handler > should return access token successfully,line=63,column=31::AssertionError: expected 401 to be 200 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 200%0A+ 401%0A%0A ❯ app/api/auth/oauth/token/route.test.ts:63:31%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/app/api/auth/oauth/token/route.test.ts,title=app/api/auth/oauth/token/route.test.ts > OAuth Token API Routes > POST handler > should handle workflowId for server-side authentication,line=98,column=31::AssertionError: expected 401 to be 200 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 200%0A+ 401%0A%0A ❯ app/api/auth/oauth/token/route.test.ts:98:31%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/app/api/auth/oauth/token/route.test.ts,title=app/api/auth/oauth/token/route.test.ts > OAuth Token API Routes > GET handler > should return access token successfully,line=334,column=31::AssertionError: expected 401 to be 200 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 200%0A+ 401%0A%0A ❯ app/api/auth/oauth/token/route.test.ts:334:31%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/app/api/workflows/[id]/execute/route.async.test.ts,title=app/api/workflows/[id]/execute/route.async.test.ts > workflow execute async route > returns 499 when a non-SSE execution is cancelled by client disconnect,line=307,column=29::AssertionError: expected 500 to be 499 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 499%0A+ 500%0A%0A ❯ app/api/workflows/[id]/execute/route.async.test.ts:307:29%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/app/api/workflows/[id]/execute/route.async.test.ts,title=app/api/workflows/[id]/execute/route.async.test.ts > workflow execute async route > rejects large MCP bridge outputs instead of returning large-value refs,line=340,column=29::AssertionError: expected 500 to be 413 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 413%0A+ 500%0A%0A ❯ app/api/workflows/[id]/execute/route.async.test.ts:340:29%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/app/api/workflows/[id]/execute/route.async.test.ts,title=app/api/workflows/[id]/execute/route.async.test.ts > workflow execute async route > does not trust client-spoofed MCP bridge headers on API key executions,line=380,column=29::AssertionError: expected 500 to be 200 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 200%0A+ 500%0A%0A ❯ app/api/workflows/[id]/execute/route.async.test.ts:380:29%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/app/api/workflows/[id]/execute/route.async.test.ts,title=app/api/workflows/[id]/execute/route.async.test.ts > workflow execute async route > keeps trusted internal MCP bridge executions on the JSON envelope path,line=415,column=29::AssertionError: expected 500 to be 200 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 200%0A+ 500%0A%0A ❯ app/api/workflows/[id]/execute/route.async.test.ts:415:29%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/app/api/workflows/[id]/execute/route.async.test.ts,title=app/api/workflows/[id]/execute/route.async.test.ts > workflow execute async route > preserves authenticated-user actor semantics for trusted MCP bridge calls,line=459,column=29::AssertionError: expected 500 to be 200 // Object.is equality%0A%0A- Expected%0A+ Received%0A%0A- 200%0A+ 500%0A%0A ❯ app/api/workflows/[id]/execute/route.async.test.ts:459:29%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/lib/copilot/tools/server/workflow/edit-workflow/operations.test.ts,title=lib/copilot/tools/server/workflow/edit-workflow/operations.test.ts > handleEditOperation nestedNodes merge > updates inputs on matched children without changing their ID,line=313,column=48::AssertionError: expected undefined to be 'New prompt' // Object.is equality%0A%0A- Expected:%0A"New prompt"%0A%0A+ Received:%0Aundefined%0A%0A ❯ lib/copilot/tools/server/workflow/edit-workflow/operations.test.ts:313:48%0A%0A
+
+::error file=/home/runner/work/p2-sim/p2-sim/apps/sim/lib/copilot/tools/server/workflow/edit-workflow/operations.test.ts,title=lib/copilot/tools/server/workflow/edit-workflow/operations.test.ts > handleEditOperation nestedNodes merge > recursively updates an existing nested loop and preserves grandchild IDs,line=357,column=70::AssertionError: expected undefined to be 'Updated prompt' // Object.is equality%0A%0A- Expected:%0A"Updated prompt"%0A%0A+ Received:%0Aundefined%0A%0A ❯ lib/copilot/tools/server/workflow/edit-workflow/operations.test.ts:357:70%0A%0A
+error: script "test" exited with code 1
+::error::sim#test: command (/home/runner/work/p2-sim/p2-sim/apps/sim) /home/runner/.bun/bin/bun run test exited (1)
+ ERROR  sim#test: command (/home/runner/work/p2-sim/p2-sim/apps/sim) /home/runner/.bun/bin/bun run test exited (1)
+
+ Tasks:    9 successful, 10 total
+Cached:    0 cached, 10 total
+  Time:    8m55.454s 
+Failed:    sim#test
+
+ ERROR  run failed: command  exited (1)
+error: script "test" exited with code 1
+
+```
+
+## Merge policy
+
+{
+  "strategy": "fork-first",
+  "description": "Only paths listed in forkFirst (auto --ours) or upstreamFirst (auto --theirs) are resolved without an agent. Everything else — whether or not it appears in manualReview — is agent-reviewed. manualReview is a non-exhaustive hint list of known hard shared hotspots, not a closed set. unionPaths are agent-reviewed: keep fork-only symbols and take upstream additions; never drop upstream exports that in-tree consumers import. package.json is union-merged (upstream base + fork-only scripts/deps). bun.lock is regenerated after manifests. Agents SHOULD extend this file when they learn a recurring rule (add a forkFirst/upstreamFirst/manualReview/unionPaths prefix or packageJson.dropScripts entry) so the next sync is cheaper. CAVEAT on upstreamFirst apps/sim/lib/copilot/generated/: auto --theirs is correct for the bulk, but the fork carries a hand-edit there (Superagent task description, Google Docs GFM guidance) that exists in NO generator source, and `bun run mship:generate` cannot regenerate in this checkout because scripts/sync-tool-catalog.ts reads a sibling repo (../copilot/) the fork does not have. Every sync must re-apply that sentence via a mustEdit directive after resolving theirs.",
+  "packageJson": {
+    "strategy": "union",
+    "dropScripts": ["dev:full:minimal-registry"]
+  },
+  "forkFirst": [
+    "apps/sim/tools/arena/",
+    "apps/sim/tools/arena-development/",
+    "apps/sim/app/api/tools/arena/",
+    "apps/sim/app/api/arena/",
+    "apps/sim/lib/arena-utils/",
+    "apps/sim/blocks/blocks/arena.ts",
+    "apps/sim/blocks/blocks/arena-development.ts",
+    "apps/sim/hooks/queries/arena-clients.ts",
+    "apps/sim/app/arenaMixpanelEvents/",
+    "apps/sim/public/arena-ai-docs/",
+    "apps/sim/app/api/help/arena-help/",
+    "apps/sim/tools/p2_docs/",
+    "apps/sim/blocks/blocks/p2_docs.ts",
+    "apps/sim/lib/hubspot/",
+    "apps/sim/app/api/hubspot/",
+    "apps/sim/tools/unipile/",
+    "apps/sim/app/api/tools/unipile/",
+
