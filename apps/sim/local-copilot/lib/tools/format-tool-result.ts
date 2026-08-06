@@ -1,7 +1,5 @@
 import { truncate } from '@sim/utils/string'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
-import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
-import { getBlock } from '@/blocks/registry'
 import { REDACTED_MARKER } from '@/lib/core/security/redaction'
 import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
 import { getBlock } from '@/blocks/registry'
