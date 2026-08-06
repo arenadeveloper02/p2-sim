@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-08-06T11:43:47.218Z",
+  "updatedAt": "2026-08-06T13:56:37.265Z",
   "stack": [
     {
       "runId": "2026-08-06",
@@ -23,6 +23,14 @@
       "upstreamSha": "e01bfb148a756c8e6268370b27a01a3dd5294288",
       "branch": "upstream-sync/2026-08-06T11-28-59",
       "prNumber": 687,
+      "status": "open"
+    },
+    {
+      "runId": "2026-08-06-4",
+      "releaseVersion": "v0.7.32",
+      "upstreamSha": "9d23e25ce1c5fb9310fcb94a10fdb4c4f554d4d8",
+      "branch": "upstream-sync/2026-08-06T11-45-10",
+      "prNumber": 688,
       "status": "open"
     }
   ]
