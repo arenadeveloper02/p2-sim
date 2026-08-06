@@ -172,3 +172,18 @@ Q2=A fork-first resolution. Protocol/header and attribution plumbing were adopte
 
 Targeted Biome and diff checks pass. Full typecheck/test runs are blocked by unrelated unresolved merge markers outside this cluster.
 
+## Cluster chat-ui-arena
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/app/api/chat/[identifier]/route.test.ts` | manual | Kept fork chat-auth and file-validation coverage while retaining upstream streaming and preprocessing coverage. |
+| `apps/sim/app/api/chat/[identifier]/route.ts` | manual | Kept Arena chat behavior and actor execution fields; adopted upstream billing attribution additively and removed the deleted free-plan embed gate. |
+| `apps/sim/app/api/chat/utils.ts` | manual | Removed the orphaned free-API deployment gate and api-access dependency while retaining deployed-chat image access and first-party-origin helpers. |
+| `apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/agent-group.tsx` | manual | Unioned upstream shimmer and narration rendering with the fork assistant-label resolver, PillsRing spinner, and expansion semantics. |
+| `apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/tool-call-item.tsx` | manual | Unioned upstream natural-language titles, read target block icons, and execution shimmer with fork live titles, multiline layout, and status icons. |
+| `apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/special-tags.tsx` | manual | Kept fork chart, thinking, and single-select rendering while adopting upstream workspace billing permission handling. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/chat/chat.tsx` | manual | Adopted upstream uploaded-attachment plumbing and storage-backed message previews while preserving generated-image handling and the fork FileReader timeout/abort path. |
+| `apps/sim/stores/chat/store.ts` | manual | Unioned fork safe storage and chronological message persistence with upstream version-one migration. |
+
+Resolved all eight assigned paths under the locked union plan; no recurring policy change was introduced.
+

@@ -1,4 +1,5 @@
 export * from './custom-app-config'
+export * from './instagram'
 export * from './microsoft'
 export * from './oauth'
 export * from './types'
