@@ -52,7 +52,10 @@
     "docker-compose.local-build.yml",
     "docker-compose.dev-env.yml",
     "docker-compose.sandbox.yml",
-    "bunfig.toml"
+    "bunfig.toml",
+    "apps/sim/public/favicon/",
+    "apps/sim/public/icon.svg",
+    "apps/sim/app/(landing)/components/navbar/components/sim-wordmark.tsx"
   ],
   "upstreamFirst": ["apps/sim/lib/copilot/generated/"],
   "unionPaths": [
@@ -62,7 +65,17 @@
     "apps/sim/lib/core/config/env-flags.ts",
     "apps/sim/lib/billing/organizations/membership.ts",
     "apps/sim/lib/oauth/types.ts",
-    "apps/sim/providers/models.ts"
+    "apps/sim/lib/oauth/oauth.ts",
+    "apps/sim/providers/models.ts",
+    "apps/sim/providers/types.ts",
+    "apps/sim/providers/registry.ts",
+    "apps/sim/blocks/types.ts",
+    "apps/sim/tools/types.ts",
+    "apps/sim/components/icons.tsx",
+    "apps/sim/lib/core/config/env.ts",
+    "apps/sim/lib/core/config/api-keys.ts",
+    "apps/sim/lib/integrations/integrations.json",
+    "apps/sim/lib/auth/auth.ts"
   ],
   "manualReview": [
     "packages/db/migrations/",
@@ -83,8 +96,17 @@
     "apps/sim/lib/chat/",
     "apps/sim/app/(interfaces)/chat/",
     "apps/sim/app/(interfaces)/chat/[identifier]/ArenaDeployedChat.tsx",
-    "apps/sim/app/api/chat/"
+    "apps/sim/app/api/chat/",
+    "apps/sim/app/(landing)/",
+    "apps/sim/lib/oauth/custom-apps.ts",
+    "apps/sim/app/api/auth/oauth/utils.ts",
+    "apps/sim/app/api/credentials/",
+    "apps/sim/lib/credentials/"
   ],
+  "migrations": {
+    "strategy": "append-upstream-at-tail",
+    "description": "Never renumber the fork's existing migrations to make room for upstream's. drizzle-orm/pg-core/dialect.js:62 applies a migration only when Number(lastDbMigration.created_at) < migration.folderMillis, so a new upstream migration whose journal `when` predates the fork's newest applied migration is skipped forever on every already-migrated database. Instead: keep the fork's files and journal entries byte-identical, rename each incoming upstream migration to the next free index after the fork's highest, append its journal entry with a `when` strictly greater than the fork's newest, and rename its meta snapshot to match. Never regenerate upstream SQL bodies — they carry hand-written `COMMIT;` + `CREATE INDEX CONCURRENTLY` blocks. Verify the reordering is dependency-free (upstream DDL must not require a table a later fork migration creates) and run `bun run check:migrations`."
+  },
   "regenerateAfterMerge": ["bun run mship:generate"],
   "prReviewers": ["utcarshsrivastava-collab"],
   "prReviewerNotes": "GitHub usernames only. utcarshsrivastava-collab ↔ utcarsh.srivastava@position2.com. Override via UPSTREAM_SYNC_PR_REVIEWERS."

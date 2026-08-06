@@ -1,0 +1,320 @@
+{
+  "version": 1,
+  "runId": "2026-08-06",
+  "kind": "draft",
+  "selfResolutions": [
+    {
+      "decision": "SR1 — keep Arena favicons and app icon; never ship upstream's new Sim wordmark marks",
+      "paths": ["apps/sim/public/icon.svg"],
+      "prefixes": ["apps/sim/public/favicon/"],
+      "strategy": "ours",
+      "rationale": "Fork rebranded 6 of these assets (a7b189033 'logo chnages, agentIocn to vimiIcon'), but favicon-96x96.png / favicon.svg / web-app-manifest-*.png were never rebranded, so simstudioai/sim#5587 would auto-merge a NEW Sim wordmark into the Arena white-label with no conflict to catch it. Apply as a directive-level checkoutOurs so it covers unconflicted files too.",
+      "cite": "simstudioai/sim#5587 / FBI 2026-08-06 / merge-policy forkFirst (branding)"
+    },
+    {
+      "decision": "SR2 — take upstream's new landing and logo art (enterprise hero background, team avatars, 426-240 reverse logo)",
+      "paths": ["apps/sim/public/logo/426-240/reverse/small.png"],
+      "prefixes": ["apps/sim/public/landing/"],
+      "strategy": "theirs",
+      "rationale": "Assets required by the enterprise page redesign; the fork never branded them, so taking upstream is status quo and #5535 renders correctly.",
+      "cite": "simstudioai/sim#5535 / simstudioai/sim#5587"
+    },
+    {
+      "decision": "SR3 — take upstream's landing structure but preserve every Arena string",
+      "paths": [
+        "apps/sim/app/(landing)/components/footer/footer.tsx",
+        "apps/sim/app/(landing)/components/hero/hero.tsx"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "Recurring fork rule confirmed in both files: SimWordmark -> ArenaWordmark, 'Sim is your AI workspace' -> 'Arena is the AI workspace', aria-label 'Sim home' -> 'Arena home', sr-only blurb says Arena. Upstream #5585 (sr-only logos heading containment) and #5582 (Share chip) are structural and must be taken.",
+      "cite": "simstudioai/sim#5585 / simstudioai/sim#5582 / fork 9abf83057, eb2af15f7"
+    },
+    {
+      "decision": "SR4 — DB migrations: APPEND upstream's two migrations at the tail (0262/0263); do NOT renumber the fork's 0258-0261",
+      "paths": [
+        "packages/db/migrations/0258_gigantic_lady_mastermind.sql",
+        "packages/db/migrations/0259_slack_native_routing.sql",
+        "packages/db/migrations/meta/_journal.json",
+        "packages/db/migrations/meta/0258_snapshot.json",
+        "packages/db/migrations/meta/0259_snapshot.json"
+      ],
+      "prefixes": ["packages/db/migrations/"],
+      "strategy": "mustEdit",
+      "rationale": "drizzle-orm/pg-core/dialect.js:62 applies a migration only when Number(lastDbMigration.created_at) < migration.folderMillis. Upstream's 0258/0259 have when=1783620533559/1783722352108, which are OLDER than the fork's already-applied 0261_local_copilot_user_memory (when=1784346920598). Renumbering the fork's side (the usual fix) would make upstream's migrations be skipped forever on every already-migrated database, so webhook.routing_key would never exist and #5323's native Slack routing would fail at runtime. packages/db/scripts/migrate.ts uses stock migrate(), so there is no fork-side override. Appending instead is safe in both directions: fresh DBs run fork 0258-0261 then upstream 0262-0263, and upstream's SQL only touches the long-existing `webhook` table while the fork's 0258-0261 touch chat-thread / org-OAuth-app / local-copilot tables (no interdependency, verified by reading both SQL sets).",
+      "cite": "simstudioai/sim#5323 / drizzle-orm/pg-core/dialect.js:62 / packages/db/migrations/meta/_journal.json"
+    },
+    {
+      "decision": "SR5 — union packages/db/schema.ts",
+      "paths": ["packages/db/schema.ts"],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "Upstream adds webhook.path nullable + webhook.routingKey + two partial indexes (+34/-7). Fork added 913 lines (organization OAuth apps, local copilot, deployed-chat thread metadata). Disjoint; keep both.",
+      "cite": "merge-policy unionPaths / simstudioai/sim#5323 / simstudioai/sim#5504"
+    },
+    {
+      "decision": "SR6 — union all registries, type unions, icon maps and the integrations catalog",
+      "paths": [
+        "apps/sim/tools/registry.ts",
+        "apps/sim/blocks/registry-maps.ts",
+        "apps/sim/blocks/types.ts",
+        "apps/sim/tools/types.ts",
+        "apps/sim/providers/types.ts",
+        "apps/sim/providers/registry.ts",
+        "apps/sim/components/icons.tsx",
+        "apps/sim/lib/integrations/integrations.json",
+        "apps/sim/lib/oauth/types.ts"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "All four upstream additions are strictly additive: slack_v2 + tiktok in BLOCK_REGISTRY / BLOCK_META_REGISTRY, nvidia + zai in ProviderId and providerRegistry, zai + context_dev in BYOKProviderId, credentialKind?: 'custom-bot' on SubBlockConfig, tiktok in OAuthProvider/OAuthService. Fork additions are equally additive (Arena/Unipile/Facebook/Presentation entries, unipile_linkedin, zoom-admin, zoom-client, facebook-ads, ~330 icons). Never drop an upstream export that an in-tree consumer imports.",
+      "cite": "merge-policy unionPaths / simstudioai/sim#5323 / #5504 / #5560 / #5576"
+    },
+    {
+      "decision": "SR7 — model catalog union; never re-enable a model the fork commented out",
+      "paths": [
+        "apps/sim/providers/models.ts",
+        "apps/sim/providers/models.test.ts",
+        "apps/sim/providers/utils.ts",
+        "apps/sim/providers/utils.test.ts",
+        "apps/sim/providers/attachments.ts",
+        "apps/sim/providers/anthropic/core.ts"
+      ],
+      "prefixes": ["apps/sim/providers/"],
+      "strategy": "union",
+      "rationale": "Fork precedent (35c235d41 'commented non working models', fc4ef655f 'commented deprecated models') is to keep every upstream provider and disable individual model entries by commenting them out, plus add the fork-only azure-anthropic provider and Phase-3/5 pricing coverage. Take upstream's nvidia + zai providers, the new Groq/Cerebras/GLM entries, the catalog-data corrections and the Gemini thinking-config wire format; keep every fork comment-out and azure-anthropic intact.",
+      "cite": "merge-policy unionPaths / simstudioai/sim#5559 / #5560 / #5561 / #5569 / #5584"
+    },
+    {
+      "decision": "SR8 — Slack: union v1 and take SlackV2Block; resolving slack.ts --ours would break the build",
+      "paths": ["apps/sim/blocks/blocks/slack.ts", "apps/sim/blocks/blocks.test.ts"],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "The fork did not build a competing custom-bot feature — it only relabelled upstream's pre-existing authMethod oauth|bot_token pair ('Sim Bot (bot token)' / 'Custom Bot (user token)') and added operations (get_user_channels, search_all, date filters, pagination, thread controls). Upstream #5323 layers a credential-level slack-custom-bot service account on top (customBotCredential subblock, botCredential param, dependsOn extensions) and exports SlackV2Block (preview: true, hidden until revealed via block-visibility AppConfig or PREVIEW_BLOCKS). registry-maps.ts imports { SlackBlock, SlackBlockMeta, SlackV2Block } from '@/blocks/blocks/slack', so dropping upstream's slack.ts changes breaks compilation. SlackV2Block spreads SlackBlock.subBlocks, so it inherits the fork's operations automatically. Keep the fork's own label strings.",
+      "cite": "simstudioai/sim#5323 / apps/sim/blocks/registry-maps.ts:275"
+    },
+    {
+      "decision": "SR9 — OAuth / credentials union; the fork's org-scoped custom OAuth apps and HubSpot alias resolution are authoritative",
+      "paths": [
+        "apps/sim/lib/oauth/oauth.ts",
+        "apps/sim/lib/oauth/utils.ts",
+        "apps/sim/app/api/auth/oauth/utils.ts",
+        "apps/sim/app/api/auth/oauth/token/route.ts",
+        "apps/sim/app/api/credentials/route.ts",
+        "apps/sim/lib/auth/auth.ts",
+        "apps/sim/lib/api-key/byok.ts",
+        "apps/sim/lib/api/contracts/byok-keys.ts"
+      ],
+      "prefixes": ["apps/sim/lib/credentials/"],
+      "strategy": "union",
+      "rationale": "Two complementary mechanisms at different layers. Fork owns lib/oauth/custom-apps.ts, resolveCustomOAuthAppConfig, getProviderAuthConfig(provider, alias), organizationId plumbing via workspace.organizationId, and HubSpot shared-tenant alias lookup through accountTokens — all must survive verbatim. Upstream adds lib/credentials/service-account-secret.ts, GOOGLE_SERVICE_ACCOUNT_PROVIDER_ID, SLACK_CUSTOM_BOT_PROVIDER_ID, the tiktok generic-oauth provider block in auth.ts (purely additive, +71/-0), and rewrites app/api/credentials/route.ts (+49/-68). In credentials/route.ts upstream's shape wins and the fork's 8 added lines are re-applied on top.",
+      "cite": "merge-policy manualReview (lib/auth/) / simstudioai/sim#5323 / fork 0259_organization_oauth_apps"
+    },
+    {
+      "decision": "SR10 — env, hosted-key rotation, CSP, proxy and next.config union",
+      "paths": [
+        "apps/sim/lib/core/config/env.ts",
+        "apps/sim/lib/core/config/api-keys.ts",
+        "apps/sim/.env.example",
+        "apps/sim/next.config.ts",
+        "apps/sim/proxy.ts",
+        "apps/sim/lib/core/security/csp.ts"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "All upstream deltas are additive: ZAI_API_KEY_1..3, TIKTOK_CLIENT_ID/SECRET, SLACK_SIGNING_SECRET, the zai branch in getRotatingApiKey, and Context.dev in the hosted rotation pool. Fork's ~100 added env entries and 65 CSP additions stay. The HubSpot CSP hosts in csp.ts are the one exception — carried by Q1.",
+      "cite": "simstudioai/sim#5560 / #5569 / #5576 / #5323 / #5504"
+    },
+    {
+      "decision": "SR11 — apps/docs: upstream-first, preserve exactly three fork edits",
+      "paths": [
+        "apps/docs/app/layout.tsx",
+        "apps/docs/app/[lang]/layout.tsx",
+        "apps/docs/app/global.css",
+        "apps/docs/components/icons.tsx",
+        "apps/docs/components/workflow-preview/format-references.tsx"
+      ],
+      "prefixes": ["apps/docs/"],
+      "strategy": "mustEdit",
+      "rationale": "docker-compose.p2prod.yml ships only simstudio / realtime / migrations / db — the fork does not serve apps/docs, and its docs app is already Sim-branded apart from the appleWebApp title. Take upstream's #5581/#5587 docs work (footer, sim-logo, OG template, favicons) and re-apply the fork's three edits: the FONT_LINKS <link> block in app/[lang]/layout.tsx (works around a next/font Turbopack resolution failure at build), appleWebApp.title 'P2 Agents Docs' in app/layout.tsx, and the ~317 fork integration icons in components/icons.tsx.",
+      "cite": "simstudioai/sim#5581 / simstudioai/sim#5587 / docker-compose.p2prod.yml"
+    },
+    {
+      "decision": "SR12 — executor / workflow store / collaborative hook union for server-side edge validation",
+      "paths": [
+        "apps/sim/executor/constants.ts",
+        "apps/sim/executor/handlers/workflow/workflow-handler.ts",
+        "apps/sim/stores/workflows/workflow/store.ts",
+        "apps/sim/stores/workflows/workflow/store.test.ts",
+        "apps/sim/hooks/use-collaborative-workflow.ts",
+        "apps/sim/lib/workflows/input-format.ts",
+        "apps/sim/lib/workflows/subblocks/visibility.ts"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "simstudioai/sim#5571 moves edge/block validation server-side (packages/workflow-types +251, untouched by the fork so it merges clean). The shared files carry modest fork deltas; take upstream's validation logic and keep fork behaviour on top. Run the store and executor test suites after resolution.",
+      "cite": "simstudioai/sim#5571"
+    },
+    {
+      "decision": "SR13 — workspace UI union (editor, sub-block, credential selector, headers, BYOK settings)",
+      "paths": [
+        "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/editor.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/sub-block.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/credential-selector.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/workspace-header.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/workflow-item/workflow-item.tsx",
+        "apps/sim/app/workspace/[workspaceId]/integrations/[block]/integration-block-detail.tsx",
+        "apps/sim/app/workspace/[workspaceId]/settings/components/byok/byok.tsx"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "Upstream deltas are small and targeted: #5563 sidebar rename-input selection fix, #5566/#5570 MCP caret + object-param JSON editor, #5323 custom-bot credential kind in credential-selector, #5576 context_dev BYOK row. Fork deltas are large but additive (Arena integrations, mothership admin surfaces). Take both; keep the fork's Arena-specific UI.",
+      "cite": "simstudioai/sim#5563 / #5566 / #5570 / #5323 / #5576"
+    },
+    {
+      "decision": "SR14 — no upstream change deliberately skipped beyond whatever Q1 decides",
+      "paths": [],
+      "prefixes": [],
+      "strategy": "theirs",
+      "rationale": "TikTok, Icypeas cascade removal, custom-block hardening, rich-markdown-editor fixes, docker/pii.Dockerfile CUDA torch, enterprise page redesign and skills-lock/scripts changes all land unmodified — none collide with a fork surface. Record the final skipped set in skipped.md after Q1 is answered.",
+      "cite": "FBI 2026-08-06"
+    }
+  ],
+  "openQuestions": [
+    {
+      "id": "Q1",
+      "question": "simstudioai/sim#5565 adds Sim's HubSpot tracking loader (portal 246720681, https://js-na2.hs-scripts.com/246720681.js) to apps/sim/app/(landing)/layout.tsx behind `isHosted`. Upstream intends that gate to mean sim.ai only, but this fork rewrote isHosted (apps/sim/lib/core/config/env-flags.ts:34) to also be true for agent.thearena.ai, dev-agent/test-agent/test-v1-agent/sandbox-agent.thearena.ai and http://localhost:3000 — so the loader would fire on every Arena deployment and post landing-page visitor analytics to Sim's HubSpot portal. The fork never edited that layout file, so git merges it silently with no conflict to catch. How should this be resolved? (A) drop the HubSpot loader, the page-view tracker and the HubSpot CSP hosts from the fork; (B) keep the tracker but swap in Arena's own HubSpot portal id — please supply the id; (C) take upstream as-is and accept that Arena landing traffic is reported into Sim's HubSpot portal."
+    }
+  ],
+  "childClusters": [
+    {
+      "id": "db-migrations",
+      "prefix": "packages/db/",
+      "files": [],
+      "strategy": "union",
+      "notes": "Highest-risk cluster. schema.ts is a plain union (SR5). migrations/ follows SR4 exactly: keep the fork's 0258-0261 and their journal entries byte-identical; rename upstream 0258_gigantic_lady_mastermind.sql -> 0262_..., 0259_slack_native_routing.sql -> 0263_...; append journal entries at idx 262/263 with `when` values strictly greater than 1784346920598; rename upstream meta/0258_snapshot.json -> meta/0262_snapshot.json and meta/0259_snapshot.json -> meta/0263_snapshot.json, and reconcile the tail snapshot against the merged schema.ts so future `drizzle-kit generate` diffs are correct. Do NOT regenerate the SQL bodies — both files carry hand-written `COMMIT;` + `CREATE INDEX CONCURRENTLY` blocks that drizzle-kit would destroy. Read .agents/skills/db-migrate/SKILL.md. Verify with `bun run check:migrations`."
+    },
+    {
+      "id": "registries-and-types",
+      "prefix": "apps/sim/",
+      "files": [],
+      "strategy": "union",
+      "notes": "SR6. tools/registry.ts, blocks/registry-maps.ts, blocks/types.ts, tools/types.ts, providers/types.ts, providers/registry.ts, components/icons.tsx, lib/integrations/integrations.json, lib/integrations/icon-mapping.ts, lib/oauth/types.ts. Alphabetical ordering matters in registry-maps.ts. Keep the fork's integrations.json oauthServiceId 'zoom-client' override for Zoom."
+    },
+    {
+      "id": "providers-models",
+      "prefix": "apps/sim/providers/",
+      "files": [],
+      "strategy": "union",
+      "notes": "SR7. Largest single-file union (fork +1660/-1499 vs upstream +397/-4 in models.ts). Hard rule: a model entry the fork has commented out stays commented out even when upstream edits it. Keep the fork's azure-anthropic provider block and pricing fields. Run apps/sim/providers/models.test.ts and utils.test.ts after resolving."
+    },
+    {
+      "id": "oauth-credentials-slack",
+      "prefix": "apps/sim/lib/oauth/",
+      "files": [],
+      "strategy": "union",
+      "notes": "SR8 + SR9. Spans lib/oauth/, app/api/auth/oauth/, app/api/credentials/, lib/credentials/, lib/auth/auth.ts, blocks/blocks/slack.ts, blocks/blocks.test.ts. Preserve lib/oauth/custom-apps.ts, resolveCustomOAuthAppConfig, the alias parameter on getProviderAuthConfig, organizationId plumbing, and the accountTokens HubSpot alias branch verbatim. slack.ts MUST keep exporting SlackV2Block or registry-maps.ts fails to compile."
+    },
+    {
+      "id": "env-config-csp",
+      "prefix": "apps/sim/lib/core/",
+      "files": [],
+      "strategy": "union",
+      "notes": "SR10 + Q1. lib/core/config/env.ts, lib/core/config/api-keys.ts, lib/core/security/csp.ts, apps/sim/.env.example, apps/sim/next.config.ts, apps/sim/proxy.ts. The HubSpot CSP hosts in csp.ts (hs-scripts / hs-analytics / hscollectedforms / hs-banner) are governed by Q1's directive, not by this cluster's default union."
+    },
+    {
+      "id": "landing-branding",
+      "prefix": "apps/sim/app/(landing)/",
+      "files": [],
+      "strategy": "union",
+      "notes": "SR1 + SR2 + SR3 + Q1. Every user-facing 'Sim' string in landing chrome becomes 'Arena' (see .claude/rules/constitution.md and the fork's footer.tsx / hero.tsx). Binary assets under apps/sim/public/favicon/ and apps/sim/public/icon.svg are checkoutOurs; apps/sim/public/landing/ and apps/sim/public/logo/ take upstream. The HubSpot loader in (landing)/layout.tsx and (landing)/hubspot-page-view-tracker.tsx are governed by Q1."
+    },
+    {
+      "id": "workspace-ui",
+      "prefix": "apps/sim/app/workspace/",
+      "files": [],
+      "strategy": "union",
+      "notes": "SR13. editor.tsx, sub-block.tsx, credential-selector.tsx, workspace-header.tsx, workflow-item.tsx, integration-block-detail.tsx, settings/components/byok/byok.tsx, plus lib/api-key/byok.ts and lib/api/contracts/byok-keys.ts. Follow .claude/rules/sim-styling.md and the EMCN chip rules for any touched markup."
+    },
+    {
+      "id": "executor-workflow-store",
+      "prefix": "apps/sim/executor/",
+      "files": [],
+      "strategy": "union",
+      "notes": "SR12. executor/constants.ts, executor/handlers/workflow/workflow-handler.ts, stores/workflows/workflow/store.ts + store.test.ts, hooks/use-collaborative-workflow.ts, lib/workflows/input-format.ts, lib/workflows/subblocks/visibility.ts. packages/workflow-types/src/workflow.ts (+251) has no fork delta and merges clean, but the shared files must line up with its new validation contract."
+    },
+    {
+      "id": "docs-app",
+      "prefix": "apps/docs/",
+      "files": [],
+      "strategy": "theirs",
+      "notes": "SR11. Upstream-first. Re-apply exactly three fork edits after taking upstream: the FONT_LINKS <link> block in app/[lang]/layout.tsx, appleWebApp.title 'P2 Agents Docs' in app/layout.tsx, and the fork's added integration icons in components/icons.tsx."
+    }
+  ],
+  "proposedDirectives": {
+    "default": {
+      "delete": [],
+      "checkoutTheirs": [
+        "apps/sim/public/landing/enterprise-hero-background.webp",
+        "apps/sim/public/landing/team-avatar-1.jpg",
+        "apps/sim/public/landing/team-avatar-2.jpg",
+        "apps/sim/public/landing/team-avatar-3.jpg",
+        "apps/sim/public/logo/426-240/reverse/small.png"
+      ],
+      "checkoutOurs": [
+        "apps/sim/public/favicon/android-chrome-192x192.png",
+        "apps/sim/public/favicon/android-chrome-512x512.png",
+        "apps/sim/public/favicon/apple-touch-icon.png",
+        "apps/sim/public/favicon/favicon-16x16.png",
+        "apps/sim/public/favicon/favicon-32x32.png",
+        "apps/sim/public/favicon/favicon-96x96.png",
+        "apps/sim/public/favicon/favicon.ico",
+        "apps/sim/public/favicon/favicon.svg",
+        "apps/sim/public/favicon/web-app-manifest-192x192.png",
+        "apps/sim/public/favicon/web-app-manifest-512x512.png",
+        "apps/sim/public/icon.svg"
+      ],
+      "mustEdit": [
+        "packages/db/migrations/meta/_journal.json",
+        "apps/sim/app/(landing)/components/footer/footer.tsx",
+        "apps/sim/app/(landing)/components/hero/hero.tsx",
+        "apps/docs/app/layout.tsx",
+        "apps/docs/app/[lang]/layout.tsx",
+        "apps/docs/components/icons.tsx"
+      ],
+      "overrideForkFirst": [],
+      "notes": "Unconditional directives that apply regardless of Q1. Migration renaming under SR4 (0258->0262, 0259->0263 plus the two snapshots) is executed by the db-migrations cluster; _journal.json is listed as mustEdit so the harness never auto-resolves it. Landing and docs mustEdit entries carry the Arena / P2 Agents string preservation."
+    },
+    "Q1-A": {
+      "delete": ["apps/sim/app/(landing)/hubspot-page-view-tracker.tsx"],
+      "checkoutTheirs": [],
+      "checkoutOurs": [],
+      "mustEdit": [
+        "apps/sim/app/(landing)/layout.tsx",
+        "apps/sim/lib/core/security/csp.ts"
+      ],
+      "overrideForkFirst": [],
+      "notes": "Drop HubSpot entirely. In (landing)/layout.tsx remove the HUBSPOT_SCRIPT_SRC constant, the next/script <Script id='hs-script-loader'> block, the <HubspotPageViewTracker/> Suspense wrapper and the now-unused isHosted / Suspense / Script / HubspotPageViewTracker imports. In csp.ts remove the four HubSpot script-src hosts (*.hs-scripts.com, *.hs-analytics.net, *.hscollectedforms.net, *.hs-banner.com) and the *.hscollectedforms.net connect-src host. Log the drop in skipped.md with what we give up (Sim's marketing attribution on landing pages, which Arena does not want anyway)."
+    },
+    "Q1-B": {
+      "delete": [],
+      "checkoutTheirs": ["apps/sim/app/(landing)/hubspot-page-view-tracker.tsx"],
+      "checkoutOurs": [],
+      "mustEdit": ["apps/sim/app/(landing)/layout.tsx"],
+      "overrideForkFirst": [],
+      "notes": "Keep the tracker, repoint it at Arena's HubSpot portal. Replace HUBSPOT_SCRIPT_SRC in (landing)/layout.tsx with Arena's loader URL (https://js-<region>.hs-scripts.com/<ARENA_PORTAL_ID>.js) using the portal id supplied in the Q1 answer. CSP hosts are wildcard (*.hs-scripts.com etc.) so csp.ts takes upstream unchanged. Verify the region subdomain matches Arena's HubSpot account (na1 vs na2 vs eu1) — a wrong region 404s silently."
+    },
+    "Q1-C": {
+      "delete": [],
+      "checkoutTheirs": [
+        "apps/sim/app/(landing)/layout.tsx",
+        "apps/sim/app/(landing)/hubspot-page-view-tracker.tsx"
+      ],
+      "checkoutOurs": [],
+      "mustEdit": [],
+      "overrideForkFirst": [],
+      "notes": "Take upstream verbatim. csp.ts unions upstream's HubSpot hosts in normally. Record in run.md that Arena landing traffic is reported into simstudioai's HubSpot portal 246720681 on every isHosted deployment, including localhost:3000."
+    }
+  },
+  "notes": "Phase A only — no merge performed, no conflicts exist yet, so childClusters are area-level and `files` is intentionally empty. Child model is gpt-5.6-luna at max effort for every cluster. merge-policy.json was updated this run with the unionPaths / forkFirst / manualReview additions and a migrations.strategy entry recording the drizzle created_at gate; extensibility-notes.md carries the standing append-upstream-at-tail rule. Recommended cluster order if the harness serializes: db-migrations, registries-and-types, oauth-credentials-slack, providers-models, executor-workflow-store, workspace-ui, env-config-csp, landing-branding, docs-app."
+}
