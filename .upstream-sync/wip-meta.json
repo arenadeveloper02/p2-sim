@@ -7,7 +7,7 @@
     "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft.test.ts",
     "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft.ts"
   ],
-  "updatedAt": "2026-08-06T15:16:25.422Z",
-  "clusterId": "providers-models-envkeys",
+  "updatedAt": "2026-08-06T15:21:31.294Z",
+  "clusterId": "deploy-state-machine",
   "runId": "2026-08-06-5"
 }

@@ -349,3 +349,20 @@ Union cluster resolved and staged. Focused Biome validation passes; broader type
 
 All seven paths were manually union-resolved; no new merge-policy prefix was needed because the existing unionPaths entries already cover these files.
 
+## Cluster providers-models-envkeys
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/providers/models.ts` | manual | Unioned every fork model entry with upstream Kimi, Gemini 3.6 Flash, Gemini 3.5 Flash-Lite, and sunset metadata; retained fork hosted providers and restored the two fork-only Bedrock entries with sunset metadata. |
+| `apps/sim/providers/models.test.ts` | manual | Kept upstream catalog and sunset coverage while retaining fork coverage for hosted gaps and fork providers. |
+| `apps/sim/providers/utils.ts` | manual | Kept the fork SambaNova/OpenRouter hosted-gate TSDoc and eligibility, adding only the upstream Kimi branch. |
+| `apps/sim/providers/utils.test.ts` | manual | Retained fork date-suffixed hosted-model coverage alongside upstream versioned-model coverage. |
+| `apps/sim/lib/core/config/env.ts` | manual | Kept the single existing fork XAI key declarations and added only KIMI_API_KEY_1/2/3. |
+| `apps/sim/lib/core/config/api-keys.ts` | manual | Kept the single existing fork xAI guard and branch, adding only the Kimi rotation branch. |
+
+Policy proposals:
+
+- `unionPaths` `apps/sim/providers/models.ts` — Keep fork model entries and hosted providers while taking upstream Kimi, Gemini additions, and sunset metadata.
+
+Resolved the union dedupe hazard by retaining existing fork xAI symbols and adding only genuinely new Kimi symbols.
+
