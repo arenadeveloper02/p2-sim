@@ -366,3 +366,22 @@ Policy proposals:
 
 Resolved the union dedupe hazard by retaining existing fork xAI symbols and adding only genuinely new Kimi symbols.
 
+## Cluster deploy-state-machine
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/lib/workflows/orchestration/chat-deploy.ts` | manual | Adopted upstream deployment-attempt gating and active-state handling; retained the fork's chat/app fields and forwarded workflowName, requestId, request, and actorId to performFullDeploy. |
+| `apps/sim/lib/workflows/schedules/deploy.ts` | theirs | Took upstream deployment-operation-aware schedule upsert and version-scoped cleanup logic. |
+| `apps/sim/lib/workflows/schedules/deploy.test.ts` | theirs | Took upstream schedule deployment-operation and conflict-upsert coverage. |
+| `apps/sim/lib/workflows/persistence/utils.ts` | manual | Unioned the fork's migrateBlockTypes import with upstream isDynamicHandleSubblock; both existing call sites are retained. |
+| `apps/sim/lib/api/contracts/workflows.test.ts` | manual | Kept the fork's nullable block-boolean normalization test and upstream forkSyncExcluded contract coverage. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/deploy-modal.tsx` | manual | Repointed sync and flush imports to the relocated store and retained both upstream undeploy error feedback and fork telemetry. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/components/chat/chat.tsx` | manual | Retained fork session-email validation/prefill behavior and combined it with upstream permission-gated auth options. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/use-deployment.ts` | manual | Repointed imports to the relocated sync-local-draft store while preserving the pre-deploy flush call. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft.ts` | deleted | Upstream relocated this module to stores/workflows/sync-local-draft.ts. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft.test.ts` | deleted | Upstream relocated this test to stores/workflows/sync-local-draft.test.ts. |
+| `apps/sim/stores/workflows/sync-local-draft.ts` | manual | Kept upstream bounded/refetching draft synchronization and ported the fork's flushMergedLocalDraftToServer provider/model preservation helper. |
+| `apps/sim/stores/workflows/sync-local-draft.test.ts` | manual | Kept upstream synchronization race coverage and ported the fork's flush persistence and no-op cases. |
+
+Focused Biome validation passes. App Vitest could not start because @next/env is absent in the checkout; app type-check is blocked by unrelated unresolved merge markers in other clusters.
+
