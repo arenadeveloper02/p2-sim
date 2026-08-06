@@ -101,7 +101,8 @@ export const GET = withRouteHandler(
       const fullPath = decodedPath.join('/')
       const isS3Path = decodedPath[0] === 's3'
       const isBlobPath = decodedPath[0] === 'blob'
-      const isCloudPath = isS3Path || isBlobPath
+      const isGcsPath = decodedPath[0] === 'gcs'
+      const isCloudPath = isS3Path || isBlobPath || isGcsPath
       const cloudKey = isCloudPath ? decodedPath.slice(1).join('/') : fullPath
 
       // Handle agent-generated-images paths specially

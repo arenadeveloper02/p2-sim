@@ -2,11 +2,12 @@ import { db } from '@sim/db'
 import { skill } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
-import { LOAD_USER_SKILL_TOOL_NAME } from '@/lib/mothership/skills'
 import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotUserSkills')
+
+export const LOAD_USER_SKILL_TOOL_NAME = 'load_user_skill'
 
 /** Max skill summaries injected into Arena Copilot context. */
 const MAX_CONTEXT_SKILLS = 100
@@ -115,5 +116,3 @@ export async function executeLoadUserSkill(
 
   return { success: true, content }
 }
-
-export { LOAD_USER_SKILL_TOOL_NAME }

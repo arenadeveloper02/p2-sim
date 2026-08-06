@@ -1,0 +1,68 @@
+{
+  "clusterId": "db-schema-migrations",
+  "runId": "2026-08-06-5",
+  "files": [
+    {
+      "path": "packages/db/schema.ts",
+      "resolution": "manual",
+      "notes": "Unioned the fork's workflowQueries table with upstream's CustomPiiPattern and customPatterns field."
+    },
+    {
+      "path": "packages/db/migrations/meta/_journal.json",
+      "resolution": "manual",
+      "notes": "Kept fork entries 0261-0264, appended upstream entries in when order as indices 0265-0269, and updated their tags to match renamed files."
+    },
+    {
+      "path": "packages/db/migrations/0261_tranquil_donald_blake.sql",
+      "resolution": "manual",
+      "notes": "Preserved upstream SQL verbatim at 0265_tranquil_donald_blake.sql."
+    },
+    {
+      "path": "packages/db/migrations/0262_strong_storm.sql",
+      "resolution": "manual",
+      "notes": "Preserved upstream SQL verbatim at 0266_strong_storm.sql."
+    },
+    {
+      "path": "packages/db/migrations/0263_workflow_fork_sync_excluded.sql",
+      "resolution": "manual",
+      "notes": "Preserved upstream SQL verbatim at 0267_workflow_fork_sync_excluded.sql."
+    },
+    {
+      "path": "packages/db/migrations/0264_fat_ikaris.sql",
+      "resolution": "manual",
+      "notes": "Preserved upstream SQL verbatim at 0268_fat_ikaris.sql."
+    },
+    {
+      "path": "packages/db/migrations/0265_org_session_policy.sql",
+      "resolution": "manual",
+      "notes": "Preserved upstream SQL verbatim at 0269_org_session_policy.sql."
+    },
+    {
+      "path": "packages/db/migrations/meta/0261_snapshot.json",
+      "resolution": "manual",
+      "notes": "Renamed upstream snapshot to meta/0265_snapshot.json without changing its contents."
+    },
+    {
+      "path": "packages/db/migrations/meta/0262_snapshot.json",
+      "resolution": "manual",
+      "notes": "Renamed upstream snapshot to meta/0266_snapshot.json without changing its contents."
+    },
+    {
+      "path": "packages/db/migrations/meta/0263_snapshot.json",
+      "resolution": "manual",
+      "notes": "Renamed upstream snapshot to meta/0267_snapshot.json without changing its contents."
+    },
+    {
+      "path": "packages/db/migrations/meta/0264_snapshot.json",
+      "resolution": "manual",
+      "notes": "Renamed upstream snapshot to meta/0268_snapshot.json without changing its contents."
+    },
+    {
+      "path": "packages/db/migrations/meta/0265_snapshot.json",
+      "resolution": "manual",
+      "notes": "Renamed upstream snapshot to meta/0269_snapshot.json without changing its contents."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "No upstream hunks were skipped. The existing manualReview migration policy covers the journal and migration collision handling."
+}

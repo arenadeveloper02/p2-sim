@@ -1,7 +1,10 @@
 /**
  * @vitest-environment node
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { credential } from '@sim/db/schema'
+import { resetDbChainMock } from '@sim/testing'
+import { eq } from 'drizzle-orm'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubBlockConfig } from '@/blocks/types'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
@@ -22,7 +25,9 @@ vi.mock('@/lib/webhooks/pending-verification', () => ({
   PendingWebhookVerificationTracker: vi.fn(),
 }))
 
-import { buildProviderConfig } from '@/lib/webhooks/deploy'
+import { buildProviderConfig, resolveTriggerCredentialId } from '@/lib/webhooks/deploy'
+
+afterAll(resetDbChainMock)
 
 const trigger = (subBlocks: Partial<SubBlockConfig>[]): { subBlocks: SubBlockConfig[] } => ({
   subBlocks: subBlocks as SubBlockConfig[],
@@ -44,6 +49,23 @@ const tableTrigger = trigger([
   { id: 'manualTableId', mode: 'trigger-advanced', canonicalParamId: 'tableId', required: true },
 ])
 
+const slackTrigger = trigger([
+  { id: 'eventType', mode: 'trigger', required: true },
+  {
+    id: 'customBotCredential',
+    mode: 'trigger',
+    canonicalParamId: 'botCredential',
+    serviceId: 'slack',
+    required: true,
+  },
+  {
+    id: 'manualBotCredential',
+    mode: 'trigger-advanced',
+    canonicalParamId: 'botCredential',
+    required: true,
+  },
+])
+
 function makeBlock(
   type: string,
   subBlockValues: Record<string, unknown>,
@@ -59,16 +81,19 @@ function makeBlock(
   } as unknown as BlockState
 }
 
-describe('buildProviderConfig canonical collapse', () => {
-  beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  resetDbChainMock()
+})
 
+describe('buildProviderConfig canonical collapse', () => {
   it('writes the basic value under the canonical key in basic mode', () => {
     const block = makeBlock('google_drive_poller', { folderId: 'BASIC' })
     const { providerConfig } = buildProviderConfig(block, 'google_drive_poller', driveTrigger)
     expect(providerConfig.folderId).toBe('BASIC')
   })
 
-  it('returns the credential reference and canonical OAuth service for deploy validation', () => {
+  it('returns the credential reference and OAuth service for deploy validation', () => {
     const block = makeBlock('google_drive_poller', { triggerCredentials: 'credential-1' })
     const result = buildProviderConfig(block, 'google_drive_poller', driveTrigger)
 
@@ -130,5 +155,39 @@ describe('buildProviderConfig canonical collapse', () => {
     )
     const { providerConfig } = buildProviderConfig(block, 'table_new_row', tableTrigger)
     expect(providerConfig.tableId).toBe('ACTIVE')
+  })
+
+  it('collapses the slack bot credential pair under botCredential for the routing branch', () => {
+    const block = makeBlock('slack_v2', {
+      eventType: 'message',
+      customBotCredential: 'cred_bot_1',
+    })
+    const result = buildProviderConfig(block, 'slack_oauth', slackTrigger)
+
+    expect(result.providerConfig.botCredential).toBe('cred_bot_1')
+    expect(result.providerConfig.eventType).toBe('message')
+    // The slack trigger has no generic triggerCredentials field — the routing
+    // branch resolves botCredential itself.
+    expect(result.credentialReference).toBeUndefined()
+    expect(result.credentialServiceId).toBeUndefined()
+  })
+
+  it('reports a missing required slack bot credential as a missing field', () => {
+    const block = makeBlock('slack_v2', { eventType: 'message' })
+    const result = buildProviderConfig(block, 'slack_oauth', slackTrigger)
+
+    expect(result.missingFields.length).toBeGreaterThan(0)
+  })
+})
+
+describe('resolveTriggerCredentialId', () => {
+  it('canonicalizes an OAuth service alias at the credential lookup boundary', async () => {
+    await resolveTriggerCredentialId('credential-1', 'workspace-1', 'gmail')
+
+    expect(eq).toHaveBeenCalledWith(credential.workspaceId, 'workspace-1')
+    expect(eq).toHaveBeenCalledWith(credential.type, 'oauth')
+    expect(eq).toHaveBeenCalledWith(credential.providerId, 'google-email')
+    expect(eq).toHaveBeenCalledWith(credential.id, 'credential-1')
+    expect(eq).toHaveBeenCalledWith(credential.accountId, 'credential-1')
   })
 })

@@ -1,0 +1,27 @@
+{
+  "clusterId": "tools-executor",
+  "runId": "2026-08-06-5",
+  "files": [
+    {
+      "path": "apps/sim/tools/index.ts",
+      "resolution": "manual",
+      "notes": "Unioned fork allowHttp, responseData-aware transforms, dynamic hosted provider resolution, error-safe hosted billing, and in-process direct dispatch with upstream proxyUrl, response.body, abort-signal forwarding, and Copilot-only _serviceCost."
+    },
+    {
+      "path": "apps/sim/tools/index.test.ts",
+      "resolution": "manual",
+      "notes": "Kept fork billing-failure coverage and reset helpers, retained upstream hosted-cost assertions, and used the shared stateful env/env-flags mocks so setEnv and setEnvFlags remain effective."
+    },
+    {
+      "path": "apps/sim/executor/execution/types.ts",
+      "resolution": "manual",
+      "notes": "Kept both fork ExecutionActor observability and upstream CustomPiiPattern imports."
+    },
+    {
+      "path": "apps/sim/executor/handlers/workflow/workflow-handler.ts",
+      "resolution": "manual",
+      "notes": "Unioned fork ExecutionMetadata with upstream START_BLOCK_METADATA_FIELD and StartBlockRunMetadata imports."
+    }
+  ],
+  "notes": "The image generator was already resolved by the locked checkoutOurs directive and was intentionally left untouched. Biome passes for all four files; focused Vitest startup is blocked by the missing @next/env dependency, and full type-check output is blocked by unrelated unresolved clusters."
+}

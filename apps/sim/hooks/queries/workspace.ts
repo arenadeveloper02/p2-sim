@@ -21,6 +21,11 @@ import {
 } from '@/lib/api/contracts'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { setZoomAdminAccessCache } from '@/lib/workspaces/zoom-admin-access-cache'
+import {
+  normalizeWorkspace,
+  normalizeWorkspacesResponse,
+  WORKSPACE_LIST_STALE_TIME,
+} from '@/hooks/queries/utils/workspace-list-query'
 
 /**
  * Query key factory for workspace-related queries.
@@ -42,9 +47,9 @@ export const workspaceKeys = {
 }
 
 export type { Workspace, WorkspaceCreationPolicy, WorkspaceMember, WorkspacePermissions }
+export { WORKSPACE_LIST_STALE_TIME } from '@/hooks/queries/utils/workspace-list-query'
 
 export const WORKSPACE_PERMISSIONS_STALE_TIME = 30 * 1000
-export const WORKSPACE_LIST_STALE_TIME = 30 * 1000
 export const WORKSPACE_SETTINGS_STALE_TIME = 30 * 1000
 export const WORKSPACE_MEMBERS_STALE_TIME = 5 * 60 * 1000
 export const WORKSPACE_ADMIN_LIST_STALE_TIME = 60 * 1000
@@ -55,29 +60,7 @@ async function fetchWorkspaces(
   signal?: AbortSignal
 ): Promise<WorkspacesResponse> {
   const data = await requestJson(listWorkspacesContract, { query: { scope }, signal })
-  return {
-    workspaces:
-      data.workspaces?.map((workspace: Workspace) => ({
-        ...workspace,
-        organizationId: workspace.organizationId ?? null,
-        workspaceMode: workspace.workspaceMode ?? 'organization',
-        isPersonal: workspace.isPersonal ?? false,
-        inviteMembersEnabled: workspace.inviteMembersEnabled ?? false,
-        inviteDisabledReason: workspace.inviteDisabledReason ?? null,
-        inviteUpgradeRequired: workspace.inviteUpgradeRequired ?? false,
-      })) || [],
-    lastActiveWorkspaceId:
-      typeof data.lastActiveWorkspaceId === 'string' ? data.lastActiveWorkspaceId : null,
-    creationPolicy: data.creationPolicy
-      ? {
-          ...data.creationPolicy,
-          organizationId: data.creationPolicy.organizationId ?? null,
-          reason: data.creationPolicy.reason ?? null,
-          workspaceMode: data.creationPolicy.workspaceMode ?? 'organization',
-          isPersonal: data.creationPolicy.isPersonal ?? false,
-        }
-      : null,
-  }
+  return normalizeWorkspacesResponse(data)
 }
 
 const selectWorkspaces = (data: WorkspacesResponse): Workspace[] => data.workspaces
@@ -377,14 +360,7 @@ async function fetchAdminWorkspaces(
   }
 
   const workspacesData = await requestJson(listWorkspacesContract, { query: {}, signal })
-  const allUserWorkspaces = (workspacesData.workspaces || []).map((workspace: Workspace) => ({
-    ...workspace,
-    organizationId: workspace.organizationId ?? null,
-    workspaceMode: workspace.workspaceMode ?? 'grandfathered_shared',
-    inviteMembersEnabled: workspace.inviteMembersEnabled ?? false,
-    inviteDisabledReason: workspace.inviteDisabledReason ?? null,
-    inviteUpgradeRequired: workspace.inviteUpgradeRequired ?? false,
-  }))
+  const allUserWorkspaces = workspacesData.workspaces.map(normalizeWorkspace)
 
   return allUserWorkspaces
     .filter((workspace: Workspace) => workspace.permissions === 'admin')

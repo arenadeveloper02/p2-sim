@@ -1,0 +1,78 @@
+{
+  "clusterId": "branding-workspace-ui",
+  "runId": "2026-08-06-5",
+  "files": [
+    {
+      "path": "apps/sim/components/emails/components/email-footer.tsx",
+      "resolution": "manual",
+      "notes": "Kept the fork's commented-out social-links row and Arena footer content; did not activate upstream social links."
+    },
+    {
+      "path": "apps/sim/components/emails/components/email-layout.tsx",
+      "resolution": "manual",
+      "notes": "Kept the fork's Arena PNG source and comments while taking upstream custom-logo and wordmark clear-space sizing."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/sidebar.tsx",
+      "resolution": "manual",
+      "notes": "Kept Arena docs and brand-gated support/legal items; omitted the Sim Slack and docs menu handlers."
+    },
+    {
+      "path": "apps/sim/lib/posthog/events.ts",
+      "resolution": "manual",
+      "notes": "Retained the fork's arena_docs_opened event and added upstream slack_community_opened for event-map compatibility."
+    },
+    {
+      "path": "apps/sim/lib/core/security/csp.test.ts",
+      "resolution": "manual",
+      "notes": "Kept local alias and relative-path environment mocks because shared defaults do not provide brand/legal values."
+    },
+    {
+      "path": "apps/sim/lib/core/utils.test.ts",
+      "resolution": "manual",
+      "notes": "Used upstream shared stateful env mocking and retained the fork's singular Gemini API key fixture."
+    },
+    {
+      "path": "apps/sim/app/api/workspaces/route.ts",
+      "resolution": "manual",
+      "notes": "Adopted upstream workspace-list assembly and fork workspace creation helper, then suppressed inviteDisabledReason while preserving inviteMembersEnabled."
+    },
+    {
+      "path": "apps/sim/hooks/queries/workspace.ts",
+      "resolution": "manual",
+      "notes": "Adopted the shared normalizer and stale-time constant while retaining fork Zoom admin caching and admin-workspace detection."
+    },
+    {
+      "path": "apps/sim/lib/workspaces/policy.ts",
+      "resolution": "manual",
+      "notes": "Kept the fork's isPersonal-aware policy body and took upstream policy-constants imports used by merged invite-flag helpers."
+    },
+    {
+      "path": "apps/sim/lib/workspaces/policy.test.ts",
+      "resolution": "manual",
+      "notes": "Kept fork organization-attached workspace assertions while migrating the test to shared DB and env-flag mocks."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/document.tsx",
+      "resolution": "manual",
+      "notes": "Retained fork integer/query-state support and upstream scalar enabled-filter and chunk-search changes."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/sub-block.tsx",
+      "resolution": "manual",
+      "notes": "Kept the fork's broader Slack credential fallback while retaining upstream context comments."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/tool-input.tsx",
+      "resolution": "manual",
+      "notes": "Combined fork operation values with upstream block-config overrides in four-argument tool-parameter lookups."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/hooks/use-panel-resize.ts",
+      "resolution": "manual",
+      "notes": "Adopted upstream zero-render drag resizing and preserved the fork's 50px Arena panel offset."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "Union/manual cluster resolved from the locked parent directives; no new merge-policy prefix was needed."
+}

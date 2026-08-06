@@ -1,0 +1,23 @@
+{
+  "kind": "completed",
+  "title": "Upstream sync completed (advisory verification warnings)",
+  "detail": "Merged simstudioai/sim@578d9ddc into `upstream-sync/2026-08-06T11-45-10` (149 commit(s)). Advisory check/lint reported failures — see ledger / PR / job summary. Test and full build are left to CI.",
+  "syncBranch": "upstream-sync/2026-08-06T13-57-59",
+  "mergeBase": "upstream-sync/2026-08-06T11-45-10",
+  "upstreamSha": "578d9ddc869fb7e18909733336006e597698dedc",
+  "prNumber": 689,
+  "commitCount": 149,
+  "verification": [
+    {
+      "command": "bun run check",
+      "success": true
+    },
+    {
+      "command": "bun run lint",
+      "success": false,
+      "detail": "$ turbo run lint\n\n   • Packages in scope: @sim/audit, @sim/auth, @sim/db, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk\n   • Running lint in 21 packages\n   • Remote caching disabled\n\n::group::@sim/logger:lint\ncache miss, executing 7c3e48ff91a6f91b\n$ biome check --write --unsafe .\nChecked 6 files in 94ms. No fixes applied.\n::endgroup::\n::group::@sim/security:lint\ncache miss, executing 1756425d05c0f7e7\n$ biome check --write --unsafe .\nChecked 13 files in 91ms. No fixes applied.\n::endgroup::\n::group::simstudio:lint\ncache miss, executing 12cb4ae1533c111c\n$ biome check --write --unsafe .\nChecked 3 files in 96ms. No fixes applied.\n::endgroup::\n::group::@sim/realtime-protocol:lint\ncache miss, executing d10704e0013c452e\n$ biome check --write --unsafe .\nChecked 5 files in 92ms. No fixes applied.\n::endgroup::\n::group::@sim/workflow-types:lint\ncache miss, executing cfc1ec4724fbf8a9\n$ biome check --write --unsafe .\nChecked 4 files in 138ms. No fixes applied.\n::\n…(truncated)"
+    }
+  ],
+  "runId": "2026-08-06-5",
+  "recordedAt": "2026-08-06T15:50:31.512Z"
+}

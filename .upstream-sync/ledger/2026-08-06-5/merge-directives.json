@@ -1,0 +1,27 @@
+{
+  "delete": [
+    "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft.ts",
+    "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft.test.ts",
+    "apps/sim/app/workspace/[workspaceId]/home/hooks/use-chat.test.ts",
+    "apps/sim/app/workspace/[workspaceId]/home/hooks/stream/turn-model-serialize.test.ts"
+  ],
+  "checkoutTheirs": [],
+  "checkoutOurs": [
+    ".github/workflows/ci.yml",
+    "apps/sim/app/(landing)/layout.tsx",
+    "apps/sim/tools/image/generate.ts"
+  ],
+  "mustEdit": [
+    "apps/sim/lib/copilot/generated/tool-catalog-v1.ts",
+    "apps/sim/lib/copilot/generated/tool-schemas-v1.ts",
+    "apps/sim/lib/copilot/tools/server/router.ts",
+    "apps/sim/lib/core/config/env.ts",
+    "apps/sim/lib/core/config/api-keys.ts",
+    "apps/sim/lib/uploads/config.ts",
+    "apps/sim/providers/utils.ts",
+    "apps/sim/lib/auth/auth.ts",
+    "apps/sim/app/api/workspaces/route.ts"
+  ],
+  "overrideForkFirst": [],
+  "notes": "LOCKED. No open questions were raised this run (open-questions.md: 'No open questions'), so nothing new was asked and nothing settled is re-opened. The two inherited answers from run 2026-08-06-4 (qa-history a-5204435835) govern the billing/copilot clusters and are FINAL: Q1 = B *conditional on B covering A* \u2014 upstream's BillingAttributionSnapshot / deriveBillingContext is the billing path, and because ExecutionActor / extractExecutionActor / billingUserId have NO upstream equivalent, the human's 'if not, then A only' clause keeps them as an observability field (the workflow_execution_logs_workspace_actor_user_idx index is retained; the human confirmed nothing outside the repo reads actor_user_id / actor_type / api_key_id). Q2 = A \u2014 checkMothershipUsageLimits and checkSelfHostedMothershipUsageLimits remain the governing copilot gate; COPILOT_BILLING_ATTRIBUTION_V1_ENABLED and COPILOT_BILLING_PROTOCOL_REQUIRED stay unset. Every directive path below was confirmed still unmerged via `git diff --name-only --diff-filter=U` at finalize time. CHANGES FROM THE DRAFT proposedDirectives, all deliberate: (1) REMOVED from mustEdit \u2014 packages/db/migrations/meta/_journal.json, packages/db/migrations/0261_tranquil_donald_blake.sql and apps/sim/stores/workflows/sync-local-draft.ts. They are NOT unmerged (journal is a clean auto-merge, the others are staged adds), so per the finalize rules directives must not target them. They are still owned work: they appear in the db-schema-migrations and deploy-state-machine cluster file lists with explicit 'auto-merged and WRONG / staged add, never git-checkout' notes, which is exactly the mechanism that gets a child to open them. Do not lose them \u2014 the journal currently has duplicate idx 261/262/263/264 (verified). (2) ADDED to delete \u2014 the two fork-deleted home/hooks test files. Draft self-resolution 8 settles them as `delete` but the draft's proposedDirectives omitted them; a modify/delete where our side deleted is resolved by git rm. (3) ADDED to mustEdit \u2014 lib/copilot/tools/server/router.ts (self-resolution 2 marks it mustEdit and it is a hard build break today: it imports 5 catalog exports the merge deleted), plus lib/core/config/api-keys.ts and providers/utils.ts (merge-policy.dedupeOnUnion lists four files in the duplicate-identifier hazard class; the draft's mustEdit covered only two of them). mustEdit is non-destructive \u2014 it only forbids auto --ours/--theirs, which is already policy for unionPaths. checkoutOurs stays at exactly 3 files \u2014 do NOT extend it. In particular lib/core/rate-limiter/hosted-key/{hosted-key-rate-limiter.ts,hosted-key-rate-limiter.test.ts} are fork supersets to be preserved by the child (fork side as baseline), not harness-checked-out, because the test may need upstream's new mock infra to run. checkoutTheirs is intentionally EMPTY: every `theirs` self-resolution requires re-applying fork behaviour afterwards, so none of them is a whole-file side take. unionPaths are never auto ours/theirs \u2014 they are assigned to clusters with strategy union or mustEdit. Post-merge, outside the clusters: regenerate bun.lock (`bun install`), never `drizzle-kit generate`, never `bun run mship:generate`."
+}

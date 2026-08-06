@@ -186,3 +186,88 @@ Rolling log of structural improvements that reduce merge conflict surface with `
 ## 2026-08-06-4
 
 - Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
+
+### Grill findings — run 2026-08-06-5 (v0.7.38…v0.7.43, 149 commits, 83 conflicts, 0 questions)
+
+- **A clean auto-merge is not a safe auto-merge. Audit two file classes the conflict list never
+  shows you.** This slice's two worst hazards produced no conflict markers at all:
+  1. `packages/db/migrations/meta/_journal.json` **auto-merged into duplicate `idx` values** (261, 262,
+     263, 264 each twice, 270 entries) because both sides added migrations at the same indices. No child
+     agent opens a file git reports as clean, so a broken journal would have shipped. Always diff the
+     journal after a merge that touches `packages/db/migrations/`.
+  2. `lib/copilot/generated/*` — the **verify-only assertion from runs 3 and 4 passes on a wrong tree.**
+     Upstream `#5410`/`#5656` deleted 7 catalog entries the fork still routes (`Superagent`, `Research`,
+     `UserMemory`, `MoveFile`, `MoveFileFolder`, `RenameFile`, `RenameFileFolder`) and inserted
+     `ShareFile`/`Search` at the same offsets, so git aligned the fork's hand-edited Superagent
+     `task.description` against `share_file`'s `action` property. `grep -c "Drive handles GFM import"`
+     returns `1` and the assertion goes green — while the sentence is on the wrong tool and
+     `tools/server/router.ts` still imports 5 exports that no longer exist. Assert **both** the
+     sentence and the presence of every fork-consumed export.
+- **New hazard class: `dedupeOnUnion`.** On four measured files upstream re-adds, at a *new* position,
+  a symbol the fork already defines *elsewhere in the same file* — because the fork inherited it earlier
+  or authored a superset. Naive union yields duplicate object-literal keys / duplicate exports /
+  duplicate `else if` branches, which is a hard TypeScript error, not a lint nit: `env.ts`
+  (`XAI_API_KEY_1..3` twice), `api-keys.ts` (second `provider !== 'xai'` guard + unreachable `xai`
+  branch), `uploads/config.ts` (second `BLOB_CONFIG` export), `providers/utils.ts` (re-listed
+  `isXaiModel`). Recorded as `merge-policy.dedupeOnUnion`. Union the genuinely new symbols only, then
+  grep the merged file for duplicate identifiers.
+- **A modify/delete conflict is often a relocation — always look for the new home before deciding.**
+  Both `sync-local-draft.{ts,test.ts}` modify/deletes looked like upstream removing a file the fork had
+  extended. `git ls-tree <upstream-tip>` plus `git grep syncLocalDraftFromServer <upstream-tip>` showed
+  the module simply moved to `apps/sim/stores/workflows/`, with three upstream call sites importing it
+  from there. `--ours` would have left two copies and a stale import graph; `--theirs` would have
+  dropped the fork's `flushMergedLocalDraftToServer`. Correct answer: accept the move, port the fork
+  helper into the new path. Two commands, and it turns a scary conflict into a mechanical one.
+- **Fork-vs-upstream deletions cut both ways, and `grep -c` at base settles it.** `Superagent` &co. read
+  like fork-only additions until the base census showed `base=1, fork=1, upstream=0` — they are
+  *upstream* tools the fork still depends on, one of them (`UserMemory`) backed by the fork's own
+  `0261_local_copilot_user_memory` table and two of them dispatched by the fork-only
+  `apps/sim/local-copilot/`. Restoring additively is unconditionally safe on the upstream side; taking
+  the deletion orphans fork DB tables.
+- **Diffstat separates "colliding feature" from "parallel addition" and saves the question.** The
+  `home/**` chat surface looked like a mothership-v0.8-vs-Arena collision (fork +2295/−745 over 36
+  files, upstream +3682/−598 over 45). But per-file the fork's edits are additive (`+133/−6`,
+  `+149/−12`, `+18/−1`) and the actual conflict is a `chart` special tag against a `question` special
+  tag on the same union type. Union, not a product call. Compare *deletion* counts, not insertion
+  counts, to tell a rewrite from an addition.
+- **Fork-superset audit caught two more this slice.** `tools/image/generate.ts` (fork: falai + openai +
+  gemini with a dynamic `envKeyPrefix` resolver and a `__skipHostedKeyHandling` hatch; upstream narrowed
+  to falai + static prefix) and `hosted-key-rate-limiter.ts` (fork adds `_1..3` fallback + the Gemini
+  key namespace). Third consecutive run where `--theirs` on a hosted-key file would have *removed* fork
+  capability.
+- **`isHosted` audit, again — and this time `--ours` was already correct.** `#5731`'s landing pixels
+  hardcode Sim's HubSpot portal (`246720681`) behind `isHosted`, which the fork redefines to include
+  `*.thearena.ai`. The fork had already stripped the whole tracking block, so `--ours` holds; the paired
+  CSP allowlist (`#5804`) auto-merged and is inert with no pixel loaded.
+- **New `forkFirst`:** `.github/workflows/{ci,images,upstream-sync}.yml` (upstream is Blacksmith + ECR,
+  the fork is `ubuntu-latest` + GHCR with its own migrate wiring — 16 hunks of pure infra ownership every
+  release) and `apps/sim/local-copilot/` (absent upstream entirely).
+- **New `unionPaths`:** `app/api/files/`, `components/emails/`, `tools/index.ts`,
+  `executor/execution/types.ts`, `lib/posthog/events.ts`, `lib/oauth/terminal-errors.ts`,
+  `lib/workflows/persistence/utils.ts`, `lib/credentials/`, `lib/workspaces/policy.ts`,
+  `app/api/workspaces/route.ts`, `app/workspace/[workspaceId]/home/`,
+  `lib/copilot/generated/tool-{catalog,schemas}-v1.ts`, `lib/copilot/tools/server/router.ts`,
+  the `credential-selector/` directory.
+- **`packageJson.sharedDependencyVersions: "theirs"`** — on a version-only conflict for a dep both sides
+  declare, take upstream. `#5848` bumped `sharp` 0.34.3 → 0.35.3 and `js-yaml` 4.2.0 → 4.3.0 for
+  security advisories; the fork's pin would have silently retained both.
+- **Fork follow-ups surfaced (not sync-caused):** set repo variable `CI_PROVIDER=github` unless
+  Blacksmith is installed (the auto-merged `test-build.yml` now defaults to Blacksmith when unset — still
+  strictly better than the fork's current hardcoded Blacksmith with no fallback); the `meta/` snapshot gap
+  is still unbackfilled and upstream's renumbered `0265…0269_snapshot.json` describe upstream's schema,
+  not the fork's; move the 7 fork-consumed copilot catalog entries and the GFM prompt sentence into a
+  fork-owned overlay applied on top of the generated output to retire that conflict class permanently;
+  `AUTH_TRUSTED_PROXIES` is unset so `#5857`'s forwarded-IP resolution is inert; `#5805` sunset tiers
+  will start rendering amber/red warnings on canvas for any model upstream marks legacy/deprecated —
+  worth a pass over which models Arena workflows actually use.
+
+## 2026-08-06-5
+
+- Move the fork's copilot catalog entries + prompt addendum into a fork-owned overlay layer instead of
+  hand-patching `lib/copilot/generated/` every sync.
+- Move Arena brand strings out of `(landing)` JSX into `lib/branding/`.
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
+
+## 2026-08-06-5
+
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.

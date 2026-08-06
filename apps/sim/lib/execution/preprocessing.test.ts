@@ -2,31 +2,39 @@
  * @vitest-environment node
  */
 
-import { loggingSessionMock } from '@sim/testing'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { loggingSessionMock, workflowAuthzMockFns } from '@sim/testing'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockGetWorkspaceBilledAccountUserId,
   mockGetScheduleExecutionActorUserId,
   mockCheckRateLimit,
   mockGetActivelyBannedUserIds,
+  mockReserveExecutionSlot,
   mockResolveBillingAttribution,
 } = vi.hoisted(() => ({
   mockGetWorkspaceBilledAccountUserId: vi.fn(),
   mockGetScheduleExecutionActorUserId: vi.fn(),
   mockCheckRateLimit: vi.fn(),
   mockGetActivelyBannedUserIds: vi.fn().mockResolvedValue([]),
+  mockReserveExecutionSlot: vi.fn(),
   mockResolveBillingAttribution: vi.fn(),
 }))
 
-vi.mock('@sim/db', () => ({ db: {} }))
-vi.mock('drizzle-orm', () => ({ eq: vi.fn() }))
 vi.mock('@/lib/auth/ban', () => ({
   getActivelyBannedUserIds: mockGetActivelyBannedUserIds,
 }))
 vi.mock('@/lib/billing/calculations/usage-monitor', () => ({
   checkServerSideUsageLimits: vi.fn(),
   checkOrgMemberUsageLimit: vi.fn().mockResolvedValue({ isExceeded: false }),
+}))
+vi.mock('@/lib/billing/calculations/usage-reservation', () => ({
+  reserveExecutionSlot: mockReserveExecutionSlot,
+  UsageReservationUnavailableError: class UsageReservationUnavailableError extends Error {
+    readonly code = 'SERVICE_OVERLOADED'
+    readonly statusCode = 503
+    readonly retryable = true
+  },
 }))
 vi.mock('@/lib/billing/core/subscription', () => ({
   getHighestPrioritySubscription: vi.fn(),
@@ -51,20 +59,41 @@ vi.mock('@/lib/workspaces/utils', () => ({
   getScheduleExecutionActorUserId: mockGetScheduleExecutionActorUserId,
 }))
 
-vi.mock('@sim/platform-authz/workflow', () => ({
-  getActiveWorkflowRecord: vi.fn().mockResolvedValue({
+import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
+import { preprocessExecution } from '@/lib/execution/preprocessing'
+
+const ORGANIZATION_ATTRIBUTION = {
+  actorUserId: 'actor-1',
+  billedAccountUserId: 'owner-1',
+  billingEntity: { type: 'organization' as const, id: 'org-1' },
+  billingPeriod: {
+    start: '2026-07-01T00:00:00.000Z',
+    end: '2026-08-01T00:00:00.000Z',
+  },
+  organizationId: 'org-1',
+  payerSubscription: {
+    id: 'payer-sub-1',
+    periodEnd: '2026-08-01T00:00:00.000Z',
+    periodStart: '2026-07-01T00:00:00.000Z',
+    plan: 'team_25000',
+    referenceId: 'org-1',
+    seats: 3,
+    status: 'active',
+  },
+  workspaceId: 'workspace-1',
+}
+
+afterAll(() => {
+  workflowAuthzMockFns.mockGetActiveWorkflowRecord.mockReset()
+})
+beforeEach(() => {
+  workflowAuthzMockFns.mockGetActiveWorkflowRecord.mockResolvedValue({
     id: 'workflow-1',
     userId: 'creator-1',
     workspaceId: 'workspace-1',
     isDeployed: true,
-  }),
-}))
-
-import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
-import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
-import { preprocessExecution } from './preprocessing'
-
-beforeEach(() => {
+  })
   mockResolveBillingAttribution.mockImplementation(
     ({ actorUserId, workspaceId }: { actorUserId: string; workspaceId: string }) =>
       Promise.resolve({
@@ -80,6 +109,8 @@ beforeEach(() => {
         payerSubscription: null,
       })
   )
+  mockGetActivelyBannedUserIds.mockResolvedValue([])
+  mockReserveExecutionSlot.mockResolvedValue({ reserved: true })
 })
 
 describe('preprocessExecution correlation logging', () => {
@@ -444,5 +475,64 @@ describe('preprocessExecution resolvedActorUserId reuse', () => {
     expect(result.success).toBe(true)
     expect(result.actorUserId).toBe('billed-account-1')
     expect(mockGetWorkspaceBilledAccountUserId).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('preprocessExecution billing attribution snapshots', () => {
+  const baseOptions = {
+    workflowId: 'workflow-1',
+    userId: 'actor-1',
+    triggerType: 'api' as const,
+    executionId: 'execution-1',
+    requestId: 'request-1',
+    checkDeployment: false,
+    checkRateLimit: false,
+    workflowRecord: { id: 'workflow-1', workspaceId: 'workspace-1', isDeployed: true } as any,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetActivelyBannedUserIds.mockResolvedValue([])
+    vi.mocked(getHighestPrioritySubscription).mockResolvedValue({ plan: 'free' } as any)
+    vi.mocked(checkServerSideUsageLimits).mockResolvedValue({
+      isExceeded: false,
+      currentUsage: 1,
+      limit: 10,
+    } as any)
+  })
+
+  it('reuses the immutable billing snapshot while retaining execution actor observability', async () => {
+    const result = await preprocessExecution({
+      ...baseOptions,
+      resolvedActorUserId: 'actor-1',
+      billingAttribution: ORGANIZATION_ATTRIBUTION,
+      skipConcurrencyReservation: true,
+    })
+
+    expect(result).toMatchObject({
+      success: true,
+      actorUserId: 'actor-1',
+      executionActor: { actorUserId: 'actor-1', actorType: 'user' },
+      billingAttribution: ORGANIZATION_ATTRIBUTION,
+    })
+    expect(mockResolveBillingAttribution).not.toHaveBeenCalled()
+    expect(mockGetWorkspaceBilledAccountUserId).not.toHaveBeenCalled()
+  })
+
+  it('reserves capacity from the frozen payer snapshot', async () => {
+    const result = await preprocessExecution({
+      ...baseOptions,
+      resolvedActorUserId: 'actor-1',
+      billingAttribution: ORGANIZATION_ATTRIBUTION,
+    })
+
+    expect(result.success).toBe(true)
+    expect(mockReserveExecutionSlot).toHaveBeenCalledWith({
+      billingEntity: ORGANIZATION_ATTRIBUTION.billingEntity,
+      reservationId: 'execution-1',
+      plan: 'team_25000',
+      currentUsage: 1,
+      limit: 10,
+    })
   })
 })

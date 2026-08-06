@@ -1,32 +1,30 @@
 /**
  * @vitest-environment node
  */
-import { auditMock, createMockRequest, createSession } from '@sim/testing'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  auditMock,
+  authMockFns,
+  createMockRequest,
+  createSession,
+  resetEnvFlagsMock,
+  setEnvFlags,
+} from '@sim/testing'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
-  mockGetSession,
   mockIsOrganizationOwnerOrAdmin,
   mockGetOrgMemberUsageLimit,
   mockGetOrgMemberUsageForCurrentPeriod,
   mockSetOrgMemberUsageLimit,
   mockValidateOrgMemberAllocationWithinPool,
   mockGetOrganizationSubscription,
-  mockFlags,
 } = vi.hoisted(() => ({
-  mockGetSession: vi.fn(),
   mockIsOrganizationOwnerOrAdmin: vi.fn(),
   mockGetOrgMemberUsageLimit: vi.fn(),
   mockGetOrgMemberUsageForCurrentPeriod: vi.fn(),
   mockSetOrgMemberUsageLimit: vi.fn(),
   mockValidateOrgMemberAllocationWithinPool: vi.fn(),
   mockGetOrganizationSubscription: vi.fn(),
-  mockFlags: { isHosted: true },
-}))
-
-vi.mock('@/lib/auth', () => ({
-  auth: { api: { getSession: vi.fn() } },
-  getSession: mockGetSession,
 }))
 
 vi.mock('@sim/audit', () => auditMock)
@@ -46,13 +44,11 @@ vi.mock('@/lib/billing/core/billing', () => ({
   getOrganizationSubscription: mockGetOrganizationSubscription,
 }))
 
-vi.mock('@/lib/core/config/env-flags', () => ({
-  get isHosted() {
-    return mockFlags.isHosted
-  },
-}))
-
 import { GET, PUT } from '@/app/api/organizations/[id]/members/[memberId]/usage-limit/route'
+
+const mockGetSession = authMockFns.mockGetSession
+
+afterAll(resetEnvFlagsMock)
 
 function context() {
   return { params: Promise.resolve({ id: 'org-1', memberId: 'user-2' }) }
@@ -69,7 +65,7 @@ function getRequest() {
 describe('GET /api/organizations/[id]/members/[memberId]/usage-limit', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockFlags.isHosted = true
+    setEnvFlags({ isHosted: true })
     mockGetSession.mockResolvedValue(createSession({ userId: 'admin-1' }))
     mockIsOrganizationOwnerOrAdmin.mockResolvedValue(true)
     mockGetOrgMemberUsageForCurrentPeriod.mockResolvedValue(1) // $1 -> 200 credits
@@ -84,7 +80,7 @@ describe('GET /api/organizations/[id]/members/[memberId]/usage-limit', () => {
   })
 
   it('returns 404 when not hosted', async () => {
-    mockFlags.isHosted = false
+    setEnvFlags({ isHosted: false })
     const res = await GET(getRequest(), context())
     expect(res.status).toBe(404)
   })
@@ -147,7 +143,7 @@ describe('GET /api/organizations/[id]/members/[memberId]/usage-limit', () => {
 describe('PUT /api/organizations/[id]/members/[memberId]/usage-limit', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockFlags.isHosted = true
+    setEnvFlags({ isHosted: true })
     mockGetSession.mockResolvedValue(createSession({ userId: 'admin-1' }))
     mockIsOrganizationOwnerOrAdmin.mockResolvedValue(true)
     mockSetOrgMemberUsageLimit.mockResolvedValue(undefined)
@@ -155,7 +151,7 @@ describe('PUT /api/organizations/[id]/members/[memberId]/usage-limit', () => {
   })
 
   it('returns 404 when not hosted', async () => {
-    mockFlags.isHosted = false
+    setEnvFlags({ isHosted: false })
     const res = await PUT(putRequest({ creditLimit: 400 }), context())
     expect(res.status).toBe(404)
     expect(mockSetOrgMemberUsageLimit).not.toHaveBeenCalled()
