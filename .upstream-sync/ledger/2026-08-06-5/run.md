@@ -316,3 +316,22 @@ Union cluster resolved; fork-deleted stream and chat tests remain deleted per th
 
 Upstream-only governing-helper assertions were skipped per the locked Q&A; see skipped.md.
 
+## Cluster uploads-storage-gcs
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/lib/uploads/config.ts` | manual | Unioned GCS configs, provider selection, and serve prefix with Azure Blob and the fork's agent-generated-images S3 config; BLOB_CONFIG appears exactly once. |
+| `apps/sim/lib/uploads/core/setup.server.ts` | manual | Added GCS and Azure Blob setup handling while retaining the fork's local agent-image initialization. |
+| `apps/sim/lib/uploads/core/storage-client.ts` | manual | Added GCS provider reporting and metadata lookup while retaining Blob and S3 behavior. |
+| `apps/sim/lib/uploads/core/storage-service.ts` | manual | Retained fork agent-generated-images S3 handling and unioned upstream GCS upload, multipart, download, delete, head, and presign dispatch. |
+| `apps/sim/lib/uploads/utils/file-utils.ts` | manual | Retained org-logo key handling and added upstream archive detection and GCS serve-prefix parsing. |
+| `apps/sim/app/api/files/authorization.ts` | manual | Retained fork org-logo authorization and switched chat storage resolution to the shared provider-aware config. |
+| `apps/sim/app/api/files/multipart/route.ts` | manual | Retained fork Blob contexts and added upstream GCS multipart lifecycle support. |
+| `apps/sim/app/api/files/parse/route.ts` | manual | Retained fork parsing behavior and unioned provider-aware execution-file URL detection for S3, Blob, and GCS. |
+| `apps/sim/app/api/files/presigned/route.ts` | manual | Retained org-logo support and zip validation while using getServeStoragePrefix for returned URLs. |
+| `apps/sim/app/api/files/presigned/batch/route.ts` | manual | Used getServeStoragePrefix instead of the fork's hard-coded S3 path. |
+| `apps/sim/app/api/files/serve/[...path]/route.ts` | manual | Preserved the entire fork agent-generated-images auth block and execution/deployed-chat branches; added the gcs prefix alongside s3 and blob. |
+| `apps/sim/app/api/files/upload/route.ts` | manual | Unioned mothership-only zip acceptance with the fork's Image Fusion, execution, and org-logo upload behavior. |
+
+Union cluster resolved and staged. Focused Biome validation passes; broader type-check/test gates are blocked by unrelated unresolved clusters and a missing @next/env dependency.
+

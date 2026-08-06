@@ -73,7 +73,10 @@ function personalZoomMeetingSubblockCondition(values: Record<string, unknown> | 
   if (!needsMeeting || !hasZoomAuth(values)) {
     return { field: 'operation', value: [] } satisfies SubBlockCondition
   }
-  return { field: 'operation', value: ZOOM_MEETING_OPS_LIST } satisfies SubBlockCondition
+  return {
+    field: 'operation',
+    value: ZOOM_MEETING_OPS_LIST,
+  } satisfies SubBlockCondition
 }
 
 export const ZoomBlock: BlockConfig<ZoomResponse> = {
@@ -139,7 +142,7 @@ export const ZoomBlock: BlockConfig<ZoomResponse> = {
       id: 'userId',
       title: 'User ID',
       type: 'short-input',
-      placeholder: 'me (or user ID/email)',
+      placeholder: 'me (OAuth only) or user ID/email',
       required: true,
       condition: {
         field: 'operation',
@@ -748,8 +751,15 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
   },
   inputs: {
     operation: { type: 'string', description: 'Operation to perform' },
-    oauthCredential: { type: 'string', description: 'OAuth credential for Zoom' },
-    userId: { type: 'string', description: 'User ID or email (use "me" for authenticated user)' },
+    oauthCredential: {
+      type: 'string',
+      description: 'OAuth credential for Zoom',
+    },
+    userId: {
+      type: 'string',
+      description:
+        'User ID or email address. Use "me" for the authenticated user with OAuth credentials; with a Zoom server-to-server service account, "me" is not supported — provide the target user ID or email address.',
+    },
     meetingId: { type: 'string', description: 'Meeting ID' },
     topic: { type: 'string', description: 'Meeting topic' },
     topicUpdate: { type: 'string', description: 'Meeting topic for update' },
@@ -768,28 +778,64 @@ Return ONLY the date string - no explanations, no quotes, no extra text.`,
     listType: { type: 'string', description: 'Meeting type filter for list' },
     pageSize: { type: 'string', description: 'Page size for list' },
     nextPageToken: { type: 'string', description: 'Page token for pagination' },
-    occurrenceId: { type: 'string', description: 'Occurrence ID for recurring meetings' },
-    cancelMeetingReminder: { type: 'boolean', description: 'Send cancellation email' },
-    fromDate: { type: 'string', description: 'Start date for recordings list (yyyy-mm-dd)' },
-    toDate: { type: 'string', description: 'End date for recordings list (yyyy-mm-dd)' },
-    meetingTitle: { type: 'string', description: 'Filter recordings by meeting topic/title' },
+    occurrenceId: {
+      type: 'string',
+      description: 'Occurrence ID for recurring meetings',
+    },
+    cancelMeetingReminder: {
+      type: 'boolean',
+      description: 'Send cancellation email',
+    },
+    fromDate: {
+      type: 'string',
+      description: 'Start date for recordings list (yyyy-mm-dd)',
+    },
+    toDate: {
+      type: 'string',
+      description: 'End date for recordings list (yyyy-mm-dd)',
+    },
+    meetingTitle: {
+      type: 'string',
+      description: 'Filter recordings by meeting topic/title',
+    },
     recordingId: { type: 'string', description: 'Specific recording file ID' },
-    deleteAction: { type: 'string', description: 'Delete action (trash or delete)' },
-    downloadUrl: { type: 'string', description: 'Download URL for transcript or recording file' },
+    deleteAction: {
+      type: 'string',
+      description: 'Delete action (trash or delete)',
+    },
+    downloadUrl: {
+      type: 'string',
+      description: 'Download URL for transcript or recording file',
+    },
   },
   outputs: {
     // Success indicator
     success: { type: 'boolean', description: 'Operation success status' },
     // Meeting outputs
-    meeting: { type: 'json', description: 'Meeting data (create_meeting, get_meeting)' },
+    meeting: {
+      type: 'json',
+      description: 'Meeting data (create_meeting, get_meeting)',
+    },
     meetings: { type: 'json', description: 'List of meetings (list_meetings)' },
     // Invitation
-    invitation: { type: 'string', description: 'Meeting invitation text (get_meeting_invitation)' },
+    invitation: {
+      type: 'string',
+      description: 'Meeting invitation text (get_meeting_invitation)',
+    },
     // Recording outputs
-    recording: { type: 'json', description: 'Recording data (get_meeting_recordings)' },
-    recordings: { type: 'json', description: 'List of recordings (list_recordings)' },
+    recording: {
+      type: 'json',
+      description: 'Recording data (get_meeting_recordings)',
+    },
+    recordings: {
+      type: 'json',
+      description: 'List of recordings (list_recordings)',
+    },
     // Participant outputs
-    participants: { type: 'json', description: 'List of participants (list_past_participants)' },
+    participants: {
+      type: 'json',
+      description: 'List of participants (list_past_participants)',
+    },
     // Pagination
     pageInfo: { type: 'json', description: 'Pagination information' },
     content: { type: 'string', description: 'The downloaded content' },
