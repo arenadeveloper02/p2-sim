@@ -18,6 +18,7 @@ import {
 import type { UsageLogSource } from '@/lib/billing/core/usage-log'
 import { COPILOT_USAGE_SOURCES } from '@/lib/billing/core/usage-log'
 import {
+  normalizeBucketKey,
   parseDecimal,
   parseIntMetric,
   sortByBillableCostDesc,
