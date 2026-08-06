@@ -232,3 +232,39 @@ already has a documented snapshot gap (journal reaches 263, `meta/` stops at 026
 
 Predicted merge tree 92ae4f94 (git merge-tree --write-tree HEAD 9d23e25c, exit 1): 93 conflicted files, 89 content + 4 add/add, no modify/delete, no renames. Overlap measurement: upstream 1321 changed files, fork 1636, intersection 170. 29 upstream deletions, none overlapping fork-modified files. Policy coverage of the 93: 70 unlisted, 10 manualReview-only, 13 unionPaths. merge-policy.json was updated this run: lib/copilot/generated/ moved out of upstreamFirst into manualReview (second consecutive run where auto --theirs would have destroyed the fork's Superagent GFM hand-edit that the natural merge preserves); manualReview gained lib/billing/, lib/logs/execution/, lib/copilot/request/, settings/ and components/settings/; unionPaths gained .env.example, blocks/types.ts, lib/logs/types.ts, lib/oauth/index.ts, lib/oauth/utils.ts, lib/credentials/connect-draft.ts, hooks/queries/workspace.ts, tools/hubspot/index.ts, tools/hubspot/types.ts, blocks/blocks/hubspot.ts.
 
+## Usage
+
+### Usage (stack rollup)
+
+- **This slice:** $5.3741 · 5,754,159 in / 63,784 out · 1 agent(s)
+- **Prior stack:** $11.0784 · 29,099,908 in / 219,744 out · 11 agent(s)
+- **Whole stack:** $16.4525 · 34,854,067 in / 283,528 out · 12 agent(s)
+
+### parent-grill-analysis
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 1,596
+- **Input tokens (cache read):** 5,597,435
+- **Input tokens (cache create):** 155,128
+- **Input tokens (total):** 5,754,159
+- **Output tokens:** 63,784
+- **Cost:** $5.374070 (provider-reported)
+
+### Totals
+- **Total input tokens:** 5,754,159
+- **Total output tokens:** 63,784
+- **Primary models:** claude-opus-5
+- **Total cost:** $5.374070
+- **Provider-reported cost:** $5.374070
+
+### Cost by agent
+- **parent-grill-analysis:** $5.374070 (provider-reported)
+
+## Status
+
+awaiting_input
+
+## Open questions
+
+Grill left unanswered product decisions in `open-questions.md`. Merge will not start until `/upstream-sync resume`.
+

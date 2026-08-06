@@ -1,14 +1,4 @@
-# Upstream Sync — Grill Q&A Log
-
-Rolling log of questions asked on sync PRs and human answers. Future sync runs read this file (and `qa-history.jsonl`) before asking again.
-
-<!-- Entries are appended automatically by the harness from PR comments and resume replies. -->
-
-## 2026-08-05 · PR #681
-
-**A** (2026-08-05T12:08:12Z, utcarshsrivastava-collab): /upstream-sync resume
-
-Continuing after cancelling the hung `child-branding-landing` Codex pager stall. Re-apply WIP from `upstream-sync/2026-08-05T10-46-19-wip` and keep going on remaining conflicts.
+# Grill Q&A — 2026-08-06-4
 
 ## 2026-08-06-4 · PR #688
 
