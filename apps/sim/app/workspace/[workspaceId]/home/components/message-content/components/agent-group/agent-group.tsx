@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cn, Expandable, ExpandableContent } from '@sim/emcn'
 import { ChevronDown, PillsRing } from '@sim/emcn/icons'
+import { ShimmerText } from '@/components/ui'
 import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
 import type { ToolCallData } from '../../../../types'
 import { getAgentIcon, isToolDone } from '../../utils'
@@ -66,10 +67,7 @@ export function AgentGroup({
   const AgentIcon = getAgentIcon(agentName)
   const hasItems = items.length > 0
   const resolved = isAgentGroupResolved(items)
-  // Pure projection of the run's own state: a subagent header spins while it is
-  // delegating with no resolved work yet. A terminal turn closes the lane (its
-  // subagent block is stamped ended), which clears `isDelegating`, so no
-  // transport gating is needed to stop an aborted-before-first-tool spinner.
+  const isWorking = (isDelegating && !resolved) || (isStreaming && isLaneOpen)
   const showDelegatingSpinner = isDelegating && !resolved
 
   // Expand while this is the latest section, the lane is open, or work is still
@@ -92,7 +90,7 @@ export function AgentGroup({
         <button
           type='button'
           onClick={() => setManualExpanded(!expanded)}
-          className='flex cursor-pointer items-center gap-2'
+          className='group/agent flex cursor-pointer items-center gap-2'
         >
           <div className='flex size-[16px] flex-shrink-0 items-center justify-center'>
             {showDelegatingSpinner ? (
@@ -101,10 +99,14 @@ export function AgentGroup({
               <AgentIcon className='size-[16px] text-[var(--text-icon)]' />
             )}
           </div>
-          <span className='text-[var(--text-body)] text-sm'>{resolvedAgentLabel}</span>
+          {isWorking ? (
+            <ShimmerText className='text-sm'>{resolvedAgentLabel}</ShimmerText>
+          ) : (
+            <span className='text-[var(--text-body)] text-sm'>{resolvedAgentLabel}</span>
+          )}
           <ChevronDown
             className={cn(
-              'h-[7px] w-[9px] text-[var(--text-icon)] transition-transform duration-150',
+              'h-[7px] w-[9px] text-[var(--text-icon)] opacity-0 transition-[transform,opacity] duration-150 group-hover/agent:opacity-100 group-focus-visible/agent:opacity-100',
               !expanded && '-rotate-90'
             )}
           />
@@ -118,7 +120,11 @@ export function AgentGroup({
               <AgentIcon className='size-[16px] text-[var(--text-icon)]' />
             )}
           </div>
-          <span className='text-[var(--text-body)] text-sm'>{resolvedAgentLabel}</span>
+          {isWorking ? (
+            <ShimmerText className='text-sm'>{resolvedAgentLabel}</ShimmerText>
+          ) : (
+            <span className='text-[var(--text-body)] text-sm'>{resolvedAgentLabel}</span>
+          )}
         </div>
       )}
       {hasItems && (

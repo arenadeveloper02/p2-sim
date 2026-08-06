@@ -218,3 +218,11 @@ Locked from self-resolutions; no human answers were pending this run (open-quest
 
 Resolved per the locked xai-byok-providers union directive.
 
+## Cluster api-routes-security
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/app/api/help/route.ts` | manual | Unioned the fork's getHelpInboxEmail import with upstream's multipart size-limit imports, retained the fork's getFromEmailAddress import, and removed the obsolete getHelpEmailAddress import. |
+
+The route body already contained both fork and upstream behavior, including the mandatory 413 payload-size response.
+
