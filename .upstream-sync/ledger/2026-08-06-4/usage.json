@@ -1,17 +1,149 @@
 {
   "runId": "2026-08-06-4",
-  "recordedAt": "2026-08-06T12:00:06.861Z",
+  "recordedAt": "2026-08-06T13:56:30.069Z",
   "agents": [
     {
-      "agentName": "parent-grill-analysis",
+      "agentName": "parent-finalize-plan",
       "model": "claude-opus-5",
       "iterations": 1,
-      "inputTokens": 1596,
-      "outputTokens": 63784,
-      "cacheReadInputTokens": 5597435,
-      "cacheCreationInputTokens": 155128,
-      "estimatedCostUsd": 5.374070499999999,
+      "inputTokens": 11885,
+      "outputTokens": 34427,
+      "cacheReadInputTokens": 2187212,
+      "cacheCreationInputTokens": 124597,
+      "estimatedCostUsd": 2.796648249999999,
       "costSource": "provider"
+    },
+    {
+      "agentName": "child-schema-migrations",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 104455,
+      "outputTokens": 12559,
+      "cacheReadInputTokens": 1744633,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.070854,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-billing-attribution-core",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 944780,
+      "outputTokens": 117837,
+      "cacheReadInputTokens": 46396034,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 1.258281,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-copilot-mothership-billing",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 268715,
+      "outputTokens": 48301,
+      "cacheReadInputTokens": 15187247,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.415449,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-settings-ia",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 408553,
+      "outputTokens": 74965,
+      "cacheReadInputTokens": 16071433,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.493097,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-chat-ui-arena",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 405439,
+      "outputTokens": 53271,
+      "cacheReadInputTokens": 13999511,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.425003,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-oauth-credentials",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 144142,
+      "outputTokens": 23109,
+      "cacheReadInputTokens": 5270913,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.161977,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-integrations-registry",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 136242,
+      "outputTokens": 25631,
+      "cacheReadInputTokens": 3231774,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.122641,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-landing-branding",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 215285,
+      "outputTokens": 33200,
+      "cacheReadInputTokens": 8457778,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.252053,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-config-env",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 104391,
+      "outputTokens": 14527,
+      "cacheReadInputTokens": 2190689,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.082124,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-uploads-editor",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 253439,
+      "outputTokens": 42085,
+      "cacheReadInputTokens": 12517285,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.351536,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-workspace-views-urlstate",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 164018,
+      "outputTokens": 24013,
+      "cacheReadInputTokens": 4552389,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.152667,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-finalize-merge",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 601064,
+      "outputTokens": 64061,
+      "cacheReadInputTokens": 22550046,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.648087,
+      "costSource": "estimated"
     }
   ]
 }
