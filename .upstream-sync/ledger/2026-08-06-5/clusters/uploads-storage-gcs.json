@@ -1,0 +1,67 @@
+{
+  "clusterId": "uploads-storage-gcs",
+  "runId": "2026-08-06-5",
+  "files": [
+    {
+      "path": "apps/sim/lib/uploads/config.ts",
+      "resolution": "manual",
+      "notes": "Unioned GCS configs, provider selection, and serve prefix with Azure Blob and the fork's agent-generated-images S3 config; BLOB_CONFIG appears exactly once."
+    },
+    {
+      "path": "apps/sim/lib/uploads/core/setup.server.ts",
+      "resolution": "manual",
+      "notes": "Added GCS and Azure Blob setup handling while retaining the fork's local agent-image initialization."
+    },
+    {
+      "path": "apps/sim/lib/uploads/core/storage-client.ts",
+      "resolution": "manual",
+      "notes": "Added GCS provider reporting and metadata lookup while retaining Blob and S3 behavior."
+    },
+    {
+      "path": "apps/sim/lib/uploads/core/storage-service.ts",
+      "resolution": "manual",
+      "notes": "Retained fork agent-generated-images S3 handling and unioned upstream GCS upload, multipart, download, delete, head, and presign dispatch."
+    },
+    {
+      "path": "apps/sim/lib/uploads/utils/file-utils.ts",
+      "resolution": "manual",
+      "notes": "Retained org-logo key handling and added upstream archive detection and GCS serve-prefix parsing."
+    },
+    {
+      "path": "apps/sim/app/api/files/authorization.ts",
+      "resolution": "manual",
+      "notes": "Retained fork org-logo authorization and switched chat storage resolution to the shared provider-aware config."
+    },
+    {
+      "path": "apps/sim/app/api/files/multipart/route.ts",
+      "resolution": "manual",
+      "notes": "Retained fork Blob contexts and added upstream GCS multipart lifecycle support."
+    },
+    {
+      "path": "apps/sim/app/api/files/parse/route.ts",
+      "resolution": "manual",
+      "notes": "Retained fork parsing behavior and unioned provider-aware execution-file URL detection for S3, Blob, and GCS."
+    },
+    {
+      "path": "apps/sim/app/api/files/presigned/route.ts",
+      "resolution": "manual",
+      "notes": "Retained org-logo support and zip validation while using getServeStoragePrefix for returned URLs."
+    },
+    {
+      "path": "apps/sim/app/api/files/presigned/batch/route.ts",
+      "resolution": "manual",
+      "notes": "Used getServeStoragePrefix instead of the fork's hard-coded S3 path."
+    },
+    {
+      "path": "apps/sim/app/api/files/serve/[...path]/route.ts",
+      "resolution": "manual",
+      "notes": "Preserved the entire fork agent-generated-images auth block and execution/deployed-chat branches; added the gcs prefix alongside s3 and blob."
+    },
+    {
+      "path": "apps/sim/app/api/files/upload/route.ts",
+      "resolution": "manual",
+      "notes": "Unioned mothership-only zip acceptance with the fork's Image Fusion, execution, and org-logo upload behavior."
+    }
+  ],
+  "notes": "Union cluster resolved and staged. Focused Biome validation passes; broader type-check/test gates are blocked by unrelated unresolved clusters and a missing @next/env dependency."
+}

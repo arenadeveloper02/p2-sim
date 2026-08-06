@@ -7,6 +7,7 @@ import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { CopilotFiles } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
+import { getServeStoragePrefix } from '@/lib/uploads/config'
 import { generateExecutionFileKey } from '@/lib/uploads/contexts/execution/utils'
 import { generateKnowledgeBaseFileKey } from '@/lib/uploads/contexts/knowledge-base/knowledge-base-file-manager'
 import { generateOrgLogoFileKey } from '@/lib/uploads/contexts/org-logos/utils'
@@ -146,7 +147,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
-      const fileValidationError = validateAttachmentFileType(fileName)
+      const fileValidationError = validateAttachmentFileType(fileName, { allowArchives: true })
       if (fileValidationError) {
         throw new ValidationError(fileValidationError.message)
       }
@@ -359,7 +360,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       })
     }
 
-    const finalPath = `/api/files/serve/s3/${encodeURIComponent(presignedUrlResponse.key)}?context=${uploadType}`
+    const finalPath = `/api/files/serve/${getServeStoragePrefix()}/${encodeURIComponent(presignedUrlResponse.key)}?context=${uploadType}`
 
     return NextResponse.json({
       fileName,

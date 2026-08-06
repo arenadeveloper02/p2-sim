@@ -301,3 +301,18 @@ Focused assertions, Biome check, and git diff --check passed. The targeted valid
 
 Union cluster resolved; fork-deleted stream and chat tests remain deleted per the locked directives.
 
+## Cluster billing-usage-tests
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/lib/billing/core/usage-log.test.ts` | manual | Kept the shared table-aware DB mock rewrite and fork billable, actor, chat, and streaming assertions. |
+| `apps/sim/lib/billing/organizations/member-limits.test.ts` | manual | Migrated fork allocation assertions to the shared table-routed DB queues while retaining upstream period tests. |
+| `apps/sim/lib/logs/execution/logger.test.ts` | manual | Used shared DB chain spies and retained fork cost projection and pending-reconciliation assertions. |
+| `apps/sim/lib/execution/preprocessing.test.ts` | manual | Retained fork ExecutionActor and usage-gate coverage, added shared reservation mocking and compatible immutable attribution snapshot coverage. |
+| `apps/sim/app/api/copilot/api-keys/validate/route.test.ts` | manual | Used shared DB and env-flag mocks; retained checkMothershipUsageLimits/checkSelfHostedMothershipUsageLimits as the governing Copilot gate and kept protocol assertions additive. |
+| `apps/sim/app/api/billing/update-cost/route.test.ts` | manual | Kept the shared DB/env mock setup and both fork keyless attribution assertions and upstream protocol coverage. |
+| `apps/sim/lib/core/rate-limiter/hosted-key/hosted-key-rate-limiter.ts` | manual | Fork superset retained: singular and _1..3 fallback plus the Gemini namespace, with upstream singular-key behavior. |
+| `apps/sim/lib/core/rate-limiter/hosted-key/hosted-key-rate-limiter.test.ts` | manual | Retained all fork fallback assertions and upstream singular hosted-key coverage. |
+
+Upstream-only governing-helper assertions were skipped per the locked Q&A; see skipped.md.
+
