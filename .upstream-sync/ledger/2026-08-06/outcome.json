@@ -1,0 +1,12 @@
+{
+  "kind": "awaiting_input",
+  "title": "Awaiting grill answers before merge",
+  "detail": "Answer questions in `.upstream-sync/ledger/2026-08-06/open-questions.md` and reply with /upstream-sync resume.",
+  "syncBranch": "upstream-sync/2026-08-06T07-03-23",
+  "mergeBase": "feat/github-merge-agent",
+  "upstreamSha": "6c3d11b2df6c1c18490a27dab17b48d881045918",
+  "prNumber": 683,
+  "commitCount": 23,
+  "runId": "2026-08-06",
+  "recordedAt": "2026-08-06T07:17:19.644Z"
+}

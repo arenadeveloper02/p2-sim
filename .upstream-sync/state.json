@@ -2,7 +2,7 @@
   "lastSyncedUpstreamSha": null,
   "lastSyncedAt": null,
   "lastRunId": "2026-08-06",
-  "status": "running",
+  "status": "awaiting_input",
   "openQuestions": [],
   "activeBranch": "upstream-sync/2026-08-06T07-03-23",
   "activePrNumber": 683,
