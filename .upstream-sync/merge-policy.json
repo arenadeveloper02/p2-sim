@@ -83,7 +83,9 @@
     "apps/sim/lib/copilot/chat/payload.ts",
     "apps/sim/app/api/files/upload/route.ts",
     "apps/sim/app/api/help/route.ts",
-    "apps/sim/app/api/mothership/execute/route.ts"
+    "apps/sim/app/api/mothership/execute/route.ts",
+    "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/sidebar.tsx",
+    "apps/sim/lib/workflows/migrations/subblock-migrations.ts"
   ],
   "manualReview": [
     "packages/db/migrations/",
