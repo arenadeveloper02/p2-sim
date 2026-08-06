@@ -209,3 +209,12 @@ Locked from self-resolutions; no human answers were pending this run (open-quest
 - failed: 0
 - mustEdit: `apps/sim/app/api/help/route.ts`, `apps/sim/providers/utils.ts`, `apps/sim/providers/utils.test.ts`, `apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/agent-group.tsx`, `apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/tool-call-item.tsx`, `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/selector-combobox/selector-combobox.tsx`
 
+## Cluster xai-byok-providers
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/providers/utils.ts` | manual | Removed the duplicate isXaiModel declaration and retained the fork's wider hosted-provider guard, including SambaNova and OpenRouter, plus its hosted-model comment. |
+| `apps/sim/providers/utils.test.ts` | manual | Unioned the grok-4-latest and grok-4.5 billing assertions and retained the fork-only mothership assertion. |
+
+Resolved per the locked xai-byok-providers union directive.
+
