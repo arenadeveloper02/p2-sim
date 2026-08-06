@@ -220,3 +220,33 @@ resolves from merge policy, the fork's own precedent, or verified code behaviour
 
 Phase A only — no merge performed, no conflicts exist yet, so childClusters are area-level and `files` is intentionally empty. Child model is gpt-5.6-luna at max effort for every cluster. merge-policy.json was updated this run with the unionPaths / forkFirst / manualReview additions and a migrations.strategy entry recording the drizzle created_at gate; extensibility-notes.md carries the standing append-upstream-at-tail rule. Recommended cluster order if the harness serializes: db-migrations, registries-and-types, oauth-credentials-slack, providers-models, executor-workflow-store, workspace-ui, env-config-csp, landing-branding, docs-app.
 
+## Usage
+
+### parent-grill-analysis
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 1,636
+- **Input tokens (cache read):** 6,047,344
+- **Input tokens (cache create):** 145,296
+- **Input tokens (total):** 6,194,276
+- **Output tokens:** 54,270
+- **Cost:** $5.299596 (provider-reported)
+
+### Totals
+- **Total input tokens:** 6,194,276
+- **Total output tokens:** 54,270
+- **Primary models:** claude-opus-5
+- **Total cost:** $5.299596
+- **Provider-reported cost:** $5.299596
+
+### Cost by agent
+- **parent-grill-analysis:** $5.299596 (provider-reported)
+
+## Status
+
+awaiting_input
+
+## Open questions
+
+Grill left unanswered product decisions in `open-questions.md`. Merge will not start until `/upstream-sync resume`.
+
