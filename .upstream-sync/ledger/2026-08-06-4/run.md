@@ -152,3 +152,23 @@ Resolved billing attribution core by preserving fork ExecutionActor/billingUserI
 
 Q2=A fork-first resolution. Protocol/header and attribution plumbing were adopted additively; COPILOT_BILLING_ATTRIBUTION_V1_ENABLED and COPILOT_BILLING_PROTOCOL_REQUIRED remain unset. Focused Vitest execution is blocked by the unrelated unresolved apps/sim/lib/core/config/env.ts conflict.
 
+## Cluster settings-ia
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/app/workspace/[workspaceId]/layout.tsx` | manual | Adopted upstream host-context and stale-impersonation shell; retained fork branding and AppBanner. |
+| `apps/sim/app/workspace/[workspaceId]/settings/[section]/page.tsx` | manual | Kept upstream section maps and authz gates, retained the fork-only sections, and suppressed the integrations redirect. |
+| `apps/sim/app/workspace/[workspaceId]/settings/[section]/settings.tsx` | manual | Kept upstream host-aware renderer props while retaining fork billing-usage, usage, and OAuth renderers. |
+| `apps/sim/app/workspace/[workspaceId]/settings/billing/credit-usage/credit-usage-view.tsx` | manual | Kept the upstream settings-panel/back-link flow and fork usage-log source labels. |
+| `apps/sim/app/workspace/[workspaceId]/settings/components/billing/billing.tsx` | manual | Kept upstream scoped billing behavior and added legacy workspace-derived compatibility for the fork BillingPageShell. |
+| `apps/sim/app/workspace/[workspaceId]/settings/components/team-management/components/organization-member-lists/organization-member-lists.tsx` | manual | Retained fork management guards and upstream ownership-transfer/leave actions. |
+| `apps/sim/app/workspace/[workspaceId]/settings/layout.tsx` | manual | Adopted upstream unified client settings shell and before-unload handling. |
+| `apps/sim/app/workspace/[workspaceId]/settings/navigation.ts` | manual | Built on the upstream unified registry, with additive fork Usage/OAuth entries, Arena metadata, and suppression sets. |
+| `apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/settings-sidebar/settings-sidebar.tsx` | manual | Kept upstream host/permission gating and applied fork-only entries, labels, and suppressed sections. |
+| `apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/workspace-header.tsx` | manual | Combined upstream disabled-reason tooltip behavior with fork organization-admin and billing navigation behavior. |
+| `apps/sim/app/workspace/page.tsx` | manual | Retained upstream stale-session recovery/error UI and fork full-navigation/Arena profile behavior. |
+| `apps/sim/hooks/queries/workspace-usage.ts` | manual | Unioned fork analytics queries with upstream credit-availability and usage-gate queries. |
+| `apps/sim/hooks/queries/workspace.ts` | manual | Removed obsolete ownerBilling key and retained zoomAdminAccess. |
+
+Targeted Biome and diff checks pass. Full typecheck/test runs are blocked by unrelated unresolved merge markers outside this cluster.
+

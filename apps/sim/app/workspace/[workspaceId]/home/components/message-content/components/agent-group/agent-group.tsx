@@ -5,8 +5,10 @@ import { cn, Expandable, ExpandableContent } from '@sim/emcn'
 import { ChevronDown, PillsRing } from '@sim/emcn/icons'
 import { ShimmerText } from '@/components/ui'
 import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
+import { useSmoothText } from '@/hooks/use-smooth-text'
 import type { ToolCallData } from '../../../../types'
 import { getAgentIcon, isToolDone } from '../../utils'
+import { renderInlineMarkdown } from './inline-markdown'
 import { ToolCallItem } from './tool-call-item'
 
 /**
@@ -140,6 +142,7 @@ export function AgentGroup({
                         toolName={item.data.toolName}
                         displayTitle={item.data.displayTitle}
                         status={item.data.status}
+                        params={item.data.params}
                         streamingArgs={item.data.streamingArgs}
                       />
                     )
@@ -160,12 +163,11 @@ export function AgentGroup({
                     )
                   }
                   return (
-                    <span
+                    <NarrationText
                       key={`text-${idx}`}
-                      className='pl-6 text-[13px] text-[var(--text-secondary)] leading-[18px] opacity-60'
-                    >
-                      {item.content.trim()}
-                    </span>
+                      content={item.content}
+                      isStreaming={isStreaming && idx === items.length - 1}
+                    />
                   )
                 })}
               </div>
@@ -174,6 +176,27 @@ export function AgentGroup({
         </Expandable>
       )}
     </div>
+  )
+}
+
+interface NarrationTextProps {
+  content: string
+  /** This row is the group's live tail — pace its reveal like top-level text. */
+  isStreaming: boolean
+}
+
+/**
+ * A narration (thinking/text) row inside an agent group. The live tail row is
+ * paced with {@link useSmoothText} so streamed chunks reveal word-by-word
+ * instead of popping in, matching the top-level text treatment.
+ */
+function NarrationText({ content, isStreaming }: NarrationTextProps) {
+  const revealed = useSmoothText(content, isStreaming)
+
+  return (
+    <span className='pl-6 text-[13px] text-[var(--text-muted)] leading-[18px]'>
+      {renderInlineMarkdown(revealed.trim())}
+    </span>
   )
 }
 
@@ -188,19 +211,23 @@ function BoundedViewport({ children, isStreaming }: BoundedViewportProps) {
   const ref = useRef<HTMLDivElement>(null)
   const rafRef = useRef<number | null>(null)
   const stickToBottomRef = useRef(true)
+  const prevScrollTopRef = useRef(0)
   const [hasOverflow, setHasOverflow] = useState(false)
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    // Any upward user input detaches auto-stick. A subsequent scroll-to-bottom
-    // (wheel back down or dragging scrollbar) re-attaches it.
+    // Upward user input detaches auto-stick; a downward scroll reaching the
+    // bottom re-attaches it (a small upward flick can't re-stick itself).
     const handleWheel = (e: WheelEvent) => {
       if (e.deltaY < 0) stickToBottomRef.current = false
     }
     const handleScroll = () => {
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-      if (distance < BOTTOM_STICK_THRESHOLD_PX) stickToBottomRef.current = true
+      if (distance < BOTTOM_STICK_THRESHOLD_PX && el.scrollTop > prevScrollTopRef.current) {
+        stickToBottomRef.current = true
+      }
+      prevScrollTopRef.current = el.scrollTop
     }
     el.addEventListener('wheel', handleWheel, { passive: true })
     el.addEventListener('scroll', handleScroll, { passive: true })
@@ -247,7 +274,10 @@ function BoundedViewport({ children, isStreaming }: BoundedViewportProps) {
 
   return (
     <div className='relative'>
-      <div ref={ref} className={cn('max-h-[110px] overflow-y-auto pr-2', hasOverflow && 'py-1')}>
+      <div
+        ref={ref}
+        className={cn('scrollbar-hide max-h-[110px] overflow-y-auto pr-2', hasOverflow && 'py-1')}
+      >
         {children}
       </div>
       {hasOverflow && (

@@ -32,7 +32,7 @@ import { ChatFiles } from '@/lib/uploads'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 import { getWorkspaceIdsForUser } from '@/lib/workspaces/permissions/utils'
-import { assertChatEmbedAllowed, setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
+import { setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ChatIdentifierAPI')
@@ -283,13 +283,11 @@ export const POST = withRouteHandler(
             stackTrace: undefined,
           },
           traceSpans: [],
+          skipCost: true,
         })
 
         return createErrorResponse('This chat is currently unavailable', 403)
       }
-
-      const embedBlock = await assertChatEmbedAllowed(request, deployment.workflowId, requestId)
-      if (embedBlock) return embedBlock
 
       const authResult = await validateChatAuth(requestId, deployment, request, parsedBody)
       if (!authResult.authorized) {
@@ -502,9 +500,10 @@ export const POST = withRouteHandler(
         )
       }
 
-      const { actorUserId, workflowRecord } = preprocessResult
+      const { actorUserId, billingAttribution, workflowRecord } = preprocessResult
       const executionActor = preprocessResult.executionActor
       const workspaceOwnerId = actorUserId!
+      const resolvedActorUserId = actorUserId!
       const workspaceId = workflowRecord?.workspaceId
       if (!workspaceId) {
         logger.error(`[${requestId}] Workflow ${deployment.workflowId} has no workspaceId`)
@@ -540,6 +539,8 @@ export const POST = withRouteHandler(
       // Start logging session with chat metadata
       await loggingSession.safeStart({
         userId: userId || workspaceOwnerId,
+        actorUserId: resolvedActorUserId,
+        billingAttribution,
         workspaceId,
         variables: {},
         isExternalChat: true,
@@ -605,10 +606,13 @@ export const POST = withRouteHandler(
             logger.error(`[${requestId}] Failed to process chat files:`, fileError)
 
             await loggingSession.safeStart({
-              userId: workspaceOwnerId,
+              userId: resolvedActorUserId,
+              actorUserId: resolvedActorUserId,
+              billingAttribution,
               workspaceId,
               variables: {},
               conversationId: undefined,
+              executionActor,
             })
 
             await loggingSession.safeCompleteWithError({
@@ -617,6 +621,7 @@ export const POST = withRouteHandler(
                 stackTrace: fileError.stack,
               },
               traceSpans: [],
+              skipCost: true,
             })
 
             throw fileError
@@ -648,7 +653,7 @@ export const POST = withRouteHandler(
               workflowForExecution,
               requestId,
               workflowInput,
-              workspaceOwnerId,
+              resolvedActorUserId,
               {
                 enabled: true,
                 selectedOutputs,
@@ -660,6 +665,7 @@ export const POST = withRouteHandler(
                 sessionUserId: sessionUserId ?? undefined,
                 abortSignal,
                 executionMode: 'stream',
+                billingAttribution,
               },
               executionId
             ),
@@ -1230,9 +1236,6 @@ export const GET = withRouteHandler(
           ...(userWorkspaceIds && userWorkspaceIds.length > 0 && { userWorkspaceIds }),
         }
       }
-      const embedBlock = await assertChatEmbedAllowed(request, deployment.workflowId, requestId)
-      if (embedBlock) return embedBlock
-
       const cookieName = `chat_auth_${deployment.id}`
       const authCookie = request.cookies.get(cookieName)
 
