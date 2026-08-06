@@ -349,30 +349,6 @@ error: script "lint" exited with code 1
 
 ## Usage
 
-### Usage (stack rollup)
-
-- **This slice:** $2.9826 · 6,952,815 in / 49,507 out · 3 agent(s)
-- **Prior stack:** $8.0957 · 22,147,093 in / 170,237 out · 8 agent(s)
-- **Whole stack:** $11.0784 · 29,099,908 in / 219,744 out · 11 agent(s)
-
-### parent-grill-analysis
-- **Model:** `claude-opus-5`
-- **Iterations:** 1
-- **Input tokens (direct):** 59
-- **Input tokens (cache read):** 2,014,694
-- **Input tokens (cache create):** 71,388
-- **Input tokens (total):** 2,086,141
-- **Output tokens:** 22,776
-- **Cost:** $2.026137 (provider-reported)
-### parent-finalize-plan
-- **Model:** `claude-opus-5`
-- **Iterations:** 1
-- **Input tokens (direct):** 3,607
-- **Input tokens (cache read):** 523,621
-- **Input tokens (cache create):** 49,731
-- **Input tokens (total):** 576,959
-- **Output tokens:** 9,440
-- **Cost:** $0.829078 (provider-reported)
 ### child-finalize-merge
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
@@ -382,17 +358,35 @@ error: script "lint" exited with code 1
 - **Input tokens (total):** 4,289,715
 - **Output tokens:** 17,291
 - **Cost:** $0.127429 (estimated fallback)
+### parent-finalize-plan
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 3,607
+- **Input tokens (cache read):** 523,621
+- **Input tokens (cache create):** 49,731
+- **Input tokens (total):** 576,959
+- **Output tokens:** 9,440
+- **Cost:** $0.829078 (provider-reported)
+### parent-grill-analysis
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 59
+- **Input tokens (cache read):** 2,014,694
+- **Input tokens (cache create):** 71,388
+- **Input tokens (total):** 2,086,141
+- **Output tokens:** 22,776
+- **Cost:** $2.026137 (provider-reported)
 
 ### Totals
 - **Total input tokens:** 6,952,815
 - **Total output tokens:** 49,507
-- **Primary models:** claude-opus-5, gpt-5.6-luna
+- **Primary models:** gpt-5.6-luna, claude-opus-5
 - **Total cost:** $2.982644
 - **Provider-reported cost:** $2.855215
 - **Estimated cost (fallback):** $0.127429
 
 ### Cost by agent
-- **parent-grill-analysis:** $2.026137 (provider-reported)
-- **parent-finalize-plan:** $0.829078 (provider-reported)
 - **child-finalize-merge:** $0.127429 (estimated fallback)
+- **parent-finalize-plan:** $0.829078 (provider-reported)
+- **parent-grill-analysis:** $2.026137 (provider-reported)
 
