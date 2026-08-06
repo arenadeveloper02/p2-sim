@@ -46,6 +46,7 @@ import {
 } from './lib/cluster-report'
 import type { ConflictCluster } from './lib/clusters'
 import {
+  allocateRunId,
   appendExtensibilityNote,
   appendRunLogSections,
   applyMergeWip,
@@ -441,12 +442,27 @@ function syncBranchName(): string {
 
 function checkoutSyncBranch(syncBranch: string, reuseExisting: boolean): void {
   if (reuseExisting) {
-    runGit(['fetch', 'origin', syncBranch])
-    runGit(['checkout', syncBranch])
+    safeCheckoutBranch(syncBranch)
     return
   }
 
   runGit(['checkout', '-B', syncBranch])
+}
+
+/**
+ * Check out a remote branch for stacking/fresh base without dying on untracked
+ * same-day ledger files written before the branch switch.
+ */
+function safeCheckoutBranch(branch: string): void {
+  runGit(['fetch', 'origin', branch])
+  try {
+    // Tip trees often already contain ledger/<today>/; early harness writes on
+    // the land-target leave untracked copies that block a plain checkout.
+    runGit(['clean', '-fd', '--', '.upstream-sync/ledger'])
+  } catch (error) {
+    console.warn('Could not clean untracked ledger before checkout:', error)
+  }
+  runGit(['checkout', branch])
 }
 
 function resolveAgentModel(
@@ -1005,7 +1021,7 @@ async function main(): Promise<void> {
     const tip = resolveCappedUpstreamTip(baseline, {
       activeUpstreamSha: FORCE_RUN ? null : initialState.activeUpstreamSha,
     })
-    const runId = todayRunId()
+    let runId = todayRunId()
     activeRunId = runId
 
     if (tip.kind === 'noop' && !RESUME) {
@@ -1036,14 +1052,8 @@ async function main(): Promise<void> {
       `Upstream merge tip ${headSha.slice(0, 8)} (${tipReason}; ${tipCommitCount} commit(s); full HEAD ${baseline.upstreamHeadSha.slice(0, 8)}).`
     )
 
-    appendRunLogSections(runId, {
-      'Sync topology': [
-        formatBaselineMetadata(cappedBaseline, upstreamCommits.length),
-        `- **Merge tip:** ${tipReason} (\`${headSha.slice(0, 8)}\`${
-          tipCapped ? `; full upstream HEAD \`${baseline.upstreamHeadSha.slice(0, 8)}\`` : ''
-        })`,
-      ].join('\n'),
-    })
+    // Ledger writes wait until after the stack tip / land-target checkout so
+    // same-day untracked ledger files cannot block `git checkout`.
 
     if (!FORCE_RUN && !RESUME && initialState.lastSyncedUpstreamSha === headSha) {
       console.log(`No upstream changes (already at ${headSha.slice(0, 8)}).`)
@@ -1079,6 +1089,11 @@ async function main(): Promise<void> {
       syncBranch = resolveResumeSyncBranch(initialState)
       mergeBase = initialState.activeMergeBase ?? landTarget
       workingStack = bootstrapStackFromActive(initialState).stack
+      runId = allocateRunId({
+        mode: 'reuse',
+        preferredRunId: initialState.lastRunId,
+      })
+      activeRunId = runId
     } else {
       let candidateBranch = initialState.activeBranch
       const prOpen = Boolean(initialState.activePrNumber && isPrOpen(initialState.activePrNumber))
@@ -1109,15 +1124,24 @@ async function main(): Promise<void> {
         syncBranch = decision.branch
         continuingTip = true
         mergeBase = initialState.activeMergeBase ?? landTarget
+        runId = allocateRunId({
+          mode: 'reuse',
+          preferredRunId: initialState.lastRunId,
+        })
+        activeRunId = runId
         console.log(
           `Continuing tip sync PR #${decision.prNumber} on \`${syncBranch}\` (base \`${mergeBase}\`).`
         )
       } else if (decision.action === 'stack-on-tip') {
         mergeBase = decision.tipBranch
         syncBranch = syncBranchName()
+        runId = allocateRunId({
+          mode: 'new',
+          reservedRunIds: [initialState.lastRunId, ...workingStack.map((entry) => entry.runId)],
+        })
+        activeRunId = runId
         try {
-          runGit(['fetch', 'origin', decision.tipBranch])
-          runGit(['checkout', decision.tipBranch])
+          safeCheckoutBranch(decision.tipBranch)
         } catch (error) {
           throw new Error(
             `Could not check out stack tip \`${decision.tipBranch}\` to create the next slice: ${
@@ -1126,11 +1150,16 @@ async function main(): Promise<void> {
           )
         }
         console.log(
-          `Stacking new slice on tip PR #${decision.tipPrNumber} (\`${mergeBase}\`) → \`${syncBranch}\`.`
+          `Stacking new slice on tip PR #${decision.tipPrNumber} (\`${mergeBase}\`) → \`${syncBranch}\` (ledger ${runId}).`
         )
       } else {
         mergeBase = landTarget
         syncBranch = syncBranchName()
+        runId = allocateRunId({
+          mode: 'new',
+          reservedRunIds: [initialState.lastRunId, ...workingStack.map((entry) => entry.runId)],
+        })
+        activeRunId = runId
         if (workingStack.length > 0) {
           workingStack = closeOpenStackPrs(workingStack, {
             runId,
@@ -1148,8 +1177,7 @@ async function main(): Promise<void> {
           })
         }
         try {
-          runGit(['fetch', 'origin', landTarget])
-          runGit(['checkout', landTarget])
+          safeCheckoutBranch(landTarget)
         } catch (error) {
           console.warn(`Could not check out land target ${landTarget} before fresh branch:`, error)
         }
@@ -1158,6 +1186,15 @@ async function main(): Promise<void> {
     }
 
     checkoutSyncBranch(syncBranch, resuming || continuingTip)
+
+    appendRunLogSections(runId, {
+      'Sync topology': [
+        formatBaselineMetadata(cappedBaseline, upstreamCommits.length),
+        `- **Merge tip:** ${tipReason} (\`${headSha.slice(0, 8)}\`${
+          tipCapped ? `; full upstream HEAD \`${baseline.upstreamHeadSha.slice(0, 8)}\`` : ''
+        })`,
+      ].join('\n'),
+    })
 
     if (resuming || listConflictFiles().length > 0) {
       if (!ensureInstallableWorkspace(runId)) {

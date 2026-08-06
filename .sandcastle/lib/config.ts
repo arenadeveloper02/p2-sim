@@ -958,6 +958,36 @@ export function todayRunId(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+/**
+ * Pick a ledger run id for this Actions job.
+ * - `reuse` — continue/resume an in-flight tip (keep lastRunId)
+ * - `new` — stacked or fresh slice; avoid ids already claimed by the stack
+ */
+export function allocateRunId(options: {
+  mode: 'reuse' | 'new'
+  preferredRunId?: string | null
+  reservedRunIds?: readonly (string | null | undefined)[]
+}): string {
+  if (options.mode === 'reuse') {
+    const preferred = options.preferredRunId?.trim()
+    return preferred || todayRunId()
+  }
+
+  const reserved = new Set<string>()
+  for (const id of options.reservedRunIds ?? []) {
+    const trimmed = id?.trim()
+    if (trimmed) reserved.add(trimmed)
+  }
+  const preferred = options.preferredRunId?.trim()
+  if (preferred) reserved.add(preferred)
+
+  const base = todayRunId()
+  if (!reserved.has(base)) return base
+  let n = 2
+  while (reserved.has(`${base}-${n}`)) n++
+  return `${base}-${n}`
+}
+
 export function ledgerRunDir(runId: string): string {
   return join(LEDGER_DIR, runId)
 }

@@ -4,6 +4,7 @@
  */
 import { describe, expect, test } from 'bun:test'
 import {
+  allocateRunId,
   bootstrapStackFromActive,
   decideSyncBranchAction,
   defaultSyncState,
@@ -13,6 +14,7 @@ import {
   markStackSuperseded,
   type SyncStackEntry,
   type SyncState,
+  todayRunId,
   upsertStackTip,
 } from './config'
 
@@ -237,6 +239,31 @@ describe('upsertStackTip / markStackSuperseded', () => {
       { ...stack[0], status: 'closed' },
       { ...stack[1], status: 'merged' },
     ])
+  })
+})
+
+describe('allocateRunId', () => {
+  test('reuses preferred id when continuing a tip', () => {
+    expect(
+      allocateRunId({
+        mode: 'reuse',
+        preferredRunId: '2026-08-06',
+      })
+    ).toBe('2026-08-06')
+  })
+
+  test('avoids reserved ids when stacking a new slice', () => {
+    const base = todayRunId()
+    expect(
+      allocateRunId({
+        mode: 'new',
+        reservedRunIds: [base, `${base}-2`],
+      })
+    ).toBe(`${base}-3`)
+  })
+
+  test('returns calendar id when nothing is reserved', () => {
+    expect(allocateRunId({ mode: 'new', reservedRunIds: [] })).toBe(todayRunId())
   })
 })
 
