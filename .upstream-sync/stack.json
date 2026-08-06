@@ -1,13 +1,5 @@
 {
-  "lastSyncedUpstreamSha": "207785c8e4a700b085ec317e433748c6e327ee2e",
-  "lastSyncedAt": "2026-08-06T11:20:59.819Z",
-  "lastRunId": "2026-08-06-2",
-  "status": "completed",
-  "openQuestions": [],
-  "activeBranch": "upstream-sync/2026-08-06T10-38-40",
-  "activePrNumber": 685,
-  "activeMergeBase": "upstream-sync/2026-08-05T10-46-19",
-  "activeUpstreamSha": null,
+  "updatedAt": "2026-08-06T11:25:00.000Z",
   "stack": [
     {
       "runId": "2026-08-06",
