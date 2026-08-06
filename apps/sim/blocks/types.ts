@@ -389,6 +389,11 @@ export interface SubBlockConfig {
   acceptedTypes?: string
   multiple?: boolean
   maxSize?: number
+  /**
+   * When true, FileUpload checks for S3/Blob and warns / disables new uploads if missing.
+   * Used by providers (e.g. Instagram) that need a Meta-fetchable public HTTPS URL.
+   */
+  requiresCloudStorage?: boolean
   /** When 'image-fusion', upload API validates against all image extensions (e.g. svg, webp). */
   uploadContext?: 'image-fusion'
   /** When true, show "Use Start block files" so chat-uploaded files can be passed via <start.files>. */
@@ -507,6 +512,12 @@ export interface BlockConfig<T extends ToolResponse = ToolResponse> {
   hideFromToolbar?: boolean
   /** When true, the block appears in the toolbar and search only for admin workspaces. */
   adminWorkspaceOnly?: boolean
+  /**
+   * For published custom blocks only: the bound source workflow's id. Discovery
+   * surfaces use it to hide a workflow's own block on that workflow's canvas
+   * (placing it would recurse).
+   */
+  sourceWorkflowId?: string
   /**
    * Marks an unreleased block. Preview blocks are hidden from every discovery
    * surface (toolbar, search, mentions, copilot/VFS, docs) in every environment —

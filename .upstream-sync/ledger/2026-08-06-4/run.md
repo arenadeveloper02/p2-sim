@@ -187,3 +187,18 @@ Targeted Biome and diff checks pass. Full typecheck/test runs are blocked by unr
 
 Resolved all eight assigned paths under the locked union plan; no recurring policy change was introduced.
 
+## Cluster oauth-credentials
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/app/api/auth/oauth/utils.ts` | manual | Unioned token-service-account and Instagram refresh handling with fork HubSpot/custom-app refresh paths. |
+| `apps/sim/lib/auth/auth.ts` | manual | Kept upstream bounded TikTok OAuth parsing and fork Arena auth/session, Microsoft, Slack, and provider wiring. |
+| `apps/sim/lib/credentials/connect-draft.ts` | manual | Kept fork custom-display-name preservation while retaining upstream generic OAuth draft behavior. |
+| `apps/sim/lib/oauth/index.ts` | manual | Kept both custom-app-config and Instagram exports. |
+| `apps/sim/lib/oauth/oauth.test.ts` | manual | Kept fork custom-app/Zoom tests and upstream bounded-response coverage. |
+| `apps/sim/lib/oauth/oauth.ts` | manual | Unioned Instagram and fork Facebook Ads, Unipile, Zoom-admin, custom-app, and Slack provider behavior. |
+| `apps/sim/lib/oauth/types.ts` | manual | Kept both Instagram and fork Unipile/Zoom service identifiers. |
+| `apps/sim/lib/oauth/utils.ts` | manual | Kept both Facebook Ads and Instagram scope descriptions. |
+
+All eight union-path conflicts are resolved and staged. Focused OAuth tests (42) and Biome checks pass; the broader app type-check is currently blocked only by merge markers in files owned by other clusters.
+
