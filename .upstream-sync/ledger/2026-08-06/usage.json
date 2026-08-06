@@ -1,0 +1,28 @@
+{
+  "runId": "2026-08-06",
+  "recordedAt": "2026-08-06T07:01:48.966Z",
+  "agents": [
+    {
+      "agentName": "parent-finalize-plan",
+      "model": "claude-opus-5",
+      "iterations": 1,
+      "inputTokens": 17,
+      "outputTokens": 19501,
+      "cacheReadInputTokens": 569954,
+      "cacheCreationInputTokens": 75120,
+      "estimatedCostUsd": 1.2491569999999999,
+      "costSource": "provider"
+    },
+    {
+      "agentName": "child-finalize-merge",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 116146,
+      "outputTokens": 19439,
+      "cacheReadInputTokens": 2789771,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.102351,
+      "costSource": "estimated"
+    }
+  ]
+}

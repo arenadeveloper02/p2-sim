@@ -373,3 +373,36 @@ error: script "test" exited with code 1
     "apps/sim/lib/figma-design-generator.ts",
     "apps/sim/app/api/a
 
+## Usage
+
+### parent-finalize-plan
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 17
+- **Input tokens (cache read):** 569,954
+- **Input tokens (cache create):** 75,120
+- **Input tokens (total):** 645,091
+- **Output tokens:** 19,501
+- **Cost:** $1.249157 (provider-reported)
+### child-finalize-merge
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 116,146
+- **Input tokens (cache read):** 2,789,771
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 2,905,917
+- **Output tokens:** 19,439
+- **Cost:** $0.102351 (estimated fallback)
+
+### Totals
+- **Total input tokens:** 3,551,008
+- **Total output tokens:** 38,940
+- **Primary models:** claude-opus-5, gpt-5.6-luna
+- **Total cost:** $1.351508
+- **Provider-reported cost:** $1.249157
+- **Estimated cost (fallback):** $0.102351
+
+### Cost by agent
+- **parent-finalize-plan:** $1.249157 (provider-reported)
+- **child-finalize-merge:** $0.102351 (estimated fallback)
+
