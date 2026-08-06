@@ -31,9 +31,12 @@ import {
 import { AuthType, checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateInternalToken } from '@/lib/auth/internal'
 import {
-  API_EXECUTION_REQUIRES_PAID_PLAN_MESSAGE,
-  isWorkspaceApiExecutionEntitled,
-} from '@/lib/billing/core/api-access'
+  assertBillingAttributionSnapshot,
+  BILLING_ATTRIBUTION_HEADER,
+  type BillingAttributionSnapshot,
+  resolveBillingAttribution,
+  serializeBillingAttributionHeader,
+} from '@/lib/billing/core/billing-attribution'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import {
   assertContentLengthWithinLimit,
@@ -242,7 +245,7 @@ function hasResponseField(value: Record<string, unknown>, property: string): boo
 }
 
 function getWorkflowErrorStatus(status: number): number {
-  return [400, 401, 403, 404, 408, 409, 413, 429, 499, 503].includes(status) ? status : 500
+  return [400, 401, 402, 403, 404, 408, 409, 413, 429, 499, 503].includes(status) ? status : 500
 }
 
 function getWorkflowErrorCode(status: number, executeResult: Record<string, unknown>): ErrorCode {
@@ -312,20 +315,28 @@ async function getServer(serverId: string) {
 
 type WorkflowMcpServeServer = NonNullable<Awaited<ReturnType<typeof getServer>>>
 
+/**
+ * Captures attribution at the trusted MCP boundary. The workflow execute route
+ * remains the single attributed usage and reservation gate.
+ */
+async function resolveWorkflowMcpBillingAttribution(
+  actorUserId: string,
+  workspaceId: string
+): Promise<BillingAttributionSnapshot> {
+  const attribution = assertBillingAttributionSnapshot(
+    await resolveBillingAttribution({ actorUserId, workspaceId })
+  )
+  if (attribution.actorUserId !== actorUserId || attribution.workspaceId !== workspaceId) {
+    throw new Error('Resolved MCP billing attribution does not match the execution scope')
+  }
+  return attribution
+}
+
 async function authorizeMcpServeRequest(
   request: NextRequest,
   server: WorkflowMcpServeServer,
   options: { requireAuthForPublic?: boolean } = {}
 ): Promise<{ response?: NextResponse; executeAuthContext?: ExecuteAuthContext }> {
-  if (!(await isWorkspaceApiExecutionEntitled(server.workspaceId))) {
-    return {
-      response: NextResponse.json(
-        { error: API_EXECUTION_REQUIRES_PAID_PLAN_MESSAGE },
-        { status: 402 }
-      ),
-    }
-  }
-
   if (server.isPublic && !options.requireAuthForPublic) return {}
 
   const auth = await checkHybridAuth(request, { requireWorkflowId: false })
@@ -511,6 +522,7 @@ export const POST = withRouteHandler(
           return handleToolsCall(
             id,
             serverId,
+            server.workspaceId,
             paramsValidation.data,
             executeAuthContext,
             server.isPublic ? server.createdBy : undefined,
@@ -680,6 +692,7 @@ async function handleToolsList(
 async function handleToolsCall(
   id: RequestId,
   serverId: string,
+  serverWorkspaceId: string,
   params: { name: string; arguments?: Record<string, unknown> } | undefined,
   executeAuthContext?: ExecuteAuthContext | null,
   publicServerOwnerId?: string,
@@ -738,7 +751,7 @@ async function handleToolsCall(
     }
 
     const [wf] = await db
-      .select({ isDeployed: workflow.isDeployed })
+      .select({ isDeployed: workflow.isDeployed, workspaceId: workflow.workspaceId })
       .from(workflow)
       .where(and(eq(workflow.id, tool.workflowId), isNull(workflow.archivedAt)))
       .limit(1)
@@ -754,24 +767,40 @@ async function handleToolsCall(
       )
     }
 
+    if (!wf.workspaceId || wf.workspaceId !== serverWorkspaceId) {
+      logger.warn('Blocked workflow MCP tool with invalid workspace scope', {
+        serverId,
+        workflowId: tool.workflowId,
+      })
+      return NextResponse.json(
+        createError(id, ErrorCode.InternalError, 'Workflow is unavailable for this MCP server'),
+        { status: 403 }
+      )
+    }
+
+    const actorUserId = publicServerOwnerId ?? executeAuthContext?.userId
+    if (!actorUserId) {
+      throw new Error('Workflow MCP execution is missing an authenticated actor')
+    }
+    const billingAttribution = await resolveWorkflowMcpBillingAttribution(
+      actorUserId,
+      wf.workspaceId
+    )
+
     const executeUrl = `${getInternalApiBaseUrl()}/api/workflows/${tool.workflowId}/execute`
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      [BILLING_ATTRIBUTION_HEADER]: serializeBillingAttributionHeader(billingAttribution),
       [MCP_TOOL_BRIDGE_HEADER]: 'true',
     }
 
     const abortedBeforeExecute = callerAbortedJsonRpcResponse(id, abortSignal)
     if (abortedBeforeExecute) return abortedBeforeExecute
 
-    if (publicServerOwnerId) {
-      const internalToken = await generateInternalToken(publicServerOwnerId)
-      headers.Authorization = `Bearer ${internalToken}`
-    } else if (executeAuthContext) {
-      const internalToken = await generateInternalToken(executeAuthContext.userId)
-      headers.Authorization = `Bearer ${internalToken}`
-      if (executeAuthContext.useAuthenticatedUserAsActor) {
-        headers[MCP_TOOL_BRIDGE_ACTOR_HEADER] = 'authenticated-user'
-      }
+    const internalToken = await generateInternalToken(actorUserId)
+    headers.Authorization = `Bearer ${internalToken}`
+    if (executeAuthContext?.useAuthenticatedUserAsActor) {
+      headers[MCP_TOOL_BRIDGE_ACTOR_HEADER] = 'authenticated-user'
     }
 
     if (simViaHeader) {

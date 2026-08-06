@@ -619,6 +619,7 @@ async function executeWorkflowCoreImpl(
 
     loggingStarted = await loggingSession.safeStart({
       userId,
+      billingAttribution: metadata.billingAttribution,
       workspaceId: providedWorkspaceId,
       variables,
       triggerData: metadata.correlation ? { correlation: metadata.correlation } : undefined,
@@ -1038,6 +1039,7 @@ async function executeWorkflowCoreImpl(
     if (!loggingStarted) {
       loggingStarted = await loggingSession.safeStart({
         userId,
+        billingAttribution: metadata.billingAttribution,
         workspaceId: providedWorkspaceId,
         variables: {},
         triggerData: metadata.correlation ? { correlation: metadata.correlation } : undefined,

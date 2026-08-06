@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { useQueryClient } from '@tanstack/react-query'
 import Cookies from 'js-cookie'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
@@ -17,9 +18,21 @@ import { getLoginRedirectUrl } from '@/lib/core/utils/urls'
 import { InviteLayout, InviteStatusCard } from '@/app/invite/components'
 import { useBrandConfig } from '@/ee/whitelabeling'
 import { organizationKeys } from '@/hooks/queries/organization'
+import { refreshSessionQuery } from '@/hooks/queries/session'
 import { subscriptionKeys } from '@/hooks/queries/subscription'
 
 const logger = createLogger('InviteById')
+
+function runBestEffortCacheRefresh(cache: string, refresh: () => Promise<unknown>): void {
+  void Promise.resolve()
+    .then(refresh)
+    .catch((refreshError) => {
+      logger.warn('Post-acceptance cache refresh failed', {
+        cache,
+        error: getErrorMessage(refreshError),
+      })
+    })
+}
 
 type InviteErrorCode =
   | 'missing-token'
@@ -269,23 +282,17 @@ export default function Invite() {
         body: { token: token ?? undefined },
       })
 
-      if (invitation.organizationId) {
-        try {
-          await client.organization.setActive({ organizationId: invitation.organizationId })
-        } catch (setActiveError) {
-          logger.warn('Failed to set active organization after accept', setActiveError)
-        }
-      }
-
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: subscriptionKeys.all }),
-        queryClient.invalidateQueries({ queryKey: organizationKeys.all }),
-      ])
-
       setAccepted(true)
       setIsAccepting(false)
-
       setTimeout(() => router.push(data.redirectPath), 1200)
+
+      runBestEffortCacheRefresh('session', () => refreshSessionQuery(queryClient))
+      runBestEffortCacheRefresh('subscription', () =>
+        queryClient.invalidateQueries({ queryKey: subscriptionKeys.all })
+      )
+      runBestEffortCacheRefresh('organization', () =>
+        queryClient.invalidateQueries({ queryKey: organizationKeys.all })
+      )
     } catch (acceptError) {
       logger.error('Error accepting invitation:', acceptError)
       const code =

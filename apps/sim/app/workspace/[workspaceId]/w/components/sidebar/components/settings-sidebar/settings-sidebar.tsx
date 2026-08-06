@@ -4,15 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChipConfirmModal, chipVariants, cn } from '@sim/emcn'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams, usePathname, useRouter } from 'next/navigation'
+import { ORGANIZATION_PLANE_UNIFIED_SECTIONS } from '@/components/settings/navigation'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client'
-import { isEnterprise } from '@/lib/billing/plan-helpers'
+import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
 import { isHosted } from '@/lib/core/config/env-flags'
-import { getUserRole } from '@/lib/workspaces/organization'
+import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 import {
   allNavigationItems,
+  FORK_SUPPRESSED_SETTINGS_SECTIONS,
+  forkOnlyNavigationItems,
+  getSettingsSectionMeta,
   isBillingEnabled,
   sectionConfig,
 } from '@/app/workspace/[workspaceId]/settings/navigation'
@@ -26,8 +30,6 @@ import { useForkingAvailable } from '@/ee/workspace-forking/hooks/use-forking-av
 import { prefetchWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { prefetchGeneralSettings, useGeneralSettings } from '@/hooks/queries/general-settings'
 import { useInboxConfig } from '@/hooks/queries/inbox'
-import { useOrganizations } from '@/hooks/queries/organization'
-import { prefetchSubscriptionData, useSubscriptionData } from '@/hooks/queries/subscription'
 import { useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
@@ -61,37 +63,26 @@ export function SettingsSidebar({
   const [hasOverflowTop, setHasOverflowTop] = useState(false)
 
   const { data: session } = useSession()
-  const { data: organizationsData } = useOrganizations()
+  const hostContext = useWorkspaceHostContext()
   const { data: generalSettings } = useGeneralSettings()
-  const { data: subscriptionData } = useSubscriptionData({
-    enabled: isBillingEnabled,
-    staleTime: 5 * 60 * 1000,
-  })
   const { data: workspacePermissions } = useWorkspacePermissionsQuery(workspaceId)
   const { data: inboxConfig } = useInboxConfig(workspaceId)
   const { data: ssoProvidersData, isLoading: isLoadingSSO } = useSSOProviders({
     enabled: !isHosted,
   })
 
-  const activeOrganization = organizationsData?.activeOrganization
   const { config: permissionConfig } = usePermissionConfig()
-  // Mirrors the fork EE gate: the WORKSPACE's plan (not the viewer's) plus
-  // workspace admin - matching the Forks page's own gate and the server check.
   const forkingAvailable = useForkingAvailable(workspaceId)
   const { canAdmin: canAdminWorkspace } = useUserPermissionsContext()
 
-  const userEmail = session?.user?.email
   const userId = session?.user?.id
 
-  const userRole = getUserRole(activeOrganization, userEmail)
-  const isOwner = userRole === 'owner'
-  const isAdmin = userRole === 'admin'
-  const isOrgAdminOrOwner = isOwner || isAdmin
-  const subscriptionAccess = getSubscriptionAccessState(subscriptionData?.data)
+  const isOrgAdminOrOwner = hostContext.viewer.isHostOrganizationAdmin
+  const subscriptionAccess = getSubscriptionAccessState(hostContext.ownerBilling)
   const inboxEntitled = inboxConfig?.entitled ?? false
   const hasTeamPlan = subscriptionAccess.hasUsableTeamAccess
   const hasEnterprisePlan = subscriptionAccess.hasUsableEnterpriseAccess
-  const isEnterprisePlan = isEnterprise(subscriptionData?.data?.plan)
+  const isEnterprisePlan = subscriptionAccess.isEnterprise
 
   const isSuperUser = session?.user?.role === 'admin'
 
@@ -102,8 +93,16 @@ export function SettingsSidebar({
   }, [userId, ssoProvidersData?.providers, isLoadingSSO])
 
   const navigationItems = useMemo(() => {
-    return allNavigationItems.filter((item) => {
+    return [...allNavigationItems, ...forkOnlyNavigationItems].filter((item) => {
+      if (FORK_SUPPRESSED_SETTINGS_SECTIONS.has(item.id)) {
+        return false
+      }
+
       if (item.hideWhenBillingDisabled && !isBillingEnabled) {
+        return false
+      }
+
+      if (item.id === 'billing' && !canManageWorkspaceBilling(hostContext, userId)) {
         return false
       }
 
@@ -131,6 +130,20 @@ export function SettingsSidebar({
       }
 
       if (item.selfHostedOverride && !isHosted) {
+        /**
+         * Org-plane sections route through the organization gate in
+         * `settings/[section]/page.tsx` (host organization + org-admin viewer),
+         * which 404s other viewers — mirror it here so the item never links to
+         * a dead page.
+         */
+        if (
+          item.id !== 'usage' &&
+          item.id !== 'oauth-apps' &&
+          ORGANIZATION_PLANE_UNIFIED_SECTIONS.has(item.id) &&
+          !isOrgAdminOrOwner
+        ) {
+          return false
+        }
         if (item.id === 'sso') {
           const hasProviders = (ssoProvidersData?.providers?.length ?? 0) > 0
           return !hasProviders || isSSOProviderOwner === true
@@ -181,6 +194,8 @@ export function SettingsSidebar({
     hasEnterprisePlan,
     isEnterprisePlan,
     subscriptionAccess.hasUsableMaxAccess,
+    hostContext,
+    userId,
     isOrgAdminOrOwner,
     isSSOProviderOwner,
     ssoProvidersData?.providers?.length,
@@ -213,7 +228,6 @@ export function SettingsSidebar({
           void import('@/app/workspace/[workspaceId]/settings/components/secrets/secrets')
           break
         case 'billing':
-          prefetchSubscriptionData(queryClient)
           void import('@/app/workspace/[workspaceId]/settings/components/billing/billing')
           break
         case 'usage':
@@ -313,6 +327,7 @@ export function SettingsSidebar({
                   {sectionItems.map((item) => {
                     const Icon = item.icon
                     const active = activeSection === item.id
+                    const itemLabel = getSettingsSectionMeta(item.id)?.label ?? item.label
                     const isLocked =
                       item.requiresMax &&
                       (item.id === 'inbox'
@@ -323,7 +338,7 @@ export function SettingsSidebar({
                       <>
                         <Icon className='size-[16px] flex-shrink-0 text-[var(--text-icon)]' />
                         <span className='sidebar-collapse-hide min-w-0 truncate text-[var(--text-body)]'>
-                          {item.label}
+                          {itemLabel}
                         </span>
                         {isLocked && (
                           <span className='sidebar-collapse-hide ml-auto shrink-0 rounded-[3px] bg-[var(--surface-5)] px-1 py-[1px] font-medium text-[9px] text-[var(--text-icon)] uppercase tracking-wide'>
@@ -363,7 +378,7 @@ export function SettingsSidebar({
                     return (
                       <SidebarTooltip
                         key={item.id}
-                        label={item.label}
+                        label={itemLabel}
                         enabled={showCollapsedTooltips}
                       >
                         {element}

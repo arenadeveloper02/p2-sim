@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { booleanQueryFlagSchema } from '@/lib/api/contracts/primitives'
 import { type ContractJsonResponse, defineRouteContract } from '@/lib/api/contracts/types'
+import { usageLogSourceSchema } from '@/lib/api/contracts/workspace-usage'
 import { isSameOrigin } from '@/lib/core/utils/validation'
 
 export const userProfileSchema = z.object({
@@ -264,18 +265,6 @@ export type UnsubscribeData = ContractJsonResponse<typeof unsubscribeGetContract
 export type UnsubscribeActionResponse = ContractJsonResponse<typeof unsubscribePostContract>
 export type UnsubscribeBody = z.input<typeof unsubscribeBodySchema>
 export type UnsubscribeType = NonNullable<UnsubscribeBody['type']>
-
-export const usageLogSourceSchema = z.enum([
-  'workflow',
-  'wand',
-  'copilot',
-  'workspace-chat',
-  'mcp_copilot',
-  'mothership_block',
-  'knowledge-base',
-  'voice-input',
-  'enrichment',
-])
 
 export const usageLogPeriodSchema = z.enum(['1d', '7d', '30d', 'all', 'custom'])
 

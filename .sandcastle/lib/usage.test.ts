@@ -1,16 +1,21 @@
 /**
  * Run with: bun test ./.sandcastle/lib/usage.test.ts
  */
-import { afterEach, describe, expect, test } from 'bun:test'
+
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { afterEach, describe, expect, test } from 'bun:test'
 import {
+  type AgentUsageRecord,
   estimateCostFromTokens,
+  formatStackUsageRollupMarkdown,
   formatUsageMarkdown,
   formatUsageStepSummary,
+  formatUsageStepSummaryWithStack,
   getUsageRecords,
   inferModelForAgentName,
+  loadStackUsage,
   loadUsageRecordsFromJson,
   parseCostFromStdout,
   parseUsageFromClaudeStream,
@@ -21,13 +26,15 @@ import {
   recoverUsageFromLogDir,
   resetUsageRecords,
   resolveModelPricing,
+  sumUsageRecords,
+  writeStackUsageJson,
   writeUsageJson,
 } from './usage'
 
 describe('usage reporting', () => {
   afterEach(() => {
     resetUsageRecords()
-    delete process.env.GITHUB_STEP_SUMMARY
+    process.env.GITHUB_STEP_SUMMARY = undefined
   })
 
   test('formatUsageMarkdown aggregates token totals and shows provider cost', () => {
@@ -157,7 +164,7 @@ describe('usage reporting', () => {
       expect(summary).toContain('provider $2.5000')
       expect(summary).toContain('estimated $0.3200')
     } finally {
-      delete process.env.UPSTREAM_SYNC_AGENT
+      process.env.UPSTREAM_SYNC_AGENT = undefined
       rmSync(tempDir, { recursive: true, force: true })
     }
   })
@@ -330,7 +337,9 @@ describe('usage reporting', () => {
 
   test('recordAgentUsage returns null when both result and stream are empty', () => {
     expect(recordAgentUsage('ghost', 'claude-opus-4-8', null, '')).toBeNull()
-    expect(recordAgentUsage('ghost', 'claude-opus-4-8', { stdout: '', iterations: [] } as never)).toBeNull()
+    expect(
+      recordAgentUsage('ghost', 'claude-opus-4-8', { stdout: '', iterations: [] } as never)
+    ).toBeNull()
   })
 
   test('recordAgentUsage upserts the larger footprint for the same agent name', () => {
@@ -378,7 +387,7 @@ describe('usage reporting', () => {
   })
 
   test('inferModelForAgentName picks dual defaults (Opus parent, Luna children)', () => {
-    delete process.env.UPSTREAM_SYNC_AGENT
+    process.env.UPSTREAM_SYNC_AGENT = undefined
     expect(inferModelForAgentName('parent-grill-analysis')).toContain('opus')
     expect(inferModelForAgentName('child-cluster-3')).toContain('luna')
   })
@@ -388,7 +397,7 @@ describe('usage reporting', () => {
     try {
       expect(inferModelForAgentName('child-cluster-3')).toContain('sonnet')
     } finally {
-      delete process.env.UPSTREAM_SYNC_AGENT
+      process.env.UPSTREAM_SYNC_AGENT = undefined
     }
   })
 
@@ -410,7 +419,7 @@ describe('usage reporting', () => {
       expect(summary).toContain('$1.5000')
       expect(summary).toContain('**Total cost:** $1.5000')
     } finally {
-      delete process.env.GITHUB_STEP_SUMMARY
+      process.env.GITHUB_STEP_SUMMARY = undefined
       rmSync(tempDir, { recursive: true, force: true })
     }
   })
@@ -541,6 +550,91 @@ describe('usage reporting', () => {
       const summary = readFileSync(summaryPath, 'utf8')
       expect(summary).toContain('## Agent usage')
       expect(summary.match(/## Agent usage/g)?.length).toBe(1)
+    } finally {
+      process.chdir(previousCwd)
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('stack usage rollup', () => {
+  afterEach(() => {
+    resetUsageRecords()
+  })
+
+  function sampleRecord(overrides: Partial<AgentUsageRecord> = {}): AgentUsageRecord {
+    return {
+      agentName: 'parent-grill-analysis',
+      model: 'claude-opus-4-8',
+      iterations: 1,
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadInputTokens: 0,
+      cacheCreationInputTokens: 0,
+      estimatedCostUsd: 1.25,
+      costSource: 'provider',
+      ...overrides,
+    }
+  }
+
+  test('sumUsageRecords totals cost and tokens', () => {
+    const totals = sumUsageRecords([
+      sampleRecord({ estimatedCostUsd: 1.25, inputTokens: 100, outputTokens: 50 }),
+      sampleRecord({
+        agentName: 'child-0',
+        estimatedCostUsd: 0.75,
+        inputTokens: 200,
+        outputTokens: 25,
+      }),
+    ])
+    expect(totals.costUsd).toBe(2)
+    expect(totals.inputTokens).toBe(300)
+    expect(totals.outputTokens).toBe(75)
+    expect(totals.agentCount).toBe(2)
+  })
+
+  test('loadStackUsage splits this / prior / whole stack', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'stack-usage-'))
+    const previousCwd = process.cwd()
+    try {
+      process.chdir(tempDir)
+      writeUsageJson('2026-08-05', [
+        sampleRecord({ estimatedCostUsd: 2, inputTokens: 1000, outputTokens: 100 }),
+      ])
+      const thisSlice = [
+        sampleRecord({
+          agentName: 'child-0',
+          estimatedCostUsd: 1,
+          inputTokens: 500,
+          outputTokens: 40,
+        }),
+      ]
+      const rollup = loadStackUsage({
+        stack: [{ runId: '2026-08-05' }, { runId: '2026-08-06' }],
+        thisRunId: '2026-08-06',
+        thisSliceRecords: thisSlice,
+      })
+      expect(rollup.priorTotals.costUsd).toBe(2)
+      expect(rollup.thisTotals.costUsd).toBe(1)
+      expect(rollup.wholeTotals.costUsd).toBe(3)
+      expect(rollup.wholeStack).toHaveLength(2)
+
+      const markdown = formatStackUsageRollupMarkdown(rollup)
+      expect(markdown).toContain('This slice')
+      expect(markdown).toContain('Prior stack')
+      expect(markdown).toContain('Whole stack')
+      expect(markdown).toContain('$3.0000')
+
+      const path = writeStackUsageJson('2026-08-06', rollup)
+      expect(path).toBe('.upstream-sync/ledger/2026-08-06/stack-usage.json')
+      const payload = JSON.parse(readFileSync(path, 'utf8')) as {
+        wholeStack: { costUsd: number }
+      }
+      expect(payload.wholeStack.costUsd).toBe(3)
+
+      const withStack = formatUsageStepSummaryWithStack(thisSlice, rollup)
+      expect(withStack).toContain('## Agent usage')
+      expect(withStack).toContain('### Usage (stack rollup)')
     } finally {
       process.chdir(previousCwd)
       rmSync(tempDir, { recursive: true, force: true })

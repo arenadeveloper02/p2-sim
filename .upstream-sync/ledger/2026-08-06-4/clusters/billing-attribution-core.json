@@ -1,0 +1,133 @@
+{
+  "clusterId": "billing-attribution-core",
+  "runId": "2026-08-06-4",
+  "files": [
+    {
+      "path": "apps/sim/app/api/billing/route.ts",
+      "resolution": "manual",
+      "notes": "Merged fork billing behavior with upstream attribution-compatible additions."
+    },
+    {
+      "path": "apps/sim/app/api/billing/update-cost/route.test.ts",
+      "resolution": "manual",
+      "notes": "Retained fork callback compatibility and covered the merged protocol behavior."
+    },
+    {
+      "path": "apps/sim/app/api/billing/update-cost/route.ts",
+      "resolution": "manual",
+      "notes": "Preserved fork billingUserId semantics while adapting upstream attribution protocol fields at the boundary."
+    },
+    {
+      "path": "apps/sim/app/api/guardrails/validate/route.ts",
+      "resolution": "manual",
+      "notes": "Retained actor usage checks and added upstream attribution-aware billing context handling."
+    },
+    {
+      "path": "apps/sim/app/api/knowledge/search/route.ts",
+      "resolution": "manual",
+      "notes": "Preserved fork search and metering behavior with additive attribution handling."
+    },
+    {
+      "path": "apps/sim/app/api/workflows/[id]/execute/route.ts",
+      "resolution": "manual",
+      "notes": "Kept fork execution actor lineage separate from the upstream billing attribution snapshot."
+    },
+    {
+      "path": "apps/sim/background/schedule-execution.ts",
+      "resolution": "manual",
+      "notes": "Retained schedule execution actor resolution and threaded the additive billing snapshot."
+    },
+    {
+      "path": "apps/sim/background/webhook-execution.ts",
+      "resolution": "manual",
+      "notes": "Kept webhook execution actor lineage separate from payer attribution."
+    },
+    {
+      "path": "apps/sim/executor/handlers/workflow/workflow-handler.ts",
+      "resolution": "manual",
+      "notes": "Adapted nested workflow billing context at the boundary without replacing fork actor lineage."
+    },
+    {
+      "path": "apps/sim/lib/api/contracts/workflows.ts",
+      "resolution": "manual",
+      "notes": "Unioned fork workflow request fields with upstream execution headers."
+    },
+    {
+      "path": "apps/sim/lib/billing/core/billing.ts",
+      "resolution": "manual",
+      "notes": "Merged fork billing summaries with upstream personal billing behavior."
+    },
+    {
+      "path": "apps/sim/lib/billing/core/usage-log.test.ts",
+      "resolution": "manual",
+      "notes": "Kept fork legacy usage behavior while retaining upstream cumulative-ledger coverage."
+    },
+    {
+      "path": "apps/sim/lib/billing/core/usage-log.ts",
+      "resolution": "manual",
+      "notes": "Preserved fork legacy attribution fallback and added upstream ledger columns and explicit-context checks."
+    },
+    {
+      "path": "apps/sim/lib/billing/organizations/member-limits.test.ts",
+      "resolution": "manual",
+      "notes": "Unioned fork member-limit coverage with upstream additions."
+    },
+    {
+      "path": "apps/sim/lib/billing/organizations/member-limits.ts",
+      "resolution": "manual",
+      "notes": "Retained fork member-limit logic and merged upstream attribution-compatible helpers."
+    },
+    {
+      "path": "apps/sim/lib/billing/organizations/membership.ts",
+      "resolution": "manual",
+      "notes": "Kept fork membership behavior and added upstream workspace billed-account updates."
+    },
+    {
+      "path": "apps/sim/lib/execution/preprocessing.test.ts",
+      "resolution": "manual",
+      "notes": "Retained fork actor and usage-gate test behavior with additive attribution mocks."
+    },
+    {
+      "path": "apps/sim/lib/execution/preprocessing.ts",
+      "resolution": "manual",
+      "notes": "Preserved resolveExecutionActor and actor usage gates; threaded upstream billing attribution separately."
+    },
+    {
+      "path": "apps/sim/lib/logs/execution/logger.test.ts",
+      "resolution": "manual",
+      "notes": "Unioned fork logging coverage with upstream attribution coverage."
+    },
+    {
+      "path": "apps/sim/lib/logs/execution/logger.ts",
+      "resolution": "manual",
+      "notes": "Kept fork billingUserId and execution actor semantics while accepting optional upstream billing context."
+    },
+    {
+      "path": "apps/sim/lib/logs/execution/logging-factory.ts",
+      "resolution": "manual",
+      "notes": "Unioned fork logging metadata with upstream workflow-ledger exclusions."
+    },
+    {
+      "path": "apps/sim/lib/logs/execution/logging-session.ts",
+      "resolution": "manual",
+      "notes": "Retained fork actor propagation and added additive billing attribution fields."
+    },
+    {
+      "path": "apps/sim/lib/logs/types.ts",
+      "resolution": "manual",
+      "notes": "Unioned fork log types with optional upstream billing attribution fields."
+    },
+    {
+      "path": "apps/sim/lib/workflows/executor/execute-workflow.ts",
+      "resolution": "manual",
+      "notes": "Required and validated additive billing attribution while preserving fork execution actor lineage."
+    },
+    {
+      "path": "apps/sim/lib/workspaces/utils.ts",
+      "resolution": "manual",
+      "notes": "Retained fork workspace utilities and added upstream storage-payer mutation support."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "Resolved billing attribution core by preserving fork ExecutionActor/billingUserId semantics and taking upstream billing snapshots, schema-backed attribution fields, and boundary protocol support. No paths outside this cluster were edited."
+}

@@ -44,6 +44,8 @@ export function handleResourceEvent(ctx: StreamLoopContext, parsed: ResourceEven
   const onResourceEvent = onResourceEventRef.current
   const payload = parsed.payload
   const resource = payload.resource
+  const resourcePath =
+    'path' in resource && typeof resource.path === 'string' ? resource.path : undefined
 
   if (payload.op === MothershipStreamV1ResourceOp.remove) {
     removeResource(resource.type as MothershipResourceType, resource.id)
@@ -61,7 +63,7 @@ export function handleResourceEvent(ctx: StreamLoopContext, parsed: ResourceEven
     type: resource.type as MothershipResourceType,
     id: resource.id,
     title: typeof resource.title === 'string' ? resource.title : resource.id,
-    ...(typeof resource.path === 'string' && resource.path.trim() ? { path: resource.path } : {}),
+    ...(resourcePath?.trim() ? { path: resourcePath } : {}),
   }
   const completedPreviewHandoff =
     nextResource.type === 'file'

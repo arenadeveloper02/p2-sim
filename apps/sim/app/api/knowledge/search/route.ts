@@ -7,11 +7,21 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getValidationErrorMessage, parseJsonBody } from '@/lib/api/server'
 import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import {
+  type BillingAttributionSnapshot,
+  checkAttributedUsageLimits,
+  requireBillingAttributionHeader,
+  resolveBillingAttribution,
+  toBillingContext,
+} from '@/lib/billing/core/billing-attribution'
+import { recordUsage } from '@/lib/billing/core/usage-log'
+import { checkAndBillPayerOverageThreshold } from '@/lib/billing/threshold-billing'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { ALL_TAG_SLOTS } from '@/lib/knowledge/constants'
-import { recordSearchEmbeddingUsage, recordSearchRerankUsage } from '@/lib/knowledge/embeddings'
+import { recordSearchEmbeddingUsage } from '@/lib/knowledge/embeddings'
 import { getDocumentTagDefinitions } from '@/lib/knowledge/tags/service'
 import { buildUndefinedTagsError, validateTagValue } from '@/lib/knowledge/tags/utils'
 import type { StructuredFilter } from '@/lib/knowledge/types'
@@ -338,6 +348,35 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
+      const billingAttribution: BillingAttributionSnapshot | undefined =
+        hasQuery && workspaceId
+          ? auth.authType === AuthType.INTERNAL_JWT
+            ? requireBillingAttributionHeader(request.headers, {
+                actorUserId: userId,
+                workspaceId,
+              })
+            : shouldMeter
+              ? await resolveBillingAttribution({ actorUserId: userId, workspaceId })
+              : undefined
+          : undefined
+
+      /** Gate the fork actor before incurring hosted embedding or reranker cost. */
+      if (shouldMeter && hasQuery) {
+        const actorUsage = await checkActorUsageLimits(userId)
+        const usage =
+          actorUsage.isExceeded || !billingAttribution
+            ? actorUsage
+            : await checkAttributedUsageLimits(billingAttribution)
+        if (usage.isExceeded) {
+          return NextResponse.json(
+            {
+              error: usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.',
+            },
+            { status: 402 }
+          )
+        }
+      }
+
       // if (workflowId) {
       // const authorization = await authorizeWorkflowByWorkspacePermission({
       //   workflowId,
@@ -444,6 +483,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             query: validatedData.query!,
             isBYOK: queryEmbeddingIsBYOK,
             sourceReference: `kb-search:${requestId}`,
+            billingAttribution,
           })
         }
       }
@@ -506,15 +546,31 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           const pricing = getRerankModelPricing(rerankResult.model)
           rerankerCost = pricing ? pricing.perSearchUnit * rerankResult.searchUnits : undefined
 
-          if (shouldMeter && workspaceId) {
-            await recordSearchRerankUsage({
-              userId,
-              workspaceId,
-              model: rerankResult.model,
-              isBYOK: rerankResult.isBYOK,
-              sourceReference: `kb-search:${requestId}`,
-              searchUnits: rerankResult.searchUnits,
-            })
+          if (shouldMeter && workspaceId && !rerankResult.isBYOK && billingAttribution) {
+            try {
+              await recordUsage({
+                userId,
+                workspaceId,
+                ...toBillingContext(billingAttribution),
+                entries: [
+                  {
+                    category: 'model',
+                    source: 'knowledge-base',
+                    description: rerankResult.model,
+                    cost: rerankerCost ?? 0,
+                    sourceReference: `kb-search:${requestId}`,
+                    metadata: { searchUnits: rerankResult.searchUnits, rerank: true },
+                    quantity: rerankResult.searchUnits,
+                    unit: 'search_units',
+                  },
+                ],
+              })
+              await checkAndBillPayerOverageThreshold(billingAttribution.billingEntity)
+            } catch (billingError) {
+              logger.warn(`[${requestId}] Failed to record KB reranker usage`, {
+                error: billingError,
+              })
+            }
           }
         }
       }

@@ -111,7 +111,7 @@ describe('job summary', () => {
     expect(markdown).toContain('✅ Completed')
     expect(markdown).toContain('bun run check')
     expect(markdown).toContain('left to CI')
-    expect(markdown).toContain('full `bun run build` left to CI')
+    expect(markdown).toContain('`bun run test` + full `bun run build` left to CI')
   })
 
   test('writeRunOutcome / readRunOutcome round-trip', () => {

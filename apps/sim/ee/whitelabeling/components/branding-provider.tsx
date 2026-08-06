@@ -18,6 +18,10 @@ const BrandingContext = createContext<BrandingContextValue>({
 
 interface BrandingProviderProps {
   children: React.ReactNode
+  /** Organization that owns the routed workspace, never the viewer's active organization. */
+  hostOrganizationId?: string | null
+  /** External collaborators use the access-authorized server snapshot instead of the member-only org API. */
+  viewerIsHostOrganizationMember?: boolean
   /**
    * Org whitelabel settings fetched server-side from the DB by the workspace layout.
    * Used as the source of truth until the React Query result becomes available,
@@ -26,15 +30,17 @@ interface BrandingProviderProps {
   initialOrgSettings?: OrganizationWhitelabelSettings | null
 }
 
-/**
- * Provides merged branding (instance env vars + org DB settings) to the workspace.
- * Injects a `<style>` tag with CSS variable overrides when org colors are configured.
- */
-export function BrandingProvider({ children, initialOrgSettings }: BrandingProviderProps) {
-  const { data: orgsData } = useOrganizations()
-  const orgId = orgsData?.activeOrganization?.id
-  const { data: orgSettings } = useWhitelabelSettings(orgId)
+interface BrandingProviderContentProps {
+  children: React.ReactNode
+  orgSettings: OrganizationWhitelabelSettings | undefined
+  initialOrgSettings?: OrganizationWhitelabelSettings | null
+}
 
+function BrandingProviderContent({
+  children,
+  orgSettings,
+  initialOrgSettings,
+}: BrandingProviderContentProps) {
   const effectiveOrgSettings =
     orgSettings !== undefined ? orgSettings : (initialOrgSettings ?? null)
 
@@ -65,6 +71,51 @@ export function BrandingProvider({ children, initialOrgSettings }: BrandingProvi
       {children}
     </BrandingContext.Provider>
   )
+}
+
+function LegacyBrandingProvider({ children, initialOrgSettings }: BrandingProviderProps) {
+  const { data: orgsData } = useOrganizations()
+  const orgId = orgsData?.activeOrganization?.id
+  const { data: orgSettings } = useWhitelabelSettings(orgId)
+
+  return (
+    <BrandingProviderContent orgSettings={orgSettings} initialOrgSettings={initialOrgSettings}>
+      {children}
+    </BrandingProviderContent>
+  )
+}
+
+function RoutedBrandingProvider({
+  children,
+  hostOrganizationId,
+  viewerIsHostOrganizationMember,
+  initialOrgSettings,
+}: BrandingProviderProps) {
+  const { data: orgSettings } = useWhitelabelSettings(
+    viewerIsHostOrganizationMember ? (hostOrganizationId ?? undefined) : undefined
+  )
+
+  return (
+    <BrandingProviderContent orgSettings={orgSettings} initialOrgSettings={initialOrgSettings}>
+      {children}
+    </BrandingProviderContent>
+  )
+}
+
+/**
+ * Provides merged branding (instance env vars + org DB settings) to the workspace.
+ * Injects a `<style>` tag with CSS variable overrides when org colors are configured.
+ */
+export function BrandingProvider(props: BrandingProviderProps) {
+  const { hostOrganizationId, viewerIsHostOrganizationMember } = props
+  const usesRoutedWorkspaceContext =
+    hostOrganizationId !== undefined || viewerIsHostOrganizationMember !== undefined
+
+  if (usesRoutedWorkspaceContext) {
+    return <RoutedBrandingProvider {...props} />
+  }
+
+  return <LegacyBrandingProvider {...props} />
 }
 
 /**

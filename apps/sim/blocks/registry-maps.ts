@@ -26,6 +26,7 @@ import { BrandfetchBlock, BrandfetchBlockMeta } from '@/blocks/blocks/brandfetch
 import { BrexBlock, BrexBlockMeta } from '@/blocks/blocks/brex'
 import { BrightDataBlock, BrightDataBlockMeta } from '@/blocks/blocks/brightdata'
 import { BrowserUseBlock, BrowserUseBlockMeta } from '@/blocks/blocks/browser_use'
+import { BufferBlock, BufferBlockMeta } from '@/blocks/blocks/buffer'
 import { CalComBlock, CalComBlockMeta } from '@/blocks/blocks/calcom'
 import { CalendlyBlock, CalendlyBlockMeta } from '@/blocks/blocks/calendly'
 import { ChartGeneratorBlock, ChartGeneratorBlockMeta } from '@/blocks/blocks/chart_generator'
@@ -85,6 +86,7 @@ import {
   FirefliesV2Block,
   FirefliesV2BlockMeta,
 } from '@/blocks/blocks/fireflies'
+import { FlintBlock, FlintBlockMeta } from '@/blocks/blocks/flint'
 import { FunctionBlock } from '@/blocks/blocks/function'
 import { GammaBlock, GammaBlockMeta } from '@/blocks/blocks/gamma'
 import { GenericWebhookBlock } from '@/blocks/blocks/generic_webhook'
@@ -152,6 +154,7 @@ import { ImapBlock, ImapBlockMeta } from '@/blocks/blocks/imap'
 import { IncidentioBlock, IncidentioBlockMeta } from '@/blocks/blocks/incidentio'
 import { InfisicalBlock, InfisicalBlockMeta } from '@/blocks/blocks/infisical'
 import { InputTriggerBlock } from '@/blocks/blocks/input_trigger'
+import { InstagramBlock, InstagramBlockMeta } from '@/blocks/blocks/instagram'
 import { InstantlyBlock, InstantlyBlockMeta } from '@/blocks/blocks/instantly'
 import {
   IntercomBlock,
@@ -390,6 +393,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   brex: BrexBlock,
   brightdata: BrightDataBlock,
   browser_use: BrowserUseBlock,
+  buffer: BufferBlock,
   calcom: CalComBlock,
   calendly: CalendlyBlock,
   chart_generator: ChartGeneratorBlock,
@@ -453,6 +457,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   firecrawl: FirecrawlBlock,
   fireflies: FirefliesBlock,
   fireflies_v2: FirefliesV2Block,
+  flint: FlintBlock,
   function: FunctionBlock,
   gamma: GammaBlock,
   generic_webhook: GenericWebhookBlock,
@@ -504,6 +509,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   incidentio: IncidentioBlock,
   infisical: InfisicalBlock,
   input_trigger: InputTriggerBlock,
+  instagram: InstagramBlock,
   instantly: InstantlyBlock,
   intercom: IntercomBlock,
   intercom_v2: IntercomV2Block,
@@ -718,6 +724,7 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   brex: BrexBlockMeta,
   brightdata: BrightDataBlockMeta,
   browser_use: BrowserUseBlockMeta,
+  buffer: BufferBlockMeta,
   calcom: CalComBlockMeta,
   calendly: CalendlyBlockMeta,
   chart_generator: ChartGeneratorBlockMeta,
@@ -763,6 +770,7 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   firecrawl: FirecrawlBlockMeta,
   fireflies: FirefliesBlockMeta,
   fireflies_v2: FirefliesV2BlockMeta,
+  flint: FlintBlockMeta,
   gamma: GammaBlockMeta,
   github: GitHubBlockMeta,
   github_v2: GitHubV2BlockMeta,
@@ -807,6 +815,7 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   imap: ImapBlockMeta,
   incidentio: IncidentioBlockMeta,
   infisical: InfisicalBlockMeta,
+  instagram: InstagramBlockMeta,
   instantly: InstantlyBlockMeta,
   intercom: IntercomBlockMeta,
   intercom_v2: IntercomV2BlockMeta,

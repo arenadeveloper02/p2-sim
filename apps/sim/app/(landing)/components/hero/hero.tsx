@@ -90,7 +90,7 @@ export function Hero() {
             for building agentic workflows.
           </>
         }
-        description='The open-source workspace where teams build, deploy, and manage AI agents.'
+        description='Open source, with 1,000+ integrations and every major LLM. Build, deploy, and manage agents visually, conversationally, or with code.'
       />
 
       <div

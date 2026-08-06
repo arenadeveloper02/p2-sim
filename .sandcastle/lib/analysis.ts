@@ -123,20 +123,83 @@ export function resolveNextReleaseTip(
   baseline: Pick<AnalysisBaseline, 'baselineSha' | 'upstreamHeadSha'>,
   commits: UpstreamCommit[] = commitsSince(baseline.baselineSha, baseline.upstreamHeadSha)
 ): NextReleaseTip {
-  const releases = detectReleaseVersions(commits)
-  const first = releases[0]
-  if (!first?.releaseCommitSha) {
+  const batch = resolveReleaseBatchTip(baseline, commits, 1)
+  if (batch.kind === 'noop') return batch
+  return {
+    kind: 'release',
+    tipSha: batch.tipSha,
+    version: batch.version,
+    commitCount: batch.commitCount,
+  }
+}
+
+/** Default number of upstream release tips to merge per Actions run. */
+export const DEFAULT_MIN_RELEASES = 6
+
+/** Resolve `UPSTREAM_SYNC_MIN_RELEASES` (default 6, minimum 1). */
+export function resolveMinReleases(override?: number | null): number {
+  if (typeof override === 'number' && Number.isFinite(override) && override >= 1) {
+    return Math.floor(override)
+  }
+  const raw = process.env.UPSTREAM_SYNC_MIN_RELEASES?.trim()
+  if (!raw) return DEFAULT_MIN_RELEASES
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_MIN_RELEASES
+  return Math.floor(parsed)
+}
+
+/** Human label for a release batch (`v0.7.30` or `v0.7.30…v0.7.35`). */
+export function formatReleaseBatchLabel(versions: readonly string[]): string {
+  if (versions.length === 0) return ''
+  if (versions.length === 1) return versions[0] ?? ''
+  return `${versions[0]}…${versions[versions.length - 1]}`
+}
+
+export type ReleaseBatchTip =
+  | {
+      kind: 'release'
+      tipSha: string
+      /** Last release version in the batch (or sole version). */
+      version: string
+      versions: string[]
+      releaseCount: number
+      commitCount: number
+    }
+  | {
+      kind: 'noop'
+      reason: string
+    }
+
+/**
+ * Merge tip for the next batch of upstream releases.
+ * Takes `min(minReleases, remaining releases)` release tips — never past upstream HEAD,
+ * never a mid-release commit.
+ */
+export function resolveReleaseBatchTip(
+  baseline: Pick<AnalysisBaseline, 'baselineSha' | 'upstreamHeadSha'>,
+  commits: UpstreamCommit[] = commitsSince(baseline.baselineSha, baseline.upstreamHeadSha),
+  minReleases: number = resolveMinReleases()
+): ReleaseBatchTip {
+  const releases = detectReleaseVersions(commits).filter((entry) => entry.releaseCommitSha)
+  if (releases.length === 0) {
     return { kind: 'noop', reason: WAITING_FOR_NEXT_RELEASE }
   }
 
-  const tipIndex = commits.findIndex((commit) => commit.sha === first.releaseCommitSha)
+  const count = Math.min(Math.max(1, Math.floor(minReleases)), releases.length)
+  const selected = releases.slice(0, count)
+  const last = selected[selected.length - 1]
+  const tipSha = last.releaseCommitSha as string
+  const versions = selected.map((entry) => entry.version)
+  const tipIndex = commits.findIndex((commit) => commit.sha === tipSha)
   const commitCount =
-    tipIndex >= 0 ? tipIndex + 1 : commitsSince(baseline.baselineSha, first.releaseCommitSha).length
+    tipIndex >= 0 ? tipIndex + 1 : commitsSince(baseline.baselineSha, tipSha).length
 
   return {
     kind: 'release',
-    tipSha: first.releaseCommitSha,
-    version: first.version,
+    tipSha,
+    version: last.version,
+    versions,
+    releaseCount: selected.length,
     commitCount,
   }
 }
@@ -160,6 +223,8 @@ export type CappedUpstreamTip =
 export interface ResolveCappedUpstreamTipOptions {
   untilSha?: string | null
   maxCommits?: number | null
+  /** Minimum upstream release tips to merge in one slice (default 6 / env). */
+  minReleases?: number | null
   /** Resume lock: stay on this release tip instead of a newer one. */
   activeUpstreamSha?: string | null
   /** Injected commit list (oldest → newest). Skips git log / ancestor checks. */
@@ -167,14 +232,14 @@ export interface ResolveCappedUpstreamTipOptions {
 }
 
 /**
- * Cap the upstream merge tip to the next release by default.
+ * Cap the upstream merge tip to a batch of release tips by default (min 6).
  *
- * Escapes (checked in order, override next-release):
+ * Escapes (checked in order, override release-batch):
  * - `untilSha` / `UPSTREAM_SYNC_UNTIL_SHA` — exact upstream commit to merge through
  * - `maxCommits` / `UPSTREAM_SYNC_MAX_COMMITS` — positive integer; take the Nth commit after baseline
- * - `activeUpstreamSha` — persisted tip for resume (same release, not a newer one)
+ * - `activeUpstreamSha` — persisted tip for resume (same tip, not a newer one)
  *
- * `maxCommits` 0 / unset is **not** "merge all of main" — it uses the next release tip.
+ * `maxCommits` 0 / unset is **not** "merge all of main" — it uses the release batch tip.
  * No new release and no escape → noop (`waiting for next upstream release`).
  */
 export function resolveCappedUpstreamTip(
@@ -199,6 +264,9 @@ export function resolveCappedUpstreamTip(
   const activeUpstreamSha = (
     options && 'activeUpstreamSha' in options ? (options.activeUpstreamSha ?? '') : ''
   ).trim()
+  const minReleases = resolveMinReleases(
+    options && 'minReleases' in options ? options.minReleases : undefined
+  )
 
   const fullTip = baseline.upstreamHeadSha
   const commits = options?.commits ?? commitsSince(baseline.baselineSha, fullTip)
@@ -279,27 +347,28 @@ export function resolveCappedUpstreamTip(
       }
     }
     console.warn(
-      `activeUpstreamSha ${activeUpstreamSha.slice(0, 8)} is not in baseline..upstream HEAD — falling back to next release.`
+      `activeUpstreamSha ${activeUpstreamSha.slice(0, 8)} is not in baseline..upstream HEAD — falling back to release batch.`
     )
   }
 
-  const next = resolveNextReleaseTip(baseline, commits)
-  if (next.kind === 'noop') {
+  const batch = resolveReleaseBatchTip(baseline, commits, minReleases)
+  if (batch.kind === 'noop') {
     return {
       kind: 'noop',
       tipSha: null,
       commitCount: 0,
-      reason: next.reason,
+      reason: batch.reason,
     }
   }
 
+  const label = formatReleaseBatchLabel(batch.versions)
   return {
     kind: 'merge',
-    tipSha: next.tipSha,
-    capped: next.tipSha !== fullTip,
-    commitCount: next.commitCount,
-    reason: `next-release ${next.version}`,
-    version: next.version,
+    tipSha: batch.tipSha,
+    capped: batch.tipSha !== fullTip,
+    commitCount: batch.commitCount,
+    reason: `next-releases ${label} (n=${batch.releaseCount})`,
+    version: label,
   }
 }
 

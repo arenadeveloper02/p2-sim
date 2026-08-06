@@ -12,7 +12,6 @@ import {
   clampPercent,
   formatCreditCount,
 } from '@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-usage-utils'
-import { useMyMemberCredits } from '@/hooks/queries/organization'
 import { useSubscriptionData } from '@/hooks/queries/subscription'
 
 const MY_USAGE_TOOLTIP =
@@ -59,12 +58,11 @@ function resolvePersonalAllowance(
 export function BillingPersonalUsageView({ data }: BillingPersonalUsageViewProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { data: subscriptionData } = useSubscriptionData({ workspaceId })
-  const { data: memberCredits } = useMyMemberCredits(workspaceId)
 
   const consumed = data.summary.totalCredits
   const { totalCredits, hint, isUnlimited } = resolvePersonalAllowance(
     subscriptionData?.data?.usage?.limit,
-    memberCredits?.limitDollars
+    data.memberLimitDollars
   )
 
   const remaining =

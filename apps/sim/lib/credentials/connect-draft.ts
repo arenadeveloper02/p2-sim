@@ -21,6 +21,8 @@ const DRAFT_TTL_MS = 15 * 60 * 1000
  * When a draft already exists (saved from the connect modal with a user-chosen
  * display name), the upsert only refreshes the TTL — it does not overwrite
  * `displayName`, `description`, or `credentialId`.
+ * Creates the pending credential draft at OAuth click time so custom and
+ * generic OAuth callbacks can materialize the connected workspace credential.
  */
 export async function createConnectDraft(params: {
   userId: string
@@ -28,7 +30,6 @@ export async function createConnectDraft(params: {
   providerId: string
 }): Promise<void> {
   const { userId, workspaceId, providerId } = params
-
   const service = getAllOAuthServices().find((s) => s.providerId === providerId)
   const serviceName = service?.name ?? providerId
 

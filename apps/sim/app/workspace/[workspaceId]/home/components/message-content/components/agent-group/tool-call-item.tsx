@@ -1,8 +1,27 @@
 import { useMemo } from 'react'
 import { ShimmerText } from '@/components/ui'
-import { WorkspaceFile } from '@/lib/copilot/generated/tool-catalog-v1'
+import { Read as ReadTool, WorkspaceFile } from '@/lib/copilot/generated/tool-catalog-v1'
+import { getReadTargetBlock } from '@/lib/copilot/tools/client/read-block'
+import { getToolCompletedTitle } from '@/lib/copilot/tools/tool-display'
+import { getBareIconStyle } from '@/blocks/icon-color'
 import type { ToolCallStatus } from '../../../../types'
 import { getToolIcon, resolveToolDisplayState } from '../../utils'
+
+export function CircleStop({ className }: { className?: string }) {
+  return (
+    <svg
+      width='16'
+      height='16'
+      viewBox='0 0 16 16'
+      fill='none'
+      xmlns='http://www.w3.org/2000/svg'
+      className={className}
+    >
+      <circle cx='8' cy='8' r='6.5' stroke='currentColor' strokeWidth='1.25' />
+      <rect x='6' y='6' width='4' height='4' rx='0.5' fill='currentColor' />
+    </svg>
+  )
+}
 
 function CircleCheck({ className }: { className?: string }) {
   return (
@@ -22,22 +41,6 @@ function CircleCheck({ className }: { className?: string }) {
         strokeLinecap='round'
         strokeLinejoin='round'
       />
-    </svg>
-  )
-}
-
-export function CircleStop({ className }: { className?: string }) {
-  return (
-    <svg
-      width='16'
-      height='16'
-      viewBox='0 0 16 16'
-      fill='none'
-      xmlns='http://www.w3.org/2000/svg'
-      className={className}
-    >
-      <circle cx='8' cy='8' r='6.5' stroke='currentColor' strokeWidth='1.25' />
-      <rect x='6' y='6' width='4' height='4' rx='0.5' fill='currentColor' />
     </svg>
   )
 }
@@ -98,10 +101,31 @@ interface ToolCallItemProps {
   toolName: string
   displayTitle: string
   status: ToolCallStatus
+  params?: Record<string, unknown>
   streamingArgs?: string
 }
 
-export function ToolCallItem({ toolName, displayTitle, status, streamingArgs }: ToolCallItemProps) {
+/**
+ * A single tool-call row inside an agent group: shimmer while executing, a
+ * static label once terminal. For `workspace_file` the title is derived live
+ * from the streaming args; because that path bypasses the completed-title
+ * rewrite in `toToolData`, the past-tense flip is applied here on success.
+ * A `read` of a block or integration schema shows the block's brand icon
+ * inline next to its display name (e.g. the Gmail logo before "Read Gmail").
+ */
+export function ToolCallItem({
+  toolName,
+  displayTitle,
+  status,
+  params,
+  streamingArgs,
+}: ToolCallItemProps) {
+  const readBlock = useMemo(() => {
+    if (toolName !== ReadTool.id) return undefined
+    const path = params?.path
+    return typeof path === 'string' ? getReadTargetBlock(path) : undefined
+  }, [toolName, params])
+
   const liveWorkspaceFileTitle = useMemo(() => {
     if (toolName !== WorkspaceFile.id || !streamingArgs) return null
     const titleMatch = streamingArgs.match(/"title"\s*:\s*"([^"]+)"/)
@@ -131,24 +155,36 @@ export function ToolCallItem({ toolName, displayTitle, status, streamingArgs }: 
     return `${verb} ${unescaped}`
   }, [toolName, streamingArgs])
 
-  const resolvedTitle = liveWorkspaceFileTitle || displayTitle
-  const hasMultipleLines = resolvedTitle.includes('\n')
   const isExecuting = resolveToolDisplayState(status) === 'spinner'
+  const resolvedTitle = liveWorkspaceFileTitle || displayTitle
+  const title =
+    status === 'success' && liveWorkspaceFileTitle
+      ? (getToolCompletedTitle(resolvedTitle) ?? resolvedTitle)
+      : resolvedTitle
+  const hasMultipleLines = title.includes('\n')
+  const BlockIcon = readBlock?.icon
 
   return (
     <div
       className={`flex gap-[8px] pl-[24px] ${hasMultipleLines ? 'items-start' : 'items-center'}`}
     >
       <div className='flex size-[16px] flex-shrink-0 items-center justify-center'>
-        <StatusIcon status={status} toolName={toolName} />
+        {BlockIcon ? (
+          <BlockIcon
+            className='size-[14px] flex-shrink-0'
+            style={{ width: 14, height: 14, ...getBareIconStyle(BlockIcon) }}
+          />
+        ) : (
+          <StatusIcon status={status} toolName={toolName} />
+        )}
       </div>
       {isExecuting ? (
         <ShimmerText className='whitespace-pre-line text-[13px] [--shimmer-rest:var(--text-secondary)]'>
-          {resolvedTitle}
+          {title}
         </ShimmerText>
       ) : (
         <span className='whitespace-pre-line font-base text-[13px] text-[var(--text-secondary)]'>
-          {resolvedTitle}
+          {title}
         </span>
       )}
     </div>

@@ -2,7 +2,12 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { truncate } from '@sim/utils/string'
 import { create } from 'zustand'
-import { devtools, type PersistStorage, persist } from 'zustand/middleware'
+import {
+  devtools,
+  persist,
+  type PersistStorage,
+  type StorageValue,
+} from 'zustand/middleware'
 import { sanitizeMessagesForPersistence } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import type { ChatMessage, ChatState } from './types'
 import { MAX_CHAT_HEIGHT, MAX_CHAT_WIDTH, MIN_CHAT_HEIGHT, MIN_CHAT_WIDTH } from './utils'
@@ -20,23 +25,34 @@ const MAX_MESSAGES = 500
 const DEFAULT_WIDTH = 305
 const DEFAULT_HEIGHT = 286
 
+type PersistedChatState = Pick<
+  ChatState,
+  | 'isChatOpen'
+  | 'chatPosition'
+  | 'chatWidth'
+  | 'chatHeight'
+  | 'selectedWorkflowOutputs'
+  | 'conversationIds'
+  | 'messages'
+>
+
 /**
  * Safe storage adapter that handles QuotaExceededError gracefully
  * Sanitizes messages before storing to prevent localStorage quota issues
  */
-const safeStorageAdapter: PersistStorage<ChatState> = {
+const safeStorageAdapter: PersistStorage<PersistedChatState> = {
   getItem: (name: string) => {
     if (typeof localStorage === 'undefined') return null
     try {
       const value = localStorage.getItem(name)
       if (value === null) return null
-      return JSON.parse(value)
+      return JSON.parse(value) as StorageValue<PersistedChatState>
     } catch (e) {
       logger.warn('Failed to read from localStorage', e)
       return null
     }
   },
-  setItem: (name: string, value: any) => {
+  setItem: (name: string, value: StorageValue<PersistedChatState>) => {
     if (typeof localStorage === 'undefined') return
     try {
       // Ensure messages are sanitized before storing
@@ -44,7 +60,7 @@ const safeStorageAdapter: PersistStorage<ChatState> = {
         ...value,
         state: {
           ...value.state,
-          messages: sanitizeMessagesForPersistence(value.state?.messages || []),
+          messages: sanitizeMessagesForPersistence(value.state.messages),
         },
       }
       const serialized = JSON.stringify(sanitizedValue)
@@ -55,7 +71,7 @@ const safeStorageAdapter: PersistStorage<ChatState> = {
         logger.warn('localStorage quota exceeded, reducing message count and retrying', e)
         try {
           // Try to keep only the most recent messages to ensure we don't exceed quota
-          const messages = value.state?.messages || []
+          const messages = value.state.messages
           const limitedMessages = messages.slice(0, Math.min(50, messages.length))
           const limitedState = {
             ...value,
@@ -105,7 +121,7 @@ const safeStorageAdapter: PersistStorage<ChatState> = {
  */
 export const useChatStore = create<ChatState>()(
   devtools(
-    persist(
+    persist<ChatState, [], [], PersistedChatState>(
       (set, get) => ({
         isChatOpen: false,
         chatPosition: null,
@@ -143,7 +159,7 @@ export const useChatStore = create<ChatState>()(
               timestamp: (message as any).timestamp ?? new Date().toISOString(),
             }
 
-            const newMessages = [newMessage, ...state.messages].slice(0, MAX_MESSAGES)
+            const newMessages = [...state.messages, newMessage].slice(-MAX_MESSAGES)
 
             return { messages: newMessages }
           })
@@ -206,14 +222,9 @@ export const useChatStore = create<ChatState>()(
 
           const headers = ['timestamp', 'type', 'content']
 
-          const sortedMessages = [...messages].sort(
-            (a: ChatMessage, b: ChatMessage) =>
-              new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-          )
-
           const csvRows = [
             headers.join(','),
-            ...sortedMessages.map((message: ChatMessage) =>
+            ...messages.map((message: ChatMessage) =>
               [
                 formatCSVValue(message.timestamp),
                 formatCSVValue(message.type),
@@ -339,6 +350,26 @@ export const useChatStore = create<ChatState>()(
       {
         name: 'chat-store',
         storage: safeStorageAdapter,
+        version: 1,
+        /**
+         * v0 stored messages newest-first; v1 stores them in insertion
+         * (chronological) order, which consumers render without sorting.
+         */
+        migrate: (persistedState, version) => {
+          if ((version ?? 0) < 1) {
+            const state = (persistedState ?? {}) as Partial<PersistedChatState>
+            return {
+              isChatOpen: state.isChatOpen ?? false,
+              chatPosition: state.chatPosition ?? null,
+              chatWidth: state.chatWidth ?? DEFAULT_WIDTH,
+              chatHeight: state.chatHeight ?? DEFAULT_HEIGHT,
+              selectedWorkflowOutputs: state.selectedWorkflowOutputs ?? {},
+              conversationIds: state.conversationIds ?? {},
+              messages: [...(state.messages ?? [])].reverse(),
+            }
+          }
+          return persistedState as PersistedChatState
+        },
         /**
          * Persist only the durable chat state — message history (with transient
          * blob `previewUrl`s stripped since they are not valid across reloads),

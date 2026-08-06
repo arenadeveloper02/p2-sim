@@ -1,0 +1,48 @@
+{
+  "clusterId": "chat-ui-arena",
+  "runId": "2026-08-06-4",
+  "files": [
+    {
+      "path": "apps/sim/app/api/chat/[identifier]/route.test.ts",
+      "resolution": "manual",
+      "notes": "Kept fork chat-auth and file-validation coverage while retaining upstream streaming and preprocessing coverage."
+    },
+    {
+      "path": "apps/sim/app/api/chat/[identifier]/route.ts",
+      "resolution": "manual",
+      "notes": "Kept Arena chat behavior and actor execution fields; adopted upstream billing attribution additively and removed the deleted free-plan embed gate."
+    },
+    {
+      "path": "apps/sim/app/api/chat/utils.ts",
+      "resolution": "manual",
+      "notes": "Removed the orphaned free-API deployment gate and api-access dependency while retaining deployed-chat image access and first-party-origin helpers."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/agent-group.tsx",
+      "resolution": "manual",
+      "notes": "Unioned upstream shimmer and narration rendering with the fork assistant-label resolver, PillsRing spinner, and expansion semantics."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/tool-call-item.tsx",
+      "resolution": "manual",
+      "notes": "Unioned upstream natural-language titles, read target block icons, and execution shimmer with fork live titles, multiline layout, and status icons."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/special-tags.tsx",
+      "resolution": "manual",
+      "notes": "Kept fork chart, thinking, and single-select rendering while adopting upstream workspace billing permission handling."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/chat/chat.tsx",
+      "resolution": "manual",
+      "notes": "Adopted upstream uploaded-attachment plumbing and storage-backed message previews while preserving generated-image handling and the fork FileReader timeout/abort path."
+    },
+    {
+      "path": "apps/sim/stores/chat/store.ts",
+      "resolution": "manual",
+      "notes": "Unioned fork safe storage and chronological message persistence with upstream version-one migration."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "Resolved all eight assigned paths under the locked union plan; no recurring policy change was introduced."
+}

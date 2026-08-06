@@ -1,4 +1,4 @@
-import type { ComponentType, SVGProps } from 'react'
+import { createElement, type ComponentType, type SVGProps } from 'react'
 import {
   Asterisk,
   Blimp,
@@ -24,6 +24,10 @@ import { AgentIcon, ImageIcon, TTSIcon, VideoIcon } from '@/components/icons'
 import type { ToolCallStatus } from '@/app/workspace/[workspaceId]/home/types'
 
 export type IconComponent = ComponentType<SVGProps<SVGSVGElement>>
+
+function AgentToolIcon(props: SVGProps<SVGSVGElement>) {
+  return createElement(AgentIcon, { className: props.className })
+}
 
 const TOOL_ICONS: Record<string, IconComponent> = {
   mothership: Blimp,
@@ -54,7 +58,7 @@ const TOOL_ICONS: Record<string, IconComponent> = {
   table: TableIcon,
   scheduled_task: Calendar,
   job: Calendar,
-  agent: AgentIcon,
+  agent: AgentToolIcon,
   custom_tool: Wrench,
   research: Search,
   context_compaction: Asterisk,

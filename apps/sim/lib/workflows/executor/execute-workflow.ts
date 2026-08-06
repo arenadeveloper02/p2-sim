@@ -1,6 +1,10 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import {
+  assertBillingAttributionSnapshot,
+  type BillingAttributionSnapshot,
+} from '@/lib/billing/core/billing-attribution'
 import { resolveChildExecutionLineage } from '@/lib/execution/lineage'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { captureServerEvent } from '@/lib/posthog/server'
@@ -59,6 +63,8 @@ export interface ExecuteWorkflowOptions {
   triggeringChatId?: string
   /** Copilot run that triggered this run (rollup only). */
   triggeringRunId?: string
+  /** Immutable actor/payer decision captured by preprocessing. */
+  billingAttribution?: BillingAttributionSnapshot
 }
 
 export interface WorkflowInfo {
@@ -83,6 +89,14 @@ export async function executeWorkflow(
 
   const workflowId = workflow.id
   const workspaceId = workflow.workspaceId
+  if (!streamConfig?.billingAttribution) {
+    throw new Error('Billing attribution is required for workspace execution')
+  }
+  const billingAttribution = assertBillingAttributionSnapshot(streamConfig.billingAttribution)
+  if (billingAttribution.workspaceId !== workspaceId) {
+    throw new Error('Workflow billing attribution does not match its workspace')
+  }
+
   const executionId = providedExecutionId || generateId()
   const triggerType = streamConfig?.workflowTriggerType || 'api'
   const loggingSession = new LoggingSession(workflowId, executionId, triggerType, requestId)
@@ -104,6 +118,7 @@ export async function executeWorkflow(
       workflowId,
       workspaceId,
       userId: actorUserId,
+      billingAttribution,
       workflowUserId: workflow.userId,
       sessionUserId,
       triggerType,
