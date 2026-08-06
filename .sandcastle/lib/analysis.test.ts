@@ -9,6 +9,7 @@ import {
   type AnalysisBaseline,
   resolveCappedUpstreamTip,
   resolveNextReleaseTip,
+  resolveReleaseBatchTip,
   WAITING_FOR_NEXT_RELEASE,
 } from './analysis'
 import { readState, type UpstreamCommit } from './config'
@@ -36,6 +37,7 @@ const commits: UpstreamCommit[] = [
 afterEach(() => {
   process.env.UPSTREAM_SYNC_UNTIL_SHA = undefined
   process.env.UPSTREAM_SYNC_MAX_COMMITS = undefined
+  process.env.UPSTREAM_SYNC_MIN_RELEASES = undefined
 })
 
 describe('resolveNextReleaseTip', () => {
@@ -58,8 +60,32 @@ describe('resolveNextReleaseTip', () => {
   })
 })
 
+describe('resolveReleaseBatchTip', () => {
+  test('takes min(minReleases, remaining) release tips', () => {
+    expect(resolveReleaseBatchTip(baseline, commits, 6)).toEqual({
+      kind: 'release',
+      tipSha: 'c4',
+      version: 'v0.7.57',
+      versions: ['v0.7.56', 'v0.7.57'],
+      releaseCount: 2,
+      commitCount: 4,
+    })
+  })
+
+  test('honors a smaller minReleases', () => {
+    expect(resolveReleaseBatchTip(baseline, commits, 1)).toEqual({
+      kind: 'release',
+      tipSha: 'c2',
+      version: 'v0.7.56',
+      versions: ['v0.7.56'],
+      releaseCount: 1,
+      commitCount: 2,
+    })
+  })
+})
+
 describe('resolveCappedUpstreamTip', () => {
-  test('defaults to the next release tip, not full HEAD', () => {
+  test('defaults to a release batch tip (min 6, or remaining)', () => {
     expect(
       resolveCappedUpstreamTip(baseline, {
         untilSha: null,
@@ -68,11 +94,28 @@ describe('resolveCappedUpstreamTip', () => {
       })
     ).toMatchObject({
       kind: 'merge',
-      tipSha: 'c2',
-      reason: 'next-release v0.7.56',
-      commitCount: 2,
+      tipSha: 'c4',
+      reason: 'next-releases v0.7.56…v0.7.57 (n=2)',
+      commitCount: 4,
       capped: true,
+      version: 'v0.7.56…v0.7.57',
+    })
+  })
+
+  test('minReleases=1 keeps single-release slices', () => {
+    expect(
+      resolveCappedUpstreamTip(baseline, {
+        untilSha: null,
+        maxCommits: 0,
+        minReleases: 1,
+        commits,
+      })
+    ).toMatchObject({
+      kind: 'merge',
+      tipSha: 'c2',
+      reason: 'next-releases v0.7.56 (n=1)',
       version: 'v0.7.56',
+      commitCount: 2,
     })
   })
 
@@ -91,7 +134,7 @@ describe('resolveCappedUpstreamTip', () => {
     })
   })
 
-  test('until_sha escape overrides next-release default', () => {
+  test('until_sha escape overrides release-batch default', () => {
     expect(
       resolveCappedUpstreamTip(baseline, {
         untilSha: 'c3',
@@ -122,7 +165,7 @@ describe('resolveCappedUpstreamTip', () => {
     })
   })
 
-  test('max_commits escape overrides next-release default', () => {
+  test('max_commits escape overrides release-batch default', () => {
     expect(
       resolveCappedUpstreamTip(baseline, {
         untilSha: null,

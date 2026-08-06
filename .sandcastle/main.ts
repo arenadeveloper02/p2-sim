@@ -5,7 +5,7 @@
  * 1. Detect upstream changes + scaffold ledger
  * 2. Early draft PR + parent grill (Phase A: resolutions + draft child plan)
  * 3. Gate on unanswered grill questions (await `/upstream-sync resume`)
- * 4. Git merge next upstream release tip (until_sha / max_commits are smoke escapes)
+ * 4. Git merge next upstream release batch tip (min 6 releases / until_sha / max_commits escapes)
  * 5. Package bootstrap → WIP overlay (decisionHash) → parent finalize (Phase B; resume continues from cluster reports)
  * 6. Apply merge directives + deterministic policy (forkFirst overrides / mustEdit)
  * 7. Luna children from merge-plan.json clusters (fallback prefix grouping if plan missing)

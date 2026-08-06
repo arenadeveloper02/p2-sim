@@ -7,7 +7,7 @@ description: Merge simstudioai/sim main into the current branch with fork-first 
 
 Sync parent repo `simstudioai/sim` `main` into the branch that triggered the run (current branch / `GITHUB_HEAD_REF`). Set `TARGET_BRANCH` to override.
 
-Each Actions run merges **one upstream release** (`vX.Y.Z:` tip) by default — not all of `main`. After a successful complete, the harness dispatches the next release slice. `until_sha` / positive `max_commits` are smoke escapes only (`max_commits=0` means next-release).
+Each Actions run merges **up to 6 upstream releases** (`vX.Y.Z:` tips) by default — or fewer if that is all remaining — not all of `main`. After a successful complete, the harness dispatches the next batch. Override with `UPSTREAM_SYNC_MIN_RELEASES` / workflow `min_releases`. `until_sha` / positive `max_commits` are smoke escapes only (`max_commits=0` means release-batch).
 
 ## Skill workflow (run in order)
 
@@ -103,9 +103,9 @@ bun run lint
 
 ## GitHub Actions
 
-- Daily 06:00 UTC + manual dispatch — one unpaid upstream release per run
+- Daily 06:00 UTC + manual dispatch — up to **6** unpaid upstream releases per run (or fewer if that is all remaining)
 - Resume: `/upstream-sync resume` on the draft PR (skips grill re-ask, finalizes as a continuation from cluster reports + WIP)
-- Stack: each completed release opens a **new** draft PR based on the previous tip (`FORCE_RUN` starts a fresh stack and closes open stack PRs)
+- Stack: each completed batch opens a **new** draft PR based on the previous tip (`FORCE_RUN` starts a fresh stack and closes open stack PRs)
 - Tip-only landing: merge the tip PR into the target branch; lower stack PRs are review artifacts and close as superseded
 - After each complete, tip pointers are mirrored onto the land-target branch so auto-chained runs keep stacking
 - Usage rollup on PR bodies / job summary: this slice / prior stack / whole stack

@@ -1,13 +1,15 @@
 name: Upstream Sync
 
 # Merges simstudioai/sim main into the branch that triggered the run via the Sandcastle harness.
-# Cron/dispatch default: one upstream release (`vX.Y.Z:` commit) per run — not all of main.
+# Cron/dispatch default: batch of up to 6 upstream releases (`vX.Y.Z:` tips) per run —
+# or fewer if that is all that remains — not all of main.
 # After a successful complete, the harness dispatches another run if more releases remain
 # (`gh workflow run upstream-sync.yml`; concurrency group `upstream-sync` serializes).
-# Each release opens a NEW stacked draft PR based on the previous tip (not reuse/extend).
+# Each batch opens a NEW stacked draft PR based on the previous tip (not reuse/extend).
 # Tip-only landing: merge the tip into TARGET; lower stack PRs close as superseded.
 # FORCE_RUN starts a fresh stack and closes open stack PRs.
-# Smoke escapes: workflow_dispatch `until_sha` or positive `max_commits` (0 = next-release default).
+# Smoke escapes: workflow_dispatch `until_sha` or positive `max_commits` (0 = release-batch default).
+# Override batch size with `min_releases` / `UPSTREAM_SYNC_MIN_RELEASES` (default 6).
 # Parent: grill writes a draft merge plan; resume skips re-ask but finalizes the plan post-merge,
 # then Luna children run from merge-plan.json (prefix clustering is fallback only).
 # Build is left to CI; check/lint stay advisory (test is also left to CI).
@@ -68,11 +70,15 @@ on:
           - openai
         default: dual
       max_commits:
-        description: Positive integer caps commit count (smoke). 0 = next upstream release only, not all of main
+        description: Positive integer caps commit count (smoke). 0 = release-batch default (min_releases)
         type: string
         default: '0'
+      min_releases:
+        description: Minimum upstream vX.Y.Z tips to merge per run (default 6, or fewer if that is all remaining)
+        type: string
+        default: '6'
       until_sha:
-        description: Optional upstream SHA to merge through (overrides max_commits and next-release default)
+        description: Optional upstream SHA to merge through (overrides max_commits and release-batch default)
         type: string
         required: false
   issue_comment:
@@ -122,8 +128,9 @@ jobs:
       skip_agent: ${{ steps.decide.outputs.skip_agent }}
       agent_provider: ${{ steps.decide.outputs.agent_provider }}
       max_commits: ${{ steps.decide.outputs.max_commits }}
+      min_releases: ${{ steps.decide.outputs.min_releases }}
       until_sha: ${{ steps.decide.outputs.until_sha }}
-      # 0 / empty → harness next-release default (not "merge all of main")
+      # 0 max_commits → harness release-batch default (min_releases, default 6)
     steps:
       - name: Decide trigger
         id: decide
@@ -135,8 +142,9 @@ jobs:
           force=false
           skip_agent=true
           agent_provider=dual
-          # 0 = next upstream release (harness default). Positive = smoke commit cap.
+          # 0 = release-batch default (min_releases). Positive = smoke commit cap.
           max_commits=0
+          min_releases=6
           until_sha=
 
           if [ "$EVENT" = "workflow_dispatch" ]; then
@@ -145,6 +153,7 @@ jobs:
             skip_agent="${{ github.event.inputs.skip_agent == 'true' && 'true' || 'false' }}"
             agent_provider="${{ github.event.inputs.agent_provider || 'dual' }}"
             max_commits="${{ github.event.inputs.max_commits || '0' }}"
+            min_releases="${{ github.event.inputs.min_releases || '6' }}"
             until_sha="${{ github.event.inputs.until_sha || '' }}"
           fi
 
@@ -170,6 +179,7 @@ jobs:
           echo "skip_agent=$skip_agent" >> "$GITHUB_OUTPUT"
           echo "agent_provider=$agent_provider" >> "$GITHUB_OUTPUT"
           echo "max_commits=$max_commits" >> "$GITHUB_OUTPUT"
+          echo "min_releases=$min_releases" >> "$GITHUB_OUTPUT"
           echo "until_sha=$until_sha" >> "$GITHUB_OUTPUT"
 
   sync:
@@ -464,6 +474,7 @@ jobs:
           UPSTREAM_SYNC_RESUME: ${{ needs.gate.outputs.resume }}
           UPSTREAM_SYNC_SKIP_AGENT: ${{ needs.gate.outputs.skip_agent }}
           UPSTREAM_SYNC_MAX_COMMITS: ${{ needs.gate.outputs.max_commits }}
+          UPSTREAM_SYNC_MIN_RELEASES: ${{ needs.gate.outputs.min_releases }}
           UPSTREAM_SYNC_UNTIL_SHA: ${{ needs.gate.outputs.until_sha }}
           # Hierarchical clusters: deeper prefixes + max files/leaf + dynamic leftover re-split.
           # Override via repo Variables if needed.
