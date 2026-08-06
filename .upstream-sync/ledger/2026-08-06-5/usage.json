@@ -1,60 +1,16 @@
 {
   "runId": "2026-08-06-5",
-  "recordedAt": "2026-08-06T15:50:21.145Z",
+  "recordedAt": "2026-08-06T15:50:36.676Z",
   "agents": [
     {
-      "agentName": "parent-grill-analysis",
-      "model": "claude-opus-5",
-      "iterations": 1,
-      "inputTokens": 3556,
-      "outputTokens": 72197,
-      "cacheReadInputTokens": 8841170,
-      "cacheCreationInputTokens": 187085,
-      "estimatedCostUsd": 7.41579825,
-      "costSource": "provider"
-    },
-    {
-      "agentName": "parent-finalize-plan",
-      "model": "claude-opus-5",
-      "iterations": 1,
-      "inputTokens": 36,
-      "outputTokens": 33924,
-      "cacheReadInputTokens": 1469985,
-      "cacheCreationInputTokens": 112649,
-      "estimatedCostUsd": 2.29142875,
-      "costSource": "provider"
-    },
-    {
-      "agentName": "child-db-schema-migrations",
+      "agentName": "child-auth-oauth-credentials",
       "model": "gpt-5.6-luna",
       "iterations": 1,
-      "inputTokens": 99544,
-      "outputTokens": 16902,
-      "cacheReadInputTokens": 1811504,
+      "inputTokens": 258824,
+      "outputTokens": 32721,
+      "cacheReadInputTokens": 12348085,
       "cacheCreationInputTokens": 0,
-      "estimatedCostUsd": 0.076421,
-      "costSource": "estimated"
-    },
-    {
-      "agentName": "child-copilot-generated-catalog",
-      "model": "gpt-5.6-luna",
-      "iterations": 1,
-      "inputTokens": 204010,
-      "outputTokens": 32014,
-      "cacheReadInputTokens": 7688689,
-      "cacheCreationInputTokens": 0,
-      "estimatedCostUsd": 0.232993,
-      "costSource": "estimated"
-    },
-    {
-      "agentName": "child-copilot-chat-mothership",
-      "model": "gpt-5.6-luna",
-      "iterations": 1,
-      "inputTokens": 256313,
-      "outputTokens": 37987,
-      "cacheReadInputTokens": 14170750,
-      "cacheCreationInputTokens": 0,
-      "estimatedCostUsd": 0.380262,
+      "estimatedCostUsd": 0.337992,
       "costSource": "estimated"
     },
     {
@@ -69,6 +25,17 @@
       "costSource": "estimated"
     },
     {
+      "agentName": "child-db-schema-migrations",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 99544,
+      "outputTokens": 16902,
+      "cacheReadInputTokens": 1811504,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.076421,
+      "costSource": "estimated"
+    },
+    {
       "agentName": "child-uploads-storage-gcs",
       "model": "gpt-5.6-luna",
       "iterations": 1,
@@ -80,14 +47,47 @@
       "costSource": "estimated"
     },
     {
-      "agentName": "child-auth-oauth-credentials",
+      "agentName": "parent-finalize-plan",
+      "model": "claude-opus-5",
+      "iterations": 1,
+      "inputTokens": 36,
+      "outputTokens": 33924,
+      "cacheReadInputTokens": 1469985,
+      "cacheCreationInputTokens": 112649,
+      "estimatedCostUsd": 2.29142875,
+      "costSource": "provider"
+    },
+    {
+      "agentName": "child-deploy-state-machine",
       "model": "gpt-5.6-luna",
       "iterations": 1,
-      "inputTokens": 258824,
-      "outputTokens": 32721,
-      "cacheReadInputTokens": 12348085,
+      "inputTokens": 196012,
+      "outputTokens": 32759,
+      "cacheReadInputTokens": 6734410,
       "cacheCreationInputTokens": 0,
-      "estimatedCostUsd": 0.337992,
+      "estimatedCostUsd": 0.213201,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-copilot-chat-mothership",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 256313,
+      "outputTokens": 37987,
+      "cacheReadInputTokens": 14170750,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.380262,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-finalize-merge",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 351087,
+      "outputTokens": 61574,
+      "cacheReadInputTokens": 11452283,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.373152,
       "costSource": "estimated"
     },
     {
@@ -102,25 +102,14 @@
       "costSource": "estimated"
     },
     {
-      "agentName": "child-deploy-state-machine",
+      "agentName": "child-copilot-generated-catalog",
       "model": "gpt-5.6-luna",
       "iterations": 1,
-      "inputTokens": 196012,
-      "outputTokens": 32759,
-      "cacheReadInputTokens": 6734410,
+      "inputTokens": 204010,
+      "outputTokens": 32014,
+      "cacheReadInputTokens": 7688689,
       "cacheCreationInputTokens": 0,
-      "estimatedCostUsd": 0.213201,
-      "costSource": "estimated"
-    },
-    {
-      "agentName": "child-tools-executor",
-      "model": "gpt-5.6-luna",
-      "iterations": 1,
-      "inputTokens": 164838,
-      "outputTokens": 30041,
-      "cacheReadInputTokens": 7166260,
-      "cacheCreationInputTokens": 0,
-      "estimatedCostUsd": 0.212342,
+      "estimatedCostUsd": 0.232993,
       "costSource": "estimated"
     },
     {
@@ -135,15 +124,26 @@
       "costSource": "estimated"
     },
     {
-      "agentName": "child-finalize-merge",
+      "agentName": "child-tools-executor",
       "model": "gpt-5.6-luna",
       "iterations": 1,
-      "inputTokens": 351087,
-      "outputTokens": 61574,
-      "cacheReadInputTokens": 11452283,
+      "inputTokens": 164838,
+      "outputTokens": 30041,
+      "cacheReadInputTokens": 7166260,
       "cacheCreationInputTokens": 0,
-      "estimatedCostUsd": 0.373152,
+      "estimatedCostUsd": 0.212342,
       "costSource": "estimated"
+    },
+    {
+      "agentName": "parent-grill-analysis",
+      "model": "claude-opus-5",
+      "iterations": 1,
+      "inputTokens": 3556,
+      "outputTokens": 72197,
+      "cacheReadInputTokens": 8841170,
+      "cacheCreationInputTokens": 187085,
+      "estimatedCostUsd": 7.41579825,
+      "costSource": "provider"
     }
   ]
 }

@@ -637,75 +637,6 @@ error: script "lint" exited with code 1
 
 ## Usage
 
-### Usage (stack rollup)
-
-- **This slice:** $12.8895 · 118,448,962 in / 531,170 out · 13 agent(s)
-- **Prior stack:** $18.3088 · 187,343,857 in / 787,730 out · 24 agent(s)
-- **Whole stack:** $31.1983 · 305,792,819 in / 1,318,900 out · 37 agent(s)
-
-### parent-grill-analysis
-- **Model:** `claude-opus-5`
-- **Iterations:** 1
-- **Input tokens (direct):** 3,556
-- **Input tokens (cache read):** 8,841,170
-- **Input tokens (cache create):** 187,085
-- **Input tokens (total):** 9,031,811
-- **Output tokens:** 72,197
-- **Cost:** $7.415798 (provider-reported)
-### parent-finalize-plan
-- **Model:** `claude-opus-5`
-- **Iterations:** 1
-- **Input tokens (direct):** 36
-- **Input tokens (cache read):** 1,469,985
-- **Input tokens (cache create):** 112,649
-- **Input tokens (total):** 1,582,670
-- **Output tokens:** 33,924
-- **Cost:** $2.291429 (provider-reported)
-### child-db-schema-migrations
-- **Model:** `gpt-5.6-luna`
-- **Iterations:** 1
-- **Input tokens (direct):** 99,544
-- **Input tokens (cache read):** 1,811,504
-- **Input tokens (cache create):** 0
-- **Input tokens (total):** 1,911,048
-- **Output tokens:** 16,902
-- **Cost:** $0.076421 (estimated fallback)
-### child-copilot-generated-catalog
-- **Model:** `gpt-5.6-luna`
-- **Iterations:** 1
-- **Input tokens (direct):** 204,010
-- **Input tokens (cache read):** 7,688,689
-- **Input tokens (cache create):** 0
-- **Input tokens (total):** 7,892,699
-- **Output tokens:** 32,014
-- **Cost:** $0.232993 (estimated fallback)
-### child-copilot-chat-mothership
-- **Model:** `gpt-5.6-luna`
-- **Iterations:** 1
-- **Input tokens (direct):** 256,313
-- **Input tokens (cache read):** 14,170,750
-- **Input tokens (cache create):** 0
-- **Input tokens (total):** 14,427,063
-- **Output tokens:** 37,987
-- **Cost:** $0.380262 (estimated fallback)
-### child-billing-usage-tests
-- **Model:** `gpt-5.6-luna`
-- **Iterations:** 1
-- **Input tokens (direct):** 396,220
-- **Input tokens (cache read):** 14,764,560
-- **Input tokens (cache create):** 0
-- **Input tokens (total):** 15,160,780
-- **Output tokens:** 61,680
-- **Cost:** $0.448551 (estimated fallback)
-### child-uploads-storage-gcs
-- **Model:** `gpt-5.6-luna`
-- **Iterations:** 1
-- **Input tokens (direct):** 208,494
-- **Input tokens (cache read):** 8,146,973
-- **Input tokens (cache create):** 0
-- **Input tokens (total):** 8,355,467
-- **Output tokens:** 24,329
-- **Cost:** $0.233833 (estimated fallback)
 ### child-auth-oauth-credentials
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
@@ -715,15 +646,42 @@ error: script "lint" exited with code 1
 - **Input tokens (total):** 12,606,909
 - **Output tokens:** 32,721
 - **Cost:** $0.337992 (estimated fallback)
-### child-providers-models-envkeys
+### child-billing-usage-tests
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
-- **Input tokens (direct):** 289,353
-- **Input tokens (cache read):** 4,905,069
+- **Input tokens (direct):** 396,220
+- **Input tokens (cache read):** 14,764,560
 - **Input tokens (cache create):** 0
-- **Input tokens (total):** 5,194,422
-- **Output tokens:** 38,255
-- **Cost:** $0.201878 (estimated fallback)
+- **Input tokens (total):** 15,160,780
+- **Output tokens:** 61,680
+- **Cost:** $0.448551 (estimated fallback)
+### child-db-schema-migrations
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 99,544
+- **Input tokens (cache read):** 1,811,504
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 1,911,048
+- **Output tokens:** 16,902
+- **Cost:** $0.076421 (estimated fallback)
+### child-uploads-storage-gcs
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 208,494
+- **Input tokens (cache read):** 8,146,973
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 8,355,467
+- **Output tokens:** 24,329
+- **Cost:** $0.233833 (estimated fallback)
+### parent-finalize-plan
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 36
+- **Input tokens (cache read):** 1,469,985
+- **Input tokens (cache create):** 112,649
+- **Input tokens (total):** 1,582,670
+- **Output tokens:** 33,924
+- **Cost:** $2.291429 (provider-reported)
 ### child-deploy-state-machine
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
@@ -733,24 +691,15 @@ error: script "lint" exited with code 1
 - **Input tokens (total):** 6,930,422
 - **Output tokens:** 32,759
 - **Cost:** $0.213201 (estimated fallback)
-### child-tools-executor
+### child-copilot-chat-mothership
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
-- **Input tokens (direct):** 164,838
-- **Input tokens (cache read):** 7,166,260
+- **Input tokens (direct):** 256,313
+- **Input tokens (cache read):** 14,170,750
 - **Input tokens (cache create):** 0
-- **Input tokens (total):** 7,331,098
-- **Output tokens:** 30,041
-- **Cost:** $0.212342 (estimated fallback)
-### child-branding-workspace-ui
-- **Model:** `gpt-5.6-luna`
-- **Iterations:** 1
-- **Input tokens (direct):** 439,238
-- **Input tokens (cache read):** 15,781,965
-- **Input tokens (cache create):** 0
-- **Input tokens (total):** 16,221,203
-- **Output tokens:** 56,787
-- **Cost:** $0.471631 (estimated fallback)
+- **Input tokens (total):** 14,427,063
+- **Output tokens:** 37,987
+- **Cost:** $0.380262 (estimated fallback)
 ### child-finalize-merge
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
@@ -760,27 +709,72 @@ error: script "lint" exited with code 1
 - **Input tokens (total):** 11,803,370
 - **Output tokens:** 61,574
 - **Cost:** $0.373152 (estimated fallback)
+### child-providers-models-envkeys
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 289,353
+- **Input tokens (cache read):** 4,905,069
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 5,194,422
+- **Output tokens:** 38,255
+- **Cost:** $0.201878 (estimated fallback)
+### child-copilot-generated-catalog
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 204,010
+- **Input tokens (cache read):** 7,688,689
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 7,892,699
+- **Output tokens:** 32,014
+- **Cost:** $0.232993 (estimated fallback)
+### child-branding-workspace-ui
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 439,238
+- **Input tokens (cache read):** 15,781,965
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 16,221,203
+- **Output tokens:** 56,787
+- **Cost:** $0.471631 (estimated fallback)
+### child-tools-executor
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 164,838
+- **Input tokens (cache read):** 7,166,260
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 7,331,098
+- **Output tokens:** 30,041
+- **Cost:** $0.212342 (estimated fallback)
+### parent-grill-analysis
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 3,556
+- **Input tokens (cache read):** 8,841,170
+- **Input tokens (cache create):** 187,085
+- **Input tokens (total):** 9,031,811
+- **Output tokens:** 72,197
+- **Cost:** $7.415798 (provider-reported)
 
 ### Totals
 - **Total input tokens:** 118,448,962
 - **Total output tokens:** 531,170
-- **Primary models:** claude-opus-5, gpt-5.6-luna
+- **Primary models:** gpt-5.6-luna, claude-opus-5
 - **Total cost:** $12.889483
 - **Provider-reported cost:** $9.707227
 - **Estimated cost (fallback):** $3.182256
 
 ### Cost by agent
-- **parent-grill-analysis:** $7.415798 (provider-reported)
-- **parent-finalize-plan:** $2.291429 (provider-reported)
-- **child-db-schema-migrations:** $0.076421 (estimated fallback)
-- **child-copilot-generated-catalog:** $0.232993 (estimated fallback)
-- **child-copilot-chat-mothership:** $0.380262 (estimated fallback)
-- **child-billing-usage-tests:** $0.448551 (estimated fallback)
-- **child-uploads-storage-gcs:** $0.233833 (estimated fallback)
 - **child-auth-oauth-credentials:** $0.337992 (estimated fallback)
-- **child-providers-models-envkeys:** $0.201878 (estimated fallback)
+- **child-billing-usage-tests:** $0.448551 (estimated fallback)
+- **child-db-schema-migrations:** $0.076421 (estimated fallback)
+- **child-uploads-storage-gcs:** $0.233833 (estimated fallback)
+- **parent-finalize-plan:** $2.291429 (provider-reported)
 - **child-deploy-state-machine:** $0.213201 (estimated fallback)
-- **child-tools-executor:** $0.212342 (estimated fallback)
-- **child-branding-workspace-ui:** $0.471631 (estimated fallback)
+- **child-copilot-chat-mothership:** $0.380262 (estimated fallback)
 - **child-finalize-merge:** $0.373152 (estimated fallback)
+- **child-providers-models-envkeys:** $0.201878 (estimated fallback)
+- **child-copilot-generated-catalog:** $0.232993 (estimated fallback)
+- **child-branding-workspace-ui:** $0.471631 (estimated fallback)
+- **child-tools-executor:** $0.212342 (estimated fallback)
+- **parent-grill-analysis:** $7.415798 (provider-reported)
 
