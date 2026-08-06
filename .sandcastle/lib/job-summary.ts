@@ -229,7 +229,7 @@ export function formatRunJobSummary(ctx: JobSummaryContext): string {
       '',
       '### Verification',
       '',
-      '✅ `bun run check` · `bun run lint` · `bun run test` · `bun run build`'
+      '✅ `bun run check` · `bun run lint` · `bun run test` (full `bun run build` left to CI)'
     )
   }
 

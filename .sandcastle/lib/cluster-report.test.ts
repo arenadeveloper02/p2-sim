@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
   formatClusterReportTable,
+  formatCompletedClusterProgress,
   listClusterReports,
   parseClusterReport,
   readClusterReport,
@@ -84,5 +85,10 @@ describe('cluster report schema', () => {
     const table = formatClusterReportTable(sample)
     expect(table).toContain('| `apps/sim/lib/voice/tts.ts` | deleted |')
     expect(table).toContain('`unionPaths` `apps/sim/providers/models.ts`')
+    const progress = formatCompletedClusterProgress('2026-08-05')
+    expect(progress).toContain('### cluster-1.2')
+    expect(progress).toContain('`apps/sim/lib/chat/index.ts` → **manual**')
+    expect(progress).toContain('policy: `unionPaths` `apps/sim/providers/models.ts`')
+    expect(formatCompletedClusterProgress('missing-run')).toBe('')
   })
 })

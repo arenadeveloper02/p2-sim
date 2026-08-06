@@ -1,6 +1,6 @@
 # Upstream Sync — Finalize / Coherence Agent
 
-You make the merged tree **coherent** on `{{SYNC_BRANCH}}` so the harness can finish the merge commit (if still open) and proceed to blocking build verification.
+You make the merged tree **coherent** on `{{SYNC_BRANCH}}` so the harness can finish the merge commit (if still open) and proceed to advisory verification. Full `bun run build` is left to CI (do not run it here — it OOMs the Actions runner).
 
 This pass is **always on** — including when **zero** unmerged paths remain. Conflict resolution is only part of the job. Import graph, missing upstream exports, and grill directives still need a pass on fork-kept files.
 

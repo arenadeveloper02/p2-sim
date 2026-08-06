@@ -1,4 +1,7 @@
-import { execSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { VERIFY_COMMANDS, VERIFY_STEP_COMMANDS } from './config'
 
 export type VerifyStepName = keyof typeof VERIFY_STEP_COMMANDS
@@ -8,7 +11,11 @@ export const ADVISORY_VERIFY_STEPS = [
   'lint',
   'test',
 ] as const satisfies readonly VerifyStepName[]
-export const BLOCKING_VERIFY_STEPS = ['build'] as const satisfies readonly VerifyStepName[]
+/**
+ * No harness-blocking verify steps. Full `bun run build` OOMs the 7GB Actions
+ * runner during dual Next compiles — CI (`.github/workflows/images.yml`) owns build.
+ */
+export const BLOCKING_VERIFY_STEPS = [] as const satisfies readonly VerifyStepName[]
 
 export interface VerifyResult {
   command: string
@@ -18,8 +25,13 @@ export interface VerifyResult {
 }
 
 export interface RunVerificationOptions {
-  /** Subset of steps to run. Default: check, lint, test, build. */
+  /** Subset of steps to run. Default: check, lint, test (no full build). */
   steps?: readonly VerifyStepName[]
+}
+
+export interface RunShellCommandStreamingOptions {
+  /** Heartbeat interval while the command is still running. Default 60s. */
+  heartbeatMs?: number
 }
 
 function isBlockingStep(step: VerifyStepName): boolean {
@@ -32,21 +44,72 @@ function stepFromCommand(command: string): VerifyStepName | undefined {
   )?.[0]
 }
 
-function runCommand(command: string, blocking: boolean): VerifyResult {
+function resolveHeartbeatMs(override?: number): number {
+  if (override != null && Number.isFinite(override) && override > 0) return override
+  const fromEnv = Number(process.env.UPSTREAM_SYNC_VERIFY_HEARTBEAT_SECONDS)
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return Math.floor(fromEnv * 1000)
+  return 60_000
+}
+
+/**
+ * Run a shell command, stream stdout/stderr live, and capture a copy for the ledger.
+ * Emits `[verify] still running` heartbeats so CI does not look wedged.
+ */
+export function runShellCommandStreaming(
+  command: string,
+  options: RunShellCommandStreamingOptions = {}
+): { success: boolean; output: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'upstream-sync-verify-'))
+  const logFile = join(dir, 'out.log')
+  const startedAtMs = Date.now()
+  const heartbeatMs = resolveHeartbeatMs(options.heartbeatMs)
+  const heartbeat = spawn(
+    'bash',
+    [
+      '-lc',
+      `while sleep ${Math.max(1, Math.round(heartbeatMs / 1000))}; do echo "[verify] still running: ${command.replace(/"/g, '\\"')} ($(( ($(date +%s) - ${Math.floor(startedAtMs / 1000)}) ))s)"; done`,
+    ],
+    { stdio: ['ignore', 'inherit', 'inherit'] }
+  )
+
   try {
-    const output = execSync(command, { encoding: 'utf8', stdio: 'pipe' })
-    console.log(`[verify] ${command} — passed`)
-    return { command, success: true, output, blocking }
-  } catch (error) {
-    const err = error as { stdout?: string; stderr?: string; message?: string }
-    const output = [err.stdout, err.stderr, err.message].filter(Boolean).join('\n')
-    if (blocking) {
-      console.warn(`[verify] ${command} — failed (blocking; sync cannot complete)`)
-    } else {
-      console.warn(`[verify] ${command} — failed (advisory; does not fail the sync)`)
+    const quotedLog = JSON.stringify(logFile)
+    const result = spawnSync(
+      'bash',
+      ['-lc', `( ${command} ) 2>&1 | tee ${quotedLog}; exit \${PIPESTATUS[0]}`],
+      {
+        encoding: 'utf8',
+        stdio: ['ignore', 'inherit', 'inherit'],
+        env: process.env,
+      }
+    )
+
+    let output = ''
+    try {
+      output = readFileSync(logFile, 'utf8')
+    } catch {
+      output = [result.stdout, result.stderr, result.error?.message].filter(Boolean).join('\n')
     }
-    return { command, success: false, output, blocking }
+    return { success: result.status === 0, output }
+  } finally {
+    heartbeat.kill('SIGTERM')
+    rmSync(dir, { recursive: true, force: true })
   }
+}
+
+function runCommand(command: string, blocking: boolean): VerifyResult {
+  console.log(`[verify] starting ${command}`)
+  const startedAt = Date.now()
+  const { success, output } = runShellCommandStreaming(command)
+  const elapsedSec = Math.round((Date.now() - startedAt) / 1000)
+  if (success) {
+    console.log(`[verify] ${command} — passed (${elapsedSec}s)`)
+  } else if (blocking) {
+    console.warn(`[verify] ${command} — failed (blocking; sync cannot complete) (${elapsedSec}s)`)
+  } else {
+    console.warn(`[verify] ${command} — failed (advisory; does not fail the sync) (${elapsedSec}s)`)
+  }
+  return { command, success, output, blocking }
 }
 
 /** Run a single verify step so callers can pass build logs to a fix agent. */
@@ -55,11 +118,11 @@ export function runVerificationStep(step: VerifyStepName): VerifyResult {
 }
 
 /**
- * Run verification commands. Lint/test/check stay advisory; build is blocking.
- * Failures never throw — callers decide whether to complete or spawn a fix agent.
+ * Run verification commands. Check/lint/test are advisory; full build is skipped
+ * (CI owns it). Failures never throw — callers decide how to surface them.
  */
 export function runVerification(options?: RunVerificationOptions): VerifyResult[] {
-  const steps = options?.steps ?? (['check', 'lint', 'test', 'build'] as const)
+  const steps = options?.steps ?? ADVISORY_VERIFY_STEPS
   return steps.map((step) => runVerificationStep(step))
 }
 
@@ -69,18 +132,16 @@ export function runVerification(options?: RunVerificationOptions): VerifyResult[
  */
 export function autofixFormat(): VerifyResult {
   const command = 'TURBO_FORCE=1 bun run format'
-  try {
-    const output = execSync(command, {
-      encoding: 'utf8',
-      stdio: 'pipe',
-      cwd: process.cwd(),
-    })
-    return { command, success: true, output, blocking: false }
-  } catch (error) {
-    const err = error as { stdout?: string; stderr?: string; message?: string }
-    const output = [err.stdout, err.stderr, err.message].filter(Boolean).join('\n')
-    return { command, success: false, output, blocking: false }
+  console.log(`[verify] starting ${command}`)
+  const startedAt = Date.now()
+  const { success, output } = runShellCommandStreaming(command)
+  const elapsedSec = Math.round((Date.now() - startedAt) / 1000)
+  if (success) {
+    console.log(`[verify] ${command} — passed (${elapsedSec}s)`)
+  } else {
+    console.warn(`[verify] ${command} — failed (${elapsedSec}s)`)
   }
+  return { command, success, output, blocking: false }
 }
 
 export function formatVerifyResults(results: VerifyResult[]): string {
@@ -92,13 +153,12 @@ export function formatVerifyResults(results: VerifyResult[]): string {
   const advisoryFailures = results.filter((r) => !r.blocking && !r.success)
   let summary: string
   if (blockingFailures.length > 0) {
-    summary =
-      '**Blocking verification failed** — build must pass before this sync can be marked completed.'
+    summary = '**Blocking verification failed** — resolve before this sync can be marked completed.'
   } else if (advisoryFailures.length > 0) {
     summary =
-      'Advisory verification failed (lint/test/check). These do not block the sync. Review and fix on the draft PR as needed.'
+      'Advisory verification failed (lint/test/check). These do not block the sync. Full `bun run build` is left to CI. Review and fix on the draft PR as needed.'
   } else if (results.every((r) => r.success)) {
-    summary = 'All verification commands passed.'
+    summary = 'Advisory verification passed (check/lint/test). Full `bun run build` is left to CI.'
   } else {
     summary = 'Verification finished with mixed results.'
   }
@@ -124,14 +184,18 @@ export function allVerificationPassed(results: VerifyResult[]): boolean {
 
 /**
  * Blocking gate for marking a sync completed.
- * Requires build to pass. Optionally also require `bun run check`.
+ * Configured blocking steps (none by default — CI owns `bun run build`) must
+ * pass when present. Optionally also require `bun run check`.
  */
 export function allBlockingVerificationPassed(
   results: VerifyResult[],
   options?: { requireCheck?: boolean }
 ): boolean {
-  const build = getVerifyResult(results, 'build')
-  if (!build?.success) return false
+  if (results.some((result) => result.blocking && !result.success)) return false
+  for (const step of BLOCKING_VERIFY_STEPS) {
+    const result = getVerifyResult(results, step)
+    if (!result?.success) return false
+  }
   if (options?.requireCheck) {
     const check = getVerifyResult(results, 'check')
     if (!check?.success) return false

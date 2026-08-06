@@ -32,7 +32,7 @@ No grill questions were asked or answered this run. The only `qa-history.jsonl` 
 
 ### Child areas
 
-- _None_ (zero unmerged paths; `git diff --diff-filter=U` is empty)
+- _None_
 
 Phase B finalize PASS 2 for run 2026-08-06 — a CONTINUATION of the same merge as run 2026-08-05 and of the first 2026-08-06 finalize. Not a new release slice, not a greenfield replan. Same sync branch (upstream-sync/2026-08-05T10-46-19), same upstream tip 6c3d11b2 (v0.7.29, 23 commits, merge-base e2fecc86), same draft PR #681, same WIP overlay shape (applied=27, deleted=0).
 
@@ -65,11 +65,10 @@ CHANGE FROM PASS 1: apps/sim/app/(landing)/hubspot-page-view-tracker.tsx has bee
 (2) SR7 IS NOT APPLIED. The HubSpot loader is still live in apps/sim/app/(landing)/layout.tsx (Suspense import line 2, Script import line 4, isHosted import line 5, tracker import line 8, HUBSPOT_SCRIPT_SRC line 10, HubSpot comment line 36, isHosted block line 37, Script line 39, Suspense line 40, <HubspotPageViewTracker /> line 41), and hubspot-page-view-tracker.tsx still exists. Strip the loader block plus the now-unused Suspense/Script/isHosted imports (each is used only by that block — verified this pass) AND delete the tracker in the SAME change. Keep upstream's csp.ts HubSpot host allowances (already in at lines 89-92, permit-only). Then fix the ledger: .upstream-sync/ledger/2026-08-06/skipped.md still says '_No upstream changes skipped._' and must record the #5565 skip with its re-enable recipe (one Script tag with the fork's own HubSpot portal id) once the strip lands.
 
 No checkoutOurs / checkoutTheirs are re-issued this pass — every previously planned side-checkout already landed (SR2, SR3, SR4, SR5, SR6, SR8, SR9, SR10 all independently re-verified in tree this pass) and re-issuing them would overwrite WIP resolutions.
-
 - checkoutOurs: 0
 - checkoutTheirs: 0
 - delete: 0
-- overrideForkFirst: 0
+- failed: 0
 - mustEdit: `packages/db/migrations/0258_gigantic_lady_mastermind.sql`, `packages/db/migrations/0259_slack_native_routing.sql`, `packages/db/migrations/meta/_journal.json`, `apps/sim/app/(landing)/layout.tsx`, `apps/sim/app/(landing)/hubspot-page-view-tracker.tsx`
-- expected harness label: all five `mustEdit` paths will be reported as 'skipped already-resolved' by `restrictMergeDirectivesToUnmerged`. That label is WRONG — they are unfinished work. See the escalation note above.
+- skipped already-resolved: `apps/sim/app/(landing)/hubspot-page-view-tracker.tsx`, `apps/sim/app/(landing)/layout.tsx`, `packages/db/migrations/0258_gigantic_lady_mastermind.sql`, `packages/db/migrations/0259_slack_native_routing.sql`, `packages/db/migrations/meta/_journal.json`
 

@@ -159,6 +159,33 @@ export function listClusterReports(runId: string): ClusterReport[] {
   }
 }
 
+/**
+ * Compact progress dump for parent finalize on resume: completed clusters and
+ * how each file was resolved. Empty string when nothing has been reported yet.
+ */
+export function formatCompletedClusterProgress(runId: string): string {
+  const reports = listClusterReports(runId)
+  if (reports.length === 0) return ''
+
+  return reports
+    .map((report) => {
+      const lines = [
+        `### ${report.clusterId}`,
+        report.notes ? report.notes : null,
+        ...report.files.map(
+          (file) =>
+            `- \`${file.path}\` → **${file.resolution}**${file.notes ? ` — ${file.notes}` : ''}`
+        ),
+        ...(report.policyProposals ?? []).map((proposal) => {
+          const note = proposal.notes ? ` — ${proposal.notes}` : ''
+          return `- policy: \`${proposal.kind}\` \`${proposal.prefix}\`${note}`
+        }),
+      ].filter((line): line is string => Boolean(line))
+      return lines.join('\n')
+    })
+    .join('\n\n')
+}
+
 export function formatClusterReportTable(report: ClusterReport): string {
   const rows = report.files.map(
     (file) =>

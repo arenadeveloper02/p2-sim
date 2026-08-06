@@ -1,5 +1,9 @@
 # Upstream Sync — Build Fix Agent
 
+> **Harness note:** Upstream-sync no longer runs `bun run build` or invokes this
+> agent (full builds OOM the 7GB Actions runner; CI owns them). Kept for manual
+> / future use only.
+
 You fix **compile / export / module-not-found** failures so `bun run build` passes on `{{SYNC_BRANCH}}`.
 
 The harness may invoke you at most **2 rounds**. Stay narrow. Lint and unit-test noise is **out of scope** unless it is the same compile error.

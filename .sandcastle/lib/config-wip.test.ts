@@ -13,6 +13,7 @@ import {
   listResolvedConflictFiles,
   parseMergeWipMeta,
   persistMergeWip,
+  restoreWipLedger,
   shouldSkipStaleWip,
   WIP_META_RELATIVE_PATH,
   wipBranchName,
@@ -107,6 +108,7 @@ describe('WIP decisionHash + tombstones', () => {
       })
     ).toEqual({
       decisionHash: 'deadbeef',
+      stabilityHash: null,
       deleted: ['apps/sim/lib/voice/tts.ts'],
       updatedAt: '2026-08-05T00:00:00.000Z',
       clusterId: 'chat-voice',
@@ -114,6 +116,7 @@ describe('WIP decisionHash + tombstones', () => {
     })
     expect(parseMergeWipMeta({ deleted: 'nope' })).toEqual({
       decisionHash: null,
+      stabilityHash: null,
       deleted: [],
       updatedAt: expect.any(String),
     })
@@ -144,7 +147,7 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     }
   })
 
-  test('stores deletion tombstones and skips stale decisionHash overlays', () => {
+  test('stores deletion tombstones and reuses WIP when only directive hash drifts', () => {
     tempRoot = mkdtempSync(join(tmpdir(), 'wip-roundtrip-'))
     const origin = join(tempRoot, 'origin.git')
     const repo = join(tempRoot, 'work')
@@ -175,6 +178,17 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     git(repo, ['checkout', '-b', 'upstream-sync/2026-08-05T00-00-00'])
     writeFileSync(join(repo, 'keep.ts'), 'fork-keep\n')
     writeFileSync(join(repo, 'gone.ts'), 'fork-gone\n')
+    mkdirSync(join(repo, '.upstream-sync'), { recursive: true })
+    writeFileSync(join(repo, '.upstream-sync/merge-policy.json'), '{}\n')
+    writeFileSync(
+      join(repo, '.upstream-sync/qa-history.jsonl'),
+      `${JSON.stringify({
+        id: 'q-keep',
+        runId: '2026-08-05',
+        answer: 'keep fork branding',
+        source: 'pr-comment',
+      })}\n`
+    )
     git(repo, ['add', '.'])
     git(repo, ['commit', '-m', 'fork'])
     git(repo, ['push', '-u', 'origin', 'upstream-sync/2026-08-05T00-00-00'])
@@ -188,6 +202,12 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     git(repo, ['checkout', '--ours', '--', 'keep.ts'])
     git(repo, ['add', '--', 'keep.ts'])
     git(repo, ['rm', '-f', '--', 'gone.ts'])
+
+    mkdirSync(join(repo, '.upstream-sync/ledger/2026-08-05'), { recursive: true })
+    writeFileSync(
+      join(repo, '.upstream-sync/ledger/2026-08-05/merge-plan.json'),
+      `${JSON.stringify({ version: 1, runId: '2026-08-05', kind: 'final', childClusters: [{ id: 'cluster-1' }] })}\n`
+    )
 
     process.chdir(repo)
     const persisted = persistMergeWip({
@@ -206,15 +226,102 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     expect(meta?.deleted).toEqual(['gone.ts'])
 
     git(repo, ['merge', '--abort'])
+    rmSync(join(repo, '.upstream-sync/ledger/2026-08-05/merge-plan.json'), { force: true })
     try {
       git(repo, ['merge', 'upstream-side'])
     } catch {
       // conflicts again
     }
 
+    expect(restoreWipLedger('upstream-sync/2026-08-05T00-00-00')).toBe(true)
+    expect(
+      readFileSync(join(repo, '.upstream-sync/ledger/2026-08-05/merge-plan.json'), 'utf8')
+    ).toContain('"kind":"final"')
+
+    const reused = applyMergeWip({
+      syncBranch: 'upstream-sync/2026-08-05T00-00-00',
+      expectedDecisionHash: 'hash-v2',
+      runId: '2026-08-05',
+    })
+    expect(reused.skipped).toBe(false)
+    expect(reused.applied).toBeGreaterThanOrEqual(1)
+    expect(readFileSync(join(repo, 'keep.ts'), 'utf8')).toBe('fork-keep\n')
+
+    // Calendar-day roll: WIP stored under 2026-08-05, resume runs as 2026-08-06.
+    git(repo, ['merge', '--abort'])
+    try {
+      git(repo, ['merge', 'upstream-side'])
+    } catch {
+      // conflicts again
+    }
+    const crossDay = applyMergeWip({
+      syncBranch: 'upstream-sync/2026-08-05T00-00-00',
+      expectedDecisionHash: 'hash-v2',
+      runId: '2026-08-06',
+    })
+    expect(crossDay.skipped).toBe(false)
+    expect(crossDay.applied).toBeGreaterThanOrEqual(1)
+    expect(readFileSync(join(repo, 'keep.ts'), 'utf8')).toBe('fork-keep\n')
+
+    git(repo, ['merge', '--abort'])
+    try {
+      git(repo, ['merge', 'upstream-side'])
+    } catch {
+      // conflicts again
+    }
+    writeFileSync(
+      join(repo, '.upstream-sync/merge-policy.json'),
+      '{"forkFirst":["apps/changed/"]}\n'
+    )
+    const policyDrift = applyMergeWip({
+      syncBranch: 'upstream-sync/2026-08-05T00-00-00',
+      expectedDecisionHash: 'hash-v2',
+      runId: '2026-08-05',
+    })
+    expect(policyDrift.skipped).toBe(false)
+    expect(readFileSync(join(repo, 'keep.ts'), 'utf8')).toBe('fork-keep\n')
+
+    git(repo, ['merge', '--abort'])
+    try {
+      git(repo, ['merge', 'upstream-side'])
+    } catch {
+      // conflicts again
+    }
+    writeFileSync(
+      join(repo, '.upstream-sync/qa-history.jsonl'),
+      `${readFileSync(join(repo, '.upstream-sync/qa-history.jsonl'), 'utf8')}${JSON.stringify({
+        id: 'a-resume',
+        runId: '2026-08-05',
+        answer: '/upstream-sync resume\n\nContinue after pager stall.',
+        source: 'resume',
+      })}\n`
+    )
+    const resumeOnly = applyMergeWip({
+      syncBranch: 'upstream-sync/2026-08-05T00-00-00',
+      expectedDecisionHash: 'hash-v2',
+      runId: '2026-08-05',
+    })
+    expect(resumeOnly.skipped).toBe(false)
+
+    git(repo, ['merge', '--abort'])
+    try {
+      git(repo, ['merge', 'upstream-side'])
+    } catch {
+      // conflicts again
+    }
+    writeFileSync(
+      join(repo, '.upstream-sync/qa-history.jsonl'),
+      `${readFileSync(join(repo, '.upstream-sync/qa-history.jsonl'), 'utf8')}${JSON.stringify({
+        id: 'q-new',
+        runId: '2026-08-05',
+        answer: 'take upstream oauth',
+        source: 'pr-comment',
+      })}\n`
+    )
     const skipped = applyMergeWip({
       syncBranch: 'upstream-sync/2026-08-05T00-00-00',
       expectedDecisionHash: 'hash-v2',
+      runId: '2026-08-05',
     })
     expect(skipped).toEqual({
       applied: 0,
@@ -227,6 +334,7 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     const applied = applyMergeWip({
       syncBranch: 'upstream-sync/2026-08-05T00-00-00',
       expectedDecisionHash: 'hash-v1',
+      runId: '2026-08-05',
     })
     expect(applied.skipped).toBe(false)
     expect(applied.applied).toBeGreaterThanOrEqual(1)

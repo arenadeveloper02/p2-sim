@@ -9,6 +9,7 @@ import {
   readQaHistory,
   runGit,
 } from './config'
+import { wipGrillAnswerKeys } from './wip-stability'
 
 export const MERGE_PLAN_DRAFT_FILENAME = 'merge-plan.draft.json'
 export const MERGE_PLAN_FINAL_FILENAME = 'merge-plan.json'
@@ -112,6 +113,37 @@ export function emptyMergeDirectives(): MergeDirectives {
     mustEdit: [],
     overrideForkFirst: [],
     notes: '',
+  }
+}
+
+/**
+ * Drop checkout/delete/mustEdit/override entries for paths that are no longer
+ * unmerged. Prevents Phase B resume from overwriting child/WIP resolutions.
+ */
+export function restrictMergeDirectivesToUnmerged(
+  directives: MergeDirectives,
+  unmergedFiles: readonly string[]
+): { directives: MergeDirectives; dropped: string[] } {
+  const unmerged = new Set(unmergedFiles)
+  const dropped: string[] = []
+
+  const keep = (paths: readonly string[]): string[] =>
+    paths.filter((path) => {
+      if (unmerged.has(path)) return true
+      dropped.push(path)
+      return false
+    })
+
+  return {
+    directives: {
+      delete: keep(directives.delete),
+      checkoutTheirs: keep(directives.checkoutTheirs),
+      checkoutOurs: keep(directives.checkoutOurs),
+      mustEdit: keep(directives.mustEdit),
+      overrideForkFirst: keep(directives.overrideForkFirst),
+      notes: directives.notes,
+    },
+    dropped: [...new Set(dropped)].sort(),
   }
 }
 
@@ -299,12 +331,17 @@ export function loadFinalDirectives(runId: string): MergeDirectives | null {
 /**
  * Answered grill entry ids for WIP `decisionHash`.
  * Pass `entries` in tests to avoid reading `.upstream-sync/qa-history.jsonl`.
+ *
+ * Resume comments are control-plane (`/upstream-sync resume`). Including every
+ * new comment id would invalidate WIP after a hung-child continue. Only count a
+ * resume entry when it still names a grill question (`Q1`, `Q2`, …); use the
+ * stripped answer text as a stable key so a later identical resume does not
+ * churn the hash.
  */
 export function collectGrillAnswerIds(
-  entries?: ReadonlyArray<{ id: string; answer?: string }>
+  entries?: ReadonlyArray<{ id: string; answer?: string; source?: string }>
 ): string[] {
-  const source = entries ?? readQaHistory()
-  return source.filter((entry) => Boolean(entry.answer?.trim())).map((entry) => entry.id)
+  return wipGrillAnswerKeys(entries ?? readQaHistory())
 }
 
 /**

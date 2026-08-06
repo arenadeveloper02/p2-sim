@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -10,6 +11,7 @@ import {
 import { dirname, join } from 'node:path'
 import type { ConflictCluster } from './clusters'
 import { countClusterFiles, leafConflictClusters } from './clusters'
+import { computeWipStabilityHash, parseQaHistoryJsonl, wipGrillAnswerKeys } from './wip-stability'
 
 export const UPSTREAM_SYNC_ROOT = '.upstream-sync'
 export const LEDGER_DIR = join(UPSTREAM_SYNC_ROOT, 'ledger')
@@ -123,17 +125,25 @@ export const VERIFY_STEP_COMMANDS = {
   check: 'bun run check',
   lint: 'bun run lint',
   test: 'bun run test',
+  /** Kept for optional/manual use; harness does not run this (CI owns full build). */
   build: 'bun run build',
 } as const
 
+/** Default harness verify set — excludes full build (OOM on 7GB runners). */
 export const VERIFY_COMMANDS = [
   VERIFY_STEP_COMMANDS.check,
   VERIFY_STEP_COMMANDS.lint,
   VERIFY_STEP_COMMANDS.test,
-  VERIFY_STEP_COMMANDS.build,
 ] as const
 
 export const WIP_META_RELATIVE_PATH = join(UPSTREAM_SYNC_ROOT, 'wip-meta.json')
+
+const LEDGER_WIP_BASENAMES = [
+  'merge-plan.json',
+  'merge-plan.draft.json',
+  'merge-directives.json',
+  'run.md',
+] as const
 
 export interface SyncState {
   lastSyncedUpstreamSha: string | null
@@ -953,6 +963,8 @@ export function listResolvedConflictFiles(originalConflicts: string[]): string[]
 
 export interface MergeWipMeta {
   decisionHash: string | null
+  /** Grill answers + merge-policy. Directives are excluded on purpose. */
+  stabilityHash?: string | null
   deleted: string[]
   updatedAt: string
   clusterId?: string
@@ -993,13 +1005,69 @@ export function parseMergeWipMeta(value: unknown): MergeWipMeta | null {
     typeof record.decisionHash === 'string' && record.decisionHash.length > 0
       ? record.decisionHash
       : null
+  const stabilityHash =
+    typeof record.stabilityHash === 'string' && record.stabilityHash.length > 0
+      ? record.stabilityHash
+      : null
   return {
     decisionHash,
+    stabilityHash,
     deleted,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : new Date().toISOString(),
     clusterId: typeof record.clusterId === 'string' ? record.clusterId : undefined,
     runId: typeof record.runId === 'string' ? record.runId : undefined,
   }
+}
+
+function currentWipStabilityHash(): string {
+  return computeWipStabilityHash({
+    grillAnswerIds: wipGrillAnswerKeys(readQaHistory()),
+    mergePolicyContents: existsSync(MERGE_POLICY_PATH)
+      ? readFileSync(MERGE_POLICY_PATH, 'utf8')
+      : '',
+  })
+}
+
+function showRefFile(ref: string, relativePath: string): string | null {
+  try {
+    return runGit(['show', `${ref}:${relativePath}`])
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Draft-vs-final directive hashes differ on the same sync branch, and
+ * `todayRunId()` rolls at UTC midnight. Overlay is still valid when grill
+ * answers have not changed — runId is calendar-day only and must not block
+ * overnight resume/reuse of the same sync branch's WIP sidecar.
+ *
+ * Do not compare working-tree merge-policy to the WIP blob here: overlay runs
+ * mid-merge (policy may be conflicted), and `runGit` trims `git show` output so
+ * a trailing newline makes a byte-equal file look different.
+ */
+export function canReuseWipDespiteDecisionHashMismatch(options: {
+  storedMeta: MergeWipMeta | null | undefined
+  wipRef: string
+  runId?: string
+}): boolean {
+  const stored = options.storedMeta
+  if (!stored) return false
+  if (options.runId && stored.runId && stored.runId !== options.runId) {
+    console.warn(
+      `[wip] overlay reuse across runIds stored=${stored.runId} current=${options.runId} (calendar-day roll; grill answers still gate)`
+    )
+  }
+
+  const wipQaRaw = showRefFile(options.wipRef, QA_HISTORY_PATH)
+  const thenKeys = wipGrillAnswerKeys(wipQaRaw ? parseQaHistoryJsonl(wipQaRaw) : []).sort()
+  const nowKeys = wipGrillAnswerKeys(readQaHistory()).sort()
+  if (thenKeys.length > 0 && thenKeys.join('\n') !== nowKeys.join('\n')) {
+    console.warn('[wip] overlay reuse blocked: grill answers changed since WIP snapshot')
+    return false
+  }
+
+  return true
 }
 
 /** Resolved conflict snapshot split into still-present files vs upstream-delete tombstones. */
@@ -1129,6 +1197,9 @@ export function persistMergeWip(options: {
       runGit(['add', '--', file], worktreePath)
     }
 
+    snapshotLedgerIntoWip(repoRoot, worktreePath, options.runId)
+    snapshotSyncMetaIntoWip(repoRoot, worktreePath)
+
     for (const file of newlyDeleted) {
       try {
         runGit(['rm', '-f', '--', file], worktreePath)
@@ -1150,6 +1221,7 @@ export function persistMergeWip(options: {
         options.decisionHash !== undefined
           ? options.decisionHash
           : (previousMeta?.decisionHash ?? null),
+      stabilityHash: currentWipStabilityHash(),
       deleted: [...deletedSet].sort(),
       updatedAt: new Date().toISOString(),
       clusterId: options.clusterId,
@@ -1193,6 +1265,33 @@ export function persistMergeWip(options: {
 }
 
 /**
+ * Copy mid-merge ledger artifacts (final plan, directives, cluster reports)
+ * from the WIP sidecar into the working tree. Safe during an in-progress merge
+ * because these paths are not conflicted product files.
+ *
+ * Must run before `computeRunDecisionHash` on resume so the hash sees the
+ * locked plan instead of falling back to the draft.
+ */
+export function restoreWipLedger(syncBranch: string): boolean {
+  try {
+    assertUpstreamSyncRef(syncBranch)
+    const wipBranch = wipBranchName(syncBranch)
+    try {
+      runGit(['fetch', 'origin', wipBranch])
+    } catch {
+      return false
+    }
+    const storedMeta = readWipMetaFromRef(`origin/${wipBranch}`)
+    const runId = storedMeta?.runId
+    if (!runId) return false
+    return restoreLedgerFromWip(`origin/${wipBranch}`, runId)
+  } catch (error) {
+    console.warn('[wip] Failed to restore ledger snapshot:', error)
+    return false
+  }
+}
+
+/**
  * Re-apply resolved file overlays from the WIP sidecar onto the current merge.
  * Call after `git merge` recreates conflicts (fresh run or resume).
  * Skips the overlay when `expectedDecisionHash` does not match stored WIP meta.
@@ -1200,6 +1299,7 @@ export function persistMergeWip(options: {
 export function applyMergeWip(options: {
   syncBranch: string
   expectedDecisionHash?: string | null
+  runId?: string
 }): ApplyMergeWipResult {
   try {
     assertUpstreamSyncRef(options.syncBranch)
@@ -1211,12 +1311,25 @@ export function applyMergeWip(options: {
       return { applied: 0, deleted: 0, skipped: true, reason: 'no-wip' }
     }
 
-    const storedMeta = readWipMetaFromRef(`origin/${wipBranch}`)
+    const wipRef = `origin/${wipBranch}`
+    const storedMeta = readWipMetaFromRef(wipRef)
     if (shouldSkipStaleWip(storedMeta?.decisionHash, options.expectedDecisionHash)) {
-      console.warn(
-        `[wip] Skipping WIP overlay — decisionHash mismatch (stored=${storedMeta?.decisionHash ?? 'none'} expected=${options.expectedDecisionHash})`
-      )
-      return { applied: 0, deleted: 0, skipped: true, reason: 'hash-mismatch' }
+      if (
+        canReuseWipDespiteDecisionHashMismatch({
+          storedMeta,
+          wipRef,
+          runId: options.runId,
+        })
+      ) {
+        console.warn(
+          `[wip] decisionHash mismatch (stored=${storedMeta?.decisionHash ?? 'none'} expected=${options.expectedDecisionHash}) but grill answers unchanged — applying overlay`
+        )
+      } else {
+        console.warn(
+          `[wip] Skipping WIP overlay — decisionHash mismatch (stored=${storedMeta?.decisionHash ?? 'none'} expected=${options.expectedDecisionHash})`
+        )
+        return { applied: 0, deleted: 0, skipped: true, reason: 'hash-mismatch' }
+      }
     }
 
     const conflicts = listConflictFiles()
@@ -1230,8 +1343,8 @@ export function applyMergeWip(options: {
     for (const file of conflicts) {
       if (deletedSet.has(file)) continue
       try {
-        runGit(['cat-file', '-e', `origin/${wipBranch}:${file}`])
-        runGit(['checkout', `origin/${wipBranch}`, '--', file])
+        runGit(['cat-file', '-e', `${wipRef}:${file}`])
+        runGit(['checkout', wipRef, '--', file])
         applied++
       } catch {
         // Path not present on WIP tip.
@@ -1265,6 +1378,66 @@ export function applyMergeWip(options: {
     console.warn(`[wip] Failed to apply merge WIP:`, error)
     return { applied: 0, deleted: 0, skipped: true, reason: 'error' }
   }
+}
+
+function snapshotSyncMetaIntoWip(repoRoot: string, worktreePath: string): void {
+  for (const rel of [QA_HISTORY_PATH, MERGE_POLICY_PATH]) {
+    const src = join(repoRoot, rel)
+    if (!existsSync(src)) continue
+    const dest = join(worktreePath, rel)
+    mkdirSync(dirname(dest), { recursive: true })
+    copyFileSync(src, dest)
+    runGit(['add', '--', rel], worktreePath)
+  }
+}
+
+function snapshotLedgerIntoWip(repoRoot: string, worktreePath: string, runId: string): void {
+  const relDir = ledgerRunDir(runId)
+  const srcDir = join(repoRoot, relDir)
+  if (!existsSync(srcDir)) return
+
+  mkdirSync(join(worktreePath, relDir), { recursive: true })
+  for (const name of LEDGER_WIP_BASENAMES) {
+    const src = join(srcDir, name)
+    if (!existsSync(src)) continue
+    copyFileSync(src, join(worktreePath, relDir, name))
+    runGit(['add', '--', join(relDir, name)], worktreePath)
+  }
+
+  const clustersRel = join(relDir, 'clusters')
+  const clustersSrc = join(repoRoot, clustersRel)
+  if (!existsSync(clustersSrc)) return
+  cpSync(clustersSrc, join(worktreePath, clustersRel), { recursive: true })
+  runGit(['add', '--', clustersRel], worktreePath)
+}
+
+function restoreLedgerFromWip(wipRef: string, runId: string): boolean {
+  const relDir = ledgerRunDir(runId)
+  let restored = false
+  for (const name of LEDGER_WIP_BASENAMES) {
+    const rel = join(relDir, name)
+    try {
+      runGit(['cat-file', '-e', `${wipRef}:${rel}`])
+      runGit(['checkout', wipRef, '--', rel])
+      restored = true
+    } catch {
+      // Path not present on WIP tip.
+    }
+  }
+  const clustersRel = join(relDir, 'clusters')
+  try {
+    const listing = runGit(['ls-tree', '--name-only', '-r', wipRef, '--', clustersRel])
+    if (listing.trim()) {
+      runGit(['checkout', wipRef, '--', clustersRel])
+      restored = true
+    }
+  } catch {
+    // No cluster reports on WIP tip.
+  }
+  if (restored) {
+    console.log(`[wip] Restored ledger snapshot from ${wipRef} for run ${runId}`)
+  }
+  return restored
 }
 
 function readWipMetaFile(path: string): MergeWipMeta | null {
