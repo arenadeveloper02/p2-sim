@@ -28,6 +28,24 @@ const PRIVILEGED_CONTROL_TAG_PATTERN =
 /** After a successful populate, restrict which tools the model may still call. */
 export type PostBuildToolMode = 'all' | 'oauth_only' | 'final_only' | 'done'
 
+/**
+ * Tools to attach on a model round after a successful workflow populate.
+ *
+ * Bedrock requires `toolConfig` whenever the conversation already contains
+ * toolUse/toolResult blocks — never return `[]` for `final_only`. Keep the
+ * catalog and discard unwanted tool calls in the orchestrator instead.
+ */
+export function resolvePostBuildRoundTools<T extends { name: string }>(
+  mode: PostBuildToolMode,
+  tools: T[]
+): T[] {
+  if (mode === 'oauth_only') {
+    const oauthOnly = tools.filter((tool) => tool.name === 'oauth_get_auth_link')
+    return oauthOnly.length > 0 ? oauthOnly : tools
+  }
+  return tools
+}
+
 const COMPLETION_MARKERS = [
   'connect gmail',
   'built and wired',
