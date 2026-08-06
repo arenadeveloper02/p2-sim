@@ -1036,8 +1036,10 @@ function showRefFile(ref: string, relativePath: string): string | null {
 }
 
 /**
- * Draft-vs-final directive hashes differ on the same run. Overlay is still valid
- * when the sidecar belongs to this run and grill answers have not changed.
+ * Draft-vs-final directive hashes differ on the same sync branch, and
+ * `todayRunId()` rolls at UTC midnight. Overlay is still valid when grill
+ * answers have not changed — runId is calendar-day only and must not block
+ * overnight resume/reuse of the same sync branch's WIP sidecar.
  *
  * Do not compare working-tree merge-policy to the WIP blob here: overlay runs
  * mid-merge (policy may be conflicted), and `runGit` trims `git show` output so
@@ -1052,9 +1054,8 @@ export function canReuseWipDespiteDecisionHashMismatch(options: {
   if (!stored) return false
   if (options.runId && stored.runId && stored.runId !== options.runId) {
     console.warn(
-      `[wip] overlay reuse blocked: runId mismatch stored=${stored.runId} current=${options.runId}`
+      `[wip] overlay reuse across runIds stored=${stored.runId} current=${options.runId} (calendar-day roll; grill answers still gate)`
     )
-    return false
   }
 
   const wipQaRaw = showRefFile(options.wipRef, QA_HISTORY_PATH)
@@ -1320,7 +1321,7 @@ export function applyMergeWip(options: {
         })
       ) {
         console.warn(
-          `[wip] decisionHash mismatch (stored=${storedMeta?.decisionHash ?? 'none'} expected=${options.expectedDecisionHash}) but same run/grill — applying overlay`
+          `[wip] decisionHash mismatch (stored=${storedMeta?.decisionHash ?? 'none'} expected=${options.expectedDecisionHash}) but grill answers unchanged — applying overlay`
         )
       } else {
         console.warn(

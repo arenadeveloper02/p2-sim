@@ -247,6 +247,22 @@ describe('persistMergeWip / applyMergeWip roundtrip', () => {
     expect(reused.applied).toBeGreaterThanOrEqual(1)
     expect(readFileSync(join(repo, 'keep.ts'), 'utf8')).toBe('fork-keep\n')
 
+    // Calendar-day roll: WIP stored under 2026-08-05, resume runs as 2026-08-06.
+    git(repo, ['merge', '--abort'])
+    try {
+      git(repo, ['merge', 'upstream-side'])
+    } catch {
+      // conflicts again
+    }
+    const crossDay = applyMergeWip({
+      syncBranch: 'upstream-sync/2026-08-05T00-00-00',
+      expectedDecisionHash: 'hash-v2',
+      runId: '2026-08-06',
+    })
+    expect(crossDay.skipped).toBe(false)
+    expect(crossDay.applied).toBeGreaterThanOrEqual(1)
+    expect(readFileSync(join(repo, 'keep.ts'), 'utf8')).toBe('fork-keep\n')
+
     git(repo, ['merge', '--abort'])
     try {
       git(repo, ['merge', 'upstream-side'])
