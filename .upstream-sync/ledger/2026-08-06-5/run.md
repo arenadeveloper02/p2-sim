@@ -285,3 +285,19 @@ Policy proposals:
 
 Focused assertions, Biome check, and git diff --check passed. The targeted validation test could not start because @next/env is unavailable in the workspace dependency installation.
 
+## Cluster copilot-chat-mothership
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/tool-call-item.tsx` | manual | Unioned fork status-icon and multiline-row behavior with upstream gateway icon and status-title additions. |
+| `apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/special-tags.tsx` | manual | Unioned chart and question tags, parsers, renderers, and type guards while retaining the fork live-status indicator. |
+| `apps/sim/app/workspace/[workspaceId]/home/components/message-content/message-content.tsx` | manual | Unioned fork Arena live-status, table, and label behavior with upstream question, action, and stream-pacing UI. |
+| `apps/sim/app/workspace/[workspaceId]/home/components/mothership-chat/mothership-chat.tsx` | manual | Passed fork liveStatus and upstream question/last-row props; upstream fixed-tail handling covers an empty streaming row. |
+| `apps/sim/app/workspace/[workspaceId]/home/hooks/stream/stream-context.ts` | manual | Kept fork liveStatus and embed refs together with upstream text-flush timer and resume-cursor behavior. |
+| `apps/sim/lib/copilot/chat/payload.ts` | manual | Kept fork admin-workspace filtering and upstream archive-extraction guidance. |
+| `apps/sim/lib/copilot/chat/payload.test.ts` | manual | Unioned upstream metadata and hosted-key expectations with fork Arena, admin-filtering, and latest-schema assertions. |
+| `apps/sim/lib/copilot/chat/workspace-context.ts` | manual | Kept HubSpot and shared-environment integration presence plus the fork Position2 note with upstream deterministic env snapshots. |
+| `apps/sim/lib/copilot/request/handlers/run.ts` | manual | Kept the fork payload kind guard and adopted upstream scoped compaction deduplication and status updates. |
+
+Union cluster resolved; fork-deleted stream and chat tests remain deleted per the locked directives.
+

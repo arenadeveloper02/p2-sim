@@ -1,0 +1,48 @@
+{
+  "clusterId": "billing-usage-tests",
+  "runId": "2026-08-06-5",
+  "files": [
+    {
+      "path": "apps/sim/lib/billing/core/usage-log.test.ts",
+      "resolution": "manual",
+      "notes": "Kept the shared table-aware DB mock rewrite and fork billable, actor, chat, and streaming assertions."
+    },
+    {
+      "path": "apps/sim/lib/billing/organizations/member-limits.test.ts",
+      "resolution": "manual",
+      "notes": "Migrated fork allocation assertions to the shared table-routed DB queues while retaining upstream period tests."
+    },
+    {
+      "path": "apps/sim/lib/logs/execution/logger.test.ts",
+      "resolution": "manual",
+      "notes": "Used shared DB chain spies and retained fork cost projection and pending-reconciliation assertions."
+    },
+    {
+      "path": "apps/sim/lib/execution/preprocessing.test.ts",
+      "resolution": "manual",
+      "notes": "Retained fork ExecutionActor and usage-gate coverage, added shared reservation mocking and compatible immutable attribution snapshot coverage."
+    },
+    {
+      "path": "apps/sim/app/api/copilot/api-keys/validate/route.test.ts",
+      "resolution": "manual",
+      "notes": "Used shared DB and env-flag mocks; retained checkMothershipUsageLimits/checkSelfHostedMothershipUsageLimits as the governing Copilot gate and kept protocol assertions additive."
+    },
+    {
+      "path": "apps/sim/app/api/billing/update-cost/route.test.ts",
+      "resolution": "manual",
+      "notes": "Kept the shared DB/env mock setup and both fork keyless attribution assertions and upstream protocol coverage."
+    },
+    {
+      "path": "apps/sim/lib/core/rate-limiter/hosted-key/hosted-key-rate-limiter.ts",
+      "resolution": "manual",
+      "notes": "Fork superset retained: singular and _1..3 fallback plus the Gemini namespace, with upstream singular-key behavior."
+    },
+    {
+      "path": "apps/sim/lib/core/rate-limiter/hosted-key/hosted-key-rate-limiter.test.ts",
+      "resolution": "manual",
+      "notes": "Retained all fork fallback assertions and upstream singular hosted-key coverage."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "Upstream-only governing-helper assertions were skipped per the locked Q&A; see skipped.md."
+}
