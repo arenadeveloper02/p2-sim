@@ -1,0 +1,28 @@
+{
+  "clusterId": "schema-migrations",
+  "runId": "2026-08-06-4",
+  "files": [
+    {
+      "path": "packages/db/schema.ts",
+      "resolution": "manual",
+      "notes": "Unioned the fork's workspaceActorUserIdx and rootExecutionIdIdx with upstream's completedEndedAtIdx; retained fork actor columns and upstream billing/storage columns."
+    },
+    {
+      "path": "packages/db/migrations/0264_unknown_sinister_six.sql",
+      "resolution": "manual",
+      "notes": "Renamed from 0260 with byte-identical content; no 0264 snapshot was generated."
+    },
+    {
+      "path": "packages/db/migrations/meta/_journal.json",
+      "resolution": "manual",
+      "notes": "Changed only the trailing collided migration entry to idx 264, tag 0264_unknown_sinister_six, and the locked timestamp."
+    },
+    {
+      "path": "packages/db/migrations/meta/0260_snapshot.json",
+      "resolution": "ours",
+      "notes": "Retained the fork snapshot per the locked migration directive."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "Schema-migrations cluster resolved per SR1/SR2 and locked Q1-A."
+}
