@@ -357,7 +357,12 @@ Use the built-in file tools instead:
 2. **workspace_file** — \`append\`, \`update\`, or \`patch\` with \`target.kind=file_id\`, the file id, and a short \`title\`. Wait for success before the next step.
 3. **edit_content** — write the body in the **next** turn only (never in parallel with workspace_file).
 
-For **.docx** / **.pptx** / **.pdf**, \`edit_content\` must be **docxjs / pptxgenjs / pdflibjs JavaScript** (e.g. \`addSection({ children: [...] })\` for DOCX), not Python.
+For **.docx** / **.pptx** / **.pdf**, \`edit_content\` must be **docxjs / pptxgenjs / pdflibjs JavaScript** (not Python).
+
+DOCX patterns (globals already initialized — never \`require('docx')\`):
+- Preferred chunked: \`addSection({ children: [new docx.Paragraph({ children: [new docx.TextRun("Hello")] })] });\`
+- Single write: \`globalThis.doc = new docx.Document({ sections: [{ children: [...] }] });\`
+- Do **not** call \`docx.addSection\` — use the global \`addSection\` helper.
 
 For plain \`.md\`, \`.txt\`, \`.json\`, \`.csv\`, \`.html\`, use the same three tools; \`edit_content\` is the raw text.
 

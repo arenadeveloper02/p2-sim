@@ -202,7 +202,9 @@ export async function runCopilotLifecycle(
         requestPayload,
         context,
         execContext,
-        lifecycleOptions
+        // Local already executes tools in-process; do not re-dispatch via Sim's
+        // tool registry (e.g. invoke_integration_tool is Arena-only).
+        { ...lifecycleOptions, autoExecuteTools: false }
       )
     } else {
       logger.info('Delegating copilot turn to external Mothership', {

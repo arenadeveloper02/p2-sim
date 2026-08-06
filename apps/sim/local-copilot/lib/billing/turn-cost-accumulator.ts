@@ -16,6 +16,11 @@ export interface LocalTurnCostComponent {
   cost: number
   inputTokens?: number
   outputTokens?: number
+  cacheReadTokens?: number
+  /** Priced input portion (includes cached + uncached). */
+  inputCost?: number
+  /** Priced output portion. */
+  outputCost?: number
   vendor?: string
   provider?: string
   toolId?: string
@@ -42,6 +47,44 @@ export interface LocalToolBillingMetadata {
   toolId?: string
 }
 
+export interface PriceModelUsageParams {
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens?: number
+}
+
+export interface PricedModelUsage {
+  total: number
+  input: number
+  output: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+}
+
+/**
+ * Prices model usage with Anthropic-style cache reads billed at cached input rate.
+ */
+export function priceModelUsageWithCache(params: PriceModelUsageParams): PricedModelUsage {
+  const inputTokens = Math.max(0, params.inputTokens)
+  const outputTokens = Math.max(0, params.outputTokens)
+  const cacheReadTokens = Math.min(Math.max(0, params.cacheReadTokens ?? 0), inputTokens)
+  const uncachedInputTokens = Math.max(0, inputTokens - cacheReadTokens)
+
+  const cached = calculateCost(params.model, cacheReadTokens, 0, true)
+  const regular = calculateCost(params.model, uncachedInputTokens, outputTokens, false)
+
+  return {
+    total: cached.total + regular.total,
+    input: cached.input + regular.input,
+    output: regular.output,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+  }
+}
+
 /**
  * Accumulates model and trusted tool costs for one Local Arena Copilot turn.
  * Does not write the ledger — callers flush once at end-of-turn.
@@ -49,11 +92,12 @@ export interface LocalToolBillingMetadata {
 export class LocalTurnCostAccumulator {
   private readonly components: LocalTurnCostComponent[] = []
 
-  /** Prices a model round via `calculateCost` and records the component. */
+  /** Prices a model round via cache-aware `calculateCost` and records the component. */
   addModelUsage(params: {
     model: string
     inputTokens: number
     outputTokens: number
+    cacheReadTokens?: number
     provider?: string
     vendor?: string
   }): LocalTurnCostComponent | null {
@@ -61,7 +105,12 @@ export class LocalTurnCostAccumulator {
       return null
     }
 
-    const priced = calculateCost(params.model, params.inputTokens, params.outputTokens)
+    const priced = priceModelUsageWithCache({
+      model: params.model,
+      inputTokens: params.inputTokens,
+      outputTokens: params.outputTokens,
+      cacheReadTokens: params.cacheReadTokens,
+    })
     if (priced.total <= 0) {
       return null
     }
@@ -70,8 +119,11 @@ export class LocalTurnCostAccumulator {
       kind: 'model',
       id: params.model,
       cost: priced.total,
-      inputTokens: params.inputTokens,
-      outputTokens: params.outputTokens,
+      inputTokens: priced.inputTokens,
+      outputTokens: priced.outputTokens,
+      cacheReadTokens: priced.cacheReadTokens,
+      inputCost: priced.input,
+      outputCost: priced.output,
       ...(params.provider ? { provider: params.provider } : {}),
       ...(params.vendor ? { vendor: params.vendor } : {}),
     }
@@ -115,11 +167,17 @@ export class LocalTurnCostAccumulator {
     for (const component of this.components) {
       total += component.cost
       if (component.kind !== 'model') continue
-      const priced = calculateCost(
-        component.id,
-        component.inputTokens ?? 0,
-        component.outputTokens ?? 0
-      )
+      if (typeof component.inputCost === 'number' && typeof component.outputCost === 'number') {
+        input += component.inputCost
+        output += component.outputCost
+        continue
+      }
+      const priced = priceModelUsageWithCache({
+        model: component.id,
+        inputTokens: component.inputTokens ?? 0,
+        outputTokens: component.outputTokens ?? 0,
+        cacheReadTokens: component.cacheReadTokens,
+      })
       input += priced.input
       output += priced.output
     }

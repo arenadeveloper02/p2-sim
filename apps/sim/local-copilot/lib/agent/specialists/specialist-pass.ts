@@ -4,6 +4,12 @@ import { truncate } from '@sim/utils/string'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
 import type { SpecialistBudget } from '@/local-copilot/lib/agent/specialists/budget'
 import {
+  clearSpecialistCheckpoint,
+  formatSpecialistCheckpointSystemMessage,
+  loadSpecialistCheckpoint,
+  persistSpecialistCheckpoint,
+} from '@/local-copilot/lib/agent/specialists/checkpoint'
+import {
   domainSystemHint,
   filterToolsByNames,
   type LocalCopilotCloudSpecialistDomain,
@@ -18,7 +24,20 @@ import {
 import type { LocalTurnCostAccumulator } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import type { ChatMessage, LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
-import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
+import {
+  prepareLocalToolConfirmation,
+  waitForLocalToolConfirmation,
+} from '@/local-copilot/lib/security/request-tool-confirmation'
+import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
+import { mutationRequiresVerification } from '@/local-copilot/lib/verification/policy'
+import { runPostMutationVerification } from '@/local-copilot/lib/verification/run-verification'
+import { buildSpecialistStructuredResult } from '@/local-copilot/lib/verification/specialist-result'
+import type {
+  MutationOutcome,
+  SpecialistStructuredResult,
+  VerificationRecord,
+} from '@/local-copilot/lib/verification/types'
+import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   formatToolResultForLlm,
   sortToolCallsForExecution,
@@ -50,6 +69,14 @@ export interface RunSpecialistPassParams {
   getToolExecutor: () => Promise<typeof import('@/local-copilot/lib/tools/executor')>
   budget: SpecialistBudget
   parentDepth?: number
+  /** Durable run id for authenticated confirmation gating. */
+  runId?: string
+  /**
+   * Live event sink so confirmation UI / status can stream before the specialist
+   * loop returns. Without this, `confirmation_required` is buffered until after
+   * `waitForLocalToolConfirmation` finishes — the user never gets a chance to Approve.
+   */
+  onEvent?: (event: LocalCopilotStreamEvent) => void | Promise<void>
 }
 
 export interface SpecialistPassResult {
@@ -60,6 +87,9 @@ export interface SpecialistPassResult {
   success: boolean
   error?: string
   depth?: number
+  structured?: SpecialistStructuredResult
+  verifications?: VerificationRecord[]
+  mutationOutcomes?: MutationOutcome[]
 }
 
 function mergeAbortSignals(signals: AbortSignal[]): AbortSignal {
@@ -72,6 +102,18 @@ function mergeAbortSignals(signals: AbortSignal[]): AbortSignal {
     signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true })
   }
   return controller.signal
+}
+
+/**
+ * Records a specialist stream event and forwards it live when `onEvent` is set.
+ */
+async function emitSpecialistEvent(
+  events: LocalCopilotStreamEvent[],
+  event: LocalCopilotStreamEvent,
+  onEvent?: (event: LocalCopilotStreamEvent) => void | Promise<void>
+): Promise<void> {
+  events.push(event)
+  await onEvent?.(event)
 }
 
 async function withTimeoutSignal(
@@ -154,7 +196,11 @@ export async function executeSpecialistLoop(
       }
     }
 
-    events.push({ type: 'status', message: `Consulting ${params.domain} specialist…` })
+    await emitSpecialistEvent(
+      events,
+      { type: 'status', message: `Consulting ${params.domain} specialist…` },
+      params.onEvent
+    )
 
     const messages: ChatMessage[] = [
       {
@@ -164,7 +210,26 @@ export async function executeSpecialistLoop(
       { role: 'user', content: params.userMessage },
     ]
 
+    const chatId = params.toolCtx.chatId
+    if (chatId) {
+      const checkpoint = await loadSpecialistCheckpoint(chatId, params.userId)
+      if (checkpoint && checkpoint.domain === params.domain) {
+        messages.push(formatSpecialistCheckpointSystemMessage(checkpoint))
+        await emitSpecialistEvent(
+          events,
+          {
+            type: 'status',
+            message: `Resuming ${params.domain} specialist from checkpoint…`,
+          },
+          params.onEvent
+        )
+      }
+    }
+
     const findings: string[] = []
+    const mutationOutcomes: MutationOutcome[] = []
+    const verifications: VerificationRecord[] = []
+    const errors: string[] = []
     let toolRoundCount = 0
 
     for (let round = 0; round < SPECIALIST_PASS_MAX_ROUNDS; round++) {
@@ -187,6 +252,12 @@ export async function executeSpecialistLoop(
           if (chunk.type === 'done' && chunk.usage) {
             roundInputTokens = chunk.usage.inputTokens
             roundOutputTokens = chunk.usage.outputTokens
+            params.turnCost.addModelUsage({
+              model: params.model,
+              inputTokens: roundInputTokens,
+              outputTokens: roundOutputTokens,
+              cacheReadTokens: chunk.usage.cacheReadTokens,
+            })
           }
         }
       } catch (error) {
@@ -198,15 +269,7 @@ export async function executeSpecialistLoop(
         break
       }
 
-      if (roundInputTokens > 0 || roundOutputTokens > 0) {
-        // Accumulate into the parent turn ledger — do not call recordModelUsage
-        // here (that writes null chat_id rows and can double-count vs end-of-turn).
-        params.turnCost.addModelUsage({
-          model: params.model,
-          inputTokens: roundInputTokens,
-          outputTokens: roundOutputTokens,
-        })
-      }
+      // Model cost is recorded from the stream `done` usage chunk above.
 
       logger.info('Arena Copilot specialist round finished', {
         domain: params.domain,
@@ -236,12 +299,16 @@ export async function executeSpecialistLoop(
           parsedArgs = {}
         }
 
-        events.push({
-          type: 'tool_call_start',
-          toolCallId: call.id,
-          toolName: call.name,
-          args: parsedArgs,
-        })
+        await emitSpecialistEvent(
+          events,
+          {
+            type: 'tool_call_start',
+            toolCallId: call.id,
+            toolName: call.name,
+            args: parsedArgs,
+          },
+          params.onEvent
+        )
 
         if (isSpecialistTool(call.name)) {
           const childDomain = call.name as LocalCopilotCloudSpecialistDomain
@@ -251,6 +318,7 @@ export async function executeSpecialistLoop(
             userMessage: buildSpecialistUserMessage(childDomain, parsedArgs, params.userMessage),
             signal,
             parentDepth: entered.depth,
+            onEvent: params.onEvent,
           })
           for (const event of nested.events) events.push(event)
 
@@ -269,57 +337,168 @@ export async function executeSpecialistLoop(
           messages.push({
             role: 'tool',
             toolCallId: call.id,
-            content: formatToolResultForLlm(call.name, nestedOutput),
+            content: formatToolResultForLlm(call.name, nestedOutput, {
+              artifactStore: params.toolCtx.artifactStore,
+            }),
           })
-          events.push({
-            type: 'tool_call_result',
-            toolCallId: call.id,
-            toolName: call.name,
-            success: nested.success,
-            output: nestedOutput,
-            ...(nested.error ? { error: nested.error } : {}),
-          })
+          await emitSpecialistEvent(
+            events,
+            {
+              type: 'tool_call_result',
+              toolCallId: call.id,
+              toolName: call.name,
+              success: nested.success,
+              output: nestedOutput,
+              ...(nested.error ? { error: nested.error } : {}),
+            },
+            params.onEvent
+          )
           continue
         }
 
-        const { executeLocalCopilotTool, refreshToolContext } = await params.getToolExecutor()
-        const toolStatus = runToolWithStatus({
-          toolCallId: call.id,
-          toolName: call.name,
-          args: parsedArgs,
-          abortSignal: signal,
-          execute: (onProgress) =>
-            executeLocalCopilotTool(call.name, parsedArgs, { ...params.toolCtx, onProgress }),
-        })
-
-        let next = await toolStatus.next()
-        while (!next.done) {
-          events.push(next.value)
-          next = await toolStatus.next()
+        const confirmationRequirement = classifyLocalToolConfirmation(call.name, parsedArgs)
+        let toolResult: ToolExecutionResult | undefined
+        if (confirmationRequirement) {
+          const confirmationReady = await prepareLocalToolConfirmation({
+            runId: params.runId,
+            toolCallId: call.id,
+            toolName: call.name,
+            args: parsedArgs,
+            // Parent abort only — specialist budget timeout must not cancel Approve waits.
+            abortSignal: params.signal,
+          })
+          if (confirmationReady) {
+            await emitSpecialistEvent(
+              events,
+              {
+                type: 'confirmation_required',
+                toolCallId: call.id,
+                toolName: call.name,
+                requirement: confirmationRequirement,
+              },
+              params.onEvent
+            )
+          }
+          const confirmationDecision = confirmationReady
+            ? await waitForLocalToolConfirmation({
+                toolCallId: call.id,
+                // Parent abort only — users may take longer than SPECIALIST_TIMEOUT_MS to Approve.
+                abortSignal: params.signal,
+              })
+            : 'unavailable'
+          if (confirmationDecision !== 'approved') {
+            const message =
+              confirmationDecision === 'rejected'
+                ? 'The user rejected this action.'
+                : `The action was not executed because confirmation was ${confirmationDecision}.`
+            toolResult = {
+              toolName: call.name,
+              success: false,
+              result: {
+                success: false,
+                confirmationRequired: true,
+                confirmationDecision,
+                category: confirmationRequirement.category,
+                message,
+              },
+              error: message,
+            }
+          }
         }
-        const toolResult = next.value
+
+        const { executeLocalCopilotTool, refreshToolContext } = await params.getToolExecutor()
+        if (!toolResult) {
+          const toolStatus = runToolWithStatus({
+            toolCallId: call.id,
+            toolName: call.name,
+            args: parsedArgs,
+            // Tool execution uses parent abort so image/media gen can outlive specialist LLM budget.
+            abortSignal: params.signal,
+            execute: (onProgress) =>
+              executeLocalCopilotTool(call.name, parsedArgs, {
+                ...params.toolCtx,
+                onProgress,
+                activeToolCallId: call.id,
+              }),
+          })
+
+          let next = await toolStatus.next()
+          while (!next.done) {
+            await emitSpecialistEvent(events, next.value, params.onEvent)
+            next = await toolStatus.next()
+          }
+          toolResult = next.value
+        }
 
         if (toolResult.createdWorkflowId) {
           params.toolCtx.workflowId = toolResult.createdWorkflowId
           const refreshed = await refreshToolContext(params.toolCtx)
           params.toolCtx.structuredContext = refreshed.structuredContext
+          params.toolCtx.workflowRevision = refreshed.workflowRevision
         } else if (call.name === 'edit_workflow' && toolResult.success) {
           const refreshed = await refreshToolContext(params.toolCtx)
           params.toolCtx.structuredContext = refreshed.structuredContext
+          params.toolCtx.workflowRevision = refreshed.workflowRevision
         }
 
-        const llmPayload = formatToolResultForLlm(call.name, toolResult.result ?? toolResult.error)
-        findings.push(truncate(`[${call.name}] ${llmPayload}`, 4_000))
-        messages.push({ role: 'tool', toolCallId: call.id, content: llmPayload })
-        events.push({
-          type: 'tool_call_result',
-          toolCallId: call.id,
-          toolName: call.name,
-          success: toolResult.success,
-          output: toolResult.result,
-          ...(toolResult.error ? { error: toolResult.error } : {}),
-          ...(toolResult.resources?.length ? { resources: toolResult.resources } : {}),
+        const llmPayload = formatToolResultForLlm(call.name, toolResult.result ?? toolResult.error, {
+          artifactStore: params.toolCtx.artifactStore,
         })
+        findings.push(truncate(`[${call.name}] ${llmPayload}`, 4_000))
+        if (!toolResult.success && toolResult.error) {
+          errors.push(toolResult.error)
+        }
+        messages.push({ role: 'tool', toolCallId: call.id, content: llmPayload })
+        await emitSpecialistEvent(
+          events,
+          {
+            type: 'tool_call_result',
+            toolCallId: call.id,
+            toolName: call.name,
+            success: toolResult.success,
+            output: toolResult.result,
+            ...(toolResult.error ? { error: toolResult.error } : {}),
+            ...(toolResult.resources?.length ? { resources: toolResult.resources } : {}),
+          },
+          params.onEvent
+        )
+
+        if (mutationRequiresVerification(call.name)) {
+          mutationOutcomes.push({ toolName: call.name, success: toolResult.success })
+        }
+
+        if (toolResult.success && mutationRequiresVerification(call.name)) {
+          const verification = await runPostMutationVerification({
+            toolCallId: call.id,
+            toolName: call.name,
+            mutationSuccess: true,
+            mutationResult: toolResult.result,
+            workflowId: params.toolCtx.workflowId,
+            executeVerifier: async (verifierName, args) => {
+              const verifierWorkflowId =
+                typeof args.workflowId === 'string' && args.workflowId.trim()
+                  ? args.workflowId.trim()
+                  : params.toolCtx.workflowId
+              return executeLocalCopilotTool(verifierName, args, {
+                ...params.toolCtx,
+                ...(verifierWorkflowId ? { workflowId: verifierWorkflowId } : {}),
+              })
+            },
+          })
+          if (verification) {
+            verifications.push(verification)
+            await emitSpecialistEvent(
+              events,
+              { type: 'verification_completed', record: verification },
+              params.onEvent
+            )
+            if (verification.status === 'failed') {
+              errors.push(
+                `${verification.verifierToolName} failed for ${verification.toolName}`
+              )
+            }
+          }
+        }
 
         params.turnCost.addToolBilling({
           toolName: call.name,
@@ -328,22 +507,63 @@ export async function executeSpecialistLoop(
       }
     }
 
+    const findingsText = truncate(findings.filter(Boolean).join('\n\n'), SPECIALIST_FINDINGS_MAX_CHARS)
+
+    if (signal.aborted && chatId) {
+      await persistSpecialistCheckpoint(chatId, params.userId, {
+        domain: params.domain,
+        objective: truncate(params.userMessage, 280, ''),
+        findings: findingsText,
+        toolRound: toolRoundCount,
+        updatedAt: new Date().toISOString(),
+        status: 'paused',
+      }).catch(() => undefined)
+      return {
+        domain: params.domain,
+        findings: findingsText,
+        toolRoundCount,
+        events,
+        success: false,
+        error: 'Specialist aborted',
+        depth: entered.depth,
+      }
+    }
+
+    if (chatId) {
+      await clearSpecialistCheckpoint(chatId, params.userId).catch(() => undefined)
+    }
+
+    const structured = buildSpecialistStructuredResult({
+      summaryFindings: findingsText,
+      mutationOutcomes,
+      verifications,
+      errors,
+    })
+
     return {
       domain: params.domain,
-      findings: truncate(findings.filter(Boolean).join('\n\n'), SPECIALIST_FINDINGS_MAX_CHARS),
+      findings: structured.findings,
       toolRoundCount,
       events,
       success: true,
       depth: entered.depth,
+      structured,
+      verifications,
+      mutationOutcomes,
     }
   } catch (error) {
     const message = getErrorMessage(error, 'specialist failed')
     logger.warn('Specialist loop failed', { domain: params.domain, error: message })
+    await emitSpecialistEvent(
+      events,
+      { type: 'status', message: `${params.domain} specialist failed` },
+      params.onEvent
+    )
     return {
       domain: params.domain,
       findings: `Specialist (${params.domain}) failed: ${message}`,
       toolRoundCount: 0,
-      events: [...events, { type: 'status', message: `${params.domain} specialist failed` }],
+      events,
       success: false,
       error: message,
       depth: entered.depth,
@@ -354,10 +574,39 @@ export async function executeSpecialistLoop(
   }
 }
 
+/**
+ * Runs a specialist pass while streaming events as they happen (including
+ * confirmation prompts before the Approve wait).
+ */
 export async function* runSpecialistPass(
   params: RunSpecialistPassParams
 ): AsyncGenerator<LocalCopilotStreamEvent, SpecialistPassResult> {
-  const result = await executeSpecialistLoop(params)
-  for (const event of result.events) yield event
-  return result
+  const liveEvents: LocalCopilotStreamEvent[] = []
+  let wake: (() => void) | undefined
+  let settled = false
+
+  const resultPromise = executeSpecialistLoop({
+    ...params,
+    onEvent: async (event) => {
+      liveEvents.push(event)
+      await params.onEvent?.(event)
+      wake?.()
+    },
+  }).then((result) => {
+    settled = true
+    wake?.()
+    return result
+  })
+
+  while (!settled || liveEvents.length > 0) {
+    if (liveEvents.length === 0) {
+      await new Promise<void>((resolve) => {
+        wake = resolve
+      })
+      continue
+    }
+    yield liveEvents.shift()!
+  }
+
+  return await resultPromise
 }

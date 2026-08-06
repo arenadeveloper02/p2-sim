@@ -1,8 +1,11 @@
 import { db } from '@sim/db'
 import { workflow, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
 import { and, desc, eq, isNull } from 'drizzle-orm'
+import { generateWorkspaceSnapshot } from '@/lib/copilot/chat/workspace-context'
+import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { loadUserMemoriesForContext } from '@/lib/copilot/tools/server/other/user-memory'
 import { listLogs } from '@/lib/logs/list-logs'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
@@ -17,6 +20,10 @@ import {
 } from '@/local-copilot/lib/context/load-workspace-integrations'
 import { loadWorkspaceResourceSummaries } from '@/local-copilot/lib/context/load-workspace-resources'
 import { loadWorkspaceSkillSummaries } from '@/local-copilot/lib/tools/user-skills'
+import {
+  stampWorkspaceSnapshotBundle,
+  type StampedWorkspaceSnapshotBundle,
+} from '@/local-copilot/lib/context/snapshot-freshness'
 import type {
   LocalCopilotBlockSummary,
   LocalCopilotStructuredContext,
@@ -24,12 +31,90 @@ import type {
 
 const logger = createLogger('LocalCopilotContext')
 
+/** Prebuilt workspace inventory bundle from {@link generateWorkspaceSnapshot}. */
+export type WorkspaceSnapshotBundle = StampedWorkspaceSnapshotBundle
+
 export interface BuildContextParams {
   userId: string
   workspaceId: string
   workflowId?: string
   selectedBlockId?: string
   executionId?: string
+  /**
+   * Prebuilt workspace snapshot. The mothership lifecycle already fetches this in
+   * `post.ts`, so it is threaded through to avoid a second identical DB fetch.
+   * When omitted, this builder fetches its own snapshot.
+   */
+  workspaceSnapshot?: WorkspaceSnapshotBundle | null
+}
+
+type SnapshotResourceContext = Pick<
+  LocalCopilotStructuredContext,
+  'knowledgeBases' | 'tables' | 'workspaceFiles'
+>
+
+/** Maps a typed workspace snapshot into Local structured resource summaries. */
+export function mapSnapshotResources(snapshot: VfsSnapshotV1): SnapshotResourceContext {
+  return {
+    knowledgeBases: (snapshot.knowledgeBases ?? []).map((kb) => ({
+      id: kb.id,
+      name: kb.name,
+      description: kb.description ?? null,
+      ...(kb.connectorTypes && kb.connectorTypes.length > 0
+        ? { connectorTypes: kb.connectorTypes }
+        : {}),
+    })),
+    tables: (snapshot.tables ?? []).map((table) => ({
+      id: table.id,
+      name: table.name,
+      description: table.description ?? null,
+    })),
+    workspaceFiles: (snapshot.files ?? []).map((file) => ({
+      id: file.id,
+      name: file.name,
+      path: file.path,
+      type: file.type ?? '',
+      size: file.size ?? 0,
+    })),
+  }
+}
+
+/** Maps a typed workspace snapshot into the Local `workspaceWorkflows` inventory. */
+export function mapSnapshotWorkflows(
+  snapshot: VfsSnapshotV1
+): NonNullable<LocalCopilotStructuredContext['workspaceWorkflows']> {
+  return (snapshot.workflows ?? []).map((wf) => ({
+    id: wf.id,
+    name: wf.name,
+    isDeployed: wf.isDeployed ?? false,
+    ...(wf.path ? { path: wf.path } : {}),
+    ...(wf.folderPath ? { folderPath: wf.folderPath } : {}),
+    ...(wf.description ? { description: wf.description } : {}),
+  }))
+}
+
+/**
+ * Resolves the workspace snapshot, preferring a caller-supplied bundle and
+ * falling back to a fresh fetch. Returns null when the snapshot is unavailable
+ * so callers can degrade to the legacy per-resource loaders.
+ */
+async function resolveWorkspaceSnapshot(
+  params: BuildContextParams
+): Promise<WorkspaceSnapshotBundle | null> {
+  if (params.workspaceSnapshot) {
+    return stampWorkspaceSnapshotBundle(params.workspaceSnapshot)
+  }
+  try {
+    const generated = await generateWorkspaceSnapshot(params.workspaceId, params.userId)
+    if (!generated) return null
+    return stampWorkspaceSnapshotBundle(generated)
+  } catch (error) {
+    logger.warn('Failed to load workspace snapshot; falling back to legacy loaders', {
+      workspaceId: params.workspaceId,
+      error: getErrorMessage(error, 'snapshot failed'),
+    })
+    return null
+  }
 }
 
 export async function buildLocalCopilotContext(
@@ -47,10 +132,24 @@ export async function buildLocalCopilotContext(
     throw new Error('Workspace not found')
   }
 
+  const snapshotBundle = await resolveWorkspaceSnapshot(params)
+  const snapshot = snapshotBundle?.snapshot ?? null
+  const inventoryMarkdown = snapshotBundle?.markdown
+
   const integrations = await loadWorkspaceIntegrations(workspaceId, userId)
   const credentials = oauthIntegrationsToCredentialMetadata(integrations.connectedIntegrations)
-  const resources = await loadWorkspaceResourceSummaries(workspaceId)
-  const skills = await loadWorkspaceSkillSummaries(workspaceId)
+  // Prefer the unified snapshot as the single inventory source; fall back to the
+  // legacy per-resource loaders only when the snapshot is unavailable.
+  const resources = snapshot
+    ? mapSnapshotResources(snapshot)
+    : await loadWorkspaceResourceSummaries(workspaceId)
+  const skills = snapshot
+    ? (snapshot.skills ?? []).map((skill) => ({
+        id: skill.id,
+        name: skill.name,
+        description: skill.description ?? '',
+      }))
+    : await loadWorkspaceSkillSummaries(workspaceId)
   const userMemories = await loadUserMemoriesForContext(userId, workspaceId)
   const availableBlocks = summarizeBlocks(getAllBlocks())
   const availableIntegrations = [...new Set(availableBlocks.map((block) => block.category))].sort()
@@ -66,6 +165,15 @@ export async function buildLocalCopilotContext(
     knowledgeBases: resources.knowledgeBases,
     tables: resources.tables,
     workspaceFiles: resources.workspaceFiles,
+    ...(inventoryMarkdown ? { inventoryMarkdown } : {}),
+    ...(snapshotBundle?.generatedAt && snapshotBundle.contentRevision
+      ? {
+          snapshotFreshness: {
+            generatedAt: snapshotBundle.generatedAt,
+            contentRevision: snapshotBundle.contentRevision,
+          },
+        }
+      : {}),
     ...(skills.length > 0 ? { skills } : {}),
     ...(userMemories.length > 0
       ? {
@@ -80,19 +188,37 @@ export async function buildLocalCopilotContext(
       : {}),
   }
 
-  if (!workflowId) {
-    const workspaceWorkflows = await db
-      .select({
-        id: workflow.id,
-        name: workflow.name,
-        isDeployed: workflow.isDeployed,
-        lastRunAt: workflow.lastRunAt,
-      })
-      .from(workflow)
-      .where(and(eq(workflow.workspaceId, workspaceId), isNull(workflow.archivedAt)))
-      .orderBy(desc(workflow.updatedAt))
-      .limit(50)
+  const workspaceWorkflows = snapshot
+    ? mapSnapshotWorkflows(snapshot)
+    : (
+        await db
+          .select({
+            id: workflow.id,
+            name: workflow.name,
+            isDeployed: workflow.isDeployed,
+            lastRunAt: workflow.lastRunAt,
+          })
+          .from(workflow)
+          .where(and(eq(workflow.workspaceId, workspaceId), isNull(workflow.archivedAt)))
+          .orderBy(desc(workflow.updatedAt))
+          .limit(50)
+      ).map((row) => ({
+        id: row.id,
+        name: row.name ?? 'Untitled workflow',
+        isDeployed: row.isDeployed,
+        lastRunAt: row.lastRunAt?.toISOString() ?? null,
+      }))
 
+  const workspaceWorkflowsContext =
+    workspaceWorkflows.length > 0
+      ? {
+          workspaceWorkflows,
+          guidance:
+            'Existing workflows are listed in workspaceWorkflows. When the user wants to run, test, execute, debug, or use a workflow, call get_workflow_run_options then run_workflow on a matching entry — never create_workflow. Only create_workflow when the user explicitly asks for a brand-new workflow with a distinct purpose and name (pass confirmNewWorkflow: true).',
+        }
+      : { workspaceWorkflows }
+
+  if (!workflowId) {
     const context: LocalCopilotStructuredContext = {
       workspace: {
         id: workspaceRow.id,
@@ -109,22 +235,12 @@ export async function buildLocalCopilotContext(
       },
       availableIntegrations,
       availableBlocks,
-      workspaceWorkflows: workspaceWorkflows.map((row) => ({
-        id: row.id,
-        name: row.name ?? 'Untitled workflow',
-        isDeployed: row.isDeployed,
-        lastRunAt: row.lastRunAt?.toISOString() ?? null,
-      })),
-      ...(workspaceWorkflows.length > 0
-        ? {
-            guidance:
-              'Existing workflows are listed in workspaceWorkflows. When the user wants to run, test, execute, debug, or use a workflow, call get_workflow_run_options then run_workflow on a matching entry — never create_workflow. Only create_workflow when the user explicitly asks for a brand-new workflow with a distinct purpose and name (pass confirmNewWorkflow: true).',
-          }
-        : {}),
+      ...workspaceWorkflowsContext,
     }
 
     logger.info('Built Arena Copilot workspace context', {
       workspaceId,
+      inventorySource: snapshot ? 'snapshot' : 'legacy',
       workflowCount: workspaceWorkflows.length,
       fileCount: resources.workspaceFiles.length,
       tableCount: resources.tables.length,
@@ -177,6 +293,7 @@ export async function buildLocalCopilotContext(
     },
     ...integrationContext,
     ...resourceContext,
+    ...workspaceWorkflowsContext,
     workflow: {
       id: workflowRow.id,
       name: workflowRow.name ?? 'Untitled workflow',
@@ -195,7 +312,9 @@ export async function buildLocalCopilotContext(
 
   logger.info('Built Arena Copilot context', {
     workflowId,
+    inventorySource: snapshot ? 'snapshot' : 'legacy',
     blockCount: Object.keys(normalized.blocks).length,
+    workflowCount: workspaceWorkflows.length,
     skillCount: skills.length,
     envVariableCount: integrations.envVariables.length,
     connectedIntegrationCount: integrations.connectedIntegrations.length,

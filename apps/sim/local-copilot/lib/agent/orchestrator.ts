@@ -3,6 +3,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { truncate } from '@sim/utils/string'
 import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
+import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
@@ -25,21 +26,27 @@ import {
   isSpecialistTool,
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
 import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
+import { formatUxPhaseStatus, type LocalUxPhase } from '@/local-copilot/lib/agent/ux-phase'
 import {
   buildStagnationSystemMessage,
   createToolStagnationTracker,
 } from '@/local-copilot/lib/agent/tool-stagnation'
 import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
+import { sanitizeToolIoForPersistence } from '@/local-copilot/lib/audit/sanitize-persistence'
 import { recordLocalCopilotTurnUsage } from '@/local-copilot/lib/billing/record-turn-usage'
+import { assertSpendCapAllows } from '@/local-copilot/lib/billing/spend-cap'
 import {
   LocalTurnCostAccumulator,
   type LocalTurnCostSummary,
 } from '@/local-copilot/lib/billing/turn-cost-accumulator'
+import { auditLocalOpsEvent } from '@/local-copilot/lib/ops/audit-metrics'
+import { LOCAL_OPS_COUNTERS, recordLocalOpsEvent } from '@/local-copilot/lib/ops/metrics'
 import { getLocalCopilotConfig, buildLocalCopilotConfigForCatalog, assertLocalCopilotEnabled } from '@/local-copilot/lib/config'
 import {
   DEFAULT_LOCAL_COPILOT_CATALOG_ID,
   type LocalCopilotCatalogId,
 } from '@/local-copilot/lib/model-catalog'
+import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import {
   buildLocalCopilotContext,
   contextToPromptJson,
@@ -48,7 +55,6 @@ import {
   compactChatHistory,
   estimateChatMessagesTokens,
   estimateToolDefinitionTokens,
-  fitPromptToTokenBudget,
   LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
   LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
   resolveWorkflowContextDetail,
@@ -60,12 +66,27 @@ import {
   formatSessionConstraintsSystemMessage,
   type PreferenceMemoryCandidate,
 } from '@/local-copilot/lib/context/follow-up-directives'
+import { fitPromptWithSlots } from '@/local-copilot/lib/context/prompt-slots'
+import {
+  createArtifactStore,
+  persistArtifacts,
+} from '@/local-copilot/lib/context/artifacts'
+import { mergeCopilotChatConfig } from '@/local-copilot/lib/context/chat-config'
+import { toWorkspaceSnapshotMeta } from '@/local-copilot/lib/context/snapshot-freshness'
 import {
   ensureSessionMemory,
   formatSessionMemorySystemMessage,
   mergeFollowUpDirectivesIntoSessionMemory,
+  mergeSessionMemoryEvidence,
+  persistSessionMemory,
   type SessionMemoryTurn,
 } from '@/local-copilot/lib/context/session-memory'
+import {
+  formatTaskStateSystemMessage,
+  loadTaskState,
+  persistTaskState,
+  updateTaskStateFromTurn,
+} from '@/local-copilot/lib/context/task-state'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import {
   extractOptionsTitles,
@@ -74,7 +95,7 @@ import {
   normalizeSingleSelectJsonToOptionsTags,
   stripOptionsTagsForDisplay,
 } from '@/local-copilot/lib/format-options-tag'
-import { formatOAuthConnectCredentialTag } from '@/local-copilot/lib/oauth-connect-text'
+import { buildOAuthConnectControl } from '@/local-copilot/lib/oauth-connect-text'
 import {
   buildBlocksMetadataReuseSystemMessage,
   buildUnfulfilledIntentContinuationMessage,
@@ -98,6 +119,22 @@ import {
 import { createLocalCopilotProvider, getLocalCopilotProvider } from '@/local-copilot/lib/providers/registry'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import {
+  prepareLocalToolConfirmation,
+  waitForLocalToolConfirmation,
+} from '@/local-copilot/lib/security/request-tool-confirmation'
+import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
+import { buildGeneratedApiKeyControl } from '@/local-copilot/lib/security/trusted-controls'
+import { resolveTurnCompletion } from '@/local-copilot/lib/verification/completion'
+import { mutationRequiresVerification } from '@/local-copilot/lib/verification/policy'
+import { runPostMutationVerification } from '@/local-copilot/lib/verification/run-verification'
+import type {
+  MutationOutcome,
+  VerificationRecord,
+} from '@/local-copilot/lib/verification/types'
+import {
+  buildWorkflowRunChatAppendix,
+  isWorkflowRunToolName,
+  shouldAppendWorkflowRunChatResult,
   stripLeakedToolMarkers,
   synthesizeAssistantSummaryFromTools,
   type ToolTurnRecord,
@@ -106,7 +143,7 @@ import {
   LOCAL_COPILOT_TOOLS,
   resolveLocalCopilotTools,
 } from '@/local-copilot/lib/tools/definitions'
-import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
+import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   buildFollowUpContinuationMessage,
   detectMandatoryFollowUp,
@@ -150,7 +187,7 @@ Response format:
 - Finish efficiently (CRITICAL — avoid thrash):
   - Call \`get_blocks_metadata\` **once** with every block type you need in that call (e.g. \`{ "blockIds": ["agent","start_trigger","gmail"] }\`). Do not re-fetch the same types.
   - Prefer one \`edit_workflow\` that adds all blocks and wires connections. Only call edit again when the result reports skippedItems, inputValidationErrors, needsFollowUpEdit, or real lint errors.
-  - After a successful create + populate edit with no repair needed: **STOP**. One final reply. Do NOT call \`validate_workflow\`, re-open the workflow, re-fetch metadata, or restate the same completion summary.
+  - After a successful create + populate edit with no repair needed: **STOP**. One final reply. Do NOT re-open the workflow, re-fetch metadata, or restate the same completion summary. App-owned verification may run automatically — do not claim the workflow is verified unless a verification result says so.
   - Missing OAuth only: call \`oauth_get_auth_link\` once, share the link, then stop.
 - Similar existing workflows (CRITICAL):
   - If \`workspaceWorkflows\` already has a close match (e.g. Weekly Email Summary vs a 10-day email summary), do **not** silently create a duplicate.
@@ -197,7 +234,7 @@ Rules:
   - Prefer one edit_workflow call with all add operations plus a final edit on the Start block for connections. deferredConnections in results are normal for forward references within the same batch — do not re-issue them unless the target id was wrong.
   - If workflowLintMessage reports orphan blocks, fix connections on the Start (or upstream) block before run_workflow.
   - Always issue the \`edit_workflow\` tool call to apply changes. Never end a turn by only describing the intended edit.
-  - Do not call \`validate_workflow\` after a clean successful edit — trust the edit result unless it reported errors.
+  - Do not treat a clean edit_workflow success as verified by itself — wait for app-owned validation evidence before telling the user the workflow is verified.
 - Block output references (CRITICAL):
   - Wire upstream block outputs using angle-bracket tags with the block's **display name**, never its UUID: \`<My Agent.content>\`, not \`<bd80a5a8-ef94-43ef-afcf-f6daa926495f.content>\`.
   - Before wiring inputs (e.g. Gmail body, Slack message, API payload), call \`get_block_upstream_references\` for the target block and use the exact tags returned (e.g. \`agent1.content\` for a default agent without structured outputs).
@@ -211,10 +248,12 @@ Rules:
   - Clear preference overrides are also auto-persisted by the runtime — still honor \`userMemories\` and session constraints.
   - Do not store secrets (API keys, passwords, tokens) in user_memory.
 - Session memory / follow-ups (CRITICAL):
-  - A system message may include structured session memory for earlier turns (goals, decisions, constraints, activeDirective, entities, progress, open questions).
-  - Trust it for older context. If recent verbatim turns conflict, prefer the recent turns.
+  - A system message may include structured session memory for earlier turns (goals, decisions, constraints, activeDirective, entities, progress, open questions, approvals, failures, verification).
+  - Trust it for older conversational context. If recent verbatim turns conflict, prefer the recent turns.
+  - For resource facts (workflow/file/table/KB IDs, names, deploy status, inventory membership), the Workspace snapshot / structured Current context inventory ALWAYS beats session memory entities when they disagree.
   - \`constraints\` and the separate "Active user directive" / "Session constraints" system messages are authoritative for corrections ("use X not Y", "don't create a new workflow"). Do not re-ask or undo them unless the user explicitly changes course.
   - Never burn tool rounds re-doing work that constraints already forbade. If stuck after a failed retry, stop and ask — do not loop the same tool with the same args.
+  - When a tool result includes \`artifactId\` + \`truncated: true\`, call \`load_copilot_artifact\` only if you need the full body.
 - Credentials and API keys:
   - Context includes \`connectedIntegrations\` (OAuth) and \`envVariables\` (configured env key names only). If an integration or its env key (e.g. \`FIRECRAWL_API_KEY\`, \`FALAI_API_KEY\`) appears there, credentials are already available — NEVER ask the user for an API key.
   - When \`hostedKeysAvailable\` is true, many api_key blocks also receive platform-hosted keys at runtime — do not prompt for keys unless a tool returns an explicit missing-credential error.
@@ -224,14 +263,18 @@ Rules:
   - For simple requests — generate an image, search the live web, scrape a site, call an API — use direct tools when keys are already configured. Do NOT create a workflow first.
   - Image: \`generate_image\` with a clear \`prompt\` (and optional \`outputs.files\` path to save the file).
   - For variations, pass the user's exact wording in \`prompt\` (e.g. "3 variations of a red bus") — do not strip counts or the word "variations".
-  - Live web / current data: \`search_online\` with \`query\` and \`toolTitle\` (uses Exa/Serper when \`EXA_API_KEY\` / Serper keys exist).
+  - Live web / current data (CRITICAL — use the Exa block tools, not training knowledge):
+    - Factual / "who/what/when is current" questions: \`invoke_integration_tool({ toolId: "exa_answer", params: { query: "<question>" } })\` — returns an answer with citations.
+    - Broader web search result lists: \`invoke_integration_tool({ toolId: "exa_search", params: { query: "<search>" } })\`.
+    - Convenience wrapper: \`search_online\` with \`query\` + \`toolTitle\` (same Exa path under the hood; Serper fallback when configured).
+    - Do NOT invent live facts from memory. Do NOT claim "no search API key" until an Exa/search tool actually returns a missing-credential error — workspace \`EXA_API_KEY\`, BYOK, and hosted keys are applied automatically when available.
   - Other integrations: \`list_integration_tools({ integration: "gmail" })\` (underscores, not hyphens) then \`invoke_integration_tool({ toolId: "gmail_draft_v2", params: { ... } })\`. Never call \`load_integration_tool\` — that is Cloud-only; Arena Copilot uses \`invoke_integration_tool\`.
   - For OAuth integrations (Google Sheets, Gmail, Slack, etc.), \`params\` MUST include \`credentialId\` from \`connectedIntegrations\` for that provider (e.g. providerId \`google-email\` for Gmail, \`google-sheets\` for Sheets). If only one connected credential matches, Arena Copilot injects it automatically. Google Docs/Drive/Sheets credentials are interchangeable for Drive search + Docs/Sheets tools.
   - Google Docs by name (not ID): first \`google_drive_list\` with \`query\` set to the document title (or \`google_drive_search\` with \`prompt\` describing the doc), pick the matching file id (\`mimeType\` \`application/vnd.google-apps.document\`), then \`google_docs_read\` / \`google_docs_write\` with that \`documentId\`. Never pass the title as \`documentId\`.
   - Google Sheets write/update/append: pass \`spreadsheetId\`, \`sheetName\` (tab name), \`values\` as a 2D array (e.g. \`[["Name","Age"],["Alice",30]]\`). Optional \`cellRange\` like \`A1\`. Legacy \`range\` like \`Sheet1!A1\` is also accepted.
   - Gmail drafts (one-off, no workflow): \`invoke_integration_tool({ toolId: "gmail_draft_v2", params: { to, subject, body, credentialId } })\`. \`to\` and \`body\` are required strings. For separate drafts to multiple people, call once per recipient with a single email in \`to\` (Arena also fans out if \`to\` is an array). Do not put everyone on one draft unless the user asked for a single email.
   - Only build or run a workflow when the user wants automation saved for reuse, multi-step pipelines, or scheduling.
-- Prefer \`edit_workflow\` to apply changes on open workflows. Use \`propose_workflow_patch\` only when the user asks to review a plan before applying, or for a large multi-block redesign that needs confirmation. For new workflows from home chat, use create_workflow + edit_workflow.
+- Prefer \`edit_workflow\` to apply changes on open workflows. For large multi-block redesigns or destructive edits, call \`edit_workflow\` with \`dryRun: true\` first (or use \`propose_workflow_patch\` when the user wants to review before applying); re-call with \`confirmed: true\` only after preview. For new workflows from home chat, use create_workflow + edit_workflow.
 - Running and testing workflows:
   - On home chat there is no open workflow — always pass \`workflowId\` from \`workspaceWorkflows\` (or the workflow name; it will be resolved automatically when unambiguous).
   - Use \`get_workflow_run_options\` first to discover triggers, required \`workflow_input\`, and mock payloads.
@@ -287,9 +330,14 @@ Rules:
   - Creating PPTX / DOCX / PDF (CRITICAL — always available, do not refuse). Exact arg shapes:
     1. \`create_file\` empty shell — prefer \`{"fileName":"files/Deck.pptx"}\` (no \`content\`).
     2. \`workspace_file\` — \`{"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"Deck"}\`. \`target\` MUST be an object, never a string path.
-    3. Later round only: \`edit_content\` — \`{"content":"pptx.addSlide(); slide.addText(\\"Title\\", { x: 0.5, y: 0.5, w: 9, h: 1 });"}\` using pre-initialized \`pptx\` / \`docx\` / \`pdf\` globals (do not \`require\` them). Never same batch as \`workspace_file\`.
-    - These formats compile via the built-in JS sandbox even when \`e2b.docSandboxEnabled\` is false. Never refuse because E2B is off.
-    - Do **not** use \`function_execute\` / Python \`python-pptx\` / matplotlib for workspace office files unless the user explicitly asks to run sandbox code.
+    3. Later round only: \`edit_content\` with pre-initialized globals (do **not** \`require\` / \`import\` libraries):
+       - PPTX: \`pptx.addSlide(); slide.addText("Title", { x: 0.5, y: 0.5, w: 9, h: 1 });\`
+       - DOCX: \`addSection({ children: [new docx.Paragraph({ children: [new docx.TextRun("Hello")] })] });\` (chunked) OR \`globalThis.doc = new docx.Document({ sections: [{ children: [...] }] });\` (single write). Prefer \`addSection\`. Never \`docx.addSection\`.
+       - PDF: use \`pdf\` / pdf-lib globals similarly.
+       Never same batch as \`workspace_file\`.
+    - These formats compile via the built-in JS sandbox (isolated-vm) even when \`e2b.docSandboxEnabled\` is false. Never refuse because E2B is off.
+    - If \`edit_content\` fails with a system/sandbox crash (e.g. "Code execution failed unexpectedly" / isolated-vm / Node version), that is a host Node/isolated-vm issue — not missing deck code and not \`docSandboxEnabled\`. Tell the user to use Node 20–22 and rebuild isolated-vm; do not loop minimal PPTX/DOCX probes.
+    - Do **not** use \`function_execute\` / Python \`python-pptx\` / \`python-docx\` / matplotlib for workspace office files unless the user explicitly asks to run sandbox code.
   - For interactive web apps (npm build in sandbox): \`invoke_integration_tool\` with \`development_generate_app\` or \`development_edit_app\` when E2B is enabled.
 - Use tools to inspect context, validate workflows, fetch logs, run tests, and build or edit workflows.
 - When debugging failures, identify root cause, failing block, suggested fix, and test steps.
@@ -331,6 +379,11 @@ export interface RunAgentParams {
   /** Workspace markdown snapshot from mothership payload. */
   workspaceContext?: string
   /**
+   * Typed workspace inventory snapshot from the mothership payload. Paired with
+   * `workspaceContext` (markdown) to seed context building without a second DB fetch.
+   */
+  workspaceSnapshot?: VfsSnapshotV1
+  /**
    * Allowlisted Local Copilot model catalog id. When set, builds a per-request
    * provider config instead of using process-wide `COPILOT_*` env defaults.
    */
@@ -367,6 +420,11 @@ export async function* runLocalCopilotAgent(
     memory: getLocalCopilotMemorySnapshot(),
   })
 
+  const workspaceSnapshotBundle =
+    params.workspaceContext && params.workspaceSnapshot
+      ? { markdown: params.workspaceContext, snapshot: params.workspaceSnapshot }
+      : undefined
+
   let structuredContext
   try {
     structuredContext = await buildLocalCopilotContext({
@@ -375,6 +433,7 @@ export async function* runLocalCopilotAgent(
       ...(params.workflowId ? { workflowId: params.workflowId } : {}),
       selectedBlockId: params.selectedBlockId,
       executionId: params.executionId,
+      ...(workspaceSnapshotBundle ? { workspaceSnapshot: workspaceSnapshotBundle } : {}),
     })
   } catch (error) {
     logger.error('Arena Copilot context build failed', {
@@ -399,6 +458,38 @@ export async function* runLocalCopilotAgent(
   const writeChatLedger = params.writeChatLedger !== false
   const turnCost = new LocalTurnCostAccumulator()
 
+  const usageLimits = await checkServerSideUsageLimits(params.userId).catch(() => ({
+    isExceeded: false,
+    currentUsage: 0,
+    limit: Number.POSITIVE_INFINITY,
+  }))
+  const spendGate = assertSpendCapAllows({
+    isExceeded: usageLimits.isExceeded,
+    currentUsage: usageLimits.currentUsage,
+    limit: usageLimits.limit,
+    turnSoFar: 0,
+    message: usageLimits.message,
+  })
+  if (!spendGate.ok) {
+    await auditLocalOpsEvent({
+      counter: LOCAL_OPS_COUNTERS.spendCapHit,
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId,
+      chatId: params.chatId,
+      runId: params.runId,
+      metadata: {
+        currentUsage: usageLimits.currentUsage,
+        limit: usageLimits.limit,
+      },
+    })
+    yield {
+      type: 'error',
+      message: spendGate.error ?? 'Usage limit exceeded',
+    }
+    return undefined
+  }
+
   let conversationId = params.conversationId
   if (persistLocally) {
     if (!conversationId) {
@@ -416,16 +507,22 @@ export async function* runLocalCopilotAgent(
       role: 'user',
       content: { text: params.message },
     })
-
-    await logCopilotAction({
-      userId: params.userId,
-      workspaceId: params.workspaceId,
-      workflowId: params.workflowId,
-      conversationId,
-      action: 'chat_message',
-      summary: params.message.slice(0, 200),
-    })
   }
+
+  await logCopilotAction({
+    userId: params.userId,
+    workspaceId: params.workspaceId,
+    workflowId: params.workflowId,
+    conversationId,
+    action: 'chat_message',
+    summary: params.message.slice(0, 200),
+    metadata: {
+      chatId: params.chatId,
+      runId: params.runId,
+      backend: 'local',
+      persistLocally,
+    },
+  }).catch(() => undefined)
 
   const rawHistory: ChatMessage[] = params.priorMessages?.length
     ? params.priorMessages
@@ -490,16 +587,30 @@ export async function* runLocalCopilotAgent(
     ? sessionMemory.constraints
     : extractedDirectives.constraints
 
-  const messages: ChatMessage[] = fitPromptToTokenBudget(
+  let taskState = params.chatId
+    ? await loadTaskState(params.chatId, params.userId).catch(() => null)
+    : null
+
+  const messages: ChatMessage[] = fitPromptWithSlots(
     [
       { role: 'system', content: SYSTEM_PROMPT },
       {
         role: 'system',
         content: `Current context:\n${contextJson}`,
       },
-      ...(params.workspaceContext
-        ? [{ role: 'system' as const, content: `Workspace snapshot:\n${params.workspaceContext}` }]
+      ...(params.workspaceContext ?? structuredContext.inventoryMarkdown
+        ? [
+            {
+              role: 'system' as const,
+              content: `Workspace snapshot:\n${params.workspaceContext ?? structuredContext.inventoryMarkdown}${
+                structuredContext.snapshotFreshness
+                  ? `\n\n(snapshot generatedAt=${structuredContext.snapshotFreshness.generatedAt}; revision=${structuredContext.snapshotFreshness.contentRevision})`
+                  : ''
+              }`,
+            },
+          ]
         : []),
+      ...(taskState ? [formatTaskStateSystemMessage(taskState)] : []),
       ...(sessionMemory ? [formatSessionMemorySystemMessage(sessionMemory)] : []),
       ...(pinnedConstraints.length > 0
         ? [formatSessionConstraintsSystemMessage(pinnedConstraints)]
@@ -569,6 +680,17 @@ export async function* runLocalCopilotAgent(
     structuredContext,
     selectedBlockId: params.selectedBlockId,
     lastUserMessage: userTurnText,
+    mutationIdempotency: new Map(),
+    listedIntegrationToolIds: new Set(),
+    allowedWorkflowIds: new Set(),
+    blocksMetadataByType: new Map(),
+    artifactStore: createArtifactStore(),
+  }
+
+  if (params.workflowId) {
+    const { loadWorkflowRevision } = await import('@/local-copilot/lib/writes/workflow-access')
+    const loaded = await loadWorkflowRevision(params.workflowId, params.workspaceId)
+    if (loaded) toolCtx.workflowRevision = loaded.revision
   }
 
   /** Loads the heavy tool executor graph on first tool call only. */
@@ -656,6 +778,7 @@ export async function* runLocalCopilotAgent(
         turnCost,
         getToolExecutor,
         budget: specialistBudget,
+        ...(params.runId ? { runId: params.runId } : {}),
       })
 
       let passNext = await pass.next()
@@ -696,7 +819,14 @@ export async function* runLocalCopilotAgent(
   let endTurnAfterThisRound = false
   /** Full user-visible prose streamed this turn (survives per-round assistantText resets). */
   let streamedUserFacingText = ''
+  /**
+   * Length of `streamedUserFacingText` when the latest workflow-run tool finished.
+   * Used to detect the stuck "Let me run it." → Running workflow → no result case.
+   */
+  let streamedCharsAtLastRunTool: number | null = null
   const turnToolRecords: ToolTurnRecord[] = []
+  const turnMutationOutcomes: MutationOutcome[] = []
+  const turnVerifications: VerificationRecord[] = []
   const maxToolRounds = MAX_TOOL_ITERATIONS
   let pendingFollowUps: MandatoryFollowUp[] = []
   let forcedFollowUpRounds = 0
@@ -709,6 +839,31 @@ export async function* runLocalCopilotAgent(
   for (let round = 0; round < maxToolRounds; round++) {
     if (stagnationStopMessage) break
     if (postBuildToolMode === 'done') break
+
+    const midTurnSpend = assertSpendCapAllows({
+      isExceeded: usageLimits.isExceeded,
+      currentUsage: usageLimits.currentUsage,
+      limit: usageLimits.limit,
+      turnSoFar: turnCost.summarize().total,
+      message: usageLimits.message,
+    })
+    if (!midTurnSpend.ok) {
+      await auditLocalOpsEvent({
+        counter: LOCAL_OPS_COUNTERS.spendCapHit,
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        workflowId: params.workflowId,
+        conversationId,
+        chatId: params.chatId,
+        runId: params.runId,
+        metadata: { round, turnSoFar: turnCost.summarize().total },
+      })
+      yield {
+        type: 'error',
+        message: midTurnSpend.error ?? 'Usage limit exceeded',
+      }
+      break
+    }
 
     const pendingToolCalls: Array<{
       id: string
@@ -739,9 +894,11 @@ export async function* runLocalCopilotAgent(
 
     // Keep the trailing Thinking… pulse alive across tool → model gaps so the
     // UI never looks finished while the turn is still in flight.
+    const proposePhase: LocalUxPhase = 'proposing'
+    yield { type: 'ux_phase', phase: proposePhase }
     yield {
       type: 'status',
-      message: round === 0 ? 'Working on it…' : 'Deciding next step…',
+      message: round === 0 ? formatUxPhaseStatus(proposePhase) : 'Deciding next step…',
     }
 
     // Status heartbeats cover the immediate first line + rotation while the
@@ -834,6 +991,7 @@ export async function* runLocalCopilotAgent(
         model: config.model,
         inputTokens: roundInputTokens,
         outputTokens: roundOutputTokens,
+        cacheReadTokens: roundCacheReadTokens,
         provider: config.provider,
       })
     }
@@ -959,8 +1117,18 @@ export async function* runLocalCopilotAgent(
             success: outcome.success,
             message: outcome.findings,
             domain: outcome.toolName,
+            ...(outcome.result?.structured ? { structured: outcome.result.structured } : {}),
+            ...(outcome.result?.verifications?.length
+              ? { verifications: outcome.result.verifications }
+              : {}),
           },
         })
+        if (outcome.result?.verifications?.length) {
+          turnVerifications.push(...outcome.result.verifications)
+        }
+        if (outcome.result?.mutationOutcomes?.length) {
+          turnMutationOutcomes.push(...outcome.result.mutationOutcomes)
+        }
       }
     }
 
@@ -988,18 +1156,44 @@ export async function* runLocalCopilotAgent(
           success: outcome.success,
           result: outcome.output,
         })
+        if (isWorkflowRunToolName(call.name)) {
+          streamedCharsAtLastRunTool = streamedUserFacingText.length
+        }
 
         if (persistLocally && conversationId) {
+          const sanitized = sanitizeToolIoForPersistence({
+            arguments: parsedArgs,
+            result: outcome.output,
+          })
           await recordToolCall({
             conversationId,
             toolCallId: call.id,
             toolName: call.name,
-            arguments: parsedArgs,
-            result: outcome.output,
+            arguments: sanitized.arguments,
+            result: sanitized.result,
           })
         }
 
-        const formattedToolResult = formatToolResultForLlm(call.name, outcome.output)
+        await logCopilotAction({
+          userId: params.userId,
+          workspaceId: params.workspaceId,
+          workflowId: params.workflowId,
+          conversationId,
+          action: 'specialist_delegation',
+          summary: call.name,
+          status: outcome.success ? 'success' : 'failure',
+          metadata: {
+            chatId: params.chatId,
+            runId: params.runId,
+            backend: 'local',
+            toolCallId: call.id,
+            domain: call.name,
+          },
+        }).catch(() => undefined)
+
+        const formattedToolResult = formatToolResultForLlm(call.name, outcome.output, {
+          artifactStore: toolCtx.artifactStore,
+        })
         pendingFollowUps = resolveMandatoryFollowUps(
           pendingFollowUps,
           call.name,
@@ -1067,6 +1261,91 @@ export async function* runLocalCopilotAgent(
       }
 
       const { executeLocalCopilotTool, refreshToolContext } = await getToolExecutor()
+      const confirmationRequirement = classifyLocalToolConfirmation(call.name, parsedArgs)
+      let toolResult: ToolExecutionResult | undefined
+      if (confirmationRequirement) {
+        const confirmationReady = await prepareLocalToolConfirmation({
+          runId: params.runId,
+          toolCallId: call.id,
+          toolName: call.name,
+          args: parsedArgs,
+          abortSignal: params.signal,
+        })
+        if (confirmationReady) {
+          yield { type: 'ux_phase', phase: 'waiting_approval' }
+          yield {
+            type: 'status',
+            message: formatUxPhaseStatus('waiting_approval'),
+          }
+          yield {
+            type: 'confirmation_required',
+            toolCallId: call.id,
+            toolName: call.name,
+            requirement: confirmationRequirement,
+          }
+        }
+        const confirmationDecision = confirmationReady
+          ? await waitForLocalToolConfirmation({
+              toolCallId: call.id,
+              abortSignal: params.signal,
+            })
+          : 'unavailable'
+        if (confirmationDecision !== 'approved') {
+          const message =
+            confirmationDecision === 'rejected'
+              ? 'The user rejected this action.'
+              : `The action was not executed because confirmation was ${confirmationDecision}.`
+          toolResult = {
+            toolName: call.name,
+            success: false,
+            result: {
+              success: false,
+              confirmationRequired: true,
+              confirmationDecision,
+              message,
+            },
+            error: message,
+          }
+          await logCopilotAction({
+            userId: params.userId,
+            workspaceId: params.workspaceId,
+            workflowId: params.workflowId,
+            conversationId,
+            action: 'tool_confirmation',
+            summary: `${call.name}:${confirmationDecision}`,
+            status: confirmationDecision === 'rejected' ? 'rejected' : 'failure',
+            metadata: {
+              chatId: params.chatId,
+              runId: params.runId,
+              backend: 'local',
+              toolCallId: call.id,
+              toolName: call.name,
+              confirmationDecision,
+              category: confirmationRequirement.category,
+            },
+          }).catch(() => undefined)
+        } else {
+          await logCopilotAction({
+            userId: params.userId,
+            workspaceId: params.workspaceId,
+            workflowId: params.workflowId,
+            conversationId,
+            action: 'tool_confirmation',
+            summary: `${call.name}:approved`,
+            status: 'success',
+            metadata: {
+              chatId: params.chatId,
+              runId: params.runId,
+              backend: 'local',
+              toolCallId: call.id,
+              toolName: call.name,
+              confirmationDecision: 'approved',
+              category: confirmationRequirement.category,
+            },
+          }).catch(() => undefined)
+        }
+      }
+
       const toolStartedAt = Date.now()
       logger.info('Arena Copilot tool starting', {
         toolName: call.name,
@@ -1074,20 +1353,28 @@ export async function* runLocalCopilotAgent(
         workflowId: toolCtx.workflowId ?? null,
         memory: getLocalCopilotMemorySnapshot(),
       })
-      const toolStatus = runToolWithStatus({
-        toolCallId: call.id,
-        toolName: call.name,
-        args: parsedArgs,
-        abortSignal: params.signal,
-        execute: (onProgress) =>
-          executeLocalCopilotTool(call.name, parsedArgs, { ...toolCtx, onProgress }),
-      })
-      let result = await toolStatus.next()
-      while (!result.done) {
-        yield result.value
-        result = await toolStatus.next()
+      if (!toolResult) {
+        yield { type: 'ux_phase', phase: 'executing' }
+        yield { type: 'status', message: formatUxPhaseStatus('executing') }
+        const toolStatus = runToolWithStatus({
+          toolCallId: call.id,
+          toolName: call.name,
+          args: parsedArgs,
+          abortSignal: params.signal,
+          execute: (onProgress) =>
+            executeLocalCopilotTool(call.name, parsedArgs, {
+              ...toolCtx,
+              onProgress,
+              activeToolCallId: call.id,
+            }),
+        })
+        let result = await toolStatus.next()
+        while (!result.done) {
+          yield result.value
+          result = await toolStatus.next()
+        }
+        toolResult = result.value
       }
-      const toolResult = result.value
       logger.info('Arena Copilot tool finished', {
         toolName: call.name,
         toolCallId: call.id,
@@ -1101,6 +1388,7 @@ export async function* runLocalCopilotAgent(
         toolCtx.workflowId = toolResult.createdWorkflowId
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext
+        toolCtx.workflowRevision = refreshed.workflowRevision
       } else if (call.name === 'create_workflow' && !toolResult.success) {
         const output =
           toolResult.result && typeof toolResult.result === 'object'
@@ -1116,6 +1404,7 @@ export async function* runLocalCopilotAgent(
       } else if (call.name === 'edit_workflow' && toolResult.success) {
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext
+        toolCtx.workflowRevision = refreshed.workflowRevision
       } else if (toolResult.success && isWorkflowScopedDelegatedTool(call.name)) {
         const output =
           toolResult.result && typeof toolResult.result === 'object'
@@ -1142,11 +1431,54 @@ export async function* runLocalCopilotAgent(
         ...(toolResult.resources?.length ? { resources: toolResult.resources } : {}),
       }
 
+      if (mutationRequiresVerification(call.name)) {
+        turnMutationOutcomes.push({ toolName: call.name, success: toolResult.success })
+      }
+
+      if (toolResult.success && mutationRequiresVerification(call.name)) {
+        yield { type: 'ux_phase', phase: 'verifying' }
+        yield { type: 'status', message: formatUxPhaseStatus('verifying') }
+        const verification = await runPostMutationVerification({
+          toolCallId: call.id,
+          toolName: call.name,
+          mutationSuccess: true,
+          mutationResult: toolResult.result,
+          workflowId: toolCtx.workflowId,
+          executeVerifier: async (verifierName, args) => {
+            const verifierWorkflowId =
+              typeof args.workflowId === 'string' && args.workflowId.trim()
+                ? args.workflowId.trim()
+                : toolCtx.workflowId
+            return executeLocalCopilotTool(verifierName, args, {
+              ...toolCtx,
+              ...(verifierWorkflowId ? { workflowId: verifierWorkflowId } : {}),
+            })
+          },
+        })
+        if (verification) {
+          turnVerifications.push(verification)
+          yield { type: 'verification_completed', record: verification }
+          await logCopilotAction({
+            userId: params.userId,
+            workspaceId: params.workspaceId,
+            workflowId: toolCtx.workflowId ?? params.workflowId,
+            conversationId,
+            action: 'verification',
+            summary: `${verification.toolName} → ${verification.verifierToolName}`,
+            status: verification.status === 'failed' ? 'failure' : 'success',
+            metadata: verification as unknown as Record<string, unknown>,
+          }).catch(() => undefined)
+        }
+      }
+
       turnToolRecords.push({
         name: call.name,
         success: toolResult.success,
         result: toolResult.result,
       })
+      if (isWorkflowRunToolName(call.name)) {
+        streamedCharsAtLastRunTool = streamedUserFacingText.length
+      }
 
       turnCost.addToolBilling({
         toolName: call.name,
@@ -1154,12 +1486,56 @@ export async function* runLocalCopilotAgent(
       })
 
       if (persistLocally && conversationId) {
+        const sanitized = sanitizeToolIoForPersistence({
+          arguments: parsedArgs,
+          result: toolResult.result,
+        })
         await recordToolCall({
           conversationId,
           toolCallId: call.id,
           toolName: call.name,
-          arguments: parsedArgs,
-          result: toolResult.result,
+          arguments: sanitized.arguments,
+          result: sanitized.result,
+        })
+      }
+
+      await logCopilotAction({
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        workflowId: params.workflowId,
+        conversationId,
+        action: 'tool_call',
+        summary: call.name,
+        status: toolResult.success ? 'success' : 'failure',
+        metadata: {
+          chatId: params.chatId,
+          runId: params.runId,
+          backend: 'local',
+          toolCallId: call.id,
+          toolName: call.name,
+          ...sanitizeToolIoForPersistence({
+            arguments: parsedArgs,
+            result:
+              toolResult.result && typeof toolResult.result === 'object'
+                ? {
+                    success: toolResult.success,
+                    error: toolResult.error,
+                  }
+                : { success: toolResult.success },
+          }),
+        },
+      }).catch(() => undefined)
+
+      if (!toolResult.success && mutationRequiresVerification(call.name)) {
+        recordLocalOpsEvent({
+          counter: LOCAL_OPS_COUNTERS.mutationFailed,
+          userId: params.userId,
+          workspaceId: params.workspaceId,
+          workflowId: params.workflowId,
+          conversationId,
+          chatId: params.chatId,
+          runId: params.runId,
+          metadata: { toolName: call.name },
         })
       }
 
@@ -1170,7 +1546,9 @@ export async function* runLocalCopilotAgent(
         }
       }
 
-      const formattedToolResult = formatToolResultForLlm(call.name, toolResult.result)
+      const formattedToolResult = formatToolResultForLlm(call.name, toolResult.result, {
+        artifactStore: toolCtx.artifactStore,
+      })
       const mandatoryFollowUp = detectMandatoryFollowUp(call.name, formattedToolResult)
       if (mandatoryFollowUp) {
         pendingFollowUps = [
@@ -1225,17 +1603,27 @@ export async function* runLocalCopilotAgent(
         })
       }
 
+      if (call.name === 'generate_api_key' && toolResult.success) {
+        const control = buildGeneratedApiKeyControl(toolResult.result)
+        if (control) {
+          yield {
+            type: 'trusted_control',
+            toolCallId: call.id,
+            control,
+          }
+        }
+      }
+
       if (call.name === 'oauth_get_auth_link' && toolResult.success) {
         postBuildToolMode = 'done'
         endTurnAfterThisRound = true
-        // Narration in tool rounds is buffered — stream the Connect control ourselves
-        // so the user always gets a clickable connect option.
-        const connectText = formatOAuthConnectCredentialTag(toolResult.result)
-        if (connectText && !streamedUserFacingText.includes('<credential>')) {
-          const chunk = streamedUserFacingText.trim() ? `\n\n${connectText}` : connectText
-          assistantText += chunk
-          streamedUserFacingText += chunk
-          yield { type: 'text_delta', content: chunk }
+        const control = buildOAuthConnectControl(toolResult.result)
+        if (control) {
+          yield {
+            type: 'trusted_control',
+            toolCallId: call.id,
+            control,
+          }
         }
         deferredSystemMessages.push({
           role: 'system',
@@ -1386,6 +1774,7 @@ export async function* runLocalCopilotAgent(
           model: config.model,
           inputTokens: chunk.usage.inputTokens,
           outputTokens: chunk.usage.outputTokens,
+          cacheReadTokens: chunk.usage.cacheReadTokens,
           provider: config.provider,
         })
         turnInputTokens += chunk.usage.inputTokens
@@ -1433,6 +1822,24 @@ export async function* runLocalCopilotAgent(
       assistantText = safe
       yield { type: 'text_delta', content: safe }
     }
+  } else if (
+    shouldAppendWorkflowRunChatResult({
+      streamedUserFacingText,
+      streamedCharsAtLastRunTool,
+      toolRecords: turnToolRecords,
+    })
+  ) {
+    // Substantive pre-run prose (e.g. "Updated… Let me run it.") blocks full
+    // synthesize, but the run finished with no post-run reply — append the result
+    // so chat never settles on a completed "Running workflow" row alone.
+    const appendix = buildWorkflowRunChatAppendix(turnToolRecords)
+    if (appendix) {
+      const safe = stripIdsFromUserFacingText(appendix)
+      const chunk = streamedUserFacingText.trim() ? `\n\n${safe}` : safe
+      assistantText += chunk
+      streamedUserFacingText += chunk
+      yield { type: 'text_delta', content: chunk }
+    }
   }
 
   // Emit at most one follow-up block for the whole turn (never after each tool round).
@@ -1454,15 +1861,40 @@ export async function* runLocalCopilotAgent(
 
   let patchId: string | undefined
   if (proposedPatch && params.workflowId) {
-    if (persistLocally && conversationId) {
+    let patchConversationId = conversationId
+    if (!patchConversationId) {
+      patchConversationId = await createConversation({
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        workflowId: params.workflowId,
+        title: 'Arena Copilot (patch)',
+        model: config.model,
+        provider: config.provider,
+      })
+    }
+    try {
       patchId = await savePatch({
-        conversationId,
+        conversationId: patchConversationId,
         userId: params.userId,
         workflowId: params.workflowId,
         patch: proposedPatch,
       })
+    } catch (error) {
+      logger.warn('Failed to persist Arena Copilot patch', {
+        workflowId: params.workflowId,
+        error: getErrorMessage(error),
+      })
     }
-    yield { type: 'patch_proposed', patch: proposedPatch, patchId: patchId ?? '' }
+    yield {
+      type: 'ux_phase',
+      phase: 'waiting_approval',
+    }
+    yield {
+      type: 'patch_proposed',
+      patch: proposedPatch,
+      patchId: patchId ?? '',
+      workflowId: params.workflowId,
+    }
   } else if (proposedPatch) {
     yield {
       type: 'text_delta',
@@ -1483,6 +1915,118 @@ export async function* runLocalCopilotAgent(
       },
     })
   }
+
+  const turnCompletion = resolveTurnCompletion({
+    mutationOutcomes: turnMutationOutcomes,
+    verifications: turnVerifications,
+  })
+  yield {
+    type: 'turn_completion',
+    status: turnCompletion,
+    verifications: turnVerifications,
+  }
+
+  if (turnCompletion === 'completed_verified') {
+    recordLocalOpsEvent({
+      counter: LOCAL_OPS_COUNTERS.turnVerified,
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId,
+      conversationId,
+      chatId: params.chatId,
+      runId: params.runId,
+    })
+  } else if (turnCompletion === 'failed') {
+    recordLocalOpsEvent({
+      counter: LOCAL_OPS_COUNTERS.turnFailed,
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId,
+      conversationId,
+      chatId: params.chatId,
+      runId: params.runId,
+    })
+  }
+
+  const approvalLines = turnToolRecords
+    .filter((record) => {
+      const result = record.result
+      if (!result || typeof result !== 'object') return false
+      const confirmationDecision = (result as Record<string, unknown>).confirmationDecision
+      return confirmationDecision === 'approved' || confirmationDecision === 'rejected'
+    })
+    .map((record) => {
+      const result = record.result as Record<string, unknown>
+      return `${record.name} ${String(result.confirmationDecision)}`
+    })
+  const failureLines = turnToolRecords
+    .filter((record) => !record.success)
+    .map((record) => `${record.name} failed`)
+  const verificationLines = turnVerifications.map(
+    (record) => `${record.verifierToolName} ${record.status}`
+  )
+
+  if (params.chatId) {
+    const nextTask = updateTaskStateFromTurn({
+      previous: taskState,
+      objectiveHint: params.message.slice(0, 280),
+      approvals: approvalLines,
+      verification: turnVerifications.map((record) => ({
+        tool: record.verifierToolName,
+        status: record.status,
+      })),
+      failed: turnCompletion === 'failed',
+      targetResources: params.workflowId ? [params.workflowId] : [],
+    })
+    if (nextTask) {
+      taskState = nextTask
+      await persistTaskState(params.chatId, params.userId, nextTask).catch(() => undefined)
+    }
+
+    const evidenced = mergeSessionMemoryEvidence(sessionMemory, {
+      approvals: approvalLines,
+      failures: failureLines,
+      verification: verificationLines,
+    })
+    if (evidenced) {
+      sessionMemory = evidenced
+      await persistSessionMemory(params.chatId, params.userId, evidenced).catch(() => undefined)
+    }
+
+    if (toolCtx.artifactStore && toolCtx.artifactStore.artifacts.size > 0) {
+      await persistArtifacts(params.chatId, params.userId, toolCtx.artifactStore).catch(
+        () => undefined
+      )
+    }
+
+    if (structuredContext.snapshotFreshness) {
+      await mergeCopilotChatConfig(params.chatId, params.userId, {
+        workspaceSnapshotMeta: structuredContext.snapshotFreshness,
+      }).catch(() => undefined)
+    } else if (params.workspaceSnapshot && params.workspaceContext) {
+      await mergeCopilotChatConfig(params.chatId, params.userId, {
+        workspaceSnapshotMeta: toWorkspaceSnapshotMeta({
+          markdown: params.workspaceContext,
+          snapshot: params.workspaceSnapshot,
+        }),
+      }).catch(() => undefined)
+    }
+  }
+
+  await logCopilotAction({
+    userId: params.userId,
+    workspaceId: params.workspaceId,
+    workflowId: params.workflowId,
+    conversationId,
+    action: 'turn_completion',
+    summary: turnCompletion,
+    status: turnCompletion === 'failed' ? 'failure' : 'success',
+    metadata: {
+      status: turnCompletion,
+      verificationCount: turnVerifications.length,
+      mutationCount: turnMutationOutcomes.length,
+    },
+  }).catch(() => undefined)
 
   const costSummary = turnCost.summarize()
 
@@ -1523,6 +2067,16 @@ export async function* runLocalCopilotAgent(
       rootExecutionId: params.parentExecutionId,
       triggeringChatId: params.chatId,
       triggeringRunId: params.runId,
+    })
+    recordLocalOpsEvent({
+      counter: LOCAL_OPS_COUNTERS.costRecorded,
+      userId: params.userId,
+      workspaceId: params.workspaceId,
+      workflowId: params.workflowId,
+      conversationId,
+      chatId: params.chatId,
+      runId: params.runId,
+      metadata: { total: costSummary.total },
     })
   }
 

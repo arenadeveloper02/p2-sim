@@ -36,7 +36,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   generate_image:
     'Generates an image from a text prompt (no workflow). Uses hosted/workspace keys automatically. Pass the user full request in `prompt`, including variation counts (e.g. "3 variations"). Optional outputs.files path to save under files/.',
   search_online:
-    'Live web search (Exa when keys are configured). Use for current events and live data — no workflow required. REQUIRED: query (search string) and toolTitle (short UI label, e.g. "Tealium ads").',
+    'Live web search via Exa (same keys as the Exa block: workspace EXA_API_KEY, BYOK, or hosted). Prefer invoke_integration_tool with exa_answer for factual live Q&A, or exa_search for result lists. search_online is a convenience wrapper — REQUIRED: query and toolTitle.',
   enrichment_run: 'Runs a one-off table enrichment lookup inline (no table/workflow required).',
   function_execute:
     'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools.',

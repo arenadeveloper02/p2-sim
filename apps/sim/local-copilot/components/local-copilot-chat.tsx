@@ -13,6 +13,7 @@ interface LocalCopilotChatProps {
   onInputChange: (value: string) => void
   /** Sends the current input, or an explicit message when a follow-up option is clicked. */
   onSend: (message?: string) => void
+  onStop: () => void
   onClear: () => void
   onDebugLastRun: () => void
   onExplainBlock: () => void
@@ -33,6 +34,7 @@ export function LocalCopilotChat({
   input,
   onInputChange,
   onSend,
+  onStop,
   onClear,
   onDebugLastRun,
   onExplainBlock,
@@ -136,9 +138,15 @@ export function LocalCopilotChat({
               }
             }}
           />
-          <Button onClick={() => onSend()} disabled={isStreaming || !input.trim()}>
-            Send
-          </Button>
+          {isStreaming ? (
+            <Button onClick={onStop} variant='outline'>
+              Stop
+            </Button>
+          ) : (
+            <Button onClick={() => onSend()} disabled={!input.trim()}>
+              Send
+            </Button>
+          )}
         </div>
       </div>
     </div>

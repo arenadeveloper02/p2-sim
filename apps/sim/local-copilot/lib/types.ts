@@ -1,5 +1,12 @@
 import type { BlockState, Variable, WorkflowState } from '@sim/workflow-types/workflow'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
+import type { LocalUxPhase } from '@/local-copilot/lib/agent/ux-phase'
+import type { LocalToolConfirmationRequirement } from '@/local-copilot/lib/security/tool-confirmation-policy'
+import type { LocalTrustedControl } from '@/local-copilot/lib/security/trusted-controls'
+import type {
+  TurnCompletionStatus,
+  VerificationRecord,
+} from '@/local-copilot/lib/verification/types'
 
 export interface LocalCopilotE2bCapabilities {
   enabled: boolean
@@ -87,16 +94,36 @@ export interface LocalCopilotStructuredContext {
     parallels: WorkflowState['parallels']
     credentials: LocalCopilotCredentialMetadata[]
   }
-  /** Present on home chat when no workflow is open. */
+  /** Workspace workflow inventory. Present on home chat, and on the open-workflow path for cross-workflow context. */
   workspaceWorkflows?: Array<{
     id: string
     name: string
     isDeployed?: boolean
     lastRunAt?: string | null
+    /** Canonical VFS directory (e.g. `workflows/Marketing/Weekly Summary`). */
+    path?: string
+    folderPath?: string | null
+    description?: string | null
   }>
   /** Actionable hint injected when existing workflows should be preferred over creating new ones. */
   guidance?: string
-  knowledgeBases?: Array<{ id: string; name: string; description?: string | null }>
+  /**
+   * WORKSPACE.md-style inventory markdown built from {@link generateWorkspaceSnapshot}.
+   * Injected as a `Workspace snapshot:` system block so Local matches Cloud inventory
+   * richness (members, MCP servers, jobs, custom tools) without duplicating it in the JSON payload.
+   */
+  inventoryMarkdown?: string
+  /** Freshness stamps for the workspace inventory snapshot (Local wrapper). */
+  snapshotFreshness?: {
+    generatedAt: string
+    contentRevision: string
+  }
+  knowledgeBases?: Array<{
+    id: string
+    name: string
+    description?: string | null
+    connectorTypes?: string[]
+  }>
   tables?: Array<{ id: string; name: string; description?: string | null }>
   workspaceFiles?: Array<{ id: string; name: string; path: string; type: string; size: number }>
   /** User-created workspace skills (name + description). Load full body via load_user_skill. */
@@ -188,7 +215,31 @@ export type LocalCopilotStreamEvent =
       toolCallId?: string
       toolName?: string
     }
-  | { type: 'patch_proposed'; patch: WorkflowPatch; patchId: string }
+  | {
+      type: 'ux_phase'
+      phase: LocalUxPhase
+    }
+  | {
+      type: 'trusted_control'
+      toolCallId: string
+      control: LocalTrustedControl
+    }
+  | {
+      type: 'confirmation_required'
+      toolCallId: string
+      toolName: string
+      requirement: LocalToolConfirmationRequirement
+    }
+  | {
+      type: 'verification_completed'
+      record: VerificationRecord
+    }
+  | {
+      type: 'turn_completion'
+      status: TurnCompletionStatus
+      verifications: VerificationRecord[]
+    }
+  | { type: 'patch_proposed'; patch: WorkflowPatch; patchId: string; workflowId?: string }
   | { type: 'recommendations'; items: string[] }
   | { type: 'error'; message: string }
   | {

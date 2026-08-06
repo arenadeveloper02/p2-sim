@@ -21,6 +21,7 @@ import {
   enrichLocalIntegrationToolParams,
   SEPARATE_DRAFT_RECIPIENTS_KEY,
 } from '@/local-copilot/lib/tools/enrich-integration-params'
+import { injectWorkspaceEnvApiKeyIfNeeded } from '@/local-copilot/lib/tools/inject-workspace-env-api-key'
 import {
   executeMothershipDelegatedTool,
   isMothershipDelegatedTool,
@@ -33,11 +34,37 @@ import {
   normalizeBlockIdsArgs,
   resolveBlockIdsArg,
 } from '@/local-copilot/lib/tools/resolve-block-ids-arg'
+import { normalizeEditWorkflowArgs } from '@/lib/copilot/tools/server/workflow/edit-workflow/normalize-args'
 import {
   runCreateWorkflowTool,
   runEditWorkflowTool,
 } from '@/local-copilot/lib/tools/workflow-mutations'
 import type { LocalCopilotStructuredContext, WorkflowPatch } from '@/local-copilot/lib/types'
+import {
+  buildEditWorkflowDryRunResult,
+  shouldPreviewEditWorkflow,
+} from '@/local-copilot/lib/writes/edit-preview'
+import {
+  buildIdempotencyKey,
+  getIdempotentResult,
+  rememberIdempotentResult,
+  toolSupportsIdempotency,
+} from '@/local-copilot/lib/writes/idempotency'
+import {
+  assertEditWorkflowLookBeforeWrite,
+  assertInvokeLookBeforeWrite,
+} from '@/local-copilot/lib/writes/look-before-write'
+import { pinToolArgsToWorkspace } from '@/local-copilot/lib/writes/pin-ids'
+import { assertExpectedRevision } from '@/local-copilot/lib/writes/revision'
+import {
+  assertWorkflowWritableInWorkspace,
+  loadWorkflowRevision,
+} from '@/local-copilot/lib/writes/workflow-access'
+import {
+  LOAD_COPILOT_ARTIFACT_TOOL_NAME,
+  loadArtifactFromRecord,
+  loadArtifacts,
+} from '@/local-copilot/lib/context/artifacts'
 
 const logger = createLogger('LocalCopilotToolExecutor')
 
@@ -78,6 +105,18 @@ export interface ToolExecutionContext {
    * Avoids repeated identical/overlapping metadata fetches in one agent turn.
    */
   blocksMetadataByType?: Map<string, unknown>
+  /** CAS token from workflow.updatedAt for the active workflow. */
+  workflowRevision?: string
+  /** Turn-scoped idempotency cache for create/deploy/invoke. */
+  mutationIdempotency?: Map<string, ToolExecutionResult>
+  /** Integration tool ids returned by list_integration_tools this turn. */
+  listedIntegrationToolIds?: Set<string>
+  /** Workflow ids created earlier in this turn (membership bypass until refresh). */
+  allowedWorkflowIds?: Set<string>
+  /** Active tool_use id for idempotency keying. */
+  activeToolCallId?: string
+  /** Turn-scoped store for oversized tool-result artifacts. */
+  artifactStore?: import('@/local-copilot/lib/context/artifacts').ArtifactStore
 }
 
 function requireWorkflowContext(
@@ -258,6 +297,17 @@ async function runLoadUserSkill(
     })
   } catch (error) {
     const message = getErrorMessage(error, 'Skills are not allowed')
+    const { LOCAL_OPS_COUNTERS, recordLocalOpsEvent } = await import(
+      '@/local-copilot/lib/ops/metrics'
+    )
+    recordLocalOpsEvent({
+      counter: LOCAL_OPS_COUNTERS.authDenied,
+      userId: ctx.userId,
+      workspaceId: ctx.workspaceId,
+      workflowId: ctx.workflowId,
+      chatId: ctx.chatId,
+      metadata: { toolName: LOAD_USER_SKILL_TOOL_NAME },
+    })
     return {
       toolName: LOAD_USER_SKILL_TOOL_NAME,
       success: false,
@@ -289,6 +339,17 @@ export async function executeLocalCopilotTool(
   args: Record<string, unknown>,
   ctx: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
+  args = pinToolArgsToWorkspace(args, ctx.workspaceId)
+  ctx.mutationIdempotency ??= new Map()
+  ctx.listedIntegrationToolIds ??= new Set()
+  ctx.allowedWorkflowIds ??= new Set()
+
+  if (toolSupportsIdempotency(toolName)) {
+    const key = buildIdempotencyKey(toolName, args, ctx.activeToolCallId)
+    const cached = getIdempotentResult(ctx.mutationIdempotency, key)
+    if (cached) return cached
+  }
+
   // load_user_skill is registered dynamically per workspace when skills exist.
   if (toolName === LOAD_USER_SKILL_TOOL_NAME) {
     logger.info('Executing Arena Copilot tool', { toolName, workflowId: ctx.workflowId })
@@ -320,7 +381,18 @@ export async function executeLocalCopilotTool(
   logger.info('Executing Arena Copilot tool', { toolName, workflowId: ctx.workflowId })
 
   if (isMothershipDelegatedTool(toolName)) {
-    return attachToolBilling(await executeMothershipDelegatedTool(toolName, args, ctx))
+    const delegated = attachToolBilling(await executeMothershipDelegatedTool(toolName, args, ctx))
+    if (toolName === 'list_integration_tools' && delegated.success) {
+      rememberListedIntegrationTools(ctx, delegated.result)
+    }
+    if (toolSupportsIdempotency(toolName) && delegated.success) {
+      rememberIdempotentResult(
+        ctx.mutationIdempotency,
+        buildIdempotencyKey(toolName, args, ctx.activeToolCallId),
+        delegated
+      )
+    }
+    return delegated
   }
 
   switch (toolName) {
@@ -338,17 +410,117 @@ export async function executeLocalCopilotTool(
       const output = mutation.output as Record<string, unknown> | undefined
       const createdWorkflowId =
         typeof output?.workflowId === 'string' ? output.workflowId : undefined
-      return {
+      if (createdWorkflowId) {
+        ctx.allowedWorkflowIds.add(createdWorkflowId)
+        ctx.workflowId = createdWorkflowId
+      }
+      const created = {
         toolName,
         success: mutation.success,
         result: mutation.output ?? { error: mutation.error },
         error: mutation.error,
         ...(createdWorkflowId ? { createdWorkflowId } : {}),
       }
+      if (created.success) {
+        rememberIdempotentResult(
+          ctx.mutationIdempotency,
+          buildIdempotencyKey(toolName, args, ctx.activeToolCallId),
+          created
+        )
+      }
+      return created
     }
 
     case 'edit_workflow': {
-      const enrichedArgs = enrichEditWorkflowArgs(args, ctx)
+      const enrichedArgs = normalizeEditWorkflowArgs(enrichEditWorkflowArgs(args, ctx))
+      const operations = Array.isArray(enrichedArgs.operations) ? enrichedArgs.operations : []
+      if (operations.length === 0) {
+        return {
+          toolName,
+          success: false,
+          error:
+            'operations are required and must be a non-empty array — pass { operations: [{ block_id, operation_type, params }] }',
+          result: {
+            success: false,
+            error:
+              'operations are required and must be a non-empty array — pass { operations: [{ block_id, operation_type, params }] }',
+          },
+        }
+      }
+
+      const lookBefore = assertEditWorkflowLookBeforeWrite({
+        operations,
+        blocksMetadataByType: ctx.blocksMetadataByType,
+      })
+      if (!lookBefore.ok) {
+        return {
+          toolName,
+          success: false,
+          error: lookBefore.error,
+          result: { success: false, error: lookBefore.error },
+        }
+      }
+
+      const targetWorkflowId =
+        (typeof enrichedArgs.workflowId === 'string' && enrichedArgs.workflowId.trim()) ||
+        ctx.workflowId
+      if (!targetWorkflowId) {
+        return {
+          toolName,
+          success: false,
+          error: 'workflowId is required — create a workflow first with create_workflow',
+          result: {},
+        }
+      }
+
+      if (shouldPreviewEditWorkflow(enrichedArgs)) {
+        const forcedByPolicy = enrichedArgs.dryRun !== true
+        return {
+          toolName,
+          success: true,
+          result: buildEditWorkflowDryRunResult({
+            operations,
+            workflowId: targetWorkflowId,
+            forcedByPolicy,
+          }),
+        }
+      }
+
+      const access = await assertWorkflowWritableInWorkspace({
+        workflowId: targetWorkflowId,
+        workspaceId: ctx.workspaceId,
+        allowedWorkflowIds: ctx.allowedWorkflowIds,
+      })
+      if (!access.ok) {
+        return {
+          toolName,
+          success: false,
+          error: access.error,
+          result: { success: false, error: access.error },
+        }
+      }
+
+      const expectedRevision =
+        (typeof enrichedArgs.expectedRevision === 'string' &&
+          enrichedArgs.expectedRevision.trim()) ||
+        ctx.workflowRevision
+      const revisionCheck = assertExpectedRevision({
+        expectedRevision,
+        currentRevision: access.revision || undefined,
+      })
+      if (!revisionCheck.ok) {
+        return {
+          toolName,
+          success: false,
+          error: revisionCheck.error,
+          result: {
+            success: false,
+            error: revisionCheck.error,
+            currentRevision: access.revision || ctx.workflowRevision,
+          },
+        }
+      }
+
       const mutation = await runEditWorkflowTool(enrichedArgs, {
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
@@ -356,10 +528,30 @@ export async function executeLocalCopilotTool(
         chatId: ctx.chatId,
         abortSignal: ctx.abortSignal,
       })
+
+      if (mutation.success) {
+        const next = await assertWorkflowWritableInWorkspace({
+          workflowId: targetWorkflowId,
+          workspaceId: ctx.workspaceId,
+          allowedWorkflowIds: ctx.allowedWorkflowIds,
+        })
+        if (next.ok && next.revision) {
+          ctx.workflowRevision = next.revision
+        }
+      }
+
+      const output =
+        mutation.output && typeof mutation.output === 'object'
+          ? {
+              ...(mutation.output as Record<string, unknown>),
+              ...(ctx.workflowRevision ? { revision: ctx.workflowRevision } : {}),
+            }
+          : mutation.output
+
       return {
         toolName,
         success: mutation.success,
-        result: mutation.output ?? { error: mutation.error },
+        result: output ?? { error: mutation.error },
         error: mutation.error,
       }
     }
@@ -391,6 +583,52 @@ export async function executeLocalCopilotTool(
         success: true,
         result: JSON.parse(contextToPromptJson(ctx.structuredContext, { workflowDetail })),
       }
+    }
+
+    case LOAD_COPILOT_ARTIFACT_TOOL_NAME:
+    case 'load_copilot_artifact': {
+      const artifactId = typeof args.artifactId === 'string' ? args.artifactId.trim() : ''
+      if (!artifactId) {
+        return {
+          toolName,
+          success: false,
+          error: 'artifactId is required',
+          result: { error: 'artifactId is required' },
+        }
+      }
+
+      const fromTurn = ctx.artifactStore?.artifacts.get(artifactId)
+      if (fromTurn) {
+        return { toolName, success: true, result: fromTurn.body }
+      }
+
+      if (!ctx.chatId) {
+        return {
+          toolName,
+          success: false,
+          error: 'Artifact not found in this turn and no chatId for durable lookup',
+          result: { error: 'Artifact not found' },
+        }
+      }
+
+      const persisted = await loadArtifacts(ctx.chatId, ctx.userId)
+      const artifact = persisted.get(artifactId)
+      if (!artifact) {
+        const legacy = loadArtifactFromRecord(
+          Object.fromEntries(persisted),
+          artifactId
+        )
+        if (!legacy) {
+          return {
+            toolName,
+            success: false,
+            error: `Unknown artifactId: ${artifactId}`,
+            result: { error: `Unknown artifactId: ${artifactId}` },
+          }
+        }
+        return { toolName, success: true, result: legacy.body }
+      }
+      return { toolName, success: true, result: artifact.body }
     }
 
     case 'get_available_blocks': {
@@ -489,6 +727,17 @@ export async function executeLocalCopilotTool(
       }
 
     case 'invoke_integration_tool': {
+      const finishInvoke = (result: ToolExecutionResult): ToolExecutionResult => {
+        if (result.success) {
+          rememberIdempotentResult(
+            ctx.mutationIdempotency!,
+            buildIdempotencyKey(toolName, args, ctx.activeToolCallId),
+            result
+          )
+        }
+        return result
+      }
+
       const toolId =
         typeof args.toolId === 'string'
           ? args.toolId.trim()
@@ -501,6 +750,24 @@ export async function executeLocalCopilotTool(
           success: false,
           error: 'toolId is required — call list_integration_tools first',
           result: {},
+        }
+      }
+
+      const knownToolIds = new Set<string>()
+      if (isMothershipDelegatedTool(toolId) || getToolDefinition(toolId)) {
+        knownToolIds.add(toolId)
+      }
+      const invokeGate = assertInvokeLookBeforeWrite({
+        toolId,
+        listedIntegrationToolIds: ctx.listedIntegrationToolIds,
+        knownToolIds,
+      })
+      if (!invokeGate.ok) {
+        return {
+          toolName,
+          success: false,
+          error: invokeGate.error,
+          result: { toolId, output: { error: invokeGate.error } },
         }
       }
 
@@ -523,17 +790,19 @@ export async function executeLocalCopilotTool(
 
       if (isMothershipDelegatedTool(toolId) || getToolDefinition(toolId)) {
         const redirected = await executeLocalCopilotTool(toolId, rawParams, ctx)
-        return attachToolBilling({
-          toolName,
-          success: redirected.success,
-          result: {
-            toolId,
-            output: redirected.result ?? (redirected.error ? { error: redirected.error } : {}),
-          },
-          error: redirected.error,
-          resources: redirected.resources,
-          ...(redirected.billing ? { billing: redirected.billing } : {}),
-        })
+        return finishInvoke(
+          attachToolBilling({
+            toolName,
+            success: redirected.success,
+            result: {
+              toolId,
+              output: redirected.result ?? (redirected.error ? { error: redirected.error } : {}),
+            },
+            error: redirected.error,
+            resources: redirected.resources,
+            ...(redirected.billing ? { billing: redirected.billing } : {}),
+          })
+        )
       }
 
       await ensureHandlersReady()
@@ -560,22 +829,28 @@ export async function executeLocalCopilotTool(
           }
         }
         const serverResult = await handler(normalizedParams, toCopilotServerToolContext(ctx))
-        return attachToolBilling({
-          toolName,
-          success: serverResult.success,
-          result: {
-            toolId,
-            output: serverResult.output ?? (serverResult.error ? { error: serverResult.error } : {}),
-          },
-          error: serverResult.error,
-        })
+        return finishInvoke(
+          attachToolBilling({
+            toolName,
+            success: serverResult.success,
+            result: {
+              toolId,
+              output: serverResult.output ?? (serverResult.error ? { error: serverResult.error } : {}),
+            },
+            error: serverResult.error,
+          })
+        )
       }
 
-      const params = enrichLocalIntegrationToolParams(
+      let params = enrichLocalIntegrationToolParams(
         toolId,
         rawParams,
         ctx.structuredContext.connectedIntegrations
       )
+      params = await injectWorkspaceEnvApiKeyIfNeeded(toolId, params, {
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+      })
 
       await ensureHandlersReady()
       const { executeTool: executeCopilotRegistryTool } = await import(
@@ -612,7 +887,7 @@ export async function executeLocalCopilotTool(
         }
 
         const allSucceeded = drafts.length > 0 && drafts.every((draft) => draft.success)
-        return {
+        return finishInvoke({
           toolName,
           success: allSucceeded,
           result: {
@@ -632,7 +907,7 @@ export async function executeLocalCopilotTool(
                 error:
                   drafts.find((draft) => draft.error)?.error ?? 'Separate draft fan-out failed',
               }),
-        }
+        })
       }
 
       const { [SEPARATE_DRAFT_RECIPIENTS_KEY]: _ignored, ...cleanParams } = params
@@ -642,15 +917,17 @@ export async function executeLocalCopilotTool(
         executionContext
       )
 
-      return attachToolBilling({
-        toolName,
-        success: integrationResult.success,
-        result: {
-          toolId,
-          output: integrationResult.output ?? { error: integrationResult.error },
-        },
-        error: integrationResult.error,
-      })
+      return finishInvoke(
+        attachToolBilling({
+          toolName,
+          success: integrationResult.success,
+          result: {
+            toolId,
+            output: integrationResult.output ?? { error: integrationResult.error },
+          },
+          error: integrationResult.error,
+        })
+      )
     }
 
     case 'validate_workflow': {
@@ -880,6 +1157,17 @@ function suggestFixes(errorLower: string, blockType?: string): string[] {
   return fixes
 }
 
+function rememberListedIntegrationTools(ctx: ToolExecutionContext, result: unknown): void {
+  ctx.listedIntegrationToolIds ??= new Set()
+  const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : null
+  const tools = Array.isArray(record?.tools) ? record.tools : []
+  for (const entry of tools) {
+    if (!entry || typeof entry !== 'object') continue
+    const id = (entry as Record<string, unknown>).id
+    if (typeof id === 'string' && id.trim()) ctx.listedIntegrationToolIds.add(id.trim())
+  }
+}
+
 /**
  * Fills workflowId for home-chat edits when the model omits it but the workspace
  * has an obvious target (open workflow, single workflow, or name match).
@@ -928,5 +1216,10 @@ export async function refreshToolContext(
     ...(params.workflowId ? { workflowId: params.workflowId } : {}),
     selectedBlockId: params.selectedBlockId,
   })
-  return { ...params, structuredContext }
+  let workflowRevision = params.workflowRevision
+  if (params.workflowId) {
+    const loaded = await loadWorkflowRevision(params.workflowId, params.workspaceId)
+    if (loaded) workflowRevision = loaded.revision
+  }
+  return { ...params, structuredContext, workflowRevision }
 }

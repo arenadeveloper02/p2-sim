@@ -9,6 +9,7 @@ import {
   MothershipStreamV1ToolOutcome,
   MothershipStreamV1ToolPhase,
 } from '@/lib/copilot/generated/mothership-stream-v1'
+import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { sseHandlers } from '@/lib/copilot/request/handlers'
 import type { CopilotLifecycleOptions } from '@/lib/copilot/request/lifecycle/run'
 import { LOCAL_STATUS_PHASE } from '@/lib/copilot/request/session'
@@ -23,13 +24,19 @@ import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
 import type { LocalTurnCostSummary } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
-import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
 import {
   DEFAULT_LOCAL_COPILOT_CATALOG_ID,
   isLocalCopilotCatalogId,
   type LocalCopilotCatalogId,
 } from '@/local-copilot/lib/model-catalog'
+import { formatUxPhaseStatus } from '@/local-copilot/lib/agent/ux-phase'
+import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
+import {
+  formatLocalToolConfirmationTag,
+  formatLocalWorkflowPatchTag,
+} from '@/local-copilot/lib/security/tool-confirmation-policy'
+import { formatTrustedControl } from '@/local-copilot/lib/security/trusted-controls'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
 import type {
   CopilotContextEntry,
@@ -40,6 +47,16 @@ const logger = createLogger('LocalCopilotMothershipLifecycle')
 
 function extractString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+/**
+ * Reads the typed workspace inventory snapshot from the mothership payload. Sim
+ * built it in `post.ts` alongside the markdown; forwarding it lets Local context
+ * building skip a second identical DB fetch.
+ */
+function extractWorkspaceSnapshot(value: unknown): VfsSnapshotV1 | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  return value as VfsSnapshotV1
 }
 
 function resolveCatalogIdFromPayload(requestPayload: Record<string, unknown>): LocalCopilotCatalogId {
@@ -136,8 +153,12 @@ async function dispatchLocalCopilotEvent(
           phase: MothershipStreamV1ToolPhase.call,
           toolCallId: event.toolCallId,
           toolName: event.toolName,
-          executor: MothershipStreamV1ToolExecutor.sim,
+          // Arena Copilot already ran this tool. Use `go` so Sim's auto-execute
+          // path does not look up Arena-only ids (e.g. invoke_integration_tool)
+          // in the built-in tools registry.
+          executor: MothershipStreamV1ToolExecutor.go,
           mode: MothershipStreamV1ToolMode.sync,
+          arguments: event.args,
         },
       },
       context,
@@ -162,7 +183,7 @@ async function dispatchLocalCopilotEvent(
           phase: MothershipStreamV1ToolPhase.result,
           toolCallId: event.toolCallId,
           toolName: event.toolName,
-          executor: MothershipStreamV1ToolExecutor.sim,
+          executor: MothershipStreamV1ToolExecutor.go,
           mode: MothershipStreamV1ToolMode.sync,
           success: event.success,
           output: event.output,
@@ -219,8 +240,98 @@ async function dispatchLocalCopilotEvent(
     return
   }
 
+  if (event.type === 'trusted_control') {
+    await dispatchStreamEvent(
+      {
+        type: MothershipStreamV1EventType.text,
+        payload: {
+          channel: MothershipStreamV1TextChannel.assistant,
+          text: formatTrustedControl(event.control),
+        },
+      },
+      context,
+      execContext,
+      options
+    )
+    return
+  }
+
+  if (event.type === 'ux_phase') {
+    await options.onEvent?.({
+      type: 'run',
+      payload: {
+        statusPhase: LOCAL_STATUS_PHASE,
+        message: formatUxPhaseStatus(event.phase),
+      },
+    })
+    return
+  }
+
+  if (event.type === 'confirmation_required') {
+    await dispatchStreamEvent(
+      {
+        type: MothershipStreamV1EventType.text,
+        payload: {
+          channel: MothershipStreamV1TextChannel.assistant,
+          text: formatLocalToolConfirmationTag(event.toolCallId, event.toolName, event.requirement),
+        },
+      },
+      context,
+      execContext,
+      options
+    )
+    return
+  }
+
+  if (event.type === 'verification_completed') {
+    await options.onEvent?.({
+      type: 'run',
+      payload: {
+        statusPhase: LOCAL_STATUS_PHASE,
+        message: `Verified ${event.record.toolName}: ${event.record.status}`,
+        toolCallId: event.record.toolCallId,
+        toolName: event.record.verifierToolName,
+      },
+    })
+    return
+  }
+
+  if (event.type === 'turn_completion') {
+    await options.onEvent?.({
+      type: 'run',
+      payload: {
+        statusPhase: LOCAL_STATUS_PHASE,
+        message: `Turn completion: ${event.status}`,
+      },
+    })
+    return
+  }
+
   if (event.type === 'patch_proposed') {
-    const patchNote = `\n\n**Proposed workflow change:** ${event.patch.summary}\n\nReview and apply patches from the workflow Chat panel when using Arena Copilot UI.`
+    const workflowId =
+      (typeof event.workflowId === 'string' && event.workflowId.trim()) ||
+      extractString(execContext.workflowId) ||
+      ''
+    if (event.patchId && workflowId) {
+      await dispatchStreamEvent(
+        {
+          type: MothershipStreamV1EventType.text,
+          payload: {
+            channel: MothershipStreamV1TextChannel.assistant,
+            text: formatLocalWorkflowPatchTag({
+              patchId: event.patchId,
+              summary: event.patch.summary,
+              workflowId,
+            }),
+          },
+        },
+        context,
+        execContext,
+        options
+      )
+      return
+    }
+    const patchNote = `\n\n**Proposed workflow change:** ${event.patch.summary}\n\nCould not persist a reviewable patch. Ask Copilot to propose the change again.`
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.text,
@@ -264,6 +375,7 @@ export async function runLocalCopilotMothershipLifecycle(
   const contexts = extractContexts(requestPayload.context)
   const fileAttachments = extractFileAttachments(requestPayload.fileAttachments)
   const workspaceContext = extractString(requestPayload.workspaceContext)
+  const workspaceSnapshot = extractWorkspaceSnapshot(requestPayload.vfs)
   const workflowId = options.workflowId ?? extractString(requestPayload.workflowId)
   const workspaceId = options.workspaceId ?? extractString(requestPayload.workspaceId)
   const userId = options.userId
@@ -388,6 +500,7 @@ export async function runLocalCopilotMothershipLifecycle(
       ...(contexts ? { contexts } : {}),
       ...(fileAttachments ? { fileAttachments } : {}),
       ...(workspaceContext ? { workspaceContext } : {}),
+      ...(workspaceSnapshot ? { workspaceSnapshot } : {}),
       ...(workflowId ? { workflowId } : {}),
       ...(execContext.userPermission ? { userPermission: execContext.userPermission } : {}),
       signal: options.abortSignal,

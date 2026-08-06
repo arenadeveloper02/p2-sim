@@ -1,7 +1,14 @@
 import { truncate } from '@sim/utils/string'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
-import { getBlock } from '@/blocks/registry'
+import { REDACTED_MARKER } from '@/lib/core/security/redaction'
 import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
+import { getBlock } from '@/blocks/registry'
+import type { ArtifactStore } from '@/local-copilot/lib/context/artifacts'
+import {
+  LOAD_COPILOT_ARTIFACT_TOOL_NAME,
+  maybeOffloadToolResult,
+} from '@/local-copilot/lib/context/artifacts'
+import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 
 const FUNCTION_EXECUTE_STDOUT_MAX = 12_000
 
@@ -287,9 +294,13 @@ function enrichInvokeIntegrationResultForLlm(
 
 /**
  * Shapes tool output for the LLM — omits heavy workflowState, keeps repair signals,
- * and compact-serializes without truncating payload content.
+ * and compact-serializes. Oversized payloads are offloaded when an artifact store is provided.
  */
-export function formatToolResultForLlm(toolName: string, result: unknown): string {
+export function formatToolResultForLlm(
+  toolName: string,
+  result: unknown,
+  options?: { artifactStore?: ArtifactStore }
+): string {
   let formatted: unknown = result
 
   if (toolName === 'function_execute') {
@@ -301,11 +312,26 @@ export function formatToolResultForLlm(toolName: string, result: unknown): strin
     const data = asRecord(record.data)
     const size = typeof data.size === 'number' ? data.size : 0
     if (size === 0 && record.success !== false) {
-      formatted = {
-        ...record,
-        needsFollowUpWrite: true,
-        followUpHint:
-          'File is empty. For markdown/text, call create_file again with `content`, or call workspace_file operation=update on data.vfsPath then edit_content with the full body in the next step.',
+      const filePath =
+        (typeof data.vfsPath === 'string' && data.vfsPath) ||
+        (typeof data.name === 'string' && data.name) ||
+        ''
+      const isOfficeShell = /\.(pptx|docx|pdf)$/i.test(filePath)
+      if (isOfficeShell) {
+        // edit_content alone fails without a prior workspace_file intent — force that step.
+        formatted = {
+          ...record,
+          needsFollowUpWorkspaceFile: true,
+          followUpHint:
+            'Office file shell is empty. Call workspace_file operation=update on data.vfsPath (with title), then edit_content in a later round with pptx/docx/pdf script content. Do not call edit_content yet.',
+        }
+      } else {
+        formatted = {
+          ...record,
+          needsFollowUpWrite: true,
+          followUpHint:
+            'File is empty. For markdown/text, call create_file again with `content`, or call workspace_file operation=update on data.vfsPath then edit_content with the full body in the next step.',
+        }
       }
     } else {
       formatted = record
@@ -386,7 +412,26 @@ export function formatToolResultForLlm(toolName: string, result: unknown): strin
     }
   }
 
-  return compactStringifyForLlm(formatted)
+  if (toolName === 'generate_api_key') {
+    const record = asRecord(formatted)
+    if (typeof record.key === 'string') {
+      formatted = {
+        ...record,
+        key: REDACTED_MARKER,
+        redacted: true,
+      }
+    }
+  }
+
+  const sanitized = sanitizeForLlm(formatted)
+  if (options?.artifactStore && toolName !== LOAD_COPILOT_ARTIFACT_TOOL_NAME) {
+    const offload = maybeOffloadToolResult(toolName, sanitized, options.artifactStore)
+    if (offload.offloaded) {
+      return compactStringifyForLlm(offload.stub)
+    }
+  }
+
+  return compactStringifyForLlm(sanitized)
 }
 
 /**
@@ -415,6 +460,16 @@ export function detectMandatoryFollowUp(
         hint ??
         'File shell is empty. Write content via create_file with content or workspace_file then edit_content.',
       resolveWith: ['edit_content', 'create_file', 'workspace_file'],
+    }
+  }
+
+  if (parsed.needsFollowUpWorkspaceFile === true) {
+    return {
+      id: 'create_file:workspace-file',
+      hint:
+        hint ??
+        'Office file shell is empty. Call workspace_file operation=update on the file path, then edit_content in a later round.',
+      resolveWith: ['workspace_file'],
     }
   }
 
@@ -486,11 +541,17 @@ export function resolveMandatoryFollowUps(
     )
   }
 
+  if (toolName === 'workspace_file') {
+    next = next.filter((item) => item.id !== 'create_file:workspace-file')
+  }
+
   if (toolName === 'create_file') {
     const data = asRecord(asRecord(result).data)
     const size = typeof data.size === 'number' ? data.size : 0
     if (size > 0) {
-      next = next.filter((item) => item.id !== 'create_file:write')
+      next = next.filter(
+        (item) => item.id !== 'create_file:write' && item.id !== 'create_file:workspace-file'
+      )
     }
   }
 

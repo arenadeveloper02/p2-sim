@@ -1,5 +1,5 @@
 import { truncate } from '@sim/utils/string'
-import { formatOAuthConnectCredentialTag } from '@/local-copilot/lib/oauth-connect-text'
+import { buildOAuthConnectControl } from '@/local-copilot/lib/oauth-connect-text'
 import { extractCapturedOutput } from '@/local-copilot/lib/tools/format-tool-result'
 
 const LEAKED_TOOL_MARKER_PATTERN = /\[Tool [^\]]+\]/g
@@ -13,6 +13,144 @@ export interface ToolTurnRecord {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
+const WORKFLOW_RUN_TOOL_NAMES = new Set([
+  'run_workflow',
+  'run_block',
+  'run_from_block',
+  'run_workflow_until_block',
+])
+
+const RUN_OUTPUT_MAX_CHARS = 6_000
+
+/**
+ * True for tools that execute a workflow (or part of one) and produce run output.
+ */
+export function isWorkflowRunToolName(name: string): boolean {
+  return WORKFLOW_RUN_TOOL_NAMES.has(name)
+}
+
+function stringifyRunValue(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed || null
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => stringifyRunValue(item))
+      .filter((item): item is string => Boolean(item))
+    return parts.length > 0 ? parts.join('\n') : null
+  }
+  if (!value || typeof value !== 'object') return null
+
+  const record = value as Record<string, unknown>
+  for (const key of ['content', 'summary', 'text', 'message', 'result', 'stdout', 'response']) {
+    const nested = record[key]
+    if (typeof nested === 'string' && nested.trim()) return nested.trim()
+    if (nested && typeof nested === 'object') {
+      const deeper = stringifyRunValue(nested)
+      if (deeper) return deeper
+    }
+  }
+  return null
+}
+
+function extractTextFromBlockOutput(output: unknown): string | null {
+  return stringifyRunValue(output)
+}
+
+/**
+ * Pulls the most useful user-facing text from a workflow execution payload.
+ */
+export function extractWorkflowRunOutputText(result: unknown): string | null {
+  const payload = asRecord(result)
+  const logs = Array.isArray(payload.logs) ? payload.logs : []
+
+  let best: { order: number; blockName: string; text: string } | null = null
+  for (const entry of logs) {
+    const log = asRecord(entry)
+    if (log.success === false) continue
+    const blockType = typeof log.blockType === 'string' ? log.blockType : ''
+    if (blockType === 'start_trigger' || blockType === 'starter') continue
+    const text = extractTextFromBlockOutput(log.output)
+    if (!text) continue
+    const order = typeof log.executionOrder === 'number' ? log.executionOrder : 0
+    const blockName =
+      (typeof log.blockName === 'string' && log.blockName.trim()) ||
+      (blockType ? blockType.replace(/_/g, ' ') : 'Block')
+    if (!best || order >= best.order) {
+      best = { order, blockName, text }
+    }
+  }
+
+  if (best) {
+    return `**${best.blockName}**\n${truncate(best.text, RUN_OUTPUT_MAX_CHARS)}`
+  }
+
+  const fromOutput = extractTextFromBlockOutput(payload.output)
+  if (fromOutput) return truncate(fromOutput, RUN_OUTPUT_MAX_CHARS)
+
+  const message = typeof payload.message === 'string' ? payload.message.trim() : ''
+  return message ? truncate(message, RUN_OUTPUT_MAX_CHARS) : null
+}
+
+function workflowRunLabel(toolName: string): string {
+  if (toolName === 'run_block') return 'Block run'
+  if (toolName === 'run_from_block') return 'Run-from-block'
+  return 'Workflow run'
+}
+
+/**
+ * Builds chat-ready prose for a single workflow run tool record.
+ */
+export function formatWorkflowRunChatResult(record: ToolTurnRecord): string {
+  const label = workflowRunLabel(record.name)
+  const payload = asRecord(record.result)
+
+  if (!record.success || payload.success === false) {
+    const error =
+      (typeof payload.error === 'string' && payload.error.trim()) ||
+      (typeof payload.message === 'string' && payload.message.trim()) ||
+      null
+    return error ? `${label} failed: ${error}` : `${label} failed.`
+  }
+
+  const status =
+    (typeof payload.status === 'string' && payload.status.trim()) ||
+    (typeof payload.success === 'boolean' ? (payload.success ? 'completed' : 'failed') : 'completed')
+  const header = `${label} ${status}.`
+  const body = extractWorkflowRunOutputText(record.result)
+  return body ? `${header}\n\n${body}` : header
+}
+
+/**
+ * Latest workflow-run tool result formatted for the chat window.
+ */
+export function buildWorkflowRunChatAppendix(records: ToolTurnRecord[]): string | null {
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const record = records[index]
+    if (!record || !isWorkflowRunToolName(record.name)) continue
+    return formatWorkflowRunChatResult(record)
+  }
+  return null
+}
+
+/**
+ * True when a run finished and the UI never got post-run assistant prose —
+ * typical stuck state after "Let me run it." + Running workflow.
+ */
+export function shouldAppendWorkflowRunChatResult(options: {
+  streamedUserFacingText: string
+  streamedCharsAtLastRunTool: number | null
+  toolRecords: ToolTurnRecord[]
+}): boolean {
+  if (options.streamedCharsAtLastRunTool === null) return false
+  if (!buildWorkflowRunChatAppendix(options.toolRecords)) return false
+  return options.streamedUserFacingText.length <= options.streamedCharsAtLastRunTool
 }
 
 /**
@@ -68,8 +206,7 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
         parts.push(message || 'Could not update the workflow. Check the edit errors and retry.')
       } else if (payload.partialApply === true || payload.needsFollowUpEdit === true) {
         parts.push(
-          message ||
-            'Updated the workflow partially — some changes still need a follow-up edit.'
+          message || 'Updated the workflow partially — some changes still need a follow-up edit.'
         )
       } else if (message) {
         parts.push(truncate(message, GENERIC_MESSAGE_MAX_CHARS))
@@ -80,9 +217,9 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
     }
 
     if (record.name === 'oauth_get_auth_link') {
-      const connectText = formatOAuthConnectCredentialTag(record.result)
-      if (connectText) {
-        parts.push(connectText)
+      const control = buildOAuthConnectControl(record.result)
+      if (control) {
+        parts.push(`Connect ${control.provider} to finish setup.`)
       } else {
         const payload = asRecord(record.result)
         const message = typeof payload.message === 'string' ? payload.message.trim() : ''
@@ -133,21 +270,8 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
       continue
     }
 
-    if (
-      record.name === 'run_workflow' ||
-      record.name === 'run_block' ||
-      record.name === 'run_from_block' ||
-      record.name === 'run_workflow_until_block'
-    ) {
-      const payload = asRecord(record.result)
-      const status = typeof payload.status === 'string' ? payload.status : 'completed'
-      const label =
-        record.name === 'run_block'
-          ? 'Block run'
-          : record.name === 'run_from_block'
-            ? 'Run-from-block'
-            : 'Workflow run'
-      parts.push(`${label} ${status}.`)
+    if (isWorkflowRunToolName(record.name)) {
+      parts.push(formatWorkflowRunChatResult(record))
       continue
     }
 
