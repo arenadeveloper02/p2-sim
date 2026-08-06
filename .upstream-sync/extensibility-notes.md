@@ -267,3 +267,7 @@ Rolling log of structural improvements that reduce merge conflict surface with `
   hand-patching `lib/copilot/generated/` every sync.
 - Move Arena brand strings out of `(landing)` JSX into `lib/branding/`.
 - Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
+
+## 2026-08-06-5
+
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.

@@ -416,3 +416,222 @@ The image generator was already resolved by the locked checkoutOurs directive an
 | `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/hooks/use-panel-resize.ts` | manual | Adopted upstream zero-render drag resizing and preserved the fork's 50px Arena panel offset. |
 
 Union/manual cluster resolved from the locked parent directives; no new merge-policy prefix was needed.
+
+## Format
+
+✅ `bun run format` (pre-verify autofix)
+
+## Verification
+
+Advisory verification failed (check/lint). These do not block the sync. `bun run test` and full `bun run build` are left to CI. Review and fix on the draft PR as needed.
+
+### bun run check
+
+✅ passed
+
+```
+$ turbo run format:check
+
+   • Packages in scope: @sim/audit, @sim/auth, @sim/db, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk
+   • Running format:check in 21 packages
+   • Remote caching disabled
+
+::group::@sim/runtime-secrets:format:check
+cache miss, executing f03b72b8bf7a4c87
+$ biome format .
+Checked 5 files in 27ms. No fixes applied.
+::endgroup::
+::group::simstudio:format:check
+cache miss, executing b0c3845593b81cf1
+$ biome format .
+Checked 3 files in 15ms. No fixes applied.
+::endgroup::
+::group::@sim/platform-authz:format:check
+cache miss, executing 7b356316ee49d0ec
+$ biome format .
+Checked 5 files in 25ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-types:format:check
+cache miss, executing a96c2bd839112c82
+$ biome format .
+Checked 4 files in 26ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime-protocol:format:check
+cache miss, executing 1c52f83cfece43b2
+$ biome format .
+Checked 5 files in 37ms. No fixes applied.
+::endgroup::
+::group::simstudio-ts-sdk:format:check
+cache miss, executing 07953ff83592c59e
+$ biome format .
+Checked 6 files in 81ms. No fixes applied.
+::endgroup::
+::group::@sim/utils:format:check
+cache miss, executing d9ad486f95a9846c
+$ biome format .
+Checked 22 files in 130ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime:format:check
+cache miss, executing 3128b6077065a690
+$ biome format .
+Checked 32 files in 201ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-persistence:format:check
+cache miss, executing f9db13049f61d314
+$ biome format .
+Checked 10 files in 41ms. No fixes applied.
+::endgroup::
+::group::@sim/testing:format:check
+cache miss, executing e703c9775495f53c
+$ biome format .
+Checked 72 files in 333ms. No fixes applied.
+::endgroup::
+::group::@sim/auth:format:check
+cache miss
+```
+
+### bun run lint
+
+❌ failed (advisory)
+
+```
+$ turbo run lint
+
+   • Packages in scope: @sim/audit, @sim/auth, @sim/db, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk
+   • Running lint in 21 packages
+   • Remote caching disabled
+
+::group::@sim/logger:lint
+cache miss, executing 7c3e48ff91a6f91b
+$ biome check --write --unsafe .
+Checked 6 files in 94ms. No fixes applied.
+::endgroup::
+::group::@sim/security:lint
+cache miss, executing 1756425d05c0f7e7
+$ biome check --write --unsafe .
+Checked 13 files in 91ms. No fixes applied.
+::endgroup::
+::group::simstudio:lint
+cache miss, executing 12cb4ae1533c111c
+$ biome check --write --unsafe .
+Checked 3 files in 96ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime-protocol:lint
+cache miss, executing d10704e0013c452e
+$ biome check --write --unsafe .
+Checked 5 files in 92ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-types:lint
+cache miss, executing cfc1ec4724fbf8a9
+$ biome check --write --unsafe .
+Checked 4 files in 138ms. No fixes applied.
+::endgroup::
+::group::simstudio-ts-sdk:lint
+cache miss, executing ed666424dba23920
+$ biome check --write --unsafe .
+Checked 6 files in 160ms. No fixes applied.
+::endgroup::
+::group::@sim/utils:lint
+cache miss, executing 46d23856621d1a3d
+$ biome check --write --unsafe .
+Checked 22 files in 279ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-renderer:lint
+cache miss, executing 8c84c06e35e89872
+$ biome check --write --unsafe .
+Checked 13 files in 222ms. No fixes applied.
+::endgroup::
+::group::@sim/auth:lint
+cache miss, executing 53e6ec6637864755
+$ biome check --write --unsafe .
+Checked 3 files in 36ms. No fixes applied.
+::endgroup::
+::group::@sim/runtime-secrets:lint
+cache miss, executing 377fc167ab7340da
+$ biome check --write --unsafe .
+Checked 5 files in 95ms. No fixes applied.
+::endgroup::
+::group::@sim/audit:lint
+cache miss, executing 4b8aad6f33997bab
+$ biome check --write --unsafe .
+Checked 7 files in 160ms. No fixes applied.
+::endgroup::
+::group::@sim/platform-authz:lint
+cache miss, executing 8c463df3f37e55cf
+$ biome check --write --unsafe .
+Checked 5 files in 148ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-persistence:lint
+cache miss, executing d423b1224ec4bbd5
+$ biome check --write --unsafe .
+Checked 10 files in 130ms. No fixes applied.
+::endgroup::
+::group::@sim/testing:lint
+cache miss, executing f656f50ec75412eb
+$ biome check --write --unsafe .
+Checked 72 files in 887ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime:lint
+cache miss, executing fd9f706e60d8cfa3
+$ biome check --write --unsafe .
+Checked 32 files in 665ms. No fixes applied.
+::endgroup::
+::group::@sim/emcn:lint
+cache miss, executing 07335286e73e893f
+$ biome check --write --unsafe .
+Checked 192 files in 1834ms. No fixes applied.
+::endgroup::
+::group::docs:lint
+cache miss, executing e69793e135b51aa8
+$ biome check --write --unsafe .
+Checked 102 files in 2s. No fixes applied.
+::endgroup::
+::group::@sim/db:lint
+cache miss, executing dd47c4a9eb17db50
+$ biome check --write --unsafe .
+Checked 293 files in 7s. No fixes applied.
+::endgroup::
+[;31msim:lint[;0m
+cache miss, executing c50b9a4079ab7f97
+$ biome check --write --unsafe .
+app/workspace/[workspaceId]/home/components/message-content/components/special-tags/choice-blocks.ts:56:7 lint/suspicious/noShadowRestrictedNames ━━━━━━━━━━
+
+  × Do not shadow the global "escape" property.
+  
+    54 │   let depth = 0
+    55 │   let inString = false
+  > 56 │   let escape = false
+       │       ^^^^^^
+    57 │ 
+    58 │   for (let i = startIdx; i < text.length; i++) {
+  
+  i Consider renaming this variable. It's easy to confuse the origin of variables when they're named after a known global.
+  
+
+Checked 12123 files in 36s. Fixed 12 files.
+Found 1 error.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+
+error: script "lint" exited with code 1
+::error::sim#lint: command (/home/runner/work/p2-sim/p2-sim/apps/sim) /home/runner/.bun/bin/bun run lint exited (1)
+ ERROR  sim#lint: command (/home/runner/work/p2-sim/p2-sim/apps/sim) /home/runner/.bun/bin/bun run lint exited (1)
+
+ Tasks:    18 successful, 19 total
+Cached:    0 cached, 19 total
+  Time:    38.169s 
+Failed:    sim#lint
+
+ ERROR  run failed: command  exited (1)
+error: script "lint" exited with code 1
+
+```
+
+## Merge policy
+
+{
+  "strategy": "fork-first",
+  "description": "Only paths listed in forkFirst (auto --ours) or upstreamFirst (auto --theirs) are resolved without an agent. Everything else — whether or not it appears in manualReview — is agent-reviewed. manualReview is a non-exhaustive hint list of known hard shared hotspots, not a closed set. unionPaths are agent-reviewed: keep fork-only symbols and take upstream additions; never drop upstream exports that in-tree consumers import. package.json is union-merged (upstream base + fork-only scripts/deps). bun.lock is regenerated after manifests. Agents SHOULD extend this file when they learn a recurring rule (add a forkFirst/upstreamFirst/manualReview/unionPaths prefix or packageJson.dropScripts entry) so the next sync is cheaper. apps/sim/lib/copilot/generated/ is NO LONGER upstreamFirst (moved to manualReview on run 2026-08-06-4). The fork carries a hand-edit there (Superagent task description, Google Docs GFM guidance) that exists in NO generator source, and `bun run mship:generate` cannot regenerate it in this checkout because scripts/sync-tool-catalog.ts reads a sibling repo (../copilot/) the fork does not have. Two consecutive runs (2026-08-06-3, 2026-08-06-4) confirmed the natural three-way merge preserves that sentence while auto --theirs would have deleted it. Let the merge run and use a VERIFY-ONLY mustEdit that asserts the sentence is still present. IMPORTANT (run 2026-08-06-5): that verify-only assertion is NECESSARY BUT NOT SUFFICIENT. Upstream #5410/#5656 deleted seven catalog entries the fork still routes (Superagent, Research, UserMemory, MoveFile, MoveFileFolder, RenameFile, RenameFileFolder) and inserted ShareFile/Search at the same offsets, so the natural merge kept the fork's GFM sentence but grafted it onto share_file's `action` param while deleting the Superagent entry that owned it. Assert BOTH the sentence AND the presence of every fork-consumed export. Second silent-breakage class from the same run: packages/d
+
