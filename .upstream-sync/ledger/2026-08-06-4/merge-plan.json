@@ -1,0 +1,332 @@
+{
+  "version": 1,
+  "runId": "2026-08-06-4",
+  "kind": "final",
+  "selfResolutions": [
+    {
+      "decision": "SR1 — renumber upstream migration 0260 to 0264; keep fork journal + snapshot",
+      "paths": [
+        "packages/db/migrations/0260_unknown_sinister_six.sql",
+        "packages/db/migrations/meta/0260_snapshot.json",
+        "packages/db/migrations/meta/_journal.json"
+      ],
+      "prefixes": ["packages/db/migrations/"],
+      "strategy": "ours",
+      "rationale": "LOCKED, unchanged from draft. Post-merge state measured: 0260_unknown_sinister_six.sql landed staged-clean (git status 'A', not conflicted); _journal.json auto-merged clean (0 conflict markers) but now carries a DUPLICATE idx 260 — the fork's {idx:260, when:1784346820597, tag:'0260_organization_oauth_apps_allowed_workspaces'} plus an appended {idx:260, when:1783810442774, tag:'0260_unknown_sinister_six'}. Only meta/0260_snapshot.json is still unmerged (add/add). Mechanical fix owned by the schema-migrations child: git mv 0260_unknown_sinister_six.sql -> 0264_unknown_sinister_six.sql (content verbatim), rewrite the trailing journal entry to {idx:264, version:'7', when:1784346920601, tag:'0264_unknown_sinister_six', breakpoints:true}, keep meta/0260_snapshot.json as ours. Write no 0264 snapshot; never run drizzle-kit generate.",
+      "cite": "extensibility-notes.md 2026-08-05 'Migration collisions: renumber the unapplied side' + 'Do not drizzle-kit generate during a sync'"
+    },
+    {
+      "decision": "SR2 — union the workflow_execution_logs indexes",
+      "paths": ["packages/db/schema.ts"],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "LOCKED, unchanged from draft. Keep the fork's workspaceActorUserIdx + rootExecutionIdIdx and add upstream's completedEndedAtIdx. Under the locked Q1-A answer the fork's actor_user_id / actor_type / api_key_id columns on workflow_execution_logs AND usage_log are retained unconditionally — they have live in-repo consumers (see Q1 resolution note).",
+      "cite": "merge-policy unionPaths: packages/db/schema.ts; simstudioai/sim#5545"
+    },
+    {
+      "decision": "SR3 — preserve Arena brand strings, take upstream landing structure",
+      "paths": [
+        "apps/sim/app/(landing)/components/hero/hero.tsx",
+        "apps/sim/app/(landing)/components/features/features.tsx",
+        "apps/sim/app/(landing)/components/footer/footer.tsx",
+        "apps/sim/app/(landing)/components/home-structured-data/home-structured-data.tsx",
+        "apps/sim/app/(landing)/page.tsx"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "LOCKED, unchanged from draft. Fork-first on brand strings only: keep ArenaWordmark, the Arena hero headline/features copy, and the literal Arena metadata descriptions in place of upstream's new HOME_PAGE_DESCRIPTION constant. Take everything else upstream ships including footer's ALL_COMPETITORS compare column (#5684).",
+      "cite": "constitution.md Required Language; extensibility-notes 2026-08-05 'Fork branding is confined to few files'; simstudioai/sim#5684 #5651"
+    },
+    {
+      "decision": "SR4 — keep the transactional-email social row suppressed",
+      "paths": ["apps/sim/components/emails/components/email-footer.tsx"],
+      "prefixes": [],
+      "strategy": "ours",
+      "rationale": "LOCKED, unchanged from draft. Upstream #5653's !isWhitelabeled gate only fires when NEXT_PUBLIC_WHITELABELING_ENABLED is set, which Arena does not set — --theirs would ship Sim's X/LinkedIn/GitHub/Slack links in Arena's transactional emails. Directive: checkoutOurs. Record in skipped.md.",
+      "cite": "simstudioai/sim#5653 #5654"
+    },
+    {
+      "decision": "SR5 — keep fork execution timeouts and rate-limit defaults; take upstream's new vars additively",
+      "paths": ["apps/sim/lib/core/config/env.ts", "apps/sim/.env.example"],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "LOCKED, unchanged from draft. Keep every fork EXECUTION_TIMEOUT_* default of 60000 and DISABLE_EXECUTION_RATE_LIMIT; additively take upstream's RATE_LIMIT_FREE_API_ENDPOINT, COPILOT_BILLING_ATTRIBUTION_V1_ENABLED, COPILOT_BILLING_PROTOCOL_REQUIRED (all left unset) and the COPILOT_API_KEY comment rewording while keeping the fork's COPILOT_API_KEY_2.",
+      "cite": "fork commit 32c3bdac; simstudioai/sim#5640 #5545"
+    },
+    {
+      "decision": "SR6 — union all registry / integration conflicts",
+      "paths": [
+        "apps/sim/tools/registry.ts",
+        "apps/sim/tools/hubspot/index.ts",
+        "apps/sim/tools/hubspot/types.ts",
+        "apps/sim/blocks/blocks/hubspot.ts",
+        "apps/sim/blocks/types.ts"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "LOCKED, unchanged from draft. Keep all fork-only HubSpot exports (campaigns, commerce, pipelines, properties, imports, objects, subscriptions) and add upstream's delete_*/list-membership/association-label/search_line_items/search_quotes. blocks/types.ts: keep uploadContext / allowStartFilesReference / conversationFileMode and add upstream's requiresCloudStorage. Reconcile the associations response type (fork HubSpotAssociationResult / paging? vs upstream HubSpotAssociatedObject / paging: … | null) against list_associations.ts and create_association.ts; do not drop upstream's exported name.",
+      "cite": "merge-policy unionPaths: tools/registry.ts; simstudioai/sim#5635 #5632 #5637 #5641 #5568"
+    },
+    {
+      "decision": "SR7 — adopt upstream's unified settings shell; re-apply fork suppressions and Arena-only sections",
+      "paths": [],
+      "prefixes": [
+        "apps/sim/app/workspace/[workspaceId]/settings/",
+        "apps/sim/components/settings/"
+      ],
+      "strategy": "mustEdit",
+      "rationale": "LOCKED, unchanged from draft. Upstream #5545's structure wins (navigation.ts becomes a re-export of components/settings/navigation); the child re-applies on top: the fork's suppressions (SSO, workspace forks, data-drains, credential sets), the suppressed integrations top-level redirect, the fork's Arena section titles/descriptions, and the fork's own section renderers. ADDED THIS FINALIZE: settings/components/usage/** (lineage-panel.tsx, format.ts) is fork-only and reads usage_log.actor_type — it does not conflict and must keep compiling, which the locked Q1-A answer guarantees.",
+      "cite": "simstudioai/sim#5545 #5663 #5691"
+    },
+    {
+      "decision": "SR8 — drop the orphaned free-API deployment gate",
+      "paths": ["apps/sim/app/api/chat/utils.ts"],
+      "prefixes": [],
+      "strategy": "mustEdit",
+      "rationale": "LOCKED, unchanged from draft. #5678 deletes lib/billing/core/api-access.ts, so isWorkspaceApiExecutionEntitled no longer exists and the fork's gate is already inert (requires isBillingEnabled && isFreeApiDeploymentGateEnabled, neither set on Arena). Remove the gate and its imports; keep canAccessAgentGeneratedImageViaDeployedChat and isFirstPartyOrigin untouched. Record in skipped.md.",
+      "cite": "simstudioai/sim#5678"
+    },
+    {
+      "decision": "SR9 — lib/copilot/generated/ merged clean; verify-only, no directive",
+      "paths": [
+        "apps/sim/lib/copilot/generated/tool-schemas-v1.ts",
+        "apps/sim/lib/copilot/generated/tool-catalog-v1.ts"
+      ],
+      "prefixes": ["apps/sim/lib/copilot/generated/"],
+      "strategy": "mustEdit",
+      "rationale": "LOCKED, DOWNGRADED THIS FINALIZE. The prediction held: neither file is in the post-merge unmerged set, so per the directive rule ('may only target paths that are still unmerged') no directive is issued for them. This is a verify-only coherence assertion, not a merge directive: after all children land, assert the fork's Superagent 'Drive handles GFM import' sentence is still present in tool-catalog-v1.ts / tool-schemas-v1.ts; re-apply by hand only if a later step drops it. Do NOT run bun run mship:generate — scripts/sync-tool-catalog.ts reads a sibling ../copilot/ repo the fork does not have.",
+      "cite": "extensibility-notes 2026-08-06-3 'upstreamFirst auto---theirs is more dangerous than the conflict it avoids'; merge-policy strategy CAVEAT"
+    },
+    {
+      "decision": "SR10 — Q1 conditional resolved to A: upstream's model does NOT subsume the fork's",
+      "paths": [
+        "apps/sim/lib/logs/execution/logger.ts",
+        "apps/sim/lib/logs/execution/logging-session.ts",
+        "apps/sim/lib/logs/types.ts",
+        "apps/sim/lib/billing/core/usage-log.ts",
+        "apps/sim/lib/execution/preprocessing.ts",
+        "packages/db/schema.ts"
+      ],
+      "prefixes": ["apps/sim/lib/billing/", "apps/sim/lib/logs/execution/"],
+      "strategy": "mustEdit",
+      "rationale": "NEW THIS FINALIZE — resolves the human's conditional answer, it does not re-open it. The human answered Q1 as 'B if all the features of A are already included there. If not, then lets go ahead with A only', and separately confirmed nothing OUTSIDE this repo reads workflow_execution_logs.actor_user_id / actor_type / api_key_id. That clears the external-consumer blocker for B but does not by itself satisfy the superset condition, so the condition was measured directly against both trees. Result: B does NOT subsume A. Evidence: (1) upstream at 9d23e25c has ZERO occurrences of actorType or apiKeyId across lib/billing/core/billing-attribution.ts, lib/billing/core/usage-log.ts and all of lib/logs/ — BillingAttributionSnapshot carries actorUserId, workspaceId, organizationId, billedAccountUserId, billingEntity, billingPeriod and payerSubscription, and nothing else identifying the actor channel; (2) upstream's packages/db/schema.ts has NO actor_user_id / actor_type / api_key_id columns at all — they are fork-authored columns on both workflow_execution_logs and usage_log; (3) the fork's actor channel has live IN-REPO consumers that upstream cannot feed — lib/workspaces/usage/{analytics,user-analytics,organization-analytics,ledger-helpers}.ts (aggregates by actorType, counts distinct human actors, runs a missing-actor data-quality check), lib/billing/core/usage-attribution-backfill.ts, the fork-only settings/components/usage/{components/lineage-panel.tsx,format.ts} UI, and three boundary contracts (workspace-usage.ts, organization-usage.ts, user-usage.ts) that document 'Distinct human actors (resolved actor_type = user)'; (4) upstream has no equivalent of resolveExecutionActor's non-human resolution (webhook -> deployment-version creator, schedule -> getScheduleExecutionActorUserId) — its resolveSystemBillingAttribution resolves a PAYER, not the enabling human. The superset condition therefore fails on a measurable capability gap, and the human's own fallback applies: A. Directives follow the draft's Q1-A block verbatim.",
+      "cite": "grill-qa.md 2026-08-06T12:08:11Z answer 1; measured against HEAD vs 9d23e25c"
+    },
+    {
+      "decision": "SR11 — Q2 answered A: fork-first copilot / mothership usage limits",
+      "paths": [
+        "apps/sim/app/api/copilot/api-keys/validate/route.ts",
+        "apps/sim/app/api/copilot/api-keys/validate/route.test.ts",
+        "apps/sim/lib/billing/calculations/usage-monitor.ts",
+        "apps/sim/lib/copilot/request/tools/billing.ts"
+      ],
+      "prefixes": ["apps/sim/lib/copilot/request/"],
+      "strategy": "mustEdit",
+      "rationale": "NEW THIS FINALIZE — direct human answer, no interpretation needed ('2. A - we'll go with this'). checkSelfHostedMothershipUsageLimits (!isHosted branch) and checkMothershipUsageLimits (hosted branch — the one that actually runs on Arena, since the fork redefines isHosted as *.thearena.ai + localhost:3000) remain the governing gate on the validate route, with the fork's 402 responses, TraceAttr spans and limitDetails?.scope === 'member' message branch. Upstream's billing-attribution imports, header parsing and the billing-protocol-v1 module are taken additively so the route and lib/copilot/request/tools/billing.ts compile. COPILOT_BILLING_ATTRIBUTION_V1_ENABLED and COPILOT_BILLING_PROTOCOL_REQUIRED stay unset (the human did not ask for them on). Record the un-adopted parts of #5545 in skipped.md. Consistent with the locked Q1-A: no checkoutTheirs anywhere in the billing or copilot clusters.",
+      "cite": "grill-qa.md 2026-08-06T12:08:11Z answer 2; simstudioai/sim#5545"
+    }
+  ],
+  "openQuestions": [],
+  "childClusters": [
+    {
+      "id": "schema-migrations",
+      "prefix": "packages/db/",
+      "files": ["packages/db/migrations/meta/0260_snapshot.json", "packages/db/schema.ts"],
+      "strategy": "ours",
+      "notes": "SR1 + SR2. Only 2 unmerged paths remain here. MANDATORY non-conflicted work this child also owns (these files merged clean but are WRONG as merged): (a) git mv packages/db/migrations/0260_unknown_sinister_six.sql -> packages/db/migrations/0264_unknown_sinister_six.sql, content byte-identical (it already carries COMMIT; breakpoints and CREATE INDEX CONCURRENTLY); (b) packages/db/migrations/meta/_journal.json auto-merged with a DUPLICATE idx 260 — rewrite the trailing entry {idx:260, when:1783810442774, tag:'0260_unknown_sinister_six'} to {idx:264, version:'7', when:1784346920601, tag:'0264_unknown_sinister_six', breakpoints:true}; leave the fork's {idx:260, tag:'0260_organization_oauth_apps_allowed_workspaces'} entry untouched. Write NO 0264 snapshot and NEVER run drizzle-kit generate — the fork has a documented snapshot gap (journal reaches 263, meta stops at 0260) and drizzle-kit migrate reads only the journal + SQL. meta/0260_snapshot.json is an add/add conflict resolved --ours by directive (the fork's snapshot for 0260_organization_oauth_apps_allowed_workspaces wins; upstream's 0260 snapshot is discarded because its SQL is being renumbered to 0264). schema.ts: union — keep workspaceActorUserIdx + rootExecutionIdIdx, add upstream's completedEndedAtIdx, and keep ALL fork actor columns (actor_user_id / actor_type / api_key_id on both workflow_execution_logs and usage_log) per locked Q1-A. Upstream's new columns from the same migration (workspace.storage_used_bytes, workspace.organization_assigned_at, workspace.billed_account_user_id, paused_executions.automatic_resume_retry_count) must land so the schema matches the renumbered SQL. Unblocked."
+    },
+    {
+      "id": "billing-attribution-core",
+      "prefix": "apps/sim/lib/billing/",
+      "files": [
+        "apps/sim/app/api/billing/route.ts",
+        "apps/sim/app/api/billing/update-cost/route.test.ts",
+        "apps/sim/app/api/billing/update-cost/route.ts",
+        "apps/sim/app/api/guardrails/validate/route.ts",
+        "apps/sim/app/api/knowledge/search/route.ts",
+        "apps/sim/app/api/workflows/[id]/execute/route.ts",
+        "apps/sim/background/schedule-execution.ts",
+        "apps/sim/background/webhook-execution.ts",
+        "apps/sim/executor/handlers/workflow/workflow-handler.ts",
+        "apps/sim/lib/api/contracts/workflows.ts",
+        "apps/sim/lib/billing/core/billing.ts",
+        "apps/sim/lib/billing/core/usage-log.test.ts",
+        "apps/sim/lib/billing/core/usage-log.ts",
+        "apps/sim/lib/billing/organizations/member-limits.test.ts",
+        "apps/sim/lib/billing/organizations/member-limits.ts",
+        "apps/sim/lib/billing/organizations/membership.ts",
+        "apps/sim/lib/execution/preprocessing.test.ts",
+        "apps/sim/lib/execution/preprocessing.ts",
+        "apps/sim/lib/logs/execution/logger.test.ts",
+        "apps/sim/lib/logs/execution/logger.ts",
+        "apps/sim/lib/logs/execution/logging-factory.ts",
+        "apps/sim/lib/logs/execution/logging-session.ts",
+        "apps/sim/lib/logs/types.ts",
+        "apps/sim/lib/workflows/executor/execute-workflow.ts",
+        "apps/sim/lib/workspaces/utils.ts"
+      ],
+      "strategy": "mustEdit",
+      "notes": "UNBLOCKED — Q1 locked to A (see SR10). Largest cluster, 25 unmerged files. FORK-FIRST ATTRIBUTION: keep ExecutionActor / extractExecutionActor / resolveExecutionActor / billingUserId threading and the workspace_actor_user_idx consumers intact. Take upstream's new modules ADDITIVELY (lib/billing/core/billing-attribution.ts is a new upstream file and does not conflict; BillingAttributionSnapshot, deriveBillingContext, resolveBillingAttribution, ValidatedPreprocessContext, workspace.billedAccountUserId, changeWorkspaceStoragePayerInTx all land) so the tree compiles and the 0264 schema columns are backed — but do NOT rewire the logger / usage-log / preprocessing call sites onto actorUserId + exactBillingContext as the source of truth. Where an upstream-owned caller requires upstream's new signature, adapt at the boundary rather than inside the fork's attribution path. NOTE the naming trap: BOTH sides now use the identifier actorUserId, but they mean different things and are populated by different resolvers — the fork's comes from resolveExecutionActor (webhook -> deployment-version creator, schedule -> getScheduleExecutionActorUserId), upstream's from resolveSystemBillingAttribution (a payer). Do not let a merge collapse them. NEVER auto --ours or --theirs on any file here. Regression surface that must still compile and behave after this cluster: lib/workspaces/usage/{analytics,user-analytics,organization-analytics,ledger-helpers}.ts, lib/billing/core/usage-attribution-backfill.ts, lib/api/contracts/{workspace,organization,user}-usage.ts, settings/components/usage/**. Upstream deletions to TAKE: lib/billing/core/api-access.ts, app/api/billing/member-credits/, app/api/workspaces/[id]/owner-billing/ — drop fork imports of them. Record the un-adopted parts of #5657 / #5698 in skipped.md."
+    },
+    {
+      "id": "copilot-mothership-billing",
+      "prefix": "apps/sim/lib/copilot/",
+      "files": [
+        "apps/sim/app/api/copilot/api-keys/validate/route.test.ts",
+        "apps/sim/app/api/copilot/api-keys/validate/route.ts",
+        "apps/sim/app/api/mothership/execute/route.ts",
+        "apps/sim/lib/billing/calculations/usage-monitor.test.ts",
+        "apps/sim/lib/billing/calculations/usage-monitor.ts",
+        "apps/sim/lib/copilot/chat/post.ts",
+        "apps/sim/lib/copilot/request/lifecycle/run.ts",
+        "apps/sim/lib/copilot/request/lifecycle/start.ts",
+        "apps/sim/lib/copilot/request/tools/billing.ts",
+        "apps/sim/lib/copilot/tools/handlers/context.ts",
+        "apps/sim/lib/copilot/tools/handlers/workflow/mutations.ts"
+      ],
+      "strategy": "mustEdit",
+      "notes": "UNBLOCKED — Q2 locked to A (see SR11). 11 unmerged files. usage-monitor.ts + usage-monitor.test.ts are assigned HERE (not to billing-attribution-core) so exactly one child owns them; coordinate only through this cluster. Keep checkSelfHostedMothershipUsageLimits and checkMothershipUsageLimits as the governing gate on the validate route, with the fork's 402 responses, TraceAttr spans and the limitDetails?.scope === 'member' branch. Also preserve the fork's checkActorUsageLimits and checkOrgMemberUsageLimit in usage-monitor.ts. Take upstream's attribution imports, header parsing and lib/copilot/generated/billing-protocol-v1.ts additively (new file, no conflict) plus the trace-attribute additions. Leave COPILOT_BILLING_ATTRIBUTION_V1_ENABLED and COPILOT_BILLING_PROTOCOL_REQUIRED unset — with COPILOT_BILLING_PROTOCOL_REQUIRED unset, markerless legacy traffic from Arena's copilot backend is still accepted. NEVER auto --theirs on the validate route or usage-monitor.ts. Record the un-adopted parts of #5545 in skipped.md."
+    },
+    {
+      "id": "settings-ia",
+      "prefix": "apps/sim/app/workspace/[workspaceId]/settings/",
+      "files": [
+        "apps/sim/app/workspace/[workspaceId]/layout.tsx",
+        "apps/sim/app/workspace/[workspaceId]/settings/[section]/page.tsx",
+        "apps/sim/app/workspace/[workspaceId]/settings/[section]/settings.tsx",
+        "apps/sim/app/workspace/[workspaceId]/settings/billing/credit-usage/credit-usage-view.tsx",
+        "apps/sim/app/workspace/[workspaceId]/settings/components/billing/billing.tsx",
+        "apps/sim/app/workspace/[workspaceId]/settings/components/team-management/components/organization-member-lists/organization-member-lists.tsx",
+        "apps/sim/app/workspace/[workspaceId]/settings/layout.tsx",
+        "apps/sim/app/workspace/[workspaceId]/settings/navigation.ts",
+        "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/settings-sidebar/settings-sidebar.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/workspace-header.tsx",
+        "apps/sim/app/workspace/page.tsx",
+        "apps/sim/hooks/queries/workspace-usage.ts",
+        "apps/sim/hooks/queries/workspace.ts"
+      ],
+      "strategy": "mustEdit",
+      "notes": "SR7. 13 unmerged files. Upstream #5545's unified settings shell wins structurally (navigation.ts becomes a re-export of components/settings/navigation); the route shape /workspace/[id]/settings/[section] is unchanged so no Arena URLs break. Re-apply on top of upstream's structure: the fork's suppressions (SSO, workspace forks, data-drains, credential sets), the suppressed integrations top-level redirect (the fork owns settings/components/integrations), the fork's Arena section titles/descriptions, and the fork's own section renderers (billing-usage, integrations, oauth-apps, usage — none of which conflict). hooks/queries/workspace.ts: drop ownerBilling (upstream deletes app/api/workspaces/[id]/owner-billing/), keep zoomAdminAccess. Strategy is mustEdit, not theirs — the draft's 'theirs' label was an area hint; do NOT run a blanket --theirs, several of these files carry fork-only sections. Also take #5688/#5692 stale-impersonation-session recovery in workspace/page.tsx and [workspaceId]/layout.tsx. Unblocked."
+    },
+    {
+      "id": "chat-ui-arena",
+      "prefix": "apps/sim/app/workspace/[workspaceId]/home/components/message-content/",
+      "files": [
+        "apps/sim/app/api/chat/[identifier]/route.test.ts",
+        "apps/sim/app/api/chat/[identifier]/route.ts",
+        "apps/sim/app/api/chat/utils.ts",
+        "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/agent-group.tsx",
+        "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/tool-call-item.tsx",
+        "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/special-tags.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/chat/chat.tsx",
+        "apps/sim/stores/chat/store.ts"
+      ],
+      "strategy": "union",
+      "notes": "8 unmerged files. Fork-first on Arena chat semantics per the 2026-08-06-2 precedent: keep the assistant display-label resolver, live workspace-file titles and the fork spinner; take upstream's #5660/#5666/#5669 natural-language tool titles, block display names, brand icons and resource-type icons on top. Includes SR8 (chat/utils.ts): remove the free-API deployment gate and its lib/billing/core/api-access.ts imports — that module is deleted upstream — while keeping canAccessAgentGeneratedImageViaDeployedChat and isFirstPartyOrigin untouched. chat.tsx is a genuine refactor merge: upstream moved attachments to UploadedWorkflowAttachment/toChatMessageAttachments while the fork has an inline ChatFile + FileReader path — adopt upstream's attachment plumbing but KEEP the fork's FILE_READ_TIMEOUT_MS timeout/abort handling. app/api/chat/[identifier]/route.ts reads preprocessResult.actorUserId — that field survives under locked Q1-A. Unblocked."
+    },
+    {
+      "id": "oauth-credentials",
+      "prefix": "apps/sim/lib/oauth/",
+      "files": [
+        "apps/sim/app/api/auth/oauth/utils.ts",
+        "apps/sim/lib/auth/auth.ts",
+        "apps/sim/lib/credentials/connect-draft.ts",
+        "apps/sim/lib/oauth/index.ts",
+        "apps/sim/lib/oauth/oauth.test.ts",
+        "apps/sim/lib/oauth/oauth.ts",
+        "apps/sim/lib/oauth/types.ts",
+        "apps/sim/lib/oauth/utils.ts"
+      ],
+      "strategy": "union",
+      "notes": "8 unmerged files (connect-draft.ts is add/add). Upstream #5682 adds token-paste service accounts for 12 providers and #5631 fixes Slack scopes; the fork owns the Unipile / HubSpot / Zoom-admin provider entries. Additive on both sides — keep every fork provider and take every upstream provider; never drop an upstream export that in-tree consumers import. lib/auth/auth.ts is a unionPath and also carries the fork's session-cookie-domain wiring (lib/auth/session-cookie-domain.ts is forkFirst) — keep it. Unblocked."
+    },
+    {
+      "id": "integrations-registry",
+      "prefix": "apps/sim/tools/",
+      "files": [
+        "apps/sim/blocks/blocks/hubspot.ts",
+        "apps/sim/blocks/types.ts",
+        "apps/sim/tools/hubspot/index.ts",
+        "apps/sim/tools/hubspot/types.ts",
+        "apps/sim/tools/registry.ts"
+      ],
+      "strategy": "union",
+      "notes": "SR6. 5 unmerged files, all alphabetical adjacency except the HubSpot associations response type, which is the one substantive item: reconcile fork HubSpotAssociationResult / paging? against upstream HubSpotAssociatedObject / paging: … | null using the fork's list_associations.ts and create_association.ts consumers as ground truth, and keep upstream's exported name because in-tree consumers import it. blocks/types.ts: keep uploadContext / allowStartFilesReference / conversationFileMode, add upstream's requiresCloudStorage (needed by Instagram #5568). Verify tools/registry.ts and blocks/registry-maps.ts stay alphabetical and that every new upstream tool id is registered. Unblocked."
+    },
+    {
+      "id": "landing-branding",
+      "prefix": "apps/sim/app/(landing)/",
+      "files": [
+        "apps/sim/app/(landing)/components/features/features.tsx",
+        "apps/sim/app/(landing)/components/footer/footer.tsx",
+        "apps/sim/app/(landing)/components/hero/hero.tsx",
+        "apps/sim/app/(landing)/components/home-structured-data/home-structured-data.tsx",
+        "apps/sim/app/(landing)/page.tsx",
+        "apps/sim/components/emails/components/email-footer.tsx",
+        "apps/sim/ee/whitelabeling/components/branding-provider.tsx",
+        "apps/sim/ee/whitelabeling/components/whitelabeling-settings.tsx"
+      ],
+      "strategy": "union",
+      "notes": "SR3 + SR4. 8 unmerged files. Fork-first on brand strings ONLY — keep ArenaWordmark, the Arena hero headline / features copy and the literal Arena metadata descriptions in place of upstream's HOME_PAGE_DESCRIPTION constant; take upstream's structure, SEO/JSON-LD fixes (#5638/#5644/#5681/#5689) and the footer ALL_COMPETITORS compare column (#5684) everywhere else. email-footer.tsx is resolved by directive (checkoutOurs, SR4) — the child only verifies the resulting isWhitelabeled binding does not break the build; keep or void the reference rather than reintroducing Sim's social links. branding-provider.tsx: keep the fork's syncDocumentFavicon + useOrganizations wiring against upstream's refactor. Constitution check on any copy touched: Arena is an 'AI workspace', never a 'workflow tool'. Unblocked."
+    },
+    {
+      "id": "config-env",
+      "prefix": "apps/sim/lib/core/config/",
+      "files": ["apps/sim/.env.example", "apps/sim/lib/core/config/env.ts"],
+      "strategy": "union",
+      "notes": "SR5. Only 2 unmerged paths — package.json merged clean this run and is NOT conflicted, so no package.json directive is issued; the child must still VERIFY the merged scripts block kept the fork's vendor-pricing:check / vendor-pricing:sync and gained upstream's skills:sync / skills:check, and regenerate bun.lock if any manifest actually changed. env.ts: keep every fork EXECUTION_TIMEOUT_* default of 60000 and DISABLE_EXECUTION_RATE_LIMIT (upstream #5640 would cut Arena execution timeouts ~20x); additively take RATE_LIMIT_FREE_API_ENDPOINT, COPILOT_BILLING_ATTRIBUTION_V1_ENABLED and COPILOT_BILLING_PROTOCOL_REQUIRED, all left UNSET. .env.example is two disjoint additive comment blocks — straight union, keeping the fork's COPILOT_API_KEY_2 alongside upstream's reworded COPILOT_API_KEY comment. Unblocked."
+    },
+    {
+      "id": "uploads-editor",
+      "prefix": "apps/sim/lib/uploads/",
+      "files": [
+        "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/deploy-modal.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/file-upload/file-upload.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/sub-block.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/panel.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution.ts",
+        "apps/sim/executor/utils/file-tool-processor.test.ts",
+        "apps/sim/lib/uploads/client/api-fallback.ts",
+        "apps/sim/lib/uploads/core/storage-service.ts"
+      ],
+      "strategy": "union",
+      "notes": "8 unmerged files (file-tool-processor.test.ts is add/add). Upstream #5545 adds workspace.storage_used_bytes accounting on the upload paths — take it; the quota stays unenforced while FREE_STORAGE_LIMIT_GB is unset. Keep the fork's uploadContext / allowStartFilesReference / conversationFileMode behaviour on the sub-block and file-upload paths (their type declarations are owned by integrations-registry via blocks/types.ts — do not redeclare them here). deploy-modal.tsx: upstream deletes deploy-upgrade-gate/ — take the deletion and drop the import. use-workflow-execution.ts touches the execution path — do not reintroduce billing attribution changes here; that is billing-attribution-core's. Unblocked."
+    },
+    {
+      "id": "workspace-views-urlstate",
+      "prefix": "apps/sim/app/workspace/[workspaceId]/logs/",
+      "files": [
+        "apps/sim/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/document.tsx",
+        "apps/sim/app/workspace/[workspaceId]/logs/logs.tsx"
+      ],
+      "strategy": "theirs",
+      "notes": "2 unmerged files. Upstream #5648 / #5652 migrate list search/sort/filter view-state to nuqs with shared helpers, which is exactly what .claude/rules/sim-url-state.md mandates — take upstream's nuqs wiring wholesale, then re-apply any fork-only column, filter or deep-link that the fork had added on top. Even with strategy 'theirs' the child must diff the fork side before accepting, per the standing rule that a blind --theirs drops fork capability. Unblocked."
+    }
+  ],
+  "directives": {
+    "delete": [],
+    "checkoutTheirs": [],
+    "checkoutOurs": [
+      "packages/db/migrations/meta/0260_snapshot.json",
+      "apps/sim/components/emails/components/email-footer.tsx"
+    ],
+    "mustEdit": [
+      "packages/db/schema.ts",
+      "apps/sim/lib/core/config/env.ts",
+      "apps/sim/.env.example",
+      "apps/sim/app/api/chat/utils.ts",
+      "apps/sim/lib/logs/types.ts",
+      "apps/sim/lib/logs/execution/logger.ts",
+      "apps/sim/lib/logs/execution/logging-session.ts",
+      "apps/sim/lib/billing/core/usage-log.ts",
+      "apps/sim/lib/execution/preprocessing.ts",
+      "apps/sim/app/api/copilot/api-keys/validate/route.ts",
+      "apps/sim/app/api/copilot/api-keys/validate/route.test.ts",
+      "apps/sim/lib/billing/calculations/usage-monitor.ts",
+      "apps/sim/lib/copilot/request/tools/billing.ts"
+    ],
+    "overrideForkFirst": [],
+    "notes": "Locked from Q&A (2026-08-06T12:08:11Z) + SR1-SR11. Q1 = A (conditional 'B only if it subsumes A' measured and FAILED — see SR10), Q2 = A (direct answer). Consequence: NO checkoutTheirs anywhere this run; the draft's Q1-B checkoutTheirs block (logger.ts, logger.test.ts, logging-factory.ts, logging-session.ts, preprocessing.ts+test, usage-log.ts+test) and Q2-B checkoutTheirs block (validate/route.ts+test, request/tools/billing.ts) are VOID — do not apply them. checkoutOurs is exactly 2 paths: meta/0260_snapshot.json (add/add; upstream's 0260 snapshot is discarded because its SQL is renumbered to 0264) and email-footer.tsx (SR4). Directives target only still-unmerged paths; three items from the draft's default block are deliberately ABSENT because they merged clean and are therefore out of directive scope — they are cluster work instead: (a) packages/db/migrations/meta/_journal.json (auto-merged with a duplicate idx 260 — schema-migrations rewrites the trailing entry to idx 264, tag 0264_unknown_sinister_six, when 1784346920601) and the git mv of 0260_unknown_sinister_six.sql -> 0264_unknown_sinister_six.sql; (b) lib/copilot/generated/tool-schemas-v1.ts and tool-catalog-v1.ts (SR9 verify-only — assert the Superagent 'Drive handles GFM import' sentence survives; never run bun run mship:generate, never auto --theirs); (c) package.json (merged clean — verify the union kept vendor-pricing:check/sync and gained skills:sync/skills:check, regenerate bun.lock only if a manifest changed). Standing rules for every mustEdit path: no blanket --ours/--theirs, and keep the fork's actor_user_id / actor_type / api_key_id columns and their in-repo consumers alive (lib/workspaces/usage/**, usage-attribution-backfill.ts, the usage contracts, settings/components/usage/**)."
+  },
+  "notes": "Post-merge finalize. 92 unmerged paths remain (predicted 93; the 93rd, packages/db/migrations/0260_unknown_sinister_six.sql, landed staged-clean as an add and needs a rename rather than a conflict resolution). All 92 are assigned to exactly one cluster: schema-migrations 2, billing-attribution-core 25, copilot-mothership-billing 11, settings-ia 13, chat-ui-arena 8, oauth-credentials 8, integrations-registry 5, landing-branding 8, config-env 2, uploads-editor 8, workspace-views-urlstate 2. No prior cluster reports exist (.upstream-sync/ledger/2026-08-06-4/clusters/ is empty) and no prior final plan exists — this is the first finalize of the run, so nothing is carried forward as completed. The WIP overlay was skipped (no-wip); conflicts are as the harness left them. usage-monitor.ts / usage-monitor.test.ts were moved out of the draft's billing-attribution-core list into copilot-mothership-billing so exactly one child owns them under Q2-A. No unplanned cluster was needed. No forkFirst path from merge-policy.json appears in the unmerged set, so overrideForkFirst is empty."
+}

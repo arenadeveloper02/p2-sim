@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { cache } from 'react'
+import { getOAuth2Tokens } from '@better-auth/core/oauth2'
 import { sso } from '@better-auth/sso'
 import { stripe } from '@better-auth/stripe'
 import { db } from '@sim/db'
@@ -31,6 +32,8 @@ import {
   renderWelcomeEmail,
 } from '@/components/emails'
 import { getAccessControlConfig, isEmailBlockedByAccessControl } from '@/lib/auth/access-control'
+import { createAnonymousSession, ensureAnonymousUserExists } from '@/lib/auth/anonymous'
+import { getRequestedSignInProviderId, isSignInProviderAllowed } from '@/lib/auth/constants'
 import { sendPlanWelcomeEmail } from '@/lib/billing'
 import { authorizeSubscriptionReference } from '@/lib/billing/authorization'
 import {
@@ -77,6 +80,10 @@ import {
 } from '@/lib/core/config/env-flags'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import {
+  readResponseJsonWithLimit,
+  readResponseTextWithLimit,
+} from '@/lib/core/utils/stream-limits'
+import {
   getBaseUrl,
   getInternalApiBaseUrl,
   getLoginRedirectUrl,
@@ -101,8 +108,6 @@ import { captureServerEvent, getPostHogClient } from '@/lib/posthog/server'
 import { disableUserResources } from '@/lib/workflows/lifecycle'
 import { ensurePersonalWorkspaceOnEmailSignup } from '@/lib/workspaces/create-workspace'
 import { SSO_TRUSTED_PROVIDERS } from '@/ee/sso/constants'
-import { createAnonymousSession, ensureAnonymousUserExists } from './anonymous'
-import { getRequestedSignInProviderId, isSignInProviderAllowed } from './constants'
 
 const logger = createLogger('Auth')
 
@@ -2077,22 +2082,40 @@ export const auth = betterAuth({
           scopes: getCanonicalScopesForProvider('tiktok'),
           responseType: 'code',
           redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/tiktok`,
-          // TikTok requires the app identifier under `client_key`, not the standard
-          // `client_id`. The library always sends `client_id` too, but TikTok ignores
-          // unrecognized params, so adding `client_key` here (for both the authorize
-          // redirect and the token exchange) is sufficient without patching the library.
-          //
-          // TikTok also requires a comma-separated `scope` list, but the library always
-          // joins scopes with a space (no configurable separator in the generic-oauth
-          // plugin's authorize route). `additionalParams` is applied via
-          // `url.searchParams.set(key, value)` after the default scope is set, so
-          // overriding `scope` here replaces the space-joined value with a comma-joined
-          // one that TikTok can actually parse.
           authorizationUrlParams: {
             client_key: env.TIKTOK_CLIENT_ID as string,
             scope: getCanonicalScopesForProvider('tiktok').join(','),
           },
-          tokenUrlParams: { client_key: env.TIKTOK_CLIENT_ID as string },
+          getToken: async ({ code, redirectURI }) => {
+            const response = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams({
+                client_key: env.TIKTOK_CLIENT_ID as string,
+                client_secret: env.TIKTOK_CLIENT_SECRET as string,
+                code,
+                grant_type: 'authorization_code',
+                redirect_uri: redirectURI,
+              }),
+            })
+            const data = await readResponseJsonWithLimit<Record<string, unknown>>(response, {
+              maxBytes: 1024 * 1024,
+              label: 'TikTok OAuth token response',
+            })
+
+            if (!response.ok || !data || typeof data !== 'object' || Array.isArray(data)) {
+              throw new Error(`TikTok OAuth token exchange failed with HTTP ${response.status}`)
+            }
+
+            const tokens = getOAuth2Tokens(data)
+            if (!tokens.accessToken) {
+              throw new Error('TikTok OAuth token response did not include an access token')
+            }
+            if (typeof data.scope === 'string') {
+              tokens.scopes = data.scope.split(/[\s,]+/).filter(Boolean)
+            }
+            return tokens
+          },
           getUserInfo: async (tokens) => {
             try {
               const response = await fetch(
@@ -2105,7 +2128,10 @@ export const auth = betterAuth({
               )
 
               if (!response.ok) {
-                await response.text().catch(() => {})
+                await readResponseTextWithLimit(response, {
+                  maxBytes: 1024 * 1024,
+                  label: 'TikTok profile error response',
+                }).catch(() => {})
                 logger.error('Error fetching TikTok user info:', {
                   status: response.status,
                   statusText: response.statusText,
@@ -2113,7 +2139,18 @@ export const auth = betterAuth({
                 return null
               }
 
-              const profile = await response.json()
+              const profile = await readResponseJsonWithLimit<{
+                data?: {
+                  user?: {
+                    avatar_url?: string
+                    display_name?: string
+                    open_id?: string
+                  }
+                }
+              }>(response, {
+                maxBytes: 1024 * 1024,
+                label: 'TikTok profile response',
+              })
               const user = profile.data?.user
 
               if (!user?.open_id) {
@@ -3249,6 +3286,7 @@ export const auth = betterAuth({
                 const subscriptionForOrg = {
                   ...subscription,
                   plan: planFromStripe ?? subscription.plan,
+                  enterpriseOperationId: stripeSubscription.metadata?.enterpriseOperationId ?? null,
                 }
 
                 let resolvedSubscription = subscription
@@ -3331,6 +3369,7 @@ export const auth = betterAuth({
                 const subscriptionForOrg = {
                   ...subscription,
                   plan: planFromStripe ?? subscription.plan,
+                  enterpriseOperationId: stripeSubscription.metadata?.enterpriseOperationId ?? null,
                 }
 
                 let resolvedSubscription = subscription
@@ -3464,7 +3503,8 @@ export const auth = betterAuth({
                     await handleInvoiceFinalized(event)
                     break
                   }
-                  case 'customer.subscription.created': {
+                  case 'customer.subscription.created':
+                  case 'customer.subscription.updated': {
                     await handleManualEnterpriseSubscription(event)
                     break
                   }

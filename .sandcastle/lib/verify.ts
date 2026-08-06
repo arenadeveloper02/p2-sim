@@ -6,14 +6,11 @@ import { VERIFY_COMMANDS, VERIFY_STEP_COMMANDS } from './config'
 
 export type VerifyStepName = keyof typeof VERIFY_STEP_COMMANDS
 
-export const ADVISORY_VERIFY_STEPS = [
-  'check',
-  'lint',
-  'test',
-] as const satisfies readonly VerifyStepName[]
+export const ADVISORY_VERIFY_STEPS = ['check', 'lint'] as const satisfies readonly VerifyStepName[]
 /**
  * No harness-blocking verify steps. Full `bun run build` OOMs the 7GB Actions
- * runner during dual Next compiles — CI (`.github/workflows/images.yml`) owns build.
+ * runner during dual Next compiles — CI (`.github/workflows/images.yml`) owns
+ * build and test.
  */
 export const BLOCKING_VERIFY_STEPS = [] as const satisfies readonly VerifyStepName[]
 
@@ -25,7 +22,7 @@ export interface VerifyResult {
 }
 
 export interface RunVerificationOptions {
-  /** Subset of steps to run. Default: check, lint, test (no full build). */
+  /** Subset of steps to run. Default: check, lint (no test/build — CI owns those). */
   steps?: readonly VerifyStepName[]
 }
 
@@ -118,8 +115,8 @@ export function runVerificationStep(step: VerifyStepName): VerifyResult {
 }
 
 /**
- * Run verification commands. Check/lint/test are advisory; full build is skipped
- * (CI owns it). Failures never throw — callers decide how to surface them.
+ * Run verification commands. Check/lint are advisory; test + full build are
+ * skipped (CI owns them). Failures never throw — callers decide how to surface them.
  */
 export function runVerification(options?: RunVerificationOptions): VerifyResult[] {
   const steps = options?.steps ?? ADVISORY_VERIFY_STEPS
@@ -156,9 +153,10 @@ export function formatVerifyResults(results: VerifyResult[]): string {
     summary = '**Blocking verification failed** — resolve before this sync can be marked completed.'
   } else if (advisoryFailures.length > 0) {
     summary =
-      'Advisory verification failed (lint/test/check). These do not block the sync. Full `bun run build` is left to CI. Review and fix on the draft PR as needed.'
+      'Advisory verification failed (check/lint). These do not block the sync. `bun run test` and full `bun run build` are left to CI. Review and fix on the draft PR as needed.'
   } else if (results.every((r) => r.success)) {
-    summary = 'Advisory verification passed (check/lint/test). Full `bun run build` is left to CI.'
+    summary =
+      'Advisory verification passed (check/lint). `bun run test` and full `bun run build` are left to CI.'
   } else {
     summary = 'Verification finished with mixed results.'
   }

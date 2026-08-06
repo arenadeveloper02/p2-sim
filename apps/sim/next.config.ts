@@ -355,8 +355,19 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
+        source: '/slack',
+        destination:
+          'https://join.slack.com/t/sim-ott9864/shared_invite/zt-43lp8tc5v-0qrrqHGBKUsvQlpoouH~TA',
+        permanent: false,
+      },
+      {
         source: '/x',
         destination: 'https://x.com/simdotai',
+        permanent: false,
+      },
+      {
+        source: '/linkedin',
+        destination: 'https://www.linkedin.com/company/simstudioai/',
         permanent: false,
       },
       {
@@ -480,6 +491,63 @@ const nextConfig: NextConfig = {
         permanent: true,
       })
     }
+
+    /**
+     * The comparison route was renamed from `/comparison` to `/comparisons`
+     * for naming consistency with `/integrations/[slug]` (plural category,
+     * singular item). Preserve previously indexed URLs for the hub page and
+     * every competitor detail page.
+     */
+    redirects.push(
+      {
+        source: '/comparison',
+        destination: '/comparisons',
+        permanent: true,
+      },
+      {
+        source: '/comparison/:path*',
+        destination: '/comparisons/:path*',
+        permanent: true,
+      }
+    )
+
+    /**
+     * Stray crawler/artifact URLs picked up in an external SEO audit — no
+     * page ever existed at these paths, but they were indexed or linked
+     * somewhere with junk characters/casing. Send them home instead of 404.
+     */
+    redirects.push(
+      {
+        source: '/$',
+        destination: '/',
+        permanent: true,
+      },
+      {
+        source: '/&',
+        destination: '/',
+        permanent: true,
+      },
+      {
+        source: '/Sim',
+        destination: '/',
+        permanent: true,
+      },
+      {
+        source: '/homepage',
+        destination: '/',
+        permanent: true,
+      },
+      {
+        source: '/logo',
+        destination: '/',
+        permanent: true,
+      },
+      {
+        source: '/en-US',
+        destination: '/',
+        permanent: true,
+      }
+    )
 
     return redirects
   },

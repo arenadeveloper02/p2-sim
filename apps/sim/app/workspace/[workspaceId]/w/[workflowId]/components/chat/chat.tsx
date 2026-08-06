@@ -52,7 +52,11 @@ import {
   OutputSelect,
   StartBlockInputModal,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
-import { useChatFileUpload } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/hooks'
+import {
+  type ChatFile,
+  MAX_CHAT_FILES,
+  useChatFileUpload,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/hooks'
 import {
   usePreventZoom,
   useScrollManagement,
@@ -62,7 +66,15 @@ import {
   useFloatDrag,
   useFloatResize,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/float'
-import { useWorkflowExecution } from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
+import {
+  isChatWorkflowRunResult,
+  useWorkflowExecution,
+  WorkflowAttachmentUploadError,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/hooks/use-workflow-execution'
+import type {
+  UploadedWorkflowAttachment,
+  WorkflowAttachmentInput,
+} from '@/app/workspace/[workspaceId]/w/[workflowId]/utils/workflow-attachment-upload'
 import type { BlockLog, ExecutionResult } from '@/executor/types'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useChatStore } from '@/stores/chat/store'
@@ -88,27 +100,39 @@ const formatFileSize = (bytes: number): string => {
   return `${Math.round((bytes / 1024 ** i) * 10) / 10} ${units[i]}`
 }
 
-/**
- * Represents a chat file attachment before processing
- */
-interface ChatFile {
-  id: string
-  name: string
-  type: string
-  size: number
-  file: File
+type ChatFileWithDataUrl = ChatFile & {
   dataUrl?: string
 }
 
-/** Timeout for FileReader operations in milliseconds */
+function toChatMessageAttachments(
+  uploadedAttachments: UploadedWorkflowAttachment[]
+): ChatMessageAttachment[] {
+  return uploadedAttachments.map((file) => {
+    const supportsPreview = file.type.startsWith('image/') || file.type.startsWith('video/')
+    return {
+      id: file.id,
+      filename: file.name,
+      media_type: file.type,
+      size: file.size,
+      ...(supportsPreview ? { previewUrl: file.url } : {}),
+    }
+  })
+}
+
+interface ChatFilePreviewProps {
+  file: ChatFile
+  onRemove: (fileId: string) => void
+}
+
 const FILE_READ_TIMEOUT_MS = 60000
 
 /**
- * Reads files and converts them to data URLs for image display
- * @param chatFiles - Array of chat files to process
- * @returns Promise resolving to array of files with data URLs for images
+ * Uses a short-lived object URL only while an image remains in the composer.
+ * Successful uploads replace it with the storage-backed URL in message history.
  */
-const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ChatMessageAttachment[]> => {
+const processFileAttachments = async (
+  chatFiles: ChatFileWithDataUrl[]
+): Promise<ChatMessageAttachment[]> => {
   return Promise.all(
     chatFiles.map(async (file) => {
       let previewUrl: string | undefined
@@ -163,6 +187,49 @@ const processFileAttachments = async (chatFiles: ChatFile[]): Promise<ChatMessag
         previewUrl,
       }
     })
+  )
+}
+
+function ChatFilePreview({ file, onRemove }: ChatFilePreviewProps) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!file.type.startsWith('image/')) return
+
+    const objectUrl = URL.createObjectURL(file.file)
+    setPreviewUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [file.file, file.type])
+
+  return (
+    <div
+      className={cn(
+        'group relative flex-shrink-0 overflow-hidden rounded-md bg-[var(--surface-2)]',
+        previewUrl
+          ? 'size-[40px]'
+          : 'flex min-w-[80px] max-w-[120px] items-center justify-center px-2 py-0.5'
+      )}
+    >
+      {previewUrl ? (
+        <img src={previewUrl} alt={file.name} className='size-full object-cover' />
+      ) : (
+        <div className='min-w-0 flex-1'>
+          <div className='truncate font-medium text-[var(--white)] text-micro'>{file.name}</div>
+          <div className='text-[9px] text-[var(--text-tertiary)]'>{formatFileSize(file.size)}</div>
+        </div>
+      )}
+
+      <Button
+        variant='ghost'
+        onClick={(event) => {
+          event.stopPropagation()
+          onRemove(file.id)
+        }}
+        className='absolute top-0.5 right-0.5 size-4 p-0 opacity-0 transition-opacity group-hover:opacity-100'
+      >
+        <X className='size-2.5' />
+      </Button>
+    </div>
   )
 }
 
@@ -376,6 +443,7 @@ export function Chat() {
     uploadErrors,
     isDragOver,
     removeFile,
+    reportUploadError,
     clearFiles,
     clearErrors,
     handleFileInputChange,
@@ -384,38 +452,9 @@ export function Chat() {
     handleDragLeave,
     handleDrop,
   } = useChatFileUpload()
-  const filePreviewUrls = useRef<Map<string, string>>(new Map())
-
-  const getFilePreviewUrl = useCallback((file: ChatFile): string | null => {
-    if (!file.type.startsWith('image/')) return null
-
-    const existing = filePreviewUrls.current.get(file.id)
-    if (existing) return existing
-
-    const url = URL.createObjectURL(file.file)
-    filePreviewUrls.current.set(file.id, url)
-    return url
-  }, [])
-
-  useEffect(() => {
-    const currentFileIds = new Set(chatFiles.map((f) => f.id))
-    const urlMap = filePreviewUrls.current
-
-    for (const [fileId, url] of urlMap.entries()) {
-      if (!currentFileIds.has(fileId)) {
-        URL.revokeObjectURL(url)
-        urlMap.delete(fileId)
-      }
-    }
-
-    return () => {
-      for (const url of urlMap.values()) {
-        URL.revokeObjectURL(url)
-      }
-      urlMap.clear()
-    }
-  }, [chatFiles])
-
+  /**
+   * Resolves the unified start block for chat execution, if available.
+   */
   const startBlockCandidate = useMemo(() => {
     if (!activeWorkflowId) {
       return null
@@ -510,9 +549,7 @@ export function Chat() {
 
   const workflowMessages = useMemo(() => {
     if (!activeWorkflowId) return []
-    return messages
-      .filter((msg) => msg.workflowId === activeWorkflowId)
-      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+    return messages.filter((msg) => msg.workflowId === activeWorkflowId)
   }, [messages, activeWorkflowId])
 
   const {
@@ -889,29 +926,13 @@ export function Chat() {
     }
 
     const sentMessage = chatMessage.trim()
-
-    if (sentMessage && promptHistory[promptHistory.length - 1] !== sentMessage) {
-      setPromptHistory((prev) => [...prev, sentMessage])
-    }
-    setHistoryIndex(-1)
-
     const conversationId = getConversationId(activeWorkflowId)
 
+    clearErrors()
+
     try {
-      workflowChatMsgSentEvent({
-        'Message Content': sentMessage,
-        'Message Type':
-          chatFiles?.length > 0 && sentMessage
-            ? 'Text + Attachment'
-            : chatFiles?.length > 0 && !sentMessage
-              ? 'Attachment'
-              : 'Text',
-        'Message ID': conversationId,
-        'Workspace Name': workspaceName,
-        'Workspace ID': workspaceId,
-      })
       const selectedImageFiles = await materializeSelectedGeneratedImages()
-      const combinedChatFiles = [
+      const combinedChatFiles: ChatFileWithDataUrl[] = [
         ...chatFiles,
         ...selectedImageFiles.map((image) => ({
           id: image.id,
@@ -922,18 +943,24 @@ export function Chat() {
           dataUrl: image.dataUrl,
         })),
       ]
-      const attachmentsWithData = await processFileAttachments(combinedChatFiles)
-
-      addMessage({
-        content: sentMessage,
-        workflowId: activeWorkflowId,
-        type: 'user',
-        attachments: attachmentsWithData,
+      workflowChatMsgSentEvent({
+        'Message Content': sentMessage,
+        'Message Type':
+          combinedChatFiles.length > 0 && sentMessage
+            ? 'Text + Attachment'
+            : combinedChatFiles.length > 0 && !sentMessage
+              ? 'Attachment'
+              : 'Text',
+        'Message ID': conversationId,
+        'Workspace Name': workspaceName,
+        'Workspace ID': workspaceId,
       })
 
-      const fileArray =
+      const localAttachments = await processFileAttachments(combinedChatFiles)
+
+      const fileArray: Array<WorkflowAttachmentInput & { id?: string; dataUrl?: string }> =
         combinedChatFiles.length > 0
-          ? combinedChatFiles.map((chatFile: ChatFile) => ({
+          ? combinedChatFiles.map((chatFile) => ({
               name: chatFile.name,
               size: chatFile.size,
               type: chatFile.type,
@@ -941,15 +968,33 @@ export function Chat() {
               id: chatFile.id,
               dataUrl: chatFile.dataUrl,
             }))
-          : undefined
+          : []
 
       const workflowInput = buildCompleteWorkflowInput(sentMessage, conversationId, fileArray)
 
-      if (fileArray && fileArray.length > 0) {
-        workflowInput.onUploadError = (message: string) => {
-          logger.error('File upload error:', message)
-        }
+      const result = await handleRunWorkflow(workflowInput)
+      if (!isChatWorkflowRunResult(result)) {
+        focusInput(10)
+        return
       }
+      const uploadedMessageAttachments = toChatMessageAttachments(result.uploadedAttachments)
+      const messageAttachments =
+        uploadedMessageAttachments.length > 0 ? uploadedMessageAttachments : localAttachments
+
+      if (sentMessage && promptHistory[promptHistory.length - 1] !== sentMessage) {
+        setPromptHistory((prev) => [...prev, sentMessage])
+      }
+      setHistoryIndex(-1)
+
+      const messageContent =
+        sentMessage ||
+        (combinedChatFiles.length > 0 ? `Uploaded ${combinedChatFiles.length} file(s)` : '')
+      addMessage({
+        content: messageContent,
+        workflowId: activeWorkflowId,
+        type: 'user',
+        attachments: messageAttachments,
+      })
 
       setChatMessage('')
       clearFiles()
@@ -957,10 +1002,15 @@ export function Chat() {
       clearErrors()
       focusInput(10)
 
-      const result = await handleRunWorkflow(workflowInput)
       handleWorkflowResponse(result)
     } catch (error) {
-      logger.error('Error in handleSendMessage:', error)
+      if (error instanceof WorkflowAttachmentUploadError) {
+        reportUploadError(error.message)
+      } else {
+        logger.error('Error in handleSendMessage:', error)
+      }
+      focusInput(10)
+      return
     }
 
     focusInput(100)
@@ -976,6 +1026,7 @@ export function Chat() {
     handleRunWorkflow,
     handleWorkflowResponse,
     focusInput,
+    reportUploadError,
     clearFiles,
     clearErrors,
     buildCompleteWorkflowInput,
@@ -1390,49 +1441,9 @@ export function Chat() {
 
             {chatFiles.length > 0 && (
               <div className='mt-1 flex flex-wrap gap-1.5'>
-                {chatFiles.map((file) => {
-                  const previewUrl = getFilePreviewUrl(file)
-
-                  return (
-                    <div
-                      key={file.id}
-                      className={cn(
-                        'group relative flex-shrink-0 overflow-hidden rounded-md bg-[var(--surface-2)]',
-                        previewUrl
-                          ? 'size-[40px]'
-                          : 'flex min-w-[80px] max-w-[120px] items-center justify-center px-2 py-0.5'
-                      )}
-                    >
-                      {previewUrl ? (
-                        <img
-                          src={previewUrl}
-                          alt={file.name}
-                          className='h-full w-full object-cover'
-                        />
-                      ) : (
-                        <div className='min-w-0 flex-1'>
-                          <div className='truncate font-medium text-[var(--white)] text-micro'>
-                            {file.name}
-                          </div>
-                          <div className='text-[9px] text-[var(--text-tertiary)]'>
-                            {formatFileSize(file.size)}
-                          </div>
-                        </div>
-                      )}
-
-                      <Button
-                        variant='ghost'
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          removeFile(file.id)
-                        }}
-                        className='absolute top-0.5 right-0.5 size-4 p-0 opacity-0 transition-opacity group-hover:opacity-100'
-                      >
-                        <X className='h-2.5 w-2.5' />
-                      </Button>
-                    </div>
-                  )
-                })}
+                {chatFiles.map((file) => (
+                  <ChatFilePreview key={file.id} file={file} onRemove={removeFile} />
+                ))}
               </div>
             )}
 
@@ -1457,7 +1468,7 @@ export function Chat() {
                       onClick={() => document.getElementById('floating-chat-file-input')?.click()}
                       className={cn(
                         '!bg-transparent !border-0 cursor-pointer rounded-md p-[0px]',
-                        (!activeWorkflowId || isExecuting || chatFiles.length >= 15) &&
+                        (!activeWorkflowId || isExecuting || chatFiles.length >= MAX_CHAT_FILES) &&
                           'cursor-not-allowed opacity-50'
                       )}
                     >

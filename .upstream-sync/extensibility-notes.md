@@ -127,3 +127,62 @@ Rolling log of structural improvements that reduce merge conflict surface with `
 ## 2026-08-06-3
 
 - Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
+
+### Grill findings — run 2026-08-06-4 (v0.7.32…v0.7.37, 63 commits, 93 conflicts)
+
+- **The three-step measurement scales to big slices — run it before planning anything.**
+  `merge-base` → `comm -12` overlap → `git merge-tree --write-tree`. On the largest slice yet
+  (1321 upstream files × 1636 fork files) it produced an exact 93-file conflict list, the
+  conflict *type* for each (89 content, 4 add/add, zero modify/delete, zero renames), and —
+  via `git show <tree>:<path>` — the full conflicted text of every one, all read-only. Adding
+  `git diff --diff-filter=D` against the fork-changed list proved no upstream deletion lands
+  on a fork-modified file, which retired a whole class of feared breakage in one command.
+- **Rank conflicts by conflicted-line count, not file count.** Counting `<<<<<<<` blocks and
+  the lines between markers put the real work in view immediately: the scariest-looking item
+  (`meta/0260_snapshot.json`, 34 hunks / ~4000 lines) is the most mechanical, while a 13-line
+  import conflict in `usage-monitor.ts` sat on top of the slice's single hardest decision.
+- **`upstreamFirst` for `lib/copilot/generated/` is now RETIRED (moved to `manualReview`).**
+  Second consecutive run where the natural merge preserved the fork's Superagent GFM sentence
+  and auto-`--theirs` would have destroyed it. Verify-only `mustEdit` is the standing pattern.
+- **Colliding features are the expensive case, and diffstat identifies them cheaply.**
+  Comparing *fork-vs-base* against *upstream-vs-base* on the same files separates "fork edited
+  upstream's code" from "both sides built the same feature independently". Execution billing
+  attribution scored +1096/−142 (fork) against +797/−495 (upstream) over five shared files —
+  neither `--ours` nor `--theirs` is defensible there, so it became an open question instead
+  of a guess. `grep -c <symbol>` at base / fork / upstream-tip settles authorship in one line
+  (`extractExecutionActor`: 0 / 3 / 0 = fork-authored; `billingUserId`: 12 at base = old
+  upstream naming the fork merely inherited).
+- **Check whether an upstream refactor actually changes URLs before treating it as a product
+  decision.** `#5545` looked like a settings-IA rewrite that would break Arena bookmarks; the
+  route shape `/workspace/[id]/settings/[section]` is unchanged, upstream's unified navigation
+  already declares `mothership` and `recently-deleted`, and the fork's own settings components
+  don't conflict — so it demoted from "ask a human" to "adopt and re-apply suppressions".
+- **A gate whose env flag is unset is inert — verify before defending it.** The fork's
+  free-API deployment gate depends on `isBillingEnabled && isFreeApiDeploymentGateEnabled`,
+  neither set on Arena, so `#5678` deleting its `api-access` dependency costs nothing.
+- **`env.ts` defaults are fork behaviour, not boilerplate.** The fork set every
+  `EXECUTION_TIMEOUT_*` to `60000` (~16.7 h); upstream `#5640` restores `3000`/`5400` and drops
+  the FREE defaults. `--theirs` there is a silent 20× cut. Grep fork commits for `-S` on the
+  literal to confirm intent before resolving a defaults-only conflict.
+- **New `unionPaths`** from this slice's measured additive-both-sides hotspots:
+  `.env.example`, `blocks/types.ts`, `lib/logs/types.ts`, `lib/oauth/index.ts`,
+  `lib/oauth/utils.ts`, `lib/credentials/connect-draft.ts`, `hooks/queries/workspace.ts`,
+  `tools/hubspot/index.ts`, `tools/hubspot/types.ts`, `blocks/blocks/hubspot.ts`.
+  **New `manualReview` prefixes:** `lib/billing/`, `lib/logs/execution/`, `lib/copilot/request/`,
+  `app/workspace/[workspaceId]/settings/`, `components/settings/` — 70 of the 93 conflicts were
+  policy-unlisted, concentrated in exactly these areas.
+- **Fork follow-ups surfaced (not sync-caused):** `RATE_LIMIT_FREE_*` defaults now diverge from
+  upstream's "unset ⇒ unenforced while billing is disabled" model; confirm
+  `FREE_STORAGE_LIMIT_GB` stays unset so `#5545` doesn't start enforcing a 5 GB workspace file
+  quota; `/comparison` → `/comparisons` (`#5651`) changes a live Arena route; the snapshot gap
+  (`meta/` stops at `0260`, journal reaches `263`) is still unbackfilled.
+
+## 2026-08-06-4
+
+- Move Arena brand strings out of `(landing)` JSX into `lib/branding/` — the same four files
+  (`hero`, `features`, `footer`, `home-structured-data`) conflict on every landing sync.
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
+
+## 2026-08-06-4
+
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.

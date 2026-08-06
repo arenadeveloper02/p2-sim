@@ -104,7 +104,7 @@ export function BillingOrgUsageView({ data }: BillingOrgUsageViewProps) {
   }
 
   const activeUsers = members.length
-  const totalCreditsDisplay: string | 'unlimited' | null = data.orgPool?.isUnlimited
+  const totalCreditsDisplay: number | 'unlimited' | null = data.orgPool?.isUnlimited
     ? 'unlimited'
     : data.orgPool != null
       ? data.orgPool.totalCredits

@@ -20,9 +20,11 @@ const logger = createLogger('GoogleAdsV1API')
  * Updated: Added numeric ID support for better account resolution
  */
 function resolveAccountKey(
-  accountInput: string,
+  accountInput: string | undefined,
   googleAdsAccounts: Record<string, ChannelAccount>
 ): string {
+  if (!accountInput) return ''
+
   // Try direct key match first (gentle_dental)
   if (googleAdsAccounts[accountInput]) {
     return accountInput

@@ -133,10 +133,12 @@ export function estimateCostFromTokens(
   return Number(usd.toFixed(6))
 }
 
-function totalInputTokens(record: Pick<
-  AgentUsageRecord,
-  'inputTokens' | 'cacheReadInputTokens' | 'cacheCreationInputTokens'
->): number {
+function totalInputTokens(
+  record: Pick<
+    AgentUsageRecord,
+    'inputTokens' | 'cacheReadInputTokens' | 'cacheCreationInputTokens'
+  >
+): number {
   return record.inputTokens + record.cacheReadInputTokens + record.cacheCreationInputTokens
 }
 
@@ -253,9 +255,7 @@ export function parseUsageFromClaudeStream(ndjson: string): ParsedStreamUsage | 
     if (obj.type !== 'result') continue
 
     const sid =
-      typeof obj.session_id === 'string' && obj.session_id.length > 0
-        ? obj.session_id
-        : '__anon__'
+      typeof obj.session_id === 'string' && obj.session_id.length > 0 ? obj.session_id : '__anon__'
 
     const prev = bySession.get(sid) ?? { costUsd: null, tokens: null, tokenScore: -1 }
 
@@ -438,17 +438,14 @@ export function recordAgentUsage(
   /** Raw Claude/Codex NDJSON captured from the agent stream (preferred over text-only stdout). */
   streamNdjson?: string
 ): AgentUsageRecord | null {
-  const fromIterations = (result?.iterations ?? []).reduce(
-    (acc, iteration) => {
-      if (!iteration.usage) return acc
-      acc.inputTokens += iteration.usage.inputTokens ?? 0
-      acc.outputTokens += iteration.usage.outputTokens ?? 0
-      acc.cacheReadInputTokens += iteration.usage.cacheReadInputTokens ?? 0
-      acc.cacheCreationInputTokens += iteration.usage.cacheCreationInputTokens ?? 0
-      return acc
-    },
-    emptyTokenTotals()
-  )
+  const fromIterations = (result?.iterations ?? []).reduce((acc, iteration) => {
+    if (!iteration.usage) return acc
+    acc.inputTokens += iteration.usage.inputTokens ?? 0
+    acc.outputTokens += iteration.usage.outputTokens ?? 0
+    acc.cacheReadInputTokens += iteration.usage.cacheReadInputTokens ?? 0
+    acc.cacheCreationInputTokens += iteration.usage.cacheCreationInputTokens ?? 0
+    return acc
+  }, emptyTokenTotals())
 
   // Sandcastle's Claude parser does not emit usage events and `result.stdout` is
   // agent text only — fall back to raw stream-json NDJSON when iteration usage
@@ -458,8 +455,7 @@ export function recordAgentUsage(
   const fromStream = parseUsageFromAgentStream(streamNdjson ?? result?.stdout ?? '')
   const streamTokens = fromStream?.tokens
   const hasStreamUsage =
-    fromStream !== null &&
-    (tokenTotal(fromStream.tokens) > 0 || fromStream.costUsd !== null)
+    fromStream !== null && (tokenTotal(fromStream.tokens) > 0 || fromStream.costUsd !== null)
   const hasIterationUsage = tokenTotal(fromIterations) > 0
 
   if (!hasStreamUsage && !hasIterationUsage) return null
@@ -545,20 +541,14 @@ export function recoverUsageFromLogDir(
 
   const recovered: AgentUsageRecord[] = []
   for (const fileName of entries) {
-    const agentName =
-      options?.agentNameFromFile?.(fileName) ?? fileName.replace(/\.log$/i, '')
+    const agentName = options?.agentNameFromFile?.(fileName) ?? fileName.replace(/\.log$/i, '')
     let contents: string
     try {
       contents = readFileSync(join(logDir, fileName), 'utf8')
     } catch {
       continue
     }
-    const record = recordAgentUsage(
-      agentName,
-      inferModelForAgentName(agentName),
-      null,
-      contents
-    )
+    const record = recordAgentUsage(agentName, inferModelForAgentName(agentName), null, contents)
     if (record) recovered.push(record)
   }
   return recovered
@@ -578,6 +568,167 @@ export function sumUsageCostUsd(records: readonly AgentUsageRecord[]): number | 
     saw = true
   }
   return saw ? Number(total.toFixed(6)) : null
+}
+
+/** Aggregated token + cost totals for a set of agent usage records. */
+export interface UsageTotals {
+  costUsd: number | null
+  inputTokens: number
+  outputTokens: number
+  agentCount: number
+}
+
+/** Sum cost and tokens across agent usage records. */
+export function sumUsageRecords(records: readonly AgentUsageRecord[]): UsageTotals {
+  let inputTokens = 0
+  let outputTokens = 0
+  for (const record of records) {
+    inputTokens += totalInputTokens(record)
+    outputTokens += record.outputTokens
+  }
+  return {
+    costUsd: sumUsageCostUsd(records),
+    inputTokens,
+    outputTokens,
+    agentCount: records.length,
+  }
+}
+
+/** Load ledger `usage.json` for a run without mutating the in-memory record list. */
+export function readUsageRecordsFromJson(runId: string): AgentUsageRecord[] {
+  const path = join(ledgerRunDir(runId), 'usage.json')
+  let raw: string
+  try {
+    raw = readFileSync(path, 'utf8')
+  } catch {
+    return []
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return []
+  }
+  if (!parsed || typeof parsed !== 'object') return []
+  const agents = (parsed as { agents?: unknown }).agents
+  if (!Array.isArray(agents)) return []
+
+  const loaded: AgentUsageRecord[] = []
+  for (const entry of agents) {
+    if (!entry || typeof entry !== 'object') continue
+    const r = entry as Partial<AgentUsageRecord>
+    if (typeof r.agentName !== 'string' || typeof r.model !== 'string') continue
+    loaded.push({
+      agentName: r.agentName,
+      model: r.model,
+      iterations: typeof r.iterations === 'number' ? r.iterations : 0,
+      inputTokens: typeof r.inputTokens === 'number' ? r.inputTokens : 0,
+      outputTokens: typeof r.outputTokens === 'number' ? r.outputTokens : 0,
+      cacheReadInputTokens: typeof r.cacheReadInputTokens === 'number' ? r.cacheReadInputTokens : 0,
+      cacheCreationInputTokens:
+        typeof r.cacheCreationInputTokens === 'number' ? r.cacheCreationInputTokens : 0,
+      estimatedCostUsd:
+        typeof r.estimatedCostUsd === 'number'
+          ? r.estimatedCostUsd
+          : r.estimatedCostUsd === null
+            ? null
+            : null,
+      costSource:
+        r.costSource === 'provider' ||
+        r.costSource === 'estimated' ||
+        r.costSource === 'unavailable'
+          ? r.costSource
+          : 'unavailable',
+    })
+  }
+  return loaded
+}
+
+export interface StackUsageRollup {
+  thisSlice: AgentUsageRecord[]
+  priorStack: AgentUsageRecord[]
+  wholeStack: AgentUsageRecord[]
+  thisTotals: UsageTotals
+  priorTotals: UsageTotals
+  wholeTotals: UsageTotals
+}
+
+/**
+ * Walk stack entries and load each ledger `usage.json`.
+ * `thisRunId` is treated as the current slice (in-memory records preferred when provided).
+ */
+export function loadStackUsage(options: {
+  stack: ReadonlyArray<{ runId: string }>
+  thisRunId: string
+  thisSliceRecords?: readonly AgentUsageRecord[]
+}): StackUsageRollup {
+  const prior: AgentUsageRecord[] = []
+  for (const entry of options.stack) {
+    if (entry.runId === options.thisRunId) continue
+    prior.push(...readUsageRecordsFromJson(entry.runId))
+  }
+
+  const thisSlice =
+    options.thisSliceRecords !== undefined
+      ? [...options.thisSliceRecords]
+      : readUsageRecordsFromJson(options.thisRunId)
+  const wholeStack = [...prior, ...thisSlice]
+
+  return {
+    thisSlice,
+    priorStack: prior,
+    wholeStack,
+    thisTotals: sumUsageRecords(thisSlice),
+    priorTotals: sumUsageRecords(prior),
+    wholeTotals: sumUsageRecords(wholeStack),
+  }
+}
+
+function formatUsageTotalsLine(label: string, totals: UsageTotals): string {
+  const cost = totals.costUsd === null ? 'unavailable' : `$${totals.costUsd.toFixed(4)}`
+  return `- **${label}:** ${cost} · ${totals.inputTokens.toLocaleString()} in / ${totals.outputTokens.toLocaleString()} out · ${totals.agentCount} agent(s)`
+}
+
+/** Compact this / prior / whole stack usage section for PR bodies and job summaries. */
+export function formatStackUsageRollupMarkdown(rollup: StackUsageRollup): string {
+  return [
+    '### Usage (stack rollup)',
+    '',
+    formatUsageTotalsLine('This slice', rollup.thisTotals),
+    formatUsageTotalsLine('Prior stack', rollup.priorTotals),
+    formatUsageTotalsLine('Whole stack', rollup.wholeTotals),
+  ].join('\n')
+}
+
+/** Persist tip ledger `stack-usage.json` for the current rollup. */
+export function writeStackUsageJson(runId: string, rollup: StackUsageRollup): string {
+  const dir = ensureLedgerRunDir(runId)
+  const path = join(dir, 'stack-usage.json')
+  writeFileSync(
+    path,
+    `${JSON.stringify(
+      {
+        runId,
+        recordedAt: new Date().toISOString(),
+        thisSlice: sumUsageRecords(rollup.thisSlice),
+        priorStack: sumUsageRecords(rollup.priorStack),
+        wholeStack: sumUsageRecords(rollup.wholeStack),
+      },
+      null,
+      2
+    )}\n`
+  )
+  return path
+}
+
+/** Extend the Actions usage step summary with stack rollup totals when available. */
+export function formatUsageStepSummaryWithStack(
+  records: readonly AgentUsageRecord[],
+  rollup?: StackUsageRollup | null
+): string {
+  const base = formatUsageStepSummary(records)
+  if (!rollup) return base
+  return `${base}\n\n${formatStackUsageRollupMarkdown(rollup)}`
 }
 
 function formatTotalsCostLines(records: readonly AgentUsageRecord[]): string[] {
@@ -693,7 +844,10 @@ export function formatUsageStepSummary(records: readonly AgentUsageRecord[]): st
 }
 
 /** Persist structured usage under the run ledger directory. */
-export function writeUsageJson(runId: string, records: readonly AgentUsageRecord[] = usageRecords): string {
+export function writeUsageJson(
+  runId: string,
+  records: readonly AgentUsageRecord[] = usageRecords
+): string {
   const dir = ensureLedgerRunDir(runId)
   const path = join(dir, 'usage.json')
   writeFileSync(
@@ -793,8 +947,7 @@ export function loadUsageRecordsFromJson(runId: string): AgentUsageRecord[] {
       iterations: typeof r.iterations === 'number' ? r.iterations : 0,
       inputTokens: typeof r.inputTokens === 'number' ? r.inputTokens : 0,
       outputTokens: typeof r.outputTokens === 'number' ? r.outputTokens : 0,
-      cacheReadInputTokens:
-        typeof r.cacheReadInputTokens === 'number' ? r.cacheReadInputTokens : 0,
+      cacheReadInputTokens: typeof r.cacheReadInputTokens === 'number' ? r.cacheReadInputTokens : 0,
       cacheCreationInputTokens:
         typeof r.cacheCreationInputTokens === 'number' ? r.cacheCreationInputTokens : 0,
       estimatedCostUsd:
@@ -804,7 +957,9 @@ export function loadUsageRecordsFromJson(runId: string): AgentUsageRecord[] {
             ? null
             : null,
       costSource:
-        r.costSource === 'provider' || r.costSource === 'estimated' || r.costSource === 'unavailable'
+        r.costSource === 'provider' ||
+        r.costSource === 'estimated' ||
+        r.costSource === 'unavailable'
           ? r.costSource
           : 'unavailable',
     }

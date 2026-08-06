@@ -1,0 +1,22 @@
+{
+  "runId": "2026-08-06-4",
+  "recordedAt": "2026-08-06T13:56:30.059Z",
+  "thisSlice": {
+    "costUsd": 7.230417,
+    "inputTokens": 158243949,
+    "outputTokens": 567986,
+    "agentCount": 13
+  },
+  "priorStack": {
+    "costUsd": 11.078381,
+    "inputTokens": 29099908,
+    "outputTokens": 219744,
+    "agentCount": 11
+  },
+  "wholeStack": {
+    "costUsd": 18.308798,
+    "inputTokens": 187343857,
+    "outputTokens": 787730,
+    "agentCount": 24
+  }
+}

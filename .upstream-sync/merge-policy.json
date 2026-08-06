@@ -1,9 +1,11 @@
 {
   "strategy": "fork-first",
-  "description": "Only paths listed in forkFirst (auto --ours) or upstreamFirst (auto --theirs) are resolved without an agent. Everything else — whether or not it appears in manualReview — is agent-reviewed. manualReview is a non-exhaustive hint list of known hard shared hotspots, not a closed set. unionPaths are agent-reviewed: keep fork-only symbols and take upstream additions; never drop upstream exports that in-tree consumers import. package.json is union-merged (upstream base + fork-only scripts/deps). bun.lock is regenerated after manifests. Agents SHOULD extend this file when they learn a recurring rule (add a forkFirst/upstreamFirst/manualReview/unionPaths prefix or packageJson.dropScripts entry) so the next sync is cheaper. CAVEAT on upstreamFirst apps/sim/lib/copilot/generated/: auto --theirs is correct for the bulk, but the fork carries a hand-edit there (Superagent task description, Google Docs GFM guidance) that exists in NO generator source, and `bun run mship:generate` cannot regenerate in this checkout because scripts/sync-tool-catalog.ts reads a sibling repo (../copilot/) the fork does not have. Every sync must re-apply that sentence via a mustEdit directive after resolving theirs.",
+  "description": "Only paths listed in forkFirst (auto --ours) or upstreamFirst (auto --theirs) are resolved without an agent. Everything else — whether or not it appears in manualReview — is agent-reviewed. manualReview is a non-exhaustive hint list of known hard shared hotspots, not a closed set. unionPaths are agent-reviewed: keep fork-only symbols and take upstream additions; never drop upstream exports that in-tree consumers import. package.json is union-merged (upstream base + fork-only scripts/deps). bun.lock is regenerated after manifests. Agents SHOULD extend this file when they learn a recurring rule (add a forkFirst/upstreamFirst/manualReview/unionPaths prefix or packageJson.dropScripts entry) so the next sync is cheaper. apps/sim/lib/copilot/generated/ is NO LONGER upstreamFirst (moved to manualReview on run 2026-08-06-4). The fork carries a hand-edit there (Superagent task description, Google Docs GFM guidance) that exists in NO generator source, and `bun run mship:generate` cannot regenerate it in this checkout because scripts/sync-tool-catalog.ts reads a sibling repo (../copilot/) the fork does not have. Two consecutive runs (2026-08-06-3, 2026-08-06-4) confirmed the natural three-way merge preserves that sentence while auto --theirs would have deleted it. Let the merge run and use a VERIFY-ONLY mustEdit that asserts the sentence is still present.",
   "packageJson": {
     "strategy": "union",
-    "dropScripts": ["dev:full:minimal-registry"]
+    "dropScripts": [
+      "dev:full:minimal-registry"
+    ]
   },
   "forkFirst": [
     "apps/sim/tools/arena/",
@@ -57,7 +59,7 @@
     "apps/sim/public/icon.svg",
     "apps/sim/public/logo/"
   ],
-  "upstreamFirst": ["apps/sim/lib/copilot/generated/"],
+  "upstreamFirst": [],
   "unionPaths": [
     "packages/db/schema.ts",
     "apps/sim/tools/registry.ts",
@@ -85,7 +87,18 @@
     "apps/sim/app/api/help/route.ts",
     "apps/sim/app/api/mothership/execute/route.ts",
     "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/sidebar.tsx",
-    "apps/sim/lib/workflows/migrations/subblock-migrations.ts"
+    "apps/sim/lib/workflows/migrations/subblock-migrations.ts",
+    "apps/sim/.env.example",
+    "apps/sim/blocks/types.ts",
+    "apps/sim/lib/logs/types.ts",
+    "apps/sim/lib/oauth/index.ts",
+    "apps/sim/lib/oauth/utils.ts",
+    "apps/sim/lib/credentials/connect-draft.ts",
+    "apps/sim/hooks/queries/workspace.ts",
+    "apps/sim/tools/hubspot/index.ts",
+    "apps/sim/tools/hubspot/types.ts",
+    "apps/sim/blocks/blocks/hubspot.ts",
+    "apps/sim/lib/uploads/"
   ],
   "manualReview": [
     "packages/db/migrations/",
@@ -109,9 +122,19 @@
     "apps/sim/lib/chat/",
     "apps/sim/app/(interfaces)/chat/",
     "apps/sim/app/(interfaces)/chat/[identifier]/ArenaDeployedChat.tsx",
-    "apps/sim/app/api/chat/"
+    "apps/sim/app/api/chat/",
+    "apps/sim/lib/copilot/generated/",
+    "apps/sim/lib/billing/",
+    "apps/sim/lib/logs/execution/",
+    "apps/sim/lib/copilot/request/",
+    "apps/sim/app/workspace/[workspaceId]/settings/",
+    "apps/sim/components/settings/"
   ],
-  "regenerateAfterMerge": ["bun run mship:generate"],
-  "prReviewers": ["utcarshsrivastava-collab"],
+  "regenerateAfterMerge": [
+    "bun run mship:generate"
+  ],
+  "prReviewers": [
+    "utcarshsrivastava-collab"
+  ],
   "prReviewerNotes": "GitHub usernames only. utcarshsrivastava-collab ↔ utcarsh.srivastava@position2.com. Override via UPSTREAM_SYNC_PR_REVIEWERS."
 }

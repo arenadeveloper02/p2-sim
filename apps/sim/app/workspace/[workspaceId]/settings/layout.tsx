@@ -1,12 +1,8 @@
-import type { ReactNode } from 'react'
-import { Suspense } from 'react'
-import { SettingsLayoutShell } from '@/app/workspace/[workspaceId]/settings/settings-layout-shell'
-import { SettingsLayoutShellFallback } from '@/app/workspace/[workspaceId]/settings/settings-layout-shell-fallback'
+'use client'
 
-export default function SettingsLayout({ children }: { children: ReactNode }) {
-  return (
-    <Suspense fallback={<SettingsLayoutShellFallback>{children}</SettingsLayoutShellFallback>}>
-      <SettingsLayoutShell>{children}</SettingsLayoutShell>
-    </Suspense>
-  )
+import { useSettingsBeforeUnload } from '@/components/settings/use-settings-before-unload'
+
+export default function SettingsLayout({ children }: { children: React.ReactNode }) {
+  useSettingsBeforeUnload()
+  return <div className='flex h-full flex-col bg-[var(--bg)]'>{children}</div>
 }

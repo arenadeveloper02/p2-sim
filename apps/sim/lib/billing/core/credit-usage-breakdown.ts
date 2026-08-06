@@ -23,6 +23,7 @@ import {
   computeDailyRefreshConsumed,
   getOrgMemberRefreshBounds,
 } from '@/lib/billing/credits/daily-refresh'
+import { getOrgMemberUsageLimit } from '@/lib/billing/organizations/member-limits'
 import { getPlanTierDollars, isPaid } from '@/lib/billing/plan-helpers'
 import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
 import type { DbClient } from '@/lib/db/types'
@@ -53,6 +54,8 @@ export interface CreditUsageSummaryResult {
   billingPeriodEnd: string | null
   billingInterval: 'month' | 'year'
   summary: CreditUsageBreakdownCredits
+  /** The viewer's organization member allowance, when applicable. */
+  memberLimitDollars?: number | null
   orgPool?: {
     totalCredits: number
     usedCredits: number
@@ -252,6 +255,7 @@ async function getPersonalCreditUsageSummary(
     })
 
     const orgPool = await getOrganizationPoolSnapshot(organizationId, executor)
+    const memberLimitDollars = await getOrgMemberUsageLimit(organizationId, userId)
 
     return {
       scope: 'personal',
@@ -260,6 +264,7 @@ async function getPersonalCreditUsageSummary(
       billingPeriodEnd: billingPeriod.end.toISOString(),
       billingInterval: resolveBillingInterval(subscription),
       summary: toCreditBreakdown(dollarBreakdown, dollarBreakdown.totalDollars),
+      memberLimitDollars,
       orgPool,
     }
   }

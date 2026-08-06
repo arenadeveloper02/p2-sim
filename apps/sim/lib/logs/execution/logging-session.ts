@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { describeError, toError } from '@sim/utils/errors'
 import { and, eq, sql } from 'drizzle-orm'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
+import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import { isRetryableInfrastructureError } from '@/lib/core/errors/retryable-infrastructure'
 import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import type { ExecutionLineage } from '@/lib/execution/lineage'
@@ -82,11 +83,15 @@ function buildCompletedMarkerPersistenceQuery(params: {
 
 const logger = createLogger('LoggingSession')
 
-type CompletionAttempt = 'complete' | 'error' | 'cancelled' | 'paused'
+type CompletionAttempt = 'complete' | 'error' | 'cancelled' | 'paused' | 'skipped'
 
 export interface SessionStartParams {
   userId?: string
   workspaceId?: string
+  /** Explicit initiating actor for callers that do not populate `userId`. */
+  actorUserId?: string | null
+  /** Immutable actor/payer decision captured before execution. */
+  billingAttribution?: BillingAttributionSnapshot
   variables?: Record<string, string>
   triggerData?: TriggerData
   skipLogCreation?: boolean // For resume executions - reuse existing log entry
@@ -146,6 +151,7 @@ export interface SessionSkippedParams {
 export class LoggingSession {
   private workflowId: string
   private executionId: string
+  private reservationId: string
   private triggerType: ExecutionTrigger['type']
   private requestId?: string
   private trigger?: ExecutionTrigger
@@ -159,6 +165,8 @@ export class LoggingSession {
     initialInput?: string
   }
   private correlation?: NonNullable<ExecutionTrigger['data']>['correlation']
+  private actorUserId: string | null = null
+  private billingAttribution?: BillingAttributionSnapshot
   private isResume = false
   private completed = false
   /** Synchronous flag to prevent concurrent completion attempts (race condition guard) */
@@ -174,10 +182,12 @@ export class LoggingSession {
     workflowId: string,
     executionId: string,
     triggerType: ExecutionTrigger['type'],
-    requestId?: string
+    requestId?: string,
+    reservationId = executionId
   ) {
     this.workflowId = workflowId
     this.executionId = executionId
+    this.reservationId = reservationId
     this.triggerType = triggerType
     this.requestId = requestId
   }
@@ -332,13 +342,18 @@ export class LoggingSession {
       isResume: this.isResume,
       level: params.level,
       status: params.status,
+      actorUserId: this.actorUserId,
+      billingAttribution: this.billingAttribution,
     })
 
-    // Release the admission reservation from preprocessing. Skipped on pause: a
-    // paused execution keeps its slot until it terminates (or the TTL expires).
+    /**
+     * Pause persistence releases only after the resumable snapshot is durable.
+     * Releasing here would create a window where neither state nor reservation
+     * protects the execution.
+     */
     if (params.finalizationPath !== 'paused') {
       try {
-        await releaseExecutionSlot(this.executionId)
+        await releaseExecutionSlot(this.reservationId)
       } catch (error) {
         logger.warn(`Failed to release admission reservation for ${this.executionId}:`, {
           error: toError(error).message,
@@ -370,6 +385,8 @@ export class LoggingSession {
   async start(params: SessionStartParams): Promise<void> {
     const {
       userId,
+      actorUserId,
+      billingAttribution,
       workspaceId,
       variables,
       triggerData,
@@ -383,6 +400,8 @@ export class LoggingSession {
       lineage,
       executionActor,
     } = params
+    this.actorUserId = actorUserId ?? userId ?? null
+    this.billingAttribution = billingAttribution
 
     try {
       this.trigger = createTriggerObject(this.triggerType, triggerData)
@@ -417,6 +436,8 @@ export class LoggingSession {
           executionId: this.executionId,
           trigger: this.trigger,
           environment: this.environment,
+          actorUserId,
+          billingAttribution,
           workflowState: this.workflowState,
           userId,
           isExternalChat,
@@ -945,6 +966,8 @@ export class LoggingSession {
           workflowState,
           lineage,
           executionActor,
+          actorUserId,
+          billingAttribution,
         } = params
         this.trigger = createTriggerObject(this.triggerType, triggerData)
         this.correlation = triggerData?.correlation
@@ -969,6 +992,8 @@ export class LoggingSession {
           executionId: this.executionId,
           trigger: this.trigger,
           environment: this.environment,
+          actorUserId,
+          billingAttribution,
           workflowState: this.workflowState,
           userId,
           isExternalChat,
@@ -1162,6 +1187,37 @@ export class LoggingSession {
   }
 
   /**
+   * Completes a deliberately skipped execution with the same retry guard used
+   * by the other terminal completion paths.
+   */
+  async safeCompleteAsSkipped(params?: SessionSkippedParams): Promise<void> {
+    return this.runCompletionAttempt('skipped', () => this._safeCompleteAsSkippedImpl(params))
+  }
+
+  private async _safeCompleteAsSkippedImpl(params?: SessionSkippedParams): Promise<void> {
+    try {
+      await this.drainPendingProgressWrites()
+      await this.completeAsSkipped(params)
+    } catch (error) {
+      const errorMsg = toError(error).message
+      logger.warn(
+        `[${this.requestId || 'unknown'}] CompleteAsSkipped failed for execution ${this.executionId}, attempting fallback`,
+        { error: errorMsg }
+      )
+      await this.completeWithCostOnlyLog({
+        traceSpans: params?.traceSpans,
+        endedAt: params?.endedAt,
+        totalDurationMs: params?.totalDurationMs,
+        errorMessage: `Skipped execution failed to store full trace spans: ${errorMsg}`,
+        isError: false,
+        finalizationPath: 'fallback_completed',
+        finalOutput: { skipped: true },
+        status: 'skipped',
+      })
+    }
+  }
+
+  /**
    * Force-fail the execution. Waits for any in-flight completion and drains
    * pending per-block marker writes first, so a force-fail racing
    * onBlockStart/onBlockComplete still captures the latest breadcrumb in the fold.
@@ -1175,6 +1231,7 @@ export class LoggingSession {
       this.requestId,
       this.workflowId
     )
+    await releaseExecutionSlot(this.reservationId)
   }
 
   /**

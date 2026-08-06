@@ -1,0 +1,23 @@
+{
+  "kind": "completed",
+  "title": "Upstream sync completed (advisory verification warnings)",
+  "detail": "Merged simstudioai/sim@9d23e25c into `upstream-sync/2026-08-06T11-28-59` (63 commit(s)). Advisory check/lint reported failures — see ledger / PR / job summary. Test and full build are left to CI.",
+  "syncBranch": "upstream-sync/2026-08-06T11-45-10",
+  "mergeBase": "upstream-sync/2026-08-06T11-28-59",
+  "upstreamSha": "9d23e25ce1c5fb9310fcb94a10fdb4c4f554d4d8",
+  "prNumber": 688,
+  "commitCount": 63,
+  "verification": [
+    {
+      "command": "bun run check",
+      "success": true
+    },
+    {
+      "command": "bun run lint",
+      "success": false,
+      "detail": "$ turbo run lint\n\n   • Packages in scope: @sim/audit, @sim/auth, @sim/db, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk\n   • Running lint in 21 packages\n   • Remote caching disabled\n\n::group::@sim/realtime-protocol:lint\ncache miss, executing 0122da9ed0cc036d\n$ biome check --write --unsafe .\nChecked 5 files in 120ms. No fixes applied.\n::endgroup::\n::group::@sim/logger:lint\ncache miss, executing 101959f903fffb42\n$ biome check --write --unsafe .\nChecked 6 files in 112ms. No fixes applied.\n::endgroup::\n::group::@sim/workflow-types:lint\ncache miss, executing c5a2ba3ebbfce6a3\n$ biome check --write --unsafe .\nChecked 4 files in 163ms. No fixes applied.\n::endgroup::\n::group::@sim/security:lint\ncache miss, executing f0d899d639617b3d\n$ biome check --write --unsafe .\nChecked 13 files in 176ms. No fixes applied.\n::endgroup::\n::group::simstudio-ts-sdk:lint\ncache miss, executing c86521201f82f1d8\n$ biome check --write --unsafe .\nChecked 6 files in 192ms. No fixes \n…(truncated)"
+    }
+  ],
+  "runId": "2026-08-06-4",
+  "recordedAt": "2026-08-06T13:56:41.347Z"
+}

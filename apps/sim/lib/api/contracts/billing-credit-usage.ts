@@ -33,6 +33,8 @@ export const creditUsageSummarySchema = z.object({
   billingPeriodEnd: z.string().nullable(),
   billingInterval: z.enum(['month', 'year']),
   summary: creditUsageBreakdownSchema,
+  /** The viewer's optional organization member cap, in dollars. */
+  memberLimitDollars: z.number().nullable().optional(),
   /** Org-wide pool totals for `viewer: org_member`. */
   orgPool: creditUsageOrgPoolSchema.optional(),
   members: z.array(memberCreditUsageRowSchema).optional(),

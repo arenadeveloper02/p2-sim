@@ -1,0 +1,33 @@
+{
+  "clusterId": "integrations-registry",
+  "runId": "2026-08-06-4",
+  "files": [
+    {
+      "path": "apps/sim/blocks/blocks/hubspot.ts",
+      "resolution": "manual",
+      "notes": "Kept the fork campaign controls and upstream's delete-company control in the merged subblock list."
+    },
+    {
+      "path": "apps/sim/blocks/types.ts",
+      "resolution": "manual",
+      "notes": "Kept uploadContext, allowStartFilesReference, and conversationFileMode; added requiresCloudStorage."
+    },
+    {
+      "path": "apps/sim/tools/hubspot/index.ts",
+      "resolution": "manual",
+      "notes": "Unioned the fork campaign exports with all upstream HubSpot tool exports."
+    },
+    {
+      "path": "apps/sim/tools/hubspot/types.ts",
+      "resolution": "manual",
+      "notes": "Exported HubSpotAssociatedObject, retained HubSpotAssociationResult as a compatibility alias, and used nullable paging to match list_associations.ts."
+    },
+    {
+      "path": "apps/sim/tools/registry.ts",
+      "resolution": "manual",
+      "notes": "Unioned fork and upstream HubSpot registry entries, normalized the HubSpot block ordering, and verified all upstream IDs are registered."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "No upstream hunks were rejected; the existing unionPaths policy already covers these files."
+}

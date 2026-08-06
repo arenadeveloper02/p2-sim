@@ -1,0 +1,42 @@
+{
+  "clusterId": "landing-branding",
+  "runId": "2026-08-06-4",
+  "files": [
+    {
+      "path": "apps/sim/app/(landing)/components/features/features.tsx",
+      "resolution": "manual",
+      "notes": "Kept the fork's Arena feature copy and upstream-compatible structure."
+    },
+    {
+      "path": "apps/sim/app/(landing)/components/footer/footer.tsx",
+      "resolution": "manual",
+      "notes": "Kept ArenaWordmark/Arena home labeling and took upstream product/resource links, Slack link, and ALL_COMPETITORS compare column."
+    },
+    {
+      "path": "apps/sim/app/(landing)/components/hero/hero.tsx",
+      "resolution": "manual",
+      "notes": "Kept Arena sr-only and headline copy while taking upstream hero description wording."
+    },
+    {
+      "path": "apps/sim/app/(landing)/components/home-structured-data/home-structured-data.tsx",
+      "resolution": "manual",
+      "notes": "Kept literal Arena names/descriptions, retained the HOME_PAGE_DESCRIPTION barrel export for compatibility, and took upstream JSON-LD feature wording."
+    },
+    {
+      "path": "apps/sim/app/(landing)/page.tsx",
+      "resolution": "manual",
+      "notes": "Kept literal Arena metadata descriptions and titles while preserving upstream metadata structure."
+    },
+    {
+      "path": "apps/sim/ee/whitelabeling/components/branding-provider.tsx",
+      "resolution": "manual",
+      "notes": "Kept favicon synchronization and legacy useOrganizations compatibility, with upstream host-aware routing used whenever host context props are supplied."
+    },
+    {
+      "path": "apps/sim/ee/whitelabeling/components/whitelabeling-settings.tsx",
+      "resolution": "manual",
+      "notes": "Kept upstream organizationId/billing structure and fork organization-scoped logo, wordmark, favicon, and Arena copy behavior."
+    }
+  ],
+  "notes": "Resolved the assigned seven files only. The email footer was already settled by the locked checkoutOurs directive and was verified without reintroducing social links."
+}

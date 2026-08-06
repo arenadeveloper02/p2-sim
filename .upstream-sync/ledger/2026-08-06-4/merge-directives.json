@@ -1,0 +1,25 @@
+{
+  "delete": [],
+  "checkoutTheirs": [],
+  "checkoutOurs": [
+    "packages/db/migrations/meta/0260_snapshot.json",
+    "apps/sim/components/emails/components/email-footer.tsx"
+  ],
+  "mustEdit": [
+    "packages/db/schema.ts",
+    "apps/sim/lib/core/config/env.ts",
+    "apps/sim/.env.example",
+    "apps/sim/app/api/chat/utils.ts",
+    "apps/sim/lib/logs/types.ts",
+    "apps/sim/lib/logs/execution/logger.ts",
+    "apps/sim/lib/logs/execution/logging-session.ts",
+    "apps/sim/lib/billing/core/usage-log.ts",
+    "apps/sim/lib/execution/preprocessing.ts",
+    "apps/sim/app/api/copilot/api-keys/validate/route.ts",
+    "apps/sim/app/api/copilot/api-keys/validate/route.test.ts",
+    "apps/sim/lib/billing/calculations/usage-monitor.ts",
+    "apps/sim/lib/copilot/request/tools/billing.ts"
+  ],
+  "overrideForkFirst": [],
+  "notes": "Locked from Q&A (2026-08-06T12:08:11Z) + SR1-SR11. Q1 = A (conditional 'B only if it subsumes A' measured and FAILED \u2014 see SR10), Q2 = A (direct answer). Consequence: NO checkoutTheirs anywhere this run; the draft's Q1-B checkoutTheirs block (logger.ts, logger.test.ts, logging-factory.ts, logging-session.ts, preprocessing.ts+test, usage-log.ts+test) and Q2-B checkoutTheirs block (validate/route.ts+test, request/tools/billing.ts) are VOID \u2014 do not apply them. checkoutOurs is exactly 2 paths: meta/0260_snapshot.json (add/add; upstream's 0260 snapshot is discarded because its SQL is renumbered to 0264) and email-footer.tsx (SR4). Directives target only still-unmerged paths; three items from the draft's default block are deliberately ABSENT because they merged clean and are therefore out of directive scope \u2014 they are cluster work instead: (a) packages/db/migrations/meta/_journal.json (auto-merged with a duplicate idx 260 \u2014 schema-migrations rewrites the trailing entry to idx 264, tag 0264_unknown_sinister_six, when 1784346920601) and the git mv of 0260_unknown_sinister_six.sql -> 0264_unknown_sinister_six.sql; (b) lib/copilot/generated/tool-schemas-v1.ts and tool-catalog-v1.ts (SR9 verify-only \u2014 assert the Superagent 'Drive handles GFM import' sentence survives; never run bun run mship:generate, never auto --theirs); (c) package.json (merged clean \u2014 verify the union kept vendor-pricing:check/sync and gained skills:sync/skills:check, regenerate bun.lock only if a manifest changed). Standing rules for every mustEdit path: no blanket --ours/--theirs, and keep the fork's actor_user_id / actor_type / api_key_id columns and their in-repo consumers alive (lib/workspaces/usage/**, usage-attribution-backfill.ts, the usage contracts, settings/components/usage/**)."
+}

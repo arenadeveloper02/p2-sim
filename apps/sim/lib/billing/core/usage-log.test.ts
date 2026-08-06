@@ -82,6 +82,7 @@ vi.mock('@/lib/core/config/env-flags', () => ({
 import {
   buildNullOnlyAttributionFill,
   CUMULATIVE_COST_EPSILON,
+  CumulativeUsageContextMismatchError,
   recordCumulativeUsage,
   recordUsage,
   resolveCumulativeTopUp,
@@ -109,8 +110,13 @@ describe('recordUsage', () => {
 
   it('commits canonical usage rows with deterministic event keys and billing scope', async () => {
     await recordUsage({
-      userId: 'user-1',
+      userId: 'external-actor',
       workspaceId: 'workspace-1',
+      billingEntity: { type: 'organization', id: 'workspace-org' },
+      billingPeriod: {
+        start: new Date('2026-05-01T00:00:00.000Z'),
+        end: new Date('2026-06-01T00:00:00.000Z'),
+      },
       workflowId: 'workflow-1',
       executionId: 'execution-1',
       entries: [
@@ -128,7 +134,8 @@ describe('recordUsage', () => {
     const values = mockValues.mock.calls[0][0]
     expect(values).toHaveLength(2)
     expect(values[0]).toMatchObject({
-      billingEntityId: 'org-1',
+      userId: 'external-actor',
+      billingEntityId: 'workspace-org',
       billingEntityType: 'organization',
       billingPeriodEnd: new Date('2026-06-01T00:00:00.000Z'),
       billingPeriodStart: new Date('2026-05-01T00:00:00.000Z'),
@@ -145,6 +152,7 @@ describe('recordUsage', () => {
     expect(mockOnConflictDoNothing).toHaveBeenCalledWith(
       expect.objectContaining({ target: 'usageLog.eventKey' })
     )
+    expect(mockGetHighestPrioritySubscription).not.toHaveBeenCalled()
   })
 
   it('stamps occurredAt from caller when provided', async () => {
@@ -201,6 +209,17 @@ describe('recordUsage', () => {
       metadata: { inputTokens: 100, outputTokens: 50 },
     })
   })
+
+  it('resolves legacy workspace usage when the payer context is omitted', async () => {
+    await recordUsage({
+      userId: 'external-actor',
+      workspaceId: 'workspace-1',
+      entries: [{ category: 'fixed', source: 'workflow', description: 'execution_fee', cost: 0.1 }],
+    })
+
+    expect(mockGetHighestPrioritySubscription).toHaveBeenCalledTimes(1)
+    expect(mockInsert).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('resolveCumulativeTopUp', () => {
@@ -239,6 +258,26 @@ describe('resolveCumulativeTopUp', () => {
 })
 
 describe('recordCumulativeUsage', () => {
+  const defaultExistingRow: {
+    id: string
+    cost: string
+    userId: string
+    workspaceId: string | null
+    billingEntityType: 'user' | 'organization' | null
+    billingEntityId: string | null
+    billingPeriodStart: Date | null
+    billingPeriodEnd: Date | null
+  } = {
+    id: 'row-1',
+    cost: '0.3474447',
+    userId: 'user-1',
+    workspaceId: null,
+    billingEntityType: 'organization' as const,
+    billingEntityId: 'org-1',
+    billingPeriodStart: new Date('2026-05-01T00:00:00.000Z'),
+    billingPeriodEnd: new Date('2026-06-01T00:00:00.000Z'),
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     mockReturning.mockResolvedValue([{ cost: '0.3474447', billable: true }])
@@ -297,8 +336,13 @@ describe('recordCumulativeUsage', () => {
   it('inserts the full cumulative on the first flush', async () => {
     setupTx(null)
     const result = await recordCumulativeUsage({
-      userId: 'user-1',
+      userId: 'external-actor',
       workspaceId: 'ws-1',
+      billingEntity: { type: 'organization', id: 'workspace-org' },
+      billingPeriod: {
+        start: new Date('2026-05-01T00:00:00.000Z'),
+        end: new Date('2026-06-01T00:00:00.000Z'),
+      },
       source: 'workspace-chat',
       model: 'claude-opus-4.8',
       cost: 0.3474447,
@@ -308,6 +352,11 @@ describe('recordCumulativeUsage', () => {
     expect(result).toEqual({ billed: true, delta: 0.3474447, total: 0.3474447 })
     expect(mockInsert).toHaveBeenCalledTimes(1)
     expect(mockUpdate).not.toHaveBeenCalled()
+    expect(mockValues.mock.calls[0][0][0]).toMatchObject({
+      userId: 'external-actor',
+      billingEntityId: 'workspace-org',
+      billingEntityType: 'organization',
+    })
   })
 
   it('tops up to the higher cumulative and bills only the delta', async () => {
@@ -489,6 +538,41 @@ describe('recordCumulativeUsage', () => {
     })
   })
 
+  it.each([
+    ['actor', { userId: 'different-actor' }],
+    ['workspace', { workspaceId: 'different-workspace' }],
+    ['billing entity', { billingEntityId: 'different-organization' }],
+    ['billing period', { billingPeriodEnd: new Date('2026-07-01T00:00:00.000Z') }],
+  ])('rejects a reused event key bound to a different %s', async (field, override) => {
+    setupTx({
+      ...defaultExistingRow,
+      userId: 'external-actor',
+      workspaceId: 'ws-1',
+      billingEntityId: 'workspace-org',
+      ...override,
+    })
+
+    const result = recordCumulativeUsage({
+      userId: 'external-actor',
+      workspaceId: 'ws-1',
+      billingEntity: { type: 'organization', id: 'workspace-org' },
+      billingPeriod: {
+        start: new Date('2026-05-01T00:00:00.000Z'),
+        end: new Date('2026-06-01T00:00:00.000Z'),
+      },
+      source: 'workspace-chat',
+      model: 'claude-opus-4.8',
+      cost: 0.3474447,
+      eventKey: 'update-cost:msg-1-billing',
+    })
+
+    await expect(result).rejects.toMatchObject({
+      name: CumulativeUsageContextMismatchError.name,
+      mismatchedFields: [field],
+    })
+    expect(mockUpdate).not.toHaveBeenCalled()
+    expect(mockInsert).not.toHaveBeenCalled()
+  })
   it('resolves the billing context before opening the locked transaction, exactly once', async () => {
     setupTx(null)
     await recordCumulativeUsage({

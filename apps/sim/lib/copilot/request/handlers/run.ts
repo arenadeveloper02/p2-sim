@@ -13,8 +13,14 @@ export const handleRunEvent: StreamHandler = (event, context) => {
     return
   }
 
-  if (event.payload.kind === MothershipStreamV1RunKind.checkpoint_pause) {
-    const frames = (event.payload.frames ?? []).map((frame) => ({
+  if (!('kind' in event.payload)) {
+    return
+  }
+
+  const payload = event.payload
+
+  if (payload.kind === MothershipStreamV1RunKind.checkpoint_pause) {
+    const frames = (payload.frames ?? []).map((frame) => ({
       parentToolCallId: frame.parentToolCallId,
       parentToolName: frame.parentToolName,
       pendingToolIds: frame.pendingToolIds,
@@ -24,10 +30,10 @@ export const handleRunEvent: StreamHandler = (event, context) => {
     }))
 
     context.awaitingAsyncContinuation = {
-      checkpointId: event.payload.checkpointId,
-      executionId: event.payload.executionId || context.executionId,
-      runId: event.payload.runId || context.runId,
-      pendingToolCallIds: event.payload.pendingToolCallIds,
+      checkpointId: payload.checkpointId,
+      executionId: payload.executionId || context.executionId,
+      runId: payload.runId || context.runId,
+      pendingToolCallIds: payload.pendingToolCallIds,
       frames: frames.length > 0 ? frames : undefined,
     }
     logger.info('Received checkpoint pause', {
@@ -41,7 +47,7 @@ export const handleRunEvent: StreamHandler = (event, context) => {
     return
   }
 
-  if (event.payload.kind === MothershipStreamV1RunKind.compaction_start) {
+  if (payload.kind === MothershipStreamV1RunKind.compaction_start) {
     addContentBlock(context, {
       type: 'tool_call',
       toolCall: {
@@ -53,14 +59,14 @@ export const handleRunEvent: StreamHandler = (event, context) => {
     return
   }
 
-  if (event.payload.kind === MothershipStreamV1RunKind.resumed) {
+  if (payload.kind === MothershipStreamV1RunKind.resumed) {
     context.awaitingAsyncContinuation = undefined
     context.streamComplete = false
     logger.info('Received run resumed event')
     return
   }
 
-  if (event.payload.kind === MothershipStreamV1RunKind.compaction_done) {
+  if (payload.kind === MothershipStreamV1RunKind.compaction_done) {
     addContentBlock(context, {
       type: 'tool_call',
       toolCall: {
