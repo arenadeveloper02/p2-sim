@@ -91,3 +91,14 @@ Locked from Q&A (2026-08-06T12:08:11Z) + SR1-SR11. Q1 = A (conditional 'B only i
 - failed: 0
 - mustEdit: `packages/db/schema.ts`, `apps/sim/lib/core/config/env.ts`, `apps/sim/.env.example`, `apps/sim/app/api/chat/utils.ts`, `apps/sim/lib/logs/types.ts`, `apps/sim/lib/logs/execution/logger.ts`, `apps/sim/lib/logs/execution/logging-session.ts`, `apps/sim/lib/billing/core/usage-log.ts`, `apps/sim/lib/execution/preprocessing.ts`, `apps/sim/app/api/copilot/api-keys/validate/route.ts`, `apps/sim/app/api/copilot/api-keys/validate/route.test.ts`, `apps/sim/lib/billing/calculations/usage-monitor.ts`, `apps/sim/lib/copilot/request/tools/billing.ts`
 
+## Cluster schema-migrations
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `packages/db/schema.ts` | manual | Unioned the fork's workspaceActorUserIdx and rootExecutionIdIdx with upstream's completedEndedAtIdx; retained fork actor columns and upstream billing/storage columns. |
+| `packages/db/migrations/0264_unknown_sinister_six.sql` | manual | Renamed from 0260 with byte-identical content; no 0264 snapshot was generated. |
+| `packages/db/migrations/meta/_journal.json` | manual | Changed only the trailing collided migration entry to idx 264, tag 0264_unknown_sinister_six, and the locked timestamp. |
+| `packages/db/migrations/meta/0260_snapshot.json` | ours | Retained the fork snapshot per the locked migration directive. |
+
+Schema-migrations cluster resolved per SR1/SR2 and locked Q1-A.
+

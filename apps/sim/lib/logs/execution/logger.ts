@@ -13,12 +13,16 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage, getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, sql } from 'drizzle-orm'
-import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
+import { checkUsageStatus as checkResolvedUsageStatus } from '@/lib/billing/calculations/usage-monitor'
 import {
-  checkUsageStatus,
-  getOrgUsageLimit,
-  maybeSendUsageThresholdEmail,
-} from '@/lib/billing/core/usage'
+  type BillingAttributionSnapshot,
+  toBillingContext,
+} from '@/lib/billing/core/billing-attribution'
+import {
+  getHighestPriorityPersonalSubscription,
+  getHighestPrioritySubscription,
+} from '@/lib/billing/core/subscription'
+import { getOrgUsageLimit, maybeSendUsageThresholdEmail } from '@/lib/billing/core/usage'
 import {
   normalizeUsageModelId,
   normalizeUsageToolId,
@@ -33,7 +37,7 @@ import {
 } from '@/lib/billing/core/usage-log'
 import { logUsageSkip, type UsageSkipReason } from '@/lib/billing/core/usage-skip-metrics'
 import { resolveEffectivePiiRedaction } from '@/lib/billing/retention'
-import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
+import { checkAndBillPayerOverageThreshold } from '@/lib/billing/threshold-billing'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { redactApiKeys } from '@/lib/core/security/redaction'
 import { filterForDisplay } from '@/lib/core/utils/display-filters'
@@ -360,6 +364,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
     const minimal: ExecutionData = {
       ...(executionData.environment ? { environment: executionData.environment } : {}),
       ...(executionData.trigger ? { trigger: executionData.trigger } : {}),
+      ...(executionData.billingAttribution
+        ? { billingAttribution: executionData.billingAttribution }
+        : {}),
       ...(executionData.correlation ? { correlation: executionData.correlation } : {}),
       ...(executionData.error ? { error: executionData.error } : {}),
       ...(executionData.lastStartedBlock
@@ -397,6 +404,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
       minimalWithSize.storedBytes > MAX_EXECUTION_DATA_BYTES
     ) {
       const metadataOnly: ExecutionData = {
+        ...(executionData.billingAttribution
+          ? { billingAttribution: executionData.billingAttribution }
+          : {}),
         hasTraceSpans: executionData.hasTraceSpans,
         traceSpanCount: executionData.traceSpanCount,
         tokens: executionData.tokens,
@@ -443,6 +453,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
    */
   private buildCompletedExecutionData(params: {
     existingExecutionData?: WorkflowExecutionLog['executionData']
+    billingAttribution?: BillingAttributionSnapshot
     progressMarkers?: ExecutionProgressMarkers
     traceSpans?: TraceSpan[]
     finalOutput: BlockOutputData
@@ -461,6 +472,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
   }): WorkflowExecutionLog['executionData'] {
     const {
       existingExecutionData,
+      billingAttribution: providedBillingAttribution,
       progressMarkers,
       traceSpans,
       finalOutput,
@@ -470,6 +482,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
       executionState,
       workflowInput,
     } = params
+    const billingAttribution =
+      providedBillingAttribution ?? existingExecutionData?.billingAttribution
     const traceSpanCount = countTraceSpans(traceSpans)
 
     const lastStartedBlock = pickLatestStartedMarker(
@@ -486,6 +500,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
         ? { environment: existingExecutionData.environment }
         : {}),
       ...(existingExecutionData?.trigger ? { trigger: existingExecutionData.trigger } : {}),
+      ...(billingAttribution ? { billingAttribution } : {}),
       ...(existingExecutionData?.correlation || existingExecutionData?.trigger?.data?.correlation
         ? {
             correlation:
@@ -531,6 +546,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
     executionId: string
     trigger: ExecutionTrigger
     environment: ExecutionEnvironment
+    actorUserId?: string | null
+    billingAttribution?: BillingAttributionSnapshot
     workflowState: WorkflowState
     userId?: string
     isExternalChat?: boolean
@@ -555,6 +572,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       executionId,
       trigger,
       environment,
+      billingAttribution,
       workflowState,
       userId,
       isExternalChat,
@@ -625,6 +643,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
         executionData: {
           environment,
           trigger,
+          ...(billingAttribution ? { billingAttribution } : {}),
           ...(trigger.data?.correlation ? { correlation: trigger.data.correlation } : {}),
           hasTraceSpans: false,
           traceSpanCount: 0,
@@ -769,7 +788,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
     completionFailure?: string
     isResume?: boolean
     level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending' | 'skipped'
+    actorUserId?: string | null
+    billingAttribution?: BillingAttributionSnapshot
   }): Promise<WorkflowExecutionLog> {
     const {
       executionId,
@@ -786,6 +807,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
       finalChatOutput,
       level: levelOverride,
       status: statusOverride,
+      actorUserId: providedActorUserId,
+      billingAttribution: providedBillingAttribution,
     } = params
 
     let execLog = logger.withMetadata({ executionId })
@@ -802,10 +825,14 @@ export class ExecutionLogger implements IExecutionLoggerService {
         workspaceId: existingLog.workspaceId ?? undefined,
       })
     }
-    const billingUserId = this.extractBillingUserId(existingLog?.executionData)
     const existingExecutionData = existingLog?.executionData as
       | WorkflowExecutionLog['executionData']
       | undefined
+    const billingUserId = this.extractBillingUserId(existingExecutionData)
+    const billingAttribution =
+      providedBillingAttribution ?? existingExecutionData?.billingAttribution
+    const actorUserId =
+      providedActorUserId ?? this.extractActorUserId(existingExecutionData) ?? billingUserId
 
     // Determine if workflow failed by checking trace spans for unhandled errors
     // Errors handled by error handler paths (errorHandled: true) don't count as workflow failures
@@ -868,6 +895,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
 
     const builtExecutionData = this.buildCompletedExecutionData({
       existingExecutionData,
+      billingAttribution,
       progressMarkers: progressMarkers ?? undefined,
       traceSpans: mergedTraceSpans,
       finalOutput,
@@ -923,7 +951,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       {
         workflowId: existingLog?.workflowId ?? null,
         executionId,
-        userId: billingUserId,
+        userId: actorUserId,
       }
     )
 
@@ -967,19 +995,19 @@ export class ExecutionLogger implements IExecutionLoggerService {
       executionId
     )
 
-    // Persist the FULL payload to object storage first: blob storage holds up to
-    // MAX_DURABLE_LARGE_VALUE_BYTES (64MB), far above the inline row budget, so
-    // externalized logs keep full-fidelity trace IO instead of being summarized.
-    // Externalization requires the execution owner (workspace_files.user_id is
-    // NOT NULL). billingUserId comes from environment.userId and is effectively
-    // always present for a real run; if it's somehow absent, keep data inline.
+    /**
+     * Persists the full payload to object storage first. Blob storage supports
+     * up to MAX_DURABLE_LARGE_VALUE_BYTES (64MB), preserving full-fidelity trace
+     * IO beyond the inline row budget. Externalization requires the execution
+     * actor because workspace_files.user_id is non-null.
+     */
     let storedExecutionData = cleanExecutionData as Record<string, unknown>
-    if (billingUserId) {
+    if (actorUserId) {
       storedExecutionData = await externalizeExecutionData(storedExecutionData, {
         workspaceId: existingLog?.workspaceId ?? null,
         workflowId: existingLog?.workflowId ?? null,
         executionId,
-        userId: billingUserId,
+        userId: actorUserId,
       })
     } else {
       execLog.warn('Skipping execution-data externalization: missing owner userId', {
@@ -992,6 +1020,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
     // the payload to keep the Postgres row within MAX_EXECUTION_DATA_BYTES.
     if (!(TRACE_STORE_REF_KEY in storedExecutionData)) {
       storedExecutionData = completedExecutionData as Record<string, unknown>
+    } else if (billingAttribution) {
+      storedExecutionData.billingAttribution = billingAttribution
     }
     const completedExecutionLargeValueKeys = collectLargeValueReferenceKeys(storedExecutionData)
 
@@ -1040,6 +1070,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
     })
 
     if (progressMarkers !== null) void clearProgressMarkers(executionId)
+    const exactBillingContext = billingAttribution
+      ? toBillingContext(billingAttribution)
+      : undefined
 
     try {
       // Skip workflow lookup if workflow was deleted.
@@ -1047,13 +1080,14 @@ export class ExecutionLogger implements IExecutionLoggerService {
         ? (await db.select().from(workflow).where(eq(workflow.id, updatedLog.workflowId)))[0]
         : undefined
 
+      const payerContactUserId = billingAttribution?.billedAccountUserId ?? actorUserId
       const usr =
-        wf && billingUserId
+        wf && payerContactUserId
           ? (
               await db
                 .select({ id: userTable.id, email: userTable.email, name: userTable.name })
                 .from(userTable)
-                .where(eq(userTable.id, billingUserId))
+                .where(eq(userTable.id, payerContactUserId))
                 .limit(1)
             )[0]
           : undefined
@@ -1068,7 +1102,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
             userEmail: string
             userName: string | null
             planName: string
-            before: Awaited<ReturnType<typeof checkUsageStatus>>
+            before: Awaited<ReturnType<typeof checkResolvedUsageStatus>>
           }
         | {
             scope: 'organization'
@@ -1077,54 +1111,50 @@ export class ExecutionLogger implements IExecutionLoggerService {
             orgLimit: number
             orgUsageBefore: number
           }
-      let billingContext: BillingContext | undefined
+      const billingContext = exactBillingContext
       let emailContext: EmailContext | undefined
 
-      if (usr?.email) {
-        const sub = await getHighestPrioritySubscription(usr.id)
-        // Derive the billing context once from the subscription we just fetched
-        // and thread it into recordExecutionUsage so recordUsage doesn't
-        // re-resolve the subscription on the hot completion path.
-        billingContext = deriveBillingContext(usr.id, sub)
-
+      if (
+        billingAttribution?.billingEntity.type === 'organization' &&
+        billingAttribution.payerSubscription &&
+        exactBillingContext
+      ) {
+        const organizationId = billingAttribution.billingEntity.id
+        const payerSubscription = billingAttribution.payerSubscription
         const { getDisplayPlanName } = await import('@/lib/billing/plan-helpers')
-        const { isOrgScopedSubscription } = await import('@/lib/billing/subscriptions/utils')
-        const planName = getDisplayPlanName(sub?.plan)
-
-        if (isOrgScopedSubscription(sub, usr.id) && sub?.referenceId) {
-          const { limit: orgLimit } = await getOrgUsageLimit(sub.referenceId, sub.plan, sub.seats)
-          const [{ sum: orgBaselineSum }] = await db
-            .select({ sum: sql`COALESCE(SUM(${userStats.currentPeriodCost}), 0)` })
-            .from(member)
-            .leftJoin(userStats, eq(member.userId, userStats.userId))
-            .where(eq(member.organizationId, sub.referenceId))
-            .limit(1)
-          // currentPeriodCost is only a baseline; add the org's attributed
-          // usage_log for the period so the threshold email reflects real usage.
-          const { getBillingPeriodUsageCost } = await import('@/lib/billing/core/usage-log')
-          const orgLedger =
-            sub.periodStart && sub.periodEnd
-              ? await getBillingPeriodUsageCost(
-                  { type: 'organization', id: sub.referenceId },
-                  { start: sub.periodStart, end: sub.periodEnd }
-                )
-              : 0
-          emailContext = {
-            scope: 'organization',
-            organizationId: sub.referenceId,
-            planName,
-            orgLimit,
-            orgUsageBefore: Number.parseFloat(String(orgBaselineSum ?? '0')) + orgLedger,
-          }
-        } else {
-          emailContext = {
-            scope: 'user',
-            userId: usr.id,
-            userEmail: usr.email,
-            userName: usr.name,
-            planName,
-            before: await checkUsageStatus(usr.id),
-          }
+        const { limit: orgLimit } = await getOrgUsageLimit(
+          organizationId,
+          payerSubscription.plan,
+          payerSubscription.seats
+        )
+        const [{ sum: orgBaselineSum }] = await db
+          .select({ sum: sql`COALESCE(SUM(${userStats.currentPeriodCost}), 0)` })
+          .from(member)
+          .leftJoin(userStats, eq(member.userId, userStats.userId))
+          .where(eq(member.organizationId, organizationId))
+          .limit(1)
+        const { getBillingPeriodUsageCost } = await import('@/lib/billing/core/usage-log')
+        const orgLedger = await getBillingPeriodUsageCost(
+          billingAttribution.billingEntity,
+          exactBillingContext.billingPeriod
+        )
+        emailContext = {
+          scope: 'organization',
+          organizationId,
+          planName: getDisplayPlanName(payerSubscription.plan),
+          orgLimit,
+          orgUsageBefore: Number.parseFloat(String(orgBaselineSum ?? '0')) + orgLedger,
+        }
+      } else if (billingAttribution?.billingEntity.type === 'user' && usr?.email) {
+        const sub = await getHighestPriorityPersonalSubscription(usr.id)
+        const { getDisplayPlanName } = await import('@/lib/billing/plan-helpers')
+        emailContext = {
+          scope: 'user',
+          userId: usr.id,
+          userEmail: usr.email,
+          userName: usr.name,
+          planName: getDisplayPlanName(sub?.plan),
+          before: await checkResolvedUsageStatus(usr.id, sub),
         }
       }
 
@@ -1144,11 +1174,11 @@ export class ExecutionLogger implements IExecutionLoggerService {
 
       // Best-effort usage-threshold email.
       if (emailContext?.scope === 'user') {
-        const limit = emailContext.before.usageData.limit
-        const percentBefore = emailContext.before.usageData.percentUsed
+        const limit = emailContext.before.limit
+        const percentBefore = emailContext.before.percentUsed
         const percentAfter =
           limit > 0 ? Math.min(100, percentBefore + (costDelta / limit) * 100) : percentBefore
-        const currentUsageAfter = emailContext.before.usageData.currentUsage + costDelta
+        const currentUsageAfter = emailContext.before.currentUsage + costDelta
 
         await maybeSendUsageThresholdEmail({
           scope: 'user',
@@ -1278,6 +1308,11 @@ export class ExecutionLogger implements IExecutionLoggerService {
     }
   }
 
+  /** Extracts the actor from legacy execution data without an attribution snapshot. */
+  private extractActorUserId(executionData: unknown): string | null {
+    return this.extractBillingUserId(executionData)
+  }
+
   private extractBillingUserId(executionData: unknown): string | null {
     if (!executionData || typeof executionData !== 'object') {
       return null
@@ -1340,6 +1375,16 @@ export class ExecutionLogger implements IExecutionLoggerService {
           total: number
           toolCost?: number
           embeddedToolCosts?: Record<string, number>
+          tokens: { input: number; output: number; total: number }
+        }
+      >
+      workflowLedgerModels?: Record<
+        string,
+        {
+          input: number
+          output: number
+          total: number
+          toolCost?: number
           tokens: { input: number; output: number; total: number }
         }
       >
@@ -1406,9 +1451,6 @@ export class ExecutionLogger implements IExecutionLoggerService {
         return 0
       }
 
-      // Resolved before the advisory-locked transaction below: resolving inside
-      // it would run the subscription lookups on the global pool while the tx
-      // already holds a pooled connection (see recordCumulativeUsage).
       const resolvedBillingContext =
         billingContext ?? deriveBillingContext(userId, await getHighestPrioritySubscription(userId))
 
@@ -1463,6 +1505,16 @@ export class ExecutionLogger implements IExecutionLoggerService {
         unit?: string
       }
       const targets: TargetLine[] = []
+      const workflowLedgerModels = costSummary.workflowLedgerModels ?? costSummary.models ?? {}
+      const totalModelCost = Object.values(costSummary.models ?? {}).reduce(
+        (sum, model) => sum + model.total,
+        0
+      )
+      const workflowLedgerModelCost = Object.values(workflowLedgerModels).reduce(
+        (sum, model) => sum + model.total,
+        0
+      )
+      const externallyLedgeredModelCost = Math.max(0, totalModelCost - workflowLedgerModelCost)
 
       if (costSummary.baseExecutionCharge > 0) {
         targets.push({
@@ -1472,30 +1524,28 @@ export class ExecutionLogger implements IExecutionLoggerService {
         })
       }
 
-      if (costSummary.models) {
-        for (const [modelName, modelData] of Object.entries(costSummary.models)) {
-          const hasUsage =
-            modelData.total > 0 ||
-            modelData.tokens.total > 0 ||
-            modelData.tokens.input > 0 ||
-            modelData.tokens.output > 0
-          if (hasUsage) {
-            targets.push({
-              category: 'model',
-              description: normalizeUsageModelId(modelName),
-              target: modelData.total,
-              metadata: {
-                inputTokens: modelData.tokens.input,
-                outputTokens: modelData.tokens.output,
-                ...(modelData.toolCost != null &&
-                  modelData.toolCost > 0 && { toolCost: modelData.toolCost }),
-                ...(modelData.embeddedToolCosts &&
-                  Object.keys(modelData.embeddedToolCosts).length > 0 && {
-                    embeddedToolCosts: modelData.embeddedToolCosts,
-                  }),
-              },
-            })
-          }
+      for (const [modelName, modelData] of Object.entries(workflowLedgerModels)) {
+        const hasUsage =
+          modelData.total > 0 ||
+          modelData.tokens.total > 0 ||
+          modelData.tokens.input > 0 ||
+          modelData.tokens.output > 0
+        if (hasUsage) {
+          targets.push({
+            category: 'model',
+            description: normalizeUsageModelId(modelName),
+            target: modelData.total,
+            metadata: {
+              inputTokens: modelData.tokens.input,
+              outputTokens: modelData.tokens.output,
+              ...(modelData.toolCost != null &&
+                modelData.toolCost > 0 && { toolCost: modelData.toolCost }),
+              ...(modelData.embeddedToolCosts &&
+                Object.keys(modelData.embeddedToolCosts).length > 0 && {
+                  embeddedToolCosts: modelData.embeddedToolCosts,
+                }),
+            },
+          })
         }
       }
 
@@ -1676,13 +1726,15 @@ export class ExecutionLogger implements IExecutionLoggerService {
             // and can't be clobbered by a concurrent boundary. Exact by
             // construction: under the lock no delta collides, so the new sum is
             // the prior workflow-source sum plus the deltas just inserted. This
-            // supersedes the main-transaction GREATEST baseline (which remains for
-            // early-return / no-executionId / failed-reconcile paths).
+            // supersedes the main-transaction GREATEST baseline except when the
+            // display total contains Mothership cost owned by Go update-cost.
             const ledgerSum =
               [...alreadyBilled.values()].reduce((acc, v) => acc + v, 0) + recordedIncrement
+            const displayedCostTotal =
+              externallyLedgeredModelCost > 0 ? costSummary.totalCost : ledgerSum
             await tx
               .update(workflowExecutionLogs)
-              .set({ costTotal: ledgerSum.toString() })
+              .set({ costTotal: displayedCostTotal.toString() })
               .where(eq(workflowExecutionLogs.executionId, executionId))
           }
         })
@@ -1709,7 +1761,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
       // Enforcement only when billing is enabled: the ledger above is always
       // written, but overage/Stripe billing is gated on BILLING_ENABLED.
       if (isBillingEnabled) {
-        await checkAndBillOverageThreshold(userId)
+        await checkAndBillPayerOverageThreshold(resolvedBillingContext.billingEntity)
       }
     } catch (error) {
       const isLockTimeout = getPostgresErrorCode(error) === '55P03'

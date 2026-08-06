@@ -10,11 +10,13 @@ const {
   mockGetScheduleExecutionActorUserId,
   mockCheckRateLimit,
   mockGetActivelyBannedUserIds,
+  mockResolveBillingAttribution,
 } = vi.hoisted(() => ({
   mockGetWorkspaceBilledAccountUserId: vi.fn(),
   mockGetScheduleExecutionActorUserId: vi.fn(),
   mockCheckRateLimit: vi.fn(),
   mockGetActivelyBannedUserIds: vi.fn().mockResolvedValue([]),
+  mockResolveBillingAttribution: vi.fn(),
 }))
 
 vi.mock('@sim/db', () => ({ db: {} }))
@@ -40,6 +42,10 @@ vi.mock('@/lib/core/rate-limiter/rate-limiter', () => ({
   }),
 }))
 vi.mock('@/lib/logs/execution/logging-session', () => loggingSessionMock)
+vi.mock('@/lib/billing/core/billing-attribution', () => ({
+  assertBillingAttributionSnapshot: vi.fn((value) => value),
+  resolveBillingAttribution: mockResolveBillingAttribution,
+}))
 vi.mock('@/lib/workspaces/utils', () => ({
   getWorkspaceBilledAccountUserId: mockGetWorkspaceBilledAccountUserId,
   getScheduleExecutionActorUserId: mockGetScheduleExecutionActorUserId,
@@ -57,6 +63,24 @@ vi.mock('@sim/platform-authz/workflow', () => ({
 import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import { preprocessExecution } from './preprocessing'
+
+beforeEach(() => {
+  mockResolveBillingAttribution.mockImplementation(
+    ({ actorUserId, workspaceId }: { actorUserId: string; workspaceId: string }) =>
+      Promise.resolve({
+        actorUserId,
+        workspaceId,
+        billedAccountUserId: actorUserId,
+        organizationId: null,
+        billingEntity: { type: 'user' as const, id: actorUserId },
+        billingPeriod: {
+          start: '2026-07-01T00:00:00.000Z',
+          end: '2026-08-01T00:00:00.000Z',
+        },
+        payerSubscription: null,
+      })
+  )
+})
 
 describe('preprocessExecution correlation logging', () => {
   it('preserves trigger correlation when logging preprocessing failures', async () => {
