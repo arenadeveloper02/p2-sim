@@ -1,11 +1,21 @@
 {
   "lastSyncedUpstreamSha": "6c3d11b2df6c1c18490a27dab17b48d881045918",
   "lastSyncedAt": "2026-08-06T07:01:52.686Z",
-  "lastRunId": "2026-08-06",
-  "status": "completed",
+  "lastRunId": "2026-08-06-2",
+  "status": "running",
   "openQuestions": [],
-  "activeBranch": "upstream-sync/2026-08-05T10-46-19",
+  "activeBranch": "upstream-sync/2026-08-06T11-22-06",
   "activePrNumber": 681,
-  "activeMergeBase": "feat/github-merge-agent",
-  "activeUpstreamSha": null
+  "activeMergeBase": "upstream-sync/2026-08-05T10-46-19",
+  "activeUpstreamSha": "207785c8e4a700b085ec317e433748c6e327ee2e",
+  "stack": [
+    {
+      "runId": "2026-08-06",
+      "releaseVersion": null,
+      "upstreamSha": "6c3d11b2df6c1c18490a27dab17b48d881045918",
+      "branch": "upstream-sync/2026-08-05T10-46-19",
+      "prNumber": 681,
+      "status": "open"
+    }
+  ]
 }
