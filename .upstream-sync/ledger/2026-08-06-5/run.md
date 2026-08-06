@@ -635,3 +635,152 @@ error: script "lint" exited with code 1
   "strategy": "fork-first",
   "description": "Only paths listed in forkFirst (auto --ours) or upstreamFirst (auto --theirs) are resolved without an agent. Everything else — whether or not it appears in manualReview — is agent-reviewed. manualReview is a non-exhaustive hint list of known hard shared hotspots, not a closed set. unionPaths are agent-reviewed: keep fork-only symbols and take upstream additions; never drop upstream exports that in-tree consumers import. package.json is union-merged (upstream base + fork-only scripts/deps). bun.lock is regenerated after manifests. Agents SHOULD extend this file when they learn a recurring rule (add a forkFirst/upstreamFirst/manualReview/unionPaths prefix or packageJson.dropScripts entry) so the next sync is cheaper. apps/sim/lib/copilot/generated/ is NO LONGER upstreamFirst (moved to manualReview on run 2026-08-06-4). The fork carries a hand-edit there (Superagent task description, Google Docs GFM guidance) that exists in NO generator source, and `bun run mship:generate` cannot regenerate it in this checkout because scripts/sync-tool-catalog.ts reads a sibling repo (../copilot/) the fork does not have. Two consecutive runs (2026-08-06-3, 2026-08-06-4) confirmed the natural three-way merge preserves that sentence while auto --theirs would have deleted it. Let the merge run and use a VERIFY-ONLY mustEdit that asserts the sentence is still present. IMPORTANT (run 2026-08-06-5): that verify-only assertion is NECESSARY BUT NOT SUFFICIENT. Upstream #5410/#5656 deleted seven catalog entries the fork still routes (Superagent, Research, UserMemory, MoveFile, MoveFileFolder, RenameFile, RenameFileFolder) and inserted ShareFile/Search at the same offsets, so the natural merge kept the fork's GFM sentence but grafted it onto share_file's `action` param while deleting the Superagent entry that owned it. Assert BOTH the sentence AND the presence of every fork-consumed export. Second silent-breakage class from the same run: packages/d
 
+## Usage
+
+### Usage (stack rollup)
+
+- **This slice:** $12.8895 · 118,448,962 in / 531,170 out · 13 agent(s)
+- **Prior stack:** $18.3088 · 187,343,857 in / 787,730 out · 24 agent(s)
+- **Whole stack:** $31.1983 · 305,792,819 in / 1,318,900 out · 37 agent(s)
+
+### parent-grill-analysis
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 3,556
+- **Input tokens (cache read):** 8,841,170
+- **Input tokens (cache create):** 187,085
+- **Input tokens (total):** 9,031,811
+- **Output tokens:** 72,197
+- **Cost:** $7.415798 (provider-reported)
+### parent-finalize-plan
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 36
+- **Input tokens (cache read):** 1,469,985
+- **Input tokens (cache create):** 112,649
+- **Input tokens (total):** 1,582,670
+- **Output tokens:** 33,924
+- **Cost:** $2.291429 (provider-reported)
+### child-db-schema-migrations
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 99,544
+- **Input tokens (cache read):** 1,811,504
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 1,911,048
+- **Output tokens:** 16,902
+- **Cost:** $0.076421 (estimated fallback)
+### child-copilot-generated-catalog
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 204,010
+- **Input tokens (cache read):** 7,688,689
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 7,892,699
+- **Output tokens:** 32,014
+- **Cost:** $0.232993 (estimated fallback)
+### child-copilot-chat-mothership
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 256,313
+- **Input tokens (cache read):** 14,170,750
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 14,427,063
+- **Output tokens:** 37,987
+- **Cost:** $0.380262 (estimated fallback)
+### child-billing-usage-tests
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 396,220
+- **Input tokens (cache read):** 14,764,560
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 15,160,780
+- **Output tokens:** 61,680
+- **Cost:** $0.448551 (estimated fallback)
+### child-uploads-storage-gcs
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 208,494
+- **Input tokens (cache read):** 8,146,973
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 8,355,467
+- **Output tokens:** 24,329
+- **Cost:** $0.233833 (estimated fallback)
+### child-auth-oauth-credentials
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 258,824
+- **Input tokens (cache read):** 12,348,085
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 12,606,909
+- **Output tokens:** 32,721
+- **Cost:** $0.337992 (estimated fallback)
+### child-providers-models-envkeys
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 289,353
+- **Input tokens (cache read):** 4,905,069
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 5,194,422
+- **Output tokens:** 38,255
+- **Cost:** $0.201878 (estimated fallback)
+### child-deploy-state-machine
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 196,012
+- **Input tokens (cache read):** 6,734,410
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 6,930,422
+- **Output tokens:** 32,759
+- **Cost:** $0.213201 (estimated fallback)
+### child-tools-executor
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 164,838
+- **Input tokens (cache read):** 7,166,260
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 7,331,098
+- **Output tokens:** 30,041
+- **Cost:** $0.212342 (estimated fallback)
+### child-branding-workspace-ui
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 439,238
+- **Input tokens (cache read):** 15,781,965
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 16,221,203
+- **Output tokens:** 56,787
+- **Cost:** $0.471631 (estimated fallback)
+### child-finalize-merge
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 351,087
+- **Input tokens (cache read):** 11,452,283
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 11,803,370
+- **Output tokens:** 61,574
+- **Cost:** $0.373152 (estimated fallback)
+
+### Totals
+- **Total input tokens:** 118,448,962
+- **Total output tokens:** 531,170
+- **Primary models:** claude-opus-5, gpt-5.6-luna
+- **Total cost:** $12.889483
+- **Provider-reported cost:** $9.707227
+- **Estimated cost (fallback):** $3.182256
+
+### Cost by agent
+- **parent-grill-analysis:** $7.415798 (provider-reported)
+- **parent-finalize-plan:** $2.291429 (provider-reported)
+- **child-db-schema-migrations:** $0.076421 (estimated fallback)
+- **child-copilot-generated-catalog:** $0.232993 (estimated fallback)
+- **child-copilot-chat-mothership:** $0.380262 (estimated fallback)
+- **child-billing-usage-tests:** $0.448551 (estimated fallback)
+- **child-uploads-storage-gcs:** $0.233833 (estimated fallback)
+- **child-auth-oauth-credentials:** $0.337992 (estimated fallback)
+- **child-providers-models-envkeys:** $0.201878 (estimated fallback)
+- **child-deploy-state-machine:** $0.213201 (estimated fallback)
+- **child-tools-executor:** $0.212342 (estimated fallback)
+- **child-branding-workspace-ui:** $0.471631 (estimated fallback)
+- **child-finalize-merge:** $0.373152 (estimated fallback)
+
