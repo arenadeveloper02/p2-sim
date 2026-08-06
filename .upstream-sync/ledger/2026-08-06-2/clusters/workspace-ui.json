@@ -1,0 +1,22 @@
+{
+  "clusterId": "workspace-ui",
+  "runId": "2026-08-06-2",
+  "files": [
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/agent-group.tsx",
+      "resolution": "manual",
+      "notes": "Unioned ShimmerText with the fork's assistant-label resolver, @sim/emcn/icons import, PillsRing spinner, and autoExpanded behavior."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/tool-call-item.tsx",
+      "resolution": "manual",
+      "notes": "Unioned upstream execution shimmer with the fork's live workspace-file title and multiline styling."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/selector-combobox/selector-combobox.tsx",
+      "resolution": "manual",
+      "notes": "Added upstream multi-select state and handler while retaining the fork's clearable guard."
+    }
+  ],
+  "notes": "All assigned conflict markers are resolved. Biome passes on the three files. The scoped TypeScript check reports unrelated pre-existing repository errors and exits nonzero."
+}

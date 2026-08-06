@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { PillsRing } from '@sim/emcn'
+import { ShimmerText } from '@/components/ui'
 import { WorkspaceFile } from '@/lib/copilot/generated/tool-catalog-v1'
 import type { ToolCallStatus } from '../../../../types'
 import { getToolIcon, resolveToolDisplayState } from '../../utils'
@@ -57,10 +57,29 @@ function Hyphen({ className }: { className?: string }) {
   )
 }
 
+function CircleOutline({ className }: { className?: string }) {
+  return (
+    <svg
+      width='16'
+      height='16'
+      viewBox='0 0 16 16'
+      fill='none'
+      xmlns='http://www.w3.org/2000/svg'
+      className={className}
+    >
+      <circle cx='8' cy='8' r='6.5' stroke='currentColor' strokeWidth='1.25' />
+    </svg>
+  )
+}
+
 function StatusIcon({ status, toolName }: { status: ToolCallStatus; toolName: string }) {
   const display = resolveToolDisplayState(status)
   if (display === 'spinner') {
-    return <PillsRing className='size-[15px] text-[var(--text-tertiary)]' animate />
+    const Icon = getToolIcon(toolName)
+    if (Icon) {
+      return <Icon className='size-[15px] text-[var(--text-tertiary)]' />
+    }
+    return <CircleOutline className='size-[15px] text-[var(--text-tertiary)]' />
   }
   if (display === 'cancelled') {
     return <CircleStop className='size-[15px] text-[var(--text-tertiary)]' />
@@ -114,6 +133,7 @@ export function ToolCallItem({ toolName, displayTitle, status, streamingArgs }: 
 
   const resolvedTitle = liveWorkspaceFileTitle || displayTitle
   const hasMultipleLines = resolvedTitle.includes('\n')
+  const isExecuting = resolveToolDisplayState(status) === 'spinner'
 
   return (
     <div
@@ -122,9 +142,15 @@ export function ToolCallItem({ toolName, displayTitle, status, streamingArgs }: 
       <div className='flex size-[16px] flex-shrink-0 items-center justify-center'>
         <StatusIcon status={status} toolName={toolName} />
       </div>
-      <span className='whitespace-pre-line font-base text-[13px] text-[var(--text-secondary)]'>
-        {resolvedTitle}
-      </span>
+      {isExecuting ? (
+        <ShimmerText className='whitespace-pre-line text-[13px] [--shimmer-rest:var(--text-secondary)]'>
+          {resolvedTitle}
+        </ShimmerText>
+      ) : (
+        <span className='whitespace-pre-line font-base text-[13px] text-[var(--text-secondary)]'>
+          {resolvedTitle}
+        </span>
+      )}
     </div>
   )
 }

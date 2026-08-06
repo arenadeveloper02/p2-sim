@@ -1,0 +1,47 @@
+{
+  "generatedAt": "2026-08-06T10:54:46.045Z",
+  "rootCount": 3,
+  "leafCount": 3,
+  "fileCount": 6,
+  "forest": [
+    {
+      "id": "xai-byok-providers",
+      "prefix": "apps/sim/providers/",
+      "files": [
+        "apps/sim/providers/utils.ts",
+        "apps/sim/providers/utils.test.ts"
+      ],
+      "depth": 0,
+      "parentId": null,
+      "children": [],
+      "strategy": "union",
+      "notes": "BUILD BREAK TO FIX FIRST — apps/sim/providers/utils.ts declares `const isXaiModel = provider === 'xai'` TWICE (line ~1128 ours, ~1131 theirs) OUTSIDE the conflict markers; git merged both sides of an adjacent-line addition. Delete one. Then resolve the single hunk at ~1133 by KEEPING THE FORK SIDE: `if (isHosted && (isOpenAIModel || isClaudeModel || isGeminiModel || isSambaNovaModel || isXaiModel || isOpenRouterModel || isZaiModel))` plus the '// Only use server key if model is explicitly in our hosted list' comment. Upstream's narrower list drops sambanova + openrouter, which the fork's getRotatingApiKey and getHostedModels already support — taking theirs SILENTLY REMOVES fork capability. Nothing in upstream's #5574 hunk is new to the fork. utils.test.ts has 2 hunks, both union: (1) keep BOTH `shouldBillModelUsage('grok-4-latest')` (ours) and `shouldBillModelUsage('grok-4.5')` (theirs) — verified both ids exist in providers/models.ts:2014 and :2042; (2) KEEP the fork-only `expect(shouldBillModelUsage('mothership')).toBe(false)` assertion — upstream simply does not have the mothership pseudo-model. Verify with `bunx vitest run apps/sim/providers/utils.test.ts`. Related files from this area (models.ts, tools/types.ts, lib/core/config/{env,api-keys}.ts, lib/api-key/byok.ts, lib/api/contracts/byok-keys.ts, settings byok.tsx) are already resolved — do NOT reopen them."
+    },
+    {
+      "id": "api-routes-security",
+      "prefix": "apps/sim/app/api/",
+      "files": [
+        "apps/sim/app/api/help/route.ts"
+      ],
+      "depth": 0,
+      "parentId": null,
+      "children": [],
+      "strategy": "union",
+      "notes": "One hunk, import block only (lines 8-23) — the whole body below it already merged clean and is UPSTREAM's shape. Confirmed by grep: the body calls `readFormDataWithLimit` (line 47), `MAX_WORKSPACE_FORMDATA_FILE_SIZE + MAX_MULTIPART_OVERHEAD_BYTES` (line 33), `isPayloadSizeLimitError` (line 159), AND the fork's `getHelpInboxEmail()` (line 110). So the union import block is: keep `import { getHelpInboxEmail } from '@/lib/core/utils/urls'`, take upstream's `{ isPayloadSizeLimitError, MAX_MULTIPART_OVERHEAD_BYTES, readFormDataWithLimit } from '@/lib/core/utils/stream-limits'` and `MAX_WORKSPACE_FORMDATA_FILE_SIZE from '@/lib/uploads/shared/types'`, and DROP `getHelpEmailAddress` from the '@/lib/messaging/email/utils' import (fork replaced it with getHelpInboxEmail — leaving it in is an unused-import lint failure). Result: `import { getFromEmailAddress } from '@/lib/messaging/email/utils'`. Keep biome import ordering. #5601's 413 branch is mandatory and already present. files/upload/route.ts(+test) and mothership/execute/route.ts are already resolved — do NOT reopen them."
+    },
+    {
+      "id": "workspace-ui",
+      "prefix": "apps/sim/app/workspace/",
+      "files": [
+        "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/agent-group.tsx",
+        "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/tool-call-item.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/selector-combobox/selector-combobox.tsx"
+      ],
+      "depth": 0,
+      "parentId": null,
+      "children": [],
+      "strategy": "union",
+      "notes": "highlight.ts is resolved by directive (checkoutOurs) — the child only verifies no markers remain, it does not re-decide. The other three are hand-merges of upstream #5612 (ShimmerText) and #5614 (multi-select) against fork-only UI. agent-group.tsx (3 hunks): (1) import block — keep the fork's `@sim/emcn/icons` subpath with BOTH `ChevronDown` and the fork-only `PillsRing`, keep `resolveAssistantDisplayLabel` from '@/lib/chat/assistant-display-name', keep `{ cn, Expandable, ExpandableContent } from '@sim/emcn'`, and ADD upstream's `{ ShimmerText } from '@/components/ui'`. Do not adopt upstream's barrel-import of ChevronDown (both resolve — packages/emcn/src/index.ts:26 re-exports icons — but the subpath is the repo convention). (2)+(3) are the same edit in the button and non-button branches: take upstream's `isWorking ? <ShimmerText className='text-sm'>{...}</ShimmerText> : <span className='text-[var(--text-body)] text-sm'>{...}</span>` but render `resolvedAgentLabel` in BOTH slots, never `agentLabel` — dropping resolveAssistantDisplayLabel regresses the fork's assistant naming. Also preserve the fork's autoExpanded expression `isCurrentSection || (isStreaming && (isLaneOpen || !resolved))` if any adjacent edit touches it. tool-call-item.tsx (2 hunks): union — keep the fork's `const resolvedTitle = liveWorkspaceFileTitle || displayTitle` and `const hasMultipleLines = resolvedTitle.includes('\\n')` AND add upstream's `const isExecuting = resolveToolDisplayState(status) === 'spinner'` (drop upstream's duplicate `title` const, it is resolvedTitle renamed). In the JSX take upstream's isExecuting ternary but feed it `resolvedTitle` and keep the fork's `whitespace-pre-line font-base` classes on the non-shimmer span; add `whitespace-pre-line` to the ShimmerText className too so multi-line titles do not regress (the outer div already switches items-start/items-center off hasMultipleLines). Confirm `resolveToolDisplayState` and `ShimmerText` imports survived the clean-merged import block. selector-combobox.tsx (1 hunk): pure union — take upstream's `selectedValues` useMemo and `handleMultiChange` useCallback verbatim, then keep the FORK's guard on the last line: `const showClearButton = clearable && Boolean(activeValue) && !disabled && !readOnly` (upstream drops `clearable &&`, which would force the clear button onto every selector). `clearable` and `multiSelect` gate independent behavior; both props stay. Verify with `bunx tsc --noEmit` scoped to apps/sim and a biome check on the three files. search-modal.tsx, workflow.tsx and the other file-viewer files are already resolved — do NOT reopen them."
+    }
+  ]
+}

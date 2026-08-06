@@ -1,0 +1,13 @@
+{
+  "clusterId": "api-routes-security",
+  "runId": "2026-08-06-2",
+  "files": [
+    {
+      "path": "apps/sim/app/api/help/route.ts",
+      "resolution": "manual",
+      "notes": "Unioned the fork's getHelpInboxEmail import with upstream's multipart size-limit imports, retained the fork's getFromEmailAddress import, and removed the obsolete getHelpEmailAddress import."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "The route body already contained both fork and upstream behavior, including the mandatory 413 payload-size response."
+}

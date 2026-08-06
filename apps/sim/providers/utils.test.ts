@@ -867,7 +867,7 @@ describe('Cost Calculation', () => {
 })
 
 describe('getHostedModels', () => {
-  it.concurrent('should return OpenAI, Anthropic, and Google models as hosted', () => {
+  it.concurrent('should return OpenAI, Anthropic, Google, and xAI models as hosted', () => {
     const hostedModels = getHostedModels()
 
     expect(hostedModels).toContain('gpt-4o')
@@ -879,8 +879,9 @@ describe('getHostedModels', () => {
     expect(hostedModels).toContain('gemini-2.5-pro')
     expect(hostedModels).toContain('gemini-2.5-flash')
 
+    expect(hostedModels).toContain('grok-4.5')
+
     expect(hostedModels).not.toContain('deepseek-v3')
-    expect(hostedModels).not.toContain('grok-4-latest')
   })
 
   it.concurrent('should return an array of strings', () => {
@@ -908,6 +909,7 @@ describe('shouldBillModelUsage', () => {
     expect(shouldBillModelUsage('gemini-2.5-pro')).toBe(true)
     expect(shouldBillModelUsage('gemini-2.5-flash')).toBe(true)
     expect(shouldBillModelUsage('grok-4-latest')).toBe(true)
+    expect(shouldBillModelUsage('grok-4.5')).toBe(true)
   })
 
   it.concurrent('should return false for non-hosted models', () => {

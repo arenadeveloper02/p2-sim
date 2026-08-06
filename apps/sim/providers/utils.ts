@@ -1129,6 +1129,11 @@ export function getApiKey(
   const isOpenRouterModel = provider === 'openrouter'
   const isZaiModel = provider === 'zai'
 
+  /**
+   * Keep server-key eligibility explicit so hosted access cannot expand merely
+   * because a provider appears in the model registry. The fork-owned
+   * SambaNova and OpenRouter entries are intentionally retained alongside xAI.
+   */
   if (
     isHosted &&
     (isOpenAIModel ||

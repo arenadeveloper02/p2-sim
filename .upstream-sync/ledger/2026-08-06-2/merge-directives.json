@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "runId": "2026-08-06-2",
+  "kind": "directives",
+  "delete": [],
+  "checkoutTheirs": [],
+  "checkoutOurs": [
+    "apps/sim/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/highlight.ts"
+  ],
+  "mustEdit": [
+    "apps/sim/app/api/help/route.ts",
+    "apps/sim/providers/utils.ts",
+    "apps/sim/providers/utils.test.ts",
+    "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/agent-group.tsx",
+    "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/tool-call-item.tsx",
+    "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/selector-combobox/selector-combobox.tsx"
+  ],
+  "overrideForkFirst": [],
+  "notes": "Locked from self-resolutions; no human answers were pending this run (open-questions.md records zero blockers). Scope is ONLY the 7 paths still unmerged after the harness merge — the draft's other proposedDirectives (search-modal.tsx and lib/copilot/generated/* checkoutTheirs; logo png / providers/models.ts / lib/core/config/{api-keys,env}.ts checkoutOurs; next.config.ts / hero.tsx / files-upload / mothership-execute mustEdit) are DELIBERATELY OMITTED because those paths merged clean or were already resolved. Re-issuing them would overwrite good resolutions. checkoutOurs on highlight.ts is exact-locked: both sides made the identical semantic change and differ only in quote style; the fork's single-quoted form is what biome enforces. providers/utils.ts stays mustEdit (never --ours): the merged file currently declares `const isXaiModel` TWICE (utils.ts:1128 ours, :1131 theirs) OUTSIDE the conflict markers — that is a hard TS build break the child must dedupe on top of resolving the hunk."
+}

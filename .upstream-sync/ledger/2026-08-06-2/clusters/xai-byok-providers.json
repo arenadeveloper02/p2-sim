@@ -1,0 +1,18 @@
+{
+  "clusterId": "xai-byok-providers",
+  "runId": "2026-08-06-2",
+  "files": [
+    {
+      "path": "apps/sim/providers/utils.ts",
+      "resolution": "manual",
+      "notes": "Removed the duplicate isXaiModel declaration and retained the fork's wider hosted-provider guard, including SambaNova and OpenRouter, plus its hosted-model comment."
+    },
+    {
+      "path": "apps/sim/providers/utils.test.ts",
+      "resolution": "manual",
+      "notes": "Unioned the grok-4-latest and grok-4.5 billing assertions and retained the fork-only mothership assertion."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "Resolved per the locked xai-byok-providers union directive."
+}
