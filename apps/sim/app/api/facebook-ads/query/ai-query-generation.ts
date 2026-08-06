@@ -29,7 +29,7 @@ export async function parseQueryWithAI(
   })
 
   // Step 2: Build dynamic system prompt based on intents
-  const systemPrompt = buildSystemPrompt(intents, promptContext)
+  const systemPrompt = buildSystemPrompt(intents, promptContext, detectedDateSelection)
 
   logger.debug('Constructed system prompt for Facebook Ads query generation', {
     promptLength: systemPrompt.length,
@@ -60,6 +60,19 @@ export async function parseQueryWithAI(
 - Attribution: attribution_setting, action_attribution_windows
 
 **IMPORTANT:** device_platform, age, gender, country, publisher_platform are BREAKDOWNS, not fields. Never include them in the "fields" array.
+
+**NESTED OBJECTS (entity endpoints: /campaigns, /adsets, /ads):**
+Connected objects return only an ID unless you expand them. Request the subfields you
+need with brace syntax, and add parent context so each row is self-describing:
+- "creative{id,name,title,body,image_url,thumbnail_url,video_id,object_story_spec}"
+- "campaign{id,name}", "adset{id,name}"
+Entity endpoints ignore top-level date_preset/time_range. To attach metrics for the
+user's timeframe, nest insights with dot-notation parameters inside the fields array
+(the timeframes below are shape examples, not defaults):
+- "insights.date_preset(<preset>).fields(impressions,clicks,spend,ctr,cpc,reach)"
+- "insights.time_range({'since':'YYYY-MM-DD','until':'YYYY-MM-DD'}).fields(impressions,clicks,spend)"
+Use the timeframe the user asked for; if a RESOLVED TIMEFRAME section is provided, use
+that exact preset or range. Omit nested insights when no metrics were asked for.
 
 **DATE PRESETS:**
 - today, yesterday, this_month, last_month, this_quarter, last_quarter

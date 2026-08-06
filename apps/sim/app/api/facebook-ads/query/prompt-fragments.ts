@@ -1,3 +1,4 @@
+import type { FacebookDateSelection } from './date-extraction'
 import type { Intent, PromptContext } from './types'
 
 type FragmentBuilder = (context: PromptContext) => string
@@ -132,17 +133,37 @@ const creativeFragment: FragmentBuilder = () =>
   `
 **CREATIVE QUERIES:**
 When user asks about ad creatives, images, videos, headlines:
-- Use endpoint: "ads" for ad list with creative info
-- Include fields: ["id", "name", "status", "creative"]
-- For performance: Use endpoint: "insights", level: "ad"
+- Use endpoint: "ads" for ad list with creative info.
+- ALWAYS expand nested objects with subfields. A bare "creative" field returns only an
+  ID, so request "creative{...}" with the subfields you need.
+- Include parent context so each ad shows which campaign and ad set it belongs to:
+  "campaign{id,name}" and "adset{id,name}".
+- The "ads" endpoint ignores top-level date_preset/time_range. To scope metrics to the
+  user's timeframe, nest insights inside the fields array using dot-notation
+  parameters. Use whatever timeframe the user actually asked for — if a RESOLVED
+  TIMEFRAME section is present below, use that exact value:
+    "insights.date_preset(<preset>).fields(impressions,clicks,spend,ctr,cpc,reach)"
+  For a custom window use time_range instead of date_preset:
+    "insights.time_range({'since':'YYYY-MM-DD','until':'YYYY-MM-DD'}).fields(impressions,clicks,spend)"
+  Omit the nested insights entirely when the user only wants creative content and no
+  metrics.
 
-Example (ad list):
+Example (shape only — substitute the user's actual timeframe for last_7d):
 {
   "endpoint": "ads",
-  "fields": ["id", "name", "status", "creative", "effective_status"]
+  "fields": [
+    "id",
+    "name",
+    "status",
+    "effective_status",
+    "campaign{id,name}",
+    "adset{id,name}",
+    "creative{id,name,title,body,image_url,thumbnail_url,video_id,call_to_action_type,object_story_spec}",
+    "insights.date_preset(last_7d).fields(impressions,clicks,spend,ctr,cpc,reach)"
+  ]
 }
 
-Example (ad performance):
+Example (aggregate ad performance only, no creative content):
 {
   "endpoint": "insights",
   "fields": ["ad_name", "impressions", "clicks", "spend", "conversions"],
@@ -246,7 +267,41 @@ const FRAGMENT_MAP: Record<Intent, FragmentBuilder> = {
   ad: adFragment,
 }
 
-export function buildSystemPrompt(intents: Intent[], context: PromptContext): string {
+/**
+ * Relays the deterministically resolved timeframe to the model so it never has to
+ * infer a preset or guess today's date. Covers any range the extractor understands,
+ * including custom windows that have no Facebook preset (e.g. "last 12 days").
+ */
+function buildResolvedTimeframeSection(dateSelection: FacebookDateSelection): string | null {
+  if (dateSelection.date_preset) {
+    return `
+**RESOLVED TIMEFRAME:**
+The user's timeframe resolves to date_preset "${dateSelection.date_preset}".
+Use exactly this value wherever a date is required — as the top-level "date_preset" for
+insights queries, or inside nested insights on entity endpoints:
+"insights.date_preset(${dateSelection.date_preset}).fields(impressions,clicks,spend)"
+`.trim()
+  }
+
+  if (dateSelection.time_range) {
+    const { since, until } = dateSelection.time_range
+    return `
+**RESOLVED TIMEFRAME:**
+The user's timeframe resolves to the custom range ${since} → ${until}.
+Use exactly these dates wherever a date is required — as the top-level "time_range" for
+insights queries, or inside nested insights on entity endpoints:
+"insights.time_range({'since':'${since}','until':'${until}'}).fields(impressions,clicks,spend)"
+`.trim()
+  }
+
+  return null
+}
+
+export function buildSystemPrompt(
+  intents: Intent[],
+  context: PromptContext,
+  dateSelection?: FacebookDateSelection | null
+): string {
   const uniqueIntents = Array.from(new Set(intents))
   const sections = [BASE_PROMPT]
 
@@ -256,6 +311,13 @@ export function buildSystemPrompt(intents: Intent[], context: PromptContext): st
     const fragment = fragmentBuilder(context)?.trim()
     if (fragment) {
       sections.push(fragment)
+    }
+  }
+
+  if (dateSelection) {
+    const timeframeSection = buildResolvedTimeframeSection(dateSelection)
+    if (timeframeSection) {
+      sections.push(timeframeSection)
     }
   }
 
