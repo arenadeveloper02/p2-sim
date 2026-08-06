@@ -125,14 +125,15 @@ export const VERIFY_STEP_COMMANDS = {
   check: 'bun run check',
   lint: 'bun run lint',
   test: 'bun run test',
+  /** Kept for optional/manual use; harness does not run this (CI owns full build). */
   build: 'bun run build',
 } as const
 
+/** Default harness verify set — excludes full build (OOM on 7GB runners). */
 export const VERIFY_COMMANDS = [
   VERIFY_STEP_COMMANDS.check,
   VERIFY_STEP_COMMANDS.lint,
   VERIFY_STEP_COMMANDS.test,
-  VERIFY_STEP_COMMANDS.build,
 ] as const
 
 export const WIP_META_RELATIVE_PATH = join(UPSTREAM_SYNC_ROOT, 'wip-meta.json')

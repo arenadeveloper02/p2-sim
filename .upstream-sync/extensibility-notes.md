@@ -17,4 +17,4 @@ Rolling log of structural improvements that reduce merge conflict surface with `
 - **Release-sliced sync:** each Actions run merges the next upstream `vX.Y.Z:` tip; a successful complete dispatches the next unpaid release in a separate job.
 - **Parent control plane:** grill writes `merge-plan.draft.json`; resume finalizes `merge-plan.json` + `merge-directives.json` from Q&A + completed cluster reports + prior plan (continue, don’t undo); the harness restricts directives to still-unmerged paths and instantiates Luna children from the plan (prefix clustering is fallback only).
 - **Directives + WIP integrity:** `delete` / `mustEdit` / `overrideForkFirst` beat `forkFirst`. WIP sidecars store `decisionHash` + deletion tombstones and are skipped when answers/policy/directives change.
-- **Blocking build:** `bun run build` must pass (`child-fix-build`, max 2 rounds) before status `completed`. Lint/test/check stay advisory.
+- **Build:** Full `bun run build` is left to CI (`.github/workflows/images.yml`). Harness only runs advisory check/lint/test — dual Next builds OOM the 7GB Actions runner.

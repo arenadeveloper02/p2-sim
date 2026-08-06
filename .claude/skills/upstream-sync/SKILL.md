@@ -75,15 +75,14 @@ Runs after merge + coherence and is published to the ledger, draft PR, and Actio
 | `bun run check` | Advisory |
 | `bun run lint` | Advisory |
 | `bun run test` | Advisory |
-| `bun run build` | **Blocking** |
+| `bun run build` | **Skipped in harness** — CI (`.github/workflows/images.yml`) owns full builds (7GB runner OOM) |
 
-Build failures invoke `child-fix-build` (max 2 rounds). The run is marked `completed` only when blocking verification passes. Otherwise status is `blocked` (never “completed with verification warnings” on a red build). Known repo-level lint/test noise must not false-block sync.
+The run can be marked `completed` with advisory verification warnings. Do not run `bun run build` from agents during sync — leave it to CI.
 
 ```bash
 bun run check
 bun run lint
 bun run test
-bun run build
 ```
 
 ## Ledger files

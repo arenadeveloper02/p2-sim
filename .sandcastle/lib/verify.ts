@@ -11,7 +11,11 @@ export const ADVISORY_VERIFY_STEPS = [
   'lint',
   'test',
 ] as const satisfies readonly VerifyStepName[]
-export const BLOCKING_VERIFY_STEPS = ['build'] as const satisfies readonly VerifyStepName[]
+/**
+ * No harness-blocking verify steps. Full `bun run build` OOMs the 7GB Actions
+ * runner during dual Next compiles — CI (`.github/workflows/images.yml`) owns build.
+ */
+export const BLOCKING_VERIFY_STEPS = [] as const satisfies readonly VerifyStepName[]
 
 export interface VerifyResult {
   command: string
@@ -21,7 +25,7 @@ export interface VerifyResult {
 }
 
 export interface RunVerificationOptions {
-  /** Subset of steps to run. Default: check, lint, test, build. */
+  /** Subset of steps to run. Default: check, lint, test (no full build). */
   steps?: readonly VerifyStepName[]
 }
 
@@ -114,11 +118,11 @@ export function runVerificationStep(step: VerifyStepName): VerifyResult {
 }
 
 /**
- * Run verification commands. Lint/test/check stay advisory; build is blocking.
- * Failures never throw — callers decide whether to complete or spawn a fix agent.
+ * Run verification commands. Check/lint/test are advisory; full build is skipped
+ * (CI owns it). Failures never throw — callers decide how to surface them.
  */
 export function runVerification(options?: RunVerificationOptions): VerifyResult[] {
-  const steps = options?.steps ?? (['check', 'lint', 'test', 'build'] as const)
+  const steps = options?.steps ?? ADVISORY_VERIFY_STEPS
   return steps.map((step) => runVerificationStep(step))
 }
 
@@ -149,13 +153,12 @@ export function formatVerifyResults(results: VerifyResult[]): string {
   const advisoryFailures = results.filter((r) => !r.blocking && !r.success)
   let summary: string
   if (blockingFailures.length > 0) {
-    summary =
-      '**Blocking verification failed** — build must pass before this sync can be marked completed.'
+    summary = '**Blocking verification failed** — resolve before this sync can be marked completed.'
   } else if (advisoryFailures.length > 0) {
     summary =
-      'Advisory verification failed (lint/test/check). These do not block the sync. Review and fix on the draft PR as needed.'
+      'Advisory verification failed (lint/test/check). These do not block the sync. Full `bun run build` is left to CI. Review and fix on the draft PR as needed.'
   } else if (results.every((r) => r.success)) {
-    summary = 'All verification commands passed.'
+    summary = 'Advisory verification passed (check/lint/test). Full `bun run build` is left to CI.'
   } else {
     summary = 'Verification finished with mixed results.'
   }
@@ -181,14 +184,18 @@ export function allVerificationPassed(results: VerifyResult[]): boolean {
 
 /**
  * Blocking gate for marking a sync completed.
- * Requires build to pass. Optionally also require `bun run check`.
+ * Configured blocking steps (none by default — CI owns `bun run build`) must
+ * pass when present. Optionally also require `bun run check`.
  */
 export function allBlockingVerificationPassed(
   results: VerifyResult[],
   options?: { requireCheck?: boolean }
 ): boolean {
-  const build = getVerifyResult(results, 'build')
-  if (!build?.success) return false
+  if (results.some((result) => result.blocking && !result.success)) return false
+  for (const step of BLOCKING_VERIFY_STEPS) {
+    const result = getVerifyResult(results, step)
+    if (!result?.success) return false
+  }
   if (options?.requireCheck) {
     const check = getVerifyResult(results, 'check')
     if (!check?.success) return false

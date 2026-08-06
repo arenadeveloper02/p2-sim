@@ -29,7 +29,7 @@ The harness is **release-sliced** and **plan-driven**:
 2. Parent Phase A (grill) writes `merge-plan.draft.json` + `## Parent plan`. Resume skips re-ask only — Phase B still finalizes after merge, **continuing from cluster reports + prior plan + WIP** (does not re-issue resolved work).
 3. Harness applies directives (`mustEdit` / `overrideForkFirst` beat `forkFirst`), then spawns Luna children from the plan. Cluster reports land under `ledger/<runId>/clusters/`.
 4. WIP overlays carry a `decisionHash` (directives + grill answers + merge-policy) and are skipped when stale. Capacity exhaustion mid-cluster → `status: blocked`, not completed.
-5. **Build is blocking.** Coherence always runs; `child-fix-build` gets two rounds. Red build → `blocked`, never “completed with verification warnings.”
+5. **Build is left to CI.** Coherence always runs; harness verify is advisory check/lint/test only. Full `bun run build` OOMs the 7GB Actions runner — `.github/workflows/images.yml` owns it.
 
 ---
 

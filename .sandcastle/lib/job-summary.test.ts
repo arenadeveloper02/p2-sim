@@ -1,10 +1,11 @@
 /**
  * Run with: bun test ./.sandcastle/lib/job-summary.test.ts
  */
-import { afterEach, describe, expect, test } from 'bun:test'
+
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { afterEach, describe, expect, test } from 'bun:test'
 import {
   formatRunJobSummary,
   publishRunJobSummary,
@@ -16,7 +17,7 @@ import { resetUsageRecords } from './usage'
 describe('job summary', () => {
   afterEach(() => {
     resetUsageRecords()
-    delete process.env.GITHUB_STEP_SUMMARY
+    process.env.GITHUB_STEP_SUMMARY = undefined
   })
 
   test('formatRunJobSummary includes status, sync details, conflicts, verify, usage', () => {
@@ -109,7 +110,8 @@ describe('job summary', () => {
 
     expect(markdown).toContain('✅ Completed')
     expect(markdown).toContain('bun run check')
-    expect(markdown).toContain('bun run build')
+    expect(markdown).toContain('left to CI')
+    expect(markdown).toContain('full `bun run build` left to CI')
   })
 
   test('writeRunOutcome / readRunOutcome round-trip', () => {
@@ -154,7 +156,7 @@ describe('job summary', () => {
       expect(summary).toContain('✅ Completed')
       expect(summary).toContain('## Agent usage')
     } finally {
-      delete process.env.GITHUB_STEP_SUMMARY
+      process.env.GITHUB_STEP_SUMMARY = undefined
       rmSync(tempDir, { recursive: true, force: true })
     }
   })

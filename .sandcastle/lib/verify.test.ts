@@ -1,5 +1,5 @@
 /**
- * Run with: bun test .sandcastle/lib/verify.test.ts
+ * Run with: bun test ./.sandcastle/lib/verify.test.ts
  */
 import { describe, expect, test } from 'bun:test'
 import {
@@ -17,23 +17,26 @@ const mixed: VerifyResult[] = [
   { command: 'bun run test', success: false, output: 'FAIL suite', blocking: false },
 ]
 
-const buildFailed: VerifyResult[] = [
+const advisoryOnly: VerifyResult[] = [
   { command: 'bun run check', success: true, output: 'ok', blocking: false },
   { command: 'bun run lint', success: true, output: 'ok', blocking: false },
   { command: 'bun run test', success: false, output: 'FAIL suite', blocking: false },
+]
+
+const advisoryPassed: VerifyResult[] = [
+  { command: 'bun run check', success: true, output: 'ok', blocking: false },
+  { command: 'bun run lint', success: true, output: 'ok', blocking: false },
+  { command: 'bun run test', success: true, output: 'ok', blocking: false },
+]
+
+const legacyBuildFailed: VerifyResult[] = [
+  ...advisoryPassed,
   {
     command: 'bun run build',
     success: false,
     output: "Module not found: '@/missing'",
     blocking: true,
   },
-]
-
-const buildPassedAdvisoryFailed: VerifyResult[] = [
-  { command: 'bun run check', success: true, output: 'ok', blocking: false },
-  { command: 'bun run lint', success: false, output: 'lint noise', blocking: false },
-  { command: 'bun run test', success: true, output: 'ok', blocking: false },
-  { command: 'bun run build', success: true, output: 'compiled', blocking: true },
 ]
 
 describe('runShellCommandStreaming', () => {
@@ -61,55 +64,43 @@ describe('advisory verification formatting', () => {
     expect(markdown).toContain('❌ failed (advisory)')
     expect(markdown).toContain('✅ passed')
     expect(markdown).toContain('FAIL suite')
+    expect(markdown).toContain('left to CI')
     expect(markdown).not.toContain('Blocking verification failed')
   })
 
-  test('allVerificationPassed requires every command', () => {
+  test('allVerificationPassed requires every default harness command', () => {
     expect(allVerificationPassed(mixed)).toBe(false)
-    expect(
-      allVerificationPassed([
-        { command: 'bun run check', success: true, output: '', blocking: false },
-        { command: 'bun run lint', success: true, output: '', blocking: false },
-        { command: 'bun run test', success: true, output: '', blocking: false },
-        { command: 'bun run build', success: true, output: '', blocking: true },
-      ])
-    ).toBe(true)
+    expect(allVerificationPassed(advisoryPassed)).toBe(true)
   })
 })
 
 describe('blocking verification', () => {
-  test('build failure is not allBlockingVerificationPassed', () => {
-    expect(allBlockingVerificationPassed(buildFailed)).toBe(false)
-    expect(allBlockingVerificationPassed(buildFailed, { requireCheck: true })).toBe(false)
+  test('harness completes without a build result (CI owns build)', () => {
+    expect(allBlockingVerificationPassed(mixed)).toBe(true)
+    expect(allBlockingVerificationPassed(advisoryOnly)).toBe(true)
+    expect(allBlockingVerificationPassed(advisoryPassed)).toBe(true)
   })
 
-  test('advisory failures still allow blocking pass when build succeeded', () => {
-    expect(allBlockingVerificationPassed(buildPassedAdvisoryFailed)).toBe(true)
-    expect(allVerificationPassed(buildPassedAdvisoryFailed)).toBe(false)
+  test('explicit blocking failure in results still fails the gate', () => {
+    expect(allBlockingVerificationPassed(legacyBuildFailed)).toBe(false)
   })
 
   test('requireCheck can tighten the blocking gate', () => {
     const checkFailed = [
       { command: 'bun run check', success: false, output: 'type error', blocking: false },
-      { command: 'bun run build', success: true, output: 'ok', blocking: true },
     ] satisfies VerifyResult[]
     expect(allBlockingVerificationPassed(checkFailed)).toBe(true)
     expect(allBlockingVerificationPassed(checkFailed, { requireCheck: true })).toBe(false)
   })
 
-  test('missing build result fails the blocking gate', () => {
-    expect(allBlockingVerificationPassed(mixed)).toBe(false)
-  })
-
-  test('formatVerifyResults calls out blocking build failures', () => {
-    const markdown = formatVerifyResults(buildFailed)
+  test('formatVerifyResults calls out blocking failures when present', () => {
+    const markdown = formatVerifyResults(legacyBuildFailed)
     expect(markdown).toContain('Blocking verification failed')
     expect(markdown).toContain('❌ failed (blocking)')
-    expect(markdown).not.toContain('failures do not block the sync')
   })
 
   test('formatBuildLogForFixAgent returns the build tail', () => {
-    expect(formatBuildLogForFixAgent(buildFailed[3])).toContain('Module not found')
+    expect(formatBuildLogForFixAgent(legacyBuildFailed[3])).toContain('Module not found')
     expect(formatBuildLogForFixAgent(undefined)).toContain('No build verification result')
   })
 })

@@ -9,7 +9,7 @@
  * 5. Package bootstrap → WIP overlay (decisionHash) → parent finalize (Phase B; resume continues from cluster reports)
  * 6. Apply merge directives + deterministic policy (forkFirst overrides / mustEdit)
  * 7. Luna children from merge-plan.json clusters (fallback prefix grouping if plan missing)
- * 8. Always-on coherence pass; blocking `bun run build` (+ child-fix-build, max 2 rounds)
+ * 8. Always-on coherence pass; advisory check/lint/test (full build left to CI)
  * 9. Update draft PR body + final ledger commit; chain next release on success
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
@@ -143,20 +143,15 @@ import {
   allBlockingVerificationPassed,
   allVerificationPassed,
   autofixFormat,
-  formatBuildLogForFixAgent,
   formatVerifyResults,
   formatVerifyStatusLine,
-  getVerifyResult,
   runVerification,
-  runVerificationStep,
-  type VerifyResult,
 } from './lib/verify'
 
 const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'prompts')
 const SKIP_AGENT = process.env.UPSTREAM_SYNC_SKIP_AGENT === 'true'
 const FORCE_RUN = process.env.UPSTREAM_SYNC_FORCE === 'true'
 const RESUME = process.env.UPSTREAM_SYNC_RESUME === 'true'
-const MAX_BUILD_FIX_ROUNDS = 2
 const COHERENCE_REASON =
   'Always-on coherence pass after conflicts cleared (or none existed): verify import graph, restore missing upstream exports on fork-kept / union files, and honor grill directives (`delete` / `mustEdit` / `overrideForkFirst`). Do not no-op just because `git diff --diff-filter=U` is empty.'
 
@@ -428,60 +423,6 @@ function stageMergePolicyIfPresent(): void {
   } catch {
     // merge-policy may be unchanged or unreadable mid-merge
   }
-}
-
-function replaceVerifyResult(results: VerifyResult[], next: VerifyResult): VerifyResult[] {
-  const existing = results.findIndex((result) => result.command === next.command)
-  if (existing === -1) return [...results, next]
-  return results.map((result, index) => (index === existing ? next : result))
-}
-
-async function runBuildFixLoop(options: {
-  runId: string
-  syncBranch: string
-  activePrNumber: number
-  agents: ReturnType<typeof resolveAgents>
-  verifyResults: VerifyResult[]
-}): Promise<VerifyResult[]> {
-  let results = options.verifyResults
-  let build = getVerifyResult(results, 'build')
-  if (build?.success || SKIP_AGENT) return results
-
-  for (let round = 1; round <= MAX_BUILD_FIX_ROUNDS; round++) {
-    if (build?.success) break
-    console.log(
-      `[verify] build failed — invoking child-fix-build round ${round}/${MAX_BUILD_FIX_ROUNDS}`
-    )
-    const prompt = substitutePrompt(readPrompt('child-fix-build.md'), {
-      RUN_ID: options.runId,
-      SYNC_BRANCH: options.syncBranch,
-      FIX_ROUND: String(round),
-      PR_NUMBER: options.activePrNumber > 0 ? String(options.activePrNumber) : 'none',
-      BUILD_LOG: formatBuildLogForFixAgent(build),
-      CHECK_LOG: formatBuildLogForFixAgent(getVerifyResult(results, 'check')),
-    })
-
-    await runAgentPrompt({
-      prompt,
-      name: `child-fix-build-${round}`,
-      branch: options.syncBranch,
-      runId: options.runId,
-      agent: options.agents.child,
-      agentKind: 'child',
-      agents: options.agents,
-      maxIterations: 5,
-    })
-
-    runGit(['add', '-A'])
-    if (hasStagedChanges()) {
-      commitHarness(`upstream-sync(${options.runId}): build-fix round ${round}`)
-    }
-
-    build = runVerificationStep('build')
-    results = replaceVerifyResult(results, build)
-  }
-
-  return results
 }
 
 function readPrompt(name: string): string {
@@ -1851,7 +1792,7 @@ async function main(): Promise<void> {
     endGroup()
     logHarnessPhase(
       'verify',
-      'format + check / lint / test / build (streamed; heartbeats every 60s)'
+      'format + advisory check / lint / test (full build left to CI; streamed; heartbeats every 60s)'
     )
     endGroup = startLogGroup('verify')
 
@@ -1866,17 +1807,7 @@ async function main(): Promise<void> {
       console.warn(formatResult.output.slice(0, 2000))
     }
 
-    const advisoryResults = runVerification({ steps: ['check', 'lint', 'test'] })
-    const buildResult = runVerificationStep('build')
-    let verifyResults = [...advisoryResults, buildResult]
-    verifyResults = await runBuildFixLoop({
-      runId,
-      syncBranch,
-      activePrNumber,
-      agents,
-      verifyResults,
-    })
-
+    const verifyResults = runVerification()
     const verifyPassed = allVerificationPassed(verifyResults)
     const blockingPassed = allBlockingVerificationPassed(verifyResults)
     appendRunLogSections(runId, {
@@ -1888,93 +1819,14 @@ async function main(): Promise<void> {
     })
 
     if (!blockingPassed) {
-      const failedBuild = getVerifyResult(verifyResults, 'build')
-      const usageSectionBlocked = appendUsageToRunLog(runId)
-      const buildLog = formatBuildLogForFixAgent(failedBuild)
-      appendRunLogSections(runId, {
-        Status: 'blocked',
-        'Blocking verification': 'Build failed after coherence and build-fix rounds.',
-      })
-
-      const prBody = [
-        QUESTION_MARKER,
-        `## Upstream sync blocked (${runId})`,
-        '',
-        'Merge finished but **build failed** (blocking). The sync is not completed.',
-        '',
-        formatVerifyStatusLine(verifyResults),
-        '',
-        formatVerifyResults(verifyResults),
-        '',
-        '### Build log',
-        '',
-        '```',
-        buildLog,
-        '```',
-        '',
-        `Reply with \`${RESUME_COMMAND}\` after fixing compile errors, or re-run the workflow.`,
-        '',
-        '### Agent usage',
-        usageSectionBlocked,
-      ].join('\n')
-
-      const prNumber = resolveDraftPr(
-        activePrNumber,
-        mergeBase,
-        syncBranch,
-        runId,
-        extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
-        headSha,
-        syncPrTitle
+      console.warn(
+        '[verify] Unexpected blocking verification failure with no configured blocking steps — completing with advisory warnings.'
       )
-      if (prNumber > 0) {
-        try {
-          commentOnPr(
-            prNumber,
-            [
-              '## Upstream sync blocked — build failed',
-              '',
-              'Blocking verification did not pass. Status is `blocked`, not completed.',
-              '',
-              formatVerifyStatusLine(verifyResults),
-              '',
-              '```',
-              buildLog.slice(0, 6000),
-              '```',
-            ].join('\n')
-          )
-        } catch (error) {
-          console.warn(`Could not comment build failure on PR #${prNumber}:`, error)
-        }
-        syncGrillQaFromPr(prNumber, runId)
-      }
-      commitUpstreamLedger(`upstream-sync(${runId}): blocked on build`)
-      try {
-        runGit(['push', 'origin', syncBranch])
-      } catch (error) {
-        throwIfRemotePushAuthError(error, `Push ${syncBranch} after blocked build`)
-        console.warn(`Could not push ${syncBranch} after blocked build:`, error)
-      }
-      writeState({ ...readState(), activePrNumber: prNumber || null, status: 'blocked' })
-      writeRunOutcome(runId, {
-        kind: 'blocked',
-        title: 'Blocked — build failed',
-        detail:
-          'bun run build failed after coherence and child-fix-build rounds. Sync is not marked completed.',
-        syncBranch,
-        mergeBase,
-        upstreamSha: headSha,
-        prNumber: prNumber || null,
-        commitCount: upstreamCommits.length,
-        verification: verificationToOutcome(verifyResults),
-      })
-      process.exitCode = 1
-      return
     }
 
     if (!verifyPassed) {
       console.warn(
-        '[verify] Advisory check/lint/test failed — build passed, completing with advisory warnings.'
+        '[verify] Advisory check/lint/test failed — completing anyway (full bun run build is left to CI).'
       )
     }
 
@@ -2061,8 +1913,8 @@ async function main(): Promise<void> {
         ? 'Upstream sync completed'
         : 'Upstream sync completed (advisory verification warnings)',
       detail: verifyPassed
-        ? `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Draft PR ready for review.`
-        : `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Build passed; advisory check/lint/test reported failures — see ledger / PR / job summary.`,
+        ? `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Draft PR ready for review. Full build is left to CI.`
+        : `Merged simstudioai/sim@${headSha.slice(0, 8)} into \`${mergeBase}\` (${upstreamCommits.length} commit(s)). Advisory check/lint/test reported failures — see ledger / PR / job summary. Full build is left to CI.`,
       syncBranch,
       mergeBase,
       upstreamSha: headSha,

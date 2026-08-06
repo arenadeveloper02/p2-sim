@@ -38,7 +38,7 @@ One Actions run = one upstream release tip. Resume skips grill re-ask but still 
 
 ## Verification
 
-`check` / `lint` / `test` are advisory. **`bun run build` is blocking** (`child-fix-build`, max 2 rounds). Red build → `blocked`, not completed.
+`check` / `lint` / `test` are advisory. **`bun run build` is skipped in the harness** — CI (`.github/workflows/images.yml`) owns full builds (7GB runner OOM).
 
 ## Commands
 
