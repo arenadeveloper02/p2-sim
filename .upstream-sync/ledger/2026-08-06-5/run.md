@@ -385,3 +385,14 @@ Resolved the union dedupe hazard by retaining existing fork xAI symbols and addi
 
 Focused Biome validation passes. App Vitest could not start because @next/env is absent in the checkout; app type-check is blocked by unrelated unresolved merge markers in other clusters.
 
+## Cluster tools-executor
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/tools/index.ts` | manual | Unioned fork allowHttp, responseData-aware transforms, dynamic hosted provider resolution, error-safe hosted billing, and in-process direct dispatch with upstream proxyUrl, response.body, abort-signal forwarding, and Copilot-only _serviceCost. |
+| `apps/sim/tools/index.test.ts` | manual | Kept fork billing-failure coverage and reset helpers, retained upstream hosted-cost assertions, and used the shared stateful env/env-flags mocks so setEnv and setEnvFlags remain effective. |
+| `apps/sim/executor/execution/types.ts` | manual | Kept both fork ExecutionActor observability and upstream CustomPiiPattern imports. |
+| `apps/sim/executor/handlers/workflow/workflow-handler.ts` | manual | Unioned fork ExecutionMetadata with upstream START_BLOCK_METADATA_FIELD and StartBlockRunMetadata imports. |
+
+The image generator was already resolved by the locked checkoutOurs directive and was intentionally left untouched. Biome passes for all four files; focused Vitest startup is blocked by the missing @next/env dependency, and full type-check output is blocked by unrelated unresolved clusters.
+

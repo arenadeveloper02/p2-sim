@@ -71,6 +71,8 @@ import { SlackClientSelector } from './components/slack-client-selector'
 
 const SLACK_OVERRIDES: SelectorOverrides = {
   transformContext: (context, deps) => {
+    // v1 gates on authMethod (raw bot token vs OAuth); v2 has one merged
+    // credential field for actions and customBotCredential for triggers.
     const authMethod = deps.authMethod as string
     const oauthCredential =
       authMethod === 'bot_token'

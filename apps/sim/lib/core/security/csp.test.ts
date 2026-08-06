@@ -1,4 +1,4 @@
-import { createEnvMock, envFlagsMock } from '@sim/testing'
+import { createEnvMock } from '@sim/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/core/config/env', () =>
@@ -33,8 +33,6 @@ vi.mock('../config/env', () =>
     NEXT_PUBLIC_TERMS_URL: 'https://legal.example.com/terms',
   })
 )
-
-vi.mock('@/lib/core/config/env-flags', () => envFlagsMock)
 
 import {
   addCSPSource,
