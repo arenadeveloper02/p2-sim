@@ -214,3 +214,17 @@ All eight union-path conflicts are resolved and staged. Focused OAuth tests (42)
 
 No upstream hunks were rejected; the existing unionPaths policy already covers these files.
 
+## Cluster landing-branding
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/app/(landing)/components/features/features.tsx` | manual | Kept the fork's Arena feature copy and upstream-compatible structure. |
+| `apps/sim/app/(landing)/components/footer/footer.tsx` | manual | Kept ArenaWordmark/Arena home labeling and took upstream product/resource links, Slack link, and ALL_COMPETITORS compare column. |
+| `apps/sim/app/(landing)/components/hero/hero.tsx` | manual | Kept Arena sr-only and headline copy while taking upstream hero description wording. |
+| `apps/sim/app/(landing)/components/home-structured-data/home-structured-data.tsx` | manual | Kept literal Arena names/descriptions, retained the HOME_PAGE_DESCRIPTION barrel export for compatibility, and took upstream JSON-LD feature wording. |
+| `apps/sim/app/(landing)/page.tsx` | manual | Kept literal Arena metadata descriptions and titles while preserving upstream metadata structure. |
+| `apps/sim/ee/whitelabeling/components/branding-provider.tsx` | manual | Kept favicon synchronization and legacy useOrganizations compatibility, with upstream host-aware routing used whenever host context props are supplied. |
+| `apps/sim/ee/whitelabeling/components/whitelabeling-settings.tsx` | manual | Kept upstream organizationId/billing structure and fork organization-scoped logo, wordmark, favicon, and Arena copy behavior. |
+
+Resolved the assigned seven files only. The email footer was already settled by the locked checkoutOurs directive and was verified without reintroducing social links.
+

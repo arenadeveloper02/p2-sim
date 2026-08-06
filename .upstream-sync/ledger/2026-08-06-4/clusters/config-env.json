@@ -1,0 +1,18 @@
+{
+  "clusterId": "config-env",
+  "runId": "2026-08-06-4",
+  "files": [
+    {
+      "path": "apps/sim/.env.example",
+      "resolution": "manual",
+      "notes": "Unioned the fork's Development/Microsoft OAuth block with upstream's self-hosted limits documentation."
+    },
+    {
+      "path": "apps/sim/lib/core/config/env.ts",
+      "resolution": "manual",
+      "notes": "Kept fork rate-limit bypass and defaults plus all EXECUTION_TIMEOUT_* defaults of 60000; added upstream's RATE_LIMIT_FREE_API_ENDPOINT and Copilot billing flags as optional unset variables, and retained COPILOT_API_KEY_2 with upstream's COPILOT_API_KEY wording."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "Verified root package scripts retain vendor-pricing:check/vendor-pricing:sync and include skills:sync/skills:check. Regenerated bun.lock with bun install --lockfile-only; no additional lockfile delta was produced. Recorded the rejected upstream #5640 timeout/default hunk in skipped.md."
+}
