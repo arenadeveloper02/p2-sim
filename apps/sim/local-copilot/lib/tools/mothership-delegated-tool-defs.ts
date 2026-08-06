@@ -22,21 +22,21 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   glob: 'Finds workspace files by glob pattern (e.g. files/**/*.csv).',
   grep: 'Searches file contents under a workspace path pattern.',
   create_file:
-    'Creates a workspace file. Prefer fileName with a VFS path (e.g. "files/Deck.pptx"). For markdown/text/json/csv/html, ALWAYS pass content with the full body. Office formats (pptx/docx/pdf): empty shell only — no content — then workspace_file update + edit_content in later rounds.',
+    'Creates a workspace file. Prefer fileName with a VFS path (e.g. "files/Deck.pptx"). For markdown/text/json/csv/html, ALWAYS pass content with the full body. Office formats (pptx/docx/pdf): empty shell only — no content — then workspace_file update + edit_content in later rounds. Before creating, glob/read workspaceFiles — if a matching file exists, show its details and update it instead.',
   create_file_folder: 'Creates a folder under the workspace files tree.',
   workspace_file:
     'Declares a content edit on an existing workspace file (append/update/patch). REQUIRED: operation, target={kind:"path", path:"files/..."}, title (short UI label). Example: {"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"SambaNova deck"}. Does not write the body — call edit_content in the NEXT tool round with content. Never pass target as a bare string path.',
   download_to_workspace_file: 'Downloads a URL into a workspace file.',
   user_table:
-    'Creates, reads, and updates workspace tables — operations include create, get, get_schema, insert_row, batch_insert_rows, query_rows, update_row, add_column, import_file, create_from_file.',
+    'Creates, reads, and updates workspace tables — operations include create, get, get_schema, insert_row, batch_insert_rows, query_rows, update_row, add_column, import_file, create_from_file. Before creating, check `tables` then call get / get_schema — if a match exists, show details and reuse it.',
   knowledge_base:
-    'Manages knowledge bases — operations include create, get, list, query (semantic search), add_file (ingest document), update, delete, add_connector, sync_connector.',
+    'Manages knowledge bases — operations include create, get, list, query (semantic search), add_file (ingest document), update, delete, add_connector, sync_connector. Before creating, check `knowledgeBases` then call get / list / query — if a match exists, show details and reuse it.',
   open_resource: 'Opens a workspace resource (workflow, file, table, knowledge base) in the UI.',
   materialize_file: 'Materializes chat-uploaded files into workspace files or table imports.',
   generate_image:
     'Generates an image from a text prompt (no workflow). Uses hosted/workspace keys automatically. Pass the user full request in `prompt`, including variation counts (e.g. "3 variations"). Optional outputs.files path to save under files/.',
   search_online:
-    'Live web search via Exa (same keys as the Exa block: workspace EXA_API_KEY, BYOK, or hosted). Prefer invoke_integration_tool with exa_answer for factual live Q&A, or exa_search for result lists. search_online is a convenience wrapper — REQUIRED: query and toolTitle.',
+    'Live web search via Exa (same keys as the Exa block: workspace EXA_API_KEY, BYOK, or hosted). Call this FIRST for real-world factual / current questions (who/what/when/where, news, prices, weather) — do not answer from memory. For citation-heavy Q&A you may use invoke_integration_tool with exa_answer instead. REQUIRED: query and toolTitle.',
   enrichment_run: 'Runs a one-off table enrichment lookup inline (no table/workflow required).',
   function_execute:
     'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools.',

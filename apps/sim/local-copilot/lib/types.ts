@@ -1,4 +1,5 @@
 import type { BlockState, Variable, WorkflowState } from '@sim/workflow-types/workflow'
+import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
 import type { LocalUxPhase } from '@/local-copilot/lib/agent/ux-phase'
 import type { LocalToolConfirmationRequirement } from '@/local-copilot/lib/security/tool-confirmation-policy'
@@ -117,7 +118,13 @@ export interface LocalCopilotStructuredContext {
   snapshotFreshness?: {
     generatedAt: string
     contentRevision: string
+    workspaceId?: string
   }
+  /**
+   * Typed VFS inventory used for incremental baseline/delta prompting.
+   * Not injected into the JSON context payload — only for Local prompt planning.
+   */
+  vfsSnapshot?: VfsSnapshotV1
   knowledgeBases?: Array<{
     id: string
     name: string

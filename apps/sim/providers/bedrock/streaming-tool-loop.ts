@@ -47,7 +47,7 @@ export interface CreateBedrockStreamingToolLoopStreamOptions {
   request: ProviderRequest
   messages: BedrockMessage[]
   system?: SystemContentBlock[]
-  inferenceConfig: { temperature: number; maxTokens?: number }
+  inferenceConfig: { temperature?: number; maxTokens?: number }
   bedrockTools: Tool[]
   toolChoice: ToolConfiguration['toolChoice']
   logger: Logger

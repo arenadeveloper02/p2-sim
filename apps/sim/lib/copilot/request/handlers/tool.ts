@@ -613,6 +613,7 @@ function registerMainToolCall(
   finalized: boolean
 ): void {
   const hideFromUi = isToolHiddenInUi(toolName) || ui.hidden === true
+  const calledBy = toolName === 'invoke_integration_tool' ? 'SuperAgent' : undefined
   if (existing) {
     if (!rebindResolvedIntegrationCall(existing, toolName, args)) {
       updateToolCallFromFrame(existing, toolName, args, finalized)
@@ -626,7 +627,11 @@ function registerMainToolCall(
       !hideFromUi &&
       !context.contentBlocks.some((b) => b.type === 'tool_call' && b.toolCall?.id === toolCallId)
     ) {
-      addContentBlock(context, { type: 'tool_call', toolCall: existing })
+      addContentBlock(context, {
+        type: 'tool_call',
+        toolCall: existing,
+        ...(calledBy ? { calledBy } : {}),
+      })
     }
   } else {
     const created: ToolCallState = {
@@ -639,7 +644,11 @@ function registerMainToolCall(
     applyToolDisplay(created)
     context.toolCalls.set(toolCallId, created)
     if (!hideFromUi) {
-      addContentBlock(context, { type: 'tool_call', toolCall: created })
+      addContentBlock(context, {
+        type: 'tool_call',
+        toolCall: created,
+        ...(calledBy ? { calledBy } : {}),
+      })
     }
   }
 }

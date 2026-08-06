@@ -6,6 +6,7 @@ export const SNAPSHOT_FRESHNESS_MAX_AGE_MS = 5 * 60_000
 export interface WorkspaceSnapshotMeta {
   generatedAt: string
   contentRevision: string
+  workspaceId?: string
 }
 
 /** Snapshot + markdown inventory with optional Local freshness stamps. */

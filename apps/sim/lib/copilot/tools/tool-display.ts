@@ -457,6 +457,8 @@ const TOOL_TITLES: Record<string, string> = {
   get_workflow_run_options: 'Getting run options',
   list_file_folders: 'Listing folders',
   list_integration_tools: 'Listing integration tools',
+  invoke_integration_tool: 'Running integration action',
+  load_copilot_artifact: 'Loading Copilot artifact',
   list_user_workspaces: 'Listing workspaces',
   list_workspace_mcp_servers: 'Listing MCP servers',
   load_deployment: 'Loading deployment',
@@ -726,6 +728,10 @@ export function getToolDisplayTitle(name: string, args?: Record<string, unknown>
       return integration
         ? `Listing ${humanizeToolName(integration)} tools`
         : 'Listing integration tools'
+    }
+    case 'invoke_integration_tool': {
+      const toolId = stringArg(args, 'toolId')
+      return toolId ? `Running ${humanizeToolName(toolId)}` : 'Running integration action'
     }
     case 'set_environment_variables': {
       const scope = stringArg(args, 'scope') || 'workspace'

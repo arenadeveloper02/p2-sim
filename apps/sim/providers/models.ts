@@ -3625,9 +3625,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2026-07-24',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
           maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 1024 },
         },
         contextWindow: 1000000,
         releaseDate: '2026-07-24',
@@ -3642,9 +3642,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
           updatedAt: '2026-06-30',
         },
         capabilities: {
-          temperature: { min: 0, max: 1 },
           nativeStructuredOutputs: true,
           maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 1024 },
         },
         contextWindow: 1000000,
         releaseDate: '2026-06-25',

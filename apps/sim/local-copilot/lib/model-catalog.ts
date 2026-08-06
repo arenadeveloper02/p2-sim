@@ -56,7 +56,7 @@ export const LOCAL_COPILOT_CATALOG = [
   {
     id: 'bedrock-nemotron-super-3-120b',
     providerGroup: 'bedrock',
-    label: 'Nemotron Super 3 120B',
+    label: 'Nemotron Super 3',
     provider: 'bedrock' as LocalCopilotProviderId,
     model: 'nvidia.nemotron-super-3-120b',
   },

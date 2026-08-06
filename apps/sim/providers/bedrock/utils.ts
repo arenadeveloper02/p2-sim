@@ -3,6 +3,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { randomFloat } from '@sim/utils/random'
 import type { AgentStreamEvent } from '@/providers/stream-events'
+import { getModelCapabilities, supportsTemperature } from '@/providers/models'
 import { trackForcedToolUsage } from '@/providers/utils'
 
 const logger = createLogger('BedrockUtils')
@@ -209,4 +210,65 @@ export function getBedrockInferenceProfileId(modelId: string, region: string): s
   }
 
   return `${inferencePrefix}.${baseModelId}`
+}
+
+/**
+ * Whether Bedrock Converse should include `inferenceConfig.temperature`.
+ * Claude 5 / Opus 4.7+ reject temperature with "deprecated for this model".
+ */
+export function bedrockAllowsTemperature(model: string): boolean {
+  const normalized = model
+    .replace(/^bedrock\//i, '')
+    .replace(/^(us|eu|apac|global|us-gov)\./i, '')
+    .toLowerCase()
+
+  if (normalized.startsWith('anthropic.')) {
+    const shortId = normalized.slice('anthropic.'.length).replace(/-\d{8}-v\d+:\d+$/i, '')
+    // Prefer Anthropic catalog — Claude 5 / Opus 4.7+ omit temperature there.
+    if (
+      shortId === 'claude-opus-5' ||
+      shortId === 'claude-sonnet-5' ||
+      shortId === 'claude-fable-5' ||
+      shortId === 'claude-opus-4-8' ||
+      shortId === 'claude-opus-4-7'
+    ) {
+      return false
+    }
+    if (supportsTemperature(shortId)) return true
+    // Known Anthropic catalog entry without temperature → omit.
+    if (getModelCapabilities(shortId)) return false
+  }
+
+  if (/claude-(?:opus|sonnet|fable)-5(?:\b|$|-)/.test(normalized)) return false
+  if (/claude-opus-4-[78](?:\b|$|-)/.test(normalized)) return false
+
+  if (supportsTemperature(`bedrock/${normalized}`)) return true
+  return supportsTemperature(model)
+}
+
+export interface BedrockInferenceConfig {
+  temperature?: number
+  maxTokens?: number
+}
+
+/**
+ * Builds Bedrock `inferenceConfig`, omitting temperature when the model rejects it.
+ */
+export function buildBedrockInferenceConfig(options: {
+  model: string
+  temperature?: number
+  maxTokens?: number
+  /** Default temperature when the model allows it (Nova tool-calling prefers 0). */
+  defaultTemperature?: number
+}): BedrockInferenceConfig {
+  const config: BedrockInferenceConfig = {}
+  if (options.maxTokens != null) {
+    config.maxTokens = options.maxTokens
+  }
+  if (bedrockAllowsTemperature(options.model)) {
+    const isNova = /amazon\.nova/i.test(options.model)
+    config.temperature =
+      options.temperature ?? options.defaultTemperature ?? (isNova ? 0 : 0.2)
+  }
+  return config
 }

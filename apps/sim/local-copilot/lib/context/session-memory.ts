@@ -250,7 +250,32 @@ export function clampSessionMemory(memory: SessionMemory): SessionMemory {
 }
 
 /**
+ * Empty session memory used when bootstrapping evidence before the summarizer runs.
+ */
+export function createEmptySessionMemory(
+  coveredThroughMessageId = 'evidence-bootstrap'
+): SessionMemory {
+  return {
+    version: SESSION_MEMORY_VERSION,
+    updatedAt: new Date().toISOString(),
+    coveredThroughMessageId,
+    goals: [],
+    decisions: [],
+    constraints: [],
+    activeDirective: '',
+    entities: { workflows: [], blocks: [], files: [], runs: [] },
+    progress: [],
+    openQuestions: [],
+    approvals: [],
+    failures: [],
+    verification: [],
+    notes: '',
+  }
+}
+
+/**
  * Merges turn evidence (approvals / failures / verification) into session memory.
+ * Bootstraps empty memory when none exists yet so tool failures still carry to the next turn.
  */
 export function mergeSessionMemoryEvidence(
   previous: SessionMemory | null,
@@ -260,14 +285,38 @@ export function mergeSessionMemoryEvidence(
     verification?: string[]
   }
 ): SessionMemory | null {
-  if (!previous) return null
+  const hasEvidence =
+    (evidence.approvals?.length ?? 0) > 0 ||
+    (evidence.failures?.length ?? 0) > 0 ||
+    (evidence.verification?.length ?? 0) > 0
+  if (!hasEvidence) return previous
+
+  const base = previous ?? createEmptySessionMemory()
   return clampSessionMemory({
-    ...previous,
+    ...base,
     updatedAt: new Date().toISOString(),
-    approvals: [...previous.approvals, ...(evidence.approvals ?? [])],
-    failures: [...previous.failures, ...(evidence.failures ?? [])],
-    verification: [...previous.verification, ...(evidence.verification ?? [])],
+    approvals: [...base.approvals, ...(evidence.approvals ?? [])],
+    failures: [...base.failures, ...(evidence.failures ?? [])],
+    verification: [...base.verification, ...(evidence.verification ?? [])],
   })
+}
+
+/**
+ * High-signal system message for recent tool failures so the next turn does not
+ * blindly retry the same failing call.
+ */
+export function formatRecentToolFailuresSystemMessage(failures: string[]): ChatMessage | null {
+  const lines = failures.map((line) => line.trim()).filter((line) => line.length > 0)
+  if (lines.length === 0) return null
+  const recent = lines.slice(-8)
+  return {
+    role: 'system',
+    content: [
+      'Recent tool failures (CRITICAL — treat as authoritative context for this turn):',
+      ...recent.map((line) => `- ${line}`),
+      'Do not repeat the same failing tool call with the same arguments. Fix the cause, pick an alternative, or ask the user.',
+    ].join('\n'),
+  }
 }
 
 /**
@@ -428,23 +477,7 @@ export async function mergeFollowUpDirectivesIntoSessionMemory(params: {
   if (params.constraints.length === 0 && !params.activeDirective) return params.previous
 
   const base: SessionMemory =
-    params.previous ??
-    ({
-      version: SESSION_MEMORY_VERSION,
-      updatedAt: new Date().toISOString(),
-      coveredThroughMessageId: 'directive-bootstrap',
-      goals: [],
-      decisions: [],
-      constraints: [],
-      activeDirective: '',
-      entities: { workflows: [], blocks: [], files: [], runs: [] },
-      progress: [],
-      openQuestions: [],
-      approvals: [],
-      failures: [],
-      verification: [],
-      notes: '',
-    } satisfies SessionMemory)
+    params.previous ?? createEmptySessionMemory('directive-bootstrap')
 
   const next = clampSessionMemory({
     ...base,

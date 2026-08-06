@@ -404,6 +404,15 @@ function parseBlocksWithSpanTree(blocks: ContentBlock[]): MessageSegment[] {
     return group
   }
 
+  /** Same contiguous-run rule as mothership, for named agent groups (e.g. SuperAgents). */
+  const ensureNamedAgent = (name: string): AgentGroupSegment => {
+    const last = segments[segments.length - 1]
+    if (last?.type === 'agent_group' && last.agentName === name) return last
+    const group = createAgentGroupSegment(name, `agent-${name}-${mothershipRun++}`)
+    segments.push(group)
+    return group
+  }
+
   // When a subagent spawns, drop the dispatch tool that triggered it (e.g.
   // workspace_file -> file) from whichever container it landed in so it does not
   // render as a separate entry beside the agent group.
@@ -529,20 +538,26 @@ function parseBlocksWithSpanTree(blocks: ContentBlock[]): MessageSegment[] {
       // Delegation tools are represented by their subagent span group; absorb.
       if (SUBAGENT_KEYS.has(tc.name)) continue
       const tool = toToolData(tc)
+      const effectiveCalledBy =
+        tc.calledBy || (tc.name === 'invoke_integration_tool' ? 'superagent' : undefined)
       if (block.spanId) {
         let g = groupsBySpanId.get(block.spanId)
         // Out-of-order safety: a subagent's tool can stream before its
         // subagent-start block (live streaming across resume legs). Create the
         // span group on demand (nested via parentSpanId) so the tool nests
         // under its agent instead of leaking to the top-level mothership flow.
-        if (!g && tc.calledBy) {
-          g = ensureSpanGroup(tc.calledBy, block.spanId, block.parentSpanId)
+        if (!g && effectiveCalledBy) {
+          g = ensureSpanGroup(effectiveCalledBy, block.spanId, block.parentSpanId)
         }
         if (g) {
           g.isDelegating = false
           g.items.push({ type: 'tool', data: tool })
           continue
         }
+      }
+      if (effectiveCalledBy) {
+        ensureNamedAgent(effectiveCalledBy).items.push({ type: 'tool', data: tool })
+        continue
       }
       ensureMothership().items.push({ type: 'tool', data: tool })
       continue
@@ -767,12 +782,17 @@ function parseBlocksLegacy(blocks: ContentBlock[]): MessageSegment[] {
 
       const tool = toToolData(tc)
 
-      if (tc.calledBy) {
-        const { group: g, created } = ensureGroup(tc.calledBy, block.parentToolCallId)
+      // Arena Local `invoke_integration_tool` is the Direct Action path — always
+      // group under SuperAgents even when older transcripts omitted `calledBy`.
+      const effectiveCalledBy =
+        tc.calledBy || (tc.name === 'invoke_integration_tool' ? 'superagent' : undefined)
+
+      if (effectiveCalledBy) {
+        const { group: g, created } = ensureGroup(effectiveCalledBy, block.parentToolCallId)
         g.isDelegating = false
         if (created && block.parentToolCallId) g.isOpen = true
         g.items.push({ type: 'tool', data: tool })
-        activeGroupKey = resolveGroupKey(tc.calledBy, block.parentToolCallId)
+        activeGroupKey = resolveGroupKey(effectiveCalledBy, block.parentToolCallId)
       } else {
         const { group: g } = ensureGroup('mothership', undefined)
         g.items.push({ type: 'tool', data: tool })

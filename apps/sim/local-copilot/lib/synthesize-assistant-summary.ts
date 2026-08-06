@@ -9,6 +9,45 @@ export interface ToolTurnRecord {
   name: string
   success: boolean
   result: unknown
+  /** Top-level tool error message when the call failed. */
+  error?: string
+}
+
+const FAILURE_EVIDENCE_MAX_CHARS = 220
+
+/**
+ * Builds compact failure evidence lines for session memory / next-turn context.
+ */
+export function buildToolFailureEvidenceLines(records: ToolTurnRecord[]): string[] {
+  return records
+    .filter((record) => !record.success)
+    .map((record) => {
+      const detail = extractToolFailureDetail(record)
+      return detail ? `${record.name}: ${detail}` : `${record.name} failed`
+    })
+}
+
+function extractToolFailureDetail(record: ToolTurnRecord): string | null {
+  if (typeof record.error === 'string' && record.error.trim()) {
+    return truncate(record.error.trim(), FAILURE_EVIDENCE_MAX_CHARS, '…')
+  }
+
+  const payload = asRecord(record.result)
+  for (const key of ['error', 'message', 'detail', 'reason'] as const) {
+    const value = payload[key]
+    if (typeof value === 'string' && value.trim()) {
+      return truncate(value.trim(), FAILURE_EVIDENCE_MAX_CHARS, '…')
+    }
+  }
+
+  if (typeof payload.success === 'boolean' && payload.success === false) {
+    const nested = payload.result
+    if (typeof nested === 'string' && nested.trim()) {
+      return truncate(nested.trim(), FAILURE_EVIDENCE_MAX_CHARS, '…')
+    }
+  }
+
+  return null
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

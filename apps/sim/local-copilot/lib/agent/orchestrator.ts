@@ -51,7 +51,10 @@ import {
   buildLocalCopilotContext,
   contextToPromptJson,
 } from '@/local-copilot/lib/context/build-context'
-import { mergeCopilotChatConfig } from '@/local-copilot/lib/context/chat-config'
+import {
+  loadCopilotChatConfig,
+  mergeCopilotChatConfig,
+} from '@/local-copilot/lib/context/chat-config'
 import {
   compactChatHistory,
   estimateChatMessagesTokens,
@@ -73,12 +76,20 @@ import {
 import { fitPromptWithSlots } from '@/local-copilot/lib/context/prompt-slots'
 import {
   ensureSessionMemory,
+  formatRecentToolFailuresSystemMessage,
   formatSessionMemorySystemMessage,
   mergeFollowUpDirectivesIntoSessionMemory,
   mergeSessionMemoryEvidence,
   persistSessionMemory,
   type SessionMemoryTurn,
 } from '@/local-copilot/lib/context/session-memory'
+import {
+  parseWorkspaceSnapshotFingerprints,
+  parseWorkspaceSnapshotMeta,
+  resolveSnapshotPromptPlan,
+  withWorkspaceSnapshotPrefix,
+  type SnapshotPromptPlan,
+} from '@/local-copilot/lib/context/snapshot-delta'
 import { toWorkspaceSnapshotMeta } from '@/local-copilot/lib/context/snapshot-freshness'
 import {
   formatTaskStateSystemMessage,
@@ -120,6 +131,7 @@ import {
 import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
 import { buildGeneratedApiKeyControl } from '@/local-copilot/lib/security/trusted-controls'
 import {
+  buildToolFailureEvidenceLines,
   buildWorkflowRunChatAppendix,
   isWorkflowRunToolName,
   shouldAppendWorkflowRunChatResult,
@@ -268,11 +280,11 @@ Rules:
   - For simple requests — generate an image, search the live web, scrape a site, call an API — use direct tools when keys are already configured. Do NOT create a workflow first.
   - Image: \`generate_image\` with a clear \`prompt\` (and optional \`outputs.files\` path to save the file).
   - For variations, pass the user's exact wording in \`prompt\` (e.g. "3 variations of a red bus") — do not strip counts or the word "variations".
-  - Live web / current data (CRITICAL — use the Exa block tools, not training knowledge):
-    - Factual / "who/what/when is current" questions: \`invoke_integration_tool({ toolId: "exa_answer", params: { query: "<question>" } })\` — returns an answer with citations.
-    - Broader web search result lists: \`invoke_integration_tool({ toolId: "exa_search", params: { query: "<search>" } })\`.
-    - Convenience wrapper: \`search_online\` with \`query\` + \`toolTitle\` (same Exa path under the hood; Serper fallback when configured).
-    - Do NOT invent live facts from memory. Do NOT claim "no search API key" until an Exa/search tool actually returns a missing-credential error — workspace \`EXA_API_KEY\`, BYOK, and hosted keys are applied automatically when available.
+  - Live web / current data (CRITICAL — search BEFORE answering, never from training knowledge):
+    - ANY real-world factual question (who/what/when/where about people, offices, companies, events, prices, weather, news, "current"/"today"/"latest") MUST call a search tool as the FIRST action before answering.
+    - Prefer \`search_online({ query: "<question>", toolTitle: "<short label>" })\` or \`invoke_integration_tool({ toolId: "exa_answer", params: { query: "<question>" } })\` for factual Q&A with citations.
+    - Broader web result lists: \`invoke_integration_tool({ toolId: "exa_search", params: { query: "<search>" } })\`.
+    - Do NOT invent live facts from memory. Do NOT skip search because you "already know" the answer. Do NOT claim "no search API key" until an Exa/search tool actually returns a missing-credential error — workspace \`EXA_API_KEY\`, BYOK, and hosted keys are applied automatically when available.
   - Other integrations: \`list_integration_tools({ integration: "gmail" })\` (underscores, not hyphens) then \`invoke_integration_tool({ toolId: "gmail_draft_v2", params: { ... } })\`. Never call \`load_integration_tool\` — that is Cloud-only; Arena Copilot uses \`invoke_integration_tool\`.
   - For OAuth integrations (Google Sheets, Gmail, Slack, etc.), \`params\` MUST include \`credentialId\` from \`connectedIntegrations\` for that provider (e.g. providerId \`google-email\` for Gmail, \`google-sheets\` for Sheets). If only one connected credential matches, Arena Copilot injects it automatically. Google Docs/Drive/Sheets credentials are interchangeable for Drive search + Docs/Sheets tools.
   - Google Docs by name (not ID): first \`google_drive_list\` with \`query\` set to the document title (or \`google_drive_search\` with \`prompt\` describing the doc), pick the matching file id (\`mimeType\` \`application/vnd.google-apps.document\`), then \`google_docs_read\` / \`google_docs_write\` with that \`documentId\`. Never pass the title as \`documentId\`.
@@ -310,15 +322,17 @@ Rules:
 - Media (no workflow required, hosted/workspace keys applied automatically):
   - \`generate_audio\` for speech/music/sound effects, \`generate_video\` for short clips — pass the user's full request in \`prompt\` and save results via \`outputs.files\` under files/.
   - \`ffmpeg\` for editing workspace media (trim, concat, convert, overlays, thumbnails). Mount sources via \`inputs.files\` with exact VFS paths from context or glob.
-- Files, tables, and knowledge bases:
-  - Context includes \`workspaceFiles\` (id, name, vfs path), \`tables\`, and \`knowledgeBases\`.
+- Files, tables, and knowledge bases (CRITICAL — discover with read tools BEFORE creating):
+  - Context includes \`workspaceFiles\`, \`tables\`, and \`knowledgeBases\` (names/ids). Treat that as an index — then READ details with tools before creating anything.
+  - Workflows: if \`workspaceWorkflows\` has a match, call \`get_workflow_data\` / \`get_workflow_context\` (or \`get_workflow_run_options\` to run) and show those details — do not create a duplicate.
+  - Tables: if \`tables\` has a match, call \`user_table\` with \`get\` / \`get_schema\` / \`query_rows\` and show the schema/rows — reuse it instead of create.
+  - Knowledge bases: if \`knowledgeBases\` has a match, call \`knowledge_base\` with \`get\` / \`list\` / \`query\` and show what is in it — reuse it instead of create.
+  - Files: if \`workspaceFiles\` may match, \`glob\` then \`read\` the path and show contents/details — update via \`workspace_file\` + \`edit_content\` instead of create.
+  - Only create when read/list tools show nothing suitable for the request.
   - Find files: \`glob\` with a pattern like \`files/**/*.csv\`, then \`read\` using the exact path from results.
   - Create files: \`create_file_folder\` when needed, then \`create_file\` with \`content\` for markdown/text/json/csv (one step). Never call \`create_file\` without \`content\` for .md files unless you will immediately follow with \`workspace_file\` update + \`edit_content\`.
   - Rename/move/delete files: \`rename_file\`, \`move_file\`, \`delete_file\` (paths arrays). Folders: \`list_file_folders\`, \`rename_file_folder\`, \`move_file_folder\`, \`delete_file_folder\`. Delete only when the user explicitly asked.
   - Read or update existing files: \`workspace_file\` (update/append/patch) then \`edit_content\` in the **next** step with the body — never parallel.
-  - Read or update tables: \`user_table\` — use \`get\` / \`get_schema\` / \`query_rows\` to read; \`create\`, \`insert_row\`, \`batch_insert_rows\`, \`import_file\`, \`create_from_file\` to write.
-  - Knowledge bases: \`knowledge_base\` — \`query\` to search/retrieve; \`add_file\` to ingest a workspace file or URL; \`create\` for new KBs; \`get\` / \`list\` to inspect.
-  - Prefer existing resources in context before creating duplicates (same as workflows).
   - Restore archived items with \`restore_resource\` (type + id). Disable a block with \`set_block_enabled\`; edit workflow globals with \`set_global_workflow_variables\`.
 - Workspace skills and custom tools:
   - Context may include \`skills\` (name + description). Descriptions only say when a skill applies — they are NOT the instructions.
@@ -582,7 +596,39 @@ export async function* runLocalCopilotAgent(
     LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
     config.model
   )
-  const contextJson = contextToPromptJson(structuredContext, { workflowDetail })
+
+  let snapshotPromptPlan: SnapshotPromptPlan | null = null
+  const vfsSnapshot = structuredContext.vfsSnapshot ?? params.workspaceSnapshot
+  const inventoryMarkdown = params.workspaceContext ?? structuredContext.inventoryMarkdown
+  if (vfsSnapshot && inventoryMarkdown && structuredContext.snapshotFreshness) {
+    let priorMeta = null as ReturnType<typeof parseWorkspaceSnapshotMeta>
+    let priorFingerprints = null as ReturnType<typeof parseWorkspaceSnapshotFingerprints>
+    if (params.chatId) {
+      const chatConfig = await loadCopilotChatConfig(params.chatId, params.userId).catch(() => null)
+      if (chatConfig) {
+        priorMeta = parseWorkspaceSnapshotMeta(chatConfig.workspaceSnapshotMeta)
+        priorFingerprints = parseWorkspaceSnapshotFingerprints(
+          chatConfig.workspaceSnapshotFingerprints
+        )
+      }
+    }
+    snapshotPromptPlan = resolveSnapshotPromptPlan({
+      snapshot: vfsSnapshot,
+      markdown: inventoryMarkdown,
+      workspaceId: params.workspaceId,
+      generatedAt: structuredContext.snapshotFreshness.generatedAt,
+      contentRevision: structuredContext.snapshotFreshness.contentRevision,
+      priorMeta,
+      priorFingerprints,
+    })
+  }
+
+  const inventoryMode = snapshotPromptPlan?.mode ?? 'full'
+  const contextJson = contextToPromptJson(structuredContext, {
+    workflowDetail,
+    inventoryMode,
+    ...(snapshotPromptPlan ? { snapshotRevision: snapshotPromptPlan.meta.contentRevision } : {}),
+  })
   const userTurn = await buildLocalCopilotUserTurn({
     message: params.message,
     ...(params.contexts?.length ? { contexts: params.contexts } : {}),
@@ -601,6 +647,20 @@ export async function* runLocalCopilotAgent(
     ? await loadTaskState(params.chatId, params.userId).catch(() => null)
     : null
 
+  const snapshotSystemContent = snapshotPromptPlan
+    ? withWorkspaceSnapshotPrefix(snapshotPromptPlan.content)
+    : inventoryMarkdown
+      ? `Workspace snapshot:\n${inventoryMarkdown}${
+          structuredContext.snapshotFreshness
+            ? `\n\n(snapshot generatedAt=${structuredContext.snapshotFreshness.generatedAt}; revision=${structuredContext.snapshotFreshness.contentRevision})`
+            : ''
+        }`
+      : null
+
+  const recentFailuresMessage = sessionMemory?.failures?.length
+    ? formatRecentToolFailuresSystemMessage(sessionMemory.failures)
+    : null
+
   const messages: ChatMessage[] = fitPromptWithSlots(
     [
       { role: 'system', content: SYSTEM_PROMPT },
@@ -608,20 +668,17 @@ export async function* runLocalCopilotAgent(
         role: 'system',
         content: `Current context:\n${contextJson}`,
       },
-      ...((params.workspaceContext ?? structuredContext.inventoryMarkdown)
+      ...(snapshotSystemContent
         ? [
             {
               role: 'system' as const,
-              content: `Workspace snapshot:\n${params.workspaceContext ?? structuredContext.inventoryMarkdown}${
-                structuredContext.snapshotFreshness
-                  ? `\n\n(snapshot generatedAt=${structuredContext.snapshotFreshness.generatedAt}; revision=${structuredContext.snapshotFreshness.contentRevision})`
-                  : ''
-              }`,
+              content: snapshotSystemContent,
             },
           ]
         : []),
       ...(taskState ? [formatTaskStateSystemMessage(taskState)] : []),
       ...(sessionMemory ? [formatSessionMemorySystemMessage(sessionMemory)] : []),
+      ...(recentFailuresMessage ? [recentFailuresMessage] : []),
       ...(pinnedConstraints.length > 0
         ? [formatSessionConstraintsSystemMessage(pinnedConstraints)]
         : []),
@@ -1163,6 +1220,7 @@ export async function* runLocalCopilotAgent(
           name: call.name,
           success: outcome.success,
           result: outcome.output,
+          ...(outcome.error ? { error: outcome.error } : {}),
         })
         if (isWorkflowRunToolName(call.name)) {
           streamedCharsAtLastRunTool = streamedUserFacingText.length
@@ -1483,6 +1541,7 @@ export async function* runLocalCopilotAgent(
         name: call.name,
         success: toolResult.success,
         result: toolResult.result,
+        ...(toolResult.error ? { error: toolResult.error } : {}),
       })
       if (isWorkflowRunToolName(call.name)) {
         streamedCharsAtLastRunTool = streamedUserFacingText.length
@@ -1970,9 +2029,7 @@ export async function* runLocalCopilotAgent(
       const result = record.result as Record<string, unknown>
       return `${record.name} ${String(result.confirmationDecision)}`
     })
-  const failureLines = turnToolRecords
-    .filter((record) => !record.success)
-    .map((record) => `${record.name} failed`)
+  const failureLines = buildToolFailureEvidenceLines(turnToolRecords)
   const verificationLines = turnVerifications.map(
     (record) => `${record.verifierToolName} ${record.status}`
   )
@@ -2010,16 +2067,27 @@ export async function* runLocalCopilotAgent(
       )
     }
 
-    if (structuredContext.snapshotFreshness) {
+    if (snapshotPromptPlan) {
       await mergeCopilotChatConfig(params.chatId, params.userId, {
-        workspaceSnapshotMeta: structuredContext.snapshotFreshness,
+        workspaceSnapshotMeta: snapshotPromptPlan.meta,
+        workspaceSnapshotFingerprints: snapshotPromptPlan.fingerprints,
+      }).catch(() => undefined)
+    } else if (structuredContext.snapshotFreshness) {
+      await mergeCopilotChatConfig(params.chatId, params.userId, {
+        workspaceSnapshotMeta: {
+          ...structuredContext.snapshotFreshness,
+          workspaceId: params.workspaceId,
+        },
       }).catch(() => undefined)
     } else if (params.workspaceSnapshot && params.workspaceContext) {
       await mergeCopilotChatConfig(params.chatId, params.userId, {
-        workspaceSnapshotMeta: toWorkspaceSnapshotMeta({
-          markdown: params.workspaceContext,
-          snapshot: params.workspaceSnapshot,
-        }),
+        workspaceSnapshotMeta: {
+          ...toWorkspaceSnapshotMeta({
+            markdown: params.workspaceContext,
+            snapshot: params.workspaceSnapshot,
+          }),
+          workspaceId: params.workspaceId,
+        },
       }).catch(() => undefined)
     }
   }

@@ -46,6 +46,9 @@ export const MAX_PARALLEL_SUBAGENTS = 4
 export const ALWAYS_ON_TOOL_NAMES = new Set<string>([
   'search_docs',
   'search_documentation',
+  // Live web — always available so factual questions do not depend on research
+  // intent classification (e.g. "Who is the CM of Karnataka?").
+  'search_online',
   'get_workflow_context',
   'get_available_blocks',
   'get_available_integrations',
@@ -245,7 +248,7 @@ export function isSpecialistDomain(name: string): name is LocalCopilotCloudSpeci
 export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
   switch (domain) {
     case 'workflow':
-      return 'Focus on building or editing workflows (create_workflow / edit_workflow / patches). Prefer existing workspaceWorkflows before creating new ones.'
+      return 'Focus on building or editing workflows (create_workflow / edit_workflow / patches). If workspaceWorkflows lists a match, call get_workflow_data / get_workflow_context (or get_workflow_run_options to run), show those details, and edit/run — do not create a duplicate.'
     case 'run':
       return 'Focus on running and debugging workflows (get_workflow_run_options, run_workflow, run_block, run_from_block, query_logs).'
     case 'deploy':
@@ -253,22 +256,22 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'auth':
       return 'Focus on credentials, OAuth links, and API keys.'
     case 'knowledge':
-      return 'Focus on knowledge bases (query, ingest, create, connectors).'
+      return 'Focus on knowledge bases. If knowledgeBases lists a match, call knowledge_base get / list / query first, show details, and reuse — only create when nothing suitable exists.'
     case 'table':
-      return 'Focus on tables and enrichments (user_table, enrichment_run).'
+      return 'Focus on tables and enrichments. If tables lists a match, call user_table get / get_schema / query_rows first, show details, and reuse — only create when nothing suitable exists.'
     case 'scheduled_task':
       return 'Focus on scheduled tasks (create/list/update/complete/logs).'
     case 'agent':
       return 'Focus on integration tools, MCP tools, skills, and function_execute.'
     case 'research':
-      return 'Focus on research. For live/current facts use invoke_integration_tool with exa_answer (or exa_search); search_online is a convenience wrapper. Also search_docs, search_documentation, user_memory.'
+      return 'Focus on research. For ANY real-world factual or current question, call a live search tool FIRST (exa_answer via invoke_integration_tool, or search_online) before answering — never answer from training memory alone. Also search_docs, search_documentation, user_memory.'
     case 'media':
       return 'Focus on image/audio/video generation and ffmpeg.'
     case 'file':
-      return 'Focus on workspace files and VFS tools (read/glob/grep/create_file/edit_content).'
+      return 'Focus on workspace files. If workspaceFiles may match, glob then read first, show details, and update — only create_file when nothing suitable exists.'
     case 'superagent':
       return 'Focus on third-party integration actions. Authenticate if needed, then invoke the right integration tool.'
     default:
-      return 'Use whichever tools best answer the user. Prefer existing workflows before creating new ones.'
+      return 'Use whichever tools best answer the user. Prefer reading existing workflows/tables/knowledge bases/files with tools before creating new ones.'
   }
 }

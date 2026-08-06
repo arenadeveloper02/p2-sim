@@ -36,8 +36,17 @@ export interface CompactChatHistoryOptions {
   sessionMemoryPresent?: boolean
 }
 
+export type ContextInventoryMode = 'full' | 'delta' | 'unchanged'
+
 export interface BuildContextPromptOptions {
   workflowDetail?: WorkflowContextDetail
+  /**
+   * When `delta` or `unchanged`, omit duplicate workspace inventory arrays —
+   * the `Workspace snapshot:` system block is authoritative.
+   */
+  inventoryMode?: ContextInventoryMode
+  /** Snapshot revision echoed into slim context payloads. */
+  snapshotRevision?: string
 }
 
 interface HistoryTurn {
@@ -179,6 +188,8 @@ export function buildContextPromptPayload(
   options: BuildContextPromptOptions = {}
 ): string {
   const workflowDetail = options.workflowDetail ?? 'full'
+  const inventoryMode = options.inventoryMode ?? 'full'
+  const slimInventory = inventoryMode === 'delta' || inventoryMode === 'unchanged'
   const workflowPayload = context.workflow
     ? buildWorkflowPromptPayload(context.workflow, workflowDetail, context.selectedBlockId)
     : null
@@ -187,16 +198,18 @@ export function buildContextPromptPayload(
     sanitizeForLlm({
       workspace: context.workspace,
       connectedIntegrations: context.connectedIntegrations,
-      envVariables: context.envVariables,
+      envVariables: slimInventory ? undefined : context.envVariables,
       hostedKeysAvailable: context.hostedKeysAvailable,
       e2b: context.e2b,
-      guidance: context.guidance,
+      guidance: slimInventory
+        ? 'Workspace inventory lives in the Workspace snapshot system block (delta/unchanged mode). Prefer that over inventing resource lists.'
+        : context.guidance,
       workflow: workflowPayload,
-      workspaceWorkflows: context.workspaceWorkflows,
-      knowledgeBases: context.knowledgeBases,
-      tables: context.tables,
-      workspaceFiles: context.workspaceFiles,
-      skills: context.skills,
+      workspaceWorkflows: slimInventory ? undefined : context.workspaceWorkflows,
+      knowledgeBases: slimInventory ? undefined : context.knowledgeBases,
+      tables: slimInventory ? undefined : context.tables,
+      workspaceFiles: slimInventory ? undefined : context.workspaceFiles,
+      skills: slimInventory ? undefined : context.skills,
       userMemories: context.userMemories,
       execution: context.execution,
       availableIntegrations: context.availableIntegrations,
@@ -204,6 +217,12 @@ export function buildContextPromptPayload(
       availableBlocksNote:
         'Block catalog omitted to save tokens. Call get_available_blocks or get_blocks_metadata for the types you need.',
       selectedBlockId: context.selectedBlockId,
+      ...(slimInventory
+        ? {
+            inventoryMode,
+            ...(options.snapshotRevision ? { snapshotRevision: options.snapshotRevision } : {}),
+          }
+        : {}),
     }),
     null,
     2

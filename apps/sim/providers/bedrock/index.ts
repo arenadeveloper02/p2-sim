@@ -23,6 +23,7 @@ import { MAX_TOOL_ITERATIONS } from '@/providers'
 import { buildBedrockMessageContent } from '@/providers/attachments'
 import { createBedrockStreamingToolLoopStream } from '@/providers/bedrock/streaming-tool-loop'
 import {
+  buildBedrockInferenceConfig,
   checkForForcedToolUsage,
   createReadableStreamFromBedrockStream,
   generateToolUseId,
@@ -379,12 +380,16 @@ export const bedrockProvider: ProviderConfig = {
 
     const systemPromptWithSchema = systemContent
 
-    const inferenceConfig: { temperature: number; maxTokens?: number } = {
-      temperature: Number.parseFloat(String(request.temperature ?? 0.7)),
-    }
-    if (request.maxTokens != null) {
-      inferenceConfig.maxTokens = Number.parseInt(String(request.maxTokens))
-    }
+    const inferenceConfig = buildBedrockInferenceConfig({
+      model: request.model,
+      temperature:
+        request.temperature != null
+          ? Number.parseFloat(String(request.temperature))
+          : undefined,
+      maxTokens:
+        request.maxTokens != null ? Number.parseInt(String(request.maxTokens)) : undefined,
+      defaultTemperature: 0.7,
+    })
 
     /**
      * The live tool loop cannot honor responseFormat — structured output on

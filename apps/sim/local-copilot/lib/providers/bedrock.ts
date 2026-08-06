@@ -17,14 +17,22 @@ import type {
   ChatCompletionRequest,
   ChatMessage,
   LocalCopilotProvider,
+  TokenUsage,
 } from '@/local-copilot/lib/providers/types'
 import type { LocalCopilotConfig, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
-import { generateToolUseId, getBedrockInferenceProfileId } from '@/providers/bedrock/utils'
+import {
+  buildBedrockInferenceConfig,
+  generateToolUseId,
+  getBedrockInferenceProfileId,
+} from '@/providers/bedrock/utils'
 
 const logger = createLogger('LocalCopilotBedrockProvider')
 
 const BEDROCK_NOT_CONFIGURED =
   'Bedrock is not configured on this server. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (or configure the AWS default credential chain).'
+
+/** Ephemeral cache checkpoint — matches Anthropic Arena Copilot TTL. */
+export const BEDROCK_PROMPT_CACHE_POINT = { type: 'default' as const, ttl: '1h' as const }
 
 export interface BedrockConversionResult {
   system: SystemContentBlock[]
@@ -75,6 +83,105 @@ export function toBedrockTools(
         },
       }) as unknown as Tool
   )
+}
+
+/**
+ * Claude on Bedrock supports explicit `cachePoint` breakpoints (tools → system → messages).
+ */
+export function bedrockModelSupportsPromptCaching(model: string): boolean {
+  return /anthropic\.claude|claude-(?:opus|sonnet|haiku|fable)/i.test(model)
+}
+
+function contentHasToolUse(content: ContentBlock[] | undefined): boolean {
+  return Boolean(content?.some((block) => 'toolUse' in block && block.toolUse))
+}
+
+function contentHasToolResult(content: ContentBlock[] | undefined): boolean {
+  return Boolean(content?.some((block) => 'toolResult' in block && block.toolResult))
+}
+
+function contentHasConversation(content: ContentBlock[] | undefined): boolean {
+  return Boolean(
+    content?.some(
+      (block) =>
+        !(('toolResult' in block && block.toolResult) || ('toolUse' in block && block.toolUse))
+    )
+  )
+}
+
+function toolUseBlocksOnly(content: ContentBlock[] | undefined): ContentBlock[] {
+  return (content ?? []).filter((block) => 'toolUse' in block && block.toolUse)
+}
+
+function conversationBlocksOnly(content: ContentBlock[] | undefined): ContentBlock[] {
+  return (content ?? []).filter(
+    (block) =>
+      !(('toolResult' in block && block.toolResult) || ('toolUse' in block && block.toolUse))
+  )
+}
+
+/**
+ * Adds Bedrock prompt-cache checkpoints for the stable prefix (tools + system)
+ * and the current conversation tip so tool-loop rounds can reuse prior tokens.
+ *
+ * Never attach `cachePoint` to a message that already has toolUse/toolResult —
+ * Bedrock treats cachePoint as a conversation block and rejects
+ * "Conversation blocks and tool use/result blocks … in the same turn".
+ */
+export function withBedrockPromptCachePoints(params: {
+  model: string
+  system: SystemContentBlock[]
+  messages: BedrockMessage[]
+  tools?: Tool[]
+}): { system: SystemContentBlock[]; messages: BedrockMessage[]; tools?: Tool[] } {
+  if (!bedrockModelSupportsPromptCaching(params.model)) {
+    return { system: params.system, messages: params.messages, tools: params.tools }
+  }
+
+  const cachePoint = { cachePoint: BEDROCK_PROMPT_CACHE_POINT }
+
+  let tools = params.tools
+  if (tools?.length) {
+    tools = [...tools, cachePoint as Tool]
+  }
+
+  const system =
+    params.system.length > 0
+      ? [...params.system, cachePoint as SystemContentBlock]
+      : params.system
+
+  const messages = params.messages.map((message, index) => {
+    if (index !== params.messages.length - 1) return message
+    if (contentHasToolUse(message.content) || contentHasToolResult(message.content)) {
+      return message
+    }
+    const content = [...(message.content ?? []), cachePoint as ContentBlock]
+    return { ...message, content }
+  })
+
+  return { system, messages, tools }
+}
+
+/**
+ * Maps Bedrock Converse usage (including cache read/write) to Arena Copilot TokenUsage.
+ */
+export function parseBedrockUsage(usage?: {
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadInputTokens?: number
+  cacheWriteInputTokens?: number
+}): TokenUsage {
+  const result: TokenUsage = {
+    inputTokens: usage?.inputTokens ?? 0,
+    outputTokens: usage?.outputTokens ?? 0,
+  }
+  if (typeof usage?.cacheReadInputTokens === 'number') {
+    result.cacheReadTokens = usage.cacheReadInputTokens
+  }
+  if (typeof usage?.cacheWriteInputTokens === 'number') {
+    result.cacheCreationTokens = usage.cacheWriteInputTokens
+  }
+  return result
 }
 
 function parseToolArguments(raw: string): NonNullable<ToolUseBlock['input']> {
@@ -147,21 +254,75 @@ export function convertMessagesToBedrock(messages: ChatMessage[]): BedrockConver
 
   return {
     system,
-    messages: separateToolResultAndConversationTurns(bedrockMessages),
+    messages: normalizeBedrockConversationTurns(bedrockMessages),
   }
 }
 
-function contentHasToolResult(content: ContentBlock[] | undefined): boolean {
-  return Boolean(content?.some((block) => 'toolResult' in block && block.toolResult))
-}
+/**
+ * Bedrock rejects turns that mix conversation blocks (text/cachePoint) with
+ * toolUse, and rejects consecutive same-role assistants that would merge into
+ * that shape. Collapse/split so every assistant tool turn is toolUse-only.
+ */
+export function normalizeBedrockConversationTurns(messages: BedrockMessage[]): BedrockMessage[] {
+  const separated = separateToolResultAndConversationTurns(messages)
+  const out: BedrockMessage[] = []
 
-function contentHasConversation(content: ContentBlock[] | undefined): boolean {
-  return Boolean(
-    content?.some(
-      (block) =>
-        !(('toolResult' in block && block.toolResult) || ('toolUse' in block && block.toolUse))
-    )
-  )
+  for (const message of separated) {
+    if (
+      message.role === 'assistant' &&
+      contentHasToolUse(message.content) &&
+      contentHasConversation(message.content)
+    ) {
+      // Keep toolUse only — narration is not required for the next toolResult turn.
+      out.push({
+        role: 'assistant' as ConversationRole,
+        content: toolUseBlocksOnly(message.content),
+      })
+      continue
+    }
+
+    const prev = out[out.length - 1]
+    if (
+      message.role === 'assistant' &&
+      prev?.role === 'assistant' &&
+      contentHasToolUse(message.content)
+    ) {
+      // Consecutive assistants: Bedrock may merge text + toolUse into one illegal turn.
+      if (contentHasToolUse(prev.content)) {
+        out[out.length - 1] = {
+          role: 'assistant' as ConversationRole,
+          content: [...toolUseBlocksOnly(prev.content), ...toolUseBlocksOnly(message.content)],
+        }
+      } else {
+        out[out.length - 1] = {
+          role: 'assistant' as ConversationRole,
+          content: toolUseBlocksOnly(message.content),
+        }
+      }
+      continue
+    }
+
+    if (
+      message.role === 'assistant' &&
+      prev?.role === 'assistant' &&
+      !contentHasToolUse(message.content) &&
+      !contentHasToolUse(prev.content)
+    ) {
+      const mergedText = [
+        ...conversationBlocksOnly(prev.content),
+        ...conversationBlocksOnly(message.content),
+      ]
+      out[out.length - 1] = {
+        role: 'assistant' as ConversationRole,
+        content: mergedText.length > 0 ? mergedText : [{ text: '.' }],
+      }
+      continue
+    }
+
+    out.push(message)
+  }
+
+  return out
 }
 
 /**
@@ -197,10 +358,7 @@ export function separateToolResultAndConversationTurns(
       const toolBlocks = (message.content ?? []).filter(
         (block) => 'toolResult' in block && block.toolResult
       )
-      const conversationBlocks = (message.content ?? []).filter(
-        (block) =>
-          !(('toolResult' in block && block.toolResult) || ('toolUse' in block && block.toolUse))
-      )
+      const conversationBlocks = conversationBlocksOnly(message.content)
       out.push({ role: 'user' as ConversationRole, content: toolBlocks })
       out.push({
         role: 'assistant' as ConversationRole,
@@ -273,8 +431,14 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
     async *chatCompletionStream(request: ChatCompletionRequest) {
       const model = request.model || config.model
       const bedrockModelId = getBedrockInferenceProfileId(model, region)
-      const { system, messages } = convertMessagesToBedrock(request.messages)
-      const tools = toBedrockTools(request.tools)
+      const converted = convertMessagesToBedrock(request.messages)
+      const mappedTools = toBedrockTools(request.tools)
+      const { system, messages, tools } = withBedrockPromptCachePoints({
+        model,
+        system: converted.system,
+        messages: converted.messages,
+        tools: mappedTools,
+      })
 
       const hasToolContent = messages.some((msg) =>
         msg.content?.some(
@@ -293,12 +457,12 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
         ? { tools, toolChoice: { auto: {} } }
         : undefined
 
-      // Nova tool-calling is unreliable above temperature 0; leave room for tool JSON.
-      const isNova = /amazon\.nova/i.test(model)
-      const inferenceConfig: { temperature: number; maxTokens: number } = {
-        temperature: request.temperature ?? (isNova ? 0 : 0.2),
+      // Nova tool-calling is unreliable above temperature 0; Claude 5 rejects temperature.
+      const inferenceConfig = buildBedrockInferenceConfig({
+        model,
+        temperature: request.temperature,
         maxTokens: request.maxTokens ?? 8192,
-      }
+      })
 
       const baseInput = {
         modelId: bedrockModelId,
@@ -309,13 +473,15 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
       }
 
       const useStream = !(toolConfig && !bedrockSupportsStreamingWithTools(model))
+      const promptCaching = bedrockModelSupportsPromptCaching(model)
 
       try {
-        if (toolConfig) {
-          logger.info('Bedrock tool-enabled request', {
+        if (toolConfig || promptCaching) {
+          logger.info('Bedrock request', {
             model: bedrockModelId,
-            toolCount: tools!.length,
+            toolCount: mappedTools?.length ?? 0,
             streaming: useStream,
+            promptCaching,
           })
         }
 
@@ -350,17 +516,24 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
             logger.warn('Bedrock returned no toolUse on a tool-enabled turn', {
               model: bedrockModelId,
               stopReason: response.stopReason,
-              toolCount: tools!.length,
+              toolCount: mappedTools?.length ?? 0,
+            })
+          }
+
+          const usage = parseBedrockUsage(response.usage)
+          if (usage.cacheReadTokens || usage.cacheCreationTokens) {
+            logger.info('Bedrock prompt cache usage', {
+              model: bedrockModelId,
+              cacheReadTokens: usage.cacheReadTokens ?? 0,
+              cacheCreationTokens: usage.cacheCreationTokens ?? 0,
+              inputTokens: usage.inputTokens,
             })
           }
 
           yield {
             type: 'done',
             finishReason,
-            usage: {
-              inputTokens: response.usage?.inputTokens ?? 0,
-              outputTokens: response.usage?.outputTokens ?? 0,
-            },
+            usage,
           }
           return
         }
@@ -375,8 +548,7 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
         }
 
         const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>()
-        let inputTokens = 0
-        let outputTokens = 0
+        let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 }
         let finishReason = 'stop'
 
         for await (const event of response.stream) {
@@ -431,8 +603,7 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
           }
 
           if (event.metadata?.usage) {
-            inputTokens = event.metadata.usage.inputTokens ?? inputTokens
-            outputTokens = event.metadata.usage.outputTokens ?? outputTokens
+            usage = parseBedrockUsage(event.metadata.usage)
           }
 
           if (event.messageStop?.stopReason) {
@@ -440,10 +611,19 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
           }
         }
 
+        if (usage.cacheReadTokens || usage.cacheCreationTokens) {
+          logger.info('Bedrock prompt cache usage', {
+            model: bedrockModelId,
+            cacheReadTokens: usage.cacheReadTokens ?? 0,
+            cacheCreationTokens: usage.cacheCreationTokens ?? 0,
+            inputTokens: usage.inputTokens,
+          })
+        }
+
         yield {
           type: 'done',
           finishReason,
-          usage: { inputTokens, outputTokens },
+          usage,
         }
       } catch (error) {
         logger.error('Bedrock request failed', { error: toError(error).message })

@@ -171,7 +171,9 @@ export async function buildLocalCopilotContext(
           snapshotFreshness: {
             generatedAt: snapshotBundle.generatedAt,
             contentRevision: snapshotBundle.contentRevision,
+            workspaceId,
           },
+          vfsSnapshot: snapshotBundle.snapshot,
         }
       : {}),
     ...(skills.length > 0 ? { skills } : {}),
@@ -209,12 +211,33 @@ export async function buildLocalCopilotContext(
         lastRunAt: row.lastRunAt?.toISOString() ?? null,
       }))
 
+  const guidanceParts: string[] = []
+  if (workspaceWorkflows.length > 0) {
+    guidanceParts.push(
+      'Existing workflows are listed in workspaceWorkflows. Call get_workflow_data / get_workflow_context (or get_workflow_run_options then run_workflow) to inspect or use a match — never create_workflow when an existing entry fits. Only create_workflow when the user explicitly asks for a brand-new workflow with a distinct purpose and name (pass confirmNewWorkflow: true).'
+    )
+  }
+  if (resources.tables.length > 0) {
+    guidanceParts.push(
+      'Existing tables are listed in tables. Call user_table get / get_schema / query_rows to load details and show them — reuse instead of creating duplicates.'
+    )
+  }
+  if (resources.knowledgeBases.length > 0) {
+    guidanceParts.push(
+      'Existing knowledge bases are listed in knowledgeBases. Call knowledge_base get / list / query to load details and show them — reuse instead of creating duplicates.'
+    )
+  }
+  if (resources.workspaceFiles.length > 0) {
+    guidanceParts.push(
+      'Existing files are listed in workspaceFiles. Call glob then read to load details and show them — update with workspace_file + edit_content instead of creating duplicates.'
+    )
+  }
+
   const workspaceWorkflowsContext =
-    workspaceWorkflows.length > 0
+    workspaceWorkflows.length > 0 || guidanceParts.length > 0
       ? {
           workspaceWorkflows,
-          guidance:
-            'Existing workflows are listed in workspaceWorkflows. When the user wants to run, test, execute, debug, or use a workflow, call get_workflow_run_options then run_workflow on a matching entry — never create_workflow. Only create_workflow when the user explicitly asks for a brand-new workflow with a distinct purpose and name (pass confirmNewWorkflow: true).',
+          ...(guidanceParts.length > 0 ? { guidance: guidanceParts.join(' ') } : {}),
         }
       : { workspaceWorkflows }
 
@@ -326,7 +349,11 @@ export async function buildLocalCopilotContext(
 
 export function contextToPromptJson(
   context: LocalCopilotStructuredContext,
-  options?: { workflowDetail?: 'full' | 'compact' }
+  options?: {
+    workflowDetail?: 'full' | 'compact'
+    inventoryMode?: 'full' | 'delta' | 'unchanged'
+    snapshotRevision?: string
+  }
 ): string {
   return buildContextPromptPayload(context, options)
 }
