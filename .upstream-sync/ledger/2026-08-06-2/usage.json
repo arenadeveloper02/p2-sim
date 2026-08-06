@@ -1,0 +1,72 @@
+{
+  "runId": "2026-08-06-2",
+  "recordedAt": "2026-08-06T11:21:01.432Z",
+  "agents": [
+    {
+      "agentName": "parent-finalize-plan",
+      "model": "claude-opus-5",
+      "iterations": 1,
+      "inputTokens": 7407,
+      "outputTokens": 19754,
+      "cacheReadInputTokens": 1019003,
+      "cacheCreationInputTokens": 71719,
+      "estimatedCostUsd": 1.4912042500000002,
+      "costSource": "provider"
+    },
+    {
+      "agentName": "child-finalize-merge",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 213107,
+      "outputTokens": 34804,
+      "cacheReadInputTokens": 8814792,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.260682,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-api-routes-security",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 50638,
+      "outputTokens": 3896,
+      "cacheReadInputTokens": 275583,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.020314,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-xai-byok-providers",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 60727,
+      "outputTokens": 7959,
+      "cacheReadInputTokens": 909906,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.039894,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "child-workspace-ui",
+      "model": "gpt-5.6-luna",
+      "iterations": 1,
+      "inputTokens": 83015,
+      "outputTokens": 16638,
+      "cacheReadInputTokens": 1628567,
+      "cacheCreationInputTokens": 0,
+      "estimatedCostUsd": 0.06914,
+      "costSource": "estimated"
+    },
+    {
+      "agentName": "parent-grill-analysis",
+      "model": "claude-opus-5",
+      "iterations": 1,
+      "inputTokens": 1589,
+      "outputTokens": 48246,
+      "cacheReadInputTokens": 5300734,
+      "cacheCreationInputTokens": 159298,
+      "estimatedCostUsd": 4.8629945,
+      "costSource": "provider"
+    }
+  ]
+}

@@ -27,6 +27,7 @@ import { finalizeAssistantTurn } from '@/lib/copilot/chat/terminal-state'
 import { generateWorkspaceSnapshot } from '@/lib/copilot/chat/workspace-context'
 import { chatPubSub } from '@/lib/copilot/chat-status'
 import { COPILOT_REQUEST_MODES } from '@/lib/copilot/constants'
+import { computeWorkspaceEntitlements } from '@/lib/copilot/entitlements'
 import {
   CopilotChatFinalizeOutcome,
   CopilotChatPersistOutcome,
@@ -38,10 +39,6 @@ import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { createBadRequestResponse, createUnauthorizedResponse } from '@/lib/copilot/request/http'
 import { createSSEStream, SSE_RESPONSE_HEADERS } from '@/lib/copilot/request/lifecycle/start'
 import { startCopilotOtelRoot, withCopilotSpan } from '@/lib/copilot/request/otel'
-import {
-  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
-  isLocalCopilotCatalogId,
-} from '@/local-copilot/lib/model-catalog'
 import {
   acquirePendingChatStream,
   getPendingChatStreamId,
@@ -62,6 +59,10 @@ import {
 import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
+import {
+  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
+  isLocalCopilotCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 
 export const maxDuration = 3600
@@ -187,6 +188,7 @@ type UnifiedChatBranch =
         contexts: Array<{ type: string; content: string; tag?: string; path?: string }>
         fileAttachments?: UnifiedChatRequest['fileAttachments']
         userPermission?: string
+        entitlements?: string[]
         userTimezone?: string
         userMetadata?: { name?: string; email?: string; timezone?: string }
         workflowId: string
@@ -224,6 +226,7 @@ type UnifiedChatBranch =
         contexts: Array<{ type: string; content: string; tag?: string; path?: string }>
         fileAttachments?: UnifiedChatRequest['fileAttachments']
         userPermission?: string
+        entitlements?: string[]
         userTimezone?: string
         userMetadata?: { name?: string; email?: string; timezone?: string }
         workspaceContext?: string
@@ -639,6 +642,7 @@ async function resolveBranch(params: {
             workspaceContext: payloadParams.workspaceContext,
             vfs: payloadParams.vfs,
             userPermission: payloadParams.userPermission,
+            entitlements: payloadParams.entitlements,
             userTimezone: payloadParams.userTimezone,
             userMetadata: payloadParams.userMetadata,
           },
@@ -694,6 +698,7 @@ async function resolveBranch(params: {
           workspaceContext: payloadParams.workspaceContext,
           vfs: payloadParams.vfs,
           userPermission: payloadParams.userPermission,
+          entitlements: payloadParams.entitlements,
           userTimezone: payloadParams.userTimezone,
           userMetadata: payloadParams.userMetadata,
           includeMothershipTools: true,
@@ -1058,6 +1063,9 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 }
               )
             : Promise.resolve(null)
+      const entitlementsPromise = workspaceId
+        ? computeWorkspaceEntitlements(workspaceId, authenticatedUserId)
+        : Promise.resolve([])
       // Wrap the pre-LLM prep work in spans so the trace waterfall shows
       // where time is going between "request received" and "llm.stream
       // opens". Previously these ran bare under the root and inflated the
@@ -1112,10 +1120,11 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         activeOtelRoot.context
       )
 
-      const [agentContexts, userPermission, workspaceSnapshot, , executionContext] =
+      const [agentContexts, userPermission, entitlements, workspaceSnapshot, , executionContext] =
         await Promise.all([
           agentContextsPromise,
           userPermissionPromise,
+          entitlementsPromise,
           workspaceContextPromise,
           persistUserMessagePromise,
           executionContextPromise,
@@ -1150,6 +1159,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 contexts: agentContexts,
                 fileAttachments: body.fileAttachments,
                 userPermission: userPermission ?? undefined,
+                entitlements,
                 userTimezone: body.userTimezone,
                 userMetadata,
                 workflowId: branch.workflowId,
@@ -1171,6 +1181,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 contexts: agentContexts,
                 fileAttachments: body.fileAttachments,
                 userPermission: userPermission ?? undefined,
+                entitlements,
                 userTimezone: body.userTimezone,
                 userMetadata,
                 workspaceContext,
