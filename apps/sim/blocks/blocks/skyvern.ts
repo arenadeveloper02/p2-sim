@@ -256,14 +256,16 @@ export const SkyvernBlock: BlockConfig<SkyvernResponse> = {
       id: 'dataExtractionGoal',
       title: 'Data Extraction Goal',
       type: 'long-input',
-      placeholder: 'Creates a separate extraction block after navigation (e.g. extract company email)',
+      placeholder:
+        'Creates a separate extraction block after navigation (e.g. extract company email)',
       condition: { field: 'operation', value: 'skyvern_create_workflow' },
     },
     {
       id: 'prompt',
       title: 'Prompt',
       type: 'long-input',
-      placeholder: 'Extra instructions merged with navigation goal, or used alone if navigation goal is empty',
+      placeholder:
+        'Extra instructions merged with navigation goal, or used alone if navigation goal is empty',
       condition: { field: 'operation', value: 'skyvern_create_workflow' },
       mode: 'advanced',
     },
@@ -383,8 +385,7 @@ export const SkyvernBlock: BlockConfig<SkyvernResponse> = {
             result.workflowParameters = params.workflowParameters
             break
           case 'skyvern_list_workflows': {
-            const pageInput =
-              typeof params.page === 'string' ? params.page.trim() : params.page
+            const pageInput = typeof params.page === 'string' ? params.page.trim() : params.page
             const pageSizeInput =
               typeof params.pageSize === 'string' ? params.pageSize.trim() : params.pageSize
             const page = pageInput === '' ? Number.NaN : Number(pageInput)
@@ -539,8 +540,7 @@ export const SkyvernBlockMeta = {
     },
     {
       name: 'run-and-poll-workflow',
-      description:
-        'Trigger a Skyvern workflow run and poll until it reaches a terminal status.',
+      description: 'Trigger a Skyvern workflow run and poll until it reaches a terminal status.',
       content:
         '# Run and Poll Workflow\n\nExecute a Skyvern workflow and wait for completion.\n\n## Steps\n1. Use Run Workflow with the permanent workflow ID (wpid_...) and any required parameters such as starting_url.\n2. Capture the workflowRunId (wr_...) from the response.\n3. Use Get Run Status in a loop until status is completed, failed, terminated, timed_out, or canceled.\n\n## Output\nReturn the final status, extracted output payload, and failureReason if the run did not succeed.',
     },

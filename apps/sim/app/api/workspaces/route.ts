@@ -11,10 +11,7 @@ import { getSession } from '@/lib/auth'
 import type { PlanCategory } from '@/lib/billing/plan-helpers'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { captureServerEvent } from '@/lib/posthog/server'
-import {
-  createDefaultWorkspace,
-  createWorkspace,
-} from '@/lib/workspaces/create-workspace'
+import { createDefaultWorkspace, createWorkspace } from '@/lib/workspaces/create-workspace'
 import {
   evaluateWorkspaceInvitePolicy,
   getInvitePlanCategoryForOrganization,

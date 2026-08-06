@@ -82,8 +82,7 @@ export function AgentGroup({
   // ("Gathering thoughts") tool, transiently flipping `resolved` true; the open
   // lane bridges that gap so the row never collapses mid-run. A manual toggle
   // pins the choice.
-  const autoExpanded =
-    isCurrentSection || (isStreaming && (isLaneOpen || !resolved))
+  const autoExpanded = isCurrentSection || (isStreaming && (isLaneOpen || !resolved))
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null)
   const expanded = manualExpanded ?? autoExpanded
 

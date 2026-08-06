@@ -1,5 +1,8 @@
 import { buildSkyvernCreateWorkflowBody } from '@/tools/skyvern/build-create-workflow-body'
-import type { SkyvernCreateWorkflowParams, SkyvernCreateWorkflowResponse } from '@/tools/skyvern/types'
+import type {
+  SkyvernCreateWorkflowParams,
+  SkyvernCreateWorkflowResponse,
+} from '@/tools/skyvern/types'
 import {
   buildSkyvernUrl,
   requireSkyvernApiKey,
@@ -72,7 +75,8 @@ export const skyvernCreateWorkflowTool: ToolConfig<
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Optional step-by-step instructions (used as navigation goal when navigation goal is empty)',
+      description:
+        'Optional step-by-step instructions (used as navigation goal when navigation goal is empty)',
     },
     workflowParameters: {
       type: 'json',

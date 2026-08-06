@@ -133,8 +133,7 @@ export function findSingleSelectJson(text: string): SingleSelectSplit | null {
 
   const options = singleSelectToOptionsTagData(parsed)
   if (!options) return null
-  const prompt =
-    isRecord(parsed) && typeof parsed.prompt === 'string' ? parsed.prompt.trim() : ''
+  const prompt = isRecord(parsed) && typeof parsed.prompt === 'string' ? parsed.prompt.trim() : ''
   return {
     before: text.slice(0, match.index),
     options,

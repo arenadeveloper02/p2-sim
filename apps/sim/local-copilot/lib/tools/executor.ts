@@ -442,9 +442,16 @@ export async function executeLocalCopilotTool(
         '@/lib/copilot/tools/registry/server-tool-adapter'
       )
       const handler = createServerToolHandler('get_blocks_metadata')
-      const metadataResult = await handler({ blockIds: missingIds }, toCopilotServerToolContext(ctx))
+      const metadataResult = await handler(
+        { blockIds: missingIds },
+        toCopilotServerToolContext(ctx)
+      )
 
-      if (metadataResult.success && metadataResult.output && typeof metadataResult.output === 'object') {
+      if (
+        metadataResult.success &&
+        metadataResult.output &&
+        typeof metadataResult.output === 'object'
+      ) {
         const output = metadataResult.output as Record<string, unknown>
         const fetched =
           output.metadata && typeof output.metadata === 'object'
@@ -464,14 +471,14 @@ export async function executeLocalCopilotTool(
       return {
         toolName,
         success: metadataResult.success,
-        result:
-          metadataResult.success
-            ? {
-                metadata,
-                ...(missingIds.length < normalizedIds.length ? { partiallyCached: true } : {}),
-                hint: 'Call get_blocks_metadata only once with every block type you need. Do not re-fetch these types.',
-              }
-            : metadataResult.output ?? (metadataResult.error ? { error: metadataResult.error } : {}),
+        result: metadataResult.success
+          ? {
+              metadata,
+              ...(missingIds.length < normalizedIds.length ? { partiallyCached: true } : {}),
+              hint: 'Call get_blocks_metadata only once with every block type you need. Do not re-fetch these types.',
+            }
+          : (metadataResult.output ??
+            (metadataResult.error ? { error: metadataResult.error } : {})),
         error: metadataResult.error,
       }
     }
@@ -565,7 +572,8 @@ export async function executeLocalCopilotTool(
           success: serverResult.success,
           result: {
             toolId,
-            output: serverResult.output ?? (serverResult.error ? { error: serverResult.error } : {}),
+            output:
+              serverResult.output ?? (serverResult.error ? { error: serverResult.error } : {}),
           },
           error: serverResult.error,
         })

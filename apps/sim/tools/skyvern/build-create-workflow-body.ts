@@ -15,10 +15,7 @@ export interface BuildSkyvernCreateWorkflowBodyParams {
   workflowParameters?: unknown
 }
 
-function normalizeSkyvernTemplatePlaceholders(
-  value: string,
-  parameterKeys: string[]
-): string {
+function normalizeSkyvernTemplatePlaceholders(value: string, parameterKeys: string[]): string {
   let normalized = value
 
   for (const key of parameterKeys) {

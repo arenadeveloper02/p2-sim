@@ -66,8 +66,7 @@ export function createToolStagnationTracker(threshold = TOOL_STAGNATION_THRESHOL
       const fingerprint = fingerprintToolCall(toolName, argsJson, success, result)
       const count = (counts.get(fingerprint) ?? 0) + 1
       counts.set(fingerprint, count)
-      const limit =
-        toolName === 'get_blocks_metadata' ? DISCOVERY_STAGNATION_THRESHOLD : threshold
+      const limit = toolName === 'get_blocks_metadata' ? DISCOVERY_STAGNATION_THRESHOLD : threshold
       if (count < limit) return null
       return {
         toolName,

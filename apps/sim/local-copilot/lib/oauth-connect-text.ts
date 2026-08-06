@@ -4,8 +4,7 @@
  * even when model narration is buffered during the tool round.
  */
 export function formatOAuthConnectCredentialTag(result: unknown): string | null {
-  const record =
-    result && typeof result === 'object' ? (result as Record<string, unknown>) : null
+  const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : null
   if (!record) return null
 
   const url =

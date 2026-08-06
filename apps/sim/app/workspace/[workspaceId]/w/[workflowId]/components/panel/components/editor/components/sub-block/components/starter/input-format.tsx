@@ -148,13 +148,12 @@ export function FieldFormat({
   const isSkyvernWorkflowParameters = variant === 'skyvern_workflow_parameters'
   const isSkyvernRunParameters = variant === 'skyvern_run_parameters'
   const inputFormatConfig = config?.inputFormatConfig
-  const typeOptions = isSkyvernWorkflowParameters || isSkyvernRunParameters
-    ? SKYVERN_PARAMETER_TYPE_OPTIONS
-    : TYPE_OPTIONS
+  const typeOptions =
+    isSkyvernWorkflowParameters || isSkyvernRunParameters
+      ? SKYVERN_PARAMETER_TYPE_OPTIONS
+      : TYPE_OPTIONS
   const showTypeEffective =
-    isLinkedinMentions || isLinkedinProfileSections || isLinkedinSearchFilters
-      ? false
-      : showType
+    isLinkedinMentions || isLinkedinProfileSections || isLinkedinSearchFilters ? false : showType
   const showDescriptionEffective = isLinkedinMentions
     ? true
     : isLinkedinProfileSections || isLinkedinSearchFilters || isSkyvernRunParameters
@@ -921,9 +920,7 @@ export function InputFormat(
         placeholder={inputFormatConfig?.fieldNamePlaceholder ?? 'parameter_key'}
         showDescription
         showValue={showValue}
-        valuePlaceholder={
-          inputFormatConfig?.fieldValuePlaceholder ?? 'Default value (optional)'
-        }
+        valuePlaceholder={inputFormatConfig?.fieldValuePlaceholder ?? 'Default value (optional)'}
         descriptionPlaceholder='Describe this parameter'
       />
     )

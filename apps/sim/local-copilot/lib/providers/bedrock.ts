@@ -58,7 +58,9 @@ export function cleanSchemaForBedrockTool(
 /**
  * Maps Local Copilot tools to Bedrock toolSpec entries.
  */
-export function toBedrockTools(tools: LocalCopilotToolDefinition[] | undefined): Tool[] | undefined {
+export function toBedrockTools(
+  tools: LocalCopilotToolDefinition[] | undefined
+): Tool[] | undefined {
   if (!tools?.length) return undefined
   // AWS SDK `Tool` is an open Smithy union (`$UnknownMember`); assert the known toolSpec variant.
   return tools.map(
@@ -196,7 +198,8 @@ export function separateToolResultAndConversationTurns(
         (block) => 'toolResult' in block && block.toolResult
       )
       const conversationBlocks = (message.content ?? []).filter(
-        (block) => !(('toolResult' in block && block.toolResult) || ('toolUse' in block && block.toolUse))
+        (block) =>
+          !(('toolResult' in block && block.toolResult) || ('toolUse' in block && block.toolUse))
       )
       out.push({ role: 'user' as ConversationRole, content: toolBlocks })
       out.push({
@@ -371,10 +374,7 @@ export function createBedrockProvider(config: LocalCopilotConfig): LocalCopilotP
           throw new Error('No stream returned from Bedrock')
         }
 
-        const pendingToolCalls = new Map<
-          number,
-          { id: string; name: string; arguments: string }
-        >()
+        const pendingToolCalls = new Map<number, { id: string; name: string; arguments: string }>()
         let inputTokens = 0
         let outputTokens = 0
         let finishReason = 'stop'

@@ -388,8 +388,7 @@ export const editWorkflowServerTool: BaseServerTool<EditWorkflowParams, unknown>
     })
 
     const sanitizationWarnings = validation.warnings.length > 0 ? validation.warnings : undefined
-    const hasPartialApply =
-      Boolean(inputErrors?.length) || Boolean(genuineSkippedItems.length > 0)
+    const hasPartialApply = Boolean(inputErrors?.length) || Boolean(genuineSkippedItems.length > 0)
 
     return {
       success: true,
