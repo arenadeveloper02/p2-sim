@@ -5,7 +5,7 @@
   "status": "running",
   "openQuestions": [],
   "activeBranch": "upstream-sync/2026-08-06T13-57-59",
-  "activePrNumber": 688,
+  "activePrNumber": 689,
   "activeMergeBase": "upstream-sync/2026-08-06T11-45-10",
   "activeUpstreamSha": "578d9ddc869fb7e18909733336006e597698dedc",
   "stack": [
@@ -39,6 +39,14 @@
       "upstreamSha": "9d23e25ce1c5fb9310fcb94a10fdb4c4f554d4d8",
       "branch": "upstream-sync/2026-08-06T11-45-10",
       "prNumber": 688,
+      "status": "open"
+    },
+    {
+      "runId": "2026-08-06-5",
+      "releaseVersion": "v0.7.38…v0.7.43",
+      "upstreamSha": "578d9ddc869fb7e18909733336006e597698dedc",
+      "branch": "upstream-sync/2026-08-06T13-57-59",
+      "prNumber": 689,
       "status": "open"
     }
   ]
