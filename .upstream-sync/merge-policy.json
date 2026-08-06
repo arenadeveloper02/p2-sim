@@ -1,6 +1,6 @@
 {
   "strategy": "fork-first",
-  "description": "Only paths listed in forkFirst (auto --ours) or upstreamFirst (auto --theirs) are resolved without an agent. Everything else — whether or not it appears in manualReview — is agent-reviewed. manualReview is a non-exhaustive hint list of known hard shared hotspots, not a closed set. unionPaths are agent-reviewed: keep fork-only symbols and take upstream additions; never drop upstream exports that in-tree consumers import. package.json is union-merged (upstream base + fork-only scripts/deps). bun.lock is regenerated after manifests. Agents SHOULD extend this file when they learn a recurring rule (add a forkFirst/upstreamFirst/manualReview/unionPaths prefix or packageJson.dropScripts entry) so the next sync is cheaper.",
+  "description": "Only paths listed in forkFirst (auto --ours) or upstreamFirst (auto --theirs) are resolved without an agent. Everything else — whether or not it appears in manualReview — is agent-reviewed. manualReview is a non-exhaustive hint list of known hard shared hotspots, not a closed set. unionPaths are agent-reviewed: keep fork-only symbols and take upstream additions; never drop upstream exports that in-tree consumers import. package.json is union-merged (upstream base + fork-only scripts/deps). bun.lock is regenerated after manifests. Agents SHOULD extend this file when they learn a recurring rule (add a forkFirst/upstreamFirst/manualReview/unionPaths prefix or packageJson.dropScripts entry) so the next sync is cheaper. CAVEAT on upstreamFirst apps/sim/lib/copilot/generated/: auto --theirs is correct for the bulk, but the fork carries a hand-edit there (Superagent task description, Google Docs GFM guidance) that exists in NO generator source, and `bun run mship:generate` cannot regenerate in this checkout because scripts/sync-tool-catalog.ts reads a sibling repo (../copilot/) the fork does not have. Every sync must re-apply that sentence via a mustEdit directive after resolving theirs.",
   "packageJson": {
     "strategy": "union",
     "dropScripts": ["dev:full:minimal-registry"]
@@ -73,7 +73,17 @@
     "apps/sim/blocks/blocks/slack.ts",
     "apps/sim/lib/core/security/csp.ts",
     "apps/sim/proxy.ts",
-    "apps/sim/lib/auth/auth.ts"
+    "apps/sim/lib/auth/auth.ts",
+    "apps/sim/lib/core/config/env.ts",
+    "apps/sim/lib/core/config/api-keys.ts",
+    "apps/sim/lib/api-key/byok.ts",
+    "apps/sim/lib/api/contracts/byok-keys.ts",
+    "apps/sim/tools/types.ts",
+    "apps/sim/next.config.ts",
+    "apps/sim/lib/copilot/chat/payload.ts",
+    "apps/sim/app/api/files/upload/route.ts",
+    "apps/sim/app/api/help/route.ts",
+    "apps/sim/app/api/mothership/execute/route.ts"
   ],
   "manualReview": [
     "packages/db/migrations/",

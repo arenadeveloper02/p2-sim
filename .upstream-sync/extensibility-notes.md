@@ -54,3 +54,38 @@ Rolling log of structural improvements that reduce merge conflict surface with `
 ## 2026-08-06
 
 - Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
+
+### Grill findings — run 2026-08-06-2 (v0.7.30)
+
+- **Measure the overlap before planning.** `comm -12` of upstream-changed files against
+  fork-changed files (both vs the same baseline) reduced this slice from "112 upstream
+  files" to a **32-file conflict surface**. Cheap, exact, and it scopes the child clusters
+  correctly. Do this first on every run.
+- **`upstreamFirst` + `regenerateAfterMerge` is unsafe for `lib/copilot/generated/`.**
+  The fork hand-edited the Superagent `task` description (Google Docs GFM guidance) directly
+  in the generated output; the sentence exists in **no** generator source. And
+  `bun run mship:generate` **cannot run in this checkout** —
+  `scripts/sync-tool-catalog.ts:8` reads `../copilot/copilot/contracts/tool-catalog-v1.json`,
+  a sibling repo the fork does not have. So auto `--theirs` silently deletes fork prompt
+  behavior with no way to restore it. Re-apply via a `mustEdit` directive each sync.
+  **Fork follow-up:** either vendor the catalog JSON so `mship:generate` works here, or move
+  the addendum into a fork-owned override layer applied on top of the generated file.
+- **The `isHosted` audit can also cut the other way — check for fork supersets.**
+  Upstream `#5574` (xAI hosted key rotation) looked like a classic `isHosted`-gated risk,
+  but the fork already had *more* than upstream: `XAI_API_KEY` + `_1..3`, the `xai` branch in
+  `getRotatingApiKey` plus `vertex`/`sambanova`/`google`, `isXaiModel` inside `getApiKey`'s
+  hosted gate, and `getProviderModels('xai')` in `getHostedModels`. Taking `--theirs` would
+  have **removed** fork capability. Audit means comparing both directions, not just
+  "does upstream turn something on for us".
+- **`@sim/emcn` barrel re-exports icons** (`packages/emcn/src/index.ts:26` →
+  `export * from './icons'`), so upstream files importing `ChevronDown`/`Library` from the
+  barrel still compile. Prefer the fork's `@sim/emcn/icons` path for style, but do not flag
+  it as a build break.
+- **New unionPaths recorded** from this slice's measured additive-both-sides hotspots:
+  `lib/core/config/env.ts`, `lib/core/config/api-keys.ts`, `lib/api-key/byok.ts`,
+  `lib/api/contracts/byok-keys.ts`, `tools/types.ts`, `next.config.ts`,
+  `lib/copilot/chat/payload.ts`, `app/api/files/upload/route.ts`, `app/api/help/route.ts`,
+  `app/api/mothership/execute/route.ts`.
+- **Pre-existing fork gap surfaced (not sync-caused):**
+  `(landing)/demo/.../demo-scheduler.tsx` defaults `CAL_LINK` to `'team/sim/demo'` — Sim's
+  calendar. Set `NEXT_PUBLIC_CAL_LINK` for Arena.

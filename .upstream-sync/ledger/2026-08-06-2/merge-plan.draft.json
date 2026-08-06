@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "runId": "2026-08-06-2",
+  "kind": "draft",
+  "selfResolutions": [
+    {
+      "decision": "Keep Arena brand assets over upstream's Sim logo re-export",
+      "paths": ["apps/sim/public/logo/426-240/reverse/small.png"],
+      "prefixes": ["apps/sim/public/logo/", "apps/sim/public/favicon/", "apps/sim/public/icon.svg"],
+      "strategy": "ours",
+      "rationale": "Binary assets have no sane three-way merge and the fork ships Arena artwork. Already covered by merge-policy forkFirst; listed so the child does not second-guess it.",
+      "cite": "merge-policy.forkFirst / extensibility-notes 2026-08-05 'Brand assets belong in forkFirst'"
+    },
+    {
+      "decision": "xAI server-side key rotation is already a fork superset — keep ours",
+      "paths": [
+        "apps/sim/providers/models.ts",
+        "apps/sim/providers/utils.ts",
+        "apps/sim/lib/core/config/api-keys.ts",
+        "apps/sim/lib/core/config/env.ts"
+      ],
+      "prefixes": [],
+      "strategy": "ours",
+      "rationale": "Audited per the 'isHosted is fork-redefined' rule. The fork already declares XAI_API_KEY plus _1.._3, already has the xai branch in getRotatingApiKey (plus vertex/sambanova/google), already has isXaiModel inside getApiKey's isHosted gate, and already includes getProviderModels('xai') in getHostedModels. Upstream #5574's server-side half is a strict subset — taking theirs would REMOVE fork capability (sambanova/vertex rotation, XAI_API_KEY fallback, the better error message).",
+      "cite": "simstudioai/sim#5574 / extensibility-notes 2026-08-05 'isHosted is fork-redefined'"
+    },
+    {
+      "decision": "Take upstream's new xAI BYOK surface, union with fork-only BYOK providers",
+      "paths": [
+        "apps/sim/tools/types.ts",
+        "apps/sim/lib/api/contracts/byok-keys.ts",
+        "apps/sim/lib/api-key/byok.ts",
+        "apps/sim/app/workspace/[workspaceId]/settings/components/byok/byok.tsx"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "strategyDetail": "Add 'xai' to BYOKProviderId and byokProviderIdSchema alongside the fork's 'semrush' and 'browser_use'. Add isXaiModel to byok.ts's hosted gate. Add the xAI provider card AND its 'xai' entry in PROVIDER_SECTIONS. Keep the fork's non-BYOK getApiKey fallback block and the Google rotation-namespace comment in byok.ts.",
+      "rationale": "Purely additive and safe: xAIIcon already exists at apps/sim/components/icons.tsx:1269, and the fork's getRotatingApiKey already supports 'xai', so the new hosted-gate path resolves.",
+      "cite": "simstudioai/sim#5574"
+    },
+    {
+      "decision": "Take every upstream security fix in this slice unconditionally",
+      "paths": [
+        "apps/sim/app/api/files/upload/route.ts",
+        "apps/sim/app/api/files/upload/route.test.ts",
+        "apps/sim/app/api/help/route.ts",
+        "apps/sim/app/workspace/[workspaceId]/files/components/file-viewer/docx-preview.tsx"
+      ],
+      "prefixes": [
+        "apps/sim/lib/core/security/",
+        "apps/sim/app/api/chat/[identifier]/otp/",
+        "apps/sim/lib/workflows/custom-blocks/"
+      ],
+      "strategy": "union",
+      "strategyDetail": "files/upload: take upstream's mothership workspace write/admin permission check + storage quota block verbatim, keep the fork's org-logos context, image-fusion validation, validateExecutionContextUpload, and generateOrgLogoFileKey. help: take readFormDataWithLimit + the 413 branch, keep the fork's getHelpInboxEmail. docx-preview: add sanitizeRenderedHyperlinks alongside the fork's empty/zero-byte/generating-engagement branches.",
+      "rationale": "#5604 closes a real authz hole (mothership uploads previously needed only a session, not workspace permission). #5601, #5599, #5600, #5613 are body-bound, XSS, auth-cookie, and iconUrl hardening. Merge policy gives upstream shared-infra security by default and nothing in the ledger says otherwise.",
+      "cite": "simstudioai/sim#5604, #5601, #5599, #5600, #5613 / merge-policy 'Upstream wins on shared infra (deps, CI, security)'"
+    },
+    {
+      "decision": "Take upstream generated copilot contracts, then re-apply the fork's Superagent addendum",
+      "paths": [
+        "apps/sim/lib/copilot/generated/tool-catalog-v1.ts",
+        "apps/sim/lib/copilot/generated/tool-schemas-v1.ts"
+      ],
+      "prefixes": ["apps/sim/lib/copilot/generated/"],
+      "strategy": "mustEdit",
+      "strategyDetail": "Resolve --theirs first (upstream adds ~117 catalog entries incl. deploy_custom_block), then append the fork's sentence back onto BOTH Superagent 'task' property descriptions: ' When creating a Google Doc from a workspace file, say to read the file and pass its exact GFM markdown to google_docs_create.content — do not ask to convert or reformat markdown; Drive handles GFM import.'",
+      "rationale": "The path is upstreamFirst with regenerateAfterMerge, but two facts break that assumption: (1) grep confirms the fork's sentence exists in NO generator source, only in the generated output; (2) scripts/sync-tool-catalog.ts reads ../copilot/copilot/contracts/tool-catalog-v1.json, a sibling repo absent from this checkout, so `bun run mship:generate` cannot regenerate here. A plain --theirs would silently delete fork prompt behavior with no way to restore it.",
+      "cite": "merge-policy.upstreamFirst + regenerateAfterMerge / scripts/sync-tool-catalog.ts:8"
+    },
+    {
+      "decision": "Take upstream's Cmd-K search modal wholesale; drop the fork's dead commented import",
+      "paths": [
+        "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/search-modal/search-modal.tsx"
+      ],
+      "prefixes": [],
+      "strategy": "theirs",
+      "rationale": "The fork's ONLY delta vs baseline in this file is a single commented-out `// import { searchItems } ...` line. Upstream rewrites 139/91 lines for the result-group cap plus pendingConnect auto-connect wiring. Keeping the dead comment has zero value and the fork has not touched stores/modals/search or search-modal/utils.ts, so the surrounding cluster merges clean.",
+      "cite": "simstudioai/sim#5597, #5586"
+    },
+    {
+      "decision": "Keep the fork's quoting on the identical highlight.ts change",
+      "paths": [
+        "apps/sim/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/highlight.ts"
+      ],
+      "prefixes": [],
+      "strategy": "ours",
+      "rationale": "Both sides made the same semantic change (String.raw`...` to a plain string literal) in the same line; they differ only in quote style. The fork's single-quoted form is what biome enforces, so ours avoids a lint fixup.",
+      "cite": "simstudioai/sim#5590"
+    },
+    {
+      "decision": "Take upstream's CWV/perf next.config changes including productionBrowserSourceMaps",
+      "paths": ["apps/sim/next.config.ts"],
+      "prefixes": [],
+      "strategy": "union",
+      "strategyDetail": "Take productionBrowserSourceMaps: true, the `_next/static/` exclusion in the static-asset cache rule, and the `/(.*)\\.map` anchor fix + Cache-Control. Keep every fork addition: outputFileTracingRoot/monorepoRoot, sambanova.ai remote pattern, the serverExternalPackages additions (playwright/pino/ssh2/stagehand/@json-render/*), outputFileTracingIncludes for generative_ui, turbopackFileSystemCacheForBuild, and the /arena-ai-docs rewrite.",
+      "rationale": "Upstream's stated premise for productionBrowserSourceMaps is 'this repo's source is already fully public on GitHub'. Verified for the fork: `gh repo view arenadeveloper02/p2-sim` returns visibility PUBLIC, so sourcemaps expose nothing the repo does not already publish. Merge policy gives upstream shared infra, and diverging on next.config.ts would create recurring conflict surface. Reviewer note: the fork self-hosts via scripts/deploy-ec2-local-build.sh, so if sourcemap build time / image size hurts the EC2 pipeline this is a one-line revert.",
+      "cite": "simstudioai/sim#5605 / merge-policy 'Upstream wins on shared infra'"
+    },
+    {
+      "decision": "Union landing + llms.txt: upstream structure, fork Arena branding",
+      "paths": [
+        "apps/sim/app/(landing)/components/hero/hero.tsx",
+        "apps/docs/app/llms.txt/route.ts",
+        "apps/sim/app/llms-full.txt/route.ts"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "strategyDetail": "hero.tsx: add fetchPriority='high' to the hero Image, keep the fork's 'Arena is the AI workspace' headline and sr-only copy. llms routes: take upstream's markdown-link restructuring and the Mothership->Chat rename, keep the fork's 'Arena' title/description strings.",
+      "rationale": "Additive-both-sides in disjoint regions. Upstream's Mothership->Chat rename in llms-full.txt matches the fork's own constitution rule ('Never say Mothership or copilot'), so taking it is strictly correct for the fork too.",
+      "cite": "simstudioai/sim#5605 / .claude/rules/constitution.md"
+    },
+    {
+      "decision": "Take the landing CTA-constants refactor as-is (no routing change for the fork)",
+      "paths": [],
+      "prefixes": ["apps/sim/app/(landing)/"],
+      "strategy": "theirs",
+      "rationale": "Verified this is NOT a customer-facing reroute: cta.tsx, hero-cta.tsx, navbar.tsx, mobile-nav.tsx and enterprise.tsx already point sales CTAs at /demo in the fork's tree — upstream only swaps the literal '/demo' for the new DEMO_HREF constant. The one real behavior change is /pricing routing its intent==='sales' card to /demo instead of /signup, which makes it consistent with every other sales CTA the fork already ships. The fork has touched none of these files, so they merge clean.",
+      "cite": "simstudioai/sim#5602, #5616"
+    },
+    {
+      "decision": "Take the 80 upstream files outside the 32-file overlap unmodified",
+      "paths": [],
+      "prefixes": [
+        "apps/docs/",
+        "apps/sim/lib/mcp/",
+        "apps/sim/lib/copilot/tools/handlers/deployment/",
+        "apps/sim/lib/pptx-renderer/",
+        "apps/sim/stores/modals/search/",
+        "packages/emcn/src/components/wizard/",
+        "packages/workflow-renderer/"
+      ],
+      "strategy": "theirs",
+      "rationale": "Measured: upstream touched 112 files, the fork touched 1608 since the same baseline, and the intersection is exactly 32. The remaining 80 have no fork-side edits and merge without conflict. Verified no dangling imports from the pptx-renderer url-safety move, unchanged WizardProps for the fork's two Wizard consumers, and that lib/copilot/entitlements.ts's only app import (lib/workflows/custom-blocks/operations) plus lru-cache both exist in the fork.",
+      "cite": "FBI 2026-08-06-2 / simstudioai/sim#5599, #5614, #5532"
+    }
+  ],
+  "openQuestions": [],
+  "childClusters": [
+    {
+      "id": "xai-byok-providers",
+      "prefix": "apps/sim/providers/",
+      "files": [],
+      "strategy": "union",
+      "notes": "Area-level; real files assigned in Phase B. Covers providers/models.ts, providers/utils.ts, providers/*.test.ts, tools/types.ts, lib/core/config/{env,api-keys}.ts, lib/core/utils.test.ts, lib/api/contracts/byok-keys.ts, lib/api-key/byok.ts, settings/components/byok/byok.tsx. TRAP: the fork is a strict SUPERSET of upstream on server-side rotation (sambanova/vertex/google branches, XAI_API_KEY fallback, xai already in getHostedModels and in getApiKey's isHosted gate). Never let upstream's narrower guard list or getHostedModels overwrite ours. Only the BYOK-surface additions are new."
+    },
+    {
+      "id": "api-routes-security",
+      "prefix": "apps/sim/app/api/",
+      "files": [],
+      "strategy": "union",
+      "notes": "Area-level. Covers files/upload/route.ts(+test), help/route.ts, mothership/execute/route.ts. Upstream's authz + quota + body-bound hardening is MANDATORY (see selfResolutions). Fork state that must survive: org-logos context + isOrganizationAdminOrOwner + generateOrgLogoFileKey, image-fusion validation, validateExecutionContextUpload, getHelpInboxEmail (replaces getHelpEmailAddress), checkMothershipUsageLimits 402 branch, and copilotBackend threading. In mothership/execute merge upstream's `entitlements` into the fork's Promise.all destructure — the array order and the destructure must stay in sync."
+    },
+    {
+      "id": "copilot-payload-generated",
+      "prefix": "apps/sim/lib/copilot/",
+      "files": [],
+      "strategy": "union",
+      "notes": "Area-level. Covers chat/payload.ts, chat/payload.test.ts, chat/post.ts, generated/*. Take upstream's entitlements param + spread in buildCopilotRequestPayload; keep the fork's fileAttachments mapping and the isAdminWorkspace/isAdminWorkspaceOnlyTool filter in buildIntegrationToolSchemasUncached. For generated/: resolve --theirs then re-apply the Superagent GFM sentence to BOTH files. Do NOT run `bun run mship:generate` — its generator reads a sibling repo that does not exist here; verify by grep for 'Drive handles GFM import' instead."
+    },
+    {
+      "id": "workspace-ui",
+      "prefix": "apps/sim/app/workspace/",
+      "files": [],
+      "strategy": "union",
+      "notes": "Area-level. Covers w/[workflowId]/workflow.tsx, selector-combobox.tsx, home/.../agent-group.tsx, tool-call-item.tsx, sidebar/.../search-modal.tsx, files/.../file-viewer/*. agent-group.tsx is the delicate one: keep the fork's resolveAssistantDisplayLabel and the fork's autoExpanded expression (isCurrentSection || (isStreaming && (isLaneOpen || !resolved))), take upstream's ShimmerText treatment, and render resolvedAgentLabel — NOT agentLabel — inside ShimmerText. selector-combobox.tsx: union the fork's `clearable` prop with upstream's `multiSelect` prop; both gate showClearButton/selectedValues independently. Prefer the fork's @sim/emcn/icons import path over upstream's barrel import (both resolve — packages/emcn/src/index.ts:26 re-exports icons — so this is style, not a build break)."
+    },
+    {
+      "id": "landing-branding-config",
+      "prefix": "apps/sim/app/(landing)/",
+      "files": [],
+      "strategy": "union",
+      "notes": "Area-level. Covers (landing)/components/hero/hero.tsx, apps/sim/next.config.ts, apps/docs/app/llms.txt/route.ts, apps/sim/app/llms-full.txt/route.ts. Every 'Arena' string is fork-owned and must survive; every upstream perf/structural change is taken. Small cluster — the rest of (landing)/ has no fork-side edits this slice."
+    }
+  ],
+  "proposedDirectives": {
+    "default": {
+      "delete": [],
+      "checkoutTheirs": [
+        "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/search-modal/search-modal.tsx",
+        "apps/sim/lib/copilot/generated/tool-catalog-v1.ts",
+        "apps/sim/lib/copilot/generated/tool-schemas-v1.ts"
+      ],
+      "checkoutOurs": [
+        "apps/sim/public/logo/426-240/reverse/small.png",
+        "apps/sim/app/workspace/[workspaceId]/files/components/file-viewer/rich-markdown-editor/highlight.ts",
+        "apps/sim/providers/models.ts",
+        "apps/sim/lib/core/config/api-keys.ts",
+        "apps/sim/lib/core/config/env.ts"
+      ],
+      "mustEdit": [
+        "apps/sim/lib/copilot/generated/tool-catalog-v1.ts",
+        "apps/sim/lib/copilot/generated/tool-schemas-v1.ts",
+        "apps/sim/app/api/files/upload/route.ts",
+        "apps/sim/app/api/help/route.ts",
+        "apps/sim/app/api/mothership/execute/route.ts",
+        "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/agent-group.tsx",
+        "apps/sim/next.config.ts",
+        "apps/sim/app/(landing)/components/hero/hero.tsx"
+      ],
+      "overrideForkFirst": [],
+      "notes": "Unconditional — no human answers pending. checkoutOurs on providers/models.ts, api-keys.ts and env.ts is deliberate: the fork is a strict superset of upstream's #5574 server-side changes, so --ours loses nothing. providers/utils.ts is NOT in checkoutOurs because the fork's diff there is large and unrelated (sambanova metadata, OAuth subblock defaults, spyfu) — leave it to the xai-byok-providers child to union. The two generated files appear in both checkoutTheirs and mustEdit by design: take theirs, then re-apply the fork's Superagent GFM sentence."
+    }
+  },
+  "notes": "Small slice: no packages/db changes (no migrations, no schema, no _journal.json), no package.json/bun.lock changes (lockfile bootstrap is a no-op), and no tools/blocks registry changes. Conflict surface is exactly the 32-file overlap between upstream's 112 changed files and the fork's 1608. No open questions — every call resolved from merge-policy, the ledger, or direct code inspection. merge-policy.json was extended this run with the measured additive-both-sides hotspots so the next sync inherits them."
+}
