@@ -234,12 +234,6 @@ Predicted merge tree 92ae4f94 (git merge-tree --write-tree HEAD 9d23e25c, exit 1
 
 ## Usage
 
-### Usage (stack rollup)
-
-- **This slice:** $5.3741 · 5,754,159 in / 63,784 out · 1 agent(s)
-- **Prior stack:** $11.0784 · 29,099,908 in / 219,744 out · 11 agent(s)
-- **Whole stack:** $16.4525 · 34,854,067 in / 283,528 out · 12 agent(s)
-
 ### parent-grill-analysis
 - **Model:** `claude-opus-5`
 - **Iterations:** 1
