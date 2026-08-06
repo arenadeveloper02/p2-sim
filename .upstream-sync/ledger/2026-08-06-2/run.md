@@ -526,21 +526,6 @@ error: script "test" exited with code 1
 
 ## Usage
 
-### Usage (stack rollup)
-
-- **This slice:** $6.7442 · 18,596,085 in / 131,297 out · 6 agent(s)
-- **Prior stack:** $1.3515 · 3,551,008 in / 38,940 out · 2 agent(s)
-- **Whole stack:** $8.0957 · 22,147,093 in / 170,237 out · 8 agent(s)
-
-### parent-grill-analysis
-- **Model:** `claude-opus-5`
-- **Iterations:** 1
-- **Input tokens (direct):** 1,589
-- **Input tokens (cache read):** 5,300,734
-- **Input tokens (cache create):** 159,298
-- **Input tokens (total):** 5,461,621
-- **Output tokens:** 48,246
-- **Cost:** $4.862995 (provider-reported)
 ### parent-finalize-plan
 - **Model:** `claude-opus-5`
 - **Iterations:** 1
@@ -550,33 +535,6 @@ error: script "test" exited with code 1
 - **Input tokens (total):** 1,098,129
 - **Output tokens:** 19,754
 - **Cost:** $1.491204 (provider-reported)
-### child-xai-byok-providers
-- **Model:** `gpt-5.6-luna`
-- **Iterations:** 1
-- **Input tokens (direct):** 60,727
-- **Input tokens (cache read):** 909,906
-- **Input tokens (cache create):** 0
-- **Input tokens (total):** 970,633
-- **Output tokens:** 7,959
-- **Cost:** $0.039894 (estimated fallback)
-### child-api-routes-security
-- **Model:** `gpt-5.6-luna`
-- **Iterations:** 1
-- **Input tokens (direct):** 50,638
-- **Input tokens (cache read):** 275,583
-- **Input tokens (cache create):** 0
-- **Input tokens (total):** 326,221
-- **Output tokens:** 3,896
-- **Cost:** $0.020314 (estimated fallback)
-### child-workspace-ui
-- **Model:** `gpt-5.6-luna`
-- **Iterations:** 1
-- **Input tokens (direct):** 83,015
-- **Input tokens (cache read):** 1,628,567
-- **Input tokens (cache create):** 0
-- **Input tokens (total):** 1,711,582
-- **Output tokens:** 16,638
-- **Cost:** $0.069140 (estimated fallback)
 ### child-finalize-merge
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
@@ -586,6 +544,42 @@ error: script "test" exited with code 1
 - **Input tokens (total):** 9,027,899
 - **Output tokens:** 34,804
 - **Cost:** $0.260682 (estimated fallback)
+### child-api-routes-security
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 50,638
+- **Input tokens (cache read):** 275,583
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 326,221
+- **Output tokens:** 3,896
+- **Cost:** $0.020314 (estimated fallback)
+### child-xai-byok-providers
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 60,727
+- **Input tokens (cache read):** 909,906
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 970,633
+- **Output tokens:** 7,959
+- **Cost:** $0.039894 (estimated fallback)
+### child-workspace-ui
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 83,015
+- **Input tokens (cache read):** 1,628,567
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 1,711,582
+- **Output tokens:** 16,638
+- **Cost:** $0.069140 (estimated fallback)
+### parent-grill-analysis
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 1,589
+- **Input tokens (cache read):** 5,300,734
+- **Input tokens (cache create):** 159,298
+- **Input tokens (total):** 5,461,621
+- **Output tokens:** 48,246
+- **Cost:** $4.862995 (provider-reported)
 
 ### Totals
 - **Total input tokens:** 18,596,085
@@ -596,10 +590,10 @@ error: script "test" exited with code 1
 - **Estimated cost (fallback):** $0.390030
 
 ### Cost by agent
-- **parent-grill-analysis:** $4.862995 (provider-reported)
 - **parent-finalize-plan:** $1.491204 (provider-reported)
-- **child-xai-byok-providers:** $0.039894 (estimated fallback)
-- **child-api-routes-security:** $0.020314 (estimated fallback)
-- **child-workspace-ui:** $0.069140 (estimated fallback)
 - **child-finalize-merge:** $0.260682 (estimated fallback)
+- **child-api-routes-security:** $0.020314 (estimated fallback)
+- **child-xai-byok-providers:** $0.039894 (estimated fallback)
+- **child-workspace-ui:** $0.069140 (estimated fallback)
+- **parent-grill-analysis:** $4.862995 (provider-reported)
 
