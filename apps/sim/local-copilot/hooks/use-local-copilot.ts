@@ -17,6 +17,7 @@ import {
 import { formatLocalToolConfirmationTag } from '@/local-copilot/lib/security/tool-confirmation-policy'
 import { formatTrustedControl } from '@/local-copilot/lib/security/trusted-controls'
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
+import { stripIdsFromUserFacingText } from '@/local-copilot/lib/user-facing-text'
 
 export const localCopilotKeys = {
   all: ['local-copilot'] as const,
@@ -148,7 +149,9 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
             const event = JSON.parse(line.slice(5).trim()) as LocalCopilotStreamEvent
 
             if (event.type === 'text_delta') {
-              assistantText += event.content
+              const safe = stripIdsFromUserFacingText(event.content)
+              if (!safe) continue
+              assistantText += safe
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId ? { ...m, text: assistantText, streaming: true } : m
@@ -186,7 +189,7 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
               recommendations = event.items
             }
             if (event.type === 'error') {
-              throw new Error(event.message)
+              throw new Error(stripIdsFromUserFacingText(event.message) || event.message)
             }
           }
         }

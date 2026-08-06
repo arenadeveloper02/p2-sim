@@ -21,6 +21,7 @@ import type {
   StreamingContext,
 } from '@/lib/copilot/request/types'
 import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
+import { formatUxPhaseStatus } from '@/local-copilot/lib/agent/ux-phase'
 import type { LocalTurnCostSummary } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
@@ -29,7 +30,6 @@ import {
   isLocalCopilotCatalogId,
   type LocalCopilotCatalogId,
 } from '@/local-copilot/lib/model-catalog'
-import { formatUxPhaseStatus } from '@/local-copilot/lib/agent/ux-phase'
 import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import {
@@ -38,6 +38,7 @@ import {
 } from '@/local-copilot/lib/security/tool-confirmation-policy'
 import { formatTrustedControl } from '@/local-copilot/lib/security/trusted-controls'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
+import { stripIdsFromUserFacingText } from '@/local-copilot/lib/user-facing-text'
 import type {
   CopilotContextEntry,
   CopilotFileAttachmentRef,
@@ -59,7 +60,9 @@ function extractWorkspaceSnapshot(value: unknown): VfsSnapshotV1 | undefined {
   return value as VfsSnapshotV1
 }
 
-function resolveCatalogIdFromPayload(requestPayload: Record<string, unknown>): LocalCopilotCatalogId {
+function resolveCatalogIdFromPayload(
+  requestPayload: Record<string, unknown>
+): LocalCopilotCatalogId {
   const model = extractString(requestPayload.model)
   if (!model || !isLocalCopilotCatalogId(model)) {
     return DEFAULT_LOCAL_COPILOT_CATALOG_ID
@@ -210,11 +213,18 @@ async function dispatchLocalCopilotEvent(
       }
     }
 
-    const chatId = options.chatId
+    // Prefer options.chatId, then the streaming context — a missing chatId
+    // skips resource upserts and leaves the mothership right panel closed.
+    const chatId = options.chatId ?? context.chatId
     if (chatId && event.success) {
+      // Pass runtime + projected results (identical on Arena — no secret
+      // projection). Omitting projectedResult used to shift chatId into that
+      // slot; projected extraction then returned [] and the length mismatch
+      // dropped the upsert that opens the right panel.
       await handleResourceSideEffects(
         event.toolName,
         toolArgsByCallId.get(event.toolCallId),
+        toolResult,
         toolResult,
         chatId,
         (streamEvent) => dispatchStreamEvent(streamEvent, context, execContext, options),
@@ -225,12 +235,14 @@ async function dispatchLocalCopilotEvent(
   }
 
   if (event.type === 'text_delta' && event.content) {
+    const safeText = stripIdsFromUserFacingText(event.content)
+    if (!safeText) return
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.text,
         payload: {
           channel: MothershipStreamV1TextChannel.assistant,
-          text: event.content,
+          text: safeText,
         },
       },
       context,
@@ -331,7 +343,9 @@ async function dispatchLocalCopilotEvent(
       )
       return
     }
-    const patchNote = `\n\n**Proposed workflow change:** ${event.patch.summary}\n\nCould not persist a reviewable patch. Ask Copilot to propose the change again.`
+    const patchNote = stripIdsFromUserFacingText(
+      `\n\n**Proposed workflow change:** ${event.patch.summary}\n\nCould not persist a reviewable patch. Ask Copilot to propose the change again.`
+    )
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.text,
@@ -348,11 +362,12 @@ async function dispatchLocalCopilotEvent(
   }
 
   if (event.type === 'error') {
-    context.errors.push(event.message)
+    const safeMessage = stripIdsFromUserFacingText(event.message) || event.message
+    context.errors.push(safeMessage)
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.error,
-        payload: { message: event.message, code: 'local_copilot_error' },
+        payload: { message: safeMessage, code: 'local_copilot_error' },
       },
       context,
       execContext,
@@ -503,6 +518,9 @@ export async function runLocalCopilotMothershipLifecycle(
       ...(workspaceSnapshot ? { workspaceSnapshot } : {}),
       ...(workflowId ? { workflowId } : {}),
       ...(execContext.userPermission ? { userPermission: execContext.userPermission } : {}),
+      ...(execContext.billingAttribution
+        ? { billingAttribution: execContext.billingAttribution }
+        : {}),
       signal: options.abortSignal,
     })
 

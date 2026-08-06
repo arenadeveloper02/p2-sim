@@ -6,7 +6,24 @@
 import { stripOptionsTagsForDisplay } from '@/local-copilot/lib/format-options-tag'
 import { stripUntrustedSecurityControls } from '@/local-copilot/lib/security/trusted-controls'
 
-const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi
+/** Any UUID-shaped token (not only RFC version/variant nibbles). */
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi
+
+/** Anthropic / OpenAI / Responses API tool-call ids. */
+const PROVIDER_TOOL_CALL_ID_PATTERN = /\b(?:toolu_|call_|fc_)[A-Za-z0-9_-]{6,}\b/g
+
+/**
+ * CamelCase id labels the model often echoes from tool JSON
+ * (`workflowId: …`, `blockId=…`, `[messageId:…]`).
+ */
+const LABELED_ID_PATTERN =
+  /\b(?:workflow|block|execution|message|patch|chat|conversation|tool(?:Call)?|start(?:Block)?|job|file|document)Id\b\s*[:=]\s*[`'"[]?[A-Za-z0-9_-]+[`'"\]]?/gi
+
+const MESSAGE_ID_BRACKET_PATTERN = /\[messageId:[^\]]*\]/gi
+
+/** Privileged tags that must keep embedded ids for Apply/Approve UI. */
+const PRIVILEGED_CONTROL_TAG_PATTERN =
+  /<(credential|workspace_resource|tool_confirmation|workflow_patch)>[\s\S]*?<\/\1>/gi
 
 /** After a successful populate, restrict which tools the model may still call. */
 export type PostBuildToolMode = 'all' | 'oauth_only' | 'final_only' | 'done'
@@ -24,27 +41,43 @@ const COMPLETION_MARKERS = [
 ] as const
 
 /**
- * Removes UUIDs from prose (e.g. "Start block ID is …") without destroying
- * auth/callback URLs that embed workspace or workflow ids.
+ * Removes internal ids from prose without destroying auth/callback URLs or
+ * privileged control tags that need ids for Apply/Approve UI.
  */
 export function stripIdsFromUserFacingText(text: string): string {
-  const urls: string[] = []
-  const withUrlPlaceholders = text.replace(/https?:\/\/\S+/gi, (url) => {
-    urls.push(url)
-    return `<<URL_${urls.length - 1}>>`
-  })
+  if (!text) return text
 
-  const stripped = withUrlPlaceholders
+  const protectedSegments: string[] = []
+  const protect = (segment: string): string => {
+    protectedSegments.push(segment)
+    return `<<PROT_${protectedSegments.length - 1}>>`
+  }
+
+  const withProtected = text
+    .replace(PRIVILEGED_CONTROL_TAG_PATTERN, (tag) => protect(tag))
+    .replace(/https?:\/\/\S+/gi, (url) => protect(url))
+
+  const stripped = withProtected
     .replace(
       /\b(?:start\s+)?block\s+id(?:s)?\s*(?:is|are|=|:)\s*[0-9a-f-]{36}\b/gi,
       'the Start block'
     )
+    .replace(MESSAGE_ID_BRACKET_PATTERN, '')
+    .replace(LABELED_ID_PATTERN, '')
+    .replace(
+      /\b(?:an?\s+)?(?:workflow|block|execution|message|patch|tool|chat|conversation)\s+ids?\s*(?:is|are|=|:)\s*[`'"[]?[A-Za-z0-9_-]+[`'"\]]?/gi,
+      ''
+    )
+    .replace(PROVIDER_TOOL_CALL_ID_PATTERN, '')
     .replace(UUID_PATTERN, '')
-    .replace(/\(\s*ID\s*`*`\s*\)/gi, '')
+    .replace(/\(\s*IDs?\s*:?\s*\)/gi, '')
+    .replace(/\bIDs?\s*:?\s*(?=[.,;)\]]|$)/gi, '')
+    .replace(/\[\s*\]/g, '')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/ ?\n{3,}/g, '\n\n')
+    .replace(/[ \t]+([.,;:])/g, '$1')
 
-  return stripped.replace(/<<URL_(\d+)>>/g, (_, index) => urls[Number(index)] ?? '')
+  return stripped.replace(/<<PROT_(\d+)>>/g, (_, index) => protectedSegments[Number(index)] ?? '')
 }
 
 /**
@@ -149,7 +182,8 @@ const BRIDGING_NARRATION_PATTERN =
 const MUTATION_INTENT_NARRATION_PATTERN =
   /^(?:okay[,.]?\s+|ok[,.]?\s+|sure[,.]?\s+|alright[,.]?\s+|now[,.]?\s+)?(?:(?:i(?:'| a)?m |i(?:'| wi)?ll |let me )+)?(?:now\s+)?(?:applying|editing|updating|fixing|redeploying|deploying|wiring|patching|saving)\b[\s\S]{0,220}$/i
 
-const POLITE_BRIDGING_PREFIX = /^(?:okay[,.]?\s+|ok[,.]?\s+|sure[,.]?\s+|alright[,.]?\s+|now[,.]?\s+)/i
+const POLITE_BRIDGING_PREFIX =
+  /^(?:okay[,.]?\s+|ok[,.]?\s+|sure[,.]?\s+|alright[,.]?\s+|now[,.]?\s+)/i
 const BARE_POLITE_TOKEN = /^(?:okay|ok|sure|alright|now)[,.]?$/i
 
 /**

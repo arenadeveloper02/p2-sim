@@ -3,6 +3,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { truncate } from '@sim/utils/string'
 import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
@@ -392,6 +393,11 @@ export interface RunAgentParams {
    * provider config instead of using process-wide `COPILOT_*` env defaults.
    */
   catalogId?: LocalCopilotCatalogId
+  /**
+   * Workspace payer snapshot from mothership admission. When omitted, turn
+   * usage recording resolves attribution from the workspace.
+   */
+  billingAttribution?: BillingAttributionSnapshot
 }
 
 export async function* runLocalCopilotAgent(
@@ -1765,7 +1771,9 @@ export async function* runLocalCopilotAgent(
       }
       const chunk = event.item
       if (chunk.type === 'text' && chunk.content) {
-        const cleaned = stripLeakedToolMarkers(chunk.content, { trim: false })
+        const cleaned = stripIdsFromUserFacingText(
+          stripLeakedToolMarkers(chunk.content, { trim: false })
+        )
         if (!cleaned) continue
         assistantText += cleaned
         streamedUserFacingText += cleaned
@@ -1784,9 +1792,10 @@ export async function* runLocalCopilotAgent(
       }
     }
     if (assistantText.length === priorAssistantChars) {
-      assistantText += stagnationStopMessage
-      streamedUserFacingText += stagnationStopMessage
-      yield { type: 'text_delta', content: stagnationStopMessage }
+      const safe = stripIdsFromUserFacingText(stagnationStopMessage)
+      assistantText += safe
+      streamedUserFacingText += safe
+      yield { type: 'text_delta', content: safe }
     }
   }
 
@@ -2069,6 +2078,7 @@ export async function* runLocalCopilotAgent(
       rootExecutionId: params.parentExecutionId,
       triggeringChatId: params.chatId,
       triggeringRunId: params.runId,
+      ...(params.billingAttribution ? { billingAttribution: params.billingAttribution } : {}),
     })
     recordLocalOpsEvent({
       counter: LOCAL_OPS_COUNTERS.costRecorded,

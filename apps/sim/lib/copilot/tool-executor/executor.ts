@@ -4,7 +4,7 @@ import { toError } from '@sim/utils/errors'
 import { projectToolErrorMessageForCopilot } from '@/lib/copilot/request/tools/resolved-secret-result'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/execution/constants'
 import { executeTool as executeAppTool } from '@/tools'
-import { getToolEntry, isClientExecuted, isKnownTool, isSimExecuted } from './router'
+import { getToolEntry, isClientExecuted, isGoExecuted, isKnownTool, isSimExecuted } from './router'
 import type {
   ToolCallDescriptor,
   ToolExecutionContext,
@@ -62,14 +62,18 @@ export async function executeTool(
 
   const normalizedParams = normalizeToolParams(toolId, params, context)
 
-  // Client-routed tools (e.g. run_workflow) are normally executed in the browser and never
-  // reach this point in interactive mode. In headless mode (Mothership block, no browser) there
-  // is no client to delegate to, so fall back to the registered server-side handler when one
-  // exists — otherwise the call would route to executeAppTool and throw "Tool not found".
+  // Prefer a registered in-process handler whenever one exists. Catalog `go`
+  // tools (e.g. list_integration_tools) are normally remote on Cloud, but Local
+  // Arena registers Sim handlers for them — falling through to @/tools throws
+  // "Built-in tool not found".
+  //
+  // Client-routed tools (e.g. run_workflow) are normally executed in the browser.
+  // In headless mode there is no client, so use the registered server handler.
   const canUseRegisteredHandler =
     (hasHandler(toolId) && !isKnownTool(toolId)) ||
     (isKnownTool(toolId) &&
-      (isSimExecuted(toolId) || (isClientExecuted(toolId) && hasHandler(toolId))))
+      hasHandler(toolId) &&
+      (isSimExecuted(toolId) || isGoExecuted(toolId) || isClientExecuted(toolId)))
   if (!canUseRegisteredHandler) {
     const appParams = buildAppToolParams(normalizedParams, context)
     return context.resolvedSecretTraceRegistry

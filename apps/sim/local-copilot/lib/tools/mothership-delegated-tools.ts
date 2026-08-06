@@ -345,7 +345,8 @@ export async function executeMothershipDelegatedTool(
     return withBillingFromResult(result)
   }
 
-  // Remaining delegated tools are sim-routed (run_workflow, function_execute, …).
+  // Remaining delegated tools are sim-/go-routed with registered handlers
+  // (run_workflow, list_integration_tools, function_execute, …).
   const { executeTool } = await import('@/lib/copilot/tool-executor/executor')
   const result = await executeTool(toolName, enrichedArgs, {
     userId: ctx.userId,
@@ -362,6 +363,21 @@ export async function executeMothershipDelegatedTool(
       toolName,
       workflowId: workflowId ?? null,
       error: result.error,
+    })
+  }
+
+  if (toolName === 'list_integration_tools' && result.success) {
+    const { adaptListIntegrationToolsForLocal } = await import(
+      '@/local-copilot/lib/tools/adapt-list-integration-tools'
+    )
+    return withBillingFromResult({
+      toolName,
+      success: result.success,
+      result: adaptListIntegrationToolsForLocal(
+        result.output ?? (result.error ? { error: result.error } : {})
+      ),
+      error: result.error,
+      resources: result.resources,
     })
   }
 

@@ -1,5 +1,11 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import {
+  assertBillingAttributionSnapshot,
+  type BillingAttributionSnapshot,
+  resolveBillingAttribution,
+  toBillingContext,
+} from '@/lib/billing/core/billing-attribution'
 import { recordUsage } from '@/lib/billing/core/usage-log'
 import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 import {
@@ -24,6 +30,11 @@ export interface RecordLocalCopilotTurnUsageParams {
   rootExecutionId?: string
   triggeringChatId?: string
   triggeringRunId?: string
+  /**
+   * Prefer the mothership-resolved snapshot when present so ledger writes match
+   * the admission payer. Resolved from the workspace when omitted.
+   */
+  billingAttribution?: BillingAttributionSnapshot
 }
 
 /**
@@ -48,9 +59,26 @@ export async function recordLocalCopilotTurnUsage(
   })
 
   try {
+    const attribution = params.billingAttribution
+      ? assertBillingAttributionSnapshot(params.billingAttribution)
+      : await resolveBillingAttribution({
+          actorUserId: params.userId,
+          workspaceId: params.workspaceId,
+        })
+
+    if (
+      attribution.actorUserId !== params.userId ||
+      attribution.workspaceId !== params.workspaceId
+    ) {
+      throw new Error('Local Copilot billing attribution does not match its actor and workspace')
+    }
+
+    const billingContext = toBillingContext(attribution)
+
     await recordUsage({
-      userId: params.userId,
-      workspaceId: params.workspaceId,
+      userId: attribution.actorUserId,
+      workspaceId: attribution.workspaceId,
+      ...billingContext,
       workflowId: params.workflowId,
       chatId: params.chatId,
       runId: params.runId,
@@ -95,6 +123,8 @@ export async function recordLocalCopilotTurnUsage(
       runId: params.runId ?? null,
       messageId: params.messageId,
       turnEventKey,
+      billingEntityType: billingContext.billingEntity.type,
+      billingEntityId: billingContext.billingEntity.id,
       componentCount: params.summary.components.length,
       total: params.summary.total,
     })
