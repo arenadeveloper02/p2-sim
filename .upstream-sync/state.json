@@ -35,7 +35,7 @@
     },
     {
       "runId": "2026-08-06-4",
-      "releaseVersion": "v0.7.32…v0.7.37",
+      "releaseVersion": "v0.7.32",
       "upstreamSha": "9d23e25ce1c5fb9310fcb94a10fdb4c4f554d4d8",
       "branch": "upstream-sync/2026-08-06T11-45-10",
       "prNumber": 688,
