@@ -93,3 +93,37 @@ Rolling log of structural improvements that reduce merge conflict surface with `
 ## 2026-08-06-2
 
 - Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
+
+### Grill findings — run 2026-08-06-3 (v0.7.31)
+
+- **Predict the merge before planning it: `git merge-tree --write-tree` is free and read-only.**
+  After the `comm -12` overlap measurement narrowed this slice to 3 candidate files,
+  `git merge-tree --write-tree HEAD <upstream-tip>` returned a tree OID with exit 0 and **no**
+  conflicted-file list — proving the whole slice merges clean before touching the working tree.
+  Then `git show <tree>:<path>` verifies each fork invariant survived, without a merge. Do this
+  after the overlap measurement on every run: it turns "3 planned child clusters" into "3
+  contingency stubs" and can retire an entire Luna round.
+- **Overlapping hunks are not conflicting hunks — check the distance.** All 3 overlap files here
+  looked risky and none conflicted. `tool-schemas-v1.ts` was the closest call: upstream's biome
+  key reformat lands at old line 3537 and the fork's Superagent addendum at old 3542. Hunk
+  *headers* overlap (3534-3540 vs 3539-3545) but the *changed* lines are 5 apart, so git merges
+  both. Compare changed-line offsets, not `@@` header ranges, before declaring a conflict.
+- **`upstreamFirst` auto-`--theirs` is more dangerous than the conflict it avoids.** The standing
+  `lib/copilot/generated/` rule would have force-deleted the fork's Superagent GFM sentence on a
+  slice where plain git kept it. When a prefix carries a known hand-edit, the correct move is to
+  let the natural merge run and add a **verify-only `mustEdit`**, not to pre-emptively checkout
+  theirs and re-patch. Consider narrowing the `upstreamFirst` prefix to exclude
+  `tool-schemas-v1.ts` outright.
+- **New `unionPaths` recorded** from this slice's measured additive-both-sides hotspots:
+  `app/workspace/[workspaceId]/w/components/sidebar/sidebar.tsx` (fork carries Arena branding,
+  `arena_v3` embed flag, mixpanel, hub URL; upstream develops it actively) and
+  `lib/workflows/migrations/subblock-migrations.ts` (both sides append to the same shared
+  `SUBBLOCK_ID_MIGRATIONS` record).
+- **Follow-up (pre-existing, not sync-caused):** `from=arena_v3` embeds apply `hidden` to the
+  sidebar rather than unmounting it, so upstream's new Cmd+B (`#5618`) toggles collapse state
+  with no visible effect in embed mode. Inert, but gating the `toggle-sidebar` registration on
+  `!hideSidebarForArenaV3` would be tidier.
+
+## 2026-08-06-3
+
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.

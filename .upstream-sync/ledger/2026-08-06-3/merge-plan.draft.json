@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "runId": "2026-08-06-3",
+  "kind": "draft",
+  "selfResolutions": [
+    {
+      "decision": "Take upstream wholesale for all non-overlapping files in this slice",
+      "paths": [
+        "apps/sim/app/workspace/[workspaceId]/providers/global-commands-provider.tsx",
+        "apps/sim/app/workspace/[workspaceId]/providers/global-commands-provider.test.tsx",
+        "apps/sim/app/workspace/[workspaceId]/utils/commands-utils.ts",
+        "apps/sim/blocks/blocks/ashby.ts",
+        "apps/sim/blocks/blocks/ashby.test.ts",
+        "apps/sim/lib/webhooks/provider-subscriptions.ts",
+        "apps/sim/lib/webhooks/provider-subscriptions.test.ts",
+        "apps/sim/tools/ashby/list_applications.ts",
+        "apps/sim/tools/ashby/types.ts"
+      ],
+      "prefixes": [],
+      "strategy": "theirs",
+      "rationale": "comm -12 of upstream-changed vs fork-changed files (both vs merge-base 207785c8) shows zero fork edits to any of these 9 files, so they fast-forward with no conflict. Direction-audited both ways: no isHosted/isProd/sim.ai gate anywhere in the upstream diff (grep: 0 hits), and no fork superset that --theirs would regress. Build prerequisites resolve in-tree: Tooltip.Shortcut at packages/emcn/src/components/tooltip/tooltip.tsx:468 (exported :556) and apps/sim/lib/webhooks/env-resolver.ts both exist. Upstream removes the ashby filterCandidateId subblock; the predicted merged tree has zero dangling refs in ashby.ts, list_applications.ts, and types.ts. Mod+B has no fork binding (only an upstream test fixture at global-commands-provider.test.tsx:82).",
+      "cite": "FBI 2026-08-06-3 / simstudioai/sim#5618 #5619 #5621 #5623 #5624 / extensibility-notes 2026-08-06-2 'measure the overlap before planning' + 'isHosted audit cuts both ways'"
+    },
+    {
+      "decision": "Let the natural three-way union stand on sidebar.tsx — keep Arena branding, take upstream Cmd+B",
+      "paths": ["apps/sim/app/workspace/[workspaceId]/w/components/sidebar/sidebar.tsx"],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "Upstream #5618 changes old lines 120, 1236 and 1288; the nearest fork hunks are at old lines 1256-1268 and 1653+, i.e. 14+ lines away, so no hunk pair is adjacent. git merge-tree --write-tree confirms a clean merge (tree b4f398d7, exit 0, no conflicted files) and the predicted tree contains BOTH upstream's toggle-sidebar command registration AND all 4 fork branding/arena refs (handleOpenArenaDocs, hideSidebarForArenaV3, useOrgBrandConfig, createWorkflowEvent). No child work required unless the harness merge diverges.",
+      "cite": "simstudioai/sim#5618 / merge-policy unionPaths (added this run) / git merge-tree b4f398d7"
+    },
+    {
+      "decision": "Do NOT checkout --theirs on lib/copilot/generated/tool-schemas-v1.ts this slice; the clean merge already preserves the fork hand-edit",
+      "paths": ["apps/sim/lib/copilot/generated/tool-schemas-v1.ts"],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "The standing upstreamFirst prefix would auto-resolve --theirs and silently delete the fork's Superagent task-description addendum (the Google Docs GFM sentence), which exists in NO generator source and cannot be regenerated here because scripts/sync-tool-catalog.ts:8 reads the absent sibling repo ../copilot/. Upstream's only change in this file is biome key reformatting (['x']: -> x:, 96 keys, zero schema change) at old line 3537; the fork's edit is at old line 3542 — 5 lines apart, so git merges both. Verified in the predicted tree: the GFM sentence is present (1 hit), 'superagent: {' is unquoted (1 hit), and 0 residual ['x']: keys remain. A verify-only mustEdit guards the invariant. bun run mship:generate must NOT be run — it is unnecessary (formatting-only upstream change) and cannot execute in this checkout.",
+      "cite": "merge-policy.json description CAVEAT / extensibility-notes 2026-08-06-2 'upstreamFirst + regenerateAfterMerge is unsafe for lib/copilot/generated/'"
+    },
+    {
+      "decision": "Union subblock-migrations.ts — upstream ashby _removed_filterCandidateId entry plus fork zoom canonical-mode backfill",
+      "paths": ["apps/sim/lib/workflows/migrations/subblock-migrations.ts"],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "Classic additive-both-sides on a shared record map. Upstream adds one key inside the ashby map (old lines 46-49); the fork adds a zoom map at old lines 27-31 and a Zoom OAuth backfill branch at old 193+/229+. No hunk overlap. Predicted tree carries both: filterCandidateId migration entry (1 hit) and ZOOM_OAUTH_CANONICAL_IDS (2 hits). Added to merge-policy unionPaths so the next sync inherits the rule.",
+      "cite": "simstudioai/sim#5624 / merge-policy unionPaths (added this run)"
+    }
+  ],
+  "openQuestions": [],
+  "childClusters": [
+    {
+      "id": "sidebar-cmd-b",
+      "prefix": "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/",
+      "files": ["apps/sim/app/workspace/[workspaceId]/w/components/sidebar/sidebar.tsx"],
+      "strategy": "union",
+      "notes": "CONTINGENCY ONLY — git merge-tree predicts zero conflicts (tree b4f398d7). Instantiate a child only if the harness merge actually conflicts here. Invariant to preserve on both sides: TAKE upstream's SidebarTooltip `shortcut?: string` prop, the Tooltip.Shortcut render branch, the `toggle-sidebar` entry in useRegisterGlobalCommands, and the shortcut={isMac ? 'Cmd+B' : 'Ctrl+B'} prop on the collapse-button tooltip. KEEP every fork addition: useSearchParams + hideSidebarForArenaV3, getArenaHubAgentsUrl state/effect, SidebarBrandHeader import, useOrgBrandConfig + resolveBrandDocsUrl, createWorkflowEvent mixpanel call in handleCreateWorkflow, and handleOpenArenaDocs / handleContactSupport / handleOpenTerms / handleOpenPrivacy plus their DropdownMenuItems. Never restore upstream's handleOpenDocs pointing at docs.sim.ai."
+    },
+    {
+      "id": "copilot-generated-schemas",
+      "prefix": "apps/sim/lib/copilot/generated/",
+      "files": ["apps/sim/lib/copilot/generated/tool-schemas-v1.ts"],
+      "strategy": "union",
+      "notes": "CONTINGENCY ONLY — predicted clean. If it does conflict: take upstream's unquoted object keys everywhere (['x']: -> x:) AND keep the fork's Superagent task description ending in '...do not ask to convert or reformat markdown; Drive handles GFM import.' Do NOT auto --theirs despite the upstreamFirst prefix, and do NOT run bun run mship:generate (it cannot resolve ../copilot/ in this checkout)."
+    },
+    {
+      "id": "subblock-migrations-union",
+      "prefix": "apps/sim/lib/workflows/migrations/",
+      "files": ["apps/sim/lib/workflows/migrations/subblock-migrations.ts"],
+      "strategy": "union",
+      "notes": "CONTINGENCY ONLY — predicted clean. If it conflicts: keep both map entries — upstream's ashby.filterCandidateId: '_removed_filterCandidateId' and the fork's zoom map (credentialAdmin/manualCredentialAdmin) plus the ZOOM_OAUTH_CANONICAL_IDS backfill branch in backfillCanonicalModes."
+    }
+  ],
+  "proposedDirectives": {
+    "default": {
+      "delete": [],
+      "checkoutTheirs": [],
+      "checkoutOurs": [],
+      "mustEdit": ["apps/sim/lib/copilot/generated/tool-schemas-v1.ts"],
+      "overrideForkFirst": [],
+      "notes": "Unconditional — there are no open questions, so this set applies as-is in Phase B. The single mustEdit is VERIFY-ONLY: assert that the Superagent `task` description in TOOL_RUNTIME_SCHEMAS still ends with '...do not ask to convert or reformat markdown; Drive handles GFM import.' and re-append that sentence only if the merge dropped it. It is expected to already be present (confirmed in predicted tree b4f398d7) — make no edit if so. Skip the regenerateAfterMerge hook (bun run mship:generate) this run: upstream's change to the generated file is key formatting only, and the script cannot run in this checkout."
+    }
+  },
+  "notes": "12 upstream files, 3 overlap the fork, git merge-tree --write-tree HEAD e01bfb14 predicts a fully clean merge (tree b4f398d7, exit 0, no conflicted paths) with every fork invariant intact. All three child clusters are contingency scaffolding. Merge-policy updated this run: apps/sim/app/workspace/[workspaceId]/w/components/sidebar/sidebar.tsx and apps/sim/lib/workflows/migrations/subblock-migrations.ts added to unionPaths. Nothing skipped — skipped.md stays empty."
+}

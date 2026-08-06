@@ -1,0 +1,8 @@
+{
+  "delete": [],
+  "checkoutTheirs": [],
+  "checkoutOurs": [],
+  "mustEdit": [],
+  "overrideForkFirst": [],
+  "notes": "Empty by design. The harness merge (2b121cb2, HEAD x e01bfb14) completed with ZERO unmerged paths, exactly as git merge-tree --write-tree predicted in Phase A (tree b4f398d7, exit 0). Directives may only target still-unmerged paths, and none remain, so every draft directive is discharged rather than re-issued. Specifically: the draft's single verify-only mustEdit on apps/sim/lib/copilot/generated/tool-schemas-v1.ts was DISCHARGED by direct verification of the merged worktree (Superagent GFM sentence present, unquoted superagent key present, 0 residual ['x']: keys) — re-issuing it would risk a child overwriting an already-correct file. Do NOT run the regenerateAfterMerge hook (bun run mship:generate) this run: upstream's change to the generated file is pure key formatting, already carried by the merge, and scripts/sync-tool-catalog.ts cannot resolve the absent sibling repo ../copilot/ in this checkout. No children to instantiate; proceed straight to coherence + build-fix."
+}
