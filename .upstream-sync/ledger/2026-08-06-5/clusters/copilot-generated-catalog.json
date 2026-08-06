@@ -1,0 +1,44 @@
+{
+  "clusterId": "copilot-generated-catalog",
+  "runId": "2026-08-06-5",
+  "files": [
+    {
+      "path": "apps/sim/lib/copilot/generated/tool-catalog-v1.ts",
+      "resolution": "manual",
+      "notes": "Kept upstream Search and ShareFile definitions, including ShareFile.action, and restored the seven fork-consumed entries plus their catalog registrations. Re-attached the fork GFM instruction to Superagent.task."
+    },
+    {
+      "path": "apps/sim/lib/copilot/generated/tool-schemas-v1.ts",
+      "resolution": "manual",
+      "notes": "Kept upstream runtime schema additions and added schema keys for Superagent, Research, UserMemory, MoveFile, MoveFileFolder, RenameFile, and RenameFileFolder; ShareFile retains action."
+    },
+    {
+      "path": "apps/sim/lib/copilot/tools/server/router.ts",
+      "resolution": "manual",
+      "notes": "Restored fork catalog imports and permission keys for the file tools and UserMemory while retaining upstream queryUserTableServerTool and ShareFile routing."
+    },
+    {
+      "path": "apps/sim/lib/copilot/tools/descriptions.ts",
+      "resolution": "manual",
+      "notes": "Preserved Arena branding and the fork Google Docs GFM note while retaining upstream conditional hosted-key handling."
+    },
+    {
+      "path": "apps/sim/lib/copilot/tools/server/workflow/edit-workflow/validation.ts",
+      "resolution": "manual",
+      "notes": "Combined fork agent prompt/message normalization with upstream webhook/read-only validation and additional input types; unknown block handling preserves normalized inputs and validation errors."
+    }
+  ],
+  "policyProposals": [
+    {
+      "kind": "unionPaths",
+      "prefix": "apps/sim/lib/copilot/tools/descriptions.ts",
+      "notes": "Keep fork branding/GFM guidance and take upstream hosted-key behavior additively."
+    },
+    {
+      "kind": "unionPaths",
+      "prefix": "apps/sim/lib/copilot/tools/server/workflow/edit-workflow/validation.ts",
+      "notes": "Keep fork agent normalization and take upstream webhook/read-only validation additively."
+    }
+  ],
+  "notes": "Focused assertions, Biome check, and git diff --check passed. The targeted validation test could not start because @next/env is unavailable in the workspace dependency installation."
+}

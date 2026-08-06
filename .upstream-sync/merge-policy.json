@@ -119,6 +119,8 @@
     "apps/sim/lib/copilot/generated/tool-catalog-v1.ts",
     "apps/sim/lib/copilot/generated/tool-schemas-v1.ts",
     "apps/sim/lib/copilot/tools/server/router.ts",
+    "apps/sim/lib/copilot/tools/descriptions.ts",
+    "apps/sim/lib/copilot/tools/server/workflow/edit-workflow/validation.ts",
     "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/"
   ],
   "dedupeOnUnion": [

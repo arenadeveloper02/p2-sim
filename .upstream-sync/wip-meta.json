@@ -1,13 +1,13 @@
 {
   "decisionHash": "c2e8891e70512d8fb086c79b15500292f4ea2ad4271ef29fe437df748b010a7d",
-  "stabilityHash": "64de0b1bd511a10d36d08ba0dcd845fa61dd949dfd968d9a4066a8ebc1f65b84",
+  "stabilityHash": "1d029e7246501659e7c8738def564a21d8f395ba0db82c6e07571a8d1fe8d007",
   "deleted": [
     "apps/sim/app/workspace/[workspaceId]/home/hooks/stream/turn-model-serialize.test.ts",
     "apps/sim/app/workspace/[workspaceId]/home/hooks/use-chat.test.ts",
     "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft.test.ts",
     "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft.ts"
   ],
-  "updatedAt": "2026-08-06T14:25:46.301Z",
-  "clusterId": "db-schema-migrations",
+  "updatedAt": "2026-08-06T14:30:54.536Z",
+  "clusterId": "copilot-generated-catalog",
   "runId": "2026-08-06-5"
 }

@@ -249,3 +249,22 @@ LOCKED. No open questions were raised this run (open-questions.md: 'No open ques
 - failed: 0
 - mustEdit: `apps/sim/lib/copilot/generated/tool-catalog-v1.ts`, `apps/sim/lib/copilot/generated/tool-schemas-v1.ts`, `apps/sim/lib/copilot/tools/server/router.ts`, `apps/sim/lib/core/config/env.ts`, `apps/sim/lib/core/config/api-keys.ts`, `apps/sim/lib/uploads/config.ts`, `apps/sim/providers/utils.ts`, `apps/sim/lib/auth/auth.ts`, `apps/sim/app/api/workspaces/route.ts`
 
+## Cluster db-schema-migrations
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `packages/db/schema.ts` | manual | Unioned the fork's workflowQueries table with upstream's CustomPiiPattern and customPatterns field. |
+| `packages/db/migrations/meta/_journal.json` | manual | Kept fork entries 0261-0264, appended upstream entries in when order as indices 0265-0269, and updated their tags to match renamed files. |
+| `packages/db/migrations/0261_tranquil_donald_blake.sql` | manual | Preserved upstream SQL verbatim at 0265_tranquil_donald_blake.sql. |
+| `packages/db/migrations/0262_strong_storm.sql` | manual | Preserved upstream SQL verbatim at 0266_strong_storm.sql. |
+| `packages/db/migrations/0263_workflow_fork_sync_excluded.sql` | manual | Preserved upstream SQL verbatim at 0267_workflow_fork_sync_excluded.sql. |
+| `packages/db/migrations/0264_fat_ikaris.sql` | manual | Preserved upstream SQL verbatim at 0268_fat_ikaris.sql. |
+| `packages/db/migrations/0265_org_session_policy.sql` | manual | Preserved upstream SQL verbatim at 0269_org_session_policy.sql. |
+| `packages/db/migrations/meta/0261_snapshot.json` | manual | Renamed upstream snapshot to meta/0265_snapshot.json without changing its contents. |
+| `packages/db/migrations/meta/0262_snapshot.json` | manual | Renamed upstream snapshot to meta/0266_snapshot.json without changing its contents. |
+| `packages/db/migrations/meta/0263_snapshot.json` | manual | Renamed upstream snapshot to meta/0267_snapshot.json without changing its contents. |
+| `packages/db/migrations/meta/0264_snapshot.json` | manual | Renamed upstream snapshot to meta/0268_snapshot.json without changing its contents. |
+| `packages/db/migrations/meta/0265_snapshot.json` | manual | Renamed upstream snapshot to meta/0269_snapshot.json without changing its contents. |
+
+No upstream hunks were skipped. The existing manualReview migration policy covers the journal and migration collision handling.
+
