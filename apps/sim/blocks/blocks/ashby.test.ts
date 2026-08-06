@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { AshbyBlock } from './ashby'
+import { AshbyBlock } from '@/blocks/blocks/ashby'
 
 describe('AshbyBlock', () => {
   const buildParams = (operation: string, extra: Record<string, unknown>) => ({
