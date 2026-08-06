@@ -164,7 +164,9 @@ export const providers: Record<ProviderId, ProviderMetadata> = {
   cerebras: buildProviderMetadata('cerebras'),
   groq: buildProviderMetadata('groq'),
   sakana: buildProviderMetadata('sakana'),
+  nvidia: buildProviderMetadata('nvidia'),
   meta: buildProviderMetadata('meta'),
+  zai: buildProviderMetadata('zai'),
   mistral: buildProviderMetadata('mistral'),
   bedrock: buildProviderMetadata('bedrock'),
   openrouter: buildProviderMetadata('openrouter'),
@@ -1125,10 +1127,17 @@ export function getApiKey(
   const isSambaNovaModel = provider === 'sambanova'
   const isXaiModel = provider === 'xai'
   const isOpenRouterModel = provider === 'openrouter'
+  const isZaiModel = provider === 'zai'
 
   if (
     isHosted &&
-    (isOpenAIModel || isClaudeModel || isGeminiModel || isSambaNovaModel || isXaiModel)
+    (isOpenAIModel ||
+      isClaudeModel ||
+      isGeminiModel ||
+      isSambaNovaModel ||
+      isXaiModel ||
+      isOpenRouterModel ||
+      isZaiModel)
   ) {
     // Only use server key if model is explicitly in our hosted list
     const hostedModels = getHostedModels()

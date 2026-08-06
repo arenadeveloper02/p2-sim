@@ -71,9 +71,11 @@ import { SlackClientSelector } from './components/slack-client-selector'
 
 const SLACK_OVERRIDES: SelectorOverrides = {
   transformContext: (context, deps) => {
-    // Slack selectors (channels/users) rely on an oauthCredential in context.
-    // We always use the Slack OAuth credential; token type selection is handled server-side.
-    const oauthCredential = String(deps.credential ?? '')
+    const authMethod = deps.authMethod as string
+    const oauthCredential =
+      authMethod === 'bot_token'
+        ? String(deps.customBotCredential ?? deps.botToken ?? deps.credential ?? '')
+        : String(deps.credential ?? deps.customBotCredential ?? deps.triggerCredentials ?? '')
     return { ...context, oauthCredential }
   },
 }

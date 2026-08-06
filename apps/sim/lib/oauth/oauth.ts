@@ -44,6 +44,7 @@ import {
   ShopifyIcon,
   SlackIcon,
   SpotifyIcon,
+  TikTokIcon,
   TrelloIcon,
   UnipileIcon,
   VertexIcon,
@@ -431,6 +432,28 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'x',
   },
+  tiktok: {
+    name: 'TikTok',
+    icon: TikTokIcon,
+    services: {
+      tiktok: {
+        name: 'TikTok',
+        description: 'Read profile info and videos, and publish content to TikTok.',
+        providerId: 'tiktok',
+        icon: TikTokIcon,
+        baseProviderIcon: TikTokIcon,
+        scopes: [
+          'user.info.basic',
+          'user.info.profile',
+          'user.info.stats',
+          'video.publish',
+          'video.upload',
+          'video.list',
+        ],
+      },
+    },
+    defaultService: 'tiktok',
+  },
   atlassian: {
     name: 'Atlassian',
     icon: JiraIcon,
@@ -704,6 +727,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Slack',
         description: 'Use Slack messaging, files, reactions, views, and canvases.',
         providerId: 'slack',
+        serviceAccountProviderId: 'slack-custom-bot',
         icon: SlackIcon,
         baseProviderIcon: SlackIcon,
         scopes: [
@@ -718,7 +742,9 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'mpim:write',
           'chat:write',
           'chat:write.public',
-          // TODO: Add 'assistant:write' once Slack app review is approved
+          'assistant:write',
+          'app_mentions:read',
+          'im:history',
           'im:write',
           'im:read',
           'users:read',
@@ -729,6 +755,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'canvases:write',
           'reactions:write',
           'reactions:read',
+          'pins:read',
         ],
       },
     },
@@ -1245,6 +1272,11 @@ interface ProviderAuthConfig {
    * instead of the default application/x-www-form-urlencoded. Used by Notion.
    */
   useJsonBody?: boolean
+  /**
+   * Body param name to use for the client identifier instead of the standard `client_id`.
+   * TikTok requires `client_key` instead.
+   */
+  clientIdParamName?: string
 }
 
 export type CustomOAuthAppCredentialsResolver = (
@@ -1310,6 +1342,21 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         clientSecret,
         useBasicAuth: true,
         supportsRefreshTokenRotation: true,
+      }
+    }
+    case 'tiktok': {
+      const { clientId, clientSecret } = getCredentials(
+        env.TIKTOK_CLIENT_ID,
+        env.TIKTOK_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://open.tiktokapis.com/v2/oauth/token/',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: true,
+        // TikTok requires `client_key` in the token request body instead of `client_id`.
+        clientIdParamName: 'client_key',
       }
     }
     case 'confluence': {
@@ -1724,7 +1771,7 @@ function buildAuthRequest(
     headers.Authorization = `Basic ${basicAuth}`
   } else {
     // Use body credentials - include client credentials in request body
-    bodyParams.client_id = config.clientId
+    bodyParams[config.clientIdParamName || 'client_id'] = config.clientId
     if (config.clientSecret) {
       bodyParams.client_secret = config.clientSecret
     }
