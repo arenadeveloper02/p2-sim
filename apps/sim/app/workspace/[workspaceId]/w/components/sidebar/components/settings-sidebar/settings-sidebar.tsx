@@ -107,6 +107,10 @@ export function SettingsSidebar({
         return false
       }
 
+      if (item.id === 'billing' && subscriptionData?.data?.isOrgScoped && !isOrgAdminOrOwner) {
+        return false
+      }
+
       if (item.hideForEnterprise && isEnterprisePlan) {
         return false
       }
@@ -181,6 +185,7 @@ export function SettingsSidebar({
     hasEnterprisePlan,
     isEnterprisePlan,
     subscriptionAccess.hasUsableMaxAccess,
+    subscriptionData?.data?.isOrgScoped,
     isOrgAdminOrOwner,
     isSSOProviderOwner,
     ssoProvidersData?.providers?.length,

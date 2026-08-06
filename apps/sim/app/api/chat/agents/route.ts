@@ -1,7 +1,7 @@
 import { db } from '@sim/db'
-import { chat, user, webhook, workflow, workflowSchedule } from '@sim/db/schema'
+import { chat, user, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, isNull } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getAgentDepartmentLabelMap, labelFromDepartmentMap } from '@/lib/chat/arena-departments'
 
@@ -24,6 +24,9 @@ const logger = createLogger('ChatAgentsAPI')
  * Response includes:
  * - From chat table: title, workflow_id, subdomain
  * - From workflow table: name, description, workspace_id
+ *
+ * Chat deployments remain listable even when the same workflow also has an
+ * active schedule or webhook.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -98,12 +101,7 @@ export async function GET(request: NextRequest) {
       .from(chat)
       .innerJoin(workflow, eq(chat.workflowId, workflow.id))
       .innerJoin(user, eq(user.id, chat.userId))
-      .leftJoin(webhook, and(eq(webhook.workflowId, workflow.id), eq(webhook.isActive, true)))
-      .leftJoin(
-        workflowSchedule,
-        and(eq(workflowSchedule.workflowId, workflow.id), eq(workflowSchedule.status, 'active'))
-      )
-      .where(and(eq(chat.isActive, true), and(isNull(webhook.id), isNull(workflowSchedule.id))))
+      .where(eq(chat.isActive, true))
 
     // Step 3: Filter chats based on access rules
     const accessibleChats = chats.filter((chatRecord) => {
