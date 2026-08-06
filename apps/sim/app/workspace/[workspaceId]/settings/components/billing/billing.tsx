@@ -15,7 +15,6 @@ import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/predicates'
 import { getErrorMessage } from '@sim/utils/errors'
 import { formatDate } from '@sim/utils/formatting'
-import { useQueryClient } from '@tanstack/react-query'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession, useSubscription } from '@/lib/auth/auth-client'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
@@ -54,18 +53,14 @@ import {
 } from '@/hooks/queries/general-settings'
 import {
   useOrganizationBilling,
-  useOrganizations,
   useUpdateOrganizationUsageLimit,
 } from '@/hooks/queries/organization'
 import {
-  prefetchUpgradeBillingData,
   useInvoices,
   useOpenBillingPortal,
   useSubscriptionData,
   useUpdateUsageLimit,
-  useUsageLimitData,
 } from '@/hooks/queries/subscription'
-import { prefetchWorkspaceSettings, useWorkspaceSettings } from '@/hooks/queries/workspace'
 
 const logger = createLogger('Billing')
 
@@ -102,31 +97,44 @@ function formatInvoiceAmount(amountMinor: number, currency: string): string {
   return getInvoiceAmountFormatter(currency).format(amountMinor / 100)
 }
 
-export function Billing() {
+interface BillingProps {
+  scope?: 'account' | 'organization'
+  organizationId?: string
+  creditUsageHref?: string
+}
+
+export function Billing({ scope, organizationId, creditUsageHref }: BillingProps = {}) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const router = useRouter()
-  const queryClient = useQueryClient()
+  const isLegacyWorkspaceScope = scope === undefined
+  const isExplicitOrganizationScope = scope === 'organization'
 
   const {
     data: subscriptionData,
     isLoading: isSubscriptionLoading,
     refetch: refetchSubscription,
   } = useSubscriptionData({
-    includeOrg: true,
-    workspaceId,
+    includeOrg: isLegacyWorkspaceScope,
+    workspaceId: isLegacyWorkspaceScope ? workspaceId : undefined,
+    enabled: isLegacyWorkspaceScope || !isExplicitOrganizationScope,
   })
-  const { data: usageLimitResponse, isLoading: isUsageLimitLoading } = useUsageLimitData()
-  const { data: workspaceData, isLoading: isWorkspaceLoading } = useWorkspaceSettings(workspaceId)
+  const legacyOrganizationId = subscriptionData?.data?.organization?.id ?? null
+  const billingOrganizationId = isExplicitOrganizationScope
+    ? (organizationId ?? null)
+    : isLegacyWorkspaceScope
+      ? legacyOrganizationId
+      : null
+  const isOrganizationScope =
+    isExplicitOrganizationScope ||
+    (isLegacyWorkspaceScope && Boolean(subscriptionData?.data?.isOrgScoped))
 
-  const { data: orgsData } = useOrganizations()
-  const activeOrgId = orgsData?.activeOrganization?.id
-  const workspaceOrganizationId = workspaceData?.settings?.workspace?.organizationId ?? null
-  const billingOrganizationId =
-    workspaceOrganizationId ?? subscriptionData?.data?.organization?.id ?? activeOrgId ?? null
-
-  const { data: organizationBillingData, isLoading: isOrgBillingLoading } = useOrganizationBilling(
-    billingOrganizationId || ''
-  )
+  const {
+    data: organizationBillingData,
+    isLoading: isOrgBillingLoading,
+    refetch: refetchOrganizationBilling,
+  } = useOrganizationBilling(billingOrganizationId || '', {
+    enabled: isOrganizationScope,
+  })
 
   const updateUserLimit = useUpdateUsageLimit()
   const updateOrgLimit = useUpdateOrganizationUsageLimit()
@@ -138,60 +146,65 @@ export function Billing() {
   const betterAuthSubscription = useSubscription()
   const openBillingPortal = useOpenBillingPortal()
 
-  const upgradeHref = buildUpgradeHref(workspaceId)
-
-  /**
-   * Warm the Upgrade route bundle and the exact queries that page gates on, so
-   * the click navigates into already-cached data instead of a loading state.
-   */
+  const organizationBilling = organizationBillingData?.data
+  const upgradeWorkspaceId = isOrganizationScope
+    ? organizationBilling?.upgradeWorkspaceId
+    : isLegacyWorkspaceScope
+      ? workspaceId
+      : subscriptionData?.data?.upgradeWorkspaceId
+  const upgradeHref = upgradeWorkspaceId ? buildUpgradeHref(upgradeWorkspaceId) : null
   const prefetchUpgrade = () => {
-    router.prefetch(upgradeHref)
-    prefetchUpgradeBillingData(queryClient)
-    prefetchWorkspaceSettings(queryClient, workspaceId)
+    if (upgradeHref) router.prefetch(upgradeHref)
   }
 
-  const hasOrgScopedSubscription = Boolean(subscriptionData?.data?.isOrgScoped)
-  const isLoading =
-    isSubscriptionLoading ||
-    isUsageLimitLoading ||
-    isWorkspaceLoading ||
-    (hasOrgScopedSubscription && isOrgBillingLoading)
+  const plan = isOrganizationScope
+    ? (organizationBilling?.subscriptionPlan ?? 'free')
+    : (subscriptionData?.data?.plan ?? 'free')
+  const status = isOrganizationScope
+    ? (organizationBilling?.subscriptionStatus ?? 'inactive')
+    : (subscriptionData?.data?.status ?? 'inactive')
+  const isLoading = isOrganizationScope ? isOrgBillingLoading : isSubscriptionLoading
 
   const subscription = {
-    isFree: isFree(subscriptionData?.data?.plan),
-    isPro: isPro(subscriptionData?.data?.plan),
-    isTeam: isTeam(subscriptionData?.data?.plan),
-    isEnterprise: isEnterprise(subscriptionData?.data?.plan),
-    isPaid:
-      isPaid(subscriptionData?.data?.plan) &&
-      hasPaidSubscriptionStatus(subscriptionData?.data?.status),
+    isFree: isFree(plan),
+    isPro: isPro(plan),
+    isTeam: isTeam(plan),
+    isEnterprise: isEnterprise(plan),
+    isPaid: isPaid(plan) && hasPaidSubscriptionStatus(status),
     /**
      * True when the subscription is attached to an org (regardless of plan
      * name). Drives routing of usage-limit edits and whether we show pooled
      * or personal usage.
      */
-    isOrgScoped: Boolean(subscriptionData?.data?.isOrgScoped),
-    plan: subscriptionData?.data?.plan || 'free',
-    status: subscriptionData?.data?.status || 'inactive',
-    seats: getEffectiveSeats(subscriptionData?.data),
+    isOrgScoped: isOrganizationScope,
+    plan,
+    status,
+    seats: isOrganizationScope
+      ? (organizationBilling?.totalSeats ?? 0)
+      : getEffectiveSeats(subscriptionData?.data),
   }
 
   const usage = {
-    current: subscriptionData?.data?.usage?.current || 0,
-    limit: subscriptionData?.data?.usage?.limit || 0,
-    percentUsed: subscriptionData?.data?.usage?.percentUsed || 0,
+    current: isOrganizationScope
+      ? (organizationBilling?.totalCurrentUsage ?? 0)
+      : (subscriptionData?.data?.usage?.current ?? 0),
+    limit: isOrganizationScope
+      ? (organizationBilling?.totalUsageLimit ?? 0)
+      : (subscriptionData?.data?.usage?.limit ?? 0),
+    percentUsed: isOrganizationScope
+      ? organizationBilling?.totalUsageLimit
+        ? (organizationBilling.totalCurrentUsage / organizationBilling.totalUsageLimit) * 100
+        : 0
+      : (subscriptionData?.data?.usage?.percentUsed ?? 0),
   }
 
-  const usageLimitData = {
-    currentLimit: usageLimitResponse?.data?.currentLimit || 0,
-    minimumLimit: usageLimitResponse?.data?.minimumLimit || getPlanTierDollars(subscription.plan),
-  }
+  const isBlocked = isOrganizationScope
+    ? Boolean(organizationBilling?.billingBlocked)
+    : Boolean(subscriptionData?.data?.billingBlocked)
 
-  const isBlocked = Boolean(subscriptionData?.data?.billingBlocked)
-
-  const userRole = subscriptionData?.data?.organization?.role ?? 'member'
+  const userRole = isOrganizationScope ? (organizationBillingData?.userRole ?? 'member') : 'owner'
   const isTeamAdmin = isOrgAdminRole(userRole)
-  const shouldUseOrganizationBillingContext = subscription.isOrgScoped && isTeamAdmin
+  const shouldUseOrganizationBillingContext = isOrganizationScope
 
   const { data: invoicesData } = useInvoices({
     context: shouldUseOrganizationBillingContext ? 'organization' : 'user',
@@ -202,18 +215,18 @@ export function Billing() {
   })
 
   const planIncludedAmount =
-    subscription.isOrgScoped && isTeamAdmin && organizationBillingData?.data
-      ? organizationBillingData.data.minimumBillingAmount
+    subscription.isOrgScoped && organizationBilling
+      ? organizationBilling.minimumBillingAmount
       : getPlanTierCredits(subscription.plan) / CREDIT_MULTIPLIER
 
   const effectiveUsageLimit =
-    subscription.isOrgScoped && isTeamAdmin && organizationBillingData?.data
-      ? organizationBillingData.data.totalUsageLimit
-      : usageLimitData.currentLimit || usage.limit
+    subscription.isOrgScoped && organizationBilling
+      ? organizationBilling.totalUsageLimit
+      : usage.limit
 
   const effectiveCurrentUsage =
-    subscription.isOrgScoped && organizationBillingData?.data?.totalCurrentUsage != null
-      ? organizationBillingData.data.totalCurrentUsage
+    subscription.isOrgScoped && organizationBilling?.totalCurrentUsage != null
+      ? organizationBilling.totalCurrentUsage
       : usage.current
 
   /**
@@ -221,10 +234,11 @@ export function Billing() {
    * `setUsageLimitForCredits` (limit = planBase + creditBalance). `covered` is
    * that same never-billed ceiling, so on-demand is "on" only when the limit is
    * raised above it — a credit grant alone must not read as on-demand.
-   * `creditBalance` is the org's balance for org-scoped admins (resolved
-   * server-side by `getCreditBalance`) and the user's balance otherwise.
+   * Each scope reads its exact payer balance from the matching billing DTO.
    */
-  const creditBalance = subscriptionData?.data?.creditBalance ?? 0
+  const creditBalance = isOrganizationScope
+    ? (organizationBilling?.creditBalance ?? 0)
+    : (subscriptionData?.data?.creditBalance ?? 0)
   const covered = getCoveredUsage(planIncludedAmount, creditBalance)
 
   const isOnDemandActive = getIsOnDemandActive({
@@ -381,7 +395,8 @@ export function Billing() {
       }
       const referenceId = subscription.isOrgScoped ? billingOrganizationId : session?.user?.id
       await betterAuthSubscription.restore({ referenceId: referenceId || '' })
-      await refetchSubscription()
+      if (isOrganizationScope) await refetchOrganizationBilling()
+      else await refetchSubscription()
     } catch (error) {
       logger.error('Failed to restore subscription', { error })
       toast.error("Couldn't restore subscription", {
@@ -391,23 +406,34 @@ export function Billing() {
   }
 
   if (isLoading) return null
-  if (!subscriptionData?.data) return null
+  if (isOrganizationScope ? !organizationBilling : !subscriptionData?.data) return null
 
-  /** All workspaces are org-linked; billing follows the organization subscription. */
-  const displayPlan = subscription.plan
-  const displayPlanName = getDisplayPlanName(displayPlan)
-  const displayIsEnterprise = subscription.isEnterprise
+  const planName = getDisplayPlanName(subscription.plan)
+  const billingInterval = isOrganizationScope
+    ? organizationBilling?.billingInterval
+    : subscriptionData?.data?.billingInterval
+  const billingPeriod = billingInterval === 'year' ? 'billed annually' : 'billed monthly'
+  const organizationSubscriptionState = organizationBilling?.subscriptionState
+  const planTitle = isOrganizationScope
+    ? organizationSubscriptionState === 'lapsed'
+      ? `Organization ${planName} plan ended`
+      : `Organization ${planName} plan`
+    : `Personal ${planName} plan`
+  const priceText =
+    organizationSubscriptionState === 'free'
+      ? 'No active organization subscription'
+      : organizationSubscriptionState === 'lapsed'
+        ? 'Choose a new plan for this organization'
+        : subscription.isEnterprise
+          ? 'Custom pricing'
+          : `$${getPlanTierDollars(subscription.plan)} per user/month, ${billingPeriod}`
 
-  const billingPeriod =
-    subscriptionData.data.billingInterval === 'year' ? 'billed annually' : 'billed monthly'
-  const priceText = displayIsEnterprise
-    ? 'Custom pricing'
-    : isFree(displayPlan)
-      ? 'Included credits to get started'
-      : `$${getPlanTierDollars(displayPlan)} per user/month, ${billingPeriod}`
-
-  const periodEnd = subscriptionData.data.periodEnd ?? null
-  const isCancelledAtPeriodEnd = subscriptionData.data.cancelAtPeriodEnd === true
+  const periodEnd = isOrganizationScope
+    ? (organizationBilling?.billingPeriodEnd ?? null)
+    : (subscriptionData?.data?.periodEnd ?? null)
+  const isCancelledAtPeriodEnd = isOrganizationScope
+    ? organizationBilling?.cancelAtPeriodEnd === true
+    : subscriptionData?.data?.cancelAtPeriodEnd === true
 
   const invoices = (invoicesData?.invoices ?? []).map((invoice) => ({
     id: invoice.id,
@@ -418,18 +444,22 @@ export function Billing() {
   }))
 
   const canManageBilling = permissions.canEditUsageLimit
-  const showUsageLimit = !subscription.isFree && !subscription.isEnterprise
+  const canExplorePlans = permissions.showUpgradePlans
+  const showUsageLimit = subscription.isPaid && !subscription.isEnterprise
   const showOnDemand = hasUsablePaidAccess && !subscription.isEnterprise
 
   const usageLimitCurrent =
-    subscription.isOrgScoped && isTeamAdmin && organizationBillingData?.data
-      ? organizationBillingData.data.totalUsageLimit
-      : usageLimitData.currentLimit || usage.limit
+    subscription.isOrgScoped && organizationBilling
+      ? organizationBilling.totalUsageLimit
+      : usage.limit
 
   const usageLimitMinimum =
-    subscription.isOrgScoped && isTeamAdmin && organizationBillingData?.data
-      ? organizationBillingData.data.minimumBillingAmount
-      : usageLimitData.minimumLimit
+    subscription.isOrgScoped && organizationBilling
+      ? organizationBilling.minimumBillingAmount
+      : getPlanTierDollars(subscription.plan)
+  const explorePlansLabel = isOrganizationScope
+    ? 'Explore organization plans'
+    : 'Explore personal plans'
 
   return (
     <SettingsPanel>
@@ -441,12 +471,12 @@ export function Billing() {
             </div>
           </div>
           <div className='flex min-w-0 flex-col'>
-            <span className='truncate text-[var(--text-body)] text-sm'>{displayPlanName} plan</span>
+            <span className='truncate text-[var(--text-body)] text-sm'>{planTitle}</span>
             <span className='truncate text-[var(--text-muted)] text-caption'>{priceText}</span>
           </div>
         </div>
         {!subscription.isEnterprise &&
-          (canManageBilling ? (
+          (canExplorePlans && upgradeHref ? (
             <ChipLink
               href={upgradeHref}
               variant='border-shadow'
@@ -454,11 +484,11 @@ export function Billing() {
               onMouseEnter={prefetchUpgrade}
               onFocus={prefetchUpgrade}
             >
-              Explore plans
+              {explorePlansLabel}
             </ChipLink>
           ) : (
             <Chip variant='border-shadow' flush disabled>
-              Explore plans
+              {explorePlansLabel}
             </Chip>
           ))}
       </div>
@@ -507,7 +537,7 @@ export function Billing() {
         </SettingsSection>
       )}
 
-      {!subscription.isFree && !subscription.isEnterprise && (
+      {!isOrganizationScope && !subscription.isFree && !subscription.isEnterprise && (
         <SettingsSection label='Usage notifications'>
           <div className='flex items-center justify-between'>
             <span className='text-[var(--text-body)] text-small'>
@@ -640,7 +670,9 @@ export function Billing() {
         </SettingsSection>
       )}
 
-      {!subscription.isEnterprise && <CreditUsageSection workspaceId={workspaceId} />}
+      {!isOrganizationScope && !subscription.isEnterprise && (
+        <CreditUsageSection href={creditUsageHref} />
+      )}
     </SettingsPanel>
   )
 }

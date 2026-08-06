@@ -1,0 +1,73 @@
+{
+  "clusterId": "settings-ia",
+  "runId": "2026-08-06-4",
+  "files": [
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/layout.tsx",
+      "resolution": "manual",
+      "notes": "Adopted upstream host-context and stale-impersonation shell; retained fork branding and AppBanner."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/settings/[section]/page.tsx",
+      "resolution": "manual",
+      "notes": "Kept upstream section maps and authz gates, retained the fork-only sections, and suppressed the integrations redirect."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/settings/[section]/settings.tsx",
+      "resolution": "manual",
+      "notes": "Kept upstream host-aware renderer props while retaining fork billing-usage, usage, and OAuth renderers."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/settings/billing/credit-usage/credit-usage-view.tsx",
+      "resolution": "manual",
+      "notes": "Kept the upstream settings-panel/back-link flow and fork usage-log source labels."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/settings/components/billing/billing.tsx",
+      "resolution": "manual",
+      "notes": "Kept upstream scoped billing behavior and added legacy workspace-derived compatibility for the fork BillingPageShell."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/settings/components/team-management/components/organization-member-lists/organization-member-lists.tsx",
+      "resolution": "manual",
+      "notes": "Retained fork management guards and upstream ownership-transfer/leave actions."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/settings/layout.tsx",
+      "resolution": "manual",
+      "notes": "Adopted upstream unified client settings shell and before-unload handling."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/settings/navigation.ts",
+      "resolution": "manual",
+      "notes": "Built on the upstream unified registry, with additive fork Usage/OAuth entries, Arena metadata, and suppression sets."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/settings-sidebar/settings-sidebar.tsx",
+      "resolution": "manual",
+      "notes": "Kept upstream host/permission gating and applied fork-only entries, labels, and suppressed sections."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/workspace-header.tsx",
+      "resolution": "manual",
+      "notes": "Combined upstream disabled-reason tooltip behavior with fork organization-admin and billing navigation behavior."
+    },
+    {
+      "path": "apps/sim/app/workspace/page.tsx",
+      "resolution": "manual",
+      "notes": "Retained upstream stale-session recovery/error UI and fork full-navigation/Arena profile behavior."
+    },
+    {
+      "path": "apps/sim/hooks/queries/workspace-usage.ts",
+      "resolution": "manual",
+      "notes": "Unioned fork analytics queries with upstream credit-availability and usage-gate queries."
+    },
+    {
+      "path": "apps/sim/hooks/queries/workspace.ts",
+      "resolution": "manual",
+      "notes": "Removed obsolete ownerBilling key and retained zoomAdminAccess."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "Targeted Biome and diff checks pass. Full typecheck/test runs are blocked by unrelated unresolved merge markers outside this cluster."
+}

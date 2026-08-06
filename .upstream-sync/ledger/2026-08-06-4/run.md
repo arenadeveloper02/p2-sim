@@ -134,3 +134,21 @@ Schema-migrations cluster resolved per SR1/SR2 and locked Q1-A.
 
 Resolved billing attribution core by preserving fork ExecutionActor/billingUserId semantics and taking upstream billing snapshots, schema-backed attribution fields, and boundary protocol support. No paths outside this cluster were edited.
 
+## Cluster copilot-mothership-billing
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/app/api/copilot/api-keys/validate/route.test.ts` | manual | Unioned fork usage-gate and member-limit coverage with additive billing-protocol coverage. |
+| `apps/sim/app/api/copilot/api-keys/validate/route.ts` | manual | Kept fork mothership usage helpers as the governing gate and merged upstream protocol/header handling additively. |
+| `apps/sim/app/api/mothership/execute/route.ts` | manual | Preserved the fork usage gate and added upstream billing-attribution request-header handling. |
+| `apps/sim/lib/billing/calculations/usage-monitor.test.ts` | manual | Unioned upstream attribution-limit tests with fork actor/member and mothership-limit tests. |
+| `apps/sim/lib/billing/calculations/usage-monitor.ts` | manual | Preserved fork actor/member and mothership gates while retaining upstream attribution-limit helpers. |
+| `apps/sim/lib/copilot/chat/post.ts` | manual | Kept fork mothership gating and upstream billing-attribution resolution. |
+| `apps/sim/lib/copilot/request/lifecycle/run.ts` | manual | Unioned fork routing and usage gates with upstream attributed billing request-envelope propagation. |
+| `apps/sim/lib/copilot/request/lifecycle/start.ts` | manual | Retained fork local-title behavior and upstream billing-protocol title context. |
+| `apps/sim/lib/copilot/request/tools/billing.ts` | manual | Kept fork member-limit upgrade messaging while using upstream attribution subscription context additively. |
+| `apps/sim/lib/copilot/tools/handlers/context.ts` | manual | Retained fork Copilot tool execution context and upstream billing-attribution context. |
+| `apps/sim/lib/copilot/tools/handlers/workflow/mutations.ts` | manual | Preserved fork Copilot workflow-lineage options alongside upstream mutation options. |
+
+Q2=A fork-first resolution. Protocol/header and attribution plumbing were adopted additively; COPILOT_BILLING_ATTRIBUTION_V1_ENABLED and COPILOT_BILLING_PROTOCOL_REQUIRED remain unset. Focused Vitest execution is blocked by the unrelated unresolved apps/sim/lib/core/config/env.ts conflict.
+
