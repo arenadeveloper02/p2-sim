@@ -123,3 +123,7 @@ Rolling log of structural improvements that reduce merge conflict surface with `
   sidebar rather than unmounting it, so upstream's new Cmd+B (`#5618`) toggles collapse state
   with no visible effect in embed mode. Inert, but gating the `toggle-sidebar` registration on
   `!hideSidebarForArenaV3` would be tidier.
+
+## 2026-08-06-3
+
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.

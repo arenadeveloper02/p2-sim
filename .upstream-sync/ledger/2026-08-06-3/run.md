@@ -107,3 +107,243 @@ Nothing skipped. `skipped.md` stays empty for this run.
 
 PHASE B FINAL — zero remaining conflicts, zero child clusters. 12 upstream files across 6 commits (#5618 #5619 #5621 #5623 #5624 + v0.7.31 release e01bfb14); only 3 overlapped the fork and all 3 merged additively. All three draft child clusters (sidebar-cmd-b, copilot-generated-schemas, subblock-migrations-union) were CONTINGENCY-ONLY scaffolding conditioned on the harness merge conflicting; it did not, so none are instantiated and all are dropped from the active plan. Every fork invariant re-verified by grep against the real post-merge worktree, not just the predicted tree: sidebar toggle-sidebar + Tooltip.Shortcut present with 8 Arena/branding refs intact and 0 docs.sim.ai refs; tool-schemas-v1.ts carries the fork Superagent GFM sentence with upstream's unquoted keys fully applied; subblock-migrations.ts carries both the upstream _removed_filterCandidateId entry and the fork ZOOM_OAUTH_CANONICAL_IDS backfill. No open questions were raised this run (open-questions.md: none), so no grill answers needed mapping and no settled decision was re-opened. Nothing skipped — skipped.md stays empty. merge-policy.json gained two unionPaths this run: the sidebar and subblock-migrations paths.
 
+## Format
+
+✅ `bun run format` (pre-verify autofix)
+
+## Verification
+
+Advisory verification failed (check/lint). These do not block the sync. `bun run test` and full `bun run build` are left to CI. Review and fix on the draft PR as needed.
+
+### bun run check
+
+✅ passed
+
+```
+$ turbo run format:check
+
+   • Packages in scope: @sim/audit, @sim/auth, @sim/db, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk
+   • Running format:check in 21 packages
+   • Remote caching disabled
+
+::group::@sim/auth:format:check
+cache miss, executing 7b95f933c974b740
+$ biome format .
+Checked 3 files in 11ms. No fixes applied.
+::endgroup::
+::group::simstudio:format:check
+cache miss, executing db888607b0259b5e
+$ biome format .
+Checked 3 files in 22ms. No fixes applied.
+::endgroup::
+::group::@sim/logger:format:check
+cache miss, executing d07801b30193037f
+$ biome format .
+Checked 6 files in 36ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-types:format:check
+cache miss, executing d343ec897a7b120b
+$ biome format .
+Checked 4 files in 46ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-renderer:format:check
+cache miss, executing 1549899c6299c617
+$ biome format .
+Checked 13 files in 84ms. No fixes applied.
+::endgroup::
+::group::@sim/security:format:check
+cache miss, executing fc2410243714aad2
+$ biome format .
+Checked 13 files in 65ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime:format:check
+cache miss, executing 50312f9021db7fb0
+$ biome format .
+Checked 32 files in 308ms. No fixes applied.
+::endgroup::
+::group::@sim/testing:format:check
+cache miss, executing 6754342b8949f5f1
+$ biome format .
+Checked 66 files in 353ms. No fixes applied.
+::endgroup::
+::group::@sim/platform-authz:format:check
+cache miss, executing 20bfbd17ba902713
+$ biome format .
+Checked 5 files in 48ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-persistence:format:check
+cache miss, executing 6a2f322f646254f4
+$ biome format .
+Checked 8 files in 65ms. No fixes applied.
+::endgroup::
+::group::simstudio-ts-sdk:format:check
+cache miss, execu
+```
+
+### bun run lint
+
+❌ failed (advisory)
+
+```
+$ turbo run lint
+
+   • Packages in scope: @sim/audit, @sim/auth, @sim/db, @sim/emcn, @sim/logger, @sim/pii, @sim/platform-authz, @sim/realtime, @sim/realtime-protocol, @sim/runtime-secrets, @sim/security, @sim/testing, @sim/tsconfig, @sim/utils, @sim/workflow-persistence, @sim/workflow-renderer, @sim/workflow-types, docs, sim, simstudio, simstudio-ts-sdk
+   • Running lint in 21 packages
+   • Remote caching disabled
+
+::group::simstudio:lint
+cache miss, executing 3b3448794fd8d67a
+$ biome check --write --unsafe .
+Checked 3 files in 31ms. No fixes applied.
+::endgroup::
+::group::@sim/logger:lint
+cache miss, executing 101959f903fffb42
+$ biome check --write --unsafe .
+Checked 6 files in 65ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime-protocol:lint
+cache miss, executing 0122da9ed0cc036d
+$ biome check --write --unsafe .
+Checked 5 files in 93ms. No fixes applied.
+::endgroup::
+::group::@sim/security:lint
+cache miss, executing f0d899d639617b3d
+$ biome check --write --unsafe .
+Checked 13 files in 105ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-types:lint
+cache miss, executing c5a2ba3ebbfce6a3
+$ biome check --write --unsafe .
+Checked 4 files in 114ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-renderer:lint
+cache miss, executing 766887a777f1bb1f
+$ biome check --write --unsafe .
+Checked 13 files in 166ms. No fixes applied.
+::endgroup::
+::group::simstudio-ts-sdk:lint
+cache miss, executing c86521201f82f1d8
+$ biome check --write --unsafe .
+Checked 6 files in 196ms. No fixes applied.
+::endgroup::
+::group::@sim/runtime-secrets:lint
+cache miss, executing 0affd3cfd3a3ca22
+$ biome check --write --unsafe .
+Checked 5 files in 40ms. No fixes applied.
+::endgroup::
+::group::@sim/utils:lint
+cache miss, executing 07ed1635ff1bad02
+$ biome check --write --unsafe .
+Checked 22 files in 298ms. No fixes applied.
+::endgroup::
+::group::@sim/auth:lint
+cache miss, executing 9430b4cb7b0f5ea1
+$ biome check --write --unsafe .
+Checked 3 files in 50ms. No fixes applied.
+::endgroup::
+::group::@sim/platform-authz:lint
+cache miss, executing 5c043a9e7804d1fa
+$ biome check --write --unsafe .
+Checked 5 files in 81ms. No fixes applied.
+::endgroup::
+::group::@sim/workflow-persistence:lint
+cache miss, executing a6585cd84bdc79fc
+$ biome check --write --unsafe .
+Checked 8 files in 88ms. No fixes applied.
+::endgroup::
+::group::@sim/audit:lint
+cache miss, executing 176f393c5252970e
+$ biome check --write --unsafe .
+Checked 7 files in 136ms. No fixes applied.
+::endgroup::
+::group::@sim/testing:lint
+cache miss, executing 3e85379ba14ee220
+$ biome check --write --unsafe .
+Checked 66 files in 674ms. No fixes applied.
+::endgroup::
+::group::@sim/realtime:lint
+cache miss, executing ed2fe0202e342b01
+$ biome check --write --unsafe .
+Checked 32 files in 607ms. No fixes applied.
+::endgroup::
+::group::@sim/emcn:lint
+cache miss, executing ac892d7173f5ca3a
+$ biome check --write --unsafe .
+Checked 189 files in 1480ms. No fixes applied.
+::endgroup::
+::group::docs:lint
+cache miss, executing 3ca2b0f772ab34ad
+$ biome check --write --unsafe .
+Checked 101 files in 1309ms. No fixes applied.
+::endgroup::
+::group::@sim/db:lint
+cache miss, executing 5be67c93d969bd53
+$ biome check --write --unsafe .
+Checked 284 files in 7s. No fixes applied.
+::endgroup::
+[;31msim:lint[;0m
+cache miss, executing 95a6d6486881cba3
+$ biome check --write --unsafe .
+app/workspace/[workspaceId]/home/components/message-content/components/special-tags/choice-blocks.ts:56:7 lint/suspicious/noShadowRestrictedNames ━━━━━━━━━━
+
+  × Do not shadow the global "escape" property.
+  
+    54 │   let depth = 0
+    55 │   let inString = false
+  > 56 │   let escape = false
+       │       ^^^^^^
+    57 │ 
+    58 │   for (let i = startIdx; i < text.length; i++) {
+  
+  i Consider renaming this variable. It's easy to confuse the origin of variables when they're named after a known global.
+  
+
+Checked 11375 files in 34s. Fixed 8 files.
+Found 1 error.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+
+error: script "lint" exited with code 1
+::error::sim#lint: command (/home/runner/work/p2-sim/p2-sim/apps/sim) /home/runner/.bun/bin/bun run lint exited (1)
+ ERROR  sim#lint: command (/home/runner/work/p2-sim/p2-sim/apps/sim) /home/runner/.bun/bin/bun run lint exited (1)
+
+ Tasks:    18 successful, 19 total
+Cached:    0 cached, 19 total
+  Time:    35.759s 
+Failed:    sim#lint
+
+ ERROR  run failed: command  exited (1)
+error: script "lint" exited with code 1
+
+```
+
+## Merge policy
+
+{
+  "strategy": "fork-first",
+  "description": "Only paths listed in forkFirst (auto --ours) or upstreamFirst (auto --theirs) are resolved without an agent. Everything else — whether or not it appears in manualReview — is agent-reviewed. manualReview is a non-exhaustive hint list of known hard shared hotspots, not a closed set. unionPaths are agent-reviewed: keep fork-only symbols and take upstream additions; never drop upstream exports that in-tree consumers import. package.json is union-merged (upstream base + fork-only scripts/deps). bun.lock is regenerated after manifests. Agents SHOULD extend this file when they learn a recurring rule (add a forkFirst/upstreamFirst/manualReview/unionPaths prefix or packageJson.dropScripts entry) so the next sync is cheaper. CAVEAT on upstreamFirst apps/sim/lib/copilot/generated/: auto --theirs is correct for the bulk, but the fork carries a hand-edit there (Superagent task description, Google Docs GFM guidance) that exists in NO generator source, and `bun run mship:generate` cannot regenerate in this checkout because scripts/sync-tool-catalog.ts reads a sibling repo (../copilot/) the fork does not have. Every sync must re-apply that sentence via a mustEdit directive after resolving theirs.",
+  "packageJson": {
+    "strategy": "union",
+    "dropScripts": ["dev:full:minimal-registry"]
+  },
+  "forkFirst": [
+    "apps/sim/tools/arena/",
+    "apps/sim/tools/arena-development/",
+    "apps/sim/app/api/tools/arena/",
+    "apps/sim/app/api/arena/",
+    "apps/sim/lib/arena-utils/",
+    "apps/sim/blocks/blocks/arena.ts",
+    "apps/sim/blocks/blocks/arena-development.ts",
+    "apps/sim/hooks/queries/arena-clients.ts",
+    "apps/sim/app/arenaMixpanelEvents/",
+    "apps/sim/public/arena-ai-docs/",
+    "apps/sim/app/api/help/arena-help/",
+    "apps/sim/tools/p2_docs/",
+    "apps/sim/blocks/blocks/p2_docs.ts",
+    "apps/sim/lib/hubspot/",
+    "apps/sim/app/api/hubspot/",
+    "apps/sim/tools/unipile/",
+    "apps/sim/app/api/tools/unipile/",
+
