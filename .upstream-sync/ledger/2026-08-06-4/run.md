@@ -7,7 +7,7 @@
 - **Merge-base (target ↔ upstream):** `e2fecc86`
 - **Analysis baseline:** `e01bfb14` (lastSyncedUpstreamSha)
 - **Commits in sync range:** 63
-- **Merge tip:** next-releases v0.7.32…v0.7.37 (n=6) (`9d23e25c`; full upstream HEAD `e1ab24c1`)
+- **Merge tip:** active-upstream-sha 9d23e25c (`9d23e25c`; full upstream HEAD `e1ab24c1`)
 
 ## Grill analysis
 

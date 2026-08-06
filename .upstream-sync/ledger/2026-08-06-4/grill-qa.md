@@ -108,3 +108,9 @@ For the record, these looked like questions and resolved cleanly from the codeba
 **Q** (2026-08-06T12:00:04.796Z, upstream-sync[bot]): Grill open questions must be answered before merge starts.
 _Context: .upstream-sync/ledger/2026-08-06-4/open-questions.md_
 
+## 2026-08-06-4 · PR #688
+
+**A** (2026-08-06T12:08:11Z, utcarshsrivastava-collab): /upstream-sync resume
+1. Let us go with B - if all the features of A are already included there. If not, then lets go ahead with A only. workflow_execution_logs.actor_user_id / actor_type / api_key_id is not being called anywhere else. 
+2. A - we'll go with this
+
