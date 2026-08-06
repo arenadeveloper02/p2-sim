@@ -202,3 +202,15 @@ Resolved all eight assigned paths under the locked union plan; no recurring poli
 
 All eight union-path conflicts are resolved and staged. Focused OAuth tests (42) and Biome checks pass; the broader app type-check is currently blocked only by merge markers in files owned by other clusters.
 
+## Cluster integrations-registry
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/blocks/blocks/hubspot.ts` | manual | Kept the fork campaign controls and upstream's delete-company control in the merged subblock list. |
+| `apps/sim/blocks/types.ts` | manual | Kept uploadContext, allowStartFilesReference, and conversationFileMode; added requiresCloudStorage. |
+| `apps/sim/tools/hubspot/index.ts` | manual | Unioned the fork campaign exports with all upstream HubSpot tool exports. |
+| `apps/sim/tools/hubspot/types.ts` | manual | Exported HubSpotAssociatedObject, retained HubSpotAssociationResult as a compatibility alias, and used nullable paging to match list_associations.ts. |
+| `apps/sim/tools/registry.ts` | manual | Unioned fork and upstream HubSpot registry entries, normalized the HubSpot block ordering, and verified all upstream IDs are registered. |
+
+No upstream hunks were rejected; the existing unionPaths policy already covers these files.
+

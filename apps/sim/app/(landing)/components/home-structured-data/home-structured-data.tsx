@@ -16,6 +16,14 @@ import { JsonLd } from '@/app/(landing)/components/json-ld'
  * - All claims must also appear as visible text on the page.
  * - Do not add `aggregateRating` without real, verifiable review data.
  */
+/**
+ * Arena's default home-page description, retained for the barrel export used by
+ * downstream landing consumers. Metadata surfaces keep their literal copy so
+ * the Arena wording remains explicit at each boundary.
+ */
+export const HOME_PAGE_DESCRIPTION =
+  'Arena is the open-source AI workspace where teams build, deploy, and manage AI agents across 1,000+ integrations and every major LLM.'
+
 const HOME_JSON_LD = {
   '@context': 'https://schema.org',
   '@graph': [
@@ -93,7 +101,7 @@ const HOME_JSON_LD = {
       ],
       featureList: [
         'AI workspace for teams',
-        'Mothership: natural language agent creation',
+        'Chat: build and manage agents in natural language',
         'Visual workflow builder',
         '1,000+ integrations',
         'LLM orchestration (OpenAI, Anthropic, Google, xAI, Mistral, Perplexity)',
