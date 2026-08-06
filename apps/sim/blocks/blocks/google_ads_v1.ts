@@ -44,9 +44,8 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
   bgColor: '#4285f4',
   icon: GoogleIcon,
   subBlocks: [
-    // Google Ads Account (basic mode - dropdown)
     {
-      id: 'accounts',
+      id: 'accountsSelector',
       title: 'Google Ads Account',
       type: 'dropdown',
       options: [],
@@ -86,7 +85,6 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
       mode: 'basic',
       canonicalParamId: 'accounts',
     },
-    // Google Ads Account (advanced mode - text input)
     {
       id: 'accountsAdvanced',
       title: 'Google Ads Account',
@@ -156,7 +154,7 @@ Generate a clear, specific prompt for what the user wants to query from Google A
     config: {
       tool: () => 'google_ads_v1_query',
       params: (params) => ({
-        accounts: params.accounts,
+        accounts: params.accountsAdvanced ?? params.accountsSelector ?? params.accounts,
         prompt: params.prompt,
       }),
     },
