@@ -268,3 +268,20 @@ LOCKED. No open questions were raised this run (open-questions.md: 'No open ques
 
 No upstream hunks were skipped. The existing manualReview migration policy covers the journal and migration collision handling.
 
+## Cluster copilot-generated-catalog
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/lib/copilot/generated/tool-catalog-v1.ts` | manual | Kept upstream Search and ShareFile definitions, including ShareFile.action, and restored the seven fork-consumed entries plus their catalog registrations. Re-attached the fork GFM instruction to Superagent.task. |
+| `apps/sim/lib/copilot/generated/tool-schemas-v1.ts` | manual | Kept upstream runtime schema additions and added schema keys for Superagent, Research, UserMemory, MoveFile, MoveFileFolder, RenameFile, and RenameFileFolder; ShareFile retains action. |
+| `apps/sim/lib/copilot/tools/server/router.ts` | manual | Restored fork catalog imports and permission keys for the file tools and UserMemory while retaining upstream queryUserTableServerTool and ShareFile routing. |
+| `apps/sim/lib/copilot/tools/descriptions.ts` | manual | Preserved Arena branding and the fork Google Docs GFM note while retaining upstream conditional hosted-key handling. |
+| `apps/sim/lib/copilot/tools/server/workflow/edit-workflow/validation.ts` | manual | Combined fork agent prompt/message normalization with upstream webhook/read-only validation and additional input types; unknown block handling preserves normalized inputs and validation errors. |
+
+Policy proposals:
+
+- `unionPaths` `apps/sim/lib/copilot/tools/descriptions.ts` — Keep fork branding/GFM guidance and take upstream hosted-key behavior additively.
+- `unionPaths` `apps/sim/lib/copilot/tools/server/workflow/edit-workflow/validation.ts` — Keep fork agent normalization and take upstream webhook/read-only validation additively.
+
+Focused assertions, Biome check, and git diff --check passed. The targeted validation test could not start because @next/env is unavailable in the workspace dependency installation.
+

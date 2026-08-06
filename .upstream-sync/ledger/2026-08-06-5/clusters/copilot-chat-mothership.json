@@ -1,0 +1,53 @@
+{
+  "clusterId": "copilot-chat-mothership",
+  "runId": "2026-08-06-5",
+  "files": [
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/tool-call-item.tsx",
+      "resolution": "manual",
+      "notes": "Unioned fork status-icon and multiline-row behavior with upstream gateway icon and status-title additions."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/special-tags.tsx",
+      "resolution": "manual",
+      "notes": "Unioned chart and question tags, parsers, renderers, and type guards while retaining the fork live-status indicator."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/home/components/message-content/message-content.tsx",
+      "resolution": "manual",
+      "notes": "Unioned fork Arena live-status, table, and label behavior with upstream question, action, and stream-pacing UI."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/home/components/mothership-chat/mothership-chat.tsx",
+      "resolution": "manual",
+      "notes": "Passed fork liveStatus and upstream question/last-row props; upstream fixed-tail handling covers an empty streaming row."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/home/hooks/stream/stream-context.ts",
+      "resolution": "manual",
+      "notes": "Kept fork liveStatus and embed refs together with upstream text-flush timer and resume-cursor behavior."
+    },
+    {
+      "path": "apps/sim/lib/copilot/chat/payload.ts",
+      "resolution": "manual",
+      "notes": "Kept fork admin-workspace filtering and upstream archive-extraction guidance."
+    },
+    {
+      "path": "apps/sim/lib/copilot/chat/payload.test.ts",
+      "resolution": "manual",
+      "notes": "Unioned upstream metadata and hosted-key expectations with fork Arena, admin-filtering, and latest-schema assertions."
+    },
+    {
+      "path": "apps/sim/lib/copilot/chat/workspace-context.ts",
+      "resolution": "manual",
+      "notes": "Kept HubSpot and shared-environment integration presence plus the fork Position2 note with upstream deterministic env snapshots."
+    },
+    {
+      "path": "apps/sim/lib/copilot/request/handlers/run.ts",
+      "resolution": "manual",
+      "notes": "Kept the fork payload kind guard and adopted upstream scoped compaction deduplication and status updates."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "Union cluster resolved; fork-deleted stream and chat tests remain deleted per the locked directives."
+}
