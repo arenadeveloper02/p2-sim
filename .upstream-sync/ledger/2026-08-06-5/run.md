@@ -396,3 +396,23 @@ Focused Biome validation passes. App Vitest could not start because @next/env is
 
 The image generator was already resolved by the locked checkoutOurs directive and was intentionally left untouched. Biome passes for all four files; focused Vitest startup is blocked by the missing @next/env dependency, and full type-check output is blocked by unrelated unresolved clusters.
 
+## Cluster branding-workspace-ui
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/components/emails/components/email-footer.tsx` | manual | Kept the fork's commented-out social-links row and Arena footer content; did not activate upstream social links. |
+| `apps/sim/components/emails/components/email-layout.tsx` | manual | Kept the fork's Arena PNG source and comments while taking upstream custom-logo and wordmark clear-space sizing. |
+| `apps/sim/app/workspace/[workspaceId]/w/components/sidebar/sidebar.tsx` | manual | Kept Arena docs and brand-gated support/legal items; omitted the Sim Slack and docs menu handlers. |
+| `apps/sim/lib/posthog/events.ts` | manual | Retained the fork's arena_docs_opened event and added upstream slack_community_opened for event-map compatibility. |
+| `apps/sim/lib/core/security/csp.test.ts` | manual | Kept local alias and relative-path environment mocks because shared defaults do not provide brand/legal values. |
+| `apps/sim/lib/core/utils.test.ts` | manual | Used upstream shared stateful env mocking and retained the fork's singular Gemini API key fixture. |
+| `apps/sim/app/api/workspaces/route.ts` | manual | Adopted upstream workspace-list assembly and fork workspace creation helper, then suppressed inviteDisabledReason while preserving inviteMembersEnabled. |
+| `apps/sim/hooks/queries/workspace.ts` | manual | Adopted the shared normalizer and stale-time constant while retaining fork Zoom admin caching and admin-workspace detection. |
+| `apps/sim/lib/workspaces/policy.ts` | manual | Kept the fork's isPersonal-aware policy body and took upstream policy-constants imports used by merged invite-flag helpers. |
+| `apps/sim/lib/workspaces/policy.test.ts` | manual | Kept fork organization-attached workspace assertions while migrating the test to shared DB and env-flag mocks. |
+| `apps/sim/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/document.tsx` | manual | Retained fork integer/query-state support and upstream scalar enabled-filter and chunk-search changes. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/sub-block.tsx` | manual | Kept the fork's broader Slack credential fallback while retaining upstream context comments. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/tool-input.tsx` | manual | Combined fork operation values with upstream block-config overrides in four-argument tool-parameter lookups. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/hooks/use-panel-resize.ts` | manual | Adopted upstream zero-render drag resizing and preserved the fork's 50px Arena panel offset. |
+
+Union/manual cluster resolved from the locked parent directives; no new merge-policy prefix was needed.

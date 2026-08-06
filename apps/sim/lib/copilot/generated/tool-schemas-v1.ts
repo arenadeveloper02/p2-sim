@@ -217,6 +217,24 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
       required: ['success', 'message'],
     },
   },
+  create_file_folder: {
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description:
+            'Canonical folder VFS path to create, e.g. "files/Images" or "files/Reports/2026".',
+        },
+        workspaceId: {
+          type: 'string',
+          description: 'Optional workspace ID. Defaults to the current workspace.',
+        },
+      },
+      required: ['path'],
+    },
+    resultSchema: undefined,
+  },
   create_workflow: {
     parameters: {
       type: 'object',
@@ -2278,6 +2296,18 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
       required: ['success', 'message'],
     },
   },
+  list_file_folders: {
+    parameters: {
+      type: 'object',
+      properties: {
+        workspaceId: {
+          type: 'string',
+          description: 'Optional workspace ID. Defaults to the current workspace.',
+        },
+      },
+    },
+    resultSchema: undefined,
+  },
   list_integration_tools: {
     parameters: {
       properties: {
@@ -2766,6 +2796,26 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
     },
     resultSchema: undefined,
   },
+  move_workflow: {
+    parameters: {
+      type: 'object',
+      properties: {
+        folderId: {
+          type: 'string',
+          description: 'Target folder ID. Omit or pass empty string to move to workspace root.',
+        },
+        workflowIds: {
+          type: 'array',
+          description: 'The workflow IDs to move.',
+          items: {
+            type: 'string',
+          },
+        },
+      },
+      required: ['workflowIds'],
+    },
+    resultSchema: undefined,
+  },
   oauth_get_auth_link: {
     parameters: {
       type: 'object',
@@ -3181,6 +3231,23 @@ export const TOOL_RUNTIME_SCHEMAS: Record<string, ToolRuntimeSchemaEntry> = {
         },
       },
       required: ['path', 'name'],
+    },
+    resultSchema: undefined,
+  },
+  rename_workflow: {
+    parameters: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'The new name for the workflow.',
+        },
+        workflowId: {
+          type: 'string',
+          description: 'The workflow ID to rename.',
+        },
+      },
+      required: ['workflowId', 'name'],
     },
     resultSchema: undefined,
   },

@@ -47,6 +47,7 @@ export const workspaceKeys = {
 }
 
 export type { Workspace, WorkspaceCreationPolicy, WorkspaceMember, WorkspacePermissions }
+export { WORKSPACE_LIST_STALE_TIME } from '@/hooks/queries/utils/workspace-list-query'
 
 export const WORKSPACE_PERMISSIONS_STALE_TIME = 30 * 1000
 export const WORKSPACE_SETTINGS_STALE_TIME = 30 * 1000

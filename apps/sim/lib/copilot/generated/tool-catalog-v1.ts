@@ -15,6 +15,7 @@ export interface ToolCatalogEntry {
     | 'cp'
     | 'crawl_website'
     | 'create_file'
+    | 'create_file_folder'
     | 'create_workflow'
     | 'create_workspace_mcp_server'
     | 'delete_file'
@@ -51,6 +52,7 @@ export interface ToolCatalogEntry {
     | 'grep'
     | 'knowledge'
     | 'knowledge_base'
+    | 'list_file_folders'
     | 'list_integration_tools'
     | 'list_user_workspaces'
     | 'list_workspace_mcp_servers'
@@ -64,6 +66,9 @@ export interface ToolCatalogEntry {
     | 'manage_skill'
     | 'materialize_file'
     | 'media'
+    | 'move_file'
+    | 'move_file_folder'
+    | 'move_workflow'
     | 'mkdir'
     | 'mv'
     | 'oauth_get_auth_link'
@@ -74,6 +79,10 @@ export interface ToolCatalogEntry {
     | 'query_user_table'
     | 'read'
     | 'redeploy'
+    | 'rename_file'
+    | 'rename_file_folder'
+    | 'rename_workflow'
+    | 'research'
     | 'respond'
     | 'restore_resource'
     | 'run'
@@ -95,10 +104,12 @@ export interface ToolCatalogEntry {
     | 'set_environment_variables'
     | 'set_global_workflow_variables'
     | 'share_file'
+    | 'superagent'
     | 'table'
     | 'update_deployment_version'
     | 'update_scheduled_task_history'
     | 'update_workspace_mcp_server'
+    | 'user_memory'
     | 'user_table'
     | 'workflow'
     | 'workspace_file'
@@ -113,6 +124,7 @@ export interface ToolCatalogEntry {
     | 'cp'
     | 'crawl_website'
     | 'create_file'
+    | 'create_file_folder'
     | 'create_workflow'
     | 'create_workspace_mcp_server'
     | 'delete_file'
@@ -149,6 +161,7 @@ export interface ToolCatalogEntry {
     | 'grep'
     | 'knowledge'
     | 'knowledge_base'
+    | 'list_file_folders'
     | 'list_integration_tools'
     | 'list_user_workspaces'
     | 'list_workspace_mcp_servers'
@@ -162,6 +175,9 @@ export interface ToolCatalogEntry {
     | 'manage_skill'
     | 'materialize_file'
     | 'media'
+    | 'move_file'
+    | 'move_file_folder'
+    | 'move_workflow'
     | 'mkdir'
     | 'mv'
     | 'oauth_get_auth_link'
@@ -172,6 +188,10 @@ export interface ToolCatalogEntry {
     | 'query_user_table'
     | 'read'
     | 'redeploy'
+    | 'rename_file'
+    | 'rename_file_folder'
+    | 'rename_workflow'
+    | 'research'
     | 'respond'
     | 'restore_resource'
     | 'run'
@@ -193,15 +213,17 @@ export interface ToolCatalogEntry {
     | 'set_environment_variables'
     | 'set_global_workflow_variables'
     | 'share_file'
+    | 'superagent'
     | 'table'
     | 'update_deployment_version'
     | 'update_scheduled_task_history'
     | 'update_workspace_mcp_server'
+    | 'user_memory'
     | 'user_table'
     | 'workflow'
     | 'workspace_file'
   parameters: unknown
-  requiredPermission?: 'admin' | 'write'
+  requiredPermission?: 'admin' | 'read' | 'write'
   resultSchema?: unknown
   route: 'client' | 'go' | 'sim' | 'subagent'
   subagentId?:
@@ -211,9 +233,11 @@ export interface ToolCatalogEntry {
     | 'file'
     | 'knowledge'
     | 'media'
+    | 'research'
     | 'run'
     | 'scheduled_task'
     | 'search'
+    | 'superagent'
     | 'table'
     | 'workflow'
 }
@@ -431,6 +455,29 @@ export const CreateFile: ToolCatalogEntry = {
   },
   requiredPermission: 'write',
   capabilities: ['file_output'],
+}
+
+export const CreateFileFolder: ToolCatalogEntry = {
+  id: 'create_file_folder',
+  name: 'create_file_folder',
+  route: 'sim',
+  mode: 'async',
+  parameters: {
+    type: 'object',
+    properties: {
+      path: {
+        type: 'string',
+        description:
+          'Canonical folder VFS path to create, e.g. "files/Images" or "files/Reports/2026".',
+      },
+      workspaceId: {
+        type: 'string',
+        description: 'Optional workspace ID. Defaults to the current workspace.',
+      },
+    },
+    required: ['path'],
+  },
+  requiredPermission: 'write',
 }
 
 export const CreateWorkflow: ToolCatalogEntry = {
@@ -2458,6 +2505,23 @@ export const KnowledgeBase: ToolCatalogEntry = {
   },
 }
 
+export const ListFileFolders: ToolCatalogEntry = {
+  id: 'list_file_folders',
+  name: 'list_file_folders',
+  route: 'sim',
+  mode: 'async',
+  parameters: {
+    type: 'object',
+    properties: {
+      workspaceId: {
+        type: 'string',
+        description: 'Optional workspace ID. Defaults to the current workspace.',
+      },
+    },
+  },
+  requiredPermission: 'read',
+}
+
 export const ListIntegrationTools: ToolCatalogEntry = {
   id: 'list_integration_tools',
   name: 'list_integration_tools',
@@ -2919,6 +2983,29 @@ export const MoveFileFolder: ToolCatalogEntry = {
   requiredPermission: 'write',
 }
 
+export const MoveWorkflow: ToolCatalogEntry = {
+  id: 'move_workflow',
+  name: 'move_workflow',
+  route: 'sim',
+  mode: 'async',
+  parameters: {
+    type: 'object',
+    properties: {
+      folderId: {
+        type: 'string',
+        description: 'Target folder ID. Omit or pass empty string to move to workspace root.',
+      },
+      workflowIds: {
+        type: 'array',
+        description: 'The workflow IDs to move.',
+        items: { type: 'string' },
+      },
+    },
+    required: ['workflowIds'],
+  },
+  requiredPermission: 'write',
+}
+
 export const Mkdir: ToolCatalogEntry = {
   id: 'mkdir',
   name: 'mkdir',
@@ -3374,6 +3461,22 @@ export const RenameFileFolder: ToolCatalogEntry = {
       },
     },
     required: ['path', 'name'],
+  },
+  requiredPermission: 'write',
+}
+
+export const RenameWorkflow: ToolCatalogEntry = {
+  id: 'rename_workflow',
+  name: 'rename_workflow',
+  route: 'sim',
+  mode: 'async',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'The new name for the workflow.' },
+      workflowId: { type: 'string', description: 'The workflow ID to rename.' },
+    },
+    required: ['workflowId', 'name'],
   },
   requiredPermission: 'write',
 }
