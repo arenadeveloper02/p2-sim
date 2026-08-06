@@ -2,8 +2,9 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { truncate } from '@sim/utils/string'
-import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
 import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
+import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
@@ -26,11 +27,11 @@ import {
   isSpecialistTool,
 } from '@/local-copilot/lib/agent/specialists/specialist-tools'
 import { MODEL_WAIT_STATUS_FALLBACK } from '@/local-copilot/lib/agent/status-messages'
-import { formatUxPhaseStatus, type LocalUxPhase } from '@/local-copilot/lib/agent/ux-phase'
 import {
   buildStagnationSystemMessage,
   createToolStagnationTracker,
 } from '@/local-copilot/lib/agent/tool-stagnation'
+import { formatUxPhaseStatus, type LocalUxPhase } from '@/local-copilot/lib/agent/ux-phase'
 import { logCopilotAction } from '@/local-copilot/lib/audit/logger'
 import { sanitizeToolIoForPersistence } from '@/local-copilot/lib/audit/sanitize-persistence'
 import { recordLocalCopilotTurnUsage } from '@/local-copilot/lib/billing/record-turn-usage'
@@ -44,18 +45,12 @@ import {
   buildLocalCopilotConfigForCatalog,
   getLocalCopilotConfig,
 } from '@/local-copilot/lib/config'
-import { auditLocalOpsEvent } from '@/local-copilot/lib/ops/audit-metrics'
-import { LOCAL_OPS_COUNTERS, recordLocalOpsEvent } from '@/local-copilot/lib/ops/metrics'
-import { getLocalCopilotConfig, buildLocalCopilotConfigForCatalog, assertLocalCopilotEnabled } from '@/local-copilot/lib/config'
-import {
-  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
-  type LocalCopilotCatalogId,
-} from '@/local-copilot/lib/model-catalog'
-import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
+import { createArtifactStore, persistArtifacts } from '@/local-copilot/lib/context/artifacts'
 import {
   buildLocalCopilotContext,
   contextToPromptJson,
 } from '@/local-copilot/lib/context/build-context'
+import { mergeCopilotChatConfig } from '@/local-copilot/lib/context/chat-config'
 import {
   compactChatHistory,
   estimateChatMessagesTokens,
@@ -70,17 +65,11 @@ import {
   formatSessionConstraintsSystemMessage,
   type PreferenceMemoryCandidate,
 } from '@/local-copilot/lib/context/follow-up-directives'
-import { fitPromptWithSlots } from '@/local-copilot/lib/context/prompt-slots'
-import {
-  createArtifactStore,
-  persistArtifacts,
-} from '@/local-copilot/lib/context/artifacts'
-import { mergeCopilotChatConfig } from '@/local-copilot/lib/context/chat-config'
-import { toWorkspaceSnapshotMeta } from '@/local-copilot/lib/context/snapshot-freshness'
 import {
   applyMicrocompactInPlace,
   microcompactMessages,
 } from '@/local-copilot/lib/context/microcompact'
+import { fitPromptWithSlots } from '@/local-copilot/lib/context/prompt-slots'
 import {
   ensureSessionMemory,
   formatSessionMemorySystemMessage,
@@ -89,6 +78,7 @@ import {
   persistSessionMemory,
   type SessionMemoryTurn,
 } from '@/local-copilot/lib/context/session-memory'
+import { toWorkspaceSnapshotMeta } from '@/local-copilot/lib/context/snapshot-freshness'
 import {
   formatTaskStateSystemMessage,
   loadTaskState,
@@ -103,12 +93,13 @@ import {
   normalizeSingleSelectJsonToOptionsTags,
   stripOptionsTagsForDisplay,
 } from '@/local-copilot/lib/format-options-tag'
-import { buildOAuthConnectControl } from '@/local-copilot/lib/oauth-connect-text'
 import {
   DEFAULT_LOCAL_COPILOT_CATALOG_ID,
   type LocalCopilotCatalogId,
 } from '@/local-copilot/lib/model-catalog'
-import { formatOAuthConnectCredentialTag } from '@/local-copilot/lib/oauth-connect-text'
+import { buildOAuthConnectControl } from '@/local-copilot/lib/oauth-connect-text'
+import { auditLocalOpsEvent } from '@/local-copilot/lib/ops/audit-metrics'
+import { LOCAL_OPS_COUNTERS, recordLocalOpsEvent } from '@/local-copilot/lib/ops/metrics'
 import {
   appendMessage,
   createConversation,
@@ -127,13 +118,6 @@ import {
 } from '@/local-copilot/lib/security/request-tool-confirmation'
 import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
 import { buildGeneratedApiKeyControl } from '@/local-copilot/lib/security/trusted-controls'
-import { resolveTurnCompletion } from '@/local-copilot/lib/verification/completion'
-import { mutationRequiresVerification } from '@/local-copilot/lib/verification/policy'
-import { runPostMutationVerification } from '@/local-copilot/lib/verification/run-verification'
-import type {
-  MutationOutcome,
-  VerificationRecord,
-} from '@/local-copilot/lib/verification/types'
 import {
   buildWorkflowRunChatAppendix,
   isWorkflowRunToolName,
@@ -176,6 +160,10 @@ import {
   type CopilotFileAttachmentRef,
   getLocalCopilotUserTurnText,
 } from '@/local-copilot/lib/user-turn-content'
+import { resolveTurnCompletion } from '@/local-copilot/lib/verification/completion'
+import { mutationRequiresVerification } from '@/local-copilot/lib/verification/policy'
+import { runPostMutationVerification } from '@/local-copilot/lib/verification/run-verification'
+import type { MutationOutcome, VerificationRecord } from '@/local-copilot/lib/verification/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 
 const logger = createLogger('LocalCopilotAgent')
@@ -614,7 +602,7 @@ export async function* runLocalCopilotAgent(
         role: 'system',
         content: `Current context:\n${contextJson}`,
       },
-      ...(params.workspaceContext ?? structuredContext.inventoryMarkdown
+      ...((params.workspaceContext ?? structuredContext.inventoryMarkdown)
         ? [
             {
               role: 'system' as const,
