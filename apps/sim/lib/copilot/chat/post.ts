@@ -11,6 +11,7 @@ import { z } from 'zod'
 import { isZodError, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { checkMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import { resolveBillingAttribution } from '@/lib/billing/core/billing-attribution'
 import { type ChatLoadResult, resolveOrCreateChat } from '@/lib/copilot/chat/lifecycle'
 import { appendCopilotChatMessages } from '@/lib/copilot/chat/messages-store'
 import { buildCopilotRequestPayload } from '@/lib/copilot/chat/payload'
@@ -418,13 +419,19 @@ async function buildInitialExecutionContext(params: {
     }
   }
 
-  const decryptedEnvVars = await getEffectiveDecryptedEnv(userId, workspaceId)
+  const [decryptedEnvVars, billingAttribution] = await Promise.all([
+    getEffectiveDecryptedEnv(userId, workspaceId),
+    workspaceId
+      ? resolveBillingAttribution({ actorUserId: userId, workspaceId })
+      : Promise.resolve(undefined),
+  ])
   return {
     userId,
     workflowId: workflowId ?? '',
     workspaceId,
     chatId,
     decryptedEnvVars,
+    billingAttribution,
     messageId,
     userTimezone,
     requestMode,

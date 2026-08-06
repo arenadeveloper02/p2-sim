@@ -102,3 +102,35 @@ Locked from Q&A (2026-08-06T12:08:11Z) + SR1-SR11. Q1 = A (conditional 'B only i
 
 Schema-migrations cluster resolved per SR1/SR2 and locked Q1-A.
 
+## Cluster billing-attribution-core
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/app/api/billing/route.ts` | manual | Merged fork billing behavior with upstream attribution-compatible additions. |
+| `apps/sim/app/api/billing/update-cost/route.test.ts` | manual | Retained fork callback compatibility and covered the merged protocol behavior. |
+| `apps/sim/app/api/billing/update-cost/route.ts` | manual | Preserved fork billingUserId semantics while adapting upstream attribution protocol fields at the boundary. |
+| `apps/sim/app/api/guardrails/validate/route.ts` | manual | Retained actor usage checks and added upstream attribution-aware billing context handling. |
+| `apps/sim/app/api/knowledge/search/route.ts` | manual | Preserved fork search and metering behavior with additive attribution handling. |
+| `apps/sim/app/api/workflows/[id]/execute/route.ts` | manual | Kept fork execution actor lineage separate from the upstream billing attribution snapshot. |
+| `apps/sim/background/schedule-execution.ts` | manual | Retained schedule execution actor resolution and threaded the additive billing snapshot. |
+| `apps/sim/background/webhook-execution.ts` | manual | Kept webhook execution actor lineage separate from payer attribution. |
+| `apps/sim/executor/handlers/workflow/workflow-handler.ts` | manual | Adapted nested workflow billing context at the boundary without replacing fork actor lineage. |
+| `apps/sim/lib/api/contracts/workflows.ts` | manual | Unioned fork workflow request fields with upstream execution headers. |
+| `apps/sim/lib/billing/core/billing.ts` | manual | Merged fork billing summaries with upstream personal billing behavior. |
+| `apps/sim/lib/billing/core/usage-log.test.ts` | manual | Kept fork legacy usage behavior while retaining upstream cumulative-ledger coverage. |
+| `apps/sim/lib/billing/core/usage-log.ts` | manual | Preserved fork legacy attribution fallback and added upstream ledger columns and explicit-context checks. |
+| `apps/sim/lib/billing/organizations/member-limits.test.ts` | manual | Unioned fork member-limit coverage with upstream additions. |
+| `apps/sim/lib/billing/organizations/member-limits.ts` | manual | Retained fork member-limit logic and merged upstream attribution-compatible helpers. |
+| `apps/sim/lib/billing/organizations/membership.ts` | manual | Kept fork membership behavior and added upstream workspace billed-account updates. |
+| `apps/sim/lib/execution/preprocessing.test.ts` | manual | Retained fork actor and usage-gate test behavior with additive attribution mocks. |
+| `apps/sim/lib/execution/preprocessing.ts` | manual | Preserved resolveExecutionActor and actor usage gates; threaded upstream billing attribution separately. |
+| `apps/sim/lib/logs/execution/logger.test.ts` | manual | Unioned fork logging coverage with upstream attribution coverage. |
+| `apps/sim/lib/logs/execution/logger.ts` | manual | Kept fork billingUserId and execution actor semantics while accepting optional upstream billing context. |
+| `apps/sim/lib/logs/execution/logging-factory.ts` | manual | Unioned fork logging metadata with upstream workflow-ledger exclusions. |
+| `apps/sim/lib/logs/execution/logging-session.ts` | manual | Retained fork actor propagation and added additive billing attribution fields. |
+| `apps/sim/lib/logs/types.ts` | manual | Unioned fork log types with optional upstream billing attribution fields. |
+| `apps/sim/lib/workflows/executor/execute-workflow.ts` | manual | Required and validated additive billing attribution while preserving fork execution actor lineage. |
+| `apps/sim/lib/workspaces/utils.ts` | manual | Retained fork workspace utilities and added upstream storage-payer mutation support. |
+
+Resolved billing attribution core by preserving fork ExecutionActor/billingUserId semantics and taking upstream billing snapshots, schema-backed attribution fields, and boundary protocol support. No paths outside this cluster were edited.
+
