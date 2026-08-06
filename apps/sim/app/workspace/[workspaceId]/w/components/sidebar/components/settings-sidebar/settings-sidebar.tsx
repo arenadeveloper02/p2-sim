@@ -230,6 +230,9 @@ export function SettingsSidebar({
         case 'billing':
           void import('@/app/workspace/[workspaceId]/settings/components/billing/billing')
           break
+        case 'arena-billing':
+          void import('@/app/workspace/[workspaceId]/settings/components/billing-usage')
+          break
         case 'usage':
           void import('@/app/workspace/[workspaceId]/settings/components/usage/usage')
           break

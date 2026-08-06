@@ -204,12 +204,6 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       visibility: 'user-or-llm',
       description: 'Fal.ai safety tolerance when supported',
     },
-    numImages: {
-      type: 'number',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Number of images to generate, subject to provider limits',
-    },
     seed: {
       type: 'number',
       required: false,
@@ -237,13 +231,14 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
     inputImage: {
       type: 'json',
       required: false,
-      visibility: 'user-or-llm',
-      description: 'Reference image for editing',
+      visibility: 'user-only',
+      description:
+        'Reference images for editing. Chat and Start block files are used automatically when unset.',
     },
     inputImages: {
       type: 'json',
       required: false,
-      visibility: 'user-or-llm',
+      visibility: 'hidden',
       description:
         'Multiple reference images for fusion. Supported on Gemini models (up to 14) and subject to per-model limits.',
     },
@@ -370,7 +365,6 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         outputFormat: params.outputFormat,
         moderation: params.moderation,
         safetyTolerance: params.safetyTolerance,
-        numImages: params.numImages,
         seed: params.seed,
         enableSafetyChecker: params.enableSafetyChecker,
         enableWebSearch: params.enableWebSearch,

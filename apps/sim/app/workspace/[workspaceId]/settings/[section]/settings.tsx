@@ -64,7 +64,10 @@ const SelfHost = dynamic(() =>
   )
 )
 const Billing = dynamic(() =>
-  import('@/app/workspace/[workspaceId]/settings/components/billing-usage/billing-page-shell').then(
+  import('@/app/workspace/[workspaceId]/settings/components/billing/billing').then((m) => m.Billing)
+)
+const ArenaBilling = dynamic(() =>
+  import('@/app/workspace/[workspaceId]/settings/components/billing-usage').then(
     (m) => m.BillingPageShell
   )
 )
@@ -183,6 +186,14 @@ export function SettingsPage({ section }: SettingsPageProps) {
       {effectiveSection === 'apikeys' && <ApiKeys scope='combined' />}
       {isBillingEnabled && effectiveSection === 'billing' && (
         <Billing
+          scope={organizationId ? 'organization' : 'account'}
+          organizationId={organizationId ?? undefined}
+          governingWorkspaceName={hostContext.workspace.name}
+          creditUsageHref={`/workspace/${hostContext.workspace.id}/settings/billing/credit-usage`}
+        />
+      )}
+      {effectiveSection === 'arena-billing' && (
+        <ArenaBilling
           scope={organizationId ? 'organization' : 'account'}
           organizationId={organizationId ?? undefined}
           governingWorkspaceName={hostContext.workspace.name}

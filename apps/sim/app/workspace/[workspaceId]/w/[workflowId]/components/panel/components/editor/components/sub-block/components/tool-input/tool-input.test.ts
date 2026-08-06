@@ -12,6 +12,7 @@ import {
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/utils'
 import { AgentBlock } from '@/blocks/blocks/agent'
 import { ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'
+import { START_FILES_REF } from '@/executor/constants'
 
 describe('isAgentToolPickerBlock', () => {
   it('includes image_generator_v2 even though it is a blocks-category block', () => {
@@ -46,7 +47,13 @@ describe('buildInitialAgentToolParams', () => {
       },
     ])
 
-    expect(params).toEqual({})
+    expect(params).toEqual({ inputImage: START_FILES_REF })
+  })
+
+  it('seeds start.files as the image generator reference default', () => {
+    const params = buildInitialAgentToolParams('image_generator_v2', [])
+
+    expect(params).toEqual({ inputImage: START_FILES_REF })
   })
 
   it('still seeds user-only defaults for other agent tools', () => {

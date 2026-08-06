@@ -104,6 +104,8 @@ interface BillingProps {
   organizationId?: string
   creditUsageHref?: string
   governingWorkspaceName?: string
+  /** When true, skip the compact credit-usage glance (Arena shell renders BillingCreditUsagePanel instead). */
+  hideCreditUsageSection?: boolean
 }
 
 export function Billing({
@@ -111,6 +113,7 @@ export function Billing({
   organizationId,
   creditUsageHref,
   governingWorkspaceName,
+  hideCreditUsageSection = false,
 }: BillingProps) {
   const router = useRouter()
   const isOrganizationScope = scope === 'organization'
@@ -677,7 +680,7 @@ export function Billing({
         </SettingsSection>
       )}
 
-      {!isOrganizationScope && !subscription.isEnterprise && (
+      {!hideCreditUsageSection && !isOrganizationScope && !subscription.isEnterprise && (
         <CreditUsageSection href={creditUsageHref} />
       )}
     </SettingsPanel>

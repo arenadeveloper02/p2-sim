@@ -16,6 +16,7 @@ export interface MaterializedSelectedGeneratedImage {
   type: string
   file: File
   dataUrl: string
+  url?: string
 }
 
 interface MessageWithGeneratedImages {
@@ -164,6 +165,7 @@ export async function materializeSelectedGeneratedImage(
       type,
       file: new File([], name, { type }),
       dataUrl: fetchUrl,
+      url: sourceUrl,
     }
   }
 
@@ -182,6 +184,7 @@ export async function materializeSelectedGeneratedImage(
         type,
         file: new File([], name, { type }),
         dataUrl: fetchUrl,
+        url: serveUrl,
       }
     }
   }

@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  applyAgentChatFilesToImageGeneratorTools,
   buildReferenceFileValue,
   CONVERSATION_IMAGE_REF_SOURCE,
   flattenReferenceFileInputs,
@@ -79,5 +80,81 @@ describe('reference-files', () => {
       START_FILES_REF,
       conversationFile,
     ])
+  })
+
+  it('injects chat image files into unset image generator agent tools', () => {
+    const imageFile = {
+      id: 'file-1',
+      name: 'ref.png',
+      url: '/api/files/serve/workspace/ref.png',
+      size: 12,
+      type: 'image/png',
+      key: 'workspace/ref.png',
+    }
+    const pdfFile = {
+      id: 'file-2',
+      name: 'notes.pdf',
+      url: '/api/files/serve/workspace/notes.pdf',
+      size: 20,
+      type: 'application/pdf',
+      key: 'workspace/notes.pdf',
+    }
+    const tools = [
+      { type: 'image_generator_v2', params: { prompt: 'edit this' } },
+      { type: 'function', params: {} },
+    ]
+
+    applyAgentChatFilesToImageGeneratorTools(tools, [imageFile, pdfFile])
+
+    expect(tools[0]?.params).toEqual({
+      prompt: 'edit this',
+      inputImage: [imageFile],
+    })
+    expect(tools[1]?.params).toEqual({})
+  })
+
+  it('replaces unresolved start.files refs with resolved chat images', () => {
+    const imageFile = {
+      id: 'file-1',
+      name: 'ref.png',
+      url: '/api/files/serve/workspace/ref.png',
+      size: 12,
+      type: 'image/png',
+      key: 'workspace/ref.png',
+    }
+    const tools = [{ type: 'image_generator_v2', params: { inputImage: START_FILES_REF } }]
+
+    applyAgentChatFilesToImageGeneratorTools(tools, [imageFile])
+
+    expect(tools[0]?.params?.inputImage).toEqual([imageFile])
+  })
+
+  it('does not overwrite configured image generator references', () => {
+    const chatFile = {
+      id: 'file-1',
+      name: 'chat.png',
+      url: '/api/files/serve/workspace/chat.png',
+      size: 12,
+      type: 'image/png',
+      key: 'workspace/chat.png',
+    }
+    const configuredFile = {
+      id: 'file-2',
+      name: 'logo.png',
+      url: '/api/files/serve/workspace/logo.png',
+      size: 8,
+      type: 'image/png',
+      key: 'workspace/logo.png',
+    }
+    const tools = [
+      {
+        type: 'image_generator_v2',
+        params: { inputImage: [configuredFile] },
+      },
+    ]
+
+    applyAgentChatFilesToImageGeneratorTools(tools, [chatFile])
+
+    expect(tools[0]?.params?.inputImage).toEqual([configuredFile])
   })
 })

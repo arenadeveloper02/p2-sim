@@ -853,6 +853,7 @@ export function Chat() {
         type: string
         file: File
         dataUrl?: string
+        url?: string
       }>,
       overrideValues?: Record<string, unknown>
     ) => {
@@ -921,6 +922,7 @@ export function Chat() {
           type: image.type,
           file: image.file,
           dataUrl: image.dataUrl,
+          url: image.url,
         })),
       ]
 
@@ -946,6 +948,7 @@ export function Chat() {
               file: chatFile.file,
               id: chatFile.id,
               dataUrl: chatFile.dataUrl,
+              url: chatFile.url,
             }))
           : undefined
 

@@ -52,6 +52,7 @@ describe('settings navigation boundaries', () => {
       'access-control',
       'audit-logs',
       'billing',
+      'arena-billing',
       'usage',
       'teammates',
       'organization',
