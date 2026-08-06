@@ -2,7 +2,7 @@
   "decisionHash": "6da59160441d7c6f363398f14d2b2a089f1ef8cd7d68fbcea601ac8fd36591bb",
   "stabilityHash": "b1c6cbb2a47d1471e3939a990462f98f6e4f4a93ee8f9266cc06b0886f82c48f",
   "deleted": [],
-  "updatedAt": "2026-08-06T11:36:48.349Z",
-  "clusterId": "parent-finalize",
+  "updatedAt": "2026-08-06T11:42:34.292Z",
+  "clusterId": "finalize-after-clusters",
   "runId": "2026-08-06-3"
 }
