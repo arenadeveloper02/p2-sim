@@ -54,39 +54,15 @@ Post-merge finalize. 92 unmerged paths remain (predicted 93; the 93rd, packages/
 
 ## Usage
 
-### Usage (stack rollup)
-
-- **This slice:** $7.2304 · 158,243,949 in / 567,986 out · 13 agent(s)
-- **Prior stack:** $11.0784 · 29,099,908 in / 219,744 out · 11 agent(s)
-- **Whole stack:** $18.3088 · 187,343,857 in / 787,730 out · 24 agent(s)
-
-### parent-finalize-plan
-- **Model:** `claude-opus-5`
-- **Iterations:** 1
-- **Input tokens (direct):** 11,885
-- **Input tokens (cache read):** 2,187,212
-- **Input tokens (cache create):** 124,597
-- **Input tokens (total):** 2,323,694
-- **Output tokens:** 34,427
-- **Cost:** $2.796648 (provider-reported)
-### child-schema-migrations
+### child-oauth-credentials
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
-- **Input tokens (direct):** 104,455
-- **Input tokens (cache read):** 1,744,633
+- **Input tokens (direct):** 144,142
+- **Input tokens (cache read):** 5,270,913
 - **Input tokens (cache create):** 0
-- **Input tokens (total):** 1,849,088
-- **Output tokens:** 12,559
-- **Cost:** $0.070854 (estimated fallback)
-### child-billing-attribution-core
-- **Model:** `gpt-5.6-luna`
-- **Iterations:** 1
-- **Input tokens (direct):** 944,780
-- **Input tokens (cache read):** 46,396,034
-- **Input tokens (cache create):** 0
-- **Input tokens (total):** 47,340,814
-- **Output tokens:** 117,837
-- **Cost:** $1.258281 (estimated fallback)
+- **Input tokens (total):** 5,415,055
+- **Output tokens:** 23,109
+- **Cost:** $0.161977 (estimated fallback)
 ### child-copilot-mothership-billing
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
@@ -105,42 +81,51 @@ Post-merge finalize. 92 unmerged paths remain (predicted 93; the 93rd, packages/
 - **Input tokens (total):** 16,479,986
 - **Output tokens:** 74,965
 - **Cost:** $0.493097 (estimated fallback)
-### child-chat-ui-arena
+### child-billing-attribution-core
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
-- **Input tokens (direct):** 405,439
-- **Input tokens (cache read):** 13,999,511
+- **Input tokens (direct):** 944,780
+- **Input tokens (cache read):** 46,396,034
 - **Input tokens (cache create):** 0
-- **Input tokens (total):** 14,404,950
-- **Output tokens:** 53,271
-- **Cost:** $0.425003 (estimated fallback)
-### child-oauth-credentials
+- **Input tokens (total):** 47,340,814
+- **Output tokens:** 117,837
+- **Cost:** $1.258281 (estimated fallback)
+### parent-finalize-plan
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 11,885
+- **Input tokens (cache read):** 2,187,212
+- **Input tokens (cache create):** 124,597
+- **Input tokens (total):** 2,323,694
+- **Output tokens:** 34,427
+- **Cost:** $2.796648 (provider-reported)
+### child-schema-migrations
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
-- **Input tokens (direct):** 144,142
-- **Input tokens (cache read):** 5,270,913
+- **Input tokens (direct):** 104,455
+- **Input tokens (cache read):** 1,744,633
 - **Input tokens (cache create):** 0
-- **Input tokens (total):** 5,415,055
-- **Output tokens:** 23,109
-- **Cost:** $0.161977 (estimated fallback)
-### child-integrations-registry
+- **Input tokens (total):** 1,849,088
+- **Output tokens:** 12,559
+- **Cost:** $0.070854 (estimated fallback)
+### child-finalize-merge
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
-- **Input tokens (direct):** 136,242
-- **Input tokens (cache read):** 3,231,774
+- **Input tokens (direct):** 601,064
+- **Input tokens (cache read):** 22,550,046
 - **Input tokens (cache create):** 0
-- **Input tokens (total):** 3,368,016
-- **Output tokens:** 25,631
-- **Cost:** $0.122641 (estimated fallback)
-### child-landing-branding
+- **Input tokens (total):** 23,151,110
+- **Output tokens:** 64,061
+- **Cost:** $0.648087 (estimated fallback)
+### child-workspace-views-urlstate
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
-- **Input tokens (direct):** 215,285
-- **Input tokens (cache read):** 8,457,778
+- **Input tokens (direct):** 164,018
+- **Input tokens (cache read):** 4,552,389
 - **Input tokens (cache create):** 0
-- **Input tokens (total):** 8,673,063
-- **Output tokens:** 33,200
-- **Cost:** $0.252053 (estimated fallback)
+- **Input tokens (total):** 4,716,407
+- **Output tokens:** 24,013
+- **Cost:** $0.152667 (estimated fallback)
 ### child-config-env
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
@@ -159,47 +144,56 @@ Post-merge finalize. 92 unmerged paths remain (predicted 93; the 93rd, packages/
 - **Input tokens (total):** 12,770,724
 - **Output tokens:** 42,085
 - **Cost:** $0.351536 (estimated fallback)
-### child-workspace-views-urlstate
+### child-integrations-registry
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
-- **Input tokens (direct):** 164,018
-- **Input tokens (cache read):** 4,552,389
+- **Input tokens (direct):** 136,242
+- **Input tokens (cache read):** 3,231,774
 - **Input tokens (cache create):** 0
-- **Input tokens (total):** 4,716,407
-- **Output tokens:** 24,013
-- **Cost:** $0.152667 (estimated fallback)
-### child-finalize-merge
+- **Input tokens (total):** 3,368,016
+- **Output tokens:** 25,631
+- **Cost:** $0.122641 (estimated fallback)
+### child-landing-branding
 - **Model:** `gpt-5.6-luna`
 - **Iterations:** 1
-- **Input tokens (direct):** 601,064
-- **Input tokens (cache read):** 22,550,046
+- **Input tokens (direct):** 215,285
+- **Input tokens (cache read):** 8,457,778
 - **Input tokens (cache create):** 0
-- **Input tokens (total):** 23,151,110
-- **Output tokens:** 64,061
-- **Cost:** $0.648087 (estimated fallback)
+- **Input tokens (total):** 8,673,063
+- **Output tokens:** 33,200
+- **Cost:** $0.252053 (estimated fallback)
+### child-chat-ui-arena
+- **Model:** `gpt-5.6-luna`
+- **Iterations:** 1
+- **Input tokens (direct):** 405,439
+- **Input tokens (cache read):** 13,999,511
+- **Input tokens (cache create):** 0
+- **Input tokens (total):** 14,404,950
+- **Output tokens:** 53,271
+- **Cost:** $0.425003 (estimated fallback)
 
 ### Totals
 - **Total input tokens:** 158,243,949
 - **Total output tokens:** 567,986
-- **Primary models:** claude-opus-5, gpt-5.6-luna
+- **Primary models:** gpt-5.6-luna, claude-opus-5
 - **Total cost:** $7.230417
 - **Provider-reported cost:** $2.796648
 - **Estimated cost (fallback):** $4.433769
 
 ### Cost by agent
-- **parent-finalize-plan:** $2.796648 (provider-reported)
-- **child-schema-migrations:** $0.070854 (estimated fallback)
-- **child-billing-attribution-core:** $1.258281 (estimated fallback)
+- **child-oauth-credentials:** $0.161977 (estimated fallback)
 - **child-copilot-mothership-billing:** $0.415449 (estimated fallback)
 - **child-settings-ia:** $0.493097 (estimated fallback)
-- **child-chat-ui-arena:** $0.425003 (estimated fallback)
-- **child-oauth-credentials:** $0.161977 (estimated fallback)
-- **child-integrations-registry:** $0.122641 (estimated fallback)
-- **child-landing-branding:** $0.252053 (estimated fallback)
+- **child-billing-attribution-core:** $1.258281 (estimated fallback)
+- **parent-finalize-plan:** $2.796648 (provider-reported)
+- **child-schema-migrations:** $0.070854 (estimated fallback)
+- **child-finalize-merge:** $0.648087 (estimated fallback)
+- **child-workspace-views-urlstate:** $0.152667 (estimated fallback)
 - **child-config-env:** $0.082124 (estimated fallback)
 - **child-uploads-editor:** $0.351536 (estimated fallback)
-- **child-workspace-views-urlstate:** $0.152667 (estimated fallback)
-- **child-finalize-merge:** $0.648087 (estimated fallback)
+- **child-integrations-registry:** $0.122641 (estimated fallback)
+- **child-landing-branding:** $0.252053 (estimated fallback)
+- **child-chat-ui-arena:** $0.425003 (estimated fallback)
 
 ## Status
 
