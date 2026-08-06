@@ -1,0 +1,68 @@
+{
+  "clusterId": "deploy-state-machine",
+  "runId": "2026-08-06-5",
+  "files": [
+    {
+      "path": "apps/sim/lib/workflows/orchestration/chat-deploy.ts",
+      "resolution": "manual",
+      "notes": "Adopted upstream deployment-attempt gating and active-state handling; retained the fork's chat/app fields and forwarded workflowName, requestId, request, and actorId to performFullDeploy."
+    },
+    {
+      "path": "apps/sim/lib/workflows/schedules/deploy.ts",
+      "resolution": "theirs",
+      "notes": "Took upstream deployment-operation-aware schedule upsert and version-scoped cleanup logic."
+    },
+    {
+      "path": "apps/sim/lib/workflows/schedules/deploy.test.ts",
+      "resolution": "theirs",
+      "notes": "Took upstream schedule deployment-operation and conflict-upsert coverage."
+    },
+    {
+      "path": "apps/sim/lib/workflows/persistence/utils.ts",
+      "resolution": "manual",
+      "notes": "Unioned the fork's migrateBlockTypes import with upstream isDynamicHandleSubblock; both existing call sites are retained."
+    },
+    {
+      "path": "apps/sim/lib/api/contracts/workflows.test.ts",
+      "resolution": "manual",
+      "notes": "Kept the fork's nullable block-boolean normalization test and upstream forkSyncExcluded contract coverage."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/deploy-modal.tsx",
+      "resolution": "manual",
+      "notes": "Repointed sync and flush imports to the relocated store and retained both upstream undeploy error feedback and fork telemetry."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/components/chat/chat.tsx",
+      "resolution": "manual",
+      "notes": "Retained fork session-email validation/prefill behavior and combined it with upstream permission-gated auth options."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/use-deployment.ts",
+      "resolution": "manual",
+      "notes": "Repointed imports to the relocated sync-local-draft store while preserving the pre-deploy flush call."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft.ts",
+      "resolution": "deleted",
+      "notes": "Upstream relocated this module to stores/workflows/sync-local-draft.ts."
+    },
+    {
+      "path": "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/sync-local-draft.test.ts",
+      "resolution": "deleted",
+      "notes": "Upstream relocated this test to stores/workflows/sync-local-draft.test.ts."
+    },
+    {
+      "path": "apps/sim/stores/workflows/sync-local-draft.ts",
+      "resolution": "manual",
+      "notes": "Kept upstream bounded/refetching draft synchronization and ported the fork's flushMergedLocalDraftToServer provider/model preservation helper."
+    },
+    {
+      "path": "apps/sim/stores/workflows/sync-local-draft.test.ts",
+      "resolution": "manual",
+      "notes": "Kept upstream synchronization race coverage and ported the fork's flush persistence and no-op cases."
+    }
+  ],
+  "policyProposals": [],
+  "notes": "Focused Biome validation passes. App Vitest could not start because @next/env is absent in the checkout; app type-check is blocked by unrelated unresolved merge markers in other clusters."
+}

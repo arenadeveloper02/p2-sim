@@ -2,11 +2,13 @@ import type { Edge } from 'reactflow'
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
 import type { ExecutionActor } from '@/lib/execution/actor-resolution'
+import type { CustomPiiPattern } from '@/lib/guardrails/pii-entities'
 import type { NodeMetadata } from '@/executor/dag/types'
 import type {
   BlockLog,
   BlockState,
   NormalizedBlockOutput,
+  StartBlockRunMetadata,
   StreamingExecution,
 } from '@/executor/types'
 import type { RunFromBlockContext } from '@/executor/utils/run-from-block'
@@ -168,6 +170,8 @@ export interface PiiBlockOutputRedaction {
   entityTypes: string[]
   /** Language whose Presidio recognizers apply. */
   language: string
+  /** User-supplied custom regex patterns applied alongside `entityTypes`. */
+  customPatterns?: CustomPiiPattern[]
 }
 
 export interface ContextExtensions {
@@ -202,6 +206,12 @@ export interface ContextExtensions {
   dagIncomingEdges?: Record<string, string[]>
   snapshotState?: SerializableExecutionState
   metadata?: ExecutionMetadata
+  /**
+   * Trusted run metadata injected into the Start block output when its
+   * "Add run metadata" toggle is enabled. Built server-side at the two
+   * Executor construction sites — never from caller-supplied input.
+   */
+  startRunMetadata?: StartBlockRunMetadata
   /**
    * AbortSignal for cancellation support.
    * When aborted, the execution should stop gracefully.

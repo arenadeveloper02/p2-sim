@@ -39,6 +39,7 @@ export type AttachmentProvider =
   | 'nvidia'
   | 'meta'
   | 'zai'
+  | 'kimi'
 
 export interface PreparedProviderAttachment {
   file: UserFile
@@ -155,6 +156,7 @@ const PROVIDER_SUPPORTED_LABELS: Record<AttachmentProvider, string> = {
   nvidia: 'no file attachments in the current API adapter',
   meta: 'no file attachments in the current API adapter',
   zai: 'no file attachments in the current API adapter',
+  kimi: 'images through image_url message parts on multimodal models',
 }
 
 export function getAttachmentProvider(providerId: ProviderId | string): AttachmentProvider | null {
@@ -178,6 +180,7 @@ export function getAttachmentProvider(providerId: ProviderId | string): Attachme
   if (providerId === 'nvidia') return 'nvidia'
   if (providerId === 'meta') return 'meta'
   if (providerId === 'zai') return 'zai'
+  if (providerId === 'kimi') return 'kimi'
   return null
 }
 
@@ -331,6 +334,7 @@ function isMimeTypeSupportedByProvider(
     case 'vllm':
     case 'litellm':
     case 'xai':
+    case 'kimi':
       return isImageMimeType(mimeType)
     case 'deepseek':
     case 'cerebras':

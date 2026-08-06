@@ -1,38 +1,10 @@
-import { envFlagsMock } from '@sim/testing'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { usageLog, workflow } from '@sim/db/schema'
+import { dbChainMockFns, queueTableRows, resetDbChainMock } from '@sim/testing'
+import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { recordUsage } from '@/lib/billing/core/usage-log'
 import { ExecutionLogger } from '@/lib/logs/execution/logger'
 
-const dbSelectMock = vi.hoisted(() => vi.fn())
-const dbExecuteMock = vi.hoisted(() => vi.fn())
-const dbUpdateWhereMock = vi.hoisted(() => vi.fn(() => Promise.resolve()))
-const dbUpdateSetMock = vi.hoisted(() => vi.fn(() => ({ where: dbUpdateWhereMock })))
-const dbUpdateMock = vi.hoisted(() => vi.fn(() => ({ set: dbUpdateSetMock })))
-const txUpdateSetMock = vi.hoisted(() => vi.fn(() => ({ where: () => Promise.resolve() })))
-const txUpdateMock = vi.hoisted(() => vi.fn(() => ({ set: txUpdateSetMock })))
-
-vi.mock('@sim/db', () => {
-  // The reconcile runs inside db.transaction with an advisory lock. The tx
-  // shares dbSelectMock so the existing call-order seeding (call 1 = workflow
-  // row via .limit, call 2 = already-billed via .groupBy) still applies;
-  // tx.execute (set_config + pg_advisory_xact_lock) is a no-op; tx.update backs
-  // the exact cost_total refine.
-  const tx = {
-    select: dbSelectMock,
-    insert: vi.fn(),
-    update: txUpdateMock,
-    execute: dbExecuteMock,
-  }
-  return {
-    db: {
-      select: dbSelectMock,
-      insert: vi.fn(),
-      update: dbUpdateMock,
-      execute: dbExecuteMock,
-      transaction: vi.fn(async (cb: (txArg: typeof tx) => Promise<unknown>) => cb(tx)),
-    },
-  }
-})
+afterAll(resetDbChainMock)
 
 // Mock billing modules
 vi.mock('@/lib/billing/core/subscription', () => ({
@@ -98,8 +70,6 @@ vi.mock('@/lib/billing/threshold-billing', () => ({
   checkAndBillPayerOverageThreshold: vi.fn(() => Promise.resolve()),
 }))
 
-vi.mock('@/lib/core/config/env-flags', () => envFlagsMock)
-
 // Mock security module
 vi.mock('@/lib/core/security/redaction', () => ({
   redactApiKeys: vi.fn((data) => data),
@@ -148,6 +118,7 @@ describe('ExecutionLogger', () => {
   beforeEach(() => {
     logger = new ExecutionLogger()
     vi.clearAllMocks()
+    resetDbChainMock()
   })
 
   describe('class instantiation', () => {
@@ -589,6 +560,7 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
   beforeEach(() => {
     logger = new ExecutionLogger() as any
     vi.clearAllMocks()
+    resetDbChainMock()
   })
 
   const costSummary = (overrides: Record<string, unknown> = {}) => ({
@@ -612,22 +584,12 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     },
   }
 
-  // db.select() is called in recordExecutionUsage: workflow row, optional
-  // execution-log lineage row (when executionId is set), then already-billed rows.
+  // recordExecutionUsage reads two tables: the workflow row (from(workflow)
+  // ... .limit(1)), then the already-billed usage_log rows (from(usageLog)
+  // ... .groupBy(...)). Route each result set by its table.
   const mockDb = (billedRows: Array<Record<string, unknown>>) => {
-    dbSelectMock.mockImplementation((fields?: unknown) => {
-      const isLineageSelect =
-        fields && typeof fields === 'object' && 'parentExecutionId' in (fields as object)
-
-      const chain: any = {
-        from: () => chain,
-        where: () => chain,
-        limit: () =>
-          Promise.resolve(isLineageSelect ? [] : [{ id: 'workflow-1', workspaceId: 'ws-1' }]),
-        groupBy: () => Promise.resolve(billedRows),
-      }
-      return chain
-    })
+    queueTableRows(workflow, [{ id: 'workflow-1', workspaceId: 'ws-1' }])
+    queueTableRows(usageLog, billedRows)
   }
 
   const run = (
@@ -680,8 +642,8 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     // Returns the amount recorded at this boundary (drives threshold-email math).
     expect(recorded).toBeCloseTo(1.005, 8)
     // cost_total is refined to the exact ledger sum inside the locked tx.
-    expect(txUpdateMock).toHaveBeenCalledTimes(1)
-    expect(txUpdateSetMock).toHaveBeenCalledWith({ costTotal: '1.005' })
+    expect(dbChainMockFns.update).toHaveBeenCalledTimes(1)
+    expect(dbChainMockFns.set).toHaveBeenCalledWith({ costTotal: '1.005' })
   })
 
   test('cost_total projection matches SUM(usage_log) for workflow source at completion', async () => {
@@ -707,12 +669,12 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
         0
       )
     expect(ledgerSum).toBeCloseTo(2.525, 8)
-    expect(txUpdateSetMock).toHaveBeenCalledWith({ costTotal: ledgerSum.toString() })
+    expect(dbChainMockFns.set).toHaveBeenCalledWith({ costTotal: ledgerSum.toString() })
   })
 
   test('leaves Mothership model spend to cumulative update-cost while ledgering ordinary models', async () => {
     const setCostTotalMock = vi.fn(() => ({ where: () => Promise.resolve() }))
-    txUpdateMock.mockImplementationOnce(() => ({ set: setCostTotalMock }))
+    dbChainMockFns.update.mockReturnValueOnce({ set: setCostTotalMock })
 
     const recorded = await run(
       costSummary({
@@ -1067,7 +1029,7 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     )
 
     // set_config('lock_timeout') + pg_advisory_xact_lock both run on the tx.
-    expect(dbExecuteMock).toHaveBeenCalledTimes(2)
+    expect(dbChainMockFns.execute).toHaveBeenCalledTimes(2)
     expect(recordUsage).toHaveBeenCalledTimes(1)
     // The ledger INSERT participates in the locked transaction.
     expect(vi.mocked(recordUsage).mock.calls[0][0]).toHaveProperty('tx')
@@ -1086,8 +1048,8 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     )
 
     expect(recorded).toBe(0)
-    expect(dbUpdateMock).toHaveBeenCalled()
-    expect(dbUpdateSetMock).toHaveBeenCalled()
-    expect(dbUpdateWhereMock).toHaveBeenCalled()
+    expect(dbChainMockFns.update).toHaveBeenCalled()
+    expect(dbChainMockFns.set).toHaveBeenCalled()
+    expect(dbChainMockFns.where).toHaveBeenCalled()
   })
 })

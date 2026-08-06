@@ -8,9 +8,9 @@ import * as schema from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { betterAuth, type User } from 'better-auth'
+import { type BetterAuthOptions, betterAuth, type User } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { APIError, createAuthMiddleware } from 'better-auth/api'
+import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api'
 import { nextCookies } from 'better-auth/next-js'
 import {
   admin,
@@ -34,8 +34,15 @@ import {
 import { getAccessControlConfig, isEmailBlockedByAccessControl } from '@/lib/auth/access-control'
 import { createAnonymousSession, ensureAnonymousUserExists } from '@/lib/auth/anonymous'
 import { getRequestedSignInProviderId, isSignInProviderAllowed } from '@/lib/auth/constants'
+import { getSessionCookieCacheVersion } from '@/lib/auth/security-policy'
+import { clampExpiryForSession } from '@/lib/auth/session-policy'
+import { guardSubscriptionPlanWrites } from '@/lib/auth/stripe-adapter-guard'
 import { sendPlanWelcomeEmail } from '@/lib/billing'
-import { authorizeSubscriptionReference } from '@/lib/billing/authorization'
+import {
+  assertPersonalCheckoutAllowed,
+  authorizeSubscriptionReference,
+  isPersonalCheckoutRequest,
+} from '@/lib/billing/authorization'
 import {
   getOrganizationIdForSubscriptionReference,
   syncSubscriptionPlan,
@@ -46,7 +53,8 @@ import {
   ensureOrganizationForTeamSubscription,
   syncSubscriptionUsageLimits,
 } from '@/lib/billing/organization'
-import { isTeam } from '@/lib/billing/plan-helpers'
+import { pauseProSubscriptionForOrgCoverage } from '@/lib/billing/organizations/membership'
+import { isPro, isTeam } from '@/lib/billing/plan-helpers'
 import { getPlans, resolvePlanFromStripeSubscription } from '@/lib/billing/plans'
 import { syncSeatsFromStripeQuantity } from '@/lib/billing/validation/seat-management'
 import { handleAbandonedCheckout } from '@/lib/billing/webhooks/checkout'
@@ -58,7 +66,6 @@ import {
   handleInvoicePaymentSucceeded,
 } from '@/lib/billing/webhooks/invoices'
 import {
-  handleOrganizationPlanDowngrade,
   handleSubscriptionCreated,
   handleSubscriptionDeleted,
 } from '@/lib/billing/webhooks/subscription'
@@ -103,6 +110,8 @@ import {
   getMicrosoftRefreshTokenExpiry,
   isMicrosoftProvider,
 } from '@/lib/oauth/microsoft'
+import { extractSlackTeamId, fanOutSlackTokenChain } from '@/lib/oauth/slack'
+import { clearDeadFlag } from '@/lib/oauth/terminal-errors'
 import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
 import { captureServerEvent, getPostHogClient } from '@/lib/posthog/server'
 import { disableUserResources } from '@/lib/workflows/lifecycle'
@@ -263,6 +272,17 @@ function resolveArenaHubTrustedOrigin(): string | null {
 
 const arenaHubTrustedOrigin = resolveArenaHubTrustedOrigin()
 
+/**
+ * Reverse-proxy hops trusted for forwarded-IP resolution. When configured,
+ * Better Auth walks the x-forwarded-for chain right to left, skips these
+ * hops, and records the first untrusted address as the session client IP —
+ * preventing header spoofing behind multi-hop proxies.
+ */
+const trustedProxies = (env.AUTH_TRUSTED_PROXIES ?? '')
+  .split(',')
+  .map((entry) => entry.trim())
+  .filter(Boolean)
+
 export const auth = betterAuth({
   baseURL: getBaseUrl(),
   trustedOrigins: [
@@ -278,24 +298,38 @@ export const auth = betterAuth({
     ...(env.NEXT_PUBLIC_SOCKET_URL ? [env.NEXT_PUBLIC_SOCKET_URL] : []),
     ...additionalTrustedOrigins,
   ].filter(Boolean),
-  ...(betterAuthCrossSubdomainCookieDomain
-    ? {
-        advanced: {
+  advanced: {
+    ...(betterAuthCrossSubdomainCookieDomain
+      ? {
           crossSubDomainCookies: {
             enabled: true,
             domain: betterAuthCrossSubdomainCookieDomain,
           },
-        },
-      }
-    : {}),
-  database: drizzleAdapter(db, {
-    provider: 'pg',
-    schema,
-  }),
+        }
+      : {}),
+    ipAddress: {
+      ...(trustedProxies.length > 0 ? { trustedProxies } : {}),
+    },
+  },
+  database: (options: BetterAuthOptions) =>
+    guardSubscriptionPlanWrites(
+      drizzleAdapter(db, {
+        provider: 'pg',
+        schema,
+      })(options)
+    ),
   session: {
     cookieCache: {
       enabled: true,
       maxAge: 24 * 60 * 60, // 24 hours in seconds
+      /**
+       * Embeds the member org's security-policy version. Bumping the version
+       * (policy change, org-wide revocation) invalidates every cached session
+       * cookie in the org on its next request, forcing a DB session read —
+       * revocation latency becomes the policy cache TTL, not 24h.
+       */
+      version: async (session) =>
+        getSessionCookieCacheVersion(session as { userId?: string | null }),
     },
     expiresIn: 30 * 24 * 60 * 60, // 30 days (how long a session can last overall)
     updateAge: 24 * 60 * 60, // 24 hours (how often to refresh the expiry)
@@ -462,7 +496,9 @@ export const auth = betterAuth({
                 }
               }
             } catch (error) {
-              logger.error('Failed to fetch Salesforce instance URL', { error })
+              logger.error('Failed to fetch Salesforce instance URL', {
+                error,
+              })
             }
           }
 
@@ -499,7 +535,10 @@ export const auth = betterAuth({
 
             if (stablePrefix && stablePrefix !== account.accountId) {
               const siblings = await db
-                .select({ id: schema.account.id, accountId: schema.account.accountId })
+                .select({
+                  id: schema.account.id,
+                  accountId: schema.account.accountId,
+                })
                 .from(schema.account)
                 .where(
                   and(
@@ -537,6 +576,41 @@ export const auth = betterAuth({
               providerId: account.providerId,
               error,
             })
+          }
+
+          /**
+           * A fresh Slack connect re-issues the installation's rotating token
+           * chain, invalidating the copies held by sibling account rows for the
+           * same team (Slack bot tokens are per-installation, not per-grant).
+           * Propagate the new chain so every sibling is valid again, and clear
+           * the installation's dead flag.
+           */
+          if (account.providerId === 'slack' && account.accessToken) {
+            try {
+              const teamId = extractSlackTeamId(account.accountId)
+              if (teamId) {
+                // Clear the dead flag before fanning out: the connect itself
+                // proves the installation has live tokens, and a fan-out
+                // failure must not leave the hour-long flag blocking refreshes.
+                await clearDeadFlag(`slack:${teamId}`)
+                await fanOutSlackTokenChain(teamId, {
+                  accessToken: account.accessToken,
+                  refreshToken: account.refreshToken ?? null,
+                  accessTokenExpiresAt: account.accessTokenExpiresAt ?? null,
+                })
+                logger.info('[account.create.after] Propagated Slack installation token chain', {
+                  userId: account.userId,
+                  teamId,
+                  newAccountId: account.id,
+                })
+              }
+            } catch (error) {
+              logger.error('[account.create.after] Failed to propagate Slack token chain', {
+                userId: account.userId,
+                accountId: account.id,
+                error,
+              })
+            }
           }
 
           try {
@@ -632,7 +706,9 @@ export const auth = betterAuth({
                   }
                 }
               } catch (error) {
-                logger.error('Failed to fetch Salesforce instance URL', { error })
+                logger.error('Failed to fetch Salesforce instance URL', {
+                  error,
+                })
               }
             }
 
@@ -688,7 +764,7 @@ export const auth = betterAuth({
           try {
             // Find the first organization this user is a member of
             const members = await db
-              .select()
+              .select({ organizationId: schema.member.organizationId })
               .from(schema.member)
               .where(eq(schema.member.userId, session.userId))
               .limit(1)
@@ -699,9 +775,12 @@ export const auth = betterAuth({
                 organizationId: members[0].organizationId,
               })
 
+              const expiresAt = await clampExpiryForSession(session, members[0].organizationId)
+
               return {
                 data: {
                   ...session,
+                  expiresAt,
                   activeOrganizationId: members[0].organizationId,
                 },
               }
@@ -717,6 +796,26 @@ export const auth = betterAuth({
             })
             return { data: session }
           }
+        },
+      },
+      update: {
+        /**
+         * Better Auth's sliding refresh rewrites `expiresAt` to
+         * `now + expiresIn` (30 days), which would silently stretch a
+         * policy-shortened session back out — re-clamp on every refresh.
+         * The current session row is read from the endpoint context; when
+         * it is unavailable (non-refresh update paths) the update passes
+         * through untouched and the next refresh re-clamps.
+         */
+        before: async (data, ctx) => {
+          if (!data.expiresAt) return { data }
+          const current = ctx?.context?.session?.session
+          if (!current) return { data }
+          const expiresAt = await clampExpiryForSession({
+            ...current,
+            expiresAt: new Date(data.expiresAt),
+          })
+          return { data: { ...data, expiresAt } }
         },
       },
     },
@@ -820,6 +919,13 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
+    /**
+     * Same flag that hides the email/password signup form (DISABLE_EMAIL_SIGNUP).
+     * Blocks /sign-up/email at the better-auth layer so ripping out the frontend
+     * form cannot be bypassed by calling the endpoint directly. Existing users
+     * can still sign in.
+     */
+    disableSignUp: isEmailSignupDisabled,
     requireEmailVerification: isEmailVerificationEnabled,
     /**
      * When someone signs up with an already-registered email, better-auth returns a
@@ -943,11 +1049,6 @@ export const auth = betterAuth({
           })
       }
 
-      if (isEmailSignupDisabled && ctx.path.startsWith('/sign-up/email'))
-        throw new APIError('FORBIDDEN', {
-          message: 'Email sign-up is disabled. Please use Google, Microsoft, or GitHub.',
-        })
-
       const isSignIn = ctx.path.startsWith('/sign-in')
       const isSignUp = ctx.path.startsWith('/sign-up')
 
@@ -997,6 +1098,21 @@ export const auth = betterAuth({
               message: 'Sign-ups from this email domain are not allowed.',
             })
           }
+        }
+      }
+
+      /**
+       * Personal checkout guard. The Stripe plugin's `authorizeReference`
+       * only runs for organization references (it skips references equal to
+       * the session user), so duplicate-coverage enforcement for personal
+       * checkouts lives here: a member of an org with an entitled paid
+       * subscription must not buy a personal plan on top of it.
+       */
+      if (isBillingEnabled && ctx.path === '/subscription/upgrade') {
+        const session = await getSessionFromCtx(ctx)
+        const sessionUserId = session?.user?.id
+        if (sessionUserId && isPersonalCheckoutRequest(ctx.body ?? {}, sessionUserId)) {
+          await assertPersonalCheckoutAllowed(sessionUserId)
         }
       }
 
@@ -1110,6 +1226,16 @@ export const auth = betterAuth({
           throw error
         }
       },
+      /**
+       * Without this, /sign-in/email-otp auto-registers any unknown email —
+       * bypassing the signup gate entirely (no captcha, no /sign-up path).
+       * Gated by the same DISABLE_EMAIL_SIGNUP flag as the signup form (and by
+       * DISABLE_REGISTRATION, whose /sign-up path check has the same blind
+       * spot); when set, better-auth also silently skips sending OTPs to
+       * unknown emails (enumeration-safe) while existing users keep OTP
+       * sign-in.
+       */
+      disableSignUp: isEmailSignupDisabled || isRegistrationDisabled,
       sendVerificationOnSignUp: false,
       otpLength: 6, // Explicitly set the OTP length
       expiresIn: 15 * 60, // 15 minutes in seconds
@@ -1133,7 +1259,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1169,7 +1297,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1205,7 +1335,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1241,7 +1373,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1277,7 +1411,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1314,7 +1450,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1350,7 +1488,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1385,7 +1525,9 @@ export const auth = betterAuth({
                 headers: { Authorization: `Bearer ${tokens.accessToken}` },
               })
               if (!response.ok) {
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1421,7 +1563,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1458,7 +1602,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1495,7 +1641,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1532,7 +1680,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1568,7 +1718,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -1605,7 +1757,9 @@ export const auth = betterAuth({
               })
               if (!response.ok) {
                 await response.text().catch(() => {})
-                logger.error('Failed to fetch Google user info', { status: response.status })
+                logger.error('Failed to fetch Google user info', {
+                  status: response.status,
+                })
                 throw new Error(`Failed to fetch Google user info: ${response.statusText}`)
               }
               const profile = await response.json()
@@ -2008,7 +2162,9 @@ export const auth = betterAuth({
                 updatedAt: new Date(),
               }
             } catch (error) {
-              logger.error('Error creating Salesforce user profile:', { error })
+              logger.error('Error creating Salesforce user profile:', {
+                error,
+              })
               return null
             }
           },
@@ -2089,7 +2245,9 @@ export const auth = betterAuth({
           getToken: async ({ code, redirectURI }) => {
             const response = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
               body: new URLSearchParams({
                 client_key: env.TIKTOK_CLIENT_ID as string,
                 client_secret: env.TIKTOK_CLIENT_SECRET as string,
@@ -2480,6 +2638,55 @@ export const auth = betterAuth({
         },
 
         {
+          providerId: 'clickup',
+          clientId: env.CLICKUP_CLIENT_ID as string,
+          clientSecret: env.CLICKUP_CLIENT_SECRET as string,
+          authorizationUrl: 'https://app.clickup.com/api',
+          tokenUrl: 'https://api.clickup.com/api/v2/oauth/token',
+          scopes: getCanonicalScopesForProvider('clickup'),
+          responseType: 'code',
+          pkce: false,
+          redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/clickup`,
+          getUserInfo: async (tokens) => {
+            try {
+              const response = await fetch('https://api.clickup.com/api/v2/user', {
+                headers: {
+                  Authorization: `Bearer ${tokens.accessToken}`,
+                  'Content-Type': 'application/json',
+                },
+              })
+
+              if (!response.ok) {
+                await response.text().catch(() => {})
+                logger.error('Error fetching ClickUp user info:', {
+                  status: response.status,
+                  statusText: response.statusText,
+                })
+                return null
+              }
+
+              const data = await response.json()
+              const user = data.user
+              if (!user?.id) return null
+
+              const now = new Date()
+              return {
+                id: `${user.id.toString()}-${generateId()}`,
+                name: user.username || 'ClickUp User',
+                email: user.email || `${user.id}@clickup.user`,
+                emailVerified: !!user.email,
+                createdAt: now,
+                updatedAt: now,
+                image: user.profilePicture || undefined,
+              }
+            } catch (error) {
+              logger.error('Error in ClickUp getUserInfo:', { error })
+              return null
+            }
+          },
+        },
+
+        {
           providerId: 'linear',
           clientId: env.LINEAR_CLIENT_ID as string,
           clientSecret: env.LINEAR_CLIENT_SECRET as string,
@@ -2818,7 +3025,9 @@ export const auth = betterAuth({
               const data = await response.json()
 
               if (!data.ok) {
-                logger.error('Slack auth.test returned error', { error: data.error })
+                logger.error('Slack auth.test returned error', {
+                  error: data.error,
+                })
                 return null
               }
 
@@ -2933,7 +3142,9 @@ export const auth = betterAuth({
                 `https://graph.facebook.com/v22.0/me?fields=id,name,email&access_token=${encodeURIComponent(tokens.accessToken ?? '')}`
               )
               if (!response.ok) {
-                logger.error('Failed to fetch Facebook user info', { status: response.status })
+                logger.error('Failed to fetch Facebook user info', {
+                  status: response.status,
+                })
                 throw new Error('Failed to fetch Facebook user info')
               }
               const profile = (await response.json()) as {
@@ -3246,8 +3457,21 @@ export const auth = betterAuth({
             subscription: {
               enabled: true,
               plans: getPlans(),
-              authorizeReference: async ({ user, referenceId, action }) => {
-                return await authorizeSubscriptionReference(user.id, referenceId, action)
+              authorizeReference: async ({ user, referenceId, action }, ctx) => {
+                const body: unknown = ctx?.body
+                const requestedPlan =
+                  typeof body === 'object' &&
+                  body !== null &&
+                  'plan' in body &&
+                  typeof body.plan === 'string'
+                    ? body.plan
+                    : undefined
+                return await authorizeSubscriptionReference(
+                  user.id,
+                  referenceId,
+                  action,
+                  requestedPlan
+                )
               },
               getCheckoutSessionParams: async () => ({
                 params: { allow_promotion_codes: true },
@@ -3277,15 +3501,24 @@ export const auth = betterAuth({
                 if (!planFromStripe) {
                   logger.error(
                     '[onSubscriptionComplete] Could not resolve plan from Stripe price — check env var configuration',
-                    { subscriptionId: subscription.id, dbPlan: subscription.plan, priceId }
+                    {
+                      subscriptionId: subscription.id,
+                      dbPlan: subscription.plan,
+                      priceId,
+                    }
                   )
                 }
 
-                await syncSubscriptionPlan(subscription.id, subscription.plan, planFromStripe)
+                const syncedPlan = await syncSubscriptionPlan(
+                  subscription.id,
+                  subscription.plan,
+                  planFromStripe,
+                  subscription.referenceId
+                )
 
                 const subscriptionForOrg = {
                   ...subscription,
-                  plan: planFromStripe ?? subscription.plan,
+                  plan: syncedPlan ?? subscription.plan,
                   enterpriseOperationId: stripeSubscription.metadata?.enterpriseOperationId ?? null,
                 }
 
@@ -3308,7 +3541,29 @@ export const auth = betterAuth({
                   throw orgError
                 }
 
-                await handleSubscriptionCreated(resolvedSubscription, event.id)
+                /**
+                 * Transactional fence behind the personal-checkout admission
+                 * guard: if the user joined a paid organization while their
+                 * checkout was in flight, pause the fresh personal Pro at
+                 * period end (same state a paid-org joiner's personal Pro
+                 * enters; restored automatically if they leave the org).
+                 *
+                 * Runs BEFORE the free→paid transition handling: a personal
+                 * subscription born covered is not a free→paid transition —
+                 * the org plan keeps governing the user — so the usage reset
+                 * (which would wipe org-attributed current-period usage) and
+                 * its instrumentation must not run. Gated on `covered`, not
+                 * `paused`, so event retries decide identically even when the
+                 * join path already paused the subscription.
+                 */
+                const coveredByOrganization = isPro(resolvedSubscription.plan)
+                  ? (await pauseProSubscriptionForOrgCoverage(resolvedSubscription.referenceId))
+                      .covered
+                  : false
+
+                if (!coveredByOrganization) {
+                  await handleSubscriptionCreated(resolvedSubscription, event.id)
+                }
 
                 await syncSubscriptionUsageLimits(resolvedSubscription)
 
@@ -3344,8 +3599,6 @@ export const auth = betterAuth({
                 const isUpgradeToTeam =
                   isTeamPlan && !isTeam(subscription.plan) && referenceOrganizationId == null
 
-                const effectivePlanForTeamFeatures = planFromStripe ?? subscription.plan
-
                 logger.info('[onSubscriptionUpdate] Subscription updated', {
                   subscriptionId: subscription.id,
                   status: subscription.status,
@@ -3360,15 +3613,31 @@ export const auth = betterAuth({
                 if (!planFromStripe) {
                   logger.error(
                     '[onSubscriptionUpdate] Could not resolve plan from Stripe price — org creation may be skipped for team upgrades',
-                    { subscriptionId: subscription.id, dbPlan: subscription.plan }
+                    {
+                      subscriptionId: subscription.id,
+                      dbPlan: subscription.plan,
+                    }
                   )
                 }
 
-                await syncSubscriptionPlan(subscription.id, subscription.plan, planFromStripe)
+                const syncedPlan = await syncSubscriptionPlan(
+                  subscription.id,
+                  subscription.plan,
+                  planFromStripe,
+                  subscription.referenceId
+                )
+
+                /**
+                 * All downstream processing keys off the plan the DB actually
+                 * holds after the sync — a plan write refused by the org/plan
+                 * invariant must not leak the rejected Stripe plan into org
+                 * resolution, seat sync, or usage limits.
+                 */
+                const effectivePlanForTeamFeatures = syncedPlan ?? subscription.plan
 
                 const subscriptionForOrg = {
                   ...subscription,
-                  plan: planFromStripe ?? subscription.plan,
+                  plan: effectivePlanForTeamFeatures,
                   enterpriseOperationId: stripeSubscription.metadata?.enterpriseOperationId ?? null,
                 }
 
@@ -3439,16 +3708,6 @@ export const auth = betterAuth({
                       error,
                     })
                   }
-                } else {
-                  await handleOrganizationPlanDowngrade(
-                    {
-                      id: resolvedSubscription.id,
-                      plan: effectivePlanForTeamFeatures ?? null,
-                      referenceId: resolvedSubscription.referenceId,
-                      status: resolvedSubscription.status ?? null,
-                    },
-                    event.id
-                  )
                 }
 
                 await writeBillingInterval(resolvedSubscription.id, isAnnual ? 'year' : 'month')

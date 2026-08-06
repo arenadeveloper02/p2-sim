@@ -444,6 +444,7 @@ export class DAGExecutor {
           this.contextExtensions.metadata?.useDraftState ??
           this.contextExtensions.isDeployedContext !== true,
       },
+      startRunMetadata: this.contextExtensions.startRunMetadata,
       environmentVariables: this.environmentVariables,
       workflowVariables: this.workflowVariables,
       decisions: {
@@ -628,6 +629,7 @@ export class DAGExecutor {
     const blockOutput = buildStartBlockOutput({
       resolution: startResolution,
       workflowInput: this.workflowInput,
+      runMetadata: this.contextExtensions.startRunMetadata,
     })
 
     state.setBlockState(startResolution.block.id, {

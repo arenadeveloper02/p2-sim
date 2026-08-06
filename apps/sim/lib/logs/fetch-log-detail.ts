@@ -315,7 +315,7 @@ export async function fetchLogDetail({
     const totalDollars = costLedger?.total ?? (log.costTotal != null ? Number(log.costTotal) : null)
 
     const liveMarkers =
-      log.status === 'running' || log.status === 'pending'
+      log.status === 'running' || log.status === 'pending' || log.status === 'redacting'
         ? ((await getProgressMarkers(log.executionId)) ?? {})
         : {}
     const rowMarkers = (executionData ?? {}) as ExecutionProgressMarkers
