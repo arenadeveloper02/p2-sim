@@ -87,7 +87,6 @@ import { useDebounce } from '@/hooks/use-debounce'
 import { useUrlSort } from '@/hooks/use-url-sort'
 import { useFilterStore } from '@/stores/logs/filters/store'
 import { CORE_TRIGGER_TYPES } from '@/stores/logs/filters/types'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { Dashboard, ExecutionSnapshot, LogDetails, LogRowContextMenu } from './components'
 import {
   DELETED_WORKFLOW_LABEL,
@@ -291,8 +290,6 @@ export default function Logs() {
     onClear: onClearSort,
   } = useUrlSort(logSortParams, logFilterUrlKeys)
   const userPermissions = useUserPermissionsContext()
-  const workflows = useWorkflowRegistry((state) => state.workflows)
-
   const [contextMenuOpen, setContextMenuOpen] = useState(false)
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
   const [contextMenuLog, setContextMenuLog] = useState<WorkflowLogSummary | null>(null)
@@ -462,7 +459,7 @@ export default function Logs() {
           .filter(Boolean)
           .join(', ') || '',
     })
-  }, [debouncedSearchQuery, level, timeRange, triggers, workflowIds, workflows])
+  }, [debouncedSearchQuery, level, timeRange, triggers, workflowIds])
 
   /**
    * The single write path for user-driven `executionId` changes. Cancels any

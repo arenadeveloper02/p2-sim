@@ -1385,6 +1385,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
           output: number
           total: number
           toolCost?: number
+          embeddedToolCosts?: Record<string, number>
           tokens: { input: number; output: number; total: number }
         }
       >
@@ -1500,6 +1501,7 @@ export class ExecutionLogger implements IExecutionLoggerService {
         description: string
         target: number
         metadata?: ModelUsageMetadata | ExternalUsageMetadata | null
+        toolId?: string
         vendor?: string
         quantity?: number
         unit?: string

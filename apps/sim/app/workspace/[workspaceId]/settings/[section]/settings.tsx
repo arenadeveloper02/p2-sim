@@ -153,13 +153,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
         <AuditLogs organizationId={organizationId} />
       )}
       {effectiveSection === 'apikeys' && <ApiKeys scope='combined' />}
-      {isBillingEnabled && effectiveSection === 'billing' && (
-        <Billing
-          scope={organizationId ? 'organization' : 'account'}
-          organizationId={organizationId ?? undefined}
-          creditUsageHref={`/workspace/${hostContext.workspace.id}/settings/billing/credit-usage`}
-        />
-      )}
+      {isBillingEnabled && effectiveSection === 'billing' && <Billing />}
       {effectiveSection === 'teammates' && <Teammates />}
       {isBillingEnabled && effectiveSection === 'organization' && organizationId && (
         <TeamManagement

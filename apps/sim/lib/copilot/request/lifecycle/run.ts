@@ -741,6 +741,7 @@ async function runCheckpointLoop(
       onEvent: async (event: StreamEvent) => {
         if (
           event.type === MothershipStreamV1EventType.run &&
+          'kind' in event.payload &&
           event.payload.kind === MothershipStreamV1RunKind.checkpoint_pause &&
           options.runId
         ) {

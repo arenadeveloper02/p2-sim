@@ -557,7 +557,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
                     category: 'model',
                     source: 'knowledge-base',
                     description: rerankResult.model,
-                    cost: rerankerCost,
+                    cost: rerankerCost ?? 0,
                     sourceReference: `kb-search:${requestId}`,
                     metadata: { searchUnits: rerankResult.searchUnits, rerank: true },
                     quantity: rerankResult.searchUnits,

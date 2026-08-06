@@ -83,7 +83,7 @@ function buildCompletedMarkerPersistenceQuery(params: {
 
 const logger = createLogger('LoggingSession')
 
-type CompletionAttempt = 'complete' | 'error' | 'cancelled' | 'paused'
+type CompletionAttempt = 'complete' | 'error' | 'cancelled' | 'paused' | 'skipped'
 
 export interface SessionStartParams {
   userId?: string
@@ -1182,6 +1182,37 @@ export class LoggingSession {
         finalizationPath: 'paused',
         finalOutput: { paused: true },
         status: 'pending',
+      })
+    }
+  }
+
+  /**
+   * Completes a deliberately skipped execution with the same retry guard used
+   * by the other terminal completion paths.
+   */
+  async safeCompleteAsSkipped(params?: SessionSkippedParams): Promise<void> {
+    return this.runCompletionAttempt('skipped', () => this._safeCompleteAsSkippedImpl(params))
+  }
+
+  private async _safeCompleteAsSkippedImpl(params?: SessionSkippedParams): Promise<void> {
+    try {
+      await this.drainPendingProgressWrites()
+      await this.completeAsSkipped(params)
+    } catch (error) {
+      const errorMsg = toError(error).message
+      logger.warn(
+        `[${this.requestId || 'unknown'}] CompleteAsSkipped failed for execution ${this.executionId}, attempting fallback`,
+        { error: errorMsg }
+      )
+      await this.completeWithCostOnlyLog({
+        traceSpans: params?.traceSpans,
+        endedAt: params?.endedAt,
+        totalDurationMs: params?.totalDurationMs,
+        errorMessage: `Skipped execution failed to store full trace spans: ${errorMsg}`,
+        isError: false,
+        finalizationPath: 'fallback_completed',
+        finalOutput: { skipped: true },
+        status: 'skipped',
       })
     }
   }

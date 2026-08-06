@@ -256,3 +256,12 @@ Policy proposals:
 
 Resolved all eight assigned files under the locked union plan. Focused upload and file-processor tests pass; Biome check passes for all eight files.
 
+## Cluster workspace-views-urlstate
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/document.tsx` | manual | Adopted upstream nuqs-backed search and sort wiring, while retaining the fork's chunk-index deep-link compatibility, off-page chunk lookup, document-tag analytics context, and chunk-index outbound links. |
+| `apps/sim/app/workspace/[workspaceId]/logs/logs.tsx` | manual | Adopted upstream nuqs-backed filter/sort state and executionId synchronization, while retaining the fork's Arena search analytics event tracking. |
+
+Upstream's URL-state migration is the base for both pages; fork-only analytics and deep-link behavior were re-applied without restoring direct query-string state mutation.
+

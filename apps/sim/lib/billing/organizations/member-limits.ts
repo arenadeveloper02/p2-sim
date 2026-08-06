@@ -7,6 +7,7 @@ import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
 import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
 import { getOrgUsageLimit } from '@/lib/billing/core/usage'
+import { getOrgWorkspaceUsageCostForUser } from '@/lib/billing/core/usage-log'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { toDecimal, toNumber } from '@/lib/billing/utils/decimal'
 import type { DbOrTx } from '@/lib/db/types'
@@ -210,4 +211,24 @@ export async function getOrgMemberUsageForCurrentPeriod(
       : defaultBillingPeriod()
 
   return getOrgMemberUsageForBillingPeriod(organizationId, userId, billingPeriod)
+}
+
+/**
+ * Compatibility reader for the legacy workspace-scoped member gate.
+ *
+ * The attribution-aware reader above is the source of truth for new callers;
+ * this wrapper keeps the fork's actor gate available for callers that have not
+ * yet captured an immutable billing context.
+ */
+export async function getOrgMemberWorkspaceUsage(
+  organizationId: string,
+  userId: string
+): Promise<number> {
+  const subscription = await getOrganizationSubscription(organizationId)
+  const billingPeriod =
+    subscription?.periodStart && subscription.periodEnd
+      ? { start: subscription.periodStart, end: subscription.periodEnd }
+      : defaultBillingPeriod()
+
+  return getOrgWorkspaceUsageCostForUser(organizationId, userId, billingPeriod)
 }
