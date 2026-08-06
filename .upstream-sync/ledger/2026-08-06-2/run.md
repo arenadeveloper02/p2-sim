@@ -226,3 +226,13 @@ Resolved per the locked xai-byok-providers union directive.
 
 The route body already contained both fork and upstream behavior, including the mandatory 413 payload-size response.
 
+## Cluster workspace-ui
+
+| File | Resolution | Notes |
+| --- | --- | --- |
+| `apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/agent-group.tsx` | manual | Unioned ShimmerText with the fork's assistant-label resolver, @sim/emcn/icons import, PillsRing spinner, and autoExpanded behavior. |
+| `apps/sim/app/workspace/[workspaceId]/home/components/message-content/components/agent-group/tool-call-item.tsx` | manual | Unioned upstream execution shimmer with the fork's live workspace-file title and multiline styling. |
+| `apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/selector-combobox/selector-combobox.tsx` | manual | Added upstream multi-select state and handler while retaining the fork's clearable guard. |
+
+All assigned conflict markers are resolved. Biome passes on the three files. The scoped TypeScript check reports unrelated pre-existing repository errors and exits nonzero.
+
