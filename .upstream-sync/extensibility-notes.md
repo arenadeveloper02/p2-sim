@@ -182,3 +182,7 @@ Rolling log of structural improvements that reduce merge conflict surface with `
 - Move Arena brand strings out of `(landing)` JSX into `lib/branding/` — the same four files
   (`hero`, `features`, `footer`, `home-structured-data`) conflict on every landing sync.
 - Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
+
+## 2026-08-06-4
+
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
