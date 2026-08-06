@@ -50,3 +50,7 @@ Rolling log of structural improvements that reduce merge conflict surface with `
   `lib/oauth/oauth.ts`, `app/api/auth/oauth/utils.ts`, `providers/utils.ts`,
   `components/icons.tsx`, `blocks/blocks/slack.ts`, `lib/core/security/csp.ts`, `proxy.ts`,
   `lib/auth/auth.ts`.
+
+## 2026-08-06
+
+- Consider moving fork registry entries to sidecar import files to reduce registry.ts merge conflicts.
