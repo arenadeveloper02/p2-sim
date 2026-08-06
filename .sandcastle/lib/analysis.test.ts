@@ -188,5 +188,6 @@ describe('readState activeUpstreamSha default', () => {
     expect(state.activeUpstreamSha).toBeNull()
     expect(state.lastSyncedUpstreamSha).toBe('abc')
     expect(state.activeMergeBase).toBe('main')
+    expect(state.stack).toEqual([])
   })
 })

@@ -4,6 +4,9 @@ name: Upstream Sync
 # Cron/dispatch default: one upstream release (`vX.Y.Z:` commit) per run — not all of main.
 # After a successful complete, the harness dispatches another run if more releases remain
 # (`gh workflow run upstream-sync.yml`; concurrency group `upstream-sync` serializes).
+# Each release opens a NEW stacked draft PR based on the previous tip (not reuse/extend).
+# Tip-only landing: merge the tip into TARGET; lower stack PRs close as superseded.
+# FORCE_RUN starts a fresh stack and closes open stack PRs.
 # Smoke escapes: workflow_dispatch `until_sha` or positive `max_commits` (0 = next-release default).
 # Parent: grill writes a draft merge plan; resume skips re-ask but finalizes the plan post-merge,
 # then Luna children run from merge-plan.json (prefix clustering is fallback only).

@@ -106,4 +106,6 @@ bun run test
 
 - Daily 06:00 UTC + manual dispatch — one unpaid upstream release per run
 - Resume: `/upstream-sync resume` on the draft PR (skips grill re-ask, finalizes as a continuation from cluster reports + WIP)
-- Reuse: open sync PR/branch is extended when upstream advances (`FORCE_RUN` still opens a fresh PR)
+- Stack: each completed release opens a **new** draft PR based on the previous tip (`FORCE_RUN` starts a fresh stack and closes open stack PRs)
+- Tip-only landing: merge the tip PR into the target branch; lower stack PRs are review artifacts and close as superseded
+- Usage rollup on PR bodies / job summary: this slice / prior stack / whole stack

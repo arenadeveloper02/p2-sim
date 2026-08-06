@@ -8,7 +8,12 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ensureLedgerRunDir, ledgerRunDir, listConflictFiles, readState } from './config'
-import { type AgentUsageRecord, formatUsageStepSummary, getUsageRecords } from './usage'
+import {
+  type AgentUsageRecord,
+  formatUsageStepSummaryWithStack,
+  getUsageRecords,
+  loadStackUsage,
+} from './usage'
 import type { VerifyResult } from './verify'
 
 export type RunOutcomeKind =
@@ -234,7 +239,16 @@ export function formatRunJobSummary(ctx: JobSummaryContext): string {
   }
 
   const usage = ctx.usageRecords ?? getUsageRecords()
-  lines.push('', formatUsageStepSummary(usage))
+  const stack = state?.stack ?? []
+  const rollup =
+    typeof runId === 'string' && runId !== '_unknown_' && stack.length > 0
+      ? loadStackUsage({
+          stack,
+          thisRunId: runId,
+          thisSliceRecords: usage,
+        })
+      : null
+  lines.push('', formatUsageStepSummaryWithStack(usage, rollup))
 
   lines.push(
     '',

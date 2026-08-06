@@ -25,20 +25,42 @@ export const SYNC_BRANCH_README_PATH = join(UPSTREAM_SYNC_ROOT, 'SYNC-BRANCH.md'
 export const COMPLETION_SIGNAL = '<promise>UPSTREAM_SYNC_COMPLETE</promise>'
 export const GRILL_COMPLETION_SIGNAL = '<promise>UPSTREAM_SYNC_GRILL_COMPLETE</promise>'
 export const QUESTION_MARKER = '<!-- upstream-sync-question -->'
-export const EXTENDED_MARKER = '<!-- upstream-sync-extended -->'
+export const SUPERSEDED_MARKER = '<!-- upstream-sync-superseded -->'
 export const RESUME_COMMAND = '/upstream-sync resume'
+export const STACK_PATH = join(UPSTREAM_SYNC_ROOT, 'stack.json')
 
-/** Decision for whether to reuse an open sync PR/branch or start fresh. */
+/** Status of one release slice in the open sync stack. */
+export type SyncStackEntryStatus = 'open' | 'merged' | 'closed'
+
+/** One release slice in the ordered stack (oldest → tip). */
+export interface SyncStackEntry {
+  runId: string
+  /** Upstream release tag when known (e.g. `v0.7.56`). */
+  releaseVersion: string | null
+  upstreamSha: string
+  branch: string
+  prNumber: number
+  status: SyncStackEntryStatus
+}
+
+/**
+ * Decision for the next sync branch/PR.
+ * - `continue-tip` — tip slice still in progress; keep working that branch/PR
+ * - `stack-on-tip` — tip completed its release; open a new PR based on the tip branch
+ * - `fresh` — start a new stack from TARGET_BRANCH (`FORCE_RUN` or no usable tip)
+ */
 export type SyncBranchDecision =
-  | { action: 'reuse'; branch: string; prNumber: number }
+  | { action: 'continue-tip'; branch: string; prNumber: number }
+  | { action: 'stack-on-tip'; tipBranch: string; tipPrNumber: number }
   | {
       action: 'fresh'
       reason: 'force' | 'no-open-pr' | 'pr-closed' | 'branch-missing'
     }
 
 /**
- * Pure policy: reuse an open sync PR when its branch still exists on origin;
- * otherwise open a fresh sync. `FORCE_RUN` always forces a fresh branch/PR.
+ * Pure policy for stacked release PRs.
+ * `FORCE_RUN` always starts a fresh stack. An open completed tip stacks the next
+ * release as a new PR; an incomplete tip continues on the same branch/PR.
  */
 export function decideSyncBranchAction(input: {
   force: boolean
@@ -46,6 +68,8 @@ export function decideSyncBranchAction(input: {
   activeBranch: string | null
   prOpen: boolean
   branchExistsOnRemote: boolean
+  /** Tip slice finished its release (status completed/idle, no in-flight tip SHA). */
+  tipCompleted: boolean
 }): SyncBranchDecision {
   if (input.force) return { action: 'fresh', reason: 'force' }
   if (!input.activePrNumber) return { action: 'fresh', reason: 'no-open-pr' }
@@ -53,72 +77,71 @@ export function decideSyncBranchAction(input: {
   if (!input.activeBranch || !input.branchExistsOnRemote) {
     return { action: 'fresh', reason: 'branch-missing' }
   }
+  if (input.tipCompleted) {
+    return {
+      action: 'stack-on-tip',
+      tipBranch: input.activeBranch,
+      tipPrNumber: input.activePrNumber,
+    }
+  }
   return {
-    action: 'reuse',
+    action: 'continue-tip',
     branch: input.activeBranch,
     prNumber: input.activePrNumber,
   }
 }
 
-/** Draft PR title — normal run or extended reuse of an open sync PR. */
+/** True when the tip slice is done and the next release should open a new stacked PR. */
+export function isTipSliceCompleted(state: SyncState): boolean {
+  if (state.activeUpstreamSha) return false
+  return state.status === 'completed' || state.status === 'idle'
+}
+
+/** Draft PR title — includes release version and stack-vs-target base. */
 export function formatSyncPrTitle(options: {
   mergeBase: string
   runId: string
-  extendedToSha?: string
+  releaseVersion?: string | null
 }): string {
-  if (options.extendedToSha) {
-    return `upstream-sync: merge simstudioai/sim main into ${options.mergeBase} (extended ${options.runId} → ${options.extendedToSha.slice(0, 8)})`
+  const version = options.releaseVersion?.trim()
+  const prefix = version ? `upstream-sync: ${version}` : 'upstream-sync'
+  if (isSyncBranch(options.mergeBase)) {
+    return `${prefix} → stack tip (${options.runId})`
   }
-  return `upstream-sync: merge simstudioai/sim main into ${options.mergeBase} (${options.runId})`
+  return `${prefix} → ${options.mergeBase} (${options.runId})`
 }
 
-/** Banner prepended when an open sync PR is extended with newer upstream commits. */
-export function formatExtendedBanner(options: {
-  previousSha: string
-  newSha: string
-  commitCount: number
-  runId: string
-}): string {
-  return [
-    '## Extended',
-    '',
-    'This open sync PR was extended with newer upstream commits.',
-    '',
-    '| | |',
-    '|---|---|',
-    `| Previous upstream | [\`${options.previousSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${options.previousSha}) |`,
-    `| New upstream | [\`${options.newSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${options.newSha}) |`,
-    `| Commits added | ${options.commitCount} |`,
-    `| Ledger | [.upstream-sync/ledger/${options.runId}/](.upstream-sync/ledger/${options.runId}/) |`,
-    '',
-  ].join('\n')
-}
-
-/** Short PR comment posted when a sync run extends an existing open PR. */
-export function formatExtendedPrComment(options: {
-  previousSha: string
-  newSha: string
-  commitCount: number
-  runId: string
-}): string {
-  return [
-    EXTENDED_MARKER,
-    '## Sync extended',
-    '',
-    `Upstream advanced \`${options.previousSha.slice(0, 8)}\` → \`${options.newSha.slice(0, 8)}\` (+${options.commitCount} commit${options.commitCount === 1 ? '' : 's'}). Continuing on this branch/PR.`,
-    '',
-    `Ledger: \`.upstream-sync/ledger/${options.runId}/\``,
-  ].join('\n')
-}
-
-/** Prepend an Extended banner while keeping any leading question marker. */
-export function withExtendedBanner(body: string, banner: string): string {
-  const trimmedBanner = banner.trimEnd()
-  if (body.startsWith(QUESTION_MARKER)) {
-    const rest = body.slice(QUESTION_MARKER.length).replace(/^\n+/, '')
-    return `${QUESTION_MARKER}\n${trimmedBanner}\n\n${rest}`
+/** Markdown table of the current release stack (oldest → tip). */
+export function formatStackTableMarkdown(
+  stack: readonly SyncStackEntry[],
+  options?: { repository?: string; highlightPrNumber?: number | null }
+): string {
+  if (stack.length === 0) {
+    return ['_No stack entries yet._'].join('\n')
   }
-  return `${trimmedBanner}\n\n${body}`
+
+  const repo = options?.repository
+  const rows = stack.map((entry, index) => {
+    const n = index + 1
+    const version = entry.releaseVersion ?? '_unknown_'
+    const prLabel = entry.prNumber > 0 ? `#${entry.prNumber}` : '_none_'
+    const prCell =
+      repo && entry.prNumber > 0
+        ? `[${prLabel}](https://github.com/${repo}/pull/${entry.prNumber})`
+        : prLabel
+    const tip = options?.highlightPrNumber === entry.prNumber ? ' ← tip' : ''
+    return `| ${n} | ${version} | ${prCell}${tip} | \`${entry.branch}\` | ${entry.status} |`
+  })
+
+  return [
+    '### Stack',
+    '',
+    '| # | Release | PR | Branch | Status |',
+    '| ---: | --- | --- | --- | --- |',
+    ...rows,
+    '',
+    `_Tip-only landing: merge the tip PR into the target branch, then close lower stack PRs as superseded._`,
+  ].join('\n')
 }
 
 export const VERIFY_STEP_COMMANDS = {
@@ -151,11 +174,16 @@ export interface SyncState {
   lastRunId: string | null
   status: 'idle' | 'running' | 'awaiting_input' | 'blocked' | 'completed' | 'failed'
   openQuestions: Array<{ id: string; question: string; context?: string }>
+  /** Tip sync branch — mirrors `stack[stack.length - 1].branch` when the stack is non-empty. */
   activeBranch: string | null
+  /** Tip draft PR — mirrors `stack[stack.length - 1].prNumber` when the stack is non-empty. */
   activePrNumber: number | null
+  /** PR base for the tip slice (`TARGET_BRANCH` or prior sync branch). */
   activeMergeBase: string | null
   /** Upstream SHA this open sync run is merging through (one release tip). Null when idle/complete. */
   activeUpstreamSha: string | null
+  /** Ordered release stack (oldest → tip). Intermediate PRs are review artifacts; tip is landable. */
+  stack: SyncStackEntry[]
 }
 
 export interface UpstreamCommit {
@@ -319,11 +347,14 @@ export function explainPrCreateFailure(error: unknown, mergeBase: string, branch
   const message = error instanceof Error ? error.message : String(error)
 
   if (isSyncBranch(mergeBase)) {
-    return [
-      `Invalid PR base "${mergeBase}" — sync branches cannot be merge targets.`,
-      `Set TARGET_BRANCH to the fork branch (e.g. feat/github-merge-agent).`,
-      'This often happens when a push to upstream-sync/* re-triggers the workflow.',
-    ].join(' ')
+    // Sync→sync bases are valid for stacked release PRs. Keep a soft hint only when
+    // the failure looks like an empty compare (usually tip not pushed / identical SHAs).
+    if (message.includes('No commits between')) {
+      return [
+        `No commits between stacked base "${mergeBase}" and head "${branch}".`,
+        'Ensure the new slice branch is pushed and has commits ahead of the previous tip.',
+      ].join(' ')
+    }
   }
 
   if (message.includes('No commits between')) {
@@ -481,7 +512,77 @@ export function defaultSyncState(): SyncState {
     activePrNumber: null,
     activeMergeBase: null,
     activeUpstreamSha: null,
+    stack: [],
   }
+}
+
+/**
+ * When `stack` is empty but tip pointers exist, seed `stack[0]` from the open draft
+ * (bootstrap for stacks that predate this field — e.g. PR #681). Does not close or
+ * extend that PR.
+ */
+export function bootstrapStackFromActive(state: SyncState): SyncState {
+  if (state.stack.length > 0) return state
+  if (!state.activePrNumber || !state.activeBranch) return state
+
+  const upstreamSha = state.activeUpstreamSha ?? state.lastSyncedUpstreamSha ?? ''
+  const entry: SyncStackEntry = {
+    runId: state.lastRunId ?? 'unknown',
+    releaseVersion: null,
+    upstreamSha,
+    branch: state.activeBranch,
+    prNumber: state.activePrNumber,
+    status: 'open',
+  }
+  return { ...state, stack: [entry] }
+}
+
+/** Persist a stable stack pointer beside `state.json` for humans / resume tooling. */
+export function writeStackPointer(stack: readonly SyncStackEntry[]): void {
+  mkdirSync(UPSTREAM_SYNC_ROOT, { recursive: true })
+  writeFileSync(
+    STACK_PATH,
+    `${JSON.stringify(
+      {
+        updatedAt: new Date().toISOString(),
+        stack,
+      },
+      null,
+      2
+    )}\n`
+  )
+}
+
+/** Replace or append the tip stack entry (matched by branch or PR number). */
+export function upsertStackTip(
+  stack: readonly SyncStackEntry[],
+  entry: SyncStackEntry
+): SyncStackEntry[] {
+  const next = [...stack]
+  const tipIndex = next.length - 1
+  if (
+    tipIndex >= 0 &&
+    (next[tipIndex].branch === entry.branch || next[tipIndex].prNumber === entry.prNumber)
+  ) {
+    next[tipIndex] = { ...next[tipIndex], ...entry }
+    return next
+  }
+  next.push(entry)
+  return next
+}
+
+/** Mark open stack entries closed (after tip merge or FORCE fresh stack). */
+export function markStackSuperseded(
+  stack: readonly SyncStackEntry[],
+  options?: { keepTipPrNumber?: number | null }
+): SyncStackEntry[] {
+  return stack.map((entry) => {
+    if (entry.status !== 'open') return entry
+    if (options?.keepTipPrNumber && entry.prNumber === options.keepTipPrNumber) {
+      return { ...entry, status: 'merged' as const }
+    }
+    return { ...entry, status: 'closed' as const }
+  })
 }
 
 export function ensureUpstreamSyncScaffold(): void {
@@ -525,7 +626,8 @@ export function ensureSandcastleEnvFile(): void {
 export function readState(): SyncState {
   try {
     const parsed = JSON.parse(readFileSync(STATE_PATH, 'utf8')) as Partial<SyncState>
-    return { ...defaultSyncState(), ...parsed }
+    const stack = Array.isArray(parsed.stack) ? parsed.stack : []
+    return bootstrapStackFromActive({ ...defaultSyncState(), ...parsed, stack })
   } catch {
     return defaultSyncState()
   }
@@ -533,6 +635,11 @@ export function readState(): SyncState {
 
 export function writeState(state: SyncState): void {
   writeFileSync(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`)
+  try {
+    writeStackPointer(state.stack ?? [])
+  } catch {
+    // best-effort companion pointer
+  }
 }
 
 export function appendQaHistory(entry: Record<string, unknown>): void {
@@ -764,30 +871,87 @@ export function isPrOpen(prNumber: number): boolean {
 }
 
 /**
- * Close a stale open sync PR when a fresh sync is forced or the prior sync branch is gone.
- * Daily advances reuse the open PR instead — see `decideSyncBranchAction`.
+ * Close a stale open sync PR when a fresh stack is forced or the tip lands.
+ * Stacked advances open a new PR on the tip instead — see `decideSyncBranchAction`.
  */
 export function closeSupersededPr(
   prNumber: number,
-  options: { newUpstreamSha: string; runId: string; newBranch: string }
+  options: {
+    newUpstreamSha?: string
+    runId: string
+    newBranch?: string
+    reason?: 'force' | 'tip-merged' | 'fresh-stack' | 'branch-missing'
+  }
 ): void {
   if (!isPrOpen(prNumber)) return
 
-  const comment = [
-    '<!-- upstream-sync-superseded -->',
-    '## Superseded by newer upstream sync',
-    '',
-    `Closed automatically: \`simstudioai/sim\` \`main\` advanced to [\`${options.newUpstreamSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${options.newUpstreamSha}) before this PR was merged.`,
-    '',
-    `A fresh sync (\`${options.runId}\`) will open \`${options.newBranch}\` → \`${baseBranch()}\`.`,
-    '',
-    'Cherry-pick anything you still need from this branch into the new sync PR.',
-  ].join('\n')
+  const reason = options.reason ?? 'fresh-stack'
+  const lines = [SUPERSEDED_MARKER, '## Superseded', '']
 
-  commentOnPr(prNumber, comment)
+  if (reason === 'tip-merged') {
+    lines.push(
+      'Closed automatically: the stack tip was merged into the target branch.',
+      '',
+      'This lower stack PR is no longer needed (tip-only landing).'
+    )
+  } else if (reason === 'force') {
+    lines.push(
+      'Closed automatically: `FORCE_RUN` started a fresh upstream-sync stack.',
+      '',
+      options.newBranch
+        ? `New stack branch: \`${options.newBranch}\` (\`${options.runId}\`).`
+        : `Fresh stack run: \`${options.runId}\`.`
+    )
+  } else {
+    lines.push(
+      options.newUpstreamSha
+        ? `Closed automatically: a fresh sync stack started for [\`${options.newUpstreamSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${options.newUpstreamSha}).`
+        : 'Closed automatically: a fresh sync stack started.',
+      '',
+      options.newBranch
+        ? `New sync branch: \`${options.newBranch}\` (\`${options.runId}\`).`
+        : `Run: \`${options.runId}\`.`
+    )
+  }
+
+  lines.push('', 'Cherry-pick anything you still need from this branch into the tip PR if needed.')
+
+  commentOnPr(prNumber, lines.join('\n'))
   const { owner, repo } = repoSlug()
   runGh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/pulls/${prNumber}`, '-f', 'state=closed'])
-  console.log(`Closed superseded sync PR #${prNumber}.`)
+  console.log(`Closed superseded sync PR #${prNumber} (${reason}).`)
+}
+
+/**
+ * Close every open stack PR (FORCE fresh stack, or tip merged into TARGET).
+ * Returns the stack with statuses updated.
+ */
+export function closeOpenStackPrs(
+  stack: readonly SyncStackEntry[],
+  options: {
+    runId: string
+    reason: 'force' | 'tip-merged' | 'fresh-stack'
+    newBranch?: string
+    newUpstreamSha?: string
+    /** When tip merged, mark this PR merged instead of closing it. */
+    mergedTipPrNumber?: number | null
+  }
+): SyncStackEntry[] {
+  for (const entry of stack) {
+    if (entry.status !== 'open') continue
+    if (options.mergedTipPrNumber && entry.prNumber === options.mergedTipPrNumber) continue
+    try {
+      closeSupersededPr(entry.prNumber, {
+        runId: options.runId,
+        reason: options.reason,
+        newBranch: options.newBranch,
+        newUpstreamSha: options.newUpstreamSha,
+      })
+    } catch (error) {
+      console.warn(`Could not close stack PR #${entry.prNumber}:`, error)
+    }
+  }
+  return markStackSuperseded(stack, { keepTipPrNumber: options.mergedTipPrNumber })
 }
 
 export function todayRunId(): string {
@@ -869,14 +1033,14 @@ function releaseBodyFromCommit(entry: ReleaseNotesEntry): string | null {
 
 export const SYNC_BRANCH_PREFIX = 'upstream-sync/'
 
-/** True when the branch name is a harness sync branch (not a valid PR base). */
+/** True when the branch name is a harness sync branch (PR head; may also be a stacked PR base). */
 export function isSyncBranch(name: string): boolean {
   return name.startsWith(SYNC_BRANCH_PREFIX)
 }
 
 /**
- * PR base / fork source — the branch upstream changes merge into (e.g. feat/github-merge-agent).
- * Never returns a sync branch; those are PR heads only.
+ * Ultimate land target — the fork branch tip merges into (e.g. feat/github-merge-agent).
+ * Never returns a sync branch; stacked PR bases use `activeMergeBase` / tip branch instead.
  */
 export function baseBranch(): string {
   const candidates = [
@@ -904,9 +1068,9 @@ export function baseBranch(): string {
   )
 }
 
-/** Merge target for this run — persisted on resume, otherwise resolved from env/git. */
+/** PR base for this run — persisted on resume (may be a sync branch when stacking). */
 export function resolveMergeBase(state: SyncState, resume: boolean): string {
-  if (resume && state.activeMergeBase && !isSyncBranch(state.activeMergeBase)) {
+  if (resume && state.activeMergeBase) {
     return state.activeMergeBase
   }
   return baseBranch()

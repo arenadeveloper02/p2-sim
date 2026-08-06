@@ -52,7 +52,9 @@ UPSTREAM_SYNC_FORCE=true bun run upstream-sync
 
 - Daily 06:00 UTC + manual dispatch
 - Resume: `/upstream-sync resume` on the draft PR
-- Reuse: open sync PR/branch is extended when upstream advances (`FORCE_RUN` / `UPSTREAM_SYNC_FORCE=true` still opens a fresh PR)
+- Stack: each completed release opens a **new** draft PR based on the previous tip (`FORCE_RUN` / `UPSTREAM_SYNC_FORCE=true` starts a fresh stack and closes open stack PRs)
+- Tip-only landing: merge the tip; lower stack PRs close as superseded
+- Usage rollup: this slice / prior stack / whole stack on PR bodies and the Actions job summary
 - Reviewer: `utcarshsrivastava-collab` (see `merge-policy.json`)
 
 ## `force` workflow input

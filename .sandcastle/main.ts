@@ -10,7 +10,7 @@
  * 6. Apply merge directives + deterministic policy (forkFirst overrides / mustEdit)
  * 7. Luna children from merge-plan.json clusters (fallback prefix grouping if plan missing)
  * 8. Always-on coherence pass; advisory check/lint/test (full build left to CI)
- * 9. Update draft PR body + final ledger commit; chain next release on success
+ * 9. Update draft PR body + final ledger commit; chain next release as a stacked PR on success
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -49,9 +49,11 @@ import {
   appendExtensibilityNote,
   appendRunLogSections,
   applyMergeWip,
+  baseBranch,
+  bootstrapStackFromActive,
   COMPLETION_SIGNAL,
+  closeOpenStackPrs,
   closeSupersededPr,
-  commentOnPr,
   commitHarness,
   commitSyncBranchScaffold,
   comparePullRequestUrl,
@@ -64,15 +66,14 @@ import {
   fetchAllUpstreamReleaseNotes,
   fetchUpstream,
   findOpenSyncPr,
-  formatExtendedBanner,
-  formatExtendedPrComment,
   formatReleaseNotesMarkdown,
+  formatStackTableMarkdown,
   formatSyncPrTitle,
   GRILL_COMPLETION_SIGNAL,
   getPrReviewers,
   groupConflictClusters,
   isPrOpen,
-  isSyncBranch,
+  isTipSliceCompleted,
   leafConflictClusters,
   listConflictFiles,
   logHarnessQuestion,
@@ -89,14 +90,15 @@ import {
   restoreWipLedger,
   runGh,
   runGit,
+  type SyncStackEntry,
   splitLeftoverCluster,
   substitutePrompt,
   syncGrillQaFromPr,
   throwIfRemotePushAuthError,
   todayRunId,
   updateDraftPr,
+  upsertStackTip,
   walkConflictClusters,
-  withExtendedBanner,
   writeClusterManifest,
   writeFbiReport,
   writeReleaseNotesReport,
@@ -133,11 +135,14 @@ import {
   restrictMergeDirectivesToUnmerged,
 } from './lib/merge-plan'
 import {
+  formatStackUsageRollupMarkdown,
   getUsageRecords,
+  loadStackUsage,
   persistUsageArtifacts,
   recordAgentUsage,
   recoverUsageFromLogDir,
   resetUsageRecords,
+  writeStackUsageJson,
 } from './lib/usage'
 import {
   allBlockingVerificationPassed,
@@ -610,16 +615,6 @@ function createDraftPr(
   upstreamSha: string,
   title?: string
 ): number {
-  if (isSyncBranch(mergeBase)) {
-    const hint = explainPrCreateFailure(
-      new Error(`No commits between ${mergeBase} and ${branch}`),
-      mergeBase,
-      branch
-    )
-    console.warn(`Could not create draft PR via gh: ${hint}`)
-    return 0
-  }
-
   const prTitle = title ?? formatSyncPrTitle({ mergeBase, runId })
   const { owner, repo } = repoSlug()
   const currentBranch = runGit(['branch', '--show-current'])
@@ -737,17 +732,40 @@ function persistActiveSyncState(options: {
   mergeBase: string
   activePrNumber: number | null
   activeUpstreamSha: string | null
+  stack?: SyncStackEntry[]
 }): void {
+  const prev = readState()
   writeState({
-    ...readState(),
+    ...prev,
     status: 'running',
     lastRunId: options.runId,
     activeBranch: options.syncBranch,
     activeMergeBase: options.mergeBase,
     activePrNumber: options.activePrNumber,
     activeUpstreamSha: options.activeUpstreamSha,
+    stack: options.stack ?? prev.stack,
   })
   commitUpstreamLedger(`upstream-sync(${options.runId}): active sync state`)
+}
+
+function buildStackUsageSections(options: { runId: string; stack: readonly SyncStackEntry[] }): {
+  rollupMarkdown: string
+  detailedMarkdown: string
+} {
+  const rollup = loadStackUsage({
+    stack: options.stack,
+    thisRunId: options.runId,
+    thisSliceRecords: getUsageRecords(),
+  })
+  try {
+    writeStackUsageJson(options.runId, rollup)
+  } catch (error) {
+    console.warn('Could not write stack-usage.json:', error)
+  }
+  return {
+    rollupMarkdown: formatStackUsageRollupMarkdown(rollup),
+    detailedMarkdown: persistUsageArtifacts(options.runId),
+  }
 }
 
 function maybeDispatchNextReleaseSlice(options: {
@@ -785,11 +803,16 @@ function maybeDispatchNextReleaseSlice(options: {
   }
 }
 
-function appendUsageToRunLog(runId: string): string {
-  const usageMarkdown = persistUsageArtifacts(runId)
-  appendRunLogSections(runId, { Usage: usageMarkdown })
+function appendUsageToRunLog(runId: string, stack?: readonly SyncStackEntry[]): string {
+  const { rollupMarkdown, detailedMarkdown } = buildStackUsageSections({
+    runId,
+    stack: stack ?? readState().stack,
+  })
+  appendRunLogSections(runId, {
+    Usage: [rollupMarkdown, '', detailedMarkdown].join('\n'),
+  })
   usageFlushCompleted = true
-  return usageMarkdown
+  return [rollupMarkdown, '', detailedMarkdown].join('\n')
 }
 
 /**
@@ -951,9 +974,12 @@ async function main(): Promise<void> {
     ensureSandcastleEnvFile()
     fetchUpstream()
 
-    let initialState = readState()
-    const mergeBase = resolveMergeBase(initialState, RESUME)
-    console.log(`Sync target: ${mergeBase} ← simstudioai/sim main (PR base)`)
+    let initialState = bootstrapStackFromActive(readState())
+    const landTarget = baseBranch()
+    // Analysis always uses the ultimate land target; PR base may be a stacked sync branch.
+    let mergeBase = resolveMergeBase(initialState, RESUME)
+    console.log(`Sync land target: ${landTarget} ← simstudioai/sim main`)
+    console.log(`PR base (initial): ${mergeBase}`)
 
     // Resume checks out the sync branch; seed lastSynced from the target branch when missing.
     if (!initialState.lastSyncedUpstreamSha && mergeBase) {
@@ -975,7 +1001,7 @@ async function main(): Promise<void> {
       }
     }
 
-    const baseline = resolveAnalysisBaseline(mergeBase, initialState)
+    const baseline = resolveAnalysisBaseline(landTarget, initialState)
     const tip = resolveCappedUpstreamTip(baseline, {
       activeUpstreamSha: FORCE_RUN ? null : initialState.activeUpstreamSha,
     })
@@ -1046,16 +1072,27 @@ async function main(): Promise<void> {
     }
 
     let syncBranch: string
-    let extending = false
-    let previousUpstreamSha: string | null = null
+    let continuingTip = false
+    let workingStack = initialState.stack
     const resuming = RESUME
     if (resuming) {
       syncBranch = resolveResumeSyncBranch(initialState)
+      mergeBase = initialState.activeMergeBase ?? landTarget
+      workingStack = bootstrapStackFromActive(initialState).stack
     } else {
       let candidateBranch = initialState.activeBranch
       const prOpen = Boolean(initialState.activePrNumber && isPrOpen(initialState.activePrNumber))
       if (!candidateBranch && initialState.activePrNumber && prOpen) {
         candidateBranch = resolvePrHeadBranch(initialState.activePrNumber)
+      }
+
+      // Adopt open draft into stack[0] before deciding (e.g. PR #681 predates stack field).
+      if (prOpen && candidateBranch) {
+        initialState = bootstrapStackFromActive({
+          ...initialState,
+          activeBranch: candidateBranch,
+        })
+        workingStack = initialState.stack
       }
 
       const branchExistsOnRemote = candidateBranch ? remoteBranchExists(candidateBranch) : false
@@ -1065,29 +1102,62 @@ async function main(): Promise<void> {
         activeBranch: candidateBranch,
         prOpen,
         branchExistsOnRemote,
+        tipCompleted: isTipSliceCompleted(initialState),
       })
 
-      if (decision.action === 'reuse') {
+      if (decision.action === 'continue-tip') {
         syncBranch = decision.branch
-        extending = true
-        previousUpstreamSha = initialState.lastSyncedUpstreamSha ?? baseline.baselineSha
+        continuingTip = true
+        mergeBase = initialState.activeMergeBase ?? landTarget
         console.log(
-          `Reusing open sync PR #${decision.prNumber} on \`${syncBranch}\` (extend to ${headSha.slice(0, 8)}).`
+          `Continuing tip sync PR #${decision.prNumber} on \`${syncBranch}\` (base \`${mergeBase}\`).`
+        )
+      } else if (decision.action === 'stack-on-tip') {
+        mergeBase = decision.tipBranch
+        syncBranch = syncBranchName()
+        try {
+          runGit(['fetch', 'origin', decision.tipBranch])
+          runGit(['checkout', decision.tipBranch])
+        } catch (error) {
+          throw new Error(
+            `Could not check out stack tip \`${decision.tipBranch}\` to create the next slice: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          )
+        }
+        console.log(
+          `Stacking new slice on tip PR #${decision.tipPrNumber} (\`${mergeBase}\`) → \`${syncBranch}\`.`
         )
       } else {
+        mergeBase = landTarget
         syncBranch = syncBranchName()
-        if (prOpen && initialState.activePrNumber) {
+        if (workingStack.length > 0) {
+          workingStack = closeOpenStackPrs(workingStack, {
+            runId,
+            reason: FORCE_RUN ? 'force' : 'fresh-stack',
+            newBranch: syncBranch,
+            newUpstreamSha: headSha,
+          })
+          workingStack = []
+        } else if (prOpen && initialState.activePrNumber) {
           closeSupersededPr(initialState.activePrNumber, {
             newUpstreamSha: headSha,
             runId,
             newBranch: syncBranch,
+            reason: FORCE_RUN ? 'force' : 'fresh-stack',
           })
         }
-        console.log(`Starting fresh sync branch \`${syncBranch}\` (${decision.reason}).`)
+        try {
+          runGit(['fetch', 'origin', landTarget])
+          runGit(['checkout', landTarget])
+        } catch (error) {
+          console.warn(`Could not check out land target ${landTarget} before fresh branch:`, error)
+        }
+        console.log(`Starting fresh sync stack \`${syncBranch}\` (${decision.reason}).`)
       }
     }
 
-    checkoutSyncBranch(syncBranch, resuming || extending)
+    checkoutSyncBranch(syncBranch, resuming || continuingTip)
 
     if (resuming || listConflictFiles().length > 0) {
       if (!ensureInstallableWorkspace(runId)) {
@@ -1151,6 +1221,7 @@ async function main(): Promise<void> {
       activeMergeBase: mergeBase,
       activePrNumber: activePrNumber || null,
       activeUpstreamSha: headSha,
+      stack: workingStack,
     })
 
     writeFbiReport(
@@ -1166,31 +1237,41 @@ async function main(): Promise<void> {
 
     commitUpstreamLedger(`upstream-sync(${runId}): pre-merge ledger`)
 
+    const releaseVersion =
+      tip.kind === 'merge' && tip.version ? tip.version : (releaseEntries[0]?.version ?? null)
+    const { owner, repo } = repoSlug()
+    const repository = `${owner}/${repo}`
+
     const syncPrTitle = formatSyncPrTitle({
       mergeBase,
       runId,
-      extendedToSha: extending ? headSha : undefined,
+      releaseVersion,
     })
-    const extendedBanner =
-      extending && previousUpstreamSha
-        ? formatExtendedBanner({
-            previousSha: previousUpstreamSha,
-            newSha: headSha,
-            commitCount: upstreamCommits.length,
-            runId,
-          })
-        : null
 
     endGroup()
     endGroup = startLogGroup('draft PR')
 
-    let earlyPrBody = [
+    const stackPreview = upsertStackTip(workingStack, {
+      runId,
+      releaseVersion,
+      upstreamSha: headSha,
+      branch: syncBranch,
+      prNumber: activePrNumber || 0,
+      status: 'open',
+    })
+
+    const earlyPrBody = [
       QUESTION_MARKER,
       `## Upstream sync in progress — grill/analysis phase (${runId})`,
       '',
       `Branch \`${syncBranch}\` · merging [\`simstudioai/sim@${headSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${headSha}) into \`${mergeBase}\`.`,
       '',
       `**Sync range:** ${upstreamCommits.length} commit(s) since \`${baseline.baselineSha.slice(0, 8)}\` (${baseline.baselineSource}).`,
+      '',
+      formatStackTableMarkdown(stackPreview, {
+        repository,
+        highlightPrNumber: activePrNumber || null,
+      }),
       '',
       'The parent grill agent will post questions here. Reply with `/upstream-sync resume` after answering.',
       '',
@@ -1199,12 +1280,9 @@ async function main(): Promise<void> {
       `- [.upstream-sync/ledger/${runId}/fbi-report.md](.upstream-sync/ledger/${runId}/fbi-report.md)`,
       `- [.upstream-sync/ledger/${runId}/release-notes.md](.upstream-sync/ledger/${runId}/release-notes.md)`,
     ].join('\n')
-    if (extendedBanner) {
-      earlyPrBody = withExtendedBanner(earlyPrBody, extendedBanner)
-    }
 
     activePrNumber = ensureActiveDraftPr({
-      existingPrNumber: activePrNumber,
+      existingPrNumber: continuingTip || resuming ? activePrNumber : 0,
       mergeBase,
       syncBranch,
       runId,
@@ -1213,21 +1291,14 @@ async function main(): Promise<void> {
       title: syncPrTitle,
     })
 
-    if (extending && activePrNumber > 0 && previousUpstreamSha) {
-      try {
-        commentOnPr(
-          activePrNumber,
-          formatExtendedPrComment({
-            previousSha: previousUpstreamSha,
-            newSha: headSha,
-            commitCount: upstreamCommits.length,
-            runId,
-          })
-        )
-      } catch (error) {
-        console.warn(`Could not post extension comment on PR #${activePrNumber}:`, error)
-      }
-    }
+    workingStack = upsertStackTip(workingStack, {
+      runId,
+      releaseVersion,
+      upstreamSha: headSha,
+      branch: syncBranch,
+      prNumber: activePrNumber || 0,
+      status: 'open',
+    })
 
     persistActiveSyncState({
       runId,
@@ -1235,6 +1306,7 @@ async function main(): Promise<void> {
       mergeBase,
       activePrNumber: activePrNumber || null,
       activeUpstreamSha: headSha,
+      stack: workingStack,
     })
 
     endGroup()
@@ -1331,7 +1403,14 @@ async function main(): Promise<void> {
         runId,
         headSha,
         title: syncPrTitle,
-        body: extendedBanner ? withExtendedBanner(questionsBody, extendedBanner) : questionsBody,
+        body: [
+          questionsBody,
+          '',
+          formatStackTableMarkdown(workingStack, {
+            repository,
+            highlightPrNumber: activePrNumber || null,
+          }),
+        ].join('\n'),
       })
       logHarnessQuestion(
         runId,
@@ -1394,10 +1473,15 @@ async function main(): Promise<void> {
             '',
             `Reply with \`${RESUME_COMMAND}\` after fixing manifests manually.`,
           ].join('\n')
-          return extendedBanner ? withExtendedBanner(body, extendedBanner) : body
+          return body
         })(),
       })
-      writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
+      writeState({
+        ...readState(),
+        activePrNumber: prNumber || null,
+        status: 'awaiting_input',
+        stack: workingStack,
+      })
       writeRunOutcome(runId, {
         kind: 'awaiting_input',
         title: 'Package bootstrap failed after merge',
@@ -1599,11 +1683,16 @@ async function main(): Promise<void> {
           mergeBase,
           syncBranch,
           runId,
-          extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
+          prBody,
           headSha,
           syncPrTitle
         )
-        writeState({ ...readState(), activePrNumber: prNumber || null, status: 'blocked' })
+        writeState({
+          ...readState(),
+          activePrNumber: prNumber || null,
+          status: 'blocked',
+          stack: workingStack,
+        })
         writeRunOutcome(runId, {
           kind: 'blocked',
           title: 'Blocked on model capacity during cluster resolution',
@@ -1681,7 +1770,7 @@ async function main(): Promise<void> {
         mergeBase,
         syncBranch,
         runId,
-        extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
+        prBody,
         headSha,
         syncPrTitle
       )
@@ -1693,7 +1782,12 @@ async function main(): Promise<void> {
       )
       if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
       commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
-      writeState({ ...readState(), activePrNumber: prNumber || null, status: 'awaiting_input' })
+      writeState({
+        ...readState(),
+        activePrNumber: prNumber || null,
+        status: 'awaiting_input',
+        stack: workingStack,
+      })
       writeRunOutcome(runId, {
         kind: 'awaiting_input',
         title: `${remaining.length} unresolved merge conflict(s)`,
@@ -1758,7 +1852,7 @@ async function main(): Promise<void> {
             mergeBase,
             syncBranch,
             runId,
-            extendedBanner ? withExtendedBanner(prBody, extendedBanner) : prBody,
+            prBody,
             headSha,
             syncPrTitle
           )
@@ -1766,6 +1860,7 @@ async function main(): Promise<void> {
             ...readState(),
             activePrNumber: prNumber || null,
             status: 'awaiting_input',
+            stack: workingStack,
           })
           writeRunOutcome(runId, {
             kind: 'awaiting_input',
@@ -1843,13 +1938,26 @@ async function main(): Promise<void> {
       commitHarness(`upstream-sync(${runId}): update ledger`)
     }
 
-    const usageSectionFinal = appendUsageToRunLog(runId)
-    let prBody = [
+    const usageSectionFinal = appendUsageToRunLog(runId, workingStack)
+    workingStack = upsertStackTip(workingStack, {
+      runId,
+      releaseVersion,
+      upstreamSha: headSha,
+      branch: syncBranch,
+      prNumber: activePrNumber || 0,
+      status: 'open',
+    })
+    const prBody = [
       `## Upstream sync — ${runId}`,
       '',
       `Merges [\`simstudioai/sim@${headSha.slice(0, 8)}\`](https://github.com/simstudioai/sim/commit/${headSha}) into \`${mergeBase}\`.`,
       '',
       `**Sync range:** ${upstreamCommits.length} commit(s) since \`${baseline.baselineSha.slice(0, 8)}\` (${baseline.baselineSource}).`,
+      '',
+      formatStackTableMarkdown(workingStack, {
+        repository,
+        highlightPrNumber: activePrNumber || null,
+      }),
       '',
       `### Ledger`,
       `- [.upstream-sync/ledger/${runId}/run.md](.upstream-sync/ledger/${runId}/run.md)`,
@@ -1859,22 +1967,20 @@ async function main(): Promise<void> {
       `- [.upstream-sync/grill-log.md](.upstream-sync/grill-log.md) — **rolling grill Q&A across all runs**`,
       `- [.upstream-sync/ledger/${runId}/skipped.md](.upstream-sync/ledger/${runId}/skipped.md) — **upstream changes we declined**`,
       `- [.upstream-sync/ledger/${runId}/merge-plan.json](.upstream-sync/ledger/${runId}/merge-plan.json) — **final parent plan**`,
+      `- [.upstream-sync/ledger/${runId}/stack-usage.json](.upstream-sync/ledger/${runId}/stack-usage.json) — **stack usage rollup**`,
       '',
       '### Verification',
       formatVerifyStatusLine(verifyResults),
       '',
-      '_Build is blocking. Check / lint / test are advisory._',
+      '_Check / lint / test are advisory. Full build is left to CI._',
       '',
       formatVerifyResults(verifyResults),
       '',
       '### Agent usage',
       usageSectionFinal,
       '',
-      '**Draft** — mark ready for review when satisfied.',
+      '**Draft** — tip-only landing: merge this tip into the target branch, then close lower stack PRs as superseded.',
     ].join('\n')
-    if (extendedBanner) {
-      prBody = withExtendedBanner(prBody, extendedBanner)
-    }
 
     const prNumber = resolveDraftPr(
       activePrNumber,
@@ -1886,6 +1992,14 @@ async function main(): Promise<void> {
       syncPrTitle
     )
     if (prNumber > 0) syncGrillQaFromPr(prNumber, runId)
+    workingStack = upsertStackTip(workingStack, {
+      runId,
+      releaseVersion,
+      upstreamSha: headSha,
+      branch: syncBranch,
+      prNumber: prNumber || 0,
+      status: 'open',
+    })
     commitUpstreamLedger(`upstream-sync(${runId}): log grill Q&A`)
     runGit(['push', 'origin', syncBranch])
 
@@ -1899,6 +2013,7 @@ async function main(): Promise<void> {
       activePrNumber: prNumber,
       activeMergeBase: mergeBase,
       activeUpstreamSha: null,
+      stack: workingStack,
     })
 
     maybeDispatchNextReleaseSlice({
