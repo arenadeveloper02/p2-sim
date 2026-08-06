@@ -103,7 +103,7 @@ bun run lint
 
 ## GitHub Actions
 
-- Daily 06:00 UTC + manual dispatch — up to **6** unpaid upstream releases per run (or fewer if that is all remaining)
+- Weekly Monday 06:00 UTC + manual dispatch — up to **6** unpaid upstream releases per run (or fewer if that is all remaining)
 - Resume: `/upstream-sync resume` on the draft PR (skips grill re-ask, finalizes as a continuation from cluster reports + WIP)
 - Stack: each completed batch opens a **new** draft PR based on the previous tip (`FORCE_RUN` starts a fresh stack and closes open stack PRs)
 - Tip-only landing: merge the tip PR into the target branch; lower stack PRs are review artifacts and close as superseded

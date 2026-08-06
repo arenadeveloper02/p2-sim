@@ -42,7 +42,7 @@ on:
       - 'package.json'
       - 'bun.lock'
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 6 * * 1' # Weekly Monday 06:00 UTC
   workflow_dispatch:
     inputs:
       force:
