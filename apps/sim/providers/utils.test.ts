@@ -1710,6 +1710,161 @@ describe('transformBlockTool multi-instance unique IDs', () => {
   })
 })
 
+describe('transformBlockTool ads account canonical pairs', () => {
+  /**
+   * Reproduces the agent-tool failure: UI in advanced mode with an empty text field,
+   * model fills the canonical tool param (`accounts` / `account`). When the basic
+   * subblock id equaled the canonical id, paramsTransform omitted that value.
+   */
+  async function transformAdsTool(
+    blockDef: {
+      type: string
+      inputs: Record<string, unknown>
+      subBlocks: Array<Record<string, unknown>>
+      tools: {
+        access: string[]
+        config: {
+          tool: () => string
+          params: (params: Record<string, unknown>) => Record<string, unknown>
+        }
+      }
+    },
+    toolId: string,
+    canonicalId: string,
+    llmParams: Record<string, unknown>
+  ) {
+    const result = await transformBlockTool(
+      { type: blockDef.type, params: {} },
+      {
+        getAllBlocks: () => [blockDef],
+        getTool: (id: string) => ({
+          id,
+          name: id,
+          description: id,
+          params: {
+            [canonicalId]: { type: 'string', required: true, visibility: 'user-or-llm' },
+            prompt: { type: 'string', required: true, visibility: 'user-or-llm' },
+            query: { type: 'string', required: true, visibility: 'user-or-llm' },
+          },
+        }),
+        canonicalModes: { [`0:${canonicalId}`]: 'advanced' },
+        toolIndex: 0,
+      }
+    )
+    expect(result?.id).toBe(toolId)
+    return result?.paramsTransform?.(llmParams)
+  }
+
+  it('keeps LLM-filled accounts for google_ads_v1 when advanced mode field is empty', async () => {
+    const blockDef = {
+      type: 'google_ads_v1',
+      inputs: { accounts: { type: 'string' }, prompt: { type: 'string' } },
+      subBlocks: [
+        { id: 'accountsSelector', type: 'dropdown', canonicalParamId: 'accounts', mode: 'basic' },
+        {
+          id: 'accountsAdvanced',
+          type: 'short-input',
+          canonicalParamId: 'accounts',
+          mode: 'advanced',
+        },
+        { id: 'prompt', type: 'long-input' },
+      ],
+      tools: {
+        access: ['google_ads_v1_query'],
+        config: {
+          tool: () => 'google_ads_v1_query',
+          params: (params: Record<string, unknown>) => ({
+            accounts: params.accountsAdvanced ?? params.accountsSelector ?? params.accounts,
+            prompt: params.prompt,
+          }),
+        },
+      },
+    }
+
+    const transformed = await transformAdsTool(blockDef, 'google_ads_v1_query', 'accounts', {
+      accounts: 'ami',
+      prompt: 'campaign performance last 30 days',
+    })
+
+    expect(transformed).toMatchObject({
+      accounts: 'ami',
+      prompt: 'campaign performance last 30 days',
+    })
+  })
+
+  it('keeps LLM-filled account for facebook_ads when advanced mode field is empty', async () => {
+    const blockDef = {
+      type: 'facebook_ads',
+      inputs: { account: { type: 'string' }, query: { type: 'string' } },
+      subBlocks: [
+        { id: 'accountSelector', type: 'dropdown', canonicalParamId: 'account', mode: 'basic' },
+        {
+          id: 'accountAdvanced',
+          type: 'short-input',
+          canonicalParamId: 'account',
+          mode: 'advanced',
+        },
+        { id: 'query', type: 'long-input' },
+      ],
+      tools: {
+        access: ['facebook_ads_query'],
+        config: {
+          tool: () => 'facebook_ads_query',
+          params: (params: Record<string, unknown>) => ({
+            account: params.accountAdvanced ?? params.accountSelector ?? params.account,
+            query: params.query,
+          }),
+        },
+      },
+    }
+
+    const transformed = await transformAdsTool(blockDef, 'facebook_ads_query', 'account', {
+      account: 'ami',
+      query: 'campaign spend last 7 days',
+    })
+
+    expect(transformed).toMatchObject({
+      account: 'ami',
+      query: 'campaign spend last 7 days',
+    })
+  })
+
+  it('still drops the LLM value when basic id incorrectly equals the canonical id (old bug)', async () => {
+    const brokenBlockDef = {
+      type: 'google_ads_v1',
+      inputs: { accounts: { type: 'string' }, prompt: { type: 'string' } },
+      subBlocks: [
+        { id: 'accounts', type: 'dropdown', canonicalParamId: 'accounts', mode: 'basic' },
+        {
+          id: 'accountsAdvanced',
+          type: 'short-input',
+          canonicalParamId: 'accounts',
+          mode: 'advanced',
+        },
+        { id: 'prompt', type: 'long-input' },
+      ],
+      tools: {
+        access: ['google_ads_v1_query'],
+        config: {
+          tool: () => 'google_ads_v1_query',
+          params: (params: Record<string, unknown>) => ({
+            accounts: params.accountsAdvanced ?? params.accounts,
+            prompt: params.prompt,
+          }),
+        },
+      },
+    }
+
+    const transformed = await transformAdsTool(brokenBlockDef, 'google_ads_v1_query', 'accounts', {
+      accounts: 'ami',
+      prompt: 'campaign performance last 30 days',
+    })
+
+    expect(transformed?.accounts).toBeUndefined()
+    expect(transformed).toMatchObject({ prompt: 'campaign performance last 30 days' })
+  })
+})
+
 describe('transformBlockTool knowledge-base multi-instance unique IDs', () => {
   const knowledgeBlockDef = {
     type: 'knowledge',

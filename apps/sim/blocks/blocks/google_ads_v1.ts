@@ -44,9 +44,8 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
   bgColor: '#4285f4',
   icon: GoogleIcon,
   subBlocks: [
-    // Google Ads Account (basic mode - dropdown)
     {
-      id: 'accounts',
+      id: 'accountsSelector',
       title: 'Google Ads Account',
       type: 'dropdown',
       options: [],
@@ -86,13 +85,12 @@ export const GoogleAdsV1Block: BlockConfig<ToolResponse> = {
       mode: 'basic',
       canonicalParamId: 'accounts',
     },
-    // Google Ads Account (advanced mode - text input)
     {
       id: 'accountsAdvanced',
       title: 'Google Ads Account',
       type: 'short-input',
       canonicalParamId: 'accounts',
-      placeholder: 'Enter account key (e.g., ami, heartland)',
+      placeholder: 'Enter account key or numeric account ID',
       required: true,
       mode: 'advanced',
     },
@@ -156,7 +154,7 @@ Generate a clear, specific prompt for what the user wants to query from Google A
     config: {
       tool: () => 'google_ads_v1_query',
       params: (params) => ({
-        accounts: params.accounts,
+        accounts: params.accountsAdvanced ?? params.accountsSelector ?? params.accounts,
         prompt: params.prompt,
       }),
     },
@@ -166,7 +164,10 @@ Generate a clear, specific prompt for what the user wants to query from Google A
       type: 'string',
       description: 'Natural language description of what data you want',
     },
-    accounts: { type: 'string', description: 'Selected Google Ads account' },
+    accounts: {
+      type: 'string',
+      description: 'Google Ads account key or numeric account ID',
+    },
   },
   outputs: {
     success: { type: 'boolean', description: 'Whether the query succeeded' },
