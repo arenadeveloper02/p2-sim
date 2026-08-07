@@ -1,15 +1,18 @@
 'use client'
 
-import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type RefObject, useCallback, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
 import { client } from '@/lib/auth/auth-client'
-import { noop } from '@/lib/core/utils/request'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
-import type { InputFormatField } from '@/lib/workflows/types'
+import {
+  AGENT_STREAM_PROTOCOL_HEADER,
+  AGENT_STREAM_PROTOCOL_V1,
+} from '@/lib/workflows/streaming/agent-stream-protocol'
+import { DesktopTitleBarLane } from '@/app/_shell/desktop-title-bar'
 import {
   ChatErrorState,
   ChatHeader,
@@ -20,37 +23,29 @@ import {
   EmailAuth,
   GoldenQueriesModal,
   PasswordAuth,
-  VoiceInterface,
 } from '@/app/(interfaces)/chat/components'
 import { CHAT_ERROR_MESSAGES, CHAT_REQUEST_TIMEOUT_MS } from '@/app/(interfaces)/chat/constants'
-import { useAudioStreaming, useChatStreaming } from '@/app/(interfaces)/chat/hooks'
 import { StartBlockInputModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components'
-import SSOAuth from '@/ee/sso/components/sso-auth'
-import { useDeployedChatConfig } from '@/hooks/queries/chats'
-import { useGitHubStars } from '@/hooks/queries/github-stars'
-import { useVoiceSettings } from '@/hooks/queries/voice-settings'
 import LeftNavThread from './leftNavThread'
 
-const logger = createLogger('ChatClient')
-
-interface ChatConfig {
-  id: string
-  title: string
-  description: string
-  customizations: {
-    primaryColor?: string
-    logoUrl?: string
-    imageUrl?: string
-    welcomeMessage?: string
-    headerText?: string
-    goldenQueries?: Array<{ id?: string; query: string }>
-  }
-  authType?: 'public' | 'password' | 'email' | 'sso'
-  outputConfigs?: Array<{ blockId: string; path?: string }>
-  inputFormat?: InputFormatField[]
-  /** Workspace IDs the current user can access; when set, "View in Knowledge Base" links are shown for KB refs in that workspace */
-  userWorkspaceIds?: string[]
-}
+// interface ChatConfig {
+//   id: string
+//   title: string
+//   description: string
+//   customizations: {
+//     primaryColor?: string
+//     logoUrl?: string
+//     imageUrl?: string
+//     welcomeMessage?: string
+//     headerText?: string
+//     goldenQueries?: Array<{ id?: string; query: string }>
+//   }
+//   authType?: 'public' | 'password' | 'email' | 'sso'
+//   outputConfigs?: Array<{ blockId: string; path?: string }>
+//   inputFormat?: InputFormatField[]
+//   /** Workspace IDs the current user can access; when set, "View in Knowledge Base" links are shown for KB refs in that workspace */
+//   userWorkspaceIds?: string[]
+// }
 
 interface ThreadRecord {
   chatId: string
@@ -60,11 +55,14 @@ interface ThreadRecord {
   updatedAt: string
 }
 
-interface AudioStreamingOptions {
-  voiceId: string
-  chatId: string
-  onError: (error: Error) => void
-}
+import { useChatStreaming } from '@/app/(interfaces)/chat/hooks'
+import SSOAuth from '@/ee/sso/components/sso-auth'
+import { useDeployedChatConfig } from '@/hooks/queries/chats'
+import { useGitHubStars } from '@/hooks/queries/github-stars'
+
+const logger = createLogger('ChatClient')
+
+const NEAR_BOTTOM_THRESHOLD_PX = 100
 
 interface ChatRequestFile {
   name: string
@@ -79,13 +77,6 @@ interface ChatRequestPayload {
   files?: ChatRequestFile[]
 }
 
-const DEFAULT_VOICE_SETTINGS = {
-  voiceId: 'cgSgspJ2msm6clMCkdW9', // Default ElevenLabs voice (Jessica) — Flash v2.5-optimized
-}
-
-/**
- * Converts a File object to a base64 data URL
- */
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -95,37 +86,9 @@ function fileToBase64(file: File): Promise<string> {
   })
 }
 
-/**
- * Creates an audio stream handler for text-to-speech conversion
- * @param streamTextToAudio - Function to stream text to audio
- * @param voiceId - The voice ID to use for TTS
- * @param chatId - Optional chat ID for deployed chat authentication
- * @returns Audio stream handler function or undefined
- */
-function createAudioStreamHandler(
-  streamTextToAudio: (text: string, options: AudioStreamingOptions) => Promise<void>,
-  voiceId: string,
-  chatId: string
-) {
-  return async (text: string) => {
-    try {
-      await streamTextToAudio(text, {
-        voiceId,
-        chatId,
-        onError: (error: Error) => {
-          logger.error('Audio streaming error:', error)
-        },
-      })
-    } catch (error) {
-      logger.error('TTS error:', error)
-    }
-  }
-}
-
 export default function ChatClient({ identifier }: { identifier: string }) {
   const router = useRouter()
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -140,8 +103,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [isConversationFinished, setIsConversationFinished] = useState<any>(false)
 
   const [showScrollButton, setShowScrollButton] = useState(false)
-  const [userHasScrolled, setUserHasScrolled] = useState(false)
-  const isUserScrollingRef = useRef(false)
+  /** ChatGPT-style: follow new tokens only while the viewport is near the bottom. */
+  const stickToBottomRef = useRef(true)
+  const ignoreScrollRef = useRef(false)
 
   const [isAutoLoginInProgress, setIsAutoLoginInProgress] = useState<boolean>(false)
 
@@ -150,17 +114,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const [startBlockInputs, setStartBlockInputs] = useState<Record<string, unknown>>({})
   const hasShownModalRef = useRef<boolean>(false)
 
-  const [isVoiceFirstMode, setIsVoiceFirstMode] = useState(false)
   const [isGoldenQueriesOpen, setIsGoldenQueriesOpen] = useState(false)
   const [goldenQueries, setGoldenQueries] = useState<Array<{ id?: string; query: string }>>([])
   const [isGoldenQueriesSaving, setIsGoldenQueriesSaving] = useState(false)
   const [askInChatText, setAskInChatText] = useState('')
 
   const { data: chatConfigResult, error: chatConfigError } = useDeployedChatConfig(identifier)
-  const { data: voiceSettings } = useVoiceSettings()
   const { data: starCount } = useGitHubStars()
 
-  const sttAvailable = voiceSettings?.sttAvailable === true
   const authRequired = chatConfigResult?.kind === 'auth' ? chatConfigResult.authType : null
   const chatConfig = chatConfigResult?.kind === 'config' ? chatConfigResult.config : null
 
@@ -184,14 +145,31 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   const { isStreamingResponse, abortControllerRef, stopStreaming, handleStreamedResponse } =
     useChatStreaming()
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const { isPlayingAudio, streamTextToAudio, stopAudio } = useAudioStreaming(audioContextRef)
 
-  const scrollToBottom = useCallback(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+  /**
+   * ChatGPT-style scroll. Without `force`, no-ops when the user has scrolled away.
+   * With `force` (jump button), re-pins to bottom.
+   */
+  const scrollToBottom = (options?: { behavior?: ScrollBehavior; force?: boolean }) => {
+    const behavior = options?.behavior ?? 'smooth'
+    const force = options?.force === true
+    if (!force && !stickToBottomRef.current) return
+    if (!messagesEndRef.current) return
+
+    if (force) {
+      stickToBottomRef.current = true
+      setShowScrollButton(false)
     }
-  }, [])
+
+    ignoreScrollRef.current = true
+    messagesEndRef.current.scrollIntoView({ behavior })
+    window.setTimeout(
+      () => {
+        ignoreScrollRef.current = false
+      },
+      behavior === 'smooth' ? 400 : 50
+    )
+  }
 
   useEffect(() => {
     const incoming = chatConfig?.customizations?.goldenQueries ?? []
@@ -200,37 +178,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     )
     setGoldenQueries(normalized)
   }, [chatConfig?.customizations?.goldenQueries])
-
-  const scrollToMessage = useCallback(
-    (messageId: string, scrollToShowOnlyMessage = false) => {
-      const messageElement = document.querySelector(`[data-message-id="${messageId}"]`)
-      if (messageElement && messagesContainerRef.current) {
-        const container = messagesContainerRef.current
-        const containerRect = container.getBoundingClientRect()
-        const messageRect = messageElement.getBoundingClientRect()
-
-        if (scrollToShowOnlyMessage) {
-          const scrollTop = container.scrollTop + messageRect.top - containerRect.top
-
-          container.scrollTo({
-            top: scrollTop,
-            behavior: 'smooth',
-          })
-        } else {
-          const scrollTop = container.scrollTop + messageRect.top - containerRect.top - 80
-
-          container.scrollTo({
-            top: scrollTop,
-            behavior: 'smooth',
-          })
-        }
-      }
-    },
-    [messagesContainerRef]
-  )
-
-  const isStreamingResponseRef = useRef(isStreamingResponse)
-  isStreamingResponseRef.current = isStreamingResponse
 
   // Fetch history messages
   useEffect(() => {
@@ -319,38 +266,48 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     }
   }, [identifier, chatConfig, currentChatId])
 
-  useEffect(() => {
+  const scrollToMessage = (messageId: string) => {
+    const messageElement = document.querySelector(`[data-message-id="${messageId}"]`)
+    if (!messageElement || !messagesContainerRef.current) return
+
     const container = messagesContainerRef.current
-    if (!container) return
+    const containerRect = container.getBoundingClientRect()
+    const messageRect = messageElement.getBoundingClientRect()
+
+    container.scrollTo({
+      top: container.scrollTop + messageRect.top - containerRect.top,
+      behavior: 'smooth',
+    })
+  }
+
+  /**
+   * Attaches on mount via a ref callback rather than an effect: the container
+   * renders only after the auth/loading early returns, so an effect would need
+   * unrelated render values as a stand-in for "the node exists yet".
+   */
+  const attachMessagesContainer = useCallback((node: HTMLDivElement | null) => {
+    messagesContainerRef.current = node
+    if (!node) return
 
     const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container
+      if (ignoreScrollRef.current) return
+      const { scrollTop, scrollHeight, clientHeight } = node
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight
-      setShowScrollButton(distanceFromBottom > 100)
-
-      if (isStreamingResponseRef.current && !isUserScrollingRef.current) {
-        setUserHasScrolled(true)
-      }
+      const nearBottom = distanceFromBottom <= NEAR_BOTTOM_THRESHOLD_PX
+      stickToBottomRef.current = nearBottom
+      setShowScrollButton(!nearBottom)
     }
 
-    container.addEventListener('scroll', handleScroll, { passive: true })
-    return () => container.removeEventListener('scroll', handleScroll)
-  }, [chatConfig, isVoiceFirstMode, authRequired])
-
-  useEffect(() => {
-    if (isStreamingResponse) {
-      setUserHasScrolled(false)
-
-      isUserScrollingRef.current = true
-      const timeoutId = setTimeout(() => {
-        isUserScrollingRef.current = false
-      }, 1000)
-      return () => clearTimeout(timeoutId)
+    node.addEventListener('scroll', handleScroll, { passive: true })
+    return () => {
+      node.removeEventListener('scroll', handleScroll)
+      messagesContainerRef.current = null
     }
-  }, [isStreamingResponse])
+  }, [])
 
   const fetchChatConfig = async () => {
     try {
+      // boundary-raw-fetch: reads the 401 error body (`auth_required_email`) to drive the Arena auto-login retry, which requestJson's thrown error does not expose
       const response = await fetch(`/api/chat/${identifier}`, {
         credentials: 'same-origin',
         headers: {
@@ -459,8 +416,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   }
 
   const handleSendMessage = async (
-    messageParam?: string,
-    isVoiceInput = false,
+    messageToSend: string,
     files?: Array<{
       id: string
       name: string
@@ -472,19 +428,18 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     forceExecution = false, // Allow execution even with empty input (e.g., when form is submitted)
     overrideValues?: Record<string, unknown> // Override values for Start Block inputs (e.g., from form submission)
   ) => {
-    const messageToSend = messageParam ?? inputValue
     // Allow execution if forceExecution is true (form submission) or if there's input/files
     if ((!messageToSend.trim() && (!files || files.length === 0) && !forceExecution) || isLoading)
       return
 
     logger.info('Sending message:', {
       messageToSend,
-      isVoiceInput,
       conversationId,
       filesCount: files?.length,
     })
 
-    setUserHasScrolled(false)
+    stickToBottomRef.current = true
+    setShowScrollButton(false)
 
     let userMessageId: string | null = null
     const userMessage: ChatMessage = {
@@ -504,7 +459,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
     // Add the user's message to the chat
     setMessages((prev) => [...prev, userMessage])
-    setInputValue('')
     setIsLoading(true)
 
     // Scroll to show only the user's message and loading indicator (if message exists)
@@ -514,7 +468,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       }, 100)
     }
 
+    // One AbortController for fetch + SSE body reads so Stop cancels server work too.
     const abortController = new AbortController()
+    abortControllerRef.current = abortController
     const timeoutId = setTimeout(() => {
       abortController.abort()
     }, CHAT_REQUEST_TIMEOUT_MS)
@@ -576,6 +532,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         headers: {
           'Content-Type': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
+          [AGENT_STREAM_PROTOCOL_HEADER]: AGENT_STREAM_PROTOCOL_V1,
         },
         body: JSON.stringify(payload),
         credentials: 'same-origin',
@@ -596,33 +553,16 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         throw new Error('Response body is missing')
       }
 
-      const shouldPlayAudio = isVoiceInput || isVoiceFirstMode
-      const audioHandler =
-        shouldPlayAudio && chatConfig?.id
-          ? createAudioStreamHandler(
-              streamTextToAudio,
-              DEFAULT_VOICE_SETTINGS.voiceId,
-              chatConfig.id
-            )
-          : undefined
-
-      logger.info('Starting to handle streamed response:', { shouldPlayAudio })
       setIsConversationFinished(true)
 
       await handleStreamedResponse(
         response,
         setMessages,
         setIsLoading,
-        scrollToBottom,
-        userHasScrolled,
+        () => scrollToBottom({ behavior: 'auto' }),
         {
-          voiceSettings: {
-            isVoiceEnabled: shouldPlayAudio,
-            voiceId: DEFAULT_VOICE_SETTINGS.voiceId,
-            autoPlayResponses: shouldPlayAudio,
-          },
-          audioStreamHandler: audioHandler,
           outputConfigs: chatConfig?.outputConfigs,
+          abortController,
         }
       )
     } catch (error) {
@@ -695,41 +635,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       }
     },
     [identifier]
-  )
-
-  useEffect(() => {
-    return () => {
-      stopAudio()
-      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        audioContextRef.current.close()
-      }
-    }
-  }, [stopAudio])
-
-  const handleVoiceInterruption = useCallback(() => {
-    stopAudio()
-
-    if (isStreamingResponse) {
-      stopStreaming(setMessages)
-    }
-  }, [isStreamingResponse, stopStreaming, setMessages, stopAudio])
-
-  const handleVoiceStart = useCallback(() => {
-    if (!sttAvailable) return
-    setIsVoiceFirstMode(true)
-  }, [sttAvailable])
-
-  const handleExitVoiceMode = useCallback(() => {
-    setIsVoiceFirstMode(false)
-    stopAudio()
-  }, [stopAudio])
-
-  const handleVoiceTranscript = useCallback(
-    (transcript: string) => {
-      logger.info('Received voice transcript:', transcript)
-      handleSendMessage(transcript, true)
-    },
-    [handleSendMessage]
   )
 
   // Get custom fields from inputFormat (excluding reserved fields: input, conversationId, files)
@@ -810,7 +715,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       // but with all Start Block inputs included
       // Pass values as overrideValues to ensure they're used immediately
       try {
-        await handleSendMessage('', false, undefined, true, values) // forceExecution = true, overrideValues = values
+        await handleSendMessage('', undefined, true, values) // forceExecution = true, overrideValues = values
       } catch (error) {
         logger.error('Error executing workflow from modal submit:', error)
       }
@@ -853,14 +758,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
               setCurrentChatId(firstId)
               params.set('chatId', firstId)
               const newUrl = `/chat/${workflowId}?${params.toString()}`
-              router.push(newUrl)
+              router.replace(newUrl)
             } else {
               // No threads exist yet: generate a new UUID chatId for a fresh chat
               const newId = generateId()
               setCurrentChatId(newId)
               params.set('chatId', newId)
               const newUrl = `/chat/${workflowId}?${params.toString()}`
-              router.push(newUrl)
+              router.replace(newUrl)
             }
           }
         }
@@ -899,7 +804,9 @@ export default function ChatClient({ identifier }: { identifier: string }) {
       const params = new URLSearchParams(window.location.search)
       params.set('chatId', newChatId)
       const newUrl = `/chat/${identifier}?${params.toString()}`
-      router.push(newUrl)
+      // Replace so browser Back leaves the deployed chat (e.g. to Arena hub),
+      // matching Exit Agent — do not push a chatId-only history entry.
+      router.replace(newUrl)
     },
     [router, identifier]
   )
@@ -973,34 +880,14 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     return <ChatLoadingState />
   }
 
-  if (isVoiceFirstMode) {
-    return (
-      <VoiceInterface
-        onCallEnd={handleExitVoiceMode}
-        onVoiceTranscript={handleVoiceTranscript}
-        onVoiceStart={noop}
-        onVoiceEnd={noop}
-        onInterrupt={handleVoiceInterruption}
-        isStreaming={isStreamingResponse}
-        isPlayingAudio={isPlayingAudio}
-        audioContextRef={audioContextRef}
-        chatId={chatConfig?.id}
-        messages={displayMessages.map((msg) => ({
-          content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-          type: msg.type,
-        }))}
-      />
-    )
-  }
-
   return (
-    <div className='light fixed inset-0 z-[100] flex flex-col bg-[var(--bg)] text-[var(--text-primary)]'>
+    <div className='light desktop-title-bar-page fixed inset-0 z-[var(--z-dropdown)] flex flex-col bg-[var(--bg)] text-[var(--text-primary)]'>
       {isHistoryLoading && (
         <div className='absolute top-[72px] left-[276px] z-[105] flex h-[calc(100vh-85px)] w-[calc(100vw-286px)] items-center justify-center bg-white/60 pb-[6%]'>
           <LoadingAgentP2 size='lg' />
         </div>
       )}
-      {/* Header component */}
+      <DesktopTitleBarLane />
       <ChatHeader chatConfig={chatConfig} starCount={starCount} />
 
       <LeftNavThread
@@ -1022,29 +909,25 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         isLoading={isLoading}
         isStreaming={isStreamingResponse}
         showScrollButton={showScrollButton}
-        messagesContainerRef={messagesContainerRef as RefObject<HTMLDivElement>}
+        messagesContainerRef={attachMessagesContainer}
         messagesEndRef={messagesEndRef as RefObject<HTMLDivElement>}
-        scrollToBottom={scrollToBottom}
-        scrollToMessage={scrollToMessage}
+        scrollToBottom={() => scrollToBottom({ behavior: 'smooth', force: true })}
         chatConfig={chatConfig}
         workspaceIdsForKbLinks={chatConfig?.userWorkspaceIds}
         onAskInChat={(text) => setAskInChatText(text)}
         onWelcomeQueryClick={handleWelcomeQueryClick}
       />
 
-      {/* Input area (free-standing at the bottom) */}
       <div className='relative p-3 pb-4 md:p-4 md:pb-6'>
         <div className='relative mx-auto max-w-3xl md:max-w-[768px]'>
           <ChatInput
-            onSubmit={(value, isVoiceInput, files) => {
-              void handleSendMessage(value, isVoiceInput, files)
+            onSubmit={(value, files) => {
+              void handleSendMessage(value, files)
             }}
             isStreaming={isStreamingResponse}
             onStopStreaming={() => stopStreaming(setMessages)}
-            onVoiceStart={handleVoiceStart}
             insertText={askInChatText}
             onInsertConsumed={() => setAskInChatText('')}
-            sttAvailable={sttAvailable}
           />
         </div>
       </div>

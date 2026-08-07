@@ -7,6 +7,19 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getValidationErrorMessage, parseJsonBody } from '@/lib/api/server'
 import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+// import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+// import {
+//   checkAttributedUsageLimits,
+//   requireBillingAttributionHeader,
+//   resolveBillingAttribution,
+//   // toBillingContext, // applied inside recordSearchEmbeddingUsage
+// } from '@/lib/billing/core/billing-attribution'
+// Threshold billing runs inside recordSearchEmbeddingUsage, so the route no
+// longer calls it directly.
+// import {
+//   checkAndBillOverageThreshold,
+//   checkAndBillPayerOverageThreshold,
+// } from '@/lib/billing/threshold-billing'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
@@ -305,18 +318,28 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
+      const accessibleKbs = accessChecks
+        .filter((ac): ac is NonNullable<typeof ac> & { hasAccess: true } => ac?.hasAccess === true)
+        .map((ac) => ac.knowledgeBase)
       const workspaceId = accessChecks.find((ac) => ac?.hasAccess)?.knowledgeBase?.workspaceId
 
+      // Upstream drives the reranker from flat `rerankerEnabled` / `rerankerModel`
+      // body fields. This fork drives it from the nested `rerank` object instead,
+      // via `rerankConfig` further down, so these two lines stay disabled.
+      // const useReranker = validatedData.rerankerEnabled && Boolean(validatedData.query?.trim())
+      // const rerankerModel = useReranker ? validatedData.rerankerModel : null
+
       const hasQuery = validatedData.query && validatedData.query.trim().length > 0
-      const embeddingModels = Array.from(
-        new Set(
-          accessChecks
-            .filter(
-              (ac): ac is NonNullable<typeof ac> & { hasAccess: true } => ac?.hasAccess === true
-            )
-            .map((ac) => ac.knowledgeBase.embeddingModel)
+
+      const workspaceIds = new Set(accessibleKbs.map((kb) => kb.workspaceId ?? null))
+      if (hasQuery && workspaceIds.size > 1) {
+        return NextResponse.json(
+          { error: 'Selected knowledge bases must belong to the same workspace' },
+          { status: 400 }
         )
-      )
+      }
+
+      const embeddingModels = Array.from(new Set(accessibleKbs.map((kb) => kb.embeddingModel)))
       if (hasQuery && embeddingModels.length > 1) {
         return NextResponse.json(
           {
@@ -337,6 +360,38 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           { status: 404 }
         )
       }
+
+      // Billing attribution is disabled for Arena — the header/scope check fails when a
+      // workflow searches a KB outside its own workspace. Keep the upstream path here
+      // so it can be restored without reconstructing it.
+      // const billingAttribution =
+      //   hasQuery && workspaceId
+      //     ? auth.authType === AuthType.INTERNAL_JWT
+      //       ? requireBillingAttributionHeader(request.headers, {
+      //           actorUserId: userId,
+      //           workspaceId,
+      //         })
+      //       : shouldMeter
+      //         ? await resolveBillingAttribution({
+      //             actorUserId: userId,
+      //             workspaceId,
+      //           })
+      //         : undefined
+      //     : undefined
+      //
+      // if (shouldMeter && hasQuery) {
+      //   const usage = billingAttribution
+      //     ? await checkAttributedUsageLimits(billingAttribution)
+      //     : await checkActorUsageLimits(userId)
+      //   if (usage.isExceeded) {
+      //     return NextResponse.json(
+      //       {
+      //         error: usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.',
+      //       },
+      //       { status: 402 }
+      //     )
+      //   }
+      // }
 
       // if (workflowId) {
       // const authorization = await authorizeWorkflowByWorkspacePermission({
@@ -444,6 +499,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             query: validatedData.query!,
             isBYOK: queryEmbeddingIsBYOK,
             sourceReference: `kb-search:${requestId}`,
+            // billingAttribution,
           })
         }
       }
@@ -474,7 +530,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
       // Fetch document names for the results
       const documentIds = results.map((result) => result.documentId)
-      const documentNameMap = await getDocumentMetadataByIds(documentIds)
+      const documentMetadataMap = await getDocumentMetadataByIds(documentIds)
 
       // Fetch workspaceId per knowledge base for "View in Knowledge Base" links (only for users with workspace access)
       const kbIds = [...new Set(results.map((r) => r.knowledgeBaseId))]
@@ -504,9 +560,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
         if (rerankResult.searchUnits > 0) {
           const pricing = getRerankModelPricing(rerankResult.model)
-          rerankerCost = pricing
-            ? pricing.perSearchUnit * rerankResult.searchUnits
-            : undefined
+          rerankerCost = pricing ? pricing.perSearchUnit * rerankResult.searchUnits : undefined
 
           if (shouldMeter && workspaceId) {
             await recordSearchRerankUsage({
@@ -554,9 +608,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
               }
             })
 
+            const docMeta = documentMetadataMap[result.documentId]
             return {
               documentId: result.documentId,
-              documentName: documentNameMap[result.documentId] || undefined,
+              documentName: docMeta?.filename || undefined,
+              sourceUrl: docMeta?.sourceUrl ?? null,
               content: result.content,
               chunkIndex: result.chunkIndex,
               metadata: tags, // Clean display name mapped tags

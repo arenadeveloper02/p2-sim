@@ -1,4 +1,4 @@
-export { BaseCard, BaseCardSkeleton, BaseCardSkeletonGrid } from './base-card'
+export { CopyKnowledgeBaseModal } from './copy-knowledge-base-modal'
 export { CreateBaseModal } from './create-base-modal'
 export { DeleteKnowledgeBaseModal } from './delete-knowledge-base-modal'
 export { EditKnowledgeBaseModal } from './edit-knowledge-base-modal'

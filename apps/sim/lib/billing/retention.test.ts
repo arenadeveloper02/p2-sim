@@ -2,9 +2,12 @@
  * @vitest-environment node
  */
 import type { DataRetentionSettings, PiiRedactionRule } from '@sim/db/schema'
-import { describe, expect, it } from 'vitest'
+import { queueTableRows, resetDbChainMock, schemaMock } from '@sim/testing'
+import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   DEFAULT_PII_REDACTION,
+  getForeignWorkspaceTargetsReason,
+  getPiiRedactionDenialReason,
   resolveEffectivePiiRedaction,
   resolveEffectiveRetentionHours,
 } from '@/lib/billing/retention'
@@ -13,7 +16,7 @@ function settings(rules: PiiRedactionRule[]): DataRetentionSettings {
   return { piiRedaction: { rules } }
 }
 
-const DISABLED = { enabled: false, entityTypes: [], language: 'en' }
+const DISABLED = { enabled: false, entityTypes: [], language: 'en', customPatterns: [] }
 
 describe('resolveEffectivePiiRedaction', () => {
   const allRule: PiiRedactionRule = {
@@ -31,7 +34,12 @@ describe('resolveEffectivePiiRedaction', () => {
       expect(result).toEqual({
         input: DISABLED,
         blockOutputs: DISABLED,
-        logs: { enabled: true, entityTypes: ['EMAIL_ADDRESS', 'PHONE_NUMBER'], language: 'en' },
+        logs: {
+          enabled: true,
+          entityTypes: ['EMAIL_ADDRESS', 'PHONE_NUMBER'],
+          language: 'en',
+          customPatterns: [],
+        },
       })
     })
 
@@ -46,7 +54,7 @@ describe('resolveEffectivePiiRedaction', () => {
       expect(result).toEqual({
         input: DISABLED,
         blockOutputs: DISABLED,
-        logs: { enabled: true, entityTypes: ['US_SSN'], language: 'en' },
+        logs: { enabled: true, entityTypes: ['US_SSN'], language: 'en', customPatterns: [] },
       })
     })
 
@@ -57,7 +65,12 @@ describe('resolveEffectivePiiRedaction', () => {
         ]),
         workspaceId: 'ws-1',
       })
-      expect(result.logs).toEqual({ enabled: true, entityTypes: ['ES_NIF'], language: 'es' })
+      expect(result.logs).toEqual({
+        enabled: true,
+        entityTypes: ['ES_NIF'],
+        language: 'es',
+        customPatterns: [],
+      })
     })
 
     it('falls back to en when a stored language is unsupported/stale', () => {
@@ -67,7 +80,12 @@ describe('resolveEffectivePiiRedaction', () => {
         ]),
         workspaceId: 'ws-1',
       })
-      expect(result.logs).toEqual({ enabled: true, entityTypes: ['EMAIL_ADDRESS'], language: 'en' })
+      expect(result.logs).toEqual({
+        enabled: true,
+        entityTypes: ['EMAIL_ADDRESS'],
+        language: 'en',
+        customPatterns: [],
+      })
     })
 
     it('exempts a workspace when its specific flat rule has no entity types', () => {
@@ -102,9 +120,19 @@ describe('resolveEffectivePiiRedaction', () => {
         workspaceId: 'ws-1',
       })
       expect(result).toEqual({
-        input: { enabled: true, entityTypes: ['PERSON'], language: 'es' },
-        blockOutputs: { enabled: true, entityTypes: ['EMAIL_ADDRESS'], language: 'en' },
-        logs: { enabled: true, entityTypes: ['US_SSN', 'PHONE_NUMBER'], language: 'en' },
+        input: { enabled: true, entityTypes: ['PERSON'], language: 'es', customPatterns: [] },
+        blockOutputs: {
+          enabled: true,
+          entityTypes: ['EMAIL_ADDRESS'],
+          language: 'en',
+          customPatterns: [],
+        },
+        logs: {
+          enabled: true,
+          entityTypes: ['US_SSN', 'PHONE_NUMBER'],
+          language: 'en',
+          customPatterns: [],
+        },
       })
     })
 
@@ -125,7 +153,51 @@ describe('resolveEffectivePiiRedaction', () => {
       })
       expect(result.input).toEqual(DISABLED)
       expect(result.blockOutputs).toEqual(DISABLED)
-      expect(result.logs).toEqual({ enabled: true, entityTypes: ['PERSON'], language: 'en' })
+      expect(result.logs).toEqual({
+        enabled: true,
+        entityTypes: ['PERSON'],
+        language: 'en',
+        customPatterns: [],
+      })
+    })
+
+    it('strips spaCy-NER entities from blockOutputs at resolve time (regex-only)', () => {
+      const result = resolveEffectivePiiRedaction({
+        orgSettings: settings([
+          {
+            id: 'r-1',
+            workspaceId: 'ws-1',
+            stages: {
+              input: stage(true, ['PERSON', 'EMAIL_ADDRESS']),
+              blockOutputs: stage(true, ['PERSON', 'EMAIL_ADDRESS']),
+              logs: stage(true, ['DATE_TIME']),
+            },
+          },
+        ]),
+        workspaceId: 'ws-1',
+      })
+      // input + logs keep NER; blockOutputs drops it (regex-only execution path).
+      expect(result.input.entityTypes).toEqual(['PERSON', 'EMAIL_ADDRESS'])
+      expect(result.blockOutputs.entityTypes).toEqual(['EMAIL_ADDRESS'])
+      expect(result.logs.entityTypes).toEqual(['DATE_TIME'])
+    })
+
+    it('disables blockOutputs when only NER was stored (un-migrated rule)', () => {
+      const result = resolveEffectivePiiRedaction({
+        orgSettings: settings([
+          {
+            id: 'r-1',
+            workspaceId: 'ws-1',
+            stages: {
+              input: stage(false, []),
+              blockOutputs: stage(true, ['PERSON']),
+              logs: stage(false, []),
+            },
+          },
+        ]),
+        workspaceId: 'ws-1',
+      })
+      expect(result.blockOutputs).toEqual(DISABLED)
     })
 
     it('selects the whole workspace rule over the all rule (no per-stage merge)', () => {
@@ -144,9 +216,50 @@ describe('resolveEffectivePiiRedaction', () => {
         ]),
         workspaceId: 'ws-1',
       })
-      expect(result.input).toEqual({ enabled: true, entityTypes: ['PERSON'], language: 'en' })
+      expect(result.input).toEqual({
+        enabled: true,
+        entityTypes: ['PERSON'],
+        language: 'en',
+        customPatterns: [],
+      })
       // The all rule's logs entity types are NOT unioned in.
       expect(result.logs).toEqual(DISABLED)
+    })
+
+    it('carries custom patterns through each stage (blockOutputs strips NER but keeps them)', () => {
+      const result = resolveEffectivePiiRedaction({
+        orgSettings: settings([
+          {
+            id: 'r-1',
+            workspaceId: 'ws-1',
+            stages: {
+              input: {
+                enabled: true,
+                entityTypes: [],
+                customPatterns: [{ name: 'Emp', regex: 'EMP-\\d{6}', replacement: '<EMP>' }],
+              },
+              blockOutputs: {
+                enabled: true,
+                entityTypes: ['PERSON'],
+                customPatterns: [{ name: 'Tck', regex: 'TCK-\\d+', replacement: '<TCK>' }],
+              },
+              logs: stage(false, []),
+            },
+          },
+        ]),
+        workspaceId: 'ws-1',
+      })
+      // Input: enabled by custom pattern alone (no entity types).
+      expect(result.input.enabled).toBe(true)
+      expect(result.input.customPatterns).toEqual([
+        { name: 'Emp', regex: 'EMP-\\d{6}', replacement: '<EMP>' },
+      ])
+      // Block outputs: NER stripped, but the custom pattern keeps the stage enabled.
+      expect(result.blockOutputs.entityTypes).toEqual([])
+      expect(result.blockOutputs.enabled).toBe(true)
+      expect(result.blockOutputs.customPatterns).toEqual([
+        { name: 'Tck', regex: 'TCK-\\d+', replacement: '<TCK>' },
+      ])
     })
   })
 
@@ -243,5 +356,163 @@ describe('resolveEffectiveRetentionHours', () => {
         key: 'logRetentionHours',
       })
     ).toBeNull()
+  })
+})
+
+describe('getPiiRedactionDenialReason', () => {
+  const BOTH_ON = { piiRedactionEnabled: true, piiGranularRedactionEnabled: true }
+
+  function rule(workspaceId: string | null, stages?: { input?: boolean; blockOutputs?: boolean }) {
+    return {
+      id: `r-${workspaceId ?? 'all'}`,
+      workspaceId,
+      stages: stages
+        ? {
+            input: { enabled: stages.input === true, entityTypes: [] },
+            blockOutputs: { enabled: stages.blockOutputs === true, entityTypes: [] },
+            logs: { enabled: false, entityTypes: [] },
+          }
+        : undefined,
+    }
+  }
+
+  it('allows the write when both flags are on', () => {
+    expect(
+      getPiiRedactionDenialReason({
+        current: null,
+        incoming: { rules: [rule('ws-1', { input: true })] },
+        ...BOTH_ON,
+      })
+    ).toBeNull()
+  })
+
+  it('rejects any write when PII redaction is off', () => {
+    expect(
+      getPiiRedactionDenialReason({
+        current: null,
+        incoming: { rules: [] },
+        piiRedactionEnabled: false,
+        piiGranularRedactionEnabled: true,
+      })
+    ).toContain('PII redaction is not enabled')
+  })
+
+  it('rejects newly enabling a granular stage when the granular flag is off', () => {
+    expect(
+      getPiiRedactionDenialReason({
+        current: null,
+        incoming: { rules: [rule('ws-1', { input: true })] },
+        piiRedactionEnabled: true,
+        piiGranularRedactionEnabled: false,
+      })
+    ).toContain('Granular PII redaction')
+  })
+
+  it('allows re-saving a granular stage that is already enabled', () => {
+    /**
+     * The settings UI re-sends the full PII snapshot on every save, so an
+     * organization that configured granular stages before the flag was turned
+     * off must still be able to change unrelated retention settings.
+     */
+    expect(
+      getPiiRedactionDenialReason({
+        current: { rules: [rule('ws-1', { input: true })] },
+        incoming: { rules: [rule('ws-1', { input: true })] },
+        piiRedactionEnabled: true,
+        piiGranularRedactionEnabled: false,
+      })
+    ).toBeNull()
+  })
+
+  it('rejects when one stage is preserved but another is newly enabled', () => {
+    expect(
+      getPiiRedactionDenialReason({
+        current: { rules: [rule('ws-1', { input: true })] },
+        incoming: { rules: [rule('ws-1', { input: true, blockOutputs: true })] },
+        piiRedactionEnabled: true,
+        piiGranularRedactionEnabled: false,
+      })
+    ).toContain('Granular PII redaction')
+  })
+
+  it('scopes the comparison per rule target, so another workspace does not grant enablement', () => {
+    expect(
+      getPiiRedactionDenialReason({
+        current: { rules: [rule('ws-1', { input: true })] },
+        incoming: { rules: [rule('ws-2', { input: true })] },
+        piiRedactionEnabled: true,
+        piiGranularRedactionEnabled: false,
+      })
+    ).toContain('Granular PII redaction')
+  })
+
+  it('treats the org-default rule (null workspaceId) as its own target', () => {
+    expect(
+      getPiiRedactionDenialReason({
+        current: { rules: [rule(null, { input: true })] },
+        incoming: { rules: [rule(null, { input: true })] },
+        piiRedactionEnabled: true,
+        piiGranularRedactionEnabled: false,
+      })
+    ).toBeNull()
+  })
+
+  it('allows a logs-only write while the granular flag is off', () => {
+    expect(
+      getPiiRedactionDenialReason({
+        current: null,
+        incoming: { rules: [rule('ws-1', {})] },
+        piiRedactionEnabled: true,
+        piiGranularRedactionEnabled: false,
+      })
+    ).toBeNull()
+  })
+})
+
+describe('getForeignWorkspaceTargetsReason', () => {
+  beforeEach(resetDbChainMock)
+  afterAll(resetDbChainMock)
+
+  it('skips the lookup entirely when nothing targets a workspace', async () => {
+    await expect(
+      getForeignWorkspaceTargetsReason({
+        organizationId: 'org-1',
+        retentionOverrides: [],
+        piiRedaction: { rules: [{ workspaceId: null }] },
+      })
+    ).resolves.toBeNull()
+  })
+
+  it('accepts overrides whose workspaces belong to the organization', async () => {
+    queueTableRows(schemaMock.workspace, [{ id: 'ws-1' }, { id: 'ws-2' }])
+
+    await expect(
+      getForeignWorkspaceTargetsReason({
+        organizationId: 'org-1',
+        retentionOverrides: [{ workspaceId: 'ws-1' }, { workspaceId: 'ws-2' }],
+      })
+    ).resolves.toBeNull()
+  })
+
+  it('rejects an override naming a workspace the organization does not own', async () => {
+    queueTableRows(schemaMock.workspace, [{ id: 'ws-1' }])
+
+    await expect(
+      getForeignWorkspaceTargetsReason({
+        organizationId: 'org-1',
+        retentionOverrides: [{ workspaceId: 'ws-1' }, { workspaceId: 'ws-foreign' }],
+      })
+    ).resolves.toContain('ws-foreign')
+  })
+
+  it('also checks workspaces named by PII rules, not just overrides', async () => {
+    queueTableRows(schemaMock.workspace, [])
+
+    await expect(
+      getForeignWorkspaceTargetsReason({
+        organizationId: 'org-1',
+        piiRedaction: { rules: [{ workspaceId: 'ws-foreign' }] },
+      })
+    ).resolves.toContain('ws-foreign')
   })
 })

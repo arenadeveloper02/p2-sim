@@ -14,7 +14,10 @@ import {
   listLocalCopilotConversationsContract,
   rejectLocalCopilotPatchContract,
 } from '@/local-copilot/contracts/local-copilot'
+import { formatLocalToolConfirmationTag } from '@/local-copilot/lib/security/tool-confirmation-policy'
+import { formatTrustedControl } from '@/local-copilot/lib/security/trusted-controls'
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
+import { stripIdsFromUserFacingText } from '@/local-copilot/lib/user-facing-text'
 
 export const localCopilotKeys = {
   all: ['local-copilot'] as const,
@@ -146,7 +149,31 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
             const event = JSON.parse(line.slice(5).trim()) as LocalCopilotStreamEvent
 
             if (event.type === 'text_delta') {
-              assistantText += event.content
+              const safe = stripIdsFromUserFacingText(event.content)
+              if (!safe) continue
+              assistantText += safe
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, text: assistantText, streaming: true } : m
+                )
+              )
+            }
+            if (event.type === 'trusted_control') {
+              const controlText = formatTrustedControl(event.control)
+              assistantText += `${assistantText.trim() ? '\n\n' : ''}${controlText}`
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, text: assistantText, streaming: true } : m
+                )
+              )
+            }
+            if (event.type === 'confirmation_required') {
+              const controlText = formatLocalToolConfirmationTag(
+                event.toolCallId,
+                event.toolName,
+                event.requirement
+              )
+              assistantText += `${assistantText.trim() ? '\n\n' : ''}${controlText}`
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId ? { ...m, text: assistantText, streaming: true } : m
@@ -162,7 +189,7 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
               recommendations = event.items
             }
             if (event.type === 'error') {
-              throw new Error(event.message)
+              throw new Error(stripIdsFromUserFacingText(event.message) || event.message)
             }
           }
         }
@@ -182,7 +209,20 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
           )
         )
       } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') return
+        if (error instanceof Error && error.name === 'AbortError') {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    text: assistantText.trim() || 'Stopped.',
+                    streaming: false,
+                  }
+                : m
+            )
+          )
+          return
+        }
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
@@ -236,6 +276,11 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
     setShowDiff(false)
   }, [])
 
+  const stop = useCallback(() => {
+    abortRef.current?.abort()
+    setIsStreaming(false)
+  }, [])
+
   const debugLastRun = useCallback(() => {
     void sendMessage('Debug the last failed workflow run. Explain root cause and suggest fixes.')
   }, [sendMessage])
@@ -258,6 +303,7 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
     showDiff,
     setShowDiff,
     sendMessage,
+    stop,
     applyPatch,
     rejectPatch,
     loadPatch,

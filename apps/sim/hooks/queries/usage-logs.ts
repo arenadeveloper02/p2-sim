@@ -5,6 +5,7 @@ import { requestJson } from '@/lib/api/client/request'
 import {
   getUsageLogsContract,
   type UsageLogPeriod,
+  type UsageLogSourceGroup,
   type UsageLogsApiResponse,
 } from '@/lib/api/contracts/user'
 import { usageLogKeys } from '@/hooks/queries/utils/usage-log-keys'
@@ -20,6 +21,8 @@ interface UsagePeriodFilter {
   startDate?: string
   /** Required when `period` is `'custom'`. */
   endDate?: string
+  sourceGroup?: UsageLogSourceGroup
+  workspaceId?: string
 }
 
 async function fetchUsageLogs(
@@ -45,11 +48,28 @@ interface UseUsageLogsOptions extends UsagePeriodFilter {
  * `nextCursor`. Keeps the prior filter's rows on screen while a newly
  * selected period/range loads, since the filter is a variable key.
  */
-export function useUsageLogs({ period, startDate, endDate, enabled = true }: UseUsageLogsOptions) {
+export function useUsageLogs({
+  period,
+  startDate,
+  endDate,
+  sourceGroup,
+  workspaceId,
+  enabled = true,
+}: UseUsageLogsOptions) {
   return useInfiniteQuery({
-    queryKey: usageLogKeys.list(period, undefined, { startDate, endDate }),
+    queryKey: usageLogKeys.list(period, {
+      sourceGroup,
+      workspaceId,
+      startDate,
+      endDate,
+    }),
     queryFn: ({ pageParam, signal }) =>
-      fetchUsageLogs({ period, startDate, endDate }, PAGE_SIZE, pageParam, signal),
+      fetchUsageLogs(
+        { period, startDate, endDate, sourceGroup, workspaceId },
+        PAGE_SIZE,
+        pageParam,
+        signal
+      ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) =>
       lastPage.pagination.hasMore ? lastPage.pagination.nextCursor : undefined,

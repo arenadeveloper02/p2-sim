@@ -380,10 +380,20 @@ export function hasStandaloneAdvancedFields(
   canonicalIndex: CanonicalIndex
 ): boolean {
   for (const subBlock of subBlocks) {
-    if (subBlock.mode !== 'advanced') continue
+    if (!isStandaloneAdvancedMode(subBlock.mode)) continue
     if (!canonicalIndex.canonicalIdBySubBlockId[subBlock.id]) return true
   }
   return false
+}
+
+/**
+ * True for the modes that make a field advanced-only when it is not part of a
+ * canonical basic/advanced pair: a standalone `advanced` field, or a standalone
+ * `trigger-advanced` field (an advanced option on a trigger block). Both are
+ * hidden until the block-level advanced toggle is on.
+ */
+export function isStandaloneAdvancedMode(mode: SubBlockConfig['mode']): boolean {
+  return mode === 'advanced' || mode === 'trigger-advanced'
 }
 
 /**
@@ -408,7 +418,7 @@ export function hasAdvancedValues(
       continue
     }
 
-    if (subBlock.mode === 'advanced' && isNonEmptyValue(values[subBlock.id])) {
+    if (isStandaloneAdvancedMode(subBlock.mode) && isNonEmptyValue(values[subBlock.id])) {
       return true
     }
   }
@@ -436,7 +446,9 @@ export function isSubBlockVisibleForMode(
   }
 
   if (subBlock.mode === 'basic' && displayAdvancedOptions) return false
-  if (subBlock.mode === 'advanced' && !displayAdvancedOptions) return false
+  // Standalone advanced-only fields (`advanced` or a trigger's `trigger-advanced`)
+  // hide until the block-level advanced toggle is on.
+  if (isStandaloneAdvancedMode(subBlock.mode) && !displayAdvancedOptions) return false
   return true
 }
 
@@ -530,11 +542,36 @@ export function resolveDependencyValue(
 }
 
 /**
+ * Whether a subblock only applies when the block is used as an agent tool.
+ *
+ * `paramVisibility` filters what appears *inside* tool-input but cannot hide a
+ * subblock from the canvas, so this is a separate axis rather than another
+ * visibility level.
+ */
+export function isToolInputOnlySubBlock(subBlock: Pick<SubBlockConfig, 'context'>): boolean {
+  return subBlock.context === 'tool-input'
+}
+
+/**
+ * Whether any env var named by an env-gate spec is truthy.
+ *
+ * A gate may name several vars, comma-separated, meaning "any of these" — that
+ * is what lets a renamed flag ship without every existing deployment losing the
+ * field until it sets the new var. Shared by both gates so the two cannot
+ * interpret their value differently.
+ */
+function anyEnvSet(spec: string): boolean {
+  return spec.split(',').some((name) => isTruthy(getEnv(name.trim())))
+}
+
+/**
  * Check if a subblock is gated by a feature flag.
  */
-export function isSubBlockFeatureEnabled(subBlock: SubBlockConfig): boolean {
+export function isSubBlockFeatureEnabled(
+  subBlock: Pick<SubBlockConfig, 'showWhenEnvSet'>
+): boolean {
   if (!subBlock.showWhenEnvSet) return true
-  return isTruthy(getEnv(subBlock.showWhenEnvSet))
+  return anyEnvSet(subBlock.showWhenEnvSet)
 }
 
 /**
@@ -544,8 +581,12 @@ export function isSubBlockFeatureEnabled(subBlock: SubBlockConfig): boolean {
  * - `hideWhenEnvSet`: hidden when a specific NEXT_PUBLIC_ env var is truthy
  *   (credential fields hidden when the deployment provides them server-side)
  */
-export function isSubBlockHidden(subBlock: SubBlockConfig): boolean {
-  if (subBlock.hideWhenHosted && isHosted) return true
-  if (subBlock.hideWhenEnvSet && isTruthy(getEnv(subBlock.hideWhenEnvSet))) return true
+export function isSubBlockHidden(
+  subBlock: SubBlockConfig,
+  options?: { hosted?: boolean }
+): boolean {
+  const hosted = options?.hosted ?? isHosted
+  if (subBlock.hideWhenHosted && hosted) return true
+  if (subBlock.hideWhenEnvSet && anyEnvSet(subBlock.hideWhenEnvSet)) return true
   return false
 }

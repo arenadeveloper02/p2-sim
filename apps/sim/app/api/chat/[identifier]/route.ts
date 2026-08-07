@@ -32,7 +32,7 @@ import { ChatFiles } from '@/lib/uploads'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 import type { InputFormatField } from '@/lib/workflows/types'
 import { getWorkspaceIdsForUser } from '@/lib/workspaces/permissions/utils'
-import { assertChatEmbedAllowed, setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
+import { setChatAuthCookie, validateChatAuth } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ChatIdentifierAPI')
@@ -107,6 +107,8 @@ interface ChatConfigSource {
   outputConfigs: unknown
   inputFormat?: unknown
   userWorkspaceIds?: unknown
+  includeThinking?: boolean | null
+  includeToolCalls?: boolean | null
 }
 
 function toChatConfigResponse(deployment: ChatConfigSource) {
@@ -119,6 +121,8 @@ function toChatConfigResponse(deployment: ChatConfigSource) {
     outputConfigs: deployment.outputConfigs,
     inputFormat: deployment.inputFormat,
     userWorkspaceIds: deployment.userWorkspaceIds,
+    includeThinking: deployment.includeThinking ?? false,
+    includeToolCalls: deployment.includeToolCalls ?? false,
   }
 }
 
@@ -234,6 +238,8 @@ export const POST = withRouteHandler(
           password: chat.password,
           allowedEmails: chat.allowedEmails,
           outputConfigs: chat.outputConfigs,
+          includeThinking: chat.includeThinking,
+          includeToolCalls: chat.includeToolCalls,
         })
         .from(chat)
         .where(and(eq(chat.identifier, identifier), isNull(chat.archivedAt)))
@@ -283,13 +289,11 @@ export const POST = withRouteHandler(
             stackTrace: undefined,
           },
           traceSpans: [],
+          skipCost: true,
         })
 
         return createErrorResponse('This chat is currently unavailable', 403)
       }
-
-      const embedBlock = await assertChatEmbedAllowed(request, deployment.workflowId, requestId)
-      if (embedBlock) return embedBlock
 
       const authResult = await validateChatAuth(requestId, deployment, request, parsedBody)
       if (!authResult.authorized) {
@@ -502,9 +506,9 @@ export const POST = withRouteHandler(
         )
       }
 
-      const { actorUserId, workflowRecord } = preprocessResult
+      const { actorUserId, billingAttribution, workflowRecord } = preprocessResult
       const executionActor = preprocessResult.executionActor
-      const workspaceOwnerId = actorUserId!
+      const resolvedActorUserId = actorUserId!
       const workspaceId = workflowRecord?.workspaceId
       if (!workspaceId) {
         logger.error(`[${requestId}] Workflow ${deployment.workflowId} has no workspaceId`)
@@ -539,7 +543,9 @@ export const POST = withRouteHandler(
 
       // Start logging session with chat metadata
       await loggingSession.safeStart({
-        userId: userId || workspaceOwnerId,
+        userId: userId || resolvedActorUserId,
+        actorUserId: resolvedActorUserId,
+        billingAttribution,
         workspaceId,
         variables: {},
         isExternalChat: true,
@@ -560,7 +566,12 @@ export const POST = withRouteHandler(
           }
         }
 
-        const { createStreamingResponse } = await import('@/lib/workflows/streaming/streaming')
+        const { createStreamingResponse, agentStreamProtocolResponseHeaders } = await import(
+          '@/lib/workflows/streaming/streaming'
+        )
+        const { shouldEmitAgentStreamEvents } = await import(
+          '@/lib/workflows/streaming/agent-stream-protocol'
+        )
         const { executeWorkflow } = await import('@/lib/workflows/executor/execute-workflow')
         const { SSE_HEADERS } = await import('@/lib/core/utils/sse')
 
@@ -605,10 +616,13 @@ export const POST = withRouteHandler(
             logger.error(`[${requestId}] Failed to process chat files:`, fileError)
 
             await loggingSession.safeStart({
-              userId: workspaceOwnerId,
+              userId: resolvedActorUserId,
+              actorUserId: resolvedActorUserId,
+              billingAttribution,
               workspaceId,
               variables: {},
               conversationId: undefined,
+              executionActor,
             })
 
             await loggingSession.safeCompleteWithError({
@@ -617,6 +631,7 @@ export const POST = withRouteHandler(
                 stackTrace: fileError.stack,
               },
               traceSpans: [],
+              skipCost: true,
             })
 
             throw fileError
@@ -631,6 +646,13 @@ export const POST = withRouteHandler(
           variables: (workflowRecord?.variables as Record<string, unknown>) ?? undefined,
         }
 
+        const includeThinking = deployment.includeThinking ?? false
+        const includeToolCalls = deployment.includeToolCalls ?? false
+        const agentEvents = shouldEmitAgentStreamEvents({
+          includeThinking,
+          includeToolCalls,
+          requestHeaders: request.headers,
+        })
         const originalStream = await createStreamingResponse({
           requestId,
           streamConfig: {
@@ -638,17 +660,21 @@ export const POST = withRouteHandler(
             isSecureMode: true,
             workflowTriggerType: 'chat',
             sessionUserId: userId ?? undefined,
+            includeThinking,
+            includeToolCalls,
           },
           executionId,
           workspaceId,
           workflowId: deployment.workflowId,
-          userId: workspaceOwnerId,
+          userId: resolvedActorUserId,
+          requestSignal: request.signal,
+          requestHeaders: request.headers,
           executeFn: async ({ onStream, onBlockComplete, abortSignal, sessionUserId }) =>
             executeWorkflow(
               workflowForExecution,
               requestId,
               workflowInput,
-              workspaceOwnerId,
+              resolvedActorUserId,
               {
                 enabled: true,
                 selectedOutputs,
@@ -660,6 +686,10 @@ export const POST = withRouteHandler(
                 sessionUserId: sessionUserId ?? undefined,
                 abortSignal,
                 executionMode: 'stream',
+                billingAttribution,
+                includeThinking,
+                includeToolCalls,
+                agentEvents,
               },
               executionId
             ),
@@ -1025,7 +1055,10 @@ export const POST = withRouteHandler(
 
         const streamResponse = new NextResponse(wrappedStream, {
           status: 200,
-          headers: SSE_HEADERS,
+          headers: {
+            ...SSE_HEADERS,
+            ...agentStreamProtocolResponseHeaders({ requestHeaders: request.headers }),
+          },
         })
         return streamResponse
       } catch (error: any) {
@@ -1148,6 +1181,8 @@ export const GET = withRouteHandler(
           outputConfigs: chat.outputConfigs,
           department: chat.department,
           deploymentType: chat.deploymentType,
+          includeThinking: chat.includeThinking,
+          includeToolCalls: chat.includeToolCalls,
         })
         .from(chat)
         .where(and(eq(chat.identifier, identifier), isNull(chat.archivedAt)))
@@ -1208,15 +1243,13 @@ export const GET = withRouteHandler(
         // Continue without inputFormat - not critical for chat config
       }
       const goldenQueries = await fetchGoldenQueries(deployment.workflowId)
+      const departmentLabel = await getAgentDepartmentLabel(deployment.department ?? null)
 
       /**
        * Helper function to build chat config response with inputFormat always included.
        * When userWorkspaceIds is provided (logged-in user with workspace access), KB "View in Knowledge Base" links are shown.
        */
       const buildChatConfigData = (userWorkspaceIds?: string[]) => {
-        const departmentValue = deployment.department ?? null
-        const departmentLabel = getAgentDepartmentLabel(departmentValue)
-
         return {
           id: deployment.id,
           title: deployment.title,
@@ -1229,11 +1262,11 @@ export const GET = withRouteHandler(
           outputConfigs: deployment.outputConfigs,
           inputFormat, // Always included in successful responses
           department: departmentLabel, // Department in label format
+          includeThinking: deployment.includeThinking ?? false,
+          includeToolCalls: deployment.includeToolCalls ?? false,
           ...(userWorkspaceIds && userWorkspaceIds.length > 0 && { userWorkspaceIds }),
         }
       }
-      const embedBlock = await assertChatEmbedAllowed(request, deployment.workflowId, requestId)
-      if (embedBlock) return embedBlock
 
       const cookieName = `chat_auth_${deployment.id}`
       const authCookie = request.cookies.get(cookieName)

@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { chat, user, webhook, workflow, workflowSchedule } from '@sim/db/schema'
+import { chat, user, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -13,11 +13,10 @@ const logger = createLogger('DeployedChatAgentDetailAPI')
  * GET /api/chat/agentsList/[id]
  * Returns a single agent (chat deployment) by id, using the same response shape
  * as one item from GET /api/chat/agentsList. Auth matches the list endpoint.
+ * Chat deployments remain fetchable even when the workflow also has an active
+ * schedule or webhook.
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const authError = verifyCronAuth(request, 'Schedule execution')
   if (authError) {
     return authError
@@ -49,20 +48,7 @@ export async function GET(
       .from(chat)
       .innerJoin(workflow, eq(chat.workflowId, workflow.id))
       .innerJoin(user, eq(workflow.userId, user.id))
-      .leftJoin(webhook, and(eq(webhook.workflowId, workflow.id), eq(webhook.isActive, true)))
-      .leftJoin(
-        workflowSchedule,
-        and(eq(workflowSchedule.workflowId, workflow.id), eq(workflowSchedule.status, 'active'))
-      )
-      .where(
-        and(
-          eq(chat.id, agentId),
-          eq(chat.isActive, true),
-          isNull(chat.archivedAt),
-          isNull(webhook.id),
-          isNull(workflowSchedule.id)
-        )
-      )
+      .where(and(eq(chat.id, agentId), eq(chat.isActive, true), isNull(chat.archivedAt)))
       .limit(1)
 
     if (rows.length === 0) {
@@ -80,7 +66,7 @@ export async function GET(
       workflow_id: row.workflowId,
       workflow_name: row.workflowName,
       workspace_id: row.workspaceId,
-      department: getAgentDepartmentLabel(row.department),
+      department: await getAgentDepartmentLabel(row.department),
       created_at: row.createdAt.toISOString(),
       workflow_description: row.description,
       status: 'published',

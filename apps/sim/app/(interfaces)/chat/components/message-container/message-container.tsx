@@ -1,8 +1,8 @@
 'use client'
 
+import type { Ref } from 'react'
 import {
   type Dispatch,
-  memo,
   type RefObject,
   type SetStateAction,
   useCallback,
@@ -10,8 +10,8 @@ import {
   useRef,
   useState,
 } from 'react'
+import { Button } from '@sim/emcn'
 import { ArrowDown, MessageCircle } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
 import {
   DEPLOYED_CHAT_CANVAS_GRADIENT,
@@ -27,10 +27,9 @@ interface ChatMessageContainerProps {
   /** When true, response is streaming (show "Fetching..." instead of "Thinking...") */
   isStreaming?: boolean
   showScrollButton: boolean
-  messagesContainerRef: RefObject<HTMLDivElement>
+  messagesContainerRef: Ref<HTMLDivElement>
   messagesEndRef: RefObject<HTMLDivElement>
   scrollToBottom: () => void
-  scrollToMessage?: (messageId: string) => void
   chatConfig: {
     description?: string
   } | null
@@ -59,7 +58,7 @@ interface ChatMessageContainerProps {
   onRegenerateMessage?: () => void
 }
 
-export const ChatMessageContainer = memo(function ChatMessageContainer({
+export function ChatMessageContainer({
   messages,
   isLoading,
   isStreaming = false,
@@ -67,7 +66,6 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
   messagesContainerRef,
   messagesEndRef,
   scrollToBottom,
-  scrollToMessage,
   chatConfig,
   setMessages,
   workspaceIdsForKbLinks,
@@ -198,7 +196,7 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
         ref={messagesContainerRef}
         className='!scroll-smooth min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-auto'
       >
-        <div className='px-3 md:px-4 py-4'>
+        <div className='px-3 py-4 md:px-4'>
           <div className={`mx-auto w-full ${DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS} pb-8`}>
             {messages.length === 0 ? (
               <div className='flex min-h-full flex-col items-center justify-center py-10'>
@@ -250,7 +248,6 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
         </div>
       </div>
 
-      {/* Scroll to bottom button - appears when user scrolls up */}
       {showScrollButton && (
         <div className='-translate-x-1/2 absolute bottom-4 left-1/2 z-20 transform'>
           <Button
@@ -266,4 +263,4 @@ export const ChatMessageContainer = memo(function ChatMessageContainer({
       )}
     </div>
   )
-})
+}

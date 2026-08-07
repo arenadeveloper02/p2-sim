@@ -13,10 +13,10 @@ import { vi } from 'vitest'
  */
 export const inputValidationMockFns = {
   mockValidateUrlWithDNS: vi.fn(),
+  mockValidateAndPinProxyUrl: vi.fn(),
   mockValidateDatabaseHost: vi.fn(),
   mockSecureFetchWithPinnedIP: vi.fn(),
   mockSecureFetchWithValidation: vi.fn(),
-  mockIsPrivateOrReservedIP: vi.fn().mockReturnValue(false),
   mockCreatePinnedLookup: vi.fn(),
 }
 
@@ -29,11 +29,13 @@ export const inputValidationMockFns = {
  * ```
  */
 export const inputValidationMock = {
+  DEFAULT_MAX_RESPONSE_BYTES: 100 * 1024 * 1024,
+  MAX_JSON_API_RESPONSE_BYTES: 10 * 1024 * 1024,
   validateUrlWithDNS: inputValidationMockFns.mockValidateUrlWithDNS,
+  validateAndPinProxyUrl: inputValidationMockFns.mockValidateAndPinProxyUrl,
   validateDatabaseHost: inputValidationMockFns.mockValidateDatabaseHost,
   secureFetchWithPinnedIP: inputValidationMockFns.mockSecureFetchWithPinnedIP,
   secureFetchWithValidation: inputValidationMockFns.mockSecureFetchWithValidation,
-  isPrivateOrReservedIP: inputValidationMockFns.mockIsPrivateOrReservedIP,
   createPinnedLookup: inputValidationMockFns.mockCreatePinnedLookup,
   SecureFetchHeaders: class {
     headers: Record<string, string> = {}

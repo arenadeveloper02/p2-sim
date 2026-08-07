@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
+import { env } from '@/lib/core/config/env'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import { browserUseHosting } from '@/tools/browser_use/hosting'
 import type { BrowserUseRunTaskParams, BrowserUseRunTaskResponse } from '@/tools/browser_use/types'
@@ -8,23 +9,33 @@ import type { ToolConfig, ToolResponse } from '@/tools/types'
 
 const logger = createLogger('BrowserUseTool')
 
+const DEFAULT_BROWSER_USE_BASE_URL = 'https://api.browser-use.com/api/v2'
+
+/**
+ * Resolves the Browser Use API base URL from server environment, falling back to the cloud default.
+ */
+function resolveBrowserUseBaseUrl(): string {
+  const fromEnv = env.BROWSER_USE_BASE_URL?.trim()
+  if (fromEnv) return fromEnv.replace(/\/+$/, '')
+  return DEFAULT_BROWSER_USE_BASE_URL
+}
+
 function resolveBrowserUseApiKey(params: BrowserUseRunTaskParams): string {
   const fromBlock = params.apiKey?.trim()
   if (fromBlock) return fromBlock
-  return process.env.BROWSER_USE_API_KEY?.trim() ?? ''
+  return env.BROWSER_USE_API_KEY?.trim() ?? ''
 }
 
 const POLL_INTERVAL_MS = 5000
 const MAX_POLL_TIME_MS = getMaxExecutionTimeout()
 const MAX_CONSECUTIVE_ERRORS = 3
-const API_BASE = 'https://api.browser-use.com/api/v2'
 
 async function createSessionWithProfile(
   profileId: string,
   apiKey: string
 ): Promise<{ sessionId: string } | { error: string }> {
   try {
-    const response = await fetch(`${API_BASE}/sessions`, {
+    const response = await fetch(`${resolveBrowserUseBaseUrl()}/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -52,7 +63,7 @@ async function createSessionWithProfile(
 
 async function stopSession(sessionId: string, apiKey: string): Promise<void> {
   try {
-    const response = await fetch(`${API_BASE}/sessions/${sessionId}`, {
+    const response = await fetch(`${resolveBrowserUseBaseUrl()}/sessions/${sessionId}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -76,7 +87,7 @@ async function fetchSessionLiveUrl(
   apiKey: string
 ): Promise<{ liveUrl: string | null; publicShareUrl: string | null }> {
   try {
-    const response = await fetch(`${API_BASE}/sessions/${sessionId}`, {
+    const response = await fetch(`${resolveBrowserUseBaseUrl()}/sessions/${sessionId}`, {
       method: 'GET',
       headers: { 'X-Browser-Use-API-Key': apiKey },
     })
@@ -164,7 +175,7 @@ async function fetchTaskStatus(
   apiKey: string
 ): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
   try {
-    const response = await fetch(`${API_BASE}/tasks/${taskId}`, {
+    const response = await fetch(`${resolveBrowserUseBaseUrl()}/tasks/${taskId}`, {
       method: 'GET',
       headers: { 'X-Browser-Use-API-Key': apiKey },
     })
@@ -302,13 +313,16 @@ async function pollForCompletion(taskId: string, apiKey: string): Promise<PollRe
 
 async function createShareUrl(sessionId: string, apiKey: string): Promise<string | null> {
   try {
-    const response = await fetch(`${API_BASE}/sessions/${sessionId}/public-share`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Browser-Use-API-Key': apiKey,
-      },
-    })
+    const response = await fetch(
+      `${resolveBrowserUseBaseUrl()}/sessions/${sessionId}/public-share`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Browser-Use-API-Key': apiKey,
+        },
+      }
+    )
 
     if (!response.ok) {
       logger.warn(`Failed to create share URL for session ${sessionId}: ${response.statusText}`)
@@ -438,7 +452,7 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
   },
 
   request: {
-    url: `${API_BASE}/tasks`,
+    url: () => `${resolveBrowserUseBaseUrl()}/tasks`,
     method: 'POST',
     headers: (params) => ({
       'Content-Type': 'application/json',
@@ -478,7 +492,7 @@ export const runTaskTool: ToolConfig<BrowserUseRunTaskParams, BrowserUseRunTaskR
     logger.info('Creating BrowserUse task', { hasSession: !!sessionId })
 
     try {
-      const response = await fetch(`${API_BASE}/tasks`, {
+      const response = await fetch(`${resolveBrowserUseBaseUrl()}/tasks`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

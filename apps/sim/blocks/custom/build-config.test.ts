@@ -8,6 +8,7 @@ import {
   CUSTOM_BLOCK_TILE_COLOR,
   type CustomBlockRow,
   isCustomBlockType,
+  isReservedOutputName,
 } from '@/blocks/custom/build-config'
 import type { BlockIcon } from '@/blocks/types'
 
@@ -33,6 +34,18 @@ describe('isCustomBlockType', () => {
   })
 })
 
+describe('isReservedOutputName', () => {
+  it('rejects the system output fields case-insensitively', () => {
+    expect(isReservedOutputName('cost')).toBe(true)
+    expect(isReservedOutputName('Cost')).toBe(true)
+    expect(isReservedOutputName(' success ')).toBe(true)
+    expect(isReservedOutputName('error')).toBe(true)
+    expect(isReservedOutputName('result')).toBe(false)
+    expect(isReservedOutputName('cost_2')).toBe(false)
+    expect(isReservedOutputName('summary')).toBe(false)
+  })
+})
+
 describe('buildCustomBlockConfig', () => {
   const fields: WorkflowInputField[] = [
     { name: 'title', type: 'string' },
@@ -47,6 +60,7 @@ describe('buildCustomBlockConfig', () => {
     const config = buildCustomBlockConfig(row, fields, { icon })
     expect(config.type).toBe('custom_block_abc123')
     expect(config.name).toBe('Invoice Parser')
+    expect(config.sourceWorkflowId).toBe('wf-1')
     expect(config.category).toBe('tools')
     expect(config.bgColor).toBe(CUSTOM_BLOCK_TILE_COLOR)
     expect(config.hideFromToolbar).toBeUndefined()
@@ -80,9 +94,18 @@ describe('buildCustomBlockConfig', () => {
     expect(findSub(config, 'docs')?.multiple).toBe(true)
   })
 
-  it('exposes the full result and hides plumbing when no outputs are curated', () => {
+  it('advertises no data fields — and no whole-result fallback — without curation', () => {
     const config = buildCustomBlockConfig(row, fields, { icon })
-    expect(Object.keys(config.outputs).sort()).toEqual(['error', 'result', 'success'])
+    // Curation is required at publish, so an uncurated row exposes only the
+    // system fields. `result` must not come back: it would advertise the child's
+    // raw terminal state (agent toolCalls/thinking, nested workflow ids).
+    expect(Object.keys(config.outputs).sort()).toEqual([
+      'error',
+      'errorRef',
+      'errorType',
+      'success',
+    ])
+    expect(config.outputs.result).toBeUndefined()
     expect(config.outputs.childWorkflowId).toBeUndefined()
     expect(config.outputs.childTraceSpans).toBeUndefined()
   })

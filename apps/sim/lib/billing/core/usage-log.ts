@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { db, dbReplica } from '@sim/db'
-import { usageLog, workflow, workspace } from '@sim/db/schema'
+import { usageLog, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getPostgresErrorCode, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
@@ -184,6 +184,7 @@ export type UsageLogSource =
   | 'knowledge-base'
   | 'voice-input'
   | 'enrichment'
+  | 'voice-output'
 
 /**
  * usage_log sources that make up the "copilot" cost breakdown shown in billing
@@ -279,7 +280,7 @@ export interface UsageEntry {
 }
 
 interface RecordUsageBaseParams {
-  /** The user being charged */
+  /** Actor recorded in usage_log.userId. */
   userId: string
   /** One or more usage_log entries to record. Total cost is derived from these. */
   entries: UsageEntry[]
@@ -355,12 +356,10 @@ export interface BillingContext {
 }
 
 /**
- * Derive the billing entity + period from an ALREADY-resolved subscription.
- * Callers that already hold the subscription (e.g. the workflow completion path,
- * which fetches it for usage-threshold emails) can derive the context once and
- * pass it into recordUsage so resolveBillingContext skips a redundant lookup.
- * This is the single source of the entity/period derivation — keep it the only
- * place that maps a subscription to a billing context.
+ * Derive an account-only billing entity and period from an already-resolved
+ * subscription. Workspace-hosted callers must use `resolveBillingAttribution`
+ * so the routed workspace, rather than the actor's subscriptions, selects the
+ * payer.
  */
 export function deriveBillingContext(
   userId: string,
@@ -429,6 +428,40 @@ export async function getBillingPeriodUsageCost(
   return Number.parseFloat(row?.cost ?? '0')
 }
 
+/**
+ * Period total plus the portion attributable to `source`, in a single scan.
+ *
+ * Two separate aggregates over the identical row set double the work and, because
+ * they are separate statements, can observe different snapshots — which makes the
+ * subset exceeding the total representable. One statement rules that out.
+ */
+export async function getBillingPeriodUsageCostWithSourceSubset(
+  billingEntity: BillingEntity,
+  billingPeriod: { start: Date; end: Date },
+  source: UsageLogSource[],
+  executor: DbClient = db
+): Promise<{ total: number; subset: number }> {
+  const [row] = await executor
+    .select({
+      total: sql<string>`COALESCE(SUM(${usageLog.cost}), 0)`,
+      subset: sql<string>`COALESCE(SUM(${usageLog.cost}) FILTER (WHERE ${inArray(usageLog.source, source)}), 0)`,
+    })
+    .from(usageLog)
+    .where(
+      and(
+        eq(usageLog.billingEntityType, billingEntity.type),
+        eq(usageLog.billingEntityId, billingEntity.id),
+        eq(usageLog.billingPeriodStart, billingPeriod.start),
+        eq(usageLog.billingPeriodEnd, billingPeriod.end)
+      )
+    )
+
+  return {
+    total: Number.parseFloat(row?.total ?? '0'),
+    subset: Number.parseFloat(row?.subset ?? '0'),
+  }
+}
+
 export async function getBillingPeriodUsageCostByUser(
   billingEntity: BillingEntity,
   billingPeriod: { start: Date; end: Date },
@@ -458,42 +491,6 @@ export async function getBillingPeriodUsageCostByUser(
     .groupBy(usageLog.userId)
 
   return new Map(rows.map((row) => [row.userId, Number.parseFloat(row.cost ?? '0')]))
-}
-
-/**
- * A single user's usage_log cost inside an organization's own workspaces within
- * a wall-clock window (by `created_at`).
- *
- * Unlike {@link getBillingPeriodUsageCostByUser} (which filters by the attributed
- * billing entity and the stored billing-period columns), this joins `workspace`
- * on `organization_id` and filters by `user_id` + a `created_at` range. That
- * captures the member's consumption inside org-owned workspaces regardless of
- * which billing entity the row was attributed to — required for per-member
- * org-workspace usage, including external members whose runs bill to their own
- * personal entity and mothership/copilot cost attributed to the using user.
- * Scoped to one user so it uses the `(user_id, created_at)` index rather than
- * scanning the whole org's period on the execution hot path.
- */
-export async function getOrgWorkspaceUsageCostForUser(
-  organizationId: string,
-  userId: string,
-  window: { start: Date; end: Date }
-): Promise<number> {
-  const [row] = await db
-    .select({ cost: sql<string>`COALESCE(SUM(${usageLog.cost}), 0)` })
-    .from(usageLog)
-    .innerJoin(workspace, eq(workspace.id, usageLog.workspaceId))
-    .where(
-      and(
-        eq(usageLog.userId, userId),
-        eq(usageLog.billable, true),
-        eq(workspace.organizationId, organizationId),
-        gte(usageLog.createdAt, window.start),
-        lt(usageLog.createdAt, window.end)
-      )
-    )
-
-  return Number.parseFloat(row?.cost ?? '0')
 }
 
 /**
@@ -537,6 +534,10 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
 
   if (scaledEntries.length === 0) {
     return
+  }
+
+  if (workspaceId && (!billingEntity || !billingPeriod)) {
+    throw new Error('Workspace usage requires an explicit billing entity and billing period')
   }
 
   const context = await resolveBillingContext(userId, billingEntity, billingPeriod)
@@ -676,8 +677,13 @@ export function resolveCumulativeTopUp(
 }
 
 export interface RecordCumulativeUsageParams {
+  /** Actor recorded in usage_log.userId. */
   userId: string
   workspaceId?: string
+  /** Exact workspace payer, required whenever workspaceId is present. */
+  billingEntity?: BillingEntity
+  /** Exact workspace payer period, required whenever workspaceId is present. */
+  billingPeriod?: { start: Date; end: Date }
   source: UsageLogSource
   /** Model name, stored as the row description. */
   model: string
@@ -799,6 +805,67 @@ export function buildNullOnlyAttributionFill(
 
   return patch
 }
+export type CumulativeUsageContextField =
+  | 'actor'
+  | 'workspace'
+  | 'billing entity'
+  | 'billing period'
+
+export class CumulativeUsageContextMismatchError extends Error {
+  constructor(
+    readonly eventKey: string,
+    readonly mismatchedFields: readonly CumulativeUsageContextField[]
+  ) {
+    super(
+      `Cumulative usage event "${eventKey}" is already bound to a different billing context (${mismatchedFields.join(', ')})`
+    )
+    this.name = 'CumulativeUsageContextMismatchError'
+  }
+}
+
+interface CumulativeUsageLedgerBinding {
+  userId: string
+  workspaceId: string | null
+  billingEntityType: BillingEntityType | null
+  billingEntityId: string | null
+  billingPeriodStart: Date | null
+  billingPeriodEnd: Date | null
+}
+
+function assertCumulativeUsageLedgerBinding(
+  existing: CumulativeUsageLedgerBinding,
+  expected: {
+    userId: string
+    workspaceId?: string
+    billingContext: BillingContext
+    eventKey: string
+  }
+): void {
+  const mismatchedFields: CumulativeUsageContextField[] = []
+  if (existing.userId !== expected.userId) {
+    mismatchedFields.push('actor')
+  }
+  if (existing.workspaceId !== (expected.workspaceId ?? null)) {
+    mismatchedFields.push('workspace')
+  }
+  if (
+    existing.billingEntityType !== expected.billingContext.billingEntity.type ||
+    existing.billingEntityId !== expected.billingContext.billingEntity.id
+  ) {
+    mismatchedFields.push('billing entity')
+  }
+  if (
+    existing.billingPeriodStart?.getTime() !==
+      expected.billingContext.billingPeriod.start.getTime() ||
+    existing.billingPeriodEnd?.getTime() !== expected.billingContext.billingPeriod.end.getTime()
+  ) {
+    mismatchedFields.push('billing period')
+  }
+
+  if (mismatchedFields.length > 0) {
+    throw new CumulativeUsageContextMismatchError(expected.eventKey, mismatchedFields)
+  }
+}
 
 /**
  * Bounds the wait for the per-event-key advisory lock (and any row/index lock
@@ -818,6 +885,8 @@ const CUMULATIVE_FLUSH_LOCK_TIMEOUT_MS = 3_000
  * each flush. A per-key transactional advisory lock serializes concurrent
  * flushes so the read-then-write — including the first insert — is race-free
  * (no two flushes can both believe they are first and clobber each other).
+ * An existing row must match the incoming actor, workspace, payer, and billing
+ * period before either a duplicate no-op or a top-up is accepted.
  * The billing context is resolved BEFORE the transaction and the lock wait is
  * bounded by `lock_timeout`, keeping the critical section to one SELECT plus
  * one INSERT/UPDATE on a single pooled connection.
@@ -833,6 +902,8 @@ export async function recordCumulativeUsage(
   const {
     userId,
     workspaceId,
+    billingEntity,
+    billingPeriod,
     source,
     model,
     cost,
@@ -854,13 +925,11 @@ export async function recordCumulativeUsage(
   const canonicalModel = normalizeUsageModelId(model)
   const envMultiplier = getUsageLogCostMultiplier()
 
-  // Resolved before the locked transaction on purpose: resolving inside it
-  // ran the subscription lookups on the global pool while this tx already
-  // held a pooled connection plus the advisory lock, so under load N
-  // first-flush transactions each pinned a connection while waiting for one
-  // more — starving the pool and queueing every same-key flush (and the Go
-  // side's retries) behind the stall.
-  const billingContext = await resolveBillingContext(userId)
+  if (workspaceId && (!billingEntity || !billingPeriod)) {
+    throw new Error('Workspace usage requires an explicit billing entity and billing period')
+  }
+
+  const billingContext = await resolveBillingContext(userId, billingEntity, billingPeriod)
 
   try {
     return await db.transaction(async (tx) => {
@@ -891,6 +960,15 @@ export async function recordCumulativeUsage(
         .from(usageLog)
         .where(eq(usageLog.eventKey, eventKey))
         .limit(1)
+
+      if (existing) {
+        assertCumulativeUsageLedgerBinding(existing, {
+          userId,
+          workspaceId,
+          billingContext,
+          eventKey,
+        })
+      }
 
       const recordedRaw = existing ? Number.parseFloat(existing.rawCost ?? existing.cost) : 0
       const { shouldBill, delta, newTotal } = resolveCumulativeTopUp(recordedRaw, cost)
@@ -1006,6 +1084,8 @@ export async function recordCumulativeUsage(
 
 interface UsageLogFilter {
   source?: UsageLogSource
+  /** When set, filters to any of these sources (takes precedence over `source`). */
+  sources?: UsageLogSource[]
   workspaceId?: string
   startDate?: Date
   endDate?: Date
@@ -1013,7 +1093,11 @@ interface UsageLogFilter {
 
 function buildUsageLogConditions(userId: string, filter: UsageLogFilter) {
   const conditions = [eq(usageLog.userId, userId)]
-  if (filter.source) conditions.push(eq(usageLog.source, filter.source))
+  if (filter.sources && filter.sources.length > 0) {
+    conditions.push(inArray(usageLog.source, filter.sources))
+  } else if (filter.source) {
+    conditions.push(eq(usageLog.source, filter.source))
+  }
   if (filter.workspaceId) conditions.push(eq(usageLog.workspaceId, filter.workspaceId))
   if (filter.startDate) conditions.push(gte(usageLog.createdAt, filter.startDate))
   if (filter.endDate) conditions.push(lte(usageLog.createdAt, filter.endDate))
@@ -1047,8 +1131,10 @@ export async function getUsageCreditsByLogId(
  * Options for querying usage logs
  */
 export interface GetUsageLogsOptions {
-  /** Filter by source */
+  /** Filter by a single source */
   source?: UsageLogSource
+  /** Filter by any of these sources (takes precedence over `source`) */
+  sources?: UsageLogSource[]
   /** Filter by workspace */
   workspaceId?: string
   /** Start date (inclusive) */
@@ -1118,6 +1204,7 @@ export async function getUserUsageLogs(
 ): Promise<UsageLogsResult> {
   const {
     source,
+    sources,
     workspaceId,
     startDate,
     endDate,
@@ -1128,7 +1215,13 @@ export async function getUserUsageLogs(
   } = options
 
   try {
-    const conditions = buildUsageLogConditions(userId, { source, workspaceId, startDate, endDate })
+    const conditions = buildUsageLogConditions(userId, {
+      source,
+      sources,
+      workspaceId,
+      startDate,
+      endDate,
+    })
 
     if (cursor) {
       let resolvedCursorCreatedAt = cursorCreatedAt
@@ -1197,6 +1290,7 @@ export async function getUserUsageLogs(
     if (includeSummary) {
       const summaryConditions = buildUsageLogConditions(userId, {
         source,
+        sources,
         workspaceId,
         startDate,
         endDate,

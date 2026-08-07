@@ -6,20 +6,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/hooks/queries/skills', () => ({ useSkills: () => ({ data: [] }) }))
-vi.mock('@/hooks/queries/workflows', () => ({ useWorkflows: () => ({ data: [] }) }))
-vi.mock('@/hooks/queries/tables', () => ({ useTablesList: () => ({ data: [] }) }))
-vi.mock('@/hooks/queries/workspace-files', () => ({ useWorkspaceFiles: () => ({ data: [] }) }))
-vi.mock('@/hooks/queries/kb/knowledge', () => ({ useKnowledgeBasesQuery: () => ({ data: [] }) }))
-vi.mock('@/hooks/queries/folders', () => ({ useFolders: () => ({ data: [] }) }))
-vi.mock('@/hooks/queries/workspace-file-folders', () => ({
-  useWorkspaceFileFolders: () => ({ data: [] }),
-}))
-vi.mock('@/hooks/queries/mothership-chats', () => ({ useMothershipChats: () => ({ data: [] }) }))
-vi.mock('@/hooks/queries/schedules', () => ({ useWorkspaceSchedules: () => ({ data: [] }) }))
-vi.mock('@/hooks/queries/logs', () => ({ useLogsList: () => ({ data: undefined }) }))
+vi.mock('@/hooks/queries/mcp', () => ({ useMcpServers: () => ({ data: [] }) }))
 vi.mock('@/blocks/integration-matcher', () => ({
   getIntegrationMatcher: () => ({ regex: null, byName: new Map() }),
-  listIntegrations: () => [],
 }))
 
 import type { PlusMenuHandle } from '@/app/workspace/[workspaceId]/home/components/user-input/components/constants'
@@ -28,6 +17,7 @@ import {
   usePromptEditor,
 } from '@/app/workspace/[workspaceId]/home/components/user-input/components/prompt-editor/use-prompt-editor'
 import type { SkillsMenuHandle } from '@/app/workspace/[workspaceId]/home/components/user-input/components/skills-menu-dropdown/skills-menu-dropdown'
+import type { ChatContext } from '@/stores/panel'
 
 /**
  * Mounts `usePromptEditor` in a real React 19 root under jsdom (no
@@ -90,7 +80,7 @@ describe('usePromptEditor mention menu dismissal', () => {
       open: vi.fn(),
       close: vi.fn(),
       moveActive: vi.fn(),
-      selectActive: vi.fn(() => false),
+      selectActive: vi.fn(() => 'empty' as const),
     }
   })
 
@@ -243,6 +233,126 @@ describe('usePromptEditor toolbar slash trigger after a dismiss', () => {
 
     expect(skillsMenu.open).toHaveBeenCalledTimes(2)
 
+    unmount()
+  })
+})
+
+describe('usePromptEditor context insertion', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('appends a real mention token and context, then focuses the editor', () => {
+    const onContextAdd = vi.fn()
+    let focusFrame: FrameRequestCallback | undefined
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      focusFrame = callback
+      return 1
+    })
+    const context = {
+      kind: 'terminal_tab',
+      terminalId: 'terminal-1',
+      label: 'Terminal (L9-11)',
+      selection: { text: 'selected output', startLine: 9, endLine: 11 },
+    } satisfies ChatContext
+    const { result, textarea, unmount } = renderPromptEditor({
+      workspaceId: 'ws-1',
+      initialValue: 'Explain this',
+      onContextAdd,
+    })
+
+    act(() => {
+      result().insertContext(context)
+    })
+
+    expect(result().value).toBe('Explain this @Terminal (L9-11) ')
+    expect(result().contexts).toEqual([context])
+    expect(onContextAdd).toHaveBeenCalledWith(context)
+
+    textarea.value = result().value
+    act(() => focusFrame?.(0))
+    expect(document.activeElement).toBe(textarea)
+    expect(textarea.selectionStart).toBe(textarea.value.length)
+    expect(textarea.selectionEnd).toBe(textarea.value.length)
+
+    unmount()
+  })
+
+  it('suffixes duplicate visible labels so two browser selections coexist', () => {
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0)
+      return 1
+    })
+    const first = {
+      kind: 'browser_tab',
+      tabId: 'tab-1',
+      label: 'Browser · Example page title',
+      selection: { text: 'first selection', url: 'https://example.com' },
+    } satisfies ChatContext
+    const second = {
+      kind: 'browser_tab',
+      tabId: 'tab-1',
+      label: 'Browser · Another page title',
+      selection: { text: 'second selection', url: 'https://example.com' },
+    } satisfies ChatContext
+    const { result, textarea, unmount } = renderPromptEditor({ workspaceId: 'ws-1' })
+
+    act(() => {
+      result().insertContext(first)
+    })
+    act(() => {
+      result().insertContext(second)
+    })
+
+    expect(result().value).toBe('@Browser @Browser (1) ')
+    expect(result().contexts).toEqual([
+      { ...first, label: 'Browser' },
+      { ...second, label: 'Browser (1)' },
+    ])
+
+    let contextsAtSubmit: ChatContext[] = []
+    act(() => {
+      typeInto(textarea, '@Browser (1) ')
+      result().handleInputChange({
+        target: textarea,
+        currentTarget: textarea,
+      } as unknown as React.ChangeEvent<HTMLTextAreaElement>)
+      contextsAtSubmit = result().getActiveContexts()
+    })
+    expect(contextsAtSubmit).toEqual([{ ...second, label: 'Browser (1)' }])
+
+    unmount()
+  })
+
+  it('excludes a deleted chip from submission before the cleanup effect runs', () => {
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0)
+      return 1
+    })
+    const context = {
+      kind: 'browser_tab',
+      tabId: 'tab-1',
+      label: 'Browser',
+      selection: { text: 'selected text', url: 'https://example.com' },
+    } satisfies ChatContext
+    const { result, textarea, unmount } = renderPromptEditor({
+      workspaceId: 'ws-1',
+      initialValue: 'Explain this',
+    })
+
+    act(() => result().insertContext(context))
+
+    let contextsAtSubmit: ChatContext[] = []
+    act(() => {
+      typeInto(textarea, 'Explain this')
+      result().handleInputChange({
+        target: textarea,
+        currentTarget: textarea,
+      } as unknown as React.ChangeEvent<HTMLTextAreaElement>)
+      contextsAtSubmit = result().getActiveContexts()
+    })
+
+    expect(contextsAtSubmit).toEqual([])
     unmount()
   })
 })

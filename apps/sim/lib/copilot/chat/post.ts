@@ -11,6 +11,7 @@ import { z } from 'zod'
 import { isZodError, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { checkMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+import { resolveBillingAttribution } from '@/lib/billing/core/billing-attribution'
 import { type ChatLoadResult, resolveOrCreateChat } from '@/lib/copilot/chat/lifecycle'
 import { appendCopilotChatMessages } from '@/lib/copilot/chat/messages-store'
 import { buildCopilotRequestPayload } from '@/lib/copilot/chat/payload'
@@ -23,10 +24,18 @@ import {
   processContextsServer,
   resolveActiveResourceContext,
 } from '@/lib/copilot/chat/process-contents'
+import {
+  MAX_FILE_SELECTION_TEXT_LENGTH,
+  MAX_TABLE_SELECTION_COLUMNS,
+  MAX_TABLE_SELECTION_ROWS,
+  safeBrowserSelectionUrl,
+} from '@/lib/copilot/chat/selection-context'
 import { finalizeAssistantTurn } from '@/lib/copilot/chat/terminal-state'
 import { generateWorkspaceSnapshot } from '@/lib/copilot/chat/workspace-context'
 import { chatPubSub } from '@/lib/copilot/chat-status'
 import { COPILOT_REQUEST_MODES } from '@/lib/copilot/constants'
+import { computeWorkspaceEntitlements } from '@/lib/copilot/entitlements'
+import { prepareCopilotEnvironmentContext } from '@/lib/copilot/environment-context'
 import {
   CopilotChatFinalizeOutcome,
   CopilotChatPersistOutcome,
@@ -46,8 +55,11 @@ import {
 import { buildUsageUpgradeContent } from '@/lib/copilot/request/tools/usage-upgrade'
 import type { ExecutionContext, OrchestratorResult } from '@/lib/copilot/request/types'
 import { persistChatResources } from '@/lib/copilot/resources/persistence'
+import {
+  canonicalizeDesktopSessionResources,
+  isEphemeralResource,
+} from '@/lib/copilot/resources/types'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
-import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { resolveWorkflowIdForUser } from '@/lib/workflows/utils'
 import {
@@ -58,12 +70,20 @@ import {
 import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
+import {
+  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
+  isLocalCopilotCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 
 export const maxDuration = 3600
 
 const logger = createLogger('UnifiedChatAPI')
 const DEFAULT_MODEL = 'claude-opus-4-8'
+const CHAT_SELECTION_TEXT_MAX_LENGTH = 100_000
+const CHAT_SELECTION_SOURCE_URL_MAX_LENGTH = 8_192
+const CHAT_SELECTION_SOURCE_TITLE_MAX_LENGTH = 512
+const TERMINAL_SELECTION_LINE_MAX = 10_000_000
 
 const FileAttachmentSchema = z.object({
   id: z.string(),
@@ -86,10 +106,27 @@ const ResourceAttachmentSchema = z.object({
     'log',
     'scheduledtask',
     'generic',
+    'browser',
+    // Filtered out client-side rather than sent, but accepted here so a stray
+    // terminal attachment degrades to a no-op instead of rejecting the whole
+    // chat request.
+    'terminal',
   ]),
   id: z.string().min(1),
   title: z.string().optional(),
   active: z.boolean().optional(),
+  /**
+   * Live page URL for `browser` attachments. The agent browser lives in the
+   * desktop app, so the client supplies its state — the server has nothing
+   * to resolve it from. Web-only: this string is interpolated into LLM
+   * context, and rejecting other schemes (file://, chrome://…) keeps local
+   * host paths from ever entering the copilot payload.
+   */
+  url: z
+    .string()
+    .max(2048)
+    .regex(/^https?:\/\//, 'Must be an http(s) URL')
+    .optional(),
 })
 
 const GENERIC_RESOURCE_TITLE: Record<z.infer<typeof ResourceAttachmentSchema>['type'], string> = {
@@ -103,40 +140,119 @@ const GENERIC_RESOURCE_TITLE: Record<z.infer<typeof ResourceAttachmentSchema>['t
   log: 'Log',
   scheduledtask: 'Scheduled Task',
   generic: 'Resource',
+  browser: 'Browser',
+  terminal: 'Terminal',
 }
 
-const ChatContextSchema = z.object({
-  kind: z.enum([
-    'past_chat',
-    'workflow',
-    'current_workflow',
-    'blocks',
-    'logs',
-    'workflow_block',
-    'knowledge',
-    'docs',
-    'table',
-    'file',
-    'folder',
-    'filefolder',
-    'scheduledtask',
-    'integration',
-    'skill',
-  ]),
-  label: z.string(),
-  chatId: z.string().optional(),
-  workflowId: z.string().optional(),
-  knowledgeId: z.string().optional(),
-  blockId: z.string().optional(),
-  blockIds: z.array(z.string()).optional(),
-  executionId: z.string().optional(),
-  tableId: z.string().optional(),
-  fileId: z.string().optional(),
-  folderId: z.string().optional(),
-  fileFolderId: z.string().optional(),
-  skillId: z.string().optional(),
-  scheduleId: z.string().optional(),
-})
+/**
+ * Synthetic client-side panels are context-only: never persisted to the chat.
+ * Browser tab attachments are normalized to the singleton Browser panel before
+ * persistence; their page title and URL remain request context only.
+ */
+function isPersistableAttachment(resource: z.infer<typeof ResourceAttachmentSchema>): boolean {
+  return !isEphemeralResource({
+    type: resource.type,
+    id: resource.id,
+    title: resource.title ?? '',
+  })
+}
+
+/** Non-strings pass through for the schema to reject; strings are sanitized. */
+function sanitizeBrowserSelectionUrl(value: unknown): unknown {
+  return typeof value === 'string' ? safeBrowserSelectionUrl(value) : value
+}
+
+const BrowserTextSelectionSchema = z
+  .object({
+    text: z.string().min(1).max(CHAT_SELECTION_TEXT_MAX_LENGTH),
+    url: z.preprocess(
+      sanitizeBrowserSelectionUrl,
+      z.string().max(CHAT_SELECTION_SOURCE_URL_MAX_LENGTH).optional()
+    ),
+    title: z.string().max(CHAT_SELECTION_SOURCE_TITLE_MAX_LENGTH).optional(),
+  })
+  .strict()
+  .transform(({ text, title, url }) => ({
+    text,
+    ...(url ? { url } : {}),
+    ...(title ? { title } : {}),
+  }))
+
+const TerminalTextSelectionSchema = z
+  .object({
+    text: z.string().min(1).max(CHAT_SELECTION_TEXT_MAX_LENGTH),
+    startLine: z.number().int().positive().max(TERMINAL_SELECTION_LINE_MAX),
+    endLine: z.number().int().positive().max(TERMINAL_SELECTION_LINE_MAX),
+  })
+  .strict()
+  .refine(({ startLine, endLine }) => endLine >= startLine, {
+    message: 'endLine must be greater than or equal to startLine',
+    path: ['endLine'],
+  })
+
+const ChatContextSchema = z
+  .object({
+    kind: z.enum([
+      'past_chat',
+      'workflow',
+      'current_workflow',
+      'blocks',
+      'logs',
+      'workflow_block',
+      'knowledge',
+      'docs',
+      'table',
+      'table_selection',
+      'file',
+      'file_selection',
+      'folder',
+      'filefolder',
+      'scheduledtask',
+      'integration',
+      'skill',
+      'mcp',
+      'browser_tab',
+      'terminal_tab',
+    ]),
+    label: z.string(),
+    chatId: z.string().optional(),
+    workflowId: z.string().optional(),
+    knowledgeId: z.string().optional(),
+    blockId: z.string().optional(),
+    blockIds: z.array(z.string()).optional(),
+    executionId: z.string().optional(),
+    tableId: z.string().optional(),
+    fileId: z.string().optional(),
+    folderId: z.string().optional(),
+    fileFolderId: z.string().optional(),
+    skillId: z.string().optional(),
+    serverId: z.string().optional(),
+    scheduleId: z.string().optional(),
+    tabId: z.string().optional(),
+    terminalId: z.string().optional(),
+    text: z.string().max(MAX_FILE_SELECTION_TEXT_LENGTH).optional(),
+    fileName: z.string().optional(),
+    startLine: z.number().int().positive().optional(),
+    endLine: z.number().int().positive().optional(),
+    tableName: z.string().optional(),
+    rowIds: z.array(z.string()).max(MAX_TABLE_SELECTION_ROWS).optional(),
+    columnIds: z.array(z.string()).max(MAX_TABLE_SELECTION_COLUMNS).optional(),
+    selection: z.union([BrowserTextSelectionSchema, TerminalTextSelectionSchema]).optional(),
+  })
+  .superRefine(({ kind, selection }, refinementContext) => {
+    if (!selection) return
+    const isTerminalSelection = 'startLine' in selection
+    const selectionMatchesKind =
+      (kind === 'browser_tab' && !isTerminalSelection) ||
+      (kind === 'terminal_tab' && isTerminalSelection)
+    if (!selectionMatchesKind) {
+      refinementContext.addIssue({
+        code: 'custom',
+        message: 'selection must match its browser_tab or terminal_tab context kind',
+        path: ['selection'],
+      })
+    }
+  })
 
 const ChatMessageSchema = z.object({
   message: z.string().min(1, 'Message is required'),
@@ -158,9 +274,42 @@ const ChatMessageSchema = z.object({
   userTimezone: z.string().optional(),
   effectiveWorkspaceId: z.string(),
   copilotBackend: z.enum(['local', 'external']).optional(),
+  desktopCapabilities: z
+    .object({
+      localFilesystem: z.boolean().optional(),
+      browser: z.boolean().optional(),
+      terminal: z.boolean().optional(),
+      terminals: z
+        .array(
+          z.object({
+            id: z.string().max(64),
+            cwd: z.string().max(1024).optional(),
+            running: z.string().max(1024).optional(),
+            interactive: z.boolean().optional(),
+            active: z.boolean().optional(),
+          })
+        )
+        .optional(),
+      browserSessions: z
+        .array(
+          z.object({
+            hostname: z
+              .string()
+              .max(253)
+              .regex(/^[a-z0-9.-]+$/),
+            evidence: z.enum(['sign-in-completed', 'cookies']),
+            lastObservedAt: z.string().datetime(),
+          })
+        )
+        .max(20)
+        .optional(),
+    })
+    .optional(),
 })
 
 type UnifiedChatRequest = z.infer<typeof ChatMessageSchema>
+type BrowserSessions = NonNullable<UnifiedChatRequest['desktopCapabilities']>['browserSessions']
+type Terminals = NonNullable<UnifiedChatRequest['desktopCapabilities']>['terminals']
 type UnifiedChatBranch =
   | {
       kind: 'workflow'
@@ -181,8 +330,10 @@ type UnifiedChatBranch =
         userMessageId: string
         chatId?: string
         contexts: Array<{ type: string; content: string; tag?: string; path?: string }>
+        mcpServerIds?: string[]
         fileAttachments?: UnifiedChatRequest['fileAttachments']
         userPermission?: string
+        entitlements?: string[]
         userTimezone?: string
         userMetadata?: { name?: string; email?: string; timezone?: string }
         workflowId: string
@@ -195,6 +346,11 @@ type UnifiedChatBranch =
         implicitFeedback?: string
         workspaceContext?: string
         vfs?: VfsSnapshotV1
+        desktopLocalFilesystem?: boolean
+        browser?: boolean
+        terminalCapable?: boolean
+        terminals?: Terminals
+        browserSessions?: BrowserSessions
       }) => Promise<Record<string, unknown>>
       buildExecutionContext: (params: {
         userId: string
@@ -218,12 +374,19 @@ type UnifiedChatBranch =
         userMessageId: string
         chatId?: string
         contexts: Array<{ type: string; content: string; tag?: string; path?: string }>
+        mcpServerIds?: string[]
         fileAttachments?: UnifiedChatRequest['fileAttachments']
         userPermission?: string
+        entitlements?: string[]
         userTimezone?: string
         userMetadata?: { name?: string; email?: string; timezone?: string }
         workspaceContext?: string
         vfs?: VfsSnapshotV1
+        desktopLocalFilesystem?: boolean
+        browser?: boolean
+        terminalCapable?: boolean
+        terminals?: Terminals
+        browserSessions?: BrowserSessions
       }) => Promise<Record<string, unknown>>
       buildExecutionContext: (params: {
         userId: string
@@ -244,6 +407,44 @@ function normalizeContexts(contexts: UnifiedChatRequest['contexts']) {
     if (ctx.blockId) return { ...ctx, blockIds: [ctx.blockId] }
     return ctx
   })
+}
+
+/**
+ * An MCP server tagged with `/name` stays enabled for the rest of the chat, not
+ * just the turn it was tagged on. Persisted user messages already carry their
+ * `mcp` contexts, so the transcript is the source of truth — enablement survives
+ * reloads and reopened chats with no extra state to keep in sync. There is
+ * deliberately no off switch: history is append-only.
+ *
+ * Only the ids travel forward, not the contexts themselves. The tools ride the
+ * tool array on every turn, so the model always sees their names and schemas;
+ * re-expanding the prompt listing each turn would just duplicate that. Keeping
+ * inherited servers out of the persisted contexts also keeps the `/name` chips
+ * on a sent message showing only what the user actually typed that turn.
+ */
+function collectChatMcpServerIds(
+  conversationHistory: unknown[],
+  currentContexts: UnifiedChatRequest['contexts']
+): string[] {
+  const serverIds = new Set<string>()
+
+  const collect = (contexts: unknown) => {
+    if (!Array.isArray(contexts)) return
+    for (const ctx of contexts) {
+      if (!ctx || typeof ctx !== 'object') continue
+      const { kind, serverId } = ctx as { kind?: unknown; serverId?: unknown }
+      if (kind === 'mcp' && typeof serverId === 'string' && serverId) {
+        serverIds.add(serverId)
+      }
+    }
+  }
+
+  for (const message of conversationHistory) {
+    collect((message as { contexts?: unknown } | null)?.contexts)
+  }
+  collect(currentContexts)
+
+  return Array.from(serverIds)
 }
 
 async function resolveAgentContexts(params: {
@@ -276,6 +477,22 @@ async function resolveAgentContexts(params: {
   if (Array.isArray(resourceAttachments) && resourceAttachments.length > 0 && workspaceId) {
     const results = await Promise.allSettled(
       resourceAttachments.map(async (resource) => {
+        // The live browser panel resolves from the attachment itself: its
+        // page state is client-held (the desktop app's embedded browser),
+        // not a workspace entity the server could look up.
+        if (resource.type === 'browser') {
+          if (!resource.url) return null
+          const title = resource.title?.trim()
+          return {
+            type: 'active_resource',
+            tag: resource.active ? '@active_tab' : '@open_tab',
+            content: `The user's ${
+              resource.active ? 'currently visible browser tab' : 'other open browser tab'
+            } (driven by the browser subagent) is open on: ${
+              title ? `"${title}" — ` : ''
+            }${resource.url}`,
+          }
+        }
         const ctx = await resolveActiveResourceContext(
           resource.type,
           resource.id,
@@ -411,13 +628,19 @@ async function buildInitialExecutionContext(params: {
     }
   }
 
-  const decryptedEnvVars = await getEffectiveDecryptedEnv(userId, workspaceId)
+  const [environmentContext, billingAttribution] = await Promise.all([
+    prepareCopilotEnvironmentContext(userId, workspaceId),
+    workspaceId
+      ? resolveBillingAttribution({ actorUserId: userId, workspaceId })
+      : Promise.resolve(undefined),
+  ])
   return {
     userId,
     workflowId: workflowId ?? '',
     workspaceId,
     chatId,
-    decryptedEnvVars,
+    ...environmentContext,
+    billingAttribution,
     messageId,
     userTimezone,
     requestMode,
@@ -572,6 +795,8 @@ async function resolveBranch(params: {
   model?: string
   mode?: UnifiedChatRequest['mode']
   provider?: string
+  /** When Local, workspace branch embeds this catalog id in the request payload. */
+  localCatalogId?: string
 }): Promise<UnifiedChatBranch | NextResponse> {
   const {
     authenticatedUserId,
@@ -581,6 +806,7 @@ async function resolveBranch(params: {
     model,
     mode,
     provider,
+    localCatalogId,
   } = params
 
   if (providedWorkflowId || workflowName) {
@@ -624,6 +850,7 @@ async function resolveBranch(params: {
             model: selectedModel,
             provider: payloadParams.provider,
             contexts: payloadParams.contexts,
+            mcpServerIds: payloadParams.mcpServerIds,
             fileAttachments: payloadParams.fileAttachments,
             commands: payloadParams.commands,
             chatId: payloadParams.chatId,
@@ -632,8 +859,14 @@ async function resolveBranch(params: {
             workspaceContext: payloadParams.workspaceContext,
             vfs: payloadParams.vfs,
             userPermission: payloadParams.userPermission,
+            entitlements: payloadParams.entitlements,
             userTimezone: payloadParams.userTimezone,
             userMetadata: payloadParams.userMetadata,
+            desktopLocalFilesystem: payloadParams.desktopLocalFilesystem,
+            browser: payloadParams.browser,
+            terminalCapable: payloadParams.terminalCapable,
+            terminals: payloadParams.terminals,
+            browserSessions: payloadParams.browserSessions,
           },
           { selectedModel }
         ),
@@ -668,9 +901,9 @@ async function resolveBranch(params: {
     kind: 'workspace',
     workspaceId: requestedWorkspaceId,
     workspacePermission,
-    effectiveModel: DEFAULT_MODEL,
+    effectiveModel: localCatalogId || DEFAULT_MODEL,
     goRoute: '/api/mothership',
-    titleModel: DEFAULT_MODEL,
+    titleModel: localCatalogId || DEFAULT_MODEL,
     notifyWorkspaceStatus: true,
     buildPayload: async (payloadParams) =>
       buildCopilotRequestPayload(
@@ -680,18 +913,24 @@ async function resolveBranch(params: {
           userId: payloadParams.userId,
           userMessageId: payloadParams.userMessageId,
           mode: 'agent',
-          model: '',
+          model: localCatalogId || '',
           contexts: payloadParams.contexts,
+          mcpServerIds: payloadParams.mcpServerIds,
           fileAttachments: payloadParams.fileAttachments,
           chatId: payloadParams.chatId,
           workspaceContext: payloadParams.workspaceContext,
           vfs: payloadParams.vfs,
           userPermission: payloadParams.userPermission,
+          entitlements: payloadParams.entitlements,
           userTimezone: payloadParams.userTimezone,
           userMetadata: payloadParams.userMetadata,
-          includeMothershipTools: true,
+          desktopLocalFilesystem: payloadParams.desktopLocalFilesystem,
+          browser: payloadParams.browser,
+          terminalCapable: payloadParams.terminalCapable,
+          terminals: payloadParams.terminals,
+          browserSessions: payloadParams.browserSessions,
         },
-        { selectedModel: '' }
+        { selectedModel: localCatalogId || '' }
       ),
     buildExecutionContext: async ({ userId, chatId, userTimezone, messageId }) =>
       buildInitialExecutionContext({
@@ -750,6 +989,19 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           : userAllowedForLocal
             ? 'local'
             : 'external'
+
+    let localCatalogId: string | undefined
+    if (copilotBackend === 'local') {
+      const requestedModel = body.model?.trim()
+      if (!requestedModel || requestedModel === DEFAULT_MODEL) {
+        localCatalogId = DEFAULT_LOCAL_COPILOT_CATALOG_ID
+      } else if (isLocalCopilotCatalogId(requestedModel)) {
+        localCatalogId = requestedModel
+      } else {
+        return createBadRequestResponse(`Unknown local copilot model: ${requestedModel}`)
+      }
+    }
+
     const userMetadata = {
       ...(authenticatedUserName ? { name: authenticatedUserName } : {}),
       ...(authenticatedUserEmail ? { email: authenticatedUserEmail } : {}),
@@ -801,6 +1053,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
             model: body.model,
             mode: body.mode,
             provider: body.provider,
+            ...(localCatalogId ? { localCatalogId } : {}),
           }),
         activeOtelRoot.context
       )
@@ -843,6 +1096,20 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           ? chatResult.conversationHistory
           : []
 
+        if (
+          localCatalogId &&
+          actualChatId &&
+          !chatIsNew &&
+          currentChat &&
+          'model' in currentChat &&
+          currentChat.model !== localCatalogId
+        ) {
+          await db
+            .update(copilotChats)
+            .set({ model: localCatalogId, updatedAt: new Date() })
+            .where(eq(copilotChats.id, actualChatId))
+        }
+
         if (body.chatId && !currentChat) {
           activeOtelRoot.span.setAttribute(TraceAttr.HttpStatusCode, 404)
           activeOtelRoot.finish('error')
@@ -851,14 +1118,16 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       }
 
       if (chatIsNew && actualChatId && body.resourceAttachments?.length) {
-        await persistChatResources(
-          actualChatId,
-          body.resourceAttachments.map((r) => ({
-            type: r.type,
-            id: r.id,
-            title: r.title ?? GENERIC_RESOURCE_TITLE[r.type],
+        const persistable = canonicalizeDesktopSessionResources(
+          body.resourceAttachments.filter(isPersistableAttachment).map((resource) => ({
+            type: resource.type,
+            id: resource.id,
+            title: resource.title ?? GENERIC_RESOURCE_TITLE[resource.type],
           }))
         )
+        if (persistable.length > 0) {
+          await persistChatResources(actualChatId, persistable)
+        }
       }
 
       let pendingStreamWaitMs = 0
@@ -1023,6 +1292,9 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 }
               )
             : Promise.resolve(null)
+      const entitlementsPromise = workspaceId
+        ? computeWorkspaceEntitlements(workspaceId, authenticatedUserId)
+        : Promise.resolve([])
       // Wrap the pre-LLM prep work in spans so the trace waterfall shows
       // where time is going between "request received" and "llm.stream
       // opens". Previously these ran bare under the root and inflated the
@@ -1077,10 +1349,11 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         activeOtelRoot.context
       )
 
-      const [agentContexts, userPermission, workspaceSnapshot, , executionContext] =
+      const [agentContexts, userPermission, entitlements, workspaceSnapshot, , executionContext] =
         await Promise.all([
           agentContextsPromise,
           userPermissionPromise,
+          entitlementsPromise,
           workspaceContextPromise,
           persistUserMessagePromise,
           executionContextPromise,
@@ -1105,16 +1378,19 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           [TraceAttr.CopilotFileAttachmentsCount]: body.fileAttachments?.length ?? 0,
           [TraceAttr.CopilotContextsCount]: normalizedContexts.length,
         },
-        () =>
-          branch.kind === 'workflow'
+        () => {
+          const mcpServerIds = collectChatMcpServerIds(conversationHistory, normalizedContexts)
+          return branch.kind === 'workflow'
             ? branch.buildPayload({
                 message: body.message,
                 userId: authenticatedUserId,
                 userMessageId,
                 chatId: actualChatId,
                 contexts: agentContexts,
+                mcpServerIds,
                 fileAttachments: body.fileAttachments,
                 userPermission: userPermission ?? undefined,
+                entitlements,
                 userTimezone: body.userTimezone,
                 userMetadata,
                 workflowId: branch.workflowId,
@@ -1127,6 +1403,11 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 implicitFeedback: body.implicitFeedback,
                 workspaceContext,
                 vfs,
+                desktopLocalFilesystem: body.desktopCapabilities?.localFilesystem === true,
+                browser: body.desktopCapabilities?.browser === true,
+                terminalCapable: body.desktopCapabilities?.terminal === true,
+                terminals: body.desktopCapabilities?.terminals,
+                browserSessions: body.desktopCapabilities?.browserSessions,
               })
             : branch.buildPayload({
                 message: body.message,
@@ -1134,13 +1415,21 @@ export async function handleUnifiedChatPost(req: NextRequest) {
                 userMessageId,
                 chatId: actualChatId,
                 contexts: agentContexts,
+                mcpServerIds,
                 fileAttachments: body.fileAttachments,
                 userPermission: userPermission ?? undefined,
+                entitlements,
                 userTimezone: body.userTimezone,
                 userMetadata,
                 workspaceContext,
                 vfs,
-              }),
+                desktopLocalFilesystem: body.desktopCapabilities?.localFilesystem === true,
+                browser: body.desktopCapabilities?.browser === true,
+                terminalCapable: body.desktopCapabilities?.terminal === true,
+                terminals: body.desktopCapabilities?.terminals,
+                browserSessions: body.desktopCapabilities?.browserSessions,
+              })
+        },
         activeOtelRoot.context
       )
 

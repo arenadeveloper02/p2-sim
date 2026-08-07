@@ -1,5 +1,9 @@
 import { z } from 'zod'
-import { unknownRecordSchema } from '@/lib/api/contracts/primitives'
+import {
+  customPatternSchema,
+  stringRecordSchema,
+  unknownRecordSchema,
+} from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 import { DEFAULT_CODE_LANGUAGE } from '@/lib/execution/languages'
 export const guardrailsValidateContract = defineRouteContract({
@@ -27,6 +31,7 @@ export const guardrailsValidateContract = defineRouteContract({
     piiEntityTypes: z.array(z.string()).optional(),
     piiMode: z.string().optional(),
     piiLanguage: z.string().optional(),
+    piiCustomPatterns: z.array(customPatternSchema).max(20).optional(),
   }),
   response: {
     mode: 'json',
@@ -50,6 +55,7 @@ const guardrailsMaskBatchBodySchema = z.object({
   texts: z.array(z.string()).max(100_000),
   entityTypes: z.array(z.string().min(1, 'Entity type cannot be empty')).max(200),
   language: z.string().min(1).max(20).optional(),
+  customPatterns: z.array(customPatternSchema).max(20).optional(),
 })
 
 const guardrailsMaskBatchResponseSchema = z.object({
@@ -174,9 +180,9 @@ export const functionExecuteContract = defineRouteContract({
       })
       .strict()
       .optional(),
-    envVars: z.record(z.string(), z.string()).optional().default({}),
+    envVars: stringRecordSchema.optional().default({}),
     blockData: unknownRecordSchema.optional().default({}),
-    blockNameMapping: z.record(z.string(), z.string()).optional().default({}),
+    blockNameMapping: stringRecordSchema.optional().default({}),
     blockOutputSchemas: z.record(z.string(), unknownRecordSchema).optional().default({}),
     workflowVariables: unknownRecordSchema.optional().default({}),
     contextVariables: unknownRecordSchema.optional().default({}),
@@ -189,6 +195,12 @@ export const functionExecuteContract = defineRouteContract({
     workspaceId: z.string().optional(),
     userId: z.string().optional(),
     isCustomTool: z.boolean().optional().default(false),
+    /** Workspace sandbox whose dependency set this execution runs against. */
+    sandboxId: z.string().optional(),
+    /** `all` (default) or `selected`; see mountedSecrets. */
+    secretScope: z.enum(['all', 'selected']).optional(),
+    /** Secret names this execution may read when secretScope is `selected`. */
+    mountedSecrets: z.array(z.string()).optional(),
     _sandboxFiles: z
       .array(
         z.union([

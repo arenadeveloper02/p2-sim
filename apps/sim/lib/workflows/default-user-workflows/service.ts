@@ -3,9 +3,9 @@ import {
   credential,
   credentialMember,
   defaultUserWorkflows,
+  folder,
   user,
   workflow,
-  workflowFolder,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
@@ -23,11 +23,13 @@ import {
   populatePostgresBlocks,
 } from '@/lib/workflows/default-user-workflows/postgres'
 import { performChatDeploy, performFullDeploy } from '@/lib/workflows/orchestration'
+import { performCreateFolder } from '@/lib/workflows/orchestration/folder-lifecycle'
 import {
   loadWorkflowFromNormalizedTables,
   saveWorkflowToNormalizedTables,
 } from '@/lib/workflows/persistence/utils'
-import { createFolderRecord, deduplicateWorkflowName } from '@/lib/workflows/utils'
+// import { createFolderRecord, deduplicateWorkflowName } from '@/lib/workflows/utils'
+import { deduplicateWorkflowName } from '@/lib/workflows/utils'
 import { regenerateWorkflowIds } from '@/stores/workflows/utils'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
@@ -46,29 +48,36 @@ async function getOrCreateSystemDefaultWorkflowFolder(params: {
   userId: string
 }): Promise<string> {
   const [existing] = await db
-    .select({ id: workflowFolder.id })
-    .from(workflowFolder)
+    .select({ id: folder.id })
+    .from(folder)
     .where(
       and(
-        eq(workflowFolder.workspaceId, params.workspaceId),
-        eq(workflowFolder.name, SYSTEM_DEFAULT_WORKFLOWS_FOLDER_NAME),
-        isNull(workflowFolder.parentId),
-        isNull(workflowFolder.archivedAt)
+        eq(folder.workspaceId, params.workspaceId),
+        eq(folder.resourceType, 'workflow'),
+        eq(folder.name, SYSTEM_DEFAULT_WORKFLOWS_FOLDER_NAME),
+        isNull(folder.parentId),
+        isNull(folder.deletedAt)
       )
     )
-    .orderBy(asc(workflowFolder.createdAt))
+    .orderBy(asc(folder.createdAt))
     .limit(1)
 
   if (existing) {
     return existing.id
   }
 
-  const { folderId } = await createFolderRecord({
+  const created = await performCreateFolder({
     userId: params.userId,
     workspaceId: params.workspaceId,
     name: SYSTEM_DEFAULT_WORKFLOWS_FOLDER_NAME,
     parentId: null,
   })
+
+  if (!created.success || !created.folder?.id) {
+    throw new Error(created.error || 'Failed to create system default workflows folder')
+  }
+
+  const folderId = created.folder.id
 
   logger.info('Created system default workflows folder', {
     folderId,

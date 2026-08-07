@@ -56,7 +56,7 @@ export async function finalizeStream(
       })
       await handleError(result, publisher, runId, requestId)
     } else {
-      await handleSuccess(publisher, runId, requestId)
+      await handleSuccess(publisher, runId, requestId, result)
     }
     // Successful + cancelled paths fall through as status-unset → set
     // OK so dashboards don't show "incomplete" for normal terminals.
@@ -164,12 +164,25 @@ async function handleError(
 async function handleSuccess(
   publisher: StreamWriter,
   runId: string,
-  requestId: string
+  requestId: string,
+  result?: OrchestratorResult
 ): Promise<void> {
   if (!publisher.sawComplete) {
+    const usage = result?.usage
     await publisher.publish({
       type: MothershipStreamV1EventType.complete,
-      payload: { status: MothershipStreamV1CompletionStatus.complete },
+      payload: {
+        status: MothershipStreamV1CompletionStatus.complete,
+        ...(usage && (usage.prompt > 0 || usage.completion > 0)
+          ? {
+              usage: {
+                input_tokens: usage.prompt,
+                output_tokens: usage.completion,
+                total_tokens: usage.prompt + usage.completion,
+              },
+            }
+          : {}),
+      },
     })
   }
   await publisher.flush()

@@ -46,8 +46,7 @@ export const workflowExecutorTool: ToolConfig<
       const isDeployedContext = params._context?.isDeployedContext
       const parentWorkspaceId = params._context?.workspaceId
       const parentExecutionId = params._context?.executionId
-      const parentRootExecutionId =
-        params._context?.rootExecutionId ?? parentExecutionId
+      const parentRootExecutionId = params._context?.rootExecutionId ?? parentExecutionId
       return {
         input: inputData,
         triggerType: 'workflow',

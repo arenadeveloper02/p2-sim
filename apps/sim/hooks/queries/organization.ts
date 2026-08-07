@@ -16,15 +16,16 @@ import {
 } from '@/lib/api/contracts/invitations'
 import {
   createOrganizationContract,
+  getMemberRemovalImpactContract,
   getMyMemberCreditsContract,
   getOrganizationMemberUsageLimitContract,
   getOrganizationRosterContract,
-  inviteOrganizationMembersContract,
   listOrganizationMembersContract,
   type MyMemberCreditsData,
   type OrganizationMembersResponse,
   type OrganizationMemberUsageLimitData,
   type OrganizationRoster,
+  type RemovalImpactCredential,
   type RosterMember,
   type RosterPendingInvitation,
   type RosterWorkspaceAccess,
@@ -36,8 +37,8 @@ import {
   updateOrganizationUsageLimitContract,
 } from '@/lib/api/contracts/organization'
 import {
-  listCreatorOrganizationsContract,
   type CreatorOrganization,
+  listCreatorOrganizationsContract,
 } from '@/lib/api/contracts/organizations'
 import {
   getOrganizationBillingContract,
@@ -61,6 +62,12 @@ export const ORGANIZATION_BILLING_STALE_TIME = 30 * 1000
 export const ORGANIZATION_MEMBERS_STALE_TIME = 30 * 1000
 export const ORGANIZATION_MEMBER_USAGE_LIMIT_STALE_TIME = 30 * 1000
 export const ORGANIZATION_MY_MEMBER_CREDITS_STALE_TIME = 30 * 1000
+/**
+ * Zero: removal impact is a consent disclosure, so every dialog open must
+ * refetch — a cached list may omit credentials added moments ago, and the
+ * dialog holds its confirm on `isFetching` until fresh data lands.
+ */
+export const ORGANIZATION_REMOVAL_IMPACT_STALE_TIME = 0
 
 type OrganizationSubscriptionCandidate = {
   id: string
@@ -123,6 +130,8 @@ export const organizationKeys = {
   memberUsageLimit: (id: string, userId: string) =>
     [...organizationKeys.detail(id), 'member-usage-limit', userId] as const,
   roster: (id: string) => [...organizationKeys.detail(id), 'roster'] as const,
+  removalImpact: (id: string, userId: string) =>
+    [...organizationKeys.detail(id), 'removal-impact', userId] as const,
   myMemberCredits: (workspaceId: string) =>
     [...organizationKeys.all, 'my-member-credits', workspaceId] as const,
 }
@@ -156,7 +165,7 @@ async function fetchOrganizationRoster(
     })
     return payload.data
   } catch (error) {
-    if (error instanceof ApiClientError && (error.status === 403 || error.status === 404)) {
+    if (error instanceof ApiClientError && error.status === 404) {
       return null
     }
     throw error
@@ -169,14 +178,47 @@ export function useOrganizationRoster(orgId: string | undefined | null) {
     queryFn: ({ signal }) => fetchOrganizationRoster(orgId as string, signal),
     enabled: !!orgId,
     staleTime: ORGANIZATION_ROSTER_STALE_TIME,
-    placeholderData: keepPreviousData,
+  })
+}
+
+async function fetchMemberRemovalImpact(
+  orgId: string,
+  userId: string,
+  signal?: AbortSignal
+): Promise<RemovalImpactCredential[]> {
+  const data = await requestJson(getMemberRemovalImpactContract, {
+    params: { id: orgId },
+    query: { userId },
+    signal,
+  })
+  return data.credentials
+}
+
+/**
+ * Identity-bound credentials the target user owns in organization workspaces —
+ * the set that stops working after removal. Fetched lazily while the
+ * remove-member dialog is open.
+ */
+export function useMemberRemovalImpact(
+  orgId: string | undefined | null,
+  userId: string | undefined | null,
+  options?: { enabled?: boolean }
+) {
+  return useQuery({
+    queryKey: organizationKeys.removalImpact(orgId ?? '', userId ?? ''),
+    queryFn: ({ signal }) => fetchMemberRemovalImpact(orgId as string, userId as string, signal),
+    enabled: Boolean(orgId) && Boolean(userId) && (options?.enabled ?? true),
+    staleTime: ORGANIZATION_REMOVAL_IMPACT_STALE_TIME,
   })
 }
 
 /**
- * Fetch all organizations for the current user
- * Note: Billing data is fetched separately via useSubscriptionData() to avoid duplicate calls
- * Note: better-auth client does not support AbortSignal, so signal is accepted but not forwarded
+ * Fetches the current viewer's account-scoped organizations.
+ *
+ * `activeOrganization` reflects the viewer session's selected organization. It
+ * must not be used as the organization context for a routed workspace; those
+ * surfaces use the workspace host context instead. Billing data is fetched
+ * separately, and the Better Auth client does not accept an AbortSignal.
  */
 async function fetchOrganizations(_signal?: AbortSignal) {
   const [orgsResponse, activeOrgResponse] = await Promise.all([
@@ -191,7 +233,10 @@ async function fetchOrganizations(_signal?: AbortSignal) {
 }
 
 /**
- * Hook to fetch all organizations
+ * Reads the viewer's account organizations and account-scoped active organization.
+ *
+ * Workspace-bound consumers must use the routed workspace host context instead
+ * of `activeOrganization`.
  */
 export function useOrganizations() {
   return useQuery({
@@ -226,7 +271,6 @@ export function useOrganization(orgId: string) {
     queryFn: ({ signal }) => fetchOrganization(orgId, signal),
     enabled: !!orgId,
     staleTime: ORGANIZATION_DETAIL_STALE_TIME,
-    placeholderData: keepPreviousData,
   })
 }
 
@@ -310,7 +354,6 @@ export function useOrganizationBilling(
     enabled: !!orgId && (options?.enabled ?? true),
     retry: false,
     staleTime: ORGANIZATION_BILLING_STALE_TIME,
-    placeholderData: keepPreviousData,
   })
 }
 
@@ -431,56 +474,6 @@ export function useUpdateOrganizationUsageLimit() {
       queryClient.invalidateQueries({
         queryKey: organizationKeys.subscription(variables.organizationId),
       })
-    },
-  })
-}
-
-/**
- * Invite member mutation
- */
-type InviteMemberParams = Pick<
-  ContractBodyInput<typeof inviteOrganizationMembersContract>,
-  'emails' | 'workspaceInvitations'
-> & {
-  orgId: string
-}
-
-export function useInviteMember() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: async ({ emails, workspaceInvitations, orgId }: InviteMemberParams) => {
-      /**
-       * Partial batches return HTTP 207 with `success: false` and a `data`
-       * payload (some invited/added, some failed). `requestJson` only throws on
-       * >= 400 (e.g. the total-failure 502 / validation 400 paths), so partials
-       * resolve here and the caller reports successes + per-email failures from
-       * `data` instead of surfacing a single generic error.
-       */
-      return requestJson(inviteOrganizationMembersContract, {
-        params: { id: orgId },
-        query: { batch: true },
-        body: {
-          emails,
-          workspaceInvitations,
-        },
-      })
-    },
-    onSettled: (_data, _error, variables) => {
-      queryClient.invalidateQueries({ queryKey: organizationKeys.detail(variables.orgId) })
-      queryClient.invalidateQueries({ queryKey: organizationKeys.billing(variables.orgId) })
-      queryClient.invalidateQueries({ queryKey: organizationKeys.memberUsage(variables.orgId) })
-      queryClient.invalidateQueries({ queryKey: organizationKeys.roster(variables.orgId) })
-      queryClient.invalidateQueries({ queryKey: organizationKeys.lists() })
-      // Existing members may have been added directly to selected workspaces.
-      for (const grant of variables.workspaceInvitations ?? []) {
-        queryClient.invalidateQueries({
-          queryKey: workspaceKeys.permissions(grant.workspaceId),
-        })
-        queryClient.invalidateQueries({
-          queryKey: workspaceKeys.members(grant.workspaceId),
-        })
-      }
     },
   })
 }
@@ -664,7 +657,11 @@ export function useUpdateInvitation() {
 }
 
 /**
- * Cancel invitation mutation
+ * Revokes an entire pending invitation, including every workspace it grants.
+ *
+ * Sends no workspace scope, so the route requires authority over all of it —
+ * organization admin, or admin of every granted workspace. To withdraw a single
+ * workspace's access instead, use `useCancelWorkspaceInvitation`.
  */
 interface CancelInvitationParams {
   invitationId: string
@@ -678,6 +675,7 @@ export function useCancelInvitation() {
     mutationFn: async ({ invitationId }: CancelInvitationParams) => {
       return requestJson(cancelInvitationContract, {
         params: { id: invitationId },
+        query: {},
       })
     },
     onSettled: (_data, _error, variables) => {

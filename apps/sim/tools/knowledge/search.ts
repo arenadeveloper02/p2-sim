@@ -42,6 +42,13 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
         },
       },
     },
+    searchMode: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description:
+        "Retrieval mode: 'vector' (default) uses semantic similarity only, 'hybrid' also runs a full-text leg and fuses both",
+    },
     rerank: {
       type: 'object',
       required: false,
@@ -130,6 +137,7 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
         topK: params.topK ? Math.max(1, Math.min(100, Number(params.topK))) : 10,
         ...(params.rerank ? { rerank: params.rerank } : {}),
         ...(structuredFilters.length > 0 && { tagFilters: structuredFilters }),
+        ...(params.searchMode === 'hybrid' && { searchMode: 'hybrid' }),
         ...(rerankerEnabled && {
           rerankerEnabled: true,
           rerankerModel,

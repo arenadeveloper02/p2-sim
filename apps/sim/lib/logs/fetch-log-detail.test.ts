@@ -3,8 +3,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildAdditiveCostLeaves } from '@/lib/logs/fetch-log-detail'
 import type { CostLedgerItem } from '@/lib/api/contracts/logs'
+import { buildAdditiveCostLeaves } from '@/lib/logs/fetch-log-detail'
 import type { TraceSpan } from '@/lib/logs/types'
 
 const { selectMock, checkWorkspaceAccessMock, materializeExecutionDataMock } = vi.hoisted(() => ({

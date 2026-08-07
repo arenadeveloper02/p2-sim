@@ -5,11 +5,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { Badge, cn, handleKeyboardActivation, Tooltip } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { ArrowUp, Mic, Paperclip, X } from 'lucide-react'
+import { ArrowUp, Paperclip, X } from 'lucide-react'
 import type { SelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
 import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { SendChatIcon } from '@/app/(interfaces)/chat/[identifier]/send-icon'
-import { VoiceInput } from '@/app/(interfaces)/chat/components/input/voice-input'
 import {
   DEPLOYED_CHAT_CONTENT_MAX_WIDTH_CLASS,
   DEPLOYED_CHAT_ICON_DEFAULT,
@@ -35,7 +34,9 @@ export const ChatInput: React.FC<{
   onSubmit?: (value: string, isVoiceInput?: boolean, files?: AttachedFile[]) => void
   isStreaming?: boolean
   onStopStreaming?: () => void
+  /** @deprecated Voice UI removed; kept for call-site compat. */
   onVoiceStart?: () => void
+  /** @deprecated Voice UI removed; kept for call-site compat. */
   voiceOnly?: boolean
   selectedGeneratedImages?: SelectedGeneratedImage[]
   onRemoveSelectedGeneratedImage?: (imageId: string) => void
@@ -43,6 +44,7 @@ export const ChatInput: React.FC<{
   insertText?: string
   /** Called after insertText has been applied so the parent can clear it */
   onInsertConsumed?: () => void
+  /** @deprecated Voice UI removed; kept for call-site compat. */
   sttAvailable?: boolean
   /** When true, input is positioned within the flex main column instead of fixed viewport offsets */
   embedded?: boolean
@@ -53,13 +55,10 @@ export const ChatInput: React.FC<{
   onSubmit,
   isStreaming = false,
   onStopStreaming,
-  onVoiceStart,
-  voiceOnly = false,
   selectedGeneratedImages = [],
   onRemoveSelectedGeneratedImage,
   insertText,
   onInsertConsumed,
-  sttAvailable = false,
   embedded = false,
   landing = false,
   placeholder = 'Enter a message...',
@@ -281,7 +280,7 @@ export const ChatInput: React.FC<{
           placeholder={isDragOver ? 'Drop files here...' : placeholder}
           rows={1}
           className={cn(
-            'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 font-normal font-poppins text-[16px] leading-6 text-[var(--color-ds-text-primary,#2C2D33)] outline-none placeholder:font-normal placeholder:font-poppins placeholder:text-[#A7AAB2] placeholder:text-[16px] focus-visible:ring-0 focus-visible:ring-offset-0',
+            'm-0 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 font-normal font-poppins text-[16px] text-[var(--color-ds-text-primary,#2C2D33)] leading-6 outline-none placeholder:font-normal placeholder:font-poppins placeholder:text-[#A7AAB2] placeholder:text-[16px] focus-visible:ring-0 focus-visible:ring-offset-0',
             isMultiLineInput
               ? 'min-h-[24px] overflow-y-auto overflow-x-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
               : 'min-h-[24px] overflow-hidden'
@@ -326,31 +325,6 @@ export const ChatInput: React.FC<{
     )
   }
 
-  if (voiceOnly) {
-    return (
-      <Tooltip.Provider>
-        <div className='flex items-center justify-center'>
-          {sttAvailable && (
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <div>
-                  <VoiceInput
-                    onVoiceStart={onVoiceStart ?? (() => {})}
-                    disabled={isStreaming}
-                    large={true}
-                  />
-                </div>
-              </Tooltip.Trigger>
-              <Tooltip.Content side='top'>
-                <p>Start voice conversation</p>
-              </Tooltip.Content>
-            </Tooltip.Root>
-          )}
-        </div>
-      </Tooltip.Provider>
-    )
-  }
-
   return (
     <Tooltip.Provider>
       <div
@@ -380,8 +354,7 @@ export const ChatInput: React.FC<{
           <div
             className={cn(
               'w-full',
-              useDeployedChrome &&
-                'rounded-[29px] border border-solid border-transparent p-0',
+              useDeployedChrome && 'rounded-[29px] border border-transparent border-solid p-0',
               useDeployedChrome && !hasDeployedExtras && DEPLOYED_CHAT_INPUT_HEIGHT_CLASS
             )}
             style={
@@ -555,24 +528,6 @@ export const ChatInput: React.FC<{
                     </div>
 
                     <div className='flex items-center gap-1.5'>
-                      {sttAvailable && (
-                        <Tooltip.Root>
-                          <Tooltip.Trigger asChild>
-                            <button
-                              type='button'
-                              onClick={onVoiceStart}
-                              disabled={isStreaming}
-                              className='flex size-[28px] items-center justify-center rounded-full text-[var(--text-icon)] transition-colors hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50 dark:text-[var(--landing-text-muted)] dark:hover:bg-[#303030]'
-                            >
-                              <Mic className='size-[16px]' strokeWidth={2} />
-                            </button>
-                          </Tooltip.Trigger>
-                          <Tooltip.Content side='top'>
-                            <p>Start voice conversation</p>
-                          </Tooltip.Content>
-                        </Tooltip.Root>
-                      )}
-
                       {isStreaming ? (
                         <button
                           type='button'

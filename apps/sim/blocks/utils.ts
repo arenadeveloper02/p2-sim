@@ -1,4 +1,5 @@
 import { toError } from '@sim/utils/errors'
+import { SimAutoIcon } from '@/components/icons'
 import {
   isAzureConfigured,
   isCohereConfigured,
@@ -6,16 +7,20 @@ import {
   isOllamaConfigured,
 } from '@/lib/core/config/env-flags'
 import { getScopesForService } from '@/lib/oauth/utils'
+import { containsReference } from '@/lib/workflows/sanitization/references'
 import { buildCanonicalIndex } from '@/lib/workflows/subblocks/visibility'
 import type { BlockOutput, OutputFieldDefinition, SubBlockConfig } from '@/blocks/types'
 import {
   getBaseModelProviders,
   getHostedModels,
+  getModelSunsetStatus,
   getProviderIcon,
   getProviderModels,
+  isAutoModel,
   orderModelIdsByReleaseDate,
+  SIM_AUTO_MODEL_ID,
 } from '@/providers/models'
-import { isPiSupportedProvider } from '@/providers/pi-providers'
+import { isPiSupportedModel } from '@/providers/pi-providers'
 import { getProviderFromModel } from '@/providers/utils'
 import { useProvidersStore } from '@/stores/providers/store'
 
@@ -74,10 +79,21 @@ export function getModelOptions() {
     ])
   )
 
-  return allModels.map((model) => {
-    const icon = getProviderIcon(model)
-    return { label: model, id: model, ...(icon && { icon }) }
-  })
+  const options = allModels
+    .filter((model) => getModelSunsetStatus(model) !== 'deprecated')
+    .map((model) => {
+      const icon = getProviderIcon(model)
+      return { label: model, id: model, ...(icon && { icon }) }
+    })
+
+  // Hosted-only automatic model. Deliberately LAST in the list (limited
+  // visibility for the initial release): available to anyone who scrolls or
+  // searches for it, but never the first thing the dropdown offers.
+  if (isHosted) {
+    options.push({ label: 'Auto', id: SIM_AUTO_MODEL_ID, icon: SimAutoIcon })
+  }
+
+  return options
 }
 
 const OPENROUTER_MODEL_PREFIX = 'openrouter/' as const
@@ -108,16 +124,14 @@ export function getAgentModelOptions() {
 }
 
 /**
- * Model options filtered to providers the Pi Coding Agent can run (see
- * {@link isPiSupportedProvider}), so the Pi block never offers a model that would
- * error at execution. Uses the same `getProviderFromModel` resolution as the Pi
- * handler, so the dropdown matches runtime behavior; unresolved/blacklisted
- * models (which `getProviderFromModel` can throw on) are excluded.
+ * Model options filtered to exact provider/model pairs in Pi's pinned catalog.
+ * Unresolved or blacklisted models (which `getProviderFromModel` can throw on)
+ * are excluded.
  */
 export function getPiModelOptions() {
   return getModelOptions().filter((option) => {
     try {
-      return isPiSupportedProvider(getProviderFromModel(option.id))
+      return isPiSupportedModel(getProviderFromModel(option.id), option.id)
     } catch {
       return false
     }
@@ -186,6 +200,17 @@ function getProviderFromStore(model: string): string | null {
   return null
 }
 
+/**
+ * Whether an Ollama instance is available. `isOllamaConfigured` reads the
+ * server-only `OLLAMA_URL` env var, which is always undefined in the browser —
+ * there the providers store (populated from the server's model list, which is
+ * non-empty only when Ollama is configured) is the signal.
+ */
+function isOllamaAvailable(): boolean {
+  if (isOllamaConfigured) return true
+  return useProvidersStore.getState().providers.ollama.models.length > 0
+}
+
 function buildModelVisibilityCondition(model: string, shouldShow: boolean) {
   if (!model) {
     return { field: 'model', value: '__no_model_selected__' }
@@ -197,6 +222,11 @@ function buildModelVisibilityCondition(model: string, shouldShow: boolean) {
 function shouldRequireApiKeyForModel(model: string): boolean {
   const normalizedModel = model.trim().toLowerCase()
   if (!normalizedModel) return false
+
+  // On hosted Sim the auto pseudo-model resolves server-side to a hosted pool
+  // model. On self-hosted it exists only via imported workflows and always
+  // falls back to the default Anthropic model, so the key field must show.
+  if (isAutoModel(normalizedModel)) return !isHosted
 
   if (isHosted) {
     const hostedModels = getHostedModels()
@@ -224,13 +254,30 @@ function shouldRequireApiKeyForModel(model: string): boolean {
     return false
   if (storeProvider) return true
 
-  if (isOllamaConfigured) {
+  if (isOllamaAvailable()) {
     if (normalizedModel.includes('/')) return true
     if (normalizedModel in getBaseModelProviders()) return true
     return false
   }
 
   return true
+}
+
+/**
+ * Visibility condition for a model-tuning field that only some models accept, such as
+ * reasoning effort or verbosity. Gates on the capability list, but keeps the field visible
+ * when `model` itself holds a variable or block reference — the concrete model id is only
+ * known at execution time then, so matching a reference against a static list would hide
+ * the field for every workflow that binds its model dynamically.
+ */
+export function getModelCapabilityCondition(capableModels: string[]) {
+  return (values?: Record<string, unknown>) => {
+    const model = typeof values?.model === 'string' ? values.model : ''
+    if (containsReference(model)) {
+      return buildModelVisibilityCondition(model, true)
+    }
+    return { field: 'model', value: capableModels }
+  }
 }
 
 /**
@@ -646,6 +693,7 @@ export const AGENT_TOOL_BLOCK_TYPES = new Set([
   'function',
   'table',
   'image_generator_v2',
+  'chart_generator',
 ])
 
 /**
@@ -672,6 +720,7 @@ export const BUILT_IN_TOOL_TYPES = new Set([
   'table',
   'webhook_request',
   'workflow',
+  'chart_generator',
 ])
 
 /**

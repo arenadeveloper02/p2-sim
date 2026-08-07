@@ -187,7 +187,7 @@ export function buildImageToolBodyFromExecutionParams(
     moderation: typeof params.moderation === 'string' ? params.moderation : undefined,
     safetyTolerance:
       typeof params.safetyTolerance === 'string' ? params.safetyTolerance : undefined,
-    numImages: typeof params.numImages === 'number' ? params.numImages : undefined,
+    numImages: 1,
     seed: typeof params.seed === 'number' ? params.seed : undefined,
     enableSafetyChecker:
       typeof params.enableSafetyChecker === 'boolean' ? params.enableSafetyChecker : undefined,
@@ -1112,7 +1112,7 @@ async function generateWithFalAI(
   }
 
   if (modelConfig.maxNumImages) {
-    requestBody.num_images = clampInteger(body.numImages, 1, modelConfig.maxNumImages, 1)
+    requestBody.num_images = 1
   }
   if (modelConfig.supportsSeed && body.seed !== undefined) {
     requestBody.seed = body.seed
@@ -1346,7 +1346,7 @@ function buildImageBillingForBody(
       quality: body.quality,
       resolution: body.resolution,
       aspectRatio: body.aspectRatio,
-      numImages: body.numImages ?? 1,
+      numImages: 1,
       hasEdit: hasReferenceImage(body),
     })
   } catch {

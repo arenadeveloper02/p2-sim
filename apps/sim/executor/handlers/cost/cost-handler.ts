@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
-import type { BlockOutput } from '@/blocks/types'
 import { traverseObjectPath } from '@/lib/core/utils/response-format'
+import type { BlockOutput } from '@/blocks/types'
 import { BlockType, isUuid, normalizeName } from '@/executor/constants'
 import type { BlockHandler, ExecutionContext } from '@/executor/types'
 import { collectBlockData } from '@/executor/utils/block-data'
@@ -92,9 +92,7 @@ function resolveUpstreamBlockId(
   const baseCurrentId = extractBaseBlockId(currentBlockId)
   const candidates = connections
     .filter(
-      (connection) =>
-        connection.target === currentBlockId ||
-        connection.target === baseCurrentId
+      (connection) => connection.target === currentBlockId || connection.target === baseCurrentId
     )
     .map((connection) => connection.source)
     .filter((sourceId) => {
@@ -207,14 +205,13 @@ export class CostBlockHandler implements BlockHandler {
     nodeMetadata: { nodeId: string }
   ): Promise<BlockOutput> {
     const mode = (inputs.mode || 'fixed') as CostMode
-    const currency = typeof inputs.currency === 'string' && inputs.currency.trim()
-      ? inputs.currency.trim().toUpperCase()
-      : 'USD'
+    const currency =
+      typeof inputs.currency === 'string' && inputs.currency.trim()
+        ? inputs.currency.trim().toUpperCase()
+        : 'USD'
     const vendor = typeof inputs.vendor === 'string' ? inputs.vendor.trim() : undefined
     const label =
-      typeof inputs.label === 'string' && inputs.label.trim()
-        ? inputs.label.trim()
-        : vendor
+      typeof inputs.label === 'string' && inputs.label.trim() ? inputs.label.trim() : vendor
     const quantity = coerceToNonNegativeNumber(inputs.quantity)
     const unit = typeof inputs.unit === 'string' ? inputs.unit.trim() : undefined
     const exchangeRate = coerceToNonNegativeNumber(inputs.exchangeRate)
@@ -318,7 +315,8 @@ export class CostBlockHandler implements BlockHandler {
       const { blockData } = collectBlockData(ctx, nodeMetadata.nodeId)
       const sourceOutput = blockData[sourceBlockId]
       passthrough = sourceOutput
-      const pathValue = sourceOutput !== undefined ? traverseObjectPath(sourceOutput, responsePath) : undefined
+      const pathValue =
+        sourceOutput !== undefined ? traverseObjectPath(sourceOutput, responsePath) : undefined
       resolvedAmount = coerceToNonNegativeNumber(pathValue)
     } else {
       throw new Error(`Unknown cost mode: ${mode}`)

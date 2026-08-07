@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
+import Image from 'next/image'
 import { SupportFooter } from '@/app/(auth)/components'
+import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { LogoShell } from '@/app/(landing)/components'
 
 /**
@@ -18,5 +20,13 @@ interface InterfacesShellProps {
 }
 
 export function InterfacesShell({ children }: InterfacesShellProps) {
-  return <LogoShell footer={<SupportFooter position='static' />}>{children}</LogoShell>
+  return (
+    <LogoShell
+      footer={<SupportFooter position='static' />}
+      logo={<Image src={arenaLogo} alt='Arena' width={30} height={30} priority />}
+      logoLabel='Arena home'
+    >
+      {children}
+    </LogoShell>
+  )
 }

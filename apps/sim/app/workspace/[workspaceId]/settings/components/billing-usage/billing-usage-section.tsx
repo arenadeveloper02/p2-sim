@@ -4,6 +4,8 @@ interface BillingUsageSectionProps {
   label: string
   description?: string
   headerAccessory?: ReactNode
+  /** Right-aligned header actions (e.g. Refresh / Export). */
+  action?: ReactNode
   children: ReactNode
 }
 
@@ -15,6 +17,7 @@ export function BillingUsageSection({
   label,
   description,
   headerAccessory,
+  action,
   children,
 }: BillingUsageSectionProps) {
   return (
@@ -31,6 +34,7 @@ export function BillingUsageSection({
             <p className='text-[var(--text-muted)] text-small'>{description}</p>
           ) : null}
         </div>
+        {action ? <div className='flex flex-shrink-0 items-center gap-2'>{action}</div> : null}
       </div>
       <div className='mt-[9px] mb-3 h-px bg-[var(--border)]' />
       {children}

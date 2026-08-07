@@ -1,6 +1,8 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { omit } from '@sim/utils/object'
 import { validateSelectorIds } from '@/lib/copilot/validation/selector-validator'
+import { isHosted as isHostedDeployment } from '@/lib/core/config/env-flags'
 import { isBlockTypeAccessControlExempt } from '@/lib/permission-groups/block-access'
 import type { PermissionGroupConfig } from '@/lib/permission-groups/types'
 import { getCustomToolById } from '@/lib/workflows/custom-tools/operations'
@@ -14,10 +16,11 @@ import {
 import { getBlock } from '@/blocks/registry'
 import type { SubBlockConfig } from '@/blocks/types'
 import { getModelOptions } from '@/blocks/utils'
-import { EDGE, normalizeName } from '@/executor/constants'
-import { isKnownModelId, suggestModelIdsForUnknownModel } from '@/providers/models'
+import { BlockType, EDGE, normalizeName } from '@/executor/constants'
+import { isAutoModel, isKnownModelId, suggestModelIdsForUnknownModel } from '@/providers/models'
+import { isPiByokOnlyMode } from '@/providers/pi-providers'
 import { getTool } from '@/tools/utils'
-import { TRIGGER_RUNTIME_SUBBLOCK_IDS } from '@/triggers/constants'
+import { TRIGGER_RUNTIME_SUBBLOCK_IDS, TRIGGER_WEBHOOK_URL_FIELD } from '@/triggers/constants'
 import type {
   EdgeHandleValidationResult,
   EditWorkflowOperation,
@@ -45,6 +48,108 @@ export function findBlockWithDuplicateNormalizedName(
   )
 }
 
+interface AgentMessage {
+  role: string
+  content: string
+}
+
+/**
+ * Parses an agent `messages` subblock value into a mutable array.
+ */
+export function parseAgentMessagesValue(value: unknown): AgentMessage[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+      const record = item as Record<string, unknown>
+      if (typeof record.role !== 'string') return []
+      return [
+        {
+          role: record.role,
+          content:
+            typeof record.content === 'string' ? record.content : String(record.content ?? ''),
+        },
+      ]
+    })
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      return parseAgentMessagesValue(JSON.parse(value) as unknown)
+    } catch {
+      return []
+    }
+  }
+
+  return []
+}
+
+/**
+ * Maps legacy `systemPrompt` / `userPrompt` agent fields onto `messages`.
+ * Models often emit the old field names; without this alias the edit is rejected
+ * as an unknown input and the workflow appears unchanged.
+ *
+ * When both `messages` and legacy prompt fields are present, legacy fields still
+ * win for their roles — models frequently send a stale `messages` array alongside
+ * the intended `systemPrompt`/`userPrompt` updates.
+ */
+export function normalizeAgentLegacyPromptInputs(
+  inputs: Record<string, any>,
+  existingMessagesValue?: unknown
+): Record<string, any> {
+  if (!Object.hasOwn(inputs, 'systemPrompt') && !Object.hasOwn(inputs, 'userPrompt')) {
+    return inputs
+  }
+
+  const next = { ...inputs }
+  const systemPrompt =
+    typeof next.systemPrompt === 'string'
+      ? next.systemPrompt
+      : next.systemPrompt === undefined
+        ? undefined
+        : String(next.systemPrompt)
+  const userPrompt =
+    typeof next.userPrompt === 'string'
+      ? next.userPrompt
+      : next.userPrompt === undefined
+        ? undefined
+        : String(next.userPrompt)
+  next.systemPrompt = undefined
+  next.userPrompt = undefined
+
+  const messages =
+    next.messages !== undefined
+      ? parseAgentMessagesValue(next.messages)
+      : parseAgentMessagesValue(existingMessagesValue)
+
+  if (systemPrompt !== undefined) {
+    const systemIndex = messages.findIndex((message) => message.role === 'system')
+    if (systemIndex >= 0) {
+      messages[systemIndex] = { ...messages[systemIndex], content: systemPrompt }
+    } else {
+      messages.unshift({ role: 'system', content: systemPrompt })
+    }
+  }
+
+  if (userPrompt !== undefined) {
+    const userIndex = messages.findIndex((message) => message.role === 'user')
+    if (userIndex >= 0) {
+      messages[userIndex] = { ...messages[userIndex], content: userPrompt }
+    } else {
+      messages.push({ role: 'user', content: userPrompt })
+    }
+  }
+
+  if (messages.length === 0 && systemPrompt !== undefined) {
+    messages.push({ role: 'system', content: systemPrompt }, { role: 'user', content: '' })
+  }
+
+  if (messages.length > 0) {
+    next.messages = messages
+  }
+
+  return next
+}
+
 /**
  * Validates and filters inputs against a block's subBlock configuration
  * Returns valid inputs and any validation errors encountered
@@ -52,15 +157,36 @@ export function findBlockWithDuplicateNormalizedName(
 export function validateInputsForBlock(
   blockType: string,
   inputs: Record<string, any>,
-  blockId: string
+  blockId: string,
+  options?: { existingSubBlocks?: Record<string, { value?: unknown }> }
 ): ValidationResult {
   const errors: ValidationError[] = []
+
+  // Synthesized by sanitizeForCopilot in the read view; derived, never stored.
+  // Rejected before the unknown-block-type early return below so it can never be
+  // written regardless of block type.
+  if (TRIGGER_WEBHOOK_URL_FIELD in inputs) {
+    errors.push({
+      blockId,
+      blockType,
+      field: TRIGGER_WEBHOOK_URL_FIELD,
+      value: inputs[TRIGGER_WEBHOOK_URL_FIELD],
+      error: `"${TRIGGER_WEBHOOK_URL_FIELD}" is read-only. The webhook URL is auto-assigned by Sim and cannot be changed by the agent or the user.`,
+    })
+    inputs = omit(inputs, [TRIGGER_WEBHOOK_URL_FIELD])
+  }
+
   const blockConfig = getBlock(blockType)
+
+  const normalizedInputs =
+    blockType === 'agent'
+      ? normalizeAgentLegacyPromptInputs(inputs, options?.existingSubBlocks?.messages?.value)
+      : inputs
 
   if (!blockConfig) {
     // Unknown block type - return inputs as-is (let it fail later if invalid)
     validationLogger.warn(`Unknown block type: ${blockType}, skipping validation`)
-    return { validInputs: inputs, errors: [] }
+    return { validInputs: normalizedInputs, errors: [] }
   }
 
   const validatedInputs: Record<string, any> = {}
@@ -71,7 +197,7 @@ export function validateInputsForBlock(
     subBlockMap.set(subBlock.id, subBlock)
   }
 
-  for (const [key, value] of Object.entries(inputs)) {
+  for (const [key, value] of Object.entries(normalizedInputs)) {
     // Skip runtime subblock IDs
     if (TRIGGER_RUNTIME_SUBBLOCK_IDS.includes(key)) {
       continue
@@ -94,6 +220,30 @@ export function validateInputsForBlock(
           error: `Unknown input field "${key}" for block type "${blockType}"`,
         })
       }
+      continue
+    }
+
+    // Display-only fields (e.g. webhookUrlDisplay, samplePayload) are computed or
+    // static in the UI; a written value would be dead state the UI never shows.
+    if (subBlockConfig.readOnly === true) {
+      errors.push({
+        blockId,
+        blockType,
+        field: key,
+        value,
+        error: `Field "${key}" on block type "${blockType}" is a read-only display field and cannot be set`,
+      })
+      continue
+    }
+
+    if (subBlockConfig.hideFromCopilot === true) {
+      errors.push({
+        blockId,
+        blockType,
+        field: key,
+        value,
+        error: `Field "${key}" on block type "${blockType}" is server-managed and cannot be set by Copilot`,
+      })
       continue
     }
 
@@ -385,7 +535,9 @@ export function validateValueForSubBlockType(
     }
 
     case 'condition-input':
-    case 'router-input': {
+    case 'router-input':
+    case 'knowledge-tag-filters':
+    case 'document-tag-entry': {
       const parsedValue =
         typeof value === 'string'
           ? (() => {
@@ -494,6 +646,39 @@ export function validateValueForSubBlockType(
       return { valid: true, value }
     }
 
+    case 'messages-input': {
+      if (Array.isArray(value)) {
+        const messages = parseAgentMessagesValue(value)
+        if (messages.length === 0 && value.length > 0) {
+          return {
+            valid: false,
+            error: {
+              blockId,
+              blockType,
+              field: fieldName,
+              value,
+              error: `Invalid messages value for field "${fieldName}" - expected an array of { role, content } objects`,
+            },
+          }
+        }
+        return { valid: true, value: messages }
+      }
+      if (typeof value === 'string') {
+        const messages = parseAgentMessagesValue(value)
+        return { valid: true, value: messages }
+      }
+      return {
+        valid: false,
+        error: {
+          blockId,
+          blockType,
+          field: fieldName,
+          value,
+          error: `Invalid messages value for field "${fieldName}" - expected an array of { role, content } objects`,
+        },
+      }
+    }
+
     case 'response-format': {
       // Allow empty/null
       if (value === null || value === undefined || value === '') {
@@ -543,6 +728,12 @@ export function validateValueForSubBlockType(
       if (usesProviderCatalog) {
         const stringValue = typeof value === 'string' ? value : String(value)
         const trimmed = stringValue.trim()
+        // sim-auto is a valid model value on hosted Sim only (mirrors the
+        // options array the agent reads: it is absent from self-hosted
+        // snapshots, so writes of it there are rejected as unknown).
+        if (trimmed !== '' && isAutoModel(trimmed) && isHostedDeployment) {
+          return { valid: true, value: trimmed.toLowerCase() }
+        }
         if (trimmed !== '' && !isKnownModelId(trimmed)) {
           const suggestions = suggestModelIdsForUnknownModel(trimmed)
           const suggestionText =
@@ -1235,7 +1426,8 @@ export async function collectUnresolvedAgentToolReferences(
  * - Filters out apiKey inputs when isHosted is true and the key is platform-managed: either a
  *   hosted LLM model (model in getHostedModels) or a block whose active tool declares
  *   `hosting` (e.g. Fal-backed video/image generators) - the canonical signal also used by
- *   injectHostedKeyIfNeeded at execution
+ *   injectHostedKeyIfNeeded at execution. The Pi Coding Agent block in Create PR mode is
+ *   exempt from the hosted-model rule because it always runs on the user's own key
  * - Also validates credentials and apiKeys in nestedNodes (blocks inside loop/parallel)
  * Returns validation errors for any removed inputs.
  */
@@ -1303,17 +1495,24 @@ export async function preValidateCredentialInputs(
   }
 
   /**
-   * Check if apiKey should be filtered for a block with the given model
+   * Check if apiKey should be filtered for a block with the given model.
+   *
+   * The Pi Coding Agent in Create PR mode is exempt: it hands the model key to
+   * a sandbox, so Sim never covers it with a hosted key and the block needs the
+   * user's own key even for hosted models. Its other modes keep the model
+   * client in Sim and follow the normal rule.
    */
   function collectHostedApiKeyInput(
     inputs: Record<string, unknown>,
-    modelValue: string | undefined,
+    toolParams: Record<string, unknown>,
     opIndex: number,
     blockId: string,
     blockType: string,
     nestedBlockId?: string
   ) {
     if (!hostedModelsLower || !inputs.apiKey) return
+    if (blockType === BlockType.PI && isPiByokOnlyMode(toolParams.mode)) return
+    const modelValue = toolParams.model
     if (!modelValue || typeof modelValue !== 'string') return
 
     if (hostedModelsLower.has(modelValue.toLowerCase())) {
@@ -1512,10 +1711,9 @@ export async function preValidateCredentialInputs(
       // Hosted collectors no-op off hosted Sim, so only resolve the effective state when it matters.
       if (isHosted) {
         const toolParams = finalValues.get(stateKey) ?? inputs
-        const modelValue = toolParams.model as string | undefined
         collectHostedApiKeyInput(
           inputs,
-          modelValue,
+          toolParams,
           opIndex,
           reportBlockId,
           blockType,

@@ -188,6 +188,7 @@ export class ExecutionEngine {
         output: this.finalOutput,
         error: errorMessage,
         logs: this.context.blockLogs,
+        executionState: this.getSerializableExecutionState(),
         metadata: this.context.metadata,
       }
 

@@ -1,7 +1,9 @@
 /**
  * @vitest-environment node
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { usageLog } from '@sim/db/schema'
+import { dbChainMockFns, resetDbChainMock, resetEnvFlagsMock, setEnvFlags } from '@sim/testing'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockGetHighestPrioritySubscription,
@@ -23,50 +25,6 @@ const {
   mockUpdate: vi.fn(),
 }))
 
-vi.mock('@sim/db', () => {
-  const instance = { insert: mockInsert, transaction: mockTransaction }
-  return { db: instance, dbReplica: instance }
-})
-
-vi.mock('@sim/db/schema', () => ({
-  usageLog: {
-    billingEntityId: 'usageLog.billingEntityId',
-    billingEntityType: 'usageLog.billingEntityType',
-    billingPeriodEnd: 'usageLog.billingPeriodEnd',
-    billingPeriodStart: 'usageLog.billingPeriodStart',
-    category: 'usageLog.category',
-    cost: 'usageLog.cost',
-    rawCost: 'usageLog.rawCost',
-    billableCost: 'usageLog.billableCost',
-    billable: 'usageLog.billable',
-    chatId: 'usageLog.chatId',
-    runId: 'usageLog.runId',
-    vendor: 'usageLog.vendor',
-    provider: 'usageLog.provider',
-    toolId: 'usageLog.toolId',
-    quantity: 'usageLog.quantity',
-    unit: 'usageLog.unit',
-    pricingSnapshot: 'usageLog.pricingSnapshot',
-    occurredAt: 'usageLog.occurredAt',
-    createdAt: 'usageLog.createdAt',
-    description: 'usageLog.description',
-    eventKey: 'usageLog.eventKey',
-    executionId: 'usageLog.executionId',
-    id: 'usageLog.id',
-    metadata: 'usageLog.metadata',
-    source: 'usageLog.source',
-    userId: 'usageLog.userId',
-    workflowId: 'usageLog.workflowId',
-    workspaceId: 'usageLog.workspaceId',
-    actorUserId: 'usageLog.actorUserId',
-    actorType: 'usageLog.actorType',
-    parentExecutionId: 'usageLog.parentExecutionId',
-    rootExecutionId: 'usageLog.rootExecutionId',
-    triggeringChatId: 'usageLog.triggeringChatId',
-    triggeringRunId: 'usageLog.triggeringRunId',
-  },
-}))
-
 vi.mock('@/lib/billing/core/plan', () => ({
   getHighestPrioritySubscription: mockGetHighestPrioritySubscription,
 }))
@@ -75,21 +33,39 @@ vi.mock('@/lib/billing/subscriptions/utils', () => ({
   isOrgScopedSubscription: mockIsOrgScopedSubscription,
 }))
 
-vi.mock('@/lib/core/config/env-flags', () => ({
-  isBillingEnabled: true,
-}))
-
 import {
   buildNullOnlyAttributionFill,
   CUMULATIVE_COST_EPSILON,
+  CumulativeUsageContextMismatchError,
   recordCumulativeUsage,
   recordUsage,
   resolveCumulativeTopUp,
 } from '@/lib/billing/core/usage-log'
 
+/**
+ * Re-wires the shared db mocks (`dbChainMockFns`, backing the single shared
+ * `@sim/db` mock instance) to this file's insert/transaction chain.
+ */
+function installSharedDbMocks(): void {
+  resetDbChainMock()
+  dbChainMockFns.insert.mockImplementation((...args: unknown[]) => mockInsert(...args))
+  dbChainMockFns.transaction.mockImplementation((...args: unknown[]) => mockTransaction(...args))
+}
+
+afterAll(() => {
+  resetDbChainMock()
+})
+
+beforeAll(() => {
+  setEnvFlags({ isBillingEnabled: true })
+})
+
+afterAll(resetEnvFlagsMock)
+
 describe('recordUsage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    installSharedDbMocks()
     mockReturning.mockResolvedValue([
       { cost: '0.10', billable: true },
       { cost: '0.20', billable: true },
@@ -109,8 +85,13 @@ describe('recordUsage', () => {
 
   it('commits canonical usage rows with deterministic event keys and billing scope', async () => {
     await recordUsage({
-      userId: 'user-1',
+      userId: 'external-actor',
       workspaceId: 'workspace-1',
+      billingEntity: { type: 'organization', id: 'workspace-org' },
+      billingPeriod: {
+        start: new Date('2026-05-01T00:00:00.000Z'),
+        end: new Date('2026-06-01T00:00:00.000Z'),
+      },
       workflowId: 'workflow-1',
       executionId: 'execution-1',
       entries: [
@@ -128,7 +109,8 @@ describe('recordUsage', () => {
     const values = mockValues.mock.calls[0][0]
     expect(values).toHaveLength(2)
     expect(values[0]).toMatchObject({
-      billingEntityId: 'org-1',
+      userId: 'external-actor',
+      billingEntityId: 'workspace-org',
       billingEntityType: 'organization',
       billingPeriodEnd: new Date('2026-06-01T00:00:00.000Z'),
       billingPeriodStart: new Date('2026-05-01T00:00:00.000Z'),
@@ -142,9 +124,11 @@ describe('recordUsage', () => {
       cost: '0.1',
       billable: true,
     })
-    expect(mockOnConflictDoNothing).toHaveBeenCalledWith(
-      expect.objectContaining({ target: 'usageLog.eventKey' })
-    )
+    expect(mockOnConflictDoNothing).toHaveBeenCalledTimes(1)
+    expect(mockOnConflictDoNothing.mock.calls[0][0]).toMatchObject({
+      target: usageLog.eventKey,
+    })
+    expect(mockGetHighestPrioritySubscription).not.toHaveBeenCalled()
   })
 
   it('stamps occurredAt from caller when provided', async () => {
@@ -179,9 +163,9 @@ describe('recordUsage', () => {
   it('inserts zero-cost entries with billable=false and full metadata', async () => {
     mockReturning.mockResolvedValue([{ cost: '0', billable: false }])
 
+    // Omit workspaceId — workspace usage requires an explicit payer context.
     await recordUsage({
       userId: 'user-1',
-      workspaceId: 'workspace-1',
       executionId: 'execution-1',
       entries: [
         {
@@ -200,6 +184,21 @@ describe('recordUsage', () => {
       billable: false,
       metadata: { inputTokens: 100, outputTokens: 50 },
     })
+  })
+
+  it('rejects workspace usage without an explicit payer context', async () => {
+    await expect(
+      recordUsage({
+        userId: 'external-actor',
+        workspaceId: 'workspace-1',
+        entries: [
+          { category: 'fixed', source: 'workflow', description: 'execution_fee', cost: 0.1 },
+        ],
+      })
+    ).rejects.toThrow('Workspace usage requires an explicit billing entity and billing period')
+
+    expect(mockGetHighestPrioritySubscription).not.toHaveBeenCalled()
+    expect(mockInsert).not.toHaveBeenCalled()
   })
 })
 
@@ -239,8 +238,39 @@ describe('resolveCumulativeTopUp', () => {
 })
 
 describe('recordCumulativeUsage', () => {
+  const defaultExistingRow: {
+    id: string
+    cost: string
+    userId: string
+    workspaceId: string | null
+    billingEntityType: 'user' | 'organization' | null
+    billingEntityId: string | null
+    billingPeriodStart: Date | null
+    billingPeriodEnd: Date | null
+    rawCost?: string
+    pricingSnapshot?: unknown
+    chatId?: string | null
+    runId?: string | null
+    actorUserId?: string | null
+    actorType?: string | null
+    parentExecutionId?: string | null
+    rootExecutionId?: string | null
+    triggeringChatId?: string | null
+    triggeringRunId?: string | null
+  } = {
+    id: 'row-1',
+    cost: '0.3474447',
+    userId: 'user-1',
+    workspaceId: null,
+    billingEntityType: 'organization' as const,
+    billingEntityId: 'org-1',
+    billingPeriodStart: new Date('2026-05-01T00:00:00.000Z'),
+    billingPeriodEnd: new Date('2026-06-01T00:00:00.000Z'),
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
+    installSharedDbMocks()
     mockReturning.mockResolvedValue([{ cost: '0.3474447', billable: true }])
     mockOnConflictDoNothing.mockReturnValue({ returning: mockReturning })
     mockValues.mockReturnValue({ onConflictDoNothing: mockOnConflictDoNothing })
@@ -254,23 +284,23 @@ describe('recordCumulativeUsage', () => {
   })
 
   const setupTx = (
-    existingRow: {
-      id: string
-      cost: string
-      rawCost?: string
-      pricingSnapshot?: unknown
-      workspaceId?: string | null
-      chatId?: string | null
-      runId?: string | null
-      actorUserId?: string | null
-      actorType?: string | null
-      parentExecutionId?: string | null
-      rootExecutionId?: string | null
-      triggeringChatId?: string | null
-      triggeringRunId?: string | null
-    } | null
+    existingRow:
+      | (Partial<typeof defaultExistingRow> & {
+          rawCost?: string
+          pricingSnapshot?: unknown
+          chatId?: string | null
+          runId?: string | null
+          actorUserId?: string | null
+          actorType?: string | null
+          parentExecutionId?: string | null
+          rootExecutionId?: string | null
+          triggeringChatId?: string | null
+          triggeringRunId?: string | null
+        })
+      | null
   ) => {
-    const limit = vi.fn().mockResolvedValue(existingRow ? [existingRow] : [])
+    const resolvedExistingRow = existingRow ? { ...defaultExistingRow, ...existingRow } : null
+    const limit = vi.fn().mockResolvedValue(resolvedExistingRow ? [resolvedExistingRow] : [])
     const where = vi.fn().mockReturnValue({ limit })
     const from = vi.fn().mockReturnValue({ where })
     const select = vi.fn().mockReturnValue({ from })
@@ -297,8 +327,13 @@ describe('recordCumulativeUsage', () => {
   it('inserts the full cumulative on the first flush', async () => {
     setupTx(null)
     const result = await recordCumulativeUsage({
-      userId: 'user-1',
+      userId: 'external-actor',
       workspaceId: 'ws-1',
+      billingEntity: { type: 'organization', id: 'workspace-org' },
+      billingPeriod: {
+        start: new Date('2026-05-01T00:00:00.000Z'),
+        end: new Date('2026-06-01T00:00:00.000Z'),
+      },
       source: 'workspace-chat',
       model: 'claude-opus-4.8',
       cost: 0.3474447,
@@ -308,6 +343,11 @@ describe('recordCumulativeUsage', () => {
     expect(result).toEqual({ billed: true, delta: 0.3474447, total: 0.3474447 })
     expect(mockInsert).toHaveBeenCalledTimes(1)
     expect(mockUpdate).not.toHaveBeenCalled()
+    expect(mockValues.mock.calls[0][0][0]).toMatchObject({
+      userId: 'external-actor',
+      billingEntityId: 'workspace-org',
+      billingEntityType: 'organization',
+    })
   })
 
   it('tops up to the higher cumulative and bills only the delta', async () => {
@@ -360,7 +400,7 @@ describe('recordCumulativeUsage', () => {
     )
 
     if (previousMultiplier === undefined) {
-      delete process.env.USAGE_LOG_COST_MULTIPLIER
+      process.env.USAGE_LOG_COST_MULTIPLIER = undefined
     } else {
       process.env.USAGE_LOG_COST_MULTIPLIER = previousMultiplier
     }
@@ -489,6 +529,42 @@ describe('recordCumulativeUsage', () => {
     })
   })
 
+  it.each([
+    ['actor', { userId: 'different-actor' }],
+    ['workspace', { workspaceId: 'different-workspace' }],
+    ['billing entity', { billingEntityId: 'different-organization' }],
+    ['billing period', { billingPeriodEnd: new Date('2026-07-01T00:00:00.000Z') }],
+  ])('rejects a reused event key bound to a different %s', async (field, override) => {
+    setupTx({
+      ...defaultExistingRow,
+      userId: 'external-actor',
+      workspaceId: 'ws-1',
+      billingEntityId: 'workspace-org',
+      ...override,
+    })
+
+    const result = recordCumulativeUsage({
+      userId: 'external-actor',
+      workspaceId: 'ws-1',
+      billingEntity: { type: 'organization', id: 'workspace-org' },
+      billingPeriod: {
+        start: new Date('2026-05-01T00:00:00.000Z'),
+        end: new Date('2026-06-01T00:00:00.000Z'),
+      },
+      source: 'workspace-chat',
+      model: 'claude-opus-4.8',
+      cost: 0.3474447,
+      eventKey: 'update-cost:msg-1-billing',
+    })
+
+    await expect(result).rejects.toMatchObject({
+      name: CumulativeUsageContextMismatchError.name,
+      mismatchedFields: [field],
+    })
+    expect(mockUpdate).not.toHaveBeenCalled()
+    expect(mockInsert).not.toHaveBeenCalled()
+  })
+
   it('resolves the billing context before opening the locked transaction, exactly once', async () => {
     setupTx(null)
     await recordCumulativeUsage({
@@ -554,8 +630,15 @@ describe('recordCumulativeUsage', () => {
 })
 
 describe('recordCumulativeUsage streaming idempotency with chatId/runId', () => {
+  const streamBillingEntity = { type: 'organization' as const, id: 'workspace-org' }
+  const streamBillingPeriod = {
+    start: new Date('2026-05-01T00:00:00.000Z'),
+    end: new Date('2026-06-01T00:00:00.000Z'),
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
+    installSharedDbMocks()
     mockReturning.mockResolvedValue([{ cost: '0.3474447', billable: true }])
     mockOnConflictDoNothing.mockReturnValue({ returning: mockReturning })
     mockValues.mockReturnValue({ onConflictDoNothing: mockOnConflictDoNothing })
@@ -576,6 +659,11 @@ describe('recordCumulativeUsage streaming idempotency with chatId/runId', () => 
       workspaceId?: string | null
       chatId?: string | null
       runId?: string | null
+      userId?: string
+      billingEntityType?: 'user' | 'organization' | null
+      billingEntityId?: string | null
+      billingPeriodStart?: Date | null
+      billingPeriodEnd?: Date | null
     } | null
   ) => {
     const limit = vi.fn().mockResolvedValue(existingRow ? [existingRow] : [])
@@ -604,12 +692,19 @@ describe('recordCumulativeUsage streaming idempotency with chatId/runId', () => 
       workspaceId?: string | null
       chatId?: string | null
       runId?: string | null
+      userId?: string
+      billingEntityType?: 'user' | 'organization' | null
+      billingEntityId?: string | null
+      billingPeriodStart?: Date | null
+      billingPeriodEnd?: Date | null
     } | null
   ) => {
     setupTx(existing)
     return recordCumulativeUsage({
       userId: 'user-1',
       workspaceId: 'ws-1',
+      billingEntity: streamBillingEntity,
+      billingPeriod: streamBillingPeriod,
       source: 'workspace-chat',
       model: 'claude-opus-4.8',
       cost,
@@ -629,9 +724,14 @@ describe('recordCumulativeUsage streaming idempotency with chatId/runId', () => 
       id: 'row-1',
       cost: '0.3',
       rawCost: '0.3',
+      userId: 'user-1',
       workspaceId: 'ws-1',
       chatId: 'chat-1',
       runId: 'run-1',
+      billingEntityType: 'organization',
+      billingEntityId: 'workspace-org',
+      billingPeriodStart: streamBillingPeriod.start,
+      billingPeriodEnd: streamBillingPeriod.end,
     })
     expect(duplicate).toEqual({ billed: false, delta: 0, total: 0.3 })
     expect(mockInsert).toHaveBeenCalledTimes(1)
@@ -641,9 +741,14 @@ describe('recordCumulativeUsage streaming idempotency with chatId/runId', () => 
       id: 'row-1',
       cost: '0.3',
       rawCost: '0.3',
+      userId: 'user-1',
       workspaceId: 'ws-1',
       chatId: 'chat-1',
       runId: 'run-1',
+      billingEntityType: 'organization',
+      billingEntityId: 'workspace-org',
+      billingPeriodStart: streamBillingPeriod.start,
+      billingPeriodEnd: streamBillingPeriod.end,
     })
     expect(recovered.billed).toBe(true)
     expect(recovered.total).toBe(0.5)
@@ -653,10 +758,22 @@ describe('recordCumulativeUsage streaming idempotency with chatId/runId', () => 
   })
 
   it('preserves chatId and runId when topping up an existing cumulative row', async () => {
-    const { updateSet } = setupTx({ id: 'row-1', cost: '0.3', rawCost: '0.3' })
+    const { updateSet } = setupTx({
+      id: 'row-1',
+      cost: '0.3',
+      rawCost: '0.3',
+      userId: 'user-1',
+      workspaceId: 'ws-1',
+      billingEntityType: 'organization',
+      billingEntityId: 'workspace-org',
+      billingPeriodStart: streamBillingPeriod.start,
+      billingPeriodEnd: streamBillingPeriod.end,
+    })
     await recordCumulativeUsage({
       userId: 'user-1',
       workspaceId: 'ws-1',
+      billingEntity: streamBillingEntity,
+      billingPeriod: streamBillingPeriod,
       source: 'workspace-chat',
       model: 'claude-opus-4.8',
       cost: 0.5,

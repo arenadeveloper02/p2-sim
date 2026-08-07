@@ -1,25 +1,14 @@
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { ChipTag, Combobox, type ComboboxOption } from '@sim/emcn'
-import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { isRecordLike } from '@sim/utils/object'
-import { isEqual } from 'es-toolkit'
-import { useStoreWithEqualityFn } from 'zustand/traditional'
-import { buildCanonicalIndex, resolveDependencyValue } from '@/lib/workflows/subblocks/visibility'
 import {
   getZoomAdminAccessEpoch,
   subscribeZoomAdminAccess,
 } from '@/lib/workspaces/zoom-admin-access-cache'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
+import { useFetchedOptions } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-fetched-options'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useActiveSearchTarget } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
 import { getBlock } from '@/blocks/registry'
@@ -27,8 +16,6 @@ import type { SubBlockConfig } from '@/blocks/types'
 import { getDependsOnFields } from '@/blocks/utils'
 import { ResponseBlockHandler } from '@/executor/handlers/response/response-handler'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
-import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
-import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
 /** Selected-value badges shown before folding the rest into a "+N" badge. */
@@ -87,6 +74,8 @@ interface DropdownProps {
   searchable?: boolean
   /** When true, empty is intentional and defaults must not be re-seeded on hydration */
   clearable?: boolean
+  /** Render option labels verbatim instead of lowercasing them */
+  preserveLabelCase?: boolean
 }
 
 /**
@@ -115,6 +104,7 @@ export const Dropdown = memo(function Dropdown({
   dependsOn,
   searchable = false,
   clearable = false,
+  preserveLabelCase = false,
 }: DropdownProps) {
   const activeSearchTarget = useActiveSearchTarget()
   const { isToolAllowed } = usePermissionConfig()
@@ -125,38 +115,10 @@ export const Dropdown = memo(function Dropdown({
 
   const dependsOnFields = useMemo(() => getDependsOnFields(dependsOn), [dependsOn])
 
-  const activeWorkflowId = useWorkflowRegistry((s) => s.activeWorkflowId)
-  const blockState = useWorkflowStore((state) => state.blocks[blockId])
-  const blockConfig = blockState?.type ? getBlock(blockState.type) : null
-  const canonicalIndex = useMemo(
-    () => buildCanonicalIndex(blockConfig?.subBlocks || []),
-    [blockConfig?.subBlocks]
-  )
-  const canonicalModeOverrides = blockState?.data?.canonicalModes
-  const dependencyValues = useStoreWithEqualityFn(
-    useSubBlockStore,
-    useCallback(
-      (state) => {
-        if (dependsOnFields.length === 0 || !activeWorkflowId) return []
-        const workflowValues = state.workflowValues[activeWorkflowId] || {}
-        const blockValues = workflowValues[blockId] || {}
-        return dependsOnFields.map((depKey) =>
-          resolveDependencyValue(depKey, blockValues, canonicalIndex, canonicalModeOverrides)
-        )
-      },
-      [dependsOnFields, activeWorkflowId, blockId, canonicalIndex, canonicalModeOverrides]
-    ),
-    isEqual
-  )
-
-  const [fetchedOptions, setFetchedOptions] = useState<Array<{ label: string; id: string }>>([])
-  const [isLoadingOptions, setIsLoadingOptions] = useState(false)
-  const [fetchError, setFetchError] = useState<string | null>(null)
-  const [hydratedOption, setHydratedOption] = useState<{ label: string; id: string } | null>(null)
-  const [hasFetched, setHasFetched] = useState(false)
+  const blockType = useWorkflowStore((state) => state.blocks[blockId]?.type)
+  const blockConfig = blockType ? getBlock(blockType) : null
 
   const previousModeRef = useRef<string | null>(null)
-  const previousDependencyValuesRef = useRef<string>('')
 
   const [builderData, setBuilderData] = useSubBlockValue<any[]>(blockId, 'builderData')
   const [data, setData] = useSubBlockValue<string>(blockId, 'data')
@@ -181,36 +143,6 @@ export const Dropdown = memo(function Dropdown({
         : []
     : null
 
-  const fetchOptionsIfNeeded = useCallback(async () => {
-    if (!fetchOptions || isPreview || disabled) return
-
-    setIsLoadingOptions(true)
-    setFetchError(null)
-    try {
-      const options = await fetchOptions(blockId)
-      setFetchedOptions(options)
-    } catch (error) {
-      const errorMessage = getErrorMessage(error, 'Failed to fetch options')
-      setFetchError(errorMessage)
-      setFetchedOptions([])
-    } finally {
-      setHasFetched(true)
-      setIsLoadingOptions(false)
-    }
-  }, [fetchOptions, blockId, isPreview, disabled])
-
-  /**
-   * Handles combobox open state changes to trigger option fetching
-   */
-  const handleOpenChange = useCallback(
-    (open: boolean) => {
-      if (open) {
-        void fetchOptionsIfNeeded()
-      }
-    },
-    [fetchOptionsIfNeeded]
-  )
-
   /** Re-evaluate function options when Zoom Admin allowlist cache updates. */
   const zoomAdminAccessEpoch = useSyncExternalStore(
     subscribeZoomAdminAccess,
@@ -221,6 +153,35 @@ export const Dropdown = memo(function Dropdown({
   const evaluatedOptions = useMemo(() => {
     return typeof options === 'function' ? options() : options
   }, [options, zoomAdminAccessEpoch])
+
+  const {
+    fetchedOptions,
+    isLoadingOptions,
+    fetchError,
+    hydratedOption,
+    refetch: refetchOptions,
+  } = useFetchedOptions({
+    blockId,
+    dependsOnFields,
+    fetchOptions,
+    fetchOptionById,
+    isPreview: Boolean(isPreview),
+    disabled: Boolean(disabled),
+    valueToHydrate: singleValue,
+    localOptions: evaluatedOptions,
+  })
+
+  /**
+   * Handles combobox open state changes to trigger option fetching
+   */
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) {
+        refetchOptions()
+      }
+    },
+    [refetchOptions]
+  )
 
   const normalizedFetchedOptions = useMemo(() => {
     return fetchedOptions.map((opt) => ({ label: opt.label, id: opt.id }))
@@ -268,18 +229,19 @@ export const Dropdown = memo(function Dropdown({
   }, [subBlockId, blockConfig, allOptions, isToolAllowed])
 
   const comboboxOptions = useMemo((): ComboboxOption[] => {
+    const toLabel = (raw: string) => (preserveLabelCase ? raw : raw.toLowerCase())
     return allOptions.map((opt) => {
       if (typeof opt === 'string') {
-        return { label: opt.toLowerCase(), value: opt, hidden: deniedOperationIds.has(opt) }
+        return { label: toLabel(opt), value: opt, hidden: deniedOperationIds.has(opt) }
       }
       return {
-        label: opt.label.toLowerCase(),
+        label: toLabel(opt.label),
         value: opt.id,
         icon: 'icon' in opt ? opt.icon : undefined,
         hidden: opt.hidden || deniedOperationIds.has(opt.id),
       }
     })
-  }, [allOptions, deniedOperationIds])
+  }, [allOptions, deniedOperationIds, preserveLabelCase])
 
   const optionMap = useMemo(() => {
     return new Map(comboboxOptions.map((opt) => [opt.value, opt.label]))
@@ -446,111 +408,6 @@ export const Dropdown = memo(function Dropdown({
   )
 
   /**
-   * Effect to clear fetched options and hydrated option when dependencies actually change
-   * This ensures options are refetched with new dependency values (e.g., new credentials)
-   */
-  useEffect(() => {
-    if (fetchOptions && dependsOnFields.length > 0) {
-      const currentDependencyValuesStr = JSON.stringify(dependencyValues)
-      const previousDependencyValuesStr = previousDependencyValuesRef.current
-
-      if (
-        previousDependencyValuesStr &&
-        currentDependencyValuesStr !== previousDependencyValuesStr
-      ) {
-        setFetchedOptions([])
-        setHasFetched(false)
-        setHydratedOption(null)
-        // Clear the selected value when dependencies change (e.g., switching accounts)
-        // This prevents stale values from the previous account from persisting
-        if (multiSelect) {
-          setStoreValue([])
-        } else {
-          setStoreValue('')
-        }
-      }
-
-      previousDependencyValuesRef.current = currentDependencyValuesStr
-    }
-  }, [dependencyValues, fetchOptions, dependsOnFields.length, multiSelect, setStoreValue])
-
-  /**
-   * Effect to fetch options when needed (on mount, when enabled, or when dependencies change)
-   */
-  useEffect(() => {
-    if (
-      fetchOptions &&
-      !isPreview &&
-      !disabled &&
-      !hasFetched &&
-      !isLoadingOptions &&
-      !fetchError
-    ) {
-      fetchOptionsIfNeeded()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchOptionsIfNeeded deps already covered above
-  }, [
-    fetchOptions,
-    isPreview,
-    disabled,
-    hasFetched,
-    isLoadingOptions,
-    fetchError,
-    dependencyValues,
-  ])
-
-  /**
-   * Effect to hydrate the stored value's label by fetching it individually
-   * This ensures the correct label is shown before the full options list loads
-   */
-  useEffect(() => {
-    if (!fetchOptionById || isPreview || disabled) return
-
-    // Get the value to hydrate (single value only, not multi-select)
-    const valueToHydrate = multiSelect ? null : (singleValue as string | null | undefined)
-    if (!valueToHydrate) return
-
-    // Skip if value is an expression (not a real ID)
-    if (valueToHydrate.startsWith('<') || valueToHydrate.includes('{{')) return
-
-    // Skip if already hydrated with the same value
-    if (hydratedOption?.id === valueToHydrate) return
-
-    // Skip if value is already in fetched options or static options
-    const alreadyInFetchedOptions = fetchedOptions.some((opt) => opt.id === valueToHydrate)
-    const alreadyInStaticOptions = evaluatedOptions.some((opt) =>
-      typeof opt === 'string' ? opt === valueToHydrate : opt.id === valueToHydrate
-    )
-    if (alreadyInFetchedOptions || alreadyInStaticOptions) return
-
-    // Track if effect is still active (cleanup on unmount or value change)
-    let isActive = true
-
-    // Fetch the hydrated option
-    fetchOptionById(blockId, valueToHydrate)
-      .then((option) => {
-        if (isActive) setHydratedOption(option)
-      })
-      .catch(() => {
-        if (isActive) setHydratedOption(null)
-      })
-
-    return () => {
-      isActive = false
-    }
-  }, [
-    fetchOptionById,
-    singleValue,
-    multiSelect,
-    blockId,
-    isPreview,
-    disabled,
-    fetchedOptions,
-    evaluatedOptions,
-    hydratedOption?.id,
-  ])
-
-  /**
    * Custom overlay content for multi-select mode. Shows at most two badges
    * and folds the rest into a "+N" badge, matching the summary notation used
    * for collapsed subblock rows.
@@ -565,7 +422,8 @@ export const Dropdown = memo(function Dropdown({
     return (
       <div className='flex items-center gap-1 overflow-hidden whitespace-nowrap'>
         {visibleValues.map((selectedValue: string, index) => {
-          const label = (optionMap.get(selectedValue) || selectedValue).toLowerCase()
+          const rawLabel = optionMap.get(selectedValue) || selectedValue
+          const label = preserveLabelCase ? rawLabel : rawLabel.toLowerCase()
           const workflowSearchHighlight = getWorkflowSearchLabelHighlight({
             activeSearchTarget,
             blockId,
@@ -574,7 +432,7 @@ export const Dropdown = memo(function Dropdown({
             label,
           })
           return (
-            <ChipTag key={selectedValue} variant='mono' className='min-w-0 shrink'>
+            <ChipTag key={selectedValue} variant='field' className='min-w-0 shrink'>
               <span className='truncate'>
                 {formatDisplayText(label, { workflowSearchHighlight })}
               </span>
@@ -582,13 +440,21 @@ export const Dropdown = memo(function Dropdown({
           )
         })}
         {overflowCount > 0 && (
-          <ChipTag variant='mono' className='shrink-0'>
+          <ChipTag variant='field' className='shrink-0'>
             +{overflowCount}
           </ChipTag>
         )}
       </div>
     )
-  }, [activeSearchTarget, blockId, multiSelect, multiValues, optionMap, subBlockId])
+  }, [
+    activeSearchTarget,
+    blockId,
+    multiSelect,
+    multiValues,
+    optionMap,
+    preserveLabelCase,
+    subBlockId,
+  ])
 
   const singleSelectOverlay = useMemo(() => {
     if (multiSelect || !singleValue) return undefined

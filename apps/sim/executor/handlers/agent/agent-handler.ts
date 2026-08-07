@@ -6,10 +6,25 @@ import { sleep } from '@sim/utils/helpers'
 import { truncate } from '@sim/utils/string'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { normalizeStringRecord, normalizeWorkflowVariables } from '@/lib/core/utils/records'
-import { normalizeReferenceFileParams } from '@/lib/image-generation/reference-files'
+import {
+  applyAgentChatFilesToImageGeneratorTools,
+  normalizeReferenceFileParams,
+} from '@/lib/image-generation/reference-files'
 import { createMcpToolId } from '@/lib/mcp/utils'
-import { processFilesToUserFiles, type RawFileInput } from '@/lib/uploads/utils/file-utils'
+import {
+  type AutoMediaKind,
+  type AutoRoutingResult,
+  type AutoRoutingSignals,
+  resolveAutoModel,
+  SIM_AUTO_SYSTEM_PREAMBLE,
+} from '@/lib/model-router/resolve'
+import {
+  MODEL_SUPPORTED_IMAGE_MIME_TYPES,
+  processFilesToUserFiles,
+  type RawFileInput,
+} from '@/lib/uploads/utils/file-utils'
 import { hydrateUserFilesWithBase64 } from '@/lib/uploads/utils/user-file-base64.server'
+import { resolveCustomBlockToolBinding } from '@/lib/workflows/custom-blocks/operations'
 import { getCustomToolById } from '@/lib/workflows/custom-tools/operations'
 import { getAllBlocks } from '@/blocks'
 import type { BlockOutput } from '@/blocks/types'
@@ -41,10 +56,16 @@ import { stringifyJSON } from '@/executor/utils/json'
 import { resolveVertexCredential } from '@/executor/utils/vertex-credential'
 import { executeProviderRequest } from '@/providers'
 import {
-  INLINE_ATTACHMENT_THRESHOLD_BYTES,
+  formatAttachmentSizes,
+  getProviderFileStrategy,
   shouldUseLargeFilePath,
   supportsFileAttachments,
 } from '@/providers/attachments'
+import {
+  canUseProviderLargeFilePath,
+  getInlineHydrationMaxBytes,
+} from '@/providers/file-attachments.server'
+import { isAutoModel, SIM_AUTO_MODEL_ID } from '@/providers/models'
 import { getProviderFromModel, transformBlockTool } from '@/providers/utils'
 import type { SerializedBlock } from '@/serializer/types'
 import { filterSchemaForLLM, type ToolSchema } from '@/tools/params'
@@ -132,7 +153,7 @@ export class AgentBlockHandler implements BlockHandler {
 
     const filteredInputs = {
       ...inputs,
-      tools: filteredTools,
+      tools: applyAgentChatFilesToImageGeneratorTools(filteredTools, inputs.files),
       memoryType,
       conversationId: conversationId,
     }
@@ -140,7 +161,32 @@ export class AgentBlockHandler implements BlockHandler {
     await this.validateToolPermissions(ctx, filteredInputs.tools || [])
 
     const responseFormat = parseResponseFormat(filteredInputs.responseFormat)
-    const model = filteredInputs.model || AGENT.DEFAULT_MODEL
+    const configuredModel = filteredInputs.model || AGENT.DEFAULT_MODEL
+
+    let model = configuredModel
+    let autoRouting: AutoRoutingResult | null = null
+    if (isAutoModel(configuredModel)) {
+      autoRouting = await resolveAutoModel({
+        ctx,
+        blockId: block.id,
+        signals: this.buildAutoRoutingSignals(filteredInputs, responseFormat),
+        fallbackModel: AGENT.DEFAULT_MODEL,
+      })
+      model = autoRouting.model
+      logger.info('Resolved sim-auto model', {
+        blockId: block.id,
+        model,
+        tier: autoRouting.tier,
+        decidedBy: autoRouting.decidedBy,
+      })
+      // Hidden identity preamble for every auto execution (fallback included):
+      // keeps pool models in English by default and off the topic of which
+      // underlying model they are. Applied after signal building so the
+      // preamble never influences classification.
+      filteredInputs.systemPrompt = [SIM_AUTO_SYSTEM_PREAMBLE, filteredInputs.systemPrompt]
+        .filter(Boolean)
+        .join('\n\n')
+    }
 
     await validateModelProvider(ctx.userId, ctx.workspaceId, model, ctx)
 
@@ -218,6 +264,13 @@ export class AgentBlockHandler implements BlockHandler {
     const result = await this.executeProviderRequest(ctx, providerRequest, block, responseFormat)
 
     const memoryEnabled = Boolean(filteredInputs.memoryType && filteredInputs.memoryType !== 'none')
+    if (autoRouting && autoRouting.billableRoutingCost > 0) {
+      this.applyRoutingCost(result, autoRouting.billableRoutingCost)
+    }
+
+    if (autoRouting) {
+      this.applyAutoModelLabel(result, model)
+    }
 
     if (this.isStreamingExecution(result)) {
       if (memoryEnabled) {
@@ -246,64 +299,139 @@ export class AgentBlockHandler implements BlockHandler {
   }
 
   /**
-   * Updates the system message in inputs.messages array to match inputs.systemPrompt
-   * This ensures both are kept in sync when we modify the system prompt.
+   * Derives the compact routing signals for sim-auto resolution from the
+   * block's resolved inputs. Excerpts only — the resolver truncates further
+   * and mothership re-clamps server-side.
    */
-  private updateSystemMessageInInputs(inputs: AgentInputs): void {
-    if (!inputs.systemPrompt) return
+  private buildAutoRoutingSignals(inputs: AgentInputs, responseFormat: any): AutoRoutingSignals {
+    const lastMessage =
+      typeof inputs.userPrompt === 'string'
+        ? inputs.userPrompt
+        : inputs.userPrompt != null
+          ? stringifyJSON(inputs.userPrompt)
+          : (inputs.messages?.at(-1)?.content ?? '')
+    const systemPrompt = inputs.systemPrompt ?? ''
+    const normalizedFiles = normalizeFileInput(inputs.files)
+    const approxChars =
+      systemPrompt.length +
+      lastMessage.length +
+      (inputs.messages ? stringifyJSON(inputs.messages).length : 0)
 
-    if (inputs.messages && Array.isArray(inputs.messages)) {
-      const systemMsgIndex = inputs.messages.findIndex((m) => m.role === 'system')
-      if (systemMsgIndex !== -1) {
-        // Update existing system message
-        inputs.messages[systemMsgIndex].content = inputs.systemPrompt
-      } else {
-        // Add system message at the beginning if it doesn't exist
-        inputs.messages.unshift({ role: 'system', content: inputs.systemPrompt })
-      }
+    return {
+      systemPrompt,
+      lastMessage,
+      messageCount: (inputs.messages?.length ?? 0) + (inputs.userPrompt ? 1 : 0),
+      toolNames: (inputs.tools ?? []).map((t) => t.title || t.type || 'tool'),
+      mediaKind: this.resolveMediaKind(inputs, normalizedFiles),
+      hasResponseFormat: Boolean(responseFormat),
+      approxInputTokens: Math.ceil(approxChars / 4),
     }
   }
 
   /**
-   * Extracts complete input from messages array for logging purposes.
-   * This includes conversation history that was added to the prompt.
+   * Classifies what the block attaches, which decides the sim-auto pool column.
+   *
+   * Media reaches the provider by two routes — the block's `files` input and
+   * files already carried on inbound messages (chat deployments, memory, an
+   * upstream block feeding `messages`) — and both count. A file whose MIME type
+   * is missing or unrecognized counts as `file`, the column served by the
+   * providers that accept the most input types, because the alternative is
+   * handing a document to a model whose API models no such content part.
    */
-  private extractCompleteInputFromMessages(
-    messages: Message[] | undefined,
-    inputs: AgentInputs
-  ): any {
-    if (!messages || messages.length === 0) {
-      return inputs
+  private resolveMediaKind(inputs: AgentInputs, normalizedFiles: unknown): AutoMediaKind {
+    const attached: Array<{ type?: string }> = [
+      ...(Array.isArray(normalizedFiles) ? (normalizedFiles as Array<{ type?: string }>) : []),
+      ...(inputs.messages ?? []).flatMap((message) => message.files ?? []),
+    ]
+
+    if (attached.length === 0) return 'none'
+
+    return attached.every((file) =>
+      MODEL_SUPPORTED_IMAGE_MIME_TYPES.has((file.type ?? '').toLowerCase())
+    )
+      ? 'image'
+      : 'file'
+  }
+
+  /**
+   * Reports a completed auto run under the `sim-auto` identity everywhere the
+   * run is observed — the block output, the trace span, and the usage-ledger
+   * row keyed on the model name — so the pool model that served the request
+   * stays an implementation detail (matching the block's configured model and
+   * the hidden identity preamble the models themselves run under).
+   *
+   * Runs after `executeProviderRequest`, whose billability gate and pricing
+   * key on the concrete pool model: tokens and cost are already settled here,
+   * only the label changes.
+   */
+  private applyAutoModelLabel(
+    result: BlockOutput | StreamingExecution,
+    resolvedModel: string
+  ): void {
+    const output = this.isStreamingExecution(result)
+      ? (result as StreamingExecution).execution?.output
+      : (result as BlockOutput)
+    if (!output || typeof output !== 'object') return
+
+    const target = output as {
+      model?: string
+      providerTiming?: {
+        timeSegments?: Array<{ type?: string; name?: string; provider?: string }>
+      }
+    }
+    target.model = SIM_AUTO_MODEL_ID
+
+    // Model segments name themselves after the model (every provider does) and
+    // carry the serving provider, which the log detail renders as that
+    // provider's icon — the same leak by two other routes.
+    for (const segment of target.providerTiming?.timeSegments ?? []) {
+      if (segment.type !== 'model') continue
+      if (segment.name?.toLowerCase() === resolvedModel.toLowerCase()) {
+        segment.name = SIM_AUTO_MODEL_ID
+      }
+      segment.provider = undefined
+    }
+  }
+
+  /**
+   * Adds the billable sim-auto routing charge to the output's cost breakdown
+   * as a distinct `routing` component.
+   *
+   * A non-streaming cost is final, so it is mutated in place. A streaming
+   * output's cost settles at stream end — written through the accessor
+   * `installStreamingCostPolicy` installed — so the charge is layered as a
+   * read-time overlay on the property instead: whatever the drain writes,
+   * every later read (trace spans, cost summary, usage ledger) sees the
+   * routing component on top.
+   */
+  private applyRoutingCost(result: BlockOutput | StreamingExecution, routingCost: number): void {
+    const output = this.isStreamingExecution(result)
+      ? (result as StreamingExecution).execution?.output
+      : (result as BlockOutput)
+    if (!output || typeof output !== 'object') return
+    const target = output as { cost?: Record<string, number> }
+
+    const withRouting = (cost: Record<string, number> | undefined): Record<string, number> =>
+      cost && typeof cost.total === 'number'
+        ? { ...cost, routing: routingCost, total: cost.total + routingCost }
+        : { input: 0, output: 0, routing: routingCost, total: routingCost }
+
+    if (!this.isStreamingExecution(result)) {
+      target.cost = withRouting(target.cost)
+      return
     }
 
-    // Reconstruct the input with the complete user prompt (including conversation history)
-    const userMessages = messages.filter((m) => m.role === 'user')
-    const lastUserMessage = userMessages[userMessages.length - 1]
-
-    if (lastUserMessage) {
-      if (inputs.userPrompt) {
-        return {
-          ...inputs,
-          userPrompt: lastUserMessage.content,
-        }
-      }
-      if (inputs.messages && Array.isArray(inputs.messages)) {
-        const updatedMessages = [...inputs.messages]
-        const userMsgIndex = updatedMessages.findIndex((m) => m.role === 'user')
-        if (userMsgIndex !== -1) {
-          updatedMessages[userMsgIndex] = {
-            ...updatedMessages[userMsgIndex],
-            content: lastUserMessage.content,
-          }
-        }
-        return {
-          ...inputs,
-          messages: updatedMessages,
-        }
-      }
-    }
-
-    return inputs
+    const prior = Object.getOwnPropertyDescriptor(target, 'cost')
+    let raw = prior?.get ? undefined : (target.cost as Record<string, number> | undefined)
+    Object.defineProperty(target, 'cost', {
+      get: () => withRouting(prior?.get ? (prior.get.call(target) as never) : raw),
+      set: (value: Record<string, number> | undefined) => {
+        if (prior?.set) prior.set.call(target, value)
+        else raw = value
+      },
+      configurable: true,
+      enumerable: true,
+    })
   }
 
   private async validateToolPermissions(ctx: ExecutionContext, tools: ToolInput[]): Promise<void> {
@@ -744,6 +872,8 @@ export class AgentBlockHandler implements BlockHandler {
       getTool,
       canonicalModes,
       toolIndex,
+      resolveCustomBlockBinding: (blockType: string) =>
+        resolveCustomBlockToolBinding(blockType, ctx.workspaceId),
     })
 
     if (transformedTool) {
@@ -938,6 +1068,8 @@ export class AgentBlockHandler implements BlockHandler {
     const requestId = ctx.executionId || ctx.workflowId || 'agent-files'
     const nextMessages = [...messages]
 
+    const inlineMaxBytes = getInlineHydrationMaxBytes(providerId)
+
     for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
       const message = messages[messageIndex]
       if (!message.files?.length) {
@@ -955,15 +1087,37 @@ export class AgentBlockHandler implements BlockHandler {
         allowLargeValueWorkflowScope: ctx.allowLargeValueWorkflowScope,
         userId: ctx.userId,
         logger,
-        maxBytes: INLINE_ATTACHMENT_THRESHOLD_BYTES,
+        maxBytes: inlineMaxBytes,
       })
 
       const missingFile = hydratedFiles.find(
-        (file) => !file.base64 && !shouldUseLargeFilePath(file, providerId)
+        (file) =>
+          !file.base64 &&
+          !(canUseProviderLargeFilePath(providerId) && shouldUseLargeFilePath(file, providerId))
       )
       if (missingFile) {
+        const { size: sizeMB, limit: inlineMB } = formatAttachmentSizes(
+          missingFile.size,
+          inlineMaxBytes
+        )
+        const oversized = Number.isFinite(missingFile.size) && missingFile.size > inlineMaxBytes
+        /**
+         * Ordered by how general the cause is. A provider with no upload path at all cannot be
+         * helped by changing the file, and a deployment with no object storage cannot reach any
+         * upload path whatever the file is — so both outrank the format-specific case. Leading
+         * with the generated-document arm blamed the document on providers that have no upload
+         * path for anything, and on hosts whose only real problem was unconfigured storage.
+         */
+        const reason =
+          getProviderFileStrategy(providerId) === 'inline'
+            ? `provider "${providerId}" has no large-file upload path`
+            : !canUseProviderLargeFilePath(providerId)
+              ? 'this deployment has no cloud file storage for the large-file upload path'
+              : `a generated document cannot use the large-file path for provider "${providerId}", because a signed URL points at the generation source rather than the rendered file`
         throw new Error(
-          `File "${missingFile.name}" could not be read for provider "${providerId}". The file may exceed the attachment size limit or may no longer be accessible.`
+          oversized
+            ? `File "${missingFile.name}" (${sizeMB}MB) exceeds the ${inlineMB}MB inline attachment limit, and ${reason}.`
+            : `File "${missingFile.name}" could not be read for provider "${providerId}". The file may no longer be accessible.`
         )
       }
 
@@ -1126,6 +1280,7 @@ export class AgentBlockHandler implements BlockHandler {
       workflowId: ctx.workflowId,
       workspaceId: ctx.workspaceId,
       userId: ctx.userId,
+      executionId: ctx.executionId,
       stream: streaming,
       messages: messages?.map(({ executionId, ...msg }) => msg),
       environmentVariables: normalizeStringRecord(ctx.environmentVariables),
@@ -1135,7 +1290,10 @@ export class AgentBlockHandler implements BlockHandler {
       reasoningEffort: inputs.reasoningEffort,
       verbosity: inputs.verbosity,
       thinkingLevel: inputs.thinkingLevel,
+      promptCaching: inputs.promptCaching === true,
       previousInteractionId: inputs.previousInteractionId,
+      /** Agent-events remains the opt-in for exposing thinking and tool lifecycle events. */
+      agentEvents: streaming && ctx.metadata?.agentEvents === true,
     }
   }
 
@@ -1169,48 +1327,65 @@ export class AgentBlockHandler implements BlockHandler {
       let finalApiKey: string | undefined = providerRequest.apiKey
 
       if (providerId === 'vertex' && providerRequest.vertexCredential) {
-        finalApiKey = await resolveVertexCredential(
-          providerRequest.vertexCredential,
-          ctx.userId,
-          'vertex-agent'
-        )
+        finalApiKey = await resolveVertexCredential({
+          credentialId: providerRequest.vertexCredential,
+          actingUserId: ctx.userId,
+          workspaceId: ctx.workspaceId,
+          callerLabel: 'vertex-agent',
+        })
       }
 
       const { blockData, blockNameMapping } = collectBlockData(ctx)
 
-      const response = await executeProviderRequest(providerId, {
-        model,
-        systemPrompt: 'systemPrompt' in providerRequest ? providerRequest.systemPrompt : undefined,
-        context: 'context' in providerRequest ? providerRequest.context : undefined,
-        tools: providerRequest.tools,
-        temperature: providerRequest.temperature,
-        maxTokens: providerRequest.maxTokens,
-        apiKey: finalApiKey,
-        azureEndpoint: providerRequest.azureEndpoint,
-        azureApiVersion: providerRequest.azureApiVersion,
-        vertexProject: providerRequest.vertexProject,
-        vertexLocation: providerRequest.vertexLocation,
-        bedrockAccessKeyId: providerRequest.bedrockAccessKeyId,
-        bedrockSecretKey: providerRequest.bedrockSecretKey,
-        bedrockRegion: providerRequest.bedrockRegion,
-        responseFormat: providerRequest.responseFormat,
-        workflowId: providerRequest.workflowId,
-        workspaceId: ctx.workspaceId,
-        userId: ctx.userId,
-        stream: providerRequest.stream,
-        messages: 'messages' in providerRequest ? providerRequest.messages : undefined,
-        environmentVariables: normalizeStringRecord(ctx.environmentVariables),
-        workflowVariables: normalizeWorkflowVariables(ctx.workflowVariables),
-        blockData,
-        blockNameMapping,
-        isDeployedContext: ctx.isDeployedContext,
-        callChain: ctx.callChain,
-        reasoningEffort: providerRequest.reasoningEffort,
-        verbosity: providerRequest.verbosity,
-        thinkingLevel: providerRequest.thinkingLevel,
-        previousInteractionId: providerRequest.previousInteractionId,
-        abortSignal: ctx.abortSignal,
-      })
+      const response = await executeProviderRequest(
+        providerId,
+        {
+          model,
+          systemPrompt:
+            'systemPrompt' in providerRequest ? providerRequest.systemPrompt : undefined,
+          context: 'context' in providerRequest ? providerRequest.context : undefined,
+          tools: providerRequest.tools,
+          temperature: providerRequest.temperature,
+          maxTokens: providerRequest.maxTokens,
+          apiKey: finalApiKey,
+          azureEndpoint: providerRequest.azureEndpoint,
+          azureApiVersion: providerRequest.azureApiVersion,
+          vertexProject: providerRequest.vertexProject,
+          vertexLocation: providerRequest.vertexLocation,
+          bedrockAccessKeyId: providerRequest.bedrockAccessKeyId,
+          bedrockSecretKey: providerRequest.bedrockSecretKey,
+          bedrockRegion: providerRequest.bedrockRegion,
+          responseFormat: providerRequest.responseFormat,
+          workflowId: providerRequest.workflowId,
+          workspaceId: ctx.workspaceId,
+          userId: ctx.userId,
+          stream: providerRequest.stream,
+          messages: 'messages' in providerRequest ? providerRequest.messages : undefined,
+          environmentVariables: normalizeStringRecord(ctx.environmentVariables),
+          workflowVariables: normalizeWorkflowVariables(ctx.workflowVariables),
+          blockData,
+          blockNameMapping,
+          isDeployedContext: ctx.isDeployedContext,
+          callChain: ctx.callChain,
+          billingAttribution: ctx.metadata.billingAttribution,
+          // Reaches tool `_context` via `prepareToolExecution`, so a tool that starts
+          // its own child execution (a custom block) correlates and cancels against
+          // this real run instead of minting a phantom id.
+          executionId: ctx.executionId,
+          reasoningEffort: providerRequest.reasoningEffort,
+          verbosity: providerRequest.verbosity,
+          thinkingLevel: providerRequest.thinkingLevel,
+          promptCaching: providerRequest.promptCaching,
+          // Stable per-block identity; providers use it to route cache lookups.
+          blockId: block.id,
+          previousInteractionId: providerRequest.previousInteractionId,
+          agentEvents: providerRequest.agentEvents,
+          abortSignal: ctx.abortSignal,
+        },
+        {
+          resolvedSecretTraceRegistry: ctx.resolvedSecretTraceRegistry,
+        }
+      )
 
       return this.processProviderResponse(response, block, responseFormat)
     } catch (error) {
@@ -1270,8 +1445,7 @@ export class AgentBlockHandler implements BlockHandler {
     lastUserMessage: Message | null
   ): StreamingExecution {
     return {
-      stream: streamingExec.stream,
-      execution: streamingExec.execution,
+      ...streamingExec,
       onFullContent: async (content: string) => {
         if (!content.trim()) return
         try {

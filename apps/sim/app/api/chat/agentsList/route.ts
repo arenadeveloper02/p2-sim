@@ -1,18 +1,15 @@
 import { db } from '@sim/db'
-import {
-  chat,
-  user,
-  webhook,
-  workflow,
-  workflowExecutionLogs,
-  workflowSchedule,
-} from '@sim/db/schema'
+import { chat, user, workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import type { SQL } from 'drizzle-orm'
-import { and, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
-import { getAgentDepartmentLabel, resolveAgentDepartmentValue } from '@/lib/chat/arena-departments'
+import {
+  getAgentDepartmentLabelMap,
+  labelFromDepartmentMap,
+  resolveAgentDepartmentValue,
+} from '@/lib/chat/arena-departments'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 const logger = createLogger('DeployedChatAgentsListAPI')
@@ -53,7 +50,7 @@ function hasAllowedEmailStartingWithAtSymbol(
 }
 
 /** Maps a DB row to the response agent list item shape. */
-function toAgentListItem(row: AgentChatRow) {
+function toAgentListItem(row: AgentChatRow, departmentLabelMap: Map<string, string>) {
   const appRedirectUrl = row.deploymentType === 'app' && row.redirectUrl ? row.redirectUrl : null
   return {
     id: row.chatId,
@@ -62,7 +59,7 @@ function toAgentListItem(row: AgentChatRow) {
     workflow_id: row.workflowId,
     workflow_name: row.workflowName,
     workspace_id: row.workspaceId,
-    department: getAgentDepartmentLabel(row.department),
+    department: labelFromDepartmentMap(departmentLabelMap, row.department),
     created_at: row.createdAt.toISOString(),
     workflow_description: row.description,
     status: 'published',
@@ -172,9 +169,9 @@ const getAgentsListAllowedEmail = (chats: AgentChatRow[], emailId: string) => {
 /**
  * Fetches active chats with their workflow and author metadata.
  *
- * This is intentionally shared across tabs to keep the same join strategy:
- * - Joins workflow + author email
- * - Excludes chats tied to active webhooks or active schedules
+ * Shared across tabs: joins workflow + author email. Chat deployments remain
+ * listable even when the same workflow also has an active schedule or webhook,
+ * since chat runs use triggerType=chat independently of those automations.
  */
 async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promise<AgentChatRow[]> {
   /**
@@ -201,11 +198,6 @@ async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promi
     .from(chat)
     .innerJoin(workflow, eq(chat.workflowId, workflow.id))
     .innerJoin(user, eq(workflow.userId, user.id))
-    .leftJoin(webhook, and(eq(webhook.workflowId, workflow.id), eq(webhook.isActive, true)))
-    .leftJoin(
-      workflowSchedule,
-      and(eq(workflowSchedule.workflowId, workflow.id), eq(workflowSchedule.status, 'active'))
-    )
     .where(whereConditions)
     .orderBy(desc(chat.updatedAt))
 }
@@ -229,12 +221,7 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
   const creatorUserId = userRecord[0].id
 
   const chats = await fetchAgentChats(
-    and(
-      eq(chat.isActive, true),
-      eq(workflow.userId, creatorUserId),
-      isNull(webhook.id),
-      isNull(workflowSchedule.id)
-    )
+    and(eq(chat.isActive, true), eq(workflow.userId, creatorUserId))
   )
 
   /**
@@ -244,8 +231,9 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
    */
   const accessibleChats = getAgentsListAllowedEmail(chats, emailId)
 
+  const departmentLabelMap = await getAgentDepartmentLabelMap()
   const agentList = await sortAgentListByRecentUsage(
-    accessibleChats.map((row) => toAgentListItem(row)),
+    accessibleChats.map((row) => toAgentListItem(row, departmentLabelMap)),
     creatorUserId
   )
 
@@ -270,16 +258,9 @@ async function fetchSharedWithMeChats(
       ? and(
           eq(chat.isActive, true),
           eq(chat.department, departmentValue),
-          ne(workflow.userId, userId),
-          isNull(webhook.id),
-          isNull(workflowSchedule.id)
+          ne(workflow.userId, userId)
         )
-      : and(
-          eq(chat.isActive, true),
-          ne(workflow.userId, userId),
-          isNull(webhook.id),
-          isNull(workflowSchedule.id)
-        )
+      : and(eq(chat.isActive, true), ne(workflow.userId, userId))
 
   const chats = await fetchAgentChats(sharedWhereConditions)
 
@@ -303,7 +284,8 @@ async function getSharedWithMeAgentsList(emailId: string): Promise<NextResponse>
   }
 
   const sharedChats = await fetchSharedWithMeChats(emailId, userRecord[0].id)
-  const agentList = sharedChats.map((row) => toAgentListItem(row))
+  const departmentLabelMap = await getAgentDepartmentLabelMap()
+  const agentList = sharedChats.map((row) => toAgentListItem(row, departmentLabelMap))
 
   logger.info(
     `agentsList (sharedwithme): returning ${agentList.length} chats for ${emailId} (in allowedEmails, not created by user)`
@@ -335,22 +317,18 @@ async function getGlobalAgentsList(
 
   const globalWhereConditions =
     departmentValue !== undefined
-      ? and(
-          eq(chat.isActive, true),
-          eq(chat.department, departmentValue),
-          isNull(webhook.id),
-          isNull(workflowSchedule.id)
-        )
-      : and(eq(chat.isActive, true), isNull(webhook.id), isNull(workflowSchedule.id))
+      ? and(eq(chat.isActive, true), eq(chat.department, departmentValue))
+      : eq(chat.isActive, true)
   const userEmailDomain = `@${emailId.split('@')[1]}`
 
   const globalChats = await fetchAgentChats(globalWhereConditions)
+  const departmentLabelMap = await getAgentDepartmentLabelMap()
   const globalAgentList = globalChats
     .filter((row) => hasAllowedEmailStartingWithAtSymbol(row.allowedEmails, userEmailDomain))
-    .map((row) => toAgentListItem(row))
+    .map((row) => toAgentListItem(row, departmentLabelMap))
 
   const sharedChats = await fetchSharedWithMeChats(emailId, userId, departmentValue)
-  const sharedAgentList = sharedChats.map((row) => toAgentListItem(row))
+  const sharedAgentList = sharedChats.map((row) => toAgentListItem(row, departmentLabelMap))
 
   const mergedAgentList = mergeAgentListsById(globalAgentList, sharedAgentList)
   const agentList = await sortAgentListByRecentUsage(mergedAgentList, userId)
@@ -409,7 +387,7 @@ export async function GET(request: NextRequest) {
       }
 
       const departmentName = searchParams.get('departmentName')
-      const departmentValue = resolveAgentDepartmentValue(departmentName)
+      const departmentValue = await resolveAgentDepartmentValue(departmentName)
 
       return await getGlobalAgentsList(emailId.trim(), departmentValue)
     }

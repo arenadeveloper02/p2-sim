@@ -2,6 +2,7 @@ import {
   credential,
   customTools,
   document,
+  folder as folderTable,
   knowledgeBase,
   mcpServers,
   skill,
@@ -10,7 +11,6 @@ import {
   workflowDeploymentVersion,
   workflowMcpServer,
   workspaceEnvironment,
-  workspaceFileFolder,
   workspaceFiles,
 } from '@sim/db/schema'
 import { and, count, eq, exists, inArray, isNull, sql } from 'drizzle-orm'
@@ -152,14 +152,15 @@ const fileCandidatesWithFolderQuery = (
       key: workspaceFiles.key,
       label: sql<string>`coalesce(${workspaceFiles.displayName}, ${workspaceFiles.originalName})`,
       folderId: workspaceFiles.folderId,
-      folderName: workspaceFileFolder.name,
+      folderName: folderTable.name,
     })
     .from(workspaceFiles)
     .leftJoin(
-      workspaceFileFolder,
+      folderTable,
       and(
-        eq(workspaceFiles.folderId, workspaceFileFolder.id),
-        isNull(workspaceFileFolder.deletedAt)
+        eq(workspaceFiles.folderId, folderTable.id),
+        eq(folderTable.resourceType, 'file'),
+        isNull(folderTable.deletedAt)
       )
     )
     .where(
@@ -436,11 +437,13 @@ export async function listForkCopyableResources(
         .from(workflow)
         // Match listDeployedWorkflows: a workflow only counts as copyable when it has an
         // actually-active deployment version, not just the isDeployed flag, so the fork
-        // modal's preflight count never over-reports "ghost" deployed workflows.
+        // modal's preflight count never over-reports "ghost" deployed workflows. Sync-excluded
+        // workflows are likewise omitted so the count matches what createFork actually copies.
         .where(
           and(
             eq(workflow.workspaceId, workspaceId),
             eq(workflow.isDeployed, true),
+            eq(workflow.forkSyncExcluded, false),
             isNull(workflow.archivedAt),
             exists(
               executor

@@ -6,7 +6,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { env } from '@/lib/core/config/env'
 import { isProd } from '@/lib/core/config/env-flags'
-import { executeShellInE2B, type SandboxFile } from '@/lib/execution/e2b'
+import { executeShellInSandbox, type SandboxFile } from '@/lib/execution/remote-sandbox'
 
 function sanitizeRelativeFilePath(filePath: string): string | null {
   const normalized = normalize(filePath.replace(/\\/g, '/'))
@@ -61,8 +61,7 @@ const NPM_INSTALL_ARGS = [
 ] as const
 
 /** Shared E2B install flags — omit --prefer-offline so stale sandbox packuments cannot ETARGET new transitive versions. */
-const E2B_NPM_INSTALL =
-  'npm install --include=dev --legacy-peer-deps --no-audit --no-fund 2>&1'
+const E2B_NPM_INSTALL = 'npm install --include=dev --legacy-peer-deps --no-audit --no-fund 2>&1'
 
 /**
  * NODE_ENV must be 'production' (never 'development'): `next build` under a
@@ -250,7 +249,7 @@ async function validateAppTypecheckInE2b(
     'echo "__SIM_RESULT__={\\"typecheckOk\\":true}"',
   ])
 
-  const result = await executeShellInE2B({
+  const result = await executeShellInSandbox({
     code: shellScript,
     envs: { ...E2B_VALIDATION_ENV },
     timeoutMs: TYPECHECK_TIMEOUT_MS,
@@ -285,7 +284,7 @@ async function validateAppBuildInE2b(
     'echo "__SIM_RESULT__={\\"buildOk\\":true}"',
   ])
 
-  const result = await executeShellInE2B({
+  const result = await executeShellInSandbox({
     code: shellScript,
     envs: { ...E2B_VALIDATION_ENV },
     timeoutMs: FULL_BUILD_TIMEOUT_MS,

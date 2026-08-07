@@ -871,6 +871,20 @@ async function executeTask(request, executionId) {
     timings.runtimeBootstrap = Date.now() - tPhase
     tPhase = Date.now()
 
+    // Bun's IIFE sandbox bundles (notably docx.cjs) leave a free `__require`
+    // for optional CJS builtins. Without this, Document construction throws
+    // `ReferenceError: __require is not defined` and Arena Copilot reports
+    // "No docs". The throw below is intentional — optional deps catch it.
+    const requireShimScript = await isolate.compileScript(`
+      if (typeof globalThis.__require !== 'function') {
+        globalThis.__require = function(id) {
+          throw new Error('Module \"' + id + '\" is not available in the document sandbox');
+        };
+      }
+    `)
+    releaseables.push(requireShimScript)
+    await requireShimScript.run(context)
+
     for (const bundleName of task.bundles) {
       const { source, fileName } = getBundleSource(bundleName)
       const bundleScript = await isolate.compileScript(source, { filename: `sandbox/${fileName}` })

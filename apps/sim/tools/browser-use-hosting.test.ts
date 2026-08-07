@@ -2,10 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import {
-  BROWSER_USE_STEP_USD,
-  BROWSER_USE_TASK_INIT_USD,
-} from '@/tools/browser_use/hosting'
+import { BROWSER_USE_STEP_USD, BROWSER_USE_TASK_INIT_USD } from '@/tools/browser_use/hosting'
 import { runTaskTool } from '@/tools/browser_use/run_task'
 
 function cost(output: Record<string, unknown>) {
@@ -33,9 +30,7 @@ describe('Browser Use hosted key config', () => {
 
   it('falls back to V2 flat pricing placeholder', () => {
     const steps = [{}, {}, {}]
-    expect(cost({ steps }).cost).toBeCloseTo(
-      BROWSER_USE_TASK_INIT_USD + BROWSER_USE_STEP_USD * 3
-    )
+    expect(cost({ steps }).cost).toBeCloseTo(BROWSER_USE_TASK_INIT_USD + BROWSER_USE_STEP_USD * 3)
     expect(cost({}).cost).toBeCloseTo(BROWSER_USE_TASK_INIT_USD + BROWSER_USE_STEP_USD)
   })
 })

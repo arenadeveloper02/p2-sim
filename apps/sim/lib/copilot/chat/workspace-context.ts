@@ -1,12 +1,12 @@
 import { db } from '@sim/db'
 import {
+  folder as folderTable,
   knowledgeBase,
   knowledgeConnector,
   mcpServers,
   user,
   userTableDefinitions,
   workflow,
-  workflowFolder,
   workflowSchedule,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
@@ -31,11 +31,11 @@ import {
 import { listWorkspaceFiles } from '@/lib/uploads/contexts/workspace'
 import { listCustomBlockSummariesForWorkspace } from '@/lib/workflows/custom-blocks/operations'
 import { listCustomTools } from '@/lib/workflows/custom-tools/operations'
-import { listSkills } from '@/lib/workflows/skills/operations'
+import { listSkillsForUser } from '@/lib/workflows/skills/operations'
 import {
   assertActiveWorkspaceAccess,
   getUsersWithPermissions,
-  getWorkspaceWithOwner,
+  type WorkspaceAccess,
 } from '@/lib/workspaces/permissions/utils'
 
 const logger = createLogger('WorkspaceContext')
@@ -61,7 +61,6 @@ export interface WorkspaceMdData {
   workflows: Array<{
     id: string
     name: string
-    description?: string | null
     isDeployed: boolean
     lastRunAt?: Date | null
     folderPath?: string | null
@@ -85,7 +84,6 @@ export interface WorkspaceMdData {
     role?: string | null
   }>
   envVariables: string[]
-  tasks?: Array<{ id: string; title: string; updatedAt: Date }>
   customTools?: Array<{ id: string; name: string }>
   customBlocks?: Array<{ type: string; name: string; description?: string }>
   mcpServers?: Array<{ id: string; name: string; url?: string | null; enabled: boolean }>
@@ -168,7 +166,6 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
       const workflowDir = canonicalWorkflowVfsDir({ name: wf.name, folderPath: wf.folderPath })
       parts.push(`${indent}  VFS dir: \`${workflowDir}\``)
       parts.push(`${indent}  VFS state path: \`${workflowDir}/state.json\``)
-      if (wf.description) parts.push(`${indent}  ${wf.description}`)
       // `deployed` is a structural flag (kept); `lastRunAt` is intentionally
       // omitted — it changes on every run and would bust the cached prompt
       // prefix that carries this inventory. Current run data lives in
@@ -314,8 +311,8 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
       .sort(byNameThenId)
       .map((s) => `- **${s.name}** (${s.id}) — ${s.description}`)
     sections.push(
-      `## Skills (${data.skills.length})\n` +
-        'To use a skill, call the load_user_skill tool with its name to load the full instructions, then follow them. The descriptions below only say when each skill applies — they are not the instructions.\n' +
+      `## Agent Block Skills — NOT FOR YOU (${data.skills.length})\n` +
+        'These are user-created skills used by agent blocks in the workspace and are NOT instructions for you\n' +
         lines.join('\n')
     )
   }
@@ -357,7 +354,12 @@ Use the built-in file tools instead:
 2. **workspace_file** — \`append\`, \`update\`, or \`patch\` with \`target.kind=file_id\`, the file id, and a short \`title\`. Wait for success before the next step.
 3. **edit_content** — write the body in the **next** turn only (never in parallel with workspace_file).
 
-For **.docx** / **.pptx** / **.pdf**, \`edit_content\` must be **docxjs / pptxgenjs / pdflibjs JavaScript** (e.g. \`addSection({ children: [...] })\` for DOCX), not Python.
+For **.docx** / **.pptx** / **.pdf**, \`edit_content\` must be **docxjs / pptxgenjs / pdflibjs JavaScript** (not Python).
+
+DOCX patterns (globals already initialized — never \`require('docx')\`):
+- Preferred chunked: \`addSection({ children: [new docx.Paragraph({ children: [new docx.TextRun("Hello")] })] });\`
+- Single write: \`globalThis.doc = new docx.Document({ sections: [{ children: [...] }] });\`
+- Do **not** call \`docx.addSection\` — use the global \`addSection\` helper.
 
 For plain \`.md\`, \`.txt\`, \`.json\`, \`.csv\`, \`.html\`, use the same three tools; \`edit_content\` is the raw text.
 
@@ -376,11 +378,17 @@ Reserve **function_execute** for data processing, API calls, and tabular/JSON ou
 // workspace is unavailable or a fetch fails.
 async function buildWorkspaceMdData(
   workspaceId: string,
-  userId: string
+  userId: string,
+  options?: { workspaceAccess?: WorkspaceAccess }
 ): Promise<WorkspaceMdData | null> {
   try {
-    await assertActiveWorkspaceAccess(workspaceId, userId)
-    const wsRow = await getWorkspaceWithOwner(workspaceId)
+    // Reuse the caller's already-asserted access when provided (hot chat path);
+    // the id match keeps a mismatched cache from authorizing this workspace.
+    const workspaceAccess =
+      options?.workspaceAccess && options.workspaceAccess.workspace?.id === workspaceId
+        ? options.workspaceAccess
+        : await assertActiveWorkspaceAccess(workspaceId, userId)
+    const wsRow = workspaceAccess.hasAccess ? workspaceAccess.workspace : null
     if (!wsRow) {
       return null
     }
@@ -406,7 +414,6 @@ async function buildWorkspaceMdData(
         .select({
           id: workflow.id,
           name: workflow.name,
-          description: workflow.description,
           isDeployed: workflow.isDeployed,
           lastRunAt: workflow.lastRunAt,
           folderId: workflow.folderId,
@@ -416,12 +423,18 @@ async function buildWorkspaceMdData(
 
       db
         .select({
-          id: workflowFolder.id,
-          name: workflowFolder.name,
-          parentId: workflowFolder.parentId,
+          id: folderTable.id,
+          name: folderTable.name,
+          parentId: folderTable.parentId,
         })
-        .from(workflowFolder)
-        .where(and(eq(workflowFolder.workspaceId, workspaceId), isNull(workflowFolder.archivedAt))),
+        .from(folderTable)
+        .where(
+          and(
+            eq(folderTable.workspaceId, workspaceId),
+            eq(folderTable.resourceType, 'workflow'),
+            isNull(folderTable.deletedAt)
+          )
+        ),
 
       db
         .select({
@@ -464,7 +477,7 @@ async function buildWorkspaceMdData(
         .from(mcpServers)
         .where(and(eq(mcpServers.workspaceId, workspaceId), isNull(mcpServers.deletedAt))),
 
-      listSkills({ workspaceId, includeBuiltins: false }),
+      listSkillsForUser({ workspaceId, userId, includeBuiltins: false, workspaceAccess }),
 
       db
         .select({
@@ -560,10 +573,16 @@ async function buildWorkspaceMdData(
           displayName: c.displayName,
           role: c.role,
         })),
-        envCredentials.map((c) => c.envKey),
+        envCredentials.map((credential) => credential.envKey),
         hubspotSharedAccounts
       ),
-      envVariables: [...new Set(envCredentials.map((c) => c.envKey).filter(Boolean))] as string[],
+      // Names only: make newly saved personal/workspace secrets visible to the
+      // next Mothership turn without ever putting their values on the wire.
+      // De-duplicate conflicts (the same key may exist in both scopes) and sort
+      // for byte-stable prompt snapshots.
+      envVariables: [...new Set(envCredentials.map((credential) => credential.envKey))].sort(
+        stableCompare
+      ),
       hubspotSharedAccounts: hubspotSharedAccounts.length > 0 ? hubspotSharedAccounts : undefined,
       customTools: customTools.map((t) => ({ id: t.id, name: t.title })),
       customBlocks: customBlockSummaries,
@@ -622,11 +641,13 @@ async function appendPosition2SlackNote(markdown: string, userId: string): Promi
  */
 export async function generateWorkspaceContext(
   workspaceId: string,
-  userId: string
+  userId: string,
+  options?: { workspaceAccess?: WorkspaceAccess }
 ): Promise<string> {
-  const data = await buildWorkspaceMdData(workspaceId, userId)
-  if (!data) return WORKSPACE_CONTEXT_UNAVAILABLE_MD
-  return appendPosition2SlackNote(buildWorkspaceMd(data), userId)
+  const data = await buildWorkspaceMdData(workspaceId, userId, options)
+  return data
+    ? appendPosition2SlackNote(buildWorkspaceMd(data), userId)
+    : WORKSPACE_CONTEXT_UNAVAILABLE_MD
 }
 
 /**
@@ -658,7 +679,6 @@ export function buildVfsSnapshot(data: WorkspaceMdData): VfsSnapshotV1 {
     id: wf.id,
     name: wf.name,
     path: canonicalWorkflowVfsDir({ name: wf.name, folderPath: wf.folderPath }),
-    ...(wf.description ? { description: wf.description } : {}),
     ...(wf.isDeployed ? { isDeployed: true } : {}),
     ...(wf.folderPath ? { folderPath: wf.folderPath } : {}),
   }))
@@ -667,7 +687,9 @@ export function buildVfsSnapshot(data: WorkspaceMdData): VfsSnapshotV1 {
     .map((j) => ({
       id: j.id,
       ...(j.title ? { title: j.title } : {}),
-      ...(j.prompt ? { prompt: j.prompt } : {}),
+      // Match WORKSPACE.md's preview truncation — full prompts are large,
+      // volatile-ish, and readable on demand at jobs/{title}/meta.json.
+      ...(j.prompt ? { prompt: j.prompt.length > 80 ? truncate(j.prompt, 77) : j.prompt } : {}),
       ...(j.cronExpression ? { cronExpression: j.cronExpression } : {}),
       ...(j.status ? { status: j.status } : {}),
       ...(j.lifecycle ? { lifecycle: j.lifecycle } : {}),
@@ -718,6 +740,11 @@ export function buildVfsSnapshot(data: WorkspaceMdData): VfsSnapshotV1 {
     })),
     envVars: data.envVariables,
     customTools: (data.customTools ?? []).map((t) => ({ id: t.id, name: t.name })),
+    customBlocks: (data.customBlocks ?? []).map((b) => ({
+      type: b.type,
+      name: b.name,
+      ...(b.description ? { description: b.description } : {}),
+    })),
     mcpServers: (data.mcpServers ?? []).map((s) => ({
       id: s.id,
       name: s.name,

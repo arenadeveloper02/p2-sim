@@ -4,6 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
+import { filterUndefined } from '@sim/utils/object'
 import { randomFloat } from '@sim/utils/random'
 import { env } from '@/lib/core/config/env'
 import { getRedisClient } from '@/lib/core/config/redis'
@@ -16,6 +17,7 @@ import { sanitizeUrlForLog } from '@/lib/core/utils/logging'
 const logger = createLogger('IsolatedVMExecution')
 
 let nodeAvailable: boolean | null = null
+let resolvedWorkerNodeBin: string | null = null
 
 function checkNodeAvailable(): boolean {
   if (nodeAvailable !== null) return nodeAvailable
@@ -26,6 +28,65 @@ function checkNodeAvailable(): boolean {
     nodeAvailable = false
   }
   return nodeAvailable
+}
+
+function nodeMajorFromVersionOutput(versionOutput: string): number | null {
+  const match = versionOutput.trim().match(/^v?(\d+)/)
+  if (!match?.[1]) return null
+  const major = Number.parseInt(match[1], 10)
+  return Number.isFinite(major) ? major : null
+}
+
+/**
+ * Picks a Node binary for the isolated-vm worker. Node 25+ currently SIGSEGVs
+ * inside isolated-vm; prefer an explicit override or Node 20–22 on PATH / nvm.
+ */
+function resolveWorkerNodeBinary(): string {
+  if (resolvedWorkerNodeBin) return resolvedWorkerNodeBin
+
+  const override = process.env.IVM_NODE_BIN?.trim()
+  if (override && fs.existsSync(override)) {
+    resolvedWorkerNodeBin = override
+    return resolvedWorkerNodeBin
+  }
+
+  try {
+    const version = execSync('node --version', { encoding: 'utf8' })
+    const major = nodeMajorFromVersionOutput(version)
+    if (major !== null && major >= 20 && major <= 22) {
+      resolvedWorkerNodeBin = 'node'
+      return resolvedWorkerNodeBin
+    }
+  } catch {
+    // Fall through to nvm candidates.
+  }
+
+  const home = process.env.HOME?.trim()
+  if (home) {
+    const nvmRoot = path.join(home, '.nvm', 'versions', 'node')
+    try {
+      const versions = fs
+        .readdirSync(nvmRoot)
+        .filter((name) => /^v(20|21|22)\./.test(name))
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+      for (const version of versions) {
+        const candidate = path.join(nvmRoot, version, 'bin', 'node')
+        if (fs.existsSync(candidate)) {
+          logger.warn('PATH node is incompatible with isolated-vm; using nvm Node instead', {
+            pathNode: process.versions.node,
+            workerNode: candidate,
+          })
+          resolvedWorkerNodeBin = candidate
+          return resolvedWorkerNodeBin
+        }
+      }
+    } catch {
+      // No nvm install — fall back.
+    }
+  }
+
+  resolvedWorkerNodeBin = 'node'
+  return resolvedWorkerNodeBin
 }
 
 export interface IsolatedVMExecutionRequest {
@@ -837,7 +898,10 @@ function handleWorkerMessage(workerId: number, message: unknown) {
   }
 }
 
-function cleanupWorker(workerId: number) {
+function cleanupWorker(
+  workerId: number,
+  options?: { signal?: NodeJS.Signals | null; stderr?: string }
+) {
   const workerInfo = workers.get(workerId)
   if (!workerInfo) return
 
@@ -846,6 +910,8 @@ function cleanupWorker(workerId: number) {
   }
 
   workerInfo.process.kill()
+
+  const crashMessage = buildWorkerCrashMessage(options?.signal, options?.stderr)
 
   for (const [id, pending] of workerInfo.pendingExecutions) {
     clearTimeout(pending.timeout)
@@ -859,7 +925,7 @@ function cleanupWorker(workerId: number) {
       result: null,
       stdout: '',
       error: {
-        message: 'Code execution failed unexpectedly. Please try again.',
+        message: crashMessage,
         name: 'Error',
         isSystemError: true,
       },
@@ -869,6 +935,36 @@ function cleanupWorker(workerId: number) {
   workerInfo.activeExecutions = 0
 
   workers.delete(workerId)
+}
+
+/**
+ * Builds a user-facing message when the isolated-vm worker dies mid-execution.
+ * Node 25+ currently SIGSEGVs inside isolated-vm; surface that instead of a
+ * generic "try again" so agents stop blaming docSandboxEnabled.
+ */
+function buildWorkerCrashMessage(
+  signal?: NodeJS.Signals | null,
+  stderr?: string
+): string {
+  const nodeMajor = Number.parseInt(process.versions.node.split('.')[0] ?? '', 10)
+  if (signal === 'SIGSEGV' || (Number.isFinite(nodeMajor) && nodeMajor >= 25)) {
+    return (
+      'Document/code sandbox worker crashed (isolated-vm). ' +
+      `Host Node is v${process.versions.node}; use Node 20–22 LTS, then rebuild: ` +
+      '`cd node_modules/isolated-vm && npm rebuild`, and restart the app. ' +
+      'This is unrelated to e2b.docSandboxEnabled — PPTX/DOCX/PDF use the local JS sandbox.'
+    )
+  }
+  if (stderr?.includes('NODE_MODULE_VERSION') || stderr?.includes('isolated_vm')) {
+    return (
+      'isolated-vm native module is incompatible with this Node.js version. ' +
+      'Use Node 20–22 LTS and run `cd node_modules/isolated-vm && npm rebuild`, then restart.'
+    )
+  }
+  if (signal) {
+    return `Code execution worker exited (${signal}). Please try again.`
+  }
+  return 'Code execution failed unexpectedly. Please try again.'
 }
 
 function resetWorkerIdleTimeout(workerId: number) {
@@ -888,6 +984,37 @@ function resetWorkerIdleTimeout(workerId: number) {
       }
     }, WORKER_IDLE_TIMEOUT_MS)
   }
+}
+
+/**
+ * Environment for the sandbox worker process. The worker runs untrusted user
+ * code, so it must never inherit the app's `process.env` (DB URLs, encryption
+ * keys, provider API keys — see `.claude/rules/sim-sandbox.md`): a V8 isolate
+ * escape would read every inherited secret from the worker's environment.
+ * Only an explicit allowlist is forwarded — `PATH` so `spawn('node', ...)` can
+ * resolve the binary, `NODE_ENV`, the two `IVM_*` limits the worker reads,
+ * timezone/locale vars so `Date`/`Intl` behavior inside isolates matches the
+ * host, and the Windows system vars Node needs to boot (undefined elsewhere
+ * and stripped).
+ * Any new env var the worker reads must be added here and to the allowlist
+ * regression test in `isolated-vm.test.ts`.
+ */
+function buildWorkerEnv(): NodeJS.ProcessEnv {
+  const allowed: Record<string, string | undefined> = {
+    PATH: process.env.PATH,
+    IVM_MAX_STDOUT_CHARS: env.IVM_MAX_STDOUT_CHARS,
+    IVM_MAX_FETCH_OPTIONS_JSON_CHARS: env.IVM_MAX_FETCH_OPTIONS_JSON_CHARS,
+    TZ: process.env.TZ,
+    LANG: process.env.LANG,
+    LC_ALL: process.env.LC_ALL,
+    SYSTEMROOT: process.env.SYSTEMROOT,
+    WINDIR: process.env.WINDIR,
+    COMSPEC: process.env.COMSPEC,
+    PATHEXT: process.env.PATHEXT,
+    TEMP: process.env.TEMP,
+    TMP: process.env.TMP,
+  }
+  return { ...filterUndefined(allowed), NODE_ENV: process.env.NODE_ENV }
 }
 
 function spawnWorker(): Promise<WorkerInfo> {
@@ -951,12 +1078,16 @@ function spawnWorker(): Promise<WorkerInfo> {
 
     import('node:child_process')
       .then(({ spawn }) => {
-        // Required for isolated-vm on Node.js 20+ (issue #377)
-        const proc = spawn('node', ['--no-node-snapshot', workerPath], {
+        // Required for isolated-vm on Node.js 20+ (issue #377). Prefer Node 20–22 —
+        // Node 25+ currently SIGSEGVs inside isolated-vm during PPTX/DOCX/PDF compile.
+        const nodeBin = resolveWorkerNodeBinary()
+        const proc = spawn(nodeBin, ['--no-node-snapshot', workerPath], {
           stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
           serialization: 'json',
+          env: buildWorkerEnv(),
         })
         childProcess = proc
+        logger.info('Spawning isolated-vm worker', { workerId, nodeBin })
 
         proc.on('message', (message: unknown) => handleWorkerMessage(workerId, message))
 
@@ -999,7 +1130,7 @@ function spawnWorker(): Promise<WorkerInfo> {
         }
         proc.on('message', readyHandler)
 
-        proc.on('exit', () => {
+        proc.on('exit', (code, signal) => {
           const wasStartupFailure = !workerInfo.ready
 
           if (wasStartupFailure) {
@@ -1016,13 +1147,29 @@ function spawnWorker(): Promise<WorkerInfo> {
             } else if (stderrData) {
               errorMessage = `Worker process failed: ${stderrData.slice(0, 500)}`
               logger.error('Worker process failed', { stderr: stderrData, workerId })
+            } else if (signal === 'SIGSEGV') {
+              errorMessage = buildWorkerCrashMessage(signal, stderrData)
+              logger.error('Worker segfaulted during startup', {
+                workerId,
+                node: process.versions.node,
+              })
             }
 
             reject(new Error(errorMessage))
             return
           }
 
-          cleanupWorker(workerId)
+          if (signal || (typeof code === 'number' && code !== 0)) {
+            logger.error('Worker exited while handling executions', {
+              workerId,
+              code,
+              signal,
+              node: process.versions.node,
+              stderr: stderrData.slice(0, 500) || undefined,
+            })
+          }
+
+          cleanupWorker(workerId, { signal, stderr: stderrData })
           drainQueue()
         })
       })

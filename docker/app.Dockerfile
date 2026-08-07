@@ -1,14 +1,19 @@
+# syntax=docker/dockerfile:1
+# check=skip=SecretsUsedInArgOrEnv
 # ========================================
-# Base Stage: Debian-based Bun with Node.js 22
+# Base Stage: Debian-based Bun with Node.js 24
 # ========================================
-FROM oven/bun:1.3.13-slim AS base
+FROM oven/bun:1.3.14-slim AS base
 
-# Install Node.js 22 and common dependencies once in base stage
+# Install Node.js 24 (Active LTS) and common dependencies once in base stage.
+# Node runs only the isolated-vm sandbox worker (the app itself runs under Bun);
+# the version is kept in lockstep with the `isolated-vm` pin in
+# apps/sim/package.json — Node 24 (ABI 137) requires isolated-vm 6.x.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv make g++ curl ca-certificates bash ffmpeg \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs
 
 # ========================================
@@ -78,6 +83,11 @@ ENV DATABASE_URL=${DATABASE_URL}
 ARG NEXT_PUBLIC_APP_URL="http://localhost:3000"
 ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 
+# Dummy auth secret so page-data collection doesn't throw BetterAuthError on
+# every route that imports `@/lib/auth`. Not a real credential — build-time
+# only; runtime overrides at deploy. (SecretsUsedInArgOrEnv skipped at file top.)
+ENV BETTER_AUTH_SECRET="docker-build-dummy-better-auth-secret-32b"
+
 # Docker builders are memory-constrained (GH Actions ~7GB RAM). BuildKit's sandbox
 # blocks swapon() without the security.insecure entitlement, which many CI setups
 # don't (and shouldn't have to) grant. Instead of provisioning swap inside the
@@ -85,8 +95,11 @@ ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
 # `build` script reads this directly (defaults to 8192 if unset) and passes it
 # to `next build` as NODE_OPTIONS itself, so set it here rather than NODE_OPTIONS
 # directly (an ENV NODE_OPTIONS here would just get overridden by that script).
-# Lower this further if the build still OOMs on your runner.
-ENV BUILD_MAX_OLD_SPACE_MB=5120
+# Keep this well under the cgroup limit so V8 GCs before the kernel OOM-kills
+# the process (a high ceiling + static-page RSS is what caused exit 137 at
+# ~304/1218 pages). next.config also sets experimental.cpus=1 and
+# staticGenerationMaxConcurrency=1 under DOCKER_BUILD.
+ENV BUILD_MAX_OLD_SPACE_MB=3072
 
 # Per-platform cache id keeps arm64/amd64 SWC artifacts isolated.
 RUN --mount=type=cache,id=next-cache-${TARGETPLATFORM},target=/app/apps/sim/.next/cache \
@@ -107,7 +120,7 @@ RUN bun build apps/sim/bootstrap.ts --target=bun --outfile=apps/sim/bootstrap.js
 FROM base AS runner
 WORKDIR /app
 
-# Node.js 22, Python, ffmpeg, etc. are already installed in base stage
+# Node.js 24, Python, ffmpeg, etc. are already installed in base stage
 ENV NODE_ENV=production
 
 # ========================================
@@ -184,6 +197,28 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/content ./apps/sim/conte
 
 # Copy isolated-vm native module (compiled for Node.js in deps stage)
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules/isolated-vm ./node_modules/isolated-vm
+
+# sharp@0.35+ splits the native addon (`@img/sharp-linux-*`) from the libvips
+# shared library (`@img/sharp-libvips-linux-*/lib/libvips-cpp.so.*`). The addon
+# dlopens libvips at runtime, so Next's standalone file tracer never sees the
+# `.so` and omits it — every route whose import graph reaches sharp then 500s
+# with `ERR_DLOPEN_FAILED: libvips-cpp.so.8.18.3`. Same monorepo-root hoist
+# problem as yjs/lib0 below: `outputFileTracingIncludes` globs resolve against
+# apps/sim and cannot reach `/app/node_modules`, so copy the full trees from
+# the deps install (which already has the correct linux/$TARGETARCH optional
+# packages because this stage builds on that platform).
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/sharp ./node_modules/sharp
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/@img ./node_modules/@img
+
+# The collab-doc seed/merge/persist routes run the converter (markdown <-> Yjs) server-side. `yjs` is a
+# serverExternalPackage, and the Next standalone tracer copies it only partially — it misses ESM subpath
+# files that `yjs/dist/yjs.mjs` imports through `lib0`'s exports map (e.g. `lib0/logging`), so the seed
+# 500s ("Cannot find module 'lib0/logging'") and every collaborative doc is stuck read-only. Overwrite
+# the partial trace with the complete packages from the full install (outputFileTracingIncludes can't:
+# its globs resolve against apps/sim, but these deps hoist to the monorepo-root node_modules).
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/lib0 ./node_modules/lib0
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/yjs ./node_modules/yjs
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/y-protocols ./node_modules/y-protocols
 
 # Copy the isolated-vm worker script
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/execution/isolated-vm-worker.cjs ./apps/sim/lib/execution/isolated-vm-worker.cjs

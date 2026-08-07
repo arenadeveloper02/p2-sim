@@ -40,8 +40,8 @@ This chart deploys the Sim platform on a Kubernetes cluster using the Helm packa
 * **`app`** — the Sim Next.js web application (Deployment).
 * **`realtime`** — the WebSocket service for live workflow updates (Deployment).
 * **`postgresql`** — an in-cluster `pgvector/pgvector` Postgres (StatefulSet, with a headless Service for stable per-pod DNS).
-* **`migrations`** — a Job that applies database migrations on install/upgrade.
-* **`cronjobs`** — scheduled jobs for workflow schedule execution, inbox/calendar/drive polling (Gmail, Outlook, Calendar, Drive, Sheets, IMAP, RSS), workspace event polling, subscription renewal, data drains, and connector syncs.
+* **`migrations`** — an init container on the app Deployment that applies database migrations before each app pod starts.
+* **`cronjobs`** — scheduled jobs for workflow schedule execution, inbox/calendar/drive polling (Gmail, Outlook, Calendar, Drive, Sheets, IMAP, RSS), workspace event and HubSpot webhook polling, outbox processing, subscription renewal, billing-seat and inbox-entitlement reconciliation, time-pause/resume polling, data drains, and connector syncs.
 * **`serviceaccount`** — a dedicated ServiceAccount with `automountServiceAccountToken: false`.
 
 Optional components (off by default):
@@ -214,11 +214,29 @@ cat ./helm/sim/values.schema.json
 
 Before installing in production, confirm each of the following:
 
-* **High availability** — scale `app.replicaCount > 1`. The chart auto-creates a `PodDisruptionBudget` with `minAvailable: 1`. Set `podDisruptionBudget.maxUnavailable: "25%"` for a more permissive policy or `minAvailable: "50%"` for a stricter one.
+* **High availability** — scale `app.replicaCount > 1`. The chart auto-creates a `PodDisruptionBudget` with `maxUnavailable: "25%"`. Set `podDisruptionBudget.minAvailable` instead for a stricter policy.
 * **Pinned images** — override `image.tag` (or `image.digest`) with an explicit version. Do not rely on the chart's default tag in production.
 * **Secrets management** — provide secrets via External Secrets Operator (ESO) or pre-created Kubernetes Secrets. Never commit secrets to `values.yaml`.
 * **TLS / Ingress** — set the `cert-manager.io/cluster-issuer` annotation on the ingress and tune `proxy-body-size` / `proxy-read-timeout` for your workload. See commented examples in `values.yaml`.
 * **Network policy egress** — review `networkPolicy.egressExceptCidrs`. Defaults block cloud metadata endpoints (`169.254.169.254/32`, `169.254.170.2/32`); add your cluster's API server CIDR for stronger isolation. Custom egress rules go in `networkPolicy.egress` (a list).
+
+  **Every datastore you run outside the chart needs its own egress rule.** The default policy allows HTTPS (443) plus the bundled Postgres and Redis by pod selector — nothing else on a non-443 port. So a managed Postgres, a managed Redis, or any `REDIS_URL` you supply through a Secret is reachable only if you add a rule for it. This bites hardest when the URL comes from a Secret, because the chart cannot see the host and cannot generate the rule for you:
+
+  ```yaml
+  networkPolicy:
+    enabled: true
+    egress:
+      - to:
+          - ipBlock:
+              cidr: 10.0.0.0/16   # your VPC / managed-service subnet
+        ports:
+          - protocol: TCP
+            port: 6379           # managed Redis
+          - protocol: TCP
+            port: 5432           # managed Postgres
+  ```
+
+  If you would rather not maintain CIDR lists, `networkPolicy.allowExternalEgress: true` drops the port restriction entirely while still blocking the cloud metadata endpoints. It defaults to `false` — this chart is deliberately stricter than the common chart default of unrestricted egress.
 * **Network policy ingress** — `networkPolicy.ingressFrom` defaults to `[{}]` (an empty peer selector), which allows ingress traffic from **any pod in the cluster**, not just your ingress controller. This is a deliberate simple default, not a locked-down one. On a shared or multi-tenant cluster, scope it down, e.g. to the ingress-nginx namespace:
   ```yaml
   networkPolicy:
@@ -271,8 +289,7 @@ postgresql:
   auth:
     existingSecret:
       enabled: true
-      name: sim-postgres-secret
-      passwordKey: POSTGRES_PASSWORD
+      name: sim-postgres-secret   # must contain the password under the key POSTGRES_PASSWORD
 ```
 
 See `examples/values-existing-secret.yaml`.
@@ -357,7 +374,7 @@ autoscaling:
   targetMemoryUtilizationPercentage: 80
 ```
 
-When `autoscaling.enabled=true`, the chart omits `spec.replicas` from the Deployment so the HPA owns replica count. Requires `metrics-server` in the cluster.
+When `autoscaling.enabled=true`, the chart omits `spec.replicas` from the Deployment so the HPA owns replica count. Requires `metrics-server` in the cluster. The realtime Deployment gets the same HPA unless `autoscaling.realtime.enabled=false` — scale realtime past one replica only with `REDIS_URL` set (Socket.IO Redis adapter), or cross-pod collaboration events are dropped.
 
 ---
 
@@ -370,7 +387,7 @@ monitoring:
     interval: 30s
 ```
 
-Requires the Prometheus Operator CRDs. Scrapes `/metrics` on the app and realtime services.
+Requires the Prometheus Operator CRDs. Scrapes `/metrics` on the app and realtime services — note the default images do not currently expose a `/metrics` endpoint, so enable this only with a build that does.
 
 ---
 
@@ -427,7 +444,7 @@ Common causes:
 
 * `NEXT_PUBLIC_APP_URL` still set to `http://localhost:3000` in a clustered deploy → set it to your public origin.
 * `DATABASE_URL` not reachable → check the Postgres pod is running and `postgresql.auth.password` matches.
-* Missing migration → check `kubectl logs job/sim-migrations`.
+* Missing migration → check `kubectl logs deploy/sim-app -c migrations` (migrations run as an init container on the app pod).
 
 ### Image pull errors (`ErrImagePull` / `ImagePullBackOff`)
 
@@ -463,17 +480,44 @@ kubectl describe ingress --namespace sim
 kubectl --namespace sim logs -f deployment/sim-app
 kubectl --namespace sim logs -f deployment/sim-realtime
 kubectl --namespace sim logs -f statefulset/sim-postgresql
-kubectl --namespace sim logs job/sim-migrations
+kubectl --namespace sim logs deploy/sim-app -c migrations
 ```
 
 ---
+
+## Upgrading to 1.5.0
+
+Two changes alter behavior on an existing release. Neither requires action, but read both.
+
+* **Free-tier plan limits are no longer preset.** `app.envDefaults` previously shipped `RATE_LIMIT_FREE_SYNC`, `RATE_LIMIT_FREE_ASYNC`, `EXECUTION_TIMEOUT_FREE`, `EXECUTION_TIMEOUT_ASYNC_FREE`, `FREE_TABLES_LIMIT: 3`, and `FREE_TABLE_ROWS_LIMIT: 1000`. With billing disabled the application treats these as **opt-in** — unset means unlimited — so presetting them imposed hosted-plan caps on self-hosted deployments and diverged from Docker Compose, which presets nothing. They are now commented out. **On upgrade, these limits stop being enforced.** To keep them, set the keys explicitly under `app.env`. An explicitly set value has always taken precedence and is unaffected.
+
+* **Redis is now bundled** (`redis.enabled: true`), matching the Docker Compose stack. Redis backs pub/sub and the Socket.IO adapter, and multi-replica deployments silently drop cross-pod events without it.
+
+  **An existing `REDIS_URL` always wins, wherever it comes from — no action needed on upgrade.** The bundled URL ships as a ConfigMap listed *before* the app Secret in `envFrom`. Kubernetes resolves duplicate keys by letting the last source win, so a `REDIS_URL` in your chart-managed Secret, a pre-created `existingSecret`, or one synced by External Secrets overrides the bundled value — the chart never has to read it. The bundled Redis simply fills the gap when nothing else provides a URL.
+
+  Set `app.env.REDIS_URL` to skip the bundled Deployment entirely (no unused pod), or `redis.enabled: false` to opt out.
+
+## Upgrading to 1.2.0
+
+* `appVersion` (the default image tag when `image.tag` is unset) is now `v0.7.44` — the previous `0.6.73` referenced a tag that does not exist on GHCR, so an unpinned default install could not pull images. Production installs should still pin `image.tag` explicitly.
+* `externalSecrets.apiVersion` now defaults to `"v1"` — current External Secrets Operator releases no longer serve `v1beta1` (removed upstream in 2026). Set `externalSecrets.apiVersion: "v1beta1"` only if you still run ESO < 0.17.
+* `values.schema.json` now declares every top-level key and rejects unknown top-level keys, so a typo like `networkPolciy:` fails fast at install time instead of being silently ignored. If an upgrade suddenly fails schema validation, check your values file for stray top-level keys.
+* The opt-in telemetry collector no longer ships a Prometheus scrape config for the app/realtime services (they expose no `/metrics` endpoint); OTLP ingestion is unchanged.
+
+## Upgrading to 1.1.0
+
+No action is required for working configurations. Notes:
+
+* Pods for `app` and `realtime` roll once on upgrade (their rollout checksum now also covers the ExternalSecret manifest, fixing missed rollouts in ESO mode).
+* Two values keys that were never consumed by any template were removed: `app.secrets.existingSecret.keys` and `*.existingSecret.passwordKey`. Existing secrets must use the standard key names (`BETTER_AUTH_SECRET`, ..., `POSTGRES_PASSWORD`, `EXTERNAL_DB_PASSWORD`); leftover keys in your values file are ignored, not rejected.
+* `telemetry.jaeger` now exports over OTLP (`otlp/jaeger`) — point `telemetry.jaeger.endpoint` at Jaeger's OTLP gRPC port (4317). The previous `jaeger` exporter did not exist in the pinned collector image, so any prior jaeger-enabled config was already failing at collector startup.
 
 ## Support
 
 * **Docs:** https://docs.sim.ai
 * **GitHub:** https://github.com/simstudioai/sim
 * **Issues:** https://github.com/simstudioai/sim/issues
-* **Discord:** https://discord.gg/Hr4UWYEcTT
+* **Slack:** https://join.slack.com/t/sim-ott9864/shared_invite/zt-43lp8tc5v-0qrrqHGBKUsvQlpoouH~TA
 
 ---
 

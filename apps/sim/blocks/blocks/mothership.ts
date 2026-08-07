@@ -1,4 +1,5 @@
 import { Blimp } from '@sim/emcn'
+import { fetchWorkspaceRawSecretNameOptions } from '@/lib/workflows/subblocks/options'
 import type { BlockConfig } from '@/blocks/types'
 import type { ToolResponse } from '@/tools/types'
 
@@ -17,10 +18,10 @@ interface MothershipResponse extends ToolResponse {
 
 export const MothershipBlock: BlockConfig<MothershipResponse> = {
   type: 'mothership',
-  name: 'Sim',
+  name: 'Sim Chat',
   description: 'Talk to Sim',
   longDescription:
-    'The Sim block sends messages to Sim, which has access to subagents, integration tools, memory, and workspace context. Use it to perform complex multi-step reasoning, cross-service queries, or any task that benefits from the full Sim intelligence within a workflow.',
+    'The Sim block sends messages to Sim, which has access to subagents, integration tools, and workspace context. Use it to perform complex multi-step reasoning, cross-service queries, or any task that benefits from the full Sim intelligence within a workflow.',
   bestPractices: `
   - Use for tasks that require multi-step reasoning, tool use, or cross-service coordination.
   - Sim picks its own model and tools internally — you only provide a prompt.
@@ -60,6 +61,43 @@ export const MothershipBlock: BlockConfig<MothershipResponse> = {
       mode: 'advanced',
       required: false,
     },
+    {
+      id: 'tools',
+      title: 'Tools',
+      type: 'tool-input',
+      defaultValue: [],
+    },
+    {
+      id: 'skills',
+      title: 'Skills',
+      type: 'skill-input',
+      defaultValue: [],
+    },
+    {
+      id: 'secretScope',
+      title: 'Secret access',
+      type: 'dropdown',
+      mode: 'advanced',
+      hideFromCopilot: true,
+      options: [
+        { label: 'All secrets', id: 'all' },
+        { label: 'Selected secrets', id: 'selected' },
+      ],
+      value: () => 'all',
+    },
+    {
+      id: 'mountedSecrets',
+      title: 'Secrets',
+      type: 'dropdown',
+      mode: 'advanced',
+      hideFromCopilot: true,
+      multiSelect: true,
+      searchable: true,
+      preserveLabelCase: true,
+      options: [],
+      condition: { field: 'secretScope', value: 'selected' },
+      fetchOptions: () => fetchWorkspaceRawSecretNameOptions(),
+    },
   ],
   tools: {
     access: [],
@@ -77,6 +115,10 @@ export const MothershipBlock: BlockConfig<MothershipResponse> = {
       type: 'file',
       description: 'Files to send to Sim as attachments',
     },
+    tools: { type: 'json', description: 'MCP tools available to Sim for this request' },
+    skills: { type: 'json', description: 'Skills activated for this request' },
+    secretScope: { type: 'string', description: 'Secret access mode: all or selected' },
+    mountedSecrets: { type: 'json', description: 'Secret names available to Sim code execution' },
   },
   outputs: {
     content: { type: 'string', description: 'Generated response content' },

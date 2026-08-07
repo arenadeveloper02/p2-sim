@@ -9,7 +9,11 @@ import {
   performUpdateWorkflowMcpServer,
 } from '@/lib/mcp/orchestration'
 import { generateWorkflowDiffSummary } from '@/lib/workflows/comparison'
-import { performActivateVersion, performRevertToVersion } from '@/lib/workflows/orchestration'
+import {
+  getWorkflowDeploymentSummary,
+  performActivateVersion,
+  performRevertToVersion,
+} from '@/lib/workflows/orchestration'
 import {
   listWorkflowVersions,
   updateDeploymentVersionMetadata,
@@ -28,6 +32,7 @@ import type {
   UpdateDeploymentVersionParams,
   UpdateWorkspaceMcpServerParams,
 } from '../param-types'
+import { getCopilotDeploymentIdempotencyKey, getHistoricalDeploymentAttemptError } from './context'
 import { resolveWorkflowStateRef } from './state-refs'
 
 export async function executeCheckDeploymentStatus(
@@ -42,9 +47,9 @@ export async function executeCheckDeploymentStatus(
     const { workflow: workflowRecord } = await ensureWorkflowAccess(workflowId, context.userId)
     const workspaceId = workflowRecord.workspaceId
 
-    const [apiDeploy, chatDeploy] = await Promise.all([
+    const [apiDeploy, chatDeploy, deploymentSummary] = await Promise.all([
       db
-        .select({ isDeployed: workflow.isDeployed, deployedAt: workflow.deployedAt })
+        .select({ deployedAt: workflow.deployedAt })
         .from(workflow)
         .where(eq(workflow.id, workflowId))
         .limit(1),
@@ -57,22 +62,37 @@ export async function executeCheckDeploymentStatus(
           authType: chat.authType,
           allowedEmails: chat.allowedEmails,
           outputConfigs: chat.outputConfigs,
+          includeThinking: chat.includeThinking,
+          includeToolCalls: chat.includeToolCalls,
           password: chat.password,
           customizations: chat.customizations,
         })
         .from(chat)
         .where(and(eq(chat.workflowId, workflowId), isNull(chat.archivedAt)))
         .limit(1),
+      getWorkflowDeploymentSummary(workflowId),
     ])
 
-    const isApiDeployed = apiDeploy[0]?.isDeployed || false
+    /**
+     * Deployed means an active version snapshot exists; the legacy
+     * `workflow.isDeployed` flag is not consulted so this can never
+     * contradict the attached `activeDeployment` summary.
+     */
+    const isApiDeployed = deploymentSummary.activeDeployment !== null
     const needsRedeployment = isApiDeployed ? await checkNeedsRedeployment(workflowId) : false
+    const currentDeploymentAttempt = deploymentSummary.latestDeploymentAttempt?.isCurrent
+      ? deploymentSummary.latestDeploymentAttempt
+      : null
     const apiDetails = {
       isDeployed: isApiDeployed,
       deployedAt: apiDeploy[0]?.deployedAt || null,
       endpoint: isApiDeployed ? `/api/workflows/${workflowId}/execute` : null,
       apiKey: workflowRecord.workspaceId ? 'Workspace API keys' : 'Personal API keys',
       needsRedeployment,
+      activeDeployment: deploymentSummary.activeDeployment,
+      latestDeploymentAttempt: deploymentSummary.latestDeploymentAttempt,
+      currentDeploymentAttempt,
+      warnings: deploymentSummary.warnings ?? [],
     }
 
     const isChatDeployed = !!chatDeploy[0]
@@ -90,6 +110,8 @@ export async function executeCheckDeploymentStatus(
       authType: chatDeploy[0]?.authType || null,
       allowedEmails: chatDeploy[0]?.allowedEmails || null,
       outputConfigs: chatDeploy[0]?.outputConfigs || null,
+      includeThinking: chatDeploy[0]?.includeThinking ?? false,
+      includeToolCalls: chatDeploy[0]?.includeToolCalls ?? false,
       welcomeMessage: chatCustomizations.welcomeMessage || null,
       primaryColor: chatCustomizations.primaryColor || null,
       hasPassword: Boolean(chatDeploy[0]?.password),
@@ -362,6 +384,7 @@ export async function executeGetDeploymentLog(
       name: r.name ?? undefined,
       description: r.description ?? undefined,
       isActive: r.isActive,
+      latestOperationStatus: r.latestOperationStatus ?? undefined,
       createdAt: r.createdAt.toISOString(),
       createdBy: r.createdBy ?? undefined,
     }))
@@ -539,20 +562,31 @@ export async function executePromoteToLive(
       workflowId,
       version,
       userId: context.userId,
-      workflow: workflowRecord as Record<string, unknown>,
+      idempotencyKey: getCopilotDeploymentIdempotencyKey(context),
     })
 
     if (!result.success) {
       return { success: false, error: result.error || 'Failed to promote version' }
     }
+    const historicalAttemptError = getHistoricalDeploymentAttemptError(
+      result.latestDeploymentAttempt,
+      'promotion'
+    )
+    if (historicalAttemptError) return { success: false, error: historicalAttemptError }
 
+    const isActive = result.activeDeployment?.version === version
     return {
       success: true,
       output: {
         workflowId,
         version,
-        message: `Promoted version ${version} to live`,
+        message: isActive
+          ? `Promoted version ${version} to live`
+          : `Started preparing version ${version} for promotion`,
         deployedAt: result.deployedAt ? new Date(result.deployedAt).toISOString() : undefined,
+        lifecycleStatus: result.latestDeploymentAttempt?.status ?? null,
+        readiness: result.latestDeploymentAttempt?.readiness ?? null,
+        error: result.latestDeploymentAttempt?.error ?? null,
         warnings: result.warnings,
       },
     }

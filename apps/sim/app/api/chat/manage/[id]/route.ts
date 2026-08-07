@@ -13,9 +13,21 @@ import { isDev } from '@/lib/core/config/env-flags'
 import { encryptSecret } from '@/lib/core/security/encryption'
 import { getEmailDomain } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { performChatUndeploy, performFullDeploy } from '@/lib/workflows/orchestration'
+import {
+  getWorkflowDeploymentSummary,
+  performChatUndeploy,
+  performFullDeploy,
+} from '@/lib/workflows/orchestration'
 import { checkChatAccess } from '@/app/api/chat/utils'
-import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
+import {
+  checkNeedsRedeployment,
+  createErrorResponse,
+  createSuccessResponse,
+} from '@/app/api/workflows/utils'
+import {
+  ChatDeployAuthNotAllowedError,
+  validateChatDeployAuth,
+} from '@/ee/access-control/utils/permission-check'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -82,6 +94,7 @@ export const GET = withRouteHandler(
 
       const result = {
         ...safeData,
+        includeToolCalls: safeData.includeToolCalls ?? false,
         chatUrl,
         hasPassword: !!password,
       }
@@ -140,6 +153,8 @@ export const PATCH = withRouteHandler(
         outputConfigs,
         deploymentType,
         redirectUrl,
+        includeThinking,
+        includeToolCalls,
       } = validatedData
 
       if (deploymentType === 'app' && !redirectUrl?.trim()) {
@@ -148,6 +163,20 @@ export const PATCH = withRouteHandler(
 
       if (workflowId && workflowId !== existingChat[0].workflowId) {
         return createErrorResponse('Changing the workflow of a chat deployment is not allowed', 400)
+      }
+
+      // Enforce the permission group's chat auth-mode allow-list only when the
+      // mode actually changes, so a grandfathered mode already saved on this chat
+      // can still be re-saved (e.g. a title-only edit) without a 403.
+      if (authType && authType !== existingChatRecord.authType && chatWorkspaceId) {
+        try {
+          await validateChatDeployAuth(session.user.id, chatWorkspaceId, authType)
+        } catch (error) {
+          if (error instanceof ChatDeployAuthNotAllowedError) {
+            return createErrorResponse(error.message, 403)
+          }
+          throw error
+        }
       }
 
       if (identifier && identifier !== existingChat[0].identifier) {
@@ -175,26 +204,59 @@ export const PATCH = withRouteHandler(
         logger.info('Keeping existing password')
       }
 
-      // Redeploy the workflow to ensure latest version is active
-      const deployResult = await performFullDeploy({
-        workflowId: existingChat[0].workflowId,
-        userId: session.user.id,
-        request,
-      })
-
-      if (!deployResult.success) {
-        logger.warn(`Failed to redeploy workflow for chat update: ${deployResult.error}`)
-        const status =
-          deployResult.errorCode === 'validation'
-            ? 400
-            : deployResult.errorCode === 'not_found'
-              ? 404
-              : 500
-        return createErrorResponse(deployResult.error || 'Failed to redeploy workflow', status)
+      /**
+       * A settings update only redeploys when the draft actually drifted from
+       * the active version, and never while another attempt is in flight —
+       * otherwise each blocked retry would admit a fresh deployment version
+       * on top of the pending one.
+       */
+      const deploymentSummary = await getWorkflowDeploymentSummary(existingChat[0].workflowId)
+      const attemptStatus = deploymentSummary.latestDeploymentAttempt?.status
+      if (attemptStatus === 'preparing' || attemptStatus === 'activating') {
+        return createErrorResponse(
+          'A workflow deployment is still preparing. Retry the chat update after it becomes active.',
+          409
+        )
       }
-      logger.info(
-        `Redeployed workflow ${existingChat[0].workflowId} for chat update (v${deployResult.version})`
-      )
+
+      const needsRedeploy =
+        !deploymentSummary.activeDeployment ||
+        (await checkNeedsRedeployment(existingChat[0].workflowId))
+
+      if (needsRedeploy) {
+        const deployResult = await performFullDeploy({
+          workflowId: existingChat[0].workflowId,
+          userId: session.user.id,
+        })
+
+        if (!deployResult.success) {
+          logger.warn(`Failed to redeploy workflow for chat update: ${deployResult.error}`)
+          const status =
+            deployResult.errorCode === 'validation'
+              ? 400
+              : deployResult.errorCode === 'not_found'
+                ? 404
+                : 500
+          return createErrorResponse(deployResult.error || 'Failed to redeploy workflow', status)
+        }
+        /**
+         * Deploys settle asynchronously: `success` only admits the attempt.
+         * The chat record must not advance until cutover finished, otherwise
+         * a later preparation failure strands the chat on the previous
+         * version with no error. A blocked retry lands in the in-flight gate
+         * above without admitting another version. Mirrors performChatDeploy.
+         */
+        if (deployResult.latestDeploymentAttempt?.status !== 'active') {
+          return createErrorResponse(
+            deployResult.warnings?.[0] ??
+              'Workflow deployment is still preparing. Retry the chat update after it becomes active.',
+            409
+          )
+        }
+        logger.info(
+          `Redeployed workflow ${existingChat[0].workflowId} for chat update (v${deployResult.version})`
+        )
+      }
 
       const updateData: Record<string, unknown> = {
         updatedAt: new Date(),
@@ -225,7 +287,13 @@ export const PATCH = withRouteHandler(
         }
       }
 
-      if (encryptedPassword) {
+      /**
+       * Only store a new password when the chat ends up password-protected.
+       * Applying it unconditionally re-armed the secret that the branch above
+       * just cleared, so `PATCH { authType: 'email', password }` persisted an
+       * encrypted password on an email-gated chat.
+       */
+      if (encryptedPassword && (authType ?? existingChat[0].authType) === 'password') {
         updateData.password = encryptedPassword
       }
 
@@ -242,6 +310,13 @@ export const PATCH = withRouteHandler(
         updateData.redirectUrl = deploymentType === 'app' ? (redirectUrl?.trim() ?? null) : null
       }
 
+      if (includeThinking !== undefined) {
+        updateData.includeThinking = includeThinking
+      }
+
+      // Partial updates keep the stored value; a row predating the column reads false.
+      updateData.includeToolCalls = includeToolCalls ?? existingChatRecord.includeToolCalls ?? false
+
       const emailCount = Array.isArray(updateData.allowedEmails)
         ? updateData.allowedEmails.length
         : undefined
@@ -255,6 +330,8 @@ export const PATCH = withRouteHandler(
         hasPassword: updateData.password !== undefined,
         emailCount,
         outputConfigsCount,
+        includeThinking: updateData.includeThinking,
+        includeToolCalls: updateData.includeToolCalls,
       })
 
       await db.update(chat).set(updateData).where(eq(chat.id, chatId))

@@ -71,6 +71,7 @@ describe('HostedKeyRateLimiter', () => {
     process.env.EXA_API_KEY_1 = 'test-key-1'
     process.env.EXA_API_KEY_2 = 'test-key-2'
     process.env.EXA_API_KEY_3 = 'test-key-3'
+    process.env.EXA_API_KEY = undefined
   })
 
   afterEach(() => {
@@ -87,9 +88,13 @@ describe('HostedKeyRateLimiter', () => {
       mockAdapter.consumeTokens.mockResolvedValue(allowedResult)
 
       process.env.EXA_API_KEY_COUNT = undefined
+      // biome-ignore lint/performance/noDelete: must unset env keys; assigning undefined stringifies
       delete process.env.EXA_API_KEY
+      // biome-ignore lint/performance/noDelete: must unset env keys; assigning undefined stringifies
       delete process.env.EXA_API_KEY_1
+      // biome-ignore lint/performance/noDelete: must unset env keys; assigning undefined stringifies
       delete process.env.EXA_API_KEY_2
+      // biome-ignore lint/performance/noDelete: must unset env keys; assigning undefined stringifies
       delete process.env.EXA_API_KEY_3
 
       const result = await rateLimiter.acquireKey(
@@ -157,6 +162,57 @@ describe('HostedKeyRateLimiter', () => {
       expect(result.success).toBe(true)
       expect(result.key).toBe('legacy-gemini-primary')
       expect(result.envVarName).toBe('GEMINI_API_KEY')
+    })
+
+    it('prefers GEMINI_API_KEY over an invalid leftover GOOGLE_API_KEY', async () => {
+      mockAdapter.consumeTokens.mockResolvedValue({
+        allowed: true,
+        tokensRemaining: 9,
+        resetAt: new Date(Date.now() + 60000),
+      } satisfies ConsumeResult)
+
+      process.env.GOOGLE_API_KEY_COUNT = undefined
+      process.env.GOOGLE_API_KEY = 'stale-invalid-google-key'
+      process.env.GOOGLE_API_KEY_1 = undefined
+      process.env.GOOGLE_API_KEY_2 = undefined
+      process.env.GOOGLE_API_KEY_3 = undefined
+      process.env.GEMINI_API_KEY = 'valid-gemini-key'
+      process.env.GEMINI_API_KEY_1 = undefined
+      process.env.GEMINI_API_KEY_2 = undefined
+      process.env.GEMINI_API_KEY_3 = undefined
+
+      const result = await rateLimiter.acquireKey(
+        'google',
+        'GOOGLE_API_KEY',
+        perRequestRateLimit,
+        'workspace-google-prefer'
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.key).toBe('valid-gemini-key')
+      expect(result.envVarName).toBe('GEMINI_API_KEY')
+    })
+
+    it('uses a singular hosted key when no numbered pool count is configured', async () => {
+      mockAdapter.consumeTokens.mockResolvedValue({
+        allowed: true,
+        tokensRemaining: 9,
+        resetAt: new Date(Date.now() + 60000),
+      } satisfies ConsumeResult)
+      process.env.EXA_API_KEY_COUNT = undefined
+      process.env.EXA_API_KEY = 'singular-test-key'
+
+      const result = await rateLimiter.acquireKey(
+        testProvider,
+        envKeyPrefix,
+        perRequestRateLimit,
+        'workspace-1'
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.key).toBe('singular-test-key')
+      expect(result.envVarName).toBe('EXA_API_KEY')
+      expect(result.keyIndex).toBe(0)
     })
 
     it('should rate limit billing actor when wait exceeds the queue cap', async () => {

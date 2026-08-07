@@ -9,12 +9,6 @@ import {
 } from '@sim/db/schema'
 import { and, eq, type SQL } from 'drizzle-orm'
 import type { AdditiveCostLeaf, CostLedger } from '@/lib/api/contracts/logs'
-import {
-  type ExecutionProgressMarkers,
-  getProgressMarkers,
-  pickLatestCompletedMarker,
-  pickLatestStartedMarker,
-} from '@/lib/logs/execution/progress-markers'
 import type { ModelUsageMetadata } from '@/lib/billing/core/usage-log'
 import {
   formatEmbeddedToolLabel,
@@ -22,7 +16,13 @@ import {
   resolveEmbeddedToolsForModel,
   UNATTRIBUTED_AGENT_TOOLS_ID,
 } from '@/lib/logs/embedded-tool-costs'
-import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
+import {
+  type ExecutionProgressMarkers,
+  getProgressMarkers,
+  pickLatestCompletedMarker,
+  pickLatestStartedMarker,
+} from '@/lib/logs/execution/progress-markers'
+import { materializeExecutionDataForDisplay } from '@/lib/logs/execution/trace-store'
 import type { TraceSpan } from '@/lib/logs/types'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
@@ -30,10 +30,7 @@ type LookupColumn = 'id' | 'executionId'
 
 type LedgerItem = CostLedger['items'][number]
 
-function mergeLedgerMetadata(
-  existing: LedgerItem,
-  metadata: ModelUsageMetadata
-): void {
+function mergeLedgerMetadata(existing: LedgerItem, metadata: ModelUsageMetadata): void {
   if (typeof metadata.inputTokens === 'number') {
     existing.inputTokens = Math.max(existing.inputTokens ?? 0, metadata.inputTokens)
   }
@@ -74,7 +71,10 @@ export function buildAdditiveCostLeaves(
   traceSpans?: TraceSpan[]
 ): AdditiveCostLeaf[] {
   const enrichedItems = items.map((item) => {
-    const copy = { ...item, embeddedTools: item.embeddedTools ? [...item.embeddedTools] : undefined }
+    const copy = {
+      ...item,
+      embeddedTools: item.embeddedTools ? [...item.embeddedTools] : undefined,
+    }
     enrichModelItemFromTrace(copy, traceSpans)
     return copy
   })
@@ -305,9 +305,14 @@ export async function fetchLogDetail({
       (totalPauseCount > 0 && resumedCount < totalPauseCount) ||
       (log.pausedStatus !== null && log.pausedStatus !== 'fully_resumed')
 
-    const executionData = await materializeExecutionData(
+    const executionData = await materializeExecutionDataForDisplay(
       log.executionData as Record<string, unknown> | null,
-      { workspaceId, workflowId: log.workflowId, executionId: log.executionId }
+      {
+        workspaceId,
+        workflowId: log.workflowId,
+        executionId: log.executionId,
+        userId,
+      }
     )
 
     const traceSpans = (executionData as { traceSpans?: TraceSpan[] }).traceSpans
@@ -315,7 +320,7 @@ export async function fetchLogDetail({
     const totalDollars = costLedger?.total ?? (log.costTotal != null ? Number(log.costTotal) : null)
 
     const liveMarkers =
-      log.status === 'running' || log.status === 'pending'
+      log.status === 'running' || log.status === 'pending' || log.status === 'redacting'
         ? ((await getProgressMarkers(log.executionId)) ?? {})
         : {}
     const rowMarkers = (executionData ?? {}) as ExecutionProgressMarkers
@@ -387,7 +392,15 @@ export async function fetchLogDetail({
   const jobLog = jobRows[0]
   if (!jobLog) return null
 
-  const execData = (jobLog.executionData as Record<string, unknown> | null) ?? {}
+  const execData = await materializeExecutionDataForDisplay(
+    jobLog.executionData as Record<string, unknown> | null,
+    {
+      workspaceId,
+      workflowId: null,
+      executionId: jobLog.executionId,
+      userId,
+    }
+  )
   return {
     id: jobLog.id,
     workflowId: null,

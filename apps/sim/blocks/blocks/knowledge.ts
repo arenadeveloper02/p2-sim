@@ -106,6 +106,18 @@ export const KnowledgeBlock: BlockConfig = {
       dependsOn: ['knowledgeBaseSelector'],
       condition: { field: 'operation', value: 'search' },
     },
+    {
+      id: 'searchMode',
+      title: 'Retrieval Mode',
+      type: 'dropdown',
+      options: [
+        { label: 'Vector only', id: 'vector' },
+        { label: 'Hybrid (full-text + vector)', id: 'hybrid' },
+      ],
+      value: () => 'vector',
+      mode: 'advanced',
+      condition: { field: 'operation', value: 'search' },
+    },
     //..........sim side reraking..................>
     // {
     //   id: 'rerankerEnabled',
@@ -486,9 +498,10 @@ export const KnowledgeBlock: BlockConfig = {
     limit: { type: 'number', description: 'Max items to return' },
     offset: { type: 'number', description: 'Pagination offset' },
     tagFilters: { type: 'string', description: 'Tag filter criteria' },
-    rerankEnabled: { type: 'boolean', description: 'Enable or disable reranking' },
-    rerankModel: { type: 'string', description: 'Optional rerank model name' },
-    rerankTopN: { type: 'number', description: 'Optional rerank top N' },
+    searchMode: {
+      type: 'string',
+      description: 'Retrieval mode: vector only (default) or hybrid (full-text + vector)',
+    },
     // Document tags for create document (JSON string of tag objects)
     // rereanking fields from sim side.........................>
     // rerankerEnabled: { type: 'boolean', description: 'Apply Cohere reranking to search results' },

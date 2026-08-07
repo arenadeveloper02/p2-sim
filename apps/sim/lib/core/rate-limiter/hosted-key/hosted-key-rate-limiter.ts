@@ -102,19 +102,41 @@ function resolveEnvKeys(prefix: string): string[] {
   const names: string[] = []
 
   if (count > 0) {
+    // Arena ships `GEMINI_API_KEY*` for Generative Language. Include that
+    // namespace even when a GOOGLE_API_KEY_COUNT pool is declared.
+    if (prefix === 'GOOGLE_API_KEY') {
+      pushLegacyEnvKeys(names, 'GEMINI_API_KEY')
+    }
     for (let i = 1; i <= count; i++) {
       pushUniqueEnvVar(names, `${prefix}_${i}`)
     }
     return names
   }
 
-  pushLegacyEnvKeys(names, prefix)
-
+  // Prefer GEMINI_* ahead of GOOGLE_* so Arena's GEMINI_API_KEY wins when both exist.
   if (prefix === 'GOOGLE_API_KEY') {
     pushLegacyEnvKeys(names, 'GEMINI_API_KEY')
   }
+  pushLegacyEnvKeys(names, prefix)
 
   return names
+}
+
+/**
+ * When acquiring keys for Google tools, prefer the GEMINI_API_KEY namespace if any
+ * of those env vars are set. Agents already rotate via GEMINI_*; image tools must
+ * not pick a leftover invalid GOOGLE_API_KEY / NEXT_PUBLIC Maps key ahead of Gemini.
+ */
+function preferGeminiKeysForGoogle(
+  envKeyPrefix: string,
+  availableKeys: AvailableKey[]
+): AvailableKey[] {
+  if (envKeyPrefix !== 'GOOGLE_API_KEY' || availableKeys.length === 0) {
+    return availableKeys
+  }
+
+  const geminiKeys = availableKeys.filter((entry) => entry.envVarName.startsWith('GEMINI_API_KEY'))
+  return geminiKeys.length > 0 ? geminiKeys : availableKeys
 }
 
 /** Dimension name for per-billing-actor request rate limiting */
@@ -178,7 +200,9 @@ export class HostedKeyRateLimiter {
     for (let i = 0; i < envKeys.length; i++) {
       const envVarName = envKeys[i]
       const key = process.env[envVarName]
-      if (key) {
+      // Bun/Node can stringify `process.env.X = undefined` to the literal
+      // "undefined"; treat that as unset so Gemini fallback can run.
+      if (key && key !== 'undefined' && key.trim().length > 0) {
         keys.push({ key, keyIndex: i, envVarName })
       }
     }
@@ -298,7 +322,8 @@ export class HostedKeyRateLimiter {
    * back to `MAX_QUEUE_WAIT_MS`. On exhaustion the call returns today's 429 result. The
    * ticket is removed from the queue on exit regardless of success or failure.
    *
-   * @param envKeyPrefix - Env var prefix (e.g. 'EXA_API_KEY'). Keys resolved via `{prefix}_COUNT`.
+   * @param envKeyPrefix - Env var prefix (e.g. 'EXA_API_KEY'). Uses a numbered
+   * pool via `{prefix}_COUNT`, or the singular prefix when no count is set.
    * @param billingActorId - The billing actor (typically workspace ID) to rate limit against
    * @param signal - Optional execution `AbortSignal`; bounds the queue wait to the run's budget.
    */
@@ -403,7 +428,10 @@ export class HostedKeyRateLimiter {
       }
 
       const envKeys = resolveEnvKeys(envKeyPrefix)
-      const availableKeys = this.getAvailableKeys(envKeys)
+      const availableKeys = preferGeminiKeysForGoogle(
+        envKeyPrefix,
+        this.getAvailableKeys(envKeys)
+      )
 
       if (availableKeys.length === 0) {
         logger.warn(`No hosted keys configured for provider ${provider}`)

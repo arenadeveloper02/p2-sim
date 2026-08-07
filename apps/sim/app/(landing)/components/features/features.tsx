@@ -54,7 +54,7 @@ export function Features() {
         <FeatureCard
           eyebrow='Context'
           title='Give Arena data it can reason over.'
-          description='Arena stores your data semantically in tables, files, and knowledge bases your agents read from to ground every answer in your own data.'
+          description='Arena stores your data in tables, files, and knowledge bases, the semantic memory agents read to ground every answer.'
           backdropSrc='/landing/feature-context-backdrop.jpg'
           mediaSide='right'
         >
@@ -65,9 +65,9 @@ export function Features() {
         <FeatureCard
           eyebrow='Build'
           title='Build agents that solve real problems.'
-          description='Wire blocks, models, and integrations into agent logic on a visual builder, from one agent to many working in parallel.'
+          description="Wire blocks, models, and integrations into agent logic on Arena's visual builder, from one agent to many working in parallel."
           href='/workflows'
-          linkLabel='Explore the workflow builder'
+          linkLabel='Explore the AI workflow builder'
         >
           <BuildCallout />
         </FeatureCard>
@@ -76,7 +76,7 @@ export function Features() {
         <FeatureCard
           eyebrow='Monitor'
           title='Watch every run, end to end.'
-          description='Trace each run block by block, with full logs and the real cost, so you always know what ran and why.'
+          description='Arena traces each run block by block, with full logs and the real cost.'
           backdropSrc='/landing/feature-monitor-backdrop.jpg'
           mediaSide='right'
           flushBottom

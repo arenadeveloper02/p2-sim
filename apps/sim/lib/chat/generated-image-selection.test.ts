@@ -3,10 +3,11 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 
-vi.stubGlobal(
-  'fetch',
-  vi.fn(() => Promise.reject(new Error('fetch should not be called for internal serve URLs')))
+const fetchMock = vi.fn(() =>
+  Promise.reject(new Error('fetch should not be called for internal serve URLs'))
 )
+
+vi.stubGlobal('fetch', fetchMock)
 
 import { materializeSelectedGeneratedImage } from '@/lib/chat/generated-image-selection'
 
@@ -22,8 +23,9 @@ describe('materializeSelectedGeneratedImage', () => {
 
     expect(result.size).toBeGreaterThan(0)
     expect(result.file.size).toBe(0)
+    expect(result.url).toContain('/api/files/serve/')
     expect(result.dataUrl).toContain('/api/files/serve/')
-    expect(fetch).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('preserves known byte size from generated image metadata', async () => {
@@ -63,7 +65,8 @@ describe('materializeSelectedGeneratedImage', () => {
     })
 
     expect(result.size).toBe(8_725_519)
+    expect(result.url).toContain('/api/files/serve/')
     expect(result.dataUrl).toContain('/api/files/serve/')
-    expect(fetch).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

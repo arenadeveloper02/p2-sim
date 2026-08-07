@@ -4,9 +4,11 @@
 import { createLogger } from '@sim/logger'
 import { describe, expect, it } from 'vitest'
 import {
+  extractStorageKey,
   inferContextFromKey,
   isAbortError,
   isInternalFileUrl,
+  isMarkdownFile,
   isNetworkError,
   parseInternalFileUrl,
   processSingleFileToUserFile,
@@ -14,6 +16,44 @@ import {
 } from '@/lib/uploads/utils/file-utils'
 
 const logger = createLogger('FileUtilsTest')
+
+describe('isMarkdownFile', () => {
+  it('is true for .md and .markdown (case-insensitive)', () => {
+    expect(isMarkdownFile({ name: 'notes.md' })).toBe(true)
+    expect(isMarkdownFile({ name: 'README.MD' })).toBe(true)
+    expect(isMarkdownFile({ name: 'doc.markdown' })).toBe(true)
+  })
+
+  it('is true for a text/markdown MIME even without a .md name', () => {
+    expect(isMarkdownFile({ type: 'text/markdown', name: 'notes' })).toBe(true)
+    expect(isMarkdownFile({ type: 'text/markdown', name: 'doc.txt' })).toBe(true)
+  })
+
+  it('is false for non-markdown files', () => {
+    expect(isMarkdownFile({ type: 'text/javascript', name: 'script.js' })).toBe(false)
+    expect(isMarkdownFile({ name: 'report.docx' })).toBe(false)
+    expect(isMarkdownFile({ type: 'text/plain', name: 'notes.txt' })).toBe(false)
+    expect(isMarkdownFile({ name: 'noext' })).toBe(false)
+  })
+})
+
+describe('extractStorageKey', () => {
+  it('strips every provider serve prefix', () => {
+    expect(extractStorageKey('/api/files/serve/s3/workspace%2Fws-1%2Ffile.txt')).toBe(
+      'workspace/ws-1/file.txt'
+    )
+    expect(extractStorageKey('/api/files/serve/blob/workspace%2Fws-1%2Ffile.txt')).toBe(
+      'workspace/ws-1/file.txt'
+    )
+    expect(extractStorageKey('/api/files/serve/gcs/workspace%2Fws-1%2Ffile.txt')).toBe(
+      'workspace/ws-1/file.txt'
+    )
+  })
+
+  it('returns unprefixed serve keys as-is', () => {
+    expect(extractStorageKey('/api/files/serve/kb/123-doc.pdf')).toBe('kb/123-doc.pdf')
+  })
+})
 
 describe('isInternalFileUrl', () => {
   it('classifies relative serve paths as internal', () => {

@@ -60,15 +60,15 @@ export function AutoLoginProvider({ children }: { children: React.ReactNode }) {
           return
         }
 
-        const isEmbedPath =
-          typeof window !== 'undefined' && window.location.pathname.includes('/embed')
+        const pathname = typeof window !== 'undefined' ? window.location.pathname : ''
+        // Keep the user on the current URL for embeds and deployed chats; otherwise go to workspace.
+        const stayOnCurrentPath = pathname.includes('/embed') || pathname.startsWith('/chat/')
         const callbackURL =
-          isEmbedPath && typeof window !== 'undefined' ? window.location.href : '/workspace'
+          stayOnCurrentPath && typeof window !== 'undefined' ? window.location.href : '/workspace'
 
-        logger.info('Auto-login attempt with email from cookie', { isEmbedPath })
+        logger.info('Auto-login attempt with email from cookie', { stayOnCurrentPath })
 
         // Auto-login with email from cookie and password "Position2!"
-        // Keep Arena iframe embeds on the current URL; otherwise go to workspace.
         const result = await client.signIn.email(
           {
             email: emailFromCookie.trim().toLowerCase(),
@@ -84,8 +84,8 @@ export function AutoLoginProvider({ children }: { children: React.ReactNode }) {
         )
 
         if (result?.data) {
-          logger.info('Auto-login successful', { isEmbedPath })
-          if (!isEmbedPath) {
+          logger.info('Auto-login successful', { stayOnCurrentPath })
+          if (!stayOnCurrentPath) {
             router.push('/workspace')
           }
           router.refresh()

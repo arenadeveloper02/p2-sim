@@ -11,17 +11,30 @@ import {
   createExecutionContext,
   createMockFetch,
   type ExecutionContext,
+  encryptionMockFns,
+  environmentUtilsMockFns,
   inputValidationMock,
   inputValidationMockFns,
   type MockFetchResponse,
+  resetEnvFlagsMock,
+  resetEnvironmentUtilsMock,
+  resetEnvMock,
+  resetUrlsMock,
+  setEnv,
+  setEnvFlags,
 } from '@sim/testing'
 import { sleep } from '@sim/utils/helpers'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
+import { projectToolResultForCopilot } from '@/lib/copilot/request/tools/resolved-secret-result'
+import {
+  ANONYMOUS_SECRET_TRACE_REPLACEMENT,
+  ResolvedSecretTraceRegistry,
+} from '@/executor/utils/resolved-secret-trace-registry'
+import { workflowExecutorTool } from '@/tools/workflow/executor'
 
 // Hoisted mock state - these are available to vi.mock factories
 const {
-  mockIsHosted,
-  mockEnv,
   mockGetBYOKKey,
   mockGetToolAsync,
   mockRateLimiterFns,
@@ -31,8 +44,6 @@ const {
   mockGenerateInternalToken,
   mockResolveWorkspaceFileReference,
 } = vi.hoisted(() => ({
-  mockIsHosted: { value: false },
-  mockEnv: { NEXT_PUBLIC_APP_URL: 'http://localhost:3000' } as Record<string, string | undefined>,
   mockGetBYOKKey: vi.fn(),
   mockGetToolAsync: vi.fn(),
   mockRateLimiterFns: {
@@ -49,34 +60,7 @@ const {
 
 const mockSecureFetchWithPinnedIP = inputValidationMockFns.mockSecureFetchWithPinnedIP
 const mockValidateUrlWithDNS = inputValidationMockFns.mockValidateUrlWithDNS
-
-// Mock feature flags
-vi.mock('@/lib/core/config/env-flags', () => ({
-  get isHosted() {
-    return mockIsHosted.value
-  },
-  isProd: false,
-  isDev: true,
-  isTest: true,
-}))
-
-// Mock env config to control hosted key availability
-vi.mock('@/lib/core/config/env', () => ({
-  env: new Proxy({} as Record<string, string | undefined>, {
-    get: (_target, prop: string) => mockEnv[prop],
-  }),
-  getEnv: (key: string) => mockEnv[key],
-  isTruthy: (val: unknown) => val === true || val === 'true' || val === '1',
-  isFalsy: (val: unknown) => val === false || val === 'false' || val === '0',
-  envBoolean: (value: boolean | string | undefined | null): boolean | undefined => {
-    if (typeof value === 'boolean') return value
-    if (value === undefined || value === null || value === '') return undefined
-    const normalized = String(value).trim().toLowerCase()
-    return (
-      normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on'
-    )
-  },
-}))
+const mockGetEffectiveDecryptedEnv = environmentUtilsMockFns.mockGetEffectiveDecryptedEnv
 
 // Mock getBYOKKey
 vi.mock('@/lib/api-key/byok', () => ({
@@ -85,6 +69,11 @@ vi.mock('@/lib/api-key/byok', () => ({
 
 vi.mock('@/lib/auth/internal', () => ({
   generateInternalToken: (...args: unknown[]) => mockGenerateInternalToken(...args),
+}))
+
+vi.mock('@/lib/core/security/encryption', () => ({
+  decryptSecret: encryptionMockFns.mockDecryptSecret,
+  encryptSecret: encryptionMockFns.mockEncryptSecret,
 }))
 
 vi.mock('@/ee/access-control/utils/permission-check', () => ({
@@ -120,227 +109,215 @@ vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
 
 // Mock the tools registry to avoid loading the full 4500+ line registry file.
 // Only the tools actually exercised in tests are provided.
-vi.mock('@/tools/registry', () => {
-  const mockTools: Record<string, any> = {
-    http_request: {
-      id: 'http_request',
-      name: 'HTTP Request',
-      description: 'Make HTTP requests',
-      version: '1.0.0',
-      params: {
-        url: { type: 'string', required: true },
-        method: { type: 'string', default: 'GET' },
-        headers: { type: 'object' },
-        body: { type: 'object' },
-        params: { type: 'object' },
-        pathParams: { type: 'object' },
-        formData: { type: 'object' },
-        timeout: { type: 'number' },
-        retries: { type: 'number' },
-        retryDelayMs: { type: 'number' },
-        retryMaxDelayMs: { type: 'number' },
-        retryNonIdempotent: { type: 'boolean' },
-      },
-      request: {
-        url: (p: any) => p.url || '/api/test',
-        method: (p: any) => p.method || 'GET',
-        headers: (p: any) => p.headers || { 'Content-Type': 'application/json' },
-        body: (p: any) => p.body,
-        retry: {
-          enabled: true,
-          maxRetries: 0,
-          initialDelayMs: 500,
-          maxDelayMs: 30000,
-          retryIdempotentOnly: true,
-        },
-      },
-      transformResponse: async (response: any) => {
-        const contentType = response.headers?.get?.('content-type') || ''
-        const headers: Record<string, string> = {}
-        if (response.headers?.forEach) {
-          response.headers.forEach((value: string, key: string) => {
-            headers[key] = value
-          })
-        }
-        const data = await (contentType.includes('application/json')
-          ? response.json()
-          : response.text())
-        return {
-          success: response.ok,
-          output: { data, status: response.status, headers },
-        }
-      },
-      outputs: {
-        data: { type: 'json', description: 'Response data' },
-        status: { type: 'number', description: 'HTTP status code' },
-        headers: { type: 'object', description: 'Response headers' },
+const mockRegistryTools: Record<string, any> = {
+  workflow_executor: workflowExecutorTool,
+  http_request: {
+    id: 'http_request',
+    name: 'HTTP Request',
+    description: 'Make HTTP requests',
+    version: '1.0.0',
+    params: {
+      url: { type: 'string', required: true },
+      method: { type: 'string', default: 'GET' },
+      headers: { type: 'object' },
+      body: { type: 'object' },
+      params: { type: 'object' },
+      pathParams: { type: 'object' },
+      formData: { type: 'object' },
+      timeout: { type: 'number' },
+      retries: { type: 'number' },
+      retryDelayMs: { type: 'number' },
+      retryMaxDelayMs: { type: 'number' },
+      retryNonIdempotent: { type: 'boolean' },
+    },
+    request: {
+      url: (p: any) => p.url || '/api/test',
+      method: (p: any) => p.method || 'GET',
+      headers: (p: any) => p.headers || { 'Content-Type': 'application/json' },
+      body: (p: any) => p.body,
+      retry: {
+        enabled: true,
+        maxRetries: 0,
+        initialDelayMs: 500,
+        maxDelayMs: 30000,
+        retryIdempotentOnly: true,
       },
     },
-    function_execute: {
-      id: 'function_execute',
-      name: 'Function Execute',
-      description: 'Execute JavaScript code',
-      version: '1.0.0',
-      params: {
-        code: { type: 'string', required: true },
-        language: { type: 'string', required: false },
-        timeout: { type: 'number', required: false },
-      },
-      request: {
-        url: '/api/function/execute',
-        method: 'POST',
-        headers: () => ({ 'Content-Type': 'application/json' }),
-        body: (p: any) => ({
-          code: Array.isArray(p.code) ? p.code.map((c: any) => c.content).join('\n') : p.code,
-          language: p.language || 'javascript',
-          timeout: p.timeout || 30000,
-        }),
-      },
-      transformResponse: async (response: any) => {
-        const data = await response.json()
-        return { success: true, output: data }
-      },
-      outputs: {
-        result: { type: 'json', description: 'Execution result' },
-      },
+    transformResponse: async (response: any) => {
+      const contentType = response.headers?.get?.('content-type') || ''
+      const headers: Record<string, string> = {}
+      if (response.headers?.forEach) {
+        response.headers.forEach((value: string, key: string) => {
+          headers[key] = value
+        })
+      }
+      const data = await (contentType.includes('application/json')
+        ? response.json()
+        : response.text())
+      return {
+        success: response.ok,
+        output: { data, status: response.status, headers },
+      }
     },
-    gmail_read: {
-      id: 'gmail_read',
-      name: 'Gmail Read',
-      description: 'Read Gmail messages',
-      version: '1.0.0',
-      oauth: { required: true, provider: 'google-email' },
-      params: {},
-      request: { url: '/api/tools/gmail/read', method: 'GET' },
+    outputs: {
+      data: { type: 'json', description: 'Response data' },
+      status: { type: 'number', description: 'HTTP status code' },
+      headers: { type: 'object', description: 'Response headers' },
     },
-    gmail_send: {
-      id: 'gmail_send',
-      name: 'Gmail Send',
-      description: 'Send Gmail messages',
-      version: '1.0.0',
-      oauth: { required: true, provider: 'google-email' },
-      params: {},
-      request: { url: '/api/tools/gmail/send', method: 'POST' },
+  },
+  function_execute: {
+    id: 'function_execute',
+    name: 'Function Execute',
+    description: 'Execute JavaScript code',
+    version: '1.0.0',
+    params: {
+      code: { type: 'string', required: true },
+      language: { type: 'string', required: false },
+      timeout: { type: 'number', required: false },
     },
-    test_single_file_tool: {
-      id: 'test_single_file_tool',
-      name: 'Test Single File Tool',
-      description: 'Accepts a single file parameter',
-      version: '1.0.0',
-      params: {
-        attachment: { type: 'file', required: true },
-      },
-      request: {
-        url: '/api/tools/test/single-file',
-        method: 'POST',
-        headers: () => ({ 'Content-Type': 'application/json' }),
-        body: (p: any) => ({ attachment: p.attachment }),
-      },
-      transformResponse: async (response: any) => {
-        const data = await response.json()
-        return { success: true, output: data }
-      },
+    request: {
+      url: '/api/function/execute',
+      method: 'POST',
+      headers: () => ({ 'Content-Type': 'application/json' }),
+      body: (p: any) => ({
+        code: Array.isArray(p.code) ? p.code.map((c: any) => c.content).join('\n') : p.code,
+        language: p.language || 'javascript',
+        timeout: p.timeout || 30000,
+      }),
     },
-    test_file_array_tool: {
-      id: 'test_file_array_tool',
-      name: 'Test File Array Tool',
-      description: 'Accepts an array of file parameters',
-      version: '1.0.0',
-      params: {
-        attachments: { type: 'file[]', required: true },
-      },
-      request: {
-        url: '/api/tools/test/file-array',
-        method: 'POST',
-        headers: () => ({ 'Content-Type': 'application/json' }),
-        body: (p: any) => ({ attachments: p.attachments }),
-      },
-      transformResponse: async (response: any) => {
-        const data = await response.json()
-        return { success: true, output: data }
-      },
+    transformResponse: async (response: any) => {
+      const data = await response.json()
+      return { success: true, output: data }
     },
-    google_drive_list: {
-      id: 'google_drive_list',
-      name: 'Google Drive List',
-      description: 'List Google Drive files',
-      version: '1.0.0',
-      params: {},
-      request: { url: '/api/tools/google-drive/list', method: 'GET' },
+    outputs: {
+      result: { type: 'json', description: 'Execution result' },
     },
-    serper_search: {
-      id: 'serper_search',
-      name: 'Serper Search',
-      description: 'Search via Serper',
-      version: '1.0.0',
-      params: {},
-      request: { url: '/api/tools/serper/search', method: 'GET' },
+  },
+  gmail_read: {
+    id: 'gmail_read',
+    name: 'Gmail Read',
+    description: 'Read Gmail messages',
+    version: '1.0.0',
+    oauth: { required: true, provider: 'google-email' },
+    params: {},
+    request: { url: '/api/tools/gmail/read', method: 'GET' },
+  },
+  gmail_send: {
+    id: 'gmail_send',
+    name: 'Gmail Send',
+    description: 'Send Gmail messages',
+    version: '1.0.0',
+    oauth: { required: true, provider: 'google-email' },
+    params: {},
+    request: { url: '/api/tools/gmail/send', method: 'POST' },
+  },
+  test_single_file_tool: {
+    id: 'test_single_file_tool',
+    name: 'Test Single File Tool',
+    description: 'Accepts a single file parameter',
+    version: '1.0.0',
+    params: {
+      attachment: { type: 'file', required: true },
     },
-    notion_add_database_row: {
-      id: 'notion_add_database_row',
-      name: 'Add Notion Database Row',
-      description: 'Add a new row to a Notion database with specified properties',
-      version: '1.0.0',
-      params: {},
-      request: { url: 'https://api.notion.com/v1/pages', method: 'POST' },
+    request: {
+      url: '/api/tools/test/single-file',
+      method: 'POST',
+      headers: () => ({ 'Content-Type': 'application/json' }),
+      body: (p: any) => ({ attachment: p.attachment }),
     },
-    notion_add_database_row_v2: {
-      id: 'notion_add_database_row_v2',
-      name: 'Add Notion Database Row',
-      description: 'Add a new row to a Notion database with specified properties',
-      version: '2.0.0',
-      params: {},
-      request: { url: 'https://api.notion.com/v1/pages', method: 'POST' },
+    transformResponse: async (response: any) => {
+      const data = await response.json()
+      return { success: true, output: data }
     },
-    notion_update_page: {
-      id: 'notion_update_page',
-      name: 'Notion Page Updater',
-      description: 'Update properties of a Notion page',
-      version: '1.0.0',
-      params: {},
-      request: { url: 'https://api.notion.com/v1/pages/x', method: 'PATCH' },
+  },
+  test_env_ref_tool: {
+    id: 'test_env_ref_tool',
+    name: 'Test Env Reference Tool',
+    description: 'Accepts a user-only API key and an llm-writable note',
+    version: '1.0.0',
+    params: {
+      apiKey: { type: 'string', required: true, visibility: 'user-only' },
+      note: { type: 'string', required: false, visibility: 'user-or-llm' },
     },
-    notion_update_page_v2: {
-      id: 'notion_update_page_v2',
-      name: 'Notion Page Updater',
-      description: 'Update properties of a Notion page',
-      version: '2.0.0',
-      params: {},
-      request: { url: 'https://api.notion.com/v1/pages/x', method: 'PATCH' },
+    request: {
+      url: '/api/tools/test/env-ref',
+      method: 'POST',
+      headers: () => ({ 'Content-Type': 'application/json' }),
+      body: (p: any) => ({ apiKey: p.apiKey, note: p.note }),
     },
-  }
-  return { tools: mockTools }
-})
-
-// Mock query client for custom tool cache reads
-vi.mock('@/app/_shell/providers/get-query-client', () => {
-  const mockCustomTool = {
-    id: 'custom-tool-123',
-    title: 'Custom Weather Tool',
-    code: 'return { result: "Weather data" }',
-    schema: {
-      function: {
-        description: 'Get weather information',
-        parameters: {
-          type: 'object',
-          properties: {
-            location: { type: 'string', description: 'City name' },
-            unit: { type: 'string', description: 'Unit (metric/imperial)' },
-          },
-          required: ['location'],
-        },
-      },
+    transformResponse: async (response: any) => {
+      const data = await response.json()
+      return { success: true, output: data }
     },
-  }
-  return {
-    getQueryClient: () => ({
-      getQueryData: (key: string[]) => {
-        if (key[0] === 'customTools') return [mockCustomTool]
-        return undefined
-      },
-    }),
-  }
-})
+  },
+  test_file_array_tool: {
+    id: 'test_file_array_tool',
+    name: 'Test File Array Tool',
+    description: 'Accepts an array of file parameters',
+    version: '1.0.0',
+    params: {
+      attachments: { type: 'file[]', required: true },
+    },
+    request: {
+      url: '/api/tools/test/file-array',
+      method: 'POST',
+      headers: () => ({ 'Content-Type': 'application/json' }),
+      body: (p: any) => ({ attachments: p.attachments }),
+    },
+    transformResponse: async (response: any) => {
+      const data = await response.json()
+      return { success: true, output: data }
+    },
+  },
+  google_drive_list: {
+    id: 'google_drive_list',
+    name: 'Google Drive List',
+    description: 'List Google Drive files',
+    version: '1.0.0',
+    params: {},
+    request: { url: '/api/tools/google-drive/list', method: 'GET' },
+  },
+  serper_search: {
+    id: 'serper_search',
+    name: 'Serper Search',
+    description: 'Search via Serper',
+    version: '1.0.0',
+    params: {},
+    request: { url: '/api/tools/serper/search', method: 'GET' },
+  },
+  notion_add_database_row: {
+    id: 'notion_add_database_row',
+    name: 'Add Notion Database Row',
+    description: 'Add a new row to a Notion database with specified properties',
+    version: '1.0.0',
+    params: {},
+    request: { url: 'https://api.notion.com/v1/pages', method: 'POST' },
+  },
+  notion_add_database_row_v2: {
+    id: 'notion_add_database_row_v2',
+    name: 'Add Notion Database Row',
+    description: 'Add a new row to a Notion database with specified properties',
+    version: '2.0.0',
+    params: {},
+    request: { url: 'https://api.notion.com/v1/pages', method: 'POST' },
+  },
+  notion_update_page: {
+    id: 'notion_update_page',
+    name: 'Notion Page Updater',
+    description: 'Update properties of a Notion page',
+    version: '1.0.0',
+    params: {},
+    request: { url: 'https://api.notion.com/v1/pages/x', method: 'PATCH' },
+  },
+  notion_update_page_v2: {
+    id: 'notion_update_page_v2',
+    name: 'Notion Page Updater',
+    description: 'Update properties of a Notion page',
+    version: '2.0.0',
+    params: {},
+    request: { url: 'https://api.notion.com/v1/pages/x', method: 'PATCH' },
+  },
+}
 
 vi.mock('@/lib/workflows/custom-tools/operations', () => ({
   getCustomToolById: mockGetCustomToolById,
@@ -357,10 +334,89 @@ vi.mock('@/tools/utils.server', async (importOriginal) => {
   }
 })
 
+import type { QueryClient } from '@tanstack/react-query'
+import * as getQueryClientModule from '@/app/_shell/providers/get-query-client'
 import { executeTool, postProcessToolOutput } from '@/tools'
 import { tools } from '@/tools/registry'
 import { getTool } from '@/tools/utils'
 import { getToolAsync } from '@/tools/utils.server'
+
+/**
+ * Overlay the mock tools onto the REAL registry object instead of vi.mock:
+ * under `isolate: false` shared consumers (`@/tools/utils`, `@/tools`) may be
+ * cached across test files bound to the real registry namespace, so mutating
+ * the one real `tools` object (and restoring it afterAll) is the only wiring
+ * that applies in every ordering.
+ */
+const replacedRegistryEntries = new Map<string, unknown>()
+for (const [id, tool] of Object.entries(mockRegistryTools)) {
+  replacedRegistryEntries.set(id, (tools as Record<string, unknown>)[id])
+  ;(tools as Record<string, any>)[id] = tool
+}
+
+afterAll(() => {
+  for (const [id, original] of replacedRegistryEntries) {
+    if (original === undefined) {
+      delete (tools as Record<string, unknown>)[id]
+    } else {
+      ;(tools as Record<string, any>)[id] = original
+    }
+  }
+})
+
+const mockCustomTool = {
+  id: 'custom-tool-123',
+  title: 'Custom Weather Tool',
+  code: 'return { result: "Weather data" }',
+  schema: {
+    function: {
+      description: 'Get weather information',
+      parameters: {
+        type: 'object',
+        properties: {
+          location: { type: 'string', description: 'City name' },
+          unit: { type: 'string', description: 'Unit (metric/imperial)' },
+        },
+        required: ['location'],
+      },
+    },
+  },
+}
+
+function createMockQueryClient(): QueryClient {
+  return {
+    getQueryData: (key: readonly unknown[]) => {
+      if (key[0] === 'customTools') return [mockCustomTool]
+      return undefined
+    },
+  } as unknown as QueryClient
+}
+
+/**
+ * Spy on the real get-query-client namespace instead of vi.mock: under
+ * `isolate: false` the shared `@/tools/utils` module may be cached across test
+ * files, so patching the real namespace is the only wiring that composes.
+ * Re-applied in beforeEach because suites below call vi.resetAllMocks() /
+ * vi.restoreAllMocks().
+ */
+vi.spyOn(getQueryClientModule, 'getQueryClient').mockImplementation(createMockQueryClient)
+
+beforeEach(() => {
+  vi.spyOn(getQueryClientModule, 'getQueryClient').mockImplementation(createMockQueryClient)
+  // Suites below call vi.resetAllMocks(), which wipes the shared env/urls mock
+  // implementations — restore their defaults and re-pin the base URL each test.
+  resetEnvMock()
+  resetUrlsMock()
+  resetEnvironmentUtilsMock()
+  setEnv({ NEXT_PUBLIC_APP_URL: 'http://localhost:3000' })
+})
+
+afterAll(() => {
+  vi.mocked(getQueryClientModule.getQueryClient).mockRestore()
+  resetEnvMock()
+  resetUrlsMock()
+  resetEnvironmentUtilsMock()
+})
 
 /**
  * Sets up global fetch mock with Next.js preconnect support.
@@ -370,6 +426,19 @@ function setupFetchMock(config: MockFetchResponse = {}) {
   const fetchWithPreconnect = Object.assign(mockFetch, { preconnect: vi.fn() }) as typeof fetch
   global.fetch = fetchWithPreconnect
   return mockFetch
+}
+
+const TEST_BILLING_ATTRIBUTION: BillingAttributionSnapshot = {
+  actorUserId: 'test-user',
+  workspaceId: 'workspace-456',
+  organizationId: null,
+  billedAccountUserId: 'test-user',
+  billingEntity: { type: 'user', id: 'test-user' },
+  billingPeriod: {
+    start: '2026-07-01T00:00:00.000Z',
+    end: '2026-08-01T00:00:00.000Z',
+  },
+  payerSubscription: null,
 }
 
 /**
@@ -388,6 +457,11 @@ function createToolExecutionContext(overrides?: Partial<ExecutionContext>): Exec
     ...ctx,
     workspaceId: 'workspace-456',
     ...overrides,
+    metadata: {
+      ...ctx.metadata,
+      ...overrides?.metadata,
+      billingAttribution: overrides?.metadata?.billingAttribution ?? TEST_BILLING_ATTRIBUTION,
+    },
   } as ExecutionContext
 }
 
@@ -405,6 +479,12 @@ function setupEnvVars(variables: Record<string, string>) {
     })
   }
 }
+
+beforeAll(() => {
+  setEnvFlags({ isDev: true })
+})
+
+afterAll(resetEnvFlagsMock)
 
 describe('Tools Registry', () => {
   it('should include all expected built-in tools', () => {
@@ -578,6 +658,352 @@ describe('executeTool Function', () => {
       expect.stringContaining('/api/function/execute'),
       expect.anything()
     )
+  })
+
+  it('consumes Function secret provenance without exposing private transport metadata', async () => {
+    const registry = new ResolvedSecretTraceRegistry([
+      {
+        name: 'API_KEY',
+        plaintext: 'secret-value',
+        encryptedValue: 'encrypted-value',
+      },
+    ])
+    global.fetch = Object.assign(
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            success: true,
+            output: { result: 'secret-value', stdout: '' },
+            __resolvedSecretNames: ['API_KEY'],
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'x-sim-private-tool-metadata': 'resolved-secret-names-v1',
+            },
+          }
+        )
+      ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const result = await executeTool(
+      'function_execute',
+      {
+        code: 'return {{API_KEY}}',
+        envVars: { API_KEY: 'secret-value' },
+      },
+      { resolvedSecretTraceRegistry: registry }
+    )
+
+    const [, requestInit] = vi.mocked(global.fetch).mock.calls[0]
+    expect(new Headers(requestInit?.headers).get('x-sim-request-private-tool-metadata')).toBe(
+      'resolved-secret-names-v1'
+    )
+    expect(result.output).toEqual({
+      success: true,
+      output: { result: 'secret-value', stdout: '' },
+    })
+    expect(registry.getActiveMatches()).toEqual([
+      { plaintext: 'secret-value', replacement: '{{API_KEY}}' },
+    ])
+  })
+
+  it('fails concurrent projection closed while custom-tool provenance is pending', async () => {
+    const secret = 'custom-tool-secret-value'
+    const registry = new ResolvedSecretTraceRegistry([
+      {
+        name: 'API_KEY',
+        plaintext: secret,
+        encryptedValue: 'encrypted-value',
+      },
+    ])
+    mockGetToolAsync.mockResolvedValueOnce({
+      id: 'custom_pending-provenance',
+      name: 'Pending provenance custom tool',
+      description: 'Tests late provenance activation',
+      version: '1.0.0',
+      params: {},
+      request: {
+        url: '/api/function/execute',
+        method: 'POST',
+        headers: () => ({ 'Content-Type': 'application/json' }),
+        body: () => ({ code: 'return {{API_KEY}}', envVars: { API_KEY: secret } }),
+      },
+      transformResponse: async (response: Response) => {
+        const data = await response.json()
+        return { success: true, output: data.output }
+      },
+    })
+
+    let resolveRequest!: (response: Response) => void
+    let markRequestStarted!: () => void
+    const requestStarted = new Promise<void>((resolve) => {
+      markRequestStarted = resolve
+    })
+    global.fetch = Object.assign(
+      vi.fn().mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveRequest = resolve
+            markRequestStarted()
+          })
+      ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const execution = executeTool(
+      'custom_pending-provenance',
+      { envVars: { API_KEY: secret } },
+      {
+        executionContext: createToolExecutionContext(),
+        resolvedSecretTraceRegistry: registry,
+      }
+    )
+    await requestStarted
+
+    expect(registry.isComplete()).toBe(false)
+    expect(
+      projectToolResultForCopilot({ success: true, output: { result: secret } }, registry)
+    ).not.toHaveProperty('output')
+
+    resolveRequest(
+      new Response(
+        JSON.stringify({
+          success: true,
+          output: { result: secret },
+          __resolvedSecretNames: ['API_KEY'],
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'x-sim-private-tool-metadata': 'resolved-secret-names-v1',
+          },
+        }
+      )
+    )
+
+    await expect(execution).resolves.toMatchObject({ success: true })
+    expect(registry.isComplete()).toBe(true)
+    expect(
+      projectToolResultForCopilot({ success: true, output: { result: secret } }, registry)
+    ).toMatchObject({ output: { result: '{{API_KEY}}' } })
+  })
+
+  it('keeps the Function result unchanged when requested provenance is missing', async () => {
+    const registry = new ResolvedSecretTraceRegistry()
+    global.fetch = Object.assign(
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ success: true, output: { result: 'unchanged', stdout: '' } }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const result = await executeTool(
+      'function_execute',
+      { code: 'return "unchanged"', envVars: {} },
+      { resolvedSecretTraceRegistry: registry }
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.output).toEqual({
+      success: true,
+      output: { result: 'unchanged', stdout: '' },
+    })
+    expect(registry.isComplete()).toBe(false)
+  })
+
+  it('filters cross-scope workflow provenance to literals present in the unchanged result', async () => {
+    const registry = new ResolvedSecretTraceRegistry([], {
+      userId: 'parent-user',
+      workspaceId: 'workspace-456',
+    })
+    encryptionMockFns.mockDecryptSecret.mockImplementation(async (encryptedValue: string) => ({
+      decrypted: encryptedValue === 'crossed-encrypted' ? 'crossed-secret' : 'unrelated-secret',
+    }))
+    const childOutput = {
+      answer: 'The child returned crossed-secret verbatim',
+      publicValue: 'unchanged',
+    }
+    global.fetch = Object.assign(
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            success: true,
+            workflowId: 'child-workflow',
+            workflowName: 'Child Workflow',
+            output: childOutput,
+            metadata: { duration: 17 },
+            __resolvedSecretTraceProvenance: {
+              version: 1,
+              complete: true,
+              entries: [
+                { name: 'CROSSED', encryptedValue: 'crossed-encrypted' },
+                { name: 'UNRELATED', encryptedValue: 'unrelated-encrypted' },
+              ],
+              scope: { userId: 'parent-user', workspaceId: 'child-workspace' },
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'x-sim-private-tool-metadata': 'resolved-secret-provenance-v1',
+            },
+          }
+        )
+      ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const result = await executeTool(
+      'workflow_executor_child-workflow',
+      { workflowId: 'child-workflow', inputMapping: {} },
+      {
+        executionContext: createToolExecutionContext({ userId: 'parent-user' }),
+        resolvedSecretTraceRegistry: registry,
+      }
+    )
+
+    expect(result).toEqual({
+      success: true,
+      duration: 17,
+      childWorkflowId: 'child-workflow',
+      childWorkflowName: 'Child Workflow',
+      output: childOutput,
+      result: childOutput,
+      error: undefined,
+      timing: {
+        startTime: expect.any(String),
+        endTime: expect.any(String),
+        duration: expect.any(Number),
+      },
+    })
+    expect(JSON.stringify(result)).not.toContain('__resolvedSecretTraceProvenance')
+    expect(registry.getActiveMatches()).toEqual([
+      {
+        plaintext: 'crossed-secret',
+        replacement: ANONYMOUS_SECRET_TRACE_REPLACEMENT,
+      },
+    ])
+    expect(registry.isComplete()).toBe(true)
+  })
+
+  it('does not charge private provenance against the functional response limit', async () => {
+    const registry = new ResolvedSecretTraceRegistry([], {
+      userId: 'parent-user',
+      workspaceId: 'workspace-456',
+    })
+    const functionalValue = 'f'.repeat(9 * 1024 * 1024)
+    const encryptedValue = 'e'.repeat(2 * 1024 * 1024)
+    encryptionMockFns.mockDecryptSecret.mockResolvedValueOnce({ decrypted: 'secret-value' })
+    global.fetch = Object.assign(
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            success: true,
+            workflowId: 'child-workflow',
+            workflowName: 'Child Workflow',
+            output: { value: functionalValue },
+            metadata: { duration: 17 },
+            __resolvedSecretTraceProvenance: {
+              version: 1,
+              complete: true,
+              entries: [{ name: 'TOKEN', encryptedValue }],
+              scope: { userId: 'parent-user', workspaceId: 'workspace-456' },
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'x-sim-private-tool-metadata': 'resolved-secret-provenance-v1',
+            },
+          }
+        )
+      ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const result = await executeTool(
+      'workflow_executor_child-workflow',
+      { workflowId: 'child-workflow', inputMapping: {} },
+      {
+        executionContext: createToolExecutionContext({ userId: 'parent-user' }),
+        resolvedSecretTraceRegistry: registry,
+      }
+    )
+
+    expect(result.success).toBe(true)
+    expect((result.output as { value: string }).value).toHaveLength(functionalValue.length)
+    expect(result).not.toHaveProperty('__resolvedSecretTraceProvenance')
+    expect(result.output).not.toHaveProperty('__resolvedSecretTraceProvenance')
+    expect(registry.isComplete()).toBe(true)
+  })
+
+  it('strips private metadata even when an internal endpoint returns the wrong marker', async () => {
+    const registry = new ResolvedSecretTraceRegistry()
+    global.fetch = Object.assign(
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            success: true,
+            output: { result: 'unchanged' },
+            __resolvedSecretTraceProvenance: { version: 1, complete: true, entries: [] },
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'x-sim-private-tool-metadata': 'resolved-secret-provenance-v1',
+            },
+          }
+        )
+      ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const result = await executeTool(
+      'function_execute',
+      { code: 'return "unchanged"', envVars: {} },
+      { resolvedSecretTraceRegistry: registry }
+    )
+
+    expect(JSON.stringify(result)).not.toContain('__resolvedSecretTraceProvenance')
+    expect(registry.isComplete()).toBe(false)
+  })
+
+  it('fails closed when a marked private response envelope is malformed', async () => {
+    const registry = new ResolvedSecretTraceRegistry()
+    global.fetch = Object.assign(
+      vi.fn().mockResolvedValue(
+        new Response('{"__resolvedSecretNames":["API_KEY"],"value":"secret-value"', {
+          status: 500,
+          headers: {
+            'content-type': 'application/json',
+            'x-sim-private-tool-metadata': 'resolved-secret-names-v1',
+          },
+        })
+      ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const result = await executeTool(
+      'function_execute',
+      { code: 'return "unchanged"', envVars: { API_KEY: 'secret-value' } },
+      { resolvedSecretTraceRegistry: registry }
+    )
+
+    expect(JSON.stringify(result)).not.toContain('secret-value')
+    expect(JSON.stringify(result)).not.toContain('__resolvedSecretNames')
+    expect(registry.isComplete()).toBe(false)
   })
 
   it('should handle non-existent tool', async () => {
@@ -881,6 +1307,142 @@ describe('Automatic Internal Route Detection', () => {
     )
 
     // Restore original tools
+    Object.assign(tools, originalTools)
+  })
+
+  it('should validate + pin a proxyUrl param and pass it to secureFetchWithPinnedIP', async () => {
+    inputValidationMockFns.mockValidateAndPinProxyUrl.mockResolvedValue({
+      isValid: true,
+      pinnedProxyUrl: 'http://user:pass@1.2.3.4:8080/',
+    })
+
+    const mockTool = {
+      id: 'test_external_proxy',
+      name: 'Test External Proxy Tool',
+      description: 'A test tool that routes through a proxy',
+      version: '1.0.0',
+      params: {},
+      request: {
+        url: 'https://api.example.com/endpoint',
+        method: 'GET',
+        headers: () => ({ 'Content-Type': 'application/json' }),
+      },
+      transformResponse: vi.fn().mockResolvedValue({ success: true, output: {} }),
+    }
+
+    const originalTools = { ...tools }
+    ;(tools as any).test_external_proxy = mockTool
+
+    await executeTool('test_external_proxy', { proxyUrl: 'http://user:pass@proxy.host:8080' })
+
+    expect(inputValidationMockFns.mockValidateAndPinProxyUrl).toHaveBeenCalledWith(
+      'http://user:pass@proxy.host:8080'
+    )
+    expect(mockSecureFetchWithPinnedIP).toHaveBeenCalledWith(
+      'https://api.example.com/endpoint',
+      '93.184.216.34',
+      expect.objectContaining({ proxyUrl: 'http://user:pass@1.2.3.4:8080/' })
+    )
+
+    Object.assign(tools, originalTools)
+  })
+
+  it("should forward a tool's stripAuthOnRedirect to secureFetchWithPinnedIP", async () => {
+    // Tools whose endpoint redirects to a signed third-party URL (GitHub's
+    // Actions log download) must not have their API credential replayed to the
+    // redirect target. This fetch path follows redirects itself rather than
+    // through the fetch spec, so nothing strips the header without the flag.
+    const mockTool = {
+      id: 'test_redirecting_download',
+      name: 'Test Redirecting Download Tool',
+      description: 'A test tool whose endpoint redirects to another origin',
+      version: '1.0.0',
+      params: {},
+      request: {
+        url: 'https://api.example.com/download',
+        method: 'GET',
+        headers: () => ({ Authorization: 'Bearer secret-token' }),
+        stripAuthOnRedirect: true,
+      },
+      transformResponse: vi.fn().mockResolvedValue({ success: true, output: {} }),
+    }
+
+    const originalTools = { ...tools }
+    ;(tools as any).test_redirecting_download = mockTool
+
+    await executeTool('test_redirecting_download', {})
+
+    expect(mockSecureFetchWithPinnedIP).toHaveBeenCalledWith(
+      'https://api.example.com/download',
+      '93.184.216.34',
+      expect.objectContaining({ stripAuthOnRedirect: true })
+    )
+
+    Reflect.deleteProperty(tools, 'test_redirecting_download')
+    Object.assign(tools, originalTools)
+  })
+
+  it('should leave stripAuthOnRedirect unset for tools that do not opt in', async () => {
+    const mockTool = {
+      id: 'test_plain_external',
+      name: 'Test Plain External Tool',
+      description: 'A test tool with no redirect handling',
+      version: '1.0.0',
+      params: {},
+      request: {
+        url: 'https://api.example.com/plain',
+        method: 'GET',
+        headers: () => ({ Authorization: 'Bearer secret-token' }),
+      },
+      transformResponse: vi.fn().mockResolvedValue({ success: true, output: {} }),
+    }
+
+    const originalTools = { ...tools }
+    ;(tools as any).test_plain_external = mockTool
+
+    await executeTool('test_plain_external', {})
+
+    expect(mockSecureFetchWithPinnedIP).toHaveBeenCalledWith(
+      'https://api.example.com/plain',
+      '93.184.216.34',
+      expect.objectContaining({ stripAuthOnRedirect: undefined })
+    )
+
+    Reflect.deleteProperty(tools, 'test_plain_external')
+    Object.assign(tools, originalTools)
+  })
+
+  it('should throw when the proxyUrl param fails validation', async () => {
+    inputValidationMockFns.mockValidateAndPinProxyUrl.mockResolvedValue({
+      isValid: false,
+      error: 'proxyUrl must use http:// (https/socks proxies are not supported)',
+    })
+
+    const mockTool = {
+      id: 'test_external_bad_proxy',
+      name: 'Test External Bad Proxy Tool',
+      description: 'A test tool with an invalid proxy',
+      version: '1.0.0',
+      params: {},
+      request: {
+        url: 'https://api.example.com/endpoint',
+        method: 'GET',
+        headers: () => ({ 'Content-Type': 'application/json' }),
+      },
+      transformResponse: vi.fn().mockResolvedValue({ success: true, output: {} }),
+    }
+
+    const originalTools = { ...tools }
+    ;(tools as any).test_external_bad_proxy = mockTool
+
+    const result = await executeTool('test_external_bad_proxy', {
+      proxyUrl: 'https://proxy.host:8080',
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Invalid proxy URL')
+    expect(mockSecureFetchWithPinnedIP).not.toHaveBeenCalled()
+
     Object.assign(tools, originalTools)
   })
 
@@ -1248,6 +1810,231 @@ describe('Copilot OAuth Credential Enforcement', () => {
   })
 })
 
+describe('Copilot Env Variable Reference Resolution', () => {
+  let cleanupEnvVars: () => void
+
+  function mockJsonFetch() {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: new Headers(),
+      json: () => Promise.resolve({ ok: true }),
+      text: () => Promise.resolve(JSON.stringify({ ok: true })),
+      clone: vi.fn().mockReturnThis(),
+    })
+    global.fetch = Object.assign(fetchMock, { preconnect: vi.fn() }) as typeof fetch
+    return fetchMock
+  }
+
+  function sentRequestBody(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> {
+    return JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
+  }
+
+  const copilotContext = () =>
+    createToolExecutionContext({
+      workspaceId: 'workspace-456',
+      userId: 'user-123',
+      copilotToolExecution: true,
+    } as any)
+
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_APP_URL = 'http://localhost:3000'
+    cleanupEnvVars = setupEnvVars({ NEXT_PUBLIC_APP_URL: 'http://localhost:3000' })
+    mockGetEffectiveDecryptedEnv.mockReset()
+    mockGetEffectiveDecryptedEnv.mockResolvedValue({ SENTRY_AUTH_TOKEN: 'sntrys_real_token' })
+  })
+
+  afterEach(() => {
+    vi.resetAllMocks()
+    cleanupEnvVars()
+  })
+
+  it('resolves a whole-value {{VAR}} reference in a user-only param', async () => {
+    const fetchMock = mockJsonFetch()
+
+    const result = await executeTool(
+      'test_env_ref_tool',
+      { apiKey: '{{SENTRY_AUTH_TOKEN}}' },
+      { executionContext: copilotContext() }
+    )
+
+    expect(result.success).toBe(true)
+    expect(mockGetEffectiveDecryptedEnv).toHaveBeenCalledWith('user-123', 'workspace-456')
+    expect(sentRequestBody(fetchMock).apiKey).toBe('sntrys_real_token')
+  })
+
+  it('fails concurrent projection closed while a user-only secret reference is resolving', async () => {
+    const secret = 'sntrys_real_token'
+    const registry = new ResolvedSecretTraceRegistry([
+      {
+        name: 'SENTRY_AUTH_TOKEN',
+        plaintext: secret,
+        encryptedValue: 'encrypted-token',
+      },
+    ])
+    let resolveEnvironment!: (variables: Record<string, string>) => void
+    let markResolutionStarted!: () => void
+    const resolutionStarted = new Promise<void>((resolve) => {
+      markResolutionStarted = resolve
+    })
+    mockGetEffectiveDecryptedEnv.mockImplementationOnce(
+      () =>
+        new Promise<Record<string, string>>((resolve) => {
+          resolveEnvironment = resolve
+          markResolutionStarted()
+        })
+    )
+    mockJsonFetch()
+
+    const execution = executeTool(
+      'test_env_ref_tool',
+      { apiKey: '{{SENTRY_AUTH_TOKEN}}' },
+      {
+        executionContext: copilotContext(),
+        resolvedSecretTraceRegistry: registry,
+      }
+    )
+    await resolutionStarted
+
+    expect(registry.isComplete()).toBe(false)
+    expect(
+      projectToolResultForCopilot({ success: true, output: { result: secret } }, registry)
+    ).not.toHaveProperty('output')
+
+    resolveEnvironment({ SENTRY_AUTH_TOKEN: secret })
+    await expect(execution).resolves.toMatchObject({ success: true })
+
+    expect(registry.isComplete()).toBe(true)
+    expect(
+      projectToolResultForCopilot({ success: true, output: { result: secret } }, registry)
+    ).toMatchObject({ output: { result: '{{SENTRY_AUTH_TOKEN}}' } })
+  })
+
+  it('trims whitespace inside the braces like the executor resolver', async () => {
+    const fetchMock = mockJsonFetch()
+
+    const result = await executeTool(
+      'test_env_ref_tool',
+      { apiKey: '{{ SENTRY_AUTH_TOKEN }}' },
+      { executionContext: copilotContext() }
+    )
+
+    expect(result.success).toBe(true)
+    expect(sentRequestBody(fetchMock).apiKey).toBe('sntrys_real_token')
+  })
+
+  it('never resolves references in llm-writable (user-or-llm) params', async () => {
+    const fetchMock = mockJsonFetch()
+
+    const result = await executeTool(
+      'test_env_ref_tool',
+      { apiKey: '{{SENTRY_AUTH_TOKEN}}', note: '{{SENTRY_AUTH_TOKEN}}' },
+      { executionContext: copilotContext() }
+    )
+
+    expect(result.success).toBe(true)
+    expect(sentRequestBody(fetchMock).note).toBe('{{SENTRY_AUTH_TOKEN}}')
+  })
+
+  it('leaves embedded references untouched in user-only params', async () => {
+    const fetchMock = mockJsonFetch()
+
+    const result = await executeTool(
+      'test_env_ref_tool',
+      { apiKey: 'Bearer {{SENTRY_AUTH_TOKEN}}' },
+      { executionContext: copilotContext() }
+    )
+
+    expect(result.success).toBe(true)
+    expect(sentRequestBody(fetchMock).apiKey).toBe('Bearer {{SENTRY_AUTH_TOKEN}}')
+    expect(mockGetEffectiveDecryptedEnv).not.toHaveBeenCalled()
+  })
+
+  it('fails with a clear error before any request when the variable is missing', async () => {
+    const fetchMock = mockJsonFetch()
+
+    const result = await executeTool(
+      'test_env_ref_tool',
+      { apiKey: '{{MISSING_VAR}}' },
+      { executionContext: copilotContext() }
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('MISSING_VAR')
+    expect(result.error).toContain('apiKey')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('fails fast instead of forwarding the placeholder when user context is missing', async () => {
+    const fetchMock = mockJsonFetch()
+
+    const result = await executeTool(
+      'test_env_ref_tool',
+      { apiKey: '{{SENTRY_AUTH_TOKEN}}' },
+      {
+        executionContext: createToolExecutionContext({
+          workspaceId: 'workspace-456',
+          userId: undefined,
+          copilotToolExecution: true,
+        } as any),
+      }
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('authenticated user context')
+    expect(mockGetEffectiveDecryptedEnv).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('explains the personal-only scope when a variable is missing without a workspace context', async () => {
+    const fetchMock = mockJsonFetch()
+
+    const result = await executeTool(
+      'test_env_ref_tool',
+      { apiKey: '{{MISSING_VAR}}' },
+      {
+        executionContext: createToolExecutionContext({
+          workspaceId: undefined,
+          userId: 'user-123',
+          copilotToolExecution: true,
+        } as any),
+      }
+    )
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('only personal variables are available')
+    expect(mockGetEffectiveDecryptedEnv).toHaveBeenCalledWith('user-123', undefined)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('does not resolve references outside copilot execution', async () => {
+    const fetchMock = mockJsonFetch()
+
+    const result = await executeTool(
+      'test_env_ref_tool',
+      { apiKey: '{{SENTRY_AUTH_TOKEN}}' },
+      { executionContext: createToolExecutionContext({ userId: 'user-123' } as any) }
+    )
+
+    expect(result.success).toBe(true)
+    expect(mockGetEffectiveDecryptedEnv).not.toHaveBeenCalled()
+    expect(sentRequestBody(fetchMock).apiKey).toBe('{{SENTRY_AUTH_TOKEN}}')
+  })
+
+  it('never mutates the caller-owned params object (log-leak guard)', async () => {
+    mockJsonFetch()
+    const callerParams = { apiKey: '{{SENTRY_AUTH_TOKEN}}' }
+
+    const result = await executeTool('test_env_ref_tool', callerParams, {
+      executionContext: copilotContext(),
+    })
+
+    expect(result.success).toBe(true)
+    expect(callerParams.apiKey).toBe('{{SENTRY_AUTH_TOKEN}}')
+  })
+})
+
 describe('Centralized Error Handling', () => {
   let cleanupEnvVars: () => void
 
@@ -1531,6 +2318,248 @@ describe('MCP Tool Execution', () => {
     expect(result.output).toBeDefined()
     expect(result.output.content).toBeDefined()
     expect(result.timing).toBeDefined()
+  })
+
+  it('consumes marker-gated MCP provenance while leaving the tool result unchanged', async () => {
+    const registry = new ResolvedSecretTraceRegistry([], {
+      userId: 'test-user',
+      workspaceId: 'workspace-456',
+    })
+    const importProvenance = vi.spyOn(registry, 'importProvenance')
+    encryptionMockFns.mockDecryptSecret.mockResolvedValueOnce({ decrypted: 'secret-value' })
+    global.fetch = Object.assign(
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            success: true,
+            data: { output: { content: [{ type: 'text', text: 'secret-value' }] } },
+            __resolvedSecretTraceProvenance: {
+              version: 1,
+              complete: true,
+              entries: [{ name: 'MCP_TOKEN', encryptedValue: 'encrypted-token' }],
+              scope: { userId: 'test-user', workspaceId: 'workspace-456' },
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              'x-sim-private-tool-metadata': 'resolved-secret-provenance-v1',
+            },
+          }
+        )
+      ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const result = await executeTool(
+      'mcp-123-list_files',
+      { path: '/test' },
+      {
+        executionContext: createToolExecutionContext(),
+        resolvedSecretTraceRegistry: registry,
+      }
+    )
+
+    const [, requestInit] = vi.mocked(global.fetch).mock.calls[0]
+    expect(new Headers(requestInit?.headers).get('x-sim-request-private-tool-metadata')).toBe(
+      'resolved-secret-provenance-v1'
+    )
+    expect(result.output).toEqual({ content: [{ type: 'text', text: 'secret-value' }] })
+    expect(JSON.stringify(result)).not.toContain('__resolvedSecretTraceProvenance')
+    expect(importProvenance).toHaveBeenCalledTimes(1)
+    expect(importProvenance).toHaveBeenCalledWith(
+      {
+        version: 1,
+        complete: true,
+        entries: [{ name: 'MCP_TOKEN', encryptedValue: 'encrypted-token' }],
+        scope: { userId: 'test-user', workspaceId: 'workspace-456' },
+      },
+      { trusted: true }
+    )
+    expect(encryptionMockFns.mockDecryptSecret).toHaveBeenCalledWith('encrypted-token')
+    expect(registry.isComplete()).toBe(true)
+    expect(registry.getActiveMatches()).toEqual([
+      { plaintext: 'secret-value', replacement: '{{MCP_TOKEN}}' },
+    ])
+  })
+
+  it('fails concurrent projection closed while MCP provenance is pending', async () => {
+    const secret = 'mcp-secret-value'
+    const registry = new ResolvedSecretTraceRegistry([], {
+      userId: 'test-user',
+      workspaceId: 'workspace-456',
+    })
+    encryptionMockFns.mockDecryptSecret.mockResolvedValueOnce({ decrypted: secret })
+
+    let resolveRequest!: (response: Response) => void
+    let markRequestStarted!: () => void
+    const requestStarted = new Promise<void>((resolve) => {
+      markRequestStarted = resolve
+    })
+    global.fetch = Object.assign(
+      vi.fn().mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveRequest = resolve
+            markRequestStarted()
+          })
+      ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const execution = executeTool(
+      'mcp-123-list_files',
+      { path: '/test' },
+      {
+        executionContext: createToolExecutionContext(),
+        resolvedSecretTraceRegistry: registry,
+      }
+    )
+    await requestStarted
+
+    expect(registry.isComplete()).toBe(false)
+    expect(
+      projectToolResultForCopilot({ success: true, output: { value: secret } }, registry)
+    ).not.toHaveProperty('output')
+
+    resolveRequest(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: { output: { content: [{ type: 'text', text: secret }] } },
+          __resolvedSecretTraceProvenance: {
+            version: 1,
+            complete: true,
+            entries: [{ name: 'MCP_TOKEN', encryptedValue: 'encrypted-token' }],
+            scope: { userId: 'test-user', workspaceId: 'workspace-456' },
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'x-sim-private-tool-metadata': 'resolved-secret-provenance-v1',
+          },
+        }
+      )
+    )
+
+    await expect(execution).resolves.toMatchObject({ success: true })
+    expect(registry.isComplete()).toBe(true)
+    expect(
+      projectToolResultForCopilot({ success: true, output: { value: secret } }, registry)
+    ).toMatchObject({ output: { value: '{{MCP_TOKEN}}' } })
+  })
+
+  it('rejects unmarked MCP provenance instead of trusting a response body field', async () => {
+    const registry = new ResolvedSecretTraceRegistry()
+    global.fetch = Object.assign(
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            success: true,
+            data: { output: { content: [{ type: 'text', text: 'unchanged' }] } },
+            __resolvedSecretTraceProvenance: {
+              version: 1,
+              complete: true,
+              entries: [{ name: 'MCP_TOKEN', encryptedValue: 'untrusted-encrypted-token' }],
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const result = await executeTool(
+      'mcp-123-list_files',
+      { path: '/test' },
+      {
+        executionContext: createToolExecutionContext(),
+        resolvedSecretTraceRegistry: registry,
+      }
+    )
+
+    expect(result.success).toBe(true)
+    expect(JSON.stringify(result)).not.toContain('__resolvedSecretTraceProvenance')
+    expect(registry.getActiveMatches()).toEqual([])
+    expect(registry.isComplete()).toBe(false)
+  })
+
+  it('preserves MCP error semantics while stripping marked private provenance', async () => {
+    const registry = new ResolvedSecretTraceRegistry()
+    global.fetch = Object.assign(
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: 'provider error detail',
+            __resolvedSecretTraceProvenance: { version: 1, complete: true, entries: [] },
+          }),
+          {
+            status: 500,
+            headers: {
+              'content-type': 'application/json',
+              'x-sim-private-tool-metadata': 'resolved-secret-provenance-v1',
+            },
+          }
+        )
+      ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const result = await executeTool(
+      'mcp-123-list_files',
+      { path: '/test' },
+      {
+        executionContext: createToolExecutionContext(),
+        resolvedSecretTraceRegistry: registry,
+      }
+    )
+
+    expect(result).toMatchObject({ success: false, error: 'provider error detail' })
+    expect(JSON.stringify(result)).not.toContain('__resolvedSecretTraceProvenance')
+    expect(registry.isComplete()).toBe(true)
+  })
+
+  it('accepts MCP responses above the generic tool cap while stripping private metadata', async () => {
+    const registry = new ResolvedSecretTraceRegistry()
+    global.fetch = Object.assign(
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            success: true,
+            data: { output: { content: [{ type: 'text', text: 'unchanged' }] } },
+            __resolvedSecretTraceProvenance: { version: 1, complete: true, entries: [] },
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-length': String(10 * 1024 * 1024 + 1),
+              'content-type': 'application/json',
+              'x-sim-private-tool-metadata': 'resolved-secret-provenance-v1',
+            },
+          }
+        )
+      ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const result = await executeTool(
+      'mcp-123-list_files',
+      { path: '/test' },
+      {
+        executionContext: createToolExecutionContext(),
+        resolvedSecretTraceRegistry: registry,
+      }
+    )
+
+    expect(result).toMatchObject({
+      success: true,
+      output: { content: [{ type: 'text', text: 'unchanged' }] },
+    })
+    expect(JSON.stringify(result)).not.toContain('__resolvedSecretTraceProvenance')
+    expect(registry.isComplete()).toBe(true)
   })
 
   it('should handle MCP tool ID parsing correctly', async () => {
@@ -2230,8 +3259,8 @@ describe('Rate Limiting and Retry Logic', () => {
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
     })
     vi.clearAllMocks()
-    mockIsHosted.value = true
-    mockEnv.TEST_HOSTED_KEY = 'test-hosted-api-key'
+    setEnvFlags({ isHosted: true })
+    setEnv({ TEST_HOSTED_KEY: 'test-hosted-api-key' })
     mockGetBYOKKey.mockResolvedValue(null)
     // Set up throttler mock defaults
     mockRateLimiterFns.acquireKey.mockResolvedValue({
@@ -2248,8 +3277,8 @@ describe('Rate Limiting and Retry Logic', () => {
     vi.useRealTimers()
     vi.resetAllMocks()
     cleanupEnvVars()
-    mockIsHosted.value = false
-    mockEnv.TEST_HOSTED_KEY = undefined
+    setEnvFlags({ isHosted: false })
+    setEnv({ TEST_HOSTED_KEY: undefined })
   })
 
   it('should retry on 429 rate limit errors with exponential backoff', async () => {
@@ -2614,8 +3643,8 @@ describe('Cost Field Handling', () => {
       NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
     })
     vi.clearAllMocks()
-    mockIsHosted.value = true
-    mockEnv.TEST_HOSTED_KEY = 'test-hosted-api-key'
+    setEnvFlags({ isHosted: true })
+    setEnv({ TEST_HOSTED_KEY: 'test-hosted-api-key' })
     mockGetBYOKKey.mockResolvedValue(null)
     // Set up throttler mock defaults
     mockRateLimiterFns.acquireKey.mockResolvedValue({
@@ -2631,8 +3660,8 @@ describe('Cost Field Handling', () => {
   afterEach(() => {
     vi.resetAllMocks()
     cleanupEnvVars()
-    mockIsHosted.value = false
-    mockEnv.TEST_HOSTED_KEY = undefined
+    setEnvFlags({ isHosted: false })
+    setEnv({ TEST_HOSTED_KEY: undefined })
   })
 
   it('should add cost to output when using hosted key with per_request pricing', async () => {
@@ -2746,7 +3775,7 @@ describe('Cost Field Handling', () => {
   })
 
   it('should not add cost when not using hosted key', async () => {
-    mockIsHosted.value = false
+    setEnvFlags({ isHosted: false })
 
     const mockTool = {
       id: 'test_no_hosted_cost',
@@ -2803,6 +3832,130 @@ describe('Cost Field Handling', () => {
     expect(result.success).toBe(true)
     // Should not have cost since user provided their own key
     expect(result.output.cost).toBeUndefined()
+
+    Object.assign(tools, originalTools)
+  })
+
+  it('emits _serviceCost for copilot executions using a hosted key', async () => {
+    const mockTool = {
+      id: 'test_copilot_hosted_cost',
+      name: 'Test Copilot Hosted Cost',
+      description: 'A hosted-key tool invoked by the copilot',
+      version: '1.0.0',
+      params: {
+        apiKey: { type: 'string', required: false },
+      },
+      hosting: {
+        envKeyPrefix: 'TEST_HOSTED_KEY',
+        apiKeyParam: 'apiKey',
+        byokProviderId: 'exa',
+        pricing: {
+          type: 'per_request' as const,
+          cost: 0.005,
+        },
+        rateLimit: {
+          mode: 'per_request' as const,
+          requestsPerMinute: 100,
+        },
+      },
+      request: {
+        url: '/api/test/copilot-cost',
+        method: 'POST' as const,
+        headers: () => ({ 'Content-Type': 'application/json' }),
+      },
+      transformResponse: vi.fn().mockResolvedValue({
+        success: true,
+        output: { result: 'success' },
+      }),
+    }
+
+    const originalTools = { ...tools }
+    ;(tools as any).test_copilot_hosted_cost = mockTool
+
+    global.fetch = Object.assign(
+      vi.fn().mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: () => Promise.resolve({ success: true }),
+      })),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    // Copilot flow: no executionContext option; scope comes from _context,
+    // which the copilot tool-executor stamps with copilotToolExecution.
+    const result = await executeTool('test_copilot_hosted_cost', {
+      _context: {
+        userId: 'user-123',
+        workspaceId: 'workspace-456',
+        copilotToolExecution: true,
+      },
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.output.cost).toEqual({ total: 0.005 })
+    expect(result.output._serviceCost).toEqual({ service: 'exa', cost: 0.005 })
+
+    Object.assign(tools, originalTools)
+  })
+
+  it('does not emit _serviceCost for workflow executions using a hosted key', async () => {
+    const mockTool = {
+      id: 'test_workflow_hosted_cost',
+      name: 'Test Workflow Hosted Cost',
+      description: 'A hosted-key tool invoked by a workflow',
+      version: '1.0.0',
+      params: {
+        apiKey: { type: 'string', required: false },
+      },
+      hosting: {
+        envKeyPrefix: 'TEST_HOSTED_KEY',
+        apiKeyParam: 'apiKey',
+        pricing: {
+          type: 'per_request' as const,
+          cost: 0.005,
+        },
+        rateLimit: {
+          mode: 'per_request' as const,
+          requestsPerMinute: 100,
+        },
+      },
+      request: {
+        url: '/api/test/workflow-cost',
+        method: 'POST' as const,
+        headers: () => ({ 'Content-Type': 'application/json' }),
+      },
+      transformResponse: vi.fn().mockResolvedValue({
+        success: true,
+        output: { result: 'success' },
+      }),
+    }
+
+    const originalTools = { ...tools }
+    ;(tools as any).test_workflow_hosted_cost = mockTool
+
+    global.fetch = Object.assign(
+      vi.fn().mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: () => Promise.resolve({ success: true }),
+      })),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const mockContext = createToolExecutionContext({ userId: 'user-123' } as any)
+    const result = await executeTool(
+      'test_workflow_hosted_cost',
+      {},
+      { executionContext: mockContext }
+    )
+
+    expect(result.success).toBe(true)
+    // Workflow executions bill through the execution ledger; emitting
+    // _serviceCost here would double-bill via Go's service-charge path.
+    expect(result.output.cost).toEqual({ total: 0.005 })
+    expect(result.output._serviceCost).toBeUndefined()
 
     Object.assign(tools, originalTools)
   })

@@ -13,6 +13,38 @@ import {
 } from './lib/core/security/csp'
 
 /**
+ * Marketing routes (`app/(landing)/**`, plus the root) exempted from COEP.
+ *
+ * COEP is a *document* header and is inherited across client-side `<Link>`
+ * navigations, so `/demo`'s own exemption only applies on a direct load. Any
+ * landing page left isolated soft-navigates into `/demo` still credentialless,
+ * where the Cal.com booker iframe loads uncredentialed and hangs forever.
+ * Every route under `app/(landing)` must be listed here.
+ */
+const LANDING_ROUTES = [
+  'blog',
+  'careers',
+  'changelog',
+  'comparisons',
+  'contact',
+  'demo',
+  'enterprise',
+  'files',
+  'integrations',
+  'knowledge',
+  'library',
+  'logs',
+  'models',
+  'pricing',
+  'privacy',
+  'scheduled-tasks',
+  'solutions',
+  'tables',
+  'terms',
+  'workflows',
+] as const
+
+/**
  * Dev-only escape hatch: when `SIM_DEV_MINIMAL_REGISTRY=1` (`bun run dev:minimal`),
  * swap the heavy block and tool registries for tiny curated variants via a
  * Turbopack/webpack resolve alias. The shared workspace layout drags the
@@ -34,6 +66,10 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: monorepoRoot,
   devIndicators: false,
   poweredByHeader: false,
+  // Safe here since this repo's source is already fully public on GitHub -
+  // no additional exposure versus Next's default (disabled to avoid leaking
+  // source on the client).
+  productionBrowserSourceMaps: true,
   turbopack: {
     root: monorepoRoot,
     resolveAlias: minimalRegistryAlias,
@@ -129,7 +165,6 @@ const nextConfig: NextConfig = {
   serverExternalPackages: [
     '@1password/sdk',
     'unpdf',
-    'ffmpeg-static',
     'fluent-ffmpeg',
     'cpu-features',
     'chromium-bidi',
@@ -144,10 +179,59 @@ const nextConfig: NextConfig = {
     'isolated-vm',
     '@e2b/code-interpreter',
     'e2b',
+    '@daytona/sdk',
+    '@earendil-works/pi-ai',
     '@earendil-works/pi-coding-agent',
+    // Keep json-render out of the Turbopack RSC graph (react-email render pulls react-dom/server).
+    '@json-render/core',
+    '@json-render/react',
+    '@json-render/react-email',
+    // The collab-doc seed converter lazily `require`s jsdom for a headless TipTap editor. Keep it
+    // external so webpack doesn't try to bundle jsdom's dynamic internal requires.
+    'jsdom',
+    // The collab-doc converter runs TipTap + Yjs headlessly server-side. Two reasons these must be
+    // external (native Node require), not bundled: (1) the server bundler gives bundled TipTap a
+    // `window` that does NOT read `globalThis`, so `elementFromString` throws "no window object" even
+    // after the converter installs a jsdom window; (2) bundling would load a SECOND copy of `yjs`, so
+    // `@tiptap/y-tiptap`'s `item instanceof Y.XmlElement` checks — against the external `yjs` — would
+    // fail on nodes the app created with the bundled `yjs` ("Unexpected case"). One external copy fixes
+    // both. Server-only — the client editor bundles its own copies for the browser.
+    'yjs',
+    'y-protocols',
+    'lib0',
+    '@tiptap/core',
+    '@tiptap/pm',
+    '@tiptap/markdown',
+    '@tiptap/y-tiptap',
+    '@tiptap/starter-kit',
+    '@tiptap/extension-code',
+    '@tiptap/extension-code-block',
+    '@tiptap/extension-image',
+    '@tiptap/extension-list',
+    '@tiptap/extension-paragraph',
+    '@tiptap/extension-table',
+    '@tiptap/extension-highlight',
   ],
   outputFileTracingIncludes: {
     '/api/tools/stagehand/*': ['./node_modules/ws/**/*'],
+    '/api/tools/generative_ui/*': [
+      './node_modules/@json-render/**/*',
+      './node_modules/@react-email/**/*',
+    ],
+    // The seed, merge, and persist endpoints all lazily `require('jsdom')` (via the collab-doc
+    // converter), which is invisible to the standalone file tracer, so force jsdom (and its transitive
+    // deps, followed from its static requires) into the trace — otherwise a Docker/standalone build
+    // omits it and the endpoint 500s with MODULE_NOT_FOUND. (The Yjs external stack — yjs/lib0/
+    // y-protocols — is copied whole in docker/app.Dockerfile: its glob would resolve against apps/sim
+    // but those deps hoist to the monorepo root, so a trace include can't reach them.)
+    '/api/internal/file-doc/seed': ['./node_modules/jsdom/**/*'],
+    '/api/internal/file-doc/merge': ['./node_modules/jsdom/**/*'],
+    '/api/internal/file-doc/persist': ['./node_modules/jsdom/**/*'],
+    // sharp@0.35+ needs both `@img/sharp-<platform>` and sibling
+    // `@img/sharp-libvips-<platform>` (the `.so` the addon dlopens). These
+    // globs help non-monorepo / Vercel traces; Docker still has to COPY the
+    // hoisted `/app/node_modules/{sharp,@img}` trees in `docker/app.Dockerfile`
+    // because these paths resolve against `apps/sim` and miss the root hoist.
     '/*': [
       './node_modules/sharp/**/*',
       './node_modules/@img/**/*',
@@ -155,12 +239,91 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
-    optimizeCss: !isDev,
-    turbopackFileSystemCacheForDev: false,
+    /**
+     * Turbopack's dev filesystem cache stays ON (this is also the Next default
+     * since v16.1). It is what makes a dev-server restart cheap: without it every
+     * restart recompiles the route graph from scratch.
+     *
+     * Measured locally on `/workspace/[workspaceId]/w`, n=3 per cell, restarting
+     * the dev server between each run:
+     *
+     *   cache OFF   31.4s / 30.1s / 31.9s   RSS ~9.0-9.8 GB
+     *   cache ON     5.7s /  6.1s /  5.7s   RSS ~4.8-5.1 GB
+     *
+     * 5.4x faster restarts and ~1.9x less memory. Cold compile with an empty
+     * cache is unchanged (~32s either way) — the cache only pays back on restart.
+     *
+     * This is deliberately NOT the same decision as `turbopackFileSystemCacheForBuild`
+     * below. That one is measured-harmful for `next build`; this one is
+     * measured-beneficial for `next dev`. It was previously `false`, but that was
+     * incidental — it was introduced by a landing-page redesign (#5408) whose
+     * description never mentions Turbopack, caching, or dev performance, and it
+     * is not covered by the #6078 build A/B cited below.
+     *
+     * The cache is unbounded on disk (an abandoned one reached 78 GB here), so
+     * `scripts/prune-turbopack-cache.ts` is chained into every `dev` script to cap it.
+     * A *corrupted* cache can abort Turbopack outright ("Cache corruption
+     * detected: checksum mismatch") rather than falling back — it depends whether
+     * the damaged region is read. `bun run dev:clean` and restart is the fix.
+     *
+     * If you re-measure any of this: `next dev` compiles routes on demand, so
+     * startup time means nothing — time the first request to a route, restart the
+     * server between runs, and stop it with SIGINT. A `kill -9` mid-write makes
+     * Turbopack discard the partially-written cache and rebuild silently, which
+     * reads as "the cache does nothing" and is how this flag stayed wrong.
+     */
+    turbopackFileSystemCacheForDev: true,
+    /**
+     * Turbopack's persistent build cache (beta) stays off — it is a net loss at
+     * this app's size. A controlled A/B on a byte-identical module graph (PR
+     * #6078) measured compile at 113s with it off, 162s cold with it on, and 360s
+     * warm: the cache made the same build 3.2x slower. It also grew 5.1 GB ->
+     * 12 GB across two runs of an unchanged tree, so a cache degrades the longer
+     * it lives. Restoring across commits is separately undocumented-as-supported
+     * (vercel/next.js#87283 reports stale HTML from a cache built elsewhere).
+     *
+     * Pinned explicitly rather than left to the Next default: upstream already
+     * flips this default to true in canary/preview builds (vercel/next.js#94616),
+     * so relying on the default would let a version bump silently re-enable a
+     * config we measured as harmful. Always off for Docker/CI too — the cache
+     * itself adds RSS under BuildKit's tight cgroup.
+     * Keep the explicit pin even while we sit on 16.2.12: 16.3.0 flips this
+     * default to true for stable (vercel/next.js#94616), so dropping it would
+     * silently re-enable the slower cache the next time we take that bump.
+     */
+    turbopackFileSystemCacheForBuild: false,
+    /**
+     * TypeScript 7 ships no JavaScript compiler API until 7.1, so Next's default
+     * checker cannot load it — this shells out to the project-local `tsc` instead.
+     * Pinned because the failure mode is not slower type checking but none at all:
+     * without it 16.2.12 skips the stage silently in 138ms.
+     */
+    useTypeScriptCli: true,
     preloadEntriesOnStart: false,
-    turbopackFileSystemCacheForBuild: true,
+    /**
+     * Docker/CI image builds run under a tight BuildKit cgroup (~7GB on
+     * ubuntu-latest). Without these caps, Next spawns ~CPU-count page-data
+     * workers and each worker still renders
+     * `staticGenerationMaxConcurrency` (default 8) pages in parallel —
+     * regularly SIGKILL (exit 137) around a few hundred of ~1200 static
+     * pages. Cap both knobs when DOCKER_BUILD is set. Do not also set
+     * memoryBasedWorkersCount — that path enforces a minimum of 4 workers.
+     */
+    ...(isTruthy(env.DOCKER_BUILD)
+      ? {
+          cpus: 1,
+          staticGenerationMaxConcurrency: 1,
+        }
+      : {}),
+    /**
+     * Under Turbopack this is not a no-op: the list feeds
+     * `side_effect_free_packages` and is force-appended to `transpiledPackages`,
+     * which also removes each entry from the server externals set. Entries here
+     * must be real barrel packages that are actually imported - a stale entry
+     * costs transform work and overrides that package's own `sideEffects`
+     * declaration.
+     */
     optimizePackageImports: [
-      'lodash',
       'framer-motion',
       'reactflow',
       '@radix-ui/react-dialog',
@@ -168,7 +331,6 @@ const nextConfig: NextConfig = {
       '@radix-ui/react-popover',
       '@radix-ui/react-select',
       '@radix-ui/react-tabs',
-      '@radix-ui/react-accordion',
       '@radix-ui/react-checkbox',
       '@radix-ui/react-switch',
       '@radix-ui/react-slider',
@@ -189,10 +351,12 @@ const nextConfig: NextConfig = {
         : []),
       'localhost:3000',
       'localhost:3001',
+      '127.0.0.1',
+      '127.0.0.1:3011',
+      '127.0.0.1:3012',
     ],
   }),
   transpilePackages: [
-    'prettier',
     '@react-email/components',
     '@react-email/render',
     '@t3-oss/env-nextjs',
@@ -204,7 +368,11 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: '/((?!api/).*\\.(?:svg|jpg|jpeg|png|gif|ico|webp|avif|woff|woff2|ttf|eot))',
+        // `/public`-served assets keep their path across deploys (no content
+        // hash), so a shorter TTL + revalidation window bounds how long a
+        // changed asset can serve stale.
+        source:
+          '/((?!api/|_next/static/).*\\.(?:svg|jpg|jpeg|png|gif|ico|webp|avif|woff|woff2|ttf|eot))',
         headers: [
           {
             key: 'Cache-Control',
@@ -233,17 +401,27 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // Exclude Vercel internal resources and static assets from strict COEP, Google Drive Picker
+        // Exclude Vercel internal resources and static assets from strict COOP, Google Drive Picker
         // and the /demo Cal.com booking embed to prevent 'refused to connect' / slow-load issues
         source: '/((?!_next|_vercel|api|favicon.ico|w/.*|workspace/.*|api/tools/drive|demo).*)',
         headers: [
           {
-            key: 'Cross-Origin-Embedder-Policy',
-            value: 'credentialless',
-          },
-          {
             key: 'Cross-Origin-Opener-Policy',
             value: 'same-origin',
+          },
+        ],
+      },
+      {
+        // COEP stays on by default - a new route is cross-origin isolated unless
+        // it is named here. The exemptions are the app surfaces that embed
+        // credentialed third parties (Drive Picker, Vercel resources) and the
+        // marketing surface, which must opt out wholesale: see LANDING_ROUTES.
+        // The trailing `|$` exempts the root path.
+        source: `/((?!_next|_vercel|api|favicon.ico|w/.*|workspace/.*|api/tools/drive|${LANDING_ROUTES.join('|')}|$).*)`,
+        headers: [
+          {
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'credentialless',
           },
         ],
       },
@@ -261,13 +439,31 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      // Block access to sourcemap files (defense in depth)
+      // Keeps sourcemap files out of search indexes. This does NOT block
+      // access to them - `productionBrowserSourceMaps` is on and the `.map`
+      // files ship publicly in the production image; nothing here restricts
+      // who can fetch one. The trailing
+      // `$` this rule previously ended with is not a regex anchor in Next's
+      // `source` matcher (path-to-regexp syntax, not raw regex) - it matched
+      // a literal `$` character, so this rule never actually fired against
+      // real `.map` URLs. Next already anchors the compiled pattern at both
+      // ends, so no trailing anchor is needed here.
+      //
+      // Also bounds `.map` files to a short, revalidated TTL rather than
+      // Next's built-in 1yr immutable default for `_next/static/*` - maps
+      // are content-hashed like their JS, so this isn't about staleness,
+      // it's so a future decision to stop shipping `productionBrowserSourceMaps`
+      // isn't undermined by browsers/edges holding old maps for a year.
       {
-        source: '/(.*)\\.map$',
+        source: '/(.*)\\.map',
         headers: [
           {
             key: 'x-robots-tag',
             value: 'noindex',
+          },
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
           },
         ],
       },
@@ -322,8 +518,19 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
+        source: '/slack',
+        destination:
+          'https://join.slack.com/t/sim-ott9864/shared_invite/zt-43lp8tc5v-0qrrqHGBKUsvQlpoouH~TA',
+        permanent: false,
+      },
+      {
         source: '/x',
         destination: 'https://x.com/simdotai',
+        permanent: false,
+      },
+      {
+        source: '/linkedin',
+        destination: 'https://www.linkedin.com/company/simstudioai/',
         permanent: false,
       },
       {
@@ -333,7 +540,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: '/team',
-        destination: 'https://cal.com/emirkarabeg/sim-team',
+        destination: 'https://cal.com/team/sim/demo',
         permanent: false,
       }
     )
@@ -447,6 +654,85 @@ const nextConfig: NextConfig = {
         permanent: true,
       })
     }
+
+    /**
+     * The comparison route was renamed from `/comparison` to `/comparisons`
+     * for naming consistency with `/integrations/[slug]` (plural category,
+     * singular item). Preserve previously indexed URLs for the hub page and
+     * every competitor detail page.
+     */
+    redirects.push(
+      {
+        source: '/comparison',
+        destination: '/comparisons',
+        permanent: true,
+      },
+      {
+        source: '/comparison/:path*',
+        destination: '/comparisons/:path*',
+        permanent: true,
+      }
+    )
+
+    /**
+     * Stray crawler/artifact URLs picked up in an external SEO audit — no
+     * page ever existed at these paths, but they were indexed or linked
+     * somewhere with junk characters/casing. Send them home instead of 404.
+     */
+    redirects.push(
+      {
+        source: '/$',
+        destination: '/',
+        permanent: true,
+      },
+      {
+        source: '/&',
+        destination: '/',
+        permanent: true,
+      },
+      {
+        source: '/Sim',
+        destination: '/',
+        permanent: true,
+      },
+      {
+        source: '/homepage',
+        destination: '/',
+        permanent: true,
+      },
+      {
+        source: '/logo',
+        destination: '/',
+        permanent: true,
+      },
+      {
+        source: '/en-US',
+        destination: '/',
+        permanent: true,
+      }
+    )
+
+    /**
+     * Indexed 404s from an external SEO audit. The capability paths read as
+     * tool/feature pages and map to the integrations catalog; the rest have no
+     * closer successor than the homepage.
+     *
+     * `/security` is deliberately excluded: security.txt advertises it as the
+     * RFC 9116 `Policy` URI, so a permanent redirect to marketing would both
+     * mislead that link and shadow a real policy page added later.
+     */
+    redirects.push(
+      ...['read', 'research', 'scrape'].map((slug) => ({
+        source: `/${slug}`,
+        destination: '/integrations',
+        permanent: true,
+      })),
+      ...['actions', 'crawl', 'fast'].map((slug) => ({
+        source: `/${slug}`,
+        destination: '/',
+        permanent: true,
+      }))
+    )
 
     return redirects
   },

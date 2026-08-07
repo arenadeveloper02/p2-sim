@@ -1,10 +1,12 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import {
+  ASYNC_TOOL_CONFIRMATION_STATUS,
   ASYNC_TOOL_STATUS,
   type AsyncCompletionEnvelope,
   type AsyncConfirmationState,
   isAsyncEphemeralConfirmationStatus,
+  isAsyncTerminalConfirmationStatus,
 } from '@/lib/copilot/async-runs/lifecycle'
 import { getAsyncToolCalls } from '@/lib/copilot/async-runs/repository'
 import { MothershipStreamV1ToolOutcome } from '@/lib/copilot/generated/mothership-stream-v1'
@@ -13,6 +15,7 @@ import { createPubSubChannel, type PubSubChannel } from '@/lib/events/pubsub'
 
 const logger = createLogger('CopilotOrchestratorPersistence')
 const TOOL_CONFIRMATION_TTL_SECONDS = 60 * 10
+const TOOL_CONFIRMATION_POLL_MS = 500
 const toolConfirmationKey = (toolCallId: string) => `copilot:tool-confirmation:${toolCallId}`
 
 type ToolConfirmGlobal = typeof globalThis & {
@@ -46,10 +49,10 @@ export async function getToolConfirmation(
   })
   if (!row) return null
   if (row.status === ASYNC_TOOL_STATUS.delivered) {
-    logger.warn('Delivered async tool rows are outside request confirmation flow', {
-      toolCallId,
-    })
-    return null
+    return {
+      status: ASYNC_TOOL_CONFIRMATION_STATUS.background,
+      timestamp: row.updatedAt?.toISOString?.(),
+    }
   }
   return {
     status:
@@ -63,6 +66,36 @@ export async function getToolConfirmation(
     message: row.error || undefined,
     ...(row.result !== undefined ? { data: row.result } : {}),
     timestamp: row.updatedAt?.toISOString?.(),
+  }
+}
+
+/**
+ * Reads a confirmation envelope persisted by {@link publishToolConfirmation}.
+ */
+async function getRedisToolConfirmation(
+  toolCallId: string
+): Promise<AsyncConfirmationState | null> {
+  const redis = getRedisClient()
+  if (!redis) return null
+  try {
+    const raw = await redis.get(toolConfirmationKey(toolCallId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as AsyncCompletionEnvelope
+    if (!parsed || parsed.toolCallId !== toolCallId || typeof parsed.status !== 'string') {
+      return null
+    }
+    return {
+      status: parsed.status,
+      ...(parsed.message !== undefined ? { message: parsed.message } : {}),
+      ...(parsed.data !== undefined ? { data: parsed.data } : {}),
+      ...(parsed.timestamp !== undefined ? { timestamp: parsed.timestamp } : {}),
+    }
+  } catch (error) {
+    logger.warn('Failed to read tool confirmation from Redis', {
+      toolCallId,
+      error: toError(error).message,
+    })
+    return null
   }
 }
 
@@ -105,8 +138,8 @@ export function publishToolConfirmation(event: AsyncCompletionEnvelope): void {
 /**
  * Wait for an async tool confirmation update.
  *
- * `background` still arrives as a request-local detach signal, so it is checked
- * from pubsub before falling back to the durable async tool row.
+ * Terminal statuses settle from the pubsub envelope immediately. DB + Redis
+ * keys are polled as a fallback when pubsub is delayed or missed.
  */
 export async function waitForToolConfirmation(
   toolCallId: string,
@@ -120,10 +153,12 @@ export async function waitForToolConfirmation(
   return new Promise((resolve) => {
     let settled = false
     let timeoutId: ReturnType<typeof setTimeout> | null = null
+    let pollTimer: ReturnType<typeof setTimeout> | null = null
     let unsubscribe: (() => void) | null = null
 
     const cleanup = () => {
       if (timeoutId) clearTimeout(timeoutId)
+      if (pollTimer) clearTimeout(pollTimer)
       if (unsubscribe) unsubscribe()
       abortSignal?.removeEventListener('abort', onAbort)
     }
@@ -137,6 +172,29 @@ export async function waitForToolConfirmation(
 
     const onAbort = () => settle(null)
 
+    const tryAccept = (latest: AsyncConfirmationState | null, source: string) => {
+      if (!latest || !acceptStatus(latest.status)) return false
+      logger.info('Resolved tool confirmation', {
+        toolCallId,
+        status: latest.status,
+        source,
+      })
+      settle(latest)
+      return true
+    }
+
+    const pollDurable = async () => {
+      if (settled) return
+      const fromRedis = await getRedisToolConfirmation(toolCallId)
+      if (tryAccept(fromRedis, 'redis')) return
+      const fromDb = await getToolConfirmation(toolCallId)
+      if (tryAccept(fromDb, 'db-poll')) return
+      if (settled) return
+      pollTimer = setTimeout(() => {
+        void pollDurable()
+      }, TOOL_CONFIRMATION_POLL_MS)
+    }
+
     unsubscribe = toolConfirmationChannel.subscribe((event) => {
       if (event.toolCallId !== toolCallId) return
       if (isAsyncEphemeralConfirmationStatus(event.status) && acceptStatus(event.status)) {
@@ -148,13 +206,19 @@ export async function waitForToolConfirmation(
         })
         return
       }
-      void getToolConfirmation(toolCallId).then((latest) => {
-        if (!latest || !acceptStatus(latest.status)) return
-        logger.info('Resolved tool confirmation from pubsub', {
-          toolCallId,
-          status: latest.status,
+      // Terminal confirmations (Approve/Reject) settle from the envelope so a
+      // slow DB read cannot drop the only pubsub wakeup.
+      if (isAsyncTerminalConfirmationStatus(event.status) && acceptStatus(event.status)) {
+        settle({
+          status: event.status,
+          ...(event.message !== undefined ? { message: event.message } : {}),
+          ...(event.data !== undefined ? { data: event.data } : {}),
+          ...(event.timestamp !== undefined ? { timestamp: event.timestamp } : {}),
         })
-        settle(latest)
+        return
+      }
+      void getToolConfirmation(toolCallId).then((latest) => {
+        tryAccept(latest, 'pubsub-db')
       })
     })
 
@@ -165,14 +229,6 @@ export async function waitForToolConfirmation(
     }
     abortSignal?.addEventListener('abort', onAbort, { once: true })
 
-    void getToolConfirmation(toolCallId).then((latest) => {
-      if (latest && acceptStatus(latest.status)) {
-        logger.info('Resolved tool confirmation after subscribe', {
-          toolCallId,
-          status: latest.status,
-        })
-        settle(latest)
-      }
-    })
+    void pollDurable()
   })
 }

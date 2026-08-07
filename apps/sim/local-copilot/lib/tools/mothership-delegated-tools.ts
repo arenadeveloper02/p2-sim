@@ -5,13 +5,11 @@ import { and, desc, eq, isNull } from 'drizzle-orm'
 import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
-import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   enrichCreateFileArgs,
   enrichEditContentArgs,
   enrichWorkspaceFileArgs,
 } from '@/local-copilot/lib/tools/enrich-file-tool-args'
-import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   buildMothershipDelegatedToolDefinitions,
   isMothershipDelegatedTool,
@@ -217,7 +215,35 @@ async function executeCopilotServerTool(
 const VARIATION_INTENT_PATTERN =
   /\b(?:variations?|versions?|options?|alternatives?|[1-5]|one|two|three|four|five)\b/i
 
+/**
+ * Remaps common generate_image aliases to `prompt`, falls back to the latest
+ * user message when the model omits a prompt, and restores variation counts
+ * stripped from the tool args.
+ */
 function enrichGenerateImagePrompt(args: Record<string, unknown>, lastUserMessage?: string): void {
+  if (typeof args.prompt !== 'string' || !args.prompt.trim()) {
+    for (const key of [
+      'description',
+      'text',
+      'query',
+      'content',
+      'caption',
+      'message',
+      'image_prompt',
+      'imagePrompt',
+    ] as const) {
+      const value = args[key]
+      if (typeof value === 'string' && value.trim()) {
+        args.prompt = value.trim()
+        break
+      }
+    }
+  }
+
+  if ((typeof args.prompt !== 'string' || !args.prompt.trim()) && lastUserMessage?.trim()) {
+    args.prompt = lastUserMessage.trim()
+  }
+
   const prompt = args.prompt
   if (typeof prompt !== 'string' || !lastUserMessage?.trim()) return
   if (VARIATION_INTENT_PATTERN.test(prompt)) return
@@ -319,7 +345,15 @@ export async function executeMothershipDelegatedTool(
     return withBillingFromResult(result)
   }
 
-  // Remaining delegated tools are sim-routed (run_workflow, function_execute, …).
+  // Remaining delegated tools are sim-/go-routed with registered handlers
+  // (run_workflow, list_integration_tools, function_execute, …).
+  logger.info('Delegating Mothership tool', {
+    toolName,
+    workflowId: workflowId ?? null,
+    hasBillingAttribution: Boolean(ctx.billingAttribution),
+    billingEntityType: ctx.billingAttribution?.billingEntity.type ?? null,
+    workspaceId: ctx.workspaceId,
+  })
   const { executeTool } = await import('@/lib/copilot/tool-executor/executor')
   const result = await executeTool(toolName, enrichedArgs, {
     userId: ctx.userId,
@@ -329,6 +363,7 @@ export async function executeMothershipDelegatedTool(
     abortSignal: ctx.abortSignal,
     copilotToolExecution: true,
     userPermission: ctx.userPermission,
+    ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
   })
 
   if (!result.success) {
@@ -336,6 +371,21 @@ export async function executeMothershipDelegatedTool(
       toolName,
       workflowId: workflowId ?? null,
       error: result.error,
+    })
+  }
+
+  if (toolName === 'list_integration_tools' && result.success) {
+    const { adaptListIntegrationToolsForLocal } = await import(
+      '@/local-copilot/lib/tools/adapt-list-integration-tools'
+    )
+    return withBillingFromResult({
+      toolName,
+      success: result.success,
+      result: adaptListIntegrationToolsForLocal(
+        result.output ?? (result.error ? { error: result.error } : {})
+      ),
+      error: result.error,
+      resources: result.resources,
     })
   }
 

@@ -1,21 +1,26 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Badge,
   ButtonGroup,
   ButtonGroupItem,
+  Calendar,
   ChipLink,
   ChipSelect,
   cn,
   Info,
   Loader,
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
   RefreshCw,
   Skeleton,
 } from '@sim/emcn'
 import { useParams } from 'next/navigation'
 import { useQueryStates } from 'nuqs'
 import type { WorkspaceUsageAnalytics } from '@/lib/api/contracts/workspace-usage'
+import { formatDateShort } from '@/lib/core/utils/date-display'
 import { averageBillableCostPerRun } from '@/lib/workspaces/usage/ledger-utils'
 import { getMothershipChatPath } from '@/app/workspace/[workspaceId]/home/mothership-chat-path'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
@@ -28,7 +33,13 @@ import { CostShareBars } from '@/app/workspace/[workspaceId]/settings/components
 import { DataHealthPanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/data-health-panel'
 import { LineagePanel } from '@/app/workspace/[workspaceId]/settings/components/usage/components/lineage-panel'
 import { OrganizationUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/organization-usage-content'
+import { UsageBillingStats } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-billing-stats'
+import {
+  UsageCollapsibleGroup,
+  useUsageCollapsibleGroups,
+} from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-collapsible-group'
 import { UsageTimeSeriesChart } from '@/app/workspace/[workspaceId]/settings/components/usage/components/usage-time-series-chart'
+import { UserUsageContent } from '@/app/workspace/[workspaceId]/settings/components/usage/components/user-usage-content'
 import {
   formatBillableWithCredits,
   formatPeriodLabel,
@@ -38,10 +49,6 @@ import {
   resolveUsageSourceLabel,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/format'
 import {
-  buildWorkflowAverageCostChartRows,
-  buildWorkflowTotalCostChartRows,
-} from '@/app/workspace/[workspaceId]/settings/components/usage/workflow-chart-rows'
-import {
   isLegacyUnattributedChatId,
   LEGACY_UNATTRIBUTED_CHAT_ID,
   LEGACY_UNATTRIBUTED_CHAT_TITLE,
@@ -49,16 +56,21 @@ import {
 } from '@/app/workspace/[workspaceId]/settings/components/usage/legacy-unattributed-chat'
 import {
   USAGE_PERIODS,
-  USAGE_SCOPES,
   USAGE_TABS,
+  USER_WORKSPACE_FILTER_ALL,
   type UsagePeriod,
   type UsageScope,
   type UsageTab,
   usageParsers,
   usageUrlKeys,
 } from '@/app/workspace/[workspaceId]/settings/components/usage/search-params'
+import {
+  buildWorkflowAverageCostChartRows,
+  buildWorkflowTotalCostChartRows,
+} from '@/app/workspace/[workspaceId]/settings/components/usage/workflow-chart-rows'
 import { useAdminOrganizations, useOrganizationRoster } from '@/hooks/queries/organization'
 import { useOrganizationUsageAnalytics } from '@/hooks/queries/organization-usage'
+import { useUserUsageAnalytics } from '@/hooks/queries/user-usage'
 import { useWorkspacePermissionsQuery, useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useWorkspaceUsageAnalytics } from '@/hooks/queries/workspace-usage'
 
@@ -69,9 +81,12 @@ const TAB_LABELS: Record<UsageTab, string> = {
 }
 
 const SCOPE_LABELS: Record<UsageScope, string> = {
+  user: 'User',
   workspace: 'Workspace',
   organization: 'Organization',
 }
+
+const USER_WORKSPACE_FILTER_CURRENT = 'current' as const
 
 const SUMMARY_METRIC_TOOLTIPS = {
   tokens: 'Total input and output tokens from billing ledger rows in the selected period.',
@@ -133,19 +148,22 @@ function UsageDashboardContent({
 }: UsageDashboardContentProps) {
   const showWorkflow = tab === 'all' || tab === 'workflow'
   const showMothership = tab === 'all' || tab === 'mothership'
+  const { openGroups, setGroupOpen } = useUsageCollapsibleGroups(tab)
 
   const workflowChartRows = useMemo(
     () =>
-      buildWorkflowTotalCostChartRows(data.workflow.byWorkflow, (workflowId) =>
-        `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
+      buildWorkflowTotalCostChartRows(
+        data.workflow.byWorkflow,
+        (workflowId) => `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
       ),
     [data.workflow.byWorkflow, workspaceId]
   )
 
   const workflowAverageChartRows = useMemo(
     () =>
-      buildWorkflowAverageCostChartRows(data.workflow.byWorkflow, (workflowId) =>
-        `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
+      buildWorkflowAverageCostChartRows(
+        data.workflow.byWorkflow,
+        (workflowId) => `/workspace/${workspaceId}/logs?workflowIds=${workflowId}`
       ),
     [data.workflow.byWorkflow, workspaceId]
   )
@@ -171,132 +189,47 @@ function UsageDashboardContent({
 
   return (
     <div className='flex flex-col gap-8'>
-      <SettingsSection label='Trends'>
-        <UsageTimeSeriesChart
-          timeSeries={data.timeSeries}
-          periodActiveUserCount={data.summary.activeUserCount}
-        />
-      </SettingsSection>
-
-      {data.byChargeType.length > 0 && (
-        <ChargeTypePanel
-          byChargeType={data.byChargeType}
-          totalBillableCost={data.summary.billableCost}
-        />
-      )}
-
-      {(tab === 'all' || tab === 'workflow') && data.bySource.length > 0 && (
-        <SettingsSection label='By source'>
-          <CostBreakdownTable
-            rows={data.bySource}
-            getRowKey={(row) => row.label}
-            columns={[
-              {
-                key: 'source',
-                header: 'Source',
-                render: (row) => resolveUsageSourceLabel(row),
-              },
-              {
-                key: 'count',
-                header: 'Entries',
-                align: 'right',
-                render: (row) => row.count.toLocaleString(),
-              },
-              {
-                key: 'tokens',
-                header: 'Tokens',
-                align: 'right',
-                render: (row) => formatTokenCount(row.usage.totalTokens),
-              },
-              {
-                key: 'cost',
-                header: 'Credits',
-                align: 'right',
-                render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
-              },
-            ]}
+      <UsageCollapsibleGroup
+        label='Overview'
+        open={openGroups.overview}
+        onOpenChange={(open) => setGroupOpen('overview', open)}
+      >
+        <SettingsSection label='Trends'>
+          <UsageTimeSeriesChart
+            timeSeries={data.timeSeries}
+            periodActiveUserCount={data.summary.activeUserCount}
           />
         </SettingsSection>
-      )}
 
-      {showWorkflow && (
-        <SettingsSection label='Workflow executions'>
-          <div className='mb-4 flex flex-wrap items-center justify-between gap-2'>
-            <p className='text-[var(--text-secondary)] text-small'>
-              {data.workflow.executions.total.toLocaleString()} executions ·{' '}
-              {data.workflow.executions.withProjectedCost.toLocaleString()} with projected cost
-            </p>
-            <ChipLink
-              href={`/workspace/${workspaceId}/logs`}
-              target='_blank'
-              rel='noopener noreferrer'
-            >
-              View execution logs
-            </ChipLink>
-          </div>
-          {workflowChartRows.length > 0 && (
-            <div className='mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3'>
-              <p className='mb-3 font-medium text-[var(--text-primary)] text-small'>
-                Most expensive workflows
-              </p>
-              <CostShareBars
-                rows={workflowChartRows}
-                emptyMessage='No workflow cost in this period.'
-              />
-            </div>
-          )}
-          {workflowAverageChartRows.length > 0 && (
-            <div className='mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3'>
-              <p className='mb-3 font-medium text-[var(--text-primary)] text-small'>
-                Highest average cost per run
-              </p>
-              <CostShareBars
-                rows={workflowAverageChartRows}
-                emptyMessage='No workflow cost in this period.'
-              />
-            </div>
-          )}
-          {data.workflow.byWorkflow.length > 0 && (
+        {data.byChargeType.length > 0 && (
+          <ChargeTypePanel
+            byChargeType={data.byChargeType}
+            totalBillableCost={data.summary.billableCost}
+          />
+        )}
+
+        {(tab === 'all' || tab === 'workflow') && data.bySource.length > 0 && (
+          <SettingsSection label='By source'>
             <CostBreakdownTable
-              rows={data.workflow.byWorkflow}
-              getRowKey={(row) => row.workflowId ?? `unknown-${row.workflowName}`}
-              emptyMessage='No workflow executions in this period.'
+              rows={data.bySource}
+              getRowKey={(row) => row.label}
               columns={[
                 {
-                  key: 'workflow',
-                  header: 'Workflow',
-                  render: (row) => {
-                    const label = row.workflowName ?? row.workflowId ?? 'Unknown workflow'
-                    if (row.workflowId) {
-                      return (
-                        <ChipLink
-                          href={`/workspace/${workspaceId}/logs?workflowIds=${row.workflowId}`}
-                          target='_blank'
-                          rel='noopener noreferrer'
-                        >
-                          {label}
-                        </ChipLink>
-                      )
-                    }
-                    return label
-                  },
+                  key: 'source',
+                  header: 'Source',
+                  render: (row) => resolveUsageSourceLabel(row),
                 },
                 {
-                  key: 'executions',
-                  header: 'Runs',
+                  key: 'count',
+                  header: 'Entries',
                   align: 'right',
-                  render: (row) => row.executionCount.toLocaleString(),
+                  render: (row) => row.count.toLocaleString(),
                 },
                 {
-                  key: 'avgCost',
-                  header: 'Avg credits/run',
+                  key: 'tokens',
+                  header: 'Tokens',
                   align: 'right',
-                  render: (row) =>
-                    row.executionCount > 0
-                      ? formatBillableWithCredits(
-                          averageBillableCostPerRun(row.billableCost, row.executionCount)
-                        )
-                      : '—',
+                  render: (row) => formatTokenCount(row.usage.totalTokens),
                 },
                 {
                   key: 'cost',
@@ -308,141 +241,67 @@ function UsageDashboardContent({
                 },
               ]}
             />
-          )}
-          {data.workflow.byTrigger.length > 0 && (
-            <div className='mt-6'>
-              <p className='mb-2 text-[var(--text-muted)] text-small'>By trigger</p>
-              <CostBreakdownTable
-                rows={data.workflow.byTrigger}
-                getRowKey={(row) => row.trigger}
-                columns={[
-                  {
-                    key: 'trigger',
-                    header: 'Trigger',
-                    render: (row) => row.trigger || 'Unknown',
-                  },
-                  {
-                    key: 'executions',
-                    header: 'Runs',
-                    align: 'right',
-                    render: (row) => row.executionCount.toLocaleString(),
-                  },
-                  {
-                    key: 'cost',
-                    header: 'Credits',
-                    align: 'right',
-                    render: (row) => (
-                      <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
-                    ),
-                  },
-                ]}
-              />
-            </div>
-          )}
-        </SettingsSection>
-      )}
+          </SettingsSection>
+        )}
+      </UsageCollapsibleGroup>
 
       {showWorkflow && (
-        <LineagePanel
-          workspaceId={workspaceId}
-          lineage={data.lineage}
-          rootExecutionId={rootExecutionId}
-          userNameById={userNameById}
-          onSelectRoot={onSelectRoot}
-          onClearDrillDown={onClearDrillDown}
-        />
-      )}
-
-      {showMothership && (
-        <SettingsSection label='Mothership & copilot'>
-          <div className='mb-4 flex flex-wrap items-center justify-between gap-2'>
-            <p className='text-[var(--text-secondary)] text-small'>
-              {data.copilot.chats.total.toLocaleString()} chats ·{' '}
-              {data.copilot.chats.withLedgerCost.toLocaleString()} with ledger cost ·{' '}
-              {data.copilot.runs.total.toLocaleString()} runs
-            </p>
-            <ChipLink
-              href={`/workspace/${workspaceId}/home`}
-              target='_blank'
-              rel='noopener noreferrer'
-            >
-              Open mothership
-            </ChipLink>
-          </div>
-          {data.copilot.triggeredWorkflows.executionCount > 0 && (
-            <div className='mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3'>
-              <p className='font-medium text-[var(--text-primary)] text-small'>
-                Workflows triggered by copilot
+        <UsageCollapsibleGroup
+          label='Workflows'
+          open={openGroups.workflows}
+          onOpenChange={(open) => setGroupOpen('workflows', open)}
+        >
+          <SettingsSection label='Workflow executions'>
+            <div className='mb-4 flex flex-wrap items-center justify-between gap-2'>
+              <p className='text-[var(--text-secondary)] text-small'>
+                {data.workflow.executions.total.toLocaleString()} executions ·{' '}
+                {data.workflow.executions.withProjectedCost.toLocaleString()} with projected cost
               </p>
-              <p className='mt-1 text-[var(--text-secondary)] text-small'>
-                {data.copilot.triggeredWorkflows.executionCount.toLocaleString()} child runs ·{' '}
-                {formatBillableWithCredits(data.copilot.triggeredWorkflows.billableCost)} inclusive
-              </p>
-              <p className='mt-1 text-[var(--text-muted)] text-xs'>
-                Rolled up via triggering chat — excluded from mothership headline totals to avoid
-                double counting.
-              </p>
-              {data.copilot.triggeredWorkflows.byChat.length > 0 && (
-                <div className='mt-4'>
-                  <CostBreakdownTable
-                    rows={data.copilot.triggeredWorkflows.byChat}
-                    getRowKey={(row) => row.triggeringChatId}
-                    columns={[
-                      {
-                        key: 'chat',
-                        header: 'Triggering chat',
-                        render: (row) => (
-                          <span className='font-mono text-small'>
-                            {row.triggeringChatId.slice(0, 12)}…
-                          </span>
-                        ),
-                      },
-                      {
-                        key: 'runs',
-                        header: 'Runs',
-                        align: 'right',
-                        render: (row) => row.executionCount.toLocaleString(),
-                      },
-                      {
-                        key: 'cost',
-                        header: 'Credits',
-                        align: 'right',
-                        render: (row) => (
-                          <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
-                        ),
-                      },
-                    ]}
-                  />
-                </div>
-              )}
+              <ChipLink
+                href={`/workspace/${workspaceId}/logs`}
+                target='_blank'
+                rel='noopener noreferrer'
+              >
+                View execution logs
+              </ChipLink>
             </div>
-          )}
-          {mothershipByChatRows.length > 0 && (
-            <div className='mb-6'>
-              <p className='mb-2 text-[var(--text-muted)] text-small'>
-                Most expensive chats (top {mothershipByChatRows.length})
-              </p>
+            {workflowChartRows.length > 0 && (
+              <div className='mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3'>
+                <p className='mb-3 font-medium text-[var(--text-primary)] text-small'>
+                  Most expensive workflows
+                </p>
+                <CostShareBars
+                  rows={workflowChartRows}
+                  emptyMessage='No workflow cost in this period.'
+                />
+              </div>
+            )}
+            {workflowAverageChartRows.length > 0 && (
+              <div className='mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3'>
+                <p className='mb-3 font-medium text-[var(--text-primary)] text-small'>
+                  Highest average cost per run
+                </p>
+                <CostShareBars
+                  rows={workflowAverageChartRows}
+                  emptyMessage='No workflow cost in this period.'
+                />
+              </div>
+            )}
+            {data.workflow.byWorkflow.length > 0 && (
               <CostBreakdownTable
-                rows={mothershipByChatRows}
-                getRowKey={(row) => row.chatId}
-                emptyMessage='No mothership chat cost in this period.'
+                rows={data.workflow.byWorkflow}
+                getRowKey={(row) => row.workflowId ?? `unknown-${row.workflowName}`}
+                emptyMessage='No workflow executions in this period.'
                 columns={[
                   {
-                    key: 'chat',
-                    header: 'Chat',
+                    key: 'workflow',
+                    header: 'Workflow',
                     render: (row) => {
-                      if (isLegacyUnattributedChatId(row.chatId)) {
-                        return (
-                          <span className='text-[var(--text-secondary)]'>
-                            {LEGACY_UNATTRIBUTED_CHAT_TITLE}
-                          </span>
-                        )
-                      }
-                      const label = row.title?.trim() || `${row.chatId.slice(0, 8)}…`
-                      if (row.chatType === 'mothership') {
+                      const label = row.workflowName ?? row.workflowId ?? 'Unknown workflow'
+                      if (row.workflowId) {
                         return (
                           <ChipLink
-                            href={getMothershipChatPath(workspaceId, row.chatId)}
+                            href={`/workspace/${workspaceId}/logs?workflowIds=${row.workflowId}`}
                             target='_blank'
                             rel='noopener noreferrer'
                           >
@@ -454,183 +313,21 @@ function UsageDashboardContent({
                     },
                   },
                   {
-                    key: 'user',
-                    header: 'Owner',
-                    render: (row) =>
-                      isLegacyUnattributedChatId(row.chatId)
-                        ? '—'
-                        : (userNameById.get(row.userId) ?? row.userId),
-                  },
-                  {
-                    key: 'type',
-                    header: 'Type',
-                    render: (row) =>
-                      isLegacyUnattributedChatId(row.chatId) ? (
-                        <span>Legacy</span>
-                      ) : (
-                        <span className='capitalize'>{row.chatType}</span>
-                      ),
-                  },
-                  {
-                    key: 'runs',
+                    key: 'executions',
                     header: 'Runs',
                     align: 'right',
+                    render: (row) => row.executionCount.toLocaleString(),
+                  },
+                  {
+                    key: 'avgCost',
+                    header: 'Avg credits/run',
+                    align: 'right',
                     render: (row) =>
-                      isLegacyUnattributedChatId(row.chatId)
-                        ? `${row.count.toLocaleString()} rows`
-                        : row.runCount.toLocaleString(),
-                  },
-                  {
-                    key: 'cost',
-                    header: 'Credits',
-                    align: 'right',
-                    render: (row) => (
-                      <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
-                    ),
-                  },
-                ]}
-              />
-            </div>
-          )}
-          {data.copilot.byChatType.length > 0 && (
-            <CostBreakdownTable
-              rows={data.copilot.byChatType}
-              getRowKey={(row) => row.chatType}
-              columns={[
-                {
-                  key: 'type',
-                  header: 'Chat type',
-                  render: (row) => <span className='capitalize'>{row.chatType}</span>,
-                },
-                {
-                  key: 'chats',
-                  header: 'Chats',
-                  align: 'right',
-                  render: (row) => row.chatCount.toLocaleString(),
-                },
-                {
-                  key: 'runs',
-                  header: 'Runs',
-                  align: 'right',
-                  render: (row) => row.runCount.toLocaleString(),
-                },
-                {
-                  key: 'cost',
-                  header: 'Credits',
-                  align: 'right',
-                  render: (row) => (
-                    <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
-                  ),
-                },
-              ]}
-            />
-          )}
-          {data.copilot.byModel.length > 0 && (
-            <div className='mt-6'>
-              <p className='mb-2 text-[var(--text-muted)] text-small'>By model</p>
-              <CostBreakdownTable
-                rows={data.copilot.byModel}
-                getRowKey={(row) => row.model}
-                columns={[
-                  {
-                    key: 'model',
-                    header: 'Model',
-                    render: (row) => row.model,
-                  },
-                  {
-                    key: 'count',
-                    header: 'Entries',
-                    align: 'right',
-                    render: (row) => row.count.toLocaleString(),
-                  },
-                  {
-                    key: 'cost',
-                    header: 'Credits',
-                    align: 'right',
-                    render: (row) => (
-                      <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
-                    ),
-                  },
-                ]}
-              />
-            </div>
-          )}
-        </SettingsSection>
-      )}
-
-      {tab === 'all' && data.byUser.length > 0 && (
-        <SettingsSection label='By billing user'>
-          <CostBreakdownTable
-            rows={data.byUser}
-            getRowKey={(row) => row.userId}
-            columns={[
-              {
-                key: 'user',
-                header: 'User',
-                render: (row) => userNameById.get(row.userId) ?? row.userId,
-              },
-              {
-                key: 'count',
-                header: 'Entries',
-                align: 'right',
-                render: (row) => row.count.toLocaleString(),
-              },
-              {
-                key: 'cost',
-                header: 'Credits',
-                align: 'right',
-                render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
-              },
-            ]}
-          />
-        </SettingsSection>
-      )}
-
-      {tab === 'all' && data.byVendor.length > 0 && (
-        <SettingsSection label='External vendor spend'>
-          <p className='mb-4 text-[var(--text-secondary)] text-small'>
-            Pass-through third-party API costs tracked via Cost blocks.
-          </p>
-          <CostBreakdownTable
-            rows={data.byVendor}
-            getRowKey={(row) => row.vendor}
-            columns={[
-              {
-                key: 'vendor',
-                header: 'Vendor',
-                render: (row) => row.vendor,
-              },
-              {
-                key: 'count',
-                header: 'Entries',
-                align: 'right',
-                render: (row) => row.count.toLocaleString(),
-              },
-              {
-                key: 'cost',
-                header: 'Credits',
-                align: 'right',
-                render: (row) => <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />,
-              },
-            ]}
-          />
-        </SettingsSection>
-      )}
-
-      {tab === 'all' &&
-        (data.byModel.length > 0 || data.byProvider.length > 0 || data.byTool.length > 0) && (
-          <SettingsSection label='Model & tool usage'>
-            {data.byModel.length > 0 && (
-              <CostBreakdownTable
-                rows={data.byModel}
-                getRowKey={(row) => row.model}
-                columns={[
-                  { key: 'model', header: 'Model', render: (row) => row.model },
-                  {
-                    key: 'count',
-                    header: 'Entries',
-                    align: 'right',
-                    render: (row) => row.count.toLocaleString(),
+                      row.executionCount > 0
+                        ? formatBillableWithCredits(
+                            averageBillableCostPerRun(row.billableCost, row.executionCount)
+                          )
+                        : '—',
                   },
                   {
                     key: 'cost',
@@ -643,19 +340,23 @@ function UsageDashboardContent({
                 ]}
               />
             )}
-            {data.byProvider.length > 0 && (
+            {data.workflow.byTrigger.length > 0 && (
               <div className='mt-6'>
-                <p className='mb-2 text-[var(--text-muted)] text-small'>By provider</p>
+                <p className='mb-2 text-[var(--text-muted)] text-small'>By trigger</p>
                 <CostBreakdownTable
-                  rows={data.byProvider}
-                  getRowKey={(row) => row.provider}
+                  rows={data.workflow.byTrigger}
+                  getRowKey={(row) => row.trigger}
                   columns={[
-                    { key: 'provider', header: 'Provider', render: (row) => row.provider },
                     {
-                      key: 'count',
-                      header: 'Entries',
+                      key: 'trigger',
+                      header: 'Trigger',
+                      render: (row) => row.trigger || 'Unknown',
+                    },
+                    {
+                      key: 'executions',
+                      header: 'Runs',
                       align: 'right',
-                      render: (row) => row.count.toLocaleString(),
+                      render: (row) => row.executionCount.toLocaleString(),
                     },
                     {
                       key: 'cost',
@@ -669,14 +370,209 @@ function UsageDashboardContent({
                 />
               </div>
             )}
-            {data.byTool.length > 0 && (
-              <div className='mt-6'>
-                <p className='mb-2 text-[var(--text-muted)] text-small'>By tool</p>
+          </SettingsSection>
+
+          <LineagePanel
+            workspaceId={workspaceId}
+            lineage={data.lineage}
+            rootExecutionId={rootExecutionId}
+            userNameById={userNameById}
+            onSelectRoot={onSelectRoot}
+            onClearDrillDown={onClearDrillDown}
+          />
+        </UsageCollapsibleGroup>
+      )}
+
+      {showMothership && (
+        <UsageCollapsibleGroup
+          label='Mothership'
+          open={openGroups.mothership}
+          onOpenChange={(open) => setGroupOpen('mothership', open)}
+        >
+          <SettingsSection label='Mothership & copilot'>
+            <div className='mb-4 flex flex-wrap items-center justify-between gap-2'>
+              <p className='text-[var(--text-secondary)] text-small'>
+                {data.copilot.chats.total.toLocaleString()} chats ·{' '}
+                {data.copilot.chats.withLedgerCost.toLocaleString()} with ledger cost ·{' '}
+                {data.copilot.runs.total.toLocaleString()} runs
+              </p>
+              <ChipLink
+                href={`/workspace/${workspaceId}/home`}
+                target='_blank'
+                rel='noopener noreferrer'
+              >
+                Open mothership
+              </ChipLink>
+            </div>
+            {data.copilot.triggeredWorkflows.executionCount > 0 && (
+              <div className='mb-6 rounded-lg border border-[var(--border)] bg-[var(--surface-3)] px-4 py-3'>
+                <p className='font-medium text-[var(--text-primary)] text-small'>
+                  Workflows triggered by copilot
+                </p>
+                <p className='mt-1 text-[var(--text-secondary)] text-small'>
+                  {data.copilot.triggeredWorkflows.executionCount.toLocaleString()} child runs ·{' '}
+                  {formatBillableWithCredits(data.copilot.triggeredWorkflows.billableCost)}{' '}
+                  inclusive
+                </p>
+                <p className='mt-1 text-[var(--text-muted)] text-xs'>
+                  Rolled up via triggering chat — excluded from mothership headline totals to avoid
+                  double counting.
+                </p>
+                {data.copilot.triggeredWorkflows.byChat.length > 0 && (
+                  <div className='mt-4'>
+                    <CostBreakdownTable
+                      rows={data.copilot.triggeredWorkflows.byChat}
+                      getRowKey={(row) => row.triggeringChatId}
+                      columns={[
+                        {
+                          key: 'chat',
+                          header: 'Triggering chat',
+                          render: (row) => (
+                            <span className='font-mono text-small'>
+                              {row.triggeringChatId.slice(0, 12)}…
+                            </span>
+                          ),
+                        },
+                        {
+                          key: 'runs',
+                          header: 'Runs',
+                          align: 'right',
+                          render: (row) => row.executionCount.toLocaleString(),
+                        },
+                        {
+                          key: 'cost',
+                          header: 'Credits',
+                          align: 'right',
+                          render: (row) => (
+                            <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
+                          ),
+                        },
+                      ]}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            {mothershipByChatRows.length > 0 && (
+              <div className='mb-6'>
+                <p className='mb-2 text-[var(--text-muted)] text-small'>
+                  Most expensive chats (top {mothershipByChatRows.length})
+                </p>
                 <CostBreakdownTable
-                  rows={data.byTool}
-                  getRowKey={(row) => row.toolId}
+                  rows={mothershipByChatRows}
+                  getRowKey={(row) => row.chatId}
+                  emptyMessage='No mothership chat cost in this period.'
                   columns={[
-                    { key: 'tool', header: 'Tool', render: (row) => formatToolLabel(row.toolId) },
+                    {
+                      key: 'chat',
+                      header: 'Chat',
+                      render: (row) => {
+                        if (isLegacyUnattributedChatId(row.chatId)) {
+                          return (
+                            <span className='text-[var(--text-secondary)]'>
+                              {LEGACY_UNATTRIBUTED_CHAT_TITLE}
+                            </span>
+                          )
+                        }
+                        const label = row.title?.trim() || `${row.chatId.slice(0, 8)}…`
+                        if (row.chatType === 'mothership') {
+                          return (
+                            <ChipLink
+                              href={getMothershipChatPath(workspaceId, row.chatId)}
+                              target='_blank'
+                              rel='noopener noreferrer'
+                            >
+                              {label}
+                            </ChipLink>
+                          )
+                        }
+                        return label
+                      },
+                    },
+                    {
+                      key: 'user',
+                      header: 'Owner',
+                      render: (row) =>
+                        isLegacyUnattributedChatId(row.chatId)
+                          ? '—'
+                          : (userNameById.get(row.userId) ?? row.userId),
+                    },
+                    {
+                      key: 'type',
+                      header: 'Type',
+                      render: (row) =>
+                        isLegacyUnattributedChatId(row.chatId) ? (
+                          <span>Legacy</span>
+                        ) : (
+                          <span className='capitalize'>{row.chatType}</span>
+                        ),
+                    },
+                    {
+                      key: 'runs',
+                      header: 'Runs',
+                      align: 'right',
+                      render: (row) =>
+                        isLegacyUnattributedChatId(row.chatId)
+                          ? `${row.count.toLocaleString()} rows`
+                          : row.runCount.toLocaleString(),
+                    },
+                    {
+                      key: 'cost',
+                      header: 'Credits',
+                      align: 'right',
+                      render: (row) => (
+                        <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
+                      ),
+                    },
+                  ]}
+                />
+              </div>
+            )}
+            {data.copilot.byChatType.length > 0 && (
+              <CostBreakdownTable
+                rows={data.copilot.byChatType}
+                getRowKey={(row) => row.chatType}
+                columns={[
+                  {
+                    key: 'type',
+                    header: 'Chat type',
+                    render: (row) => <span className='capitalize'>{row.chatType}</span>,
+                  },
+                  {
+                    key: 'chats',
+                    header: 'Chats',
+                    align: 'right',
+                    render: (row) => row.chatCount.toLocaleString(),
+                  },
+                  {
+                    key: 'runs',
+                    header: 'Runs',
+                    align: 'right',
+                    render: (row) => row.runCount.toLocaleString(),
+                  },
+                  {
+                    key: 'cost',
+                    header: 'Credits',
+                    align: 'right',
+                    render: (row) => (
+                      <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
+                    ),
+                  },
+                ]}
+              />
+            )}
+            {data.copilot.byModel.length > 0 && (
+              <div className='mt-6'>
+                <p className='mb-2 text-[var(--text-muted)] text-small'>By model</p>
+                <CostBreakdownTable
+                  rows={data.copilot.byModel}
+                  getRowKey={(row) => row.model}
+                  columns={[
+                    {
+                      key: 'model',
+                      header: 'Model',
+                      render: (row) => row.model,
+                    },
                     {
                       key: 'count',
                       header: 'Entries',
@@ -696,17 +592,187 @@ function UsageDashboardContent({
               </div>
             )}
           </SettingsSection>
+        </UsageCollapsibleGroup>
+      )}
+
+      <UsageCollapsibleGroup
+        label='Breakdowns'
+        open={openGroups.breakdowns}
+        onOpenChange={(open) => setGroupOpen('breakdowns', open)}
+      >
+        {tab === 'all' && data.byUser.length > 0 && (
+          <SettingsSection label='By billing user'>
+            <CostBreakdownTable
+              rows={data.byUser}
+              getRowKey={(row) => row.userId}
+              columns={[
+                {
+                  key: 'user',
+                  header: 'User',
+                  render: (row) => userNameById.get(row.userId) ?? row.userId,
+                },
+                {
+                  key: 'count',
+                  header: 'Entries',
+                  align: 'right',
+                  render: (row) => row.count.toLocaleString(),
+                },
+                {
+                  key: 'cost',
+                  header: 'Credits',
+                  align: 'right',
+                  render: (row) => (
+                    <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
+                  ),
+                },
+              ]}
+            />
+          </SettingsSection>
         )}
 
-      <DataHealthPanel data={data} />
+        {tab === 'all' && data.byVendor.length > 0 && (
+          <SettingsSection label='External vendor spend'>
+            <p className='mb-4 text-[var(--text-secondary)] text-small'>
+              Pass-through third-party API costs tracked via Cost blocks.
+            </p>
+            <CostBreakdownTable
+              rows={data.byVendor}
+              getRowKey={(row) => row.vendor}
+              columns={[
+                {
+                  key: 'vendor',
+                  header: 'Vendor',
+                  render: (row) => row.vendor,
+                },
+                {
+                  key: 'count',
+                  header: 'Entries',
+                  align: 'right',
+                  render: (row) => row.count.toLocaleString(),
+                },
+                {
+                  key: 'cost',
+                  header: 'Credits',
+                  align: 'right',
+                  render: (row) => (
+                    <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
+                  ),
+                },
+              ]}
+            />
+          </SettingsSection>
+        )}
+
+        {tab === 'all' &&
+          (data.byModel.length > 0 || data.byProvider.length > 0 || data.byTool.length > 0) && (
+            <SettingsSection label='Model & tool usage'>
+              {data.byModel.length > 0 && (
+                <CostBreakdownTable
+                  rows={data.byModel}
+                  getRowKey={(row) => row.model}
+                  columns={[
+                    { key: 'model', header: 'Model', render: (row) => row.model },
+                    {
+                      key: 'count',
+                      header: 'Entries',
+                      align: 'right',
+                      render: (row) => row.count.toLocaleString(),
+                    },
+                    {
+                      key: 'cost',
+                      header: 'Credits',
+                      align: 'right',
+                      render: (row) => (
+                        <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
+                      ),
+                    },
+                  ]}
+                />
+              )}
+              {data.byProvider.length > 0 && (
+                <div className='mt-6'>
+                  <p className='mb-2 text-[var(--text-muted)] text-small'>By provider</p>
+                  <CostBreakdownTable
+                    rows={data.byProvider}
+                    getRowKey={(row) => row.provider}
+                    columns={[
+                      { key: 'provider', header: 'Provider', render: (row) => row.provider },
+                      {
+                        key: 'count',
+                        header: 'Entries',
+                        align: 'right',
+                        render: (row) => row.count.toLocaleString(),
+                      },
+                      {
+                        key: 'cost',
+                        header: 'Credits',
+                        align: 'right',
+                        render: (row) => (
+                          <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
+                        ),
+                      },
+                    ]}
+                  />
+                </div>
+              )}
+              {data.byTool.length > 0 && (
+                <div className='mt-6'>
+                  <p className='mb-2 text-[var(--text-muted)] text-small'>By tool</p>
+                  <CostBreakdownTable
+                    rows={data.byTool}
+                    getRowKey={(row) => row.toolId}
+                    columns={[
+                      {
+                        key: 'tool',
+                        header: 'Tool',
+                        render: (row) => formatToolLabel(row.toolId),
+                      },
+                      {
+                        key: 'count',
+                        header: 'Entries',
+                        align: 'right',
+                        render: (row) => row.count.toLocaleString(),
+                      },
+                      {
+                        key: 'cost',
+                        header: 'Credits',
+                        align: 'right',
+                        render: (row) => (
+                          <CostCell billableCost={row.billableCost} rawCost={row.rawCost} />
+                        ),
+                      },
+                    ]}
+                  />
+                </div>
+              )}
+            </SettingsSection>
+          )}
+
+        <DataHealthPanel data={data} />
+      </UsageCollapsibleGroup>
     </div>
   )
 }
 
 export function Usage() {
   const { workspaceId } = useParams<{ workspaceId: string }>()
-  const [{ scope, tab, period, allTime, rootExecutionId, orgWorkspaceId }, setUsageParams] =
-    useQueryStates(usageParsers, usageUrlKeys)
+  const [
+    {
+      scope,
+      tab,
+      period,
+      allTime,
+      startTime,
+      endTime,
+      rootExecutionId,
+      orgWorkspaceId,
+      userWorkspaceId,
+    },
+    setUsageParams,
+  ] = useQueryStates(usageParsers, usageUrlKeys)
+  const [datePickerOpen, setDatePickerOpen] = useState(false)
+
+  const isCustomRange = Boolean(startTime && endTime) && !allTime
 
   const { data: permissions, isPending: permissionsLoading } =
     useWorkspacePermissionsQuery(workspaceId)
@@ -727,26 +793,73 @@ export function Usage() {
       adminOrganizations?.organizations.some((organization) => organization.id === organizationId)
   )
 
-  const effectiveScope: UsageScope =
-    canViewOrganizationUsage && scope === 'organization' ? 'organization' : 'workspace'
+  const availableScopes = useMemo(() => {
+    const scopes: UsageScope[] = ['user']
+    if (isWorkspaceAdmin) scopes.push('workspace')
+    if (canViewOrganizationUsage) scopes.push('organization')
+    return scopes
+  }, [canViewOrganizationUsage, isWorkspaceAdmin])
+
+  const effectiveScope: UsageScope = availableScopes.includes(scope) ? scope : 'user'
+  const isUserScope = effectiveScope === 'user'
+  const isWorkspaceScope = effectiveScope === 'workspace'
   const isOrganizationScope = effectiveScope === 'organization'
+  const showScopeToggle = availableScopes.length > 1
+
+  const isUserAllWorkspaces = isUserScope && userWorkspaceId === USER_WORKSPACE_FILTER_ALL
+  const resolvedUserWorkspaceId = isUserAllWorkspaces ? undefined : (userWorkspaceId ?? workspaceId)
+  const userLineageWorkspaceId = isUserAllWorkspaces ? null : (resolvedUserWorkspaceId ?? null)
 
   const analyticsQuery = useMemo(() => {
-    const base = allTime ? { allTime: 'true' as const } : { period: period as UsagePeriod }
+    const base = allTime
+      ? { allTime: 'true' as const }
+      : isCustomRange && startTime && endTime
+        ? { startTime, endTime }
+        : { period: period as UsagePeriod }
 
     if (tab === 'workflow') return { ...base, sources: 'workflow' }
     if (tab === 'mothership') return { ...base, sources: MOTHERSHIP_USAGE_SOURCES }
     return base
-  }, [allTime, period, tab])
+  }, [allTime, endTime, isCustomRange, period, startTime, tab])
+
+  const handlePeriodChange = (value: string) => {
+    if (value === 'custom') {
+      setDatePickerOpen(true)
+      return
+    }
+    if (value === 'all') {
+      void setUsageParams({ allTime: true, startTime: null, endTime: null })
+      return
+    }
+    void setUsageParams({
+      allTime: false,
+      period: value as UsagePeriod,
+      startTime: null,
+      endTime: null,
+    })
+  }
+
+  const handleDateRangeApply = (nextStart: string, nextEnd: string) => {
+    void setUsageParams({
+      allTime: false,
+      startTime: nextStart,
+      endTime: nextEnd,
+    })
+    setDatePickerOpen(false)
+  }
+
+  const handleDatePickerCancel = () => {
+    setDatePickerOpen(false)
+  }
 
   const workspaceAnalyticsQuery = useMemo(() => {
     const withLineage =
-      !isOrganizationScope && rootExecutionId && (tab === 'workflow' || tab === 'all')
+      isWorkspaceScope && rootExecutionId && (tab === 'workflow' || tab === 'all')
         ? { rootExecutionId }
         : {}
 
     return { ...analyticsQuery, ...withLineage }
-  }, [analyticsQuery, isOrganizationScope, rootExecutionId, tab])
+  }, [analyticsQuery, isWorkspaceScope, rootExecutionId, tab])
 
   const organizationAnalyticsQuery = useMemo(
     () => ({
@@ -756,6 +869,24 @@ export function Usage() {
     [analyticsQuery, orgWorkspaceId]
   )
 
+  const userAnalyticsQuery = useMemo(() => {
+    const withWorkspace = resolvedUserWorkspaceId ? { workspaceId: resolvedUserWorkspaceId } : {}
+    const withLineage =
+      userLineageWorkspaceId && rootExecutionId && (tab === 'workflow' || tab === 'all')
+        ? { rootExecutionId }
+        : {}
+
+    return { ...analyticsQuery, ...withWorkspace, ...withLineage }
+  }, [analyticsQuery, resolvedUserWorkspaceId, rootExecutionId, tab, userLineageWorkspaceId])
+
+  const {
+    data: userData,
+    isLoading: userLoading,
+    isFetching: userFetching,
+    error: userError,
+    refetch: refetchUser,
+  } = useUserUsageAnalytics(userAnalyticsQuery, isUserScope)
+
   const {
     data: workspaceData,
     isLoading: workspaceLoading,
@@ -763,7 +894,7 @@ export function Usage() {
     error: workspaceError,
     refetch: refetchWorkspace,
   } = useWorkspaceUsageAnalytics(
-    isWorkspaceAdmin && !isOrganizationScope ? workspaceId : undefined,
+    isWorkspaceAdmin && isWorkspaceScope ? workspaceId : undefined,
     workspaceAnalyticsQuery
   )
 
@@ -787,15 +918,46 @@ export function Usage() {
     return options
   }, [organizationData?.workspaces])
 
+  const userWorkspaceFilterOptions = useMemo(() => {
+    const options = [
+      { label: 'Current workspace', value: USER_WORKSPACE_FILTER_CURRENT },
+      { label: 'All workspaces', value: USER_WORKSPACE_FILTER_ALL },
+    ]
+    for (const ws of userData?.workspaces ?? []) {
+      if (ws.id === workspaceId) continue
+      options.push({ label: ws.name, value: ws.id })
+    }
+    return options
+  }, [userData?.workspaces, workspaceId])
+
+  const userWorkspaceSelectValue =
+    userWorkspaceId === USER_WORKSPACE_FILTER_ALL
+      ? USER_WORKSPACE_FILTER_ALL
+      : userWorkspaceId
+        ? userWorkspaceId
+        : USER_WORKSPACE_FILTER_CURRENT
+
   const { data: organizationRoster } = useOrganizationRoster(
     isOrganizationScope && canViewOrganizationUsage ? organizationId : undefined
   )
 
-  const data = isOrganizationScope ? organizationData : workspaceData
-  const isLoading = isOrganizationScope ? organizationAnalyticsLoading : workspaceLoading
-  const isFetching = isOrganizationScope ? organizationFetching : workspaceFetching
-  const error = isOrganizationScope ? organizationError : workspaceError
-  const refetch = isOrganizationScope ? refetchOrganization : refetchWorkspace
+  const data = isUserScope ? userData : isOrganizationScope ? organizationData : workspaceData
+  const isLoading = isUserScope
+    ? userLoading
+    : isOrganizationScope
+      ? organizationAnalyticsLoading
+      : workspaceLoading
+  const isFetching = isUserScope
+    ? userFetching
+    : isOrganizationScope
+      ? organizationFetching
+      : workspaceFetching
+  const error = isUserScope ? userError : isOrganizationScope ? organizationError : workspaceError
+  const refetch = isUserScope
+    ? refetchUser
+    : isOrganizationScope
+      ? refetchOrganization
+      : refetchWorkspace
 
   const workspaceUserNameById = useMemo(() => {
     const map = new Map<string, string>()
@@ -835,25 +997,23 @@ export function Usage() {
     )
   }
 
-  if (!isWorkspaceAdmin) {
-    return (
-      <div className='px-6 py-8'>
-        <p className='text-[var(--text-secondary)] text-small'>
-          Workspace admin access is required to view usage analytics.
-        </p>
-      </div>
-    )
-  }
-
   const periodLabel = allTime
     ? 'All time'
-    : data
-      ? `${formatPeriodLabel(period)} · ${new Date(data.period.startTime).toLocaleDateString()} – ${new Date(data.period.endTime).toLocaleDateString()}`
-      : formatPeriodLabel(period)
+    : isCustomRange && startTime && endTime
+      ? `${formatDateShort(startTime)} – ${formatDateShort(endTime)}`
+      : data
+        ? `${formatPeriodLabel(period)} · ${new Date(data.period.startTime).toLocaleDateString()} – ${new Date(data.period.endTime).toLocaleDateString()}`
+        : formatPeriodLabel(period)
 
-  const emptyCopy = isOrganizationScope
-    ? 'No billing ledger entries were found across organization workspaces in the selected period. Workflow and mothership activity may still exist without cost rows.'
-    : 'No billing ledger entries were found for this workspace in the selected period. Workflow and mothership activity may still exist without cost rows.'
+  const periodSelectorValue = allTime ? 'all' : isCustomRange ? 'custom' : period
+
+  const emptyCopy = isUserScope
+    ? isUserAllWorkspaces
+      ? 'No billing ledger entries were found for your activity across membership workspaces in the selected period. Workflow and mothership activity may still exist without cost rows.'
+      : 'No billing ledger entries were found for your activity in this workspace in the selected period. Workflow and mothership activity may still exist without cost rows.'
+    : isOrganizationScope
+      ? 'No billing ledger entries were found across organization workspaces in the selected period. Workflow and mothership activity may still exist without cost rows.'
+      : 'No billing ledger entries were found for this workspace in the selected period. Workflow and mothership activity may still exist without cost rows.'
 
   return (
     <div className='flex h-full flex-col bg-[var(--bg)]'>
@@ -876,20 +1036,27 @@ export function Usage() {
               </button>
             </div>
 
+            <UsageBillingStats />
+
             <div className='flex flex-wrap items-center gap-3'>
-              {canViewOrganizationUsage && (
+              {showScopeToggle && (
                 <ButtonGroup
                   value={effectiveScope}
                   onValueChange={(value) => {
                     const nextScope = value as UsageScope
                     void setUsageParams({
                       scope: nextScope,
-                      rootExecutionId: nextScope === 'organization' ? null : rootExecutionId,
-                      orgWorkspaceId: nextScope === 'workspace' ? null : orgWorkspaceId,
+                      rootExecutionId:
+                        nextScope === 'organization' ||
+                        (nextScope === 'user' && userWorkspaceId === USER_WORKSPACE_FILTER_ALL)
+                          ? null
+                          : rootExecutionId,
+                      orgWorkspaceId: nextScope === 'organization' ? orgWorkspaceId : null,
+                      userWorkspaceId: nextScope === 'user' ? userWorkspaceId : null,
                     })
                   }}
                 >
-                  {USAGE_SCOPES.map((scopeId) => (
+                  {availableScopes.map((scopeId) => (
                     <ButtonGroupItem key={scopeId} value={scopeId}>
                       {SCOPE_LABELS[scopeId]}
                     </ButtonGroupItem>
@@ -903,7 +1070,9 @@ export function Usage() {
                   void setUsageParams({
                     tab: value as UsageTab,
                     rootExecutionId:
-                      value === 'mothership' || isOrganizationScope ? null : rootExecutionId,
+                      value === 'mothership' || isOrganizationScope || isUserAllWorkspaces
+                        ? null
+                        : rootExecutionId,
                   })
                 }
               >
@@ -913,6 +1082,27 @@ export function Usage() {
                   </ButtonGroupItem>
                 ))}
               </ButtonGroup>
+
+              {isUserScope && (
+                <ChipSelect
+                  align='start'
+                  value={userWorkspaceSelectValue}
+                  onChange={(value) => {
+                    const nextFilter =
+                      value === USER_WORKSPACE_FILTER_CURRENT
+                        ? null
+                        : value === USER_WORKSPACE_FILTER_ALL
+                          ? USER_WORKSPACE_FILTER_ALL
+                          : value
+                    void setUsageParams({
+                      userWorkspaceId: nextFilter,
+                      rootExecutionId:
+                        nextFilter === USER_WORKSPACE_FILTER_ALL ? null : rootExecutionId,
+                    })
+                  }}
+                  options={userWorkspaceFilterOptions}
+                />
+              )}
 
               {isOrganizationScope && (
                 <ChipSelect
@@ -927,24 +1117,34 @@ export function Usage() {
                 />
               )}
 
-              <div className='flex flex-wrap items-center gap-2'>
-                <ButtonGroup
-                  value={allTime ? 'all' : period}
-                  onValueChange={(value) => {
-                    if (value === 'all') {
-                      void setUsageParams({ allTime: true })
-                      return
-                    }
-                    void setUsageParams({ allTime: false, period: value as UsagePeriod })
-                  }}
-                >
+              <div className='relative flex flex-wrap items-center gap-2'>
+                <ButtonGroup value={periodSelectorValue} onValueChange={handlePeriodChange}>
                   {USAGE_PERIODS.map((periodId) => (
                     <ButtonGroupItem key={periodId} value={periodId}>
                       {formatPeriodLabel(periodId)}
                     </ButtonGroupItem>
                   ))}
                   <ButtonGroupItem value='all'>All time</ButtonGroupItem>
+                  <ButtonGroupItem value='custom'>Custom</ButtonGroupItem>
                 </ButtonGroup>
+                <Popover
+                  open={datePickerOpen}
+                  onOpenChange={(isOpen) => {
+                    if (!isOpen) handleDatePickerCancel()
+                  }}
+                >
+                  <PopoverAnchor className='pointer-events-none absolute inset-0' />
+                  <PopoverContent align='end' sideOffset={4} className='w-auto p-0'>
+                    <Calendar
+                      mode='range'
+                      showTime
+                      startDate={startTime ?? undefined}
+                      endDate={endTime ?? undefined}
+                      onRangeChange={handleDateRangeApply}
+                      onCancel={handleDatePickerCancel}
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
           </div>
@@ -1009,7 +1209,19 @@ export function Usage() {
             </div>
           )}
 
-          {data && !isOrganizationScope && workspaceData && (
+          {data && isUserScope && userData && (
+            <UserUsageContent
+              data={userData}
+              tab={tab}
+              showByWorkspace={isUserAllWorkspaces}
+              lineageWorkspaceId={userLineageWorkspaceId}
+              rootExecutionId={rootExecutionId}
+              onSelectRoot={handleSelectRoot}
+              onClearDrillDown={handleClearDrillDown}
+            />
+          )}
+
+          {data && isWorkspaceScope && workspaceData && (
             <UsageDashboardContent
               workspaceId={workspaceId}
               data={workspaceData}

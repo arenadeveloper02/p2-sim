@@ -5,8 +5,8 @@
  * circular dependency that surfaces when loading `semrush/query` directly.
  */
 import { describe, expect, it } from 'vitest'
-import { semrushHosting } from '@/tools/semrush/hosting'
 import { tools } from '@/tools/registry'
+import { semrushHosting } from '@/tools/semrush/hosting'
 
 const semrushQueryTool = tools.semrush_query
 const semrushOrganicPositionsTool = tools.semrush_organic_positions
