@@ -193,12 +193,6 @@ Draft: `.upstream-sync/ledger/2026-08-07/merge-plan.draft.json` (`kind: "draft"`
 
 ## Usage
 
-### Usage (stack rollup)
-
-- **This slice:** $9.6558 · 12,693,173 in / 77,159 out · 1 agent(s)
-- **Prior stack:** $31.1983 · 305,792,819 in / 1,318,900 out · 37 agent(s)
-- **Whole stack:** $40.8541 · 318,485,992 in / 1,396,059 out · 38 agent(s)
-
 ### parent-grill-analysis
 - **Model:** `claude-opus-5`
 - **Iterations:** 1
