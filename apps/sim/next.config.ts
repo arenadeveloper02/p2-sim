@@ -133,6 +133,7 @@ const nextConfig: NextConfig = {
     'fluent-ffmpeg',
     'cpu-features',
     'chromium-bidi',
+    'playwright',
     'playwright-core',
     'pino',
     'pino-pretty',
