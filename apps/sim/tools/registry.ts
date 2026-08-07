@@ -2721,6 +2721,7 @@ import {
   pdlPersonSearchTool,
 } from '@/tools/peopledatalabs'
 import { perplexityChatTool, perplexitySearchTool } from '@/tools/perplexity'
+import { playwrightRunTaskTool } from '@/tools/playwright'
 import {
   personaApproveInquiryTool,
   personaCreateAccountTool,
@@ -5907,6 +5908,7 @@ export const tools: Record<string, ToolConfig> = {
   pipedrive_update_activity: pipedriveUpdateActivityTool,
   pipedrive_update_deal: pipedriveUpdateDealTool,
   pipedrive_update_lead: pipedriveUpdateLeadTool,
+  playwright_run_task: playwrightRunTaskTool,
   postgresql_query: postgresQueryTool,
   postgresql_insert: postgresInsertTool,
   postgresql_update: postgresUpdateTool,

@@ -2531,6 +2531,41 @@ l57 -85 -48 -124 c-203 -517 -79 -930 346 -1155 159 -85 441 -71 585 28 l111
   )
 }
 
+export function PlaywrightIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      {...props}
+      xmlns='http://www.w3.org/2000/svg'
+      width='28'
+      height='28'
+      viewBox='0 0 24 24'
+      fill='none'
+    >
+      <rect
+        x='3'
+        y='4'
+        width='18'
+        height='16'
+        rx='2'
+        stroke='currentColor'
+        strokeWidth='1.5'
+        fill='none'
+      />
+      <path d='M3 8h18' stroke='currentColor' strokeWidth='1.5' />
+      <circle cx='7' cy='6' r='0.75' fill='currentColor' />
+      <circle cx='10' cy='6' r='0.75' fill='currentColor' />
+      <circle cx='13' cy='6' r='0.75' fill='currentColor' />
+      <path
+        d='M8 14l2.5 2.5L16 11'
+        stroke='currentColor'
+        strokeWidth='1.5'
+        strokeLinecap='round'
+        strokeLinejoin='round'
+      />
+    </svg>
+  )
+}
+
 export function Mem0Icon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg

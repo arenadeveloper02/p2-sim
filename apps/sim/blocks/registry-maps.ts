@@ -241,6 +241,7 @@ import { PersonaBlock, PersonaBlockMeta } from '@/blocks/blocks/persona'
 import { PiBlock } from '@/blocks/blocks/pi'
 import { PineconeBlock, PineconeBlockMeta } from '@/blocks/blocks/pinecone'
 import { PipedriveBlock, PipedriveBlockMeta } from '@/blocks/blocks/pipedrive'
+import { PlaywrightBlock, PlaywrightBlockMeta } from '@/blocks/blocks/playwright'
 import { PolymarketBlock, PolymarketBlockMeta } from '@/blocks/blocks/polymarket'
 import { PostgreSQLBlock, PostgreSQLBlockMeta } from '@/blocks/blocks/postgresql'
 import { PostHogBlock, PostHogBlockMeta } from '@/blocks/blocks/posthog'
@@ -565,6 +566,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   pi: PiBlock,
   pinecone: PineconeBlock,
   pipedrive: PipedriveBlock,
+  playwright: PlaywrightBlock,
   polymarket: PolymarketBlock,
   postgresql: PostgreSQLBlock,
   posthog: PostHogBlock,
@@ -855,6 +857,7 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   persona: PersonaBlockMeta,
   pinecone: PineconeBlockMeta,
   pipedrive: PipedriveBlockMeta,
+  playwright: PlaywrightBlockMeta,
   polymarket: PolymarketBlockMeta,
   postgresql: PostgreSQLBlockMeta,
   posthog: PostHogBlockMeta,
