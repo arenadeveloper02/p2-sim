@@ -1,13 +1,13 @@
 {
   "lastSyncedUpstreamSha": "578d9ddc869fb7e18909733336006e597698dedc",
   "lastSyncedAt": "2026-08-06T15:50:24.959Z",
-  "lastRunId": "2026-08-06-5",
-  "status": "completed",
+  "lastRunId": "2026-08-07",
+  "status": "running",
   "openQuestions": [],
-  "activeBranch": "upstream-sync/2026-08-06T13-57-59",
+  "activeBranch": "upstream-sync/2026-08-07T06-21-59",
   "activePrNumber": 689,
-  "activeMergeBase": "upstream-sync/2026-08-06T11-45-10",
-  "activeUpstreamSha": null,
+  "activeMergeBase": "upstream-sync/2026-08-06T13-57-59",
+  "activeUpstreamSha": "2a6267391d24d4e10e043ce474615ce9f5d1c22a",
   "stack": [
     {
       "runId": "2026-08-06",
