@@ -8,7 +8,8 @@ import { getBingAdsAccounts } from '@/lib/channel-accounts'
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
-    const accounts = await getBingAdsAccounts()
+    const workspaceId = request.nextUrl.searchParams.get('workspaceId') ?? undefined
+    const accounts = await getBingAdsAccounts(workspaceId)
 
     return NextResponse.json({
       success: true,

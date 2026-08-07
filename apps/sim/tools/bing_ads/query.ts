@@ -6,11 +6,10 @@ const logger = createLogger('BingAdsQuery')
 interface BingAdsQueryParams {
   account: string
   query: string
-}
-
-interface BingAdsAccount {
-  id: string
-  name: string
+  workspaceId?: string
+  _context?: {
+    workspaceId?: string
+  }
 }
 
 export const bingAdsQueryTool: ToolConfig<BingAdsQueryParams, any> = {
@@ -32,6 +31,12 @@ export const bingAdsQueryTool: ToolConfig<BingAdsQueryParams, any> = {
       required: true,
       visibility: 'user-or-llm',
     },
+    workspaceId: {
+      type: 'string',
+      description: 'Workspace ID used to scope the visible Bing Ads account catalog',
+      required: false,
+      visibility: 'hidden',
+    },
   },
   request: {
     url: () => '/api/bing-ads/query',
@@ -42,6 +47,7 @@ export const bingAdsQueryTool: ToolConfig<BingAdsQueryParams, any> = {
     body: (params: BingAdsQueryParams) => ({
       account: params.account,
       query: params.query,
+      workspaceId: params.workspaceId ?? params._context?.workspaceId,
     }),
   },
   transformResponse: async (response: Response, params?: BingAdsQueryParams) => {

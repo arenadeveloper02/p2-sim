@@ -2,11 +2,6 @@
  * Constants for Bing Ads API
  */
 
-import { getBingAdsAccounts } from '@/lib/channel-accounts'
-
-// Database-driven Bing Ads accounts - fetched dynamically from database
-export const BING_ADS_ACCOUNTS = await getBingAdsAccounts()
-
 // Bing Ads API constants
 export const BING_ADS_DEFAULT_CUSTOMER_ID = 'C000736328'
 export const BING_ADS_OAUTH_URL = 'https://login.live.com/oauth20_token.srf'

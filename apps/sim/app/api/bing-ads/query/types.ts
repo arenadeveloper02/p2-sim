@@ -68,6 +68,7 @@ export interface BingAdsReportRequest {
 export interface BingAdsV1Request {
   query: string
   account: string
+  workspaceId?: string
 }
 
 export interface BingAdsQueryResponse {

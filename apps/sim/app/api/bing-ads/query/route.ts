@@ -4,18 +4,40 @@
  */
 
 import { type NextRequest, NextResponse } from 'next/server'
-import { BING_ADS_ACCOUNTS } from './constants'
+import type { ChannelAccount } from '@/lib/channel-accounts'
+import { getBingAdsAccounts } from '@/lib/channel-accounts'
 import { generateBingAdsQuery } from './query-generation'
 import { makeBingAdsRequest } from './bing-ads-api'
 import { processResults } from './result-processing'
 import type { BingAdsV1Request } from './types'
+
+/**
+ * Resolves an account input to a catalog key, accepting either the key itself
+ * (`amazon_web_services`) or the raw Bing account ID (`40043856`).
+ */
+function resolveAccountKey(
+  accountInput: string,
+  bingAdsAccounts: Record<string, ChannelAccount>
+): string {
+  if (bingAdsAccounts[accountInput]) {
+    return accountInput
+  }
+
+  const foundAccount = Object.entries(bingAdsAccounts).find(
+    ([, account]) => account.id === accountInput
+  )
+
+  return foundAccount ? foundAccount[0] : accountInput
+}
 
 export async function POST(request: NextRequest): Promise<NextResponse<any>> {
   const startTime = Date.now()
 
   try {
     const body: BingAdsV1Request = await request.json()
-    const { query, account } = body
+    const { query, account, workspaceId: bodyWorkspaceId } = body
+    const workspaceId =
+      bodyWorkspaceId ?? request.nextUrl.searchParams.get('workspaceId') ?? undefined
 
     // Validate query
     if (!query) {
@@ -27,12 +49,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<any>> {
       return NextResponse.json({ error: 'No account provided' }, { status: 400 })
     }
 
-    // Get account information
-    const accountInfo = BING_ADS_ACCOUNTS[account]
+    // Resolve the account against the catalog visible to this workspace
+    const bingAdsAccounts = await getBingAdsAccounts(workspaceId)
+    const accountInfo = bingAdsAccounts[resolveAccountKey(account, bingAdsAccounts)]
     if (!accountInfo) {
       return NextResponse.json(
         {
-          error: `Invalid account key: ${account}. Available accounts: ${Object.keys(BING_ADS_ACCOUNTS).join(', ')}`,
+          error: `Invalid account key or ID: ${account}. Available accounts: ${Object.keys(bingAdsAccounts).join(', ')}`,
         },
         { status: 400 }
       )

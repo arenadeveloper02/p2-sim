@@ -1,5 +1,37 @@
 import { MicrosoftIcon } from '@/components/icons'
+import { resolveExecutionWorkspaceId } from '@/lib/workspaces/is-admin-workspace'
 import type { BlockConfig } from '@/blocks/types'
+
+/** In-flight promise cache keyed by workspaceId — deduplicates concurrent fetchOptions + fetchOptionById calls */
+let _inflightFetch: {
+  workspaceId: string
+  promise: Promise<Record<string, { id: string; name: string }>>
+} | null = null
+
+async function fetchBingAdsAccounts(
+  workspaceId: string
+): Promise<Record<string, { id: string; name: string }>> {
+  if (_inflightFetch?.workspaceId === workspaceId) {
+    return _inflightFetch.promise
+  }
+
+  const promise = fetch(`/api/bing-ads/accounts?workspaceId=${encodeURIComponent(workspaceId)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      _inflightFetch = null
+      if (data?.success && data.accounts && typeof data.accounts === 'object') {
+        return data.accounts as Record<string, { id: string; name: string }>
+      }
+      return {}
+    })
+    .catch(() => {
+      _inflightFetch = null
+      return {}
+    })
+
+  _inflightFetch = { workspaceId, promise }
+  return promise
+}
 
 export interface BingAdsQueryResponse {
   success: boolean
@@ -34,43 +66,32 @@ export const BingAdsBlock: BlockConfig<BingAdsQueryResponse> = {
       options: [],
       fetchOptions: async () => {
         try {
-          const response = await fetch('/api/bing-ads/accounts')
-          const data = await response.json()
+          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+          const workspaceId = useWorkflowRegistry.getState().hydration.workspaceId
+          if (!workspaceId) return []
 
-          console.log('Bing Ads API response:', data)
-
-          if (data?.success && data.accounts && typeof data.accounts === 'object') {
-            const accounts = data.accounts as Record<string, { id: string; name: string }>
-            const options = Object.entries(accounts).map(([key, account]) => ({
-              id: key,
-              label: account.name,
-            }))
-            console.log('Bing Ads options:', options)
-            return Array.isArray(options) ? options : []
-          }
-          console.log('Bing Ads: Invalid response format')
-          return []
-        } catch (error) {
-          console.error('Failed to fetch Bing Ads accounts:', error)
+          const accounts = await fetchBingAdsAccounts(workspaceId)
+          return Object.entries(accounts).map(([key, account]) => ({
+            id: key,
+            label: account.name,
+            value: key,
+          }))
+        } catch {
           return []
         }
       },
-      fetchOptionById: async (optionId: string) => {
+      fetchOptionById: async (_blockId: string, optionId: string) => {
         try {
-          const response = await fetch('/api/bing-ads/accounts')
-          const data = await response.json()
+          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+          const workspaceId = useWorkflowRegistry.getState().hydration.workspaceId
+          if (!workspaceId) return null
 
-          if (data.success && data.accounts[optionId]) {
-            const account = data.accounts[optionId] as { id: string; name: string }
-            return {
-              id: optionId,
-              label: account.name,
-              value: account.id,
-            }
-          }
-          return null
-        } catch (error) {
-          console.error('Failed to fetch Bing Ads account:', error)
+          const accounts = await fetchBingAdsAccounts(workspaceId)
+          const account = accounts[optionId]
+          if (!account) return null
+
+          return { id: optionId, label: account.name }
+        } catch {
           return null
         }
       },
@@ -133,8 +154,10 @@ Generate a clear, specific question about Bing Ads performance based on the user
     config: {
       tool: () => 'bing_ads_query',
       params: (params) => ({
-        account: params.account,
+        account: params.accountAdvanced ?? params.account,
         query: params.query,
+        workspaceId: resolveExecutionWorkspaceId(params as Record<string, unknown> | undefined),
+        _context: params._context,
       }),
     },
   },
