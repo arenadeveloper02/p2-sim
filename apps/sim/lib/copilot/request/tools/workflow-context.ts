@@ -1,3 +1,4 @@
+import { createLogger } from '@sim/logger'
 import { isRecordLike } from '@sim/utils/object'
 import {
   reserveExecutionSlot,
@@ -14,6 +15,8 @@ import {
   type ReservationDenialReason,
 } from '@/lib/core/admission/transient-failure'
 import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
+
+const logger = createLogger('CopilotWorkflowContext')
 
 function getCreateWorkflowOutput(
   output: unknown
@@ -59,14 +62,47 @@ export function applyCreateWorkflowOutputToContext(
  * Selects billing for one hosted workflow execution. Same-workspace work
  * keeps the root snapshot; cross-workspace work gets a fresh child snapshot
  * without mutating or implicitly replacing the root lifecycle attribution.
+ * When the lifecycle never stamped a root snapshot (Arena Copilot tool
+ * contexts that resolve attribution per turn), resolves one for the target
+ * workspace and stamps it onto the context for the rest of the turn.
  */
 export async function resolveWorkflowExecutionBillingAttribution(
   context: ExecutionContext,
   targetWorkspaceId: string
 ): Promise<BillingAttributionSnapshot | undefined> {
-  const rootAttribution = context.billingAttribution
+  let rootAttribution = context.billingAttribution
   if (!rootAttribution) {
-    return undefined
+    if (!context.userId || !targetWorkspaceId) {
+      logger.error('Cannot resolve workflow billing attribution without actor and workspace', {
+        userId: context.userId || null,
+        targetWorkspaceId: targetWorkspaceId || null,
+        workflowId: context.workflowId || null,
+        chatId: context.chatId || null,
+        runId: context.runId || null,
+      })
+      return undefined
+    }
+
+    logger.warn('Copilot workflow execution missing root billing attribution; resolving', {
+      userId: context.userId,
+      targetWorkspaceId,
+      workflowId: context.workflowId || null,
+      chatId: context.chatId || null,
+      runId: context.runId || null,
+    })
+    rootAttribution = await resolveBillingAttribution({
+      actorUserId: context.userId,
+      workspaceId: targetWorkspaceId,
+    })
+    if (
+      rootAttribution.actorUserId !== context.userId ||
+      rootAttribution.workspaceId !== targetWorkspaceId
+    ) {
+      throw new Error(
+        'Resolved workflow billing attribution does not match its actor and workspace'
+      )
+    }
+    context.billingAttribution = rootAttribution
   }
 
   if (rootAttribution.workspaceId === targetWorkspaceId) {

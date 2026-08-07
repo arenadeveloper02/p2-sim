@@ -17,7 +17,7 @@ function resolveBrowserUseApiKey(params: BrowserUseRunTaskParams): string {
 const POLL_INTERVAL_MS = 5000
 const MAX_POLL_TIME_MS = getMaxExecutionTimeout()
 const MAX_CONSECUTIVE_ERRORS = 3
-const API_BASE = 'https://api.browser-use.com/api/v2'
+const API_BASE = 'http://127.0.0.1:8010/api/v4'
 
 async function createSessionWithProfile(
   profileId: string,

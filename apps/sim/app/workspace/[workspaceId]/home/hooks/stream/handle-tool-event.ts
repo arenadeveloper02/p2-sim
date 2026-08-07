@@ -1,6 +1,7 @@
 import { isBrowserToolName } from '@sim/browser-protocol'
 import { isTerminalToolName } from '@sim/terminal-protocol'
 import {
+  MothershipStreamV1ToolExecutor,
   MothershipStreamV1ToolPhase,
   MothershipStreamV1ToolStatus,
 } from '@/lib/copilot/generated/mothership-stream-v1'
@@ -30,6 +31,19 @@ import { folderKeys } from '@/hooks/queries/utils/folder-keys'
 import { workflowKeys } from '@/hooks/queries/workflows'
 
 type ToolEvent = Extract<PersistedStreamEventEnvelope, { type: 'tool' }>
+
+/**
+ * True when the call frame is meant to run in the browser. Arena Copilot emits
+ * workflow tools with `executor: go` while it already runs them server-side —
+ * those frames must not trigger a second client execution that would fail
+ * binding checks on `/api/workflows/.../execute`.
+ */
+function isClientExecutableToolCall(payload: ToolEvent['payload']): boolean {
+  if (!('executor' in payload)) return false
+  if (payload.executor === MothershipStreamV1ToolExecutor.client) return true
+  const ui = 'ui' in payload ? payload.ui : undefined
+  return ui?.clientExecutable === true
+}
 
 /** The display agent id for a tool's owning span (undefined on the main lane). */
 function agentIdForSpan(ctx: StreamLoopContext, spanId: string): string | undefined {
@@ -168,7 +182,8 @@ export function handleToolEvent(ctx: StreamLoopContext, parsed: ToolEvent): void
   const name = payload.toolName
   const isPartial =
     payload.partial === true || payload.status === MothershipStreamV1ToolStatus.generating
-  if (isWorkflowToolName(name) && !isPartial) {
+  const clientExecutable = isClientExecutableToolCall(payload)
+  if (isWorkflowToolName(name) && !isPartial && clientExecutable) {
     const shouldStartWorkflowTool =
       !deps.options.suppressedWorkflowToolStartIds?.has(rawId) &&
       node?.kind === 'tool' &&
@@ -180,14 +195,14 @@ export function handleToolEvent(ctx: StreamLoopContext, parsed: ToolEvent): void
     }
   }
   const localFilesystemArgs = payload.arguments as Record<string, unknown> | undefined
-  if (isUserLocalVfsToolCall(name, localFilesystemArgs) && !isPartial) {
+  if (isUserLocalVfsToolCall(name, localFilesystemArgs) && !isPartial && clientExecutable) {
     const shouldStartLocalFilesystemTool =
       node?.kind === 'tool' && node.status === 'running' && !node.result
     if (shouldStartLocalFilesystemTool) {
       deps.startClientLocalFilesystemTool(rawId, name, localFilesystemArgs ?? {})
     }
   }
-  if (isBrowserToolName(name) && !isPartial) {
+  if (isBrowserToolName(name) && !isPartial && clientExecutable) {
     const shouldStartBrowserTool =
       !deps.options.suppressedWorkflowToolStartIds?.has(rawId) &&
       node?.kind === 'tool' &&
@@ -202,7 +217,7 @@ export function handleToolEvent(ctx: StreamLoopContext, parsed: ToolEvent): void
       )
     }
   }
-  if (isTerminalToolName(name) && !isPartial) {
+  if (isTerminalToolName(name) && !isPartial && clientExecutable) {
     const shouldStartTerminalTool =
       !deps.options.suppressedWorkflowToolStartIds?.has(rawId) &&
       node?.kind === 'tool' &&

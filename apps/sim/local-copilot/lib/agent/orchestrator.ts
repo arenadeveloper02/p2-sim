@@ -3,7 +3,10 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { truncate } from '@sim/utils/string'
 import { checkServerSideUsageLimits } from '@/lib/billing/calculations/usage-monitor'
-import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
+import {
+  type BillingAttributionSnapshot,
+  resolveBillingAttribution,
+} from '@/lib/billing/core/billing-attribution'
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
@@ -59,8 +62,9 @@ import {
   compactChatHistory,
   estimateChatMessagesTokens,
   estimateToolDefinitionTokens,
-  LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
+  LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS,
   LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
+  resolveLocalCopilotPromptTokenBudget,
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
 import {
@@ -662,6 +666,35 @@ export async function* runLocalCopilotAgent(
     ? formatRecentToolFailuresSystemMessage(sessionMemory.failures)
     : null
 
+  const allTools = await resolveLocalCopilotTools(params.workspaceId)
+  const intent = classifyLocalCopilotIntent(params.message)
+  const allowedToolNames = toolNamesForIntent(intent)
+  let tools = filterToolsByNames(allTools, allowedToolNames)
+
+  // Hybrid: intent leaf tools ∪ 12 specialist entry tools.
+  const specialistTools = getParentSpecialistToolDefinitions()
+  const seenToolNames = new Set(tools.map((tool) => tool.name))
+  for (const specialistTool of specialistTools) {
+    if (!seenToolNames.has(specialistTool.name)) {
+      tools = [...tools, specialistTool]
+      seenToolNames.add(specialistTool.name)
+    }
+  }
+
+  // Full catalog only when the hybrid set is empty (never solely because primary is general).
+  let usedFullCatalog = allowedToolNames === null
+  if (tools.length === 0) {
+    tools = allTools
+    usedFullCatalog = true
+  }
+
+  const estimatedToolDefinitionTokens = estimateToolDefinitionTokens(tools, config.model)
+  const promptBudget = resolveLocalCopilotPromptTokenBudget({
+    model: config.model,
+    toolDefinitionTokens: estimatedToolDefinitionTokens,
+    maxOutputTokens: LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS,
+  })
+
   const messages: ChatMessage[] = fitPromptWithSlots(
     [
       { role: 'system', content: SYSTEM_PROMPT },
@@ -687,31 +720,9 @@ export async function* runLocalCopilotAgent(
       ...historyMessages,
       userTurn,
     ],
-    LOCAL_COPILOT_PROMPT_TOKEN_BUDGET,
+    promptBudget.tokenBudget,
     config.model
   )
-
-  const allTools = await resolveLocalCopilotTools(params.workspaceId)
-  const intent = classifyLocalCopilotIntent(params.message)
-  const allowedToolNames = toolNamesForIntent(intent)
-  let tools = filterToolsByNames(allTools, allowedToolNames)
-
-  // Hybrid: intent leaf tools ∪ 12 specialist entry tools.
-  const specialistTools = getParentSpecialistToolDefinitions()
-  const seenToolNames = new Set(tools.map((tool) => tool.name))
-  for (const specialistTool of specialistTools) {
-    if (!seenToolNames.has(specialistTool.name)) {
-      tools = [...tools, specialistTool]
-      seenToolNames.add(specialistTool.name)
-    }
-  }
-
-  // Full catalog only when the hybrid set is empty (never solely because primary is general).
-  let usedFullCatalog = allowedToolNames === null
-  if (tools.length === 0) {
-    tools = allTools
-    usedFullCatalog = true
-  }
 
   const specialistBudget = createSpecialistBudget()
 
@@ -722,7 +733,11 @@ export async function* runLocalCopilotAgent(
     contextEntries: params.contexts?.length ?? 0,
     fileAttachments: params.fileAttachments?.length ?? 0,
     estimatedPromptTokens: estimateChatMessagesTokens(messages, config.model),
-    estimatedToolDefinitionTokens: estimateToolDefinitionTokens(tools, config.model),
+    estimatedToolDefinitionTokens,
+    promptTokenBudget: promptBudget.tokenBudget,
+    modelContextWindow: promptBudget.contextWindow,
+    reservedTokens: promptBudget.reservedTokens,
+    promptBudgetSoftCapped: promptBudget.softCapped,
     tokenCountModel: config.model,
     toolDefinitionCount: tools.length,
     toolCatalogCount: allTools.length,
@@ -735,6 +750,18 @@ export async function* runLocalCopilotAgent(
   })
 
   const provider = params.catalogId ? createLocalCopilotProvider(config) : getLocalCopilotProvider()
+  const billingAttribution =
+    params.billingAttribution ??
+    (await resolveBillingAttribution({
+      actorUserId: params.userId,
+      workspaceId: params.workspaceId,
+    }))
+  if (
+    billingAttribution.actorUserId !== params.userId ||
+    billingAttribution.workspaceId !== params.workspaceId
+  ) {
+    throw new Error('Arena Copilot billing attribution does not match its actor and workspace')
+  }
   const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
@@ -743,6 +770,7 @@ export async function* runLocalCopilotAgent(
     messageId: usageTurnId,
     abortSignal: params.signal,
     userPermission: params.userPermission,
+    billingAttribution,
     structuredContext,
     selectedBlockId: params.selectedBlockId,
     lastUserMessage: userTurnText,
@@ -1810,6 +1838,16 @@ export async function* runLocalCopilotAgent(
       })
     }
 
+    if (estimateChatMessagesTokens(messages, config.model) > promptBudget.tokenBudget) {
+      const refit = fitPromptWithSlots(messages, promptBudget.tokenBudget, config.model)
+      messages.splice(0, messages.length, ...refit)
+      logger.info('Arena Copilot prompt re-fit after tool round', {
+        round,
+        promptTokenBudget: promptBudget.tokenBudget,
+        estimatedPromptTokens: estimateChatMessagesTokens(messages, config.model),
+      })
+    }
+
     if (stagnationStopMessage) break
     if (endTurnAfterThisRound) {
       postBuildToolMode = 'done'
@@ -2156,7 +2194,7 @@ export async function* runLocalCopilotAgent(
       rootExecutionId: params.parentExecutionId,
       triggeringChatId: params.chatId,
       triggeringRunId: params.runId,
-      ...(params.billingAttribution ? { billingAttribution: params.billingAttribution } : {}),
+      billingAttribution,
     })
     recordLocalOpsEvent({
       counter: LOCAL_OPS_COUNTERS.costRecorded,

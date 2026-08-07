@@ -1,9 +1,16 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
+import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
+import { normalizeEditWorkflowArgs } from '@/lib/copilot/tools/server/workflow/edit-workflow/normalize-args'
 import type { LocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
+import {
+  LOAD_COPILOT_ARTIFACT_TOOL_NAME,
+  loadArtifactFromRecord,
+  loadArtifacts,
+} from '@/local-copilot/lib/context/artifacts'
 import {
   buildLocalCopilotContext,
   contextToPromptJson,
@@ -30,7 +37,6 @@ import {
   normalizeBlockIdsArgs,
   resolveBlockIdsArg,
 } from '@/local-copilot/lib/tools/resolve-block-ids-arg'
-import { normalizeEditWorkflowArgs } from '@/lib/copilot/tools/server/workflow/edit-workflow/normalize-args'
 import {
   executeLoadUserSkill,
   LOAD_USER_SKILL_TOOL_NAME,
@@ -60,11 +66,6 @@ import {
   assertWorkflowWritableInWorkspace,
   loadWorkflowRevision,
 } from '@/local-copilot/lib/writes/workflow-access'
-import {
-  LOAD_COPILOT_ARTIFACT_TOOL_NAME,
-  loadArtifactFromRecord,
-  loadArtifacts,
-} from '@/local-copilot/lib/context/artifacts'
 
 const logger = createLogger('LocalCopilotToolExecutor')
 
@@ -94,6 +95,11 @@ export interface ToolExecutionContext {
   messageId?: string
   abortSignal?: AbortSignal
   userPermission?: string
+  /**
+   * Frozen workspace payer snapshot from mothership admission. Required for
+   * delegated workflow runs (`run_workflow`, etc.) that call `executeWorkflow`.
+   */
+  billingAttribution?: BillingAttributionSnapshot
   structuredContext: LocalCopilotStructuredContext
   selectedBlockId?: string
   /** Latest user message — used to preserve variation counts for generate_image. */
@@ -614,10 +620,7 @@ export async function executeLocalCopilotTool(
       const persisted = await loadArtifacts(ctx.chatId, ctx.userId)
       const artifact = persisted.get(artifactId)
       if (!artifact) {
-        const legacy = loadArtifactFromRecord(
-          Object.fromEntries(persisted),
-          artifactId
-        )
+        const legacy = loadArtifactFromRecord(Object.fromEntries(persisted), artifactId)
         if (!legacy) {
           return {
             toolName,

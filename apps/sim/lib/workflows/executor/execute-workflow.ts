@@ -4,6 +4,7 @@ import { generateId } from '@sim/utils/id'
 import {
   assertBillingAttributionSnapshot,
   type BillingAttributionSnapshot,
+  resolveBillingAttribution,
 } from '@/lib/billing/core/billing-attribution'
 import { resolveChildExecutionLineage } from '@/lib/execution/lineage'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
@@ -16,6 +17,59 @@ import type { ExecutionResult, StreamingExecution } from '@/executor/types'
 import type { ResolvedSecretTraceProvenanceV1 } from '@/executor/utils/resolved-secret-trace-registry'
 
 const logger = createLogger('WorkflowExecution')
+
+/**
+ * Ensures workspace execution has a frozen payer snapshot. Copilot tool paths
+ * sometimes arrive without a lifecycle-stamped root attribution; resolve one
+ * from the actor + workspace rather than failing the run.
+ */
+async function resolveExecutionBillingAttribution(params: {
+  requestId: string
+  workflowId: string
+  workspaceId: string
+  actorUserId: string
+  streamConfig?: ExecuteWorkflowOptions
+}): Promise<BillingAttributionSnapshot> {
+  const { requestId, workflowId, workspaceId, actorUserId, streamConfig } = params
+  if (streamConfig?.billingAttribution) {
+    return assertBillingAttributionSnapshot(streamConfig.billingAttribution)
+  }
+
+  const canResolveFromActor =
+    streamConfig?.workflowTriggerType === 'copilot' ||
+    Boolean(streamConfig?.triggeringChatId || streamConfig?.triggeringRunId)
+
+  if (!canResolveFromActor) {
+    logger.error(`[${requestId}] Missing billing attribution for workspace execution`, {
+      workflowId,
+      workspaceId,
+      actorUserId,
+      hasStreamConfig: Boolean(streamConfig),
+      triggerType: streamConfig?.workflowTriggerType,
+      triggeringChatId: streamConfig?.triggeringChatId,
+      triggeringRunId: streamConfig?.triggeringRunId,
+      parentExecutionId: streamConfig?.parentExecutionId,
+    })
+    throw new Error('Billing attribution is required for workspace execution')
+  }
+
+  logger.warn(
+    `[${requestId}] Resolving missing billing attribution for copilot workflow execution`,
+    {
+      workflowId,
+      workspaceId,
+      actorUserId,
+      triggerType: streamConfig?.workflowTriggerType,
+      triggeringChatId: streamConfig?.triggeringChatId ?? null,
+      triggeringRunId: streamConfig?.triggeringRunId ?? null,
+    }
+  )
+  const resolved = await resolveBillingAttribution({
+    actorUserId,
+    workspaceId,
+  })
+  return assertBillingAttributionSnapshot(resolved)
+}
 
 export interface ExecuteWorkflowOptions {
   enabled: boolean
@@ -101,14 +155,26 @@ export async function executeWorkflow(
 
   const workflowId = workflow.id
   const workspaceId = workflow.workspaceId
-  if (!streamConfig?.billingAttribution) {
-    throw new Error('Billing attribution is required for workspace execution')
-  }
-  const billingAttribution = assertBillingAttributionSnapshot(streamConfig.billingAttribution)
+  const billingAttribution = await resolveExecutionBillingAttribution({
+    requestId,
+    workflowId,
+    workspaceId,
+    actorUserId,
+    streamConfig,
+  })
   if (
     billingAttribution.actorUserId !== actorUserId ||
     billingAttribution.workspaceId !== workspaceId
   ) {
+    logger.error(`[${requestId}] Workflow billing attribution mismatch`, {
+      workflowId,
+      workspaceId,
+      actorUserId,
+      attributionActorUserId: billingAttribution.actorUserId,
+      attributionWorkspaceId: billingAttribution.workspaceId,
+      billingEntityType: billingAttribution.billingEntity.type,
+      billingEntityId: billingAttribution.billingEntity.id,
+    })
     throw new Error('Workflow billing attribution does not match its actor and workspace')
   }
 

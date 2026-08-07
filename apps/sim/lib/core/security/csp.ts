@@ -121,7 +121,7 @@ const STATIC_CONNECT_SRC = [
   /** Arena app + hub + internal APIs (e.g. test-service.thearena.ai) */
   'https://*.thearena.ai',
   'wss://*.thearena.ai',
-  'https://api.browser-use.com',
+  'http://127.0.0.1:8010',
   'https://api.elevenlabs.io',
   'wss://api.elevenlabs.io',
   'https://api.exa.ai',

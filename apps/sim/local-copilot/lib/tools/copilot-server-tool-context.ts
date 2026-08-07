@@ -15,5 +15,6 @@ export function toCopilotServerToolContext(
     messageId: ctx.messageId,
     abortSignal: ctx.abortSignal,
     copilotToolExecution: true,
+    ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
   }
 }

@@ -347,6 +347,13 @@ export async function executeMothershipDelegatedTool(
 
   // Remaining delegated tools are sim-/go-routed with registered handlers
   // (run_workflow, list_integration_tools, function_execute, …).
+  logger.info('Delegating Mothership tool', {
+    toolName,
+    workflowId: workflowId ?? null,
+    hasBillingAttribution: Boolean(ctx.billingAttribution),
+    billingEntityType: ctx.billingAttribution?.billingEntity.type ?? null,
+    workspaceId: ctx.workspaceId,
+  })
   const { executeTool } = await import('@/lib/copilot/tool-executor/executor')
   const result = await executeTool(toolName, enrichedArgs, {
     userId: ctx.userId,
@@ -356,6 +363,7 @@ export async function executeMothershipDelegatedTool(
     abortSignal: ctx.abortSignal,
     copilotToolExecution: true,
     userPermission: ctx.userPermission,
+    ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
   })
 
   if (!result.success) {

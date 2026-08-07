@@ -5,15 +5,88 @@ import { getMessageContentText } from '@/local-copilot/lib/providers/message-con
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
+import { findCatalogModel } from '@/providers/models'
 
 /** Fallback tiktoken model when the configured provider model has no encoding. */
 const DEFAULT_TOKEN_COUNT_MODEL = 'gpt-4o'
 
-/** Total prompt budget before calling the LLM (input side; leaves room for tools + output). */
+/**
+ * Soft ceiling for prompt tokens on large-context models.
+ * Keeps cost/latency bounded even when the catalog window is 200k–1M+.
+ */
 export const LOCAL_COPILOT_PROMPT_TOKEN_BUDGET = 120_000
+
+/** Floor so extreme reservations still leave a usable prompt. */
+export const LOCAL_COPILOT_MIN_PROMPT_TOKEN_BUDGET = 8_000
+
+/** Matches Bedrock/Anthropic local-copilot default `maxTokens`. */
+export const LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS = 8_192
+
+/**
+ * Headroom for tokenizer mismatch, message framing, and cache/tool overhead
+ * that `estimateChatMessagesTokens` does not see.
+ */
+export const LOCAL_COPILOT_CONTEXT_SAFETY_BUFFER_TOKENS = 4_000
+
+/** Assumed window when the model is missing from the pricing catalog. */
+export const LOCAL_COPILOT_DEFAULT_CONTEXT_WINDOW = 128_000
 
 /** Workflow JSON above this size is sent as block summaries instead of full state. */
 export const LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET = 24_000
+
+export interface ResolveLocalCopilotPromptTokenBudgetOptions {
+  model: string
+  /** Estimated tokens for tool definitions sent beside the prompt. */
+  toolDefinitionTokens?: number
+  /** Actual `maxTokens` / max output for this request (not catalog capability). */
+  maxOutputTokens?: number
+  /** Soft ceiling — never request more than this even if the model allows it. */
+  softCap?: number
+}
+
+export interface ResolvedLocalCopilotPromptTokenBudget {
+  /** Tokens available for chat messages (system + history + user). */
+  tokenBudget: number
+  /** Catalog (or default) context window used for the calculation. */
+  contextWindow: number
+  /** Tokens reserved for output + tools + safety buffer. */
+  reservedTokens: number
+  /** True when the soft cap, not the model window, bound the budget. */
+  softCapped: boolean
+}
+
+/**
+ * Resolves a model-aware prompt token budget:
+ * `min(softCap, max(minBudget, contextWindow − maxOutput − tools − safety))`.
+ *
+ * Smaller Bedrock windows (e.g. Llama 128k) shrink below the 120k soft cap so
+ * input + tools + maxTokens fit. Larger windows stay soft-capped at 120k.
+ */
+export function resolveLocalCopilotPromptTokenBudget(
+  options: ResolveLocalCopilotPromptTokenBudgetOptions
+): ResolvedLocalCopilotPromptTokenBudget {
+  const softCap = options.softCap ?? LOCAL_COPILOT_PROMPT_TOKEN_BUDGET
+  const maxOutputTokens = Math.max(
+    0,
+    options.maxOutputTokens ?? LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS
+  )
+  const toolDefinitionTokens = Math.max(0, Math.ceil(options.toolDefinitionTokens ?? 0))
+  const reservedTokens =
+    maxOutputTokens + toolDefinitionTokens + LOCAL_COPILOT_CONTEXT_SAFETY_BUFFER_TOKENS
+
+  const catalog = findCatalogModel(options.model)
+  const catalogWindow = catalog?.model.contextWindow
+  const contextWindow =
+    typeof catalogWindow === 'number' && catalogWindow > 0
+      ? catalogWindow
+      : LOCAL_COPILOT_DEFAULT_CONTEXT_WINDOW
+
+  const usable = Math.max(LOCAL_COPILOT_MIN_PROMPT_TOKEN_BUDGET, contextWindow - reservedTokens)
+  const softCapped = usable > softCap
+  const tokenBudget = Math.min(softCap, usable)
+
+  return { tokenBudget, contextWindow, reservedTokens, softCapped }
+}
 
 /** Recent user/assistant turns kept verbatim (full message bodies) in chat history. */
 export const LOCAL_COPILOT_RECENT_TURNS_FULL = 6

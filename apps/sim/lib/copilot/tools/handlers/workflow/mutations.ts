@@ -96,6 +96,28 @@ async function executeCopilotWorkflowTarget(params: {
     params.workflow.workspaceId,
     childExecutionId
   )
+  if (admission.billingAttribution) {
+    logger.info('Copilot workflow execution admitted', {
+      workflowId: params.workflow.id,
+      workspaceId: params.workflow.workspaceId,
+      userId: params.context.userId,
+      billingEntityType: admission.billingAttribution.billingEntity.type,
+      billingEntityId: admission.billingAttribution.billingEntity.id,
+      targetReservation: admission.targetReservation,
+    })
+  } else {
+    logger.warn(
+      'Copilot workflow admission has no billing attribution; executeWorkflow will resolve',
+      {
+        workflowId: params.workflow.id,
+        workspaceId: params.workflow.workspaceId,
+        userId: params.context.userId,
+        chatId: params.context.chatId ?? null,
+        runId: params.context.runId ?? null,
+        triggerType: params.options.workflowTriggerType ?? null,
+      }
+    )
+  }
   const trustedInitialResolvedSecretTraceProvenance =
     params.context.resolvedSecretTraceRegistry?.exportProvenanceForValue(params.input)
   const completePendingActivation =
@@ -109,7 +131,9 @@ async function executeCopilotWorkflowTarget(params: {
       params.context.userId,
       {
         ...params.options,
-        billingAttribution: admission.billingAttribution,
+        ...(admission.billingAttribution
+          ? { billingAttribution: admission.billingAttribution }
+          : {}),
         ...(trustedInitialResolvedSecretTraceProvenance
           ? { trustedInitialResolvedSecretTraceProvenance }
           : {}),
