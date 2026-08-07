@@ -190,3 +190,40 @@ Draft: `.upstream-sync/ledger/2026-08-07/merge-plan.draft.json` (`kind: "draft"`
   file) is still the standing fix for the recurring `lib/copilot/generated/` hazard.
 - Arena brand strings still live inline in `(landing)` JSX; move them to `lib/branding/`.
 - Re-evaluate `turbopackFileSystemCacheForBuild` against upstream's measured 3.2× build win.
+
+## Usage
+
+### Usage (stack rollup)
+
+- **This slice:** $9.6558 · 12,693,173 in / 77,159 out · 1 agent(s)
+- **Prior stack:** $31.1983 · 305,792,819 in / 1,318,900 out · 37 agent(s)
+- **Whole stack:** $40.8541 · 318,485,992 in / 1,396,059 out · 38 agent(s)
+
+### parent-grill-analysis
+- **Model:** `claude-opus-5`
+- **Iterations:** 1
+- **Input tokens (direct):** 1,644
+- **Input tokens (cache read):** 12,453,323
+- **Input tokens (cache create):** 238,206
+- **Input tokens (total):** 12,693,173
+- **Output tokens:** 77,159
+- **Cost:** $9.655848 (provider-reported)
+
+### Totals
+- **Total input tokens:** 12,693,173
+- **Total output tokens:** 77,159
+- **Primary models:** claude-opus-5
+- **Total cost:** $9.655848
+- **Provider-reported cost:** $9.655848
+
+### Cost by agent
+- **parent-grill-analysis:** $9.655848 (provider-reported)
+
+## Status
+
+awaiting_input
+
+## Open questions
+
+Grill left unanswered product decisions in `open-questions.md`. Merge will not start until `/upstream-sync resume`.
+
