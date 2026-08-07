@@ -7,7 +7,8 @@
       "dev:full:minimal-registry"
     ],
     "sharedDependencyVersions": "theirs",
-    "sharedDependencyVersionsNote": "On a version-only conflict for a dependency BOTH sides declare, take upstream's version. Fork-only deps (sanitize-html, selenium-webdriver, soap, ...) are kept by the union. Established run 2026-08-06-5: upstream #5848 bumped sharp 0.34.3 -> 0.35.3 and js-yaml 4.2.0 -> 4.3.0 for security advisories; pinning the fork's older version would silently keep the advisory. Regenerate bun.lock after manifests; never hand-merge bun.lock."
+    "sharedDependencyVersionsNote": "On a version-only conflict for a dependency BOTH sides declare, take upstream's version. Fork-only deps (sanitize-html, selenium-webdriver, soap, ...) are kept by the union. Established run 2026-08-06-5: upstream #5848 bumped sharp 0.34.3 -> 0.35.3 and js-yaml 4.2.0 -> 4.3.0 for security advisories; pinning the fork's older version would silently keep the advisory. Regenerate bun.lock after manifests; never hand-merge bun.lock.",
+    "overridesNote": "IMPORTANT (run 2026-08-07): the version rule must be applied to `overrides` blocks too, and to BOTH manifests. The root package.json `overrides` auto-merges to upstream's version, but apps/sim/package.json carries a FORK-ONLY `overrides` block that git never reconciles against it. This run the root resolved to next 16.2.12 (upstream #5890 + #6077, both security-advisory bumps) while apps/sim/package.json still pinned `next`/`@next/env` to 16.2.6 inside the conflict region - a split pin that reintroduces the advisory and can desync @next/swc. After every merge, diff `next` across root overrides, root optionalDependencies (@next/swc-*), apps/sim dependencies, and apps/sim overrides; they must all be the same version."
   },
   "forkFirst": [
     ".github/workflows/ci.yml",
@@ -121,13 +122,33 @@
     "apps/sim/lib/copilot/tools/server/router.ts",
     "apps/sim/lib/copilot/tools/descriptions.ts",
     "apps/sim/lib/copilot/tools/server/workflow/edit-workflow/validation.ts",
-    "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/"
+    "apps/sim/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/credential-selector/",
+    "apps/sim/stores/chat/",
+    "apps/sim/lib/api/contracts/chats.ts",
+    "apps/sim/hooks/queries/chats.ts",
+    "apps/sim/lib/workflows/orchestration/chat-deploy.ts",
+    "apps/sim/lib/workflows/streaming/streaming.ts",
+    "apps/sim/app/api/chat/route.ts",
+    "apps/sim/app/api/chat/manage/",
+    "apps/sim/app/api/workflows/[id]/execute/route.ts",
+    "apps/sim/lib/api/client/request.ts",
+    "apps/sim/lib/core/security/input-validation.ts",
+    "apps/sim/hooks/queries/kb/knowledge.ts",
+    "apps/sim/hooks/queries/oauth/",
+    "apps/sim/hooks/use-oauth-return.ts",
+    "apps/sim/app/layout.tsx",
+    "apps/sim/app/workspace/[workspaceId]/layout.tsx",
+    "apps/sim/lib/copilot/tools/tool-display.ts",
+    "apps/sim/lib/copilot/chat/post.ts",
+    "apps/sim/lib/copilot/request/lifecycle/run.ts",
+    "apps/sim/tools/shopify/constants.ts"
   ],
   "dedupeOnUnion": [
     "apps/sim/lib/core/config/env.ts",
     "apps/sim/lib/core/config/api-keys.ts",
     "apps/sim/lib/uploads/config.ts",
-    "apps/sim/providers/utils.ts"
+    "apps/sim/providers/utils.ts",
+    "apps/sim/lib/copilot/tools/tool-display.ts"
   ],
   "dedupeOnUnionNote": "Union hazard class discovered on run 2026-08-06-5. On these files upstream re-adds, at a NEW position, a symbol the fork already defines elsewhere in the SAME file (fork inherited it earlier or authored a superset). A naive union produces duplicate object-literal keys / duplicate exports / duplicate else-if branches, which is a hard TypeScript error, not a lint nit. Measured cases: env.ts (XAI_API_KEY_1..3 already at fork L168-171, upstream re-adds them next to KIMI_API_KEY_1..3), api-keys.ts (fork already has `provider !== 'xai'` and `else if (provider === 'xai')`), uploads/config.ts (fork already exports BLOB_CONFIG), providers/utils.ts (fork retains SambaNova + OpenRouter in the hosted gate). Rule: union the genuinely NEW symbols only, then grep the merged file for duplicate identifiers.",
   "manualReview": [
@@ -165,8 +186,24 @@
     "apps/sim/lib/logs/execution/",
     "apps/sim/lib/copilot/request/",
     "apps/sim/app/workspace/[workspaceId]/settings/",
-    "apps/sim/components/settings/"
+    "apps/sim/components/settings/",
+    "apps/sim/lib/workspaces/policy.ts",
+    "apps/sim/lib/invitations/",
+    "apps/sim/lib/workspaces/create-workspace.ts",
+    "apps/sim/tools/exa/",
+    "apps/sim/tools/firecrawl/",
+    "apps/sim/blocks/blocks/exa.ts",
+    "apps/sim/providers/cost-policy.ts",
+    "apps/sim/executor/handlers/router/",
+    "apps/sim/executor/handlers/evaluator/",
+    "apps/sim/lib/copilot/tools/server/files/"
   ],
+  "manualReviewNotes": {
+    "apps/sim/lib/workspaces/policy.ts": "Both sides independently rewrote the SAME `!isBillingEnabled` branch of `evaluateWorkspaceCreationPolicy` — the branch Arena actually runs. The fork forces every workspace to workspaceMode ORGANIZATION and tracks personal-ness on the fork-authored `workspace.is_personal` column (migration 0248_workspace_is_personal.sql, commit `ccfdd45292` \"Personal workspace attaching to Org\"), gating non-admins to one workspace. Upstream #5918 keeps the mode split and lets plain members create org workspaces freely once billing is off, adding `observedOrganizationId`, `blockedReasonCode` and a billing-identity lock. Never auto-resolve this file — it is a product decision (asked as Q1 on run 2026-08-07 / PR #690).",
+    "apps/sim/lib/invitations/": "The fork has never touched this directory, so upstream #5918's join-time workspace sweep lands WHOLE via auto-merge with zero conflict markers. Accepting an organization invitation now reassigns the joiner's owned workspaces (organizationId + billedAccountUserId) into that organization. A clean merge here is a live behaviour change — audit it every sync even when git reports no conflict.",
+    "apps/sim/tools/exa/": "Upstream #6074 refreshed the whole integration against the live API and retired `exa_research` (/research/v1 returns HTTP 410 RESEARCH_RETIRED — the fork's operation is hard-broken in production). Upstream's block routes saved `exa_research` workflows to the new `exa_agent` and preserves the research output shape, and it already carries the fork's four crawl/published-date subBlocks. Upstream-first is correct here; the only fork re-apply is the `apiKey` subBlock (`required: false, hidden: true` — Arena always supplies the hosted key). Same shape for firecrawl: upstream extracted `firecrawlHosting()` from the inline `hosting` blocks the fork wrote.",
+    "apps/sim/lib/copilot/tools/server/files/": "Upstream retired the copilot `delete_file` / `delete_file_folder` tools with no replacement: `delete-file.ts` is DELETED silently (fork never modified it since base, so git takes the deletion with no conflict), the catalog + schema entries vanish, and `tool-schemas-v1.ts` auto-merges to zero `delete_file` occurrences. The fork-only `apps/sim/local-copilot/` still advertises and delegates both tool names, so accepting the deletion breaks Arena's local copilot at runtime, not at build time. Restore additively (run 2026-08-06-5 precedent) and assert the exports after every merge."
+  },
   "regenerateAfterMerge": [
     "bun run mship:generate"
   ],

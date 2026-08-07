@@ -1,0 +1,332 @@
+{
+  "version": 1,
+  "runId": "2026-08-07",
+  "kind": "draft",
+  "selfResolutions": [
+    {
+      "decision": "Fork owns CI/infra workflows",
+      "paths": [".github/workflows/ci.yml"],
+      "prefixes": [".github/workflows/"],
+      "strategy": "ours",
+      "rationale": "Upstream runs Blacksmith + ECR; the fork runs ubuntu-latest + GHCR with its own migrate wiring. Established forkFirst on run 2026-08-06-5; nine hunks of pure infra ownership this slice.",
+      "cite": "merge-policy.forkFirst"
+    },
+    {
+      "decision": "Renumber upstream migrations 0266-0276 to 0270-0280; keep the fork's 0266-0269; rebuild the journal",
+      "paths": [
+        "packages/db/migrations/meta/_journal.json",
+        "packages/db/migrations/meta/0266_snapshot.json",
+        "packages/db/migrations/meta/0267_snapshot.json",
+        "packages/db/migrations/meta/0268_snapshot.json",
+        "packages/db/migrations/meta/0269_snapshot.json"
+      ],
+      "prefixes": ["packages/db/migrations/"],
+      "strategy": "mustEdit",
+      "rationale": "Fork's highest applied idx is 269 (renumbered from upstream 0262-0265 last run). Upstream adds eleven migrations starting at 0266, so the four add/add snapshot conflicts and the auto-merged journal collide. The journal merges CLEAN into duplicate idx 266/267/268/269 - measured on tree de2ad423, 281 entries. Keep the fork's already-applied indices and shift upstream's block by +4, preserving upstream's relative order and SQL verbatim. Do not run drizzle-kit generate. (The duplicate idx 239 is present at the baseline and is not sync-caused.)",
+      "cite": "merge-policy.manualReview + extensibility-notes 2026-08-05 / 2026-08-06-5"
+    },
+    {
+      "decision": "Union both schema slices - chat SSE columns beside the fork's deployment columns, and both usage-log indexes",
+      "paths": ["packages/db/schema.ts"],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "Three conflicts, all parallel additions. chat: fork deploymentType/redirectUrl vs upstream includeThinking/includeToolCalls. usage_log: the fork's billing_entity_period_billable_idx and upstream's new billing_period_cost_idx are differently named covering indexes, not replacements - upstream's own comment says the older one is kept deliberately.",
+      "cite": "merge-policy.unionPaths (packages/db/schema.ts)"
+    },
+    {
+      "decision": "Adopt upstream's validated Exa/Firecrawl refresh; drop exa_research; re-apply the fork's hidden/optional apiKey subBlock",
+      "paths": [
+        "apps/sim/blocks/blocks/exa.ts",
+        "apps/sim/tools/exa/answer.ts",
+        "apps/sim/tools/exa/find_similar_links.ts",
+        "apps/sim/tools/exa/get_contents.ts",
+        "apps/sim/tools/exa/research.ts",
+        "apps/sim/tools/exa/search.ts",
+        "apps/sim/tools/exa/types.ts",
+        "apps/sim/tools/exa/hosting.ts",
+        "apps/sim/tools/firecrawl/crawl.ts",
+        "apps/sim/tools/firecrawl/extract.ts",
+        "apps/sim/tools/firecrawl/map.ts",
+        "apps/sim/tools/firecrawl/search.ts"
+      ],
+      "prefixes": ["apps/sim/tools/exa/", "apps/sim/tools/firecrawl/"],
+      "strategy": "theirs",
+      "rationale": "Upstream #6074 validated every claim against the live API with a real key: /research/v1 returns HTTP 410 RESEARCH_RETIRED, so the fork's exa_research is already hard-broken in production. Upstream routes saved exa_research workflows to the new exa_agent operation AND preserves the research output shape, and its block already contains all four of the fork's crawl/published-date subBlocks (deprecated but working). Both sides independently built hosted-key billing with the SAME envKeyPrefix (EXA_API_KEY / FIRECRAWL_API_KEY) and byokProviderId, so this is convergence, not a product fork. mustEdit follow-through: re-apply the fork's apiKey subBlock (required: false, hidden: true - Arena always supplies the hosted key), delete the now-orphaned tools/exa/hosting.ts and tools/exa/research.ts, and confirm upstream's firecrawlHosting() keeps the fork's $0.001-per-credit rate.",
+      "cite": "simstudioai/sim#6074 commit body"
+    },
+    {
+      "decision": "Restore the copilot delete_file / delete_file_folder family additively",
+      "paths": [
+        "apps/sim/lib/copilot/tools/server/files/delete-file.ts",
+        "apps/sim/lib/copilot/generated/tool-catalog-v1.ts",
+        "apps/sim/lib/copilot/generated/tool-schemas-v1.ts",
+        "apps/sim/lib/copilot/tools/server/router.ts"
+      ],
+      "prefixes": [],
+      "strategy": "mustEdit",
+      "rationale": "Upstream retired both tools with no replacement. Census: DeleteFile / DeleteFileFolder = base 1, fork 1, upstream 0, merged 0 - upstream tools the fork still depends on. delete-file.ts is deleted SILENTLY (fork never modified it since base, so git takes the deletion with no conflict) and tool-schemas-v1.ts auto-merges to zero delete_file occurrences. The fork-only apps/sim/local-copilot/ still advertises and delegates both names in orchestrator.ts, specialists/domains.ts and mothership-delegated-tool-defs.ts, so accepting the deletion breaks Arena's local copilot at runtime, not at build time. router.ts DOES conflict and still references [DeleteFile.id], so a naive --ours there is a hard build break instead. Restoring additively is unconditionally safe on the upstream side.",
+      "cite": "extensibility-notes 2026-08-06-5 (fork-consumed catalog exports)"
+    },
+    {
+      "decision": "Router and Evaluator adopt resolveProxiedModelCost; keep resolveBlockModelCost exported",
+      "paths": [
+        "apps/sim/executor/handlers/router/router-handler.ts",
+        "apps/sim/executor/handlers/router/router-handler.test.ts",
+        "apps/sim/executor/handlers/evaluator/evaluator-handler.ts",
+        "apps/sim/providers/utils.ts"
+      ],
+      "prefixes": [],
+      "strategy": "theirs",
+      "rationale": "resolveBlockModelCost is fork-authored (base 0 / fork 13 / upstream 0). Upstream's new providers/cost-policy.ts centralises the same two concerns - the BYOK billability gate and the margin multiplier - and in the merged tree providers/index.ts already applies applyModelCostPolicy / installStreamingCostPolicy on the provider path. Keeping the fork helper at these two call sites would therefore apply the margin TWICE on Router and Evaluator blocks. Upstream containing all of the fork helper's features is exactly the condition the human set on run 2026-08-06-4 Q1. Keep the export: the fork-only lib/billing/core/historical-workflow-reconciliation.ts still consumes it.",
+      "cite": "qa-history a-5204435835 (run 2026-08-06-4 Q1 = B when upstream supersets)"
+    },
+    {
+      "decision": "One Next.js version across all four pin sites",
+      "paths": ["package.json", "apps/sim/package.json", "bun.lock"],
+      "prefixes": [],
+      "strategy": "mustEdit",
+      "rationale": "Root overrides auto-merged to upstream's 16.2.12 (#5890 and #6077, both security-advisory bumps) but apps/sim/package.json carries a FORK-ONLY overrides block still pinning next and @next/env to 16.2.6 inside the conflict region - a split pin that reintroduces the advisory and can desync @next/swc. Union the manifests otherwise (fork keeps @ai-hero/sandcastle, yaml, trustedDependencies; upstream contributes opentype.js, sharp 0.35.3, zod 4.3.6, e2b). Regenerate bun.lock; never hand-merge it.",
+      "cite": "merge-policy.packageJson.sharedDependencyVersions + overridesNote"
+    },
+    {
+      "decision": "Fork brand strings win on the landing surface",
+      "paths": [
+        "apps/sim/app/(landing)/components/hero/hero.tsx",
+        "apps/sim/app/(landing)/components/home-structured-data/home-structured-data.tsx",
+        "apps/sim/app/(landing)/page.tsx"
+      ],
+      "prefixes": [],
+      "strategy": "ours",
+      "rationale": "Fourth consecutive sync conflicting on the same Arena brand lines (upstream #5887 / #5906 / #5910 / #5912 / #5996 SEO copy rewrites). Take the fork's headline, structured-data name and page metadata; take upstream's structural edits where they do not carry Sim brand strings. Standing follow-up: move these strings into lib/branding/ to retire the conflict class.",
+      "cite": "extensibility-notes 2026-08-06-4 (landing brand strings)"
+    },
+    {
+      "decision": "Keep the fork's socket-token session-restore path",
+      "paths": ["apps/sim/app/api/auth/socket-token/route.ts"],
+      "prefixes": [],
+      "strategy": "ours",
+      "rationale": "The fork's flow already performs upstream's forced disableCookieCache DB read and then adds a restore path for the DB-replaced / cookie-domain-migration case the fork documents inline. Fork-first is the status quo and therefore the no-change option. Logged as a follow-up: the restore can recreate a session row upstream deliberately 401s after sign-out.",
+      "cite": "merge-policy.forkFirst (apps/sim/lib/auth/session-cookie-domain.ts family)"
+    },
+    {
+      "decision": "Keep the fork's Turbopack build-cache flag; union the rest of next.config.ts and proxy.ts",
+      "paths": ["apps/sim/next.config.ts", "apps/sim/proxy.ts", ".gitignore", "apps/sim/.env.example"],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "turbopackFileSystemCacheForBuild was added by the fork in 90f7b489cb ('fix: turbo cache eviction and swap bump') for its own EC2/GHCR build; upstream #6080 removed it for their runners. Keep the fork's build config and flag it for re-evaluation. proxy.ts, .gitignore and .env.example are pure parallel additions - upstream's isNonCanonicalSimHost compares against CANONICAL_SITE_HOST so it is host-relative and inert under the fork's redefined isHosted.",
+      "cite": "merge-policy.unionPaths (next.config.ts, proxy.ts, .env.example)"
+    },
+    {
+      "decision": "Accept the fork's deletion of the two mothership stream test files",
+      "paths": [
+        "apps/sim/app/workspace/[workspaceId]/home/hooks/use-chat.test.ts",
+        "apps/sim/app/workspace/[workspaceId]/home/hooks/stream/turn-model-serialize.test.ts"
+      ],
+      "prefixes": [],
+      "strategy": "delete",
+      "rationale": "Both are modify/delete: deleted in HEAD, modified upstream. Checked for relocation per the run 2026-08-06-5 rule - neither module moved; the fork simply removed the test files (commit d4a304b079) while keeping use-chat.ts. Keeping them deleted is the status quo; restoring upstream's versions would assert upstream's behaviour against the fork's diverged use-chat.ts. Logged as a test-coverage follow-up.",
+      "cite": "extensibility-notes 2026-08-06-5 (modify/delete is often a relocation - checked, it is not)"
+    },
+    {
+      "decision": "Union every remaining parallel-addition conflict",
+      "paths": [],
+      "prefixes": [
+        "apps/sim/stores/chat/",
+        "apps/sim/lib/api/contracts/chats.ts",
+        "apps/sim/hooks/queries/chats.ts",
+        "apps/sim/lib/workflows/orchestration/chat-deploy.ts",
+        "apps/sim/lib/workflows/streaming/streaming.ts",
+        "apps/sim/app/api/chat/",
+        "apps/sim/app/(interfaces)/chat/",
+        "apps/sim/app/api/workflows/[id]/execute/route.ts",
+        "apps/sim/executor/execution/types.ts",
+        "apps/sim/lib/workflows/executor/execute-workflow.ts",
+        "apps/sim/lib/api/client/request.ts",
+        "apps/sim/lib/core/security/input-validation.ts",
+        "apps/sim/lib/billing/core/billing.ts",
+        "apps/sim/lib/webhooks/polling/utils.ts",
+        "apps/sim/hooks/queries/kb/knowledge.ts",
+        "apps/sim/hooks/queries/oauth/",
+        "apps/sim/hooks/use-oauth-return.ts",
+        "apps/sim/lib/copilot/chat/",
+        "apps/sim/lib/copilot/request/",
+        "apps/sim/lib/copilot/tools/tool-display.ts",
+        "apps/sim/app/layout.tsx",
+        "apps/sim/app/workspace/[workspaceId]/layout.tsx",
+        "apps/sim/app/workspace/[workspaceId]/home/",
+        "apps/sim/app/workspace/[workspaceId]/knowledge/",
+        "apps/sim/tools/index.ts",
+        "apps/sim/tools/types.ts",
+        "apps/sim/tools/shopify/constants.ts",
+        "apps/sim/providers/anthropic/",
+        "apps/sim/providers/openai/"
+      ],
+      "strategy": "union",
+      "rationale": "Inspected every one of these conflicts on tree de2ad423: each is the fork and upstream adding different members to the same import list, type, subBlock array or switch. Two dedupe hazards to watch - tool-display.ts has a duplicate `file: 'File Agent'` key on BOTH sides of its conflict, and hooks/queries/kb/knowledge.ts + tools/exa/types.ts are relocations (upstream moved knowledgeKeys to a new module and imports it), so union the new symbols only and then grep the merged file for duplicate identifiers. tools/index.ts needs both halves: the fork's resolveHostingField dynamic provider resolution AND upstream's try/catch that keeps a run alive when metering fails.",
+      "cite": "merge-policy.unionPaths + dedupeOnUnion"
+    },
+    {
+      "decision": "Fork branding and suppressions win in the shell; take upstream's desktop chrome additively",
+      "paths": [
+        "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/sidebar.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/settings-sidebar/settings-sidebar.tsx",
+        "apps/sim/app/workspace/[workspaceId]/skills/skills.tsx",
+        "apps/sim/ee/whitelabeling/components/whitelabeling-settings.tsx",
+        "apps/sim/app/workspace/providers/socket-provider.tsx"
+      ],
+      "prefixes": [],
+      "strategy": "union",
+      "rationale": "Keep SidebarBrandHeader, arenaHubAgentsUrl, 'Add to Arena' and FORK_SUPPRESSED_SETTINGS_SECTIONS / forkOnlyNavigationItems; add upstream's desktop drag region, peek handling and the desktop/browser/terminal settings prefetch cases. No suppression needed for the new sections: upstream gates them behind item.requiresDesktopSurface, which is false in a browser, so they self-hide. whitelabeling-settings.tsx is fork favicon upload vs upstream wordmark upload - keep both blocks.",
+      "cite": "merge-policy.unionPaths (sidebar.tsx) + manualReview (components/settings/)"
+    }
+  ],
+  "openQuestions": [
+    {
+      "id": "Q1",
+      "question": "Workspace-creation policy: keep the fork's is_personal model (which caps a plain member at one workspace), adopt upstream #5918's rewrite (which lets members create organization workspaces freely once billing is off), or take upstream's structure and keep the fork's cap on top? Both sides rewrote the same !isBillingEnabled branch that Arena actually runs."
+    },
+    {
+      "id": "Q2",
+      "question": "Upstream #5918's join-time workspace sweep lands via a CLEAN auto-merge (the fork has never touched lib/invitations/): accepting an organization invitation will reassign organizationId and billedAccountUserId on every workspace the joiner owns. Keep it as shipped, or neutralise the migration step at accept time?"
+    }
+  ],
+  "childClusters": [
+    {
+      "id": "db-schema-migrations",
+      "prefix": "packages/db/",
+      "files": [],
+      "strategy": "union",
+      "notes": "5 conflicts (schema.ts + four add/add meta snapshots) plus two clean-but-wrong files. Renumber upstream 0266-0276 to 0270-0280 (.sql and meta snapshots), keep the fork's 0266-0269, rebuild _journal.json to 281 unique-idx entries. Union both usage_log indexes and both chat column groups. Area-level; real files assigned in Phase B."
+    },
+    {
+      "id": "infra-manifests",
+      "prefix": "",
+      "files": [],
+      "strategy": "union",
+      "notes": "8 conflicts: .github/workflows/ci.yml (ours), .gitignore, apps/sim/.env.example, next.config.ts, proxy.ts (union), package.json + apps/sim/package.json (union with upstream versions - single next 16.2.12 across all four pin sites), bun.lock (regenerate)."
+    },
+    {
+      "id": "chat-agent-stream",
+      "prefix": "apps/sim/app/api/chat/",
+      "files": [],
+      "strategy": "union",
+      "notes": "14 conflicts spanning (interfaces)/chat, api/chat, stores/chat, contracts/chats, hooks/queries/chats, chat-deploy, streaming, execute route and executor/execution/types. Fork adds deploymentType/redirectUrl/department/userWorkspaceIds; upstream #5671/#5956 add includeThinking/includeToolCalls/agentEvents. Parallel additions throughout. One real API collision: stores/chat/types.ts - keep the fork's extended finalizeMessageStream signature AND add upstream's setMessageContent."
+    },
+    {
+      "id": "tools-hosted-keys",
+      "prefix": "apps/sim/tools/",
+      "files": [],
+      "strategy": "theirs",
+      "notes": "14 conflicts: exa (6, incl. the research.ts modify/delete), firecrawl (4), blocks/blocks/exa.ts, tools/index.ts, tools/types.ts, tools/shopify/constants.ts (add/add, pure union). Upstream-first on exa/firecrawl per #6074; union on index.ts (fork resolveHostingField + upstream try/catch), types.ts and shopify. mustEdit: re-apply the hidden/optional apiKey subBlock, remove tools/exa/hosting.ts and tools/exa/research.ts."
+    },
+    {
+      "id": "org-workspace-policy",
+      "prefix": "apps/sim/lib/workspaces/",
+      "files": [],
+      "strategy": "union",
+      "notes": "8 conflicts: lib/workspaces/policy.ts + test, app/api/workspaces/route.ts, lib/credentials/access.ts + test, app/invite/[id]/invite.tsx, app/workspace/page.tsx, sidebar workspace-header.tsx. GATED ON Q1 and Q2 - do not instantiate until Phase B locks the directives. credentials/access.ts is independent of the answer: union the imports and keep the fork's ensureBilledAccountCredentialMembership either way."
+    },
+    {
+      "id": "copilot-generated",
+      "prefix": "apps/sim/lib/copilot/",
+      "files": [],
+      "strategy": "union",
+      "notes": "7 conflicts: tool-catalog-v1.ts (small type union), tools/server/router.ts, tool-display.ts (has a duplicate `file: 'File Agent'` key on both sides - dedupeOnUnion), chat/post.ts, chat/workspace-context.ts, request/lifecycle/run.ts, tools/server/files/create-file.ts. Plus the additive restore of the delete_file family. Verify BOTH the Superagent GFM sentence and every fork-consumed export."
+    },
+    {
+      "id": "shell-settings-desktop",
+      "prefix": "apps/sim/app/workspace/",
+      "files": [],
+      "strategy": "union",
+      "notes": "8 conflicts: app/layout.tsx, workspace/[workspaceId]/layout.tsx, sidebar.tsx, settings-sidebar.tsx, skills.tsx, whitelabeling-settings.tsx, socket-provider.tsx, api/auth/socket-token/route.ts (ours). Keep Arena branding and the fork suppression sets; add upstream's desktop chrome, which self-hides behind requiresDesktopSurface."
+    },
+    {
+      "id": "home-mothership",
+      "prefix": "apps/sim/app/workspace/[workspaceId]/home/",
+      "files": [],
+      "strategy": "union",
+      "notes": "6 conflicts: home.tsx (upstream turns the early-return empty state into inline content so the resource panel exists while composing - reconcile against the fork's ChatSurfaceProvider/CreditsChip tree), use-chat.ts, special-tags.tsx, tool-call-item.tsx, plus two modify/delete test files the fork removed (keep deleted)."
+    },
+    {
+      "id": "providers-cost",
+      "prefix": "apps/sim/providers/",
+      "files": [],
+      "strategy": "theirs",
+      "notes": "6 conflicts: anthropic/core.ts (fork's prompt-cache helpers vs upstream #5922 cache breakpoints - union the fork's helpers into upstream's structure), openai/utils.ts (keep the fork's createReadableStreamFromOpenAIStream export, take upstream's value import of Stream), models.test.ts, and the router/evaluator cost switch to resolveProxiedModelCost."
+    },
+    {
+      "id": "misc-client-hooks",
+      "prefix": "apps/sim/hooks/",
+      "files": [],
+      "strategy": "union",
+      "notes": "13 conflicts: kb/knowledge.ts (knowledgeKeys RELOCATED upstream - import it, do not re-declare, and confirm the fork's userAccess key survives in the new home), oauth/oauth-connections.ts, use-oauth-return.ts (keep the fork's Unipile hosted-redirect handlers, add upstream's desktop bridge), lib/api/client/request.ts, lib/core/security/input-validation.ts (isPrivateOrReservedIP is fork-consumed by 9 modules and gone upstream - keep it), lib/billing/core/billing.ts, lib/webhooks/polling/utils.ts, lib/workflows/executor/execute-workflow.ts, knowledge UI components, and the three landing brand files (ours)."
+    }
+  ],
+  "proposedDirectives": {
+    "Q1-A": {
+      "delete": [],
+      "checkoutTheirs": [],
+      "checkoutOurs": ["apps/sim/lib/workspaces/policy.ts", "apps/sim/lib/workspaces/policy.test.ts"],
+      "mustEdit": [
+        "apps/sim/app/api/workspaces/route.ts",
+        "apps/sim/lib/workspaces/create-workspace.ts",
+        "apps/sim/lib/api/contracts/workspaces.ts",
+        "apps/sim/app/workspace/page.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/workspace-header.tsx"
+      ],
+      "overrideForkFirst": [],
+      "notes": "Fork-first. Keep isPersonal, userHasPersonalWorkspace and the !isOrgAdmin && !isPersonal 403 cap verbatim. Upstream's new modules (billing-identity-lock, requireOrganizationOwnerId, disclosure-copy) are taken additively so the tree compiles, but the policy function's return shape stays the fork's. mustEdit on route.ts: it must keep passing isPersonal AND satisfy upstream's createWorkspace signature - add observedOrganizationId as a pass-through field rather than a decision input. Verify the WorkspaceCreationPolicy type in hooks/queries/workspace.ts still matches what the route returns."
+    },
+    "Q1-B": {
+      "delete": [],
+      "checkoutTheirs": ["apps/sim/lib/workspaces/policy.ts", "apps/sim/lib/workspaces/policy.test.ts"],
+      "checkoutOurs": [],
+      "mustEdit": [
+        "apps/sim/app/api/workspaces/route.ts",
+        "apps/sim/lib/workspaces/create-workspace.ts",
+        "apps/sim/lib/api/contracts/workspaces.ts",
+        "apps/sim/lib/billing/authorization.ts",
+        "apps/sim/app/workspace/page.tsx",
+        "apps/sim/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/workspace-header.tsx"
+      ],
+      "overrideForkFirst": [],
+      "notes": "Upstream-first. Adopt #5918's policy end-to-end including observedOrganizationId and blockedReasonCode. The workspace.is_personal COLUMN stays in the schema and its non-policy consumers keep working (settings api-keys/secrets UI, lib/billing/authorization.ts, lib/channel-accounts.ts, the v1 admin import route) - only the policy function stops reading it. Drop userHasPersonalWorkspace from the creation path and drop the !isOrgAdmin && !isPersonal cap. Behaviour change to announce: plain Arena members can create additional organization workspaces. Verify lib/workspaces/create-workspace.ts still sets is_personal for a user's first workspace so the UI consumers do not all read false."
+    },
+    "Q1-C": {
+      "delete": [],
+      "checkoutTheirs": [],
+      "checkoutOurs": [],
+      "mustEdit": [
+        "apps/sim/lib/workspaces/policy.ts",
+        "apps/sim/lib/workspaces/policy.test.ts",
+        "apps/sim/app/api/workspaces/route.ts",
+        "apps/sim/lib/workspaces/create-workspace.ts",
+        "apps/sim/lib/api/contracts/workspaces.ts",
+        "apps/sim/app/workspace/page.tsx"
+      ],
+      "overrideForkFirst": [],
+      "notes": "Hybrid. Take upstream's structure - observedOrganizationId, requireOrganizationOwnerId, the billing-identity lock, blockedReasonCode and the new return shape - then re-add the fork's !isOrgAdmin && !isPersonal 403 guard on the !isBillingEnabled path only, sourcing isPersonal from userHasPersonalWorkspace. Return both observedOrganizationId and isPersonal so no consumer breaks. Most work of the three, and the only option that ends the structural divergence while preserving today's member restriction."
+    },
+    "Q2-A": {
+      "delete": [],
+      "checkoutTheirs": [],
+      "checkoutOurs": [],
+      "mustEdit": ["apps/sim/app/invite/[id]/invite.tsx"],
+      "overrideForkFirst": [],
+      "notes": "Keep the sweep as upstream shipped it. lib/invitations/ is taken wholesale from the auto-merge - no directive needed there. invite.tsx must carry BOTH sides: upstream's buildMembershipNotice / buildWorkspaceMigrationNotice disclosure and useInvitationDetails, and the fork's auto-login effect plus useBrandConfig. Post-merge verification: accept an org invite in a scratch workspace and confirm organizationId and billedAccountUserId move as disclosed, and that the disclosure-outdated path renders rather than throwing."
+    },
+    "Q2-B": {
+      "delete": [],
+      "checkoutTheirs": [],
+      "checkoutOurs": [],
+      "mustEdit": [
+        "apps/sim/lib/invitations/core.ts",
+        "apps/sim/app/invite/[id]/invite.tsx",
+        "apps/sim/lib/invitations/disclosure-copy.ts"
+      ],
+      "overrideForkFirst": ["apps/sim/lib/invitations/"],
+      "notes": "Disable the sweep. Take #5918's invitation refactor for everything else but neutralise the workspace-migration step inside the acceptance transaction in lib/invitations/core.ts, and suppress the migration notice in invite.tsx and disclosure-copy.ts so the UI does not promise a move that will not happen. Keep the disclosure-outdated guard itself intact - with an empty sweep set it is inert. This is a fork carve-out inside an actively developed upstream module: record it in extensibility-notes and expect to re-apply it every sync. Also add lib/invitations/ to merge-policy.forkFirst if this option is chosen."
+    }
+  },
+  "notes": "Predicted 89 conflicts on tree de2ad423 (83 content, 3 modify/delete, 5 add/add, 0 renames); 81 self-resolved, 8 gated on Q1/Q2. Four silent hazards found in files git reports CLEAN: the migration journal auto-merged into duplicate idx 266-269; lib/copilot/tools/server/files/delete-file.ts is deleted with no conflict while local-copilot still delegates it; apps/sim/package.json pins next 16.2.6 against the root's merged 16.2.12; and lib/invitations/ takes upstream's join-time workspace sweep wholesale. All four are covered by selfResolutions or open questions. merge-policy.json was updated this run with the new unionPaths, manualReview entries and notes, a tool-display.ts dedupeOnUnion entry, and a packageJson.overridesNote."
+}
