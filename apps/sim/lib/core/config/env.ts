@@ -133,6 +133,7 @@ export const env = createEnv({
 
      //browseruse
      BROWSER_USE_API_KEY:                   z.string().min(1).optional(),           // BrowserUse API key for browser automation
+     BROWSER_USE_BASE_URL:                  z.string().url().optional(),            // BrowserUse API base URL (defaults to https://api.browser-use.com/api/v2)
 
      // Skyvern
      SKYVERN_API_KEY:                       z.string().min(1).optional(),           // Skyvern API key for browser automation workflows
