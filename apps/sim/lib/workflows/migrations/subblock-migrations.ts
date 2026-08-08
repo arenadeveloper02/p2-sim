@@ -24,6 +24,12 @@ const ZOOM_OAUTH_CANONICAL_IDS = new Set(['oauthCredential', 'oauthCredentialAdm
  * Format: { blockType: { oldSubblockId: newSubblockId } }
  */
 export const SUBBLOCK_ID_MIGRATIONS: Record<string, Record<string, string>> = {
+  facebook_ads: {
+    account: 'accountSelector',
+  },
+  google_ads_v1: {
+    accounts: 'accountsSelector',
+  },
   knowledge: {
     knowledgeBaseId: 'knowledgeBaseSelector',
   },

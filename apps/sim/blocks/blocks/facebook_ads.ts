@@ -73,7 +73,7 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
       condition: facebookAdsNonAdminOnlyCondition,
     },
     {
-      id: 'account',
+      id: 'accountSelector',
       title: 'Facebook Ad Account',
       type: 'dropdown',
       options: [],
@@ -135,7 +135,7 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
 
         if (isAdminWorkspace(workspaceId)) {
           return {
-            account: params.accountAdvanced ?? params.account,
+            account: params.accountAdvanced ?? params.accountSelector ?? params.account,
             query: params.query,
             workspaceId,
             _context: params._context,
