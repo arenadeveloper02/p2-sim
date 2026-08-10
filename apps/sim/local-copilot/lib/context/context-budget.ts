@@ -93,9 +93,9 @@ export const LOCAL_COPILOT_RECENT_TURNS_FULL = 6
 
 /**
  * Hard cap on prior chat rows considered for history.
- * Sized for ~6 tool-heavy turns (user + assistant + tool result rows).
+ * Sized for longer multi-tool threads (user + assistant + tool result rows).
  */
-export const LOCAL_COPILOT_MAX_HISTORY_MESSAGES = 150
+export const LOCAL_COPILOT_MAX_HISTORY_MESSAGES = 200
 
 export type WorkflowContextDetail = 'full' | 'compact'
 
