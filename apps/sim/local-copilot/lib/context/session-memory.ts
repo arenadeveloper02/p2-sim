@@ -12,6 +12,7 @@ import {
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { estimateChatMessagesTokens } from '@/local-copilot/lib/context/context-budget'
 import { mergeConstraints } from '@/local-copilot/lib/context/follow-up-directives'
+import { promoteDurableSessionMemoryToUserMemory } from '@/local-copilot/lib/context/promote-durable-memory'
 import { collectCompletionText } from '@/local-copilot/lib/providers/collect-text'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 import type { ChatMessage, LocalCopilotProvider } from '@/local-copilot/lib/providers/types'
@@ -507,6 +508,7 @@ export async function mergeFollowUpDirectivesIntoSessionMemory(params: {
 export async function ensureSessionMemory(params: {
   chatId?: string
   userId: string
+  workspaceId?: string
   historyMessages: ChatMessage[]
   turns: SessionMemoryTurn[]
   signal?: AbortSignal
@@ -517,6 +519,7 @@ export async function ensureSessionMemory(params: {
     load?: typeof loadSessionMemory
     persist?: typeof persistSessionMemory
     summarize?: typeof summarizeSessionMemory
+    promote?: typeof promoteDurableSessionMemoryToUserMemory
   }
 }): Promise<SessionMemory | null> {
   if (!params.chatId) return null
@@ -524,6 +527,7 @@ export async function ensureSessionMemory(params: {
   const load = params.deps?.load ?? loadSessionMemory
   const persist = params.deps?.persist ?? persistSessionMemory
   const summarize = params.deps?.summarize ?? summarizeSessionMemory
+  const promote = params.deps?.promote ?? promoteDurableSessionMemoryToUserMemory
 
   let previous: SessionMemory | null = null
   try {
@@ -573,6 +577,24 @@ export async function ensureSessionMemory(params: {
       uncoveredTurns: uncovered.length,
       coveredThroughMessageId,
     })
+
+    // Phase 2: promote durable prefs/entities into user_memory (soft-fail).
+    if (params.workspaceId) {
+      try {
+        await promote({
+          userId: params.userId,
+          workspaceId: params.workspaceId,
+          memory: updated,
+          previous,
+        })
+      } catch (error) {
+        logger.warn('Durable user_memory promotion failed after session refresh', {
+          chatId: params.chatId,
+          error: getErrorMessage(error),
+        })
+      }
+    }
+
     return updated
   } catch (error) {
     logger.warn('Session memory refresh failed; keeping previous', {

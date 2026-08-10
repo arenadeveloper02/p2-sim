@@ -4,6 +4,7 @@ import { Button, Chip, ChipTextarea, cn } from '@sim/emcn'
 import { Bug, MessageSquarePlus, Sparkles, Trash2 } from 'lucide-react'
 import { ChatContent } from '@/app/workspace/[workspaceId]/home/components/message-content/components/chat-content'
 import { PatchPreview } from '@/local-copilot/components/patch-preview'
+import { SessionMemoryInspector } from '@/local-copilot/components/session-memory-inspector'
 import type { LocalCopilotMessage } from '@/local-copilot/hooks/use-local-copilot'
 
 interface LocalCopilotChatProps {
@@ -19,6 +20,8 @@ interface LocalCopilotChatProps {
   onExplainBlock: () => void
   onGenerateWorkflow: () => void
   selectedBlockId?: string
+  /** Mothership / local chat id used by the session-memory inspector. */
+  chatId?: string
   pendingPatch?: { patchId: string; patch: LocalCopilotMessage['patch'] } | null
   showDiff: boolean
   onToggleDiff: () => void
@@ -40,6 +43,7 @@ export function LocalCopilotChat({
   onExplainBlock,
   onGenerateWorkflow,
   selectedBlockId,
+  chatId,
   pendingPatch,
   showDiff,
   onToggleDiff,
@@ -62,6 +66,7 @@ export function LocalCopilotChat({
             Explain block
           </Chip>
         ) : null}
+        <SessionMemoryInspector chatId={chatId} messageCount={messages.length} />
         <Chip onClick={onClear} leftIcon={Trash2}>
           Clear chat
         </Chip>

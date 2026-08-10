@@ -1,5 +1,9 @@
 import { z } from 'zod'
-import { workflowIdSchema, workspaceIdSchema } from '@/lib/api/contracts/primitives'
+import {
+  nonEmptyIdSchema,
+  workflowIdSchema,
+  workspaceIdSchema,
+} from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
 import type { WorkflowPatch } from '@/local-copilot/lib/types'
 
@@ -174,6 +178,52 @@ export const getLocalCopilotPatchContract = defineRouteContract({
       summary: z.string(),
       status: z.enum(['pending', 'applied', 'rejected', 'expired']),
       patch: workflowPatchSchema,
+    }),
+  },
+})
+
+const sessionMemoryEntitiesSchema = z.object({
+  workflows: z.array(z.string()),
+  blocks: z.array(z.string()),
+  files: z.array(z.string()),
+  runs: z.array(z.string()),
+})
+
+export const localCopilotSessionMemorySchema = z.object({
+  version: z.literal(1),
+  updatedAt: z.string().min(1),
+  coveredThroughMessageId: z.string().min(1),
+  goals: z.array(z.string()),
+  decisions: z.array(z.string()),
+  constraints: z.array(z.string()),
+  activeDirective: z.string(),
+  entities: sessionMemoryEntitiesSchema,
+  progress: z.array(z.string()),
+  openQuestions: z.array(z.string()),
+  approvals: z.array(z.string()),
+  failures: z.array(z.string()),
+  verification: z.array(z.string()),
+  notes: z.string(),
+})
+
+export type LocalCopilotSessionMemoryResponse = z.output<typeof localCopilotSessionMemorySchema>
+
+export const getLocalCopilotSessionMemoryQuerySchema = z.object({
+  chatId: nonEmptyIdSchema,
+})
+
+export type GetLocalCopilotSessionMemoryQuery = z.input<
+  typeof getLocalCopilotSessionMemoryQuerySchema
+>
+
+export const getLocalCopilotSessionMemoryContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/local-copilot/session-memory',
+  query: getLocalCopilotSessionMemoryQuerySchema,
+  response: {
+    mode: 'json',
+    schema: z.object({
+      memory: localCopilotSessionMemorySchema.nullable(),
     }),
   },
 })

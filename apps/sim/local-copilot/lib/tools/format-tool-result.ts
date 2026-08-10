@@ -12,13 +12,32 @@ import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 
 const FUNCTION_EXECUTE_STDOUT_MAX = 12_000
 
+/** Default hard cap for LLM-bound tool result JSON (history + live path). */
+export const LOCAL_COPILOT_TOOL_RESULT_MAX_CHARS = 8_000
+
+/**
+ * Slightly higher cap so {@link FUNCTION_EXECUTE_STDOUT_MAX} stdout can still fit
+ * inside the JSON envelope without a second hard cut.
+ */
+export const LOCAL_COPILOT_TOOL_RESULT_MAX_CHARS_FUNCTION_EXECUTE = 13_000
+
+const TOOL_RESULT_TRUNCATION_MARKER =
+  '\n…[truncated: tool result exceeded char budget; re-query with a narrower call or load_copilot_artifact if an artifactId is present]'
+
 /**
  * Compact JSON for LLM tool results. Falls back to a tiny error payload on failure.
- * Does not truncate — large list/search/KB/table payloads are kept intact.
+ * Applies a hard char cap so history reload (no artifact store) cannot rehydrate
+ * multi-10k tool bodies.
  */
-export function compactStringifyForLlm(value: unknown): string {
+export function compactStringifyForLlm(
+  value: unknown,
+  maxChars: number = LOCAL_COPILOT_TOOL_RESULT_MAX_CHARS
+): string {
   try {
-    return JSON.stringify(value)
+    const serialized = JSON.stringify(value)
+    if (serialized.length <= maxChars) return serialized
+    const budget = Math.max(0, maxChars - TOOL_RESULT_TRUNCATION_MARKER.length)
+    return `${serialized.slice(0, budget)}${TOOL_RESULT_TRUNCATION_MARKER}`
   } catch {
     return JSON.stringify({ success: false, error: 'tool result omitted' })
   }
@@ -431,7 +450,11 @@ export function formatToolResultForLlm(
     }
   }
 
-  return compactStringifyForLlm(sanitized)
+  const maxChars =
+    toolName === 'function_execute'
+      ? LOCAL_COPILOT_TOOL_RESULT_MAX_CHARS_FUNCTION_EXECUTE
+      : LOCAL_COPILOT_TOOL_RESULT_MAX_CHARS
+  return compactStringifyForLlm(sanitized, maxChars)
 }
 
 /**

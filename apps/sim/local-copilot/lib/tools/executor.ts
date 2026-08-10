@@ -33,6 +33,7 @@ import {
   executeMothershipDelegatedTool,
   isMothershipDelegatedTool,
 } from '@/local-copilot/lib/tools/mothership-delegated-tools'
+import { guardDelegatedCreateWhenExistingAvailable } from '@/local-copilot/lib/tools/reuse-existing-guards'
 import {
   normalizeBlockIdsArgs,
   resolveBlockIdsArg,
@@ -387,6 +388,9 @@ export async function executeLocalCopilotTool(
   logger.info('Executing Arena Copilot tool', { toolName, workflowId: ctx.workflowId })
 
   if (isMothershipDelegatedTool(toolName)) {
+    const reuseBlocked = guardDelegatedCreateWhenExistingAvailable(toolName, args, ctx)
+    if (reuseBlocked) return reuseBlocked
+
     const delegated = attachToolBilling(await executeMothershipDelegatedTool(toolName, args, ctx))
     if (toolName === 'list_integration_tools' && delegated.success) {
       rememberListedIntegrationTools(ctx, delegated.result)

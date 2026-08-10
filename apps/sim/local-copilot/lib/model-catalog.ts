@@ -46,13 +46,6 @@ export const LOCAL_COPILOT_CATALOG = [
     provider: 'bedrock' as LocalCopilotProviderId,
     model: 'anthropic.claude-sonnet-5',
   },
-  // {
-  //   id: 'bedrock-claude-sonnet-4',
-  //   providerGroup: 'bedrock',
-  //   label: 'Claude Sonnet 4',
-  //   provider: 'bedrock' as LocalCopilotProviderId,
-  //   model: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
-  // },
   {
     id: 'bedrock-nemotron-super-3-120b',
     providerGroup: 'bedrock',
@@ -67,34 +60,13 @@ export const LOCAL_COPILOT_CATALOG = [
     provider: 'bedrock' as LocalCopilotProviderId,
     model: 'mistral.mistral-large-3-675b-instruct',
   },
-  // {
-  //   id: 'bedrock-llama-4-maverick',
-  //   providerGroup: 'bedrock',
-  //   label: 'Llama 4 Maverick',
-  //   provider: 'bedrock' as LocalCopilotProviderId,
-  //   model: 'meta.llama4-maverick-17b-instruct-v1:0',
-  // },
   {
     id: 'bedrock-llama-3.3-70b',
     providerGroup: 'bedrock',
     label: 'Llama 3.3 70B',
     provider: 'bedrock' as LocalCopilotProviderId,
     model: 'meta.llama3-3-70b-instruct-v1:0',
-  },
-  // {
-  //   id: 'bedrock-nova-pro',
-  //   providerGroup: 'bedrock',
-  //   label: 'Amazon Nova Pro',
-  //   provider: 'bedrock' as LocalCopilotProviderId,
-  //   model: 'amazon.nova-pro-v1:0',
-  // },
-  // {
-  //   id: 'bedrock-kimi-k2.5',
-  //   providerGroup: 'bedrock',
-  //   label: 'Kimi K2.5',
-  //   provider: 'bedrock' as LocalCopilotProviderId,
-  //   model: 'moonshotai.kimi-k2.5',
-  // },
+  }
 ] as const
 
 export type LocalCopilotCatalogId = (typeof LOCAL_COPILOT_CATALOG)[number]['id']

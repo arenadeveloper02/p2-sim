@@ -11,6 +11,7 @@ import {
   applyLocalCopilotPatchContract,
   getLocalCopilotConfigContract,
   getLocalCopilotPatchContract,
+  getLocalCopilotSessionMemoryContract,
   listLocalCopilotConversationsContract,
   rejectLocalCopilotPatchContract,
 } from '@/local-copilot/contracts/local-copilot'
@@ -19,6 +20,8 @@ import { formatTrustedControl } from '@/local-copilot/lib/security/trusted-contr
 import type { LocalCopilotStreamEvent, WorkflowPatch } from '@/local-copilot/lib/types'
 import { stripIdsFromUserFacingText } from '@/local-copilot/lib/user-facing-text'
 
+export const LOCAL_COPILOT_SESSION_MEMORY_STALE_TIME = 30_000
+
 export const localCopilotKeys = {
   all: ['local-copilot'] as const,
   config: () => [...localCopilotKeys.all, 'config'] as const,
@@ -26,6 +29,25 @@ export const localCopilotKeys = {
   conversationList: (workspaceId?: string, workflowId?: string) =>
     [...localCopilotKeys.conversations(), workspaceId ?? '', workflowId ?? ''] as const,
   patch: (patchId?: string) => [...localCopilotKeys.all, 'patch', patchId ?? ''] as const,
+  sessionMemories: () => [...localCopilotKeys.all, 'session-memory'] as const,
+  sessionMemory: (chatId?: string) =>
+    [...localCopilotKeys.sessionMemories(), chatId ?? ''] as const,
+}
+
+/**
+ * Loads chat-scoped session memory for the Local Copilot inspector.
+ */
+export function useLocalCopilotSessionMemory(chatId?: string) {
+  return useQuery({
+    queryKey: localCopilotKeys.sessionMemory(chatId),
+    queryFn: ({ signal }) =>
+      requestJson(getLocalCopilotSessionMemoryContract, {
+        query: { chatId: chatId as string },
+        signal,
+      }),
+    enabled: Boolean(chatId),
+    staleTime: LOCAL_COPILOT_SESSION_MEMORY_STALE_TIME,
+  })
 }
 
 export interface LocalCopilotMessage {
