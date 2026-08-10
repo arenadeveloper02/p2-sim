@@ -93,7 +93,8 @@ export interface ProcessedResults {
 }
 
 export interface AIProviderConfig {
-  provider: 'xai' | 'openai'
+  provider: 'anthropic' | 'openai'
   model: string
   apiKey: string
+  thinkingLevel?: string
 }

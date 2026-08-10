@@ -5,33 +5,34 @@
 import type { AIProviderConfig } from './types'
 
 /**
- * Resolves AI provider with Grok first, then GPT-4o fallback
+ * Resolves AI provider with Claude Opus 5 (high effort) first, then GPT-5.6 Terra
  *
  * Priority order:
- * 1. Grok (XAI) - grok-3-fast-latest
- * 2. GPT-4o (OpenAI) - gpt-4o
+ * 1. Claude Opus 5 High (Anthropic) - claude-opus-5
+ * 2. GPT-5.6 Terra (OpenAI) - gpt-5.6-terra
  *
  * @returns Provider configuration
  * @throws Error if no provider is available
  */
 export function resolveAIProvider(): AIProviderConfig {
-  // Try Grok first
-  if (process.env.XAI_API_KEY) {
+  if (process.env.ANTHROPIC_API_KEY) {
     return {
-      provider: 'xai' as const,
-      model: 'grok-3-fast-latest',
-      apiKey: process.env.XAI_API_KEY,
+      provider: 'anthropic',
+      model: 'claude-opus-5',
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      thinkingLevel: 'high',
     }
   }
 
-  // Fallback to GPT-4o
   if (process.env.OPENAI_API_KEY) {
     return {
-      provider: 'openai' as const,
-      model: 'gpt-4o',
+      provider: 'openai',
+      model: 'gpt-5.6-terra',
       apiKey: process.env.OPENAI_API_KEY,
     }
   }
 
-  throw new Error('No AI provider available. Please set XAI_API_KEY or OPENAI_API_KEY')
+  throw new Error(
+    'No AI provider available. Please set ANTHROPIC_API_KEY or OPENAI_API_KEY'
+  )
 }

@@ -3,6 +3,8 @@
  * Uses AI to generate Bing Ads queries with dynamic date calculation
  */
 
+import { executeProviderRequest } from '@/providers'
+import type { ProviderResponse } from '@/providers/types'
 import { resolveAIProvider } from './ai-provider'
 import { getBingAdsSystemPrompt } from './prompt'
 import type { BingAdsQueryResponse } from './types'
@@ -15,57 +17,36 @@ import type { BingAdsQueryResponse } from './types'
  */
 export async function generateBingAdsQuery(query: string): Promise<BingAdsQueryResponse> {
   try {
-    // Resolve AI provider
-    const provider = resolveAIProvider()
+    const { provider, model, apiKey, thinkingLevel } = resolveAIProvider()
+    const systemPrompt = await getBingAdsSystemPrompt()
 
-    // Load prompt from DB (bing_prompt table)
-    const prompt = await getBingAdsSystemPrompt()
+    const aiResponse = (await executeProviderRequest(provider, {
+      model,
+      systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: query,
+        },
+      ],
+      apiKey,
+      temperature: 0.1,
+      maxTokens: 2048,
+      thinkingLevel,
+    })) as ProviderResponse
 
-    // Determine API endpoint based on provider
-    const apiEndpoint =
-      provider.provider === 'xai'
-        ? 'https://api.x.ai/v1/chat/completions'
-        : 'https://api.openai.com/v1/chat/completions'
+    const content =
+      typeof aiResponse === 'string'
+        ? aiResponse
+        : 'content' in aiResponse
+          ? aiResponse.content
+          : null
 
-    // Call AI API
-    const response = await fetch(apiEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${provider.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: provider.model,
-        messages: [
-          {
-            role: 'system',
-            content: prompt,
-          },
-          {
-            role: 'user',
-            content: query,
-          },
-        ],
-        temperature: 0.1,
-        max_tokens: 1000,
-      }),
-    })
-
-    if (!response.ok) {
-      throw new Error(`AI API request failed: ${response.status} ${response.statusText}`)
-    }
-
-    const aiResponse = await response.json()
-    const content = aiResponse.choices?.[0]?.message?.content
-
-    if (!content) {
+    if (!content || typeof content !== 'string') {
       throw new Error('No content received from AI API')
     }
 
-    // Parse AI response
     const parsedQuery = parseAIResponse(content)
-
-    // Validate the parsed query
     validateParsedQuery(parsedQuery)
 
     return parsedQuery
@@ -83,8 +64,9 @@ export async function generateBingAdsQuery(query: string): Promise<BingAdsQueryR
  */
 function parseAIResponse(content: string): BingAdsQueryResponse {
   try {
-    // Try to parse as JSON
-    const parsed = JSON.parse(content)
+    // Models may wrap JSON in markdown; extract the object first
+    const jsonMatch = content.match(/\{[\s\S]*\}/)
+    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content)
 
     // Ensure required fields
     if (!parsed.reportType) {
