@@ -8,7 +8,6 @@ import {
   resolveBillingAttribution,
 } from '@/lib/billing/core/billing-attribution'
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
-import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
 import { runToolWithStatus } from '@/local-copilot/lib/agent/run-tool-with-status'
@@ -20,8 +19,7 @@ import {
 } from '@/local-copilot/lib/agent/specialists/classify'
 import {
   domainSystemHint,
-  filterToolsByNames,
-  toolNamesForIntent,
+  resolveHybridParentTools,
 } from '@/local-copilot/lib/agent/specialists/domains'
 import { runParallelSubagents } from '@/local-copilot/lib/agent/specialists/parallel-subagents'
 import { runParentSpecialistToolCalls } from '@/local-copilot/lib/agent/specialists/parent-calls'
@@ -71,8 +69,8 @@ import {
   extractFollowUpDirectives,
   formatActiveDirectiveSystemMessage,
   formatSessionConstraintsSystemMessage,
-  type PreferenceMemoryCandidate,
 } from '@/local-copilot/lib/context/follow-up-directives'
+import { persistInferredUserMemories } from '@/local-copilot/lib/context/promote-durable-memory'
 import {
   applyMicrocompactInPlace,
   microcompactMessages,
@@ -239,8 +237,13 @@ Specialists (hybrid orchestration):
 
 Rules:
 - You have awareness of the workspace, available blocks/integrations, and (when open) the current workflow structure, variables, logs, and credential metadata (never secrets).
+- Reuse existing resources first (CRITICAL — default behavior):
+  - ALWAYS prefer existing workflows, knowledge bases, tables, and files when \`workspaceWorkflows\`, \`knowledgeBases\`, \`tables\`, or \`workspaceFiles\` already list something suitable.
+  - Default action is inspect → reuse/edit/run. Creating a new resource is the exception, not the default.
+  - Never create a duplicate "just in case". Only create when inventory is empty for that type, or the user explicitly asks for a brand-new distinctly named resource.
+  - Read \`guidance\` in Current context when present — it restates this rule for the inventory that exists.
 - Existing workflows first (CRITICAL):
-  - \`workspaceWorkflows\` lists every workflow in this workspace (id, name, isDeployed, lastRunAt). Read \`guidance\` in context when present.
+  - \`workspaceWorkflows\` lists every workflow in this workspace (id, name, isDeployed, lastRunAt).
   - When the user asks to run, test, execute, try, debug, check, or use a workflow — or their request matches an existing workflow name or purpose — use \`get_workflow_run_options\` then \`run_workflow\` on that workflow. NEVER call \`create_workflow\`.
   - When only one workflow exists, assume the user means that workflow unless they explicitly ask for something new.
   - Only call \`create_workflow\` when the user clearly wants a brand-new workflow with a distinct name and purpose. Pass \`confirmNewWorkflow: true\` in that case.
@@ -327,13 +330,14 @@ Rules:
 - Media (no workflow required, hosted/workspace keys applied automatically):
   - \`generate_audio\` for speech/music/sound effects, \`generate_video\` for short clips — pass the user's full request in \`prompt\` and save results via \`outputs.files\` under files/.
   - \`ffmpeg\` for editing workspace media (trim, concat, convert, overlays, thumbnails). Mount sources via \`inputs.files\` with exact VFS paths from context or glob.
-- Files, tables, and knowledge bases (CRITICAL — discover with read tools BEFORE creating):
-  - Context includes \`workspaceFiles\`, \`tables\`, and \`knowledgeBases\` (names/ids). Treat that as an index — then READ details with tools before creating anything.
+- Files, tables, and knowledge bases (CRITICAL — reuse existing; create only as last resort):
+  - Context includes \`workspaceFiles\`, \`tables\`, and \`knowledgeBases\` (names/ids). Treat that as an index — then READ details with tools BEFORE any create call.
   - Workflows: if \`workspaceWorkflows\` has a match, call \`get_workflow_data\` / \`get_workflow_context\` (or \`get_workflow_run_options\` to run) and show those details — do not create a duplicate.
-  - Tables: if \`tables\` has a match, call \`user_table\` with \`get\` / \`get_schema\` / \`query_rows\` and show the schema/rows — reuse it instead of create.
-  - Knowledge bases: if \`knowledgeBases\` has a match, call \`knowledge_base\` with \`get\` / \`list\` / \`query\` and show what is in it — reuse it instead of create.
-  - Files: if \`workspaceFiles\` may match, \`glob\` then \`read\` the path and show contents/details — update via \`workspace_file\` + \`edit_content\` instead of create.
-  - Only create when read/list tools show nothing suitable for the request.
+  - Tables: if \`tables\` is non-empty, call \`user_table\` with \`get\` / \`get_schema\` / \`query_rows\` first and reuse — never \`create\` / \`create_from_file\` unless nothing fits and the user wants a new table (\`confirmCreateNew: true\`).
+  - Knowledge bases: if \`knowledgeBases\` is non-empty, call \`knowledge_base\` with \`get\` / \`list\` / \`query\` first and reuse — never \`create\` unless nothing fits and the user wants a new KB (\`confirmCreateNew: true\`).
+  - Files: if \`workspaceFiles\` may match, \`glob\` then \`read\` the path and show contents/details — update via \`workspace_file\` + \`edit_content\` instead of \`create_file\` (\`confirmCreateNew: true\` only for an explicitly new path).
+  - Chat uploads under \`uploads/\` are not sandbox-mounted — call \`materialize_file\` into \`files/...\` (or reuse an existing \`files/...\` path) before \`function_execute\`.
+  - Only create when inventory is empty for that type or the user explicitly demands a brand-new resource.
   - Find files: \`glob\` with a pattern like \`files/**/*.csv\`, then \`read\` using the exact path from results.
   - Create files: \`create_file_folder\` when needed, then \`create_file\` with \`content\` for markdown/text/json/csv (one step). Never call \`create_file\` without \`content\` for .md files unless you will immediately follow with \`workspace_file\` update + \`edit_content\`.
   - Rename/move/delete files: \`rename_file\`, \`move_file\`, \`delete_file\` (paths arrays). Folders: \`list_file_folders\`, \`rename_file_folder\`, \`move_file_folder\`, \`delete_file_folder\`. Delete only when the user explicitly asked.
@@ -566,6 +570,7 @@ export async function* runLocalCopilotAgent(
   let sessionMemory = await ensureSessionMemory({
     chatId: params.chatId,
     userId: params.userId,
+    workspaceId: params.workspaceId,
     historyMessages: rawHistory,
     turns: params.sessionMemoryTurns ?? [],
     signal: params.signal,
@@ -583,18 +588,19 @@ export async function* runLocalCopilotAgent(
   }
 
   if (extractedDirectives.preferences.length > 0) {
-    await persistInferredUserPreferences({
+    await persistInferredUserMemories({
       userId: params.userId,
       workspaceId: params.workspaceId,
       preferences: extractedDirectives.preferences,
     })
   }
 
-  const historyMessages: ChatMessage[] = rawHistory.length
+  const historyMicrocompact = rawHistory.length
     ? microcompactMessages(
         compactChatHistory(rawHistory, { sessionMemoryPresent: Boolean(sessionMemory) })
-      ).messages
-    : []
+      )
+    : { messages: [] as ChatMessage[], clearedCount: 0, charsFreed: 0 }
+  const historyMessages = historyMicrocompact.messages
 
   const workflowDetail = resolveWorkflowContextDetail(
     structuredContext,
@@ -668,25 +674,14 @@ export async function* runLocalCopilotAgent(
 
   const allTools = await resolveLocalCopilotTools(params.workspaceId)
   const intent = classifyLocalCopilotIntent(params.message)
-  const allowedToolNames = toolNamesForIntent(intent)
-  let tools = filterToolsByNames(allTools, allowedToolNames)
-
-  // Hybrid: intent leaf tools ∪ 12 specialist entry tools.
   const specialistTools = getParentSpecialistToolDefinitions()
-  const seenToolNames = new Set(tools.map((tool) => tool.name))
-  for (const specialistTool of specialistTools) {
-    if (!seenToolNames.has(specialistTool.name)) {
-      tools = [...tools, specialistTool]
-      seenToolNames.add(specialistTool.name)
-    }
-  }
-
-  // Full catalog only when the hybrid set is empty (never solely because primary is general).
-  let usedFullCatalog = allowedToolNames === null
-  if (tools.length === 0) {
-    tools = allTools
-    usedFullCatalog = true
-  }
+  const hybridTools = resolveHybridParentTools({
+    allTools,
+    intent,
+    specialistTools,
+  })
+  const tools = hybridTools.tools
+  const usedFullCatalog = hybridTools.usedFullCatalog
 
   const estimatedToolDefinitionTokens = estimateToolDefinitionTokens(tools, config.model)
   const promptBudget = resolveLocalCopilotPromptTokenBudget({
@@ -740,7 +735,11 @@ export async function* runLocalCopilotAgent(
     promptBudgetSoftCapped: promptBudget.softCapped,
     tokenCountModel: config.model,
     toolDefinitionCount: tools.length,
+    leafToolCount: hybridTools.leafToolCount,
+    specialistEntryCount: hybridTools.specialistEntryCount,
     toolCatalogCount: allTools.length,
+    microcompactClearedCount: historyMicrocompact.clearedCount,
+    microcompactCharsFreed: historyMicrocompact.charsFreed,
     specialistPrimary: intent.primary,
     specialistSecondary: intent.secondary,
     useFullCatalog: usedFullCatalog,
@@ -1833,8 +1832,8 @@ export async function* runLocalCopilotAgent(
     if (microcompactStats.clearedCount > 0) {
       logger.info('Arena Copilot microcompact applied', {
         round,
-        clearedCount: microcompactStats.clearedCount,
-        charsFreed: microcompactStats.charsFreed,
+        microcompactClearedCount: microcompactStats.clearedCount,
+        microcompactCharsFreed: microcompactStats.charsFreed,
       })
     }
 
@@ -2233,40 +2232,3 @@ export function formatSSE(event: LocalCopilotStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`
 }
 
-/**
- * Soft-persists high-confidence preference/correction phrases into user_memory
- * so follow-up chats honor them without the model calling the tool first.
- */
-async function persistInferredUserPreferences(params: {
-  userId: string
-  workspaceId: string
-  preferences: PreferenceMemoryCandidate[]
-}): Promise<void> {
-  for (const preference of params.preferences.slice(0, 5)) {
-    try {
-      const result = await userMemoryServerTool.execute(
-        {
-          operation: 'add',
-          key: preference.key,
-          value: preference.value,
-          memory_type: preference.memoryType,
-          source: 'inferred',
-          confidence: 0.85,
-          workspaceId: params.workspaceId,
-        },
-        { userId: params.userId, workspaceId: params.workspaceId }
-      )
-      if (!result.success) {
-        logger.warn('Inferred user_memory persist failed', {
-          key: preference.key,
-          error: result.error ?? 'unknown',
-        })
-      }
-    } catch (error) {
-      logger.warn('Inferred user_memory persist threw', {
-        key: preference.key,
-        error: getErrorMessage(error),
-      })
-    }
-  }
-}

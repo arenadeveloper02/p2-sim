@@ -10,6 +10,7 @@ import {
   persistSpecialistCheckpoint,
 } from '@/local-copilot/lib/agent/specialists/checkpoint'
 import {
+  ALWAYS_ON_TOOL_NAMES,
   domainSystemHint,
   filterToolsByNames,
   type LocalCopilotCloudSpecialistDomain,
@@ -137,7 +138,11 @@ function buildSpecialistTools(
   maxDepth: number
 ): LocalCopilotToolDefinition[] {
   const allowed = toolNamesForDomain(domain)
-  const leafTools = filterToolsByNames(allTools, allowed.size > 0 ? allowed : null)
+  // Never widen an empty domain filter to the full catalog — fall back to always-on leaves.
+  const leafTools = filterToolsByNames(
+    allTools,
+    allowed.size > 0 ? allowed : new Set(ALWAYS_ON_TOOL_NAMES)
+  )
   if (depth >= maxDepth) return leafTools
   const leafNames = new Set(leafTools.map((tool) => tool.name))
   const specialistTools = getParentSpecialistToolDefinitions().filter(

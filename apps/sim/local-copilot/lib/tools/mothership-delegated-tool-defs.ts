@@ -22,17 +22,18 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   glob: 'Finds workspace files by glob pattern (e.g. files/**/*.csv).',
   grep: 'Searches file contents under a workspace path pattern.',
   create_file:
-    'Creates a workspace file. Prefer fileName with a VFS path (e.g. "files/Deck.pptx"). For markdown/text/json/csv/html, ALWAYS pass content with the full body. Office formats (pptx/docx/pdf): empty shell only — no content — then workspace_file update + edit_content in later rounds. Before creating, glob/read workspaceFiles — if a matching file exists, show its details and update it instead.',
+    'Creates a workspace file ONLY when no suitable workspaceFiles entry exists. Prefer fileName with a VFS path (e.g. "files/Deck.pptx"). For markdown/text/json/csv/html, ALWAYS pass content with the full body. Office formats (pptx/docx/pdf): empty shell only — no content — then workspace_file update + edit_content in later rounds. If a matching file exists, update it instead. Pass confirmCreateNew: true only for an explicitly brand-new path.',
   create_file_folder: 'Creates a folder under the workspace files tree.',
   workspace_file:
     'Declares a content edit on an existing workspace file (append/update/patch). REQUIRED: operation, target={kind:"path", path:"files/..."}, title (short UI label). Example: {"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"SambaNova deck"}. Does not write the body — call edit_content in the NEXT tool round with content. Never pass target as a bare string path.',
   download_to_workspace_file: 'Downloads a URL into a workspace file.',
   user_table:
-    'Creates, reads, and updates workspace tables — operations include create, get, get_schema, insert_row, batch_insert_rows, query_rows, update_row, add_column, import_file, create_from_file. Before creating, check `tables` then call get / get_schema — if a match exists, show details and reuse it.',
+    'Creates, reads, and updates workspace tables — operations include create, get, get_schema, insert_row, batch_insert_rows, query_rows, update_row, add_column, import_file, create_from_file. REUSE FIRST: if `tables` is non-empty, call get / get_schema / query_rows and reuse. Pass confirmCreateNew: true only when the user explicitly wants a brand-new table.',
   knowledge_base:
-    'Manages knowledge bases — operations include create, get, list, query (semantic search), add_file (ingest document), update, delete, add_connector, sync_connector. Before creating, check `knowledgeBases` then call get / list / query — if a match exists, show details and reuse it.',
+    'Manages knowledge bases — operations include create, get, list, query (semantic search), add_file (ingest document), update, delete, add_connector, sync_connector. REUSE FIRST: if `knowledgeBases` is non-empty, call get / list / query and reuse. Pass confirmCreateNew: true only when the user explicitly wants a brand-new knowledge base.',
   open_resource: 'Opens a workspace resource (workflow, file, table, knowledge base) in the UI.',
-  materialize_file: 'Materializes chat-uploaded files into workspace files or table imports.',
+  materialize_file:
+    'Saves chat uploads (`uploads/...`) into workspace `files/...` (or imports). Required before function_execute can open uploaded spreadsheets/docs — uploads/ paths are not sandbox-mounted.',
   generate_image:
     'Generates an image from a text prompt (no workflow). Uses hosted/workspace keys automatically. Pass the user full request in `prompt`, including variation counts (e.g. "3 variations"). Optional outputs.files path to save under files/.',
   search_online:

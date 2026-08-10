@@ -241,6 +241,65 @@ export function filterToolsByNames(
   return tools.filter((tool) => allowedNames.has(tool.name))
 }
 
+export interface HybridParentToolResolution {
+  tools: LocalCopilotToolDefinition[]
+  /** True only when the full catalog was selected (explicit escape hatch or empty hybrid). */
+  usedFullCatalog: boolean
+  leafToolCount: number
+  specialistEntryCount: number
+}
+
+/**
+ * Resolves the parent-turn tool list: intent-filtered leaf tools ∪ specialist entry tools.
+ * Falls back to the full catalog only when the hybrid set is empty — never solely because
+ * `primary === 'general'` when always-on / specialist tools are present.
+ */
+export function resolveHybridParentTools(params: {
+  allTools: LocalCopilotToolDefinition[]
+  intent: LocalCopilotIntent
+  specialistTools: LocalCopilotToolDefinition[]
+}): HybridParentToolResolution {
+  const { allTools, intent, specialistTools } = params
+  const allowedToolNames = toolNamesForIntent(intent)
+
+  if (allowedToolNames === null) {
+    return {
+      tools: allTools,
+      usedFullCatalog: true,
+      leafToolCount: allTools.length,
+      specialistEntryCount: 0,
+    }
+  }
+
+  const leafTools = filterToolsByNames(allTools, allowedToolNames)
+  const seen = new Set(leafTools.map((tool) => tool.name))
+  const hybrid: LocalCopilotToolDefinition[] = [...leafTools]
+  let specialistEntryCount = 0
+
+  for (const specialistTool of specialistTools) {
+    if (seen.has(specialistTool.name)) continue
+    hybrid.push(specialistTool)
+    seen.add(specialistTool.name)
+    specialistEntryCount += 1
+  }
+
+  if (hybrid.length === 0) {
+    return {
+      tools: allTools,
+      usedFullCatalog: true,
+      leafToolCount: 0,
+      specialistEntryCount: 0,
+    }
+  }
+
+  return {
+    tools: hybrid,
+    usedFullCatalog: false,
+    leafToolCount: leafTools.length,
+    specialistEntryCount,
+  }
+}
+
 export function isSpecialistDomain(name: string): name is LocalCopilotCloudSpecialistDomain {
   return SPECIALIST_ENTRY_TOOL_NAMES.has(name)
 }
@@ -248,17 +307,17 @@ export function isSpecialistDomain(name: string): name is LocalCopilotCloudSpeci
 export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
   switch (domain) {
     case 'workflow':
-      return 'Focus on building or editing workflows (create_workflow / edit_workflow / patches). If workspaceWorkflows lists a match, call get_workflow_data / get_workflow_context (or get_workflow_run_options to run), show those details, and edit/run — do not create a duplicate.'
+      return 'Focus on editing/running existing workflows first. If workspaceWorkflows lists anything suitable, call get_workflow_data / get_workflow_context (or get_workflow_run_options to run) — do not create_workflow unless the user explicitly wants a brand-new distinct workflow (confirmNewWorkflow: true).'
     case 'run':
-      return 'Focus on running and debugging workflows (get_workflow_run_options, run_workflow, run_block, run_from_block, query_logs).'
+      return 'Focus on running and debugging workflows (get_workflow_run_options, run_workflow, run_block, run_from_block, query_logs). Prefer existing workspaceWorkflows entries — never create a workflow just to run something.'
     case 'deploy':
       return 'Focus on deploying workflows (deploy_chat / deploy_api / redeploy / promotion) and verifying deployment status.'
     case 'auth':
       return 'Focus on credentials, OAuth links, and API keys.'
     case 'knowledge':
-      return 'Focus on knowledge bases. If knowledgeBases lists a match, call knowledge_base get / list / query first, show details, and reuse — only create when nothing suitable exists.'
+      return 'Focus on existing knowledge bases first. If knowledgeBases is non-empty, call knowledge_base get / list / query and reuse — create only when nothing suitable exists and the user wants a new KB (confirmCreateNew: true).'
     case 'table':
-      return 'Focus on tables and enrichments. If tables lists a match, call user_table get / get_schema / query_rows first, show details, and reuse — only create when nothing suitable exists.'
+      return 'Focus on existing tables first. If tables is non-empty, call user_table get / get_schema / query_rows and reuse — create only when nothing suitable exists and the user wants a new table (confirmCreateNew: true).'
     case 'scheduled_task':
       return 'Focus on scheduled tasks (create/list/update/complete/logs).'
     case 'agent':
@@ -268,10 +327,10 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'media':
       return 'Focus on image/audio/video generation and ffmpeg.'
     case 'file':
-      return 'Focus on workspace files. If workspaceFiles may match, glob then read first, show details, and update — only create_file when nothing suitable exists.'
+      return 'Focus on existing workspace files first. If workspaceFiles may match, glob then read, then update via workspace_file + edit_content — create_file only for a truly new path (confirmCreateNew: true). Chat uploads/ need materialize_file into files/ before function_execute.'
     case 'superagent':
       return 'Focus on third-party integration actions. Authenticate if needed, then invoke the right integration tool.'
     default:
-      return 'Use whichever tools best answer the user. Prefer reading existing workflows/tables/knowledge bases/files with tools before creating new ones.'
+      return 'Reuse existing workflows/tables/knowledge bases/files whenever present. Inspect with tools first; create new resources only when inventory has nothing suitable or the user explicitly asks for something brand-new.'
   }
 }

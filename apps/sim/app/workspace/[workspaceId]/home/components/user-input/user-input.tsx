@@ -35,6 +35,7 @@ import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/r
 import { MOTHERSHIP_ADD_CONTEXT_EVENT } from '@/lib/mothership/events'
 import { MOTHERSHIP_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
+import { SessionMemoryInspector } from '@/local-copilot/components/session-memory-inspector'
 import {
   AnimatedPlaceholderEffect,
   AttachedFilesList,
@@ -171,6 +172,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { navigateToSettings } = useSettingsNavigation()
   const {
+    chatId,
     userId,
     onContextAdd,
     onContextRemove,
@@ -186,6 +188,8 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     copilotBackend === 'local' &&
     localCopilotCatalogId !== undefined &&
     setLocalCopilotCatalogId !== undefined
+
+  const showSessionMemoryInspector = copilotBackend === 'local' && Boolean(chatId)
 
   const [initialValue] = useState(() => {
     if (defaultValue) return defaultValue
@@ -723,6 +727,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
               onCatalogIdChange={setLocalCopilotCatalogId}
             />
           ) : null}
+          {showSessionMemoryInspector ? <SessionMemoryInspector chatId={chatId} /> : null}
         </div>
         <div className='flex items-center gap-1.5'>
           {isSttSupported && <MicButton isListening={isListening} onToggle={toggleListening} />}

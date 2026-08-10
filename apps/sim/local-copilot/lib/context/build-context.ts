@@ -214,22 +214,22 @@ export async function buildLocalCopilotContext(
   const guidanceParts: string[] = []
   if (workspaceWorkflows.length > 0) {
     guidanceParts.push(
-      'Existing workflows are listed in workspaceWorkflows. Call get_workflow_data / get_workflow_context (or get_workflow_run_options then run_workflow) to inspect or use a match — never create_workflow when an existing entry fits. Only create_workflow when the user explicitly asks for a brand-new workflow with a distinct purpose and name (pass confirmNewWorkflow: true).'
+      'REUSE FIRST: existing workflows are listed in workspaceWorkflows. Inspect/run/edit them — never create_workflow when an entry fits. Only create_workflow when the user explicitly asks for a brand-new workflow with a distinct purpose and name (confirmNewWorkflow: true).'
     )
   }
   if (resources.tables.length > 0) {
     guidanceParts.push(
-      'Existing tables are listed in tables. Call user_table get / get_schema / query_rows to load details and show them — reuse instead of creating duplicates.'
+      'REUSE FIRST: existing tables are listed in tables. Call user_table get / get_schema / query_rows and reuse — do not create unless the user explicitly wants a new table (confirmCreateNew: true).'
     )
   }
   if (resources.knowledgeBases.length > 0) {
     guidanceParts.push(
-      'Existing knowledge bases are listed in knowledgeBases. Call knowledge_base get / list / query to load details and show them — reuse instead of creating duplicates.'
+      'REUSE FIRST: existing knowledge bases are listed in knowledgeBases. Call knowledge_base get / list / query and reuse — do not create unless the user explicitly wants a new knowledge base (confirmCreateNew: true).'
     )
   }
   if (resources.workspaceFiles.length > 0) {
     guidanceParts.push(
-      'Existing files are listed in workspaceFiles. Call glob then read to load details and show them — update with workspace_file + edit_content instead of creating duplicates.'
+      'REUSE FIRST: existing files are listed in workspaceFiles. Call glob then read, then update with workspace_file + edit_content — do not create_file duplicates (confirmCreateNew: true only for a distinctly new path).'
     )
   }
 
