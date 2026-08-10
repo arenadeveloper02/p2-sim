@@ -93,6 +93,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<any>> {
       campaignFilter: undefined,
     })
 
+    // Surface API errors instead of returning an empty "successful" result
+    if (apiResult?.error) {
+      throw new Error(apiResult.error)
+    }
+
     // Process results
     const processedResults = processResults(apiResult, '')
 

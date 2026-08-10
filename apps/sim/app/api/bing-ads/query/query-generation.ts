@@ -4,7 +4,7 @@
  */
 
 import { resolveAIProvider } from './ai-provider'
-import { BING_ADS_SYSTEM_PROMPT } from './prompt'
+import { getBingAdsSystemPrompt } from './prompt'
 import type { BingAdsQueryResponse } from './types'
 
 /**
@@ -18,8 +18,8 @@ export async function generateBingAdsQuery(query: string): Promise<BingAdsQueryR
     // Resolve AI provider
     const provider = resolveAIProvider()
 
-    // Create the prompt
-    const prompt = BING_ADS_SYSTEM_PROMPT
+    // Load prompt from DB (bing_prompt table)
+    const prompt = await getBingAdsSystemPrompt()
 
     // Determine API endpoint based on provider
     const apiEndpoint =

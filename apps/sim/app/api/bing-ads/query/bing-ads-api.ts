@@ -896,18 +896,8 @@ export async function makeBingAdsRequest(
       accountId,
     })
 
-    // Return structured error response WITH the error message visible
-    return {
-      error: errorMessage,
-      campaigns: [],
-      account_totals: {
-        clicks: 0,
-        impressions: 0,
-        spend: 0,
-        conversions: 0,
-        error_details: errorMessage, // Include error in totals for visibility
-      },
-    }
+    // Fail loudly — never return empty/mock success payloads
+    throw error instanceof Error ? error : new Error(errorMessage)
   }
 }
 
@@ -989,53 +979,3 @@ function formatBingAdsResponse(data: any, parsedQuery: ParsedBingQuery): any {
   }
 }
 
-/**
- * Get mock campaign data for testing/development
- * This will be replaced with real API data once credentials are configured
- */
-function getMockCampaignData(accountId: string, parsedQuery: ParsedBingQuery): any {
-  logger.info('Generating mock Bing Ads data for development', { accountId })
-
-  return {
-    campaigns: [
-      {
-        id: 'mock-campaign-1',
-        name: 'Sample Campaign 1',
-        status: 'Active',
-        impressions: 15000,
-        clicks: 450,
-        spend: 225.5,
-        conversions: 12,
-        ctr: 3.0,
-        avg_cpc: 0.5,
-        cost_per_conversion: 18.79,
-      },
-      {
-        id: 'mock-campaign-2',
-        name: 'Sample Campaign 2',
-        status: 'Active',
-        impressions: 8500,
-        clicks: 280,
-        spend: 168.0,
-        conversions: 8,
-        ctr: 3.29,
-        avg_cpc: 0.6,
-        cost_per_conversion: 21.0,
-      },
-    ],
-    account_totals: {
-      impressions: 23500,
-      clicks: 730,
-      spend: 393.5,
-      conversions: 20,
-      ctr: 3.11,
-      avg_cpc: 0.54,
-      cost_per_conversion: 19.68,
-    },
-    report_type: parsedQuery.reportType,
-    date_preset: parsedQuery.datePreset,
-    aggregation: parsedQuery.aggregation,
-    columns_requested: parsedQuery.columns,
-    _note: 'This is mock data. Configure BING_ADS_* environment variables for real data.',
-  }
-}
