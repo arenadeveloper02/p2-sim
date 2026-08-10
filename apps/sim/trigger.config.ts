@@ -50,7 +50,8 @@ export default defineConfig({
   project: env.TRIGGER_PROJECT_ID!,
   runtime: 'node-24',
   logLevel: 'log',
-  maxDuration: 5400,
+  // Keep in sync with EXECUTION_TIMEOUT_ASYNC_* (seconds). Default 5400 = 90 min.
+  maxDuration: Number.parseInt(env.EXECUTION_TIMEOUT_ASYNC_ENTERPRISE || '5400', 10) || 5400,
   retries: {
     enabledInDev: false,
     default: {
