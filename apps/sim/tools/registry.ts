@@ -1952,6 +1952,7 @@ import {
   identityCenterListPermissionSetsTool,
 } from '@/tools/identity_center'
 import { imageGenerateTool } from '@/tools/image'
+import { storyboardGenerateTool, storyboardRenderTool } from '@/tools/storyboard'
 import {
   googleImagenV2Tool,
   googleNanoBananaV2Tool,
@@ -8158,6 +8159,8 @@ export const tools: Record<string, ToolConfig> = {
   datadog_list_downtimes: datadogListDowntimesTool,
   datadog_cancel_downtime: datadogCancelDowntimeTool,
   image_generate: imageGenerateTool,
+  storyboard_generate: storyboardGenerateTool,
+  storyboard_render: storyboardRenderTool,
   openai_image: openAIImageTool,
   openai_image_v2: openAIImageV2Tool,
   microsoft_ad_list_users: microsoftAdListUsersTool,

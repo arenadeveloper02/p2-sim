@@ -150,6 +150,7 @@ import { IAMBlock, IAMBlockMeta } from '@/blocks/blocks/iam'
 import { IcypeasBlock, IcypeasBlockMeta } from '@/blocks/blocks/icypeas'
 import { IdentityCenterBlock, IdentityCenterBlockMeta } from '@/blocks/blocks/identity_center'
 import { ImageFusionBlock } from '@/blocks/blocks/image_fusion'
+import { StoryboardBlock } from '@/blocks/blocks/storyboard'
 import { ImageGeneratorBlock, ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'
 import { ImapBlock, ImapBlockMeta } from '@/blocks/blocks/imap'
 import { IncidentioBlock, IncidentioBlockMeta } from '@/blocks/blocks/incidentio'
@@ -366,6 +367,7 @@ const ARENA_CUSTOM_BLOCK_REGISTRY: Record<string, BlockConfig> = {
   p2_docs: P2DocsBlock,
   semrush: SemrushBlock,
   spyfu: SpyfuBlock,
+  storyboard: StoryboardBlock,
   unipile: UnipileBlock,
   // presentation: PresentationBlock,
 }

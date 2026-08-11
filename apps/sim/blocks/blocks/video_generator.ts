@@ -1642,6 +1642,111 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
   },
 }
 
+// ---------------------------------------------------------------------------
+// Story Mode (V3 only)
+//
+// Adds a "Story Mode" option to the provider dropdown. In that mode the block
+// renders a previously generated storyboard (image-to-video per scene +
+// FFmpeg stitch via the storyboard_render tool) instead of text-to-video.
+// V1/V2 definitions are untouched; the default provider stays 'falai', so
+// existing workflows keep their exact current behavior.
+// ---------------------------------------------------------------------------
+
+const STORYBOARD_PROVIDER_ID = 'storyboard'
+
+const STORYBOARD_MODE_SUBBLOCKS: SubBlockConfig[] = [
+  {
+    id: 'conversationId',
+    title: 'Conversation ID',
+    type: 'short-input',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    value: () => '<start.conversationId>',
+    placeholder: '<start.conversationId>',
+    description: 'Finds the storyboard saved for this chat. Leave as the default.',
+    required: true,
+  },
+  {
+    id: 'sceneOrder',
+    title: 'Scene Order',
+    type: 'short-input',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    placeholder: '3,1,2 — leave empty to keep the original order',
+    description: 'The order the user chose for the storyboard scenes',
+  },
+  {
+    id: 'storyVideoModel',
+    title: 'Video Model',
+    type: 'dropdown',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    options: [
+      { label: 'Google Veo 3.1 Fast', id: 'veo-3.1-fast' },
+      { label: 'Google Veo 3.1', id: 'veo-3.1' },
+      { label: 'ByteDance Seedance 2.0', id: 'seedance-2.0' },
+      { label: 'ByteDance Seedance 2.0 Fast', id: 'seedance-2.0-fast' },
+      { label: 'Kling 3.0 Pro', id: 'kling-v3-pro' },
+    ],
+    value: () => 'veo-3.1-fast',
+    description: 'Image-to-video model used for each scene clip',
+  },
+  {
+    id: 'clipDuration',
+    title: 'Seconds per Scene',
+    type: 'dropdown',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    options: [
+      { label: '4', id: '4' },
+      { label: '6', id: '6' },
+      { label: '8', id: '8' },
+    ],
+    value: () => '4',
+  },
+  {
+    id: 'storyResolution',
+    title: 'Resolution',
+    type: 'dropdown',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    options: [
+      { label: '720p', id: '720p' },
+      { label: '1080p', id: '1080p' },
+    ],
+    value: () => '720p',
+  },
+  {
+    id: 'storyAudio',
+    title: 'Generate Audio',
+    type: 'switch',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    description: 'Native audio for each scene clip (increases cost)',
+  },
+]
+
+/**
+ * Adds the Story Mode provider option and hides mode-agnostic fields (prompt,
+ * apiKey) when it is selected. Provider/model-conditioned fields already hide
+ * on their own because their conditions never match 'storyboard'.
+ */
+const withStoryboardMode = (subBlocks: SubBlockConfig[]): SubBlockConfig[] => [
+  ...subBlocks.map((subBlock) => {
+    if (subBlock.id === 'provider' && Array.isArray(subBlock.options)) {
+      return {
+        ...subBlock,
+        options: [
+          ...subBlock.options,
+          { label: 'Story Mode (Storyboard)', id: STORYBOARD_PROVIDER_ID },
+        ],
+      }
+    }
+    if (!subBlock.condition) {
+      return {
+        ...subBlock,
+        condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID, not: true },
+      }
+    }
+    return subBlock
+  }),
+  ...STORYBOARD_MODE_SUBBLOCKS,
+]
+
 export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
   ...VideoGeneratorV2Block,
   sunset: undefined,
@@ -1649,12 +1754,52 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
   name: 'Video Generator',
   description: 'Generate videos from text using AI',
   longDescription:
-    'Generate high-quality videos from text prompts via hosted Fal.ai. Supports multiple models (including Veo, Sora, Kling, MiniMax, Seedance, WAN, and LTX), aspect ratios, resolutions, prompt optimization, and native audio controls.',
+    'Generate high-quality videos from text prompts via hosted Fal.ai. Supports multiple models (including Veo, Sora, Kling, MiniMax, Seedance, WAN, and LTX), aspect ratios, resolutions, prompt optimization, and native audio controls. Story Mode renders a previously generated storyboard into one stitched video in the scene order the user chose.',
   docsLink: 'https://docs.sim.ai/integrations/video_generator',
   category: 'blocks',
   integrationType: IntegrationType.AI,
   bgColor: '#181C1E',
   icon: VideoIcon,
   hideFromToolbar: false,
-  subBlocks: withFalAIModelOptions(VideoGeneratorV2Block.subBlocks, FALAI_LATEST_MODEL_OPTIONS),
+  subBlocks: withStoryboardMode(
+    withFalAIModelOptions(VideoGeneratorV2Block.subBlocks, FALAI_LATEST_MODEL_OPTIONS)
+  ),
+  tools: {
+    access: ['video_falai', 'storyboard_render'],
+    config: {
+      tool: (params) =>
+        params.provider === STORYBOARD_PROVIDER_ID
+          ? 'storyboard_render'
+          : (VideoGeneratorV2Block.tools.config?.tool?.(params) ?? 'video_falai'),
+      params: (params) =>
+        params.provider === STORYBOARD_PROVIDER_ID
+          ? {
+              conversationId: params.conversationId,
+              order: params.sceneOrder,
+              videoModel: params.storyVideoModel,
+              clipDuration: params.clipDuration ? Number(params.clipDuration) : undefined,
+              resolution: params.storyResolution,
+              generateAudio: parseOptionalBooleanInput(params.storyAudio),
+            }
+          : (VideoGeneratorV2Block.tools.config?.params?.(params) ?? params),
+    },
+  },
+  inputs: {
+    ...VideoGeneratorV2Block.inputs,
+    conversationId: {
+      type: 'string',
+      description: 'Story Mode: conversation whose saved storyboard to render',
+    },
+    sceneOrder: { type: 'string', description: 'Story Mode: scene order, e.g. "3,1,2"' },
+    storyVideoModel: { type: 'string', description: 'Story Mode: image-to-video model' },
+    clipDuration: { type: 'number', description: 'Story Mode: seconds per scene clip' },
+    storyResolution: { type: 'string', description: 'Story Mode: clip resolution' },
+    storyAudio: { type: 'boolean', description: 'Story Mode: generate native audio per clip' },
+  },
+  outputs: {
+    ...VideoGeneratorV2Block.outputs,
+    content: { type: 'string', description: 'Story Mode: confirmation text with video link' },
+    storyboardId: { type: 'string', description: 'Story Mode: storyboard that was rendered' },
+    clipCount: { type: 'number', description: 'Story Mode: number of stitched clips' },
+  },
 }

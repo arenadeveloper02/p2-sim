@@ -302,6 +302,49 @@ async function executeChartGenerateDirect(params: Record<string, any>): Promise<
   return { success: true, output: result }
 }
 
+/**
+ * Server-only storyboard generation. Kept out of the ToolConfig for the same
+ * reason as chart generation: the client-bundled tools registry must not pull
+ * in run-storyboard-generate.server (db/postgres).
+ */
+async function executeStoryboardGenerateDirect(
+  params: Record<string, any>
+): Promise<ToolResponse> {
+  const { runStoryboardGenerate } = await import(
+    '@/lib/storyboard/run-storyboard-generate.server'
+  )
+  const ctx = (params._context ?? {}) as {
+    userId?: string
+    workspaceId?: string
+    workflowId?: string
+  }
+  const result = await runStoryboardGenerate(params as Record<string, unknown>, {
+    userId: ctx.userId,
+    workspaceId: ctx.workspaceId,
+    workflowId: ctx.workflowId,
+  })
+  return { success: true, output: result }
+}
+
+/**
+ * Server-only storyboard rendering (Story Mode of the Video Generator).
+ * Same client-bundle reasoning as executeStoryboardGenerateDirect.
+ */
+async function executeStoryboardRenderDirect(params: Record<string, any>): Promise<ToolResponse> {
+  const { runStoryboardRender } = await import('@/lib/storyboard/run-storyboard-render.server')
+  const ctx = (params._context ?? {}) as {
+    userId?: string
+    workspaceId?: string
+    workflowId?: string
+  }
+  const result = await runStoryboardRender(params as Record<string, unknown>, {
+    userId: ctx.userId,
+    workspaceId: ctx.workspaceId,
+    workflowId: ctx.workflowId,
+  })
+  return { success: true, output: result }
+}
+
 function resolveToolScope(
   params: Record<string, unknown>,
   executionContext?: ExecutionContext
@@ -1963,7 +2006,11 @@ export async function executeTool(
                             ? true
                             : params.arenaMode,
                       })
-                  : tool.directExecution
+                  : normalizedToolId === 'storyboard_generate'
+                    ? executeStoryboardGenerateDirect
+                    : normalizedToolId === 'storyboard_render'
+                      ? executeStoryboardRenderDirect
+                      : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
       const result = await directExecution(contextParams, effectiveSignal)
