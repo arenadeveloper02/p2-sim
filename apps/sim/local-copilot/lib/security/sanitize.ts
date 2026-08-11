@@ -46,7 +46,7 @@ function sanitizeValue(value: unknown, key?: string): unknown {
 
   const result: Record<string, unknown> = {}
   for (const [nestedKey, nested] of Object.entries(value)) {
-    if (SECRET_KEY_PATTERN.test(nestedKey)) {
+    if (SECRET_KEY_PATTERN.test(nestedKey) && !IDENTIFIER_KEY_PATTERN.test(nestedKey)) {
       result[nestedKey] = '[REDACTED]'
       continue
     }

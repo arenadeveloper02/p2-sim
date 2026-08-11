@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
-import { Button, Combobox } from '@sim/emcn'
+import { Button, Combobox, type ComboboxOptionGroup } from '@sim/emcn'
 import { ExternalLink, KeyRound } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
@@ -13,15 +13,24 @@ import {
   type OAuthProvider,
   parseProvider,
 } from '@/lib/oauth'
-import { getMissingRequiredScopes, getRequiredScopesForCredential } from '@/lib/oauth/utils'
+import {
+  getMissingRequiredScopes,
+  getRequiredScopesForCredential,
+  getServiceConfigByServiceId,
+} from '@/lib/oauth/utils'
 import { isAdminWorkspace } from '@/lib/workspaces/is-admin-workspace'
 import { ConnectOAuthModal } from '@/app/workspace/[workspaceId]/components/connect-oauth-modal'
+import {
+  ConnectServiceAccountModal,
+  type ServiceAccountProviderId,
+  useServiceAccountConnectTarget,
+} from '@/app/workspace/[workspaceId]/integrations/components/connect-service-account-modal'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
 import { useDependsOnGate } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-depends-on-gate'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useActiveSearchTarget } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/providers/active-search-target-provider'
-import { getBareIconStyle, type StyleableIcon } from '@/blocks/icon-color'
+import { getBareIconStyle, type StyleableIcon } from '@/blocks/brand-icon-style'
 import type { SubBlockConfig } from '@/blocks/types'
 import { useWorkspaceCredential, useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useHubSpotAccountOptions } from '@/hooks/queries/hubspot-accounts'
@@ -57,6 +66,7 @@ export function CredentialSelector({
   const workspaceId = (params?.workspaceId as string) || ''
   const [showConnectModal, setShowConnectModal] = useState(false)
   const [showOAuthModal, setShowOAuthModal] = useState(false)
+  const [showSetupModal, setShowSetupModal] = useState(false)
   const [editingValue, setEditingValue] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
@@ -140,19 +150,52 @@ export function CredentialSelector({
       (isSharedHubspotWorkspace && hubspotAccountOptionsLoading) ||
       (isSharedUnipileWorkspace && unipileAccountOptionsLoading)
 
-  const selectionPool = useMemo(
+  const credentialKind = subBlock.credentialKind
+  const isMergedKinds = credentialKind === 'any'
+
+  const credentials = useMemo(() => {
+    // A service-account picker lists only the reusable service-account
+    // credentials, including in trigger mode. A merged ('any') picker lists
+    // OAuth accounts and service accounts together.
+    if (credentialKind === 'service-account') {
+      return rawCredentials.filter((cred) => cred.type === 'service_account')
+    }
+    if (isMergedKinds) {
+      return rawCredentials
+    }
+    return isTriggerMode && !subBlock.allowServiceAccounts
+      ? rawCredentials.filter((cred) => cred.type !== 'service_account')
+      : rawCredentials
+  }, [rawCredentials, isTriggerMode, credentialKind, isMergedKinds, subBlock.allowServiceAccounts])
+
+  // Resolved service-account provider metadata for the setup modal. Gated on
+  // `credentialKind` and using the non-throwing lookup so it never runs (or
+  // throws) for plain OAuth pickers.
+  const serviceAccountService = useMemo(
     () =>
-      isTriggerMode
-        ? rawCredentials.filter((cred) => cred.type !== 'service_account')
-        : rawCredentials,
-    [rawCredentials, isTriggerMode]
+      credentialKind === 'service-account' || isMergedKinds
+        ? getServiceConfigByServiceId(serviceId)
+        : null,
+    [credentialKind, isMergedKinds, serviceId]
   )
 
-  const credentials = useMemo(() => selectionPool, [selectionPool])
+  // Canonical resolver for the service-account connect control: the vendor-
+  // accurate label and — critically — the per-viewer preview gate (a custom
+  // Slack bot rides `slack_v2`). Shared with the integrations page and chat so
+  // the gate can't be bypassed here. When `hidden`, the setup action is
+  // suppressed; existing service-account credentials stay selectable.
+  const serviceAccountTarget = useServiceAccountConnectTarget({
+    serviceAccountProviderId: serviceAccountService?.serviceAccountProviderId as
+      | ServiceAccountProviderId
+      | undefined,
+    serviceName: serviceAccountService?.name,
+    serviceIcon: serviceAccountService?.icon,
+  })
+  const serviceAccountConnectHidden = Boolean(serviceAccountTarget?.hidden)
 
   const selectedCredential = useMemo(
-    () => selectionPool.find((cred) => cred.id === selectedId),
-    [selectionPool, selectedId]
+    () => credentials.find((cred) => cred.id === selectedId),
+    [credentials, selectedId]
   )
 
   const selectedAllCredential = useMemo(
@@ -262,8 +305,12 @@ export function CredentialSelector({
   )
 
   const handleAddCredential = useCallback(() => {
+    if (credentialKind === 'service-account') {
+      setShowSetupModal(true)
+      return
+    }
     setShowConnectModal(true)
-  }, [])
+  }, [credentialKind])
 
   const handleUnipileReconnect = useCallback(
     async (credentialId: string) => {
@@ -356,6 +403,7 @@ export function CredentialSelector({
       const oauthCredentials = allWorkspaceCredentials.filter((c) => c.type === 'oauth')
       return oauthCredentials.map((cred) => ({ label: cred.displayName, value: cred.id }))
     }
+    if (isMergedKinds) return []
 
     if (isSharedHubspotWorkspace) {
       const personalAccountCount = hubspotAccountOptions.filter(
@@ -419,25 +467,93 @@ export function CredentialSelector({
       iconElement: getProviderIcon((cred.provider ?? provider) as OAuthProvider),
     }))
 
-    options.push({
-      label:
-        credentials.length > 0
-          ? `Connect another ${getProviderName(provider)} account`
-          : `Connect ${getProviderName(provider)} account`,
-      value: '__connect_account__',
-      iconElement: <ExternalLink className='size-3' />,
-    })
+    // Suppress the setup action when the service-account flow is preview-gated
+    // for this viewer (a custom Slack bot needs slack_v2) — existing accounts
+    // above stay selectable.
+    if (credentialKind !== 'service-account' || !serviceAccountConnectHidden) {
+      options.push({
+        label:
+          credentialKind === 'service-account'
+            ? (subBlock.credentialLabels?.serviceAccountConnect ??
+              serviceAccountTarget?.label ??
+              `Add ${getProviderName(provider)} key`)
+            : credentials.length > 0
+              ? `Connect another ${getProviderName(provider)} account`
+              : `Connect ${getProviderName(provider)} account`,
+        value: '__connect_account__',
+        iconElement: <ExternalLink className='size-3' />,
+      })
+    }
     options.push(...additionalConnectItems)
 
     return options
   }, [
     isAllCredentials,
+    isMergedKinds,
     isSharedUnipileWorkspace,
     unipileAccountOptions,
     allWorkspaceCredentials,
     isSharedHubspotWorkspace,
     hubspotAccountOptions,
     credentials,
+    credentialKind,
+    subBlock.credentialLabels,
+    serviceAccountConnectHidden,
+    serviceAccountTarget,
+    provider,
+    getProviderIcon,
+    getProviderName,
+    additionalConnectItems,
+  ])
+
+  const comboboxGroups = useMemo<ComboboxOptionGroup[] | undefined>(() => {
+    if (!isMergedKinds) return undefined
+
+    const labels = subBlock.credentialLabels
+    const toOption = (cred: (typeof credentials)[number]) => ({
+      label: cred.name,
+      value: cred.id,
+      iconElement: getProviderIcon((cred.provider ?? provider) as OAuthProvider),
+    })
+
+    return [
+      {
+        section: labels?.oauthGroup ?? `${getProviderName(provider)} accounts`,
+        items: [
+          ...credentials.filter((c) => c.type !== 'service_account').map(toOption),
+          {
+            label: labels?.oauthConnect ?? `Connect ${getProviderName(provider)} account`,
+            value: '__connect_account__',
+            iconElement: <ExternalLink className='size-3' />,
+          },
+        ],
+      },
+      {
+        section: labels?.serviceAccountGroup ?? 'Service accounts',
+        items: [
+          ...credentials.filter((c) => c.type === 'service_account').map(toOption),
+          // Drop the setup action when the flow is preview-gated for this viewer.
+          ...(serviceAccountConnectHidden
+            ? []
+            : [
+                {
+                  label:
+                    labels?.serviceAccountConnect ??
+                    serviceAccountTarget?.label ??
+                    `Add ${getProviderName(provider)} key`,
+                  value: '__connect_service_account__',
+                  iconElement: <ExternalLink className='size-3' />,
+                },
+              ]),
+        ],
+      },
+    ]
+  }, [
+    isMergedKinds,
+    subBlock.credentialLabels,
+    credentials,
+    serviceAccountConnectHidden,
+    serviceAccountTarget,
     provider,
     getProviderIcon,
     getProviderName,
@@ -519,7 +635,15 @@ export function CredentialSelector({
 
       if (value === '__connect_account__') {
         setConnectModalConfig(null)
+        if (isMergedKinds) {
+          setShowConnectModal(true)
+          return
+        }
         handleAddCredential()
+        return
+      }
+      if (value === '__connect_service_account__') {
+        setShowSetupModal(true)
         return
       }
 
@@ -565,6 +689,7 @@ export function CredentialSelector({
     },
     [
       isAllCredentials,
+      isMergedKinds,
       allWorkspaceCredentials,
       credentials,
       hubspotAccountOptions,
@@ -580,6 +705,7 @@ export function CredentialSelector({
     <div>
       <Combobox
         options={comboboxOptions}
+        groups={comboboxGroups}
         value={displayValue}
         selectedValue={selectedId}
         onChange={handleComboboxChange}
@@ -588,8 +714,10 @@ export function CredentialSelector({
           hasDependencies && !depsSatisfied ? 'Fill in required fields above first' : label
         }
         disabled={effectiveDisabled}
-        editable={true}
-        filterOptions={true}
+        editable={!isMergedKinds}
+        filterOptions={!isMergedKinds}
+        searchable={isMergedKinds}
+        searchPlaceholder='Search credentials...'
         isLoading={credentialsLoading}
         overlayContent={overlayContent}
         className={overlayContent ? 'pl-7' : ''}
@@ -609,7 +737,9 @@ export function CredentialSelector({
                 workflowId: activeWorkflowId || '',
                 displayName: selectedCredential?.name ?? getProviderName(reauthorizeProvider),
                 providerId: reauthorizeProvider,
-                preCount: credentials.length,
+                // Service accounts aren't OAuth connections, so they must not
+                // inflate the count used to detect a newly-connected account.
+                preCount: credentials.filter((c) => c.type !== 'service_account').length,
                 workspaceId,
                 requestedAt: Date.now(),
               })
@@ -657,6 +787,21 @@ export function CredentialSelector({
           requiredScopes={reauthorizeRequiredScopes}
           newScopes={missingRequiredScopes}
           serviceId={reauthorizeServiceId}
+        />
+      )}
+
+      {showSetupModal && serviceAccountTarget && (
+        <ConnectServiceAccountModal
+          open={showSetupModal}
+          onOpenChange={setShowSetupModal}
+          workspaceId={workspaceId}
+          serviceAccountProviderId={serviceAccountTarget.serviceAccountProviderId}
+          serviceName={serviceAccountTarget.serviceName}
+          serviceIcon={serviceAccountTarget.serviceIcon}
+          onCreated={(newCredentialId) => {
+            setStoreValue(newCredentialId)
+            refetchCredentials()
+          }}
         />
       )}
     </div>

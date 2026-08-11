@@ -6,6 +6,7 @@ import { assertKnownSizeWithinLimit } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { assertGeminiImageModel } from '@/lib/image-generation/block-model-config'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
+import { buildImageBillingMetadata } from '@/lib/tools/image-pricing'
 import type { StorageContext } from '@/lib/uploads'
 import { S3_AGENT_GENERATED_IMAGES_CONFIG } from '@/lib/uploads/config'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
@@ -469,7 +470,19 @@ export async function buildNanoBananaToolResponse(
       content: finalImageUrl || 'nano-banana-generated-image',
       image: finalImageUrl,
       images: [finalImageUrl],
-      metadata,
+      metadata: {
+        ...metadata,
+        provider: 'gemini',
+        model: metadata.model,
+      },
+      __imageBilling: buildImageBillingMetadata({
+        provider: 'gemini',
+        model: metadata.model,
+        resolution: params?.imageSize ?? undefined,
+        aspectRatio: params?.aspectRatio,
+        numImages: 1,
+        hasEdit: metadata.hasInputImage || metadata.hasInputImages,
+      }),
       s3UploadFailed,
     },
   }
@@ -865,6 +878,7 @@ export interface NanoBananaGenerationParams {
   prompt: string
   aspectRatio?: string
   imageSize?: string
+  apiKey?: string
   inputImage?: unknown
   inputImageMimeType?: string
   inputImages?: unknown[]
@@ -922,7 +936,7 @@ export async function generateNanoBananaImage(
   }
 
   try {
-    const apiKey = getRotatingApiKey('google')
+    const apiKey = params.apiKey?.trim() || getRotatingApiKey('google')
     const url = buildGenerateContentUrl(model)
     const requestBody = await buildNanoBananaRequestBody({
       prompt,

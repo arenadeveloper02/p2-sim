@@ -60,6 +60,11 @@ export const createKnowledgeBaseBodySchema = z.object({
     )
     .optional(),
   workspaceId: z.string().min(1, 'Workspace ID is required'),
+  /**
+   * Folder the knowledge base is created in, from the `knowledge_base` folder tree.
+   * `null` (or omitted) creates it at the workspace root.
+   */
+  folderId: z.string().min(1, 'Folder ID cannot be empty').nullable().optional(),
   embeddingModel: z.literal('text-embedding-3-small').default('text-embedding-3-small'),
   embeddingDimension: z.literal(1536).default(1536),
   chunkingConfig: chunkingConfigSchema.default({
@@ -77,6 +82,11 @@ export const updateKnowledgeBaseBodySchema = createKnowledgeBaseBodySchema
   .partial()
   .extend({
     chunkingConfig: chunkingConfigSchema.optional(),
+    /**
+     * Moves the knowledge base between folders. Omitted leaves the folder untouched;
+     * explicit `null` moves it back to the workspace root.
+     */
+    folderId: z.string().min(1, 'Folder ID cannot be empty').nullable().optional(),
     workspaceId: z.string().nullable().optional(),
     embeddingModel: z.literal('text-embedding-3-small').optional(),
     embeddingDimension: z.literal(1536).optional(),
@@ -106,6 +116,7 @@ export const knowledgeBaseDataSchema = z
     updatedAt: wireDateSchema,
     deletedAt: nullableWireDateSchema,
     workspaceId: z.string().nullable(),
+    folderId: z.string().nullable(),
     docCount: z.number().optional(),
     connectorTypes: z.array(z.string()).optional(),
   })
@@ -170,5 +181,26 @@ export const restoreKnowledgeBaseContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: z.object({ success: z.literal(true) }).passthrough(),
+  },
+})
+
+export const copyKnowledgeBaseBodySchema = z.object({
+  targetWorkspaceId: z.string().min(1, 'Target workspace ID is required'),
+  name: z
+    .string()
+    .min(1, 'Name is required')
+    .max(100, 'Name must be less than 100 characters')
+    .optional(),
+})
+export type CopyKnowledgeBaseBody = z.input<typeof copyKnowledgeBaseBodySchema>
+
+export const copyKnowledgeBaseContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/knowledge/[id]/copy',
+  params: knowledgeBaseParamsSchema,
+  body: copyKnowledgeBaseBodySchema,
+  response: {
+    mode: 'json',
+    schema: successResponseSchema(knowledgeBaseDataSchema),
   },
 })

@@ -35,6 +35,9 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
     patterns: [
       /\b(search|research|look\s*up|find\s+out|scrape|crawl|docs?|documentation|what\s+is|latest|news|web)\b/i,
       /\bonline\b/i,
+      // Real-world / current-facts questions that should trigger live web search.
+      /\b(who\s+(is|are|was|were|won)|what\s+(are|was|were)|when\s+(is|was|did|does)|where\s+(is|are|was)|how\s+(much|many|old|long))\b/i,
+      /\b(current|today|tonight|right\s+now|as\s+of|this\s+(week|month|year)|stock\s+price|weather|election|ceo|prime\s+minister|president|governor|chief\s+minister|\bcm\b)\b/i,
       /\b(remember|prefer|preference|always\s+use|don'?t\s+forget|forget\s+that)\b/i,
     ],
   },
@@ -119,7 +122,8 @@ export function classifyLocalCopilotIntent(message: string): LocalCopilotIntent 
   }
 
   const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1])
-  if (ranked.length === 0) return { primary: 'general', secondary: [], useFullCatalog: true }
+  // Weak / ambiguous intents stay on ALWAYS_ON ∪ specialists (not the full ~86-tool catalog).
+  if (ranked.length === 0) return { primary: 'general', secondary: [], useFullCatalog: false }
 
   const [topDomain, topScore] = ranked[0]
   const secondaries = ranked
@@ -128,10 +132,10 @@ export function classifyLocalCopilotIntent(message: string): LocalCopilotIntent 
     .map(([domain]) => domain)
 
   if (topScore < 2 && secondaries.length === 0) {
-    return { primary: 'general', secondary: [], useFullCatalog: true }
+    return { primary: 'general', secondary: [], useFullCatalog: false }
   }
   if (secondaries.length >= 3) {
-    return { primary: 'general', secondary: [], useFullCatalog: true }
+    return { primary: 'general', secondary: [], useFullCatalog: false }
   }
 
   return { primary: topDomain, secondary: secondaries, useFullCatalog: false }

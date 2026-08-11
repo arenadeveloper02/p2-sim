@@ -15,7 +15,11 @@ export function getRotatingApiKey(provider: string): string {
     provider !== 'sambanova' &&
     provider !== 'google' &&
     provider !== 'gemini' &&
-    provider !== 'cohere'
+    provider !== 'cohere' &&
+    provider !== 'zai' &&
+    // provider !== 'xai' &&
+    provider !== 'kimi' &&
+    provider !== 'fireworks'
   ) {
     throw new Error(`No rotation implemented for provider: ${provider}`)
   }
@@ -43,6 +47,7 @@ export function getRotatingApiKey(provider: string): string {
     if (env.XAI_API_KEY_2) keys.push(env.XAI_API_KEY_2)
     if (env.XAI_API_KEY_3) keys.push(env.XAI_API_KEY_3)
   } else if (provider === 'gemini' || provider === 'google' || provider === 'vertex') {
+    // Arena custom: Generative Language uses GEMINI_API_KEY*, never NEXT_PUBLIC_GOOGLE_API_KEY
     if (env.GEMINI_API_KEY) keys.push(env.GEMINI_API_KEY)
     if (env.GEMINI_API_KEY_1) keys.push(env.GEMINI_API_KEY_1)
     if (env.GEMINI_API_KEY_2) keys.push(env.GEMINI_API_KEY_2)
@@ -51,12 +56,31 @@ export function getRotatingApiKey(provider: string): string {
     if (env.COHERE_API_KEY_1) keys.push(env.COHERE_API_KEY_1)
     if (env.COHERE_API_KEY_2) keys.push(env.COHERE_API_KEY_2)
     if (env.COHERE_API_KEY_3) keys.push(env.COHERE_API_KEY_3)
+  } else if (provider === 'zai') {
+    if (env.ZAI_API_KEY_1) keys.push(env.ZAI_API_KEY_1)
+    if (env.ZAI_API_KEY_2) keys.push(env.ZAI_API_KEY_2)
+    if (env.ZAI_API_KEY_3) keys.push(env.ZAI_API_KEY_3)
+    // } else if (provider === 'xai') {
+    //   if (env.XAI_API_KEY_1) keys.push(env.XAI_API_KEY_1)
+    //   if (env.XAI_API_KEY_2) keys.push(env.XAI_API_KEY_2)
+    //   if (env.XAI_API_KEY_3) keys.push(env.XAI_API_KEY_3)
+  } else if (provider === 'kimi') {
+    if (env.KIMI_API_KEY_1) keys.push(env.KIMI_API_KEY_1)
+    if (env.KIMI_API_KEY_2) keys.push(env.KIMI_API_KEY_2)
+    if (env.KIMI_API_KEY_3) keys.push(env.KIMI_API_KEY_3)
+  } else if (provider === 'fireworks') {
+    if (env.FIREWORKS_API_KEY_1) keys.push(env.FIREWORKS_API_KEY_1)
+    if (env.FIREWORKS_API_KEY_2) keys.push(env.FIREWORKS_API_KEY_2)
+    if (env.FIREWORKS_API_KEY_3) keys.push(env.FIREWORKS_API_KEY_3)
+    // The platform Fireworks key predates the rotation slots and ships as a
+    // single secret; it stands in as a one-key pool until slots are populated.
+    if (keys.length === 0 && env.FIREWORKS_API_KEY) keys.push(env.FIREWORKS_API_KEY)
   }
 
   if (keys.length === 0) {
-    if (provider === 'google' || provider === 'vertex') {
+    if (provider === 'google' || provider === 'gemini' || provider === 'vertex') {
       throw new Error(
-        `No API keys configured for rotation. Please configure NEXT_PUBLIC_GOOGLE_API_KEY.`
+        'No API keys configured for rotation. Please configure GEMINI_API_KEY (or GEMINI_API_KEY_1..3).'
       )
     }
 

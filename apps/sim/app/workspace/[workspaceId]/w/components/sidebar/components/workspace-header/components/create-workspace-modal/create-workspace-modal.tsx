@@ -11,6 +11,8 @@ import {
 } from '@sim/emcn'
 import { getErrorMessage } from '@sim/utils/errors'
 
+const TITLE = 'Create workspace'
+
 interface CreateWorkspaceModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -49,22 +51,15 @@ export function CreateWorkspaceModal({
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      void handleSubmit()
-    }
-  }
-
   const handleNameChange = (value: string) => {
     setName(value)
     setError(null)
   }
 
   return (
-    <ChipModal open={open} onOpenChange={onOpenChange} srTitle='Create workspace'>
-      <ChipModalHeader onClose={() => onOpenChange(false)}>Create workspace</ChipModalHeader>
-      <ChipModalBody onKeyDown={handleKeyDown}>
+    <ChipModal open={open} onOpenChange={onOpenChange} srTitle={TITLE}>
+      <ChipModalHeader onClose={() => onOpenChange(false)}>{TITLE}</ChipModalHeader>
+      <ChipModalBody>
         <ChipModalField
           type='input'
           title='Name'

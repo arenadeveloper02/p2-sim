@@ -2,6 +2,10 @@ import { getErrorMessage, toError } from '@sim/utils/errors'
 import type { ToolCallResult } from '@/lib/copilot/request/types'
 import { executeCreateWorkflow } from '@/lib/copilot/tools/handlers/workflow/mutations'
 import { editWorkflowServerTool } from '@/lib/copilot/tools/server/workflow/edit-workflow'
+import {
+  normalizeEditWorkflowArgs,
+  resolveEditWorkflowOperations,
+} from '@/lib/copilot/tools/server/workflow/edit-workflow/normalize-args'
 import type { EditWorkflowParams } from '@/lib/copilot/tools/server/workflow/edit-workflow/types'
 
 export interface LocalCopilotMutationContext {
@@ -11,6 +15,8 @@ export interface LocalCopilotMutationContext {
   chatId?: string
   abortSignal?: AbortSignal
 }
+
+export { normalizeEditWorkflowArgs, resolveEditWorkflowOperations }
 
 export async function runCreateWorkflowTool(
   args: Record<string, unknown>,
@@ -29,7 +35,7 @@ export async function runCreateWorkflowTool(
       name: typeof args.name === 'string' ? args.name : '',
       description: typeof args.description === 'string' ? args.description : undefined,
       folderId: typeof args.folderId === 'string' ? args.folderId : undefined,
-      workspaceId: typeof args.workspaceId === 'string' ? args.workspaceId : ctx.workspaceId,
+      workspaceId: ctx.workspaceId,
     },
     execContext
   )
@@ -39,8 +45,9 @@ export async function runEditWorkflowTool(
   args: Record<string, unknown>,
   ctx: LocalCopilotMutationContext
 ): Promise<ToolCallResult> {
+  const normalized = normalizeEditWorkflowArgs(args)
   const workflowId =
-    (typeof args.workflowId === 'string' && args.workflowId.trim()) || ctx.workflowId
+    (typeof normalized.workflowId === 'string' && normalized.workflowId.trim()) || ctx.workflowId
   if (!workflowId) {
     return {
       success: false,
@@ -48,9 +55,13 @@ export async function runEditWorkflowTool(
     }
   }
 
-  const operations = args.operations
-  if (!Array.isArray(operations) || operations.length === 0) {
-    return { success: false, error: 'operations are required and must be a non-empty array' }
+  const operations = resolveEditWorkflowOperations(normalized)
+  if (!operations) {
+    return {
+      success: false,
+      error:
+        'operations are required and must be a non-empty array — pass { operations: [{ block_id, operation_type, params }] }',
+    }
   }
 
   try {
@@ -58,8 +69,8 @@ export async function runEditWorkflowTool(
       {
         workflowId,
         operations: operations as EditWorkflowParams['operations'],
-        ...(typeof args.currentUserWorkflow === 'string'
-          ? { currentUserWorkflow: args.currentUserWorkflow }
+        ...(typeof normalized.currentUserWorkflow === 'string'
+          ? { currentUserWorkflow: normalized.currentUserWorkflow }
           : {}),
       },
       {

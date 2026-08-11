@@ -1,27 +1,28 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Plus } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client/utils'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { generateSlug, isAdminOrOwner, type Member } from '@/lib/workspaces/organization'
+import { InviteModal } from '@/app/workspace/[workspaceId]/components/invite-modal'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
 import {
   NoOrganizationView,
-  OrganizationInviteModal,
   OrganizationMemberLists,
   RemoveMemberDialog,
   TeamSeatsOverview,
   TransferOwnershipDialog,
 } from '@/app/workspace/[workspaceId]/settings/components/team-management/components'
+import { useSettingsSearch } from '@/app/workspace/[workspaceId]/settings/components/use-settings-search'
 import {
   useCreateOrganization,
+  useMemberRemovalImpact,
   useOrganization,
   useOrganizationBilling,
   useOrganizationRoster,
-  useOrganizations,
   useRemoveMember,
   useTransferOwnership,
 } from '@/hooks/queries/organization'
@@ -30,29 +31,33 @@ import { usePermissionConfig } from '@/hooks/use-permission-config'
 
 const logger = createLogger('TeamManagement')
 
-export function TeamManagement() {
+interface TeamManagementProps {
+  organizationId: string
+  billingHref?: string
+}
+
+export function TeamManagement({
+  organizationId,
+  billingHref = `/organization/${organizationId}/settings/billing`,
+}: TeamManagementProps) {
   const { data: session } = useSession()
   const { isInvitationsDisabled } = usePermissionConfig()
-
-  const { data: organizationsData } = useOrganizations()
-  const activeOrganization = organizationsData?.activeOrganization
+  const [memberQuery, setMemberQuery] = useSettingsSearch()
 
   const { data: userSubscriptionData } = useSubscriptionData()
   const subscriptionAccess = getSubscriptionAccessState(userSubscriptionData?.data)
   const hasTeamPlan = subscriptionAccess.hasUsableTeamAccess
   const hasEnterprisePlan = subscriptionAccess.hasUsableEnterpriseAccess
 
-  const {
-    data: organization,
-    isLoading,
-    error: orgError,
-  } = useOrganization(activeOrganization?.id || '')
+  const { data: organization, isLoading, error: orgError } = useOrganization(organizationId)
+  const adminOrOwner = isAdminOrOwner(organization, session?.user?.email)
 
   const { data: organizationBillingData, isLoading: isOrgBillingLoading } = useOrganizationBilling(
-    activeOrganization?.id || ''
+    organizationId,
+    { enabled: adminOrOwner }
   )
 
-  const { data: roster, isLoading: isLoadingRoster } = useOrganizationRoster(activeOrganization?.id)
+  const { data: roster, isLoading: isLoadingRoster } = useOrganizationRoster(organizationId)
 
   const removeMemberMutation = useRemoveMember()
   const transferOwnershipMutation = useTransferOwnership()
@@ -73,7 +78,23 @@ export function TeamManagement() {
   const [orgName, setOrgName] = useState('')
   const [orgSlug, setOrgSlug] = useState('')
 
-  const adminOrOwner = isAdminOrOwner(organization, session?.user?.email)
+  /**
+   * `isFetching` (not `isLoading`) gates the confirm button: a background
+   * refetch of cached data must also hold removal so the admin never
+   * confirms against a stale credential-impact list.
+   */
+  const {
+    data: removalImpactCredentials,
+    isFetching: isRemovalImpactFetching,
+    isError: isRemovalImpactError,
+  } = useMemberRemovalImpact(organizationId, removeMemberDialog.memberId, {
+    enabled: removeMemberDialog.open,
+  })
+
+  const disclosedBreakingCredentials = [
+    ...new Set(removalImpactCredentials?.map((credential) => credential.displayName) ?? []),
+  ]
+
   const totalSeats = organizationBillingData?.data?.totalSeats ?? 0
   const usedSeats = organizationBillingData?.data?.members?.length ?? 0
   const reservedSeats = organizationBillingData?.data?.usedSeats ?? 0
@@ -95,32 +116,6 @@ export function TeamManagement() {
         referenceId: orgBilling.organizationId,
       }
     : null
-
-  const externalEmails = useMemo(() => {
-    const emails: string[] = []
-    for (const member of roster?.members ?? []) {
-      if (member.role === 'external') emails.push(member.email)
-    }
-    return emails
-  }, [roster])
-
-  /**
-   * Pending invitations for emails that already belong to a member are
-   * excluded: members can always be re-invited to additional workspaces (the
-   * server dedupes per workspace), so only non-member pending emails are
-   * blocked in the invite modal.
-   */
-  const pendingEmails = useMemo(() => {
-    const memberEmailSet = new Set<string>()
-    for (const member of roster?.members ?? []) {
-      if (member.role !== 'external') memberEmailSet.add(member.email.toLowerCase())
-    }
-    const emails: string[] = []
-    for (const invitation of roster?.pendingInvitations ?? []) {
-      if (!memberEmailSet.has(invitation.email.toLowerCase())) emails.push(invitation.email)
-    }
-    return emails
-  }, [roster])
 
   useEffect(() => {
     if ((hasTeamPlan || hasEnterprisePlan) && session?.user?.name && !orgName) {
@@ -155,7 +150,7 @@ export function TeamManagement() {
 
   const handleRemoveMember = useCallback(
     async (member: Member) => {
-      if (!session?.user || !activeOrganization?.id) return
+      if (!session?.user) return
 
       if (!member.user?.id) {
         logger.error('Member object missing user ID', { member })
@@ -175,17 +170,17 @@ export function TeamManagement() {
         isExternalRemoval: member.role === 'external',
       })
     },
-    [session?.user, activeOrganization?.id]
+    [session?.user]
   )
 
   const confirmRemoveMember = useCallback(async () => {
     const { memberId, isSelfRemoval } = removeMemberDialog
-    if (!session?.user || !activeOrganization?.id || !memberId) return
+    if (!session?.user || !memberId) return
 
     try {
       await removeMemberMutation.mutateAsync({
         memberId,
-        orgId: activeOrganization?.id,
+        orgId: organizationId,
       })
 
       setRemoveMemberDialog({
@@ -205,7 +200,7 @@ export function TeamManagement() {
     removeMemberDialog.memberId,
     removeMemberDialog.isSelfRemoval,
     session?.user?.id,
-    activeOrganization?.id,
+    organizationId,
     removeMemberMutation,
   ])
 
@@ -228,11 +223,9 @@ export function TeamManagement() {
 
   const handleConfirmTransfer = useCallback(
     async (newOwnerUserId: string) => {
-      if (!activeOrganization?.id) return
-
       try {
         const result = await transferOwnershipMutation.mutateAsync({
-          orgId: activeOrganization.id,
+          orgId: organizationId,
           newOwnerUserId,
           alsoLeave: true,
         })
@@ -246,17 +239,16 @@ export function TeamManagement() {
         logger.error('Failed to transfer ownership', error)
       }
     },
-    [activeOrganization?.id, transferOwnershipMutation]
+    [organizationId, transferOwnershipMutation]
   )
 
   const handleOpenTransferBillingPortal = useCallback(() => {
-    if (!activeOrganization?.id) return
     setTransferPortalError(null)
     const portalWindow = window.open('', '_blank')
     openBillingPortal.mutate(
       {
         context: 'organization',
-        organizationId: activeOrganization.id,
+        organizationId,
         returnUrl: `${getBaseUrl()}/workspace`,
       },
       {
@@ -278,13 +270,13 @@ export function TeamManagement() {
         },
       }
     )
-  }, [activeOrganization?.id, openBillingPortal])
+  }, [organizationId, openBillingPortal])
 
   const queryError = orgError
   const errorMessage = queryError instanceof Error ? queryError.message : null
-  const displayOrganization = organization || activeOrganization
+  const displayOrganization = organization
 
-  if (isLoading && !displayOrganization && !(hasTeamPlan || hasEnterprisePlan)) {
+  if (isLoading && !displayOrganization) {
     return null
   }
 
@@ -306,50 +298,60 @@ export function TeamManagement() {
     )
   }
 
-  if (!adminOrOwner) {
-    return null
-  }
-
   return (
     <>
       <SettingsPanel
-        actions={[
-          {
-            text: 'Invite',
-            icon: Plus,
-            variant: 'primary',
-            onSelect: () => setInviteModalOpen(true),
-            disabled: isInvitationsDisabled,
-            tooltip: isInvitationsDisabled ? 'Invitations are disabled' : undefined,
-          },
-        ]}
+        search={{
+          value: memberQuery,
+          onChange: setMemberQuery,
+          placeholder: 'Search members...',
+        }}
+        actions={
+          adminOrOwner
+            ? [
+                {
+                  text: 'Invite',
+                  icon: Plus,
+                  variant: 'primary',
+                  onSelect: () => setInviteModalOpen(true),
+                  disabled: isInvitationsDisabled,
+                  tooltip: isInvitationsDisabled ? 'Invitations are disabled' : undefined,
+                },
+              ]
+            : []
+        }
       >
-        <TeamSeatsOverview
-          subscriptionData={orgSubscription}
-          isLoadingSubscription={isOrgBillingLoading}
-          totalSeats={totalSeats}
-          usedSeats={usedSeats}
-          pendingSeats={pendingSeats}
-        />
+        {adminOrOwner && (
+          <TeamSeatsOverview
+            billingHref={billingHref}
+            subscriptionData={orgSubscription}
+            isLoadingSubscription={isOrgBillingLoading}
+            totalSeats={totalSeats}
+            usedSeats={usedSeats}
+            pendingSeats={pendingSeats}
+          />
+        )}
 
         <OrganizationMemberLists
+          canManage={adminOrOwner}
           organizationId={displayOrganization.id}
           roster={roster ?? null}
           isLoadingRoster={isLoadingRoster}
           currentUserId={session?.user?.id ?? ''}
+          query={memberQuery}
           onRemoveMember={handleRemoveMember}
           onTransferOwnership={handleOpenTransferDialog}
         />
       </SettingsPanel>
 
-      <OrganizationInviteModal
-        open={inviteModalOpen}
-        onOpenChange={setInviteModalOpen}
-        organizationId={displayOrganization.id}
-        workspaces={roster?.workspaces ?? []}
-        externalEmails={externalEmails}
-        pendingEmails={pendingEmails}
-      />
+      {adminOrOwner && (
+        <InviteModal
+          open={inviteModalOpen}
+          onOpenChange={setInviteModalOpen}
+          organizationId={displayOrganization.id}
+          canInvite={adminOrOwner}
+        />
+      )}
 
       <TransferOwnershipDialog
         open={transferDialogOpen}
@@ -371,6 +373,9 @@ export function TeamManagement() {
         memberName={removeMemberDialog.memberName}
         isSelfRemoval={removeMemberDialog.isSelfRemoval}
         isExternalRemoval={removeMemberDialog.isExternalRemoval}
+        breakingCredentials={disclosedBreakingCredentials}
+        credentialImpactPending={isRemovalImpactFetching}
+        credentialImpactFailed={isRemovalImpactError}
         isSubmitting={removeMemberMutation.isPending}
         error={removeMemberMutation.error}
         onOpenChange={(open: boolean) => {

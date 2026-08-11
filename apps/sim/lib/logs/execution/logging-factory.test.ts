@@ -5,6 +5,7 @@ import {
   createEnvironmentObject,
   createTriggerObject,
 } from '@/lib/logs/execution/logging-factory'
+import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 
 /** Mock the billing constants */
 vi.mock('@/lib/billing/constants', () => ({
@@ -458,6 +459,64 @@ describe('calculateCostSummary', () => {
     expect(result.models['gpt-4o'].total).toBe(0.03)
   })
 
+  test('keeps Mothership cost observable while excluding it from workflow-owned ledger models', () => {
+    const { traceSpans } = buildTraceSpans({
+      success: true,
+      output: {},
+      logs: [
+        {
+          blockId: 'mothership-block',
+          blockName: 'Mothership',
+          blockType: 'mothership',
+          executionOrder: 1,
+          startedAt: '2026-07-10T12:00:00.000Z',
+          endedAt: '2026-07-10T12:00:01.000Z',
+          durationMs: 1000,
+          success: true,
+          output: {
+            model: 'mothership',
+            cost: { input: 0.2, output: 0.3, total: 0.5 },
+            tokens: { input: 200, output: 300, total: 500 },
+          },
+        },
+        {
+          blockId: 'agent-block',
+          blockName: 'Agent',
+          blockType: 'agent',
+          executionOrder: 2,
+          startedAt: '2026-07-10T12:00:01.000Z',
+          endedAt: '2026-07-10T12:00:02.000Z',
+          durationMs: 1000,
+          success: true,
+          output: {
+            model: 'gpt-4o',
+            cost: { input: 0.4, output: 0.6, total: 1 },
+            tokens: { input: 400, output: 600, total: 1000 },
+          },
+        },
+      ],
+      metadata: { duration: 2000 },
+    })
+    const result = calculateCostSummary(traceSpans)
+    const mothershipSpan = traceSpans[0].children?.find((span) => span.type === 'mothership')
+
+    expect(mothershipSpan?.cost?.total).toBe(0.5)
+    expect(result.totalCost).toBe(1.5 + BASE_EXECUTION_CHARGE)
+    expect(result.models.mothership).toMatchObject({
+      input: 0.2,
+      output: 0.3,
+      total: 0.5,
+      tokens: { input: 200, output: 300, total: 500 },
+    })
+    expect(result.workflowLedgerModels).not.toHaveProperty('mothership')
+    expect(result.workflowLedgerModels['gpt-4o']).toMatchObject({
+      input: 0.4,
+      output: 0.6,
+      total: 1,
+      tokens: { input: 400, output: 600, total: 1000 },
+    })
+  })
+
   test('preserves parent toolCost while skipping model breakdown children', () => {
     const traceSpans = [
       {
@@ -509,7 +568,8 @@ describe('calculateCostSummary', () => {
     const ledgerSum =
       result.baseExecutionCharge +
       Object.values(result.models).reduce((s, m) => s + m.total, 0) +
-      Object.values(result.charges).reduce((s, c) => s + c.total, 0)
+      Object.values(result.charges).reduce((s, c) => s + c.total, 0) +
+      Object.values(result.external).reduce((s, c) => s + c.total, 0)
     expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
   })
 
@@ -530,6 +590,41 @@ describe('calculateCostSummary', () => {
     expect(Object.keys(result.charges)).toHaveLength(0)
     expect(result.models['gpt-4o'].total).toBe(0.045)
     expect(result.models['gpt-4o'].toolCost).toBe(0.015)
+  })
+
+  test('captures named embedded tool costs normalized to the model toolCost subtotal', () => {
+    const traceSpans = [
+      {
+        id: 'agent-span',
+        name: 'Agent',
+        type: 'agent',
+        model: 'gpt-4o',
+        cost: { input: 0.01, output: 0.02, total: 0.06, toolCost: 0.03 },
+        tokens: { input: 1000, output: 2000, total: 3000 },
+        children: [
+          {
+            id: 'tool-1',
+            type: 'tool',
+            name: 'image_generate',
+            output: { model: 'gpt-image-1.5', cost: { total: 0.02 } },
+          },
+          {
+            id: 'tool-2',
+            type: 'tool',
+            name: 'exa_search',
+            output: { cost: { total: 0.01 } },
+          },
+        ],
+      },
+    ]
+
+    const result = calculateCostSummary(traceSpans)
+
+    expect(result.models['gpt-4o'].toolCost).toBe(0.03)
+    expect(result.models['gpt-4o'].embeddedToolCosts).toEqual({
+      'gpt-image-1.5': 0.02,
+      exa_search: 0.01,
+    })
   })
 
   test('mixed model + standalone tool run reconciles to total', () => {
@@ -557,7 +652,8 @@ describe('calculateCostSummary', () => {
     const ledgerSum =
       result.baseExecutionCharge +
       Object.values(result.models).reduce((s, m) => s + m.total, 0) +
-      Object.values(result.charges).reduce((s, c) => s + c.total, 0)
+      Object.values(result.charges).reduce((s, c) => s + c.total, 0) +
+      Object.values(result.external).reduce((s, c) => s + c.total, 0)
     expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
   })
 
@@ -616,7 +712,8 @@ describe('calculateCostSummary', () => {
     const ledgerSum =
       result.baseExecutionCharge +
       Object.values(result.models).reduce((s, m) => s + m.total, 0) +
-      Object.values(result.charges).reduce((s, c) => s + c.total, 0)
+      Object.values(result.charges).reduce((s, c) => s + c.total, 0) +
+      Object.values(result.external).reduce((s, c) => s + c.total, 0)
     expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
   })
 
@@ -709,7 +806,128 @@ describe('calculateCostSummary', () => {
     const ledgerSum =
       result.baseExecutionCharge +
       Object.values(result.models).reduce((s, m) => s + m.total, 0) +
-      Object.values(result.charges).reduce((s, c) => s + c.total, 0)
+      Object.values(result.charges).reduce((s, c) => s + c.total, 0) +
+      Object.values(result.external).reduce((s, c) => s + c.total, 0)
     expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
+  })
+
+  test('records a Cost block span as external (not tool) with vendor metadata', () => {
+    const traceSpans = [
+      {
+        id: 'cost-block',
+        name: 'Twilio Cost',
+        type: 'cost',
+        cost: { input: 0, output: 0, total: 0.05 },
+        output: {
+          cost: { total: 0.05, input: 0, output: 0 },
+          raw: {
+            amount: 0.05,
+            currency: 'USD',
+            vendor: 'Twilio',
+            label: 'SMS send',
+            source: 'fixed',
+            quantity: 1,
+            unit: 'message',
+          },
+          recorded: true,
+        },
+      },
+    ]
+
+    const result = calculateCostSummary(traceSpans)
+
+    expect(Object.keys(result.charges)).toHaveLength(0)
+    expect(result.external['Twilio Cost']).toBeDefined()
+    expect(result.external['Twilio Cost'].total).toBe(0.05)
+    expect(result.external['Twilio Cost'].vendor).toBe('Twilio')
+    expect(result.external['Twilio Cost'].quantity).toBe(1)
+    expect(result.external['Twilio Cost'].unit).toBe('message')
+    expect(result.external['Twilio Cost'].metadata).toEqual({
+      originalAmount: 0.05,
+      originalCurrency: 'USD',
+      source: 'fixed',
+    })
+    const ledgerSum =
+      result.baseExecutionCharge +
+      Object.values(result.models).reduce((s, m) => s + m.total, 0) +
+      Object.values(result.charges).reduce((s, c) => s + c.total, 0) +
+      Object.values(result.external).reduce((s, c) => s + c.total, 0)
+    expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
+  })
+
+  test('mixed model + tool + external run reconciles to total', () => {
+    const traceSpans = [
+      {
+        id: 'agent',
+        name: 'Agent',
+        type: 'agent',
+        model: 'gpt-4o',
+        cost: { input: 0.01, output: 0.02, total: 0.03 },
+        tokens: { input: 100, output: 200, total: 300 },
+      },
+      {
+        id: 'exa',
+        name: 'Exa Search',
+        type: 'tool',
+        cost: { input: 0, output: 0, total: 0.01 },
+      },
+      {
+        id: 'cost',
+        name: 'Partner API',
+        type: 'cost',
+        cost: { input: 0, output: 0, total: 0.02 },
+        output: {
+          raw: { amount: 0.02, currency: 'USD', vendor: 'Partner', source: 'response_path' },
+        },
+      },
+    ]
+
+    const result = calculateCostSummary(traceSpans)
+
+    expect(result.models['gpt-4o'].total).toBe(0.03)
+    expect(result.charges['Exa Search'].total).toBe(0.01)
+    expect(result.external['Partner API'].total).toBe(0.02)
+    const ledgerSum =
+      result.baseExecutionCharge +
+      Object.values(result.models).reduce((s, m) => s + m.total, 0) +
+      Object.values(result.charges).reduce((s, c) => s + c.total, 0) +
+      Object.values(result.external).reduce((s, c) => s + c.total, 0)
+    expect(ledgerSum).toBeCloseTo(result.totalCost, 10)
+  })
+})
+
+describe('calculateCostSummary base charge override', () => {
+  test('an invoked child adds no execution fee when given zero', () => {
+    const result = calculateCostSummary([], { baseExecutionCharge: 0 })
+
+    expect(result.baseExecutionCharge).toBe(0)
+    expect(result.totalCost).toBe(0)
+  })
+
+  test('total equals the span sum exactly with no base charge', () => {
+    const spans = [
+      {
+        id: 's1',
+        name: 'Agent',
+        type: 'agent',
+        duration: 0,
+        startTime: '',
+        endTime: '',
+        model: 'gpt-4o',
+        cost: { input: 0.001, output: 0.002, total: 0.003 },
+        tokens: { input: 10, output: 20, total: 30 },
+      },
+    ] as any
+
+    const result = calculateCostSummary(spans, { baseExecutionCharge: 0 })
+
+    expect(result.baseExecutionCharge).toBe(0)
+    expect(result.totalCost).toBeCloseTo(0.003, 10)
+  })
+
+  test('defaults to the standard base charge when no option is passed', () => {
+    const withDefault = calculateCostSummary([])
+    expect(withDefault.baseExecutionCharge).toBeGreaterThan(0)
+    expect(withDefault.totalCost).toBe(withDefault.baseExecutionCharge)
   })
 })

@@ -1,7 +1,12 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { getBYOKKey } from '@/lib/api-key/byok'
+import {
+  type BillingAttributionSnapshot,
+  toBillingContext,
+} from '@/lib/billing/core/billing-attribution'
 import { recordUsage } from '@/lib/billing/core/usage-log'
+import { checkAndBillPayerOverageThreshold } from '@/lib/billing/threshold-billing'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { env, envNumber } from '@/lib/core/config/env'
 import { isRetryableError, retryWithExponentialBackoff } from '@/lib/knowledge/documents/utils'
@@ -13,6 +18,7 @@ import {
   type TokenizerProviderId,
 } from '@/lib/knowledge/embedding-models'
 import { batchByTokenLimit, estimateTokenCount } from '@/lib/tokenization'
+import { getRerankModelPricing } from '@/providers/models'
 import { calculateCost } from '@/providers/utils'
 
 const logger = createLogger('EmbeddingUtils')
@@ -422,8 +428,17 @@ export async function recordSearchEmbeddingUsage(params: {
   query: string
   isBYOK: boolean
   sourceReference: string
+  billingAttribution?: BillingAttributionSnapshot
 }): Promise<void> {
-  const { userId, workspaceId, embeddingModel, query, isBYOK, sourceReference } = params
+  const {
+    userId,
+    workspaceId,
+    embeddingModel,
+    query,
+    isBYOK,
+    sourceReference,
+    billingAttribution: providedBillingAttribution,
+  } = params
   if (isBYOK || !workspaceId) return
   try {
     const { count } = estimateTokenCount(
@@ -432,9 +447,20 @@ export async function recordSearchEmbeddingUsage(params: {
     )
     const cost = calculateCost(embeddingModel, count, 0, false)
     if (!cost || cost.total <= 0) return
+    if (!providedBillingAttribution) {
+      throw new Error('Billing attribution is required for workspace search embedding usage')
+    }
+    const billingAttribution = providedBillingAttribution
+    if (
+      billingAttribution.workspaceId !== workspaceId ||
+      billingAttribution.actorUserId !== userId
+    ) {
+      throw new Error('Search embedding billing attribution does not match its actor and workspace')
+    }
     await recordUsage({
-      userId,
+      userId: billingAttribution.actorUserId,
       workspaceId,
+      ...toBillingContext(billingAttribution),
       entries: [
         {
           category: 'model',
@@ -442,10 +468,56 @@ export async function recordSearchEmbeddingUsage(params: {
           description: embeddingModel,
           cost: cost.total,
           sourceReference,
+          metadata: { inputTokens: count, outputTokens: 0 },
+          quantity: count,
+          unit: 'tokens',
+        },
+      ],
+    })
+    await checkAndBillPayerOverageThreshold(billingAttribution.billingEntity)
+  } catch (error) {
+    logger.warn('Failed to record search embedding usage', { error: getErrorMessage(error) })
+  }
+}
+
+/**
+ * Records hosted rerank usage for a knowledge-base search when platform keys were used.
+ */
+export async function recordSearchRerankUsage(params: {
+  userId: string
+  workspaceId?: string | null
+  model: string
+  isBYOK: boolean
+  sourceReference: string
+  searchUnits?: number
+}): Promise<void> {
+  const { userId, workspaceId, model, isBYOK, sourceReference, searchUnits = 1 } = params
+  if (isBYOK || !workspaceId || searchUnits <= 0) return
+
+  try {
+    const pricing = getRerankModelPricing(model)
+    if (!pricing) return
+
+    const cost = pricing.perSearchUnit * searchUnits
+    if (cost <= 0) return
+
+    await recordUsage({
+      userId,
+      workspaceId,
+      entries: [
+        {
+          category: 'model',
+          source: 'knowledge-base',
+          description: model,
+          cost,
+          sourceReference,
+          metadata: { searchUnits, rerank: true },
+          quantity: searchUnits,
+          unit: 'search_units',
         },
       ],
     })
   } catch (error) {
-    logger.warn('Failed to record search embedding usage', { error: getErrorMessage(error) })
+    logger.warn('Failed to record search rerank usage', { error: getErrorMessage(error) })
   }
 }

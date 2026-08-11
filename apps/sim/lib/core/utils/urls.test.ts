@@ -7,19 +7,19 @@ const { mockGetEnv } = vi.hoisted(() => ({
   mockGetEnv: vi.fn<(key: string) => string | undefined>(),
 }))
 
+vi.unmock('@/lib/core/utils/urls')
 vi.mock('@/lib/core/config/env', () => ({
   env: {},
   getEnv: mockGetEnv,
 }))
 
-vi.mock('@/lib/core/config/env-flags', () => ({
-  isProd: false,
-}))
-
 import {
+  getArenaHubAgentsUrl,
+  getBaseUrl,
   getBrowserOrigin,
   getSocketUrl,
   isLocalhostUrl,
+  isNonCanonicalSimHost,
   isSafeHttpUrl,
   parseOriginList,
 } from '@/lib/core/utils/urls'
@@ -36,6 +36,41 @@ describe('getBrowserOrigin', () => {
   it('returns the page origin in the browser', () => {
     setLocation('https://example.com/some/path')
     expect(getBrowserOrigin()).toBe('https://example.com')
+  })
+})
+
+describe('getBaseUrl', () => {
+  beforeEach(() => {
+    mockGetEnv.mockReset()
+    mockGetEnv.mockReturnValue(undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('uses NEXT_PUBLIC_APP_URL when set', () => {
+    mockGetEnv.mockImplementation((key) =>
+      key === 'NEXT_PUBLIC_APP_URL' ? 'https://app.example.com' : undefined
+    )
+    setLocation('https://other.example.com/workspace/w/1')
+    expect(getBaseUrl()).toBe('https://app.example.com')
+  })
+
+  /**
+   * Never guesses from `window.location.origin`: an opaque origin (a sandboxed
+   * iframe) serializes to the truthy string `'null'`, which would silently
+   * produce `null/api/...` rather than surfacing the misconfiguration.
+   */
+  it('throws in the browser rather than guessing from the page origin', () => {
+    setLocation('https://www.sim.ai/workspace/ws-1/w/wf-1')
+    expect(() => getBaseUrl()).toThrow('NEXT_PUBLIC_APP_URL must be configured')
+  })
+
+  it('treats a whitespace-only NEXT_PUBLIC_APP_URL as unset', () => {
+    mockGetEnv.mockImplementation((key) => (key === 'NEXT_PUBLIC_APP_URL' ? '   ' : undefined))
+    setLocation('https://www.sim.ai/')
+    expect(() => getBaseUrl()).toThrow('NEXT_PUBLIC_APP_URL must be configured')
   })
 })
 
@@ -84,6 +119,41 @@ describe('getSocketUrl', () => {
     mockGetEnv.mockImplementation((key) => (key === 'NEXT_PUBLIC_SOCKET_URL' ? '   ' : undefined))
     setLocation('https://app.example.com/')
     expect(getSocketUrl()).toBe('https://app.example.com')
+  })
+})
+
+describe('getArenaHubAgentsUrl', () => {
+  beforeEach(() => {
+    mockGetEnv.mockReset()
+    mockGetEnv.mockReturnValue(undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('prefers NEXT_PUBLIC_ARENA_FRONTEND_APP_URL when set', () => {
+    mockGetEnv.mockImplementation((key) =>
+      key === 'NEXT_PUBLIC_ARENA_FRONTEND_APP_URL' ? 'https://dev.thearena.ai/' : undefined
+    )
+    expect(getArenaHubAgentsUrl('dev-agent.thearena.ai')).toBe('https://dev.thearena.ai/hub/agents')
+  })
+
+  it('falls back to hostname mapping when env is unset', () => {
+    expect(getArenaHubAgentsUrl('dev-agent.thearena.ai')).toBe('https://dev.thearena.ai/hub/agents')
+    expect(getArenaHubAgentsUrl('test-agent.thearena.ai')).toBe(
+      'https://test.thearena.ai/hub/agents'
+    )
+    expect(getArenaHubAgentsUrl('agent.thearena.ai')).toBe('https://app.thearena.ai/hub/agents')
+  })
+
+  it('uses window.location.hostname when no hostname arg is passed', () => {
+    setLocation('https://dev-agent.thearena.ai/workspace')
+    expect(getArenaHubAgentsUrl()).toBe('https://dev.thearena.ai/hub/agents')
+  })
+
+  it('returns null for unknown hosts without env', () => {
+    expect(getArenaHubAgentsUrl('example.com')).toBeNull()
   })
 })
 
@@ -164,5 +234,43 @@ describe('isSafeHttpUrl', () => {
 
   it('rejects unparseable absolute input without throwing', () => {
     expect(isSafeHttpUrl('http://')).toBe(false)
+  })
+})
+
+describe('isNonCanonicalSimHost', () => {
+  it.each(['www.sim.ai', 'sim.ai', 'WWW.SIM.AI', 'www.sim.ai:443'])(
+    'treats %s as the canonical marketing site',
+    (host) => {
+      expect(isNonCanonicalSimHost(host)).toBe(false)
+    }
+  )
+
+  it.each(['dev.sim.ai', 'www.dev.sim.ai', 'staging.sim.ai', 'prod.sockets.sim.ai'])(
+    'treats %s as non-canonical',
+    (host) => {
+      expect(isNonCanonicalSimHost(host)).toBe(true)
+    }
+  )
+
+  it.each(['sim.example.com', 'localhost:3000', 'notsim.ai', 'sim.ai.evil.com'])(
+    'leaves %s alone',
+    (host) => {
+      expect(isNonCanonicalSimHost(host)).toBe(false)
+    }
+  )
+
+  it.each(['www.sim.ai, dev.sim.ai', 'sim.ai,dev.sim.ai', '  www.sim.ai , staging.sim.ai'])(
+    'classifies a comma-joined forwarded host by its first entry (%s)',
+    (host) => {
+      expect(isNonCanonicalSimHost(host)).toBe(false)
+    }
+  )
+
+  it('still flags a comma-joined host whose first entry is non-canonical', () => {
+    expect(isNonCanonicalSimHost('dev.sim.ai, www.sim.ai')).toBe(true)
+  })
+
+  it('does not throw on an empty host', () => {
+    expect(isNonCanonicalSimHost('')).toBe(false)
   })
 })

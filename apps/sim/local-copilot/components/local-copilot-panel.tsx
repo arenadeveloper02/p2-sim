@@ -52,7 +52,7 @@ export function LocalCopilotPanel({
         className={cn(
           variant === 'embedded'
             ? 'flex h-full min-h-0 w-full flex-col'
-            : 'flex h-full w-[380px] flex-col border-l border-[var(--border-subtle)] bg-[var(--surface-0)]',
+            : 'flex h-full w-[380px] flex-col border-[var(--border-subtle)] border-l bg-[var(--surface-0)]',
           className
         )}
       >
@@ -70,7 +70,7 @@ export function LocalCopilotPanel({
       className={cn(
         variant === 'embedded'
           ? 'flex h-full min-h-0 w-full flex-col bg-transparent'
-          : 'flex h-full w-[380px] flex-col border-l border-[var(--border-subtle)] bg-[var(--surface-0)]',
+          : 'flex h-full w-[380px] flex-col border-[var(--border-subtle)] border-l bg-[var(--surface-0)]',
         className
       )}
     >
@@ -92,6 +92,7 @@ export function LocalCopilotPanel({
           void copilot.sendMessage(text)
           setInput('')
         }}
+        onStop={copilot.stop}
         onClear={copilot.clearChat}
         onDebugLastRun={copilot.debugLastRun}
         onExplainBlock={copilot.explainSelectedBlock}
@@ -118,9 +119,9 @@ export function LocalCopilotPanel({
 
 function PanelHeader({ onClose, subtitle }: { onClose: () => void; subtitle?: string }) {
   return (
-    <div className='flex items-center justify-between border-b border-[var(--border-subtle)] px-3 py-2'>
+    <div className='flex items-center justify-between border-[var(--border-subtle)] border-b px-3 py-2'>
       <div>
-        <p className='text-[14px] font-medium text-[var(--text-body)]'>Arena Copilot</p>
+        <p className='font-medium text-[14px] text-[var(--text-body)]'>Arena Copilot</p>
         {subtitle ? <p className='text-[11px] text-[var(--text-muted)]'>{subtitle}</p> : null}
       </div>
       <Button size='sm' variant='ghost' onClick={onClose} aria-label='Close Arena Copilot'>

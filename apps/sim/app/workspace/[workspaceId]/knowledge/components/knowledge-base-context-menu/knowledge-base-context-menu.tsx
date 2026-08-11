@@ -6,9 +6,22 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@sim/emcn'
-import { Duplicate, Pencil, SquareArrowUpRight, TagIcon, Trash } from '@sim/emcn/icons'
+import {
+  Duplicate,
+  FolderInput,
+  Pencil,
+  Pin,
+  SquareArrowUpRight,
+  TagIcon,
+  Trash,
+} from '@sim/emcn/icons'
+import type { MoveOptionNode } from '@/app/workspace/[workspaceId]/components/folders'
+import { renderMoveOptions } from '@/app/workspace/[workspaceId]/components/folders'
 
 interface KnowledgeBaseContextMenuProps {
   isOpen: boolean
@@ -17,19 +30,28 @@ interface KnowledgeBaseContextMenuProps {
   onOpenInNewTab?: () => void
   onViewTags?: () => void
   onCopyId?: () => void
+  onTogglePin?: () => void
+  /** Pin state of the right-clicked base, driving the Pin/Unpin label. */
+  pinned?: boolean
   onEdit?: () => void
+  onCopyToWorkspace?: () => void
   onDelete?: () => void
+  /** Files the base under another folder; the value is a folder id or the root sentinel. */
+  onMove?: (optionValue: string) => void
+  moveOptions?: MoveOptionNode[]
   showOpenInNewTab?: boolean
   showViewTags?: boolean
   showEdit?: boolean
+  showCopyToWorkspace?: boolean
   showDelete?: boolean
   disableEdit?: boolean
+  disableCopyToWorkspace?: boolean
   disableDelete?: boolean
 }
 
 /**
  * Context menu component for knowledge base cards.
- * Displays open in new tab, view tags, edit, and delete options.
+ * Displays open in new tab, view tags, edit, copy, and delete options.
  */
 export const KnowledgeBaseContextMenu = memo(function KnowledgeBaseContextMenu({
   isOpen,
@@ -38,18 +60,28 @@ export const KnowledgeBaseContextMenu = memo(function KnowledgeBaseContextMenu({
   onOpenInNewTab,
   onViewTags,
   onCopyId,
+  onTogglePin,
+  pinned = false,
   onEdit,
+  onCopyToWorkspace,
   onDelete,
+  onMove,
+  moveOptions,
   showOpenInNewTab = true,
   showViewTags = true,
   showEdit = true,
+  showCopyToWorkspace = true,
   showDelete = true,
   disableEdit = false,
+  disableCopyToWorkspace = false,
   disableDelete = false,
 }: KnowledgeBaseContextMenuProps) {
   const hasNavigationSection = showOpenInNewTab && !!onOpenInNewTab
-  const hasInfoSection = (showViewTags && !!onViewTags) || !!onCopyId
-  const hasEditSection = showEdit && !!onEdit
+  const hasInfoSection = (showViewTags && !!onViewTags) || !!onCopyId || !!onTogglePin
+  const hasMoveSection = !disableEdit && !!onMove && !!moveOptions && moveOptions.length > 0
+  // const hasEditSection = (showEdit && !!onEdit) || hasMoveSection
+  const hasEditSection =
+    (showEdit && !!onEdit) || (showCopyToWorkspace && !!onCopyToWorkspace) || hasMoveSection
   const hasDestructiveSection = showDelete && !!onDelete
 
   return (
@@ -96,6 +128,12 @@ export const KnowledgeBaseContextMenu = memo(function KnowledgeBaseContextMenu({
             Copy ID
           </DropdownMenuItem>
         )}
+        {onTogglePin && (
+          <DropdownMenuItem onSelect={onTogglePin}>
+            <Pin />
+            {pinned ? 'Unpin' : 'Pin'}
+          </DropdownMenuItem>
+        )}
         {hasInfoSection && (hasEditSection || hasDestructiveSection) && <DropdownMenuSeparator />}
 
         {showEdit && onEdit && (
@@ -103,6 +141,24 @@ export const KnowledgeBaseContextMenu = memo(function KnowledgeBaseContextMenu({
             <Pencil />
             Edit
           </DropdownMenuItem>
+        )}
+        {showCopyToWorkspace && onCopyToWorkspace && (
+          <DropdownMenuItem disabled={disableCopyToWorkspace} onSelect={onCopyToWorkspace}>
+            <FolderInput />
+            Copy to workspace…
+          </DropdownMenuItem>
+        )}
+
+        {hasMoveSection && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <FolderInput />
+              Move to
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {renderMoveOptions(moveOptions!, onMove!)}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
         )}
 
         {hasEditSection && hasDestructiveSection && <DropdownMenuSeparator />}

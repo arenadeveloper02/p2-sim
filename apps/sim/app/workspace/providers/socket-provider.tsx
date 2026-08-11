@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { createLogger } from '@sim/logger'
 import type {
+  AccessRevokedBroadcast,
   CursorUpdateBroadcast,
   OperationConfirmedBroadcast,
   OperationFailedBroadcast,
@@ -26,6 +27,7 @@ import type {
 } from '@sim/realtime-protocol/events'
 import { generateId } from '@sim/utils/id'
 import { backoffWithJitter } from '@sim/utils/retry'
+import { useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
 import type { Socket } from 'socket.io-client'
 import { getSocketUrl } from '@/lib/core/utils/urls'
@@ -38,6 +40,7 @@ import {
   resolveSocketWorkflowTarget,
 } from '@/app/workspace/providers/socket-join-target'
 import { getBlock } from '@/blocks'
+import { refreshSessionQuery } from '@/hooks/queries/session'
 import { useOperationQueueStore } from '@/stores/operation-queue/store'
 import type {
   SubblockUpdateEmit,
@@ -106,6 +109,7 @@ interface SocketContextType {
   onCursorUpdate: (handler: (data: CursorUpdateBroadcast) => void) => void
   onSelectionUpdate: (handler: (data: SelectionUpdateBroadcast) => void) => void
   onWorkflowDeleted: (handler: (data: WorkflowDeletedBroadcast) => void) => void
+  onAccessRevoked: (handler: (data: AccessRevokedBroadcast) => void) => void
   onWorkflowReverted: (handler: (data: WorkflowRevertedBroadcast) => void) => void
   onWorkflowUpdated: (handler: (data: WorkflowUpdatedBroadcast) => void) => void
   onWorkflowDeployed: (handler: (data: WorkflowDeployedBroadcast) => void) => void
@@ -137,6 +141,7 @@ const SocketContext = createContext<SocketContextType>({
   onCursorUpdate: () => {},
   onSelectionUpdate: () => {},
   onWorkflowDeleted: () => {},
+  onAccessRevoked: () => {},
   onWorkflowReverted: () => {},
   onWorkflowUpdated: () => {},
   onWorkflowDeployed: () => {},
@@ -170,6 +175,8 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
   const joinRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const authRetryAttemptsRef = useRef(0)
   const authRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sessionRejectedRef = useRef(false)
+  const queryClient = useQueryClient()
 
   const params = useParams()
   const urlWorkflowId = params?.workflowId as string | undefined
@@ -184,6 +191,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
     cursorUpdate?: (data: CursorUpdateBroadcast) => void
     selectionUpdate?: (data: SelectionUpdateBroadcast) => void
     workflowDeleted?: (data: WorkflowDeletedBroadcast) => void
+    accessRevoked?: (data: AccessRevokedBroadcast) => void
     workflowReverted?: (data: WorkflowRevertedBroadcast) => void
     workflowUpdated?: (data: WorkflowUpdatedBroadcast) => void
     workflowDeployed?: (data: WorkflowDeployedBroadcast) => void
@@ -384,6 +392,10 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
           reconnectionDelayMax: 30000,
           timeout: 10000,
           auth: async (cb) => {
+            // Reset per attempt so the flag describes THIS handshake only —
+            // otherwise one early 401 would still be set when a later, unrelated
+            // denial exhausts the retry budget.
+            sessionRejectedRef.current = false
             try {
               const freshToken = await generateSocketToken()
               cb({ token: freshToken })
@@ -391,6 +403,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
               logger.error('Failed to generate fresh token for connection:', error)
               if (error instanceof Error && error.message === 'Authentication required') {
                 // True auth failure - pass null token, server will reject with "Authentication required"
+                sessionRejectedRef.current = true
                 cb({ token: null })
               }
               // For server errors, don't call cb - connection will timeout and Socket.IO will retry
@@ -465,12 +478,28 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
               socketInstance.connect()
             }, delayMs)
           } else {
-            logger.error(
-              'Socket connection denied after max retries - stopping. User may need to refresh/re-login.',
-              { message: error.message }
-            )
+            logger.error('Socket connection denied after max retries - stopping.', {
+              message: error.message,
+            })
             setAuthFailed(true)
             setIsReconnecting(false)
+
+            // The handshake that exhausted the budget was refused because the
+            // token mint reported no session, yet the app is still rendering as
+            // signed in — the classic symptom of Better Auth's session cookie
+            // cache vouching for a row that no longer exists. The mint reads the
+            // database directly, so it is the one caller that sees the divergence.
+            // Settle the canonical session query from server truth (that read
+            // bypasses the cookie cache too): a genuinely dead session resolves
+            // to null and hands off to SessionExpired, while a transient
+            // failure just refreshes the cache and leaves the user alone.
+            if (sessionRejectedRef.current) {
+              void refreshSessionQuery(queryClient).catch((refreshError) => {
+                logger.error('Failed to re-read the session after socket auth failure', {
+                  error: refreshError,
+                })
+              })
+            }
           }
         })
 
@@ -597,6 +626,20 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
           eventHandlers.current.workflowDeleted?.(data)
         })
 
+        socketInstance.on('access-revoked', (data: AccessRevokedBroadcast) => {
+          logger.warn(`Access to workflow ${data.workflowId} has been revoked`)
+          const result = joinControllerRef.current.handleAccessRevoked(data.workflowId)
+          if (result.shouldClearCurrent) {
+            clearJoinedWorkflowState(true)
+            // Surface the same blocked-join UX as a denied join: persistent
+            // toast plus read-only enforcement while the user is still on the
+            // revoked workflow.
+            setBlockedJoinWorkflowId(data.workflowId)
+          }
+          executeJoinCommands(result.commands)
+          eventHandlers.current.accessRevoked?.(data)
+        })
+
         socketInstance.on('workflow-reverted', (data: WorkflowRevertedBroadcast) => {
           logger.info(`Workflow ${data.workflowId} has been reverted to deployed state`)
           eventHandlers.current.workflowReverted?.(data)
@@ -612,17 +655,35 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
           eventHandlers.current.workflowDeployed?.(data)
         })
 
-        const rehydrateWorkflowStores = async (workflowId: string, workflowState: any) => {
+        /**
+         * DEGRADED-PATH fallback: replaces the workflow + subblock stores with
+         * the raw state pushed by the realtime server. The primary join path is
+         * `syncLocalDraftFromServer`, which fetches MIGRATED state over HTTP —
+         * the realtime server loads state raw, without the app's block
+         * migrations (credential remaps, subblock-id renames, canonicalModes
+         * backfill), because those need the block registry that apps/realtime
+         * cannot import. Applying raw state is acceptable only as a fallback
+         * when the HTTP fetch fails: load-time migrations persist their result
+         * back to the normalized tables (persistMigratedBlocks), so raw state
+         * converges with migrated state after the first migrated load. If that
+         * persistence ever fails repeatedly, raw state diverges from the
+         * migrated deployed snapshot and change detection reports phantom
+         * diffs that survive redeploys (see the exact text-precision
+         * updated_at guard in persistMigratedBlocks).
+         */
+        const applyRawJoinStateFallback = async (workflowId: string, workflowState: any) => {
           const [
             { useOperationQueueStore },
             { useWorkflowRegistry },
             { useWorkflowStore },
             { useSubBlockStore },
+            { useWorkflowDiffStore },
           ] = await Promise.all([
             import('@/stores/operation-queue/store'),
             import('@/stores/workflows/registry/store'),
             import('@/stores/workflows/workflow/store'),
             import('@/stores/workflows/subblock/store'),
+            import('@/stores/workflow-diff/store'),
           ])
 
           const { activeWorkflowId } = useWorkflowRegistry.getState()
@@ -636,6 +697,11 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
             .operations.some((op: any) => op.workflowId === workflowId && op.status !== 'confirmed')
           if (hasPending) {
             logger.info('Skipping rehydration due to pending operations in queue')
+            return false
+          }
+
+          if (useWorkflowDiffStore.getState().hasActiveDiff) {
+            logger.info('Skipping rehydration - an active diff is in progress')
             return false
           }
 
@@ -736,6 +802,17 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
           }
         })
 
+        /**
+         * Join-time state sync. The realtime server can only load RAW workflow
+         * state (no block migrations — see applyRawJoinStateFallback), so the raw
+         * payload is used purely as a trigger and fallback: the stores are
+         * synced from the app's MIGRATED HTTP state via
+         * syncLocalDraftFromServer, which dedupes against an in-flight registry
+         * hydration on the shared query key and refuses to clobber pending
+         * local operations, active diffs, or newer remote updates. Only when
+         * that fetch itself fails does the raw payload get applied, so a
+         * reconnect on a flaky network still recovers to near-current state.
+         */
         socketInstance.on('workflow-state', async (workflowData) => {
           logger.info('Received workflow state from server')
 
@@ -753,10 +830,40 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
           }
 
           if (workflowData?.state) {
+            const { canApplyDraftSnapshot, captureDraftVersions, syncLocalDraftFromServer } =
+              await import('@/stores/workflows/sync-local-draft')
+            const versionsAtJoin = captureDraftVersions(workflowData.id)
+
             try {
-              await rehydrateWorkflowStores(workflowData.id, workflowData.state)
+              const synced = await syncLocalDraftFromServer(workflowData.id)
+              if (!synced) {
+                logger.info('Join-state sync skipped; keeping local state', {
+                  workflowId: workflowData.id,
+                })
+              }
             } catch (error) {
-              logger.error('Error rehydrating workflow state:', error)
+              logger.warn('Join-state sync failed; falling back to raw socket state', { error })
+
+              /**
+               * The raw payload was captured at join time. Anything applied to
+               * the stores while the HTTP sync was failing — local edits,
+               * remote broadcasts, or an external full reload
+               * (workflow-updated / revert) — is newer than the payload, so
+               * applying it would regress those changes. The shared snapshot
+               * guard covers all of those sources.
+               */
+              if (!canApplyDraftSnapshot(workflowData.id, versionsAtJoin)) {
+                logger.info('Skipping raw join-state fallback; stores changed since join', {
+                  workflowId: workflowData.id,
+                })
+                return
+              }
+
+              try {
+                await applyRawJoinStateFallback(workflowData.id, workflowData.state)
+              } catch (rehydrateError) {
+                logger.error('Error rehydrating workflow state:', rehydrateError)
+              }
             }
           }
         })
@@ -1108,6 +1215,10 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
     eventHandlers.current.workflowDeleted = handler
   }, [])
 
+  const onAccessRevoked = useCallback((handler: (data: AccessRevokedBroadcast) => void) => {
+    eventHandlers.current.accessRevoked = handler
+  }, [])
+
   const onWorkflowReverted = useCallback((handler: (data: WorkflowRevertedBroadcast) => void) => {
     eventHandlers.current.workflowReverted = handler
   }, [])
@@ -1156,6 +1267,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
       onCursorUpdate,
       onSelectionUpdate,
       onWorkflowDeleted,
+      onAccessRevoked,
       onWorkflowReverted,
       onWorkflowUpdated,
       onWorkflowDeployed,
@@ -1186,6 +1298,7 @@ export function SocketProvider({ children, user }: SocketProviderProps) {
       onCursorUpdate,
       onSelectionUpdate,
       onWorkflowDeleted,
+      onAccessRevoked,
       onWorkflowReverted,
       onWorkflowUpdated,
       onWorkflowDeployed,

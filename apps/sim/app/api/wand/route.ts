@@ -8,15 +8,19 @@ import { parseRequest } from '@/lib/api/server'
 import { getBYOKKey } from '@/lib/api-key/byok'
 import { getSession } from '@/lib/auth'
 import {
-  checkActorUsageLimits,
-  checkBillingBlocked,
-} from '@/lib/billing/calculations/usage-monitor'
+  type BillingAttributionSnapshot,
+  checkAttributedBillingBlocks,
+  checkAttributedUsageLimits,
+  resolveBillingAttribution,
+  toBillingContext,
+} from '@/lib/billing/core/billing-attribution'
 import { recordUsage } from '@/lib/billing/core/usage-log'
-import { checkAndBillOverageThreshold } from '@/lib/billing/threshold-billing'
+import { checkAndBillPayerOverageThreshold } from '@/lib/billing/threshold-billing'
 import { env } from '@/lib/core/config/env'
 import { getCostMultiplier, isBillingEnabled } from '@/lib/core/config/env-flags'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+import { enrichSandboxPackages } from '@/lib/execution/remote-sandbox/wand-enricher'
 import { enrichTableSchema } from '@/lib/table/llm/wand'
 import { verifyWorkspaceMembership } from '@/app/api/workflows/utils'
 import { extractResponseText, parseResponsesUsage } from '@/providers/openai/utils'
@@ -87,11 +91,13 @@ Use this context to calculate relative dates like "yesterday", "last week", "beg
   },
 
   'table-schema': enrichTableSchema,
+  // Both the JavaScript and Python code prompts generate under this type — the
+  // Python swap in `code.tsx` replaces the prompt text but keeps the type.
+  'javascript-function-body': enrichSandboxPackages,
 }
 
 async function updateUserStatsForWand(
-  billingUserId: string,
-  workspaceId: string | null,
+  billingAttribution: BillingAttributionSnapshot,
   usage: {
     prompt_tokens?: number
     completion_tokens?: number
@@ -132,8 +138,9 @@ async function updateUserStatsForWand(
     }
 
     await recordUsage({
-      userId: billingUserId,
-      workspaceId: workspaceId ?? undefined,
+      userId: billingAttribution.actorUserId,
+      workspaceId: billingAttribution.workspaceId,
+      ...toBillingContext(billingAttribution),
       entries: [
         {
           category: 'model',
@@ -146,7 +153,7 @@ async function updateUserStatsForWand(
       ],
     })
 
-    await checkAndBillOverageThreshold(billingUserId)
+    await checkAndBillPayerOverageThreshold(billingAttribution.billingEntity)
   } catch (error) {
     logger.error(`[${requestId}] Failed to update user stats for wand usage`, error)
   }
@@ -245,12 +252,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       )
     }
 
-    // Wand is always an interactive, session-authenticated editor action, so the
-    // person using it is the billing actor — matching client-side executions and
-    // editor voice rather than the workspace billed account. deriveBillingContext
-    // still routes payment to the org for org-scoped members; per-member usage is
-    // attributed to the member who actually used the wand.
-    const billingUserId = session.user.id
+    /** Wand is an interactive action attributed to the authenticated human. */
+    const actorUserId = session.user.id
+    const billingAttribution = await resolveBillingAttribution({
+      actorUserId,
+      workspaceId,
+    })
 
     let isBYOK = false
     let activeOpenAIKey = openaiApiKey
@@ -272,12 +279,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       )
     }
 
-    // BYOK incurs no Sim-metered cost, so it skips usage gating — but a frozen /
-    // billing-blocked account is locked out of everything, so still check that.
-    // Non-BYOK runs the full actor gate, which already includes the billing-blocked
-    // check, so it isn't repeated here.
+    /**
+     * BYOK skips metered caps but still checks the actor and exact workspace
+     * payer. Non-BYOK applies the complete attributed gate.
+     */
     if (isBYOK) {
-      const blocked = await checkBillingBlocked(billingUserId)
+      const blocked = await checkAttributedBillingBlocks(billingAttribution)
       if (blocked.blocked) {
         return NextResponse.json(
           {
@@ -288,7 +295,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         )
       }
     } else {
-      const usage = await checkActorUsageLimits(billingUserId, workspaceId)
+      const usage = await checkAttributedUsageLimits(billingAttribution)
       if (usage.isExceeded) {
         return NextResponse.json(
           {
@@ -397,13 +404,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
               }
 
               usageRecorded = true
-              await updateUserStatsForWand(
-                billingUserId,
-                workspaceId,
-                finalUsage,
-                requestId,
-                isBYOK
-              )
+              await updateUserStatsForWand(billingAttribution, finalUsage, requestId, isBYOK)
             }
 
             try {
@@ -620,8 +621,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     const usage = parseResponsesUsage(completion.usage)
     if (usage) {
       await updateUserStatsForWand(
-        billingUserId,
-        workspaceId,
+        billingAttribution,
         {
           prompt_tokens: usage.promptTokens,
           completion_tokens: usage.completionTokens,

@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { useLayoutEffect, useState } from 'react'
 import { cn } from '@sim/emcn'
 import { usePathname, useSearchParams } from 'next/navigation'
+import { useSettingsBeforeUnload } from '@/components/settings/use-settings-before-unload'
 
 interface SettingsLayoutShellProps {
   children: ReactNode
@@ -12,8 +13,13 @@ interface SettingsLayoutShellProps {
 /**
  * Settings chrome that can adjust surface styling when embedded (Arena iframe)
  * or loaded in a generic iframe, without reading `window` in a Server Component.
+ *
+ * Also owns the settings-wide unload guard: the route layout is a Server
+ * Component, so this is the closest client boundary that wraps every section.
  */
 export function SettingsLayoutShell({ children }: SettingsLayoutShellProps) {
+  useSettingsBeforeUnload()
+
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const fromArenaV3 = searchParams.get('from') === 'arena_v3'

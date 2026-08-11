@@ -11,6 +11,15 @@ import type {
  * Used by the OAuth Required Modal and available for any UI that needs to display scope info.
  */
 export const SCOPE_DESCRIPTIONS: Record<string, string> = {
+  // Zoho Desk scopes
+  'Desk.tickets.READ': 'View tickets, threads, comments, and attachments',
+  'Desk.tickets.UPDATE': 'Update tickets and add comments',
+  'Desk.contacts.READ': 'View contacts',
+  'Desk.agents.READ': 'View agents',
+  'Desk.basic.READ': 'View basic account and organization data',
+  'Desk.webhooks.CREATE': 'Create webhooks',
+  'Desk.webhooks.DELETE': 'Delete webhooks',
+  'aaaserver.profile.READ': 'View your Zoho profile',
   // Google scopes
   'https://www.googleapis.com/auth/gmail.send': 'Send emails',
   'https://www.googleapis.com/auth/gmail.labels': 'View and manage email labels',
@@ -122,6 +131,13 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'mute.write': 'Mute and unmute users',
   'offline.access': 'Access account when not using the application',
 
+  // TikTok scopes
+  'user.info.basic': "Read a user's profile info (open id, avatar, display name)",
+  'user.info.profile': "Read a user's profile info (bio, verification status, username)",
+  'user.info.stats': "Read a user's stats (follower, following, likes, and video counts)",
+  'video.upload': "Share content to a creator's account as a draft for further edit and post",
+  'video.list': "Read a user's public TikTok videos",
+
   // Airtable scopes
   'data.records:read': 'Read records',
   'data.records:write': 'Write to records',
@@ -230,6 +246,7 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   'Mail.ReadBasic': 'Read Microsoft emails',
   'Mail.Read': 'Read Microsoft emails',
   'Mail.Send': 'Send emails',
+  'Calendars.ReadWrite': 'Read and manage Outlook calendar events',
   'Files.Read': 'Read OneDrive files',
   'Files.ReadWrite': 'Read and write OneDrive files',
   'Tasks.ReadWrite': 'Read and manage Planner tasks',
@@ -357,6 +374,12 @@ export const SCOPE_DESCRIPTIONS: Record<string, string> = {
   ads_read: 'Read Facebook Ads account and campaign data',
   read_insights: 'Read Facebook Ads performance insights',
   business_management: 'Access Business Manager ad accounts',
+  // Instagram scopes (Business Login for Instagram)
+  instagram_business_basic: 'Access Instagram professional profile and media',
+  instagram_business_content_publish: 'Publish photos, videos, reels, and stories',
+  instagram_business_manage_comments: 'Read, reply to, hide, and delete comments',
+  instagram_business_manage_messages: 'Read conversations and send Instagram Direct messages',
+  instagram_business_manage_insights: 'Read account and media insights',
 
   // Box scopes
   root_readwrite: 'Read and write all files and folders in Box account',
@@ -526,7 +549,13 @@ export function getServiceConfigByServiceId(serviceId: string): OAuthServiceConf
 export function getServiceConfigByProviderId(providerId: string): OAuthServiceConfig | null {
   for (const provider of Object.values(OAUTH_PROVIDERS)) {
     for (const [key, service] of Object.entries(provider.services)) {
-      if (service.providerId === providerId || key === providerId) {
+      // Also resolve a service-account provider id (e.g. `slack-custom-bot`) back
+      // to its owning service so its credentials group under that integration.
+      if (
+        service.providerId === providerId ||
+        key === providerId ||
+        service.serviceAccountProviderId === providerId
+      ) {
         return service
       }
     }
@@ -538,6 +567,42 @@ export function getServiceConfigByProviderId(providerId: string): OAuthServiceCo
 export function getServiceAccountProviderForProviderId(providerId: string): string | undefined {
   const serviceConfig = getServiceConfigByProviderId(providerId)
   return serviceConfig?.serviceAccountProviderId
+}
+
+/**
+ * The two provider ids a service answers to. Structurally satisfied by both
+ * `OAuthServiceConfig` and the lighter `OAuthServiceMatch` that catalog
+ * resolution returns, so callers pass whichever they already hold.
+ */
+export interface ServiceProviderIdentity {
+  providerId: string
+  serviceAccountProviderId?: string
+}
+
+/**
+ * Whether a stored credential's `providerId` authenticates the given service.
+ *
+ * A service is reachable by two ids: its own OAuth `providerId` (`jira`) and
+ * the service-account provider its family issues (`atlassian-service-account`).
+ * One Atlassian API token authenticates Jira, Jira Service Management, and
+ * Confluence alike, so matching on the OAuth `providerId` alone hides a
+ * service-account credential from every product page it actually powers.
+ *
+ * Prefer this over comparing `getServiceConfigByProviderId(id)?.providerId`
+ * against a service: that resolver walks `OAUTH_PROVIDERS` in declaration
+ * order and answers "which service owns this id", which for a family-wide
+ * service-account id is an arbitrary single winner — `atlassian-service-account`
+ * resolves to the `Atlassian Service Account` pseudo-service and
+ * `google-service-account` to whichever Google service is declared first.
+ */
+export function credentialProviderMatchesService(
+  credentialProviderId: string,
+  service: ServiceProviderIdentity
+): boolean {
+  return (
+    service.providerId === credentialProviderId ||
+    service.serviceAccountProviderId === credentialProviderId
+  )
 }
 
 export function getCanonicalScopesForProvider(providerId: string): string[] {
@@ -622,6 +687,18 @@ for (const [baseProviderId, providerConfig] of Object.entries(OAUTH_PROVIDERS)) 
     PROVIDER_ID_TO_BASE_PROVIDER[service.providerId] = {
       baseProvider: baseProviderId,
       serviceKey,
+    }
+    // Service-account credentials are stored under `serviceAccountProviderId`
+    // (e.g. `claude-platform-service-account`). Map it to the same base so
+    // icon/name resolution doesn't fall back to a mis-split base provider — the
+    // hyphen split only recovers a single-segment base (`google`), not a
+    // multi-segment one (`claude-platform`). First service to claim it wins.
+    const saProviderId = service.serviceAccountProviderId
+    if (saProviderId && !PROVIDER_ID_TO_BASE_PROVIDER[saProviderId]) {
+      PROVIDER_ID_TO_BASE_PROVIDER[saProviderId] = {
+        baseProvider: baseProviderId,
+        serviceKey,
+      }
     }
   }
 }

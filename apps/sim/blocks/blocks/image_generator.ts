@@ -80,6 +80,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
   name: 'Image Generator',
   description: 'Generate, edit, or fuse images',
   hideFromToolbar: true,
+  sunset: { status: 'legacy', replacedBy: 'image_generator_v2' },
   authMode: AuthMode.ApiKey,
   longDescription:
     'Integrate Image Generator into the workflow. Can generate images using DALL-E 3 and GPT Image models.',

@@ -324,6 +324,9 @@ const executeProviderResponseSchema = z
         input: z.number().optional(),
         output: z.number().optional(),
         total: z.number().optional(),
+        /** Prompt-cache buckets, reported separately from base input tokens. */
+        cacheRead: z.number().optional(),
+        cacheWrite: z.number().optional(),
       })
       .optional(),
     toolCalls: z.array(z.record(z.string(), z.unknown())).optional(),

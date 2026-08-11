@@ -1,12 +1,16 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { truncate } from '@sim/utils/string'
 import {
   AirtableIcon,
   AsanaIcon,
+  AtlassianIcon,
   AttioIcon,
   AzureIcon,
   BoxCompanyIcon,
   CalComIcon,
+  ClaudeIcon,
+  ClickUpIcon,
   ConfluenceIcon,
   DocuSignIcon,
   DropboxIcon,
@@ -24,6 +28,7 @@ import {
   GoogleSheetsIcon,
   GoogleTasksIcon,
   HubspotIcon,
+  InstagramIcon,
   JiraIcon,
   LinearIcon,
   LinkedInIcon,
@@ -44,6 +49,7 @@ import {
   ShopifyIcon,
   SlackIcon,
   SpotifyIcon,
+  TikTokIcon,
   TrelloIcon,
   UnipileIcon,
   VertexIcon,
@@ -51,16 +57,50 @@ import {
   WebflowIcon,
   WordpressIcon,
   xIcon,
+  ZohoDeskIcon,
   ZoomIcon,
 } from '@/components/icons'
 import { env } from '@/lib/core/config/env'
+import { isSlackExtendedScopesEnabled } from '@/lib/core/config/env-flags'
+import {
+  DEFAULT_MAX_ERROR_BODY_BYTES,
+  readResponseTextWithLimit,
+} from '@/lib/core/utils/stream-limits'
 import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
+import { parseInstagramLongLivedToken } from '@/lib/oauth/instagram'
 import { getMicrosoftOAuthEndpoints } from '@/lib/oauth/microsoft'
 import type { OAuthProviderConfig } from './types'
 
 const logger = createLogger('OAuth')
 
+/**
+ * Slack scopes requested only where the app is approved for them, gated by
+ * {@link isSlackExtendedScopesEnabled}. Slack rejects the entire authorization
+ * with "unapproved permissions requested" when any requested scope is not on the
+ * app's approved list, so these stay out of the default grant.
+ */
+const SLACK_APPROVAL_GATED_SCOPES = isSlackExtendedScopesEnabled
+  ? (['assistant:write', 'app_mentions:read', 'im:history'] as const)
+  : ([] as const)
+
 export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
+  'claude-platform': {
+    name: 'Claude Platform',
+    icon: ClaudeIcon,
+    services: {
+      'claude-platform': {
+        name: 'Claude Platform',
+        description: 'Run Claude Platform Managed Agents from your workflows.',
+        providerId: 'claude-platform',
+        serviceAccountProviderId: 'claude-platform-service-account',
+        icon: ClaudeIcon,
+        baseProviderIcon: ClaudeIcon,
+        scopes: [],
+        authType: 'service_account',
+      },
+    },
+    defaultService: 'claude-platform',
+  },
   google: {
     name: 'Google',
     icon: GoogleIcon,
@@ -358,10 +398,30 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
       },
       outlook: {
         name: 'Outlook',
-        description: 'Connect to Outlook and manage emails.',
+        description: 'Connect to Outlook and manage emails and calendar events.',
         providerId: 'outlook',
         icon: OutlookIcon,
         baseProviderIcon: MicrosoftIcon,
+        /**
+         * `Calendars.ReadWrite` backs the Outlook calendar operations. Graph documents it
+         * as the sole accepted permission for creating and updating events and for
+         * accept / tentativelyAccept / decline ("Higher: Not available"), and it is
+         * supported for both work/school and personal Microsoft accounts.
+         *
+         * Do NOT add `Calendars.ReadWrite.Shared` here. This provider is shared by work
+         * and personal Outlook accounts, and the `.Shared` calendar scopes are not
+         * confirmed supported for personal Microsoft accounts — requesting one risks
+         * failing consent for personal users, which would take mail access down with it.
+         * That is the same reasoning that kept `findMeetingTimes` out of this integration.
+         * The consequence is that calendar operations target calendars the account owns;
+         * picking a calendar shared by another user may return 403 from Graph.
+         *
+         * Microsoft only grants newly-added scopes on a fresh authorization, so users who
+         * connected Outlook before `Calendars.ReadWrite` existed must reconnect
+         * (re-consent) before the calendar operations will work.
+         *
+         * @see https://learn.microsoft.com/en-us/graph/permissions-reference
+         */
         scopes: [
           'openid',
           'profile',
@@ -370,6 +430,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'Mail.ReadBasic',
           'Mail.Read',
           'Mail.Send',
+          'Calendars.ReadWrite',
           'offline_access',
         ],
       },
@@ -431,17 +492,38 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'x',
   },
+  tiktok: {
+    name: 'TikTok',
+    icon: TikTokIcon,
+    services: {
+      tiktok: {
+        name: 'TikTok',
+        description: 'Read profile info and videos, and upload drafts to the TikTok inbox.',
+        providerId: 'tiktok',
+        icon: TikTokIcon,
+        baseProviderIcon: TikTokIcon,
+        scopes: [
+          'user.info.basic',
+          'user.info.profile',
+          'user.info.stats',
+          'video.upload',
+          'video.list',
+        ],
+      },
+    },
+    defaultService: 'tiktok',
+  },
   atlassian: {
     name: 'Atlassian',
-    icon: JiraIcon,
+    icon: AtlassianIcon,
     services: {
       'atlassian-service-account': {
         name: 'Atlassian Service Account',
         description:
           'Authenticate as an Atlassian service account using a scoped API token from admin.atlassian.com.',
         providerId: 'atlassian-service-account',
-        icon: JiraIcon,
-        baseProviderIcon: JiraIcon,
+        icon: AtlassianIcon,
+        baseProviderIcon: AtlassianIcon,
         scopes: [],
         authType: 'service_account',
       },
@@ -570,6 +652,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Airtable',
         description: 'Manage Airtable bases, tables, and records.',
         providerId: 'airtable',
+        serviceAccountProviderId: 'airtable-service-account',
         icon: AirtableIcon,
         baseProviderIcon: AirtableIcon,
         scopes: [
@@ -591,12 +674,29 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Notion',
         description: 'Connect to your Notion workspace to manage pages and databases.',
         providerId: 'notion',
+        serviceAccountProviderId: 'notion-service-account',
         icon: NotionIcon,
         baseProviderIcon: NotionIcon,
         scopes: [],
       },
     },
     defaultService: 'notion',
+  },
+  clickup: {
+    name: 'ClickUp',
+    icon: ClickUpIcon,
+    services: {
+      clickup: {
+        name: 'ClickUp',
+        description: 'Manage tasks, lists, and comments in ClickUp.',
+        providerId: 'clickup',
+        serviceAccountProviderId: 'clickup-service-account',
+        icon: ClickUpIcon,
+        baseProviderIcon: ClickUpIcon,
+        scopes: [],
+      },
+    },
+    defaultService: 'clickup',
   },
   linear: {
     name: 'Linear',
@@ -606,6 +706,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Linear',
         description: 'Manage issues and projects in Linear.',
         providerId: 'linear',
+        serviceAccountProviderId: 'linear-service-account',
         icon: LinearIcon,
         baseProviderIcon: LinearIcon,
         scopes: ['read', 'write'],
@@ -621,6 +722,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Monday.com',
         description: 'Manage boards, items, and groups in Monday.com.',
         providerId: 'monday',
+        serviceAccountProviderId: 'monday-service-account',
         icon: MondayIcon,
         baseProviderIcon: MondayIcon,
         scopes: [
@@ -647,6 +749,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         icon: BoxCompanyIcon,
         baseProviderIcon: BoxCompanyIcon,
         scopes: ['root_readwrite', 'sign_requests.readwrite'],
+        serviceAccountProviderId: 'box-service-account',
       },
     },
     defaultService: 'box',
@@ -682,6 +785,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Shopify',
         description: 'Manage products, orders, and customers in your Shopify store.',
         providerId: 'shopify',
+        serviceAccountProviderId: 'shopify-service-account',
         icon: ShopifyIcon,
         baseProviderIcon: ShopifyIcon,
         scopes: [
@@ -704,6 +808,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Slack',
         description: 'Use Slack messaging, files, reactions, views, and canvases.',
         providerId: 'slack',
+        serviceAccountProviderId: 'slack-custom-bot',
         icon: SlackIcon,
         baseProviderIcon: SlackIcon,
         scopes: [
@@ -718,7 +823,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'mpim:write',
           'chat:write',
           'chat:write.public',
-          // TODO: Add 'assistant:write' once Slack app review is approved
+          ...SLACK_APPROVAL_GATED_SCOPES,
           'im:write',
           'im:read',
           'users:read',
@@ -729,6 +834,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'canvases:write',
           'reactions:write',
           'reactions:read',
+          // TODO: Add 'pins:read' once Slack app review is approved
         ],
       },
     },
@@ -774,6 +880,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Wealthbox',
         description: 'Manage contacts, notes, and tasks in your Wealthbox CRM.',
         providerId: 'wealthbox',
+        serviceAccountProviderId: 'wealthbox-service-account',
         icon: WealthboxIcon,
         baseProviderIcon: WealthboxIcon,
         scopes: ['login', 'data'],
@@ -789,6 +896,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Webflow',
         description: 'Manage Webflow CMS collections, sites, and content.',
         providerId: 'webflow',
+        serviceAccountProviderId: 'webflow-service-account',
         icon: WebflowIcon,
         baseProviderIcon: WebflowIcon,
         scopes: ['cms:read', 'cms:write', 'sites:read', 'sites:write', 'forms:read'],
@@ -804,6 +912,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Trello',
         description: 'Manage Trello boards, cards, and workflows.',
         providerId: 'trello',
+        serviceAccountProviderId: 'trello-service-account',
         icon: TrelloIcon,
         baseProviderIcon: TrelloIcon,
         scopes: ['read', 'write'],
@@ -819,6 +928,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Asana',
         description: 'Manage Asana projects, tasks, and workflows.',
         providerId: 'asana',
+        serviceAccountProviderId: 'asana-service-account',
         icon: AsanaIcon,
         baseProviderIcon: AsanaIcon,
         scopes: ['default'],
@@ -834,6 +944,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Attio',
         description: 'Manage records, notes, tasks, lists, comments, and more in Attio CRM.',
         providerId: 'attio',
+        serviceAccountProviderId: 'attio-service-account',
         icon: AttioIcon,
         baseProviderIcon: AttioIcon,
         scopes: [
@@ -859,6 +970,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Cal.com',
         description: 'Manage Cal.com bookings, event types, and schedules.',
         providerId: 'calcom',
+        serviceAccountProviderId: 'calcom-service-account',
         icon: CalComIcon,
         baseProviderIcon: CalComIcon,
         scopes: [],
@@ -889,6 +1001,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Pipedrive',
         description: 'Manage deals, contacts, and sales pipeline in Pipedrive CRM.',
         providerId: 'pipedrive',
+        serviceAccountProviderId: 'pipedrive-service-account',
         icon: PipedriveIcon,
         baseProviderIcon: PipedriveIcon,
         scopes: [
@@ -912,6 +1025,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'HubSpot',
         description: 'Access and manage your HubSpot CRM data.',
         providerId: 'hubspot',
+        serviceAccountProviderId: 'hubspot-service-account',
         icon: HubspotIcon,
         baseProviderIcon: HubspotIcon,
         scopes: [
@@ -1102,6 +1216,27 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'unipile_linkedin',
   },
+  instagram: {
+    name: 'Instagram',
+    icon: InstagramIcon,
+    services: {
+      instagram: {
+        name: 'Instagram',
+        description: 'Publish content, moderate comments, and message on Instagram.',
+        providerId: 'instagram',
+        icon: InstagramIcon,
+        baseProviderIcon: InstagramIcon,
+        scopes: [
+          'instagram_business_basic',
+          'instagram_business_content_publish',
+          'instagram_business_manage_comments',
+          'instagram_business_manage_messages',
+          'instagram_business_manage_insights',
+        ],
+      },
+    },
+    defaultService: 'instagram',
+  },
   salesforce: {
     name: 'Salesforce',
     icon: SalesforceIcon,
@@ -1110,12 +1245,55 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Salesforce',
         description: 'Access and manage your Salesforce CRM data.',
         providerId: 'salesforce',
+        serviceAccountProviderId: 'salesforce-service-account',
         icon: SalesforceIcon,
         baseProviderIcon: SalesforceIcon,
         scopes: ['api', 'refresh_token', 'openid'],
       },
     },
     defaultService: 'salesforce',
+  },
+  'zoho-desk': {
+    name: 'Zoho Desk',
+    icon: ZohoDeskIcon,
+    services: {
+      'zoho-desk': {
+        name: 'Zoho Desk',
+        description:
+          'Manage Zoho Desk tickets, comments, threads, and contacts. Connecting with OAuth requires a Zoho account in the US data center; a Self Client also supports the EU, IN, and AU data centers.',
+        providerId: 'zoho-desk',
+        serviceAccountProviderId: 'zoho-desk-service-account',
+        icon: ZohoDeskIcon,
+        baseProviderIcon: ZohoDeskIcon,
+        // Kept to exactly what the tools and the webhook trigger exercise:
+        // tickets (incl. threads/comments), contacts (get_contact), basic
+        // (list_organizations), agents (the `assigneeId` picker lists agents),
+        // webhook create/delete (the trigger provisions and tears down its own
+        // subscription), and profile (OAuth getUserInfo).
+        // Desk.search.READ, Desk.webhooks.READ and Desk.webhooks.UPDATE were
+        // requested but unused - no tool searches, and the provider never lists
+        // or edits a subscription.
+        scopes: [
+          // READ + UPDATE rather than tickets.ALL: no tool creates or deletes a
+          // ticket, and ALL additionally grants ticket DELETE. Threads, comments
+          // and attachments live under the tickets module and are covered by
+          // these two. NOTE: Zoho publishes no scope line for the attachment
+          // content sub-path - verify attachment download against a live account
+          // before merge and widen here if it returns SCOPE_MISMATCH.
+          'Desk.tickets.READ',
+          'Desk.tickets.UPDATE',
+          'Desk.contacts.READ',
+          // READ only: the agent picker for `assigneeId` lists agents, and no
+          // tool creates, edits or deletes one.
+          'Desk.agents.READ',
+          'Desk.basic.READ',
+          'Desk.webhooks.CREATE',
+          'Desk.webhooks.DELETE',
+          'aaaserver.profile.READ',
+        ],
+      },
+    },
+    defaultService: 'zoho-desk',
   },
   zoom: {
     name: 'Zoom',
@@ -1142,6 +1320,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'cloud_recording:read:list_recording_files',
           'cloud_recording:delete:recording_file',
         ],
+        serviceAccountProviderId: 'zoom-service-account',
       },
       /** Admin/account OAuth app — account-wide listing and transcripts. */
       'zoom-admin': {
@@ -1245,6 +1424,17 @@ interface ProviderAuthConfig {
    * instead of the default application/x-www-form-urlencoded. Used by Notion.
    */
   useJsonBody?: boolean
+  /**
+   * Token refresh strategy. `instagram_long_lived` uses Meta's GET
+   * `refresh_access_token?grant_type=ig_refresh_token` flow instead of a
+   * standard OAuth refresh_token POST.
+   */
+  refreshStrategy?: 'standard' | 'instagram_long_lived'
+  /**
+   * Body param name to use for the client identifier instead of the standard `client_id`.
+   * TikTok requires `client_key` instead.
+   */
+  clientIdParamName?: string
 }
 
 export type CustomOAuthAppCredentialsResolver = (
@@ -1310,6 +1500,21 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         clientSecret,
         useBasicAuth: true,
         supportsRefreshTokenRotation: true,
+      }
+    }
+    case 'tiktok': {
+      const { clientId, clientSecret } = getCredentials(
+        env.TIKTOK_CLIENT_ID,
+        env.TIKTOK_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://open.tiktokapis.com/v2/oauth/token/',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: true,
+        // TikTok requires `client_key` in the token request body instead of `client_id`.
+        clientIdParamName: 'client_key',
       }
     }
     case 'confluence': {
@@ -1391,6 +1596,19 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         clientSecret,
         useBasicAuth: false,
         supportsRefreshTokenRotation: true,
+      }
+    }
+    case 'clickup': {
+      const { clientId, clientSecret } = getCredentials(
+        env.CLICKUP_CLIENT_ID,
+        env.CLICKUP_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://api.clickup.com/api/v2/oauth/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: false,
       }
     }
     case 'linear': {
@@ -1578,6 +1796,20 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         supportsRefreshTokenRotation: false,
       }
     }
+    case 'instagram': {
+      const { clientId, clientSecret } = getCredentials(
+        env.INSTAGRAM_CLIENT_ID,
+        env.INSTAGRAM_CLIENT_SECRET
+      )
+      return {
+        tokenEndpoint: 'https://graph.instagram.com/refresh_access_token',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: true,
+        refreshStrategy: 'instagram_long_lived',
+      }
+    }
     case 'salesforce': {
       const { clientId, clientSecret } = getCredentials(
         env.SALESFORCE_CLIENT_ID,
@@ -1641,6 +1873,21 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       )
       return {
         tokenEndpoint: 'https://auth.monday.com/oauth2/token',
+        clientId,
+        clientSecret,
+        useBasicAuth: false,
+        supportsRefreshTokenRotation: false,
+      }
+    }
+    case 'zoho-desk': {
+      // Zoho's refresh_token grant returns a new access token but no new refresh
+      // token, so rotation stays off (the existing refresh token is preserved).
+      // The refresh must target the accounts server; a US/multi-DC-enabled client
+      // uses accounts.zoho.com. Data residency for API calls is honored separately
+      // via the persisted Desk base URL derived from the token response api_domain.
+      const { clientId, clientSecret } = getCredentials(env.ZOHO_CLIENT_ID, env.ZOHO_CLIENT_SECRET)
+      return {
+        tokenEndpoint: 'https://accounts.zoho.com/oauth/v2/token',
         clientId,
         clientSecret,
         useBasicAuth: false,
@@ -1724,7 +1971,7 @@ function buildAuthRequest(
     headers.Authorization = `Basic ${basicAuth}`
   } else {
     // Use body credentials - include client credentials in request body
-    bodyParams.client_id = config.clientId
+    bodyParams[config.clientIdParamName || 'client_id'] = config.clientId
     if (config.clientSecret) {
       bodyParams.client_secret = config.clientSecret
     }
@@ -1766,8 +2013,12 @@ export type RefreshTokenResult = RefreshTokenSuccess | RefreshTokenFailure
 
 function extractErrorCode(value: unknown): string | undefined {
   if (value && typeof value === 'object' && 'error' in value) {
-    const code = (value as { error: unknown }).error
-    if (typeof code === 'string') return code
+    const error = (value as { error: unknown }).error
+    if (typeof error === 'string') return error
+    if (error && typeof error === 'object' && 'code' in error) {
+      const code = (error as { code: unknown }).code
+      if (typeof code === 'string' || typeof code === 'number') return String(code)
+    }
   }
   return undefined
 }
@@ -1780,6 +2031,68 @@ function extractErrorCode(value: unknown): string | undefined {
  * the undici socket defaults (~5 min) gave up.
  */
 const TOKEN_REFRESH_TIMEOUT_MS = 15_000
+
+async function refreshInstagramLongLivedToken(
+  config: ProviderAuthConfig,
+  longLivedToken: string,
+  providerId: string
+): Promise<RefreshTokenResult> {
+  const url = new URL(config.tokenEndpoint)
+  url.searchParams.set('grant_type', 'ig_refresh_token')
+  url.searchParams.set('access_token', longLivedToken)
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    signal: AbortSignal.timeout(TOKEN_REFRESH_TIMEOUT_MS),
+  })
+
+  const responseText = await readResponseTextWithLimit(response, {
+    maxBytes: DEFAULT_MAX_ERROR_BODY_BYTES,
+    label: 'Instagram token refresh response',
+  })
+  let responseData: unknown = responseText
+  try {
+    responseData = JSON.parse(responseText)
+  } catch {
+    responseData = responseText
+  }
+
+  if (!response.ok) {
+    const errorSummary = truncate(responseText, 1000)
+    logger.error('Instagram long-lived token refresh failed:', {
+      status: response.status,
+      statusText: response.statusText,
+      error: errorSummary,
+      parsedError: responseData,
+      providerId,
+      tokenEndpoint: config.tokenEndpoint,
+    })
+    return {
+      ok: false,
+      errorCode: extractErrorCode(responseData),
+      message: `Failed to refresh token: ${response.status} ${errorSummary}`,
+    }
+  }
+
+  const payload = parseInstagramLongLivedToken(responseData)
+  if (!payload) {
+    logger.warn('Invalid Instagram refresh response', { providerId })
+    return { ok: false, message: 'Invalid Instagram token refresh response' }
+  }
+
+  logger.info('Instagram long-lived token refreshed successfully', {
+    expiresIn: payload.expires_in,
+    providerId,
+  })
+
+  // Instagram returns a new long-lived token; store it as both access and refresh.
+  return {
+    ok: true,
+    accessToken: payload.access_token,
+    expiresIn: payload.expires_in,
+    refreshToken: payload.access_token,
+  }
+}
 
 export async function refreshOAuthToken(
   providerId: string,
@@ -1801,6 +2114,10 @@ export async function refreshOAuthToken(
     const config = requiresCustomOAuthApp(provider)
       ? await resolveCustomOAuthAppConfig(provider, organizationId, resolveCustomAppCredentials)
       : getProviderAuthConfig(provider, alias)
+
+    if (config.refreshStrategy === 'instagram_long_lived') {
+      return await refreshInstagramLongLivedToken(config, refreshToken, providerId)
+    }
 
     const { headers, bodyParams, useJsonBody } = buildAuthRequest(config, refreshToken)
 
@@ -1876,7 +2193,12 @@ export async function refreshOAuthToken(
     const expiresIn = data.expires_in || data.expiresIn || 3600
 
     if (!accessToken) {
-      logger.warn('No access token found in refresh response', { providerId, response: data })
+      // Log only the shape, never `data` itself - on a partial success it can
+      // carry live tokens.
+      logger.warn('No access token found in refresh response', {
+        providerId,
+        responseKeys: Object.keys(data ?? {}),
+      })
       return { ok: false, message: 'No access token in refresh response' }
     }
 

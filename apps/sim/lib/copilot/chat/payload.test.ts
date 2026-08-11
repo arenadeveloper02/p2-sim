@@ -1,15 +1,20 @@
 /**
  * @vitest-environment node
  */
-import { envFlagsMock, workflowsUtilsMock } from '@sim/testing'
+import { workflowsUtilsMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCreateUserToolSchema, mockGetHighestPrioritySubscription, mockIsAdminWorkspace } =
-  vi.hoisted(() => ({
-    mockCreateUserToolSchema: vi.fn(() => ({ type: 'object', properties: {} })),
-    mockGetHighestPrioritySubscription: vi.fn(),
-    mockIsAdminWorkspace: vi.fn(() => false),
-  }))
+const {
+  mockCreateUserToolSchema,
+  mockGetHighestPrioritySubscription,
+  mockIsAdminWorkspace,
+  mockTrackChatUpload,
+} = vi.hoisted(() => ({
+  mockCreateUserToolSchema: vi.fn(() => ({ type: 'object', properties: {} })),
+  mockGetHighestPrioritySubscription: vi.fn(),
+  mockIsAdminWorkspace: vi.fn(() => false),
+  mockTrackChatUpload: vi.fn(),
+}))
 
 vi.mock('@/lib/billing/core/subscription', () => ({
   getHighestPrioritySubscription: mockGetHighestPrioritySubscription,
@@ -20,8 +25,6 @@ vi.mock('@/lib/billing/plan-helpers', () => ({
     (plan: string | null) => plan === 'pro' || plan === 'team' || plan === 'enterprise'
   ),
 }))
-
-vi.mock('@/lib/core/config/env-flags', () => envFlagsMock)
 
 vi.mock('@/lib/mcp/utils', () => ({
   createMcpToolId: vi.fn(),
@@ -35,6 +38,8 @@ vi.mock('@/tools/registry', () => ({
       id: 'gmail_send',
       name: 'Gmail Send',
       description: 'Send emails using Gmail',
+      outputs: { messageId: { type: 'string', description: 'Sent message ID' } },
+      oauth: { required: true, provider: 'google-email' },
     },
     brandfetch_search: {
       id: 'brandfetch_search',
@@ -107,7 +112,13 @@ vi.mock('@/lib/copilot/integration-tools', () => ({
   getExposedIntegrationTools: vi.fn(() => [
     {
       toolId: 'gmail_send',
-      config: { id: 'gmail_send', name: 'Gmail Send', description: 'Send emails using Gmail' },
+      config: {
+        id: 'gmail_send',
+        name: 'Gmail Send',
+        description: 'Send emails using Gmail',
+        outputs: { messageId: { type: 'string', description: 'Sent message ID' } },
+        oauth: { required: true, provider: 'google-email' },
+      },
       service: 'gmail',
       operation: 'send',
     },
@@ -131,6 +142,36 @@ vi.mock('@/lib/copilot/integration-tools', () => ({
       service: 'run',
       operation: 'workflow',
     },
+    {
+      toolId: 'zoom_list_meetings',
+      config: {
+        id: 'zoom_list_meetings',
+        name: 'Zoom List Meetings',
+        description: 'List Zoom meetings',
+      },
+      service: 'zoom',
+      operation: 'list_meetings',
+    },
+    {
+      toolId: 'zoom_list_account_recordings',
+      config: {
+        id: 'zoom_list_account_recordings',
+        name: 'Zoom List Account Recordings',
+        description: 'List all account recordings',
+      },
+      service: 'zoom',
+      operation: 'list_account_recordings',
+    },
+    {
+      toolId: 'google_sheets_write',
+      config: {
+        id: 'google_sheets_write_v2',
+        name: 'Google Sheets Write V2',
+        description: 'Latest write',
+      },
+      service: 'google_sheets',
+      operation: 'write',
+    },
   ]),
 }))
 
@@ -143,6 +184,9 @@ vi.mock('@/lib/workspaces/is-admin-workspace', () => ({
   isAdminWorkspaceOnlyTool: (toolId: string) =>
     toolId === 'zoom_list_account_recordings' ||
     toolId === 'zoom_get_account_recordings_with_transcript',
+}))
+vi.mock('@/lib/uploads/contexts/workspace/workspace-file-manager', () => ({
+  trackChatUpload: mockTrackChatUpload,
 }))
 
 import {
@@ -233,6 +277,22 @@ describe('buildIntegrationToolSchemas', () => {
     expect(names).toContain('zoom_list_account_recordings')
   })
 
+  it('preserves operation, outputs, and OAuth discovery metadata', async () => {
+    mockGetHighestPrioritySubscription.mockResolvedValue({ plan: 'pro', status: 'active' })
+
+    const toolSchemas = await buildIntegrationToolSchemas('user-metadata')
+    const gmailTool = toolSchemas.find((tool) => tool.name === 'gmail_send')
+
+    expect(gmailTool).toEqual(
+      expect.objectContaining({
+        service: 'gmail',
+        operation: 'send',
+        outputs: { messageId: { type: 'string', description: 'Sent message ID' } },
+        oauth: { required: true, provider: 'google-email' },
+      })
+    )
+  })
+
   it('uses copilot-facing file schemas for integration tools', async () => {
     mockGetHighestPrioritySubscription.mockResolvedValue({ plan: 'pro', status: 'active' })
 
@@ -240,11 +300,11 @@ describe('buildIntegrationToolSchemas', () => {
 
     expect(mockCreateUserToolSchema).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'gmail_send' }),
-      { surface: 'copilot' }
+      { surface: 'copilot', hostedKeySupport: expect.any(Boolean) }
     )
     expect(mockCreateUserToolSchema).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'brandfetch_search' }),
-      { surface: 'copilot' }
+      { surface: 'copilot', hostedKeySupport: expect.any(Boolean) }
     )
   })
 
@@ -258,7 +318,7 @@ describe('buildIntegrationToolSchemas', () => {
     expect(sheetsTool?.description).toBe('Latest write')
     expect(mockCreateUserToolSchema).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'google_sheets_write_v2' }),
-      { surface: 'copilot' }
+      { surface: 'copilot', hostedKeySupport: expect.any(Boolean) }
     )
   })
 
@@ -267,17 +327,66 @@ describe('buildIntegrationToolSchemas', () => {
 
     const first = await buildIntegrationToolSchemas('user-cache')
     first[0].input_schema.mutated = true
+    if (first[0].outputs) first[0].outputs.mutated = true
     const second = await buildIntegrationToolSchemas('user-cache')
 
     expect(mockGetHighestPrioritySubscription).toHaveBeenCalledTimes(1)
     expect(mockCreateUserToolSchema).toHaveBeenCalledTimes(5)
     expect(second[0].input_schema).not.toHaveProperty('mutated')
+    expect(second[0].outputs).not.toHaveProperty('mutated')
   })
 })
 
 describe('buildCopilotRequestPayload', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockTrackChatUpload.mockResolvedValue({ displayName: 'payroll.xlsx' })
+  })
+
+  describe('file attachment tracking', () => {
+    const attachmentParams = {
+      message: 'hi',
+      userId: 'mallory',
+      userMessageId: 'msg-1',
+      mode: 'agent',
+      model: 'claude-opus-4-8',
+      workspaceId: 'ws-1',
+      chatId: 'chat-1',
+      fileAttachments: [
+        { id: 'a1', key: 'workspace/ws-1/1731000000000-ab12cd34-payroll.xlsx', size: 1 },
+      ],
+    }
+
+    /**
+     * Tracking writes `workspace_files` rows. A read-only member reaching the
+     * chat endpoint must not gain that write through an attachment.
+     */
+    it.each(['read', undefined])('does not track attachments for permission %s', async (perm) => {
+      await buildCopilotRequestPayload(
+        { ...attachmentParams, userPermission: perm },
+        { selectedModel: 'claude-opus-4-8' }
+      )
+
+      expect(mockTrackChatUpload).not.toHaveBeenCalled()
+    })
+
+    it.each(['write', 'admin'])('tracks attachments for permission %s', async (perm) => {
+      await buildCopilotRequestPayload(
+        { ...attachmentParams, userPermission: perm },
+        { selectedModel: 'claude-opus-4-8' }
+      )
+
+      expect(mockTrackChatUpload).toHaveBeenCalledWith(
+        'ws-1',
+        'mallory',
+        'chat-1',
+        'workspace/ws-1/1731000000000-ab12cd34-payroll.xlsx',
+        expect.anything(),
+        expect.anything(),
+        1,
+        'msg-1'
+      )
+    })
   })
 
   it('passes workspaceContext through to the Go request payload', async () => {
@@ -300,6 +409,59 @@ describe('buildCopilotRequestPayload', () => {
         workspaceContext: 'workspace inventory',
       })
     )
+  })
+
+  it('advertises desktop capabilities without adding parallel local_* tool schemas', async () => {
+    const capablePayload = await buildCopilotRequestPayload(
+      {
+        message: 'inspect my local project',
+        userId: 'user-1',
+        userMessageId: 'msg-1',
+        mode: 'agent',
+        model: '',
+        workspaceId: 'ws-1',
+        desktopLocalFilesystem: true,
+      },
+      { selectedModel: '' }
+    )
+    expect(capablePayload).toMatchObject({
+      desktopCapabilities: { localFilesystem: true },
+    })
+    expect(capablePayload).not.toHaveProperty('mothershipTools')
+
+    const browserPayload = await buildCopilotRequestPayload(
+      {
+        message: 'inspect my local project',
+        userId: 'user-1',
+        userMessageId: 'msg-2',
+        mode: 'agent',
+        model: '',
+        workspaceId: 'ws-1',
+        browser: true,
+        browserSessions: [
+          {
+            hostname: 'example.com',
+            evidence: 'cookies',
+            lastObservedAt: '2026-08-01T00:00:00.000Z',
+          },
+        ],
+      },
+      { selectedModel: '' }
+    )
+    expect(browserPayload).not.toHaveProperty('mothershipTools')
+    expect(browserPayload).toMatchObject({
+      desktopCapabilities: {
+        browser: true,
+        browserSessions: [
+          {
+            hostname: 'example.com',
+            evidence: 'cookies',
+            lastObservedAt: '2026-08-01T00:00:00.000Z',
+          },
+        ],
+      },
+    })
+    expect(browserPayload).not.toHaveProperty('browserCapable')
   })
 
   it('passes user metadata through to the Go request payload', async () => {
@@ -329,5 +491,35 @@ describe('buildCopilotRequestPayload', () => {
         },
       })
     )
+  })
+
+  it('passes entitlements through and omits the field when empty', async () => {
+    const withEntitlements = await buildCopilotRequestPayload(
+      {
+        message: 'publish as a block',
+        userId: 'user-1',
+        userMessageId: 'msg-1',
+        mode: 'agent',
+        model: 'claude-opus-4-8',
+        workspaceId: 'ws-1',
+        entitlements: ['custom-blocks'],
+      },
+      { selectedModel: 'claude-opus-4-8' }
+    )
+    expect(withEntitlements).toEqual(expect.objectContaining({ entitlements: ['custom-blocks'] }))
+
+    const withoutEntitlements = await buildCopilotRequestPayload(
+      {
+        message: 'publish as a block',
+        userId: 'user-1',
+        userMessageId: 'msg-1',
+        mode: 'agent',
+        model: 'claude-opus-4-8',
+        workspaceId: 'ws-1',
+        entitlements: [],
+      },
+      { selectedModel: 'claude-opus-4-8' }
+    )
+    expect(withoutEntitlements).not.toHaveProperty('entitlements')
   })
 })

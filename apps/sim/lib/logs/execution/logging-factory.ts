@@ -1,6 +1,12 @@
 import { db, workflow } from '@sim/db'
 import { eq } from 'drizzle-orm'
 import { BASE_EXECUTION_CHARGE } from '@/lib/billing/constants'
+import {
+  accumulateEmbeddedToolCosts,
+  extractEmbeddedToolCostsFromSpan,
+  normalizeEmbeddedToolCosts,
+  resolveEmbeddedToolCostKey,
+} from '@/lib/logs/embedded-tool-costs'
 import type {
   ExecutionEnvironment,
   ExecutionTrigger,
@@ -85,7 +91,7 @@ export async function loadDeployedWorkflowStateForLogging(
   }
 }
 
-type CostTraceSpan = Pick<TraceSpan, 'cost' | 'model' | 'tokens'> & {
+type CostTraceSpan = Pick<TraceSpan, 'cost' | 'model' | 'tokens' | 'output'> & {
   type?: TraceSpan['type']
   name?: TraceSpan['name']
   children?: CostTraceSpan[]
@@ -96,6 +102,8 @@ export interface CostSummaryModel {
   output: number
   total: number
   toolCost?: number
+  /** Per-tool embedded costs normalized to `toolCost`; merged with max across boundaries. */
+  embeddedToolCosts?: Record<string, number>
   tokens: { input: number; output: number; total: number }
 }
 
@@ -109,6 +117,27 @@ export interface CostSummaryCharge {
   total: number
 }
 
+/**
+ * Third-party vendor spend from Cost blocks (`type: 'cost'` spans), keyed by span
+ * name for ledger reconciliation.
+ */
+export interface CostSummaryExternalCharge {
+  total: number
+  vendor?: string
+  quantity?: number
+  unit?: string
+  metadata?: {
+    originalAmount?: number
+    originalCurrency?: string
+    exchangeRate?: number
+    sourceBlockId?: string
+    responsePath?: string
+    quantityPath?: string
+    unitPrice?: number
+    source?: string
+  }
+}
+
 export interface CostSummary {
   totalCost: number
   totalInputCost: number
@@ -118,11 +147,62 @@ export interface CostSummary {
   totalCompletionTokens: number
   baseExecutionCharge: number
   models: Record<string, CostSummaryModel>
+  /**
+   * Model costs owned by workflow finalization. Mothership spans remain in
+   * `models` and the display totals, but Go's cumulative update-cost path owns
+   * their usage ledger rows.
+   */
+  workflowLedgerModels: Record<string, CostSummaryModel>
   /** Non-model billable charges keyed by span name (tool/integration costs). */
   charges: Record<string, CostSummaryCharge>
+  /** Cost-block external vendor spend keyed by span name. */
+  external: Record<string, CostSummaryExternalCharge>
 }
 
 type BillableTraceSpan = CostTraceSpan & { cost: NonNullable<TraceSpan['cost']> }
+
+interface CostBlockRawOutput {
+  amount?: number
+  currency?: string
+  exchangeRate?: number
+  vendor?: string
+  label?: string
+  source?: string
+  quantity?: number
+  unit?: string
+  unitPrice?: number
+  quantityPath?: string
+  sourceBlockId?: string
+  responsePath?: string
+}
+
+function extractExternalChargeFromSpan(span: BillableTraceSpan): {
+  description: string
+  vendor?: string
+  quantity?: number
+  unit?: string
+  metadata: CostSummaryExternalCharge['metadata']
+} {
+  const raw = (span.output?.raw ?? {}) as CostBlockRawOutput
+  const description = span.name?.trim() || raw.label?.trim() || raw.vendor?.trim() || 'external'
+
+  return {
+    description,
+    vendor: raw.vendor?.trim() || undefined,
+    quantity: typeof raw.quantity === 'number' ? raw.quantity : undefined,
+    unit: raw.unit?.trim() || undefined,
+    metadata: {
+      ...(raw.amount !== undefined ? { originalAmount: raw.amount } : {}),
+      ...(raw.currency ? { originalCurrency: raw.currency } : {}),
+      ...(raw.exchangeRate !== undefined ? { exchangeRate: raw.exchangeRate } : {}),
+      ...(raw.sourceBlockId ? { sourceBlockId: raw.sourceBlockId } : {}),
+      ...(raw.responsePath ? { responsePath: raw.responsePath } : {}),
+      ...(raw.quantityPath ? { quantityPath: raw.quantityPath } : {}),
+      ...(raw.unitPrice !== undefined ? { unitPrice: raw.unitPrice } : {}),
+      ...(raw.source ? { source: raw.source } : {}),
+    },
+  }
+}
 
 function hasBillableCost(span: CostTraceSpan): span is BillableTraceSpan {
   return span.cost !== undefined
@@ -132,18 +212,40 @@ function isModelBreakdownSpan(span: CostTraceSpan): boolean {
   return span.type === 'model'
 }
 
-export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): CostSummary {
+/** Mothership model spend is ledgered cumulatively by Go update-cost. */
+function isMothershipUpdateCostOwned(span: CostTraceSpan): boolean {
+  return span.type === 'mothership'
+}
+
+export interface CostSummaryOptions {
+  /**
+   * Per-run fixed charge folded into the total. Defaults to
+   * `BASE_EXECUTION_CHARGE`. Pass `0` for a run whose base charge is already
+   * paid by an invoking run — a custom block's child, for instance, is one
+   * logical run with its consumer and must not add a second execution fee.
+   */
+  baseExecutionCharge?: number
+}
+
+export function calculateCostSummary(
+  traceSpans: CostTraceSpan[] | undefined,
+  options?: CostSummaryOptions
+): CostSummary {
+  const baseExecutionCharge = options?.baseExecutionCharge ?? BASE_EXECUTION_CHARGE
+
   if (!traceSpans || traceSpans.length === 0) {
     return {
-      totalCost: BASE_EXECUTION_CHARGE,
+      totalCost: baseExecutionCharge,
       totalInputCost: 0,
       totalOutputCost: 0,
       totalTokens: 0,
       totalPromptTokens: 0,
       totalCompletionTokens: 0,
-      baseExecutionCharge: BASE_EXECUTION_CHARGE,
+      baseExecutionCharge,
       models: {},
+      workflowLedgerModels: {},
       charges: {},
+      external: {},
     }
   }
 
@@ -208,7 +310,42 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
   let totalPromptTokens = 0
   let totalCompletionTokens = 0
   const models: Record<string, CostSummaryModel> = {}
+  const workflowLedgerModels: Record<string, CostSummaryModel> = {}
   const charges: Record<string, CostSummaryCharge> = {}
+  const external: Record<string, CostSummaryExternalCharge> = {}
+
+  const addModelCost = (
+    target: Record<string, CostSummaryModel>,
+    model: string,
+    span: BillableTraceSpan
+  ) => {
+    if (!target[model]) {
+      target[model] = {
+        input: 0,
+        output: 0,
+        total: 0,
+        tokens: { input: 0, output: 0, total: 0 },
+      }
+    }
+    target[model].input += span.cost.input || 0
+    target[model].output += span.cost.output || 0
+    target[model].total += span.cost.total || 0
+    target[model].tokens.input += span.tokens?.input ?? span.tokens?.prompt ?? 0
+    target[model].tokens.output += span.tokens?.output ?? span.tokens?.completion ?? 0
+    target[model].tokens.total += span.tokens?.total || 0
+
+    if (span.cost.toolCost) {
+      target[model].toolCost = (target[model].toolCost || 0) + span.cost.toolCost
+      const normalized = normalizeEmbeddedToolCosts(
+        extractEmbeddedToolCostsFromSpan(span),
+        span.cost.toolCost
+      )
+      target[model].embeddedToolCosts = accumulateEmbeddedToolCosts(
+        target[model].embeddedToolCosts,
+        normalized
+      )
+    }
+  }
 
   for (const span of costSpans) {
     totalCost += span.cost.total || 0
@@ -220,38 +357,35 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
 
     if (span.model) {
       const model = span.model
-      if (!models[model]) {
-        models[model] = {
-          input: 0,
-          output: 0,
-          total: 0,
-          tokens: { input: 0, output: 0, total: 0 },
+      addModelCost(models, model, span)
+      if (!isMothershipUpdateCostOwned(span)) {
+        addModelCost(workflowLedgerModels, model, span)
+      }
+    } else if (!isMothershipUpdateCostOwned(span) && (span.cost.total || 0) > 0) {
+      if (span.type === 'cost') {
+        const { description, vendor, quantity, unit, metadata } =
+          extractExternalChargeFromSpan(span)
+        if (!external[description]) {
+          external[description] = { total: 0, vendor, quantity, unit, metadata }
         }
+        external[description].total += span.cost.total || 0
+      } else {
+        // Non-model billable span (e.g. a standalone hosted-key tool block).
+        // These previously contributed to the run total but were never itemized
+        // in the ledger (the "standalone tool gap"). Key by span name so each
+        // integration gets a single, reconciling charge row.
+        const rawName = span.name || span.type || 'tool'
+        const description =
+          span.type === 'tool' ? resolveEmbeddedToolCostKey(rawName, span.output) : rawName
+        if (!charges[description]) {
+          charges[description] = { total: 0 }
+        }
+        charges[description].total += span.cost.total || 0
       }
-      models[model].input += span.cost.input || 0
-      models[model].output += span.cost.output || 0
-      models[model].total += span.cost.total || 0
-      models[model].tokens.input += span.tokens?.input ?? span.tokens?.prompt ?? 0
-      models[model].tokens.output += span.tokens?.output ?? span.tokens?.completion ?? 0
-      models[model].tokens.total += span.tokens?.total || 0
-
-      if (span.cost.toolCost) {
-        models[model].toolCost = (models[model].toolCost || 0) + span.cost.toolCost
-      }
-    } else if ((span.cost.total || 0) > 0) {
-      // Non-model billable span (e.g. a standalone hosted-key tool block).
-      // These previously contributed to the run total but were never itemized
-      // in the ledger (the "standalone tool gap"). Key by span name so each
-      // integration gets a single, reconciling charge row.
-      const description = span.name || span.type || 'tool'
-      if (!charges[description]) {
-        charges[description] = { total: 0 }
-      }
-      charges[description].total += span.cost.total || 0
     }
   }
 
-  totalCost += BASE_EXECUTION_CHARGE
+  totalCost += baseExecutionCharge
 
   return {
     totalCost,
@@ -260,8 +394,10 @@ export function calculateCostSummary(traceSpans: CostTraceSpan[] | undefined): C
     totalTokens,
     totalPromptTokens,
     totalCompletionTokens,
-    baseExecutionCharge: BASE_EXECUTION_CHARGE,
+    baseExecutionCharge,
     models,
+    workflowLedgerModels,
     charges,
+    external,
   }
 }

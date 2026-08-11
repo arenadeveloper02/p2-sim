@@ -3,10 +3,91 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  findCatalogModel,
   getBaseModelProviders,
+  getHostedModels,
+  getModelPricing,
+  getModelsWithPromptCaching,
+  getPromptCachingMinimumTokens,
+  getProviderModels,
+  getThinkingStreamVisibility,
+  isModelDeprecated,
   orderModelIdsByReleaseDate,
   PROVIDER_DEFINITIONS,
+  resolveCanonicalModelId,
+  updateFireworksModels,
 } from '@/providers/models'
+import { supportsPromptCaching } from '@/providers/utils'
+
+describe('Anthropic thinking stream visibility', () => {
+  it('classifies visible Claude thinking as summarized rather than raw', () => {
+    for (const providerId of ['anthropic', 'azure-anthropic'] as const) {
+      for (const model of PROVIDER_DEFINITIONS[providerId].models) {
+        if (model.capabilities.thinking) {
+          expect(getThinkingStreamVisibility(model.id)).toBe('summary')
+        }
+      }
+    }
+  })
+})
+
+describe('Meta thinking stream visibility', () => {
+  it('classifies private Muse reasoning as not streamed', () => {
+    expect(getThinkingStreamVisibility('muse-spark-1.1')).toBe('none')
+  })
+})
+
+describe('prompt caching capability', () => {
+  const cachingModels = new Set(getModelsWithPromptCaching())
+
+  it('covers every Claude model on both Anthropic surfaces', () => {
+    for (const providerId of ['anthropic', 'azure-anthropic'] as const) {
+      for (const model of PROVIDER_DEFINITIONS[providerId].models) {
+        expect(cachingModels.has(model.id)).toBe(true)
+      }
+    }
+  })
+
+  /**
+   * OpenAI and Gemini cache automatically with no caller control, so declaring
+   * the capability would put a switch in the UI that does nothing.
+   */
+  it('excludes providers whose caching is automatic', () => {
+    for (const providerId of ['openai', 'google'] as const) {
+      for (const model of PROVIDER_DEFINITIONS[providerId].models) {
+        expect(cachingModels.has(model.id)).toBe(false)
+      }
+    }
+    expect(supportsPromptCaching('gpt-5.5')).toBe(false)
+  })
+
+  it('reports the vendor minimum prefix, raised for Haiku', () => {
+    expect(getPromptCachingMinimumTokens('claude-sonnet-5')).toBe(1024)
+    expect(getPromptCachingMinimumTokens('claude-haiku-4-5')).toBe(2048)
+    expect(getPromptCachingMinimumTokens('azure-anthropic/claude-haiku-4-5')).toBe(2048)
+    expect(getPromptCachingMinimumTokens('gpt-5.5')).toBeNull()
+  })
+})
+
+const DYNAMIC_PROVIDERS = new Set([
+  'ollama',
+  'ollama-cloud',
+  'vllm',
+  'litellm',
+  'openrouter',
+  'fireworks',
+  'together',
+  'baseten',
+])
+
+function firstDeprecatedModelId(): string | undefined {
+  for (const [providerId, provider] of Object.entries(PROVIDER_DEFINITIONS)) {
+    if (DYNAMIC_PROVIDERS.has(providerId)) continue
+    const dep = provider.models.find((m) => m.sunset)
+    if (dep) return dep.id
+  }
+  return undefined
+}
 
 /** Maps a lowercased model ID to its provider's index in the catalog. */
 const PROVIDER_INDEX_BY_MODEL = new Map<string, number>()
@@ -103,6 +184,24 @@ describe('orderModelIdsByReleaseDate', () => {
   })
 })
 
+describe('catalog model resolution', () => {
+  it('resolves date-suffixed Anthropic IDs to the catalog base', () => {
+    expect(resolveCanonicalModelId('claude-sonnet-4-5-20250514')).toBe('claude-sonnet-4-5')
+    expect(getModelPricing('claude-sonnet-4-5-20250514')?.input).toBe(
+      getModelPricing('claude-sonnet-4-5')?.input
+    )
+  })
+
+  it('includes pricing for high-traffic hosted gaps', () => {
+    expect(getModelPricing('gpt-4o-mini')?.input).toBeGreaterThan(0)
+    expect(getModelPricing('claude-3-7-sonnet-latest')?.input).toBeGreaterThan(0)
+  })
+
+  it('findCatalogModel matches provider-prefixed labels', () => {
+    expect(findCatalogModel('anthropic/claude-sonnet-4-6')?.model.id).toBe('claude-sonnet-4-6')
+  })
+})
+
 describe('sakana provider definition', () => {
   const sakana = PROVIDER_DEFINITIONS.sakana
 
@@ -132,5 +231,224 @@ describe('sakana provider definition', () => {
     const baseModels = getBaseModelProviders()
     expect(baseModels.fugu).toBe('sakana')
     expect(baseModels['fugu-ultra']).toBe('sakana')
+  })
+})
+
+describe('nvidia provider definition', () => {
+  const nvidia = PROVIDER_DEFINITIONS.nvidia
+
+  const expectedModels = [
+    { id: 'nvidia/llama-3.1-nemotron-70b-instruct', contextWindow: 128000 },
+    { id: 'nvidia/llama-3.1-nemotron-ultra-253b-v1', contextWindow: 131072 },
+    { id: 'nvidia/llama-3.3-nemotron-super-49b-v1.5', contextWindow: 131072 },
+    { id: 'nvidia/nemotron-3-nano-30b-a3b', contextWindow: 262144 },
+    { id: 'nvidia/nemotron-3-super-120b-a12b', contextWindow: 1048576 },
+    { id: 'nvidia/nemotron-3-ultra-550b-a55b', contextWindow: 1048576 },
+  ]
+
+  it('is registered with the current-gen Super model as the default', () => {
+    expect(nvidia).toBeDefined()
+    expect(nvidia.id).toBe('nvidia')
+    expect(nvidia.defaultModel).toBe('nvidia/nemotron-3-super-120b-a12b')
+    expect(nvidia.modelPatterns).toEqual([/^nvidia\//])
+  })
+
+  it('exposes all six Nemotron models with the documented context windows', () => {
+    expect(nvidia.models.map((m) => m.id)).toEqual(expectedModels.map((m) => m.id))
+    for (const expected of expectedModels) {
+      const model = nvidia.models.find((m) => m.id === expected.id)
+      expect(model?.contextWindow).toBe(expected.contextWindow)
+    }
+  })
+
+  it('routes every nvidia model ID to the nvidia provider', () => {
+    const baseModels = getBaseModelProviders()
+    for (const expected of expectedModels) {
+      expect(baseModels[expected.id]).toBe('nvidia')
+    }
+  })
+})
+
+describe('zai provider definition', () => {
+  const zai = PROVIDER_DEFINITIONS.zai
+
+  const expectedModels = [
+    { id: 'glm-5.2', contextWindow: 1000000 },
+    { id: 'glm-5.1', contextWindow: 200000 },
+    { id: 'glm-5', contextWindow: 200000 },
+    { id: 'glm-5-turbo', contextWindow: 200000 },
+    { id: 'glm-4.7', contextWindow: 200000 },
+    { id: 'glm-4.7-flashx', contextWindow: 200000 },
+    { id: 'glm-4.6', contextWindow: 200000 },
+    { id: 'glm-4.5', contextWindow: 128000 },
+    { id: 'glm-4.5-air', contextWindow: 128000 },
+    { id: 'glm-4.5-x', contextWindow: 128000 },
+    { id: 'glm-4.5-airx', contextWindow: 128000 },
+    { id: 'glm-4-32b-0414-128k', contextWindow: 128000 },
+  ]
+
+  it('is registered with a bare glm-4.6 as the default model', () => {
+    expect(zai).toBeDefined()
+    expect(zai.id).toBe('zai')
+    expect(zai.defaultModel).toBe('glm-4.6')
+    expect(zai.defaultModel.startsWith('zai/')).toBe(false)
+    // No fallback pattern — an unscoped `/^glm/` would overmatch unrelated self-hosted
+    // "glm-*" models and misroute them to Z.ai's hosted billing.
+    expect(zai.modelPatterns).toEqual([])
+  })
+
+  it('exposes every GLM model with the documented context window', () => {
+    expect(zai.models.map((m) => m.id)).toEqual(expectedModels.map((m) => m.id))
+    for (const expected of expectedModels) {
+      const model = zai.models.find((m) => m.id === expected.id)
+      expect(model?.contextWindow).toBe(expected.contextWindow)
+    }
+  })
+
+  it('routes every bare glm-* model ID to the zai provider', () => {
+    const baseModels = getBaseModelProviders()
+    for (const expected of expectedModels) {
+      expect(baseModels[expected.id]).toBe('zai')
+    }
+  })
+
+  it('is included in getHostedModels since Sim provides the Z.ai key server-side', () => {
+    expect(getHostedModels()).toContain('glm-4.6')
+  })
+})
+
+describe('kimi provider definition', () => {
+  const kimi = PROVIDER_DEFINITIONS.kimi
+
+  const expectedModels = [
+    { id: 'kimi-k3', contextWindow: 1048576 },
+    { id: 'kimi-k2.7-code', contextWindow: 262144 },
+    { id: 'kimi-k2.7-code-highspeed', contextWindow: 262144 },
+    { id: 'kimi-k2.6', contextWindow: 262144 },
+  ]
+
+  it('is registered with kimi-k2.6 as the default model', () => {
+    expect(kimi).toBeDefined()
+    expect(kimi.id).toBe('kimi')
+    // kimi-k2.6 (not the flagship kimi-k3) — k3 access is tier-gated on Moonshot accounts,
+    // and the default must be a model every account can serve.
+    expect(kimi.defaultModel).toBe('kimi-k2.6')
+    // No fallback pattern — an unscoped `/^kimi/` would overmatch Kimi weights re-hosted by
+    // other providers and misroute them to Moonshot's hosted billing.
+    expect(kimi.modelPatterns).toEqual([])
+  })
+
+  it('exposes every Kimi model with the documented context window', () => {
+    expect(kimi.models.map((m) => m.id)).toEqual(expectedModels.map((m) => m.id))
+    for (const expected of expectedModels) {
+      const model = kimi.models.find((m) => m.id === expected.id)
+      expect(model?.contextWindow).toBe(expected.contextWindow)
+    }
+  })
+
+  it('declares no temperature capability since every current Kimi model pins it server-side', () => {
+    expect(kimi.capabilities?.temperature).toBeUndefined()
+    for (const model of kimi.models) {
+      expect(model.capabilities.temperature).toBeUndefined()
+    }
+  })
+
+  it('exposes the thinking toggle only on kimi-k2.6', () => {
+    for (const model of kimi.models) {
+      const hasToggle = model.id === 'kimi-k2.6'
+      if (hasToggle) {
+        expect(model.capabilities.thinking).toEqual({
+          levels: ['disabled', 'enabled'],
+          default: 'enabled',
+        })
+      } else {
+        expect(model.capabilities.thinking).toBeUndefined()
+      }
+    }
+  })
+
+  it('routes every kimi model ID to the kimi provider', () => {
+    const baseModels = getBaseModelProviders()
+    for (const expected of expectedModels) {
+      expect(baseModels[expected.id]).toBe('kimi')
+    }
+  })
+
+  it('is included in getHostedModels since Sim provides the Kimi key server-side', () => {
+    expect(getHostedModels()).toContain('kimi-k3')
+  })
+})
+
+describe('xai provider definition', () => {
+  const xai = PROVIDER_DEFINITIONS.xai
+
+  it('is registered with grok-4.5 as the default model', () => {
+    expect(xai).toBeDefined()
+    expect(xai.id).toBe('xai')
+    expect(xai.defaultModel).toBe('grok-4.5')
+  })
+
+  it('is included in getHostedModels since Sim provides the xAI key server-side', () => {
+    expect(getHostedModels()).toContain('grok-4.5')
+  })
+})
+
+describe('fireworks static catalog (the sim-auto pool)', () => {
+  const poolModels = ['fireworks/glm-5.2', 'fireworks/kimi-k3']
+
+  it('is included in getHostedModels since Sim provides the Fireworks key server-side', () => {
+    for (const model of poolModels) {
+      expect(getHostedModels()).toContain(model)
+    }
+  })
+
+  it('prices every pool model so hosted usage is billable', () => {
+    for (const model of poolModels) {
+      const pricing = getModelPricing(model)
+      expect(pricing?.input).toBeGreaterThan(0)
+      expect(pricing?.output).toBeGreaterThan(0)
+    }
+  })
+
+  it('survives a dynamic model sync, which merges rather than replaces', () => {
+    updateFireworksModels(['fireworks/accounts/acme/models/custom'])
+
+    for (const model of poolModels) {
+      expect(getHostedModels()).toContain(model)
+      expect(getModelPricing(model)?.input).toBeGreaterThan(0)
+    }
+    expect(getProviderModels('fireworks')).toContain('fireworks/accounts/acme/models/custom')
+  })
+
+  it('does not duplicate a pool model the dynamic listing also returns', () => {
+    updateFireworksModels(['fireworks/glm-5.2'])
+
+    expect(getProviderModels('fireworks').filter((id) => id === 'fireworks/glm-5.2')).toHaveLength(
+      1
+    )
+    expect(getModelPricing('fireworks/glm-5.2')?.input).toBeGreaterThan(0)
+  })
+})
+
+describe('isModelDeprecated', () => {
+  it('returns true for a catalogued deprecated model (case-insensitive)', () => {
+    const id = firstDeprecatedModelId()
+    expect(id).toBeDefined()
+    expect(isModelDeprecated(id!)).toBe(true)
+    expect(isModelDeprecated(id!.toUpperCase())).toBe(true)
+  })
+
+  it('returns false for the default model of every provider', () => {
+    for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
+      if (provider.defaultModel) expect(isModelDeprecated(provider.defaultModel)).toBe(false)
+    }
+  })
+
+  it('returns false for empty, unknown, and dynamic-provider ids', () => {
+    expect(isModelDeprecated('')).toBe(false)
+    expect(isModelDeprecated(undefined)).toBe(false)
+    expect(isModelDeprecated(null)).toBe(false)
+    expect(isModelDeprecated('not-a-real-model')).toBe(false)
+    expect(isModelDeprecated('openrouter/some/model')).toBe(false)
   })
 })

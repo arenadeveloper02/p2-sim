@@ -15,7 +15,7 @@ export interface DevelopmentReferenceMedia {
 export type DevelopmentReferenceImage = DevelopmentReferenceMedia
 
 export interface ResolveDevelopmentReferenceImageInput {
-  referenceImage?: RawFileInput
+  referenceImage?: RawFileInput | null
   userId: string
   requestId: string
   logger: Logger

@@ -1,3 +1,4 @@
+import { firecrawlHosting } from '@/tools/firecrawl/hosting'
 import type { MapParams, MapResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
@@ -67,6 +68,8 @@ export const mapTool: ToolConfig<MapParams, MapResponse> = {
       description: 'Firecrawl API key',
     },
   },
+
+  hosting: firecrawlHosting(),
 
   request: {
     method: 'POST',

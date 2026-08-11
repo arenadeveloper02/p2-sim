@@ -18,9 +18,12 @@ import {
   chipContentLabelClass,
   chipVariants,
   cn,
+  FloatingTooltip,
+  isTextClipped,
   Loader,
   Tooltip,
   Trash,
+  useFloatingTooltip,
 } from '@sim/emcn'
 import { Database, DatabaseX } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
@@ -29,15 +32,15 @@ import { generateId } from '@sim/utils/id'
 import { format } from 'date-fns'
 import { AlertCircle, Pencil, Plus, Tag, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
-import { debounce, useQueryState, useQueryStates } from 'nuqs'
+import { useQueryState, useQueryStates } from 'nuqs'
 import { usePostHog } from 'posthog-js/react'
-import { SearchHighlight } from '@/components/ui/search-highlight'
 import { ALL_TAG_SLOTS, type AllTagSlot, getFieldTypeForSlot } from '@/lib/knowledge/constants'
 import type { DocumentSortField, SortOrder } from '@/lib/knowledge/documents/types'
 import { type FilterFieldType, getOperatorsForFieldType } from '@/lib/knowledge/filters/types'
 import type { DocumentData } from '@/lib/knowledge/types'
 import { captureEvent } from '@/lib/posthog/client'
 import { formatFileSize } from '@/lib/uploads/utils/file-utils'
+import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
 import type {
   BreadcrumbItem,
   FilterTag,
@@ -58,14 +61,13 @@ import {
   ConnectorsSection,
   DocumentContextMenu,
   RenameDocumentModal,
+  SearchHighlight,
 } from '@/app/workspace/[workspaceId]/knowledge/[id]/components'
 import {
   addConnectorParam,
-  DEFAULT_KB_SORT_COLUMN,
-  DEFAULT_KB_SORT_DIRECTION,
   documentFiltersParsers,
   documentFiltersUrlKeys,
-  type KbSortColumn,
+  kbDocumentSortParams,
   pageParam,
   pageUrlKeys,
 } from '@/app/workspace/[workspaceId]/knowledge/[id]/search-params'
@@ -92,8 +94,10 @@ import {
   useUpdateKnowledgeBase,
 } from '@/hooks/queries/kb/knowledge'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useDebouncedSearchSetter } from '@/hooks/use-debounced-search-setter'
 import { useInlineRename } from '@/hooks/use-inline-rename'
 import { useOAuthReturnForKBConnectors } from '@/hooks/use-oauth-return'
+import { useUrlSort } from '@/hooks/use-url-sort'
 
 const logger = createLogger('KnowledgeBase')
 
@@ -174,6 +178,39 @@ interface TagValue {
   slot: AllTagSlot
   displayName: string
   value: string
+}
+
+/**
+ * Tags cell for the documents table. Shows the joined tag values inline and
+ * reveals the full `name: value` breakdown only when the inline text is
+ * actually clipped — an un-truncated cell already says everything the tooltip
+ * would.
+ */
+function DocumentTagsCell({ tags }: { tags: TagValue[] }) {
+  const { state, handlers } = useFloatingTooltip(isTextClipped)
+
+  return (
+    <>
+      <span
+        role='presentation'
+        className='block max-w-full truncate text-[var(--text-secondary)] text-caption'
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        {...handlers}
+      >
+        {tags.map((tag) => tag.value).join(', ')}
+      </span>
+      <FloatingTooltip state={state} className='max-w-[240px]'>
+        <div className='flex flex-col gap-0.5'>
+          {tags.map((tag) => (
+            <div key={tag.slot} className='truncate text-xs'>
+              <span className='text-[var(--text-muted)]'>{tag.displayName}:</span> {tag.value}
+            </div>
+          ))}
+        </div>
+      </FloatingTooltip>
+    </>
+  )
 }
 
 /**
@@ -296,41 +333,31 @@ export function KnowledgeBase({
     ...pageUrlKeys,
   })
 
-  const [
-    { q: searchQuery, enabled: enabledFilter, sort: sortColumn, dir: sortDirection },
-    setDocumentFilters,
-  ] = useQueryStates(documentFiltersParsers, documentFiltersUrlKeys)
+  const [{ q: searchQuery, enabled: enabledFilter }, setDocumentFilters] = useQueryStates(
+    documentFiltersParsers,
+    documentFiltersUrlKeys
+  )
 
   /**
    * The input is controlled directly by the instant nuqs value; only the URL
    * write is debounced. The document query below reads a debounced value so it
    * doesn't refetch on every keystroke. Changing the search resets pagination.
    */
-  const handleSearchChange = useCallback(
-    (newQuery: string) => {
-      const trimmed = newQuery.trim()
-      const next = trimmed.length > 0 ? trimmed : null
-      setDocumentFilters(
-        { q: next },
-        next === null ? undefined : { limitUrlUpdates: debounce(300) }
-      )
-      setCurrentPage(1)
-    },
-    [setDocumentFilters, setCurrentPage]
-  )
-  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+  const handleSearchChange = useDebouncedSearchSetter((value, options) => {
+    setDocumentFilters({ q: value }, options)
+    setCurrentPage(1)
+  })
+  const debouncedSearchQuery = useDebounce(searchQuery, SEARCH_DEBOUNCE_MS)
+  /** Raw URL value drives the input; matching/highlighting always sees it trimmed. */
+  const highlightQuery = searchQuery.trim()
 
-  /**
-   * The resolved sort is exposed to the sort menu only when it differs from the
-   * default, mirroring the prior `null`-means-default semantics.
-   */
-  const activeSort = useMemo(
-    () =>
-      sortColumn === DEFAULT_KB_SORT_COLUMN && sortDirection === DEFAULT_KB_SORT_DIRECTION
-        ? null
-        : { column: sortColumn, direction: sortDirection },
-    [sortColumn, sortDirection]
-  )
+  const {
+    sort: sortColumn,
+    dir: sortDirection,
+    activeSort,
+    onSort: onSortColumn,
+    onClear: onClearSort,
+  } = useUrlSort(kbDocumentSortParams, documentFiltersUrlKeys)
 
   const setEnabledFilter = useCallback(
     (value: 'all' | 'enabled' | 'disabled') => {
@@ -385,7 +412,7 @@ export function KnowledgeBase({
     updateDocument,
     refreshDocuments,
   } = useKnowledgeBaseDocuments(id, {
-    search: debouncedSearchQuery || undefined,
+    search: debouncedSearchQuery.trim() || undefined,
     limit: DOCUMENTS_PER_PAGE,
     offset: (currentPage - 1) * DOCUMENTS_PER_PAGE,
     sortBy: sortColumn as DocumentSortField,
@@ -914,20 +941,17 @@ export function KnowledgeBase({
         { id: 'enabled', label: 'Status' },
       ],
       active: activeSort,
+      /** Sorting (or clearing the sort) resets pagination to the first page. */
       onSort: (column, direction) => {
-        setDocumentFilters({ sort: column as KbSortColumn, dir: direction })
+        onSortColumn(column, direction)
         setCurrentPage(1)
       },
-      /**
-       * Clearing writes the defaults back (stripped by clearOnDefault), so the
-       * sort menu reads "no active sort" again and the URL stays clean.
-       */
       onClear: () => {
-        setDocumentFilters({ sort: DEFAULT_KB_SORT_COLUMN, dir: DEFAULT_KB_SORT_DIRECTION })
+        onClearSort()
         setCurrentPage(1)
       },
     }),
-    [activeSort, setDocumentFilters, setCurrentPage]
+    [activeSort, onSortColumn, onClearSort, setCurrentPage]
   )
 
   const filterContent = useMemo(
@@ -1077,7 +1101,6 @@ export function KnowledgeBase({
         const DocIcon = ConnectorIcon || getDocumentIcon(doc.mimeType, doc.filename)
 
         const tags = getDocumentTags(doc, tagDefinitions)
-        const tagsDisplayText = tags.map((t) => t.value).join(', ')
 
         const statusCell: ResourceCell =
           doc.processingStatus === 'failed' && doc.processingError
@@ -1096,34 +1119,7 @@ export function KnowledgeBase({
             : { content: getStatusBadge(doc) }
 
         const tagsCell: ResourceCell =
-          tags.length === 0
-            ? { label: null }
-            : {
-                content: (
-                  <Tooltip.Root>
-                    <Tooltip.Trigger asChild>
-                      <span
-                        role='presentation'
-                        className='block max-w-full truncate text-[var(--text-secondary)] text-caption'
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
-                        {tagsDisplayText}
-                      </span>
-                    </Tooltip.Trigger>
-                    <Tooltip.Content side='top' className='max-w-[240px]'>
-                      <div className='flex flex-col gap-0.5'>
-                        {tags.map((tag) => (
-                          <div key={tag.slot} className='truncate text-xs'>
-                            <span className='text-[var(--text-muted)]'>{tag.displayName}:</span>{' '}
-                            {tag.value}
-                          </div>
-                        ))}
-                      </div>
-                    </Tooltip.Content>
-                  </Tooltip.Root>
-                ),
-              }
+          tags.length === 0 ? { label: null } : { content: <DocumentTagsCell tags={tags} /> }
 
         return {
           id: doc.id,
@@ -1138,7 +1134,7 @@ export function KnowledgeBase({
                     label={doc.filename}
                     className={cn('block', chipContentLabelClass)}
                   >
-                    <SearchHighlight text={doc.filename} searchQuery={searchQuery} />
+                    <SearchHighlight text={doc.filename} searchQuery={highlightQuery} />
                   </FloatingOverflowText>
                 </span>
               ),
@@ -1174,7 +1170,7 @@ export function KnowledgeBase({
           },
         }
       }),
-    [documents, tagDefinitions, searchQuery]
+    [documents, tagDefinitions, highlightQuery]
   )
 
   if (error && !knowledgeBase) {

@@ -57,7 +57,10 @@ async function fetchSubscriptionData(
 interface UseSubscriptionDataOptions {
   /** Include organization membership and role data */
   includeOrg?: boolean
-  /** Scope usage limits to a personal (non-org-linked) workspace when set */
+  /**
+   * Accepted for backward compatibility. Personal billing no longer scopes
+   * limits by workspace; organization billing uses `context=organization`.
+   */
   workspaceId?: string
   /** Whether to enable the query (defaults to true) */
   enabled?: boolean
@@ -93,7 +96,7 @@ export function useSubscriptionData(options: UseSubscriptionDataOptions = {}) {
 export function prefetchSubscriptionData(queryClient: QueryClient) {
   queryClient.prefetchQuery({
     queryKey: subscriptionKeys.user(false),
-    queryFn: ({ signal }) => fetchSubscriptionData(false, signal),
+    queryFn: ({ signal }) => fetchSubscriptionData(false, undefined, signal),
     staleTime: SUBSCRIPTION_DATA_STALE_TIME,
   })
 }
@@ -112,7 +115,7 @@ export function prefetchSubscriptionData(queryClient: QueryClient) {
 export function prefetchUpgradeBillingData(queryClient: QueryClient) {
   queryClient.prefetchQuery({
     queryKey: subscriptionKeys.user(true),
-    queryFn: ({ signal }) => fetchSubscriptionData(true, signal),
+    queryFn: ({ signal }) => fetchSubscriptionData(true, undefined, signal),
     staleTime: SUBSCRIPTION_DATA_STALE_TIME,
   })
   queryClient.prefetchQuery({

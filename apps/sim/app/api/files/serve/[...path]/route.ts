@@ -11,10 +11,6 @@ import {
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { CopilotFiles, isStorageContextConfigured, isUsingCloudStorage } from '@/lib/uploads'
 import type { StorageContext } from '@/lib/uploads/config'
-// import {
-//   compileDocumentIfNeeded,
-//   getWorkspaceIdForCompile,
-// } from '@/lib/uploads/utils/compile-document'
 import { ORG_LOGOS_S3_PREFIX } from '@/lib/uploads/contexts/org-logos/utils'
 import { parseWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { downloadFile } from '@/lib/uploads/core/storage-service'
@@ -66,6 +62,9 @@ function getWorkspaceIdForCompile(key: string): string | undefined {
 
 const IMMUTABLE_CACHE_CONTROL = 'private, max-age=31536000, immutable'
 const WORKSPACE_REVALIDATE_CACHE_CONTROL = 'private, no-cache, must-revalidate'
+/** For the genuinely-public, pre-auth asset routes (avatars, OG images, workspace logos) — these are
+ *  intentionally shared-cacheable. Passed EXPLICITLY so the default response cache stays `private`. */
+const PUBLIC_ASSET_CACHE_CONTROL = 'public, max-age=31536000'
 
 /**
  * Cache-Control for a served file. A versioned request (`?v=<updatedAt>`) addresses
@@ -101,7 +100,8 @@ export const GET = withRouteHandler(
       const fullPath = decodedPath.join('/')
       const isS3Path = decodedPath[0] === 's3'
       const isBlobPath = decodedPath[0] === 'blob'
-      const isCloudPath = isS3Path || isBlobPath
+      const isGcsPath = decodedPath[0] === 'gcs'
+      const isCloudPath = isS3Path || isBlobPath || isGcsPath
       const cloudKey = isCloudPath ? decodedPath.slice(1).join('/') : fullPath
 
       // Handle agent-generated-images paths specially
@@ -456,6 +456,7 @@ async function handleCloudProxyPublic(
       buffer: fileBuffer,
       contentType,
       filename,
+      cacheControl: PUBLIC_ASSET_CACHE_CONTROL,
     })
   } catch (error) {
     logger.error('Error serving public cloud file:', error)
@@ -480,6 +481,7 @@ async function handleLocalFilePublic(filename: string): Promise<NextResponse> {
       buffer: fileBuffer,
       contentType,
       filename,
+      cacheControl: PUBLIC_ASSET_CACHE_CONTROL,
     })
   } catch (error) {
     logger.error('Error reading public local file:', error)

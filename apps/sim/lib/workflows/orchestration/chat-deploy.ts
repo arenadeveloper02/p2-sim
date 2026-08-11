@@ -4,12 +4,15 @@ import { chat } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, eq, isNull } from 'drizzle-orm'
+import { chatDeploymentPasswordSchema } from '@/lib/api/contracts/chats'
 import { encryptSecret } from '@/lib/core/security/encryption'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import {
+  getWorkflowDeploymentSummary,
   type PerformFullDeployParams,
   performFullDeploy,
 } from '@/lib/workflows/orchestration/deploy'
+import { checkNeedsRedeployment } from '@/app/api/workflows/utils'
 
 const logger = createLogger('ChatDeployOrchestration')
 
@@ -32,11 +35,14 @@ export interface ChatDeployPayload {
   outputConfigs?: Array<{ blockId: string; path: string }>
   deploymentType?: 'chat' | 'app'
   redirectUrl?: string | null
+  /** When true, public SSE may expose thinking if the client also opts into agent-events-v1. */
+  includeThinking?: boolean
+  /** When true, public SSE may expose tool lifecycle if the client opts into agent-events-v1. */
+  includeToolCalls?: boolean
   workspaceId?: string | null
-  deployOptions?: Pick<
-    PerformFullDeployParams,
-    'workflowName' | 'requestId' | 'request' | 'actorId'
-  >
+  deployOptions?: Pick<PerformFullDeployParams, 'requestId' | 'actorId'>
+  /** Stable identity for the underlying workflow deployment operation. */
+  idempotencyKey?: string
 }
 
 export interface PerformChatDeployResult {
@@ -68,6 +74,8 @@ export async function performChatDeploy(
     allowedEmails = [],
     outputConfigs = [],
     deploymentType = 'chat',
+    includeThinking = false,
+    includeToolCalls = false,
   } = params
 
   const redirectUrlValue =
@@ -75,6 +83,19 @@ export async function performChatDeploy(
 
   const departmentValue = params.department?.trim() ? params.department.trim() : null
   const remarksValue = params.remarks?.trim() ? params.remarks.trim() : null
+  /**
+   * Validate the password here rather than only at the HTTP boundary. The
+   * copilot `deploy_chat` tool reaches this function without going through a
+   * route contract, so a whitespace-only or over-long password would otherwise
+   * be encrypted and stored — and neither can ever be submitted through the
+   * chat login form, permanently locking visitors out of the deployment.
+   */
+  if (password !== undefined) {
+    const validatedPassword = chatDeploymentPasswordSchema.safeParse(password)
+    if (!validatedPassword.success) {
+      return { success: false, error: validatedPassword.error.issues[0].message }
+    }
+  }
 
   const customizations = {
     primaryColor: params.customizations?.primaryColor || 'var(--brand-hover)',
@@ -84,18 +105,59 @@ export async function performChatDeploy(
     ...(params.customizations?.imageUrl ? { imageUrl: params.customizations.imageUrl } : {}),
   }
 
-  const deployResult = await performFullDeploy({
-    workflowId,
-    userId,
-    workflowName: params.deployOptions?.workflowName,
-    requestId: params.deployOptions?.requestId,
-    request: params.deployOptions?.request,
-    actorId: params.deployOptions?.actorId,
-    versionDescription: params.versionDescription,
-    versionName: params.versionName,
-  })
-  if (!deployResult.success) {
-    return { success: false, error: deployResult.error || 'Failed to deploy workflow' }
+  /**
+   * Only deploy when the draft drifted from the active version, and never
+   * while another attempt is in flight — a blocked retry must not admit a
+   * fresh deployment version on top of the pending one.
+   */
+  const deploymentSummary = await getWorkflowDeploymentSummary(workflowId)
+  const attemptStatus = deploymentSummary.latestDeploymentAttempt?.status
+  if (attemptStatus === 'preparing' || attemptStatus === 'activating') {
+    return {
+      success: false,
+      error:
+        'A workflow deployment is still preparing. Retry chat deployment after it becomes active.',
+    }
+  }
+
+  const needsRedeploy =
+    !deploymentSummary.activeDeployment || (await checkNeedsRedeployment(workflowId))
+
+  let deployResult: Awaited<ReturnType<typeof performFullDeploy>> | null = null
+  if (needsRedeploy) {
+    deployResult = await performFullDeploy({
+      workflowId,
+      userId,
+      requestId: params.deployOptions?.requestId,
+      actorId: params.deployOptions?.actorId,
+      versionDescription: params.versionDescription,
+      versionName: params.versionName,
+      idempotencyKey: params.idempotencyKey,
+    })
+    if (!deployResult.success) {
+      return { success: false, error: deployResult.error || 'Failed to deploy workflow' }
+    }
+    if (deployResult.latestDeploymentAttempt?.isCurrent === false) {
+      return {
+        success: false,
+        error:
+          'The workflow deployment attempt is historical and no longer describes production. Retry chat deployment as a new tool call.',
+      }
+    }
+    if (deployResult.latestDeploymentAttempt?.status !== 'active') {
+      return {
+        success: false,
+        error:
+          deployResult.warnings?.[0] ??
+          'Workflow deployment is still preparing. Retry chat deployment after it becomes active.',
+      }
+    }
+    if (!deployResult.activeDeployment) {
+      return {
+        success: false,
+        error: 'Workflow deployment reported active without a live deployment version.',
+      }
+    }
   }
 
   let encryptedPassword: string | null = null
@@ -109,6 +171,16 @@ export async function performChatDeploy(
     .from(chat)
     .where(and(eq(chat.workflowId, workflowId), isNull(chat.archivedAt)))
     .limit(1)
+
+  /**
+   * A password-protected chat must end up with a stored password. Both HTTP
+   * routes already reject this; without the same guard here a copilot
+   * `deploy_chat` call could create one with no password, which fails closed at
+   * login with an opaque "Authentication configuration error".
+   */
+  if (authType === 'password' && !encryptedPassword && !existingDeployment?.password) {
+    return { success: false, error: 'Password is required when using password protection' }
+  }
 
   let chatId: string
   if (existingDeployment) {
@@ -136,6 +208,8 @@ export async function performChatDeploy(
         outputConfigs,
         deploymentType,
         redirectUrl: redirectUrlValue,
+        includeThinking,
+        includeToolCalls,
         updatedAt: new Date(),
       })
       .where(eq(chat.id, chatId))
@@ -165,6 +239,8 @@ export async function performChatDeploy(
       outputConfigs,
       deploymentType,
       redirectUrl: redirectUrlValue,
+      includeThinking,
+      includeToolCalls,
       createdAt: new Date(),
       updatedAt: new Date(),
     })
@@ -232,9 +308,15 @@ export async function performChatDeploy(
     success: true,
     chatId,
     chatUrl,
-    deployedAt: deployResult.deployedAt,
-    version: deployResult.version,
+    deployedAt: deployResult?.deployedAt ?? toDeployedAtDate(deploymentSummary),
+    version: deployResult?.version ?? deploymentSummary.activeDeployment?.version,
   }
+}
+
+function toDeployedAtDate(summary: {
+  activeDeployment: { deployedAt: string } | null
+}): Date | null {
+  return summary.activeDeployment ? new Date(summary.activeDeployment.deployedAt) : null
 }
 
 export interface PerformChatUndeployParams {

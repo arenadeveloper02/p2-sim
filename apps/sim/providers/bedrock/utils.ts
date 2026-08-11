@@ -1,6 +1,9 @@
 import type { ConverseStreamOutput } from '@aws-sdk/client-bedrock-runtime'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { randomFloat } from '@sim/utils/random'
+import { getModelCapabilities, supportsTemperature } from '@/providers/models'
+import type { AgentStreamEvent } from '@/providers/stream-events'
 import { trackForcedToolUsage } from '@/providers/utils'
 
 const logger = createLogger('BedrockUtils')
@@ -10,36 +13,74 @@ export interface BedrockStreamUsage {
   outputTokens: number
 }
 
+/**
+ * Converts an AWS event-stream exception member into an Error.
+ */
+export function getBedrockStreamError(event: ConverseStreamOutput): Error | undefined {
+  const exception =
+    event.internalServerException ??
+    event.modelStreamErrorException ??
+    event.validationException ??
+    event.throttlingException ??
+    event.serviceUnavailableException
+  if (!exception) return undefined
+  return new Error(exception.message || getErrorMessage(exception, 'Bedrock stream error'), {
+    cause: exception,
+  })
+}
+
+/**
+ * Bedrock ConverseStream → agent-events-v1 for the legacy (non-tool-loop)
+ * streaming path. Text deltas only: tools on this path are never executed, so
+ * emitting `tool_call_start` here would leave a chip running forever with no
+ * matching end. Sim does not request Bedrock reasoning, so there is no
+ * thinking to forward either.
+ */
 export function createReadableStreamFromBedrockStream(
   bedrockStream: AsyncIterable<ConverseStreamOutput>,
   onComplete?: (content: string, usage: BedrockStreamUsage) => void
-): ReadableStream<Uint8Array> {
+): ReadableStream<AgentStreamEvent> {
   let fullContent = ''
   let inputTokens = 0
   let outputTokens = 0
+  let cancelled = false
+  let streamIterator: AsyncIterator<ConverseStreamOutput> | undefined
 
   return new ReadableStream({
     async start(controller) {
       try {
-        for await (const event of bedrockStream) {
+        streamIterator = bedrockStream[Symbol.asyncIterator]()
+        while (true) {
+          const next = await streamIterator.next()
+          if (next.done || cancelled) break
+          const event = next.value
+          const streamError = getBedrockStreamError(event)
+          if (streamError) throw streamError
           if (event.contentBlockDelta?.delta?.text) {
             const text = event.contentBlockDelta.delta.text
             fullContent += text
-            controller.enqueue(new TextEncoder().encode(text))
+            controller.enqueue({ type: 'text_delta', text, turn: 'final' })
           } else if (event.metadata?.usage) {
             inputTokens = event.metadata.usage.inputTokens ?? 0
             outputTokens = event.metadata.usage.outputTokens ?? 0
           }
         }
 
+        if (cancelled) return
         if (onComplete) {
           onComplete(fullContent, { inputTokens, outputTokens })
         }
 
         controller.close()
       } catch (err) {
-        controller.error(err)
+        if (!cancelled) {
+          controller.error(err)
+        }
       }
+    },
+    async cancel() {
+      cancelled = true
+      await streamIterator?.return?.()
     },
   })
 }
@@ -89,7 +130,6 @@ export function generateToolUseId(toolName: string): string {
  */
 const GEO_PROFILE_UNSUPPORTED_MODEL_IDS = new Set([
   'mistral.mistral-large-3-675b-instruct',
-  'mistral.mistral-large-2411-v1:0',
   'mistral.mistral-large-2407-v1:0',
   'mistral.magistral-small-2509',
   'mistral.ministral-3-14b-instruct',
@@ -99,7 +139,37 @@ const GEO_PROFILE_UNSUPPORTED_MODEL_IDS = new Set([
   'amazon.titan-text-premier-v1:0',
   'cohere.command-r-v1:0',
   'cohere.command-r-plus-v1:0',
+  // Moonshot Kimi K2.5: model card lists Geo inference ID as "Not supported".
+  'moonshotai.kimi-k2.5',
+  // NVIDIA Nemotron 3 Super: docs invoke the bare on-demand model ID.
+  'nvidia.nemotron-super-3-120b',
 ])
+
+/** Cross-region inference profile prefixes Bedrock prepends to a base model ID. */
+const GEO_PROFILE_PREFIX_PATTERN = /^(us-gov|us|eu|apac|au|ca|jp|global)\./
+
+/**
+ * Strips Sim's `bedrock/` namespace and any cross-region inference prefix,
+ * leaving the bare `<vendor>.<model>` ID that capability checks key off.
+ */
+function getBedrockBaseModelId(modelId: string): string {
+  const withoutNamespace = modelId.startsWith('bedrock/') ? modelId.slice(8) : modelId
+  return withoutNamespace.replace(GEO_PROFILE_PREFIX_PATTERN, '')
+}
+
+/**
+ * Whether the model accepts `status` on a `toolResult` content block.
+ *
+ * Only Amazon Nova and Anthropic Claude 3/4 support it; Llama, Mistral, Cohere,
+ * and Titan reject the whole request with
+ * `ValidationException: This model doesn't support the status field.`
+ *
+ * Source: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolResultBlock.html
+ */
+export function supportsToolResultStatus(modelId: string): boolean {
+  const baseModelId = getBedrockBaseModelId(modelId)
+  return baseModelId.startsWith('anthropic.') || baseModelId.startsWith('amazon.nova')
+}
 
 /**
  * Converts a model ID to the Bedrock inference profile format.
@@ -114,7 +184,7 @@ const GEO_PROFILE_UNSUPPORTED_MODEL_IDS = new Set([
 export function getBedrockInferenceProfileId(modelId: string, region: string): string {
   const baseModelId = modelId.startsWith('bedrock/') ? modelId.slice(8) : modelId
 
-  if (/^(us-gov|us|eu|apac|au|ca|jp|global)\./.test(baseModelId)) {
+  if (GEO_PROFILE_PREFIX_PATTERN.test(baseModelId)) {
     return baseModelId
   }
 
@@ -140,4 +210,64 @@ export function getBedrockInferenceProfileId(modelId: string, region: string): s
   }
 
   return `${inferencePrefix}.${baseModelId}`
+}
+
+/**
+ * Whether Bedrock Converse should include `inferenceConfig.temperature`.
+ * Claude 5 / Opus 4.7+ reject temperature with "deprecated for this model".
+ */
+export function bedrockAllowsTemperature(model: string): boolean {
+  const normalized = model
+    .replace(/^bedrock\//i, '')
+    .replace(/^(us|eu|apac|global|us-gov)\./i, '')
+    .toLowerCase()
+
+  if (normalized.startsWith('anthropic.')) {
+    const shortId = normalized.slice('anthropic.'.length).replace(/-\d{8}-v\d+:\d+$/i, '')
+    // Prefer Anthropic catalog — Claude 5 / Opus 4.7+ omit temperature there.
+    if (
+      shortId === 'claude-opus-5' ||
+      shortId === 'claude-sonnet-5' ||
+      shortId === 'claude-fable-5' ||
+      shortId === 'claude-opus-4-8' ||
+      shortId === 'claude-opus-4-7'
+    ) {
+      return false
+    }
+    if (supportsTemperature(shortId)) return true
+    // Known Anthropic catalog entry without temperature → omit.
+    if (getModelCapabilities(shortId)) return false
+  }
+
+  if (/claude-(?:opus|sonnet|fable)-5(?:\b|$|-)/.test(normalized)) return false
+  if (/claude-opus-4-[78](?:\b|$|-)/.test(normalized)) return false
+
+  if (supportsTemperature(`bedrock/${normalized}`)) return true
+  return supportsTemperature(model)
+}
+
+export interface BedrockInferenceConfig {
+  temperature?: number
+  maxTokens?: number
+}
+
+/**
+ * Builds Bedrock `inferenceConfig`, omitting temperature when the model rejects it.
+ */
+export function buildBedrockInferenceConfig(options: {
+  model: string
+  temperature?: number
+  maxTokens?: number
+  /** Default temperature when the model allows it (Nova tool-calling prefers 0). */
+  defaultTemperature?: number
+}): BedrockInferenceConfig {
+  const config: BedrockInferenceConfig = {}
+  if (options.maxTokens != null) {
+    config.maxTokens = options.maxTokens
+  }
+  if (bedrockAllowsTemperature(options.model)) {
+    const isNova = /amazon\.nova/i.test(options.model)
+    config.temperature = options.temperature ?? options.defaultTemperature ?? (isNova ? 0 : 0.2)
+  }
+  return config
 }

@@ -10,10 +10,11 @@ export function toCopilotServerToolContext(
     userId: ctx.userId,
     workspaceId: ctx.workspaceId,
     workflowId: workflowId ?? ctx.workflowId ?? ctx.structuredContext.workflow?.id ?? '',
-    userPermission: ctx.userPermission ?? 'write',
+    userPermission: ctx.userPermission ?? '',
     chatId: ctx.chatId,
     messageId: ctx.messageId,
     abortSignal: ctx.abortSignal,
     copilotToolExecution: true,
+    ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
   }
 }

@@ -18,6 +18,8 @@ import {
   getLogByExecutionIdContract,
   getLogDetailContract,
   listLogsContract,
+  type VerifyExecutionCostsResponse,
+  verifyExecutionCostsContract,
   type WorkflowLogDetail,
   type WorkflowLogSummary,
   type WorkflowStats,
@@ -26,7 +28,7 @@ import { getEndDateFromTimeRange, getStartDateFromTimeRange } from '@/lib/logs/f
 import { parseQuery, queryToApiParams } from '@/lib/logs/query-parser'
 import type { TimeRange } from '@/stores/logs/filters/types'
 
-export type { DashboardStatsResponse, WorkflowStats }
+export type { DashboardStatsResponse, WorkflowStats, VerifyExecutionCostsResponse }
 
 export type LogSortBy = 'date' | 'duration' | 'cost' | 'status'
 export type LogSortOrder = 'asc' | 'desc'
@@ -54,6 +56,9 @@ export const logKeys = {
   executionSnapshots: () => [...logKeys.all, 'executionSnapshot'] as const,
   executionSnapshot: (executionId: string | undefined) =>
     [...logKeys.executionSnapshots(), executionId ?? ''] as const,
+  verifyCosts: () => [...logKeys.all, 'verifyCosts'] as const,
+  verifyCost: (executionId: string | undefined) =>
+    [...logKeys.verifyCosts(), executionId ?? ''] as const,
 }
 
 export interface LogFilters {
@@ -298,6 +303,20 @@ export function useExecutionSnapshot(executionId: string | undefined) {
   })
 }
 
+/**
+ * Read-only mutation that shadow-reprices an execution against the current catalog
+ * (priced-tool allowlist only). Does not apply ledger adjustments.
+ */
+export function useVerifyExecutionCosts() {
+  return useMutation({
+    mutationFn: async (executionId: string): Promise<VerifyExecutionCostsResponse> => {
+      return requestJson(verifyExecutionCostsContract, {
+        params: { executionId },
+      })
+    },
+  })
+}
+
 export function useCancelExecution(workspaceId: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -375,12 +394,22 @@ export function useCancelExecution(workspaceId: string) {
 export function useRetryExecution() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ workflowId, input }: { workflowId: string; input?: unknown }) => {
+    mutationFn: async ({
+      workflowId,
+      executionId,
+    }: {
+      workflowId: string
+      executionId: string
+    }) => {
       // boundary-raw-fetch: stream response, body is a ReadableStream consumed one chunk at a time
       const res = await fetch(`/api/workflows/${workflowId}/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input, triggerType: 'manual', stream: true }),
+        body: JSON.stringify({
+          inputFromExecutionId: executionId,
+          triggerType: 'manual',
+          stream: true,
+        }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))

@@ -10,12 +10,30 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Button, ChipSwitch, cn, Paperclip, Plus, Slash, Tooltip, toast } from '@sim/emcn'
+import {
+  Button,
+  ChipSwitch,
+  cn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Paperclip,
+  Plus,
+  Slash,
+  Tooltip,
+  toast,
+} from '@sim/emcn'
+import { ChevronDown } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getMothershipAttachmentPreviewUrl } from '@/lib/copilot/chat/attachment-preview'
 import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { CHAT_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
+import { MOTHERSHIP_ADD_CONTEXT_EVENT } from '@/lib/mothership/events'
+import { MOTHERSHIP_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
 import {
   AnimatedPlaceholderEffect,
@@ -26,6 +44,7 @@ import {
   SendButton,
   usePromptEditor,
 } from '@/app/workspace/[workspaceId]/home/components/user-input/components'
+import { handleMothershipAddContextEvent } from '@/app/workspace/[workspaceId]/home/components/user-input/mothership-context-event'
 import type {
   FileAttachmentForApi,
   MothershipResource,
@@ -36,12 +55,76 @@ import type { AttachedFile } from '@/app/workspace/[workspaceId]/w/[workflowId]/
 import { mentionifyIntegrations } from '@/blocks/integration-matcher'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useSpeechToText } from '@/hooks/use-speech-to-text'
+import { SessionMemoryInspector } from '@/local-copilot/components/session-memory-inspector'
+import {
+  getLocalCopilotCatalogEntriesForGroup,
+  getLocalCopilotCatalogEntry,
+  isLocalCopilotCatalogId,
+  LOCAL_COPILOT_PROVIDER_GROUPS,
+  type LocalCopilotCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import { useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
 import type { ChatContext } from '@/stores/panel'
 
 export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
 
 const logger = createLogger('UserInput')
+
+interface LocalCopilotModelPickerProps {
+  catalogId: LocalCopilotCatalogId
+  onCatalogIdChange: (id: LocalCopilotCatalogId) => void
+}
+
+/**
+ * Single Local Copilot model dropdown with Claude / Gemini / Bedrock section headers.
+ */
+function LocalCopilotModelPicker({ catalogId, onCatalogIdChange }: LocalCopilotModelPickerProps) {
+  const selectedLabel = getLocalCopilotCatalogEntry(catalogId)?.label ?? 'Claude'
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type='button'
+          aria-label='Local Copilot model'
+          className={cn(
+            'ml-1 inline-flex h-7 items-center gap-0.5 rounded-[10px] bg-[var(--surface-5)] px-2.5',
+            'text-[var(--text-primary)] text-sm dark:bg-[var(--surface-4)]',
+            'hover-hover:bg-[var(--surface-2)] dark:hover-hover:bg-[var(--surface-6)]'
+          )}
+        >
+          {selectedLabel}
+          <ChevronDown className='size-[12px] text-[var(--text-muted)]' />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align='start' side='top' className='min-w-[14rem]'>
+        <DropdownMenuRadioGroup
+          value={catalogId}
+          onValueChange={(value) => {
+            if (isLocalCopilotCatalogId(value)) {
+              onCatalogIdChange(value)
+            }
+          }}
+        >
+          {LOCAL_COPILOT_PROVIDER_GROUPS.map((group, groupIndex) => {
+            const entries = getLocalCopilotCatalogEntriesForGroup(group.id)
+            return (
+              <div key={group.id}>
+                {groupIndex > 0 ? <DropdownMenuSeparator /> : null}
+                <DropdownMenuLabel>{group.label}</DropdownMenuLabel>
+                {entries.map((entry) => (
+                  <DropdownMenuRadioItem key={entry.id} value={entry.id}>
+                    {entry.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </div>
+            )
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
 
 interface UserInputProps {
   defaultValue?: string
@@ -89,13 +172,24 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { navigateToSettings } = useSettingsNavigation()
   const {
+    chatId,
     userId,
     onContextAdd,
     onContextRemove,
     canSwitchCopilotBackend,
     copilotBackend,
     setCopilotBackend,
+    localCopilotCatalogId,
+    setLocalCopilotCatalogId,
   } = useChatSurface()
+
+  const showLocalModelPicker =
+    Boolean(canSwitchCopilotBackend) &&
+    copilotBackend === 'local' &&
+    localCopilotCatalogId !== undefined &&
+    setLocalCopilotCatalogId !== undefined
+
+  const showSessionMemoryInspector = copilotBackend === 'local' && Boolean(chatId)
 
   const [initialValue] = useState(() => {
     if (defaultValue) return defaultValue
@@ -131,6 +225,21 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   const editorRef = useRef(editor)
   editorRef.current = editor
   const textareaRef = editor.textareaRef
+
+  /**
+   * Attaches context chips pushed from elsewhere in the app (browser/terminal
+   * selection actions, the highlight-to-chat action in the file/table
+   * viewers). `preventDefault` claims the event so the producer knows a live
+   * input consumed it and skips its persist-and-navigate fallback.
+   */
+  useEffect(() => {
+    const handleAddContext = (event: Event) => {
+      handleMothershipAddContextEvent(event, editorRef.current)
+    }
+
+    window.addEventListener(MOTHERSHIP_ADD_CONTEXT_EVENT, handleAddContext)
+    return () => window.removeEventListener(MOTHERSHIP_ADD_CONTEXT_EVENT, handleAddContext)
+  }, [])
 
   const draftScopeKeyRef = useRef(draftScopeKey)
   draftScopeKeyRef.current = draftScopeKey
@@ -230,7 +339,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       }
     }
     const removed = prev.filter((p) => !curr.some((c) => contextId(c) === contextId(p)))
-    if (removed.length > 0) removed.forEach((ctx) => onContextRemoveRef.current?.(ctx))
+    if (removed.length > 0) removed.forEach((ctx) => onContextRemoveRef.current?.(ctx, curr))
     prevSelectedContextsRef.current = curr
   }, [editor.contexts])
 
@@ -460,10 +569,11 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     // getPlainValue restores skill chips' EM SPACE sentinel to a literal '/'
     // so the message reads as clean `/skill-name` (skills travel via contexts
     // regardless). Only the submitted copy is converted; the live input is not.
+    const activeContexts = currentEditor.getActiveContexts()
     onSubmit(
       currentEditor.getPlainValue(),
       fileAttachmentsForApi.length > 0 ? fileAttachmentsForApi : undefined,
-      currentEditor.contexts.length > 0 ? currentEditor.contexts : undefined
+      activeContexts.length > 0 ? activeContexts : undefined
     )
     currentEditor.clear()
     sttPrefixRef.current = ''
@@ -611,6 +721,13 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
               </Tooltip.Content>
             </Tooltip.Root>
           ) : null}
+          {showLocalModelPicker && localCopilotCatalogId && setLocalCopilotCatalogId ? (
+            <LocalCopilotModelPicker
+              catalogId={localCopilotCatalogId}
+              onCatalogIdChange={setLocalCopilotCatalogId}
+            />
+          ) : null}
+          {showSessionMemoryInspector ? <SessionMemoryInspector chatId={chatId} /> : null}
         </div>
         <div className='flex items-center gap-1.5'>
           {isSttSupported && <MicButton isListening={isListening} onToggle={toggleListening} />}
@@ -628,7 +745,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         type='file'
         onChange={handleFileChange}
         className='hidden'
-        accept={CHAT_ACCEPT_ATTRIBUTE}
+        accept={MOTHERSHIP_ACCEPT_ATTRIBUTE}
         multiple
       />
 

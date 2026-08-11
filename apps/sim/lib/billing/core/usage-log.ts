@@ -1,15 +1,22 @@
 import { createHash } from 'node:crypto'
 import { db, dbReplica } from '@sim/db'
-import { usageLog, workflow, workspace } from '@sim/db/schema'
+import { usageLog, workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { toError } from '@sim/utils/errors'
+import { getPostgresErrorCode, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, desc, eq, gte, inArray, lt, lte, or, sql } from 'drizzle-orm'
 import { defaultBillingPeriod } from '@/lib/billing/core/billing-period'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/plan'
+import {
+  buildModelPricingSnapshot,
+  normalizeUsageEntry,
+  normalizeUsageModelId,
+} from '@/lib/billing/core/usage-entry-normalize'
+import { logUsageSkip } from '@/lib/billing/core/usage-skip-metrics'
 import { apportionCredits } from '@/lib/billing/credits/conversion'
 import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
 import type { DbClient, DbOrTx } from '@/lib/db/types'
+import type { ExecutionActor } from '@/lib/execution/actor-resolution'
 
 const logger = createLogger('UsageLog')
 
@@ -45,26 +52,76 @@ export function scaleUsageLogCost(cost: number): number {
   return multiplier === 1 ? cost : cost * multiplier
 }
 
+/**
+ * Converts a repriced COGS target into the billable amount persisted in `usage_log.cost`.
+ * External / Cost-block rows pass through unchanged (multiplier 1).
+ */
+export function billableReconciliationAmount(
+  category: UsageLogCategory,
+  rawAmount: number
+): number {
+  if (rawAmount <= 0) return rawAmount
+  if (category === 'external') return rawAmount
+  return scaleUsageLogCost(rawAmount)
+}
+
+/**
+ * Inverse of {@link billableReconciliationAmount} for positive ledger increments.
+ * `recordUsage` scales raw entry costs, so reconciliation deltas are emitted as COGS.
+ */
+export function rawUsageAmountFromBillable(
+  category: UsageLogCategory,
+  billableAmount: number
+): number {
+  if (billableAmount <= 0) return billableAmount
+  if (category === 'external') return billableAmount
+  const multiplier = getUsageLogCostMultiplier()
+  return multiplier === 1 ? billableAmount : billableAmount / multiplier
+}
+
 function scaleUsageEntry<T extends UsageEntry>(entry: T, multiplier: number): T {
-  const scaledCost = multiplier === 1 ? entry.cost : entry.cost * multiplier
+  const rawCost = entry.rawCost ?? entry.cost
+  const effectiveMultiplier =
+    entry.category === 'external' ? 1 : (entry.pricingSnapshot?.multiplier ?? multiplier)
+  const billableCost =
+    entry.billableCost ?? (effectiveMultiplier === 1 ? rawCost : rawCost * effectiveMultiplier)
 
-  if (!entry.metadata || typeof entry.metadata !== 'object' || Array.isArray(entry.metadata)) {
-    return { ...entry, cost: scaledCost }
-  }
-
-  const metadata = entry.metadata as ModelUsageMetadata
-  if (metadata.toolCost != null && metadata.toolCost > 0) {
-    return {
-      ...entry,
-      cost: scaledCost,
-      metadata: {
-        ...metadata,
-        toolCost: multiplier === 1 ? metadata.toolCost : metadata.toolCost * multiplier,
-      },
+  let metadata = entry.metadata
+  if (
+    metadata &&
+    typeof metadata === 'object' &&
+    !Array.isArray(metadata) &&
+    (metadata as ModelUsageMetadata).toolCost != null &&
+    (metadata as ModelUsageMetadata).toolCost! > 0
+  ) {
+    const modelMetadata = metadata as ModelUsageMetadata
+    const scaledToolCost =
+      effectiveMultiplier === 1
+        ? modelMetadata.toolCost
+        : modelMetadata.toolCost! * effectiveMultiplier
+    const scaledEmbeddedToolCosts =
+      modelMetadata.embeddedToolCosts && effectiveMultiplier !== 1
+        ? Object.fromEntries(
+            Object.entries(modelMetadata.embeddedToolCosts).map(([tool, cost]) => [
+              tool,
+              cost * effectiveMultiplier,
+            ])
+          )
+        : modelMetadata.embeddedToolCosts
+    metadata = {
+      ...modelMetadata,
+      toolCost: scaledToolCost,
+      ...(scaledEmbeddedToolCosts ? { embeddedToolCosts: scaledEmbeddedToolCosts } : {}),
     }
   }
 
-  return { ...entry, cost: scaledCost }
+  return {
+    ...entry,
+    cost: billableCost,
+    rawCost,
+    billableCost,
+    ...(metadata !== undefined ? { metadata } : {}),
+  }
 }
 
 function logUsageCostBreakdown(params: {
@@ -112,7 +169,7 @@ function scaleUsageLogCosts(entries: UsageEntry[], context: UsageCostLogContext)
 /**
  * Usage log category types
  */
-export type UsageLogCategory = 'model' | 'fixed' | 'tool'
+export type UsageLogCategory = 'model' | 'fixed' | 'tool' | 'external'
 
 /**
  * Usage log source types
@@ -127,11 +184,13 @@ export type UsageLogSource =
   | 'knowledge-base'
   | 'voice-input'
   | 'enrichment'
+  | 'voice-output'
 
 /**
  * usage_log sources that make up the "copilot" cost breakdown shown in billing
- * summaries: the copilot agent, mothership/workspace chat, MCP copilot, and
- * mothership blocks. Mirrors the source set billed via /api/billing/update-cost.
+ * summaries: Arena Copilot (local mothership), Sim Cloud mothership/workspace
+ * chat, MCP copilot, and mothership blocks. Local and Sim Cloud mothership stay
+ * on different sources (`copilot` vs `workspace-chat` / `mothership_block`).
  */
 export const COPILOT_USAGE_SOURCES: UsageLogSource[] = [
   'copilot',
@@ -147,18 +206,52 @@ export interface ModelUsageMetadata {
   inputTokens: number
   outputTokens: number
   toolCost?: number
+  embeddedToolCosts?: Record<string, number>
+}
+
+/**
+ * Metadata for `external` category charges (Cost block / third-party vendor spend).
+ */
+export interface ExternalUsageMetadata {
+  originalAmount?: number
+  originalCurrency?: string
+  exchangeRate?: number
+  sourceBlockId?: string
+  responsePath?: string
+  source?: string
 }
 
 /**
  * Union type for all usage log metadata types
  */
-export type UsageLogMetadata = ModelUsageMetadata | Record<string, unknown> | null
+export type UsageLogMetadata =
+  | ModelUsageMetadata
+  | ExternalUsageMetadata
+  | Record<string, unknown>
+  | null
 
 export type BillingEntityType = 'user' | 'organization'
 
 export interface BillingEntity {
   type: BillingEntityType
   id: string
+}
+
+/**
+ * Rates and multipliers captured at write time in `usage_log.pricing_snapshot`.
+ * Supports COGS vs billable reconciliation without re-reading vendor-pricing.json.
+ */
+export interface UsagePricingSnapshot {
+  vendor?: string
+  tool?: string
+  model?: string
+  inputRatePerMillion?: number
+  outputRatePerMillion?: number
+  cachedInputRatePerMillion?: number
+  flatRate?: number
+  multiplier?: number
+  pricingSource?: 'vendor-pricing' | 'models-ts' | 'hosted-key' | 'fixed'
+  capturedAt?: string
 }
 
 /**
@@ -169,13 +262,25 @@ export interface UsageEntry {
   source: UsageLogSource
   description: string
   cost: number
+  /** Vendor COGS before `USAGE_LOG_COST_MULTIPLIER`. When set, `cost` should equal billableCost. */
+  rawCost?: number
+  /** Customer-facing amount after multiplier. When set, should mirror `cost` for legacy readers. */
+  billableCost?: number
   eventKey?: string
   sourceReference?: string
   metadata?: UsageLogMetadata
+  vendor?: string
+  provider?: string
+  toolId?: string
+  chatId?: string
+  runId?: string
+  quantity?: number
+  unit?: string
+  pricingSnapshot?: UsagePricingSnapshot
 }
 
 interface RecordUsageBaseParams {
-  /** The user being charged */
+  /** Actor recorded in usage_log.userId. */
   userId: string
   /** One or more usage_log entries to record. Total cost is derived from these. */
   entries: UsageEntry[]
@@ -185,6 +290,25 @@ interface RecordUsageBaseParams {
   workflowId?: string
   /** Execution context */
   executionId?: string
+  /** Copilot/mothership chat context (entry-level values take precedence). */
+  chatId?: string
+  /** Copilot run context (entry-level values take precedence). */
+  runId?: string
+  /**
+   * When the underlying work started (execution `startedAt`). Falls back to
+   * `now` at insert time when omitted.
+   */
+  occurredAt?: Date
+  /** Attribution actor stamped from the hosting execution log. */
+  executionActor?: ExecutionActor
+  /** Parent workflow run for child/mothership-block attribution. */
+  parentExecutionId?: string
+  /** Root of the execution lineage tree. */
+  rootExecutionId?: string
+  /** Copilot chat that triggered the hosting run (rollup only). */
+  triggeringChatId?: string
+  /** Copilot run that triggered the hosting run (rollup only). */
+  triggeringRunId?: string
 }
 
 /**
@@ -232,12 +356,10 @@ export interface BillingContext {
 }
 
 /**
- * Derive the billing entity + period from an ALREADY-resolved subscription.
- * Callers that already hold the subscription (e.g. the workflow completion path,
- * which fetches it for usage-threshold emails) can derive the context once and
- * pass it into recordUsage so resolveBillingContext skips a redundant lookup.
- * This is the single source of the entity/period derivation — keep it the only
- * place that maps a subscription to a billing context.
+ * Derive an account-only billing entity and period from an already-resolved
+ * subscription. Workspace-hosted callers must use `resolveBillingAttribution`
+ * so the routed workspace, rather than the actor's subscriptions, selects the
+ * payer.
  */
 export function deriveBillingContext(
   userId: string,
@@ -288,6 +410,7 @@ export async function getBillingPeriodUsageCost(
     eq(usageLog.billingEntityId, billingEntity.id),
     eq(usageLog.billingPeriodStart, billingPeriod.start),
     eq(usageLog.billingPeriodEnd, billingPeriod.end),
+    eq(usageLog.billable, true),
   ]
   if (source) {
     conditions.push(
@@ -305,6 +428,40 @@ export async function getBillingPeriodUsageCost(
   return Number.parseFloat(row?.cost ?? '0')
 }
 
+/**
+ * Period total plus the portion attributable to `source`, in a single scan.
+ *
+ * Two separate aggregates over the identical row set double the work and, because
+ * they are separate statements, can observe different snapshots — which makes the
+ * subset exceeding the total representable. One statement rules that out.
+ */
+export async function getBillingPeriodUsageCostWithSourceSubset(
+  billingEntity: BillingEntity,
+  billingPeriod: { start: Date; end: Date },
+  source: UsageLogSource[],
+  executor: DbClient = db
+): Promise<{ total: number; subset: number }> {
+  const [row] = await executor
+    .select({
+      total: sql<string>`COALESCE(SUM(${usageLog.cost}), 0)`,
+      subset: sql<string>`COALESCE(SUM(${usageLog.cost}) FILTER (WHERE ${inArray(usageLog.source, source)}), 0)`,
+    })
+    .from(usageLog)
+    .where(
+      and(
+        eq(usageLog.billingEntityType, billingEntity.type),
+        eq(usageLog.billingEntityId, billingEntity.id),
+        eq(usageLog.billingPeriodStart, billingPeriod.start),
+        eq(usageLog.billingPeriodEnd, billingPeriod.end)
+      )
+    )
+
+  return {
+    total: Number.parseFloat(row?.total ?? '0'),
+    subset: Number.parseFloat(row?.subset ?? '0'),
+  }
+}
+
 export async function getBillingPeriodUsageCostByUser(
   billingEntity: BillingEntity,
   billingPeriod: { start: Date; end: Date },
@@ -316,6 +473,7 @@ export async function getBillingPeriodUsageCostByUser(
     eq(usageLog.billingEntityId, billingEntity.id),
     eq(usageLog.billingPeriodStart, billingPeriod.start),
     eq(usageLog.billingPeriodEnd, billingPeriod.end),
+    eq(usageLog.billable, true),
   ]
   if (source) {
     conditions.push(
@@ -336,41 +494,6 @@ export async function getBillingPeriodUsageCostByUser(
 }
 
 /**
- * A single user's usage_log cost inside an organization's own workspaces within
- * a wall-clock window (by `created_at`).
- *
- * Unlike {@link getBillingPeriodUsageCostByUser} (which filters by the attributed
- * billing entity and the stored billing-period columns), this joins `workspace`
- * on `organization_id` and filters by `user_id` + a `created_at` range. That
- * captures the member's consumption inside org-owned workspaces regardless of
- * which billing entity the row was attributed to — required for per-member
- * org-workspace usage, including external members whose runs bill to their own
- * personal entity and mothership/copilot cost attributed to the using user.
- * Scoped to one user so it uses the `(user_id, created_at)` index rather than
- * scanning the whole org's period on the execution hot path.
- */
-export async function getOrgWorkspaceUsageCostForUser(
-  organizationId: string,
-  userId: string,
-  window: { start: Date; end: Date }
-): Promise<number> {
-  const [row] = await db
-    .select({ cost: sql<string>`COALESCE(SUM(${usageLog.cost}), 0)` })
-    .from(usageLog)
-    .innerJoin(workspace, eq(workspace.id, usageLog.workspaceId))
-    .where(
-      and(
-        eq(usageLog.userId, userId),
-        eq(workspace.organizationId, organizationId),
-        gte(usageLog.createdAt, window.start),
-        lt(usageLog.createdAt, window.end)
-      )
-    )
-
-  return Number.parseFloat(row?.cost ?? '0')
-}
-
-/**
  * Records usage as append-only billing events.
  *
  * This intentionally avoids per-event userStats updates: userStats is retained
@@ -388,23 +511,42 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
     workspaceId,
     workflowId,
     executionId,
+    chatId,
+    runId,
+    occurredAt,
+    executionActor,
+    parentExecutionId,
+    rootExecutionId,
+    triggeringChatId,
+    triggeringRunId,
     billingEntity,
     billingPeriod,
     tx,
   } = params
 
-  const validEntries = entries.filter((e) => e.cost > 0)
+  const normalizedEntries = entries.map((entry) => normalizeUsageEntry(entry))
+  const scaledEntries = scaleUsageLogCosts(normalizedEntries, {
+    userId,
+    workspaceId,
+    workflowId,
+    executionId,
+  })
 
-  if (validEntries.length === 0) {
+  if (scaledEntries.length === 0) {
     return
   }
 
+  if (workspaceId && (!billingEntity || !billingPeriod)) {
+    throw new Error('Workspace usage requires an explicit billing entity and billing period')
+  }
+
   const context = await resolveBillingContext(userId, billingEntity, billingPeriod)
+  const stampedOccurredAt = occurredAt ?? new Date()
 
   const insertedRows = await (tx ?? db)
     .insert(usageLog)
     .values(
-      validEntries.map((entry, index) => {
+      scaledEntries.map((entry, index) => {
         const sourceReference =
           entry.sourceReference ??
           [executionId, workflowId, workspaceId, entry.source, entry.description, index]
@@ -432,14 +574,33 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
           description: entry.description,
           metadata: entry.metadata ?? null,
           cost: entry.cost.toString(),
+          rawCost: entry.rawCost != null ? entry.rawCost.toString() : null,
+          billableCost: entry.billableCost != null ? entry.billableCost.toString() : null,
           eventKey,
           billingEntityType: context.billingEntity.type,
           billingEntityId: context.billingEntity.id,
           billingPeriodStart: context.billingPeriod.start,
           billingPeriodEnd: context.billingPeriod.end,
+          vendor: entry.vendor ?? null,
+          provider: entry.provider ?? null,
+          toolId: entry.toolId ?? null,
+          chatId: entry.chatId ?? chatId ?? null,
+          runId: entry.runId ?? runId ?? null,
+          quantity: entry.quantity != null ? entry.quantity.toString() : null,
+          unit: entry.unit ?? null,
+          pricingSnapshot: entry.pricingSnapshot ?? null,
+          billable: entry.cost > 0,
           workspaceId: workspaceId ?? null,
           workflowId: workflowId ?? null,
           executionId: executionId ?? null,
+          occurredAt: stampedOccurredAt,
+          actorUserId: executionActor?.actorUserId ?? null,
+          actorType: executionActor?.actorType ?? null,
+          apiKeyId: executionActor?.apiKeyId ?? null,
+          parentExecutionId: parentExecutionId ?? null,
+          rootExecutionId: rootExecutionId ?? executionId ?? null,
+          triggeringChatId: triggeringChatId ?? null,
+          triggeringRunId: triggeringRunId ?? null,
         }
       })
     )
@@ -447,15 +608,21 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
       target: usageLog.eventKey,
       where: sql`${usageLog.eventKey} IS NOT NULL`,
     })
-    .returning({ cost: usageLog.cost })
+    .returning({ cost: usageLog.cost, billable: usageLog.billable })
 
   const insertedCost = insertedRows.reduce((sum, row) => sum + Number.parseFloat(row.cost), 0)
+  const billableInserted = insertedRows.filter((row) => row.billable).length
+  const nonBillableInserted = insertedRows.length - billableInserted
 
-  if (insertedRows.length < validEntries.length) {
-    logger.debug('Skipped duplicate usage events', {
+  if (insertedRows.length < scaledEntries.length) {
+    logUsageSkip('duplicate_event_key', {
       userId,
-      attemptedEntries: validEntries.length,
+      workspaceId,
+      workflowId,
+      executionId,
+      attemptedEntries: scaledEntries.length,
       insertedEntries: insertedRows.length,
+      droppedEntries: scaledEntries.length - insertedRows.length,
     })
   }
 
@@ -466,13 +633,16 @@ export async function recordUsage(params: RecordUsageParams): Promise<void> {
     executionId,
     totalCostAddedToUserStats: insertedCost,
     totalCost: insertedCost,
-    entryCount: validEntries.length,
-    sources: [...new Set(validEntries.map((e) => e.source))],
-    persistedCosts: validEntries.map((e) => ({
+    entryCount: scaledEntries.length,
+    billableInserted,
+    nonBillableInserted,
+    sources: [...new Set(scaledEntries.map((e) => e.source))],
+    persistedCosts: scaledEntries.map((e) => ({
       category: e.category,
       source: e.source,
       description: e.description,
       cost: e.cost,
+      billable: e.cost > 0,
     })),
   })
 }
@@ -507,16 +677,42 @@ export function resolveCumulativeTopUp(
 }
 
 export interface RecordCumulativeUsageParams {
+  /** Actor recorded in usage_log.userId. */
   userId: string
   workspaceId?: string
+  /** Exact workspace payer, required whenever workspaceId is present. */
+  billingEntity?: BillingEntity
+  /** Exact workspace payer period, required whenever workspaceId is present. */
+  billingPeriod?: { start: Date; end: Date }
   source: UsageLogSource
   /** Model name, stored as the row description. */
   model: string
-  /** The request's CUMULATIVE cost so far (not a per-leg delta). */
+  /** The request's CUMULATIVE vendor COGS so far (not a per-leg delta). */
   cost: number
   /** Stable per-request key; the single ledger row is keyed on this. */
   eventKey: string
   metadata?: UsageLogMetadata
+  chatId?: string
+  runId?: string
+  provider?: string
+  vendor?: string
+  pricingSnapshot?: UsagePricingSnapshot
+  /** When the underlying request started; stamped on first flush only. */
+  occurredAt?: Date
+  /** Parent workflow run for mothership-block / child attribution. */
+  parentExecutionId?: string
+  /** Root of the execution lineage tree. */
+  rootExecutionId?: string
+  /** Copilot chat that triggered the hosting run (rollup only). */
+  triggeringChatId?: string
+  /** Copilot run that triggered the hosting run (rollup only). */
+  triggeringRunId?: string
+  /**
+   * Who triggered the request. Mothership/copilot flushes should stamp the
+   * requesting user here — otherwise actor columns stay null and dashboards
+   * cannot attribute spend without joining `copilot_chats`.
+   */
+  executionActor?: ExecutionActor
 }
 
 export interface RecordCumulativeUsageResult {
@@ -526,6 +722,149 @@ export interface RecordCumulativeUsageResult {
   delta: number
   /** The request's recorded cumulative cost after this flush. */
   total: number
+}
+
+interface CumulativeRowAttribution {
+  workspaceId: string | null
+  chatId: string | null
+  runId: string | null
+  actorUserId: string | null
+  actorType: string | null
+  parentExecutionId: string | null
+  rootExecutionId: string | null
+  triggeringChatId: string | null
+  triggeringRunId: string | null
+}
+
+/**
+ * Builds an UPDATE patch that fills only NULL attribution/lineage columns.
+ * Never overwrites existing values or touches cost fields.
+ */
+export function buildNullOnlyAttributionFill(
+  existing: CumulativeRowAttribution,
+  incoming: {
+    workspaceId?: string
+    chatId?: string
+    runId?: string
+    parentExecutionId?: string
+    rootExecutionId?: string
+    triggeringChatId?: string
+    triggeringRunId?: string
+    executionActor?: ExecutionActor
+  }
+): Partial<{
+  workspaceId: string
+  chatId: string
+  runId: string
+  actorUserId: string
+  actorType: string
+  parentExecutionId: string
+  rootExecutionId: string
+  triggeringChatId: string
+  triggeringRunId: string
+}> {
+  const patch: Partial<{
+    workspaceId: string
+    chatId: string
+    runId: string
+    actorUserId: string
+    actorType: string
+    parentExecutionId: string
+    rootExecutionId: string
+    triggeringChatId: string
+    triggeringRunId: string
+  }> = {}
+
+  if (!existing.workspaceId && incoming.workspaceId) {
+    patch.workspaceId = incoming.workspaceId
+  }
+  if (!existing.chatId && incoming.chatId) {
+    patch.chatId = incoming.chatId
+  }
+  if (!existing.runId && incoming.runId) {
+    patch.runId = incoming.runId
+  }
+  if (!existing.parentExecutionId && incoming.parentExecutionId) {
+    patch.parentExecutionId = incoming.parentExecutionId
+  }
+  if (!existing.rootExecutionId && (incoming.rootExecutionId ?? incoming.parentExecutionId)) {
+    patch.rootExecutionId = incoming.rootExecutionId ?? incoming.parentExecutionId
+  }
+  if (!existing.triggeringChatId && incoming.triggeringChatId) {
+    patch.triggeringChatId = incoming.triggeringChatId
+  }
+  if (!existing.triggeringRunId && incoming.triggeringRunId) {
+    patch.triggeringRunId = incoming.triggeringRunId
+  }
+  if (!existing.actorUserId && incoming.executionActor?.actorUserId) {
+    patch.actorUserId = incoming.executionActor.actorUserId
+  }
+  if (!existing.actorType && incoming.executionActor?.actorType) {
+    patch.actorType = incoming.executionActor.actorType
+  }
+
+  return patch
+}
+export type CumulativeUsageContextField =
+  | 'actor'
+  | 'workspace'
+  | 'billing entity'
+  | 'billing period'
+
+export class CumulativeUsageContextMismatchError extends Error {
+  constructor(
+    readonly eventKey: string,
+    readonly mismatchedFields: readonly CumulativeUsageContextField[]
+  ) {
+    super(
+      `Cumulative usage event "${eventKey}" is already bound to a different billing context (${mismatchedFields.join(', ')})`
+    )
+    this.name = 'CumulativeUsageContextMismatchError'
+  }
+}
+
+interface CumulativeUsageLedgerBinding {
+  userId: string
+  workspaceId: string | null
+  billingEntityType: BillingEntityType | null
+  billingEntityId: string | null
+  billingPeriodStart: Date | null
+  billingPeriodEnd: Date | null
+}
+
+function assertCumulativeUsageLedgerBinding(
+  existing: CumulativeUsageLedgerBinding,
+  expected: {
+    userId: string
+    workspaceId?: string
+    billingContext: BillingContext
+    eventKey: string
+  }
+): void {
+  const mismatchedFields: CumulativeUsageContextField[] = []
+  if (existing.userId !== expected.userId) {
+    mismatchedFields.push('actor')
+  }
+  if (existing.workspaceId !== (expected.workspaceId ?? null)) {
+    mismatchedFields.push('workspace')
+  }
+  if (
+    existing.billingEntityType !== expected.billingContext.billingEntity.type ||
+    existing.billingEntityId !== expected.billingContext.billingEntity.id
+  ) {
+    mismatchedFields.push('billing entity')
+  }
+  if (
+    existing.billingPeriodStart?.getTime() !==
+      expected.billingContext.billingPeriod.start.getTime() ||
+    existing.billingPeriodEnd?.getTime() !== expected.billingContext.billingPeriod.end.getTime()
+  ) {
+    mismatchedFields.push('billing period')
+  }
+
+  if (mismatchedFields.length > 0) {
+    throw new CumulativeUsageContextMismatchError(expected.eventKey, mismatchedFields)
+  }
 }
 
 /**
@@ -546,6 +885,8 @@ const CUMULATIVE_FLUSH_LOCK_TIMEOUT_MS = 3_000
  * each flush. A per-key transactional advisory lock serializes concurrent
  * flushes so the read-then-write — including the first insert — is race-free
  * (no two flushes can both believe they are first and clobber each other).
+ * An existing row must match the incoming actor, workspace, payer, and billing
+ * period before either a duplicate no-op or a top-up is accepted.
  * The billing context is resolved BEFORE the transaction and the lock wait is
  * bounded by `lock_timeout`, keeping the critical section to one SELECT plus
  * one INSERT/UPDATE on a single pooled connection.
@@ -558,74 +899,193 @@ const CUMULATIVE_FLUSH_LOCK_TIMEOUT_MS = 3_000
 export async function recordCumulativeUsage(
   params: RecordCumulativeUsageParams
 ): Promise<RecordCumulativeUsageResult> {
-  const { userId, workspaceId, source, model, cost, eventKey, metadata } = params
+  const {
+    userId,
+    workspaceId,
+    billingEntity,
+    billingPeriod,
+    source,
+    model,
+    cost,
+    eventKey,
+    metadata,
+    chatId,
+    runId,
+    provider,
+    vendor,
+    pricingSnapshot,
+    occurredAt,
+    parentExecutionId,
+    rootExecutionId,
+    triggeringChatId,
+    triggeringRunId,
+    executionActor,
+  } = params
 
-  // Resolved before the locked transaction on purpose: resolving inside it
-  // ran the subscription lookups on the global pool while this tx already
-  // held a pooled connection plus the advisory lock, so under load N
-  // first-flush transactions each pinned a connection while waiting for one
-  // more — starving the pool and queueing every same-key flush (and the Go
-  // side's retries) behind the stall.
-  const billingContext = await resolveBillingContext(userId)
+  const canonicalModel = normalizeUsageModelId(model)
+  const envMultiplier = getUsageLogCostMultiplier()
 
-  return db.transaction(async (tx) => {
-    // Serialize all flushes for this request (lock auto-releases at tx end),
-    // with a bounded wait so a pathological holder fails this flush fast and
-    // lets the caller retry instead of hanging the connection.
-    await tx.execute(
-      sql`select set_config('lock_timeout', ${`${CUMULATIVE_FLUSH_LOCK_TIMEOUT_MS}ms`}, true)`
-    )
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${eventKey}, 0))`)
+  if (workspaceId && (!billingEntity || !billingPeriod)) {
+    throw new Error('Workspace usage requires an explicit billing entity and billing period')
+  }
 
-    const [existing] = await tx
-      .select({ id: usageLog.id, cost: usageLog.cost })
-      .from(usageLog)
-      .where(eq(usageLog.eventKey, eventKey))
-      .limit(1)
+  const billingContext = await resolveBillingContext(userId, billingEntity, billingPeriod)
 
-    const recorded = existing ? Number.parseFloat(existing.cost) : 0
-    const { shouldBill, delta, newTotal } = resolveCumulativeTopUp(recorded, cost)
+  try {
+    return await db.transaction(async (tx) => {
+      // Serialize all flushes for this request (lock auto-releases at tx end),
+      // with a bounded wait so a pathological holder fails this flush fast and
+      // lets the caller retry instead of hanging the connection.
+      await tx.execute(
+        sql`select set_config('lock_timeout', ${`${CUMULATIVE_FLUSH_LOCK_TIMEOUT_MS}ms`}, true)`
+      )
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${eventKey}, 0))`)
 
-    if (!shouldBill) {
-      return { billed: false, delta: 0, total: recorded }
+      const [existing] = await tx
+        .select({
+          id: usageLog.id,
+          cost: usageLog.cost,
+          rawCost: usageLog.rawCost,
+          pricingSnapshot: usageLog.pricingSnapshot,
+          workspaceId: usageLog.workspaceId,
+          chatId: usageLog.chatId,
+          runId: usageLog.runId,
+          actorUserId: usageLog.actorUserId,
+          actorType: usageLog.actorType,
+          parentExecutionId: usageLog.parentExecutionId,
+          rootExecutionId: usageLog.rootExecutionId,
+          triggeringChatId: usageLog.triggeringChatId,
+          triggeringRunId: usageLog.triggeringRunId,
+        })
+        .from(usageLog)
+        .where(eq(usageLog.eventKey, eventKey))
+        .limit(1)
+
+      if (existing) {
+        assertCumulativeUsageLedgerBinding(existing, {
+          userId,
+          workspaceId,
+          billingContext,
+          eventKey,
+        })
+      }
+
+      const recordedRaw = existing ? Number.parseFloat(existing.rawCost ?? existing.cost) : 0
+      const { shouldBill, delta, newTotal } = resolveCumulativeTopUp(recordedRaw, cost)
+
+      if (!shouldBill) {
+        // Duplicate / non-increasing flush: never change cost, but self-heal
+        // missing attribution so a Cloud-first write without chatId can be
+        // repaired by a later Sim retry that carries chat/run/actor.
+        if (existing) {
+          const nullFill = buildNullOnlyAttributionFill(existing, {
+            workspaceId,
+            chatId,
+            runId,
+            parentExecutionId,
+            rootExecutionId,
+            triggeringChatId,
+            triggeringRunId,
+            executionActor,
+          })
+          if (Object.keys(nullFill).length > 0) {
+            await tx.update(usageLog).set(nullFill).where(eq(usageLog.id, existing.id))
+          }
+        }
+        return { billed: false, delta: 0, total: recordedRaw }
+      }
+
+      const existingSnapshot = existing?.pricingSnapshot as UsagePricingSnapshot | null
+      const lockedMultiplier = existingSnapshot?.multiplier ?? envMultiplier
+      const billableTotal = lockedMultiplier === 1 ? newTotal : newTotal * lockedMultiplier
+
+      const firstFlushSnapshot =
+        pricingSnapshot ?? buildModelPricingSnapshot(canonicalModel, lockedMultiplier)
+
+      const attributionPatch = {
+        ...(metadata !== undefined ? { metadata } : {}),
+        ...(chatId ? { chatId } : {}),
+        ...(runId ? { runId } : {}),
+        ...(provider ? { provider } : {}),
+        ...(vendor ? { vendor } : {}),
+        ...(executionActor?.actorUserId ? { actorUserId: executionActor.actorUserId } : {}),
+        ...(executionActor?.actorType ? { actorType: executionActor.actorType } : {}),
+        ...(parentExecutionId ? { parentExecutionId } : {}),
+        ...(rootExecutionId || parentExecutionId
+          ? { rootExecutionId: rootExecutionId ?? parentExecutionId }
+          : {}),
+        ...(triggeringChatId ? { triggeringChatId } : {}),
+        ...(triggeringRunId ? { triggeringRunId } : {}),
+      }
+
+      if (existing) {
+        // Top up using the multiplier captured on first flush — never the current env.
+        await tx
+          .update(usageLog)
+          .set({
+            cost: billableTotal.toString(),
+            rawCost: newTotal.toString(),
+            billableCost: billableTotal.toString(),
+            billable: newTotal > 0,
+            ...attributionPatch,
+          })
+          .where(eq(usageLog.id, existing.id))
+      } else {
+        // First flush for this request: insert the canonical row with the
+        // pre-resolved billing context. Runs in the same tx + advisory lock.
+        await recordUsage({
+          userId,
+          workspaceId,
+          chatId,
+          runId,
+          occurredAt,
+          parentExecutionId,
+          rootExecutionId: rootExecutionId ?? parentExecutionId,
+          triggeringChatId,
+          triggeringRunId,
+          executionActor,
+          tx,
+          billingEntity: billingContext.billingEntity,
+          billingPeriod: billingContext.billingPeriod,
+          entries: [
+            {
+              category: 'model',
+              source,
+              description: canonicalModel,
+              cost: newTotal,
+              rawCost: newTotal,
+              billableCost: billableTotal,
+              eventKey,
+              sourceReference: eventKey,
+              pricingSnapshot: firstFlushSnapshot,
+              ...(metadata ? { metadata } : {}),
+              ...(chatId ? { chatId } : {}),
+              ...(runId ? { runId } : {}),
+              ...(provider ? { provider } : {}),
+              ...(vendor ? { vendor } : {}),
+            },
+          ],
+        })
+      }
+
+      return { billed: true, delta, total: newTotal }
+    })
+  } catch (error) {
+    if (getPostgresErrorCode(error) === '55P03') {
+      logUsageSkip(
+        'advisory_lock_timeout',
+        { userId, eventKey, source, model: canonicalModel },
+        'error'
+      )
     }
-
-    if (existing) {
-      // Top up the single row to the new (higher) cumulative; the
-      // period total is SUM(usage_log.cost), so this lifts it by the delta.
-      await tx
-        .update(usageLog)
-        .set({ cost: newTotal.toString(), metadata: metadata ?? null })
-        .where(eq(usageLog.id, existing.id))
-    } else {
-      // First flush for this request: insert the canonical row with the
-      // pre-resolved billing context. Runs in the same tx + advisory lock.
-      await recordUsage({
-        userId,
-        workspaceId,
-        tx,
-        billingEntity: billingContext.billingEntity,
-        billingPeriod: billingContext.billingPeriod,
-        entries: [
-          {
-            category: 'model',
-            source,
-            description: model,
-            cost: newTotal,
-            eventKey,
-            sourceReference: eventKey,
-            ...(metadata ? { metadata } : {}),
-          },
-        ],
-      })
-    }
-
-    return { billed: true, delta, total: newTotal }
-  })
+    throw error
+  }
 }
 
 interface UsageLogFilter {
   source?: UsageLogSource
+  /** When set, filters to any of these sources (takes precedence over `source`). */
+  sources?: UsageLogSource[]
   workspaceId?: string
   startDate?: Date
   endDate?: Date
@@ -633,7 +1093,11 @@ interface UsageLogFilter {
 
 function buildUsageLogConditions(userId: string, filter: UsageLogFilter) {
   const conditions = [eq(usageLog.userId, userId)]
-  if (filter.source) conditions.push(eq(usageLog.source, filter.source))
+  if (filter.sources && filter.sources.length > 0) {
+    conditions.push(inArray(usageLog.source, filter.sources))
+  } else if (filter.source) {
+    conditions.push(eq(usageLog.source, filter.source))
+  }
   if (filter.workspaceId) conditions.push(eq(usageLog.workspaceId, filter.workspaceId))
   if (filter.startDate) conditions.push(gte(usageLog.createdAt, filter.startDate))
   if (filter.endDate) conditions.push(lte(usageLog.createdAt, filter.endDate))
@@ -667,8 +1131,10 @@ export async function getUsageCreditsByLogId(
  * Options for querying usage logs
  */
 export interface GetUsageLogsOptions {
-  /** Filter by source */
+  /** Filter by a single source */
   source?: UsageLogSource
+  /** Filter by any of these sources (takes precedence over `source`) */
+  sources?: UsageLogSource[]
   /** Filter by workspace */
   workspaceId?: string
   /** Start date (inclusive) */
@@ -738,6 +1204,7 @@ export async function getUserUsageLogs(
 ): Promise<UsageLogsResult> {
   const {
     source,
+    sources,
     workspaceId,
     startDate,
     endDate,
@@ -748,7 +1215,13 @@ export async function getUserUsageLogs(
   } = options
 
   try {
-    const conditions = buildUsageLogConditions(userId, { source, workspaceId, startDate, endDate })
+    const conditions = buildUsageLogConditions(userId, {
+      source,
+      sources,
+      workspaceId,
+      startDate,
+      endDate,
+    })
 
     if (cursor) {
       let resolvedCursorCreatedAt = cursorCreatedAt
@@ -817,6 +1290,7 @@ export async function getUserUsageLogs(
     if (includeSummary) {
       const summaryConditions = buildUsageLogConditions(userId, {
         source,
+        sources,
         workspaceId,
         startDate,
         endDate,

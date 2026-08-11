@@ -2,6 +2,7 @@ import { db } from '@sim/db'
 import { account } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
+import { BILLING_ATTRIBUTION_HEADER } from '@/lib/billing/core/billing-attribution'
 import { getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { refreshTokenIfNeeded } from '@/app/api/auth/oauth/utils'
 import { executeProviderRequest } from '@/providers'
@@ -16,6 +17,8 @@ export interface HallucinationValidationResult {
   reasoning?: string
   /** Billable LLM cost (dollars) for the scoring call; 0 for BYOK/non-hosted. */
   cost?: number
+  inputTokens?: number
+  outputTokens?: number
 }
 
 export interface HallucinationValidationInput {
@@ -40,6 +43,7 @@ export interface HallucinationValidationInput {
   authHeaders?: {
     cookie?: string
     authorization?: string
+    billingAttribution?: string
   }
   requestId: string
 }
@@ -53,7 +57,7 @@ async function queryKnowledgeBase(
   topK: number,
   requestId: string,
   workflowId?: string,
-  authHeaders?: { cookie?: string; authorization?: string }
+  authHeaders?: { cookie?: string; authorization?: string; billingAttribution?: string }
 ): Promise<string[]> {
   try {
     // Call the knowledge base search API directly
@@ -65,6 +69,9 @@ async function queryKnowledgeBase(
         'Content-Type': 'application/json',
         ...(authHeaders?.cookie ? { Cookie: authHeaders.cookie } : {}),
         ...(authHeaders?.authorization ? { Authorization: authHeaders.authorization } : {}),
+        ...(authHeaders?.billingAttribution
+          ? { [BILLING_ATTRIBUTION_HEADER]: authHeaders.billingAttribution }
+          : {}),
       },
       body: JSON.stringify({
         knowledgeBaseIds: [knowledgeBaseId],
@@ -109,7 +116,13 @@ async function scoreHallucinationWithLLM(
   providerCredentials: HallucinationValidationInput['providerCredentials'],
   workspaceId: string | undefined,
   requestId: string
-): Promise<{ score: number; reasoning: string; cost: number }> {
+): Promise<{
+  score: number
+  reasoning: string
+  cost: number
+  inputTokens: number
+  outputTokens: number
+}> {
   try {
     const contextText = ragContext.join('\n\n---\n\n')
 
@@ -190,6 +203,8 @@ Evaluate the consistency and provide your score and reasoning in JSON format.`
     // executeProviderRequest already zeroes cost for BYOK / non-hosted models,
     // so this is the billable amount as-is.
     const cost = typeof response.cost?.total === 'number' ? response.cost.total : 0
+    const inputTokens = response.tokens?.input ?? 0
+    const outputTokens = response.tokens?.output ?? 0
 
     const content = response.content.trim()
 
@@ -216,6 +231,8 @@ Evaluate the consistency and provide your score and reasoning in JSON format.`
       score: result.score,
       reasoning: result.reasoning || 'No reasoning provided',
       cost,
+      inputTokens,
+      outputTokens,
     }
   } catch (error: any) {
     logger.error(`[${requestId}] Error scoring with LLM`, {
@@ -278,7 +295,7 @@ export async function validateHallucination(
     }
 
     // Step 2: Use LLM to score confidence
-    const { score, reasoning, cost } = await scoreHallucinationWithLLM(
+    const { score, reasoning, cost, inputTokens, outputTokens } = await scoreHallucinationWithLLM(
       userInput,
       ragContext,
       model,
@@ -301,6 +318,8 @@ export async function validateHallucination(
       score,
       reasoning,
       cost,
+      inputTokens,
+      outputTokens,
       error: passed
         ? undefined
         : `Low confidence: score ${score}/10 is below threshold ${threshold}`,

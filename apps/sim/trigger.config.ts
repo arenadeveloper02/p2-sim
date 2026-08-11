@@ -48,9 +48,10 @@ const grafanaTelemetry = grafanaFullyConfigured
 
 export default defineConfig({
   project: env.TRIGGER_PROJECT_ID!,
-  runtime: 'node-22',
+  runtime: 'node-24',
   logLevel: 'log',
-  maxDuration: 5400,
+  // Keep in sync with EXECUTION_TIMEOUT_ASYNC_* (seconds). Default 5400 = 90 min.
+  maxDuration: Number.parseInt(env.EXECUTION_TIMEOUT_ASYNC_ENTERPRISE || '5400', 10) || 5400,
   retries: {
     enabledInDev: false,
     default: {
@@ -60,7 +61,18 @@ export default defineConfig({
   dirs: ['./background'],
   ...(grafanaTelemetry ? { telemetry: grafanaTelemetry } : {}),
   build: {
-    external: ['isolated-vm', '@earendil-works/pi-coding-agent', 'cpu-features'],
+    external: [
+      'isolated-vm',
+      '@earendil-works/pi-ai',
+      '@earendil-works/pi-coding-agent',
+      'cpu-features',
+      // `@e2b/code-interpreter` copies `e2b`'s members onto its exports at runtime, so
+      // bundling drops every name a static analyzer cannot see — `Template` among them.
+      // Same reason `next.config.ts` keeps these in `serverExternalPackages`.
+      'e2b',
+      '@e2b/code-interpreter',
+      '@daytona/sdk',
+    ],
     extensions: [
       syncEnvVars(() => [{ name: 'DB_APP_NAME', value: 'sim-trigger' }]),
       additionalFiles({
@@ -77,7 +89,10 @@ export default defineConfig({
           'isolated-vm',
           'react-dom',
           '@react-email/render',
+          '@earendil-works/pi-ai',
           '@earendil-works/pi-coding-agent',
+          '@e2b/code-interpreter',
+          '@daytona/sdk',
         ],
       }),
     ],

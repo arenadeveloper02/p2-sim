@@ -2,7 +2,6 @@ import React from 'react'
 import { Badge } from '@sim/emcn'
 import { formatDuration, formatRelativeTime } from '@sim/utils/formatting'
 import { format } from 'date-fns'
-import type { WorkflowLogDetail } from '@/lib/api/contracts/logs'
 import { getIntegrationMetadata } from '@/lib/logs/get-trigger-options'
 import { getBlock } from '@/blocks/registry'
 import { CORE_TRIGGER_TYPES } from '@/stores/logs/filters/types'
@@ -18,7 +17,14 @@ export const LOG_COLUMNS = {
 
 export const DELETED_WORKFLOW_LABEL = 'Deleted Workflow'
 
-export type LogStatus = 'error' | 'pending' | 'running' | 'info' | 'cancelled' | 'cancelling'
+export type LogStatus =
+  | 'error'
+  | 'pending'
+  | 'running'
+  | 'redacting'
+  | 'info'
+  | 'cancelled'
+  | 'cancelling'
 
 /**
  * Maps raw status string to LogStatus for display.
@@ -29,6 +35,8 @@ export function getDisplayStatus(status: string | null | undefined): LogStatus {
   switch (status) {
     case 'running':
       return 'running'
+    case 'redacting':
+      return 'redacting'
     case 'pending':
       return 'pending'
     case 'cancelling':
@@ -55,6 +63,7 @@ export const STATUS_CONFIG: Record<
   error: { variant: 'red', label: 'Error', color: 'var(--text-error)', filterable: true },
   pending: { variant: 'amber', label: 'Pending', color: '#f59e0b', filterable: true },
   running: { variant: 'amber', label: 'Running', color: '#f59e0b', filterable: true },
+  redacting: { variant: 'amber', label: 'Redacting', color: '#f59e0b', filterable: false },
   cancelling: { variant: 'amber', label: 'Cancelling...', color: '#f59e0b', filterable: false },
   cancelled: { variant: 'orange', label: 'Cancelled', color: '#f97316', filterable: true },
   info: {
@@ -75,6 +84,7 @@ const TRIGGER_VARIANT_MAP: Record<string, React.ComponentProps<typeof Badge>['va
   copilot: 'pink',
   mothership: 'pink',
   workflow: 'blue-secondary',
+  custom_block: 'blue-secondary',
 }
 
 interface StatusBadgeProps {
@@ -177,31 +187,6 @@ export function formatLatency(ms: number): string {
   return formatDuration(ms, { precision: 2 }) ?? '—'
 }
 
-export function formatDateShort(dateStr: string): string {
-  const hasTime = dateStr.includes('T')
-  const [datePart, timePart] = dateStr.split('T')
-  const [, month, day] = datePart.split('-').map(Number)
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ]
-  const dateLabel = `${months[month - 1]} ${day}`
-  if (hasTime && timePart) {
-    return `${dateLabel} ${timePart.slice(0, 5)}`
-  }
-  return dateLabel
-}
-
 export const formatDate = (dateString: string) => {
   const date = new Date(dateString)
   return {
@@ -226,38 +211,4 @@ export const formatDate = (dateString: string) => {
     compactTime: format(date, 'h:mm a'),
     relative: formatRelativeTime(dateString),
   }
-}
-
-/**
- * Extracts the original workflow input from a log entry for retry.
- * Prefers the persisted `workflowInput` field (new logs), falls back to
- * reconstructing from `executionState.blockStates` (old logs).
- */
-export function extractRetryInput(log: WorkflowLogDetail): unknown | undefined {
-  const execData = log.executionData
-  if (!execData) return undefined
-
-  if (execData.workflowInput !== undefined) {
-    return execData.workflowInput
-  }
-
-  const executionState = (execData as Record<string, unknown>).executionState as
-    | {
-        blockStates?: Record<
-          string,
-          { output?: unknown; executed?: boolean; executionTime?: number }
-        >
-      }
-    | undefined
-  if (!executionState?.blockStates) return undefined
-
-  // Starter/trigger blocks are pre-populated with executed: false and
-  // executionTime: 0, which distinguishes them from blocks that actually ran.
-  for (const state of Object.values(executionState.blockStates)) {
-    if (state.executed === false && state.executionTime === 0 && state.output != null) {
-      return state.output
-    }
-  }
-
-  return undefined
 }

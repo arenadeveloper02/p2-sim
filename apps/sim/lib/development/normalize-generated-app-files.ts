@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { ensureArenaScaffoldFiles } from '@/lib/development/arena/scaffold'
 
 const logger = createLogger('NormalizeGeneratedApp')
 
@@ -35,6 +36,25 @@ const REACT19_COMPAT_DEPENDENCY_OVERRIDES: Record<string, string> = {
 }
 
 /**
+ * Transitive tooling the LLM sometimes pins directly (often with hallucinated or
+ * too-new versions). Leave resolution to autoprefixer/browserslist instead.
+ */
+const STRIP_DIRECT_TOOLING_DEPENDENCIES = new Set([
+  'caniuse-lite',
+  'browserslist',
+  'update-browserslist-db',
+])
+
+/** Lockfiles from the LLM freeze bad transitive versions and break fresh npm installs. */
+const GENERATED_APP_LOCKFILE_PATHS = new Set([
+  'package-lock.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+  'bun.lock',
+  'bun.lockb',
+])
+
+/**
  * Added to package.json when source files import the package but the LLM omitted it.
  * Import-driven only — nothing here is forced onto apps that do not use it.
  */
@@ -60,6 +80,8 @@ export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these ex
 - If ANY file imports a third-party package (e.g. lucide-react, recharts, date-fns, zod, bcryptjs, jsonwebtoken), package.json dependencies MUST include that exact package — a missing dependency causes TS2307 "Cannot find module" at typecheck
 - Add matching @types/* devDependencies for packages that ship no bundled types (e.g. @types/jsonwebtoken, @types/bcryptjs)
 - When using lucide-react, pin "lucide-react": "^0.479.0" or newer (React 19 compatible) — never ^0.395.x
+- NEVER add caniuse-lite, browserslist, or update-browserslist-db as direct dependencies/devDependencies/overrides — they are transitive via autoprefixer; pinning them causes npm ETARGET install failures
+- NEVER emit package-lock.json, yarn.lock, pnpm-lock.yaml, or bun.lock
 Use Tailwind CSS v3 only (tailwind.config.ts + postcss.config.mjs with tailwindcss and autoprefixer). Do NOT use a Tailwind v4-only setup.
 next.config.ts MUST NOT include an eslint property (removed in Next.js 16 — builds no longer run ESLint from next.config)`
 
@@ -104,7 +126,13 @@ export const GENERATED_APP_NULL_SAFETY_GUIDANCE = `Null safety (strictNullChecks
 - In animation loops (requestAnimationFrame), re-check \`ctx\` and \`canvasRef.current\` at the start of each frame callback
 - Self-check every Client component using canvas, refs, DOM APIs, or .getContext: every nullable value is narrowed with if (!x) return before use`
 
+export const GENERATED_APP_UPDATED_AT_NOTE = '**NOTE: dont remove updatedAt in any tables **'
+
+export const GENERATED_APP_UPDATED_AT_SCHEMA_COMMENT = `// ${GENERATED_APP_UPDATED_AT_NOTE}`
+
 export const GENERATED_APP_GENERATION_MANDATES = `NON-NEGOTIABLE — every generated app MUST satisfy these before you finish (structure validation + next build reject violations):
+
+${GENERATED_APP_UPDATED_AT_NOTE}
 
 1. app/not-found.tsx (REQUIRED file):
    - Always include app/not-found.tsx in files[] with the canonical plain-<main> template — NO imports, NO @/components, NO Navbar/Footer/AppShell
@@ -399,6 +427,7 @@ export const GENERATED_APP_NEON_DATABASE_GUIDANCE = `Neon Postgres + Prisma (YOU
 - On edit: ALWAYS return prisma/schema.prisma (echo or additive update); never edit/retype existing columns — ADD new columns only; return lib/actions.ts + lib/types.ts together when you add models/fields`
 
 export const GENERATED_APP_DATABASE_GUIDANCE = `Database (always required for Development block apps):
+- ${GENERATED_APP_UPDATED_AT_NOTE}
 - ALWAYS set requiresDatabase to true — every generated app uses Neon Postgres + Prisma, even for marketing or portfolio sites
 - NEVER use localStorage.setItem, sessionStorage.setItem, or browser storage to persist app data, users, sessions, or tokens — use Prisma server actions or app/api routes
 - Auth and session state MUST use server-side storage (database + httpOnly cookies) and client fetch (e.g. fetch('/api/auth/me')) — NEVER localStorage.setItem('user', ...) or sessionStorage for login state
@@ -420,6 +449,7 @@ export const GENERATED_APP_DATABASE_GUIDANCE = `Database (always required for De
 - ${GENERATED_APP_PRISMA_ALIGNMENT_GUIDANCE}`
 
 export const GENERATED_APP_DATABASE_EDIT_GUIDANCE = `Database edits (existing Neon Postgres — ADD columns only; NEVER edit existing columns):
+- ${GENERATED_APP_UPDATED_AT_NOTE}
 - HARD RULE: NEVER drop, delete, omit, rename, retype, or otherwise EDIT ANY existing column or model. Existing field lines must stay byte-for-byte identical (same name, same type, same attributes).
 - HARD RULE: NEVER change an existing column's data type (String↔Int, DateTime↔String, enum renames, adding/removing ?, @default, @unique, @id, @updatedAt, @relation args, etc. on an existing field).
 - HARD RULE: NEVER "clean up", "simplify", "refactor", or "normalize" prisma/schema.prisma by changing or removing fields — unused columns stay forever; dropped/altered columns break Vercel deploy.
@@ -462,6 +492,8 @@ export interface NormalizeGeneratedAppFilesOptions {
   latestUserRequest?: string
   /** Neon project id — recorded in REPO_SUMMARY.md for edit-time connection reuse. */
   neonProjectId?: string
+  /** When true, inject Arena iframe emailId scaffold into the generated app. */
+  arenaMode?: boolean
 }
 
 export const GENERATED_APP_REPO_SUMMARY_GUIDANCE = `REPO_SUMMARY.md (required, auto-maintained):
@@ -570,6 +602,7 @@ export function patchPackageJsonContent(
     const pkg = JSON.parse(content) as {
       dependencies?: Record<string, string>
       devDependencies?: Record<string, string>
+      overrides?: Record<string, unknown>
       scripts?: Record<string, string>
     }
 
@@ -581,6 +614,8 @@ export function patchPackageJsonContent(
         pkg.dependencies[dep] = version
       }
     }
+
+    stripDirectToolingDependencies(pkg)
 
     if (options.usedPackages) {
       for (const usedPackage of options.usedPackages) {
@@ -622,6 +657,31 @@ export function patchPackageJsonContent(
     return `${JSON.stringify(pkg, null, 2)}\n`
   } catch {
     return content
+  }
+}
+
+function stripDirectToolingDependencies(pkg: {
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+  overrides?: Record<string, unknown>
+}): void {
+  if (pkg.dependencies) {
+    for (const name of STRIP_DIRECT_TOOLING_DEPENDENCIES) {
+      delete pkg.dependencies[name]
+    }
+  }
+  if (pkg.devDependencies) {
+    for (const name of STRIP_DIRECT_TOOLING_DEPENDENCIES) {
+      delete pkg.devDependencies[name]
+    }
+  }
+  if (pkg.overrides) {
+    for (const name of STRIP_DIRECT_TOOLING_DEPENDENCIES) {
+      delete pkg.overrides[name]
+    }
+    if (Object.keys(pkg.overrides).length === 0) {
+      pkg.overrides = undefined
+    }
   }
 }
 
@@ -1585,7 +1645,8 @@ if (process.env.NODE_ENV !== 'production') {
 }
 `
 
-const DEFAULT_PRISMA_SCHEMA = `datasource db {
+const DEFAULT_PRISMA_SCHEMA = `${GENERATED_APP_UPDATED_AT_SCHEMA_COMMENT}
+datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
@@ -1599,8 +1660,30 @@ model AppSetting {
   key       String   @unique
   value     String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 `
+
+/**
+ * Ensures prisma/schema.prisma carries the updatedAt preservation note after
+ * generate/edit. Idempotent — skips when the note is already present.
+ */
+export function ensurePrismaUpdatedAtNote(files: GeneratedAppFile[]): GeneratedAppFile[] {
+  return files.map((file) => {
+    const path = normalizePath(file.path)
+    if (path !== 'prisma/schema.prisma' && !path.endsWith('/prisma/schema.prisma')) {
+      return file
+    }
+    if (file.content.includes(GENERATED_APP_UPDATED_AT_NOTE)) {
+      return file
+    }
+    const content = file.content.trimStart()
+    return {
+      ...file,
+      content: `${GENERATED_APP_UPDATED_AT_SCHEMA_COMMENT}\n${content}`,
+    }
+  })
+}
 
 const DEFAULT_ENV_EXAMPLE = 'DATABASE_URL=\n'
 
@@ -1662,7 +1745,16 @@ export function normalizeGeneratedAppFiles(
 ): GeneratedAppFile[] {
   const useSrcDir = projectUsesSrcAppDir(files)
 
-  const patched = files.map((file) => {
+  const withoutLockfiles = files.filter((file) => {
+    const path = normalizePath(file.path)
+    if (!GENERATED_APP_LOCKFILE_PATHS.has(path)) {
+      return true
+    }
+    logger.warn('Removed generated lockfile (npm must resolve transitive deps fresh)', { path })
+    return false
+  })
+
+  const patched = withoutLockfiles.map((file) => {
     const path = normalizePath(file.path)
 
     if (path === 'package.json' || path.endsWith('/package.json')) {
@@ -1685,12 +1777,14 @@ export function normalizeGeneratedAppFiles(
   })
 
   const withDatabase = ensureDatabaseScaffoldingFiles(patched, options)
-  const withNextEnv = ensureNextEnvFile(withDatabase)
+  const withUpdatedAtNote = ensurePrismaUpdatedAtNote(withDatabase)
+  const withNextEnv = ensureNextEnvFile(withUpdatedAtNote)
   const withReadme = ensureReadmeFile(withNextEnv, options)
   const withRepoSummary = ensureRepoSummaryFile(withReadme, options)
-  const usedPackages = collectUsedNpmPackageNames(withRepoSummary)
+  const withArena = options.arenaMode ? ensureArenaScaffoldFiles(withRepoSummary) : withRepoSummary
+  const usedPackages = collectUsedNpmPackageNames(withArena)
 
-  return withRepoSummary.map((file) => {
+  return withArena.map((file) => {
     if (normalizePath(file.path) !== 'package.json') {
       return file
     }

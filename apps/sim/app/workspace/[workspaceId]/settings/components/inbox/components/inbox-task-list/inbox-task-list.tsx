@@ -2,18 +2,21 @@
 
 import { useCallback, useMemo } from 'react'
 import { Badge, ChipInput, ChipSelect, Search } from '@sim/emcn'
+import { ArrowRight } from '@sim/emcn/icons'
 import { formatRelativeTime } from '@sim/utils/formatting'
-import { ArrowRight, Paperclip } from 'lucide-react'
+import { Paperclip } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
-import { debounce, useQueryStates } from 'nuqs'
+import { useQueryStates } from 'nuqs'
 import {
   type InboxStatusFilter,
   inboxTaskParsers,
   inboxTaskUrlKeys,
 } from '@/app/workspace/[workspaceId]/settings/components/inbox/search-params'
 import { SettingsEmptyState } from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
+import { RESOURCE_ROW_ARROW_CLASSES } from '@/app/workspace/[workspaceId]/settings/components/settings-resource-row'
 import type { InboxTaskItem } from '@/hooks/queries/inbox'
 import { useInboxConfig, useInboxTasks } from '@/hooks/queries/inbox'
+import { useDebouncedSearchSetter } from '@/hooks/use-debounced-search-setter'
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All statuses' },
@@ -25,9 +28,6 @@ const STATUS_OPTIONS = [
 ] as const
 
 type StatusFilter = InboxStatusFilter
-
-/** Debounce window for `search` URL writes; the input itself stays instant. */
-const SEARCH_DEBOUNCE_MS = 300 as const
 
 const STATUS_BADGES: Record<
   string,
@@ -55,15 +55,8 @@ export function InboxTaskList() {
    * write is debounced. Filtering below is cheap in-memory over the loaded
    * tasks, so it reads the instant value too.
    */
-  const setSearchTerm = useCallback(
-    (value: string) => {
-      const next = value.length > 0 ? value : null
-      setInboxFilters(
-        { search: next },
-        next === null ? undefined : { limitUrlUpdates: debounce(SEARCH_DEBOUNCE_MS) }
-      )
-    },
-    [setInboxFilters]
+  const setSearchTerm = useDebouncedSearchSetter((value, options) =>
+    setInboxFilters({ search: value }, options)
   )
 
   const { data: config } = useInboxConfig(workspaceId)
@@ -74,7 +67,7 @@ export function InboxTaskList() {
   const filteredTasks = useMemo(() => {
     if (!tasksData?.tasks) return []
     if (!searchTerm.trim()) return tasksData.tasks
-    const term = searchTerm.toLowerCase()
+    const term = searchTerm.trim().toLowerCase()
     return tasksData.tasks.filter(
       (t) =>
         t.subject?.toLowerCase().includes(term) ||
@@ -128,7 +121,7 @@ export function InboxTaskList() {
             </SettingsEmptyState>
           )
         ) : (
-          <div className='flex flex-col gap-0.5'>
+          <div className='-mx-2 flex flex-col gap-y-0.5'>
             {filteredTasks.map((task) => {
               const statusBadge = STATUS_BADGES[task.status] || STATUS_BADGES.received
               const isClickable =
@@ -180,15 +173,13 @@ export function InboxTaskList() {
                     <span className='whitespace-nowrap text-[var(--text-muted)] text-caption'>
                       {formatRelativeTime(task.createdAt)}
                     </span>
-                    <Badge variant={statusBadge.variant} className='text-xs'>
+                    <Badge variant={statusBadge.variant} size='sm'>
                       {task.status === 'processing' && (
                         <span className='mr-1 inline-block size-[6px] animate-pulse rounded-full bg-[var(--badge-amber-text)]' />
                       )}
                       {statusBadge.label}
                     </Badge>
-                    {isClickable && (
-                      <ArrowRight className='size-4 flex-shrink-0 text-[var(--text-icon)]' />
-                    )}
+                    {isClickable && <ArrowRight className={RESOURCE_ROW_ARROW_CLASSES} />}
                   </div>
                 </>
               )

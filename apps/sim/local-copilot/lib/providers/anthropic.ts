@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { getAnthropicAutomaticCacheControl } from '@/lib/anthropic/prompt-cache'
 import { convertMessagesToAnthropic } from '@/local-copilot/lib/providers/anthropic-messages'
+import { fetchProviderWithRetry } from '@/local-copilot/lib/providers/provider-fetch'
 import type {
   ChatCompletionRequest,
   LocalCopilotProvider,
@@ -65,16 +66,20 @@ export function createAnthropicProvider(config: LocalCopilotConfig): LocalCopilo
         }),
       }
 
-      const response = await fetch(`${baseUrl}/v1/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': config.apiKey ?? '',
-          'anthropic-version': ANTHROPIC_API_VERSION,
+      const response = await fetchProviderWithRetry(
+        `${baseUrl}/v1/messages`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': config.apiKey ?? '',
+            'anthropic-version': ANTHROPIC_API_VERSION,
+          },
+          body: JSON.stringify(body),
+          signal: request.signal,
         },
-        body: JSON.stringify(body),
-        signal: request.signal,
-      })
+        'Anthropic request failed'
+      )
 
       if (!response.ok) {
         const errorText = await response.text()

@@ -1,9 +1,8 @@
+import { firecrawlHosting } from '@/tools/firecrawl/hosting'
 import type { ScrapeParams, ScrapeResponse } from '@/tools/firecrawl/types'
 import { PAGE_METADATA_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import { safeAssign } from '@/tools/safe-assign'
 import type { ToolConfig } from '@/tools/types'
-
-const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY
 
 export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
   id: 'firecrawl_scrape',
@@ -33,14 +32,20 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
     },
   },
 
+  hosting: firecrawlHosting(),
+
   request: {
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/scrape',
-    headers: () => ({
+    headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${firecrawlApiKey}`,
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
+      if (!params.apiKey || typeof params.apiKey !== 'string' || params.apiKey.trim() === '') {
+        throw new Error('Missing or invalid API key: A valid Firecrawl API key is required')
+      }
+
       const body: Record<string, any> = {
         url: params.url,
         formats: params.formats || params.scrapeOptions?.formats || ['markdown'],
@@ -77,13 +82,17 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
 
   transformResponse: async (response: Response) => {
     const data = await response.json()
+    const creditsUsed = data.creditsUsed ?? data.data?.metadata?.creditsUsed
 
     return {
       success: true,
       output: {
         markdown: data.data.markdown,
         html: data.data.html,
-        metadata: data.data.metadata,
+        metadata: {
+          ...data.data.metadata,
+          ...(creditsUsed != null ? { creditsUsed } : {}),
+        },
       },
     }
   },

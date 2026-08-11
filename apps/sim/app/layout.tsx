@@ -7,7 +7,14 @@ import { BrandedLayout } from '@/components/branded-layout'
 import { PostHogProvider } from '@/app/_shell/providers/posthog-provider'
 import { generateBrandedMetadata, generateThemeCSS } from '@/ee/whitelabeling'
 import '@/app/_styles/globals.css'
-import { isHosted, isReactGrabEnabled, isReactScanEnabled } from '@/lib/core/config/env-flags'
+import { getEnv } from '@/lib/core/config/env'
+import {
+  isChatEnabled,
+  isHosted,
+  isReactGrabEnabled,
+  isReactScanEnabled,
+} from '@/lib/core/config/env-flags'
+import { DesktopUpdateGate } from '@/app/_shell/desktop-update-gate'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
 import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
 import { AutoLoginSessionMigrationProvider } from '@/app/_shell/providers/auto-login-session-migration-provider'
@@ -32,6 +39,16 @@ export const metadata: Metadata = generateBrandedMetadata()
 
 const GTM_ID = 'GTM-T7PHSRX5' as const
 const GA_ID = 'G-DR7YBE70VS' as const
+
+/**
+ * Static PublicEnvScript is only safe when public env is fixed per image build
+ * (sim.ai hosted). Arena agent hosts share one GHCR image across envs and must
+ * inject `NEXT_PUBLIC_*` at request time via next-runtime-env.
+ */
+function useRuntimePublicEnvScript(): boolean {
+  const appUrl = getEnv('NEXT_PUBLIC_APP_URL')
+  return appUrl !== 'https://www.sim.ai' && appUrl !== 'https://www.staging.sim.ai'
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const themeCSS = generateThemeCSS()
@@ -101,6 +118,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{
             __html: `
               (function () {
+                // The macOS desktop shell overlays native traffic lights on the
+                // workspace. Mark it before first paint so the sidebar reserves
+                // its inset title-bar lane without a post-hydration layout shift.
+                var collapsedSidebarWidth = 51;
+                try {
+                  if (window.simDesktop && /Mac/i.test(navigator.userAgent)) {
+                    document.documentElement.setAttribute('data-sim-desktop-title-bar', 'inset');
+                    collapsedSidebarWidth = 0;
+                  }
+                } catch (e) {}
+
                 try {
                   var path = window.location.pathname;
                   if (path.indexOf('/workspace/') === -1) {
@@ -135,19 +163,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     document.cookie = 'sidebar_collapsed=' + (collapsed ? '1' : '0') + '; path=/; max-age=31536000; samesite=lax';
                   }
 
-                  if (collapsed) {
-                    document.documentElement.style.setProperty('--sidebar-width', '51px');
-                  } else {
-                    var width = state && state.sidebarWidth;
-                    var maxSidebarWidth = Math.max(248, window.innerWidth * 0.3);
-                    var finalWidth =
-                      typeof width === 'number' && isFinite(width)
-                        ? Math.min(Math.max(width, 248), maxSidebarWidth)
-                        : defaultSidebarWidth;
-                    document.documentElement.style.setProperty('--sidebar-width', finalWidth + 'px');
-                  }
+                  // The expanded width is published unconditionally, even while
+                  // collapsed, because the desktop hover-peek renders the sidebar at
+                  // its restore width while --sidebar-width still reads collapsed.
+                  var width = state && state.sidebarWidth;
+                  var maxSidebarWidth = Math.max(248, window.innerWidth * 0.3);
+                  var expandedWidth =
+                    typeof width === 'number' && isFinite(width)
+                      ? Math.min(Math.max(width, 248), maxSidebarWidth)
+                      : defaultSidebarWidth;
+                  document.documentElement.style.setProperty(
+                    '--sidebar-expanded-width',
+                    expandedWidth + 'px'
+                  );
+                  document.documentElement.style.setProperty(
+                    '--sidebar-width',
+                    (collapsed ? collapsedSidebarWidth : expandedWidth) + 'px'
+                  );
                 } catch (e) {
                   document.documentElement.style.setProperty('--sidebar-width', defaultSidebarWidth + 'px');
+                  document.documentElement.style.setProperty('--sidebar-expanded-width', defaultSidebarWidth + 'px');
                 }
 
                 // Panel width and active tab
@@ -166,6 +201,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     }
 
                     var activeTab = panelState && panelState.activeTab;
+                    // A session that used the Chat tab before it was turned off still
+                    // has 'copilot' persisted; without this the CSS hides every tab
+                    // body and the panel paints empty.
+                    if (activeTab === 'copilot' && !${isChatEnabled}) {
+                      activeTab = 'toolbar';
+                    }
                     if (activeTab) {
                       document.documentElement.setAttribute('data-panel-active-tab', activeTab);
                     }
@@ -263,7 +304,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
           </>
         )}
 
-        {isHosted ? <PublicEnvScript /> : <RuntimePublicEnvScript />}
+        {useRuntimePublicEnvScript() ? <RuntimePublicEnvScript /> : <PublicEnvScript />}
       </head>
       <body className={`${season.variable} font-season`} suppressHydrationWarning>
         {/* Google Tag Manager (noscript) — hosted only */}
@@ -282,6 +323,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         <Suspense fallback={null}>
           <ResumePathSync />
         </Suspense>
+        <DesktopUpdateGate />
         <NuqsAdapter>
           <PostHogProvider>
             <ThemeProvider>

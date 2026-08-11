@@ -14,6 +14,20 @@ const ALLOWED_LOCAL_HOSTS = new Set([
   'host.docker.internal',
 ])
 
+/** Path prefixes skipped when `SECRETS_SCAN_EXCLUDE_PREFIXES` is set (comma/newline separated). */
+function getExcludedPathPrefixes(): string[] {
+  const raw = process.env.SECRETS_SCAN_EXCLUDE_PREFIXES
+  if (!raw) return []
+  return raw
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+}
+
+function isExcludedPath(file: string, prefixes: string[]): boolean {
+  return prefixes.some((prefix) => file === prefix || file.startsWith(prefix))
+}
+
 interface Finding {
   file: string
   line: number
@@ -35,9 +49,9 @@ function isAllowedLocalDatabaseUrl(url: URL): boolean {
 }
 
 function isPlaceholderDatabaseUrl(url: URL): boolean {
-  const placeholderUsernames = new Set(['user', 'username'])
-  const placeholderPasswords = new Set(['pass', 'password', 'your_password'])
-  const placeholderHosts = new Set(['host', 'hostname'])
+  const placeholderUsernames = new Set(['user', 'username', 'x'])
+  const placeholderPasswords = new Set(['pass', 'password', 'your_password', 'x'])
+  const placeholderHosts = new Set(['host', 'hostname', 'x'])
 
   return (
     placeholderUsernames.has(url.username) &&
@@ -97,9 +111,12 @@ function findForbiddenDatabaseUrls(file: string, content: string): Finding[] {
 
 async function main() {
   const files = await listTrackedFiles()
+  const excludedPrefixes = getExcludedPathPrefixes()
   const findings: Finding[] = []
 
   for (const file of files) {
+    if (isExcludedPath(file, excludedPrefixes)) continue
+
     const absolutePath = path.join(ROOT, file)
 
     let content: string

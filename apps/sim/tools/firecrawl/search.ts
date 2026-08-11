@@ -1,3 +1,4 @@
+import { firecrawlHosting } from '@/tools/firecrawl/hosting'
 import type { SearchParams, SearchResponse } from '@/tools/firecrawl/types'
 import { SEARCH_RESULT_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
@@ -24,6 +25,8 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
       description: 'Firecrawl API key',
     },
   },
+
+  hosting: firecrawlHosting(),
 
   request: {
     method: 'POST',
