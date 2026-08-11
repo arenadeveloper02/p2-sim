@@ -6,7 +6,10 @@ import type { NextRequest } from 'next/server'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/core/config/env', () =>
-  createEnvMock({ NEXT_PUBLIC_APP_URL: 'https://app.sim.test' })
+  createEnvMock({
+    NEXT_PUBLIC_APP_URL: 'https://app.sim.test',
+    NEXT_PUBLIC_ARENA_FRONTEND_APP_URL: 'https://test.thearena.ai',
+  })
 )
 
 import { resolveApiCorsPolicy } from '@/proxy'
@@ -105,6 +108,17 @@ describe('resolveApiCorsPolicy', () => {
       methods: 'GET,POST,OPTIONS,PUT,DELETE',
       headers: expect.stringContaining('Authorization'),
     })
+    expect(policy.headers).toContain('Authorisation')
+  })
+
+  it('allows Arena hub origin with credentials for arena session handoff (no cookies yet)', () => {
+    const policy = resolveApiCorsPolicy(
+      makeRequest('/api/auth/arena/session', 'https://test.thearena.ai')
+    )
+    expect(policy.origin).toBe('https://test.thearena.ai')
+    expect(policy.credentials).toBe(true)
+    expect(policy.headers).toContain('Authorization')
+    expect(policy.headers).toContain('Authorisation')
   })
 
   it('never pairs wildcard origin with credentials (CORS spec invariant)', () => {
