@@ -1,5 +1,6 @@
 export * from './admin'
 export * from './api-keys'
+export * from './arena-auth'
 export * from './audit-logs'
 export * from './byok-keys'
 export * from './chats'
