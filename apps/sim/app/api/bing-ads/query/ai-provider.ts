@@ -5,11 +5,14 @@
 import type { AIProviderConfig } from './types'
 
 /**
- * Resolves AI provider with Claude Opus 5 (high effort) first, then GPT-5.6 Terra
+ * Resolves AI provider with Claude Sonnet 5 first, then GPT-5.6 Luna
  *
  * Priority order:
- * 1. Claude Opus 5 High (Anthropic) - claude-opus-5
- * 2. GPT-5.6 Terra (OpenAI) - gpt-5.6-terra
+ * 1. Claude Sonnet 5 (Anthropic) - claude-sonnet-5, effort medium
+ * 2. GPT-5.6 Luna (OpenAI) - gpt-5.6-luna
+ *
+ * Sized for Bing JSON query generation (report type / columns / dates),
+ * not flagship Opus / Terra models.
  *
  * @returns Provider configuration
  * @throws Error if no provider is available
@@ -18,16 +21,16 @@ export function resolveAIProvider(): AIProviderConfig {
   if (process.env.ANTHROPIC_API_KEY) {
     return {
       provider: 'anthropic',
-      model: 'claude-opus-5',
+      model: 'claude-sonnet-5',
       apiKey: process.env.ANTHROPIC_API_KEY,
-      thinkingLevel: 'high',
+      thinkingLevel: 'medium',
     }
   }
 
   if (process.env.OPENAI_API_KEY) {
     return {
       provider: 'openai',
-      model: 'gpt-5.6-terra',
+      model: 'gpt-5.6-luna',
       apiKey: process.env.OPENAI_API_KEY,
     }
   }
