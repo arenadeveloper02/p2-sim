@@ -74,10 +74,6 @@ export default function WorkspacePage() {
     error: workspacesError,
   } = useWorkspacesWithMetadata(isAuthenticated)
 
-  // Do not auto sign-out on stale/401 session here — that races AutoLoginProvider
-  // when profile/session briefly fails. Auto-login already recovers via the email cookie.
-  // Previously: recoverFromStaleSession() on authenticated+401 workspaces errors.
-
   useEffect(() => {
     fetchUserProfileSetPeopleMP()
   }, [])
@@ -86,8 +82,6 @@ export default function WorkspacePage() {
     if (isSessionPending || hasRedirectedRef.current) return
 
     if (!session?.user) {
-      // Match prior working behavior: soft-redirect to login and let AutoLoginProvider
-      // recover. Do not sign out — that clears cookies and races auto-login.
       logger.info('User not authenticated, redirecting to login')
       router.replace('/login')
       return

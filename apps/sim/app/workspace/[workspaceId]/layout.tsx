@@ -73,30 +73,7 @@ async function WorkspaceLayoutInner({
 }) {
   const session = await getSession()
   if (!session?.user) {
-    // Allow render when an email cookie is present so AutoLoginProvider can establish a session
-    // (Arena iframe embeds rely on the shared `email` cookie across *.thearena.ai).
-    const cookieStore = await cookies()
-    const hasEmailCookie = !!cookieStore.get('email')?.value
-    if (!hasEmailCookie) {
-      redirect('/login')
-    }
-
-    // Host context / sidebar prefetch need a user id. Show the route loader until
-    // AutoLoginProvider finishes signing in and the layout re-renders with a session.
-    return (
-      <BrandingProvider
-        hostOrganizationId={null}
-        viewerIsHostOrganizationMember={false}
-        initialOrgSettings={null}
-      >
-        <ToastProvider>
-          <div className='flex h-screen w-full flex-col overflow-hidden bg-[var(--surface-1)]'>
-            <AppBanner />
-            <WorkspaceRouteLoading />
-          </div>
-        </ToastProvider>
-      </BrandingProvider>
-    )
+    redirect('/login')
   }
 
   const { workspaceId } = await params

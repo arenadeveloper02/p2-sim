@@ -11,13 +11,6 @@ import { getLoginRedirectUrl, isNonCanonicalSimHost } from './lib/core/utils/url
 
 const logger = createLogger('Proxy')
 
-/**
- * Helper function to check if email cookie exists
- */
-function hasEmailCookie(request: NextRequest): boolean {
-  const emailCookie = request.cookies.get('email')
-  return !!emailCookie?.value
-}
 export interface CorsPolicy {
   origin: string
   credentials: boolean
@@ -193,16 +186,6 @@ function handleRootPathRedirects(
     return null
   }
 
-  // Always redirect root path to workspace
-  // Auto-login will handle authentication if email cookie exists
-  // if (!isHosted && !isDev) {
-  //   // Self-hosted production: Always redirect based on session.
-  //   if (hasActiveSession) {
-  //     return NextResponse.redirect(new URL('/workspace', request.url))
-  //   }
-  //   return NextResponse.redirect(new URL('/login', request.url))
-  // }
-
   // For root path, redirect authenticated users to workspace
   // Unless they have a 'home' query parameter (e.g., ?home)
   // This allows intentional navigation to the homepage from anywhere in the app
@@ -214,18 +197,16 @@ function handleRootPathRedirects(
     return null
   }
 
-  // No session - check for email cookie in local dev
   if (isDev) {
-    if (hasEmailCookie(request)) {
-      // Email cookie exists - redirect to workspace (auto-login will handle it)
-      return NextResponse.redirect(new URL('/workspace', request.url))
-    }
-    // No email cookie in dev - redirect to login page
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // Non-local environment - always redirect to workspace (auto-login will handle it)
-  return NextResponse.redirect(new URL('/workspace', request.url))
+  const arenaHub = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')?.trim()
+  if (arenaHub) {
+    return NextResponse.redirect(new URL('/session-required', request.url))
+  }
+
+  return NextResponse.redirect(new URL('/login', request.url))
 }
 
 /**
@@ -334,10 +315,14 @@ export async function proxy(request: NextRequest) {
   if (redirect) return track(request, redirect)
 
   if (url.pathname === '/login' || url.pathname === '/signup') {
-    // Block login/signup pages in non-local environments
     if (!isDev) {
-      // In non-local environments, redirect to workspace (auto-login will handle authentication)
-      return track(request, NextResponse.redirect(new URL('/workspace', request.url)))
+      const arenaHub = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')?.trim()
+      if (arenaHub) {
+        return track(request, NextResponse.redirect(new URL('/session-required', request.url)))
+      }
+      if (hasActiveSession) {
+        return track(request, NextResponse.redirect(new URL('/workspace', request.url)))
+      }
     }
     if (hasActiveSession) {
       return track(request, NextResponse.redirect(new URL('/workspace', request.url)))
@@ -357,21 +342,13 @@ export async function proxy(request: NextRequest) {
   if (url.pathname.startsWith('/workspace')) {
     if (!hasActiveSession) {
       if (isDev) {
-        if (hasEmailCookie(request)) {
-          return track(request, NextResponse.next())
-        }
         return track(request, NextResponse.redirect(new URL('/login', request.url)))
       }
       const arenaHub = getEnv('NEXT_PUBLIC_ARENA_FRONTEND_APP_URL')?.trim()
       if (arenaHub) {
-        // Same as dev: allow workspace to load so AutoLoginProvider can run sign-in
-        // when the email cookie is present (avoids flashing session-required first).
-        if (hasEmailCookie(request)) {
-          return track(request, NextResponse.next())
-        }
         return track(request, NextResponse.redirect(new URL('/session-required', request.url)))
       }
-      return track(request, NextResponse.next())
+      return track(request, NextResponse.redirect(new URL('/login', request.url)))
     }
     const response = NextResponse.next()
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())

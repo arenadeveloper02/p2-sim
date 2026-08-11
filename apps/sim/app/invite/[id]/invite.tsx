@@ -1,12 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/workspace'
 import { getErrorMessage } from '@sim/utils/errors'
 import { formatQuotedNameList } from '@sim/utils/string'
 import { useQueryClient } from '@tanstack/react-query'
-import Cookies from 'js-cookie'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
@@ -210,11 +209,6 @@ export default function Invite() {
   const [accepted, setAccepted] = useState(false)
   const [isNewUser, setIsNewUser] = useState(false)
   const [token, setToken] = useState<string | null>(null)
-  const userEmail = Cookies.get('email')
-  const [autoLoginAttempted, setAutoLoginAttempted] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
-    return window.sessionStorage.getItem('inviteAutoLoginAttempted') === 'true'
-  })
 
   useEffect(() => {
     const errorReason = searchParams.get('error')
@@ -236,31 +230,6 @@ export default function Invite() {
       setUrlError(getInviteError(errorReason))
     }
   }, [searchParams, inviteId, inviteTokenStorageKey])
-
-  const handleAutoLogin = useCallback(async () => {
-    try {
-      await client.signIn.email(
-        {
-          email: userEmail || '',
-          password: 'Position2!',
-          callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
-        },
-        {}
-      )
-    } catch (error) {
-      logger.error('Error auto-logging in for invite flow', { error })
-    }
-  }, [userEmail])
-
-  useEffect(() => {
-    if (!session?.user && userEmail && !autoLoginAttempted) {
-      setAutoLoginAttempted(true)
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.setItem('inviteAutoLoginAttempted', 'true')
-      }
-      void handleAutoLogin()
-    }
-  }, [session?.user, userEmail, autoLoginAttempted, handleAutoLogin])
 
   const invitationQuery = useInvitationDetails(inviteId, token, session?.user?.id ?? null, {
     enabled: Boolean(session?.user),

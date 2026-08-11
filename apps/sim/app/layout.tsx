@@ -16,8 +16,6 @@ import {
 } from '@/lib/core/config/env-flags'
 import { DesktopUpdateGate } from '@/app/_shell/desktop-update-gate'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
-import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
-import { AutoLoginSessionMigrationProvider } from '@/app/_shell/providers/auto-login-session-migration-provider'
 import { QueryProvider } from '@/app/_shell/providers/query-provider'
 import { SessionProvider } from '@/app/_shell/providers/session-provider'
 import { ThemeProvider } from '@/app/_shell/providers/theme-provider'
@@ -329,12 +327,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             <ThemeProvider>
               <QueryProvider>
                 <SessionProvider>
-                  <AutoLoginProvider>
-                    <AutoLoginSessionMigrationProvider />
-                    <TooltipProvider>
-                      <BrandedLayout>{children}</BrandedLayout>
-                    </TooltipProvider>
-                  </AutoLoginProvider>
+                  <TooltipProvider>
+                    <BrandedLayout>{children}</BrandedLayout>
+                  </TooltipProvider>
                 </SessionProvider>
               </QueryProvider>
             </ThemeProvider>

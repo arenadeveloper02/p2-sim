@@ -4,10 +4,7 @@ import { env } from '@/lib/core/config/env'
 
 const logger = createLogger('ArenaSession')
 
-/**
- * Shared password used by Arena hub → agent auto-login (same value as the
- * client AutoLoginProvider / deployed-chat flows).
- */
+/** Shared password used by Arena hub → agent session handoff. */
 export const ARENA_SHARED_SIGN_IN_PASSWORD = 'Position2!'
 
 interface ArenaAuthUserResponse {

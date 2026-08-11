@@ -3,10 +3,8 @@
 import { type RefObject, useCallback, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { LoadingAgentP2 } from '@/components/ui/loading-agent-arena'
-import { client } from '@/lib/auth/auth-client'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
 import {
   AGENT_STREAM_PROTOCOL_HEADER,
@@ -106,8 +104,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   /** ChatGPT-style: follow new tokens only while the viewport is near the bottom. */
   const stickToBottomRef = useRef(true)
   const ignoreScrollRef = useRef(false)
-
-  const [isAutoLoginInProgress, setIsAutoLoginInProgress] = useState<boolean>(false)
 
   // Start Block input modal state
   const [isInputModalOpen, setIsInputModalOpen] = useState(false)
@@ -307,7 +303,7 @@ export default function ChatClient({ identifier }: { identifier: string }) {
 
   const fetchChatConfig = async () => {
     try {
-      // boundary-raw-fetch: reads the 401 error body (`auth_required_email`) to drive the Arena auto-login retry, which requestJson's thrown error does not expose
+      // boundary-raw-fetch: reads the 401 error body to distinguish unauthorized email vs other auth failures, which requestJson's thrown error does not expose
       const response = await fetch(`/api/chat/${identifier}`, {
         credentials: 'same-origin',
         headers: {
@@ -319,39 +315,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         // Check if auth is required or unauthorized
         if (response.status === 401 || response.status === 403) {
           const errorData = await response.json()
-
-          // Attempt a safe, one-time auto-login for email-gated chats when an email cookie exists
-          if (errorData.error === 'auth_required_email') {
-            try {
-              const autoLoginKey = `chat:autoLoginTried:${identifier}:${
-                new URLSearchParams(window.location.search).get('chatId') || 'nochat'
-              }`
-              const alreadyTried =
-                typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
-              const cookieEmail = Cookies.get('email')
-
-              // Only attempt if we have an email cookie, have not tried already, and there is no active session
-              if (cookieEmail && !alreadyTried) {
-                const sessionRes = await client.getSession()
-                const hasSession = !!sessionRes?.data?.user?.id
-                if (!hasSession) {
-                  setIsAutoLoginInProgress(true)
-                  localStorage.setItem(autoLoginKey, '1')
-                  await client.signIn.email(
-                    {
-                      email: cookieEmail,
-                      password: 'Position2!',
-                      callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
-                    },
-                    {}
-                  )
-                  return
-                }
-              }
-            } catch (_e) {
-              // Swallow and proceed to existing auth UI
-            }
-          }
 
           // If user email is not authorized, show error and redirect
           if (
@@ -849,14 +812,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const handleViewGoldenQueries = useCallback(() => {
     setIsGoldenQueriesOpen(true)
   }, [])
-
-  if (isAutoLoginInProgress) {
-    return (
-      <div className='fixed inset-0 z-[110] flex items-center justify-center bg-background'>
-        <LoadingAgentP2 size='lg' />
-      </div>
-    )
-  }
 
   // If error, show error message using the extracted component
   if (chatConfigError) {

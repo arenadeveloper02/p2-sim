@@ -5,7 +5,6 @@ import { ToastProvider, toast } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import Cookies from 'js-cookie'
 import { useRouter } from 'next/navigation'
 import { client } from '@/lib/auth/auth-client'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
@@ -187,8 +186,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
   const isUserScrollingRef = useRef(false)
 
   const [authRequired, setAuthRequired] = useState<'password' | 'email' | 'sso' | null>(null)
-  const [isAutoLoginInProgress, setIsAutoLoginInProgress] = useState<boolean>(false)
-
   const threadsQuery = useDeployedChatThreads(identifier, Boolean(chatConfig) && !authRequired)
   const threads = threadsQuery.data ?? []
   const isThreadsLoading = threadsQuery.isLoading
@@ -514,39 +511,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         // Check if auth is required or unauthorized
         if (response.status === 401 || response.status === 403) {
           const errorData = await response.json()
-
-          // Attempt a safe, one-time auto-login for email-gated chats when an email cookie exists
-          if (errorData.error === 'auth_required_email') {
-            try {
-              const autoLoginKey = `chat:autoLoginTried:${identifier}:${
-                new URLSearchParams(window.location.search).get('chatId') || 'nochat'
-              }`
-              const alreadyTried =
-                typeof window !== 'undefined' && localStorage.getItem(autoLoginKey)
-              const cookieEmail = Cookies.get('email')
-
-              // Only attempt if we have an email cookie, have not tried already, and there is no active session
-              if (cookieEmail && !alreadyTried) {
-                const sessionRes = await client.getSession()
-                const hasSession = !!sessionRes?.data?.user?.id
-                if (!hasSession) {
-                  setIsAutoLoginInProgress(true)
-                  localStorage.setItem(autoLoginKey, '1')
-                  await client.signIn.email(
-                    {
-                      email: cookieEmail,
-                      password: 'Position2!',
-                      callbackURL: typeof window !== 'undefined' ? window.location.href : undefined,
-                    },
-                    {}
-                  )
-                  return
-                }
-              }
-            } catch (_e) {
-              // Swallow and proceed to existing auth UI
-            }
-          }
 
           if (errorData.error === 'auth_required_password') {
             setAuthRequired('password')
@@ -1451,17 +1415,6 @@ export default function ChatClient({ identifier }: { identifier: string }) {
     setShowFeedbackView(false)
     setFeedbackError(null)
   }, [])
-
-  if (isAutoLoginInProgress) {
-    return (
-      <div
-        className='fixed inset-0 z-[110] flex items-center justify-center'
-        style={{ backgroundColor: DEPLOYED_CHAT_CANVAS_BG }}
-      >
-        <DeployedResponseLoader size={160} className='py-0' />
-      </div>
-    )
-  }
 
   // If error, show error message using the extracted component
   if (error) {
