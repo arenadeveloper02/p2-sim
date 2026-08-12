@@ -42,9 +42,10 @@ export const storyboardRenderTool: ToolConfig<StoryboardRenderParams, Storyboard
   params: {
     conversationId: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-only',
-      description: 'Conversation whose latest storyboard should be rendered',
+      description:
+        'Conversation whose latest storyboard should be rendered. Optional — defaults to the most recent storyboard for this workflow.',
     },
     order: {
       type: 'string',

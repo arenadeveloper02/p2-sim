@@ -143,12 +143,12 @@ export async function runStoryboardGenerate(
     throw new Error('A video idea (topic) is required to build a storyboard')
   }
 
-  const conversationId = asString(params.conversationId)
-  if (!conversationId) {
-    throw new Error(
-      'conversationId is required so the storyboard can be recalled when the video is rendered. Wire it to <start.conversationId>.'
-    )
-  }
+  // Agent tool calls do not carry the chat's conversation id (it is not part of
+  // the tool _context), so fall back to a workflow-scoped key. The render step
+  // uses the same fallback chain to find this row again.
+  const conversationId =
+    asString(params.conversationId) ||
+    (context.workflowId ? `wf:${context.workflowId}` : `user:${context.userId ?? 'unknown'}`)
 
   const sceneCount = clampSceneCount(params.sceneCount)
   const stylePrompt = asString(params.stylePrompt)

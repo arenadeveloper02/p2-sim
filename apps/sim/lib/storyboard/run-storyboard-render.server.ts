@@ -114,26 +114,83 @@ async function fetchImageAsDataUri(imageUrl: string): Promise<string> {
   return `data:${mime};base64,${buffer.toString('base64')}`
 }
 
+type StoryboardQueryRow = { id: string; topic: string | null; scenes: unknown }
+
+/**
+ * Finds the storyboard to render.
+ *
+ * The chat's conversation id is not part of the tool `_context`, so when the
+ * Agent calls this tool the field is often empty. Rather than failing, fall
+ * back to the most recent storyboard for this workflow (and user), which is
+ * what the generate step keys on in the same situation.
+ */
 async function loadStoryboard(
   storyboardId: string,
-  conversationId: string
+  conversationId: string,
+  context: RunStoryboardRenderContext
 ): Promise<StoryboardRow> {
-  const rows = (await (storyboardId
-    ? db.execute(
+  const attempts: Array<() => Promise<unknown>> = []
+
+  if (storyboardId) {
+    attempts.push(() =>
+      db.execute(
         sql`SELECT id, topic, scenes FROM storyboards WHERE id = ${storyboardId}::uuid LIMIT 1`
       )
-    : db.execute(
+    )
+  }
+
+  if (conversationId) {
+    attempts.push(() =>
+      db.execute(
         sql`SELECT id, topic, scenes FROM storyboards
             WHERE conversation_id = ${conversationId}
             ORDER BY created_at DESC LIMIT 1`
-      ))) as unknown as Array<{ id: string; topic: string | null; scenes: unknown }>
+      )
+    )
+  }
 
-  const row = rows[0]
+  if (context.workflowId) {
+    const workflowKey = `wf:${context.workflowId}`
+    attempts.push(() =>
+      db.execute(
+        sql`SELECT id, topic, scenes FROM storyboards
+            WHERE conversation_id = ${workflowKey}
+            ORDER BY created_at DESC LIMIT 1`
+      )
+    )
+    attempts.push(() =>
+      db.execute(
+        sql`SELECT id, topic, scenes FROM storyboards
+            WHERE workflow_id = ${context.workflowId}
+            ORDER BY created_at DESC LIMIT 1`
+      )
+    )
+  }
+
+  if (context.userId) {
+    attempts.push(() =>
+      db.execute(
+        sql`SELECT id, topic, scenes FROM storyboards
+            WHERE user_id = ${context.userId}
+            ORDER BY created_at DESC LIMIT 1`
+      )
+    )
+  }
+
+  let row: StoryboardQueryRow | undefined
+  for (const attempt of attempts) {
+    const rows = (await attempt()) as unknown as StoryboardQueryRow[]
+    if (rows[0]) {
+      row = rows[0]
+      break
+    }
+  }
+
   if (!row) {
     throw new Error(
       storyboardId
         ? `No storyboard found with id ${storyboardId}`
-        : `No storyboard found for this conversation. Generate a storyboard first.`
+        : 'No storyboard found yet. Generate a storyboard before rendering the video.'
     )
   }
 
@@ -158,11 +215,6 @@ export async function runStoryboardRender(
 
   const conversationId = asString(params.conversationId)
   const storyboardId = asString(params.storyboardId)
-  if (!conversationId && !storyboardId) {
-    throw new Error(
-      'conversationId is required to find the saved storyboard. Wire it to <start.conversationId>.'
-    )
-  }
 
   const model = asString(params.videoModel) || DEFAULT_RENDER_MODEL
   if (!I2V_MODELS.has(model)) {
@@ -179,7 +231,7 @@ export async function runStoryboardRender(
   const resolution = asString(params.resolution) || '720p'
   const generateAudio = params.generateAudio === true || params.generateAudio === 'true'
 
-  const storyboard = await loadStoryboard(storyboardId, conversationId)
+  const storyboard = await loadStoryboard(storyboardId, conversationId, context)
   const order = parseSceneOrder(asString(params.order), storyboard.scenes.length)
   const orderedScenes = order.map((index) => storyboard.scenes[index - 1])
 

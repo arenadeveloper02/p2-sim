@@ -1662,8 +1662,8 @@ const STORYBOARD_MODE_SUBBLOCKS: SubBlockConfig[] = [
     condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
     value: () => '<start.conversationId>',
     placeholder: '<start.conversationId>',
-    description: 'Finds the storyboard saved for this chat. Leave as the default.',
-    required: true,
+    description:
+      'Finds the storyboard saved for this chat. Optional — falls back to the latest storyboard for this workflow.',
   },
   {
     id: 'sceneOrder',
