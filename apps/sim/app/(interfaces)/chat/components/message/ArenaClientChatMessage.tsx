@@ -44,6 +44,7 @@ import type {
 } from '@/app/(interfaces)/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/(interfaces)/chat/constants'
 import {
+  ChatVideoPlayer,
   downloadImage,
   extractAllBase64Images,
   extractBase64Image,
@@ -57,6 +58,7 @@ import {
   renderBs64Img,
   renderChatMessageImage,
   resolveMessageImagesAndProse,
+  resolveMessageVideosAndProse,
   S3UploadFailedAlert,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
@@ -315,12 +317,8 @@ export const ArenaClientChatMessage = memo(
     )
 
     /** Renders string content. When onCopySegmentToInput is set and content has pipes (and is not a table/code block), renders line-by-line: each pipe splits the line; columns strictly between two other columns are click-to-copy (trimmed). Markdown in every column still renders (e.g. **bold**). */
-    const renderStringContent = useCallback(
+    const renderProseContent = useCallback(
       (str: string) => {
-        if (message.isInitialMessage) {
-          return renderWelcomeMessage(str)
-        }
-
         if (!onCopySegmentToInput || !str.includes('|')) {
           return (
             <ArenaCopilotMarkdownRenderer
@@ -369,7 +367,35 @@ export const ArenaClientChatMessage = memo(
           </span>
         )
       },
-      [message.isInitialMessage, onCopySegmentToInput, renderMarkdownImage, renderWelcomeMessage]
+      [onCopySegmentToInput, renderMarkdownImage]
+    )
+
+    /**
+     * Plays generated videos inline. Video URLs are pulled out before the prose
+     * reaches the markdown renderer, which would otherwise show them as links
+     * that download the file.
+     */
+    const renderStringContent = useCallback(
+      (str: string) => {
+        if (message.isInitialMessage) {
+          return renderWelcomeMessage(str)
+        }
+
+        const { urls: videoUrls, prose } = resolveMessageVideosAndProse(str)
+        if (videoUrls.length === 0) {
+          return renderProseContent(str)
+        }
+
+        return (
+          <>
+            {prose ? renderProseContent(prose) : null}
+            {videoUrls.map((url) => (
+              <ChatVideoPlayer key={url} src={url} />
+            ))}
+          </>
+        )
+      },
+      [message.isInitialMessage, renderProseContent, renderWelcomeMessage]
     )
 
     const handleUserAttachmentDownload = useCallback((attachment: { dataUrl: string }) => {

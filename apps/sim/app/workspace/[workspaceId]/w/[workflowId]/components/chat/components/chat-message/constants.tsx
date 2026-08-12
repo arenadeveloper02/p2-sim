@@ -939,6 +939,7 @@ export function hasBase64Images(content: any): boolean {
 export function isImageUrlString(s: string): boolean {
   if (!s || typeof s !== 'string') return false
   const trimmed = s.trim()
+  if (isRenderableVideoUrl(trimmed)) return false
   const urlPrefix = trimmed.startsWith('http') || trimmed.startsWith('/api/files/serve/')
   return (
     !!urlPrefix &&
@@ -987,6 +988,7 @@ function extractFirstImageUrlFromString(s: string): string | null {
 function isRawImageUrlString(s: string): boolean {
   const t = s.trim()
   if (!t) return false
+  if (isRenderableVideoUrl(t)) return false
   if (t.startsWith('/api/files/serve/')) {
     return t.includes('agent-generated-images') || /\.(png|jpg|jpeg|gif|webp)/i.test(t)
   }
@@ -1517,6 +1519,7 @@ export const S3_UPLOAD_FAILED_DISMISS_MS = 10_000
 export function isRenderableImageUrl(s: string): boolean {
   const t = s.trim()
   if (!t) return false
+  if (isRenderableVideoUrl(t)) return false
   if (t.startsWith('/api/files/serve/')) return true
   if (t.startsWith('http://') || t.startsWith('https://')) {
     return (
@@ -1526,6 +1529,131 @@ export function isRenderableImageUrl(s: string): boolean {
     )
   }
   return false
+}
+
+/** Video file extensions that browsers can play inline. */
+const VIDEO_EXTENSION_PATTERN = /\.(mp4|webm|mov|m4v)(\?|#|%|$)/i
+
+/**
+ * True if the string is an http(s) or app file-serve URL that should render as a
+ * video player rather than a download link.
+ */
+export function isRenderableVideoUrl(s: string): boolean {
+  if (!s || typeof s !== 'string') return false
+  const t = s.trim()
+  if (!t) return false
+  if (!t.startsWith('http://') && !t.startsWith('https://') && !t.startsWith('/api/files/serve/')) {
+    return false
+  }
+  if (VIDEO_EXTENSION_PATTERN.test(t)) return true
+  try {
+    return VIDEO_EXTENSION_PATTERN.test(decodeURIComponent(t))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Resolves a video URL for playback. Serve URLs are pinned to the page origin so
+ * the session cookie is sent; provider CDN URLs are used as-is.
+ */
+function getVideoDisplayUrl(url: string): string {
+  if (!url || typeof url !== 'string') return url
+  const trimmed = url.trim()
+  if (!trimmed) return url
+
+  try {
+    if (trimmed.startsWith('/api/files/serve/')) {
+      const q = trimmed.indexOf('?')
+      return sameOriginServeUrl(
+        q === -1 ? trimmed : trimmed.slice(0, q),
+        q === -1 ? '' : trimmed.slice(q)
+      )
+    }
+
+    if (!trimmed.startsWith('http')) return trimmed
+
+    const parsed = new URL(trimmed)
+    if (
+      parsed.pathname.startsWith('/api/files/serve/') &&
+      typeof window !== 'undefined' &&
+      parsed.origin === window.location.origin
+    ) {
+      return sameOriginServeUrl(parsed.pathname, parsed.search)
+    }
+
+    return trimmed
+  } catch {
+    return url
+  }
+}
+
+/**
+ * Splits assistant text into playable video URLs and the remaining prose, so a
+ * generated video renders as a player instead of a link that downloads.
+ */
+export function resolveMessageVideosAndProse(raw: string): { urls: string[]; prose: string } {
+  if (!raw || typeof raw !== 'string') {
+    return { urls: [], prose: '' }
+  }
+
+  const urls: string[] = []
+  const seen = new Set<string>()
+  let prose = raw
+
+  const addUrl = (candidate: string): boolean => {
+    if (!isRenderableVideoUrl(candidate)) return false
+    const key = normalizeUrlDedupeKey(candidate)
+    if (!seen.has(key)) {
+      seen.add(key)
+      urls.push(candidate)
+    }
+    return true
+  }
+
+  // Markdown links first, so the label is removed together with the URL.
+  for (const match of raw.matchAll(/!?\[[^\]]*\]\(([^)]+)\)/g)) {
+    const candidate = match[1]?.trim()
+    if (!candidate || !addUrl(candidate)) continue
+    prose = prose.split(match[0]).join('')
+  }
+
+  for (const match of prose.matchAll(/(?:https?:\/\/|\/api\/files\/serve\/)[^\s<>\][)"'`]+/g)) {
+    const candidate = match[0].replace(/[.,;:]+$/, '')
+    if (!addUrl(candidate)) continue
+    prose = prose.split(match[0]).join('')
+  }
+
+  if (urls.length === 0) {
+    return { urls: [], prose: raw }
+  }
+
+  prose = prose
+    .replace(/`+/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+  return { urls, prose }
+}
+
+/**
+ * Inline player for a generated video.
+ */
+export function ChatVideoPlayer({ src }: { src: string }) {
+  const displayUrl = getVideoDisplayUrl(src)
+
+  return (
+    <div className='my-2 w-fit max-w-full overflow-hidden rounded-lg border border-[var(--border-1)] bg-[var(--surface-5)]'>
+      {/* biome-ignore lint/a11y/useMediaCaption: generated videos have no caption track */}
+      <video
+        src={displayUrl}
+        controls
+        preload='metadata'
+        playsInline
+        className='max-h-[500px] w-full max-w-full rounded-lg'
+      />
+    </div>
+  )
 }
 
 /**

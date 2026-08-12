@@ -15,6 +15,7 @@ import type { ChatMessageAttachment } from '@/app/workspace/[workspaceId]/home/t
 import ArenaCopilotMarkdownRenderer from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/copilot-message/components/arena-markdown-renderer'
 import { useThrottledValue } from '@/hooks/use-throttled-value'
 import {
+  ChatVideoPlayer,
   downloadImage,
   extractAllBase64Images,
   extractBase64Image,
@@ -27,6 +28,7 @@ import {
   renderBs64Img,
   renderChatMessageImage,
   resolveMessageImagesAndProse,
+  resolveMessageVideosAndProse,
   S3UploadFailedAlert,
 } from './constants'
 
@@ -299,6 +301,24 @@ export function ChatMessage({
           ))}
         </>
       )
+    }
+
+    // Generated videos play inline; the markdown renderer would otherwise show
+    // them as links that download the file.
+    if (typeof content === 'string') {
+      const { urls: videoUrls, prose } = resolveMessageVideosAndProse(content)
+      if (videoUrls.length > 0) {
+        return (
+          <>
+            {prose ? (
+              <ArenaCopilotMarkdownRenderer content={prose} renderImage={renderMarkdownImage} />
+            ) : null}
+            {videoUrls.map((url) => (
+              <ChatVideoPlayer key={url} src={url} />
+            ))}
+          </>
+        )
+      }
     }
 
     try {
