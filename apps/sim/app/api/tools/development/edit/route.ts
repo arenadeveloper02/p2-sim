@@ -33,6 +33,9 @@ const RequestSchema = z.object({
   repoName: z.string().min(1, 'repoName is required'),
   referenceImage: RawFileInputSchema.nullish(),
   arenaMode: z.boolean().optional(),
+  agentUiMode: z.boolean().optional(),
+  apiCurl: z.string().optional(),
+  apiKey: z.string().optional(),
   workspaceId: z.string().optional(),
   workflowId: z.string().optional(),
   executionId: z.string().optional(),
@@ -82,6 +85,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     repoName: parsed.data.repoName,
     hasReferencePdf: Boolean(referenceImage),
     arenaMode: parsed.data.arenaMode === true,
+    agentUiMode: parsed.data.agentUiMode === true,
   })
 
   const result = await editNextjsApp({
@@ -89,6 +93,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     repoName: parsed.data.repoName,
     referenceImage,
     arenaMode: parsed.data.arenaMode === true,
+    agentUiMode: parsed.data.agentUiMode === true,
+    apiCurl: parsed.data.apiCurl,
+    apiKey: parsed.data.apiKey,
   })
 
   // Cost is returned on the response for span → usage_log billing (no side-channel).

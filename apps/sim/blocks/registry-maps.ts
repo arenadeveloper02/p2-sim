@@ -1,5 +1,6 @@
 import { A2ABlock } from '@/blocks/blocks/a2a'
 import { AgentBlock } from '@/blocks/blocks/agent'
+import { AgentUiBlock } from '@/blocks/blocks/agent-ui'
 import { AgentMailBlock, AgentMailBlockMeta } from '@/blocks/blocks/agentmail'
 import { AgentPhoneBlock, AgentPhoneBlockMeta } from '@/blocks/blocks/agentphone'
 import { AgiloftBlock, AgiloftBlockMeta } from '@/blocks/blocks/agiloft'
@@ -377,6 +378,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   agent: AgentBlock,
   agentmail: AgentMailBlock,
   agentphone: AgentPhoneBlock,
+  agent_ui: AgentUiBlock,
   agiloft: AgiloftBlock,
   ahrefs: AhrefsBlock,
   airtable: AirtableBlock,

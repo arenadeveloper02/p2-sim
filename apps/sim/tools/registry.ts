@@ -4,6 +4,7 @@ import {
   a2aGetTaskTool,
   a2aSendMessageTool,
 } from '@/tools/a2a'
+import { agentUiEditAppTool, agentUiGenerateAppTool } from '@/tools/agent-ui'
 import {
   agentmailCreateDraftTool,
   agentmailCreateInboxTool,
@@ -4902,6 +4903,8 @@ export const tools: Record<string, ToolConfig> = {
   arena_conversation_summary: arenaConversationSummary,
   arena_development_generate_app: arenaDevelopmentGenerateAppTool,
   arena_development_edit_app: arenaDevelopmentEditAppTool,
+  agent_ui_generate_app: agentUiGenerateAppTool,
+  agent_ui_edit_app: agentUiEditAppTool,
   a2a_cancel_task: a2aCancelTaskTool,
   a2a_get_agent_card: a2aGetAgentCardTool,
   a2a_get_task: a2aGetTaskTool,

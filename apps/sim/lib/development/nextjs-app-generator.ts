@@ -10,6 +10,12 @@ import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import type { ModelUsageByModel } from '@/lib/billing/core/record-model-usage'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { env } from '@/lib/core/config/env'
+import { applyAgentUiArtifacts } from '@/lib/development/agent-ui/artifacts'
+import {
+  type AgentUiPromptContext,
+  appendAgentUiSystemPrompt,
+  appendAgentUiUserInstructions,
+} from '@/lib/development/agent-ui/prompts'
 import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
 import { appendArenaSystemPrompt } from '@/lib/development/arena/prompts'
 import {
@@ -77,6 +83,7 @@ type LlmUsageAccumulator = Map<string, { inputTokens: number; outputTokens: numb
 
 const llmUsageStorage = new AsyncLocalStorage<LlmUsageAccumulator>()
 const arenaModeStorage = new AsyncLocalStorage<boolean>()
+const agentUiContextStorage = new AsyncLocalStorage<AgentUiPromptContext>()
 
 function isArenaMode(): boolean {
   return arenaModeStorage.getStore() === true
@@ -84,6 +91,38 @@ function isArenaMode(): boolean {
 
 async function runWithArenaMode<T>(arenaMode: boolean, fn: () => Promise<T>): Promise<T> {
   return arenaModeStorage.run(arenaMode, fn)
+}
+
+function isAgentUiMode(): boolean {
+  return agentUiContextStorage.getStore()?.enabled === true
+}
+
+function getAgentUiContext(): AgentUiPromptContext {
+  return agentUiContextStorage.getStore() ?? { enabled: false }
+}
+
+function toAgentUiContext(input: {
+  agentUiMode?: boolean
+  apiCurl?: string
+  apiKey?: string
+}): AgentUiPromptContext {
+  if (input.agentUiMode !== true) {
+    return { enabled: false }
+  }
+  const apiCurl = input.apiCurl?.trim()
+  const apiKey = input.apiKey?.trim()
+  return {
+    enabled: true,
+    ...(apiCurl ? { apiCurl } : {}),
+    ...(apiKey ? { apiKey } : {}),
+  }
+}
+
+async function runWithAgentUiContext<T>(
+  context: AgentUiPromptContext,
+  fn: () => Promise<T>
+): Promise<T> {
+  return agentUiContextStorage.run(context, fn)
 }
 
 function runWithLlmUsageTracking<T>(fn: () => Promise<T>): Promise<T> {
@@ -132,6 +171,10 @@ function resolveEnvModel(...values: Array<string | undefined>): string | undefin
 }
 
 function getDevelopmentModelId(purpose: DevelopmentModelPurpose): string {
+  if (isAgentUiMode()) {
+    return 'claude-sonnet-5'
+  }
+
   if (purpose === 'edit') {
     return (
       resolveEnvModel(
@@ -253,6 +296,12 @@ export interface GenerateNextjsAppInput {
   referenceImage?: DevelopmentReferenceMedia
   /** When true, inject Arena iframe emailId scaffold and Arena system-prompt mandates. */
   arenaMode?: boolean
+  /** When true, generate a self-hosted Agent UI app (skip GitHub/Vercel/Neon). */
+  agentUiMode?: boolean
+  /** Optional exact workflow execute curl for Agent UI API wiring. */
+  apiCurl?: string
+  /** Optional workflow API key written to the generated app .env (Agent UI). */
+  apiKey?: string
 }
 
 export interface GeneratedAppFile {
@@ -288,6 +337,10 @@ export interface GenerateNextjsAppResult {
   databaseProvisioned?: boolean
   neonProjectId?: string
   databaseProvisionError?: string
+  previewHtml?: string
+  previewPath?: string
+  apiWired?: boolean
+  hasDatabase?: boolean
   error?: string
   mode?: 'generate' | 'edit'
   /** Aggregated LLM token usage keyed by model id (for usage_log billing). */
@@ -655,7 +708,8 @@ function augmentSystemPromptForReferenceImage(
   systemPrompt: string,
   referenceMedia?: DevelopmentReferenceMedia
 ): string {
-  const prompt = appendArenaSystemPrompt(systemPrompt, isArenaMode())
+  const withArena = appendArenaSystemPrompt(systemPrompt, isArenaMode())
+  const prompt = appendAgentUiSystemPrompt(withArena, getAgentUiContext())
   if (!referenceMedia) {
     return prompt
   }
@@ -1417,6 +1471,51 @@ async function writeAppFiles(outputDir: string, files: GeneratedAppFile[]): Prom
   return written
 }
 
+async function completeAgentUiLocalApp(params: {
+  spec: LlmAppSpec
+  repoName: string
+  outputDir: string
+  outputPath: string
+  fileCount: number
+  buildValidated?: boolean
+  buildOutput?: string
+  mode: 'generate' | 'edit'
+}): Promise<GenerateNextjsAppResult> {
+  const artifacts = await applyAgentUiArtifacts({
+    outputDir: params.outputDir,
+    outputPath: params.outputPath,
+    spec: params.spec,
+    context: getAgentUiContext(),
+  })
+
+  logger.info('Agent UI app written for self-host', {
+    repoName: params.repoName,
+    outputDir: params.outputDir,
+    apiWired: artifacts.apiWired,
+  })
+
+  return {
+    success: true,
+    appName: params.spec.appName,
+    repoName: params.repoName,
+    description: params.spec.description,
+    features: params.spec.features,
+    outputPath: params.outputPath,
+    absoluteOutputPath: params.outputDir,
+    fileCount: params.fileCount + artifacts.extraFiles,
+    buildValidated: params.buildValidated,
+    buildOutput: params.buildOutput,
+    gitPushed: false,
+    vercelDeployed: false,
+    requiresDatabase: DEVELOPMENT_REQUIRES_DATABASE,
+    previewHtml: artifacts.previewHtml,
+    previewPath: artifacts.previewPath,
+    apiWired: artifacts.apiWired,
+    hasDatabase: artifacts.hasDatabase,
+    mode: params.mode,
+  }
+}
+
 interface BuildRepairResult {
   spec: LlmAppSpec
   buildValidated: boolean
@@ -1715,7 +1814,7 @@ export async function generateNextjsApp(
 
   return runWithLlmUsageTracking(async () => {
     const result = await runWithArenaMode(input.arenaMode === true, () =>
-      generateNextjsAppInner(input, userInput)
+      runWithAgentUiContext(toAgentUiContext(input), () => generateNextjsAppInner(input, userInput))
     )
     const llmUsage = getTrackedLlmUsage()
     return llmUsage ? { ...result, llmUsage } : result
@@ -1727,8 +1826,13 @@ async function generateNextjsAppInner(
   userInput: string
 ): Promise<GenerateNextjsAppResult> {
   try {
+    const llmUserInput = appendAgentUiUserInstructions(userInput, getAgentUiContext())
     const generationStartedAt = Date.now()
-    let spec = await generateAppSpecWithLlm(userInput, input.repoName?.trim(), input.referenceImage)
+    let spec = await generateAppSpecWithLlm(
+      llmUserInput,
+      input.repoName?.trim(),
+      input.referenceImage
+    )
     logger.info('LLM app generation finished', {
       durationMs: Date.now() - generationStartedAt,
       fileCount: spec.files.length,
@@ -1752,16 +1856,18 @@ async function generateNextjsAppInner(
     const outputPath = relative(monorepoRoot, outputDir)
 
     const deployEnvEarly = resolveDevelopmentDeployEnv()
-    const githubRepoPrep = startGitHubRepositoryPrepIfConfigured({
-      repoName,
-      description: spec.description,
-      githubToken: deployEnvEarly.githubToken,
-      vercelToken: deployEnvEarly.vercelToken,
-      githubOwner: deployEnvEarly.githubOwner,
-      privateRepo: input.privateRepo === true,
-    })
+    const githubRepoPrep = isAgentUiMode()
+      ? null
+      : startGitHubRepositoryPrepIfConfigured({
+          repoName,
+          description: spec.description,
+          githubToken: deployEnvEarly.githubToken,
+          vercelToken: deployEnvEarly.vercelToken,
+          githubOwner: deployEnvEarly.githubOwner,
+          privateRepo: input.privateRepo === true,
+        })
 
-    const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput)
+    const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, llmUserInput)
     spec = buildRepair.spec
     spec.requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
     buildValidated = buildRepair.buildValidated
@@ -1783,6 +1889,19 @@ async function generateNextjsAppInner(
         buildValidated: false,
         buildOutput,
       }
+    }
+
+    if (isAgentUiMode()) {
+      return completeAgentUiLocalApp({
+        spec,
+        repoName,
+        outputDir,
+        outputPath,
+        fileCount,
+        buildValidated,
+        buildOutput,
+        mode: 'generate',
+      })
     }
 
     let gitPushed = false
@@ -2027,6 +2146,12 @@ export interface EditNextjsAppInput {
   referenceImage?: DevelopmentReferenceMedia
   /** When true, inject Arena iframe emailId scaffold and Arena system-prompt mandates. */
   arenaMode?: boolean
+  /** When true, edit a self-hosted Agent UI app (skip GitHub/Vercel/Neon). */
+  agentUiMode?: boolean
+  /** Optional exact workflow execute curl for Agent UI API wiring. */
+  apiCurl?: string
+  /** Optional workflow API key written to the generated app .env (Agent UI). */
+  apiKey?: string
 }
 
 const EDIT_APP_JSON_SCHEMA: Record<string, unknown> = {
@@ -2496,7 +2621,9 @@ export async function editNextjsApp(input: EditNextjsAppInput): Promise<Generate
 
   return runWithLlmUsageTracking(async () => {
     const result = await runWithArenaMode(input.arenaMode === true, () =>
-      editNextjsAppInner(input, userInput, repoName)
+      runWithAgentUiContext(toAgentUiContext(input), () =>
+        editNextjsAppInner(input, userInput, repoName)
+      )
     )
     const llmUsage = getTrackedLlmUsage()
     return llmUsage ? { ...result, llmUsage } : result
@@ -2531,9 +2658,10 @@ async function editNextjsAppInner(
     const originalPrismaSchema = existingFiles.find(
       (file) => file.path.replace(/\\/g, '/') === 'prisma/schema.prisma'
     )?.content
+    const llmUserInput = appendAgentUiUserInstructions(userInput, getAgentUiContext())
     const generationStartedAt = Date.now()
     let spec = await requestAppEditsFromLlm(
-      userInput,
+      llmUserInput,
       repoName,
       existingFiles,
       input.referenceImage
@@ -2554,15 +2682,17 @@ async function editNextjsAppInner(
     let buildOutput: string | undefined
 
     const deployEnvEarly = resolveDevelopmentDeployEnv()
-    const githubRepoPrep = startGitHubRepositoryPrepIfConfigured({
-      repoName,
-      description: spec.description,
-      githubToken: deployEnvEarly.githubToken,
-      vercelToken: deployEnvEarly.vercelToken,
-      githubOwner: deployEnvEarly.githubOwner ?? localResult.githubOwner,
-    })
+    const githubRepoPrep = isAgentUiMode()
+      ? null
+      : startGitHubRepositoryPrepIfConfigured({
+          repoName,
+          description: spec.description,
+          githubToken: deployEnvEarly.githubToken,
+          vercelToken: deployEnvEarly.vercelToken,
+          githubOwner: deployEnvEarly.githubOwner ?? localResult.githubOwner,
+        })
 
-    const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, userInput, {
+    const buildRepair = await validateAndRepairUntilBuildPasses(outputDir, spec, llmUserInput, {
       originalPrismaSchema,
     })
     spec = buildRepair.spec
@@ -2585,6 +2715,19 @@ async function editNextjsAppInner(
         buildValidated: false,
         buildOutput,
       }
+    }
+
+    if (isAgentUiMode()) {
+      return completeAgentUiLocalApp({
+        spec,
+        repoName,
+        outputDir,
+        outputPath,
+        fileCount,
+        buildValidated,
+        buildOutput,
+        mode: 'edit',
+      })
     }
 
     let gitPushed = false

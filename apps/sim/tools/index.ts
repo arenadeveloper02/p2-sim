@@ -237,15 +237,23 @@ async function executeDevelopmentGenerateAppDirect(
     })
   }
 
-  return mapGenerateAppResultToToolResponse(
-    await generateNextjsApp({
-      userInput: params.userInput,
-      repoName: params.repoName,
-      privateRepo: params.privateRepo,
-      referenceImage: resolvedReference.referenceImage,
-      arenaMode: params.arenaMode === true,
-    })
-  )
+  const result = await generateNextjsApp({
+    userInput: params.userInput,
+    repoName: params.repoName,
+    privateRepo: params.privateRepo,
+    referenceImage: resolvedReference.referenceImage,
+    arenaMode: params.arenaMode === true,
+    agentUiMode: params.agentUiMode === true,
+    apiCurl: typeof params.apiCurl === 'string' ? params.apiCurl : undefined,
+    apiKey: typeof params.apiKey === 'string' ? params.apiKey : undefined,
+  })
+
+  if (params.agentUiMode === true) {
+    const { mapAgentUiResultToToolResponse } = await import('@/tools/agent-ui/map-response')
+    return mapAgentUiResultToToolResponse(result)
+  }
+
+  return mapGenerateAppResultToToolResponse(result)
 }
 
 async function executeDevelopmentEditAppDirect(params: Record<string, any>): Promise<ToolResponse> {
@@ -273,14 +281,22 @@ async function executeDevelopmentEditAppDirect(params: Record<string, any>): Pro
     })
   }
 
-  return mapGenerateAppResultToToolResponse(
-    await editNextjsApp({
-      userInput: params.userInput,
-      repoName: params.repoName,
-      referenceImage: resolvedReference.referenceImage,
-      arenaMode: params.arenaMode === true,
-    })
-  )
+  const result = await editNextjsApp({
+    userInput: params.userInput,
+    repoName: params.repoName,
+    referenceImage: resolvedReference.referenceImage,
+    arenaMode: params.arenaMode === true,
+    agentUiMode: params.agentUiMode === true,
+    apiCurl: typeof params.apiCurl === 'string' ? params.apiCurl : undefined,
+    apiKey: typeof params.apiKey === 'string' ? params.apiKey : undefined,
+  })
+
+  if (params.agentUiMode === true) {
+    const { mapAgentUiResultToToolResponse } = await import('@/tools/agent-ui/map-response')
+    return mapAgentUiResultToToolResponse(result)
+  }
+
+  return mapGenerateAppResultToToolResponse(result)
 }
 
 /**
@@ -1944,7 +1960,8 @@ export async function executeTool(
               ? (params: Record<string, any>) =>
                   executeImageGenerationWrapperV2Direct(normalizedToolId, params)
               : normalizedToolId === 'development_generate_app' ||
-                  normalizedToolId === 'arena_development_generate_app'
+                  normalizedToolId === 'arena_development_generate_app' ||
+                  normalizedToolId === 'agent_ui_generate_app'
                 ? (params: Record<string, any>) =>
                     executeDevelopmentGenerateAppDirect({
                       ...params,
@@ -1952,9 +1969,12 @@ export async function executeTool(
                         normalizedToolId === 'arena_development_generate_app'
                           ? true
                           : params.arenaMode,
+                      agentUiMode:
+                        normalizedToolId === 'agent_ui_generate_app' ? true : params.agentUiMode,
                     })
                 : normalizedToolId === 'development_edit_app' ||
-                    normalizedToolId === 'arena_development_edit_app'
+                    normalizedToolId === 'arena_development_edit_app' ||
+                    normalizedToolId === 'agent_ui_edit_app'
                   ? (params: Record<string, any>) =>
                       executeDevelopmentEditAppDirect({
                         ...params,
@@ -1962,6 +1982,8 @@ export async function executeTool(
                           normalizedToolId === 'arena_development_edit_app'
                             ? true
                             : params.arenaMode,
+                        agentUiMode:
+                          normalizedToolId === 'agent_ui_edit_app' ? true : params.agentUiMode,
                       })
                   : tool.directExecution
     if (directExecution) {
