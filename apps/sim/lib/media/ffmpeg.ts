@@ -349,55 +349,76 @@ async function concat(dir: string, inputPaths: string[]): Promise<FfmpegResult> 
   const height = probes[0].height || 720
   const fps = 30
 
-  // Normalize every clip to identical codec/size/fps/pixfmt, and SYNTHESIZE silent
-  // audio for clips that have no audio stream. Clips generated without native audio
-  // (generateAudio:false) otherwise break the concat filtergraph (it referenced a
-  // non-existent [i:a]), which is the "Error binding filtergraph inputs/outputs" failure.
-  const normalized: string[] = []
-  for (let i = 0; i < inputPaths.length; i++) {
-    const out = path.join(dir, `norm-${i}.mp4`)
-    const cmd = ffmpeg().input(inputPaths[i])
-    const maps: string[] = ['-map', '0:v:0']
-    const extra: string[] = []
-    if (probes[i].hasAudio) {
-      maps.push('-map', '0:a:0')
-    } else {
+  // Normalize every clip to identical codec/size/fps/pixfmt so the concat demuxer can
+  // stream-copy them. Clips must also agree on whether they carry audio: a missing
+  // [i:a] otherwise breaks concat ("Error binding filtergraph inputs/outputs").
+  //
+  // Clips without native audio (generateAudio:false) get a synthesized silent track via
+  // the lavfi virtual device. Some FFmpeg builds ship without lavfi ("Input format lavfi
+  // is not available"), so when that fails we retry with audio dropped from every clip —
+  // a silent joined video beats no video at all.
+  const normalizeClips = async (dropAudio: boolean): Promise<string[]> => {
+    const normalized: string[] = []
+    for (let i = 0; i < inputPaths.length; i++) {
+      const out = path.join(dir, `norm-${dropAudio ? 'noaudio' : 'audio'}-${i}.mp4`)
+      const cmd = ffmpeg().input(inputPaths[i])
+      const maps: string[] = ['-map', '0:v:0']
+      const audioOptions: string[] = []
+      const extra: string[] = []
+
+      if (dropAudio) {
+        extra.push('-an')
+      } else {
+        if (probes[i].hasAudio) {
+          maps.push('-map', '0:a:0')
+        } else {
+          cmd
+            .input('anullsrc=channel_layout=stereo:sample_rate=48000')
+            .inputOptions(['-f', 'lavfi', '-t', String(probes[i].durationSeconds || 1)])
+          maps.push('-map', '1:a:0')
+          extra.push('-shortest')
+        }
+        audioOptions.push('-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2')
+      }
+
       cmd
-        .input('anullsrc=channel_layout=stereo:sample_rate=48000')
-        .inputOptions(['-f', 'lavfi', '-t', String(probes[i].durationSeconds || 1)])
-      maps.push('-map', '1:a:0')
-      extra.push('-shortest')
+        .videoFilters(
+          `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=yuv420p`
+        )
+        .outputOptions([
+          ...maps,
+          '-c:v',
+          'libx264',
+          '-preset',
+          'medium',
+          '-crf',
+          '18',
+          '-pix_fmt',
+          'yuv420p',
+          '-r',
+          String(fps),
+          '-video_track_timescale',
+          '90000',
+          ...audioOptions,
+          ...extra,
+        ])
+      await runCommand(cmd, out)
+      normalized.push(out)
     }
-    cmd
-      .videoFilters(
-        `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=yuv420p`
-      )
-      .outputOptions([
-        ...maps,
-        '-c:v',
-        'libx264',
-        '-preset',
-        'medium',
-        '-crf',
-        '18',
-        '-pix_fmt',
-        'yuv420p',
-        '-r',
-        String(fps),
-        '-video_track_timescale',
-        '90000',
-        '-c:a',
-        'aac',
-        '-b:a',
-        '192k',
-        '-ar',
-        '48000',
-        '-ac',
-        '2',
-        ...extra,
-      ])
-    await runCommand(cmd, out)
-    normalized.push(out)
+    return normalized
+  }
+
+  const needsSynthesizedAudio = probes.some((p) => !p.hasAudio)
+  let normalized: string[]
+  try {
+    normalized = await normalizeClips(false)
+  } catch (error) {
+    if (!needsSynthesizedAudio) throw error
+    logger.warn(
+      '[FFmpeg] Silent-audio synthesis failed (lavfi unavailable?); retrying concat without audio',
+      { error: error instanceof Error ? error.message : String(error) }
+    )
+    normalized = await normalizeClips(true)
   }
 
   // Concatenate the now-uniform clips with the concat demuxer (stream copy: fast + reliable).
