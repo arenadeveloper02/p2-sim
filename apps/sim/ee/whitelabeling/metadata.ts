@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { getBaseUrl } from '@/lib/core/utils/urls'
+import { getBaseUrl, isSearchIndexableAppUrl } from '@/lib/core/utils/urls'
 import { getBrandConfig } from '@/ee/whitelabeling/branding'
 
 /**
@@ -7,6 +7,7 @@ import { getBrandConfig } from '@/ee/whitelabeling/branding'
  */
 export function generateBrandedMetadata(override: Partial<Metadata> = {}): Metadata {
   const brand = getBrandConfig()
+  const allowIndexing = isSearchIndexableAppUrl(getBaseUrl())
 
   const defaultTitle = brand.name
   const summaryFull = `Arena's AI agent workflow builder automates production tasks with powerful, open-source solutions, enabling seamless workflows for businesses of all sizes.`
@@ -52,17 +53,26 @@ export function generateBrandedMetadata(override: Partial<Metadata> = {}): Metad
         'en-US': '/',
       },
     },
-    robots: {
-      index: true,
-      follow: true,
-      googleBot: {
-        index: true,
-        follow: true,
-        'max-image-preview': 'large',
-        'max-video-preview': -1,
-        'max-snippet': -1,
-      },
-    },
+    robots: allowIndexing
+      ? {
+          index: true,
+          follow: true,
+          googleBot: {
+            index: true,
+            follow: true,
+            'max-image-preview': 'large',
+            'max-video-preview': -1,
+            'max-snippet': -1,
+          },
+        }
+      : {
+          index: false,
+          follow: false,
+          googleBot: {
+            index: false,
+            follow: false,
+          },
+        },
     openGraph: {
       type: 'website',
       locale: 'en_US',
