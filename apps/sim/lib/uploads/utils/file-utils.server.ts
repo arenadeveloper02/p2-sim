@@ -16,10 +16,12 @@ import { StorageService } from '@/lib/uploads'
 import { isExecutionFile } from '@/lib/uploads/contexts/execution/utils'
 import {
   extractStorageKey,
+  extractWorkspaceIdFromExecutionKey,
   getFileExtension,
   getMimeTypeFromExtension,
   inferContextFromKey,
   isInternalFileUrl,
+  isRenderableDocumentName,
   processSingleFileToUserFile,
   type RawFileInput,
   resolveTrustedFileContext,
@@ -49,6 +51,12 @@ export interface ResolveFileInputOptions {
   userId: string
   requestId: string
   logger: Logger
+  /**
+   * Expiry for presigned URLs minted for stored files, in seconds.
+   * Defaults to 5 minutes; raise it only when the external service fetches
+   * the URL later than the current request (e.g. scheduled publishing).
+   */
+  presignExpirySeconds?: number
 }
 
 /**
@@ -62,7 +70,7 @@ export interface ResolveFileInputOptions {
 export async function resolveFileInputToUrl(
   options: ResolveFileInputOptions
 ): Promise<FileResolutionResult> {
-  const { file, filePath, userId, requestId, logger } = options
+  const { file, filePath, userId, requestId, logger, presignExpirySeconds = 5 * 60 } = options
 
   if (file) {
     let userFile: UserFile
@@ -77,19 +85,11 @@ export async function resolveFileInputToUrl(
       }
     }
 
-    let fileUrl = userFile.url || ''
-
-    // Handle internal URLs
-    if (fileUrl && isInternalFileUrl(fileUrl)) {
-      const resolution = await resolveInternalFileUrl(fileUrl, userId, requestId, logger)
-      if (resolution.error) {
-        return { error: resolution.error }
-      }
-      fileUrl = resolution.fileUrl || ''
-    }
-
-    // Generate presigned URL if we have a key but no URL
-    if (!fileUrl && userFile.key) {
+    // A stored file always gets a freshly minted presigned URL scoped to the
+    // requested expiry — an embedded url (internal serve path or a previously
+    // minted presigned link) may be stale, shorter-lived than required, or
+    // point at a different object than the verified key.
+    if (userFile.key) {
       const context = resolveTrustedFileContext(userFile.key, userFile.context)
       const hasAccess = await verifyFileAccess(userFile.key, userId, undefined, context, false)
 
@@ -102,7 +102,30 @@ export async function resolveFileInputToUrl(
         return { error: { status: 404, message: 'File not found' } }
       }
 
-      fileUrl = await StorageService.generatePresignedDownloadUrl(userFile.key, context, 5 * 60)
+      const fileUrl = await StorageService.generatePresignedDownloadUrl(
+        userFile.key,
+        context,
+        presignExpirySeconds
+      )
+      return { fileUrl }
+    }
+
+    let fileUrl = userFile.url || ''
+
+    // Without a key, the schema guarantees the url references an uploaded
+    // file, so resolve the internal serve path to a presigned URL.
+    if (fileUrl && isInternalFileUrl(fileUrl)) {
+      const resolution = await resolveInternalFileUrl(
+        fileUrl,
+        userId,
+        requestId,
+        logger,
+        presignExpirySeconds
+      )
+      if (resolution.error) {
+        return { error: resolution.error }
+      }
+      fileUrl = resolution.fileUrl || ''
     }
 
     return { fileUrl }
@@ -112,7 +135,13 @@ export async function resolveFileInputToUrl(
     let fileUrl = filePath
 
     if (isInternalFileUrl(filePath)) {
-      const resolution = await resolveInternalFileUrl(filePath, userId, requestId, logger)
+      const resolution = await resolveInternalFileUrl(
+        filePath,
+        userId,
+        requestId,
+        logger,
+        presignExpirySeconds
+      )
       if (resolution.error) {
         return { error: resolution.error }
       }
@@ -149,6 +178,8 @@ export interface DownloadFileFromUrlOptions {
   timeoutMs?: number
   /** Hard cap on the number of bytes read from the source. */
   maxBytes?: number
+  /** Cancels an external download when the surrounding request or execution stops. */
+  signal?: AbortSignal
   /**
    * Principal the download is performed on behalf of. Required to authorize
    * internal (`/api/files/serve/...`) URLs: the resolved storage key is checked
@@ -176,7 +207,9 @@ export async function downloadFileFromUrl(
   fileUrl: string,
   options: DownloadFileFromUrlOptions = {}
 ): Promise<Buffer> {
-  const { timeoutMs = getMaxExecutionTimeout(), maxBytes, userId } = options
+  const { timeoutMs = getMaxExecutionTimeout(), maxBytes, signal, userId } = options
+
+  signal?.throwIfAborted()
 
   if (isInternalFileUrl(fileUrl)) {
     if (!userId) {
@@ -210,6 +243,7 @@ export async function downloadFileFromUrl(
   const response = await secureFetchWithPinnedIP(fileUrl, urlValidation.resolvedIP!, {
     timeout: timeoutMs,
     maxResponseBytes: maxBytes,
+    signal,
   })
 
   if (!response.ok) {
@@ -227,7 +261,8 @@ export async function resolveInternalFileUrl(
   filePath: string,
   userId: string,
   requestId: string,
-  logger: Logger
+  logger: Logger,
+  presignExpirySeconds = 5 * 60
 ): Promise<{ fileUrl?: string; error?: { status: number; message: string } }> {
   if (!isInternalFileUrl(filePath)) {
     return { fileUrl: filePath }
@@ -247,7 +282,11 @@ export async function resolveInternalFileUrl(
       return { error: { status: 404, message: 'File not found' } }
     }
 
-    const fileUrl = await StorageService.generatePresignedDownloadUrl(storageKey, context, 5 * 60)
+    const fileUrl = await StorageService.generatePresignedDownloadUrl(
+      storageKey,
+      context,
+      presignExpirySeconds
+    )
     logger.info(`[${requestId}] Generated presigned URL for ${context} file`)
     return { fileUrl }
   } catch (error) {
@@ -370,15 +409,19 @@ export async function downloadServableFileFromStorage(
 
   // Cheap pre-filter so only generated-doc candidates pay for the heavier resolver
   // import below.
-  const ext = getFileExtension(userFile.name)
-  if (ext !== 'pdf' && ext !== 'docx' && ext !== 'pptx' && ext !== 'xlsx') {
+  if (!isRenderableDocumentName(userFile.name)) {
+    const ext = getFileExtension(userFile.name)
     return { buffer, contentType: userFile.type || getMimeTypeFromExtension(ext) }
   }
 
   const { parseWorkspaceFileKey } = await import(
     '@/lib/uploads/contexts/workspace/workspace-file-manager'
   )
-  const workspaceId = userFile.key ? (parseWorkspaceFileKey(userFile.key) ?? undefined) : undefined
+  const workspaceId = userFile.key
+    ? (parseWorkspaceFileKey(userFile.key) ??
+      extractWorkspaceIdFromExecutionKey(userFile.key) ??
+      undefined)
+    : undefined
 
   const { resolveServableDocBytes } = await import('@/lib/copilot/tools/server/files/doc-compile')
   const resolved = await resolveServableDocBytes({

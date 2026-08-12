@@ -1,3 +1,4 @@
+import { buildToolLlmCostFields } from '@/lib/billing/core/tool-llm-cost'
 import type { ToolConfig, WorkflowToolExecutionContext } from '@/tools/types'
 
 // Parameters for the tool
@@ -25,6 +26,18 @@ export interface FigmaToHTMLAIResponse {
       inputTokens: number
       outputTokens: number
       combinedHtml: string
+    }
+    /** Overall tool price (= LLM cost). */
+    cost?: {
+      input: number
+      output: number
+      total: number
+    }
+    model?: string
+    tokens?: {
+      input: number
+      output: number
+      total: number
     }
   }
   error?: string
@@ -96,12 +109,75 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
     }),
   },
   transformResponse: async (response, params) => {
-    const data = (await response.json()) as {
-      error?: string
-      metadata?: FigmaToHTMLAIResponse['output']['metadata']
+    const startTime = Date.now()
+
+    if (!params) {
+      throw new Error('Missing required parameters')
     }
 
-    if (!response.ok || data.error || !data.metadata) {
+    try {
+      // Extract data from Figma API response
+      const data = await response.json()
+      console.log('Figma data:', data)
+      const figmaData = data
+
+      // Generate AI prompt
+      const prompt = generateAIPrompt(figmaData, params)
+
+      // Call AI service
+      const aiResult = await callAIService(prompt, params)
+
+      const processingTime = Date.now() - startTime
+
+      // Final cleanup of combined HTML
+      let cleanedHtml = aiResult.combinedHtml
+      cleanedHtml = cleanedHtml.replace(/```html\n?/g, '') // remove ```html
+      cleanedHtml = cleanedHtml.replace(/```\n?/g, '')
+      cleanedHtml = cleanedHtml.replace(/\r?\n|\r/g, '') // remove newlines first
+      cleanedHtml = cleanedHtml.replace(/\\/g, '') // then remove backslashes
+      cleanedHtml = cleanedHtml.replace(/\s\s+/g, ' ') // collapse extra spaces
+      cleanedHtml = cleanedHtml.trim() // trim ends
+
+      const billing = buildToolLlmCostFields(
+        aiResult.model,
+        aiResult.inputTokens,
+        aiResult.outputTokens
+      )
+
+      return {
+        success: true,
+        output: {
+          metadata: {
+            fileKey: params.fileKey,
+            nodeId: params.nodeId,
+            processingTime,
+            aiModel: aiResult.model,
+            tokensUsed: aiResult.inputTokens + aiResult.outputTokens,
+            inputTokens: aiResult.inputTokens,
+            outputTokens: aiResult.outputTokens,
+            combinedHtml: cleanedHtml,
+          },
+          ...(billing ?? {}),
+        },
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+
+      logger.error('Figma to HTML conversion failed', {
+        error: errorMessage,
+        fileKey: params.fileKey,
+        nodeId: params.nodeId,
+      })
+
+      // Final cleanup of fallback HTML
+      let cleanedHtml = generateFallbackCombinedHTML()
+      cleanedHtml = cleanedHtml.replace(/```html\n?/g, '') // remove ```html
+      cleanedHtml = cleanedHtml.replace(/```\n?/g, '')
+      cleanedHtml = cleanedHtml.replace(/\r?\n|\r/g, '') // remove newlines first
+      cleanedHtml = cleanedHtml.replace(/\\/g, '') // then remove backslashes
+      cleanedHtml = cleanedHtml.replace(/\s\s+/g, ' ') // collapse extra spaces
+      cleanedHtml = cleanedHtml.trim() // trim ends
+
       return {
         success: false,
         output: {
@@ -116,16 +192,16 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
             combinedHtml: '',
           },
         },
-        error: data.error || 'Figma to HTML conversion failed',
+        error: errorMessage || 'Figma to HTML conversion failed',
       }
     }
 
-    return {
-      success: true,
-      output: {
-        metadata: data.metadata,
-      },
-    }
+    // return {
+    //   success: true,
+    //   output: {
+    //     metadata: data.metadata,
+    //   },
+    // }
   },
 
   outputs: {
@@ -143,6 +219,11 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
           description: 'Generated HTML document with embedded CSS styles',
         },
       },
+    },
+    cost: {
+      type: 'object',
+      description: 'LLM cost for the conversion (overall tool price)',
+      optional: true,
     },
   },
 }

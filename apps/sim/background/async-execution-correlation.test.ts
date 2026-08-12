@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import {
   describeRetryableInfrastructureError,
   isRetryableInfrastructureError,
+  withInfrastructureRetry,
 } from '@/lib/core/errors/retryable-infrastructure'
 import {
   buildScheduleCorrelation,
@@ -85,6 +86,19 @@ describe('async execution correlation fallbacks', () => {
       )
     ).toBe(true)
     expect(isRetryableInfrastructureError(new Error('Failed query: syntax error'))).toBe(false)
+
+    const closedDriver = Object.assign(
+      new Error('write CONNECTION_CLOSED p2-agents-dev-v2.example:5432'),
+      { code: 'CONNECTION_CLOSED', errno: 'CONNECTION_CLOSED' }
+    )
+    const closedDrizzle = new Error('Failed query: select 1', { cause: closedDriver })
+    expect(isRetryableInfrastructureError(closedDrizzle)).toBe(true)
+    expect(describeRetryableInfrastructureError(closedDrizzle)).toEqual(
+      expect.objectContaining({
+        code: 'CONNECTION_CLOSED',
+        errno: 'CONNECTION_CLOSED',
+      })
+    )
   })
 
   it('falls back for legacy webhook payloads missing preassigned fields', () => {
@@ -109,5 +123,41 @@ describe('async execution correlation fallbacks', () => {
       provider: 'slack',
       triggerType: 'webhook',
     })
+  })
+})
+
+describe('withInfrastructureRetry', () => {
+  it('retries CONNECTION_CLOSED then succeeds', async () => {
+    let attempts = 0
+    const result = await withInfrastructureRetry(
+      async () => {
+        attempts += 1
+        if (attempts < 3) {
+          throw Object.assign(new Error('write CONNECTION_CLOSED host:5432'), {
+            code: 'CONNECTION_CLOSED',
+            errno: 'CONNECTION_CLOSED',
+          })
+        }
+        return 'ok'
+      },
+      { maxAttempts: 5, baseMs: 1, maxMs: 2 }
+    )
+
+    expect(result).toBe('ok')
+    expect(attempts).toBe(3)
+  })
+
+  it('does not retry non-infrastructure failures', async () => {
+    let attempts = 0
+    await expect(
+      withInfrastructureRetry(
+        async () => {
+          attempts += 1
+          throw new Error('Failed query: syntax error')
+        },
+        { maxAttempts: 5, baseMs: 1, maxMs: 2 }
+      )
+    ).rejects.toThrow('syntax error')
+    expect(attempts).toBe(1)
   })
 })

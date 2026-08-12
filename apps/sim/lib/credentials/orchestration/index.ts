@@ -1,20 +1,102 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { db } from '@sim/db'
-import { credential, environment, workspaceEnvironment } from '@sim/db/schema'
+import { credential, environment, webhook, workspaceEnvironment } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { encryptSecret } from '@/lib/core/security/encryption'
+import { decryptSecret } from '@/lib/core/security/encryption'
 import { getCredentialActorContext } from '@/lib/credentials/access'
+import { AtlassianValidationError } from '@/lib/credentials/atlassian-service-account'
+import { isClientCredentialAccountProviderId } from '@/lib/credentials/client-credential-accounts/descriptors'
 import { type CredentialDeleteReason, deleteCredential } from '@/lib/credentials/deletion'
+import { slackCustomBotDisplayName } from '@/lib/credentials/display-name'
 import {
   deleteWorkspaceEnvCredentials,
   syncPersonalEnvCredentialsForUser,
 } from '@/lib/credentials/environment'
+import {
+  ServiceAccountSecretError,
+  verifyAndBuildServiceAccountSecret,
+} from '@/lib/credentials/service-account-secret'
+import { TokenServiceAccountValidationError } from '@/lib/credentials/token-service-accounts/errors'
+import {
+  GOOGLE_SERVICE_ACCOUNT_PROVIDER_ID,
+  SLACK_CUSTOM_BOT_PROVIDER_ID,
+  SLACK_CUSTOM_BOT_SECRET_TYPE,
+} from '@/lib/oauth/types'
 import { captureServerEvent } from '@/lib/posthog/server'
 
 const logger = createLogger('CredentialOrchestration')
+
+/**
+ * Google's stored blob is the raw GCP JSON key, whose own `type` discriminator
+ * is `service_account`.
+ */
+const GOOGLE_SERVICE_ACCOUNT_KEY_TYPE = 'service_account'
+
+/**
+ * Provider ids whose credential `displayName` is derived from the secret's own
+ * principal at create time AND whose principal is recoverable from the stored
+ * blob. Only for these can a reconnect tell a stale derived label apart from a
+ * name the user typed. An empty provider id is a legacy Google service account
+ * (the original flow predates multi-provider support).
+ */
+const IDENTITY_DERIVED_DISPLAY_NAME_PROVIDERS: ReadonlySet<string> = new Set([
+  GOOGLE_SERVICE_ACCOUNT_PROVIDER_ID,
+  SLACK_CUSTOM_BOT_PROVIDER_ID,
+  '',
+])
+
+/**
+ * Read and decrypt a service-account credential's stored secret blob. Returns
+ * null on any failure - a blob that cannot be read must never block a
+ * reconnect; each caller degrades to the behaviour it had without the blob.
+ */
+async function readStoredSecretBlob(credentialId: string): Promise<Record<string, unknown> | null> {
+  try {
+    const rows = await db
+      .select({ key: credential.encryptedServiceAccountKey })
+      .from(credential)
+      .where(eq(credential.id, credentialId))
+      .limit(1)
+    const key = rows[0]?.key
+    if (!key) return null
+    const { decrypted } = await decryptSecret(key)
+    const blob: unknown = JSON.parse(decrypted)
+    return blob !== null && typeof blob === 'object' ? (blob as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The `dataCenter` already stored in a service-account blob. Used on reconnect
+ * so a non-secret regional selector survives a secret rotation that does not
+ * resubmit it; undefined lets the provider's own default apply.
+ */
+function readStoredDataCenter(blob: Record<string, unknown> | null): string | undefined {
+  const dataCenter = blob?.dataCenter
+  return typeof dataCenter === 'string' && dataCenter ? dataCenter : undefined
+}
+
+/**
+ * Recompute the display name that `verifyAndBuildServiceAccountSecret` derived
+ * from the *stored* secret, so a reconnect can tell whether the current label
+ * is still the previous principal or a name the user deliberately typed.
+ * Returns undefined when the blob does not carry its own identity, in which
+ * case the label must be left alone.
+ */
+function deriveStoredDisplayName(blob: Record<string, unknown> | null): string | undefined {
+  if (!blob) return undefined
+  if (blob.type === SLACK_CUSTOM_BOT_SECRET_TYPE) {
+    return slackCustomBotDisplayName(typeof blob.teamName === 'string' ? blob.teamName : undefined)
+  }
+  if (blob.type === GOOGLE_SERVICE_ACCOUNT_KEY_TYPE && typeof blob.client_email === 'string') {
+    return blob.client_email || undefined
+  }
+  return undefined
+}
 
 export type CredentialOrchestrationErrorCode =
   | 'not_found'
@@ -37,14 +119,28 @@ export interface PerformUpdateCredentialParams extends CredentialActorParams {
   displayName?: string
   description?: string | null
   serviceAccountJson?: string
+  /** Slack custom-bot secret rotation (reconnect). */
+  signingSecret?: string
+  botToken?: string
+  /** Atlassian service-account secret rotation (reconnect). */
+  apiToken?: string
+  domain?: string
+  /** Client-credential service-account secret rotation (reconnect). */
+  clientId?: string
+  clientSecret?: string
+  orgId?: string
+  dataCenter?: string
 }
 
 export interface PerformCredentialResult {
   success: boolean
   error?: string
   errorCode?: CredentialOrchestrationErrorCode
+  /** Provider-specific code (e.g. Atlassian `invalid_credentials`) for client message mapping. */
+  providerErrorCode?: string
   workspaceId?: string
   updatedFields?: string[]
+  previousDisplayName?: string
 }
 
 export async function performUpdateCredential(
@@ -80,27 +176,101 @@ export async function performUpdateCredential(
     ) {
       updates.displayName = params.displayName
     }
-    if (params.serviceAccountJson !== undefined && access.credential.type === 'service_account') {
-      let parsedJson: Record<string, unknown>
+    // Reconnect: rotate a service-account secret (Google JSON key, Slack,
+    // Atlassian, or any token-paste / client-credential provider) in place. The
+    // secret is re-verified against the provider and re-encrypted through the
+    // same builder the create path uses, so the rotation also yields the new
+    // principal's derived display name and audit metadata.
+    const hasRotationSecret =
+      params.serviceAccountJson !== undefined ||
+      params.signingSecret !== undefined ||
+      params.botToken !== undefined ||
+      params.apiToken !== undefined ||
+      params.domain !== undefined ||
+      params.clientId !== undefined ||
+      params.clientSecret !== undefined ||
+      params.orgId !== undefined ||
+      params.dataCenter !== undefined
+    let rotatedSlackBotUserId: string | undefined
+    let rotatedAuditMetadata: Record<string, string> | undefined
+    if (hasRotationSecret && access.credential.type === 'service_account') {
+      const providerId = access.credential.providerId ?? ''
+
+      // A reconnect rebuilds the secret blob from the submitted fields only, and
+      // the modal never prefills (secrets are never echoed back). For an actual
+      // secret that is correct - the admin retypes it. But a non-secret selector
+      // like the Zoho data center would be silently dropped, moving an EU/IN/AU
+      // credential back to the US accounts server. Carry the stored value forward
+      // when the caller did not supply one.
+      const needsStoredDataCenter =
+        params.dataCenter === undefined && isClientCredentialAccountProviderId(providerId)
+
+      // Rotating to a key that belongs to a different principal makes an
+      // identity-derived label (a Google `client_email`, a Slack team name)
+      // actively wrong about who the credential authenticates as. Re-derive it -
+      // but only when the stored label is still the previous principal, so a
+      // name the user deliberately typed always wins. An explicit `displayName`
+      // in this same request wins outright and skips the read entirely.
+      const needsStoredIdentity =
+        params.displayName === undefined && IDENTITY_DERIVED_DISPLAY_NAME_PROVIDERS.has(providerId)
+
+      // One read + decrypt at most, and only for the providers that can use it.
+      const storedBlob =
+        needsStoredDataCenter || needsStoredIdentity
+          ? await readStoredSecretBlob(access.credential.id)
+          : null
+
       try {
-        parsedJson = JSON.parse(params.serviceAccountJson)
-      } catch {
-        return { success: false, error: 'Invalid JSON format', errorCode: 'validation' }
-      }
-      if (
-        parsedJson.type !== 'service_account' ||
-        typeof parsedJson.client_email !== 'string' ||
-        typeof parsedJson.private_key !== 'string' ||
-        typeof parsedJson.project_id !== 'string'
-      ) {
-        return {
-          success: false,
-          error: 'Invalid service account JSON key',
-          errorCode: 'validation',
+        const secret = await verifyAndBuildServiceAccountSecret(providerId, {
+          signingSecret: params.signingSecret,
+          botToken: params.botToken,
+          apiToken: params.apiToken,
+          domain: params.domain,
+          serviceAccountJson: params.serviceAccountJson,
+          clientId: params.clientId,
+          clientSecret: params.clientSecret,
+          orgId: params.orgId,
+          dataCenter: needsStoredDataCenter ? readStoredDataCenter(storedBlob) : params.dataCenter,
+        })
+        updates.encryptedServiceAccountKey = secret.encryptedServiceAccountKey
+        rotatedSlackBotUserId = secret.botUserId
+        rotatedAuditMetadata = secret.auditMetadata
+
+        if (needsStoredIdentity) {
+          const previousIdentity = deriveStoredDisplayName(storedBlob)
+          if (
+            previousIdentity !== undefined &&
+            previousIdentity === access.credential.displayName &&
+            secret.displayName &&
+            secret.displayName !== previousIdentity
+          ) {
+            updates.displayName = secret.displayName
+          }
         }
+      } catch (error) {
+        if (error instanceof ServiceAccountSecretError) {
+          return { success: false, error: error.message, errorCode: 'validation' }
+        }
+        if (error instanceof AtlassianValidationError) {
+          // Surface the provider code so the client maps it to the specific
+          // token/domain message (create returns it too).
+          return {
+            success: false,
+            error: error.code,
+            errorCode: 'validation',
+            providerErrorCode: error.code,
+          }
+        }
+        if (error instanceof TokenServiceAccountValidationError) {
+          return {
+            success: false,
+            error: error.code,
+            errorCode: 'validation',
+            providerErrorCode: error.code,
+          }
+        }
+        throw error
       }
-      const { encrypted } = await encryptSecret(params.serviceAccountJson)
-      updates.encryptedServiceAccountKey = encrypted
     }
 
     if (Object.keys(updates).length === 0) {
@@ -118,6 +288,20 @@ export async function performUpdateCredential(
     updates.updatedAt = new Date()
     await db.update(credential).set(updates).where(eq(credential.id, params.credentialId))
 
+    // Reconnecting to a recreated Slack app changes the bot user id, but each
+    // deployed webhook cached the old one at deploy for reaction self-drop.
+    // Propagate the rotated id to the credential's live custom-bot webhooks so
+    // the bot's own reactions keep being dropped (a stale id lets them re-enter).
+    if (rotatedSlackBotUserId) {
+      await db
+        .update(webhook)
+        .set({
+          providerConfig: sql`jsonb_set((${webhook.providerConfig})::jsonb, '{bot_user_id}', to_jsonb(${rotatedSlackBotUserId}::text))::json`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(webhook.provider, 'slack'), eq(webhook.routingKey, params.credentialId)))
+    }
+
     const updatedFields = Object.keys(updates).filter((key) => key !== 'updatedAt')
     recordAudit({
       workspaceId: access.credential.workspaceId,
@@ -129,14 +313,22 @@ export async function performUpdateCredential(
       resourceId: params.credentialId,
       resourceName: access.credential.displayName,
       description: `Updated ${access.credential.type} credential "${access.credential.displayName}"`,
+      // Provider metadata first: the orchestration's own keys stay authoritative
+      // and can never be shadowed by a builder's audit payload.
       metadata: {
+        ...rotatedAuditMetadata,
         credentialType: access.credential.type,
         updatedFields,
       },
       request: params.request,
     })
 
-    return { success: true, workspaceId: access.credential.workspaceId, updatedFields }
+    return {
+      success: true,
+      workspaceId: access.credential.workspaceId,
+      updatedFields,
+      previousDisplayName: access.credential.displayName,
+    }
   } catch (error) {
     if (error instanceof Error && error.message.includes('unique')) {
       return {

@@ -1,4 +1,3 @@
-import { truncate } from '@sim/utils/string'
 import type { Edge } from 'reactflow'
 import { getAccurateTokenCount, truncateToTokenLimit } from '@/lib/tokenization/estimators'
 import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
@@ -6,35 +5,121 @@ import { getMessageContentText } from '@/local-copilot/lib/providers/message-con
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
+import { findCatalogModel } from '@/providers/models'
 
 /** Fallback tiktoken model when the configured provider model has no encoding. */
 const DEFAULT_TOKEN_COUNT_MODEL = 'gpt-4o'
 
-/** Total prompt budget before calling the LLM (input side; leaves room for tools + output). */
+/**
+ * Soft ceiling for prompt tokens on large-context models.
+ * Keeps cost/latency bounded even when the catalog window is 200k–1M+.
+ */
 export const LOCAL_COPILOT_PROMPT_TOKEN_BUDGET = 120_000
+
+/** Floor so extreme reservations still leave a usable prompt. */
+export const LOCAL_COPILOT_MIN_PROMPT_TOKEN_BUDGET = 8_000
+
+/** Matches Bedrock/Anthropic local-copilot default `maxTokens`. */
+export const LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS = 8_192
+
+/**
+ * Headroom for tokenizer mismatch, message framing, and cache/tool overhead
+ * that `estimateChatMessagesTokens` does not see.
+ */
+export const LOCAL_COPILOT_CONTEXT_SAFETY_BUFFER_TOKENS = 4_000
+
+/** Assumed window when the model is missing from the pricing catalog. */
+export const LOCAL_COPILOT_DEFAULT_CONTEXT_WINDOW = 128_000
 
 /** Workflow JSON above this size is sent as block summaries instead of full state. */
 export const LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET = 24_000
 
-/** Recent user/assistant turns kept verbatim in chat history. */
+export interface ResolveLocalCopilotPromptTokenBudgetOptions {
+  model: string
+  /** Estimated tokens for tool definitions sent beside the prompt. */
+  toolDefinitionTokens?: number
+  /** Actual `maxTokens` / max output for this request (not catalog capability). */
+  maxOutputTokens?: number
+  /** Soft ceiling — never request more than this even if the model allows it. */
+  softCap?: number
+}
+
+export interface ResolvedLocalCopilotPromptTokenBudget {
+  /** Tokens available for chat messages (system + history + user). */
+  tokenBudget: number
+  /** Catalog (or default) context window used for the calculation. */
+  contextWindow: number
+  /** Tokens reserved for output + tools + safety buffer. */
+  reservedTokens: number
+  /** True when the soft cap, not the model window, bound the budget. */
+  softCapped: boolean
+}
+
+/**
+ * Resolves a model-aware prompt token budget:
+ * `min(softCap, max(minBudget, contextWindow − maxOutput − tools − safety))`.
+ *
+ * Smaller Bedrock windows (e.g. Llama 128k) shrink below the 120k soft cap so
+ * input + tools + maxTokens fit. Larger windows stay soft-capped at 120k.
+ */
+export function resolveLocalCopilotPromptTokenBudget(
+  options: ResolveLocalCopilotPromptTokenBudgetOptions
+): ResolvedLocalCopilotPromptTokenBudget {
+  const softCap = options.softCap ?? LOCAL_COPILOT_PROMPT_TOKEN_BUDGET
+  const maxOutputTokens = Math.max(
+    0,
+    options.maxOutputTokens ?? LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS
+  )
+  const toolDefinitionTokens = Math.max(0, Math.ceil(options.toolDefinitionTokens ?? 0))
+  const reservedTokens =
+    maxOutputTokens + toolDefinitionTokens + LOCAL_COPILOT_CONTEXT_SAFETY_BUFFER_TOKENS
+
+  const catalog = findCatalogModel(options.model)
+  const catalogWindow = catalog?.model.contextWindow
+  const contextWindow =
+    typeof catalogWindow === 'number' && catalogWindow > 0
+      ? catalogWindow
+      : LOCAL_COPILOT_DEFAULT_CONTEXT_WINDOW
+
+  const usable = Math.max(LOCAL_COPILOT_MIN_PROMPT_TOKEN_BUDGET, contextWindow - reservedTokens)
+  const softCapped = usable > softCap
+  const tokenBudget = Math.min(softCap, usable)
+
+  return { tokenBudget, contextWindow, reservedTokens, softCapped }
+}
+
+/** Recent user/assistant turns kept verbatim (full message bodies) in chat history. */
 export const LOCAL_COPILOT_RECENT_TURNS_FULL = 6
 
-/** Hard cap on prior chat rows considered for history. */
-export const LOCAL_COPILOT_MAX_HISTORY_MESSAGES = 50
-
-/** Per-message character cap in recent history (approximate token guard). */
-export const LOCAL_COPILOT_MAX_MESSAGE_CHARS = 8_000
+/**
+ * Hard cap on prior chat rows considered for history.
+ * Sized for longer multi-tool threads (user + assistant + tool result rows).
+ */
+export const LOCAL_COPILOT_MAX_HISTORY_MESSAGES = 200
 
 export type WorkflowContextDetail = 'full' | 'compact'
 
 export interface CompactChatHistoryOptions {
   recentTurnsFull?: number
   maxMessages?: number
-  maxMessageChars?: number
+  /**
+   * @deprecated Older turns are never extractively summarized anymore.
+   * Session memory (injected separately) covers aged context. Kept for call-site compat.
+   */
+  sessionMemoryPresent?: boolean
 }
+
+export type ContextInventoryMode = 'full' | 'delta' | 'unchanged'
 
 export interface BuildContextPromptOptions {
   workflowDetail?: WorkflowContextDetail
+  /**
+   * When `delta` or `unchanged`, omit duplicate workspace inventory arrays —
+   * the `Workspace snapshot:` system block is authoritative.
+   */
+  inventoryMode?: ContextInventoryMode
+  /** Snapshot revision echoed into slim context payloads. */
+  snapshotRevision?: string
 }
 
 interface HistoryTurn {
@@ -56,7 +141,25 @@ export function estimateChatMessagesTokens(
 }
 
 /**
- * Keeps the last K turns verbatim and compresses older turns into one system summary.
+ * Estimates tokens for tool definitions sent alongside the prompt (not counted by message budget).
+ */
+export function estimateToolDefinitionTokens(
+  tools: Array<{ name: string; description: string; parameters: Record<string, unknown> }>,
+  model: string = DEFAULT_TOKEN_COUNT_MODEL
+): number {
+  if (tools.length === 0) return 0
+  try {
+    return getAccurateTokenCount(JSON.stringify(tools), model)
+  } catch {
+    return Math.ceil(JSON.stringify(tools).length / 4)
+  }
+}
+
+/**
+ * Keeps the last K turns verbatim with full message bodies.
+ * Older turns are omitted here — structured session memory (injected by the
+ * orchestrator) is the summary for aged conversational + technical context.
+ * Overall size is still enforced by {@link fitPromptToTokenBudget}.
  */
 export function compactChatHistory(
   messages: ChatMessage[],
@@ -64,33 +167,15 @@ export function compactChatHistory(
 ): ChatMessage[] {
   const recentTurnsFull = options.recentTurnsFull ?? LOCAL_COPILOT_RECENT_TURNS_FULL
   const maxMessages = options.maxMessages ?? LOCAL_COPILOT_MAX_HISTORY_MESSAGES
-  const maxMessageChars = options.maxMessageChars ?? LOCAL_COPILOT_MAX_MESSAGE_CHARS
 
   const trimmed = messages.slice(-maxMessages)
   const turns = groupHistoryTurns(trimmed)
 
   if (turns.length <= recentTurnsFull) {
-    return truncateMessageContents(trimmed, maxMessageChars)
+    return trimmed
   }
 
-  const olderTurns = turns.slice(0, turns.length - recentTurnsFull)
-  const recentTurns = turns.slice(turns.length - recentTurnsFull)
-
-  const summary = summarizeHistoryTurns(olderTurns)
-  const recentMessages = truncateMessageContents(
-    recentTurns.flatMap((turn) => turn.messages),
-    maxMessageChars
-  )
-
-  if (!summary) return recentMessages
-
-  return [
-    {
-      role: 'system',
-      content: `Earlier conversation (compressed summary of ${olderTurns.length} prior turns):\n${summary}`,
-    },
-    ...recentMessages,
-  ]
+  return turns.slice(turns.length - recentTurnsFull).flatMap((turn) => turn.messages)
 }
 
 /**
@@ -176,6 +261,8 @@ export function buildContextPromptPayload(
   options: BuildContextPromptOptions = {}
 ): string {
   const workflowDetail = options.workflowDetail ?? 'full'
+  const inventoryMode = options.inventoryMode ?? 'full'
+  const slimInventory = inventoryMode === 'delta' || inventoryMode === 'unchanged'
   const workflowPayload = context.workflow
     ? buildWorkflowPromptPayload(context.workflow, workflowDetail, context.selectedBlockId)
     : null
@@ -184,21 +271,31 @@ export function buildContextPromptPayload(
     sanitizeForLlm({
       workspace: context.workspace,
       connectedIntegrations: context.connectedIntegrations,
-      envVariables: context.envVariables,
+      envVariables: slimInventory ? undefined : context.envVariables,
       hostedKeysAvailable: context.hostedKeysAvailable,
       e2b: context.e2b,
-      guidance: context.guidance,
+      guidance: slimInventory
+        ? 'Workspace inventory lives in the Workspace snapshot system block (delta/unchanged mode). Prefer that over inventing resource lists.'
+        : context.guidance,
       workflow: workflowPayload,
-      workspaceWorkflows: context.workspaceWorkflows,
-      knowledgeBases: context.knowledgeBases,
-      tables: context.tables,
-      workspaceFiles: context.workspaceFiles,
-      skills: context.skills,
+      workspaceWorkflows: slimInventory ? undefined : context.workspaceWorkflows,
+      knowledgeBases: slimInventory ? undefined : context.knowledgeBases,
+      tables: slimInventory ? undefined : context.tables,
+      workspaceFiles: slimInventory ? undefined : context.workspaceFiles,
+      skills: slimInventory ? undefined : context.skills,
       userMemories: context.userMemories,
       execution: context.execution,
       availableIntegrations: context.availableIntegrations,
-      availableBlocks: context.availableBlocks,
+      // Full ~300-block catalog omitted — use get_available_blocks / get_blocks_metadata.
+      availableBlocksNote:
+        'Block catalog omitted to save tokens. Call get_available_blocks or get_blocks_metadata for the types you need.',
       selectedBlockId: context.selectedBlockId,
+      ...(slimInventory
+        ? {
+            inventoryMode,
+            ...(options.snapshotRevision ? { snapshotRevision: options.snapshotRevision } : {}),
+          }
+        : {}),
     }),
     null,
     2
@@ -231,9 +328,60 @@ function buildWorkflowPromptPayload(
     id: workflow.id,
     name: workflow.name,
     detail: 'compact' as const,
-    note: 'Block subBlock values omitted to save context. Use edit_workflow or inspect tools for full params.',
+    note: 'Block subBlock values omitted to save context. Call get_workflow_context with blockNames (or blockIds) for the blocks you need before edit_workflow.',
     state: buildCompactWorkflowState(workflow, selectedBlockId),
     credentials: workflow.credentials,
+  }
+}
+
+export interface WorkflowBlockInspectionSelector {
+  blockIds?: string[]
+  blockNames?: string[]
+}
+
+/**
+ * Returns full sanitized detail for selected blocks (by id and/or display name).
+ * Used when compact workflow context omits subBlock values.
+ */
+export function buildWorkflowBlockInspection(
+  workflow: NonNullable<LocalCopilotStructuredContext['workflow']>,
+  selector: WorkflowBlockInspectionSelector
+) {
+  const idSet = new Set(
+    (selector.blockIds ?? []).map((id) => id.trim()).filter((id) => id.length > 0)
+  )
+  const nameSet = new Set(
+    (selector.blockNames ?? [])
+      .map((name) => name.trim().toLowerCase())
+      .filter((name) => name.length > 0)
+  )
+
+  const matched = Object.values(workflow.blocks).filter((block) => {
+    if (idSet.has(block.id)) return true
+    const name = typeof block.name === 'string' ? block.name.trim().toLowerCase() : ''
+    return name.length > 0 && nameSet.has(name)
+  })
+
+  const sanitized = sanitizeForExport({
+    blocks: Object.fromEntries(matched.map((block) => [block.id, block])),
+    edges: [],
+    loops: {},
+    parallels: {},
+    variables: {},
+    metadata: { name: workflow.name },
+  }).state
+
+  return {
+    workflowId: workflow.id,
+    workflowName: workflow.name,
+    requestedBlockIds: [...idSet],
+    requestedBlockNames: [...nameSet],
+    matchedCount: matched.length,
+    blocks: sanitized.blocks,
+    note:
+      matched.length === 0
+        ? 'No blocks matched. Use display names or UUIDs from the compact workflow context.'
+        : undefined,
   }
 }
 
@@ -302,29 +450,4 @@ function groupHistoryTurns(messages: ChatMessage[]): HistoryTurn[] {
   }
 
   return turns
-}
-
-function summarizeHistoryTurns(turns: HistoryTurn[]): string {
-  return turns
-    .map((turn, index) => {
-      const lines = turn.messages.map((message) => {
-        const label = message.role === 'user' ? 'User' : 'Assistant'
-        return `- ${label}: ${truncate(getMessageContentText(message.content).replace(/\s+/g, ' ').trim(), 400)}`
-      })
-      return `Turn ${index + 1}:\n${lines.join('\n')}`
-    })
-    .join('\n\n')
-}
-
-function truncateMessageContents(messages: ChatMessage[], maxChars: number): ChatMessage[] {
-  return messages.map((message) => {
-    if (typeof message.content !== 'string') return message
-    return {
-      ...message,
-      content:
-        message.content.length > maxChars
-          ? `${truncate(message.content, maxChars)}\n\n[... message truncated for context budget]`
-          : message.content,
-    }
-  })
 }

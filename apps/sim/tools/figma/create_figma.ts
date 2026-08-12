@@ -183,6 +183,10 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
           designTargets: designTargets,
           renderedTargets: result.renderedTargets,
         },
+        ...(result.cost && typeof result.cost === 'object' ? { cost: result.cost } : {}),
+        ...(typeof result.model === 'string' ? { model: result.model } : {}),
+        ...(result.tokens && typeof result.tokens === 'object' ? { tokens: result.tokens } : {}),
+        ...(result.llmUsage ? { llmUsage: result.llmUsage } : {}),
       },
     }
   },
@@ -208,6 +212,11 @@ export const createFigmaTool: ToolConfig<CreateFigmaParams, CreateFigmaResponse>
         figmaFileUrl: { type: 'string', description: 'URL to the created Figma file' },
         renderedData: { type: 'string', description: 'Generated HTML/CSS code' },
       },
+    },
+    cost: {
+      type: 'object',
+      description: 'LLM cost for design generation (overall tool price)',
+      optional: true,
     },
   },
 }

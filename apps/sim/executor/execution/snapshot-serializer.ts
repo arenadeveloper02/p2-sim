@@ -224,6 +224,19 @@ export function serializePauseSnapshot(
     dagIncomingEdges,
     deactivatedEdges: edgeManager?.getDeactivatedEdges(),
     nodesWithActivatedEdge: edgeManager?.getNodesWithActivatedEdge(),
+    sourceExecutionId: context.executionId,
+    trustedLargeValueAccess: {
+      executionIds: Array.from(
+        new Set(
+          [context.executionId, ...(context.largeValueExecutionIds ?? [])].filter(
+            (id): id is string => Boolean(id)
+          )
+        )
+      ),
+      largeValueKeys: Array.from(new Set(context.largeValueKeys ?? [])),
+      fileKeys: Array.from(new Set(context.fileKeys ?? [])),
+    },
+    resolvedSecretTraceProvenance: context.resolvedSecretTraceRegistry?.exportProvenance(),
   }
 
   assertSnapshotValueIsCompact(context.workflowVariables, 'workflow variables')
@@ -243,6 +256,7 @@ export function serializePauseSnapshot(
     workflowId: context.workflowId,
     workspaceId,
     userId: metadataFromContext?.userId ?? '',
+    billingAttribution: metadataFromContext?.billingAttribution,
     sessionUserId: metadataFromContext?.sessionUserId,
     workflowUserId: metadataFromContext?.workflowUserId,
     triggerType: metadataFromContext?.triggerType ?? 'manual',
@@ -251,6 +265,15 @@ export function serializePauseSnapshot(
     startTime: metadataFromContext?.startTime ?? new Date().toISOString(),
     isClientSession: metadataFromContext?.isClientSession,
     executionMode: metadataFromContext?.executionMode,
+    /** Preserve deployed-chat thinking gate across HITL pause/resume. */
+    includeThinking: metadataFromContext?.includeThinking === true ? true : undefined,
+    /** Preserve false as distinct from a legacy snapshot with no independent tool policy. */
+    includeToolCalls:
+      typeof metadataFromContext?.includeToolCalls === 'boolean'
+        ? metadataFromContext.includeToolCalls
+        : undefined,
+    /** Preserve the run-level agent-events opt-in across HITL pause/resume. */
+    agentEvents: metadataFromContext?.agentEvents === true ? true : undefined,
   }
 
   const snapshot = new ExecutionSnapshot(

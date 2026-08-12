@@ -7,10 +7,24 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getValidationErrorMessage, parseJsonBody } from '@/lib/api/server'
 import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+// import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
+// import {
+//   checkAttributedUsageLimits,
+//   requireBillingAttributionHeader,
+//   resolveBillingAttribution,
+//   // toBillingContext, // applied inside recordSearchEmbeddingUsage
+// } from '@/lib/billing/core/billing-attribution'
+// Threshold billing runs inside recordSearchEmbeddingUsage, so the route no
+// longer calls it directly.
+// import {
+//   checkAndBillOverageThreshold,
+//   checkAndBillPayerOverageThreshold,
+// } from '@/lib/billing/threshold-billing'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { ALL_TAG_SLOTS } from '@/lib/knowledge/constants'
+import { recordSearchEmbeddingUsage, recordSearchRerankUsage } from '@/lib/knowledge/embeddings'
 import { getDocumentTagDefinitions } from '@/lib/knowledge/tags/service'
 import { buildUndefinedTagsError, validateTagValue } from '@/lib/knowledge/tags/utils'
 import type { StructuredFilter } from '@/lib/knowledge/types'
@@ -27,6 +41,7 @@ import {
   type SearchResult,
 } from '@/app/api/knowledge/search/utils'
 import { checkKnowledgeBaseAccess } from '@/app/api/knowledge/utils'
+import { getRerankModelPricing } from '@/providers/models'
 import { calculateCost } from '@/providers/utils'
 
 const logger = createLogger('VectorSearchAPI')
@@ -303,18 +318,28 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         )
       }
 
+      const accessibleKbs = accessChecks
+        .filter((ac): ac is NonNullable<typeof ac> & { hasAccess: true } => ac?.hasAccess === true)
+        .map((ac) => ac.knowledgeBase)
       const workspaceId = accessChecks.find((ac) => ac?.hasAccess)?.knowledgeBase?.workspaceId
 
+      // Upstream drives the reranker from flat `rerankerEnabled` / `rerankerModel`
+      // body fields. This fork drives it from the nested `rerank` object instead,
+      // via `rerankConfig` further down, so these two lines stay disabled.
+      // const useReranker = validatedData.rerankerEnabled && Boolean(validatedData.query?.trim())
+      // const rerankerModel = useReranker ? validatedData.rerankerModel : null
+
       const hasQuery = validatedData.query && validatedData.query.trim().length > 0
-      const embeddingModels = Array.from(
-        new Set(
-          accessChecks
-            .filter(
-              (ac): ac is NonNullable<typeof ac> & { hasAccess: true } => ac?.hasAccess === true
-            )
-            .map((ac) => ac.knowledgeBase.embeddingModel)
+
+      const workspaceIds = new Set(accessibleKbs.map((kb) => kb.workspaceId ?? null))
+      if (hasQuery && workspaceIds.size > 1) {
+        return NextResponse.json(
+          { error: 'Selected knowledge bases must belong to the same workspace' },
+          { status: 400 }
         )
-      )
+      }
+
+      const embeddingModels = Array.from(new Set(accessibleKbs.map((kb) => kb.embeddingModel)))
       if (hasQuery && embeddingModels.length > 1) {
         return NextResponse.json(
           {
@@ -335,6 +360,38 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           { status: 404 }
         )
       }
+
+      // Billing attribution is disabled for Arena — the header/scope check fails when a
+      // workflow searches a KB outside its own workspace. Keep the upstream path here
+      // so it can be restored without reconstructing it.
+      // const billingAttribution =
+      //   hasQuery && workspaceId
+      //     ? auth.authType === AuthType.INTERNAL_JWT
+      //       ? requireBillingAttributionHeader(request.headers, {
+      //           actorUserId: userId,
+      //           workspaceId,
+      //         })
+      //       : shouldMeter
+      //         ? await resolveBillingAttribution({
+      //             actorUserId: userId,
+      //             workspaceId,
+      //           })
+      //         : undefined
+      //     : undefined
+      //
+      // if (shouldMeter && hasQuery) {
+      //   const usage = billingAttribution
+      //     ? await checkAttributedUsageLimits(billingAttribution)
+      //     : await checkActorUsageLimits(userId)
+      //   if (usage.isExceeded) {
+      //     return NextResponse.json(
+      //       {
+      //         error: usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.',
+      //       },
+      //       { status: 402 }
+      //     )
+      //   }
+      // }
 
       // if (workflowId) {
       // const authorization = await authorizeWorkflowByWorkspacePermission({
@@ -359,6 +416,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       // }
 
       let results: SearchResult[]
+      let queryEmbeddingIsBYOK: boolean | null = null
 
       const hasFilters = structuredFilters && structuredFilters.length > 0
 
@@ -381,6 +439,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           queryEmbeddingModel,
           workspaceId
         )
+        queryEmbeddingIsBYOK = queryEmbeddingResult.isBYOK
         const queryVector = JSON.stringify(queryEmbeddingResult.embedding)
 
         results = await handleTagAndVectorSearch({
@@ -398,6 +457,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           queryEmbeddingModel,
           workspaceId
         )
+        queryEmbeddingIsBYOK = queryEmbeddingResult.isBYOK
         const queryVector = JSON.stringify(queryEmbeddingResult.embedding)
 
         results = await handleVectorOnlySearch({
@@ -430,6 +490,18 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           })
           // Continue without cost information rather than failing the search
         }
+
+        if (shouldMeter && queryEmbeddingIsBYOK !== null && workspaceId) {
+          await recordSearchEmbeddingUsage({
+            userId,
+            workspaceId,
+            embeddingModel: queryEmbeddingModel,
+            query: validatedData.query!,
+            isBYOK: queryEmbeddingIsBYOK,
+            sourceReference: `kb-search:${requestId}`,
+            // billingAttribution,
+          })
+        }
       }
 
       // Fetch tag definitions for display name mapping (reuse the same fetch from filtering)
@@ -458,7 +530,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
       // Fetch document names for the results
       const documentIds = results.map((result) => result.documentId)
-      const documentNameMap = await getDocumentMetadataByIds(documentIds)
+      const documentMetadataMap = await getDocumentMetadataByIds(documentIds)
 
       // Fetch workspaceId per knowledge base for "View in Knowledge Base" links (only for users with workspace access)
       const kbIds = [...new Set(results.map((r) => r.knowledgeBaseId))]
@@ -471,12 +543,36 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         kbToWorkspace[row.id] = row.workspaceId
       })
 
+      let rerankerCost: number | undefined
+      let rerankerModel: string | undefined
+      let rerankerSearchUnits = 0
+
       const rerankConfig: RerankConfig = {
         ...(validatedData.rerank || {}),
         requestId,
+        workspaceId,
       }
       if (hasQuery && (rerankConfig.enabled ?? true)) {
-        results = await rerankSearchResults(validatedData.query!, results, rerankConfig)
+        const rerankResult = await rerankSearchResults(validatedData.query!, results, rerankConfig)
+        results = rerankResult.results
+        rerankerModel = rerankResult.model
+        rerankerSearchUnits = rerankResult.searchUnits
+
+        if (rerankResult.searchUnits > 0) {
+          const pricing = getRerankModelPricing(rerankResult.model)
+          rerankerCost = pricing ? pricing.perSearchUnit * rerankResult.searchUnits : undefined
+
+          if (shouldMeter && workspaceId) {
+            await recordSearchRerankUsage({
+              userId,
+              workspaceId,
+              model: rerankResult.model,
+              isBYOK: rerankResult.isBYOK,
+              sourceReference: `kb-search:${requestId}`,
+              searchUnits: rerankResult.searchUnits,
+            })
+          }
+        }
       }
       try {
         PlatformEvents.knowledgeBaseSearched({
@@ -512,9 +608,11 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
               }
             })
 
+            const docMeta = documentMetadataMap[result.documentId]
             return {
               documentId: result.documentId,
-              documentName: documentNameMap[result.documentId] || undefined,
+              documentName: docMeta?.filename || undefined,
+              sourceUrl: docMeta?.sourceUrl ?? null,
               content: result.content,
               chunkIndex: result.chunkIndex,
               metadata: tags, // Clean display name mapped tags
@@ -534,7 +632,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
                 cost: {
                   input: cost.input,
                   output: cost.output,
-                  total: cost.total,
+                  total: cost.total + (rerankerCost ?? 0),
                   tokens: {
                     prompt: tokenCount.count,
                     completion: 0,
@@ -542,6 +640,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
                   },
                   model: queryEmbeddingModel,
                   pricing: cost.pricing,
+                  ...(rerankerCost !== undefined && { rerankerCost }),
+                  ...(rerankerModel && { rerankerModel }),
+                  ...(rerankerSearchUnits > 0 && { rerankerSearchUnits }),
                 },
               }
             : {}),

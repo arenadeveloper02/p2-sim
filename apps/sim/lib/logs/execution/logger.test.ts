@@ -1,48 +1,59 @@
-import { envFlagsMock } from '@sim/testing'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { usageLog, workflow } from '@sim/db/schema'
+import { dbChainMockFns, queueTableRows, resetDbChainMock } from '@sim/testing'
+import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { recordUsage } from '@/lib/billing/core/usage-log'
 import { ExecutionLogger } from '@/lib/logs/execution/logger'
+import type { WorkflowExecutionLog } from '@/lib/logs/types'
+import type { SerializableExecutionState } from '@/executor/execution/types'
 
-const dbSelectMock = vi.hoisted(() => vi.fn())
-const dbExecuteMock = vi.hoisted(() => vi.fn())
-const txUpdateMock = vi.hoisted(() =>
-  vi.fn(() => ({ set: () => ({ where: () => Promise.resolve() }) }))
-)
-
-vi.mock('@sim/db', () => {
-  // The reconcile runs inside db.transaction with an advisory lock. The tx
-  // shares dbSelectMock so the existing call-order seeding (call 1 = workflow
-  // row via .limit, call 2 = already-billed via .groupBy) still applies;
-  // tx.execute (set_config + pg_advisory_xact_lock) is a no-op; tx.update backs
-  // the exact cost_total refine.
-  const tx = {
-    select: dbSelectMock,
-    insert: vi.fn(),
-    update: txUpdateMock,
-    execute: dbExecuteMock,
-  }
-  return {
-    db: {
-      select: dbSelectMock,
-      insert: vi.fn(),
-      update: vi.fn(),
-      execute: dbExecuteMock,
-      transaction: vi.fn(async (cb: (txArg: typeof tx) => Promise<unknown>) => cb(tx)),
-    },
-  }
-})
+afterAll(resetDbChainMock)
 
 // Mock billing modules
 vi.mock('@/lib/billing/core/subscription', () => ({
+  getHighestPriorityPersonalSubscription: vi.fn(() => Promise.resolve(null)),
   getHighestPrioritySubscription: vi.fn(() => Promise.resolve(null)),
 }))
 
-vi.mock('@/lib/billing/core/usage', () => ({
+vi.mock('@/lib/billing/core/billing-attribution', () => ({
+  resolveBillingAttribution: vi.fn(
+    ({ actorUserId, workspaceId }: { actorUserId: string; workspaceId: string }) =>
+      Promise.resolve({
+        actorUserId,
+        workspaceId,
+        billedAccountUserId: 'payer-1',
+        organizationId: 'org-1',
+        billingEntity: { type: 'organization', id: 'org-1' },
+        billingPeriod: {
+          start: '2024-01-01T00:00:00.000Z',
+          end: '2024-02-01T00:00:00.000Z',
+        },
+        payerSubscription: null,
+      })
+  ),
+  toBillingContext: vi.fn((attribution) => ({
+    billingEntity: attribution.billingEntity,
+    billingPeriod: {
+      start: new Date(attribution.billingPeriod.start),
+      end: new Date(attribution.billingPeriod.end),
+    },
+  })),
+}))
+
+vi.mock('@/lib/billing/calculations/usage-monitor', () => ({
   checkUsageStatus: vi.fn(() =>
     Promise.resolve({
-      usageData: { limit: 100, percentUsed: 50, currentUsage: 50 },
+      limit: 100,
+      percentUsed: 50,
+      currentUsage: 50,
+      isExceeded: false,
+      isWarning: false,
+      scope: 'user',
+      organizationId: null,
     })
   ),
+}))
+
+vi.mock('@/lib/billing/core/usage', () => ({
   getOrgUsageLimit: vi.fn(() => Promise.resolve({ limit: 1000 })),
   maybeSendUsageThresholdEmail: vi.fn(() => Promise.resolve()),
 }))
@@ -58,9 +69,8 @@ vi.mock('@/lib/billing/core/usage-log', () => ({
 
 vi.mock('@/lib/billing/threshold-billing', () => ({
   checkAndBillOverageThreshold: vi.fn(() => Promise.resolve()),
+  checkAndBillPayerOverageThreshold: vi.fn(() => Promise.resolve()),
 }))
-
-vi.mock('@/lib/core/config/env-flags', () => envFlagsMock)
 
 // Mock security module
 vi.mock('@/lib/core/security/redaction', () => ({
@@ -110,6 +120,7 @@ describe('ExecutionLogger', () => {
   beforeEach(() => {
     logger = new ExecutionLogger()
     vi.clearAllMocks()
+    resetDbChainMock()
   })
 
   describe('class instantiation', () => {
@@ -245,6 +256,85 @@ describe('ExecutionLogger', () => {
       expect(completedData.knowledgeRefs).toEqual(knowledgeRefs)
     })
 
+    test('preserves completion-provided billing attribution when the start row is legacy', () => {
+      const loggerInstance = new ExecutionLogger() as any
+      const billingAttribution = {
+        actorUserId: 'external-actor',
+        workspaceId: 'workspace-123',
+        organizationId: 'org-123',
+        billedAccountUserId: 'owner-123',
+        billingEntity: { type: 'organization', id: 'org-123' },
+        billingPeriod: {
+          start: '2026-07-01T00:00:00.000Z',
+          end: '2026-08-01T00:00:00.000Z',
+        },
+        payerSubscription: null,
+      }
+
+      const completedData = loggerInstance.buildCompletedExecutionData({
+        existingExecutionData: {},
+        billingAttribution,
+        traceSpans: [],
+        finalOutput: {},
+        executionCost: {
+          tokens: { input: 0, output: 0, total: 0 },
+          models: {},
+        },
+      })
+
+      expect(completedData.billingAttribution).toEqual(billingAttribution)
+    })
+
+    test('preserves server-only lifecycle metadata after execution-state PII masking', () => {
+      const loggerInstance = new ExecutionLogger() as unknown as {
+        preservePrivateExecutionStateMetadata(
+          redactedState: SerializableExecutionState | undefined,
+          originalState: SerializableExecutionState | undefined
+        ): SerializableExecutionState | undefined
+      }
+      const provenance = {
+        version: 1 as const,
+        complete: true,
+        entries: [{ name: 'API_SECRET', encryptedValue: 'enc:original-ciphertext' }],
+      }
+      const trustedLargeValueAccess = {
+        executionIds: ['execution-1'],
+        largeValueKeys: ['execution/workspace-1/workflow-1/execution-1/value.json'],
+        fileKeys: ['workspace-1/file-1'],
+      }
+      const originalState: SerializableExecutionState = {
+        blockStates: {},
+        executedBlocks: [],
+        blockLogs: [],
+        decisions: { router: {}, condition: {} },
+        completedLoops: [],
+        activeExecutionPath: [],
+        resolvedSecretTraceProvenance: provenance,
+        trustedLargeValueAccess,
+      }
+      const redactedState: SerializableExecutionState = {
+        ...originalState,
+        resolvedSecretTraceProvenance: {
+          ...provenance,
+          entries: [{ name: 'API_SECRET', encryptedValue: '[MASKED]' }],
+        },
+        trustedLargeValueAccess: {
+          executionIds: [],
+          largeValueKeys: [],
+          fileKeys: [],
+        },
+      }
+
+      const preserved = loggerInstance.preservePrivateExecutionStateMetadata(
+        redactedState,
+        originalState
+      )
+
+      expect(preserved?.resolvedSecretTraceProvenance).toBe(provenance)
+      expect(preserved?.trustedLargeValueAccess).toBe(trustedLargeValueAccess)
+      expect(preserved?.blockStates).toBe(redactedState.blockStates)
+    })
+
     test('summarizes oversized execution data before storage', () => {
       const loggerInstance = new ExecutionLogger() as any
       const largePayload = 'x'.repeat(1_100_000)
@@ -328,12 +418,107 @@ describe('ExecutionLogger', () => {
         activeExecutionPathLength: 0,
         pendingQueueLength: 0,
       })
-      expect(compacted.traceSpans?.[0]?.children?.[0]?.input).toEqual({
-        _truncated: true,
-        reason: 'execution_data_size_limit',
-        originalBytes: expect.any(Number),
-        summary: 'object with 2 keys',
+      expect(compacted.traceSpans?.[0]?.children?.[0]).not.toHaveProperty('input')
+    })
+
+    test('retains the trusted Copilot binding in metadata-only compaction', () => {
+      const loggerInstance = new ExecutionLogger() as unknown as {
+        compactExecutionDataForStorage(
+          executionData: WorkflowExecutionLog['executionData'],
+          executionId: string
+        ): WorkflowExecutionLog['executionData']
+      }
+      const correlation = {
+        executionId: 'execution-metadata-only',
+        requestId: 'request-1',
+        source: 'workflow' as const,
+        workflowId: 'workflow-1',
+        copilotToolCallId: 'tool-call-1',
+      }
+
+      const compacted = loggerInstance.compactExecutionDataForStorage(
+        {
+          environment: {
+            variables: { OVERSIZED: 'x'.repeat(3.5 * 1024 * 1024) },
+            workflowId: 'workflow-1',
+            executionId: 'execution-metadata-only',
+            userId: 'user-1',
+            workspaceId: 'workspace-1',
+          },
+          correlation,
+          hasTraceSpans: false,
+          traceSpanCount: 0,
+        },
+        'execution-metadata-only'
+      )
+
+      expect(compacted.executionDataTruncated).toBe(true)
+      expect(compacted.correlation).toEqual(correlation)
+      expect(compacted).not.toHaveProperty('environment')
+    })
+
+    test('retains tool-call structure when aggregate trace content exceeds the compaction cap', () => {
+      const loggerInstance = new ExecutionLogger() as unknown as {
+        compactExecutionDataForStorage(
+          executionData: WorkflowExecutionLog['executionData'],
+          executionId: string
+        ): WorkflowExecutionLog['executionData']
+      }
+      const oversizedContent = 'x'.repeat(9_000)
+      const modelToolCalls = Array.from({ length: 200 }, (_, index) => ({
+        id: `model-call-${index}-${'m'.repeat(40)}`,
+        name: 'lookup',
+        arguments: oversizedContent,
+      }))
+      const toolCalls = Array.from({ length: 200 }, (_, index) => ({
+        id: `legacy-call-${index}-${'l'.repeat(40)}`,
+        name: 'legacy_lookup',
+        duration: 1,
+        startTime: '2025-01-01T00:00:00.000Z',
+        endTime: '2025-01-01T00:00:00.001Z',
+        status: 'success' as const,
+        input: oversizedContent,
+        output: oversizedContent,
+        error: oversizedContent,
+      }))
+
+      const compacted = loggerInstance.compactExecutionDataForStorage(
+        {
+          traceSpans: [
+            {
+              id: 'span-1',
+              name: 'Agent',
+              type: 'agent',
+              duration: 1,
+              startTime: '2025-01-01T00:00:00.000Z',
+              endTime: '2025-01-01T00:00:00.001Z',
+              status: 'success',
+              modelToolCalls,
+              toolCalls,
+            },
+          ],
+          finalOutput: { data: 'y'.repeat(1_100_000) },
+        },
+        'execution-tool-structure'
+      )
+
+      expect(compacted.executionDataTruncated).toBe(true)
+      expect(compacted.traceSpans?.[0]?.modelToolCalls).toHaveLength(modelToolCalls.length)
+      expect(compacted.traceSpans?.[0]?.modelToolCalls?.[0]).toEqual({
+        id: modelToolCalls[0].id,
+        name: 'lookup',
       })
+      expect(compacted.traceSpans?.[0]?.toolCalls).toHaveLength(toolCalls.length)
+      expect(compacted.traceSpans?.[0]?.toolCalls?.[0]).toEqual(
+        expect.objectContaining({
+          id: toolCalls[0].id,
+          name: 'legacy_lookup',
+          status: 'success',
+        })
+      )
+      expect(compacted.traceSpans?.[0]?.toolCalls?.[0]).not.toHaveProperty('input')
+      expect(compacted.traceSpans?.[0]?.toolCalls?.[0]).not.toHaveProperty('output')
+      expect(compacted.traceSpans?.[0]?.toolCalls?.[0]).not.toHaveProperty('error')
     })
   })
 
@@ -522,6 +707,7 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
   beforeEach(() => {
     logger = new ExecutionLogger() as any
     vi.clearAllMocks()
+    resetDbChainMock()
   })
 
   const costSummary = (overrides: Record<string, unknown> = {}) => ({
@@ -534,25 +720,24 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     baseExecutionCharge: 0.005,
     models: {},
     charges: {},
+    external: {},
     ...overrides,
   })
+  const billingContext = {
+    billingEntity: { type: 'organization' as const, id: 'org-1' },
+    billingPeriod: {
+      start: new Date('2026-07-01T00:00:00.000Z'),
+      end: new Date('2026-08-01T00:00:00.000Z'),
+    },
+  }
 
-  // db.select() is called twice in recordExecutionUsage: first the workflow row
-  // (terminated by .limit), then the already-billed usage_log rows (terminated
-  // by .groupBy). Return each in order.
+  // recordExecutionUsage reads the workflow row (from(workflow) ... .limit(1)),
+  // then the already-billed usage_log rows (from(usageLog) ... .groupBy(...)).
+  // Route each result set by its table. The execution-log lineage select needs
+  // no queue — an unqueued table resolves the empty default it expects.
   const mockDb = (billedRows: Array<Record<string, unknown>>) => {
-    let call = 0
-    dbSelectMock.mockImplementation(() => {
-      call += 1
-      const rows = call === 1 ? [{ id: 'workflow-1', workspaceId: 'ws-1' }] : billedRows
-      const chain: any = {
-        from: () => chain,
-        where: () => chain,
-        limit: () => Promise.resolve(rows),
-        groupBy: () => Promise.resolve(rows),
-      }
-      return chain
-    })
+    queueTableRows(workflow, [{ id: 'workflow-1', workspaceId: 'ws-1' }])
+    queueTableRows(usageLog, billedRows)
   }
 
   const run = (
@@ -560,7 +745,14 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     billedRows: Array<Record<string, unknown>>
   ) => {
     mockDb(billedRows)
-    return logger.recordExecutionUsage('workflow-1', summary, 'api', 'exec-1', 'user-1')
+    return logger.recordExecutionUsage(
+      'workflow-1',
+      summary,
+      'api',
+      'exec-1',
+      'user-1',
+      billingContext
+    )
   }
 
   const lastEntries = () => vi.mocked(recordUsage).mock.calls[0][0].entries
@@ -582,13 +774,94 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
 
     expect(recordUsage).toHaveBeenCalledTimes(1)
     expect(lastEntries()).toEqual([
-      expect.objectContaining({ category: 'fixed', description: 'execution_fee', cost: 0.005 }),
-      expect.objectContaining({ category: 'model', description: 'gpt-4o', cost: 1 }),
+      expect.objectContaining({
+        category: 'fixed',
+        source: 'workflow',
+        description: 'execution_fee',
+        cost: 0.005,
+      }),
+      expect.objectContaining({
+        category: 'model',
+        source: 'workflow',
+        description: 'gpt-4o',
+        cost: 1,
+      }),
     ])
     // Returns the amount recorded at this boundary (drives threshold-email math).
     expect(recorded).toBeCloseTo(1.005, 8)
     // cost_total is refined to the exact ledger sum inside the locked tx.
-    expect(txUpdateMock).toHaveBeenCalledTimes(1)
+    expect(dbChainMockFns.update).toHaveBeenCalledTimes(1)
+    expect(dbChainMockFns.set).toHaveBeenCalledWith({ costTotal: '1.005' })
+  })
+
+  test('cost_total projection matches SUM(usage_log) for workflow source at completion', async () => {
+    await run(
+      costSummary({
+        models: {
+          'gpt-4o': {
+            total: 2.5,
+            input: 1.5,
+            output: 1,
+            tokens: { input: 10, output: 5, total: 15 },
+          },
+        },
+        charges: { 'Exa Search': { total: 0.02 } },
+      }),
+      []
+    )
+
+    const ledgerSum = vi
+      .mocked(recordUsage)
+      .mock.calls[0][0].entries.reduce(
+        (sum: number, entry: { cost: number }) => sum + entry.cost,
+        0
+      )
+    expect(ledgerSum).toBeCloseTo(2.525, 8)
+    expect(dbChainMockFns.set).toHaveBeenCalledWith({ costTotal: ledgerSum.toString() })
+  })
+
+  test('leaves Mothership model spend to cumulative update-cost while ledgering ordinary models', async () => {
+    const setCostTotalMock = vi.fn(() => ({ where: () => Promise.resolve() }))
+    dbChainMockFns.update.mockReturnValueOnce({ set: setCostTotalMock })
+
+    const recorded = await run(
+      costSummary({
+        totalCost: 1.505,
+        models: {
+          mothership: {
+            total: 0.5,
+            input: 0.2,
+            output: 0.3,
+            tokens: { input: 200, output: 300, total: 500 },
+          },
+          'gpt-4o': {
+            total: 1,
+            input: 0.4,
+            output: 0.6,
+            tokens: { input: 400, output: 600, total: 1000 },
+          },
+        },
+        workflowLedgerModels: {
+          'gpt-4o': {
+            total: 1,
+            input: 0.4,
+            output: 0.6,
+            tokens: { input: 400, output: 600, total: 1000 },
+          },
+        },
+      }),
+      []
+    )
+
+    expect(lastEntries()).toEqual([
+      expect.objectContaining({ category: 'fixed', description: 'execution_fee', cost: 0.005 }),
+      expect.objectContaining({ category: 'model', description: 'gpt-4o', cost: 1 }),
+    ])
+    expect(lastEntries()).not.toContainEqual(
+      expect.objectContaining({ category: 'model', description: 'mothership' })
+    )
+    expect(recorded).toBeCloseTo(1.005, 8)
+    expect(setCostTotalMock).toHaveBeenCalledWith({ costTotal: '1.505' })
   })
 
   test('resume records only the increment over what is already billed', async () => {
@@ -668,6 +941,21 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     })
   })
 
+  test('does not derive an actor payer when workspace billing context is missing', async () => {
+    mockDb([])
+
+    const recorded = await (logger as any).recordExecutionUsage(
+      'workflow-1',
+      costSummary(),
+      'api',
+      'exec-1',
+      'user-1'
+    )
+
+    expect(recorded).toBe(0)
+    expect(recordUsage).not.toHaveBeenCalled()
+  })
+
   test('retry with everything already billed records nothing (idempotent)', async () => {
     await run(
       costSummary({
@@ -705,6 +993,43 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
 
     expect(lastEntries()).toEqual([
       expect.objectContaining({ category: 'tool', description: 'Exa Search', cost: 0.02 }),
+    ])
+  })
+
+  test('external Cost block charge reconciles as an external row with vendor metadata', async () => {
+    await run(
+      costSummary({
+        external: {
+          'Twilio Cost': {
+            total: 0.05,
+            vendor: 'Twilio',
+            quantity: 2,
+            unit: 'message',
+            metadata: {
+              originalAmount: 0.05,
+              originalCurrency: 'USD',
+              source: 'fixed',
+            },
+          },
+        },
+      }),
+      [{ category: 'fixed', description: 'execution_fee', cost: '0.005' }]
+    )
+
+    expect(lastEntries()).toEqual([
+      expect.objectContaining({
+        category: 'external',
+        description: 'Twilio Cost',
+        cost: 0.05,
+        vendor: 'Twilio',
+        quantity: 2,
+        unit: 'message',
+        metadata: {
+          originalAmount: 0.05,
+          originalCurrency: 'USD',
+          source: 'fixed',
+        },
+      }),
     ])
   })
 
@@ -802,7 +1127,7 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     ])
   })
 
-  test('zero-cost models and charges (BYOK) are filtered out, leaving only the base fee', async () => {
+  test('zero-cost models without usage metadata are filtered out, leaving only the base fee', async () => {
     await run(
       costSummary({
         models: {
@@ -817,6 +1142,30 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     ])
   })
 
+  test('BYOK model usage with tokens records a zero-cost ledger row', async () => {
+    await run(
+      costSummary({
+        models: {
+          'gpt-4o': {
+            input: 0,
+            output: 0,
+            total: 0,
+            tokens: { input: 120, output: 45, total: 165 },
+          },
+        },
+      }),
+      [{ category: 'fixed', description: 'execution_fee', cost: '0.005' }]
+    )
+    expect(lastEntries()).toEqual([
+      expect.objectContaining({
+        category: 'model',
+        description: 'gpt-4o',
+        cost: 0,
+        metadata: { inputTokens: 120, outputTokens: 45 },
+      }),
+    ])
+  })
+
   test('reconciles inside a transaction holding a per-execution advisory lock', async () => {
     await run(
       costSummary({
@@ -828,9 +1177,28 @@ describe('recordExecutionUsage boundary-delta reconciliation', () => {
     )
 
     // set_config('lock_timeout') + pg_advisory_xact_lock both run on the tx.
-    expect(dbExecuteMock).toHaveBeenCalledTimes(2)
+    expect(dbChainMockFns.execute).toHaveBeenCalledTimes(2)
     expect(recordUsage).toHaveBeenCalledTimes(1)
     // The ledger INSERT participates in the locked transaction.
     expect(vi.mocked(recordUsage).mock.calls[0][0]).toHaveProperty('tx')
+  })
+
+  test('marks billingReconciliationPending when recordUsage fails', async () => {
+    vi.mocked(recordUsage).mockRejectedValueOnce(new Error('ledger insert failed'))
+    mockDb([])
+
+    const recorded = await logger.recordExecutionUsage(
+      'workflow-1',
+      costSummary({ baseExecutionCharge: 0.005 }),
+      'api',
+      'exec-fail-1',
+      'user-1'
+    )
+
+    expect(recorded).toBe(0)
+    expect(dbChainMockFns.update).toHaveBeenCalled()
+    expect(dbChainMockFns.set).toHaveBeenCalledWith(
+      expect.objectContaining({ executionData: expect.anything() })
+    )
   })
 })

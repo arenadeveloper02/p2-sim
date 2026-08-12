@@ -435,13 +435,18 @@ export class DAGExecutor {
       blockLogs: overrides?.runFromBlockContext ? [] : (snapshotState?.blockLogs ?? []),
       metadata: {
         ...this.contextExtensions.metadata,
+        ...(this.contextExtensions.billingAttribution
+          ? { billingAttribution: this.contextExtensions.billingAttribution }
+          : {}),
         startTime: new Date().toISOString(),
         duration: 0,
         useDraftState:
           this.contextExtensions.metadata?.useDraftState ??
           this.contextExtensions.isDeployedContext !== true,
       },
+      startRunMetadata: this.contextExtensions.startRunMetadata,
       environmentVariables: this.environmentVariables,
+      resolvedSecretTraceRegistry: this.contextExtensions.resolvedSecretTraceRegistry,
       workflowVariables: this.workflowVariables,
       decisions: {
         router: snapshotState?.decisions?.router
@@ -625,6 +630,7 @@ export class DAGExecutor {
     const blockOutput = buildStartBlockOutput({
       resolution: startResolution,
       workflowInput: this.workflowInput,
+      runMetadata: this.contextExtensions.startRunMetadata,
     })
 
     state.setBlockState(startResolution.block.id, {

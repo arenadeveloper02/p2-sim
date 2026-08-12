@@ -10,6 +10,7 @@ import {
   bulkKnowledgeDocumentsContract,
   type ChunkData,
   type ChunksPagination,
+  copyKnowledgeBaseContract,
   createKnowledgeBaseContract,
   createKnowledgeChunkContract,
   createTagDefinitionContract,
@@ -22,12 +23,12 @@ import {
   deleteKnowledgeDocumentContract,
   deleteTagDefinitionContract,
   getKnowledgeBaseContract,
+  getKnowledgeChunkContract,
   getKnowledgeDocumentContract,
   getTagUsageContract,
   type KnowledgeBaseData,
   type KnowledgeChunksResponse,
   type KnowledgeDocumentsResponse,
-  type KnowledgeScope,
   listDocumentTagDefinitionsContract,
   listKnowledgeBasesContract,
   listKnowledgeChunksContract,
@@ -47,10 +48,17 @@ import {
 } from '@/lib/api/contracts/knowledge'
 import type { ChunkingStrategy, StrategyOptions } from '@/lib/chunkers/types'
 import type { DocumentSortField, SortOrder } from '@/lib/knowledge/documents/types'
+import {
+  KNOWLEDGE_BASE_LIST_STALE_TIME,
+  type KnowledgeQueryScope,
+  knowledgeKeys,
+} from '@/hooks/queries/utils/knowledge-keys'
 
 const logger = createLogger('KnowledgeQueries')
 
-type KnowledgeQueryScope = KnowledgeScope
+/** Re-export for callers that still import keys from this module. */
+export { KNOWLEDGE_BASE_LIST_STALE_TIME, knowledgeKeys }
+export type { KnowledgeQueryScope }
 
 export type {
   DocumentTagDefinitionData,
@@ -61,43 +69,16 @@ export type {
   TagUsageData,
 }
 
-export const KNOWLEDGE_BASE_LIST_STALE_TIME = 60 * 1000
 export const KNOWLEDGE_BASE_DETAIL_STALE_TIME = 60 * 1000
 export const KNOWLEDGE_DOCUMENT_DETAIL_STALE_TIME = 60 * 1000
 export const KNOWLEDGE_DOCUMENT_LIST_STALE_TIME = 60 * 1000
 export const KNOWLEDGE_CHUNK_LIST_STALE_TIME = 60 * 1000
 export const KNOWLEDGE_CHUNK_SEARCH_STALE_TIME = 60 * 1000
+export const KNOWLEDGE_CHUNK_DETAIL_STALE_TIME = 60 * 1000
 export const KNOWLEDGE_TAG_DEFINITION_LIST_STALE_TIME = 60 * 1000
 export const KNOWLEDGE_TAG_USAGE_STALE_TIME = 60 * 1000
 export const KNOWLEDGE_DOCUMENT_TAG_DEFINITION_LIST_STALE_TIME = 60 * 1000
-
-export const knowledgeKeys = {
-  all: ['knowledge'] as const,
-  userAccess: (workspaceId?: string) =>
-    [...knowledgeKeys.all, 'user-access', workspaceId ?? 'all'] as const,
-  lists: () => [...knowledgeKeys.all, 'list'] as const,
-  list: (workspaceId?: string, scope: KnowledgeQueryScope = 'active') =>
-    [...knowledgeKeys.lists(), workspaceId ?? 'all', scope] as const,
-  details: () => [...knowledgeKeys.all, 'detail'] as const,
-  detail: (knowledgeBaseId?: string) =>
-    [...knowledgeKeys.details(), knowledgeBaseId ?? ''] as const,
-  tagDefinitions: (knowledgeBaseId: string) =>
-    [...knowledgeKeys.detail(knowledgeBaseId), 'tagDefinitions'] as const,
-  tagUsage: (knowledgeBaseId: string) =>
-    [...knowledgeKeys.detail(knowledgeBaseId), 'tagUsage'] as const,
-  documents: (knowledgeBaseId: string, paramsKey: string) =>
-    [...knowledgeKeys.detail(knowledgeBaseId), 'documents', paramsKey] as const,
-  document: (knowledgeBaseId: string, documentId: string) =>
-    [...knowledgeKeys.detail(knowledgeBaseId), 'document', documentId] as const,
-  documentTagDefinitions: (knowledgeBaseId: string, documentId: string) =>
-    [...knowledgeKeys.document(knowledgeBaseId, documentId), 'tagDefinitions'] as const,
-  chunks: (knowledgeBaseId: string, documentId: string, paramsKey: string) =>
-    [...knowledgeKeys.document(knowledgeBaseId, documentId), 'chunks', paramsKey] as const,
-  chunk: (knowledgeBaseId: string, documentId: string, chunkId: string) =>
-    [...knowledgeKeys.document(knowledgeBaseId, documentId), 'chunk', chunkId] as const,
-  chunkSearch: (knowledgeBaseId: string, documentId: string, searchKey: string) =>
-    [...knowledgeKeys.document(knowledgeBaseId, documentId), 'search', searchKey] as const,
-}
+export const KNOWLEDGE_USER_ACCESS_STALE_TIME = 60 * 1000
 
 export async function fetchKnowledgeBases(
   workspaceId?: string,
@@ -113,15 +94,18 @@ export async function fetchKnowledgeBases(
 }
 
 /**
- * Fetch knowledge bases that user has access to via workspace permissions
+ * Fetch knowledge bases that user has access to via workspace permissions.
+ * No route contract yet for `/api/knowledge/user-access`, so this stays on raw fetch.
  */
 export async function fetchUserAccessKnowledgeBases(
-  workspaceId?: string
+  workspaceId?: string,
+  signal?: AbortSignal
 ): Promise<KnowledgeBaseData[]> {
   const url = workspaceId
     ? `/api/knowledge/user-access?workspaceId=${workspaceId}`
     : '/api/knowledge/user-access'
-  const response = await fetch(url)
+  // boundary-raw-fetch: no listUserAccessKnowledgeBasesContract yet for this Arena endpoint
+  const response = await fetch(url, { signal })
 
   if (!response.ok) {
     throw new Error(
@@ -290,9 +274,9 @@ export function useUserAccessKnowledgeBasesQuery(
 ) {
   return useQuery({
     queryKey: knowledgeKeys.userAccess(workspaceId),
-    queryFn: () => fetchUserAccessKnowledgeBases(workspaceId),
+    queryFn: ({ signal }) => fetchUserAccessKnowledgeBases(workspaceId, signal),
     enabled: options?.enabled ?? true,
-    staleTime: 60 * 1000,
+    staleTime: KNOWLEDGE_USER_ACCESS_STALE_TIME,
     placeholderData: keepPreviousData,
   })
 }
@@ -436,23 +420,13 @@ export function useDocumentChunkSearchQuery(
 export async function fetchChunk(
   knowledgeBaseId: string,
   documentId: string,
-  chunkId: string
+  chunkId: string,
+  signal?: AbortSignal
 ): Promise<ChunkData> {
-  const response = await fetch(
-    `/api/knowledge/${knowledgeBaseId}/documents/${documentId}/chunks/${chunkId}`
-  )
-
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw new Error('Chunk not found')
-    }
-    throw new Error(`Failed to fetch chunk: ${response.statusText}`)
-  }
-
-  const result = await response.json()
-  if (!result?.success || !result?.data) {
-    throw new Error(result?.error || 'Failed to fetch chunk')
-  }
+  const result = await requestJson(getKnowledgeChunkContract, {
+    params: { id: knowledgeBaseId, documentId, chunkId },
+    signal,
+  })
 
   return result.data
 }
@@ -465,9 +439,9 @@ export function useChunkById(
 ) {
   return useQuery({
     queryKey: knowledgeKeys.chunk(knowledgeBaseId, documentId, chunkId ?? ''),
-    queryFn: () => fetchChunk(knowledgeBaseId, documentId, chunkId!),
+    queryFn: ({ signal }) => fetchChunk(knowledgeBaseId, documentId, chunkId!, signal),
     enabled: (options?.enabled ?? true) && Boolean(knowledgeBaseId && documentId && chunkId),
-    staleTime: 60 * 1000,
+    staleTime: KNOWLEDGE_CHUNK_DETAIL_STALE_TIME,
   })
 }
 
@@ -692,6 +666,8 @@ interface CreateKnowledgeBaseParams {
   name: string
   description?: string
   workspaceId: string
+  /** Folder to create the knowledge base in; `null`/omitted creates it at the workspace root. */
+  folderId?: string | null
   chunkingConfig: {
     maxSize: number
     minSize: number
@@ -728,6 +704,8 @@ interface UpdateKnowledgeBaseParams {
     name?: string
     description?: string
     workspaceId?: string | null
+    /** Moves the knowledge base between folders; `null` moves it to the workspace root. */
+    folderId?: string | null
   }
 }
 
@@ -748,7 +726,29 @@ export function useUpdateKnowledgeBase(workspaceId?: string) {
 
   return useMutation({
     mutationFn: updateKnowledgeBase,
-    onError: (error) => {
+    /**
+     * A folder move re-parents a row the user is looking at, so the list is patched up
+     * front — otherwise the base lingers in the folder it just left until the refetch
+     * lands. Only the folder is applied optimistically; name/description edits already
+     * happen behind a modal that closes on success.
+     */
+    onMutate: async ({ knowledgeBaseId, updates }) => {
+      if (updates.folderId === undefined) return
+      await queryClient.cancelQueries({ queryKey: knowledgeKeys.lists() })
+      const previous = queryClient.getQueriesData<KnowledgeBaseData[]>({
+        queryKey: knowledgeKeys.lists(),
+      })
+      queryClient.setQueriesData<KnowledgeBaseData[]>({ queryKey: knowledgeKeys.lists() }, (old) =>
+        old?.map((kb) =>
+          kb.id === knowledgeBaseId ? { ...kb, folderId: updates.folderId ?? null } : kb
+        )
+      )
+      return { previous }
+    },
+    onError: (error, _variables, context) => {
+      for (const [key, data] of context?.previous ?? []) {
+        queryClient.setQueryData(key, data)
+      }
       toast.error(error.message, { duration: 5000 })
     },
     onSettled: (_data, _error, { knowledgeBaseId }) => {
@@ -783,6 +783,44 @@ export function useDeleteKnowledgeBase(workspaceId?: string) {
       })
       queryClient.invalidateQueries({
         queryKey: knowledgeKeys.detail(variables.knowledgeBaseId),
+      })
+    },
+  })
+}
+
+interface CopyKnowledgeBaseParams {
+  knowledgeBaseId: string
+  targetWorkspaceId: string
+  name?: string
+}
+
+async function copyKnowledgeBase({
+  knowledgeBaseId,
+  targetWorkspaceId,
+  name,
+}: CopyKnowledgeBaseParams): Promise<KnowledgeBaseData> {
+  const result = await requestJson(copyKnowledgeBaseContract, {
+    params: { id: knowledgeBaseId },
+    body: { targetWorkspaceId, name },
+  })
+
+  return result.data
+}
+
+/**
+ * Copies a knowledge base into another workspace.
+ */
+export function useCopyKnowledgeBase() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: copyKnowledgeBase,
+    onError: (error) => {
+      toast.error(error.message, { duration: 5000 })
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        queryKey: knowledgeKeys.lists(),
       })
     },
   })

@@ -8,6 +8,7 @@ import { calcomHandler } from '@/lib/webhooks/providers/calcom'
 import { calendlyHandler } from '@/lib/webhooks/providers/calendly'
 import { circlebackHandler } from '@/lib/webhooks/providers/circleback'
 import { clerkHandler } from '@/lib/webhooks/providers/clerk'
+import { clickupHandler } from '@/lib/webhooks/providers/clickup'
 import { confluenceHandler } from '@/lib/webhooks/providers/confluence'
 import { emailBisonHandler } from '@/lib/webhooks/providers/emailbison'
 import { fathomHandler } from '@/lib/webhooks/providers/fathom'
@@ -47,6 +48,7 @@ import { slackHandler } from '@/lib/webhooks/providers/slack'
 import { stripeHandler } from '@/lib/webhooks/providers/stripe'
 import { tableProviderHandler } from '@/lib/webhooks/providers/table'
 import { telegramHandler } from '@/lib/webhooks/providers/telegram'
+import { tiktokHandler } from '@/lib/webhooks/providers/tiktok'
 import { twilioHandler } from '@/lib/webhooks/providers/twilio'
 import { twilioVoiceHandler } from '@/lib/webhooks/providers/twilio-voice'
 import { typeformHandler } from '@/lib/webhooks/providers/typeform'
@@ -56,6 +58,7 @@ import { vercelHandler } from '@/lib/webhooks/providers/vercel'
 import { webflowHandler } from '@/lib/webhooks/providers/webflow'
 import { whatsappHandler } from '@/lib/webhooks/providers/whatsapp'
 import { zendeskHandler } from '@/lib/webhooks/providers/zendesk'
+import { zohoDeskHandler } from '@/lib/webhooks/providers/zoho-desk'
 import { zoomHandler } from '@/lib/webhooks/providers/zoom'
 
 const logger = createLogger('WebhookProviderRegistry')
@@ -69,6 +72,7 @@ const PROVIDER_HANDLERS: Record<string, WebhookProviderHandler> = {
   calcom: calcomHandler,
   circleback: circlebackHandler,
   clerk: clerkHandler,
+  clickup: clickupHandler,
   confluence: confluenceHandler,
   emailbison: emailBisonHandler,
   fireflies: firefliesHandler,
@@ -105,9 +109,13 @@ const PROVIDER_HANDLERS: Record<string, WebhookProviderHandler> = {
   sendblue: sendblueHandler,
   servicenow: servicenowHandler,
   slack: slackHandler,
+  // Native OAuth Slack trigger — inbound events are verified in the shared
+  // /api/webhooks/slack route; the handler reuses Slack payload normalization.
+  slack_app: slackHandler,
   stripe: stripeHandler,
   table: tableProviderHandler,
   telegram: telegramHandler,
+  tiktok: tiktokHandler,
   twilio: twilioHandler,
   twilio_voice: twilioVoiceHandler,
   typeform: typeformHandler,
@@ -115,6 +123,7 @@ const PROVIDER_HANDLERS: Record<string, WebhookProviderHandler> = {
   webflow: webflowHandler,
   whatsapp: whatsappHandler,
   zendesk: zendeskHandler,
+  zoho_desk: zohoDeskHandler,
   zoom: zoomHandler,
 }
 

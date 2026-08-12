@@ -332,7 +332,7 @@ const TraceTreeRow = memo(function TraceTreeRow({
         )}
         {!isIterationType(span.type) && (
           <div
-            className='flex size-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-sm'
+            className='flex size-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-sm [&_img]:size-full'
             style={{ background: bgColor }}
           >
             {BlockIcon && <BlockIcon className={cn('size-[10px]', iconColorClass(bgColor))} />}
@@ -707,7 +707,7 @@ const TraceDetailPane = memo(function TraceDetailPane({ span }: { span: TraceSpa
       <div className='flex items-start gap-2'>
         {!isIterationType(span.type) && (
           <div
-            className='mt-[2px] flex size-[18px] flex-shrink-0 items-center justify-center rounded-sm'
+            className='mt-[2px] flex size-[18px] flex-shrink-0 items-center justify-center overflow-hidden rounded-sm [&_img]:size-full'
             style={{ background: bgColor }}
           >
             {BlockIcon && <BlockIcon className={cn('size-[12px]', iconColorClass(bgColor))} />}
@@ -1006,7 +1006,7 @@ export const TraceView = memo(function TraceView({ traceSpans, runCostDollars }:
           {blockCount} {blockCount === 1 ? 'span' : 'spans'}
         </span>
         {(() => {
-          const rootCost = formatCostAmount(runCostDollars ?? normalizedSpans[0]?.cost?.total)
+          const rootCost = formatCostAmount(runCostDollars)
           return rootCost ? (
             <span className='flex-shrink-0 font-medium text-[var(--text-tertiary)] text-caption tabular-nums'>
               {rootCost}

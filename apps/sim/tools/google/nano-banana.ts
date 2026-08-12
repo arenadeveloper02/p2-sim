@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { stripInlinePayloadFromFileReference } from '@/lib/image-generation/nano-banana-inputs'
+import { calculateHostedImageToolCost } from '@/lib/tools/image-pricing'
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 
 const logger = createLogger('NanoBananaTool')
@@ -10,6 +11,7 @@ interface NanoBananaParams {
   prompt?: string
   aspectRatio?: string
   imageSize?: string
+  apiKey?: string
   inputImage?: unknown
   inputImageMimeType?: string
   inputImages?: unknown[]
@@ -84,6 +86,21 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
     },
   },
 
+  hosting: {
+    envKeyPrefix: 'GOOGLE_API_KEY',
+    apiKeyParam: 'apiKey',
+    byokProviderId: 'google',
+    pricing: {
+      type: 'custom',
+      getCost: (params, output) => calculateHostedImageToolCost(params, output),
+    },
+    rateLimit: {
+      mode: 'per_request',
+      requestsPerMinute: 20,
+      burstMultiplier: 1,
+    },
+  },
+
   request: {
     url: () => {
       logger.info('Routing Nano Banana tool request through internal API')
@@ -102,6 +119,7 @@ const nanoBananaTool: ToolConfig<NanoBananaParams> = {
         prompt: params.prompt,
         aspectRatio: params.aspectRatio,
         imageSize: params.imageSize,
+        ...(params.apiKey ? { apiKey: params.apiKey } : {}),
       }
       if (Array.isArray(params.inputImages) && params.inputImages.length > 0) {
         body.inputImages = params.inputImages.map(stripInlinePayloadFromFileReference)

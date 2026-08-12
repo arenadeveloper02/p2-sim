@@ -17,6 +17,7 @@ import {
 import { resolveSpecialistBrief } from '@/local-copilot/lib/agent/specialists/specialist-tools'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
+import { buildSpecialistExecutionBatches } from '@/local-copilot/lib/writes/specialist-scheduling'
 
 const logger = createLogger('LocalCopilotParentSpecialistCalls')
 
@@ -27,7 +28,7 @@ export interface PendingSpecialistToolCall {
 }
 
 export interface RunParentSpecialistCallsParams
-  extends Omit<RunSpecialistPassParams, 'domain' | 'userMessage' | 'parentDepth'> {
+  extends Omit<RunSpecialistPassParams, 'domain' | 'userMessage' | 'parentDepth' | 'onEvent'> {
   calls: PendingSpecialistToolCall[]
   lastUserMessage: string
   budget: SpecialistBudget
@@ -44,13 +45,6 @@ export interface ParentSpecialistCallOutcome {
   result: SpecialistPassResult | null
 }
 
-function chunkArray<T>(items: T[], size: number): T[][] {
-  if (size <= 0) return [items]
-  const chunks: T[][] = []
-  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size))
-  return chunks
-}
-
 function parseToolArgs(raw: string): Record<string, unknown> {
   try {
     return JSON.parse(raw || '{}') as Record<string, unknown>
@@ -59,12 +53,17 @@ function parseToolArgs(raw: string): Record<string, unknown> {
   }
 }
 
+/**
+ * Runs parent specialist tool calls, streaming nested events (including
+ * confirmation prompts) as they happen so Approve UI is not buffered until
+ * after the confirmation wait finishes.
+ */
 export async function* runParentSpecialistToolCalls(
   params: RunParentSpecialistCallsParams
 ): AsyncGenerator<LocalCopilotStreamEvent, ParentSpecialistCallOutcome[]> {
   const parentDepth = params.parentDepth ?? 0
   const outcomes: ParentSpecialistCallOutcome[] = []
-  const batches = chunkArray(params.calls, MAX_PARALLEL_SUBAGENTS)
+  const batches = buildSpecialistExecutionBatches(params.calls, MAX_PARALLEL_SUBAGENTS)
 
   for (const batch of batches) {
     if (batch.length > 1) {
@@ -80,73 +79,99 @@ export async function* runParentSpecialistToolCalls(
       memory: getLocalCopilotMemorySnapshot(),
     })
 
-    const settled = await Promise.all(
-      batch.map(async (call) => {
-        const parsedArgs = parseToolArgs(call.arguments)
-        if (!isSpecialistDomain(call.name)) {
-          return {
-            call,
-            parsedArgs,
-            result: {
-              domain: 'workflow' as const,
-              findings: '',
-              toolRoundCount: 0,
-              events: [
-                { type: 'status' as const, message: `Unknown specialist tool: ${call.name}` },
-              ],
-              success: false,
-              error: `Unknown specialist tool: ${call.name}`,
-            } satisfies SpecialistPassResult,
-            error: `Unknown specialist tool: ${call.name}`,
-          }
-        }
+    const liveEvents: LocalCopilotStreamEvent[] = []
+    let wake: (() => void) | undefined
+    let remaining = batch.length
 
-        try {
-          const result = await executeSpecialistLoop({
-            ...params,
-            domain: call.name,
-            userMessage: resolveSpecialistBrief(call.name, parsedArgs, params.lastUserMessage),
-            parentDepth,
-          })
-          return {
-            call,
-            parsedArgs,
-            result,
-            error: result.success ? undefined : (result.error ?? result.findings),
-          }
-        } catch (error) {
-          const message = getErrorMessage(error, 'specialist failed')
-          logger.warn('Parent specialist call failed', {
-            domain: call.name,
-            toolCallId: call.id,
-            error: message,
-          })
-          return {
-            call,
-            parsedArgs,
-            result: {
-              domain: call.name,
-              findings: `Specialist (${call.name}) failed: ${message}`,
-              toolRoundCount: 0,
-              events: [{ type: 'status' as const, message: `${call.name} specialist failed` }],
-              success: false,
-              error: message,
-            } satisfies SpecialistPassResult,
-            error: message,
-          }
-        }
+    const enqueue = (event: LocalCopilotStreamEvent) => {
+      liveEvents.push(event)
+      wake?.()
+    }
+
+    const taskPromises = batch.map(async (call) => {
+      const parsedArgs = parseToolArgs(call.arguments)
+      enqueue({
+        type: 'tool_call_start',
+        toolCallId: call.id,
+        toolName: call.name,
+        args: parsedArgs,
       })
-    )
+
+      if (!isSpecialistDomain(call.name)) {
+        remaining -= 1
+        wake?.()
+        return {
+          call,
+          parsedArgs,
+          result: {
+            domain: 'workflow' as const,
+            findings: '',
+            toolRoundCount: 0,
+            events: [{ type: 'status' as const, message: `Unknown specialist tool: ${call.name}` }],
+            success: false,
+            error: `Unknown specialist tool: ${call.name}`,
+          } satisfies SpecialistPassResult,
+          error: `Unknown specialist tool: ${call.name}`,
+        }
+      }
+
+      try {
+        const result = await executeSpecialistLoop({
+          ...params,
+          domain: call.name,
+          userMessage: resolveSpecialistBrief(call.name, parsedArgs, params.lastUserMessage),
+          parentDepth,
+          onEvent: enqueue,
+        })
+        remaining -= 1
+        wake?.()
+        return {
+          call,
+          parsedArgs,
+          result,
+          error: result.success ? undefined : (result.error ?? result.findings),
+        }
+      } catch (error) {
+        const message = getErrorMessage(error, 'specialist failed')
+        logger.warn('Parent specialist call failed', {
+          domain: call.name,
+          toolCallId: call.id,
+          error: message,
+        })
+        enqueue({ type: 'status', message: `${call.name} specialist failed` })
+        remaining -= 1
+        wake?.()
+        return {
+          call,
+          parsedArgs,
+          result: {
+            domain: call.name,
+            findings: `Specialist (${call.name}) failed: ${message}`,
+            toolRoundCount: 0,
+            events: [{ type: 'status' as const, message: `${call.name} specialist failed` }],
+            success: false,
+            error: message,
+          } satisfies SpecialistPassResult,
+          error: message,
+        }
+      }
+    })
+
+    const settledPromise = Promise.all(taskPromises)
+
+    while (remaining > 0 || liveEvents.length > 0) {
+      if (liveEvents.length === 0) {
+        await new Promise<void>((resolve) => {
+          wake = resolve
+        })
+        continue
+      }
+      yield liveEvents.shift()!
+    }
+
+    const settled = await settledPromise
 
     for (const item of settled) {
-      yield {
-        type: 'tool_call_start',
-        toolCallId: item.call.id,
-        toolName: item.call.name,
-        args: item.parsedArgs,
-      }
-      for (const event of item.result.events) yield event
-
       const findings = truncate(
         item.result.findings.trim() ||
           (item.error ? item.error : `Specialist (${item.call.name}) completed with no findings.`),
@@ -174,6 +199,10 @@ export async function* runParentSpecialistToolCalls(
           message: findings,
           domain: item.call.name,
           toolRoundCount: item.result.toolRoundCount,
+          ...(item.result.structured ? { structured: item.result.structured } : {}),
+          ...(item.result.verifications?.length
+            ? { verifications: item.result.verifications }
+            : {}),
         },
         ...(outcome.error ? { error: outcome.error } : {}),
       }

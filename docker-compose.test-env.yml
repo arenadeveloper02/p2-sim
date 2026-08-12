@@ -1,24 +1,23 @@
 services:
   simstudio:
-    build:
-      context: .
-      dockerfile: docker/app.Dockerfile
+    image: ghcr.io/arenadeveloper02/p2-sim-simstudio:${IMAGE_TAG:-dev}
     restart: unless-stopped
     ports:
-      - '3000:3000'
+      - "3000:3000"
     deploy:
       resources:
         limits:
           memory: 16G
+    env_file:
+      - apps/sim/.env
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://p2agent:Td3%23Mp6%26Vr8%21ThR@p2-agents-dev-v2.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
       - NEXT_TELEMETRY_DISABLED=1
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your_encryption_key_here}
-      - FREESTYLE_API_KEY=${FREESTYLE_API_KEY:-placeholder}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-placeholder}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-placeholder}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-placeholder}
@@ -26,7 +25,7 @@ services:
       - RESEND_API_KEY=${RESEND_API_KEY:-placeholder}
       - OLLAMA_URL=${OLLAMA_URL:-http://localhost:11434}
       - SOCKET_SERVER_URL=${SOCKET_SERVER_URL:-http://realtime:3002}
-      - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://localhost:3002}
+      - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://realtime:3002}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_API_KEY_1=${OPENAI_API_KEY_1:-}
       - OPENAI_API_KEY_2=${OPENAI_API_KEY_2:-}
@@ -50,50 +49,47 @@ services:
       realtime:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3000']
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3000"]
       interval: 90s
       timeout: 5s
       retries: 3
       start_period: 10s
 
   realtime:
-    build:
-      context: .
-      dockerfile: docker/realtime.Dockerfile
+    image: ghcr.io/arenadeveloper02/p2-sim-realtime:${IMAGE_TAG:-dev}
     restart: unless-stopped
     ports:
-      - '3002:3002'
+      - "3002:3002"
     deploy:
       resources:
         limits:
           memory: 6G
+    env_file:
+      - apps/realtime/.env
     environment:
-      - DATABASE_URL=postgresql://p2agent:Td3%23Mp6%26Vr8%21ThR@p2-agents-dev-v2.cyva1vnsabpo.us-west-2.rds.amazonaws.com:5432/simstudio?sslmode=require
-      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3000}
-      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
-      - API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-}
-      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
-      - REDIS_URL=${REDIS_URL:-}
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3002/health']
+      test:
+        ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3002/health"]
       interval: 90s
       timeout: 5s
       retries: 3
       start_period: 10s
 
   migrations:
-    image: ghcr.io/simstudioai/migrations:latest
+    image: ghcr.io/arenadeveloper02/p2-sim-migrations:${IMAGE_TAG:-dev}
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
     depends_on:
       db:
         condition: service_healthy
-    command: ['bun', 'run', 'db:migrate']
-    restart: 'no'
+    command: ["bun", "run", "db:migrate"]
+    restart: "no"
+
 
   db:
     image: pgvector/pgvector:pg17
@@ -111,6 +107,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
+      
 volumes:
   postgres_data:

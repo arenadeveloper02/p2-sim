@@ -151,3 +151,64 @@ export function normalizeReferenceFileParams(input: unknown): unknown[] | undefi
 
   return files.length > 0 ? files : undefined
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isImageReferenceFile(value: unknown): boolean {
+  if (!isRecord(value)) return false
+
+  const mimeType =
+    (typeof value.type === 'string' && value.type) ||
+    (typeof value.mimeType === 'string' && value.mimeType) ||
+    ''
+  if (mimeType.startsWith('image/')) return true
+
+  const name = typeof value.name === 'string' ? value.name.toLowerCase() : ''
+  return /\.(png|jpe?g|webp|gif|svg)$/.test(name)
+}
+
+/**
+ * Returns image files from chat / start-block attachments that can be used as generation references.
+ */
+export function extractImageReferenceFiles(input: unknown): unknown[] {
+  return flattenReferenceFileInputs(input).filter(isImageReferenceFile)
+}
+
+function hasConfiguredReferenceImages(params?: Record<string, unknown>): boolean {
+  if (!params) return false
+
+  const uploaded = [
+    ...flattenReferenceFileInputs(params.inputImage),
+    ...flattenReferenceFileInputs(params.inputImages),
+  ].filter((item) => item !== null && item !== undefined && item !== '' && !isStartFilesRef(item))
+
+  return uploaded.length > 0
+}
+
+/**
+ * When an agent image generator tool has no configured references, use chat/start files.
+ */
+export function applyAgentChatFilesToImageGeneratorTools<
+  T extends { type?: string; params?: Record<string, unknown> },
+>(tools: T[], files: unknown): T[] {
+  const imageFiles = extractImageReferenceFiles(files)
+  if (imageFiles.length === 0) return tools
+
+  for (const tool of tools) {
+    if (tool.type !== 'image_generator_v2' && tool.type !== 'image_generator') {
+      continue
+    }
+    if (hasConfiguredReferenceImages(tool.params)) {
+      continue
+    }
+
+    tool.params = {
+      ...(tool.params ?? {}),
+      inputImage: imageFiles,
+    }
+  }
+
+  return tools
+}

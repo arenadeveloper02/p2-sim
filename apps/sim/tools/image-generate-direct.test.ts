@@ -16,6 +16,7 @@ vi.mock('@/lib/core/config/env-flags', () => ({
   isProd: false,
   isDev: true,
   isTest: true,
+  isSlackExtendedScopesEnabled: false,
 }))
 
 vi.mock('@/lib/core/config/env', () => ({

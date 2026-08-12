@@ -1,6 +1,12 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import {
+  assertBillingAttributionSnapshot,
+  type BillingAttributionSnapshot,
+  resolveBillingAttribution,
+} from '@/lib/billing/core/billing-attribution'
+import { resolveChildExecutionLineage } from '@/lib/execution/lineage'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
@@ -8,8 +14,62 @@ import { handlePostExecutionPauseState } from '@/lib/workflows/executor/pause-pe
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionMetadata, SerializableExecutionState } from '@/executor/execution/types'
 import type { ExecutionResult, StreamingExecution } from '@/executor/types'
+import type { ResolvedSecretTraceProvenanceV1 } from '@/executor/utils/resolved-secret-trace-registry'
 
 const logger = createLogger('WorkflowExecution')
+
+/**
+ * Ensures workspace execution has a frozen payer snapshot. Copilot tool paths
+ * sometimes arrive without a lifecycle-stamped root attribution; resolve one
+ * from the actor + workspace rather than failing the run.
+ */
+async function resolveExecutionBillingAttribution(params: {
+  requestId: string
+  workflowId: string
+  workspaceId: string
+  actorUserId: string
+  streamConfig?: ExecuteWorkflowOptions
+}): Promise<BillingAttributionSnapshot> {
+  const { requestId, workflowId, workspaceId, actorUserId, streamConfig } = params
+  if (streamConfig?.billingAttribution) {
+    return assertBillingAttributionSnapshot(streamConfig.billingAttribution)
+  }
+
+  const canResolveFromActor =
+    streamConfig?.workflowTriggerType === 'copilot' ||
+    Boolean(streamConfig?.triggeringChatId || streamConfig?.triggeringRunId)
+
+  if (!canResolveFromActor) {
+    logger.error(`[${requestId}] Missing billing attribution for workspace execution`, {
+      workflowId,
+      workspaceId,
+      actorUserId,
+      hasStreamConfig: Boolean(streamConfig),
+      triggerType: streamConfig?.workflowTriggerType,
+      triggeringChatId: streamConfig?.triggeringChatId,
+      triggeringRunId: streamConfig?.triggeringRunId,
+      parentExecutionId: streamConfig?.parentExecutionId,
+    })
+    throw new Error('Billing attribution is required for workspace execution')
+  }
+
+  logger.warn(
+    `[${requestId}] Resolving missing billing attribution for copilot workflow execution`,
+    {
+      workflowId,
+      workspaceId,
+      actorUserId,
+      triggerType: streamConfig?.workflowTriggerType,
+      triggeringChatId: streamConfig?.triggeringChatId ?? null,
+      triggeringRunId: streamConfig?.triggeringRunId ?? null,
+    }
+  )
+  const resolved = await resolveBillingAttribution({
+    actorUserId,
+    workspaceId,
+  })
+  return assertBillingAttributionSnapshot(resolved)
+}
 
 export interface ExecuteWorkflowOptions {
   enabled: boolean
@@ -49,7 +109,28 @@ export interface ExecuteWorkflowOptions {
     sourceSnapshot: SerializableExecutionState
     sourceExecutionId?: string
   }
+  /** Trusted encrypted provenance supplied by a server-only caller before execution starts. */
+  trustedInitialResolvedSecretTraceProvenance?: ResolvedSecretTraceProvenanceV1
   executionMode?: 'sync' | 'stream' | 'async'
+  /** Parent workflow run when triggered as a child execution. */
+  parentExecutionId?: string
+  /** Parent's root execution id when known. */
+  parentRootExecutionId?: string
+  /** Copilot chat that triggered this run (rollup only). */
+  triggeringChatId?: string
+  /** Copilot run that triggered this run (rollup only). */
+  triggeringRunId?: string
+  /** Immutable actor/payer decision captured by preprocessing. */
+  billingAttribution?: BillingAttributionSnapshot
+  /** Deployed-chat thinking policy; persisted on the snapshot for resume. */
+  includeThinking?: boolean
+  /** Deployed-chat tool lifecycle policy; persisted on the snapshot for resume. */
+  includeToolCalls?: boolean
+  /**
+   * Run-level agent-events opt-in (see {@link ExecutionMetadata.agentEvents}).
+   * Callers set this only when the surface consumes thinking/tool events.
+   */
+  agentEvents?: boolean
 }
 
 export interface WorkflowInfo {
@@ -74,18 +155,51 @@ export async function executeWorkflow(
 
   const workflowId = workflow.id
   const workspaceId = workflow.workspaceId
+  const billingAttribution = await resolveExecutionBillingAttribution({
+    requestId,
+    workflowId,
+    workspaceId,
+    actorUserId,
+    streamConfig,
+  })
+  if (
+    billingAttribution.actorUserId !== actorUserId ||
+    billingAttribution.workspaceId !== workspaceId
+  ) {
+    logger.error(`[${requestId}] Workflow billing attribution mismatch`, {
+      workflowId,
+      workspaceId,
+      actorUserId,
+      attributionActorUserId: billingAttribution.actorUserId,
+      attributionWorkspaceId: billingAttribution.workspaceId,
+      billingEntityType: billingAttribution.billingEntity.type,
+      billingEntityId: billingAttribution.billingEntity.id,
+    })
+    throw new Error('Workflow billing attribution does not match its actor and workspace')
+  }
+
   const executionId = providedExecutionId || generateId()
   const triggerType = streamConfig?.workflowTriggerType || 'api'
   const loggingSession = new LoggingSession(workflowId, executionId, triggerType, requestId)
 
   try {
     const sessionUserId = streamConfig?.sessionUserId ?? undefined
+    const lineage = await resolveChildExecutionLineage({
+      executionId,
+      input: {
+        parentExecutionId: streamConfig?.parentExecutionId,
+        parentRootExecutionId: streamConfig?.parentRootExecutionId,
+        triggeringChatId: streamConfig?.triggeringChatId,
+        triggeringRunId: streamConfig?.triggeringRunId,
+      },
+    })
     const metadata: ExecutionMetadata = {
       requestId,
       executionId,
       workflowId,
       workspaceId,
       userId: actorUserId,
+      billingAttribution,
       workflowUserId: workflow.userId,
       sessionUserId,
       triggerType,
@@ -97,6 +211,16 @@ export async function executeWorkflow(
       largeValueKeys: streamConfig?.largeValueKeys,
       fileKeys: streamConfig?.fileKeys,
       executionMode: streamConfig?.executionMode,
+      parentExecutionId: lineage.parentExecutionId,
+      rootExecutionId: lineage.rootExecutionId,
+      triggeringChatId: lineage.triggeringChatId,
+      triggeringRunId: lineage.triggeringRunId,
+      includeThinking: streamConfig?.includeThinking === true ? true : undefined,
+      includeToolCalls:
+        typeof streamConfig?.includeToolCalls === 'boolean'
+          ? streamConfig.includeToolCalls
+          : undefined,
+      agentEvents: streamConfig?.agentEvents === true ? true : undefined,
     }
 
     const snapshot = new ExecutionSnapshot(
@@ -134,6 +258,8 @@ export async function executeWorkflow(
       base64MaxBytes: streamConfig?.base64MaxBytes,
       abortSignal: streamConfig?.abortSignal,
       stopAfterBlockId: streamConfig?.stopAfterBlockId,
+      trustedInitialResolvedSecretTraceProvenance:
+        streamConfig?.trustedInitialResolvedSecretTraceProvenance,
       runFromBlock: streamConfig?.runFromBlock,
     })
 

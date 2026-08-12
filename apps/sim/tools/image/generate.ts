@@ -1,7 +1,11 @@
 import { isUserFile } from '@/lib/core/utils/user-file'
-import { IMAGE_BLOCK_MODEL_IDS } from '@/lib/image-generation/block-model-config'
+import {
+  IMAGE_BLOCK_MODEL_IDS,
+  reconcileImageProviderAndModel,
+} from '@/lib/image-generation/block-model-config'
 import { IMAGE_GENERATION_PROVIDER_TIMEOUT_MS } from '@/lib/image-generation/constants'
 import { FALAI_HOSTED_KEY_MARKUP_MULTIPLIER } from '@/lib/tools/falai-pricing'
+import { calculateHostedImageToolCost } from '@/lib/tools/image-pricing'
 import type { ImageGenerationParams, ImageGenerationResponse } from '@/tools/image/types'
 import type { ToolConfig, ToolFileData } from '@/tools/types'
 
@@ -200,12 +204,6 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       visibility: 'user-or-llm',
       description: 'Fal.ai safety tolerance when supported',
     },
-    numImages: {
-      type: 'number',
-      required: false,
-      visibility: 'user-or-llm',
-      description: 'Number of images to generate, subject to provider limits',
-    },
     seed: {
       type: 'number',
       required: false,
@@ -233,13 +231,14 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
     inputImage: {
       type: 'json',
       required: false,
-      visibility: 'user-or-llm',
-      description: 'Reference image for editing',
+      visibility: 'user-only',
+      description:
+        'Reference images for editing. Chat and Start block files are used automatically when unset.',
     },
     inputImages: {
       type: 'json',
       required: false,
-      visibility: 'user-or-llm',
+      visibility: 'hidden',
       description:
         'Multiple reference images for fusion. Supported on Gemini models (up to 14) and subject to per-model limits.',
     },
@@ -271,30 +270,68 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
   },
 
   hosting: {
-    enabled: (params) =>
-      params.provider === 'falai' &&
-      (params as ImageGenerationRuntimeParams).__skipHostedKeyHandling !== true,
-    envKeyPrefix: 'FALAI_API_KEY',
+    enabled: (params) => {
+      if ((params as ImageGenerationRuntimeParams).__skipHostedKeyHandling === true) {
+        return false
+      }
+      const reconciled = reconcileImageProviderAndModel({
+        provider: params.provider,
+        model: typeof params.model === 'string' ? params.model : undefined,
+      })
+      return (
+        reconciled.provider === 'falai' ||
+        reconciled.provider === 'openai' ||
+        reconciled.provider === 'gemini'
+      )
+    },
+    envKeyPrefix: (params) => {
+      const reconciled = reconcileImageProviderAndModel({
+        provider: params.provider,
+        model: typeof params.model === 'string' ? params.model : undefined,
+      })
+      if (reconciled.provider === 'gemini') return 'GOOGLE_API_KEY'
+      if (reconciled.provider === 'openai') return 'OPENAI_API_KEY'
+      return 'FALAI_API_KEY'
+    },
     apiKeyParam: 'apiKey',
-    byokProviderId: 'falai',
+    byokProviderId: (params) => {
+      const reconciled = reconcileImageProviderAndModel({
+        provider: params.provider,
+        model: typeof params.model === 'string' ? params.model : undefined,
+      })
+      if (reconciled.provider === 'gemini') return 'google'
+      if (reconciled.provider === 'openai') return 'openai'
+      return 'falai'
+    },
     pricing: {
       type: 'custom',
-      getCost: (_params, output) => {
-        const providerCostDollars = output.__falaiCostDollars
-        if (typeof providerCostDollars !== 'number' || Number.isNaN(providerCostDollars)) {
+      getCost: (params, output) => {
+        if (
+          typeof output.__falaiCostDollars === 'number' &&
+          !Number.isNaN(output.__falaiCostDollars)
+        ) {
+          const providerCostDollars = output.__falaiCostDollars
+          return {
+            cost: providerCostDollars * FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,
+            metadata: {
+              ...(typeof output.__falaiBilling === 'object' && output.__falaiBilling !== null
+                ? (output.__falaiBilling as Record<string, unknown>)
+                : {}),
+              providerCostDollars,
+              markupMultiplier: FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,
+            },
+          }
+        }
+
+        const reconciled = reconcileImageProviderAndModel({
+          provider: params.provider,
+          model: typeof params.model === 'string' ? params.model : undefined,
+        })
+        if (reconciled.provider === 'falai') {
           throw new Error('Fal.ai image response missing cost data')
         }
 
-        return {
-          cost: providerCostDollars * FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,
-          metadata: {
-            ...(typeof output.__falaiBilling === 'object' && output.__falaiBilling !== null
-              ? (output.__falaiBilling as Record<string, unknown>)
-              : {}),
-            providerCostDollars,
-            markupMultiplier: FALAI_HOSTED_KEY_MARKUP_MULTIPLIER,
-          },
-        }
+        return calculateHostedImageToolCost(params, output)
       },
     },
     rateLimit: {
@@ -328,7 +365,6 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         outputFormat: params.outputFormat,
         moderation: params.moderation,
         safetyTolerance: params.safetyTolerance,
-        numImages: params.numImages,
         seed: params.seed,
         enableSafetyChecker: params.enableSafetyChecker,
         enableWebSearch: params.enableWebSearch,
@@ -429,6 +465,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
           s3UploadFailed: output.s3UploadFailed,
           __falaiCostDollars: output.__falaiCostDollars,
           __falaiBilling: output.__falaiBilling,
+          __imageBilling: output.__imageBilling,
         },
       }
     }
@@ -455,6 +492,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         },
         __falaiCostDollars: data.__falaiCostDollars,
         __falaiBilling: data.__falaiBilling,
+        __imageBilling: data.__imageBilling,
       },
     }
   },

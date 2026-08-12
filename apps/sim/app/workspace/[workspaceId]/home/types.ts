@@ -1,4 +1,5 @@
 import type { ChatContext } from '@/stores/panel'
+import type { BrowserTextSelection, TerminalTextSelection } from '@/stores/panel/types'
 
 const EDIT_CONTENT_TOOL_ID = 'edit_content'
 const RUN_SUBAGENT_ID = 'run'
@@ -29,6 +30,8 @@ export interface QueuedMessage {
 
 export const ToolCallStatus = {
   executing: 'executing',
+  /** Held for the user's Allow / Always allow / Skip decision; nothing has run yet. */
+  awaiting_approval: 'awaiting_approval',
   success: 'success',
   error: 'error',
   cancelled: 'cancelled',
@@ -66,6 +69,8 @@ export interface ToolCallData {
   params?: Record<string, unknown>
   result?: ToolCallResult
   streamingArgs?: string
+  /** When execution started, for rows whose label changes as it runs. */
+  startedAt?: number
 }
 
 export interface ToolCallInfo {
@@ -73,10 +78,17 @@ export interface ToolCallInfo {
   name: string
   status: ToolCallStatus
   displayTitle?: string
+  /** Model-authored activity phrase for a gateway-resolved integration call. */
+  integrationDescription?: string
   params?: Record<string, unknown>
   calledBy?: string
   result?: ToolCallResult
   streamingArgs?: string
+  /**
+   * Wall-clock the call opened. Carried separately from the block `timestamp`,
+   * which falls back to a wire seq and so cannot be read as a clock.
+   */
+  startedAtMs?: number
 }
 
 export interface OptionItem {
@@ -136,6 +148,23 @@ export interface ChatMessageContext {
   chatId?: string
   blockType?: string
   skillId?: string
+  serverId?: string
+  /** Selected passage for a `file_selection` context. */
+  text?: string
+  /** Source file name for a `file_selection` context. */
+  fileName?: string
+  /** 1-based inclusive line range for a `file_selection` context. */
+  startLine?: number
+  endLine?: number
+  /** Source table name for a `table_selection` context. */
+  tableName?: string
+  /** Selected row ids for a `table_selection` context. */
+  rowIds?: string[]
+  /** Selected column ids for a `table_selection` cell range. */
+  columnIds?: string[]
+  tabId?: string
+  terminalId?: string
+  selection?: BrowserTextSelection | TerminalTextSelection
 }
 
 export interface ChatMessage {
@@ -159,6 +188,8 @@ export const SUBAGENT_LABELS: Record<string, string> = {
   knowledge: 'Knowledge Agent',
   table: 'Table Agent',
   custom_tool: 'Custom Tool Agent',
+  scout: 'Scout Agent',
+  search: 'Search Agent',
   superagent: 'Superagent',
   run: 'Run Agent',
   agent: 'Tools Agent',
@@ -167,4 +198,5 @@ export const SUBAGENT_LABELS: Record<string, string> = {
   job: 'Job Agent',
   file: 'File Agent',
   media: 'Media Agent',
+  browser: 'Browser Agent',
 } as const

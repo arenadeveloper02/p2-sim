@@ -1,11 +1,24 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
+import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
+import { normalizeEditWorkflowArgs } from '@/lib/copilot/tools/server/workflow/edit-workflow/normalize-args'
+import type { LocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
+import { extractLocalToolBillingMetadata } from '@/local-copilot/lib/billing/turn-cost-accumulator'
+import {
+  LOAD_COPILOT_ARTIFACT_TOOL_NAME,
+  loadArtifactFromRecord,
+  loadArtifacts,
+} from '@/local-copilot/lib/context/artifacts'
 import {
   buildLocalCopilotContext,
   contextToPromptJson,
 } from '@/local-copilot/lib/context/build-context'
+import {
+  buildWorkflowBlockInspection,
+  resolveWorkflowContextDetail,
+} from '@/local-copilot/lib/context/context-budget'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { generateWorkflowPatchFromRequest } from '@/local-copilot/lib/patches/generate'
 import { validateWorkflowPatch, validateWorkflowState } from '@/local-copilot/lib/patches/validate'
@@ -15,10 +28,16 @@ import {
   enrichLocalIntegrationToolParams,
   SEPARATE_DRAFT_RECIPIENTS_KEY,
 } from '@/local-copilot/lib/tools/enrich-integration-params'
+import { injectWorkspaceEnvApiKeyIfNeeded } from '@/local-copilot/lib/tools/inject-workspace-env-api-key'
 import {
   executeMothershipDelegatedTool,
   isMothershipDelegatedTool,
 } from '@/local-copilot/lib/tools/mothership-delegated-tools'
+import {
+  normalizeBlockIdsArgs,
+  resolveBlockIdsArg,
+} from '@/local-copilot/lib/tools/resolve-block-ids-arg'
+import { guardDelegatedCreateWhenExistingAvailable } from '@/local-copilot/lib/tools/reuse-existing-guards'
 import {
   executeLoadUserSkill,
   LOAD_USER_SKILL_TOOL_NAME,
@@ -28,6 +47,26 @@ import {
   runEditWorkflowTool,
 } from '@/local-copilot/lib/tools/workflow-mutations'
 import type { LocalCopilotStructuredContext, WorkflowPatch } from '@/local-copilot/lib/types'
+import {
+  buildEditWorkflowDryRunResult,
+  shouldPreviewEditWorkflow,
+} from '@/local-copilot/lib/writes/edit-preview'
+import {
+  buildIdempotencyKey,
+  getIdempotentResult,
+  rememberIdempotentResult,
+  toolSupportsIdempotency,
+} from '@/local-copilot/lib/writes/idempotency'
+import {
+  assertEditWorkflowLookBeforeWrite,
+  assertInvokeLookBeforeWrite,
+} from '@/local-copilot/lib/writes/look-before-write'
+import { pinToolArgsToWorkspace } from '@/local-copilot/lib/writes/pin-ids'
+import { assertExpectedRevision } from '@/local-copilot/lib/writes/revision'
+import {
+  assertWorkflowWritableInWorkspace,
+  loadWorkflowRevision,
+} from '@/local-copilot/lib/writes/workflow-access'
 
 const logger = createLogger('LocalCopilotToolExecutor')
 
@@ -57,12 +96,34 @@ export interface ToolExecutionContext {
   messageId?: string
   abortSignal?: AbortSignal
   userPermission?: string
+  /**
+   * Frozen workspace payer snapshot from mothership admission. Required for
+   * delegated workflow runs (`run_workflow`, etc.) that call `executeWorkflow`.
+   */
+  billingAttribution?: BillingAttributionSnapshot
   structuredContext: LocalCopilotStructuredContext
   selectedBlockId?: string
   /** Latest user message — used to preserve variation counts for generate_image. */
   lastUserMessage?: string
   /** Optional live-status callback for long-running tools (fire-and-forget). */
   onProgress?: (message: string) => void
+  /**
+   * Per-turn cache of get_blocks_metadata results keyed by block type id.
+   * Avoids repeated identical/overlapping metadata fetches in one agent turn.
+   */
+  blocksMetadataByType?: Map<string, unknown>
+  /** CAS token from workflow.updatedAt for the active workflow. */
+  workflowRevision?: string
+  /** Turn-scoped idempotency cache for create/deploy/invoke. */
+  mutationIdempotency?: Map<string, ToolExecutionResult>
+  /** Integration tool ids returned by list_integration_tools this turn. */
+  listedIntegrationToolIds?: Set<string>
+  /** Workflow ids created earlier in this turn (membership bypass until refresh). */
+  allowedWorkflowIds?: Set<string>
+  /** Active tool_use id for idempotency keying. */
+  activeToolCallId?: string
+  /** Turn-scoped store for oversized tool-result artifacts. */
+  artifactStore?: import('@/local-copilot/lib/context/artifacts').ArtifactStore
 }
 
 function requireWorkflowContext(
@@ -84,6 +145,11 @@ export interface ToolExecutionResult {
   resources?: MothershipResource[]
   /** Set when create_workflow succeeds — subsequent tools use this workflow. */
   createdWorkflowId?: string
+  /**
+   * Trusted billing metadata for Local turn aggregation. Prefer this over
+   * scraping arbitrary user-facing tool output.
+   */
+  billing?: LocalToolBillingMetadata
 }
 
 function guardCreateWorkflowWhenExistingAvailable(
@@ -121,10 +187,15 @@ function guardCreateWorkflowWhenExistingAvailable(
   }))
 
   if (!target) {
-    const error = `This workspace already has ${existing.length} workflows. Use get_workflow_run_options + run_workflow on a matching entry from workspaceWorkflows instead of create_workflow. Pass confirmNewWorkflow: true only when the user explicitly wants a brand-new workflow.`
+    const similar = findSimilarPurposeWorkflows(requestedName, existing)
+    const similarNames = similar.map((workflow) => workflow.name).slice(0, 5)
+    const error = similarNames.length
+      ? `This workspace already has similar workflows (${similarNames.join(', ')}). Do not create a duplicate yet.`
+      : `This workspace already has ${existing.length} workflows. Confirm before creating another.`
     logger.info('Blocked create_workflow — workspace already has workflows', {
       existingCount: existing.length,
       requestedName: requestedName || null,
+      similarNames,
     })
     return {
       toolName: 'create_workflow',
@@ -133,8 +204,10 @@ function guardCreateWorkflowWhenExistingAvailable(
       result: {
         useRunWorkflowInstead: true,
         existingWorkflows: workflowsForResult,
-        followUpHint:
-          'Pick the best matching workflowId from existingWorkflows, call get_workflow_run_options, then run_workflow.',
+        ...(similarNames.length ? { similarWorkflowNames: similarNames } : {}),
+        followUpHint: similarNames.length
+          ? `If the user's message already asked to create a new/distinct workflow, retry create_workflow immediately with confirmNewWorkflow: true. Otherwise reply with one <options> block: (1) adjust "${similarNames[0]}" for this request, (2) create a new distinctly named workflow — then create with confirmNewWorkflow: true only if they choose create.`
+          : 'If the user wants a brand-new workflow (or already asked to create one), retry create_workflow with confirmNewWorkflow: true. Otherwise edit or run an existing workspaceWorkflows entry.',
       },
     }
   }
@@ -147,7 +220,7 @@ function guardCreateWorkflowWhenExistingAvailable(
       ? `This workspace has one existing workflow ("${target.name}").`
       : `A similar workflow already exists ("${target.name}").`
 
-  const error = `${reason} Use get_workflow_run_options then run_workflow to execute it, or edit_workflow to modify it. Pass confirmNewWorkflow: true only if the user explicitly asked for a separate new workflow.`
+  const error = `${reason} Prefer editing or running it instead of duplicating.`
 
   logger.info('Blocked create_workflow in favor of existing workflow', {
     existingWorkflowId: target.id,
@@ -163,9 +236,59 @@ function guardCreateWorkflowWhenExistingAvailable(
       existingWorkflowId: target.id,
       existingWorkflowName: target.name,
       existingWorkflows: workflowsForResult,
-      followUpHint: `Call get_workflow_run_options({ workflowId: "${target.id}" }) then run_workflow.`,
+      followUpHint: exactNameMatch
+        ? `A workflow with this name already exists. Edit or run "${target.name}", or ask via <options> before creating a differently named copy with confirmNewWorkflow: true.`
+        : `If the user already asked to create a new/distinct workflow, retry create_workflow with confirmNewWorkflow: true now. Otherwise offer <options>: (1) edit "${target.name}" for this request, (2) create a new workflow.`,
     },
   }
+}
+
+/**
+ * Finds existing workflows whose names share meaningful tokens with the request
+ * (e.g. "10-Day Email Summary" ↔ "Weekly Email Summary").
+ */
+function findSimilarPurposeWorkflows(
+  requestedName: string,
+  existing: Array<{ id: string; name: string; isDeployed?: boolean }>
+): Array<{ id: string; name: string; isDeployed?: boolean }> {
+  const requestTokens = meaningfulNameTokens(requestedName)
+  if (requestTokens.size < 2) return []
+
+  return existing.filter((workflow) => {
+    const existingTokens = meaningfulNameTokens(workflow.name)
+    let overlap = 0
+    for (const token of requestTokens) {
+      if (existingTokens.has(token)) overlap += 1
+    }
+    return overlap >= 2
+  })
+}
+
+const NAME_STOP_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'for',
+  'and',
+  'or',
+  'to',
+  'of',
+  'my',
+  'new',
+  'day',
+  'days',
+  'week',
+  'weekly',
+  'daily',
+])
+
+function meaningfulNameTokens(name: string): Set<string> {
+  return new Set(
+    name
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length >= 3 && !NAME_STOP_WORDS.has(token) && !/^\d+$/.test(token))
+  )
 }
 
 async function runLoadUserSkill(
@@ -181,6 +304,17 @@ async function runLoadUserSkill(
     })
   } catch (error) {
     const message = getErrorMessage(error, 'Skills are not allowed')
+    const { LOCAL_OPS_COUNTERS, recordLocalOpsEvent } = await import(
+      '@/local-copilot/lib/ops/metrics'
+    )
+    recordLocalOpsEvent({
+      counter: LOCAL_OPS_COUNTERS.authDenied,
+      userId: ctx.userId,
+      workspaceId: ctx.workspaceId,
+      workflowId: ctx.workflowId,
+      chatId: ctx.chatId,
+      metadata: { toolName: LOAD_USER_SKILL_TOOL_NAME },
+    })
     return {
       toolName: LOAD_USER_SKILL_TOOL_NAME,
       success: false,
@@ -212,6 +346,17 @@ export async function executeLocalCopilotTool(
   args: Record<string, unknown>,
   ctx: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
+  args = pinToolArgsToWorkspace(args, ctx.workspaceId)
+  ctx.mutationIdempotency ??= new Map()
+  ctx.listedIntegrationToolIds ??= new Set()
+  ctx.allowedWorkflowIds ??= new Set()
+
+  if (toolSupportsIdempotency(toolName)) {
+    const key = buildIdempotencyKey(toolName, args, ctx.activeToolCallId)
+    const cached = getIdempotentResult(ctx.mutationIdempotency, key)
+    if (cached) return cached
+  }
+
   // load_user_skill is registered dynamically per workspace when skills exist.
   if (toolName === LOAD_USER_SKILL_TOOL_NAME) {
     logger.info('Executing Arena Copilot tool', { toolName, workflowId: ctx.workflowId })
@@ -235,10 +380,29 @@ export async function executeLocalCopilotTool(
     throw new Error(`Unknown tool: ${toolName}`)
   }
 
+  // Normalize alias shapes before any handler path (direct call or invoke redirect).
+  if (toolName === 'get_blocks_metadata') {
+    args = normalizeBlockIdsArgs(args)
+  }
+
   logger.info('Executing Arena Copilot tool', { toolName, workflowId: ctx.workflowId })
 
   if (isMothershipDelegatedTool(toolName)) {
-    return executeMothershipDelegatedTool(toolName, args, ctx)
+    const reuseBlocked = guardDelegatedCreateWhenExistingAvailable(toolName, args, ctx)
+    if (reuseBlocked) return reuseBlocked
+
+    const delegated = attachToolBilling(await executeMothershipDelegatedTool(toolName, args, ctx))
+    if (toolName === 'list_integration_tools' && delegated.success) {
+      rememberListedIntegrationTools(ctx, delegated.result)
+    }
+    if (toolSupportsIdempotency(toolName) && delegated.success) {
+      rememberIdempotentResult(
+        ctx.mutationIdempotency,
+        buildIdempotencyKey(toolName, args, ctx.activeToolCallId),
+        delegated
+      )
+    }
+    return delegated
   }
 
   switch (toolName) {
@@ -256,37 +420,223 @@ export async function executeLocalCopilotTool(
       const output = mutation.output as Record<string, unknown> | undefined
       const createdWorkflowId =
         typeof output?.workflowId === 'string' ? output.workflowId : undefined
-      return {
+      if (createdWorkflowId) {
+        ctx.allowedWorkflowIds.add(createdWorkflowId)
+        ctx.workflowId = createdWorkflowId
+      }
+      const created = {
         toolName,
         success: mutation.success,
         result: mutation.output ?? { error: mutation.error },
         error: mutation.error,
         ...(createdWorkflowId ? { createdWorkflowId } : {}),
       }
+      if (created.success) {
+        rememberIdempotentResult(
+          ctx.mutationIdempotency,
+          buildIdempotencyKey(toolName, args, ctx.activeToolCallId),
+          created
+        )
+      }
+      return created
     }
 
     case 'edit_workflow': {
-      const mutation = await runEditWorkflowTool(args, {
+      const enrichedArgs = normalizeEditWorkflowArgs(enrichEditWorkflowArgs(args, ctx))
+      const operations = Array.isArray(enrichedArgs.operations) ? enrichedArgs.operations : []
+      if (operations.length === 0) {
+        return {
+          toolName,
+          success: false,
+          error:
+            'operations are required and must be a non-empty array — pass { operations: [{ block_id, operation_type, params }] }',
+          result: {
+            success: false,
+            error:
+              'operations are required and must be a non-empty array — pass { operations: [{ block_id, operation_type, params }] }',
+          },
+        }
+      }
+
+      const lookBefore = assertEditWorkflowLookBeforeWrite({
+        operations,
+        blocksMetadataByType: ctx.blocksMetadataByType,
+      })
+      if (!lookBefore.ok) {
+        return {
+          toolName,
+          success: false,
+          error: lookBefore.error,
+          result: { success: false, error: lookBefore.error },
+        }
+      }
+
+      const targetWorkflowId =
+        (typeof enrichedArgs.workflowId === 'string' && enrichedArgs.workflowId.trim()) ||
+        ctx.workflowId
+      if (!targetWorkflowId) {
+        return {
+          toolName,
+          success: false,
+          error: 'workflowId is required — create a workflow first with create_workflow',
+          result: {},
+        }
+      }
+
+      if (shouldPreviewEditWorkflow(enrichedArgs)) {
+        const forcedByPolicy = enrichedArgs.dryRun !== true
+        return {
+          toolName,
+          success: true,
+          result: buildEditWorkflowDryRunResult({
+            operations,
+            workflowId: targetWorkflowId,
+            forcedByPolicy,
+          }),
+        }
+      }
+
+      const access = await assertWorkflowWritableInWorkspace({
+        workflowId: targetWorkflowId,
+        workspaceId: ctx.workspaceId,
+        allowedWorkflowIds: ctx.allowedWorkflowIds,
+      })
+      if (!access.ok) {
+        return {
+          toolName,
+          success: false,
+          error: access.error,
+          result: { success: false, error: access.error },
+        }
+      }
+
+      const expectedRevision =
+        (typeof enrichedArgs.expectedRevision === 'string' &&
+          enrichedArgs.expectedRevision.trim()) ||
+        ctx.workflowRevision
+      const revisionCheck = assertExpectedRevision({
+        expectedRevision,
+        currentRevision: access.revision || undefined,
+      })
+      if (!revisionCheck.ok) {
+        return {
+          toolName,
+          success: false,
+          error: revisionCheck.error,
+          result: {
+            success: false,
+            error: revisionCheck.error,
+            currentRevision: access.revision || ctx.workflowRevision,
+          },
+        }
+      }
+
+      const mutation = await runEditWorkflowTool(enrichedArgs, {
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
         workflowId: ctx.workflowId,
         chatId: ctx.chatId,
         abortSignal: ctx.abortSignal,
       })
+
+      if (mutation.success) {
+        const next = await assertWorkflowWritableInWorkspace({
+          workflowId: targetWorkflowId,
+          workspaceId: ctx.workspaceId,
+          allowedWorkflowIds: ctx.allowedWorkflowIds,
+        })
+        if (next.ok && next.revision) {
+          ctx.workflowRevision = next.revision
+        }
+      }
+
+      const output =
+        mutation.output && typeof mutation.output === 'object'
+          ? {
+              ...(mutation.output as Record<string, unknown>),
+              ...(ctx.workflowRevision ? { revision: ctx.workflowRevision } : {}),
+            }
+          : mutation.output
+
       return {
         toolName,
         success: mutation.success,
-        result: mutation.output ?? { error: mutation.error },
+        result: output ?? { error: mutation.error },
         error: mutation.error,
       }
     }
 
-    case 'get_workflow_context':
+    case 'get_workflow_context': {
+      const blockIds = Array.isArray(args.blockIds)
+        ? args.blockIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        : []
+      const blockNames = Array.isArray(args.blockNames)
+        ? args.blockNames.filter(
+            (name): name is string => typeof name === 'string' && name.trim().length > 0
+          )
+        : []
+
+      if ((blockIds.length > 0 || blockNames.length > 0) && ctx.structuredContext.workflow) {
+        return {
+          toolName,
+          success: true,
+          result: buildWorkflowBlockInspection(ctx.structuredContext.workflow, {
+            blockIds,
+            blockNames,
+          }),
+        }
+      }
+
+      const workflowDetail = resolveWorkflowContextDetail(ctx.structuredContext)
       return {
         toolName,
         success: true,
-        result: JSON.parse(contextToPromptJson(ctx.structuredContext)),
+        result: JSON.parse(contextToPromptJson(ctx.structuredContext, { workflowDetail })),
       }
+    }
+
+    case LOAD_COPILOT_ARTIFACT_TOOL_NAME:
+    case 'load_copilot_artifact': {
+      const artifactId = typeof args.artifactId === 'string' ? args.artifactId.trim() : ''
+      if (!artifactId) {
+        return {
+          toolName,
+          success: false,
+          error: 'artifactId is required',
+          result: { error: 'artifactId is required' },
+        }
+      }
+
+      const fromTurn = ctx.artifactStore?.artifacts.get(artifactId)
+      if (fromTurn) {
+        return { toolName, success: true, result: fromTurn.body }
+      }
+
+      if (!ctx.chatId) {
+        return {
+          toolName,
+          success: false,
+          error: 'Artifact not found in this turn and no chatId for durable lookup',
+          result: { error: 'Artifact not found' },
+        }
+      }
+
+      const persisted = await loadArtifacts(ctx.chatId, ctx.userId)
+      const artifact = persisted.get(artifactId)
+      if (!artifact) {
+        const legacy = loadArtifactFromRecord(Object.fromEntries(persisted), artifactId)
+        if (!legacy) {
+          return {
+            toolName,
+            success: false,
+            error: `Unknown artifactId: ${artifactId}`,
+            result: { error: `Unknown artifactId: ${artifactId}` },
+          }
+        }
+        return { toolName, success: true, result: legacy.body }
+      }
+      return { toolName, success: true, result: artifact.body }
+    }
 
     case 'get_available_blocks': {
       const category =
@@ -298,28 +648,82 @@ export async function executeLocalCopilotTool(
     }
 
     case 'get_blocks_metadata': {
-      const blockIds = Array.isArray(args.blockIds)
-        ? args.blockIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-        : []
+      const blockIds = resolveBlockIdsArg(args)
       if (blockIds.length === 0) {
         return {
           toolName,
           success: false,
-          error: 'blockIds is required — pass block type ids like ["agent","start_trigger"]',
+          error:
+            'blockIds is required — pass { blockIds: ["agent","start_trigger"] } (object with blockIds array, not a bare array).',
           result: {},
         }
       }
+
+      const cache = ctx.blocksMetadataByType ?? new Map<string, unknown>()
+      ctx.blocksMetadataByType = cache
+      const normalizedIds = [
+        ...new Set(blockIds.map((id) => id.trim()).filter((id) => id.length > 0)),
+      ]
+      const missingIds = normalizedIds.filter((id) => !cache.has(id.toLowerCase()))
+
+      if (missingIds.length === 0) {
+        const metadata: Record<string, unknown> = {}
+        for (const id of normalizedIds) {
+          metadata[id] = cache.get(id.toLowerCase())
+        }
+        return {
+          toolName,
+          success: true,
+          result: {
+            metadata,
+            cached: true,
+            hint: 'Reused block metadata from earlier this turn. Do not call get_blocks_metadata again for these types.',
+          },
+        }
+      }
+
       await ensureHandlersReady()
       const { createServerToolHandler } = await import(
         '@/lib/copilot/tools/registry/server-tool-adapter'
       )
       const handler = createServerToolHandler('get_blocks_metadata')
-      const metadataResult = await handler({ blockIds }, toCopilotServerToolContext(ctx))
+      const metadataResult = await handler(
+        { blockIds: missingIds },
+        toCopilotServerToolContext(ctx)
+      )
+
+      if (
+        metadataResult.success &&
+        metadataResult.output &&
+        typeof metadataResult.output === 'object'
+      ) {
+        const output = metadataResult.output as Record<string, unknown>
+        const fetched =
+          output.metadata && typeof output.metadata === 'object'
+            ? (output.metadata as Record<string, unknown>)
+            : output
+        for (const [key, value] of Object.entries(fetched)) {
+          cache.set(key.toLowerCase(), value)
+        }
+      }
+
+      const metadata: Record<string, unknown> = {}
+      for (const id of normalizedIds) {
+        const cached = cache.get(id.toLowerCase())
+        if (cached !== undefined) metadata[id] = cached
+      }
+
       return {
         toolName,
         success: metadataResult.success,
-        result:
-          metadataResult.output ?? (metadataResult.error ? { error: metadataResult.error } : {}),
+        result: metadataResult.success
+          ? {
+              metadata,
+              ...(missingIds.length < normalizedIds.length ? { partiallyCached: true } : {}),
+              hint: 'Call get_blocks_metadata only once with every block type you need. Do not re-fetch these types.',
+            }
+          : (metadataResult.output ??
+            (metadataResult.error ? { error: metadataResult.error } : {})),
         error: metadataResult.error,
       }
     }
@@ -337,6 +741,17 @@ export async function executeLocalCopilotTool(
       }
 
     case 'invoke_integration_tool': {
+      const finishInvoke = (result: ToolExecutionResult): ToolExecutionResult => {
+        if (result.success) {
+          rememberIdempotentResult(
+            ctx.mutationIdempotency!,
+            buildIdempotencyKey(toolName, args, ctx.activeToolCallId),
+            result
+          )
+        }
+        return result
+      }
+
       const toolId =
         typeof args.toolId === 'string'
           ? args.toolId.trim()
@@ -352,32 +767,103 @@ export async function executeLocalCopilotTool(
         }
       }
 
+      const knownToolIds = new Set<string>()
+      if (isMothershipDelegatedTool(toolId) || getToolDefinition(toolId)) {
+        knownToolIds.add(toolId)
+      }
+      const invokeGate = assertInvokeLookBeforeWrite({
+        toolId,
+        listedIntegrationToolIds: ctx.listedIntegrationToolIds,
+        knownToolIds,
+      })
+      if (!invokeGate.ok) {
+        return {
+          toolName,
+          success: false,
+          error: invokeGate.error,
+          result: { toolId, output: { error: invokeGate.error } },
+        }
+      }
+
       const rawParams =
         args.params && typeof args.params === 'object' && !Array.isArray(args.params)
           ? (args.params as Record<string, unknown>)
           : { ...args }
 
-      // Model sometimes passes Arena/mothership tool ids here (e.g. search_online).
-      // Route those through the delegated path instead of shared executeTool → @/tools.
-      if (isMothershipDelegatedTool(toolId)) {
-        const delegated = await executeMothershipDelegatedTool(toolId, rawParams, ctx)
+      // Model sometimes passes Arena/mothership tool ids here (e.g. search_online,
+      // get_blocks_metadata, edit_workflow). Route those through the local executor
+      // instead of shared executeTool → @/tools ("Built-in tool not found").
+      if (toolId === 'invoke_integration_tool') {
         return {
           toolName,
-          success: delegated.success,
-          result: {
-            toolId,
-            output: delegated.result ?? (delegated.error ? { error: delegated.error } : {}),
-          },
-          error: delegated.error,
-          resources: delegated.resources,
+          success: false,
+          error: 'invoke_integration_tool cannot nest itself — pass a concrete toolId.',
+          result: {},
         }
       }
 
-      const params = enrichLocalIntegrationToolParams(
+      if (isMothershipDelegatedTool(toolId) || getToolDefinition(toolId)) {
+        const redirected = await executeLocalCopilotTool(toolId, rawParams, ctx)
+        return finishInvoke(
+          attachToolBilling({
+            toolName,
+            success: redirected.success,
+            result: {
+              toolId,
+              output: redirected.result ?? (redirected.error ? { error: redirected.error } : {}),
+            },
+            error: redirected.error,
+            resources: redirected.resources,
+            ...(redirected.billing ? { billing: redirected.billing } : {}),
+          })
+        )
+      }
+
+      await ensureHandlersReady()
+      const { hasHandler } = await import('@/lib/copilot/tool-executor/executor')
+      if (hasHandler(toolId)) {
+        const { createServerToolHandler } = await import(
+          '@/lib/copilot/tools/registry/server-tool-adapter'
+        )
+        const handler = createServerToolHandler(toolId)
+        const normalizedParams =
+          toolId === 'get_blocks_metadata'
+            ? { ...rawParams, blockIds: resolveBlockIdsArg(rawParams) }
+            : rawParams
+        if (
+          toolId === 'get_blocks_metadata' &&
+          (!Array.isArray(normalizedParams.blockIds) || normalizedParams.blockIds.length === 0)
+        ) {
+          return {
+            toolName,
+            success: false,
+            error:
+              'blockIds is required — pass { blockIds: ["agent","start_trigger"] } (object with blockIds array).',
+            result: { toolId, output: { error: 'blockIds is required' } },
+          }
+        }
+        const serverResult = await handler(normalizedParams, toCopilotServerToolContext(ctx))
+        return attachToolBilling({
+          toolName,
+          success: serverResult.success,
+          result: {
+            toolId,
+            output:
+              serverResult.output ?? (serverResult.error ? { error: serverResult.error } : {}),
+          },
+          error: serverResult.error,
+        })
+      }
+
+      let params = enrichLocalIntegrationToolParams(
         toolId,
         rawParams,
         ctx.structuredContext.connectedIntegrations
       )
+      params = await injectWorkspaceEnvApiKeyIfNeeded(toolId, params, {
+        userId: ctx.userId,
+        workspaceId: ctx.workspaceId,
+      })
 
       await ensureHandlersReady()
       const { executeTool: executeCopilotRegistryTool } = await import(
@@ -414,7 +900,7 @@ export async function executeLocalCopilotTool(
         }
 
         const allSucceeded = drafts.length > 0 && drafts.every((draft) => draft.success)
-        return {
+        return finishInvoke({
           toolName,
           success: allSucceeded,
           result: {
@@ -434,7 +920,7 @@ export async function executeLocalCopilotTool(
                 error:
                   drafts.find((draft) => draft.error)?.error ?? 'Separate draft fan-out failed',
               }),
-        }
+        })
       }
 
       const { [SEPARATE_DRAFT_RECIPIENTS_KEY]: _ignored, ...cleanParams } = params
@@ -444,15 +930,17 @@ export async function executeLocalCopilotTool(
         executionContext
       )
 
-      return {
-        toolName,
-        success: integrationResult.success,
-        result: {
-          toolId,
-          output: integrationResult.output ?? { error: integrationResult.error },
-        },
-        error: integrationResult.error,
-      }
+      return finishInvoke(
+        attachToolBilling({
+          toolName,
+          success: integrationResult.success,
+          result: {
+            toolId,
+            output: integrationResult.output ?? { error: integrationResult.error },
+          },
+          error: integrationResult.error,
+        })
+      )
     }
 
     case 'validate_workflow': {
@@ -609,6 +1097,23 @@ export async function executeLocalCopilotTool(
   }
 }
 
+function attachToolBilling(result: ToolExecutionResult): ToolExecutionResult {
+  if (result.billing) return result
+  const fromResult = extractLocalToolBillingMetadata(result.result)
+  if (fromResult) {
+    return { ...result, billing: fromResult }
+  }
+  // Integration tools nest the payload under `output`.
+  if (result.result && typeof result.result === 'object') {
+    const nested = (result.result as { output?: unknown }).output
+    const fromNested = extractLocalToolBillingMetadata(nested)
+    if (fromNested) {
+      return { ...result, billing: fromNested }
+    }
+  }
+  return result
+}
+
 function buildErrorAnalysis(
   errorMessage: string,
   blockId: string | undefined,
@@ -665,6 +1170,56 @@ function suggestFixes(errorLower: string, blockType?: string): string[] {
   return fixes
 }
 
+function rememberListedIntegrationTools(ctx: ToolExecutionContext, result: unknown): void {
+  ctx.listedIntegrationToolIds ??= new Set()
+  const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : null
+  const tools = Array.isArray(record?.tools) ? record.tools : []
+  for (const entry of tools) {
+    if (!entry || typeof entry !== 'object') continue
+    const id = (entry as Record<string, unknown>).id
+    if (typeof id === 'string' && id.trim()) ctx.listedIntegrationToolIds.add(id.trim())
+  }
+}
+
+/**
+ * Fills workflowId for home-chat edits when the model omits it but the workspace
+ * has an obvious target (open workflow, single workflow, or name match).
+ */
+function enrichEditWorkflowArgs(
+  args: Record<string, unknown>,
+  ctx: ToolExecutionContext
+): Record<string, unknown> {
+  const next = { ...args }
+  const existing =
+    (typeof next.workflowId === 'string' && next.workflowId.trim()) ||
+    (typeof ctx.workflowId === 'string' && ctx.workflowId.trim()) ||
+    ''
+  if (existing) {
+    next.workflowId = existing
+    return next
+  }
+
+  const workflows = ctx.structuredContext.workspaceWorkflows ?? []
+  const requestedName =
+    (typeof next.workflowName === 'string' && next.workflowName.trim()) ||
+    (typeof next.name === 'string' && next.name.trim()) ||
+    ''
+  if (requestedName) {
+    const match = workflows.find(
+      (workflow) => workflow.name.trim().toLowerCase() === requestedName.toLowerCase()
+    )
+    if (match?.id) {
+      next.workflowId = match.id
+      return next
+    }
+  }
+
+  if (workflows.length === 1 && workflows[0]?.id) {
+    next.workflowId = workflows[0].id
+  }
+  return next
+}
+
 export async function refreshToolContext(
   params: Omit<ToolExecutionContext, 'structuredContext'> & { selectedBlockId?: string }
 ): Promise<ToolExecutionContext> {
@@ -674,5 +1229,10 @@ export async function refreshToolContext(
     ...(params.workflowId ? { workflowId: params.workflowId } : {}),
     selectedBlockId: params.selectedBlockId,
   })
-  return { ...params, structuredContext }
+  let workflowRevision = params.workflowRevision
+  if (params.workflowId) {
+    const loaded = await loadWorkflowRevision(params.workflowId, params.workspaceId)
+    if (loaded) workflowRevision = loaded.revision
+  }
+  return { ...params, structuredContext, workflowRevision }
 }

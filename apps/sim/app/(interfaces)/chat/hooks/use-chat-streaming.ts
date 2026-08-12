@@ -3,68 +3,122 @@
 import { useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { formatChartDeployOutputForChat } from '@/lib/chart-generation/echarts-option'
+import {
+  anyToolCallRunning,
+  applyToolCallPhase,
+  settleRunningToolCalls,
+  snapshotToolCalls,
+  toolCallKey,
+} from '@/components/agent-stream/tool-call-lifecycle'
+import {
+  extractChartsFromData,
+  formatChartDeployOutputForChat,
+  formatChartsForChat,
+} from '@/lib/chart-generation/echarts-option'
 import {
   type AssistantChatFile as ChatFile,
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
 } from '@/lib/chat/assistant-assets'
 import { readSSEEvents } from '@/lib/core/utils/sse'
-import type { ChatMessage } from '@/app/(interfaces)/chat/components/message/message'
+import {
+  isChatChunkFrame,
+  isChatChunkResetFrame,
+  isChatErrorFrame,
+  isChatFinalFrame,
+  isChatStreamErrorFrame,
+  isChatThinkingFrame,
+  isChatToolFrame,
+} from '@/lib/workflows/streaming/agent-stream-protocol'
+import type { ChatMessage, ChatToolCall } from '@/app/(interfaces)/chat/components/message/message'
 import { CHAT_ERROR_MESSAGES } from '@/app/(interfaces)/chat/constants'
 import { resolveMessageImagesAndProse } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/chat/components/chat-message/constants'
 
 const logger = createLogger('UseChatStreaming')
 
-interface VoiceSettings {
-  isVoiceEnabled: boolean
-  voiceId: string
-  autoPlayResponses: boolean
-  voiceFirstMode?: boolean
-  textStreamingInVoiceMode?: 'hidden' | 'synced' | 'normal'
-  conversationMode?: boolean
+function extractFilesFromData(
+  data: any,
+  files: ChatFile[] = [],
+  seenIds = new Set<string>()
+): ChatFile[] {
+  if (!data || typeof data !== 'object') {
+    return files
+  }
+
+  if (isUserFileWithMetadata(data)) {
+    if (!seenIds.has(data.id)) {
+      seenIds.add(data.id)
+      files.push({
+        id: data.id,
+        name: data.name,
+        url: data.url,
+        key: data.key,
+        size: data.size,
+        type: data.type,
+        context: data.context,
+      })
+    }
+    return files
+  }
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      extractFilesFromData(item, files, seenIds)
+    }
+    return files
+  }
+
+  for (const value of Object.values(data)) {
+    extractFilesFromData(value, files, seenIds)
+  }
+
+  return files
 }
 
 export interface StreamingOptions {
-  voiceSettings?: VoiceSettings
-  onAudioStart?: () => void
-  onAudioEnd?: () => void
-  audioStreamHandler?: (text: string) => Promise<void>
   outputConfigs?: Array<{ blockId: string; path?: string }>
+  /**
+   * Shared AbortController for fetch + SSE body reads. When provided (preferred),
+   * Stop aborts the in-flight request server-side as well as the reader.
+   */
+  abortController?: AbortController
 }
 
-type GeneratedImage = ReturnType<typeof extractGeneratedImagesFromData>[number]
-
-interface StreamFinalData {
-  success: boolean
+/** Client-side view of the `final` frame's opaque `data` payload. */
+interface ChatFinalData {
+  success?: boolean
   error?: string | { message?: string }
   output?: Record<string, Record<string, unknown>>
   executionId?: string
 }
+
+type GeneratedImage = ReturnType<typeof extractGeneratedImagesFromData>[number]
 
 type StreamSSEPayload = {
   blockId?: string
   chunk?: string
   event?: string
   error?: string
-  data?: StreamFinalData | ChatMessage['knowledgeResults']
+  data?: ChatFinalData | ChatMessage['knowledgeResults']
 }
 
 export function useChatStreaming() {
   const [isStreamingResponse, setIsStreamingResponse] = useState(false)
   const abortControllerRef = useRef<AbortController | null>(null)
   const accumulatedTextRef = useRef<string>('')
-  const lastStreamedPositionRef = useRef<number>(0)
-  const audioStreamingActiveRef = useRef<boolean>(false)
-  const lastDisplayedPositionRef = useRef<number>(0) // Track displayed text in synced mode
+  const accumulatedThinkingRef = useRef<string>('')
+  const accumulatedToolCallsRef = useRef<ChatToolCall[]>([])
 
   const stopStreaming = (setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>) => {
     if (abortControllerRef.current) {
-      // Abort the fetch request
       abortControllerRef.current.abort()
       abortControllerRef.current = null
 
       const latestContent = accumulatedTextRef.current
+      const latestThinking = accumulatedThinkingRef.current
+      const latestTools = accumulatedToolCallsRef.current.map((tool) =>
+        tool.status === 'running' ? { ...tool, status: 'cancelled' as const } : tool
+      )
 
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1]
@@ -76,7 +130,16 @@ export function useChatStreaming() {
 
           return [
             ...prev.slice(0, -1),
-            { ...lastMessage, content: updatedContent, isStreaming: false },
+            {
+              ...lastMessage,
+              content: updatedContent,
+              // Preserve any thinking / tools received before Stop.
+              thinking: latestThinking || lastMessage.thinking,
+              toolCalls: latestTools.length > 0 ? latestTools : lastMessage.toolCalls,
+              isStreaming: false,
+              isThinkingStreaming: false,
+              isToolStreaming: false,
+            },
           ]
         }
 
@@ -85,9 +148,8 @@ export function useChatStreaming() {
 
       setIsStreamingResponse(false)
       accumulatedTextRef.current = ''
-      lastStreamedPositionRef.current = 0
-      lastDisplayedPositionRef.current = 0
-      audioStreamingActiveRef.current = false
+      accumulatedThinkingRef.current = ''
+      accumulatedToolCallsRef.current = []
     }
   }
 
@@ -96,19 +158,16 @@ export function useChatStreaming() {
     setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
     setIsLoading: React.Dispatch<React.SetStateAction<boolean>>,
     scrollToBottom: () => void,
-    userHasScrolled?: boolean,
     streamingOptions?: StreamingOptions
   ) => {
     logger.info('[useChatStreaming] handleStreamedResponse called')
-    // Set streaming state
     setIsStreamingResponse(true)
-    abortControllerRef.current = new AbortController()
 
-    // Check if we should stream audio
-    const shouldPlayAudio =
-      streamingOptions?.voiceSettings?.isVoiceEnabled &&
-      streamingOptions?.voiceSettings?.autoPlayResponses &&
-      streamingOptions?.audioStreamHandler
+    if (streamingOptions?.abortController) {
+      abortControllerRef.current = streamingOptions.abortController
+    } else if (!abortControllerRef.current) {
+      abortControllerRef.current = new AbortController()
+    }
 
     if (!response.body) {
       setIsLoading(false)
@@ -116,11 +175,29 @@ export function useChatStreaming() {
       return
     }
 
+    /**
+     * Answer text tracked per block so a `chunk_reset` (dual-gated streams:
+     * a live-streamed turn resolved to tool calls) can clear one block's
+     * contribution. `accumulatedText` is re-derived on every mutation —
+     * cross-block separators arrive baked into the chunks.
+     */
+    const blockTextOrder: string[] = []
+    const blockTextSegments = new Map<string, string>()
     let accumulatedText = ''
-    let lastAudioPosition = 0
+    const recomputeAccumulatedText = () => {
+      accumulatedText = blockTextOrder.map((id) => blockTextSegments.get(id) ?? '').join('')
+      accumulatedTextRef.current = accumulatedText
+    }
+    let accumulatedThinking = ''
+    let isThinkingStreaming = false
     let pendingKnowledgeResults: ChatMessage['knowledgeResults']
+    const toolCallsMap = new Map<string, ChatToolCall>()
+    const toolCallOrder: string[] = []
 
-    const messageIdMap = new Map<string, string>()
+    const syncToolCallsRef = () => {
+      accumulatedToolCallsRef.current = snapshotToolCalls(toolCallOrder, toolCallsMap) ?? []
+    }
+
     const messageId = generateId()
 
     const UI_BATCH_MAX_MS = 50
@@ -141,14 +218,29 @@ export function useChatStreaming() {
       if (!uiDirty) return
       uiDirty = false
       lastUIFlush = performance.now()
-      const snapshot = accumulatedText
+      const contentSnapshot = accumulatedText
+      const thinkingSnapshot = accumulatedThinking
+      const thinkingStreamingSnapshot = isThinkingStreaming
+      const toolCallsSnapshot = snapshotToolCalls(toolCallOrder, toolCallsMap)
+      const toolStreamingSnapshot = anyToolCallRunning(toolCallsMap)
       setMessages((prev) =>
         prev.map((msg) => {
           if (msg.id !== messageId) return msg
           if (!msg.isStreaming) return msg
-          return { ...msg, content: snapshot }
+          return {
+            ...msg,
+            content: contentSnapshot,
+            thinking: thinkingSnapshot || undefined,
+            isThinkingStreaming: thinkingStreamingSnapshot,
+            toolCalls: toolCallsSnapshot,
+            isToolStreaming: toolStreamingSnapshot,
+          }
         })
       )
+      // Caller supplies a stick-to-bottom-aware scroller (no-ops if user scrolled away).
+      requestAnimationFrame(() => {
+        scrollToBottom()
+      })
     }
 
     const scheduleUIFlush = () => {
@@ -177,31 +269,65 @@ export function useChatStreaming() {
     setIsLoading(false)
 
     let terminated = false
+    // Capture before Stop nulls abortControllerRef; needed when the reader
+    // resolves on abort instead of throwing AbortError.
+    const streamAbortSignal = abortControllerRef.current!.signal
 
     try {
-      await readSSEEvents<StreamSSEPayload>(response.body, {
-        signal: abortControllerRef.current.signal,
+      await readSSEEvents<Record<string, unknown>>(response.body, {
+        signal: streamAbortSignal,
         onParseError: (_data, parseError) => {
           logger.error('Error parsing stream data:', parseError)
         },
         onEvent: async (json) => {
-          const { blockId, chunk: contentChunk, event: eventType } = json
-
-          const forkKnowledgeResults = readForkKnowledgeResultsEvent(json)
+          const forkKnowledgeResults = readForkKnowledgeResultsEvent(json as StreamSSEPayload)
           if (forkKnowledgeResults !== undefined) {
             pendingKnowledgeResults = forkKnowledgeResults
-            return
+            return false
           }
 
-          if (eventType === 'error' || json.event === 'error') {
+          if (isChatErrorFrame(json)) {
+            // User Stop aborts the fetch; the server often still emits a terminal
+            // `{ event: 'error', error: 'Client cancelled request' }` before the
+            // SSE reader finishes. Do not overwrite the stop notice.
+            if (streamAbortSignal.aborted) {
+              settleRunningToolCalls(toolCallsMap, 'cancelled')
+              syncToolCallsRef()
+              const toolsSnapshot = snapshotToolCalls(toolCallOrder, toolCallsMap)
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === messageId
+                    ? {
+                        ...msg,
+                        isStreaming: false,
+                        isThinkingStreaming: false,
+                        isToolStreaming: false,
+                        thinking: accumulatedThinking || msg.thinking,
+                        toolCalls: toolsSnapshot ?? msg.toolCalls,
+                      }
+                    : msg
+                )
+              )
+              setIsLoading(false)
+              terminated = true
+              return true
+            }
+
             const errorMessage = json.error || CHAT_ERROR_MESSAGES.GENERIC_ERROR
+            settleRunningToolCalls(toolCallsMap, 'error')
+            syncToolCallsRef()
+            const toolsSnapshot = snapshotToolCalls(toolCallOrder, toolCallsMap)
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === messageId
                   ? {
                       ...msg,
                       content: errorMessage,
+                      thinking: accumulatedThinking || msg.thinking,
+                      toolCalls: toolsSnapshot ?? msg.toolCalls,
                       isStreaming: false,
+                      isThinkingStreaming: false,
+                      isToolStreaming: false,
                       type: 'assistant' as const,
                     }
                   : msg
@@ -212,11 +338,68 @@ export function useChatStreaming() {
             return true
           }
 
-          if (eventType === 'final' && json.data && !Array.isArray(json.data)) {
+          if (isChatStreamErrorFrame(json)) {
+            // Non-terminal mid-block read issue: keep streaming. The legacy
+            // client ignored these frames; log only — never repurpose the
+            // thinking lane for error text.
+            logger.warn('[useChatStreaming] Non-terminal stream_error', {
+              blockId: json.blockId,
+              error: json.error || 'A streaming error occurred',
+            })
+            return false
+          }
+
+          if (isChatThinkingFrame(json)) {
+            accumulatedThinking += json.data
+            accumulatedThinkingRef.current = accumulatedThinking
+            isThinkingStreaming = true
+            uiDirty = true
+            scheduleUIFlush()
+            return false
+          }
+
+          if (isChatToolFrame(json)) {
+            const { blockId } = json
+            // Tools starting means the turn's thinking phase is over — settle
+            // the thinking chrome (it re-opens if more thinking streams later).
+            if (json.phase === 'start' && isThinkingStreaming) {
+              isThinkingStreaming = false
+            }
+            applyToolCallPhase(
+              toolCallsMap,
+              toolCallOrder,
+              {
+                key: toolCallKey(blockId, json.id),
+                id: json.id,
+                name: json.name,
+                phase: json.phase,
+                status: json.status,
+              },
+              (tool): ChatToolCall => ({
+                ...tool,
+                blockId,
+                displayName: tool.displayName ?? tool.name,
+              })
+            )
+            syncToolCallsRef()
+            uiDirty = true
+            scheduleUIFlush()
+            return false
+          }
+
+          if (isChatFinalFrame(json)) {
             flushUI()
+            const finalData = json.data as ChatFinalData
+            isThinkingStreaming = false
+            // A failed run can still terminate with `final` (success: false) —
+            // straggler running chips must not settle green in that case.
+            settleRunningToolCalls(toolCallsMap, finalData.success === false ? 'error' : 'success')
+            syncToolCallsRef()
+            const toolsSnapshot = snapshotToolCalls(toolCallOrder, toolCallsMap)
+
             const forkFinal = resolveForkFinalStreamState({
               accumulatedText,
-              finalData: json.data,
+              finalData,
               outputConfigs: streamingOptions?.outputConfigs,
               pendingKnowledgeResults,
             })
@@ -227,9 +410,12 @@ export function useChatStreaming() {
                   ? {
                       ...msg,
                       isStreaming: false,
+                      isThinkingStreaming: false,
+                      isToolStreaming: false,
                       content: forkFinal.content,
+                      thinking: accumulatedThinking || msg.thinking,
+                      toolCalls: toolsSnapshot ?? msg.toolCalls,
                       executionId: forkFinal.executionId ?? msg.executionId,
-                      liked: null,
                       files: forkFinal.files,
                       generatedImages: forkFinal.generatedImages,
                       knowledgeResults: forkFinal.knowledgeResults,
@@ -240,21 +426,48 @@ export function useChatStreaming() {
 
             pendingKnowledgeResults = undefined
             accumulatedTextRef.current = ''
-            lastStreamedPositionRef.current = 0
-            lastDisplayedPositionRef.current = 0
-            audioStreamingActiveRef.current = false
+            accumulatedThinkingRef.current = ''
+            accumulatedToolCallsRef.current = []
 
             terminated = true
             return true
           }
 
-          if (blockId && contentChunk) {
-            if (!messageIdMap.has(blockId)) {
-              messageIdMap.set(blockId, messageId)
+          if (isChatChunkResetFrame(json)) {
+            // The block's live-streamed text belonged to an intermediate turn
+            // (tool calls follow); drop it — the final turn re-streams after.
+            // Remove the block from the order too: its re-streamed text
+            // re-registers at the end, keeping render order = arrival order
+            // (the server re-computes the cross-block separator on re-stream).
+            const { blockId } = json
+            if (blockTextSegments.has(blockId)) {
+              blockTextSegments.delete(blockId)
+              const orderIndex = blockTextOrder.indexOf(blockId)
+              if (orderIndex !== -1) {
+                blockTextOrder.splice(orderIndex, 1)
+              }
+              recomputeAccumulatedText()
+              uiDirty = true
+              scheduleUIFlush()
+            }
+            return false
+          }
+
+          // Answer text only — never append thinking/tool/unknown chunk frames blindly.
+          if (isChatChunkFrame(json)) {
+            const { blockId, chunk: contentChunk } = json
+
+            // First answer chunk settles thinking chrome (still visible, no longer “live”).
+            if (isThinkingStreaming) {
+              isThinkingStreaming = false
             }
 
-            accumulatedText += contentChunk
-            accumulatedTextRef.current = accumulatedText
+            if (!blockTextSegments.has(blockId)) {
+              blockTextOrder.push(blockId)
+              blockTextSegments.set(blockId, '')
+            }
+            blockTextSegments.set(blockId, blockTextSegments.get(blockId)! + contentChunk)
+            recomputeAccumulatedText()
             logger.debug('[useChatStreaming] Received chunk', {
               blockId,
               chunkLength: contentChunk.length,
@@ -264,62 +477,72 @@ export function useChatStreaming() {
             })
             uiDirty = true
             scheduleUIFlush()
-
-            if (shouldPlayAudio && streamingOptions?.audioStreamHandler) {
-              const newText = accumulatedText.substring(lastAudioPosition)
-              const sentenceEndings = ['. ', '! ', '? ', '.\n', '!\n', '?\n', '.', '!', '?']
-              let sentenceEnd = -1
-
-              for (const ending of sentenceEndings) {
-                const index = newText.indexOf(ending)
-                if (index > 0) {
-                  sentenceEnd = index + ending.length
-                  break
-                }
-              }
-
-              if (sentenceEnd > 0) {
-                const sentence = newText.substring(0, sentenceEnd).trim()
-                if (sentence && sentence.length >= 3) {
-                  try {
-                    await streamingOptions.audioStreamHandler(sentence)
-                    lastAudioPosition += sentenceEnd
-                  } catch (error) {
-                    logger.error('TTS error:', error)
-                  }
-                }
-              }
-            }
-          } else if (blockId && eventType === 'end') {
-            setMessages((prev) =>
-              prev.map((msg) => (msg.id === messageId ? { ...msg, isStreaming: false } : msg))
-            )
           }
         },
       })
 
       if (!terminated) {
         flushUI()
-        if (
-          shouldPlayAudio &&
-          streamingOptions?.audioStreamHandler &&
-          accumulatedText.length > lastAudioPosition
-        ) {
-          const remainingText = accumulatedText.substring(lastAudioPosition).trim()
-          if (remainingText) {
-            try {
-              await streamingOptions.audioStreamHandler(remainingText)
-            } catch (error) {
-              logger.error('TTS error for remaining text:', error)
+        // Stream closed without a terminal final/error frame (abrupt disconnect,
+        // or only non-terminal stream_error). Clear live chrome so the UI does not
+        // stay stuck in a streaming/loading state.
+        const wasAborted = streamAbortSignal.aborted
+        settleRunningToolCalls(toolCallsMap, wasAborted ? 'cancelled' : 'error')
+        syncToolCallsRef()
+        isThinkingStreaming = false
+        const toolsSnapshot = snapshotToolCalls(toolCallOrder, toolCallsMap)
+        setMessages((prev) =>
+          prev.map((msg) => {
+            if (msg.id !== messageId) return msg
+            // stopStreaming already wrote the stop notice into content; do not clobber it.
+            if (wasAborted) {
+              return {
+                ...msg,
+                isStreaming: false,
+                isThinkingStreaming: false,
+                isToolStreaming: false,
+                thinking: accumulatedThinking || msg.thinking,
+                toolCalls: toolsSnapshot ?? msg.toolCalls,
+              }
             }
-          }
-        }
+            return {
+              ...msg,
+              isStreaming: false,
+              isThinkingStreaming: false,
+              isToolStreaming: false,
+              content: accumulatedText || msg.content,
+              thinking: accumulatedThinking || msg.thinking,
+              toolCalls: toolsSnapshot ?? msg.toolCalls,
+            }
+          })
+        )
       }
     } catch (error) {
-      logger.error('Error processing stream:', error)
+      // Stop / timeout abort the shared fetch controller; body read then throws AbortError.
+      // Expected cancel, not a hard failure.
+      if (error instanceof Error && error.name === 'AbortError') {
+        logger.info('Stream aborted by user or timeout')
+        settleRunningToolCalls(toolCallsMap, 'cancelled')
+      } else {
+        logger.error('Error processing stream:', error)
+        settleRunningToolCalls(toolCallsMap, 'error')
+      }
+      syncToolCallsRef()
       flushUI()
+      const toolsSnapshot = snapshotToolCalls(toolCallOrder, toolCallsMap)
       setMessages((prev) =>
-        prev.map((msg) => (msg.id === messageId ? { ...msg, isStreaming: false } : msg))
+        prev.map((msg) =>
+          msg.id === messageId
+            ? {
+                ...msg,
+                isStreaming: false,
+                isThinkingStreaming: false,
+                isToolStreaming: false,
+                thinking: accumulatedThinking || msg.thinking,
+                toolCalls: toolsSnapshot ?? msg.toolCalls,
+              }
+            : msg
+        )
       )
     } finally {
       if (uiRAF !== null) cancelAnimationFrame(uiRAF)
@@ -327,21 +550,15 @@ export function useChatStreaming() {
       setIsStreamingResponse(false)
       abortControllerRef.current = null
 
-      if (!userHasScrolled) {
-        setTimeout(() => {
-          scrollToBottom()
-        }, 300)
-      }
-
-      if (shouldPlayAudio) {
-        streamingOptions?.onAudioEnd?.()
-      }
+      // Stick-to-bottom-aware; no-ops if the user scrolled away mid-stream.
+      setTimeout(() => {
+        scrollToBottom()
+      }, 300)
     }
   }
 
   return {
     isStreamingResponse,
-    setIsStreamingResponse,
     abortControllerRef,
     stopStreaming,
     handleStreamedResponse,
@@ -350,7 +567,7 @@ export function useChatStreaming() {
 
 interface ForkFinalStreamInput {
   accumulatedText: string
-  finalData: StreamFinalData
+  finalData: ChatFinalData
   outputConfigs?: StreamingOptions['outputConfigs']
   pendingKnowledgeResults?: ChatMessage['knowledgeResults']
 }
@@ -454,9 +671,40 @@ function collectForkConfiguredOutputs(
     if (formatted) {
       formattedOutputs.push(formatted)
     }
+
+    // Surface charts nested inside the full block output (e.g. the Agent block
+    // calling Chart Generator as a tool, where the chart lands in
+    // `toolCalls.list[].result`). Only append charts not already rendered by the
+    // selected value, so the standalone Chart Generator block never duplicates.
+    const chartFromNested = resolveNestedChartOutput(blockOutputs, value)
+    if (chartFromNested) {
+      formattedOutputs.push(chartFromNested)
+    }
   }
 
   return { formattedOutputs, extractedFiles, generatedImages }
+}
+
+/**
+ * Returns chart content found deeper in the block output than the selected value
+ * (Agent tool-call results), de-duplicated against charts already present in the
+ * selected value. Returns null when there is nothing new to render.
+ */
+function resolveNestedChartOutput(
+  blockOutputs: Record<string, unknown>,
+  selectedValue: unknown
+): string | null {
+  const allCharts = extractChartsFromData(blockOutputs)
+  if (allCharts.length === 0) {
+    return null
+  }
+
+  const existingSignatures = new Set(
+    extractChartsFromData(selectedValue).map((option) => JSON.stringify(option))
+  )
+  const newCharts = allCharts.filter((option) => !existingSignatures.has(JSON.stringify(option)))
+
+  return formatChartsForChat(newCharts)
 }
 
 function resolveForkFallbackContent(finalData: StreamFinalData): string | undefined {

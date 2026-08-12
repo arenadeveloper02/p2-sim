@@ -90,6 +90,8 @@ export const userSettingsSchema = z.object({
   errorNotificationsEnabled: z.boolean().default(true),
   snapToGridSize: z.number().min(0).max(50).default(0),
   showActionBar: z.boolean().default(true),
+  /** Copilot tool ids the user chose "always allow" for, so they are never prompted for them again. */
+  copilotAutoAllowedTools: z.array(z.string()).default([]),
   /** IANA timezone for scheduling; `null` means the client falls back to the browser-detected zone. */
   timezone: z.string().nullable().default(null),
   lastActiveWorkspaceId: z.string().nullable().optional(),
@@ -109,6 +111,7 @@ export const updateUserSettingsBodySchema = z.object({
   errorNotificationsEnabled: z.boolean().optional(),
   snapToGridSize: z.number().min(0).max(50).optional(),
   showActionBar: z.boolean().optional(),
+  copilotAutoAllowedTools: z.array(z.string()).optional(),
   /** IANA timezone; explicit `null` resets to the browser-detected zone. */
   timezone: ianaTimezoneSchema.nullable().optional(),
   /** Mirrors `userSettingsSchema.lastActiveWorkspaceId` so explicit `null` is accepted to clear the active workspace. */
@@ -275,9 +278,13 @@ export const usageLogSourceSchema = z.enum([
   'knowledge-base',
   'voice-input',
   'enrichment',
+  'voice-output',
 ])
 
-export const usageLogPeriodSchema = z.enum(['1d', '7d', '30d', 'all', 'custom'])
+export const usageLogPeriodSchema = z.enum(['1d', '7d', '30d', '90d', 'all', 'custom'])
+
+/** UI bucket for Activity detail — expands to one or more ledger `source` values. */
+export const usageLogSourceGroupSchema = z.enum(['workflow', 'mothership'])
 
 /**
  * `Date`-constructor-parseable string — the {@link Calendar} range picker
@@ -290,15 +297,22 @@ const parseableDateSchema = z
   .refine((value) => !Number.isNaN(Date.parse(value)), { error: 'Invalid date' })
 
 /** Shared by the paginated list query and the export query — filters only, no pagination. */
-const usageLogsFilterSchema = z.object({
-  source: usageLogSourceSchema.optional(),
-  workspaceId: z.string().optional(),
-  period: usageLogPeriodSchema.optional().default('30d'),
-  /** Required when `period` is `'custom'`. */
-  startDate: parseableDateSchema.optional(),
-  /** Defaults to now when omitted for `'custom'`. */
-  endDate: parseableDateSchema.optional(),
-})
+const usageLogsFilterSchema = z
+  .object({
+    source: usageLogSourceSchema.optional(),
+    /** Mutually exclusive with `source` — prefer this for Workflows / Mothership tabs. */
+    sourceGroup: usageLogSourceGroupSchema.optional(),
+    workspaceId: z.string().optional(),
+    period: usageLogPeriodSchema.optional().default('30d'),
+    /** Required when `period` is `'custom'`. */
+    startDate: parseableDateSchema.optional(),
+    /** Defaults to now when omitted for `'custom'`. */
+    endDate: parseableDateSchema.optional(),
+  })
+  .refine((query) => !(query.source && query.sourceGroup), {
+    error: 'Pass either source or sourceGroup, not both',
+    path: ['sourceGroup'],
+  })
 
 /** Both the list and export query schemas require startDate whenever period is 'custom'. */
 const startDateRequiredForCustomPeriod = {
@@ -332,6 +346,11 @@ export const usageLogEntrySchema = z.object({
   id: z.string(),
   createdAt: z.string(),
   source: usageLogSourceSchema,
+  /**
+   * Resolved display label. Local mothership shares ledger source `copilot`
+   * with workspace Copilot — Local mothership is "Arena AI".
+   */
+  sourceLabel: z.string().min(1),
   /** Specific workflow name, populated only when `source` is `'workflow'`. */
   workflowName: z.string().nullable(),
   /**
@@ -386,6 +405,7 @@ export const exportUsageLogsContract = defineRouteContract({
 
 export type UsageLogSource = z.output<typeof usageLogSourceSchema>
 export type UsageLogPeriod = z.output<typeof usageLogPeriodSchema>
+export type UsageLogSourceGroup = z.output<typeof usageLogSourceGroupSchema>
 export type UsageLogEntry = z.output<typeof usageLogEntrySchema>
 export type UsageLogsApiResponse = z.output<typeof usageLogsApiResponseSchema>
 export type ExportUsageLogsQuery = z.output<typeof exportUsageLogsQuerySchema>

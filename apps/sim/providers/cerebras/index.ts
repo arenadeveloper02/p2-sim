@@ -1,13 +1,18 @@
 import { Cerebras } from '@cerebras/cerebras_cloud_sdk'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
+import { isRecordLike } from '@sim/utils/object'
 import type { StreamingExecution } from '@/executor/types'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 import { formatMessagesForProvider } from '@/providers/attachments'
 import type { CerebrasResponse } from '@/providers/cerebras/types'
 import { createReadableStreamFromCerebrasStream } from '@/providers/cerebras/utils'
 import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
+import { createOpenAICompatAssistantHistory } from '@/providers/openai-compat/assistant-history'
+import { executeProviderTool } from '@/providers/runtime-context'
+import { createSettledAgentEventStream } from '@/providers/stream-events'
 import { createStreamingExecution } from '@/providers/streaming-execution'
+import { isAbortError, parseToolArguments } from '@/providers/streaming-tool-loop-shared'
 import { adaptOpenAIChatToolSchema } from '@/providers/tool-schema-adapter'
 import { enrichLastModelSegmentFromChatCompletions } from '@/providers/trace-enrichment'
 import type {
@@ -19,12 +24,12 @@ import type {
 import { ProviderError } from '@/providers/types'
 import {
   calculateCost,
+  isFunctionToolCall,
   prepareToolExecution,
   prepareToolsWithUsageControl,
   sumToolCosts,
   trackForcedToolUsage,
 } from '@/providers/utils'
-import { executeTool } from '@/tools'
 
 const logger = createLogger('CerebrasProvider')
 
@@ -133,6 +138,7 @@ export const cerebrasProvider: ProviderConfig = {
           initialTokens: { input: 0, output: 0, total: 0 },
           initialCost: { input: 0, output: 0, total: 0 },
           isStreaming: true,
+          streamFormat: 'agent-events-v1',
           createStream: ({ output }) =>
             createReadableStreamFromCerebrasStream(streamResponse, (content, usage) => {
               output.content = content
@@ -192,7 +198,8 @@ export const cerebrasProvider: ProviderConfig = {
       const toolCallSignatures = new Set()
       try {
         while (iterationCount < MAX_TOOL_ITERATIONS) {
-          const toolCallsInResponse = currentResponse.choices[0]?.message?.tool_calls
+          const toolCallsInResponse =
+            currentResponse.choices[0]?.message?.tool_calls?.filter(isFunctionToolCall)
 
           enrichLastModelSegmentFromChatCompletions(
             timeSegments,
@@ -230,12 +237,27 @@ export const cerebrasProvider: ProviderConfig = {
             const toolName = toolCall.function.name
 
             try {
-              const toolArgs = JSON.parse(toolCall.function.arguments)
+              const toolArgs = parseToolArguments(toolCall.function.arguments, toolName)
               const tool = request.tools?.find((t) => t.id === toolName)
-              if (!tool) return null
+              if (!tool) {
+                const toolCallEndTime = Date.now()
+                return {
+                  toolCall,
+                  toolName,
+                  toolParams: {},
+                  result: {
+                    success: false,
+                    output: undefined,
+                    error: `Tool "${toolName}" is not available`,
+                  },
+                  startTime: toolCallStartTime,
+                  endTime: toolCallEndTime,
+                  duration: toolCallEndTime - toolCallStartTime,
+                }
+              }
 
               const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-              const result = await executeTool(toolName, executionParams, {
+              const result = await executeProviderTool(toolName, executionParams, {
                 signal: request.abortSignal,
               })
               const toolCallEndTime = Date.now()
@@ -250,6 +272,9 @@ export const cerebrasProvider: ProviderConfig = {
                 duration: toolCallEndTime - toolCallStartTime,
               }
             } catch (error) {
+              if (isAbortError(error) || request.abortSignal?.aborted) {
+                throw error
+              }
               const toolCallEndTime = Date.now()
               logger.error('Error processing tool call (Cerebras):', {
                 error: toError(error).message,
@@ -272,25 +297,21 @@ export const cerebrasProvider: ProviderConfig = {
             }
           })
 
-          const executionResults = await Promise.allSettled(toolExecutionPromises)
-          currentMessages.push({
-            role: 'assistant',
-            content: null,
-            tool_calls: filteredToolCalls.map((tc) => ({
-              id: tc.id,
-              type: 'function',
-              function: {
-                name: tc.function.name,
-                arguments: tc.function.arguments,
-              },
-            })),
-          })
+          const executionResults = await Promise.all(toolExecutionPromises)
+          const assistantMessage = currentResponse.choices[0]?.message
+          if (assistantMessage) {
+            currentMessages.push(
+              createOpenAICompatAssistantHistory({
+                message: assistantMessage,
+                toolCalls: filteredToolCalls,
+                reasoningFields: ['reasoning'],
+              })
+            )
+          }
 
-          for (const settledResult of executionResults) {
-            if (settledResult.status === 'rejected' || !settledResult.value) continue
-
+          for (const executionResult of executionResults) {
             const { toolCall, toolName, toolParams, result, startTime, endTime, duration } =
-              settledResult.value
+              executionResult
             timeSegments.push({
               type: 'tool',
               name: toolName,
@@ -299,10 +320,12 @@ export const cerebrasProvider: ProviderConfig = {
               duration: duration,
               toolCallId: toolCall.id,
             })
-            let resultContent: any
-            if (result.success && result.output) {
-              toolResults.push(result.output)
-              resultContent = result.output
+            let resultContent: unknown
+            if (result.success) {
+              if (isRecordLike(result.output)) {
+                toolResults.push(result.output)
+              }
+              resultContent = result.output ?? null
             } else {
               resultContent = {
                 error: true,
@@ -332,7 +355,7 @@ export const cerebrasProvider: ProviderConfig = {
           let usedForcedTools: string[] = []
           if (typeof originalToolChoice === 'object' && forcedTools.length > 0) {
             const toolTracking = trackForcedToolUsage(
-              currentResponse.choices[0]?.message?.tool_calls,
+              currentResponse.choices[0]?.message?.tool_calls?.filter(isFunctionToolCall),
               originalToolChoice,
               logger,
               'openai',
@@ -357,7 +380,7 @@ export const cerebrasProvider: ProviderConfig = {
             }
             finalPayload.tool_choice = 'none'
 
-            const finalResponse = (await client.chat.completions.create(
+            currentResponse = (await client.chat.completions.create(
               finalPayload,
               request.abortSignal ? { signal: request.abortSignal } : undefined
             )) as CerebrasResponse
@@ -375,22 +398,23 @@ export const cerebrasProvider: ProviderConfig = {
 
             modelTime += thisModelTime
 
-            if (finalResponse.choices[0]?.message?.content) {
-              content = finalResponse.choices[0].message.content
+            if (currentResponse.choices[0]?.message?.content) {
+              content = currentResponse.choices[0].message.content
             }
-            if (finalResponse.usage) {
-              tokens.input += finalResponse.usage.prompt_tokens || 0
-              tokens.output += finalResponse.usage.completion_tokens || 0
-              tokens.total += finalResponse.usage.total_tokens || 0
+            if (currentResponse.usage) {
+              tokens.input += currentResponse.usage.prompt_tokens || 0
+              tokens.output += currentResponse.usage.completion_tokens || 0
+              tokens.total += currentResponse.usage.total_tokens || 0
             }
 
             enrichLastModelSegmentFromChatCompletions(
               timeSegments,
-              finalResponse,
-              finalResponse.choices[0]?.message?.tool_calls,
+              currentResponse,
+              currentResponse.choices[0]?.message?.tool_calls?.filter(isFunctionToolCall),
               { model: request.model, provider: 'cerebras' }
             )
 
+            iterationCount++
             break
           }
 
@@ -428,16 +452,57 @@ export const cerebrasProvider: ProviderConfig = {
           }
         }
 
-        if (iterationCount === MAX_TOOL_ITERATIONS) {
+        const cappedToolCalls =
+          currentResponse.choices[0]?.message?.tool_calls?.filter(isFunctionToolCall)
+        if (iterationCount === MAX_TOOL_ITERATIONS && cappedToolCalls?.length) {
           enrichLastModelSegmentFromChatCompletions(
             timeSegments,
             currentResponse,
-            currentResponse.choices[0]?.message?.tool_calls,
+            cappedToolCalls,
             { model: request.model, provider: 'cerebras' }
           )
+
+          const finalModelStartTime = Date.now()
+          currentResponse = (await client.chat.completions.create(
+            {
+              ...payload,
+              messages: currentMessages,
+              tool_choice: 'none',
+            },
+            request.abortSignal ? { signal: request.abortSignal } : undefined
+          )) as CerebrasResponse
+          const finalModelEndTime = Date.now()
+          const finalModelDuration = finalModelEndTime - finalModelStartTime
+
+          timeSegments.push({
+            type: 'model',
+            name: request.model,
+            startTime: finalModelStartTime,
+            endTime: finalModelEndTime,
+            duration: finalModelDuration,
+          })
+          modelTime += finalModelDuration
+
+          if (currentResponse.choices[0]?.message?.content) {
+            content = currentResponse.choices[0].message.content
+          }
+          if (currentResponse.usage) {
+            tokens.input += currentResponse.usage.prompt_tokens || 0
+            tokens.output += currentResponse.usage.completion_tokens || 0
+            tokens.total += currentResponse.usage.total_tokens || 0
+          }
+
+          enrichLastModelSegmentFromChatCompletions(
+            timeSegments,
+            currentResponse,
+            currentResponse.choices[0]?.message?.tool_calls?.filter(isFunctionToolCall),
+            { model: request.model, provider: 'cerebras' }
+          )
+          iterationCount++
         }
       } catch (error) {
         logger.error('Error in Cerebras tool processing:', { error })
+        throw error
       }
 
       const providerEndTime = Date.now()
@@ -445,21 +510,8 @@ export const cerebrasProvider: ProviderConfig = {
       const totalDuration = providerEndTime - providerStartTime
 
       if (request.stream) {
-        logger.info('Using streaming for final Cerebras response after tool processing')
-
-        const streamingPayload = {
-          ...payload,
-          messages: currentMessages,
-          tool_choice: 'auto',
-          stream: true,
-        }
-
-        const streamResponse: any = await client.chat.completions.create(
-          streamingPayload,
-          request.abortSignal ? { signal: request.abortSignal } : undefined
-        )
-
         const accumulatedCost = calculateCost(request.model, tokens.input, tokens.output)
+        const toolCost = sumToolCosts(toolResults)
 
         const streamingResult = createStreamingExecution({
           model: request.model,
@@ -481,8 +533,8 @@ export const cerebrasProvider: ProviderConfig = {
           initialCost: {
             input: accumulatedCost.input,
             output: accumulatedCost.output,
-            toolCost: undefined as number | undefined,
-            total: accumulatedCost.total,
+            toolCost: toolCost || undefined,
+            total: accumulatedCost.total + toolCost,
           },
           toolCalls:
             toolCalls.length > 0
@@ -492,28 +544,12 @@ export const cerebrasProvider: ProviderConfig = {
                 }
               : undefined,
           isStreaming: true,
-          createStream: ({ output }) =>
-            createReadableStreamFromCerebrasStream(streamResponse, (content, usage) => {
-              output.content = content
-              output.tokens = {
-                input: tokens.input + usage.prompt_tokens,
-                output: tokens.output + usage.completion_tokens,
-                total: tokens.total + usage.total_tokens,
-              }
-
-              const streamCost = calculateCost(
-                request.model,
-                usage.prompt_tokens,
-                usage.completion_tokens
-              )
-              const tc = sumToolCosts(toolResults)
-              output.cost = {
-                input: accumulatedCost.input + streamCost.input,
-                output: accumulatedCost.output + streamCost.output,
-                toolCost: tc || undefined,
-                total: accumulatedCost.total + streamCost.total + tc,
-              }
-            }),
+          streamFormat: 'agent-events-v1',
+          createStream: ({ output, finalizeTiming }) => {
+            output.content = content
+            finalizeTiming()
+            return createSettledAgentEventStream(content)
+          },
         })
 
         return streamingResult
@@ -545,6 +581,10 @@ export const cerebrasProvider: ProviderConfig = {
         error,
         duration: totalDuration,
       })
+
+      if (isAbortError(error) || request.abortSignal?.aborted) {
+        throw error
+      }
 
       throw new ProviderError(toError(error).message, {
         startTime: providerStartTimeISO,

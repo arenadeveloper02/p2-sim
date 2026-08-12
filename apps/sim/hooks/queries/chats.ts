@@ -12,7 +12,10 @@ import {
   type DeployedChatAuthBody,
   type DeployedChatConfig,
   deleteChatContract,
+  getChatPasswordContract,
   getDeployedChatConfigContract,
+  type ListAgentDepartmentsResponse,
+  listAgentDepartmentsContract,
   requestChatEmailOtpContract,
   type UpdateChatBody,
   type UpdateChatResponse,
@@ -20,7 +23,7 @@ import {
   verifyChatEmailOtpContract,
 } from '@/lib/api/contracts/chats'
 import type { OutputConfig } from '@/stores/chat/types'
-import { deploymentKeys } from './deployments'
+import { deploymentKeys, invalidateDeploymentQueries } from './deployments'
 
 const logger = createLogger('ChatMutations')
 
@@ -29,13 +32,28 @@ const logger = createLogger('ChatMutations')
  */
 export const chatKeys = {
   all: ['chats'] as const,
-  status: deploymentKeys.chatStatus,
-  detail: deploymentKeys.chatDetail,
   configs: () => [...chatKeys.all, 'config'] as const,
   config: (identifier?: string) => [...chatKeys.configs(), identifier ?? ''] as const,
+  departments: () => [...chatKeys.all, 'departments'] as const,
 }
 
 export const DEPLOYED_CHAT_CONFIG_STALE_TIME = 60 * 1000
+export const AGENT_DEPARTMENTS_STALE_TIME = 5 * 60 * 1000
+
+async function fetchAgentDepartments(signal?: AbortSignal): Promise<ListAgentDepartmentsResponse> {
+  return requestJson(listAgentDepartmentsContract, { signal })
+}
+
+/**
+ * Active Arena agent departments for chat deploy category pickers.
+ */
+export function useAgentDepartments() {
+  return useQuery({
+    queryKey: chatKeys.departments(),
+    queryFn: ({ signal }) => fetchAgentDepartments(signal),
+    staleTime: AGENT_DEPARTMENTS_STALE_TIME,
+  })
+}
 
 /**
  * Auth types for chat access control
@@ -185,6 +203,10 @@ export interface ChatFormData {
   selectedOutputBlocks: string[]
   deploymentType: DeploymentType
   redirectUrl: string
+  /** When true, thinking may be streamed to clients that opt into agent-events-v1. Default false. */
+  includeThinking: boolean
+  /** When true, tool lifecycle may be streamed to opted-in clients. Default false. */
+  includeToolCalls: boolean
 }
 
 /**
@@ -280,6 +302,8 @@ function buildChatPayload(
     ...(formData.deploymentType === 'app' && formData.redirectUrl.trim()
       ? { redirectUrl: formData.redirectUrl.trim() }
       : {}),
+    includeThinking: formData.includeThinking,
+    includeToolCalls: formData.includeToolCalls,
   }
 }
 
@@ -306,17 +330,8 @@ export function useCreateChat() {
         throwUserFriendlyIdentifierError(error)
       }
     },
-    onSettled: (_data, _error, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: deploymentKeys.chatStatus(variables.workflowId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: deploymentKeys.info(variables.workflowId),
-      })
-      queryClient.invalidateQueries({
-        queryKey: deploymentKeys.versions(variables.workflowId),
-      })
-    },
+    onSettled: (_data, _error, variables) =>
+      invalidateDeploymentQueries(queryClient, variables.workflowId),
     onError: (error) => {
       logger.error('Failed to create chat', { error })
     },
@@ -352,11 +367,9 @@ export function useUpdateChat() {
     },
     onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({
-        queryKey: deploymentKeys.chatStatus(variables.workflowId),
-      })
-      queryClient.invalidateQueries({
         queryKey: deploymentKeys.chatDetail(variables.chatId),
       })
+      return invalidateDeploymentQueries(queryClient, variables.workflowId)
     },
     onError: (error) => {
       logger.error('Failed to update chat', { error })
@@ -386,6 +399,33 @@ export function useDeleteChat() {
     },
     onError: (error) => {
       logger.error('Failed to delete chat', { error })
+    },
+  })
+}
+
+interface RevealChatPasswordVariables {
+  chatId: string
+}
+
+/**
+ * Mutation hook that fetches a chat deployment's current password for workspace
+ * admins. Modeled as a mutation (despite the GET) because revealing a secret is
+ * an audited, explicitly-triggered action, not cacheable read state.
+ *
+ * `gcTime: 0` evicts the decrypted password from the mutation cache as soon as
+ * the last observer unmounts, rather than letting it sit there for the default
+ * five minutes after the deploy modal closes. While the modal is open the caller
+ * holds the plaintext anyway, and it discards it when the field is hidden.
+ */
+export function useRevealChatPassword() {
+  return useMutation({
+    gcTime: 0,
+    mutationFn: async ({ chatId }: RevealChatPasswordVariables): Promise<string> => {
+      const result = await requestJson(getChatPasswordContract, { params: { id: chatId } })
+      return result.password
+    },
+    onError: (error) => {
+      logger.error('Failed to reveal chat password', { error })
     },
   })
 }

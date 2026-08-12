@@ -1,9 +1,10 @@
+import type { SecretSafeBlockLog } from '@/lib/logs/execution/display-types'
 import type {
+  BlockCompletionCallbackData,
   ChildWorkflowContext,
   IterationContext,
   ParentIteration,
 } from '@/executor/execution/types'
-import type { BlockLog } from '@/executor/types'
 import type { SubflowType } from '@/stores/workflows/workflow/types'
 
 export type ExecutionEventType =
@@ -17,7 +18,26 @@ export type ExecutionEventType =
   | 'block:error'
   | 'block:childWorkflowStarted'
   | 'stream:chunk'
+  /** Live-only: clears a block's streamed answer text (intermediate turn). */
+  | 'stream:chunk_reset'
   | 'stream:done'
+  /** Live-only agent thinking delta (not buffered for reconnect replay). */
+  | 'stream:thinking'
+  /** Live-only tool lifecycle (not buffered for reconnect replay). */
+  | 'stream:tool'
+
+/**
+ * Event types that are live-only: forwarded to connected clients but excluded
+ * from reconnect replay buffers (same rule as answer chunks — guaranteed `seq`
+ * replay for stream events is out of scope).
+ */
+export const LIVE_ONLY_EXECUTION_EVENT_TYPES: ReadonlySet<ExecutionEventType> = new Set([
+  'stream:chunk',
+  'stream:chunk_reset',
+  'stream:done',
+  'stream:thinking',
+  'stream:tool',
+])
 
 /**
  * Base event structure for SSE
@@ -27,6 +47,15 @@ interface BaseExecutionEvent {
   timestamp: string
   executionId: string
   eventId?: number
+}
+
+export interface ExecutionEventDisplayData {
+  input?: unknown
+  output?: unknown
+  error?: string
+  text?: string
+  chunk?: string
+  clearLiveDisplay?: true
 }
 
 /**
@@ -53,7 +82,7 @@ interface ExecutionCompletedEvent extends BaseExecutionEvent {
     startTime: string
     endTime: string
     /** Authoritative per-block terminal states from the server's blockLogs. */
-    finalBlockLogs?: BlockLog[]
+    finalBlockLogs?: SecretSafeBlockLog[]
   }
 }
 
@@ -69,7 +98,7 @@ interface ExecutionPausedEvent extends BaseExecutionEvent {
     startTime: string
     endTime: string
     /** Authoritative per-block terminal states from the server's blockLogs. */
-    finalBlockLogs?: BlockLog[]
+    finalBlockLogs?: SecretSafeBlockLog[]
   }
 }
 
@@ -81,9 +110,10 @@ interface ExecutionErrorEvent extends BaseExecutionEvent {
   workflowId: string
   data: {
     error: string
+    display?: ExecutionEventDisplayData
     duration: number
     /** Authoritative per-block terminal states from the server's blockLogs. */
-    finalBlockLogs?: BlockLog[]
+    finalBlockLogs?: SecretSafeBlockLog[]
   }
 }
 
@@ -93,7 +123,7 @@ interface ExecutionCancelledEvent extends BaseExecutionEvent {
   data: {
     duration: number
     /** Authoritative per-block terminal states from the server's blockLogs. */
-    finalBlockLogs?: BlockLog[]
+    finalBlockLogs?: SecretSafeBlockLog[]
   }
 }
 
@@ -130,6 +160,7 @@ interface BlockCompletedEvent extends BaseExecutionEvent {
     blockType: string
     input?: any
     output: any
+    display?: ExecutionEventDisplayData
     durationMs: number
     startedAt: string
     executionOrder: number
@@ -158,6 +189,7 @@ interface BlockErrorEvent extends BaseExecutionEvent {
     blockType: string
     input?: any
     error: string
+    display?: ExecutionEventDisplayData
     durationMs: number
     startedAt: string
     executionOrder: number
@@ -205,6 +237,21 @@ interface StreamChunkEvent extends BaseExecutionEvent {
   data: {
     blockId: string
     chunk: string
+    display?: ExecutionEventDisplayData
+  }
+}
+
+/**
+ * Live-only reconciliation for agent-events runs: the answer text streamed so
+ * far for `blockId` belonged to an intermediate turn (tool calls follow).
+ * Clients discard the block's accumulated streamed text; the final turn's
+ * text re-streams as regular `stream:chunk` events after tools settle.
+ */
+interface StreamChunkResetEvent extends BaseExecutionEvent {
+  type: 'stream:chunk_reset'
+  workflowId: string
+  data: {
+    blockId: string
   }
 }
 
@@ -216,6 +263,37 @@ interface StreamDoneEvent extends BaseExecutionEvent {
   workflowId: string
   data: {
     blockId: string
+  }
+}
+
+/**
+ * Live thinking delta from an agent-events provider sink (canvas / draft runs).
+ * Builder runs show provider-exposed signals when the sink is attached
+ * (executor already disables the sink under PII redaction).
+ */
+interface StreamThinkingEvent extends BaseExecutionEvent {
+  type: 'stream:thinking'
+  workflowId: string
+  data: {
+    blockId: string
+    text: string
+    display?: ExecutionEventDisplayData
+  }
+}
+
+/**
+ * Live tool lifecycle from an agent-events provider sink.
+ * Name + status only — never args or results.
+ */
+interface StreamToolEvent extends BaseExecutionEvent {
+  type: 'stream:tool'
+  workflowId: string
+  data: {
+    blockId: string
+    phase: 'start' | 'end'
+    id: string
+    name: string
+    status?: 'success' | 'error' | 'cancelled'
   }
 }
 
@@ -233,7 +311,10 @@ export type ExecutionEvent =
   | BlockErrorEvent
   | BlockChildWorkflowStartedEvent
   | StreamChunkEvent
+  | StreamChunkResetEvent
   | StreamDoneEvent
+  | StreamThinkingEvent
+  | StreamToolEvent
 
 export type ExecutionStartedData = ExecutionStartedEvent['data']
 export type ExecutionCompletedData = ExecutionCompletedEvent['data']
@@ -245,7 +326,10 @@ export type BlockCompletedData = BlockCompletedEvent['data']
 export type BlockErrorData = BlockErrorEvent['data']
 export type BlockChildWorkflowStartedData = BlockChildWorkflowStartedEvent['data']
 export type StreamChunkData = StreamChunkEvent['data']
+export type StreamChunkResetData = StreamChunkResetEvent['data']
 export type StreamDoneData = StreamDoneEvent['data']
+export type StreamThinkingData = StreamThinkingEvent['data']
+export type StreamToolData = StreamToolEvent['data']
 
 /**
  * Helper to create SSE formatted message
@@ -325,19 +409,11 @@ export function createExecutionCallbacks(options: {
     blockId: string,
     blockName: string,
     blockType: string,
-    callbackData: {
-      input?: unknown
-      output: any
-      executionTime: number
-      startedAt: string
-      executionOrder: number
-      endedAt: string
-      childWorkflowInstanceId?: string
-    },
+    callbackData: BlockCompletionCallbackData,
     iterationContext?: IterationContext,
     childWorkflowContext?: ChildWorkflowContext
   ) => {
-    const hasError = callbackData.output?.error
+    const callbackError = callbackData.output?.error
     const iterationData = iterationContext
       ? {
           iterationCurrent: iterationContext.iterationCurrent,
@@ -359,8 +435,7 @@ export function createExecutionCallbacks(options: {
     const instanceData = callbackData.childWorkflowInstanceId
       ? { childWorkflowInstanceId: callbackData.childWorkflowInstanceId }
       : {}
-
-    if (hasError) {
+    if (callbackError) {
       await sendBufferedEvent({
         type: 'block:error',
         timestamp: new Date().toISOString(),
@@ -371,7 +446,7 @@ export function createExecutionCallbacks(options: {
           blockName,
           blockType,
           input: callbackData.input,
-          error: callbackData.output.error,
+          error: callbackError,
           durationMs: callbackData.executionTime || 0,
           startedAt: callbackData.startedAt,
           executionOrder: callbackData.executionOrder,

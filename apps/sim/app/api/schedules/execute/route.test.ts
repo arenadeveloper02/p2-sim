@@ -3,9 +3,18 @@
  *
  * @vitest-environment node
  */
-import { dbChainMock, dbChainMockFns, requestUtilsMockFns, resetDbChainMock } from '@sim/testing'
+import {
+  dbChainMock,
+  dbChainMockFns,
+  requestUtilsMockFns,
+  resetDbChainMock,
+  resetEnvFlagsMock,
+  resetEnvMock,
+  setEnv,
+  setEnvFlags,
+} from '@sim/testing'
 import { type NextRequest, NextResponse } from 'next/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const orderByLimitMock = vi.fn()
 
@@ -14,7 +23,6 @@ const {
   mockExecuteScheduleJob,
   mockExecuteJobInline,
   mockReleaseScheduleLock,
-  mockFeatureFlags,
   mockEnqueue,
   mockGetJob,
   mockStartJob,
@@ -22,17 +30,15 @@ const {
   mockMarkJobFailed,
   mockCancelJob,
   mockShouldExecuteInline,
+  mockResolveSystemBillingAttribution,
+  mockAssertBillingAttributionSnapshot,
+  mockApplyScheduleFailureUpdate,
+  mockNotifyScheduleAutoDisabled,
 } = vi.hoisted(() => ({
   mockVerifyCronAuth: vi.fn().mockReturnValue(null),
   mockExecuteScheduleJob: vi.fn().mockResolvedValue(undefined),
   mockExecuteJobInline: vi.fn().mockResolvedValue(undefined),
   mockReleaseScheduleLock: vi.fn().mockResolvedValue(undefined),
-  mockFeatureFlags: {
-    isTriggerDevEnabled: false,
-    isHosted: false,
-    isProd: false,
-    isDev: true,
-  },
   mockEnqueue: vi.fn().mockResolvedValue('job-id-1'),
   mockGetJob: vi.fn().mockResolvedValue(null),
   mockStartJob: vi.fn().mockResolvedValue(undefined),
@@ -40,28 +46,31 @@ const {
   mockMarkJobFailed: vi.fn().mockResolvedValue(undefined),
   mockCancelJob: vi.fn().mockResolvedValue(undefined),
   mockShouldExecuteInline: vi.fn().mockReturnValue(false),
+  mockResolveSystemBillingAttribution: vi.fn(),
+  mockAssertBillingAttributionSnapshot: vi.fn(),
+  mockApplyScheduleFailureUpdate: vi.fn().mockResolvedValue({ updated: true, disabled: false }),
+  mockNotifyScheduleAutoDisabled: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/auth/internal', () => ({
   verifyCronAuth: mockVerifyCronAuth,
 }))
 
+vi.mock('@/lib/billing/core/billing-attribution', () => ({
+  assertBillingAttributionSnapshot: mockAssertBillingAttributionSnapshot,
+  resolveSystemBillingAttribution: mockResolveSystemBillingAttribution,
+}))
+
 vi.mock('@/background/schedule-execution', () => ({
   executeScheduleJob: mockExecuteScheduleJob,
   executeJobInline: mockExecuteJobInline,
   releaseScheduleLock: mockReleaseScheduleLock,
-  buildScheduleFailureUpdate: (now: Date, nextRunAt: Date | null) => ({
-    updatedAt: now,
-    lastQueuedAt: null,
-    nextRunAt,
-    failedCount: { type: 'sql' },
-    lastFailedAt: now,
-    status: { type: 'sql' },
-    infraRetryCount: 0,
-  }),
+  applyScheduleFailureUpdate: mockApplyScheduleFailureUpdate,
 }))
 
-vi.mock('@/lib/core/config/env-flags', () => mockFeatureFlags)
+vi.mock('@/lib/workflows/schedules/disable-notifications', () => ({
+  notifyScheduleAutoDisabled: mockNotifyScheduleAutoDisabled,
+}))
 
 vi.mock('@/lib/core/async-jobs', () => ({
   getJobQueue: vi.fn().mockResolvedValue({
@@ -181,6 +190,21 @@ const MULTIPLE_SCHEDULES = [
 
 const SINGLE_CLAIMED_SCHEDULE_ROWS = [{ id: 'schedule-1', workspaceId: 'workspace-1' }]
 
+function createBillingAttribution(workspaceId: string, actorUserId = `owner-${workspaceId}`) {
+  return {
+    actorUserId,
+    workspaceId,
+    organizationId: 'org-1',
+    billedAccountUserId: `owner-${workspaceId}`,
+    billingEntity: { type: 'organization', id: 'org-1' },
+    billingPeriod: {
+      start: '2026-07-01T00:00:00.000Z',
+      end: '2026-08-01T00:00:00.000Z',
+    },
+    payerSubscription: null,
+  }
+}
+
 const SINGLE_JOB = [
   {
     id: 'job-1',
@@ -253,6 +277,11 @@ function createMockRequest(): NextRequest {
   } as NextRequest
 }
 
+afterAll(() => {
+  resetEnvFlagsMock()
+  resetEnvMock()
+})
+
 describe('Scheduled Workflow Execution API Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -265,10 +294,10 @@ describe('Scheduled Workflow Execution API Route', () => {
     dbChainMockFns.orderBy.mockReturnValue({ limit: orderByLimitMock } as never)
     dbChainMockFns.execute.mockResolvedValue([{ acquired: true }] as never)
     requestUtilsMockFns.mockGenerateRequestId.mockReturnValue('test-request-id')
-    mockFeatureFlags.isTriggerDevEnabled = false
-    mockFeatureFlags.isHosted = false
-    mockFeatureFlags.isProd = false
-    mockFeatureFlags.isDev = true
+    setEnvFlags({ isTriggerDevEnabled: false, isHosted: false, isProd: false, isDev: true })
+    // Prompt-job claims are skipped without the mothership credential; pin it so
+    // these cases do not depend on whether the runner happens to have a .env.
+    setEnv({ COPILOT_API_KEY: 'test-api-key' })
     mockShouldExecuteInline.mockReturnValue(false)
     mockEnqueue.mockReset()
     mockEnqueue.mockResolvedValue('job-id-1')
@@ -288,6 +317,16 @@ describe('Scheduled Workflow Execution API Route', () => {
     mockExecuteJobInline.mockResolvedValue(undefined)
     mockReleaseScheduleLock.mockReset()
     mockReleaseScheduleLock.mockResolvedValue(undefined)
+    mockAssertBillingAttributionSnapshot.mockReset()
+    mockAssertBillingAttributionSnapshot.mockImplementation((value: unknown) => {
+      if (!value || typeof value !== 'object') {
+        throw new Error('Billing attribution snapshot must be an object')
+      }
+      return value
+    })
+    mockResolveSystemBillingAttribution.mockImplementation((workspaceId: string) =>
+      Promise.resolve(createBillingAttribution(workspaceId))
+    )
     dbChainMockFns.returning.mockReturnValue([])
   })
 
@@ -303,7 +342,7 @@ describe('Scheduled Workflow Execution API Route', () => {
   })
 
   it('should queue schedules to Trigger.dev when enabled', async () => {
-    mockFeatureFlags.isTriggerDevEnabled = true
+    setEnvFlags({ isTriggerDevEnabled: true })
     dbChainMockFns.limit
       .mockResolvedValueOnce(SINGLE_CLAIMED_SCHEDULE_ROWS)
       .mockResolvedValueOnce([])
@@ -351,7 +390,7 @@ describe('Scheduled Workflow Execution API Route', () => {
     )
   })
 
-  it('should enqueue schedule with correlation metadata via job queue', async () => {
+  it('should enqueue schedule with one atomic system actor and payer snapshot', async () => {
     dbChainMockFns.limit
       .mockResolvedValueOnce(SINGLE_CLAIMED_SCHEDULE_ROWS)
       .mockResolvedValueOnce([])
@@ -365,6 +404,11 @@ describe('Scheduled Workflow Execution API Route', () => {
         workflowId: 'workflow-1',
         executionId: 'schedule-execution-1',
         requestId: 'test-request-id',
+        billingAttribution: expect.objectContaining({
+          actorUserId: 'owner-workspace-1',
+          workspaceId: 'workspace-1',
+          billingEntity: { type: 'organization', id: 'org-1' },
+        }),
       }),
       expect.objectContaining({
         jobId: expect.stringMatching(/^schedule_[0-9a-f]{32}$/),
@@ -381,6 +425,8 @@ describe('Scheduled Workflow Execution API Route', () => {
         }),
       })
     )
+    expect(mockResolveSystemBillingAttribution).toHaveBeenCalledWith('workspace-1')
+    expect(mockResolveSystemBillingAttribution).toHaveBeenCalledTimes(1)
     expect(mockEnqueue.mock.calls[0][2].concurrencyKey).toBeUndefined()
   })
 
@@ -443,6 +489,13 @@ describe('Scheduled Workflow Execution API Route', () => {
       .mockResolvedValueOnce({
         id: 'job-id-1',
         status: 'pending',
+        payload: {
+          scheduleId: 'schedule-1',
+          workflowId: 'workflow-1',
+          workspaceId: 'workspace-1',
+          billingAttribution: createBillingAttribution('workspace-1'),
+          now: '2025-01-01T00:00:00.000Z',
+        },
       })
     orderByLimitMock
       .mockResolvedValueOnce([])
@@ -493,6 +546,8 @@ describe('Scheduled Workflow Execution API Route', () => {
         payload: {
           scheduleId: 'schedule-1',
           workflowId: 'workflow-1',
+          workspaceId: 'workspace-1',
+          billingAttribution: createBillingAttribution('workspace-1'),
           now: claimedAt.toISOString(),
         },
       },
@@ -515,6 +570,113 @@ describe('Scheduled Workflow Execution API Route', () => {
       })
     )
     expect(mockCompleteJob).toHaveBeenCalledWith('pending-job-id', null)
+  })
+
+  it.each([
+    {
+      name: 'a missing workspace',
+      payload: {
+        scheduleId: 'schedule-1',
+        workflowId: 'workflow-1',
+        billingAttribution: createBillingAttribution('workspace-1'),
+      },
+      expectedError: 'Invalid pending schedule execution payload: workspaceId is required',
+    },
+    {
+      name: 'missing billing attribution',
+      payload: {
+        scheduleId: 'schedule-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+      },
+      expectedError: 'Invalid pending schedule execution payload: billingAttribution is required',
+    },
+    {
+      name: 'billing attribution for another workspace',
+      payload: {
+        scheduleId: 'schedule-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        billingAttribution: createBillingAttribution('workspace-2'),
+      },
+      expectedError:
+        'Invalid pending schedule execution payload: billing attribution workspace does not match payload workspace',
+    },
+    {
+      name: 'billing attribution for a different system actor',
+      payload: {
+        scheduleId: 'schedule-1',
+        workflowId: 'workflow-1',
+        workspaceId: 'workspace-1',
+        billingAttribution: createBillingAttribution('workspace-1', 'member-1'),
+      },
+      expectedError:
+        'Invalid pending schedule execution payload: billing attribution actor does not match billed account',
+    },
+  ])('rejects pending database fallback jobs with $name', async ({ payload, expectedError }) => {
+    mockShouldExecuteInline.mockReturnValue(true)
+    const claimedAt = new Date('2025-01-01T00:00:00.000Z')
+    mockProcessingCounts(0, 0)
+    orderByLimitMock.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: 'pending-job-id',
+        payload: {
+          ...payload,
+          now: claimedAt.toISOString(),
+        },
+      },
+    ])
+    dbChainMockFns.limit
+      .mockResolvedValueOnce([{ lastQueuedAt: claimedAt }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+
+    const result = await runScheduleTick('test-request-id')
+
+    expect(result.processedCount).toBe(1)
+    expect(mockExecuteScheduleJob).not.toHaveBeenCalled()
+    expect(mockMarkJobFailed).toHaveBeenCalledWith('pending-job-id', expectedError)
+    expect(mockReleaseScheduleLock).toHaveBeenCalledWith(
+      'schedule-1',
+      'test-request-id',
+      expect.any(Date),
+      expect.stringContaining('invalid pending schedule execution payload'),
+      undefined,
+      { expectedLastQueuedAt: claimedAt }
+    )
+  })
+
+  it('rejects pending database fallback jobs with malformed billing attribution', async () => {
+    mockShouldExecuteInline.mockReturnValue(true)
+    const claimedAt = new Date('2025-01-01T00:00:00.000Z')
+    mockProcessingCounts(0, 0)
+    mockAssertBillingAttributionSnapshot.mockImplementationOnce(() => {
+      throw new Error('Billing attribution snapshot is missing its billing entity')
+    })
+    orderByLimitMock.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: 'pending-job-id',
+        payload: {
+          scheduleId: 'schedule-1',
+          workflowId: 'workflow-1',
+          workspaceId: 'workspace-1',
+          billingAttribution: {},
+          now: claimedAt.toISOString(),
+        },
+      },
+    ])
+    dbChainMockFns.limit
+      .mockResolvedValueOnce([{ lastQueuedAt: claimedAt }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+
+    await runScheduleTick('test-request-id')
+
+    expect(mockExecuteScheduleJob).not.toHaveBeenCalled()
+    expect(mockMarkJobFailed).toHaveBeenCalledWith(
+      'pending-job-id',
+      'Invalid pending schedule execution payload: Billing attribution snapshot is missing its billing entity'
+    )
   })
 
   it('completes stale pending database fallback jobs whose schedule claim was already released', async () => {
@@ -576,11 +738,11 @@ describe('Scheduled Workflow Execution API Route', () => {
         error: expect.stringContaining('exhausted retry attempts'),
       })
     )
-    expect(dbChainMockFns.set).toHaveBeenCalledWith(
+    expect(mockApplyScheduleFailureUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        lastQueuedAt: null,
-        lastFailedAt: expect.any(Date),
-        nextRunAt: expect.any(Date),
+        scheduleId: 'schedule-1',
+        expectedLastQueuedAt: claimedAt,
+        executor: expect.anything(),
       })
     )
   })
@@ -625,12 +787,11 @@ describe('Scheduled Workflow Execution API Route', () => {
 
     await runScheduleTick('test-request-id')
     expect(mockEnqueue).not.toHaveBeenCalled()
-    expect(dbChainMockFns.set).toHaveBeenCalledWith(
+    expect(mockApplyScheduleFailureUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        lastQueuedAt: null,
-        lastFailedAt: expect.any(Date),
+        scheduleId: schedule.id,
+        expectedLastQueuedAt: claimedAt,
         nextRunAt: expect.any(Date),
-        infraRetryCount: 0,
       })
     )
     expect(dbChainMockFns.set).not.toHaveBeenCalledWith(
@@ -638,6 +799,44 @@ describe('Scheduled Workflow Execution API Route', () => {
         infraRetryCount: 1,
       })
     )
+  })
+
+  it('emails the schedule owners when a non-retryable setup failure disables the schedule', async () => {
+    const claimedAt = new Date('2025-01-01T00:00:00.000Z')
+    const schedule = {
+      ...SINGLE_SCHEDULE[0],
+      lastQueuedAt: claimedAt,
+    }
+    mockGetJob.mockRejectedValueOnce(new Error('bad setup invariant'))
+    mockApplyScheduleFailureUpdate.mockResolvedValueOnce({ updated: true, disabled: true })
+    dbChainMockFns.limit
+      .mockResolvedValueOnce(SINGLE_CLAIMED_SCHEDULE_ROWS)
+      .mockResolvedValueOnce([])
+    dbChainMockFns.returning.mockReturnValueOnce([schedule]).mockReturnValueOnce([])
+
+    await runScheduleTick('test-request-id')
+
+    expect(mockNotifyScheduleAutoDisabled).toHaveBeenCalledWith(
+      expect.objectContaining({ scheduleId: schedule.id, reason: 'consecutive_failures' })
+    )
+  })
+
+  it('does not email when the failure update leaves the schedule active', async () => {
+    const claimedAt = new Date('2025-01-01T00:00:00.000Z')
+    const schedule = {
+      ...SINGLE_SCHEDULE[0],
+      lastQueuedAt: claimedAt,
+    }
+    mockGetJob.mockRejectedValueOnce(new Error('bad setup invariant'))
+    mockApplyScheduleFailureUpdate.mockResolvedValueOnce({ updated: true, disabled: false })
+    dbChainMockFns.limit
+      .mockResolvedValueOnce(SINGLE_CLAIMED_SCHEDULE_ROWS)
+      .mockResolvedValueOnce([])
+    dbChainMockFns.returning.mockReturnValueOnce([schedule]).mockReturnValueOnce([])
+
+    await runScheduleTick('test-request-id')
+
+    expect(mockNotifyScheduleAutoDisabled).not.toHaveBeenCalled()
   })
 
   it('uses one backend mode decision for slot accounting and schedule processing', async () => {

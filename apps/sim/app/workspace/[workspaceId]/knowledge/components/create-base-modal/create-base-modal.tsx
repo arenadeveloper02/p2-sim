@@ -38,6 +38,11 @@ const logger = createLogger('CreateBaseModal')
 interface CreateBaseModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * Folder the new base is filed under — the folder the list is currently showing, so a
+   * base created inside a folder appears where the user is looking. `null` is the root.
+   */
+  folderId?: string | null
 }
 
 const STRATEGY_OPTIONS = [
@@ -128,6 +133,7 @@ interface SubmitStatus {
 export const CreateBaseModal = memo(function CreateBaseModal({
   open,
   onOpenChange,
+  folderId = null,
 }: CreateBaseModalProps) {
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -278,6 +284,7 @@ export const CreateBaseModal = memo(function CreateBaseModal({
         name: data.name,
         description: data.description || undefined,
         workspaceId: workspaceId,
+        folderId,
         chunkingConfig: {
           maxSize: data.maxChunkSize,
           minSize: data.minChunkSize,

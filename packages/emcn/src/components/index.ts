@@ -7,7 +7,7 @@ export {
   CalendarDayCell,
   type CalendarDayCellProps,
 } from './calendar/calendar-day-cell'
-export { Checkbox } from './checkbox/checkbox'
+export { Checkbox, checkboxIconVariants, checkboxVariants } from './checkbox/checkbox'
 export {
   Chip,
   ChipLink,
@@ -41,6 +41,10 @@ export {
   type ChipDropdownOption,
   type ChipDropdownProps,
 } from './chip-dropdown/chip-dropdown'
+export {
+  ChipEmailsInput,
+  type ChipEmailsInputProps,
+} from './chip-emails-input/chip-emails-input'
 export { ChipInput, type ChipInputProps } from './chip-input/chip-input'
 export {
   type ChipConfirmAction,
@@ -145,6 +149,9 @@ export {
   ModalTabsTrigger,
   ModalTitle,
   ModalTrigger,
+  NATIVE_SURFACE_OCCLUSION_PREPARE_EVENT,
+  type NativeSurfaceOcclusionPrepareDetail,
+  useNativeSurfaceOcclusionReady,
 } from './modal/modal'
 export {
   Popover,
@@ -167,6 +174,13 @@ export { SecretReveal } from './secret-reveal/secret-reveal'
 export { Skeleton } from './skeleton/skeleton'
 export { Slider } from './slider/slider'
 export { Switch } from './switch/switch'
+export {
+  isTabTitleTruncated,
+  TabStrip,
+  type TabStripItem,
+  type TabStripProps,
+  tabDropIndex,
+} from './tab-strip/tab-strip'
 export {
   Table,
   TableBody,

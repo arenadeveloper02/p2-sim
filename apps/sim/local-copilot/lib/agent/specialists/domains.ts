@@ -46,10 +46,18 @@ export const MAX_PARALLEL_SUBAGENTS = 4
 export const ALWAYS_ON_TOOL_NAMES = new Set<string>([
   'search_docs',
   'search_documentation',
+  // Live web — always available so factual questions do not depend on research
+  // intent classification (e.g. "Who is the CM of Karnataka?").
+  'search_online',
   'get_workflow_context',
   'get_available_blocks',
   'get_available_integrations',
   'get_blocks_metadata',
+  'load_copilot_artifact',
+  // Core mutation tools — always available so Bedrock/Gemini can edit without
+  // depending solely on the `workflow` specialist entry tool.
+  'create_workflow',
+  'edit_workflow',
   'list_integration_tools',
   'invoke_integration_tool',
   'open_resource',
@@ -153,6 +161,8 @@ const AGENT_TOOLS = [
 
 const RESEARCH_TOOLS = [
   'search_online',
+  'list_integration_tools',
+  'invoke_integration_tool',
   'search_docs',
   'search_documentation',
   'function_execute',
@@ -212,7 +222,9 @@ export function toolNamesForDomain(domain: LocalCopilotSpecialistDomain): Set<st
 }
 
 export function toolNamesForIntent(intent: LocalCopilotIntent): Set<string> | null {
-  if (intent.useFullCatalog || intent.primary === 'general') return null
+  if (intent.useFullCatalog) return null
+  // Ambiguous / general: always-on leaf tools only; orchestrator unions specialist entry tools.
+  if (intent.primary === 'general') return new Set(ALWAYS_ON_TOOL_NAMES)
   const names = toolNamesForDomain(intent.primary)
   for (const domain of intent.secondary) {
     if (domain === 'general') continue
@@ -229,6 +241,65 @@ export function filterToolsByNames(
   return tools.filter((tool) => allowedNames.has(tool.name))
 }
 
+export interface HybridParentToolResolution {
+  tools: LocalCopilotToolDefinition[]
+  /** True only when the full catalog was selected (explicit escape hatch or empty hybrid). */
+  usedFullCatalog: boolean
+  leafToolCount: number
+  specialistEntryCount: number
+}
+
+/**
+ * Resolves the parent-turn tool list: intent-filtered leaf tools ∪ specialist entry tools.
+ * Falls back to the full catalog only when the hybrid set is empty — never solely because
+ * `primary === 'general'` when always-on / specialist tools are present.
+ */
+export function resolveHybridParentTools(params: {
+  allTools: LocalCopilotToolDefinition[]
+  intent: LocalCopilotIntent
+  specialistTools: LocalCopilotToolDefinition[]
+}): HybridParentToolResolution {
+  const { allTools, intent, specialistTools } = params
+  const allowedToolNames = toolNamesForIntent(intent)
+
+  if (allowedToolNames === null) {
+    return {
+      tools: allTools,
+      usedFullCatalog: true,
+      leafToolCount: allTools.length,
+      specialistEntryCount: 0,
+    }
+  }
+
+  const leafTools = filterToolsByNames(allTools, allowedToolNames)
+  const seen = new Set(leafTools.map((tool) => tool.name))
+  const hybrid: LocalCopilotToolDefinition[] = [...leafTools]
+  let specialistEntryCount = 0
+
+  for (const specialistTool of specialistTools) {
+    if (seen.has(specialistTool.name)) continue
+    hybrid.push(specialistTool)
+    seen.add(specialistTool.name)
+    specialistEntryCount += 1
+  }
+
+  if (hybrid.length === 0) {
+    return {
+      tools: allTools,
+      usedFullCatalog: true,
+      leafToolCount: 0,
+      specialistEntryCount: 0,
+    }
+  }
+
+  return {
+    tools: hybrid,
+    usedFullCatalog: false,
+    leafToolCount: leafTools.length,
+    specialistEntryCount,
+  }
+}
+
 export function isSpecialistDomain(name: string): name is LocalCopilotCloudSpecialistDomain {
   return SPECIALIST_ENTRY_TOOL_NAMES.has(name)
 }
@@ -236,30 +307,30 @@ export function isSpecialistDomain(name: string): name is LocalCopilotCloudSpeci
 export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
   switch (domain) {
     case 'workflow':
-      return 'Focus on building or editing workflows (create_workflow / edit_workflow / patches). Prefer existing workspaceWorkflows before creating new ones.'
+      return 'Focus on editing/running existing workflows first. If workspaceWorkflows lists anything suitable, call get_workflow_data / get_workflow_context (or get_workflow_run_options to run) — do not create_workflow unless the user explicitly wants a brand-new distinct workflow (confirmNewWorkflow: true).'
     case 'run':
-      return 'Focus on running and debugging workflows (get_workflow_run_options, run_workflow, run_block, run_from_block, query_logs).'
+      return 'Focus on running and debugging workflows (get_workflow_run_options, run_workflow, run_block, run_from_block, query_logs). Prefer existing workspaceWorkflows entries — never create a workflow just to run something.'
     case 'deploy':
       return 'Focus on deploying workflows (deploy_chat / deploy_api / redeploy / promotion) and verifying deployment status.'
     case 'auth':
       return 'Focus on credentials, OAuth links, and API keys.'
     case 'knowledge':
-      return 'Focus on knowledge bases (query, ingest, create, connectors).'
+      return 'Focus on existing knowledge bases first. If knowledgeBases is non-empty, call knowledge_base get / list / query and reuse — create only when nothing suitable exists and the user wants a new KB (confirmCreateNew: true).'
     case 'table':
-      return 'Focus on tables and enrichments (user_table, enrichment_run).'
+      return 'Focus on existing tables first. If tables is non-empty, call user_table get / get_schema / query_rows and reuse — create only when nothing suitable exists and the user wants a new table (confirmCreateNew: true).'
     case 'scheduled_task':
       return 'Focus on scheduled tasks (create/list/update/complete/logs).'
     case 'agent':
       return 'Focus on integration tools, MCP tools, skills, and function_execute.'
     case 'research':
-      return 'Focus on research (search_online, search_docs, search_documentation, user_memory).'
+      return 'Focus on research. For ANY real-world factual or current question, call a live search tool FIRST (exa_answer via invoke_integration_tool, or search_online) before answering — never answer from training memory alone. Also search_docs, search_documentation, user_memory.'
     case 'media':
       return 'Focus on image/audio/video generation and ffmpeg.'
     case 'file':
-      return 'Focus on workspace files and VFS tools (read/glob/grep/create_file/edit_content).'
+      return 'Focus on existing workspace files first. If workspaceFiles may match, glob then read, then update via workspace_file + edit_content — create_file only for a truly new path (confirmCreateNew: true). Chat uploads/ need materialize_file into files/ before function_execute.'
     case 'superagent':
       return 'Focus on third-party integration actions. Authenticate if needed, then invoke the right integration tool.'
     default:
-      return 'Use whichever tools best answer the user. Prefer existing workflows before creating new ones.'
+      return 'Reuse existing workflows/tables/knowledge bases/files whenever present. Inspect with tools first; create new resources only when inventory has nothing suitable or the user explicitly asks for something brand-new.'
   }
 }

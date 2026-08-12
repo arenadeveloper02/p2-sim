@@ -9,6 +9,7 @@ import {
   MothershipStreamV1ToolOutcome,
   MothershipStreamV1ToolPhase,
 } from '@/lib/copilot/generated/mothership-stream-v1'
+import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { sseHandlers } from '@/lib/copilot/request/handlers'
 import type { CopilotLifecycleOptions } from '@/lib/copilot/request/lifecycle/run'
 import { LOCAL_STATUS_PHASE } from '@/lib/copilot/request/session'
@@ -20,10 +21,24 @@ import type {
   StreamingContext,
 } from '@/lib/copilot/request/types'
 import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
+import { formatUxPhaseStatus } from '@/local-copilot/lib/agent/ux-phase'
+import type { LocalTurnCostSummary } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
+import {
+  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
+  isLocalCopilotCatalogId,
+  type LocalCopilotCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import { loadMothershipChatHistoryForLocalCopilot } from '@/local-copilot/lib/mothership-history'
+import type { ChatMessage } from '@/local-copilot/lib/providers/types'
+import {
+  formatLocalToolConfirmationTag,
+  formatLocalWorkflowPatchTag,
+} from '@/local-copilot/lib/security/tool-confirmation-policy'
+import { formatTrustedControl } from '@/local-copilot/lib/security/trusted-controls'
 import type { LocalCopilotStreamEvent } from '@/local-copilot/lib/types'
+import { stripIdsFromUserFacingText } from '@/local-copilot/lib/user-facing-text'
 import type {
   CopilotContextEntry,
   CopilotFileAttachmentRef,
@@ -33,6 +48,26 @@ const logger = createLogger('LocalCopilotMothershipLifecycle')
 
 function extractString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+/**
+ * Reads the typed workspace inventory snapshot from the mothership payload. Sim
+ * built it in `post.ts` alongside the markdown; forwarding it lets Local context
+ * building skip a second identical DB fetch.
+ */
+function extractWorkspaceSnapshot(value: unknown): VfsSnapshotV1 | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  return value as VfsSnapshotV1
+}
+
+function resolveCatalogIdFromPayload(
+  requestPayload: Record<string, unknown>
+): LocalCopilotCatalogId {
+  const model = extractString(requestPayload.model)
+  if (!model || !isLocalCopilotCatalogId(model)) {
+    return DEFAULT_LOCAL_COPILOT_CATALOG_ID
+  }
+  return model
 }
 
 function extractContexts(value: unknown): CopilotContextEntry[] | undefined {
@@ -121,8 +156,12 @@ async function dispatchLocalCopilotEvent(
           phase: MothershipStreamV1ToolPhase.call,
           toolCallId: event.toolCallId,
           toolName: event.toolName,
-          executor: MothershipStreamV1ToolExecutor.sim,
+          // Arena Copilot already ran this tool. Use `go` so Sim's auto-execute
+          // path does not look up Arena-only ids (e.g. invoke_integration_tool)
+          // in the built-in tools registry.
+          executor: MothershipStreamV1ToolExecutor.go,
           mode: MothershipStreamV1ToolMode.sync,
+          arguments: event.args,
         },
       },
       context,
@@ -147,7 +186,7 @@ async function dispatchLocalCopilotEvent(
           phase: MothershipStreamV1ToolPhase.result,
           toolCallId: event.toolCallId,
           toolName: event.toolName,
-          executor: MothershipStreamV1ToolExecutor.sim,
+          executor: MothershipStreamV1ToolExecutor.go,
           mode: MothershipStreamV1ToolMode.sync,
           success: event.success,
           output: event.output,
@@ -174,11 +213,18 @@ async function dispatchLocalCopilotEvent(
       }
     }
 
-    const chatId = options.chatId
+    // Prefer options.chatId, then the streaming context — a missing chatId
+    // skips resource upserts and leaves the mothership right panel closed.
+    const chatId = options.chatId ?? context.chatId
     if (chatId && event.success) {
+      // Pass runtime + projected results (identical on Arena — no secret
+      // projection). Omitting projectedResult used to shift chatId into that
+      // slot; projected extraction then returned [] and the length mismatch
+      // dropped the upsert that opens the right panel.
       await handleResourceSideEffects(
         event.toolName,
         toolArgsByCallId.get(event.toolCallId),
+        toolResult,
         toolResult,
         chatId,
         (streamEvent) => dispatchStreamEvent(streamEvent, context, execContext, options),
@@ -189,12 +235,14 @@ async function dispatchLocalCopilotEvent(
   }
 
   if (event.type === 'text_delta' && event.content) {
+    const safeText = stripIdsFromUserFacingText(event.content)
+    if (!safeText) return
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.text,
         payload: {
           channel: MothershipStreamV1TextChannel.assistant,
-          text: event.content,
+          text: safeText,
         },
       },
       context,
@@ -204,8 +252,100 @@ async function dispatchLocalCopilotEvent(
     return
   }
 
+  if (event.type === 'trusted_control') {
+    await dispatchStreamEvent(
+      {
+        type: MothershipStreamV1EventType.text,
+        payload: {
+          channel: MothershipStreamV1TextChannel.assistant,
+          text: formatTrustedControl(event.control),
+        },
+      },
+      context,
+      execContext,
+      options
+    )
+    return
+  }
+
+  if (event.type === 'ux_phase') {
+    await options.onEvent?.({
+      type: 'run',
+      payload: {
+        statusPhase: LOCAL_STATUS_PHASE,
+        message: formatUxPhaseStatus(event.phase),
+      },
+    })
+    return
+  }
+
+  if (event.type === 'confirmation_required') {
+    await dispatchStreamEvent(
+      {
+        type: MothershipStreamV1EventType.text,
+        payload: {
+          channel: MothershipStreamV1TextChannel.assistant,
+          text: formatLocalToolConfirmationTag(event.toolCallId, event.toolName, event.requirement),
+        },
+      },
+      context,
+      execContext,
+      options
+    )
+    return
+  }
+
+  if (event.type === 'verification_completed') {
+    await options.onEvent?.({
+      type: 'run',
+      payload: {
+        statusPhase: LOCAL_STATUS_PHASE,
+        message: `Verified ${event.record.toolName}: ${event.record.status}`,
+        toolCallId: event.record.toolCallId,
+        toolName: event.record.verifierToolName,
+      },
+    })
+    return
+  }
+
+  if (event.type === 'turn_completion') {
+    await options.onEvent?.({
+      type: 'run',
+      payload: {
+        statusPhase: LOCAL_STATUS_PHASE,
+        message: `Turn completion: ${event.status}`,
+      },
+    })
+    return
+  }
+
   if (event.type === 'patch_proposed') {
-    const patchNote = `\n\n**Proposed workflow change:** ${event.patch.summary}\n\nReview and apply patches from the workflow Chat panel when using Arena Copilot UI.`
+    const workflowId =
+      (typeof event.workflowId === 'string' && event.workflowId.trim()) ||
+      extractString(execContext.workflowId) ||
+      ''
+    if (event.patchId && workflowId) {
+      await dispatchStreamEvent(
+        {
+          type: MothershipStreamV1EventType.text,
+          payload: {
+            channel: MothershipStreamV1TextChannel.assistant,
+            text: formatLocalWorkflowPatchTag({
+              patchId: event.patchId,
+              summary: event.patch.summary,
+              workflowId,
+            }),
+          },
+        },
+        context,
+        execContext,
+        options
+      )
+      return
+    }
+    const patchNote = stripIdsFromUserFacingText(
+      `\n\n**Proposed workflow change:** ${event.patch.summary}\n\nCould not persist a reviewable patch. Ask Copilot to propose the change again.`
+    )
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.text,
@@ -222,11 +362,12 @@ async function dispatchLocalCopilotEvent(
   }
 
   if (event.type === 'error') {
-    context.errors.push(event.message)
+    const safeMessage = stripIdsFromUserFacingText(event.message) || event.message
+    context.errors.push(safeMessage)
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.error,
-        payload: { message: event.message, code: 'local_copilot_error' },
+        payload: { message: safeMessage, code: 'local_copilot_error' },
       },
       context,
       execContext,
@@ -249,6 +390,7 @@ export async function runLocalCopilotMothershipLifecycle(
   const contexts = extractContexts(requestPayload.context)
   const fileAttachments = extractFileAttachments(requestPayload.fileAttachments)
   const workspaceContext = extractString(requestPayload.workspaceContext)
+  const workspaceSnapshot = extractWorkspaceSnapshot(requestPayload.vfs)
   const workflowId = options.workflowId ?? extractString(requestPayload.workflowId)
   const workspaceId = options.workspaceId ?? extractString(requestPayload.workspaceId)
   const userId = options.userId
@@ -325,17 +467,28 @@ export async function runLocalCopilotMothershipLifecycle(
         outputTokens: number
       }
     | undefined
+  const isMothershipBlockExecute =
+    typeof options.goRoute === 'string' && options.goRoute.startsWith('/api/mothership/execute')
+  /** Workflow owns block cost via `result.cost`; interactive Local chat writes the ledger. */
+  const writeChatLedger = !isMothershipBlockExecute
+  let blockExecuteCost: LocalTurnCostSummary | undefined
 
-  let priorMessages: Awaited<ReturnType<typeof loadMothershipChatHistoryForLocalCopilot>> = []
+  let priorMessages: ChatMessage[] = []
+  let sessionMemoryTurns: Awaited<
+    ReturnType<typeof loadMothershipChatHistoryForLocalCopilot>
+  >['sessionMemoryTurns'] = []
   if (options.chatId) {
-    priorMessages = await loadMothershipChatHistoryForLocalCopilot({
+    const history = await loadMothershipChatHistoryForLocalCopilot({
       chatId: options.chatId,
       userId,
       excludeMessageId: userMessageId,
     })
+    priorMessages = history.messages
+    sessionMemoryTurns = history.sessionMemoryTurns
     logger.info('Loaded mothership chat history for Arena Copilot', {
       chatId: options.chatId,
       turns: priorMessages.length,
+      sessionMemoryTurns: sessionMemoryTurns.length,
       memory: getLocalCopilotMemorySnapshot(),
     })
   }
@@ -343,21 +496,42 @@ export async function runLocalCopilotMothershipLifecycle(
   try {
     let eventCount = 0
     let toolCallCount = 0
-    for await (const event of runLocalCopilotAgent({
+    const catalogId = resolveCatalogIdFromPayload(requestPayload)
+    const agent = runLocalCopilotAgent({
       userId,
       workspaceId,
       message,
       chatId: options.chatId,
+      runId: options.runId ?? execContext.runId,
+      catalogId,
       ...(userMessageId ? { messageId: userMessageId } : {}),
+      ...(isMothershipBlockExecute && (options.executionId ?? execContext.executionId)
+        ? { parentExecutionId: options.executionId ?? execContext.executionId }
+        : {}),
       priorMessages,
+      sessionMemoryTurns,
       persistLocally: false,
+      writeChatLedger,
       ...(contexts ? { contexts } : {}),
       ...(fileAttachments ? { fileAttachments } : {}),
       ...(workspaceContext ? { workspaceContext } : {}),
+      ...(workspaceSnapshot ? { workspaceSnapshot } : {}),
       ...(workflowId ? { workflowId } : {}),
       ...(execContext.userPermission ? { userPermission: execContext.userPermission } : {}),
+      ...(execContext.billingAttribution
+        ? { billingAttribution: execContext.billingAttribution }
+        : {}),
       signal: options.abortSignal,
-    })) {
+    })
+
+    while (true) {
+      const { done, value } = await agent.next()
+      if (done) {
+        blockExecuteCost = value
+        break
+      }
+
+      const event = value
       if (options.abortSignal?.aborted) {
         context.wasAborted = true
         logger.warn('Arena Copilot mothership lifecycle aborted', {
@@ -390,27 +564,6 @@ export async function runLocalCopilotMothershipLifecycle(
     const billingModel = turnUsage?.model || getLocalCopilotConfig().model
     context.billingModel = billingModel
 
-    // Include usage for traces; omit cost so `/api/billing/update-cost` does not
-    // double-bill — Local already writes usage_log via recordModelUsage per round.
-    const completePayload: {
-      status: typeof status
-      usage?: {
-        model: string
-        input_tokens: number
-        output_tokens: number
-        total_tokens: number
-      }
-    } = { status }
-
-    if (turnUsage && (turnUsage.inputTokens > 0 || turnUsage.outputTokens > 0)) {
-      completePayload.usage = {
-        model: billingModel,
-        input_tokens: turnUsage.inputTokens,
-        output_tokens: turnUsage.outputTokens,
-        total_tokens: turnUsage.inputTokens + turnUsage.outputTokens,
-      }
-    }
-
     logger.info('Arena Copilot mothership lifecycle finished', {
       workspaceId,
       workflowId: workflowId ?? null,
@@ -421,19 +574,29 @@ export async function runLocalCopilotMothershipLifecycle(
       model: billingModel,
       inputTokens: turnUsage?.inputTokens ?? 0,
       outputTokens: turnUsage?.outputTokens ?? 0,
+      turnCost: blockExecuteCost?.total ?? 0,
+      writeChatLedger,
       durationMs: Date.now() - startedAt,
       memory: getLocalCopilotMemorySnapshot(),
     })
 
-    await dispatchStreamEvent(
-      {
-        type: MothershipStreamV1EventType.complete,
-        payload: completePayload,
-      },
-      context,
-      execContext,
-      options
-    )
+    // Defer the `complete` SSE until after `onComplete` persists the assistant
+    // row (run.ts → finalizeStream). Publishing complete here races the client's
+    // detail refetch and can replace the rich live turn with an empty message.
+    if (turnUsage && (turnUsage.inputTokens > 0 || turnUsage.outputTokens > 0)) {
+      context.usage = {
+        prompt: turnUsage.inputTokens,
+        completion: turnUsage.outputTokens,
+      }
+    }
+
+    if (isMothershipBlockExecute && blockExecuteCost && blockExecuteCost.total > 0) {
+      context.cost = {
+        input: blockExecuteCost.input,
+        output: blockExecuteCost.output,
+        total: blockExecuteCost.total,
+      }
+    }
   } catch (error) {
     const messageText = getErrorMessage(error, 'Arena Copilot failed')
     logger.error('Arena Copilot mothership lifecycle failed', {

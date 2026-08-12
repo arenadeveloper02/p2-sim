@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { semrushHosting } from '@/tools/semrush/hosting'
 import type { SemrushParams, SemrushResponse } from '@/tools/semrush/types'
 import type { ToolConfig } from '@/tools/types'
 import { parseCsvResponse } from '../utils'
@@ -130,6 +131,8 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
     'Query Semrush SEO data API for keywords, backlinks, domain rank, and more. Requires a Semrush API key configured on the block.',
   version: '1.0.0',
 
+  hosting: semrushHosting,
+
   params: {
     apiKey: {
       type: 'string',
@@ -240,9 +243,10 @@ export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
       return path
     },
     method: 'GET',
-    headers: () => ({
+    headers: (params) => ({
       Accept: 'text/plain, text/csv, */*',
       'Content-Type': 'text/plain',
+      ...(params.apiKey ? { 'X-Semrush-Api-Key': params.apiKey } : {}),
     }),
   },
 

@@ -49,6 +49,7 @@ export const DevelopmentBlock: BlockConfig<DevelopmentGenerateAppResponse> = {
   - Optional .env: DEVELOPMENT_GITHUB_OWNER, DEVELOPMENT_VERCEL_TEAM_ID.
   - Neon Postgres is always provisioned per app on Generate (requires DEVELOPMENT_NEON_API_KEY or Vercel Neon integration). Use a console-managed Neon org — not Vercel-managed Neon.
   - Edit mode reuses the existing Neon database when DATABASE_URL is already on the Vercel project; otherwise it provisions Neon like Generate. Schema edits are additive (new models/fields via prisma db push).
+  - **NOTE: dont remove updatedAt in any tables ** — never drop or omit updatedAt on Prisma models during generate or edit.
   - Connect User Input from a Starter block or upstream Agent output for dynamic generation or edits.
   - Apps are validated before publish: structure checks, then full next build in E2B (or local TypeScript check). Fix syntax, type, and compile errors before deploy — the block auto-repairs up to 3 rounds.
   `,

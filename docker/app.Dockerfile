@@ -1,14 +1,19 @@
+# syntax=docker/dockerfile:1
+# check=skip=SecretsUsedInArgOrEnv
 # ========================================
-# Base Stage: Debian-based Bun with Node.js 22
+# Base Stage: Debian-based Bun with Node.js 24
 # ========================================
-FROM oven/bun:1.3.13-slim AS base
+FROM oven/bun:1.3.14-slim AS base
 
-# Install Node.js 22 and common dependencies once in base stage
+# Install Node.js 24 (Active LTS) and common dependencies once in base stage.
+# Node runs only the isolated-vm sandbox worker (the app itself runs under Bun);
+# the version is kept in lockstep with the `isolated-vm` pin in
+# apps/sim/package.json — Node 24 (ABI 137) requires isolated-vm 6.x.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv make g++ curl ca-certificates bash ffmpeg \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs
 
 # ========================================
@@ -73,10 +78,28 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 ARG DATABASE_URL="postgresql://user:pass@localhost:5432/dummy"
 ENV DATABASE_URL=${DATABASE_URL}
 
-# Provide dummy NEXT_PUBLIC_APP_URL for build-time evaluation.
-# Runtime environments should override this with the actual URL.
-# ARG NEXT_PUBLIC_APP_URL="http://localhost:3000"
-# ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+# Provide NEXT_PUBLIC_APP_URL for build-time module evaluation (auth, webhooks).
+# CI passes the real URL via build-args; runtime env overrides at deploy time.
+ARG NEXT_PUBLIC_APP_URL="http://localhost:3000"
+ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+
+# Dummy auth secret so page-data collection doesn't throw BetterAuthError on
+# every route that imports `@/lib/auth`. Not a real credential — build-time
+# only; runtime overrides at deploy. (SecretsUsedInArgOrEnv skipped at file top.)
+ENV BETTER_AUTH_SECRET="docker-build-dummy-better-auth-secret-32b"
+
+# Docker builders are memory-constrained (GH Actions ~7GB RAM). BuildKit's sandbox
+# blocks swapon() without the security.insecure entitlement, which many CI setups
+# don't (and shouldn't have to) grant. Instead of provisioning swap inside the
+# build container, cap the heap via BUILD_MAX_OLD_SPACE_MB — package.json's
+# `build` script reads this directly (defaults to 8192 if unset) and passes it
+# to `next build` as NODE_OPTIONS itself, so set it here rather than NODE_OPTIONS
+# directly (an ENV NODE_OPTIONS here would just get overridden by that script).
+# Keep this well under the cgroup limit so V8 GCs before the kernel OOM-kills
+# the process (a high ceiling + static-page RSS is what caused exit 137 at
+# ~304/1218 pages). next.config also sets experimental.cpus=1 and
+# staticGenerationMaxConcurrency=1 under DOCKER_BUILD.
+ENV BUILD_MAX_OLD_SPACE_MB=3072
 
 # Per-platform cache id keeps arm64/amd64 SWC artifacts isolated.
 RUN --mount=type=cache,id=next-cache-${TARGETPLATFORM},target=/app/apps/sim/.next/cache \
@@ -97,15 +120,24 @@ RUN bun build apps/sim/bootstrap.ts --target=bun --outfile=apps/sim/bootstrap.js
 FROM base AS runner
 WORKDIR /app
 
-# Node.js 22, Python, ffmpeg, etc. are already installed in base stage
+# Node.js 24, Python, ffmpeg, etc. are already installed in base stage
 ENV NODE_ENV=production
 
 # ========================================
-# Install Python + Chrome + Chromedriver
+# Install Chrome + matching Chromedriver + git
 # ========================================
-RUN apt-get update && apt-get install -y \
-      python3 python3-pip python3-venv bash ffmpeg \
-      wget gnupg ca-certificates \
+# Chrome and Chromedriver versions are pinned together and installed from the
+# same Google source. Previously Chrome came from Google's repo while
+# chromedriver came from Debian's repo — those track independent version
+# lineages (Chrome proper vs. Chromium) and drift out of sync, causing
+# "This version of ChromeDriver only supports Chrome version X" failures at
+# runtime. Update CHROME_VERSION below deliberately; don't let it float.
+ARG CHROME_VERSION=127.0.6533.88
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,id=chrome-dl,target=/tmp/chrome-dl \
+    apt-get update && apt-get install -y --no-install-recommends \
+      wget gnupg ca-certificates git \
       xvfb \
       libnss3 \
       libxss1 \
@@ -122,16 +154,19 @@ RUN apt-get update && apt-get install -y \
       libpango-1.0-0 \
       libpangocairo-1.0-0 \
       fonts-liberation \
-    && wget -qO- https://dl.google.com/linux/linux_signing_key.pub \
-         | gpg --dearmor > /usr/share/keyrings/google-linux.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
-         > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update && apt-get install -y \
-      google-chrome-stable \
-      chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
+      unzip \
+    && [ -f /tmp/chrome-dl/chrome-${CHROME_VERSION}.zip ] || wget -q \
+         "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" \
+         -O /tmp/chrome-dl/chrome-${CHROME_VERSION}.zip \
+    && unzip -q /tmp/chrome-dl/chrome-${CHROME_VERSION}.zip -d /opt \
+    && ln -s /opt/chrome-linux64/chrome /usr/bin/google-chrome \
+    && [ -f /tmp/chrome-dl/chromedriver-${CHROME_VERSION}.zip ] || wget -q \
+         "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chromedriver-linux64.zip" \
+         -O /tmp/chrome-dl/chromedriver-${CHROME_VERSION}.zip \
+    && unzip -q /tmp/chrome-dl/chromedriver-${CHROME_VERSION}.zip -d /opt \
+    && ln -s /opt/chromedriver-linux64/chromedriver /usr/bin/chromedriver
 
-# # Environment variables for Chrome
+# Environment variables for Chrome
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver \
     CHROME_BIN=/usr/bin/google-chrome \
     CHROME_PATH=/usr/bin/google-chrome \
@@ -148,13 +183,6 @@ RUN groupadd -g 1001 nodejs && \
 # ========================================
 # Copy build artifacts from builder
 # ========================================
-# Install Node.js 22 (for isolated-vm worker), git (Development block GitHub push), and other runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates git \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
 # Copy application artifacts from builder
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/public ./apps/sim/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/.next/standalone ./
@@ -169,6 +197,28 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/content ./apps/sim/conte
 
 # Copy isolated-vm native module (compiled for Node.js in deps stage)
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules/isolated-vm ./node_modules/isolated-vm
+
+# sharp@0.35+ splits the native addon (`@img/sharp-linux-*`) from the libvips
+# shared library (`@img/sharp-libvips-linux-*/lib/libvips-cpp.so.*`). The addon
+# dlopens libvips at runtime, so Next's standalone file tracer never sees the
+# `.so` and omits it — every route whose import graph reaches sharp then 500s
+# with `ERR_DLOPEN_FAILED: libvips-cpp.so.8.18.3`. Same monorepo-root hoist
+# problem as yjs/lib0 below: `outputFileTracingIncludes` globs resolve against
+# apps/sim and cannot reach `/app/node_modules`, so copy the full trees from
+# the deps install (which already has the correct linux/$TARGETARCH optional
+# packages because this stage builds on that platform).
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/sharp ./node_modules/sharp
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/@img ./node_modules/@img
+
+# The collab-doc seed/merge/persist routes run the converter (markdown <-> Yjs) server-side. `yjs` is a
+# serverExternalPackage, and the Next standalone tracer copies it only partially — it misses ESM subpath
+# files that `yjs/dist/yjs.mjs` imports through `lib0`'s exports map (e.g. `lib0/logging`), so the seed
+# 500s ("Cannot find module 'lib0/logging'") and every collaborative doc is stuck read-only. Overwrite
+# the partial trace with the complete packages from the full install (outputFileTracingIncludes can't:
+# its globs resolve against apps/sim, but these deps hoist to the monorepo-root node_modules).
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/lib0 ./node_modules/lib0
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/yjs ./node_modules/yjs
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/y-protocols ./node_modules/y-protocols
 
 # Copy the isolated-vm worker script
 COPY --from=builder --chown=nextjs:nodejs /app/apps/sim/lib/execution/isolated-vm-worker.cjs ./apps/sim/lib/execution/isolated-vm-worker.cjs

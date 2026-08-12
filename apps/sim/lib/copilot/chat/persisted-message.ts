@@ -19,6 +19,7 @@ import type {
   LocalToolCallStatus,
   OrchestratorResult,
 } from '@/lib/copilot/request/types'
+import type { BrowserTextSelection, TerminalTextSelection } from '@/stores/panel/types'
 
 export type PersistedToolState = LocalToolCallStatus | MothershipStreamV1ToolOutcome | 'interrupted'
 
@@ -37,6 +38,13 @@ interface PersistedToolCall {
 export interface PersistedContentBlock {
   type: MothershipStreamV1EventType
   lane?: MothershipStreamV1StreamScope['lane']
+  /**
+   * Subagent name on lane text blocks. The span-tree parser needs a name to
+   * create a group for content whose `subagent` start block is missing (resume
+   * legs re-emit text without re-emitting start); without it the prose is
+   * silently dropped on reload.
+   */
+  agent?: string
   channel?: MothershipStreamV1TextChannel
   phase?: MothershipStreamV1ToolPhase
   kind?: MothershipStreamV1SpanPayloadKind
@@ -68,6 +76,42 @@ interface PersistedMessageContext {
   fileId?: string
   folderId?: string
   chatId?: string
+  blockType?: string
+  skillId?: string
+  serverId?: string
+  /**
+   * Source names for `file_selection` / `table_selection` chips. Persisted
+   * because the rendered chip reads them — the label carries a location suffix
+   * (`notes.md:12-40`), so the file icon cannot derive an extension from it.
+   *
+   * The rest of a selection's payload (`text`, `rowIds`, `columnIds`, line
+   * numbers) is deliberately NOT persisted: it exists to resolve the selection
+   * server-side when the message is sent, is never read when re-rendering a past
+   * message, and would put a selection-sized blob in every stored message.
+   */
+  fileName?: string
+  tableName?: string
+  tabId?: string
+  terminalId?: string
+  selection?: BrowserTextSelection | TerminalTextSelection
+}
+
+function copyTextSelection(
+  selection: BrowserTextSelection | TerminalTextSelection | undefined
+): BrowserTextSelection | TerminalTextSelection | undefined {
+  if (!selection) return undefined
+  if ('startLine' in selection) {
+    return {
+      text: selection.text,
+      startLine: selection.startLine,
+      endLine: selection.endLine,
+    }
+  }
+  return {
+    text: selection.text,
+    ...(selection.url ? { url: selection.url } : {}),
+    ...(selection.title ? { title: selection.title } : {}),
+  }
 }
 
 export interface PersistedMessage {
@@ -190,6 +234,7 @@ function mapContentBlockBody(block: ContentBlock): PersistedContentBlock {
         lane: 'subagent',
         channel: MothershipStreamV1TextChannel.assistant,
         content: block.content,
+        ...(block.subagent ? { agent: block.subagent } : {}),
       }
     case 'subagent_thinking':
       return {
@@ -197,6 +242,7 @@ function mapContentBlockBody(block: ContentBlock): PersistedContentBlock {
         lane: 'subagent',
         channel: MothershipStreamV1TextChannel.thinking,
         content: block.content,
+        ...(block.subagent ? { agent: block.subagent } : {}),
       }
     case 'tool_call': {
       if (!block.toolCall) {
@@ -262,7 +308,17 @@ export function buildPersistedAssistantMessage(
   }
 
   if (result.contentBlocks.length > 0) {
-    message.contentBlocks = mergeAndRedactPersistedBlocks(result.contentBlocks.map(mapContentBlock))
+    // Reasoning is display-transient and never rendered, so it is never
+    // persisted either: storing it bloats whale chats and lets the persisted
+    // turn diverge from the streamed one (the refresh-vs-switch mismatch).
+    // This is the single write-side choke point for assistant blocks, so the
+    // guarantee holds for every terminal path (complete, cancelled, error).
+    const withoutThinking = result.contentBlocks.filter(
+      (block) => block.type !== 'thinking' && block.type !== 'subagent_thinking'
+    )
+    if (withoutThinking.length > 0) {
+      message.contentBlocks = mergeAndRedactPersistedBlocks(withoutThinking.map(mapContentBlock))
+    }
   }
 
   return message
@@ -336,6 +392,14 @@ export function buildPersistedUserMessage(params: UserMessageParams): PersistedM
       ...(c.fileId ? { fileId: c.fileId } : {}),
       ...(c.folderId ? { folderId: c.folderId } : {}),
       ...(c.chatId ? { chatId: c.chatId } : {}),
+      ...(c.blockType ? { blockType: c.blockType } : {}),
+      ...(c.skillId ? { skillId: c.skillId } : {}),
+      ...(c.serverId ? { serverId: c.serverId } : {}),
+      ...(c.fileName ? { fileName: c.fileName } : {}),
+      ...(c.tableName ? { tableName: c.tableName } : {}),
+      ...(c.tabId ? { tabId: c.tabId } : {}),
+      ...(c.terminalId ? { terminalId: c.terminalId } : {}),
+      ...(c.selection ? { selection: copyTextSelection(c.selection) } : {}),
     }))
   }
 
@@ -353,6 +417,7 @@ const CANONICAL_BLOCK_TYPES: Set<string> = new Set(Object.values(MothershipStrea
 interface RawBlock {
   type: string
   lane?: string
+  agent?: string
   content?: string
   /** Go persists text blocks with key "text" instead of "content" */
   text?: string
@@ -400,6 +465,7 @@ const OUTCOME_NORMALIZATION: Record<string, PersistedToolState> = {
   interrupted: 'interrupted',
   pending: 'pending',
   executing: 'executing',
+  awaiting_approval: 'awaiting_approval',
 }
 
 function normalizeToolState(state: string | undefined): PersistedToolState {
@@ -418,6 +484,7 @@ function normalizeCanonicalBlock(block: RawBlock): PersistedContentBlock {
   if (block.lane === 'subagent') {
     result.lane = block.lane
   }
+  if (block.agent) result.agent = block.agent
   const blockContent = block.content ?? block.text
   if (blockContent !== undefined) result.content = blockContent
   if (block.channel) result.channel = block.channel as MothershipStreamV1TextChannel
@@ -651,6 +718,14 @@ export function normalizeMessage(raw: Record<string, unknown>): PersistedMessage
       ...(c.fileId ? { fileId: c.fileId } : {}),
       ...(c.folderId ? { folderId: c.folderId } : {}),
       ...(c.chatId ? { chatId: c.chatId } : {}),
+      ...(c.blockType ? { blockType: c.blockType } : {}),
+      ...(c.skillId ? { skillId: c.skillId } : {}),
+      ...(c.serverId ? { serverId: c.serverId } : {}),
+      ...(c.fileName ? { fileName: c.fileName } : {}),
+      ...(c.tableName ? { tableName: c.tableName } : {}),
+      ...(c.tabId ? { tabId: c.tabId } : {}),
+      ...(c.terminalId ? { terminalId: c.terminalId } : {}),
+      ...(c.selection ? { selection: copyTextSelection(c.selection) } : {}),
     }))
   }
 

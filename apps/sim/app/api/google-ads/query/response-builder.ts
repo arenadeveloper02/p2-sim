@@ -248,5 +248,8 @@ export function buildApiResponse(
       ],
       summary: '1/1 accounts have requested data',
     },
+    ...(queryResult.cost ? { cost: queryResult.cost } : {}),
+    ...(queryResult.model ? { model: queryResult.model } : {}),
+    ...(queryResult.tokens ? { tokens: queryResult.tokens } : {}),
   }
 }

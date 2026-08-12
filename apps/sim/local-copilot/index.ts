@@ -1,6 +1,7 @@
 export { LocalCopilotChat } from '@/local-copilot/components/local-copilot-chat'
 export { LocalCopilotPanel } from '@/local-copilot/components/local-copilot-panel'
 export { PatchPreview } from '@/local-copilot/components/patch-preview'
+export { SessionMemoryInspector } from '@/local-copilot/components/session-memory-inspector'
 export type { WorkflowPatchWire } from '@/local-copilot/contracts/local-copilot'
 export { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 export type {
@@ -11,6 +12,7 @@ export {
   localCopilotKeys,
   useLocalCopilot,
   useLocalCopilotConfig,
+  useLocalCopilotSessionMemory,
 } from '@/local-copilot/hooks/use-local-copilot'
 export { runLocalCopilotMothershipLifecycle } from '@/local-copilot/integration/mothership-lifecycle'
 export { WorkflowCopilotShell } from '@/local-copilot/integration/workflow-copilot-shell'

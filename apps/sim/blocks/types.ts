@@ -262,10 +262,33 @@ export interface SubBlockConfig {
   id: string
   title?: string
   type: SubBlockType
-  mode?: 'basic' | 'advanced' | 'both' | 'trigger' | 'trigger-advanced' // Default is 'both' if not specified. 'trigger' means only shown in trigger mode. 'trigger-advanced' is for advanced canonical pair members shown in trigger mode
+  mode?: 'basic' | 'advanced' | 'both' | 'trigger' | 'trigger-advanced' // Default is 'both' if not specified. 'trigger' means only shown in trigger mode. 'trigger-advanced' is the advanced side of a trigger field — either a canonical pair member or a standalone field shown under the block-level advanced toggle
   canonicalParamId?: string
   /** Controls parameter visibility in agent/tool-input context */
   paramVisibility?: 'user-or-llm' | 'user-only' | 'llm-only' | 'hidden'
+  /**
+   * Marks "nothing selected" as a real choice, so a dynamic-option control does
+   * not pre-fill itself with the first option it fetches. Without it a combobox
+   * silently writes and persists a value the user never picked.
+   */
+  emptyIsValid?: boolean
+  /**
+   * Pins a "create a new one" row above the options of a picker, so authoring a
+   * resource never means leaving the workflow for Settings.
+   *
+   * Names the resource rather than carrying a component: block configs are read
+   * by the serializer and the executor, which must not pull in React. The picker
+   * owns the modal each name maps to.
+   */
+  createAction?: 'sandbox'
+  /**
+   * Restricts where a subblock renders. `tool-input` means it configures how the
+   * block behaves *as an agent tool* and has no meaning on the canvas, so the
+   * canvas editor skips it while the agent's tool-input config still shows it.
+   *
+   * Generic on purpose: shared code branches on this flag, never on a block type.
+   */
+  context?: 'tool-input'
   required?:
     | boolean
     | {
@@ -318,7 +341,10 @@ export interface SubBlockConfig {
   connectionDroppable?: boolean
   hidden?: boolean
   hideFromPreview?: boolean // Hide this subblock from the workflow block preview
-  showWhenEnvSet?: string // Show this subblock only when the named NEXT_PUBLIC_ env var is truthy
+  /** Excludes server-only lifecycle configuration from Copilot workflow state and schemas. */
+  hideFromCopilot?: boolean
+  hideDividerBefore?: boolean // Visually group this field with the preceding visible subblock
+  showWhenEnvSet?: string // Show this subblock only when a named NEXT_PUBLIC_ env var is truthy; comma-separated means any of them
   hideWhenHosted?: boolean // Hide this subblock when running on hosted sim
   hideWhenEnvSet?: string // Hide this subblock when the named NEXT_PUBLIC_ env var is truthy
   description?: string
@@ -374,6 +400,32 @@ export interface SubBlockConfig {
     label: string
     serviceId: string
   }>
+  /**
+   * Narrows an `oauth-input` selector to a specific credential kind.
+   * `'service-account'` lists only service-account credentials; its connect row
+   * opens the provider's setup modal (resolved from the service-account setup
+   * registry — a bespoke wizard when registered, the generic token-paste modal
+   * otherwise). `'any'` lists OAuth accounts and service accounts together in a
+   * grouped dropdown with a connect action for each kind.
+   */
+  credentialKind?: 'service-account' | 'any'
+  /**
+   * Overrides the credential picker's section and connect-row copy. Unset keys
+   * fall back to generic provider-derived labels.
+   */
+  credentialLabels?: {
+    oauthGroup?: string
+    oauthConnect?: string
+    serviceAccountGroup?: string
+    serviceAccountConnect?: string
+  }
+  /**
+   * Opts a trigger-mode `oauth-input` selector into listing service-account
+   * credentials, which are otherwise excluded in trigger mode. Set only when the
+   * trigger's server-side polling path can resolve the provider's service-account
+   * token (see `resolveOAuthCredential` in `@/lib/webhooks/polling/utils`).
+   */
+  allowServiceAccounts?: boolean
   // Selector properties — declarative mapping to a SelectorKey
   selectorKey?: SelectorKey
   selectorAllowSearch?: boolean
@@ -389,6 +441,11 @@ export interface SubBlockConfig {
   allowStartFilesReference?: boolean
   /** When allowStartFilesReference is true, limits conversation picker to images or all attachments. */
   conversationFileMode?: 'images' | 'all'
+  /**
+   * When true, FileUpload checks for S3/Blob and warns / disables new uploads if missing.
+   * Used by providers (e.g. Instagram) that need a Meta-fetchable public HTTPS URL.
+   */
+  requiresCloudStorage?: boolean
   // Slider-specific properties
   step?: number
   integer?: boolean
@@ -398,6 +455,8 @@ export interface SubBlockConfig {
     | 'linkedin_comment_mentions'
     | 'linkedin_profile_sections'
     | 'linkedin_search_filters'
+    | 'skyvern_workflow_parameters'
+    | 'skyvern_run_parameters'
   /** Optional per-block overrides for `input-format` labels/placeholders/options. */
   inputFormatConfig?: {
     title?: string
@@ -415,6 +474,15 @@ export interface SubBlockConfig {
   rows?: number
   // Multi-select functionality
   multiSelect?: boolean
+  /**
+   * Dropdown-specific: render option labels verbatim instead of lowercasing them.
+   *
+   * The editor lowercases dropdown labels as a typographic convention, which
+   * suits authored operation names ("Send Message"). It corrupts labels that are
+   * case-sensitive identifiers the user must reproduce elsewhere — a workspace
+   * secret shown as `stripe_key` cannot be referenced as `{{stripe_key}}`.
+   */
+  preserveLabelCase?: boolean
   // Combobox specific: Enable search input in dropdown
   searchable?: boolean
   /** When true, show a clear (X) button when a value is selected (optional field) */
@@ -500,6 +568,12 @@ export interface BlockConfig<T extends ToolResponse = ToolResponse> {
   /** When true, the block appears in the toolbar and search only for admin workspaces. */
   adminWorkspaceOnly?: boolean
   /**
+   * For published custom blocks only: the bound source workflow's id. Discovery
+   * surfaces use it to hide a workflow's own block on that workflow's canvas
+   * (placing it would recurse).
+   */
+  sourceWorkflowId?: string
+  /**
    * Marks an unreleased block. Preview blocks are hidden from every discovery
    * surface (toolbar, search, mentions, copilot/VFS, docs) in every environment —
    * hosted, self-hosted, dev, and SSR — until revealed via the hosted
@@ -509,6 +583,18 @@ export interface BlockConfig<T extends ToolResponse = ToolResponse> {
    * gated. Remove at GA.
    */
   preview?: boolean
+  /**
+   * Post-GA lifecycle state. `legacy` — superseded but still supported (amber
+   * badge, click-to-upgrade); `deprecated` — no longer supported, slated for
+   * removal (red badge). Placed instances keep executing and rendering in both
+   * states. `replacedBy` is the block `type` to migrate to — omit when no direct
+   * successor exists. Distinct from {@link hideFromToolbar} (a rendering
+   * decision) and {@link preview} (unreleased). Remove config at end-of-life.
+   */
+  sunset?: {
+    status: 'legacy' | 'deprecated'
+    replacedBy?: string
+  }
   triggers?: {
     enabled: boolean
     available: string[] // List of trigger IDs this block supports

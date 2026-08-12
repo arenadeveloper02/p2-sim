@@ -1,7 +1,7 @@
 import { BookOpen, ClipboardList, File, Table, Users } from '@sim/emcn/icons'
-import { GoogleTranslateIcon, GreptileIcon, LinearIcon, SlackIcon } from '@/components/icons'
+import { GoogleTranslateIcon, GreptileIcon, SlackIcon } from '@/components/icons'
 import { getScopesForService } from '@/lib/oauth/utils'
-import type { BlockConfig, BlockMeta } from '@/blocks/types'
+import type { BlockConfig, BlockMeta, SubBlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import { normalizeFileInput } from '@/blocks/utils'
 import type { SlackResponse } from '@/tools/slack/types'
@@ -21,6 +21,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
   bgColor: '#611f69',
   icon: SlackIcon,
   triggerAllowed: true,
+  // Superseded by slack_v2, but stays discoverable until v2 GAs — hiding both
+  // would leave no Slack block in the toolbar while v2 is preview-gated. At v2
+  // GA this becomes `hideFromToolbar: true` (superseded-version paradigm).
   subBlocks: [
     {
       id: 'operation',
@@ -177,7 +180,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'channel',
       placeholder: 'Enter Slack channel ID (e.g., C1234567890)',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       mode: 'advanced',
       condition: (values?: Record<string, unknown>) => {
         const op = values?.operation as string
@@ -240,7 +243,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'dmUserId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       mode: 'advanced',
       condition: {
         field: 'destinationType',
@@ -270,7 +273,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'short-input',
       canonicalParamId: 'ephemeralUser',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -754,7 +757,7 @@ Do not include any explanations, markdown formatting, or other text outside the 
       type: 'short-input',
       canonicalParamId: 'userId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -1235,7 +1238,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       canonicalParamId: 'presenceUserId',
       placeholder: 'Enter Slack user ID (e.g., U1234567890)',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -1596,7 +1599,7 @@ Return ONLY the timestamp string - no explanations, no quotes, no extra text.`,
       type: 'short-input',
       canonicalParamId: 'publishUserId',
       placeholder: 'Enter Slack user ID (e.g., U0BPQUNTA)',
-      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken'] },
+      dependsOn: { all: ['authMethod'], any: ['credential', 'botToken', 'customBotCredential'] },
       mode: 'advanced',
       condition: {
         field: 'operation',
@@ -2068,10 +2071,10 @@ Return ONLY the integer Unix timestamp - no explanations, no quotes, no extra te
           baseParams.channel = effectiveChannel
         }
 
-        // Handle authentication based on method
-        // Always use the selected Slack OAuth credential; choose token type later.
-        // - Sim Bot (oauth): uses bot token (accessToken) from the credential
-        // - Custom Bot (bot_token): uses user token (idToken) from the credential
+        // Always use the selected Slack OAuth credential; the token type is
+        // chosen server-side from that one credential.
+        // - Sim Bot (oauth): uses the bot token (accessToken)
+        // - Custom Bot (bot_token): uses the user token (idToken)
         baseParams.credential = oauthCredential
         baseParams.useUserToken = authMethod === 'bot_token'
 
@@ -3186,7 +3189,9 @@ Return ONLY the integer Unix timestamp - no explanations, no quotes, no extra te
       },
     },
   },
-  // New: Trigger capabilities
+  // Trigger capabilities moved to slack_v2 so the trigger surfaces once.
+  // Legacy webhook trigger stays available while slack_v2 (which hosts the
+  // redesigned slack_oauth trigger) is preview-gated; drops at v2 GA.
   triggers: {
     enabled: true,
     available: ['slack_webhook'],
@@ -3209,7 +3214,7 @@ export const SlackBlockMeta = {
     },
     {
       icon: Table,
-      title: 'Churn risk detector',
+      title: 'Slack churn risk alerts',
       prompt:
         'Create a workflow that monitors customer activity — support ticket frequency, response sentiment, usage patterns — scores each account for churn risk in a table, and triggers a Slack alert to the account team when a customer crosses the risk threshold.',
       modules: ['tables', 'scheduled', 'agent', 'workflows'],
@@ -3217,8 +3222,8 @@ export const SlackBlockMeta = {
       tags: ['support', 'sales', 'monitoring', 'analysis'],
     },
     {
-      icon: LinearIcon,
-      title: 'Incident postmortem writer',
+      icon: SlackIcon,
+      title: 'Slack incident postmortem writer',
       prompt:
         'Create a workflow that when triggered after an incident, pulls the Slack thread from the incident channel, gathers relevant Sentry errors and deployment logs, and drafts a structured postmortem with timeline, root cause, and action items.',
       modules: ['agent', 'files', 'workflows'],
@@ -3247,7 +3252,7 @@ export const SlackBlockMeta = {
     },
     {
       icon: File,
-      title: 'Automated narrative report',
+      title: 'Slack narrative report',
       prompt:
         'Build a scheduled workflow that pulls key data from my tables every week, analyzes trends and anomalies, and writes a narrative report — not just charts and numbers, but written insights explaining what changed, why it matters, and what to do next. Save it as a document and send a summary to Slack.',
       modules: ['tables', 'scheduled', 'agent', 'files', 'workflows'],
@@ -3256,7 +3261,7 @@ export const SlackBlockMeta = {
     },
     {
       icon: BookOpen,
-      title: 'Email digest curator',
+      title: 'Slack reading digest',
       prompt:
         'Create a scheduled daily workflow that searches the web for the latest articles, papers, and news on topics I care about, picks the top 5 most relevant pieces, writes a one-paragraph summary for each, and delivers a curated reading digest to my inbox or Slack.',
       modules: ['scheduled', 'agent', 'files', 'workflows'],
@@ -3265,7 +3270,7 @@ export const SlackBlockMeta = {
     },
     {
       icon: ClipboardList,
-      title: 'Daily standup summary',
+      title: 'Slack standup summary',
       prompt:
         'Create a scheduled workflow that reads the #standup Slack channel each morning, summarizes what everyone is working on, identifies blockers, and posts a structured recap to a Google Docs document.',
       modules: ['scheduled', 'agent', 'files', 'workflows'],
@@ -3275,7 +3280,7 @@ export const SlackBlockMeta = {
     },
     {
       icon: Users,
-      title: 'New hire onboarding automation',
+      title: 'Slack onboarding automation',
       prompt:
         "Build a workflow that when triggered with a new hire's info, creates their accounts, sends a personalized welcome message in Slack, schedules 1:1s with their team on Google Calendar, shares relevant onboarding docs from the knowledge base, and tracks completion in a table.",
       modules: ['knowledge-base', 'tables', 'agent', 'workflows'],
@@ -3285,7 +3290,7 @@ export const SlackBlockMeta = {
     },
     {
       icon: Table,
-      title: 'Customer 360 view',
+      title: 'Slack customer 360 alerts',
       prompt:
         'Create a comprehensive customer table that aggregates data from my CRM, support tickets, billing history, and product usage into a single unified view per customer. Schedule it to sync daily and send a Slack alert when any customer shows signs of trouble across multiple signals.',
       modules: ['tables', 'scheduled', 'agent', 'workflows'],
@@ -3345,3 +3350,75 @@ export const SlackBlockMeta = {
     },
   ],
 } as const satisfies BlockMeta
+
+const SLACK_WEBHOOK_TRIGGER_SUBBLOCK_IDS = new Set(
+  getTrigger('slack_webhook').subBlocks.map((sb) => sb.id)
+)
+
+/**
+ * Adapts a v1 subblock for slack_v2's merged credential picker: fields gated on
+ * the removed `authMethod` dropdown now depend on the single `credential` field.
+ */
+function adaptSubBlockForV2(sb: SubBlockConfig): SubBlockConfig {
+  const { dependsOn, condition, ...rest } = sb
+  if (sb.id === 'credential') {
+    return {
+      ...rest,
+      credentialKind: 'any',
+      placeholder: 'Select Slack account or bot',
+      credentialLabels: {
+        oauthGroup: 'Sim app',
+        oauthConnect: 'Connect the Sim app',
+        serviceAccountGroup: 'Custom bots',
+        serviceAccountConnect: 'Set up a custom bot',
+      },
+    }
+  }
+  if (sb.id === 'manualCredential') {
+    return { ...rest, placeholder: 'Enter credential ID' }
+  }
+  if (dependsOn && !Array.isArray(dependsOn) && dependsOn.all?.includes('authMethod')) {
+    return { ...sb, dependsOn: ['credential'] }
+  }
+  return sb
+}
+
+const { authMethod: _authMethod, useUserToken: _useUserToken, ...slackV2Inputs } = SlackBlock.inputs
+
+/**
+ * slack_v2 — the go-forward Slack action block. Identical operations, tools, and
+ * outputs to v1 (shared by reference), but auth is a single credential picker
+ * listing Sim OAuth accounts and reusable custom bots together — the credential's
+ * kind is resolved server-side, so no auth-method choice is needed. Also hosts
+ * the redesigned slack_oauth trigger (v1 keeps the legacy slack_webhook).
+ */
+export const SlackV2Block: BlockConfig<SlackResponse> = {
+  ...SlackBlock,
+  type: 'slack_v2',
+  hideFromToolbar: false,
+  // Preview-gated: hidden from every discovery surface until revealed via the
+  // block-visibility AppConfig (hosted) or PREVIEW_BLOCKS=slack_v2 (dev /
+  // self-host). At GA: drop this flag, add SlackV2BlockMeta + docs, and set
+  // hideFromToolbar on v1.
+  preview: true,
+  subBlocks: [
+    ...SlackBlock.subBlocks.flatMap((sb) => {
+      // Drop the legacy paste-secret trigger config, including its 'botToken'
+      // field (v1 hosts slack_webhook). The authMethod dropdown is gone too:
+      // the merged credential picker covers both auth kinds, and the token type
+      // is resolved server-side from the selected credential.
+      if (SLACK_WEBHOOK_TRIGGER_SUBBLOCK_IDS.has(sb.id)) return []
+      if (sb.id === 'authMethod') return []
+      return [adaptSubBlockForV2(sb)]
+    }),
+    ...getTrigger('slack_oauth').subBlocks,
+  ],
+  inputs: {
+    ...slackV2Inputs,
+    oauthCredential: { type: 'string', description: 'Slack credential (OAuth account or bot)' },
+  },
+  triggers: {
+    enabled: true,
+    available: ['slack_oauth'],
+  },
+}

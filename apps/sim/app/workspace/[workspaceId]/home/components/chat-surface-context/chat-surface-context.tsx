@@ -12,6 +12,7 @@ import {
 import { noop } from '@sim/utils/helpers'
 import type { MothershipResource } from '@/app/workspace/[workspaceId]/home/types'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
+import type { LocalCopilotCatalogId } from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 
 /**
@@ -27,14 +28,22 @@ interface ChatSurfaceContextValue {
   userId?: string
   /** Notifies the surface owner that a context chip was added to the input. */
   onContextAdd: (context: ChatContext) => void
-  /** Notifies the surface owner that a context chip was removed from the input. */
-  onContextRemove: (context: ChatContext) => void
+  /**
+   * Notifies the surface owner that a context chip was removed from the input.
+   * `remaining` is the input's context list AFTER the removal, so the owner can
+   * tell whether any other chip still references the removed chip's resource
+   * before closing a shared slideover tab.
+   */
+  onContextRemove: (context: ChatContext, remaining: ChatContext[]) => void
   /** Opens a workspace resource referenced from rendered message content. */
   onWorkspaceResourceSelect: (resource: MothershipResource) => void
   /** When true, show the Local / Cloud copilot switch in the chat input. */
   canSwitchCopilotBackend?: boolean
   copilotBackend?: CopilotBackendPreference
   setCopilotBackend?: (value: CopilotBackendPreference) => void
+  /** Selected Local Copilot catalog model id for this conversation. */
+  localCopilotCatalogId?: LocalCopilotCatalogId
+  setLocalCopilotCatalogId?: (id: LocalCopilotCatalogId) => void
 }
 
 const ChatSurfaceContext = createContext<ChatSurfaceContextValue>({
@@ -47,11 +56,13 @@ interface ChatSurfaceProviderProps {
   chatId?: string
   userId?: string
   onContextAdd?: (context: ChatContext) => void
-  onContextRemove?: (context: ChatContext) => void
+  onContextRemove?: (context: ChatContext, remaining: ChatContext[]) => void
   onWorkspaceResourceSelect?: (resource: MothershipResource) => void
   canSwitchCopilotBackend?: boolean
   copilotBackend?: CopilotBackendPreference
   setCopilotBackend?: (value: CopilotBackendPreference) => void
+  localCopilotCatalogId?: LocalCopilotCatalogId
+  setLocalCopilotCatalogId?: (id: LocalCopilotCatalogId) => void
   children: ReactNode
 }
 
@@ -70,6 +81,8 @@ export function ChatSurfaceProvider({
   canSwitchCopilotBackend,
   copilotBackend,
   setCopilotBackend,
+  localCopilotCatalogId,
+  setLocalCopilotCatalogId,
   children,
 }: ChatSurfaceProviderProps) {
   const onContextAddRef = useRef(onContextAdd)
@@ -85,8 +98,8 @@ export function ChatSurfaceProvider({
   const stableOnContextAdd = useCallback((context: ChatContext) => {
     onContextAddRef.current?.(context)
   }, [])
-  const stableOnContextRemove = useCallback((context: ChatContext) => {
-    onContextRemoveRef.current?.(context)
+  const stableOnContextRemove = useCallback((context: ChatContext, remaining: ChatContext[]) => {
+    onContextRemoveRef.current?.(context, remaining)
   }, [])
   const stableOnWorkspaceResourceSelect = useCallback((resource: MothershipResource) => {
     onWorkspaceResourceSelectRef.current?.(resource)
@@ -102,6 +115,8 @@ export function ChatSurfaceProvider({
       canSwitchCopilotBackend,
       copilotBackend,
       setCopilotBackend,
+      localCopilotCatalogId,
+      setLocalCopilotCatalogId,
     }),
     [
       chatId,
@@ -112,6 +127,8 @@ export function ChatSurfaceProvider({
       canSwitchCopilotBackend,
       copilotBackend,
       setCopilotBackend,
+      localCopilotCatalogId,
+      setLocalCopilotCatalogId,
     ]
   )
 

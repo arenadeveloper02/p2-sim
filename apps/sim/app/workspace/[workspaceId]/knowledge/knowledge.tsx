@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChipDropdownOption } from '@sim/emcn'
-import { Button, ChipDropdown, Plus, Tooltip } from '@sim/emcn'
-import { Database } from '@sim/emcn/icons'
+import { Button, ChipConfirmModal, ChipDropdown, Plus, Tooltip, toast } from '@sim/emcn'
+import { Database, FolderPlus } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import { useParams, useRouter } from 'next/navigation'
+import { useQueryStates } from 'nuqs'
 import type { KnowledgeBaseData } from '@/lib/knowledge/types'
+import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
 import type {
+  BreadcrumbItem,
   FilterTag,
   ResourceAction,
   ResourceCell,
@@ -22,29 +26,64 @@ import {
   Resource,
   timeCell,
 } from '@/app/workspace/[workspaceId]/components'
+import type {
+  MoveOptionNode,
+  SortableResource,
+} from '@/app/workspace/[workspaceId]/components/folders'
+import {
+  buildDescendantIndex,
+  buildMoveOptions,
+  FolderContextMenu,
+  folderBreadcrumbItems,
+  folderRow,
+  folderRowId,
+  nextUntitledFolderName,
+  parseFolderedRowId,
+  parseMoveOptionValue,
+  sortResources,
+  useFolderNavigation,
+  useFolderRowDragDrop,
+} from '@/app/workspace/[workspaceId]/components/folders'
 import { BaseTagsModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/components'
 import {
+  CopyKnowledgeBaseModal,
   CreateBaseModal,
   DeleteKnowledgeBaseModal,
   EditKnowledgeBaseModal,
   KnowledgeBaseContextMenu,
   KnowledgeListContextMenu,
 } from '@/app/workspace/[workspaceId]/knowledge/components'
-import { filterKnowledgeBases } from '@/app/workspace/[workspaceId]/knowledge/utils/sort'
+import {
+  knowledgeParsers,
+  knowledgeSortParams,
+  knowledgeUrlKeys,
+} from '@/app/workspace/[workspaceId]/knowledge/search-params'
+import { filterKnowledgeBases } from '@/app/workspace/[workspaceId]/knowledge/utils/filter'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
 import { CONNECTOR_META_REGISTRY } from '@/connectors/registry'
 import { useKnowledgeBasesList } from '@/hooks/kb/use-knowledge'
+import { useCreateFolder, useDeleteFolderMutation, useUpdateFolder } from '@/hooks/queries/folders'
 import { useDeleteKnowledgeBase, useUpdateKnowledgeBase } from '@/hooks/queries/kb/knowledge'
-import { useWorkspaceMembersQuery } from '@/hooks/queries/workspace'
+import { usePinItem, usePinnedIds, useUnpinItem } from '@/hooks/queries/pinned-items'
+import { useWorkspaceMembersQuery, type WorkspaceMember } from '@/hooks/queries/workspace'
 import { useDebounce } from '@/hooks/use-debounce'
+import { useDebouncedSearchSetter } from '@/hooks/use-debounced-search-setter'
+import { useInlineRename } from '@/hooks/use-inline-rename'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
+import { useUrlSort } from '@/hooks/use-url-sort'
+import type { WorkflowFolder } from '@/stores/folders/types'
 
 const logger = createLogger('Knowledge')
 
 interface KnowledgeBaseWithDocCount extends KnowledgeBaseData {
   docCount?: number
 }
+
+/** A list row, resolved to the entity it refers to. */
+type KnowledgeResourceItem =
+  | { kind: 'base'; base: KnowledgeBaseWithDocCount }
+  | { kind: 'folder'; folder: WorkflowFolder }
 
 const COLUMNS: ResourceColumn[] = [
   { id: 'name', header: 'Name' },
@@ -71,6 +110,9 @@ const CONTENT_FILTER_OPTIONS: ChipDropdownOption[] = [
 ]
 
 const FILTER_SECTION_LABEL_CLASS = 'text-[var(--text-muted)] text-small'
+
+const ROOT_BREADCRUMB_LABEL = 'Knowledge Base'
+const FOLDER_RESOURCE_TYPE = 'knowledge_base' as const
 
 function connectorCell(connectorTypes?: string[]): ResourceCell {
   if (!connectorTypes || connectorTypes.length === 0) {
@@ -134,25 +176,83 @@ export function Knowledge() {
 
   const { knowledgeBases, error } = useKnowledgeBasesList(workspaceId)
   const { data: members } = useWorkspaceMembersQuery(workspaceId)
+  /**
+   * Indexed once: `ownerCell` resolves a member per row, so passing the raw array makes the
+   * owner column O(rows x members) on every rebuild. Tables already does this.
+   */
+  const membersById = useMemo(() => {
+    const byId = new Map<string, WorkspaceMember>()
+    for (const member of members ?? []) byId.set(member.userId, member)
+    return byId
+  }, [members])
+  /**
+   * Two pin lookups: a folder pins under `resourceType: 'folder'`, which is a different pin
+   * namespace from the knowledge bases it contains, so one set cannot answer for both.
+   */
+  const pinnedBaseIds = usePinnedIds(workspaceId, 'knowledge_base')
+  const pinnedFolderIds = usePinnedIds(workspaceId, 'folder')
+  const pinItem = usePinItem()
+  const unpinItem = useUnpinItem()
 
-  if (error) {
-    logger.error('Failed to load knowledge bases:', error)
-  }
+  useEffect(() => {
+    if (error) logger.error('Failed to load knowledge bases:', error)
+  }, [error])
+
   const userPermissions = useUserPermissionsContext()
 
   const { mutateAsync: updateKnowledgeBaseMutation } = useUpdateKnowledgeBase(workspaceId)
   const { mutateAsync: deleteKnowledgeBaseMutation } = useDeleteKnowledgeBase(workspaceId)
 
-  const [activeSort, setActiveSort] = useState<{
-    column: string
-    direction: 'asc' | 'desc'
-  } | null>(null)
-  const [connectorFilter, setConnectorFilter] = useState<string[]>([])
-  const [contentFilter, setContentFilter] = useState<string[]>([])
-  const [ownerFilter, setOwnerFilter] = useState<string[]>([])
+  const { currentFolderId, setCurrentFolderId, breadcrumbs, folders, folderById, foldersResolved } =
+    useFolderNavigation({
+      resourceType: FOLDER_RESOURCE_TYPE,
+      workspaceId,
+    })
 
-  const [searchInputValue, setSearchInputValue] = useState('')
-  const debouncedSearchQuery = useDebounce(searchInputValue, 300)
+  const createFolder = useCreateFolder()
+  const updateFolder = useUpdateFolder()
+  const deleteFolder = useDeleteFolderMutation()
+
+  const [
+    {
+      search: urlSearchQuery,
+      connector: connectorFilter,
+      content: contentFilter,
+      owner: ownerFilter,
+    },
+    setKnowledgeFilters,
+  ] = useQueryStates(knowledgeParsers, knowledgeUrlKeys)
+
+  /**
+   * The input is controlled directly by the instant nuqs value; only the URL
+   * write is debounced. The in-memory filter below still reads a debounced
+   * value so it doesn't recompute on every keystroke.
+   */
+  const setSearchQuery = useDebouncedSearchSetter((value, options) =>
+    setKnowledgeFilters({ search: value }, options)
+  )
+  const debouncedSearchQuery = useDebounce(urlSearchQuery, SEARCH_DEBOUNCE_MS)
+
+  const {
+    sort: sortColumn,
+    dir: sortDirection,
+    activeSort,
+    onSort: onSortColumn,
+    onClear: onClearSort,
+  } = useUrlSort(knowledgeSortParams, knowledgeUrlKeys)
+
+  const setConnectorFilter = useCallback(
+    (next: string[]) => setKnowledgeFilters({ connector: next }),
+    [setKnowledgeFilters]
+  )
+  const setContentFilter = useCallback(
+    (next: string[]) => setKnowledgeFilters({ content: next }),
+    [setKnowledgeFilters]
+  )
+  const setOwnerFilter = useCallback(
+    (next: string[]) => setKnowledgeFilters({ owner: next }),
+    [setKnowledgeFilters]
+  )
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
 
@@ -160,9 +260,20 @@ export function Knowledge() {
     null
   )
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isTagsModalOpen, setIsTagsModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  const [activeFolder, setActiveFolder] = useState<WorkflowFolder | null>(null)
+  const [folderPendingDelete, setFolderPendingDelete] = useState<WorkflowFolder | null>(null)
+
+  const {
+    isOpen: isFolderContextMenuOpen,
+    position: folderContextMenuPosition,
+    handleContextMenu: handleFolderCtxMenu,
+    closeMenu: closeFolderContextMenu,
+  } = useContextMenu()
 
   const {
     isOpen: isListContextMenuOpen,
@@ -181,11 +292,76 @@ export function Knowledge() {
   const isRowContextMenuOpenRef = useRef(isRowContextMenuOpen)
   isRowContextMenuOpenRef.current = isRowContextMenuOpen
 
+  const isFolderContextMenuOpenRef = useRef(isFolderContextMenuOpen)
+  isFolderContextMenuOpenRef.current = isFolderContextMenuOpen
+
   const knowledgeBasesRef = useRef(knowledgeBases)
   knowledgeBasesRef.current = knowledgeBases
 
   const activeKnowledgeBaseRef = useRef(activeKnowledgeBase)
   activeKnowledgeBaseRef.current = activeKnowledgeBase
+
+  const activeFolderRef = useRef(activeFolder)
+  activeFolderRef.current = activeFolder
+
+  const foldersRef = useRef(folders)
+  foldersRef.current = folders
+
+  const currentFolderIdRef = useRef(currentFolderId)
+  currentFolderIdRef.current = currentFolderId
+
+  /**
+   * Renames both kinds of row through one multiplexed session — the row id already encodes
+   * which kind it is, so the table's `editing` cell wiring stays identical for folders and
+   * knowledge bases. A duplicate sibling name is a 409 from the folder API; the mutations
+   * below surface it and `useInlineRename` keeps the edit session open so the user can pick
+   * another name.
+   */
+  const listRename = useInlineRename({
+    onSave: async (rowId, name) => {
+      const parsed = parseFolderedRowId(rowId)
+      if (parsed.kind === 'folder') {
+        try {
+          return await updateFolder.mutateAsync({
+            workspaceId,
+            resourceType: FOLDER_RESOURCE_TYPE,
+            id: parsed.id,
+            updates: { name },
+          })
+        } catch (renameError) {
+          toast.error(getErrorMessage(renameError, 'Failed to rename folder'))
+          throw renameError
+        }
+      }
+      return updateKnowledgeBaseMutation({
+        knowledgeBaseId: parsed.id,
+        updates: { name },
+      })
+    },
+  })
+
+  const listRenameRef = useRef(listRename)
+  listRenameRef.current = listRename
+
+  /** Renames the open folder from its breadcrumb crumb, where it has no row to edit. */
+  const breadcrumbRename = useInlineRename({
+    onSave: async (folderId, name) => {
+      try {
+        return await updateFolder.mutateAsync({
+          workspaceId,
+          resourceType: FOLDER_RESOURCE_TYPE,
+          id: folderId,
+          updates: { name },
+        })
+      } catch (renameError) {
+        toast.error(getErrorMessage(renameError, 'Failed to rename folder'))
+        throw renameError
+      }
+    },
+  })
+
+  const breadcrumbRenameRef = useRef(breadcrumbRename)
+  breadcrumbRenameRef.current = breadcrumbRename
 
   const handleContentContextMenu = useCallback(
     (e: React.MouseEvent) => {
@@ -224,8 +400,38 @@ export function Knowledge() {
     [deleteKnowledgeBaseMutation]
   )
 
+  /**
+   * Folders in the open folder, sorted independently of the bases below them.
+   *
+   * With no explicit sort the two blocks disagree on purpose — folders read best
+   * alphabetically while bases read best most-recently-updated-first — which mirrors the
+   * Files page. The resource filters (connectors/content/owner) describe properties a folder
+   * does not have, so folders answer only to the search term.
+   */
+  const visibleFolders = useMemo(() => {
+    const siblings = folders.filter((folder) => (folder.parentId ?? null) === currentFolderId)
+    const needle = debouncedSearchQuery.trim().toLowerCase()
+    return needle
+      ? siblings.filter((folder) => folder.name.toLowerCase().includes(needle))
+      : siblings
+  }, [folders, currentFolderId, debouncedSearchQuery])
+
   const processedKBs = useMemo(() => {
-    let result = filterKnowledgeBases(knowledgeBases, debouncedSearchQuery)
+    /**
+     * A `folderId` that no longer names an active folder — a base restored on its own out of
+     * Recently Deleted while its folder stayed archived, or a cascade that failed partway —
+     * would otherwise match no level at all and leave the base unreachable from every view.
+     * Fall it back to the root instead — but only once `foldersResolved` says the index is the
+     * complete set for THIS workspace. Gating on a loading flag instead would treat an errored
+     * fetch, a disabled query, or the previous workspace's cached folders as "no such folder"
+     * and drag every foldered base to the root.
+     */
+    let result = filterKnowledgeBases(knowledgeBases, debouncedSearchQuery).filter((kb) => {
+      const folderId = kb.folderId ?? null
+      const effectiveFolderId =
+        !foldersResolved || !folderId || folderById.has(folderId) ? folderId : null
+      return effectiveFolderId === currentFolderId
+    })
 
     if (connectorFilter.length > 0) {
       result = result.filter((kb) => {
@@ -249,96 +455,195 @@ export function Knowledge() {
       result = result.filter((kb) => ownerFilter.includes(kb.userId))
     }
 
-    const col = activeSort?.column ?? 'updated'
-    const dir = activeSort?.direction ?? 'desc'
-    return [...result].sort((a, b) => {
-      let cmp = 0
-      switch (col) {
-        case 'name':
-          cmp = a.name.localeCompare(b.name)
-          break
-        case 'documents':
-          cmp =
-            ((a as KnowledgeBaseWithDocCount).docCount || 0) -
-            ((b as KnowledgeBaseWithDocCount).docCount || 0)
-          break
-        case 'tokens':
-          cmp = (a.tokenCount || 0) - (b.tokenCount || 0)
-          break
-        case 'created':
-          cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-          break
-        case 'updated':
-          cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-          break
-        case 'connectors':
-          cmp = (a.connectorTypes?.length ?? 0) - (b.connectorTypes?.length ?? 0)
-          break
-        case 'owner':
-          cmp = (members?.find((m) => m.userId === a.userId)?.name ?? '').localeCompare(
-            members?.find((m) => m.userId === b.userId)?.name ?? ''
-          )
-          break
-      }
-      return dir === 'asc' ? cmp : -cmp
-    })
+    return result
   }, [
     knowledgeBases,
+    currentFolderId,
+    folderById,
+    foldersResolved,
     debouncedSearchQuery,
     connectorFilter,
     contentFilter,
     ownerFilter,
-    activeSort,
-    members,
   ])
 
-  const rows: ResourceRow[] = useMemo(
+  /**
+   * Folders and bases sort as ONE list — a folder never outranks a base it ties with, so a
+   * pinned base reaches the top of the list rather than the top of the base section.
+   *
+   * Decorate-sort: each row's key + pinned flag is computed ONCE (O(N)) so the comparator
+   * never re-runs Date parsing or member lookups per comparison. Folders carry no document,
+   * token, or connector count, so those keys are `null` and land the folders last in both
+   * directions — matching the em-dash they show in those cells.
+   */
+  const sortedEntries = useMemo(() => {
+    const entries: SortableResource<KnowledgeResourceItem>[] = []
+
+    for (const folder of visibleFolders) {
+      entries.push({
+        item: { kind: 'folder', folder },
+        pinned: pinnedFolderIds.has(folder.id),
+        name: folder.name,
+        key:
+          sortColumn === 'documents' || sortColumn === 'tokens' || sortColumn === 'connectors'
+            ? null
+            : sortColumn === 'created'
+              ? new Date(folder.createdAt).getTime()
+              : sortColumn === 'updated'
+                ? new Date(folder.updatedAt).getTime()
+                : sortColumn === 'owner'
+                  ? (membersById.get(folder.userId)?.name ?? null)
+                  : folder.name,
+      })
+    }
+
+    for (const kb of processedKBs) {
+      entries.push({
+        item: { kind: 'base', base: kb as KnowledgeBaseWithDocCount },
+        pinned: pinnedBaseIds.has(kb.id),
+        name: kb.name,
+        key:
+          sortColumn === 'documents'
+            ? ((kb as KnowledgeBaseWithDocCount).docCount ?? 0)
+            : sortColumn === 'tokens'
+              ? (kb.tokenCount ?? 0)
+              : sortColumn === 'connectors'
+                ? (kb.connectorTypes?.length ?? 0)
+                : sortColumn === 'created'
+                  ? new Date(kb.createdAt).getTime()
+                  : sortColumn === 'updated'
+                    ? new Date(kb.updatedAt).getTime()
+                    : sortColumn === 'owner'
+                      ? (membersById.get(kb.userId)?.name ?? null)
+                      : kb.name,
+      })
+    }
+
+    return sortResources(entries, sortDirection)
+  }, [
+    visibleFolders,
+    processedKBs,
+    sortColumn,
+    sortDirection,
+    membersById,
+    pinnedFolderIds,
+    pinnedBaseIds,
+  ])
+
+  const baseRows: ResourceRow[] = useMemo(
     () =>
-      processedKBs.map((kb) => {
-        const kbWithCount = kb as KnowledgeBaseWithDocCount
+      sortedEntries.map(({ item, pinned }): ResourceRow => {
+        if (item.kind === 'folder') {
+          return folderRow(item.folder, {
+            pinned,
+            cells: {
+              documents: { label: EMPTY_CELL_PLACEHOLDER },
+              tokens: { label: EMPTY_CELL_PLACEHOLDER },
+              connectors: { label: EMPTY_CELL_PLACEHOLDER },
+              created: timeCell(item.folder.createdAt),
+              owner: ownerCell(item.folder.userId, membersById),
+              updated: timeCell(item.folder.updatedAt),
+            },
+          })
+        }
+
+        const { base } = item
         return {
-          id: kb.id,
+          id: base.id,
           cells: {
             name: {
               icon: KNOWLEDGE_BASE_ICON,
-              label: kb.name,
+              label: base.name,
+              pinned,
             },
             documents: {
-              label: String(kbWithCount.docCount || 0),
+              label: String(base.docCount || 0),
             },
             tokens: {
-              label: kb.tokenCount ? kb.tokenCount.toLocaleString() : '0',
+              label: base.tokenCount ? base.tokenCount.toLocaleString() : '0',
             },
-            connectors: connectorCell(kb.connectorTypes),
-            created: timeCell(kb.createdAt),
-            owner: ownerCell(kb.userId, members),
-            updated: timeCell(kb.updatedAt),
+            connectors: connectorCell(base.connectorTypes),
+            created: timeCell(base.createdAt),
+            owner: ownerCell(base.userId, membersById),
+            updated: timeCell(base.updatedAt),
           },
         }
       }),
-    [processedKBs, members]
+    [sortedEntries, membersById]
   )
+
+  /**
+   * Rename is layered over the built rows rather than folded into the builder above, so a
+   * keystroke in the rename field does not rebuild every row's cells.
+   */
+  const rows: ResourceRow[] = useMemo(() => {
+    if (!listRename.editingId) return baseRows
+    return baseRows.map((row) => {
+      if (row.id !== listRename.editingId) return row
+      return {
+        ...row,
+        cells: {
+          ...row.cells,
+          name: {
+            ...row.cells.name,
+            editing: {
+              value: listRename.editValue,
+              onChange: listRename.setEditValue,
+              onSubmit: listRename.submitRename,
+              onCancel: listRename.cancelRename,
+              disabled: listRename.isSaving,
+            },
+          },
+        },
+      }
+    })
+  }, [
+    baseRows,
+    listRename.editingId,
+    listRename.editValue,
+    listRename.isSaving,
+    listRename.setEditValue,
+    listRename.submitRename,
+    listRename.cancelRename,
+  ])
 
   const handleRowClick = useCallback(
     (rowId: string) => {
-      if (isRowContextMenuOpenRef.current) return
-      const kb = knowledgeBasesRef.current.find((k) => k.id === rowId)
+      if (isRowContextMenuOpenRef.current || isFolderContextMenuOpenRef.current) return
+      if (listRenameRef.current.editingId === rowId) return
+
+      const parsed = parseFolderedRowId(rowId)
+      if (parsed.kind === 'folder') {
+        setCurrentFolderId(parsed.id)
+        return
+      }
+
+      const kb = knowledgeBasesRef.current.find((k) => k.id === parsed.id)
       if (!kb) return
       const urlParams = new URLSearchParams({ kbName: kb.name })
-      router.push(`/workspace/${workspaceId}/knowledge/${rowId}?${urlParams.toString()}`)
+      router.push(`/workspace/${workspaceId}/knowledge/${parsed.id}?${urlParams.toString()}`)
     },
-    [router, workspaceId]
+    [router, workspaceId, setCurrentFolderId]
   )
 
   const handleRowContextMenu = useCallback(
     (e: React.MouseEvent, rowId: string) => {
-      const kb = knowledgeBasesRef.current.find((k) => k.id === rowId) as
+      const parsed = parseFolderedRowId(rowId)
+      if (parsed.kind === 'folder') {
+        const folder = foldersRef.current.find((item) => item.id === parsed.id)
+        if (!folder) return
+        setActiveFolder(folder)
+        handleFolderCtxMenu(e)
+        return
+      }
+
+      const kb = knowledgeBasesRef.current.find((k) => k.id === parsed.id) as
         | KnowledgeBaseWithDocCount
         | undefined
       setActiveKnowledgeBase(kb ?? null)
       handleRowCtxMenu(e)
     },
-    [handleRowCtxMenu]
+    [handleRowCtxMenu, handleFolderCtxMenu]
   )
 
   const handleConfirmDelete = useCallback(async () => {
@@ -381,14 +686,217 @@ export function Knowledge() {
     setIsEditModalOpen(true)
   }, [])
 
+  const handleCopyToWorkspace = useCallback(() => {
+    setIsCopyModalOpen(true)
+  }, [])
+
   const handleDelete = useCallback(() => {
     setIsDeleteModalOpen(true)
   }, [])
 
   const canEdit = userPermissions.canEdit === true
 
+  const handleCreateFolder = useCallback(async () => {
+    if (!workspaceId) return
+    const parentId = currentFolderIdRef.current
+    const name = nextUntitledFolderName(foldersRef.current, parentId)
+
+    try {
+      const folder = await createFolder.mutateAsync({
+        workspaceId,
+        resourceType: FOLDER_RESOURCE_TYPE,
+        name,
+        parentId: parentId ?? undefined,
+      })
+      /**
+       * A live search term filters the folder list too, so a brand-new "New folder" would not
+       * match it — the row never renders, the rename field never appears, and the create reads
+       * as a no-op even though it succeeded. Clear the search so the thing just created is on
+       * screen to be named.
+       */
+      setSearchQuery('')
+      // Drop straight into rename: the auto-generated name is a placeholder, and the user
+      // should not have to hunt for a second action to replace it.
+      listRenameRef.current.startRename(folderRowId(folder.id), folder.name)
+    } catch (createError) {
+      logger.error('Failed to create folder', createError)
+      toast.error(getErrorMessage(createError, 'Failed to create folder'))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId])
+
+  const handleRenameFolder = useCallback(() => {
+    const folder = activeFolderRef.current
+    if (!folder) return
+    listRenameRef.current.startRename(folderRowId(folder.id), folder.name)
+  }, [])
+
+  const handleOpenFolder = useCallback(() => {
+    const folder = activeFolderRef.current
+    if (folder) setCurrentFolderId(folder.id)
+  }, [setCurrentFolderId])
+
+  const handleCopyFolderId = useCallback(() => {
+    const folder = activeFolderRef.current
+    if (folder) navigator.clipboard.writeText(folder.id)
+  }, [])
+
+  const handleRequestFolderDelete = useCallback(() => {
+    setFolderPendingDelete(activeFolderRef.current)
+  }, [])
+
+  const folderPendingDeleteRef = useRef(folderPendingDelete)
+  folderPendingDeleteRef.current = folderPendingDelete
+
+  const handleConfirmFolderDelete = useCallback(async () => {
+    const folder = folderPendingDeleteRef.current
+    if (!folder) return
+    try {
+      await deleteFolder.mutateAsync({
+        workspaceId,
+        resourceType: FOLDER_RESOURCE_TYPE,
+        id: folder.id,
+      })
+      setFolderPendingDelete(null)
+      setActiveFolder(null)
+      // Deleting the folder you are standing in leaves the list pointed at an archived
+      // folder, which renders as an empty page with a dead breadcrumb — step out to its
+      // parent instead.
+      if (currentFolderIdRef.current === folder.id) {
+        setCurrentFolderId(folder.parentId)
+      }
+    } catch (deleteError) {
+      logger.error('Failed to delete folder', deleteError)
+      toast.error(getErrorMessage(deleteError, 'Failed to delete folder'))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId, setCurrentFolderId])
+
+  const descendantsByFolderId = useMemo(() => buildDescendantIndex(folders), [folders])
+
+  const handleToggleBasePin = useCallback(() => {
+    const kb = activeKnowledgeBaseRef.current
+    if (!kb) return
+    const mutation = pinnedBaseIds.has(kb.id) ? unpinItem : pinItem
+    mutation.mutate({ workspaceId, resourceType: 'knowledge_base', resourceId: kb.id })
+    closeRowContextMenu()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutation objects are unstable; mutate is stable in v5
+  }, [workspaceId, pinnedBaseIds, closeRowContextMenu])
+
+  const handleToggleFolderPin = useCallback(() => {
+    const folder = activeFolderRef.current
+    if (!folder) return
+    const mutation = pinnedFolderIds.has(folder.id) ? unpinItem : pinItem
+    mutation.mutate({ workspaceId, resourceType: 'folder', resourceId: folder.id })
+    closeFolderContextMenu()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutation objects are unstable; mutate is stable in v5
+  }, [workspaceId, pinnedFolderIds, closeFolderContextMenu])
+
+  /** Move targets for the folder under the cursor: itself and its subtree are unreachable. */
+  const folderMoveOptions: MoveOptionNode[] = useMemo(() => {
+    if (!activeFolder) return []
+    const excluded = new Set<string>([activeFolder.id])
+    for (const id of descendantsByFolderId.get(activeFolder.id) ?? []) excluded.add(id)
+    return buildMoveOptions({
+      folders,
+      rootLabel: ROOT_BREADCRUMB_LABEL,
+      excludedFolderIds: excluded,
+    })
+  }, [folders, activeFolder, descendantsByFolderId])
+
+  /** Move targets for a knowledge base: every folder, since a base has no subtree. */
+  const knowledgeBaseMoveOptions: MoveOptionNode[] = useMemo(
+    () => buildMoveOptions({ folders, rootLabel: ROOT_BREADCRUMB_LABEL }),
+    [folders]
+  )
+
+  /** Shared by the "Move to" submenu and by dropping a folder row onto another folder. */
+  const moveFolderTo = useCallback(
+    async (folderId: string, parentId: string | null) => {
+      try {
+        await updateFolder.mutateAsync({
+          workspaceId,
+          resourceType: FOLDER_RESOURCE_TYPE,
+          id: folderId,
+          updates: { parentId },
+        })
+      } catch (moveError) {
+        logger.error('Failed to move folder', moveError)
+        toast.error(getErrorMessage(moveError, 'Failed to move folder'))
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutation objects are unstable; mutateAsync is stable in v5
+    [workspaceId]
+  )
+
+  /** Shared by the "Move to" submenu and by dropping a base row onto a folder. */
+  const moveKnowledgeBaseTo = useCallback(
+    async (knowledgeBaseId: string, folderId: string | null) => {
+      try {
+        await updateKnowledgeBaseMutation({ knowledgeBaseId, updates: { folderId } })
+      } catch (moveError) {
+        logger.error('Failed to move knowledge base', moveError)
+        toast.error(getErrorMessage(moveError, 'Failed to move knowledge base'))
+      }
+    },
+    [updateKnowledgeBaseMutation]
+  )
+
+  const handleMoveFolder = useCallback(
+    async (optionValue: string) => {
+      const folder = activeFolderRef.current
+      if (!folder) return
+      const parentId = parseMoveOptionValue(optionValue)
+      // Live placement, not the snapshot taken when the menu opened — a refetch or concurrent
+      // move in between would otherwise skip the write the user just chose. Matches the
+      // knowledge-base move below and both Tables handlers.
+      const current = foldersRef.current.find((item) => item.id === folder.id) ?? folder
+      if ((current.parentId ?? null) !== parentId) await moveFolderTo(folder.id, parentId)
+      closeFolderContextMenu()
+    },
+    [moveFolderTo, closeFolderContextMenu]
+  )
+
+  const handleMoveKnowledgeBase = useCallback(
+    async (optionValue: string) => {
+      const kb = activeKnowledgeBaseRef.current
+      if (!kb) return
+      const folderId = parseMoveOptionValue(optionValue)
+      // Re-read placement from the live list: `activeKnowledgeBase` is a snapshot from when
+      // the menu opened, and a refetch since then would make the no-op check wrong.
+      const current = knowledgeBasesRef.current.find((item) => item.id === kb.id) ?? kb
+      if ((current.folderId ?? null) !== folderId) await moveKnowledgeBaseTo(kb.id, folderId)
+      closeRowContextMenu()
+    },
+    [moveKnowledgeBaseTo, closeRowContextMenu]
+  )
+
+  const rowDragDropConfig = useFolderRowDragDrop({
+    canEdit,
+    editingRowId: listRename.editingId,
+    descendantsByFolderId,
+    getFolderParentId: (folderId) => foldersRef.current.find((f) => f.id === folderId)?.parentId,
+    getResourceFolderId: (knowledgeBaseId) =>
+      knowledgeBasesRef.current.find((kb) => kb.id === knowledgeBaseId)?.folderId ?? null,
+    getRowLabel: (rowId) => {
+      const parsed = parseFolderedRowId(rowId)
+      return parsed.kind === 'folder'
+        ? (foldersRef.current.find((f) => f.id === parsed.id)?.name ?? 'Folder')
+        : (knowledgeBasesRef.current.find((kb) => kb.id === parsed.id)?.name ?? 'Knowledge base')
+    },
+    onMoveFolder: (folderId, targetFolderId) => void moveFolderTo(folderId, targetFolderId),
+    onMoveResource: (knowledgeBaseId, targetFolderId) =>
+      void moveKnowledgeBaseTo(knowledgeBaseId, targetFolderId),
+  })
+
   const headerActions: ResourceAction[] = useMemo(
     () => [
+      {
+        text: 'New folder',
+        icon: FolderPlus,
+        onSelect: handleCreateFolder,
+        disabled: createFolder.isPending || !canEdit,
+      },
       {
         text: 'New base',
         icon: Plus,
@@ -397,17 +905,63 @@ export function Knowledge() {
         variant: 'primary',
       },
     ],
-    [handleOpenCreateModal, canEdit]
+    [handleOpenCreateModal, handleCreateFolder, createFolder.isPending, canEdit]
+  )
+
+  const listBreadcrumbs: BreadcrumbItem[] = useMemo(
+    () =>
+      folderBreadcrumbItems({
+        rootLabel: ROOT_BREADCRUMB_LABEL,
+        rootIcon: Database,
+        breadcrumbs,
+        onNavigate: setCurrentFolderId,
+        currentFolderEditing:
+          breadcrumbRename.editingId && breadcrumbRename.editingId === currentFolderId
+            ? {
+                isEditing: true,
+                value: breadcrumbRename.editValue,
+                onChange: breadcrumbRenameRef.current.setEditValue,
+                onSubmit: breadcrumbRenameRef.current.submitRename,
+                onCancel: breadcrumbRenameRef.current.cancelRename,
+                disabled: breadcrumbRename.isSaving,
+              }
+            : undefined,
+        currentFolderActions:
+          canEdit && breadcrumbs.length > 0
+            ? [
+                {
+                  label: 'Rename',
+                  onClick: () => {
+                    const folder = breadcrumbs[breadcrumbs.length - 1]
+                    breadcrumbRenameRef.current.startRename(folder.id, folder.name)
+                  },
+                },
+                {
+                  label: 'Delete',
+                  onClick: () => setFolderPendingDelete(breadcrumbs[breadcrumbs.length - 1]),
+                },
+              ]
+            : undefined,
+      }),
+    [
+      breadcrumbs,
+      currentFolderId,
+      setCurrentFolderId,
+      canEdit,
+      breadcrumbRename.editingId,
+      breadcrumbRename.editValue,
+      breadcrumbRename.isSaving,
+    ]
   )
 
   const searchConfig: SearchConfig = useMemo(
     () => ({
-      value: searchInputValue,
-      onChange: setSearchInputValue,
-      onClearAll: () => setSearchInputValue(''),
+      value: urlSearchQuery,
+      onChange: setSearchQuery,
+      onClearAll: () => setSearchQuery(''),
       placeholder: 'Search knowledge bases...',
     }),
-    [searchInputValue]
+    [urlSearchQuery, setSearchQuery]
   )
 
   const sortConfig: SortConfig = useMemo(
@@ -418,14 +972,14 @@ export function Knowledge() {
         { id: 'tokens', label: 'Tokens' },
         { id: 'connectors', label: 'Connectors' },
         { id: 'created', label: 'Created' },
-        { id: 'updated', label: 'Last Updated' },
         { id: 'owner', label: 'Owner' },
+        { id: 'updated', label: 'Last Updated' },
       ],
       active: activeSort,
-      onSort: (column, direction) => setActiveSort({ column, direction }),
-      onClear: () => setActiveSort(null),
+      onSort: onSortColumn,
+      onClear: onClearSort,
     }),
-    [activeSort]
+    [activeSort, onSortColumn, onClearSort]
   )
 
   const memberOptions: ChipDropdownOption[] = useMemo(
@@ -558,7 +1112,12 @@ export function Knowledge() {
   return (
     <>
       <Resource onContextMenu={handleContentContextMenu}>
-        <Resource.Header icon={Database} title='Knowledge Base' actions={headerActions} />
+        <Resource.Header
+          icon={Database}
+          title={ROOT_BREADCRUMB_LABEL}
+          breadcrumbs={listBreadcrumbs}
+          actions={headerActions}
+        />
         <Resource.Options
           search={searchConfig}
           sort={sortConfig}
@@ -568,6 +1127,7 @@ export function Knowledge() {
         <Resource.Table
           columns={COLUMNS}
           rows={rows}
+          rowDragDrop={rowDragDropConfig}
           onRowClick={handleRowClick}
           onRowContextMenu={handleRowContextMenu}
         />
@@ -578,7 +1138,9 @@ export function Knowledge() {
         position={listContextMenuPosition}
         onClose={closeListContextMenu}
         onAddKnowledgeBase={handleOpenCreateModal}
+        onAddFolder={handleCreateFolder}
         disableAdd={!canEdit}
+        disableAddFolder={createFolder.isPending || !canEdit}
       />
 
       {activeKnowledgeBase && (
@@ -589,16 +1151,60 @@ export function Knowledge() {
           onOpenInNewTab={handleOpenInNewTab}
           onViewTags={handleViewTags}
           onCopyId={handleCopyId}
+          onTogglePin={handleToggleBasePin}
+          pinned={pinnedBaseIds.has(activeKnowledgeBase.id)}
           onEdit={handleEdit}
+          onCopyToWorkspace={handleCopyToWorkspace}
           onDelete={handleDelete}
+          onMove={handleMoveKnowledgeBase}
+          moveOptions={knowledgeBaseMoveOptions}
           showOpenInNewTab
           showViewTags
           showEdit
+          showCopyToWorkspace
           showDelete
           disableEdit={!canEdit}
+          disableCopyToWorkspace={!canEdit}
           disableDelete={!canEdit}
         />
       )}
+
+      {activeFolder && (
+        <FolderContextMenu
+          isOpen={isFolderContextMenuOpen}
+          position={folderContextMenuPosition}
+          onClose={closeFolderContextMenu}
+          onOpen={handleOpenFolder}
+          onRename={handleRenameFolder}
+          onDelete={handleRequestFolderDelete}
+          onCopyId={handleCopyFolderId}
+          onTogglePin={handleToggleFolderPin}
+          pinned={pinnedFolderIds.has(activeFolder.id)}
+          onMove={handleMoveFolder}
+          moveOptions={folderMoveOptions}
+          canEdit={canEdit}
+        />
+      )}
+
+      <ChipConfirmModal
+        open={folderPendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setFolderPendingDelete(null)
+        }}
+        srTitle='Delete folder'
+        title='Delete folder'
+        text={[
+          'Are you sure you want to delete ',
+          { text: folderPendingDelete?.name ?? 'this folder', bold: true },
+          '? This also deletes the knowledge bases and folders inside it. You can restore them from Recently Deleted in Settings.',
+        ]}
+        confirm={{
+          label: 'Delete',
+          onClick: handleConfirmFolderDelete,
+          pending: deleteFolder.isPending,
+          pendingLabel: 'Deleting...',
+        }}
+      />
 
       {activeKnowledgeBase && (
         <EditKnowledgeBaseModal
@@ -609,6 +1215,15 @@ export function Knowledge() {
           initialDescription={activeKnowledgeBase.description || ''}
           chunkingConfig={activeKnowledgeBase.chunkingConfig}
           onSave={handleUpdateKnowledgeBase}
+        />
+      )}
+
+      {activeKnowledgeBase && (
+        <CopyKnowledgeBaseModal
+          open={isCopyModalOpen}
+          onOpenChange={setIsCopyModalOpen}
+          knowledgeBaseId={activeKnowledgeBase.id}
+          initialName={activeKnowledgeBase.name}
         />
       )}
 
@@ -630,7 +1245,11 @@ export function Knowledge() {
         />
       )}
 
-      <CreateBaseModal open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen} />
+      <CreateBaseModal
+        open={isCreateModalOpen}
+        onOpenChange={setIsCreateModalOpen}
+        folderId={currentFolderId}
+      />
     </>
   )
 }

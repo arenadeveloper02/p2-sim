@@ -1,4 +1,6 @@
+import type { BrowserKnownSession } from '@sim/browser-protocol'
 import { createLogger } from '@sim/logger'
+import { isPermissionType, permissionSatisfies } from '@sim/platform-authz/predicates'
 import { toError } from '@sim/utils/errors'
 import { LRUCache } from 'lru-cache'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
@@ -9,13 +11,14 @@ import {
   filterExposedIntegrationTools,
   getExposedIntegrationTools,
 } from '@/lib/copilot/integration-tools'
+import { buildTaggedMcpToolSchemas } from '@/lib/copilot/mcp-tools'
 import { getToolEntry } from '@/lib/copilot/tool-executor/router'
 import { getCopilotToolDescription } from '@/lib/copilot/tools/descriptions'
 import { encodeVfsSegment } from '@/lib/copilot/vfs/path-utils'
 import type { BlockVisibilityState } from '@/lib/core/config/block-visibility'
-import { isE2BDocEnabled, isHosted } from '@/lib/core/config/env-flags'
-import { buildUserSkillTool } from '@/lib/mothership/skills'
+import { isDocSandboxEnabled, isHosted } from '@/lib/core/config/env-flags'
 import { trackChatUpload } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { buildArchiveExtractGuidance, isArchiveFileName } from '@/lib/uploads/utils/file-utils'
 import { isAdminWorkspace, isAdminWorkspaceOnlyTool } from '@/lib/workspaces/is-admin-workspace'
 import { stripVersionSuffix } from '@/tools/utils'
 
@@ -34,6 +37,11 @@ interface BuildPayloadParams {
   model: string
   provider?: string
   contexts?: Array<{ type: string; content: string; tag?: string; path?: string }>
+  /**
+   * MCP servers enabled for this chat — every server tagged on this or any
+   * earlier turn. Servers never tagged in the chat stay unavailable.
+   */
+  mcpServerIds?: string[]
   fileAttachments?: Array<{ id: string; key: string; size: number; [key: string]: unknown }>
   commands?: string[]
   chatId?: string
@@ -42,24 +50,45 @@ interface BuildPayloadParams {
   workspaceContext?: string
   vfs?: VfsSnapshotV1
   userPermission?: string
+  /** Plan/flag-gated org capabilities (e.g. "custom-blocks") the mothership gates tools/prompts on. */
+  entitlements?: string[]
   userTimezone?: string
   userMetadata?: {
     name?: string
     email?: string
     timezone?: string
   }
-  includeMothershipTools?: boolean
+  desktopLocalFilesystem?: boolean
+  browser?: boolean
+  terminalCapable?: boolean
+  terminals?: Array<{
+    id: string
+    cwd?: string
+    running?: string
+    interactive?: boolean
+    active?: boolean
+  }>
+  browserSessions?: BrowserKnownSession[]
 }
 
 export interface ToolSchema {
   name: string
   description: string
   input_schema: Record<string, unknown>
+  outputs?: Record<string, unknown>
   defer_loading?: boolean
   executeLocally?: boolean
   params?: Record<string, unknown>
   /** Canonical integration service/folder (e.g. "slack"), for server-side grouping. */
   service?: string
+  /**
+   * Operation stem within the service — the VFS doc filename without `.json`
+   * (e.g. "list_users" for id "slack_list_users"). Stamped so the server can
+   * hand agents the exact `components/integrations/{service}/{operation}.json`
+   * path instead of making them derive it from the id (deriving is how the id
+   * gets guessed as the filename).
+   */
+  operation?: string
   oauth?: { required: boolean; provider: string }
 }
 
@@ -94,6 +123,7 @@ function cloneToolSchemas(toolSchemas: ToolSchema[]): ToolSchema[] {
       input_schema: { ...tool.input_schema },
     }
     if (tool.params) cloned.params = { ...tool.params }
+    if (tool.outputs) cloned.outputs = structuredClone(tool.outputs)
     if (tool.oauth) cloned.oauth = { ...tool.oauth }
     return cloned
   })
@@ -204,7 +234,7 @@ async function buildIntegrationToolSchemasUncached(
     }
 
     const exposedTools = filterExposedIntegrationTools(getExposedIntegrationTools(), vis)
-    for (const { toolId, config: toolConfig, service } of exposedTools) {
+    for (const { toolId, config: toolConfig, service, operation } of exposedTools) {
       try {
         const strippedName = stripVersionSuffix(toolId)
         if (!isAdminWorkspace(workspaceId) && isAdminWorkspaceOnlyTool(strippedName)) {
@@ -218,17 +248,32 @@ async function buildIntegrationToolSchemasUncached(
         }
         const userSchema = createUserToolSchema(toolConfig, {
           surface: options.schemaSurface,
+          // On hosted deployments the executor injects hosted keys server-side,
+          // so the gateway schema must not force the model to supply one (the
+          // model never sees the key either way).
+          hostedKeySupport: isHosted,
         })
         const catalogEntry = getToolEntry(toolId)
         integrationTools.push({
           name: toolId,
           service,
+          operation,
           description: getCopilotToolDescription(toolConfig, {
             isHosted,
             fallbackName: toolId,
             appendEmailTagline: shouldAppendEmailTagline,
           }),
           input_schema: { ...userSchema },
+          ...(toolConfig.outputs && {
+            outputs: Object.fromEntries(
+              Object.entries(toolConfig.outputs)
+                .filter(([, output]) => output != null)
+                .map(([key, output]) => [
+                  key,
+                  { type: output.type, description: output.description },
+                ])
+            ),
+          }),
           defer_loading: true,
           executeLocally:
             catalogEntry?.clientExecutable === true || catalogEntry?.route === 'client',
@@ -294,10 +339,25 @@ export async function buildCopilotRequestPayload(
   const effectiveMode = mode === 'agent' ? 'build' : mode
   const transportMode = effectiveMode === 'build' ? 'agent' : effectiveMode
 
-  // Track uploaded files in the DB and build context tags instead of base64 inlining
+  // Track uploaded files in the DB and build context tags instead of base64 inlining.
+  // Tracking writes `workspace_files` rows, so it needs the same write grant the
+  // upload routes that issue these keys already require — reaching the chat
+  // endpoint with `read` must not confer a file-write capability.
   const uploadContexts: Array<{ type: string; content: string; tag?: string; path?: string }> = []
+  // `userPermission` is typed `string` for legacy reasons, so narrow it before
+  // comparing — an unrecognized value must fail the gate, not rank below it.
+  const canWriteWorkspaceFiles =
+    isPermissionType(params.userPermission) && permissionSatisfies(params.userPermission, 'write')
   if (chatId && params.workspaceId && fileAttachments && fileAttachments.length > 0) {
-    for (const f of fileAttachments) {
+    if (!canWriteWorkspaceFiles) {
+      logger.warn('Dropping chat file attachments without workspace write access', {
+        chatId,
+        workspaceId: params.workspaceId,
+        attachmentCount: fileAttachments.length,
+      })
+    }
+    const trackableAttachments = canWriteWorkspaceFiles ? fileAttachments : []
+    for (const f of trackableAttachments) {
       const filename = (f.filename ?? f.name ?? 'file') as string
       const mediaType = (f.media_type ?? f.mimeType ?? 'application/octet-stream') as string
       try {
@@ -308,7 +368,8 @@ export async function buildCopilotRequestPayload(
           f.key,
           filename,
           mediaType,
-          f.size
+          f.size,
+          userMessageId
         )
         // Encode the read path per the percent-encoded VFS convention (matches
         // files/ and the uploads glob output). The materialize_file `fileName`
@@ -319,15 +380,25 @@ export async function buildCopilotRequestPayload(
         } catch {
           encodedUploadName = displayName
         }
-        const lines = [
-          `File "${displayName}" (${mediaType}, ${f.size} bytes) uploaded.`,
-          `Read with: read("uploads/${encodedUploadName}")`,
-          `To save permanently: materialize_file(fileName: "${displayName}")`,
-        ]
-        if (displayName.endsWith('.json')) {
-          lines.push(
-            `To import as a workflow: materialize_file(fileName: "${displayName}", operation: "import")`
-          )
+        let lines: string[]
+        if (isArchiveFileName(displayName)) {
+          // A .zip is stored in uploads/ but its contents aren't readable until
+          // the agent extracts it once into workspace files/ (explicit step).
+          lines = [
+            `Archive "${displayName}" (${mediaType}, ${f.size} bytes) uploaded.`,
+            buildArchiveExtractGuidance(displayName),
+          ]
+        } else {
+          lines = [
+            `File "${displayName}" (${mediaType}, ${f.size} bytes) uploaded.`,
+            `Read with: read("uploads/${encodedUploadName}")`,
+            `To save permanently: materialize_file(fileName: "${displayName}")`,
+          ]
+          if (displayName.endsWith('.json')) {
+            lines.push(
+              `To import as a workflow: materialize_file(fileName: "${displayName}", operation: "import")`
+            )
+          }
         }
         uploadContexts.push({
           type: 'uploaded_file',
@@ -346,30 +417,26 @@ export async function buildCopilotRequestPayload(
   const allContexts = [...(contexts ?? []), ...uploadContexts]
 
   let integrationTools: ToolSchema[] = []
-  const mothershipTools: ToolSchema[] = []
+  let mothershipTools: ToolSchema[] = []
   const payloadLogger = logger.withMetadata({ messageId: userMessageId })
 
-  if (effectiveMode === 'build') {
+  // "superagent" is a legacy wire value for Direct Action mode; both modes
+  // execute connected-service operations through the main-agent gateway.
+  if (effectiveMode === 'build' || effectiveMode === 'superagent') {
     integrationTools = await buildIntegrationToolSchemas(
       userId,
       userMessageId,
       { schemaSurface: 'copilot' },
       params.workspaceId
     )
+  }
 
-    if (params.includeMothershipTools && params.workspaceId) {
-      // Expose all workspace user-created skills via the single load_user_skill
-      // tool. Available to every user; content is fetched sim-side when the
-      // model calls it.
-      try {
-        const userSkillTool = await buildUserSkillTool(params.workspaceId)
-        if (userSkillTool) mothershipTools.push(userSkillTool)
-      } catch (error) {
-        logger.warn('Failed to build load_user_skill tool', {
-          error: toError(error).message,
-        })
-      }
-    }
+  if (params.workspaceId && params.mcpServerIds?.length) {
+    mothershipTools = await buildTaggedMcpToolSchemas(
+      userId,
+      params.workspaceId,
+      params.mcpServerIds
+    )
   }
 
   return {
@@ -402,6 +469,7 @@ export async function buildCopilotRequestPayload(
     ...(params.workspaceContext ? { workspaceContext: params.workspaceContext } : {}),
     ...(params.vfs ? { vfs: params.vfs } : {}),
     ...(params.userPermission ? { userPermission: params.userPermission } : {}),
+    ...(params.entitlements?.length ? { entitlements: params.entitlements } : {}),
     ...(params.userTimezone ? { userTimezone: params.userTimezone } : {}),
     ...(params.userMetadata &&
     (params.userMetadata.name || params.userMetadata.email || params.userMetadata.timezone)
@@ -409,7 +477,22 @@ export async function buildCopilotRequestPayload(
       : {}),
     // Tell the copilot file subagent which document toolchain to write. Emitted
     // only in Python mode so the JS path sends no new field (Go defaults to js).
-    ...(isE2BDocEnabled ? { docCompiler: 'python' } : {}),
+    ...(isDocSandboxEnabled ? { docCompiler: 'python' } : {}),
+    ...(params.desktopLocalFilesystem || params.browser || params.terminalCapable
+      ? {
+          desktopCapabilities: {
+            ...(params.desktopLocalFilesystem ? { localFilesystem: true } : {}),
+            ...(params.browser ? { browser: true } : {}),
+            ...(params.terminalCapable ? { terminal: true } : {}),
+            ...(params.terminalCapable && params.terminals?.length
+              ? { terminals: params.terminals }
+              : {}),
+            ...(params.browser && params.browserSessions?.length
+              ? { browserSessions: params.browserSessions }
+              : {}),
+          },
+        }
+      : {}),
     isHosted,
   }
 }

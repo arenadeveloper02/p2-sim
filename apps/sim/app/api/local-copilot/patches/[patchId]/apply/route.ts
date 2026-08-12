@@ -63,6 +63,10 @@ export const POST = withRouteHandler(
       userId: session.user.id,
       workflowId: parsed.data.body.workflowId,
       currentState: workflowState,
+      ...(conversation?.workspaceId ? { workspaceId: conversation.workspaceId } : {}),
+      ...(parsed.data.body.expectedRevision
+        ? { expectedRevision: parsed.data.body.expectedRevision }
+        : {}),
     })
 
     await logCopilotAction({
@@ -74,7 +78,7 @@ export const POST = withRouteHandler(
       action: 'apply_patch',
       summary: patchRow.summary,
       status: result.success ? 'success' : 'failure',
-      metadata: { errors: result.errors },
+      metadata: { errors: result.errors, revision: result.revision },
     })
 
     logger.info('Apply patch result', {
@@ -85,6 +89,7 @@ export const POST = withRouteHandler(
     return NextResponse.json({
       success: result.success,
       errors: result.errors,
+      ...(result.revision ? { revision: result.revision } : {}),
     })
   }
 )

@@ -8,10 +8,15 @@ import {
   MothershipStreamV1TextChannel,
 } from '@/lib/copilot/generated/mothership-stream-v1'
 import { LOCAL_COPILOT_MAX_HISTORY_MESSAGES } from '@/local-copilot/lib/context/context-budget'
+import type { SessionMemoryTurn } from '@/local-copilot/lib/context/session-memory'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import { stripLeakedToolMarkers } from '@/local-copilot/lib/synthesize-assistant-summary'
+import { formatToolResultForLlm } from '@/local-copilot/lib/tools/format-tool-result'
 
 const MAX_HISTORY_MESSAGES = LOCAL_COPILOT_MAX_HISTORY_MESSAGES
+
+/** Max chars per persisted row when building session-memory summarizer turns. */
+const SESSION_MEMORY_TURN_TEXT_MAX = 4_000
 
 /**
  * Converts persisted mothership/copilot chat rows into provider chat messages.
@@ -37,6 +42,56 @@ export function mothershipMessagesToChatHistory(
   return out.slice(-MAX_HISTORY_MESSAGES)
 }
 
+/**
+ * Builds compact turn records (with persisted message ids) for session-memory refresh.
+ */
+export function mothershipMessagesToSessionMemoryTurns(
+  messages: PersistedMessage[],
+  options?: { excludeMessageId?: string }
+): SessionMemoryTurn[] {
+  const turns: SessionMemoryTurn[] = []
+
+  for (const message of messages) {
+    if (options?.excludeMessageId && message.id === options.excludeMessageId) continue
+
+    if (message.role === 'user') {
+      const text = message.content?.trim()
+      if (!text) continue
+      turns.push({
+        messageId: message.id,
+        role: 'user',
+        text: text.slice(0, SESSION_MEMORY_TURN_TEXT_MAX),
+      })
+      continue
+    }
+
+    const assistantText = assistantMessageToSessionMemoryText(message)
+    if (!assistantText) continue
+    turns.push({
+      messageId: message.id,
+      role: 'assistant',
+      text: assistantText.slice(0, SESSION_MEMORY_TURN_TEXT_MAX),
+    })
+  }
+
+  return turns
+}
+
+function assistantMessageToSessionMemoryText(message: PersistedMessage): string {
+  const prose = stripLeakedToolMarkers(message.content ?? '').trim()
+  const toolNames = (message.contentBlocks ?? [])
+    .filter(isToolHistoryBlock)
+    .map((block) => block.toolCall?.name)
+    .filter((name): name is string => Boolean(name))
+
+  const uniqueTools = [...new Set(toolNames)]
+  const toolLine = uniqueTools.length > 0 ? `Tools: ${uniqueTools.slice(0, 12).join(', ')}` : ''
+
+  if (prose && toolLine) return `${prose}\n${toolLine}`
+  if (prose) return prose
+  return toolLine
+}
+
 function isAssistantProseBlock(block: PersistedContentBlock): boolean {
   return (
     block.type === MothershipStreamV1EventType.text &&
@@ -59,13 +114,33 @@ function toolResultContent(block: PersistedContentBlock): string {
 
   const result = toolCall.result
   if (result && typeof result === 'object') {
-    const payload: Record<string, unknown> = { success: result.success }
-    if (result.output !== undefined) payload.output = result.output
-    if (result.error) payload.error = result.error
-    return JSON.stringify(payload)
+    const record = result as {
+      success?: boolean
+      output?: unknown
+      error?: unknown
+    }
+    // Prefer the live tool output shape so formatToolResultForLlm can strip workflowState etc.
+    const payload =
+      record.output !== undefined
+        ? record.output && typeof record.output === 'object'
+          ? {
+              ...(record.output as Record<string, unknown>),
+              ...(typeof record.success === 'boolean' ? { success: record.success } : {}),
+              ...(record.error ? { error: record.error } : {}),
+            }
+          : {
+              success: record.success,
+              output: record.output,
+              ...(record.error ? { error: record.error } : {}),
+            }
+        : {
+            ...(typeof record.success === 'boolean' ? { success: record.success } : {}),
+            ...(record.error ? { error: record.error } : {}),
+          }
+    return formatToolResultForLlm(toolCall.name, payload)
   }
 
-  return JSON.stringify({
+  return formatToolResultForLlm(toolCall.name, {
     success: toolCall.state === 'success',
     ...(toolCall.error ? { error: toolCall.error } : {}),
   })
@@ -143,6 +218,12 @@ export function assistantMessageToChatHistory(message: PersistedMessage): ChatMe
   return out
 }
 
+export interface MothershipChatHistoryForLocalCopilot {
+  messages: ChatMessage[]
+  /** Compact turns with persisted ids for session-memory refresh. */
+  sessionMemoryTurns: SessionMemoryTurn[]
+}
+
 /**
  * Loads prior turns from the shared `copilot_messages` table for a mothership chat.
  */
@@ -150,15 +231,21 @@ export async function loadMothershipChatHistoryForLocalCopilot(params: {
   chatId: string
   userId: string
   excludeMessageId?: string
-}): Promise<ChatMessage[]> {
+}): Promise<MothershipChatHistoryForLocalCopilot> {
   const [chat] = await db
     .select({ id: copilotChats.id })
     .from(copilotChats)
     .where(and(eq(copilotChats.id, params.chatId), eq(copilotChats.userId, params.userId)))
     .limit(1)
 
-  if (!chat) return []
+  if (!chat) {
+    return { messages: [], sessionMemoryTurns: [] }
+  }
 
   const messages = await loadCopilotChatMessages(params.chatId)
-  return mothershipMessagesToChatHistory(messages, { excludeMessageId: params.excludeMessageId })
+  const options = { excludeMessageId: params.excludeMessageId }
+  return {
+    messages: mothershipMessagesToChatHistory(messages, options),
+    sessionMemoryTurns: mothershipMessagesToSessionMemoryTurns(messages, options),
+  }
 }

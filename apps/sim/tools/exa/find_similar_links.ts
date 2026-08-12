@@ -1,8 +1,13 @@
+import { exaHosting } from '@/tools/exa/hosting'
 import type { ExaFindSimilarLinksParams, ExaFindSimilarLinksResponse } from '@/tools/exa/types'
+import { applyFreshness, parseCommaList, resolveCategory } from '@/tools/exa/utils'
 import type { ToolConfig } from '@/tools/types'
 
-const exaApiKey = process.env.EXA_API_KEY
-
+/**
+ * Exa has deprecated `/findSimilar` in favor of running a `/search` with a query
+ * derived from the seed page. The endpoint still serves traffic, so this tool
+ * remains available for workflows already built on it.
+ */
 export const findSimilarLinksTool: ToolConfig<
   ExaFindSimilarLinksParams,
   ExaFindSimilarLinksResponse
@@ -10,8 +15,10 @@ export const findSimilarLinksTool: ToolConfig<
   id: 'exa_find_similar_links',
   name: 'Exa Find Similar Links',
   description:
-    'Find webpages similar to a given URL using Exa AI. Returns a list of similar links with titles and text snippets.',
-  version: '1.0.0',
+    'Find webpages similar to a given URL using Exa AI. Deprecated by Exa in favor of Search — prefer Search for new workflows.',
+  version: '2.0.0',
+
+  hosting: exaHosting,
 
   params: {
     url: {
@@ -24,7 +31,7 @@ export const findSimilarLinksTool: ToolConfig<
       type: 'number',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Number of similar links to return (e.g., 5, 10, 25). Default: 10, max: 25',
+      description: 'Number of similar links to return (1-100). Default: 10',
     },
     text: {
       type: 'boolean',
@@ -52,6 +59,13 @@ export const findSimilarLinksTool: ToolConfig<
       visibility: 'user-only',
       description: 'Exclude the source domain from results (default: false)',
     },
+    category: {
+      type: 'string',
+      required: false,
+      visibility: 'user-only',
+      description:
+        'Filter by category: company, publication, news, personal site, financial report, people',
+    },
     highlights: {
       type: 'boolean',
       required: false,
@@ -64,12 +78,25 @@ export const findSimilarLinksTool: ToolConfig<
       visibility: 'user-only',
       description: 'Include AI-generated summaries in results (default: false)',
     },
+    maxAgeHours: {
+      type: 'number',
+      required: false,
+      visibility: 'user-only',
+      description:
+        'Cache freshness in hours (-1 to 720). 0 always crawls live, -1 uses cache only. Cannot be combined with livecrawl.',
+    },
+    livecrawlTimeout: {
+      type: 'number',
+      required: false,
+      visibility: 'user-only',
+      description: 'Live crawl timeout in milliseconds (max 90000). Default: 10000',
+    },
     livecrawl: {
       type: 'string',
       required: false,
       visibility: 'user-only',
       description:
-        'Live crawling mode: never (default), fallback, always, or preferred (always try livecrawl, fall back to cache if fails)',
+        'Deprecated: use maxAgeHours instead. Live crawling mode: never, fallback, always, or preferred',
     },
     apiKey: {
       type: 'string',
@@ -82,43 +109,34 @@ export const findSimilarLinksTool: ToolConfig<
   request: {
     url: 'https://api.exa.ai/findSimilar',
     method: 'POST',
-    headers: () => ({
+    headers: (params) => ({
       'Content-Type': 'application/json',
-      'x-api-key': exaApiKey ?? '',
+      'x-api-key': params.apiKey,
     }),
     body: (params) => {
       const body: Record<string, any> = {
         url: params.url,
       }
 
-      // Add optional parameters if provided
       if (params.numResults) body.numResults = Number(params.numResults)
 
-      // Domain filtering
-      if (params.includeDomains) {
-        body.includeDomains = params.includeDomains
-          .split(',')
-          .map((d: string) => d.trim())
-          .filter((d: string) => d.length > 0)
-      }
-      if (params.excludeDomains) {
-        body.excludeDomains = params.excludeDomains
-          .split(',')
-          .map((d: string) => d.trim())
-          .filter((d: string) => d.length > 0)
-      }
+      const includeDomains = parseCommaList(params.includeDomains)
+      if (includeDomains) body.includeDomains = includeDomains
+      const excludeDomains = parseCommaList(params.excludeDomains)
+      if (excludeDomains) body.excludeDomains = excludeDomains
       if (params.excludeSourceDomain !== undefined) {
         body.excludeSourceDomain = params.excludeSourceDomain
       }
 
-      // Content options - build contents object
+      const category = resolveCategory(params.category)
+      if (category) body.category = category
+
       const contents: Record<string, any> = {}
       if (params.text !== undefined) contents.text = params.text
       if (params.highlights !== undefined) contents.highlights = params.highlights
       if (params.summary !== undefined) contents.summary = params.summary
 
-      // Live crawl mode should be inside contents
-      if (params.livecrawl) contents.livecrawl = params.livecrawl
+      applyFreshness(contents, params)
 
       if (Object.keys(contents).length > 0) {
         body.contents = contents
@@ -134,14 +152,16 @@ export const findSimilarLinksTool: ToolConfig<
     return {
       success: true,
       output: {
-        similarLinks: data.results.map((result: any) => ({
+        similarLinks: (data.results ?? []).map((result: any) => ({
+          id: result.id,
           title: result.title || '',
           url: result.url,
           text: result.text || '',
           summary: result.summary,
           highlights: result.highlights,
-          score: result.score || 0,
+          score: result.score,
         })),
+        requestId: data.requestId,
         __costDollars: data.costDollars,
       },
     }
@@ -154,11 +174,18 @@ export const findSimilarLinksTool: ToolConfig<
       items: {
         type: 'object',
         properties: {
+          id: { type: 'string', description: 'Exa identifier for the similar page' },
           title: { type: 'string', description: 'The title of the similar webpage' },
           url: { type: 'string', description: 'The URL of the similar webpage' },
           text: {
             type: 'string',
             description: 'Text snippet or full content from the similar webpage',
+          },
+          summary: { type: 'string', description: 'AI-generated summary of the similar webpage' },
+          highlights: {
+            type: 'array',
+            description: 'Relevant snippets extracted from the page',
+            items: { type: 'string' },
           },
           score: {
             type: 'number',
@@ -167,5 +194,6 @@ export const findSimilarLinksTool: ToolConfig<
         },
       },
     },
+    requestId: { type: 'string', description: 'Exa request identifier, useful for support' },
   },
 }

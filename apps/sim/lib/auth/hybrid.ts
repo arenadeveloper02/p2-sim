@@ -36,6 +36,7 @@ export interface AuthResult {
   userEmail?: string | null
   authType?: AuthTypeValue
   apiKeyType?: 'personal' | 'workspace'
+  apiKeyId?: string
   error?: string
 }
 
@@ -167,9 +168,9 @@ export async function checkSessionOrInternalAuth(
 
 /**
  * Check for authentication using any of the 3 supported methods:
- * 1. Session authentication (cookies)
- * 2. API key authentication (X-API-Key header)
- * 3. Internal JWT authentication (Authorization: Bearer header)
+ * 1. Internal JWT authentication (Authorization: Bearer header)
+ * 2. Explicit API key authentication (X-API-Key header)
+ * 3. Session authentication (cookies)
  *
  * For internal JWT calls, requires workflowId to determine user context
  */
@@ -178,7 +179,6 @@ export async function checkHybridAuth(
   options: { requireWorkflowId?: boolean } = {}
 ): Promise<AuthResult> {
   try {
-    // 1. Check for internal JWT token first
     const authHeader = request.headers.get('authorization')
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1]
@@ -189,21 +189,8 @@ export async function checkHybridAuth(
       }
     }
 
-    // 2. Try session auth (for web UI)
-    const session = await getSession()
-    if (session?.user?.id) {
-      return {
-        success: true,
-        userId: session.user.id,
-        userName: session.user.name,
-        userEmail: session.user.email,
-        authType: AuthType.SESSION,
-      }
-    }
-
-    // 3. Try API key auth (X-API-Key header only)
-    const apiKeyHeader = request.headers.get('x-api-key')
-    if (apiKeyHeader) {
+    if (request.headers.has(API_KEY_HEADER)) {
+      const apiKeyHeader = request.headers.get(API_KEY_HEADER) ?? ''
       const result = await authenticateApiKeyFromHeader(apiKeyHeader)
       if (result.success) {
         await updateApiKeyLastUsed(result.keyId!)
@@ -213,12 +200,24 @@ export async function checkHybridAuth(
           workspaceId: result.workspaceId,
           authType: AuthType.API_KEY,
           apiKeyType: result.keyType,
+          apiKeyId: result.keyId,
         }
       }
 
       return {
         success: false,
         error: 'Invalid API key',
+      }
+    }
+
+    const session = await getSession()
+    if (session?.user?.id) {
+      return {
+        success: true,
+        userId: session.user.id,
+        userName: session.user.name,
+        userEmail: session.user.email,
+        authType: AuthType.SESSION,
       }
     }
 

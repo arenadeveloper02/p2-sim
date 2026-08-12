@@ -47,26 +47,13 @@ import { Chip, type ChipProps } from '../chip/chip'
 import { chipContentIconClass, chipContentLabelClass } from '../chip/chip-chrome'
 import { ChipCopyInput } from '../chip-copy-input/chip-copy-input'
 import { ChipDropdown, type ChipDropdownOption } from '../chip-dropdown/chip-dropdown'
+import { ChipEmailsInput, type ChipEmailsInputProps } from '../chip-emails-input/chip-emails-input'
 import { ChipInput } from '../chip-input/chip-input'
 import { ChipSwitch } from '../chip-switch/chip-switch'
 import { ChipTextarea } from '../chip-textarea/chip-textarea'
 import { Label } from '../label/label'
 import { Modal, ModalContent } from '../modal/modal'
-import { TagInput, type TagItem } from '../tag-input/tag-input'
 import { Tooltip } from '../tooltip/tooltip'
-
-/**
- * Generic RFC 5322 email syntax gate for the `type='emails'` field. This is
- * deliberately format-only — app-specific policy (disposable domains, MX/DNS,
- * membership rules) is the consumer's concern and flows through the field's
- * `validate` prop, keeping that logic in the app rather than the design system.
- */
-const EMAIL_SYNTAX_REGEX =
-  /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/
-
-function isValidEmailSyntax(email: string): boolean {
-  return EMAIL_SYNTAX_REGEX.test(email) && email.length <= 254
-}
 
 /**
  * The modal's hairline divider — used by the header and footer edges, and
@@ -85,6 +72,26 @@ export function ChipModalSeparator({ className }: { className?: string }) {
  * sit outside any field and therefore manage their own `mt-1 px-2`.
  */
 const CHIP_MODAL_FIELD_ERROR_CLASS = 'text-[var(--text-error)] text-caption'
+
+/**
+ * The modal's registered primary action, published by {@link ChipModalFooter}
+ * and consumed by {@link ChipModalField} so a single-line input can submit the
+ * modal on Enter without the consumer wiring `onSubmit` on every field.
+ */
+interface ChipModalSubmit {
+  /** Fires the footer's primary action. */
+  trigger: () => void
+  /** Mirrors the primary action's disabled state so Enter never submits an invalid form. */
+  disabled?: boolean
+}
+
+/**
+ * Carries a mutable handle to the modal's primary action down to its fields.
+ * A ref (not state) so the footer can keep it current without re-rendering the
+ * body, and fields read it at Enter-time rather than at render-time.
+ */
+const ChipModalSubmitContext =
+  React.createContext<React.MutableRefObject<ChipModalSubmit | null> | null>(null)
 
 export interface ChipModalProps {
   /** Controlled open state. */
@@ -120,21 +127,24 @@ function ChipModal({
   className,
   children,
 }: ChipModalProps) {
+  const submitRef = React.useRef<ChipModalSubmit | null>(null)
   return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent bare showClose={false} srTitle={srTitle} size={size}>
-        <div
-          className={cn(
-            'flex min-h-0 w-full flex-col rounded-xl border border-[var(--border-muted)] bg-[var(--surface-4)] p-[3px] shadow-[var(--shadow-overlay)] dark:bg-[var(--surface-5)]',
-            className
-          )}
-        >
-          <div className='flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--border-1)] bg-[var(--bg)]'>
-            {children}
+    <ChipModalSubmitContext.Provider value={submitRef}>
+      <Modal open={open} onOpenChange={onOpenChange}>
+        <ModalContent bare showClose={false} srTitle={srTitle} size={size}>
+          <div
+            className={cn(
+              'flex min-h-0 w-full flex-col rounded-xl border border-[var(--border-muted)] bg-[var(--surface-4)] p-[3px] shadow-[var(--shadow-overlay)] dark:bg-[var(--surface-5)]',
+              className
+            )}
+          >
+            <div className='flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--border-1)] bg-[var(--bg)]'>
+              {children}
+            </div>
           </div>
-        </div>
-      </ModalContent>
-    </Modal>
+        </ModalContent>
+      </Modal>
+    </ChipModalSubmitContext.Provider>
   )
 }
 
@@ -214,6 +224,10 @@ export interface ChipModalTabsProps {
  * Reusing `ChipSwitch` keeps every tabbed modal visually identical to the
  * segmented toggles elsewhere in the app (e.g. the billing-period switch).
  *
+ * Pinned to `w-fit` so the pill always hugs its tabs: dropped directly into a
+ * flex column the `inline-flex` trough is otherwise blockified and stretched
+ * full-width by `align-items: stretch`. A caller-supplied width class still wins.
+ *
  * @example
  * ```tsx
  * <ChipModalBody>
@@ -239,7 +253,7 @@ function ChipModalTabs({
       onChange={onChange}
       aria-label={ariaLabel}
       options={tabs.map((tab) => ({ value: tab.value, label: tab.label, icon: tab.icon }))}
-      className={className}
+      className={cn('w-fit', className)}
     />
   )
 }
@@ -364,7 +378,32 @@ interface ChipModalFieldBaseProps {
   className?: string
 }
 
-interface ChipModalInputFieldProps extends ChipModalFieldBaseProps {
+/**
+ * Enter-submit behavior shared by the single-line field types (`input`,
+ * `email`). Both fire the modal's {@link ChipModalFooter} primary action on
+ * Enter by default; these props override or opt out of that.
+ */
+interface ChipModalSingleLineEnterProps {
+  /**
+   * Overrides the default Enter behavior. By default, pressing Enter in a
+   * single-line field fires the {@link ChipModalFooter} primary action (unless
+   * it's disabled), so a plain modal submits on Enter with no wiring. Pass
+   * `onSubmit` only when Enter should do something OTHER than the primary action
+   * (e.g. advance a multi-step flow).
+   */
+  onSubmit?: () => void
+  /**
+   * Opts this field out of the automatic Enter-submits-the-primary-action
+   * behavior. Set `false` for a config knob that lives inside a larger form
+   * (e.g. a "number of runs" input in a scheduling modal) where Enter firing
+   * the modal's primary action would submit prematurely. Ignored when an
+   * explicit `onSubmit` is provided.
+   * @default true
+   */
+  submitOnEnter?: boolean
+}
+
+interface ChipModalInputFieldProps extends ChipModalFieldBaseProps, ChipModalSingleLineEnterProps {
   type: 'input'
   value: string
   onChange: (value: string) => void
@@ -380,24 +419,14 @@ interface ChipModalInputFieldProps extends ChipModalFieldBaseProps {
    * @default false
    */
   mono?: boolean
-  /**
-   * Called when the user presses Enter in the field. Wire this to the
-   * modal's primary action so the field behaves like a form submit.
-   */
-  onSubmit?: () => void
 }
 
-interface ChipModalEmailFieldProps extends ChipModalFieldBaseProps {
+interface ChipModalEmailFieldProps extends ChipModalFieldBaseProps, ChipModalSingleLineEnterProps {
   type: 'email'
   value: string
   onChange: (value: string) => void
   placeholder?: string
   autoComplete?: string
-  /**
-   * Called when the user presses Enter in the field. Wire this to the
-   * modal's primary action so the field behaves like a form submit.
-   */
-  onSubmit?: () => void
 }
 
 interface ChipModalTextareaFieldBaseProps extends ChipModalFieldBaseProps {
@@ -482,34 +511,47 @@ interface ChipModalFileFieldProps extends ChipModalFieldBaseProps {
   loading?: boolean
 }
 
-export interface ChipModalEmailsFieldProps extends ChipModalFieldBaseProps {
+/**
+ * The emails field is a thin row wrapper over {@link ChipEmailsInput} — the
+ * control's own props (`value`, `onChange`, `validate`, `allowDomains`,
+ * `placeholder`, …) pass straight through, so they are declared in one place.
+ * `variant` is not forwarded: the field always uses the tall `block` chip
+ * surface so it stacks as a peer with `textarea` fields.
+ */
+export interface ChipModalEmailsFieldProps
+  extends ChipModalFieldBaseProps,
+    Omit<ChipEmailsInputProps, 'variant' | 'id'> {
   type: 'emails'
-  /** Current list of valid email addresses. */
-  value: string[]
-  /** Called with the next list when valid items are added or removed. */
-  onChange: (next: string[]) => void
-  /**
-   * Optional domain-level validator. Runs AFTER the field's internal format
-   * check passes. Return an error message to reject the email (added as an
-   * invalid chip whose reason shows in a tooltip on hover); return `null`
-   * to accept.
-   */
-  validate?: (email: string) => string | null
   /**
    * External error (e.g. server-side submit failure), rendered in the inline
    * banner below the field. Per-email rejection reasons are shown on the
    * invalid chips themselves, not here.
    */
   error?: React.ReactNode
-  /** Auto-focus the input when the field mounts. */
-  autoFocus?: boolean
-  /** Placeholder shown when no chips exist. Defaults to `'Enter emails'`. */
-  placeholder?: string
+}
+
+/**
+ * ARIA the field derives from its own state and renders elsewhere in the row —
+ * the `hint`/`error` paragraph ids, plus `required`/`invalid` flags.
+ */
+export interface ChipModalFieldAria {
+  'aria-required'?: boolean
+  'aria-invalid'?: boolean
+  'aria-describedby'?: string
 }
 
 interface ChipModalCustomFieldProps extends ChipModalFieldBaseProps {
   type: 'custom'
-  children: React.ReactNode
+  /**
+   * Arbitrary JSX, or a function receiving the field's {@link ChipModalFieldAria}.
+   *
+   * The owned control types wire this ARIA themselves, but a custom field can
+   * hold anything — a bare input, or a wrapper several levels above one — so
+   * the field cannot know which element should carry it. Use the function form
+   * whenever the child renders a focusable control, or its `hint`/`error` text
+   * is rendered but never announced.
+   */
+  children: React.ReactNode | ((aria: ChipModalFieldAria) => React.ReactNode)
 }
 
 export type ChipModalFieldProps =
@@ -536,6 +578,7 @@ export type ChipModalFieldProps =
  */
 function ChipModalField(props: ChipModalFieldProps) {
   const id = React.useId()
+  const submitRef = React.useContext(ChipModalSubmitContext)
   const errorId = `${id}-error`
   const hintId = `${id}-hint`
   const { title, required, error, hint, flush = false, className } = props
@@ -559,7 +602,7 @@ function ChipModalField(props: ChipModalFieldProps) {
           </span>
         )}
       </Label>
-      {renderChipModalControl(props, id, errorId, hintId)}
+      {renderChipModalControl(props, id, errorId, hintId, submitRef)}
       {error && props.type !== 'emails' ? (
         <p id={errorId} role='alert' className={CHIP_MODAL_FIELD_ERROR_CLASS}>
           {error}
@@ -584,7 +627,8 @@ function renderChipModalControl(
   props: ChipModalFieldProps,
   id: string,
   errorId: string,
-  hintId: string
+  hintId: string,
+  submitRef: React.MutableRefObject<ChipModalSubmit | null> | null
 ): React.ReactNode {
   const aria = {
     'aria-required': props.required || undefined,
@@ -594,23 +638,32 @@ function renderChipModalControl(
 
   switch (props.type) {
     case 'input':
-    case 'email':
+    case 'email': {
+      const onSubmit = props.onSubmit
       return (
         <ChipInput
           id={id}
           type={props.type === 'email' ? 'email' : (props.inputType ?? 'text')}
           value={props.value}
           onChange={(event) => props.onChange(event.target.value)}
-          onKeyDown={
-            props.onSubmit
-              ? (event) => {
-                  if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                    event.preventDefault()
-                    props.onSubmit?.()
-                  }
-                }
-              : undefined
-          }
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+            if (onSubmit) {
+              event.preventDefault()
+              event.stopPropagation()
+              onSubmit()
+              return
+            }
+            if (props.submitOnEnter === false) return
+            const submit = submitRef?.current
+            if (submit && !submit.disabled) {
+              event.preventDefault()
+              // Stop bubbling so a parent Enter handler (e.g. a modal body that
+              // also submits) can't fire the same primary action a second time.
+              event.stopPropagation()
+              submit.trigger()
+            }
+          }}
           placeholder={props.placeholder}
           maxLength={props.type === 'input' ? props.maxLength : undefined}
           autoComplete={props.autoComplete}
@@ -619,6 +672,7 @@ function renderChipModalControl(
           {...aria}
         />
       )
+    }
     case 'textarea':
       return (
         <ChipTextarea
@@ -664,123 +718,42 @@ function renderChipModalControl(
     case 'emails':
       return <ChipModalEmailsControl {...props} id={id} errorId={errorId} />
     case 'custom':
-      return props.children
+      return typeof props.children === 'function' ? props.children(aria) : props.children
   }
 }
 
 /**
- * Derives the post-first-chip placeholder from the initial placeholder so
- * consumers don't have to spell both. Tries an `'Enter <noun>s'` →
- * `'Add <noun>'` singularize; falls back to a generic `'Add another'`.
- */
-function derivePlaceholderWithTags(placeholder: string): string {
-  const match = placeholder.match(/^Enter\s+(.+?)s?$/i)
-  if (match) return `Add ${match[1]}`
-  return 'Add another'
-}
-
-/**
- * Internal renderer for {@link ChipModalField} `type='emails'`. Owns the
- * chip lifecycle (valid + invalid items, dedupe, per-chip error tooltips)
- * and lifts only the valid email list up to the consumer via `onChange`.
- * Each rejected entry carries its rejection reason on the chip itself,
- * surfaced as a tooltip; the inline banner is reserved for the consumer's
- * `error` (e.g. server-side submit failures).
+ * Internal renderer for {@link ChipModalField} `type='emails'`. Delegates the
+ * chip lifecycle to {@link ChipEmailsInput} and adds only the field-level
+ * error banner — per-entry rejection reasons are shown on the chips
+ * themselves, so this banner is reserved for the consumer's `error` (e.g. a
+ * server-side submit failure).
  */
 function ChipModalEmailsControl({
   value,
   onChange,
   validate,
-  error,
+  allowDomains,
+  placeholder,
+  placeholderWithTags,
   autoFocus,
-  placeholder = 'Enter emails',
   disabled,
-  id,
+  error,
   errorId,
+  id,
 }: ChipModalEmailsFieldProps & { id: string; errorId: string }) {
-  const [items, setItems] = React.useState<TagItem[]>([])
-
-  /**
-   * Synchronous mirror of `items`. Pasting multiple values calls `handleAdd`
-   * once per value within a single event, before React re-renders — reading
-   * the `items` state there would make every call see the same stale array
-   * and each add overwrite the previous one (only the last pasted email
-   * survives). All reads and writes go through the ref so consecutive adds
-   * compose; `commitItems` keeps state and ref in lockstep.
-   */
-  const itemsRef = React.useRef<TagItem[]>(items)
-
-  const commitItems = React.useCallback((next: TagItem[]) => {
-    itemsRef.current = next
-    setItems(next)
-  }, [])
-
-  /**
-   * Reconcile internal `items` with the consumer's `value` when the latter
-   * changes externally (programmatic clear, partial-failure reseed, etc.).
-   * When our own `onChange` is the source of the update, the valid items in
-   * `items` already match `value` and this is a no-op.
-   */
-  React.useEffect(() => {
-    const prevValid = itemsRef.current.filter((item) => item.isValid).map((item) => item.value)
-    if (prevValid.length === value.length && prevValid.every((v, idx) => v === value[idx])) {
-      return
-    }
-    itemsRef.current = value.map((v) => ({ value: v, isValid: true }))
-    setItems(itemsRef.current)
-  }, [value])
-
-  const handleAdd = React.useCallback(
-    (raw: string): boolean => {
-      const email = raw.trim().toLowerCase()
-      if (!email) return false
-      const current = itemsRef.current
-      if (current.some((item) => item.value === email)) return false
-
-      if (!isValidEmailSyntax(email)) {
-        commitItems([...current, { value: email, isValid: false, error: 'Invalid email format' }])
-        return false
-      }
-
-      const reason = validate?.(email)
-      if (reason) {
-        commitItems([...current, { value: email, isValid: false, error: reason }])
-        return false
-      }
-
-      const next = [...current, { value: email, isValid: true }]
-      commitItems(next)
-      onChange(next.filter((item) => item.isValid).map((item) => item.value))
-      return true
-    },
-    [validate, onChange, commitItems]
-  )
-
-  const handleRemove = React.useCallback(
-    (_removed: string, index: number) => {
-      const current = itemsRef.current
-      const wasValid = current[index]?.isValid ?? false
-      const next = current.filter((_, i) => i !== index)
-      commitItems(next)
-      if (wasValid) {
-        onChange(next.filter((item) => item.isValid).map((item) => item.value))
-      }
-    },
-    [onChange, commitItems]
-  )
-
   return (
     <>
-      <TagInput
-        variant='block'
-        items={items}
-        onAdd={handleAdd}
-        onRemove={handleRemove}
-        placeholder={placeholder}
-        placeholderWithTags={derivePlaceholderWithTags(placeholder)}
-        disabled={disabled}
-        autoFocus={autoFocus}
+      <ChipEmailsInput
         id={id}
+        value={value}
+        onChange={onChange}
+        validate={validate}
+        allowDomains={allowDomains}
+        placeholder={placeholder}
+        placeholderWithTags={placeholderWithTags}
+        autoFocus={autoFocus}
+        disabled={disabled}
       />
       {error && (
         <p id={errorId} role='alert' className={CHIP_MODAL_FIELD_ERROR_CLASS}>
@@ -1043,6 +1016,35 @@ function ChipModalFooter({
   secondaryActions,
 }: ChipModalFooterProps) {
   const showsDisabledTooltip = Boolean(primaryAction.disabled && primaryAction.disabledTooltip)
+
+  /**
+   * Publish the primary action so single-line {@link ChipModalField}s can submit
+   * the modal on Enter without per-field wiring. Kept in a ref (updated each
+   * render) rather than state so fields read the latest handler at Enter-time.
+   *
+   * A layout effect (not a passive effect) so the ref is populated before the
+   * browser paints the modal — otherwise there is a window between first paint
+   * and effect commit where an enabled primary is visible but Enter does
+   * nothing because `submitRef.current` is still `null`.
+   *
+   * A `destructive` primary is deliberately NOT published: Enter must never
+   * trigger a destructive action from a text field. Destructive flows that DO
+   * want Enter (e.g. a guarded "change address") wire an explicit field-level
+   * `onSubmit`, which takes precedence over this fallback.
+   */
+  const submitRef = React.useContext(ChipModalSubmitContext)
+  React.useLayoutEffect(() => {
+    if (!submitRef) return
+    if (primaryAction.variant === 'destructive') {
+      submitRef.current = null
+      return
+    }
+    submitRef.current = { trigger: primaryAction.onClick, disabled: primaryAction.disabled }
+    return () => {
+      submitRef.current = null
+    }
+  }, [submitRef, primaryAction.onClick, primaryAction.disabled, primaryAction.variant])
+
   const primaryChip = (
     <Chip
       variant={primaryAction.variant ?? 'primary'}

@@ -38,6 +38,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     localOnly,
     provider: config.provider,
     model: config.model,
+    specialistModel: config.specialistModel,
     selfHosted: isSelfHostedDeployment(),
   })
 })

@@ -1,10 +1,12 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { createLogger } from '@sim/logger'
 import { getPostgresErrorCode, toError } from '@sim/utils/errors'
+import { notifyWorkspaceFilesChanged } from '@/lib/realtime/notify'
 import {
   bulkArchiveWorkspaceFileItems,
   createWorkspaceFileFolder,
   FileConflictError,
+  moveRenameWorkspaceFile,
   moveWorkspaceFileItems,
   renameWorkspaceFile,
   restoreWorkspaceFile,
@@ -193,6 +195,7 @@ export async function performDeleteWorkspaceFileItems(
       })
     }
 
+    await notifyWorkspaceFilesChanged(workspaceId)
     return { success: true, deletedItems }
   } catch (error) {
     logger.error('Failed to delete workspace file items', { error })
@@ -253,6 +256,7 @@ export async function performMoveWorkspaceFileItems(
       })
     }
 
+    await notifyWorkspaceFilesChanged(workspaceId)
     return { success: true, movedItems }
   } catch (error) {
     logger.error('Failed to move workspace file items', { error })
@@ -297,11 +301,79 @@ export async function performRenameWorkspaceFile(
       description: `Renamed file to "${file.name}"`,
     })
 
+    await notifyWorkspaceFilesChanged(workspaceId)
     return { success: true, file }
   } catch (error) {
     logger.error('Failed to rename workspace file', { error })
     if (error instanceof FileConflictError || getPostgresErrorCode(error) === '23505') {
       return { success: false, error: toError(error).message, errorCode: 'conflict' }
+    }
+    return { success: false, error: toError(error).message, errorCode: 'internal' }
+  }
+}
+
+export interface PerformMoveRenameWorkspaceFileParams {
+  workspaceId: string
+  userId: string
+  fileId: string
+  targetFolderId: string | null
+  newName: string
+}
+
+export interface PerformMoveRenameWorkspaceFileResult {
+  success: boolean
+  error?: string
+  errorCode?: WorkspaceFilesOrchestrationErrorCode
+  file?: WorkspaceFileRecord
+}
+
+export async function performMoveRenameWorkspaceFile(
+  params: PerformMoveRenameWorkspaceFileParams
+): Promise<PerformMoveRenameWorkspaceFileResult> {
+  const { workspaceId, userId, fileId, targetFolderId, newName } = params
+
+  try {
+    const { file, renamed, moved } = await moveRenameWorkspaceFile({
+      workspaceId,
+      fileId,
+      targetFolderId,
+      newName,
+    })
+    logger.info('Moved/renamed workspace file', { workspaceId, fileId, renamed, moved })
+
+    if (moved) {
+      recordAudit({
+        workspaceId,
+        actorId: userId,
+        action: AuditAction.FILE_MOVED,
+        resourceType: AuditResourceType.FILE,
+        resourceId: fileId,
+        resourceName: file.name,
+        description: `Moved file "${file.name}"${targetFolderId ? ' to folder' : ' to root'}`,
+        metadata: { targetFolderId },
+      })
+    }
+    if (renamed) {
+      recordAudit({
+        workspaceId,
+        actorId: userId,
+        action: AuditAction.FILE_UPDATED,
+        resourceType: AuditResourceType.FILE,
+        resourceId: fileId,
+        resourceName: file.name,
+        description: `Renamed file to "${file.name}"`,
+      })
+    }
+
+    await notifyWorkspaceFilesChanged(workspaceId)
+    return { success: true, file }
+  } catch (error) {
+    logger.error('Failed to move/rename workspace file', { error })
+    if (error instanceof FileConflictError || getPostgresErrorCode(error) === '23505') {
+      return { success: false, error: toError(error).message, errorCode: 'conflict' }
+    }
+    if (toError(error).message.includes('not found')) {
+      return { success: false, error: toError(error).message, errorCode: 'not_found' }
     }
     return { success: false, error: toError(error).message, errorCode: 'internal' }
   }
@@ -327,6 +399,7 @@ export async function performRestoreWorkspaceFile(
       description: `Restored workspace file ${fileId}`,
     })
 
+    await notifyWorkspaceFilesChanged(workspaceId)
     return { success: true }
   } catch (error) {
     logger.error('Failed to restore workspace file', { error })
@@ -357,6 +430,7 @@ export async function performCreateWorkspaceFileFolder(
       description: `Created file folder "${folder.name}"`,
     })
 
+    await notifyWorkspaceFilesChanged(workspaceId)
     return { success: true, folder }
   } catch (error) {
     logger.error('Failed to create workspace file folder', { error })
@@ -396,6 +470,7 @@ export async function performUpdateWorkspaceFileFolder(
       description: `Updated file folder "${folder.name}"`,
     })
 
+    await notifyWorkspaceFilesChanged(workspaceId)
     return { success: true, folder }
   } catch (error) {
     logger.error('Failed to update workspace file folder', { error })
@@ -442,6 +517,7 @@ export async function performRestoreWorkspaceFileFolder(
       },
     })
 
+    await notifyWorkspaceFilesChanged(workspaceId)
     return { success: true, folder, restoredItems }
   } catch (error) {
     logger.error('Failed to restore workspace file folder', { error })

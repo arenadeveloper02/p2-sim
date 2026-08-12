@@ -2,8 +2,15 @@
  * @vitest-environment node
  */
 
-import { auditMock, workflowsOrchestrationMock, workflowsOrchestrationMockFns } from '@sim/testing'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  auditMock,
+  queueTableRows,
+  resetDbChainMock,
+  schemaMock,
+  workflowsOrchestrationMock,
+  workflowsOrchestrationMockFns,
+} from '@sim/testing'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ExecutionContext } from '@/lib/copilot/request/types'
 
 const { ensureWorkflowAccessMock, checkNeedsRedeploymentMock } = vi.hoisted(() => ({
@@ -13,6 +20,8 @@ const { ensureWorkflowAccessMock, checkNeedsRedeploymentMock } = vi.hoisted(() =
 
 const performRevertToVersionMock = workflowsOrchestrationMockFns.mockPerformRevertToVersion
 const performActivateVersionMock = workflowsOrchestrationMockFns.mockPerformActivateVersion
+const getWorkflowDeploymentSummaryMock =
+  workflowsOrchestrationMockFns.mockGetWorkflowDeploymentSummary
 
 const { resolveWorkflowStateRefMock, generateWorkflowDiffSummaryMock, listWorkflowVersionsMock } =
   vi.hoisted(() => ({
@@ -20,20 +29,6 @@ const { resolveWorkflowStateRefMock, generateWorkflowDiffSummaryMock, listWorkfl
     generateWorkflowDiffSummaryMock: vi.fn(),
     listWorkflowVersionsMock: vi.fn(),
   }))
-
-vi.mock('@sim/db', () => ({
-  db: {
-    select: vi.fn(),
-    insert: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-  },
-  chat: {},
-  workflow: {},
-  workflowDeploymentVersion: {},
-  workflowMcpServer: {},
-  workflowMcpTool: {},
-}))
 
 vi.mock('@sim/audit', () => auditMock)
 
@@ -79,7 +74,6 @@ vi.mock('@/lib/workflows/persistence/utils', () => ({
   updateDeploymentVersionMetadata: vi.fn(),
 }))
 
-import { db } from '@sim/db'
 import {
   executeCheckDeploymentStatus,
   executeDiffWorkflows,
@@ -88,16 +82,9 @@ import {
   executePromoteToLive,
 } from './manage'
 
-function selectChain(result: unknown[], resolveOnWhere = false) {
-  const chain = {
-    from: vi.fn(() => chain),
-    innerJoin: vi.fn(() => chain),
-    where: vi.fn(() => (resolveOnWhere ? Promise.resolve(result) : chain)),
-    orderBy: vi.fn(() => Promise.resolve(result)),
-    limit: vi.fn(() => Promise.resolve(result)),
-  }
-  return chain
-}
+afterAll(() => {
+  resetDbChainMock()
+})
 
 describe('executeLoadDeployment', () => {
   beforeEach(() => {
@@ -182,11 +169,30 @@ describe('executePromoteToLive', () => {
     performActivateVersionMock.mockResolvedValue({
       success: true,
       deployedAt: new Date('2026-05-30T00:00:00.000Z'),
+      activeDeployment: {
+        deploymentVersionId: 'dv-3',
+        version: 3,
+        deployedAt: '2026-05-30T00:00:00.000Z',
+      },
+      latestDeploymentAttempt: {
+        id: 'op-1',
+        deploymentVersionId: 'dv-3',
+        version: 3,
+        action: 'activate',
+        status: 'active',
+        isCurrent: true,
+        readiness: { webhooks: 'ready', schedules: 'ready', mcp: 'ready' },
+        requestedAt: '2026-05-30T00:00:00.000Z',
+        activatedAt: '2026-05-30T00:00:00.000Z',
+        error: null,
+      },
     })
 
     const result = await executePromoteToLive({ workflowId: 'wf-1', version: 3 }, {
       userId: 'user-1',
       workflowId: 'wf-1',
+      executionId: 'execution-1',
+      toolCallId: 'call-1',
     } as ExecutionContext)
 
     expect(ensureWorkflowAccessMock).toHaveBeenCalledWith('wf-1', 'user-1', 'admin')
@@ -194,13 +200,46 @@ describe('executePromoteToLive', () => {
       workflowId: 'wf-1',
       version: 3,
       userId: 'user-1',
-      workflow: { id: 'wf-1', workspaceId: 'ws-1', name: 'Test Workflow' },
+      idempotencyKey: 'copilot:execution-1:tool-call:call-1',
     })
     expect(result.success).toBe(true)
     expect(result.output).toMatchObject({
       workflowId: 'wf-1',
       version: 3,
       message: 'Promoted version 3 to live',
+      lifecycleStatus: 'active',
+      error: null,
+    })
+  })
+
+  it('does not report a historical active operation as a successful promotion', async () => {
+    performActivateVersionMock.mockResolvedValue({
+      success: true,
+      activeDeployment: null,
+      latestDeploymentAttempt: {
+        id: 'op-old',
+        deploymentVersionId: 'dv-3',
+        version: 3,
+        action: 'activate',
+        status: 'active',
+        isCurrent: false,
+        readiness: { webhooks: 'ready', schedules: 'ready', mcp: 'ready' },
+        requestedAt: '2026-05-30T00:00:00.000Z',
+        activatedAt: '2026-05-30T00:00:00.000Z',
+        error: null,
+      },
+    })
+
+    const result = await executePromoteToLive({ workflowId: 'wf-1', version: 3 }, {
+      userId: 'user-1',
+      workflowId: 'wf-1',
+      executionId: 'execution-1',
+      toolCallId: 'call-1',
+    } as ExecutionContext)
+
+    expect(result).toMatchObject({
+      success: false,
+      error: expect.stringContaining('historical'),
     })
   })
 
@@ -318,19 +357,29 @@ describe('executeDiffWorkflows', () => {
 describe('executeCheckDeploymentStatus', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetDbChainMock()
     ensureWorkflowAccessMock.mockResolvedValue({
       workflow: { id: 'wf-1', workspaceId: 'ws-1', name: 'Test Workflow' },
     })
     checkNeedsRedeploymentMock.mockResolvedValue(false)
+    getWorkflowDeploymentSummaryMock.mockResolvedValue({
+      activeDeployment: null,
+      latestDeploymentAttempt: null,
+      warnings: [],
+    })
   })
 
   it('uses the shared redeployment freshness helper for deployed APIs', async () => {
-    vi.mocked(db.select)
-      .mockReturnValueOnce(
-        selectChain([{ isDeployed: true, deployedAt: new Date('2026-05-28') }]) as never
-      )
-      .mockReturnValueOnce(selectChain([]) as never)
-      .mockReturnValueOnce(selectChain([], true) as never)
+    getWorkflowDeploymentSummaryMock.mockResolvedValue({
+      activeDeployment: {
+        deploymentVersionId: 'dv-1',
+        version: 1,
+        deployedAt: '2026-05-28T00:00:00.000Z',
+      },
+      latestDeploymentAttempt: null,
+      warnings: [],
+    })
+    queueTableRows(schemaMock.workflow, [{ deployedAt: new Date('2026-05-28') }])
     checkNeedsRedeploymentMock.mockResolvedValueOnce(true)
 
     const result = await executeCheckDeploymentStatus({ workflowId: 'wf-1' }, {
@@ -350,10 +399,7 @@ describe('executeCheckDeploymentStatus', () => {
   })
 
   it('does not check redeployment freshness for undeployed APIs', async () => {
-    vi.mocked(db.select)
-      .mockReturnValueOnce(selectChain([{ isDeployed: false, deployedAt: null }]) as never)
-      .mockReturnValueOnce(selectChain([]) as never)
-      .mockReturnValueOnce(selectChain([], true) as never)
+    queueTableRows(schemaMock.workflow, [{ deployedAt: null }])
 
     const result = await executeCheckDeploymentStatus({ workflowId: 'wf-1' }, {
       userId: 'user-1',
@@ -367,6 +413,46 @@ describe('executeCheckDeploymentStatus', () => {
       api: {
         isDeployed: false,
         needsRedeployment: false,
+      },
+    })
+  })
+
+  it('separates a historical active attempt from the current undeployed state', async () => {
+    getWorkflowDeploymentSummaryMock.mockResolvedValue({
+      activeDeployment: null,
+      latestDeploymentAttempt: {
+        id: 'op-historical',
+        deploymentVersionId: 'dv-old',
+        version: 1,
+        action: 'deploy',
+        status: 'active',
+        isCurrent: false,
+        readiness: { webhooks: 'ready', schedules: 'ready', mcp: 'ready' },
+        requestedAt: '2026-05-28T00:00:00.000Z',
+        activatedAt: '2026-05-28T00:00:00.000Z',
+        error: null,
+      },
+      warnings: ['The latest successful deployment attempt is historical.'],
+    })
+    queueTableRows(schemaMock.workflow, [{ deployedAt: null }])
+
+    const result = await executeCheckDeploymentStatus({ workflowId: 'wf-1' }, {
+      userId: 'user-1',
+      workflowId: 'wf-1',
+    } as ExecutionContext)
+
+    expect(result.success).toBe(true)
+    expect(result.output).toMatchObject({
+      isDeployed: false,
+      api: {
+        isDeployed: false,
+        activeDeployment: null,
+        latestDeploymentAttempt: {
+          status: 'active',
+          isCurrent: false,
+        },
+        currentDeploymentAttempt: null,
+        warnings: [expect.stringContaining('historical')],
       },
     })
   })
