@@ -181,6 +181,7 @@ export type GenerationType =
   | 'typescript-function-body'
   | 'json-schema'
   | 'json-object'
+  | 'json-array'
   | 'table-schema'
   | 'system-prompt'
   | 'custom-tool-schema'
@@ -268,6 +269,8 @@ export interface SubBlockConfig {
    * silently writes and persists a value the user never picked.
    */
   emptyIsValid?: boolean
+  /** Clears a persisted id after its authoritative single-option fetch confirms deletion. */
+  clearOnMissingOption?: boolean
   /**
    * Pins a "create a new one" row above the options of a picker, so authoring a
    * resource never means leaving the workflow for Settings.
@@ -385,7 +388,7 @@ export interface SubBlockConfig {
     requiredType: 'oauth' | 'service_account'
   }
   // Props specific to 'code' sub-block type
-  language?: 'javascript' | 'json' | 'python'
+  language?: 'javascript' | 'json' | 'python' | 'shell'
   generationType?: GenerationType
   collapsible?: boolean // Whether the code block can be collapsed
   defaultCollapsed?: boolean // Whether the code block is collapsed by default

@@ -12,10 +12,10 @@ import {
   SecretInput,
   Wizard,
 } from '@sim/emcn'
+import { Loader } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { Loader2 } from 'lucide-react'
 import { SlackIcon } from '@/components/icons'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { SLACK_CUSTOM_BOT_PROVIDER_ID } from '@/lib/oauth/types'
@@ -243,7 +243,7 @@ interface SubStepProps {
 function SubStep({ n, children }: SubStepProps) {
   return (
     <li className='flex gap-2.5'>
-      <span className='mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-5)] font-medium text-[var(--text-secondary)] text-xs tabular-nums'>
+      <span className='mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-5)] text-[var(--text-secondary)] text-xs tabular-nums'>
         {n}
       </span>
       <div className='min-w-0 flex-1 text-[var(--text-secondary)] text-sm leading-relaxed'>
@@ -431,7 +431,7 @@ function StepDone({ pending, created, error, onRetry }: StepDoneProps) {
   if (pending) {
     return (
       <div className='flex flex-col items-center gap-3 py-10 text-center'>
-        <Loader2 className='size-6 animate-spin text-[var(--text-muted)]' />
+        <Loader className='size-6 animate-spin text-[var(--text-muted)]' />
         <p className='text-[var(--text-secondary)] text-sm'>Verifying your bot and connecting…</p>
       </div>
     )
@@ -450,7 +450,7 @@ function StepDone({ pending, created, error, onRetry }: StepDoneProps) {
     return (
       <div className='flex flex-col items-center gap-4 py-10 text-center'>
         <div className='space-y-1'>
-          <p className='font-medium text-[var(--text-primary)] text-base'>Bot connected</p>
+          <p className='text-[var(--text-primary)] text-base'>Bot connected</p>
           <p className='max-w-sm text-[var(--text-secondary)] text-sm leading-relaxed'>
             It's now selectable in Slack triggers and actions across this workspace. Click Done to
             finish.

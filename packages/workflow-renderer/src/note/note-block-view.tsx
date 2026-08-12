@@ -21,22 +21,22 @@ const NOTE_COMPONENTS = {
     </p>
   ),
   h1: ({ children }: { children?: ReactNode }) => (
-    <h1 className='mt-3 mb-3 break-words font-semibold text-[var(--text-primary)] text-lg first:mt-0'>
+    <h1 className='mt-3 mb-3 break-words text-[var(--text-primary)] text-lg first:mt-0'>
       {children}
     </h1>
   ),
   h2: ({ children }: { children?: ReactNode }) => (
-    <h2 className='mt-2.5 mb-2.5 break-words font-semibold text-[var(--text-primary)] text-base first:mt-0'>
+    <h2 className='mt-2.5 mb-2.5 break-words text-[var(--text-primary)] text-base first:mt-0'>
       {children}
     </h2>
   ),
   h3: ({ children }: { children?: ReactNode }) => (
-    <h3 className='mt-2 mb-2 break-words font-semibold text-[var(--text-primary)] text-sm first:mt-0'>
+    <h3 className='mt-2 mb-2 break-words text-[var(--text-primary)] text-sm first:mt-0'>
       {children}
     </h3>
   ),
   h4: ({ children }: { children?: ReactNode }) => (
-    <h4 className='mt-2 mb-2 break-words font-semibold text-[var(--text-primary)] text-xs first:mt-0'>
+    <h4 className='mt-2 mb-2 break-words text-[var(--text-primary)] text-xs first:mt-0'>
       {children}
     </h4>
   ),
@@ -138,7 +138,7 @@ const NOTE_COMPONENTS = {
     <em className='break-words text-[var(--text-tertiary)]'>{children}</em>
   ),
   blockquote: ({ children }: { children?: ReactNode }) => (
-    <blockquote className='my-4 break-words border-[var(--divider)] border-l-2 pl-4 text-[var(--text-primary)] italic [&>p:first-child]:mt-0 [&>p:last-child]:mb-0 [&>p]:my-2'>
+    <blockquote className='my-4 break-words border-[var(--border)] border-l-2 pl-4 text-[var(--text-primary)] italic [&>p:first-child]:mt-0 [&>p:last-child]:mb-0 [&>p]:my-2'>
       {children}
     </blockquote>
   ),
@@ -155,7 +155,7 @@ const NOTE_COMPONENTS = {
     <tr className='border-[var(--border)] border-b last:border-b-0'>{children}</tr>
   ),
   th: ({ children }: { children?: ReactNode }) => (
-    <th className='px-2 py-1 text-left font-semibold text-[var(--text-primary)]'>{children}</th>
+    <th className='px-2 py-1 text-left text-[var(--text-primary)]'>{children}</th>
   ),
   td: ({ children }: { children?: ReactNode }) => (
     <td className='px-2 py-1 text-[var(--text-secondary)]'>{children}</td>
@@ -216,14 +216,11 @@ export function NoteBlockView({
       >
         {actionBar}
 
-        <div className='flex items-center justify-between border-[var(--divider)] border-b p-2'>
+        <div className='flex items-center justify-between border-[var(--border)] border-b p-2'>
           <div className='flex min-w-0 flex-1 items-center'>
             <OverflowSpan
               value={name ?? ''}
-              className={cn(
-                'truncate font-medium text-md',
-                !isEnabled && 'text-[var(--text-muted)]'
-              )}
+              className={cn('truncate text-md', !isEnabled && 'text-[var(--text-muted)]')}
             />
           </div>
         </div>

@@ -3,11 +3,11 @@
 import type { ElementType, ReactNode } from 'react'
 import { cn } from '@sim/emcn'
 import {
-  Calendar,
   Connections,
   Database,
   File as FileIcon,
   Folder as FolderIcon,
+  Globe,
   Library,
   Table as TableIcon,
   Task,
@@ -15,7 +15,6 @@ import {
   Workflow,
 } from '@sim/emcn/icons'
 import type { QueryClient } from '@tanstack/react-query'
-import { Globe } from 'lucide-react'
 import { getDocumentIcon } from '@/components/icons/document-icons'
 import type {
   MothershipResource,
@@ -24,7 +23,6 @@ import type {
 import { getBareIconStyle, type StyleableIcon } from '@/blocks/brand-icon-style'
 import { logKeys } from '@/hooks/queries/logs'
 import { mothershipChatKeys } from '@/hooks/queries/mothership-chats'
-import { scheduleKeys } from '@/hooks/queries/schedules'
 import { folderKeys } from '@/hooks/queries/utils/folder-keys'
 import { invalidateWorkflowLists } from '@/hooks/queries/utils/invalidate-workflow-lists'
 import { knowledgeKeys } from '@/hooks/queries/utils/knowledge-keys'
@@ -186,15 +184,6 @@ export const RESOURCE_REGISTRY: Record<MothershipResourceType, ResourceTypeConfi
     ),
     renderDropdownItem: (props) => <DefaultDropdownItem {...props} />,
   },
-  scheduledtask: {
-    type: 'scheduledtask',
-    label: 'Scheduled Tasks',
-    icon: Calendar,
-    renderTabIcon: (_resource, className) => (
-      <Calendar className={cn(className, 'text-[var(--text-icon)]')} />
-    ),
-    renderDropdownItem: (props) => <IconDropdownItem {...props} icon={Calendar} />,
-  },
   log: {
     type: 'log',
     label: 'Logs',
@@ -233,7 +222,36 @@ export const RESOURCE_REGISTRY: Record<MothershipResourceType, ResourceTypeConfi
   },
 } as const
 
-export const RESOURCE_TYPES = Object.values(RESOURCE_REGISTRY)
+/**
+ * Top-down order for every menu that lists resource families, mirroring the
+ * workspace sidebar so a user reads the same sequence in both places. The two
+ * desktop-only panels trail the workspace resources, matching where they surface
+ * in the app. `folder`/`filefolder` never render as their own entry — they feed
+ * their family's folder tree — but are ordered beside it so a menu that ever does
+ * surface them lands in the right place.
+ */
+export const RESOURCE_MENU_ORDER: readonly MothershipResourceType[] = [
+  'integration',
+  'task',
+  'table',
+  'file',
+  'filefolder',
+  'knowledgebase',
+  'log',
+  'workflow',
+  'folder',
+  'browser',
+  'terminal',
+  'generic',
+]
+
+/** Sorts anything keyed by resource type into {@link RESOURCE_MENU_ORDER}. */
+export function byResourceMenuOrder<T extends { type: MothershipResourceType }>(
+  a: T,
+  b: T
+): number {
+  return RESOURCE_MENU_ORDER.indexOf(a.type) - RESOURCE_MENU_ORDER.indexOf(b.type)
+}
 
 export function getResourceConfig(type: MothershipResourceType): ResourceTypeConfig {
   return RESOURCE_REGISTRY[type]
@@ -272,9 +290,6 @@ const RESOURCE_INVALIDATORS: Record<
   },
   task: (qc, wId) => {
     qc.invalidateQueries({ queryKey: mothershipChatKeys.list(wId) })
-  },
-  scheduledtask: (qc, wId) => {
-    qc.invalidateQueries({ queryKey: scheduleKeys.list(wId) })
   },
   log: (qc, wId, id) => {
     qc.invalidateQueries({ queryKey: logKeys.details() })

@@ -3,11 +3,11 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { cn, Library, useNativeSurfaceOcclusionReady } from '@sim/emcn'
 import {
-  Calendar,
   Database,
   Duplicate,
   File,
   FolderPlus,
+  Hammer,
   HelpCircle,
   Home,
   Integration,
@@ -15,6 +15,7 @@ import {
   Play,
   Plus,
   Search,
+  SelectAll,
   Send,
   Settings,
   Table,
@@ -22,7 +23,6 @@ import {
 } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { Command } from 'cmdk'
-import { Scan } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { createPortal } from 'react-dom'
@@ -105,7 +105,6 @@ export function SearchModal({
   const atomicBrowserOcclusion = supportsAtomicBrowserPanelOcclusion()
   const nativeSurfaceReady = useNativeSurfaceOcclusionReady(open, 'modal')
   const visuallyOpen = open && nativeSurfaceReady
-  const focusReady = atomicBrowserOcclusion ? visuallyOpen : open
   const [retainNativeSurfaceOcclusion, setRetainNativeSurfaceOcclusion] = useState(open)
   const nativeSurfaceOcclusionActive =
     open || (atomicBrowserOcclusion && retainNativeSurfaceOcclusion)
@@ -159,6 +158,13 @@ export function SearchModal({
           hidden: permissionConfig.hideIntegrationsTab,
         },
         {
+          id: 'skills',
+          name: 'Skills',
+          icon: Hammer,
+          href: `/workspace/${workspaceId}/skills`,
+          hidden: permissionConfig.hideIntegrationsTab,
+        },
+        {
           id: 'tables',
           name: 'Tables',
           icon: Table,
@@ -178,12 +184,6 @@ export function SearchModal({
           icon: Database,
           href: `/workspace/${workspaceId}/knowledge`,
           hidden: permissionConfig.hideKnowledgeBaseTab,
-        },
-        {
-          id: 'scheduled-tasks',
-          name: 'Scheduled tasks',
-          icon: Calendar,
-          href: `/workspace/${workspaceId}/scheduled-tasks`,
         },
         {
           id: 'logs',
@@ -282,7 +282,7 @@ export function SearchModal({
       id: 'fit-to-view',
       name: 'Fit workflow to view',
       keywords: 'zoom center recenter canvas reset',
-      icon: Scan,
+      icon: SelectAll,
       shortcut: '⌘⇧F',
       context: 'workflow',
       run: () => invokeCommand('fit-to-view'),
@@ -325,8 +325,12 @@ export function SearchModal({
     if (open) setSearch('')
   }
 
+  /**
+   * Focus only once the dialog is actually visible: `.focus()` is a no-op while
+   * the surface still carries `invisible`, and nothing re-focuses afterwards.
+   */
   useEffect(() => {
-    if (!focusReady || !inputRef.current) return
+    if (!visuallyOpen || !inputRef.current) return
     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
       window.HTMLInputElement.prototype,
       'value'
@@ -336,7 +340,7 @@ export function SearchModal({
       inputRef.current.dispatchEvent(new Event('input', { bubbles: true }))
     }
     inputRef.current.focus()
-  }, [focusReady])
+  }, [visuallyOpen])
 
   const deferredSearch = useDeferredValue(search)
   const deferredSearchRef = useRef(deferredSearch)
@@ -796,9 +800,6 @@ export function SearchModal({
               {showSection('chats') && (
                 <ChatsGroup items={filteredChats} onSelect={handleChatSelect} />
               )}
-              {showSection('workflows') && (
-                <WorkflowsGroup items={filteredWorkflows} onSelect={handleWorkflowSelect} />
-              )}
               {showSection('tables') && (
                 <TablesGroup items={filteredTables} onSelect={handleTableSelect} />
               )}
@@ -807,6 +808,9 @@ export function SearchModal({
               )}
               {showSection('knowledgeBases') && (
                 <KnowledgeBasesGroup items={filteredKnowledgeBases} onSelect={handleKbSelect} />
+              )}
+              {showSection('workflows') && (
+                <WorkflowsGroup items={filteredWorkflows} onSelect={handleWorkflowSelect} />
               )}
               {showSection('toolOperations') && (
                 <ToolOpsGroup items={filteredToolOps} onSelect={handleToolOperationSelect} />

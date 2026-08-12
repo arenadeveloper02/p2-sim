@@ -25,12 +25,11 @@ import {
   Trash,
   useFloatingTooltip,
 } from '@sim/emcn'
-import { Database, DatabaseX } from '@sim/emcn/icons'
+import { CircleAlert, Database, DatabaseX, Pencil, Plus, TagIcon, X } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { format } from 'date-fns'
-import { AlertCircle, Pencil, Plus, Tag, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQueryState, useQueryStates } from 'nuqs'
 import { usePostHog } from 'posthog-js/react'
@@ -147,7 +146,7 @@ const getStatusBadge = (doc: DocumentData) => {
       )
     case 'failed':
       return doc.processingError ? (
-        <Badge variant='red' size='sm' icon={AlertCircle}>
+        <Badge variant='red' size='sm' icon={CircleAlert}>
           Failed
         </Badge>
       ) : (
@@ -901,7 +900,7 @@ export function KnowledgeBase({
               },
               {
                 label: 'Tags',
-                icon: Tag,
+                icon: TagIcon,
                 disabled: !userPermissions.canEdit,
                 onClick: () => setShowTagsModal(true),
               },
@@ -985,7 +984,6 @@ export function KnowledgeBase({
             }}
             align='start'
             fullWidth
-            flush
           />
         </div>
         <TagFilterSection
@@ -1014,7 +1012,7 @@ export function KnowledgeBase({
               key={connector.id}
               type='button'
               onClick={() => setShowConnectorsModal(true)}
-              className={cn(chipVariants({ variant: 'filled', flush: true }), 'max-w-[180px]')}
+              className={cn(chipVariants({ variant: 'filled' }), 'max-w-[180px]')}
             >
               <span className='relative flex size-[14px] flex-shrink-0 items-center justify-center'>
                 {connector.status === 'syncing' ? (
@@ -1147,7 +1145,7 @@ export function KnowledgeBase({
               content: (
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
-                    <span className='font-medium text-[var(--text-secondary)] text-sm'>
+                    <span className='text-[var(--text-secondary)] text-sm'>
                       {format(new Date(doc.uploadedAt), 'MMM d')}
                     </span>
                   </Tooltip.Trigger>
@@ -1170,9 +1168,7 @@ export function KnowledgeBase({
       <div className='flex h-full flex-col items-center justify-center gap-3'>
         <DatabaseX className='size-[32px] text-[var(--text-muted)]' />
         <div className='flex flex-col items-center gap-1'>
-          <h2 className='font-medium text-[20px] text-[var(--text-secondary)]'>
-            Knowledge base not found
-          </h2>
+          <h2 className='text-[20px] text-[var(--text-secondary)]'>Knowledge base not found</h2>
           <p className='text-[var(--text-muted)] text-small'>
             This knowledge base may have been deleted or moved
           </p>
@@ -1525,7 +1521,6 @@ function TagFilterValueControl({ entry, onChange }: TagFilterValueControlProps) 
             onChange={(value) => onChange({ value })}
             placeholder='From'
             fullWidth
-            flush
           />
           <span className='flex-shrink-0 text-[var(--text-muted)] text-caption'>to</span>
           <ChipDatePicker
@@ -1533,7 +1528,6 @@ function TagFilterValueControl({ entry, onChange }: TagFilterValueControlProps) 
             onChange={(value) => onChange({ valueTo: value })}
             placeholder='To'
             fullWidth
-            flush
           />
         </div>
       )
@@ -1545,7 +1539,6 @@ function TagFilterValueControl({ entry, onChange }: TagFilterValueControlProps) 
         onChange={(value) => onChange({ value })}
         placeholder='Select date'
         fullWidth
-        flush
       />
     )
   }
@@ -1693,7 +1686,6 @@ function TagFilterSection({ tagDefinitions, entries, onChange }: TagFilterSectio
                     matchTriggerWidth={false}
                     contentClassName='max-h-[240px] overflow-y-auto'
                     className='max-w-[150px]'
-                    flush
                   />
                   {entry.tagSlot && (
                     <ChipDropdown
@@ -1703,7 +1695,6 @@ function TagFilterSection({ tagDefinitions, entries, onChange }: TagFilterSectio
                       placeholder='Operator'
                       align='start'
                       matchTriggerWidth={false}
-                      flush
                     />
                   )}
                 </div>

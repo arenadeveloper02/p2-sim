@@ -3,7 +3,7 @@
 import type React from 'react'
 import { useMemo } from 'react'
 import { ChipCombobox, Combobox, type ComboboxOptionGroup, cn } from '@sim/emcn'
-import { RepeatIcon, SplitIcon } from 'lucide-react'
+import { Repeat, Split } from '@sim/emcn/icons'
 import { useShallow } from 'zustand/react/shallow'
 import {
   type FlattenOutputsBlockInput,
@@ -271,16 +271,16 @@ export function OutputSelect({
       if (blockConfig?.icon) {
         blockIcon = blockConfig.icon
       } else if (firstOutput.blockType === 'loop') {
-        blockIcon = RepeatIcon
+        blockIcon = Repeat
       } else if (firstOutput.blockType === 'parallel') {
-        blockIcon = SplitIcon
+        blockIcon = Split
       }
 
       return {
         sectionElement: (
           <div className='flex items-center gap-1.5 px-1.5 py-1'>
             <TagIcon icon={blockIcon} color={blockColor} />
-            <span className='font-medium text-small'>{blockName}</span>
+            <span className='text-small'>{blockName}</span>
           </div>
         ),
         items: outputs.map((output) => ({

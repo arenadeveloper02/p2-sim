@@ -1,5 +1,7 @@
 import { z } from 'zod'
+import { resolvedSecretTraceProvenanceSchema } from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
+import { RESOLVED_SECRET_PROVENANCE_FIELD } from '@/lib/execution/private-tool-metadata'
 
 export const openRouterModelInfoSchema = z.object({
   id: z.string(),
@@ -55,6 +57,20 @@ export const openRouterUpstreamResponseSchema = z.object({
         .passthrough()
     )
     .default([]),
+})
+
+export const openRouterEmbeddingModelsUpstreamResponseSchema = z.object({
+  data: z.array(
+    z
+      .object({
+        id: z.string().min(1, 'OpenRouter embedding model id cannot be empty'),
+        context_length: z
+          .number()
+          .int('OpenRouter embedding context length must be an integer')
+          .positive('OpenRouter embedding context length must be positive'),
+      })
+      .passthrough()
+  ),
 })
 
 export const vllmUpstreamResponseSchema = z.object({
@@ -211,6 +227,7 @@ export const providerApiRequestBodySchema = z
     blockNameMapping: z.record(z.string(), z.string()).optional(),
     reasoningEffort: z.string().optional(),
     verbosity: z.string().optional(),
+    [RESOLVED_SECRET_PROVENANCE_FIELD]: resolvedSecretTraceProvenanceSchema.optional(),
   })
   .passthrough()
 export type ProviderApiRequestBody = z.input<typeof providerApiRequestBodySchema>
@@ -245,6 +262,15 @@ export const getVllmProviderModelsContract = defineRouteContract({
 export const getOpenRouterProviderModelsContract = defineRouteContract({
   method: 'GET',
   path: '/api/providers/openrouter/models',
+  response: {
+    mode: 'json',
+    schema: providerModelsResponseSchema,
+  },
+})
+
+export const getOpenRouterEmbeddingModelsContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/providers/openrouter/embeddings/models',
   response: {
     mode: 'json',
     schema: providerModelsResponseSchema,
