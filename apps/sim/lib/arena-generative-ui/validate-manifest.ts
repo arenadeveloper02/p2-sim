@@ -5,6 +5,7 @@ import {
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
   type ArenaGenerativePageHint,
+  isJsonRenderSpec,
 } from '@/lib/arena-generative-ui/types'
 
 interface FlatElement {
@@ -137,7 +138,7 @@ export function validateArenaGenerativeManifest(
       return { success: false, error: `Page "${key}" is missing a spec` }
     }
     const validation = arenaGenerativeUiCatalog.validate(spec)
-    if (!validation.success || !validation.data) {
+    if (!validation.success || !validation.data || !isJsonRenderSpec(validation.data)) {
       const issueSummary =
         validation.error?.issues
           ?.slice(0, 5)

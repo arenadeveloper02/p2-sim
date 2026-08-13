@@ -5,8 +5,8 @@ import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from '@si
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
+import { ARENA_GENERATIVE_APP_BASE_PATH, isJsonRenderSpec } from '@/lib/arena-generative-ui/types'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
-import { ARENA_GENERATIVE_APP_BASE_PATH } from '@/lib/arena-generative-ui/types'
 import {
   useDeployedAppConfig,
   useDeployedAppEmailOtpRequest,
@@ -71,7 +71,7 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
     return <p className='p-8 text-[var(--color-ds-grey-500,#8a8d99)] text-sm'>Loading page…</p>
   }
 
-  if (!pageQuery.data) {
+  if (!pageQuery.data || !isJsonRenderSpec(pageQuery.data.spec)) {
     return <div className='p-8 text-center'>Page not found</div>
   }
 

@@ -1,5 +1,5 @@
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
-import type { ToolResponse } from '@/tools/types'
+import type { ToolResponse, WorkflowToolExecutionContext } from '@/tools/types'
 
 export interface ArenaGenerativeUiParams {
   userInput: string
@@ -8,6 +8,7 @@ export interface ArenaGenerativeUiParams {
   apiBindings?: unknown
   designNotes?: string
   existingDraftId?: string
+  _context?: WorkflowToolExecutionContext
 }
 
 export interface ArenaGenerativeUiResponse extends ToolResponse {

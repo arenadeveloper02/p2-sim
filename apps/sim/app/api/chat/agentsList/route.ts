@@ -4,8 +4,8 @@ import { createLogger } from '@sim/logger'
 import type { SQL } from 'drizzle-orm'
 import { and, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
-import { verifyCronAuth } from '@/lib/auth/internal'
 import { ARENA_GENERATIVE_APP_BASE_PATH } from '@/lib/arena-generative-ui/types'
+import { verifyCronAuth } from '@/lib/auth/internal'
 import {
   getAgentDepartmentLabelMap,
   labelFromDepartmentMap,
@@ -87,7 +87,10 @@ interface AgentGenerativeAppRow {
   identifier: string
 }
 
-function toGenerativeAppListItem(row: AgentGenerativeAppRow, departmentLabelMap: Map<string, string>) {
+function toGenerativeAppListItem(
+  row: AgentGenerativeAppRow,
+  departmentLabelMap: Map<string, string>
+) {
   return {
     id: row.appId,
     title: row.title,
@@ -105,9 +108,7 @@ function toGenerativeAppListItem(row: AgentGenerativeAppRow, departmentLabelMap:
   }
 }
 
-type AgentListItem =
-  | ReturnType<typeof toAgentListItem>
-  | ReturnType<typeof toGenerativeAppListItem>
+type AgentListItem = ReturnType<typeof toAgentListItem> | ReturnType<typeof toGenerativeAppListItem>
 
 /**
  * Returns execution log rows for the given workflowIds and userId, ordered by started_at desc.
@@ -293,7 +294,11 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
    */
   const accessibleChats = getAgentsListAllowedEmail(chats, emailId)
   const apps = await fetchGenerativeApps(
-    and(eq(deployedApp.isActive, true), eq(workflow.userId, creatorUserId), isNull(deployedApp.archivedAt))
+    and(
+      eq(deployedApp.isActive, true),
+      eq(workflow.userId, creatorUserId),
+      isNull(deployedApp.archivedAt)
+    )
   )
   const accessibleApps = getAgentsListAllowedEmail(apps, emailId)
 
@@ -356,7 +361,11 @@ async function getSharedWithMeAgentsList(emailId: string): Promise<NextResponse>
   const departmentLabelMap = await getAgentDepartmentLabelMap()
   const sharedApps = getAgentsListAllowedEmail(
     await fetchGenerativeApps(
-      and(eq(deployedApp.isActive, true), ne(workflow.userId, userRecord[0].id), isNull(deployedApp.archivedAt))
+      and(
+        eq(deployedApp.isActive, true),
+        ne(workflow.userId, userRecord[0].id),
+        isNull(deployedApp.archivedAt)
+      )
     ),
     emailId
   )
@@ -429,7 +438,11 @@ async function getGlobalAgentsList(
             ne(workflow.userId, userId),
             isNull(deployedApp.archivedAt)
           )
-        : and(eq(deployedApp.isActive, true), ne(workflow.userId, userId), isNull(deployedApp.archivedAt))
+        : and(
+            eq(deployedApp.isActive, true),
+            ne(workflow.userId, userId),
+            isNull(deployedApp.archivedAt)
+          )
     ),
     emailId
   )

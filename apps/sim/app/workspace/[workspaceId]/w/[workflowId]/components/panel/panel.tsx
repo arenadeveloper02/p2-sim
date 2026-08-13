@@ -39,7 +39,10 @@ import {
   deleteCopilotChatContract,
 } from '@/lib/api/contracts/copilot'
 import { getWorkflowNormalizedStateContract } from '@/lib/api/contracts/workflows'
-import { ARENA_GENERATIVE_APP_API_BASE_PATH, ARENA_GENERATIVE_APP_BASE_PATH } from '@/lib/arena-generative-ui/types'
+import {
+  ARENA_GENERATIVE_APP_API_BASE_PATH,
+  ARENA_GENERATIVE_APP_BASE_PATH,
+} from '@/lib/arena-generative-ui/types'
 import { useSession } from '@/lib/auth/auth-client'
 import { getWorkspaceUsageLimitAction } from '@/lib/billing/workspace-permissions'
 import { isChatEnabled } from '@/lib/core/config/env-flags'

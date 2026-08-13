@@ -66,8 +66,8 @@ import { mergeSubblockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 import { ApiDeploy, ChatDeploy, type ExistingChat, GeneralDeploy, McpDeploy } from './components'
-import { GenerativeAppDeploy } from './components/generative-app'
 import { ApiInfoModal } from './components/general/components/api-info-modal'
+import { GenerativeAppDeploy } from './components/generative-app'
 
 const logger = createLogger('DeployModal')
 
@@ -95,7 +95,14 @@ interface WorkflowDeploymentInfoUI {
 
 type TabView = 'general' | 'api' | 'chat' | 'app' | 'mcp' | 'generative_app'
 
-const DEPLOY_MODAL_TABS = new Set<TabView>(['general', 'api', 'chat', 'app', 'mcp', 'generative_app'])
+const DEPLOY_MODAL_TABS = new Set<TabView>([
+  'general',
+  'api',
+  'chat',
+  'app',
+  'mcp',
+  'generative_app',
+])
 
 function isDeployModalTab(value: unknown): value is TabView {
   return typeof value === 'string' && DEPLOY_MODAL_TABS.has(value as TabView)

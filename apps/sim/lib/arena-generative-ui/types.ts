@@ -1,6 +1,22 @@
 import type { Spec } from '@json-render/core'
 
 export const ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/**
+ * Narrows a page payload to a json-render Spec (`root` + `elements`).
+ */
+export function isJsonRenderSpec(value: unknown): value is Spec {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+  const record = value as Record<string, unknown>
+  return (
+    typeof record.root === 'string' &&
+    Boolean(record.elements) &&
+    typeof record.elements === 'object' &&
+    !Array.isArray(record.elements)
+  )
+}
 /** Public host path for published generative apps (`/gui-apps/{identifier}`). */
 export const ARENA_GENERATIVE_APP_BASE_PATH = '/gui-apps'
 /** JSON API prefix for generative apps (`/api/gui-apps/...`). */

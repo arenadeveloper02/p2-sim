@@ -1,7 +1,7 @@
 import { GenerativeUiIcon } from '@/components/icons'
+import { ARENA_GENERATIVE_APP_API_BASE_PATH } from '@/lib/arena-generative-ui/types'
 import type { BlockConfig } from '@/blocks/types'
 import { IntegrationType } from '@/blocks/types'
-import { ARENA_GENERATIVE_APP_API_BASE_PATH } from '@/lib/arena-generative-ui/types'
 import type { ArenaGenerativeUiResponse } from '@/tools/arena-generative-ui/types'
 
 let _inflightDraftFetch: Promise<Array<{ label: string; id: string }>> | null = null
