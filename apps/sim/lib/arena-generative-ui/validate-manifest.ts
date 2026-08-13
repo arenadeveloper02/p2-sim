@@ -63,6 +63,15 @@ function collectActionIdsFromSpec(spec: Spec): string[] {
   return ids
 }
 
+function stripActionIds(spec: Spec): void {
+  const elements = spec.elements as Record<string, FlatElement>
+  for (const element of Object.values(elements ?? {})) {
+    if (element.props && asString(element.props.actionId)) {
+      element.props.actionId = undefined
+    }
+  }
+}
+
 function walkReachable(
   entryPath: string,
   pages: ArenaGenerativeAppManifest['pages'],
@@ -181,7 +190,22 @@ export function validateArenaGenerativeManifest(
 
   const bindingKeys = new Set(options.apiBindings.map((binding) => binding.key))
   const actions: ArenaGenerativeAppManifest['actions'] = {}
+  const navigationOnly = bindingKeys.size === 0
+  const reachabilityActions: ArenaGenerativeAppManifest['actions'] = {}
   for (const [actionId, value] of Object.entries(actionsRaw)) {
+    if (navigationOnly) {
+      if (value && typeof value === 'object') {
+        const onSuccess = (value as Record<string, unknown>).onSuccess
+        const navigate =
+          onSuccess && typeof onSuccess === 'object'
+            ? asString((onSuccess as Record<string, unknown>).navigate)
+            : ''
+        if (navigate && pages[navigate]) {
+          reachabilityActions[actionId] = { apiKey: actionId, onSuccess: { navigate } }
+        }
+      }
+      continue
+    }
     if (!value || typeof value !== 'object') {
       return { success: false, error: `Action "${actionId}" is invalid` }
     }
@@ -248,6 +272,9 @@ export function validateArenaGenerativeManifest(
       }
     }
     for (const actionId of collectActionIdsFromSpec(page.spec)) {
+      if (navigationOnly) {
+        continue
+      }
       if (!actions[actionId]) {
         return {
           success: false,
@@ -257,7 +284,12 @@ export function validateArenaGenerativeManifest(
     }
   }
 
-  const reachable = walkReachable(entryPath, pages, actions)
+  const reachable = walkReachable(entryPath, pages, navigationOnly ? reachabilityActions : actions)
+  if (navigationOnly) {
+    for (const page of Object.values(pages)) {
+      stripActionIds(page.spec)
+    }
+  }
   const orphans = pageKeys.filter((path) => !reachable.has(path))
   if (orphans.length > 0) {
     return {

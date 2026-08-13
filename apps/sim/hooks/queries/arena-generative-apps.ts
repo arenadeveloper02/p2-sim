@@ -14,6 +14,7 @@ import {
   listGenerativeAppDraftsContract,
   requestGenerativeAppEmailOtpContract,
   runDeployedAppActionContract,
+  runGenerativeAppDraftActionContract,
   type UpdateDeployedAppBody,
   updateDeployedAppContract,
   verifyGenerativeAppEmailOtpContract,
@@ -25,6 +26,8 @@ export const arenaGenerativeAppKeys = {
   draftList: (workflowId?: string) =>
     [...arenaGenerativeAppKeys.drafts(), workflowId ?? ''] as const,
   draft: (id?: string) => [...arenaGenerativeAppKeys.drafts(), 'detail', id ?? ''] as const,
+  draftActions: () => [...arenaGenerativeAppKeys.drafts(), 'action'] as const,
+  draftAction: (id?: string) => [...arenaGenerativeAppKeys.draftActions(), id ?? ''] as const,
   status: (workflowId?: string) =>
     [...arenaGenerativeAppKeys.all, 'status', workflowId ?? ''] as const,
   configs: () => [...arenaGenerativeAppKeys.all, 'config'] as const,
@@ -191,6 +194,16 @@ export function useRunDeployedAppAction(identifier: string) {
       requestJson(runDeployedAppActionContract, {
         params: { identifier, actionId },
         body: { values, emailId },
+      }),
+  })
+}
+
+export function useRunGenerativeAppDraftAction(draftId: string) {
+  return useMutation({
+    mutationFn: ({ actionId, values }: { actionId: string; values: Record<string, unknown> }) =>
+      requestJson(runGenerativeAppDraftActionContract, {
+        params: { id: draftId, actionId },
+        body: { values },
       }),
   })
 }

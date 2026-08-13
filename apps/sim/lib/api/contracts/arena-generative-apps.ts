@@ -6,6 +6,7 @@ import {
   toolSuccessResponseSchema,
 } from '@/lib/api/contracts/tool-primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
+import { isReservedGenerativeAppIdentifier } from '@/lib/arena-generative-ui/types'
 
 export const arenaGenerativePagePathSchema = z
   .string()
@@ -94,12 +95,33 @@ export const arenaGenerativePageSummarySchema = z.object({
   title: z.string(),
 })
 
+function omitEmptyOptionalJson(value: unknown): unknown {
+  if (value == null) return undefined
+  if (typeof value === 'string' && value.trim() === '') return undefined
+  if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) {
+    return undefined
+  }
+  return value
+}
+
+function omitEmptyOptionalString(value: unknown): unknown {
+  if (value == null) return undefined
+  if (typeof value === 'string' && value.trim() === '') return undefined
+  return value
+}
+
 export const arenaGenerativeGenerateBodySchema = z.object({
   userInput: z.string().min(1, 'userInput is required').max(20_000),
-  pages: z.union([z.array(arenaGenerativePageHintSchema), z.string()]).optional(),
-  entryPath: arenaGenerativePagePathSchema.optional(),
-  apiBindings: z.union([z.array(arenaGenerativeApiBindingSchema), z.string()]).optional(),
-  designNotes: z.string().max(4000).optional(),
+  pages: z.preprocess(
+    omitEmptyOptionalJson,
+    z.union([z.array(arenaGenerativePageHintSchema), z.string()]).optional()
+  ),
+  entryPath: z.preprocess(omitEmptyOptionalString, arenaGenerativePagePathSchema.optional()),
+  apiBindings: z.preprocess(
+    omitEmptyOptionalJson,
+    z.union([z.array(arenaGenerativeApiBindingSchema), z.string()]).optional()
+  ),
+  designNotes: z.preprocess(omitEmptyOptionalString, z.string().max(4000).optional()),
   existingDraftId: z.string().min(1).optional(),
   workspaceId: z.string().min(1).optional(),
   workflowId: z.string().min(1).optional(),
@@ -225,7 +247,10 @@ export const createDeployedAppBodySchema = z.object({
   identifier: z
     .string()
     .min(1, 'Identifier is required')
-    .regex(/^[a-z0-9-]+$/, 'Identifier can only contain lowercase letters, numbers, and hyphens'),
+    .regex(/^[a-z0-9-]+$/, 'Identifier can only contain lowercase letters, numbers, and hyphens')
+    .refine((value) => !isReservedGenerativeAppIdentifier(value), {
+      message: 'This identifier is reserved',
+    }),
   title: z.string().min(1, 'Title is required').max(200),
   description: z.string().max(2000).optional(),
   department: z.string().max(200).optional(),
@@ -351,6 +376,14 @@ export const runDeployedAppActionBodySchema = z.object({
   emailId: z.string().max(320).optional(),
 })
 
+export const runDeployedAppActionResponseSchema = z.object({
+  ok: z.boolean(),
+  data: z.unknown().optional(),
+  navigate: z.string().optional(),
+  setState: unknownRecordSchema.optional(),
+  error: z.string().optional(),
+})
+
 export const runDeployedAppActionContract = defineRouteContract({
   method: 'POST',
   path: '/api/gui-apps/[identifier]/actions/[actionId]',
@@ -358,13 +391,27 @@ export const runDeployedAppActionContract = defineRouteContract({
   body: runDeployedAppActionBodySchema,
   response: {
     mode: 'json',
-    schema: z.object({
-      ok: z.boolean(),
-      data: z.unknown().optional(),
-      navigate: z.string().optional(),
-      setState: unknownRecordSchema.optional(),
-      error: z.string().optional(),
-    }),
+    schema: runDeployedAppActionResponseSchema,
+  },
+})
+
+export const generativeAppDraftActionParamsSchema = z.object({
+  id: z.string().min(1),
+  actionId: z.string().min(1),
+})
+
+export const runGenerativeAppDraftActionBodySchema = z.object({
+  values: unknownRecordSchema.optional().default({}),
+})
+
+export const runGenerativeAppDraftActionContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/gui-apps/drafts/[id]/actions/[actionId]',
+  params: generativeAppDraftActionParamsSchema,
+  body: runGenerativeAppDraftActionBodySchema,
+  response: {
+    mode: 'json',
+    schema: runDeployedAppActionResponseSchema,
   },
 })
 

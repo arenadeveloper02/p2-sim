@@ -83,6 +83,29 @@ describe('validateArenaGenerativeManifest', () => {
     expect(result.success).toBe(true)
   })
 
+  it('accepts a navigation-only app when API bindings are empty', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec: pageSpec() },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+        },
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.success).toBe(true)
+    expect(result.manifest?.actions).toEqual({})
+    const homeElements = result.manifest?.pages.home.spec.elements as Record<
+      string,
+      { props?: { actionId?: unknown } }
+    >
+    expect(homeElements.form.props?.actionId).toBeUndefined()
+  })
+
   it('rejects an unknown apiKey', () => {
     const result = validateArenaGenerativeManifest(
       {

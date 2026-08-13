@@ -5,6 +5,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { validateGenerativeAppIdentifierContract } from '@/lib/api/contracts/arena-generative-apps'
 import { parseRequest } from '@/lib/api/server'
+import { isReservedGenerativeAppIdentifier } from '@/lib/arena-generative-ui/types'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
@@ -21,6 +22,13 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   if (!parsed.success) return parsed.response
 
   const identifier = parsed.data.query.identifier
+  if (isReservedGenerativeAppIdentifier(identifier)) {
+    return createSuccessResponse({
+      available: false,
+      error: 'This identifier is reserved',
+    })
+  }
+
   try {
     const existing = await db
       .select({ id: deployedApp.id })

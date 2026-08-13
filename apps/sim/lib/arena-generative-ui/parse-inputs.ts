@@ -4,6 +4,19 @@ import {
   type ArenaGenerativePageHint,
 } from '@/lib/arena-generative-ui/types'
 
+function isEmptyJsonListInput(raw: unknown): boolean {
+  if (raw == null || raw === '') {
+    return true
+  }
+  if (typeof raw === 'string' && raw.trim() === '') {
+    return true
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length === 0) {
+    return true
+  }
+  return false
+}
+
 function parseJsonValue(raw: unknown): unknown {
   if (typeof raw !== 'string') {
     return raw
@@ -23,10 +36,13 @@ function parseJsonValue(raw: unknown): unknown {
  * Parses optional page hints from a JSON array or already-parsed list.
  */
 export function parsePageHints(raw: unknown): ArenaGenerativePageHint[] {
-  if (raw == null || raw === '') {
+  if (isEmptyJsonListInput(raw)) {
     return []
   }
   const parsed = parseJsonValue(raw)
+  if (parsed == null || isEmptyJsonListInput(parsed)) {
+    return []
+  }
   if (!Array.isArray(parsed)) {
     throw new Error('pages must be a JSON array of { path, title, purpose? }')
   }
@@ -51,10 +67,13 @@ export function parsePageHints(raw: unknown): ArenaGenerativePageHint[] {
  * Parses API bindings from a JSON array or already-parsed list.
  */
 export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
-  if (raw == null || raw === '') {
+  if (isEmptyJsonListInput(raw)) {
     return []
   }
   const parsed = parseJsonValue(raw)
+  if (parsed == null || isEmptyJsonListInput(parsed)) {
+    return []
+  }
   if (!Array.isArray(parsed)) {
     throw new Error('apiBindings must be a JSON array')
   }

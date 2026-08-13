@@ -19,10 +19,21 @@ export function isJsonRenderSpec(value: unknown): value is Spec {
 }
 /** Public host path for published generative apps (`/gui-apps/{identifier}`). */
 export const ARENA_GENERATIVE_APP_BASE_PATH = '/gui-apps'
+/** Session-only draft preview (`/gui-apps/preview/{draftId}`). */
+export const ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH = '/gui-apps/preview'
 /** JSON API prefix for generative apps (`/api/gui-apps/...`). */
 export const ARENA_GENERATIVE_APP_API_BASE_PATH = '/api/gui-apps'
+/** Identifiers that collide with static `/gui-apps` segments. */
+export const ARENA_GENERATIVE_APP_RESERVED_IDENTIFIERS = ['preview'] as const
 export const ARENA_EMAIL_COOKIE_NAME = 'arena_email_id'
 export const ARENA_ACCESS_DENIED_MESSAGE = 'Do not have access'
+
+/**
+ * Returns true when an identifier would shadow a static `/gui-apps` route.
+ */
+export function isReservedGenerativeAppIdentifier(identifier: string): boolean {
+  return (ARENA_GENERATIVE_APP_RESERVED_IDENTIFIERS as readonly string[]).includes(identifier)
+}
 
 export type ArenaGenerativeHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 

@@ -24,6 +24,7 @@ import { toError } from '@sim/utils/errors'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
 import type { DeploymentOperationSummary } from '@/lib/api/contracts/deployments'
+import { ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH } from '@/lib/arena-generative-ui/types'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { getInputFormatExample as getInputFormatExampleUtil } from '@/lib/workflows/operations/deployment-utils'
 import {
@@ -138,6 +139,7 @@ export function DeployModal({
   const [isChatFormValid, setIsChatFormValid] = useState(false)
   const [isAppFormValid, setIsAppFormValid] = useState(false)
   const [isGenerativeAppFormValid, setIsGenerativeAppFormValid] = useState(false)
+  const [selectedGenerativeAppDraftId, setSelectedGenerativeAppDraftId] = useState('')
   const [generativeAppSubmitting, setGenerativeAppSubmitting] = useState(false)
   const [generativeAppSuccess, setGenerativeAppSuccess] = useState(false)
   const generativeAppSuccessTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -733,6 +735,7 @@ export function DeployModal({
                   submitting={generativeAppSubmitting}
                   setSubmitting={setGenerativeAppSubmitting}
                   onValidationChange={setIsGenerativeAppFormValid}
+                  onSelectedDraftChange={setSelectedGenerativeAppDraftId}
                   onDeployed={() => {
                     if (generativeAppSuccessTimeoutRef.current) {
                       clearTimeout(generativeAppSuccessTimeoutRef.current)
@@ -873,6 +876,20 @@ export function DeployModal({
             <ModalFooter className='items-center justify-between'>
               <div />
               <div className='flex items-center gap-2'>
+                <Button
+                  type='button'
+                  variant='tertiary'
+                  disabled={!selectedGenerativeAppDraftId}
+                  onClick={() => {
+                    window.open(
+                      `${ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH}/${selectedGenerativeAppDraftId}`,
+                      '_blank',
+                      'noopener,noreferrer'
+                    )
+                  }}
+                >
+                  Preview
+                </Button>
                 <Button
                   type='button'
                   variant='tertiary'

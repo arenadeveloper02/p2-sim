@@ -15,6 +15,7 @@ import {
   ARENA_GENERATIVE_APP_BASE_PATH,
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
+  isReservedGenerativeAppIdentifier,
 } from '@/lib/arena-generative-ui/types'
 import { isDev } from '@/lib/core/config/env-flags'
 import { encryptSecret } from '@/lib/core/security/encryption'
@@ -78,6 +79,10 @@ export async function performGenerativeAppDeploy(
     allowedEmails = [],
     requireArenaEmailId = false,
   } = params
+
+  if (isReservedGenerativeAppIdentifier(identifier)) {
+    return { success: false, error: 'This identifier is reserved' }
+  }
 
   if (password !== undefined) {
     const validatedPassword = chatDeploymentPasswordSchema.safeParse(password)

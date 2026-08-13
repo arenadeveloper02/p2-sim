@@ -51,7 +51,8 @@ vi.mock('@sim/db', () => ({
 }))
 
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
-import { runDeployedAppAction } from '@/lib/arena-generative-ui/run-action'
+import { runDeployedAppAction, runGenerativeAppAction } from '@/lib/arena-generative-ui/run-action'
+import { twoPageApiBindings, twoPageManifest } from '@/lib/arena-generative-ui/two-page-app.fixture'
 
 function baseDeployment(overrides?: Partial<DeployedAppRecord>): DeployedAppRecord {
   return {
@@ -194,5 +195,31 @@ describe('runDeployedAppAction', () => {
     })
     expect(result.ok).toBe(false)
     expect(result.error).toMatch(/allowlisted|not allowed/i)
+  })
+
+  it('runs a two-page draft CTA and returns navigate plus score state', async () => {
+    const result = await runGenerativeAppAction({
+      manifest: twoPageManifest,
+      apiBindings: twoPageApiBindings,
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-preview',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.navigate).toBe('results')
+    expect(result.setState).toEqual({ score: 91 })
+    expect(mockExecuteWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'wf-bound' }),
+      'req-preview',
+      { name: 'Ada' },
+      'user-1',
+      expect.objectContaining({ isSecureMode: true }),
+      expect.any(String)
+    )
   })
 })

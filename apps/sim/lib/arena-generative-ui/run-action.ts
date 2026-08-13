@@ -6,7 +6,10 @@ import { generateId } from '@sim/utils/id'
 import { eq } from 'drizzle-orm'
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
 import { isHttpUrlAllowlisted } from '@/lib/arena-generative-ui/http-allowlist'
-import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
+import type {
+  ArenaGenerativeApiBinding,
+  ArenaGenerativeAppManifest,
+} from '@/lib/arena-generative-ui/types'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
 import { isDev } from '@/lib/core/config/env-flags'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
@@ -246,21 +249,30 @@ export interface RunDeployedAppActionResult {
   error?: string
 }
 
-/**
- * Executes a published generative-app CTA (workflow or allowlisted HTTP).
- */
-export async function runDeployedAppAction(options: {
-  deployment: DeployedAppRecord
+export interface RunGenerativeAppActionOptions {
+  manifest: ArenaGenerativeAppManifest
+  apiBindings: ArenaGenerativeApiBinding[]
+  httpAllowlist: string[]
+  userId: string
+  workspaceId: string
   actionId: string
   values: Record<string, unknown>
   requestId: string
-}): Promise<RunDeployedAppActionResult> {
-  const action = options.deployment.manifest.actions[options.actionId]
+  actorUserId: string
+}
+
+/**
+ * Executes a generative-app CTA (workflow or allowlisted HTTP) from a draft or deployment.
+ */
+export async function runGenerativeAppAction(
+  options: RunGenerativeAppActionOptions
+): Promise<RunDeployedAppActionResult> {
+  const action = options.manifest.actions[options.actionId]
   if (!action) {
     return { ok: false, error: `Unknown action "${options.actionId}"` }
   }
 
-  const binding = options.deployment.apiBindings.find((item) => item.key === action.apiKey)
+  const binding = options.apiBindings.find((item) => item.key === action.apiKey)
   if (!binding) {
     return { ok: false, error: `Unknown API binding "${action.apiKey}"` }
   }
@@ -272,14 +284,14 @@ export async function runDeployedAppAction(options: {
       ? await runHttpBinding({
           binding,
           mappedInput,
-          allowlist: options.deployment.httpAllowlist,
-          userId: options.deployment.userId,
-          workspaceId: options.deployment.workspaceId,
+          allowlist: options.httpAllowlist,
+          userId: options.userId,
+          workspaceId: options.workspaceId,
         })
       : await runWorkflowBinding({
           binding,
           mappedInput,
-          actorUserId: options.deployment.userId,
+          actorUserId: options.actorUserId,
           requestId: options.requestId,
         })
 
@@ -310,4 +322,26 @@ export async function runDeployedAppAction(options: {
     navigate: action.onSuccess?.navigate,
     setState,
   }
+}
+
+/**
+ * Executes a published generative-app CTA (workflow or allowlisted HTTP).
+ */
+export async function runDeployedAppAction(options: {
+  deployment: DeployedAppRecord
+  actionId: string
+  values: Record<string, unknown>
+  requestId: string
+}): Promise<RunDeployedAppActionResult> {
+  return runGenerativeAppAction({
+    manifest: options.deployment.manifest,
+    apiBindings: options.deployment.apiBindings,
+    httpAllowlist: options.deployment.httpAllowlist,
+    userId: options.deployment.userId,
+    workspaceId: options.deployment.workspaceId,
+    actionId: options.actionId,
+    values: options.values,
+    requestId: options.requestId,
+    actorUserId: options.deployment.userId,
+  })
 }

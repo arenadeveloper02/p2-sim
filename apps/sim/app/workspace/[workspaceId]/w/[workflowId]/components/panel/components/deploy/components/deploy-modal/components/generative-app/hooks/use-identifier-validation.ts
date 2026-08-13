@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { requestJson } from '@/lib/api/client/request'
 import { validateGenerativeAppIdentifierContract } from '@/lib/api/contracts/arena-generative-apps'
+import { isReservedGenerativeAppIdentifier } from '@/lib/arena-generative-ui/types'
 
 const IDENTIFIER_PATTERN = /^[a-z0-9-]+$/
 const DEBOUNCE_MS = 500
@@ -49,6 +50,11 @@ export function useGenerativeAppIdentifierValidation(
 
     if (!IDENTIFIER_PATTERN.test(identifier)) {
       setError('Identifier can only contain lowercase letters, numbers, and hyphens')
+      return
+    }
+
+    if (isReservedGenerativeAppIdentifier(identifier)) {
+      setError('This identifier is reserved')
       return
     }
 

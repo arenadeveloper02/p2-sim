@@ -17,7 +17,7 @@ export {
 } from '@/lib/arena-generative-ui/http-allowlist'
 export { parseApiBindings, parsePageHints } from '@/lib/arena-generative-ui/parse-inputs'
 export { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
-export { runDeployedAppAction } from '@/lib/arena-generative-ui/run-action'
+export { runDeployedAppAction, runGenerativeAppAction } from '@/lib/arena-generative-ui/run-action'
 export type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeAppManifest,
@@ -28,6 +28,9 @@ export {
   ARENA_GENERATIVE_APP_API_BASE_PATH,
   ARENA_GENERATIVE_APP_BASE_PATH,
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
+  ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
+  ARENA_GENERATIVE_APP_RESERVED_IDENTIFIERS,
   isJsonRenderSpec,
+  isReservedGenerativeAppIdentifier,
 } from '@/lib/arena-generative-ui/types'
 export { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/validate-manifest'

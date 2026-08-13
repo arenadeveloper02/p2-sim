@@ -1,12 +1,15 @@
 'use client'
 
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import { ChipEmailsInput, ChipInput, Label, Loader, Switch, Textarea } from '@sim/emcn'
+import { Button, ChipEmailsInput, ChipInput, Label, Loader, Switch, Textarea } from '@sim/emcn'
 import { getErrorMessage } from '@sim/utils/errors'
 import { Check } from 'lucide-react'
 import { GeneratedPasswordInput } from '@/components/ui'
 import { CustomSelect } from '@/components/ui/native-select'
-import { ARENA_GENERATIVE_APP_BASE_PATH } from '@/lib/arena-generative-ui/types'
+import {
+  ARENA_GENERATIVE_APP_BASE_PATH,
+  ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
+} from '@/lib/arena-generative-ui/types'
 import { useSession } from '@/lib/auth/auth-client'
 import { isSsoEnabled } from '@/lib/core/config/env-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -28,6 +31,7 @@ interface GenerativeAppDeployProps {
   submitting: boolean
   setSubmitting: (submitting: boolean) => void
   onValidationChange?: (isValid: boolean) => void
+  onSelectedDraftChange?: (draftId: string) => void
   onDeployed?: () => void
 }
 
@@ -36,6 +40,7 @@ export function GenerativeAppDeploy({
   submitting,
   setSubmitting,
   onValidationChange,
+  onSelectedDraftChange,
   onDeployed,
 }: GenerativeAppDeployProps) {
   const { data: session } = useSession()
@@ -72,6 +77,10 @@ export function GenerativeAppDeploy({
       setDraftId(drafts[0].id)
     }
   }, [drafts, draftId])
+
+  useEffect(() => {
+    onSelectedDraftChange?.(draftId)
+  }, [draftId, onSelectedDraftChange])
 
   useEffect(() => {
     if (existing && !identifier) {
@@ -185,9 +194,23 @@ export function GenerativeAppDeploy({
       {error ? <p className='text-[var(--text-error)] text-sm'>{error}</p> : null}
 
       <div>
-        <Label className='mb-[6.5px] block font-medium text-[var(--text-primary)] text-small'>
-          Draft
-        </Label>
+        <div className='mb-[6.5px] flex items-center justify-between gap-2'>
+          <Label className='font-medium text-[var(--text-primary)] text-small'>Draft</Label>
+          <Button
+            type='button'
+            variant='tertiary'
+            disabled={!draftId}
+            onClick={() => {
+              window.open(
+                `${ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH}/${draftId}`,
+                '_blank',
+                'noopener,noreferrer'
+              )
+            }}
+          >
+            Preview draft
+          </Button>
+        </div>
         <CustomSelect
           value={draftId}
           onChange={setDraftId}
