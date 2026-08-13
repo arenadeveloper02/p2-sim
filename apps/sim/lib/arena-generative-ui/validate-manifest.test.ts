@@ -83,6 +83,23 @@ describe('validateArenaGenerativeManifest', () => {
     expect(result.success).toBe(true)
   })
 
+  it('accepts pages emitted as an array of { path, title, spec }', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: [
+          { title: 'Home', path: 'home', spec: pageSpec() },
+          { title: 'Results', path: 'results', spec: resultsSpec() },
+        ],
+        actions: {},
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.success).toBe(true)
+    expect(result.manifest?.pages.home.title).toBe('Home')
+    expect(result.manifest?.pages.results.title).toBe('Results')
+  })
+
   it('accepts a navigation-only app when API bindings are empty', () => {
     const result = validateArenaGenerativeManifest(
       {

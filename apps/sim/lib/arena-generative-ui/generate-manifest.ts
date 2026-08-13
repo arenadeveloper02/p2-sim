@@ -6,6 +6,7 @@ import {
   ARENA_GENERATIVE_UI_OUTPUT_RULES,
   arenaGenerativeUiCatalog,
 } from '@/lib/arena-generative-ui/catalog'
+import { parseLlmJsonObject } from '@/lib/arena-generative-ui/parse-inputs'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeAppManifest,
@@ -20,47 +21,12 @@ const logger = createLogger('ArenaGenerativeUi')
 
 const DEFAULT_MODEL = 'claude-haiku-4-5'
 
-function extractJsonFromLlmText(text: string): string {
-  const trimmed = text.trim()
-  if (trimmed.startsWith('{')) {
-    return trimmed
-  }
-
-  const fencePrefix = /^```(?:json)?\s*\n?/i
-  if (fencePrefix.test(trimmed)) {
-    const withoutOpen = trimmed.replace(fencePrefix, '')
-    const closeIdx = withoutOpen.lastIndexOf('```')
-    if (closeIdx >= 0) {
-      const inner = withoutOpen.slice(0, closeIdx).trim()
-      if (inner.startsWith('{')) {
-        return inner
-      }
-    }
-  }
-
-  const firstBrace = trimmed.indexOf('{')
-  const lastBrace = trimmed.lastIndexOf('}')
-  if (firstBrace >= 0 && lastBrace > firstBrace) {
-    return trimmed.slice(firstBrace, lastBrace + 1)
-  }
-  return trimmed
-}
-
 function extractMessageText(message: Anthropic.Messages.Message): string {
   return message.content
     .filter((block): block is Anthropic.Messages.TextBlock => block.type === 'text')
     .map((block) => block.text)
     .join('\n')
     .trim()
-}
-
-function parseJsonObject(text: string): Record<string, unknown> {
-  const jsonText = extractJsonFromLlmText(text)
-  const parsed: unknown = JSON.parse(jsonText)
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('Model returned a non-object JSON payload')
-  }
-  return parsed as Record<string, unknown>
 }
 
 export interface GenerateArenaGenerativeManifestParams {
@@ -105,8 +71,8 @@ export async function generateArenaGenerativeManifest(
       : `Mode: generate a new multi-page app.`,
     params.entryPath ? `Requested entryPath: ${params.entryPath}` : '',
     pageHints.length > 0
-      ? `Requested pages (must emit exactly these paths):\n${JSON.stringify(pageHints, null, 2)}`
-      : 'No explicit page list. Infer a small coherent sitemap from the brief.',
+      ? `Requested pages (must emit exactly these paths as object keys, not an array):\n${JSON.stringify(pageHints, null, 2)}`
+      : 'No explicit page list. Infer a small coherent sitemap from the brief. Emit manifest.pages as an object keyed by path (home, person, …), never as an array.',
     bindingsSummary.length > 0
       ? `Declared API bindings (CTAs may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
       : 'No API bindings. Navigation and static content only.',
@@ -135,7 +101,7 @@ export async function generateArenaGenerativeManifest(
       return { success: false, error: 'Model returned an empty response' }
     }
 
-    const parsed = parseJsonObject(rawText)
+    const parsed = parseLlmJsonObject(rawText)
     const manifestCandidate = (parsed.manifest ?? parsed) as Record<string, unknown>
     const validation = validateArenaGenerativeManifest(manifestCandidate, {
       pageHints: pageHints.length > 0 ? pageHints : undefined,

@@ -40,9 +40,9 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
   longDescription:
     'Creates a multi-page json-render draft (home, results, and more) with in-app navigation and optional CTA bindings to deployed workflows or allowlisted HTTP APIs. Run the block to save a draft, then publish from Deploy → GUI App to get a public /gui-apps/{identifier} URL.',
   bestPractices: `
-  - Use Generate for a new draft. List pages as JSON [{ "path": "home", "title": "Form" }, { "path": "results", "title": "Score" }] when you want a fixed sitemap.
+  - Use Generate for a new draft. Leave Pages blank so the model chooses the sitemap, or pin paths as JSON [{ "path": "home", "title": "Form" }].
   - Describe navigation in User Input: NavLinks, Back buttons, and "submit then go to results".
-  - Add apiBindings JSON to allow CTAs to call a deployed workflow or HTTP URL. The model can only use keys you declare.
+  - Add apiBindings JSON only when CTAs should call a deployed workflow or HTTP URL. Leave it blank for navigation-only; the model cannot invent keys.
   - After a successful run, open Deploy → GUI App, pick the draft, set an identifier, and Launch. The public URL is /gui-apps/{identifier}.
   - Use Edit mode with an existing draft to change pages, copy, or CTA wiring.
   `,
@@ -104,8 +104,9 @@ Return ONLY the specification text.`,
       title: 'Pages',
       type: 'code',
       language: 'json',
-      placeholder: '[{"path":"home","title":"Form"},{"path":"results","title":"Score"}]',
-      description: 'Optional sitemap. Empty lets the model propose pages from User Input.',
+      placeholder: '[]',
+      description:
+        'Optional sitemap. Leave blank (or []) and the model chooses pages from User Input.',
       condition: { field: 'operation', value: 'generate' },
     },
     {
@@ -124,7 +125,7 @@ Return ONLY the specification text.`,
       placeholder:
         '[{"key":"qualify_lead","kind":"workflow","workflowId":"...","label":"Qualify"}]',
       description:
-        'Named APIs CTAs may call. kind is workflow or http. HTTP rows need http.method and http.url.',
+        'Named APIs CTAs may call. Leave blank for a navigation-only app — the model cannot invent API keys.',
     },
     {
       id: 'designNotes',

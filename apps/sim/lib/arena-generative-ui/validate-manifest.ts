@@ -24,6 +24,28 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+/**
+ * Models often emit `pages` as an array of `{ path, title, spec }`. Fold that
+ * into the path-keyed record the host expects.
+ */
+function normalizePagesRecord(pagesRaw: unknown): Record<string, unknown> | null {
+  if (Array.isArray(pagesRaw)) {
+    const pages: Record<string, unknown> = {}
+    for (const item of pagesRaw) {
+      if (!item || typeof item !== 'object') continue
+      const record = item as Record<string, unknown>
+      const path = asString(record.path)
+      if (!path) continue
+      pages[path] = record
+    }
+    return Object.keys(pages).length > 0 ? pages : null
+  }
+  if (pagesRaw && typeof pagesRaw === 'object') {
+    return pagesRaw as Record<string, unknown>
+  }
+  return null
+}
+
 function normalizeSpec(raw: unknown): Spec | null {
   if (!raw || typeof raw !== 'object') return null
   const spec = structuredClone(raw) as Spec
@@ -116,18 +138,18 @@ export function validateArenaGenerativeManifest(
   }
 
   const candidate = raw as Record<string, unknown>
-  const pagesRaw = candidate.pages
+  const pagesRaw = normalizePagesRecord(candidate.pages)
   const actionsRaw =
     candidate.actions && typeof candidate.actions === 'object' && !Array.isArray(candidate.actions)
       ? (candidate.actions as Record<string, unknown>)
       : {}
 
-  if (!pagesRaw || typeof pagesRaw !== 'object' || Array.isArray(pagesRaw)) {
+  if (!pagesRaw) {
     return { success: false, error: 'manifest.pages must be an object keyed by page path' }
   }
 
   const pages: ArenaGenerativeAppManifest['pages'] = {}
-  for (const [key, value] of Object.entries(pagesRaw as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(pagesRaw)) {
     if (!ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN.test(key)) {
       return {
         success: false,

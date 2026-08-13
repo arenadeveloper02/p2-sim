@@ -203,6 +203,8 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
 export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Output a single complete JSON object. Do NOT wrap it in markdown fences. Do NOT output JSONL patches.',
   'Shape: { "title": string, "content": string, "manifest": { "entryPath": string, "pages": { [path]: { "title", "path", "spec" } }, "actions": { [actionId]: { "apiKey", "inputMapping?", "onSuccess?", "onError?" } } } }',
+  'manifest.pages MUST be an object keyed by kebab-case path, never an array. Example: { "home": { "path": "home", "title": "People", "spec": { ... } }, "person": { "path": "person", "title": "Profile", "spec": { ... } } }.',
+  'Return one JSON object only. Do not emit a short summary object before the manifest.',
   'Each page spec is a json-render Spec: { "root": string, "elements": { [key]: { type, props, children } } }.',
   'Every page Spec root element must be type Page.',
   'Every element must include a children array (use [] for leaves).',
