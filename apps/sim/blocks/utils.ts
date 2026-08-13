@@ -694,6 +694,7 @@ export const AGENT_TOOL_BLOCK_TYPES = new Set([
   'table',
   'image_generator_v2',
   'chart_generator',
+  'arena_generative_ui',
 ])
 
 /**
@@ -721,6 +722,7 @@ export const BUILT_IN_TOOL_TYPES = new Set([
   'webhook_request',
   'workflow',
   'chart_generator',
+  'arena_generative_ui',
 ])
 
 /**

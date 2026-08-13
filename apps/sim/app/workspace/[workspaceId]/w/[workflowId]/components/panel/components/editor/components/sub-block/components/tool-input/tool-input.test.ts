@@ -11,12 +11,17 @@ import {
   isWorkflowAlreadySelected,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/utils'
 import { AgentBlock } from '@/blocks/blocks/agent'
+import { ArenaGenerativeUiBlock } from '@/blocks/blocks/arena-generative-ui'
 import { ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'
 import { START_FILES_REF } from '@/executor/constants'
 
 describe('isAgentToolPickerBlock', () => {
   it('includes image_generator_v2 even though it is a blocks-category block', () => {
     expect(isAgentToolPickerBlock(ImageGeneratorV2Block)).toBe(true)
+  })
+
+  it('includes arena_generative_ui even though it is a blocks-category block', () => {
+    expect(isAgentToolPickerBlock(ArenaGenerativeUiBlock)).toBe(true)
   })
 
   it('excludes the agent block itself', () => {
