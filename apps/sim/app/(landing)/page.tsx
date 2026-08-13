@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { SITE_URL } from '@/lib/core/utils/urls'
+import { getEnv } from '@/lib/core/config/env'
+import { isSearchIndexableAppUrl, SITE_URL } from '@/lib/core/utils/urls'
 import {
   HOME_PAGE_DESCRIPTION,
   HOME_PAGE_TITLE,
@@ -7,6 +8,8 @@ import {
 import Landing from '@/app/(landing)/landing'
 
 export const revalidate = 3600
+
+const allowIndexing = isSearchIndexableAppUrl(getEnv('NEXT_PUBLIC_APP_URL'))
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -59,19 +62,24 @@ export const metadata: Metadata = {
       'x-default': SITE_URL,
     },
   },
-  robots: {
-    index: true,
-    follow: true,
-    nocache: false,
-    googleBot: {
-      index: true,
-      follow: true,
-      noimageindex: false,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
-    },
-  },
+  robots: allowIndexing
+    ? {
+        index: true,
+        follow: true,
+        nocache: false,
+        googleBot: {
+          index: true,
+          follow: true,
+          noimageindex: false,
+          'max-video-preview': -1,
+          'max-image-preview': 'large',
+          'max-snippet': -1,
+        },
+      }
+    : {
+        index: false,
+        follow: false,
+      },
   category: 'technology',
   classification: 'AI Development Tools',
   referrer: 'origin-when-cross-origin',

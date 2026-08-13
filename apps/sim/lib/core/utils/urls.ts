@@ -132,6 +132,34 @@ export function isNonCanonicalSimHost(host: string): boolean {
   return hostname !== canonical && hostname.endsWith(`.${canonical}`)
 }
 
+/** Only this Arena agent host may appear in search-engine results. */
+export const INDEXABLE_APP_HOST = 'agent.thearena.ai'
+
+/**
+ * True when the request Host should be indexed. Dev/test/sandbox agent hosts
+ * (and localhost) return false so they stay out of search results.
+ *
+ * Takes the first entry of a comma-joined forwarded host.
+ */
+export function isSearchIndexableHost(host: string): boolean {
+  const first = host.split(',')[0]?.trim() ?? ''
+  const hostname = first.toLowerCase().split(':')[0]
+  return hostname === INDEXABLE_APP_HOST
+}
+
+/**
+ * True when `NEXT_PUBLIC_APP_URL` points at the single indexable Arena agent host.
+ * Used by `robots.ts` (no request Host available at that boundary).
+ */
+export function isSearchIndexableAppUrl(appUrl: string | undefined): boolean {
+  if (!appUrl?.trim()) return false
+  try {
+    return new URL(normalizeBaseUrl(appUrl.trim())).hostname.toLowerCase() === INDEXABLE_APP_HOST
+  } catch {
+    return false
+  }
+}
+
 /**
  * Returns the domain for email addresses, stripping www subdomain for Resend compatibility
  * @returns The email domain (e.g., 'sim.ai' instead of 'www.sim.ai')
