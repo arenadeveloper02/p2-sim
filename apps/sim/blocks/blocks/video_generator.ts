@@ -1775,7 +1775,10 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
         params.provider === STORYBOARD_PROVIDER_ID
           ? {
               conversationId: params.conversationId,
-              order: params.sceneOrder,
+              // The LLM may fill either the block field (sceneOrder) or the
+              // underlying tool param (order); accept both so the user's chosen
+              // order is never silently dropped.
+              order: params.sceneOrder || params.order,
               videoModel: params.storyVideoModel,
               clipDuration: params.clipDuration ? Number(params.clipDuration) : undefined,
               resolution: params.storyResolution,
