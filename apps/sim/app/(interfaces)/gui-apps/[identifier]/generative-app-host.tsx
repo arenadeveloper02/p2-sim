@@ -1,12 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
 import { ARENA_GENERATIVE_APP_BASE_PATH, isJsonRenderSpec } from '@/lib/arena-generative-ui/types'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
+import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import {
   useDeployedAppConfig,
   useDeployedAppEmailOtpRequest,
@@ -27,7 +29,7 @@ interface GenerativeAppHostProps {
 export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeAppHostProps) {
   const router = useRouter()
   const configQuery = useDeployedAppConfig(identifier)
-  const [state, setState] = useState<Record<string, unknown>>({})
+  const { state, mergeState } = useGenerativeAppHostState()
   const pageQuery = useDeployedAppPage(identifier, pagePath, configQuery.data?.kind === 'config')
   const runAction = useRunDeployedAppAction(identifier)
 
@@ -88,8 +90,11 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
             values,
             emailId: emailId || undefined,
           })
-          if (result.setState) {
-            setState((current) => ({ ...current, ...result.setState }))
+          const nextState = result.setState
+          if (nextState) {
+            flushSync(() => {
+              mergeState(nextState)
+            })
           }
           if (result.navigate) {
             navigate(result.navigate)

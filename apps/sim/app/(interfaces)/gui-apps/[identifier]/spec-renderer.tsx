@@ -132,7 +132,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         const display =
           value === undefined || value === null ? asString(props.fallback, '') : String(value)
         return (
-          <p className='font-medium' style={styleFromProps(props)}>
+          <p className='whitespace-pre-wrap font-medium' style={styleFromProps(props)}>
             {display}
           </p>
         )

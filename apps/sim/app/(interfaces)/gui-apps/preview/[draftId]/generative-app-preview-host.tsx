@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { flushSync } from 'react-dom'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
@@ -9,6 +9,7 @@ import {
   isJsonRenderSpec,
 } from '@/lib/arena-generative-ui/types'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
+import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import {
   useGenerativeAppDraft,
   useRunGenerativeAppDraftAction,
@@ -25,7 +26,7 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
   const router = useRouter()
   const draftQuery = useGenerativeAppDraft(draftId)
   const runAction = useRunGenerativeAppDraftAction(draftId)
-  const [state, setState] = useState<Record<string, unknown>>({})
+  const { state, mergeState } = useGenerativeAppHostState()
 
   const navigate = (path: string) => {
     router.push(`${ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH}/${draftId}/${path}`)
@@ -61,8 +62,11 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
         onRunAction={async (actionId, values) => {
           try {
             const result = await runAction.mutateAsync({ actionId, values })
-            if (result.setState) {
-              setState((current) => ({ ...current, ...result.setState }))
+            const nextState = result.setState
+            if (nextState) {
+              flushSync(() => {
+                mergeState(nextState)
+              })
             }
             if (result.navigate) {
               navigate(result.navigate)

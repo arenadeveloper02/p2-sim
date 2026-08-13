@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { twoPageDraft, twoPageManifest } from '@/lib/arena-generative-ui/two-page-app.fixture'
 import { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/validate-manifest'
+import { GenerativeAppHostStateProvider } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import { GenerativeAppPreviewHost } from '@/app/(interfaces)/gui-apps/preview/[draftId]/generative-app-preview-host'
 
 const { mockPush, mockMutateAsync } = vi.hoisted(() => ({
@@ -65,9 +66,13 @@ describe('two-page GUI App draft preview', () => {
     unmount = undefined
   })
 
-  function render(pagePath: string) {
+  function render(pagePath: string, hostKey = pagePath) {
     act(() => {
-      root.render(<GenerativeAppPreviewHost draftId='draft-1' pagePath={pagePath} />)
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <GenerativeAppPreviewHost key={hostKey} draftId='draft-1' pagePath={pagePath} />
+        </GenerativeAppHostStateProvider>
+      )
     })
     unmount = () => {
       act(() => {
@@ -131,7 +136,7 @@ describe('two-page GUI App draft preview', () => {
     })
     expect(mockPush).toHaveBeenCalledWith('/gui-apps/preview/draft-1/results')
 
-    render('results')
+    render('results', 'results')
     expect(container.textContent).toContain('Score')
     expect(container.textContent).toContain('91')
   })

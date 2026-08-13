@@ -28,6 +28,7 @@ vi.mock('@/hooks/queries/arena-generative-apps', () => ({
   }),
 }))
 
+import { GenerativeAppHostStateProvider } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import { GenerativeAppPreviewHost } from '@/app/(interfaces)/gui-apps/preview/[draftId]/generative-app-preview-host'
 
 const homeSpec: Spec = {
@@ -92,7 +93,11 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
 
   function renderHost() {
     act(() => {
-      root.render(<GenerativeAppPreviewHost draftId='draft-1' pagePath={pagePath} />)
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <GenerativeAppPreviewHost key={pagePath} draftId='draft-1' pagePath={pagePath} />
+        </GenerativeAppHostStateProvider>
+      )
     })
   }
 
