@@ -57,7 +57,7 @@ export function GenerativeAppDeploy({
   const [authType, setAuthType] = useState<AuthType>('public')
   const [password, setPassword] = useState('')
   const [emails, setEmails] = useState<string[]>([])
-  const [requireArenaEmailId, setRequireArenaEmailId] = useState(true)
+  const [requireArenaEmailId, setRequireArenaEmailId] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const selectedDraftQuery = useGenerativeAppDraft(draftId || undefined)
@@ -254,9 +254,14 @@ export function GenerativeAppDeploy({
       </div>
 
       <div className='flex items-center justify-between gap-3'>
-        <Label className='font-medium text-[var(--text-primary)] text-small'>
-          Require Arena emailId
-        </Label>
+        <div>
+          <Label className='font-medium text-[var(--text-primary)] text-small'>
+            Require Arena emailId
+          </Label>
+          <p className='mt-1 text-[var(--text-secondary)] text-xs'>
+            Off: open as a Sim page like /chat. On: Arena embeds must pass ?emailId=.
+          </p>
+        </div>
         <Switch checked={requireArenaEmailId} onCheckedChange={setRequireArenaEmailId} />
       </div>
 

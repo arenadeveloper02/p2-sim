@@ -232,7 +232,7 @@ export const createDeployedAppBodySchema = z.object({
   authType: chatAuthTypeSchema.default('public'),
   password: chatDeploymentPasswordSchema.optional(),
   allowedEmails: z.array(z.string()).optional().default([]),
-  requireArenaEmailId: z.boolean().optional().default(true),
+  requireArenaEmailId: z.boolean().optional().default(false),
 })
 export type CreateDeployedAppBody = z.input<typeof createDeployedAppBodySchema>
 

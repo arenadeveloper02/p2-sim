@@ -5080,7 +5080,7 @@
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
-          "default": true
+          "default": false
         },
         "draft_id": {
           "name": "draft_id",

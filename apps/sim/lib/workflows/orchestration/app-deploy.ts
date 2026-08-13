@@ -76,7 +76,7 @@ export async function performGenerativeAppDeploy(
     authType = 'public',
     password,
     allowedEmails = [],
-    requireArenaEmailId = true,
+    requireArenaEmailId = false,
   } = params
 
   if (password !== undefined) {

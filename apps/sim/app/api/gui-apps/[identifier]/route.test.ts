@@ -70,6 +70,13 @@ describe('Deployed app config route', () => {
     expect(body.entryPath).toBe('home')
     expect(body.title).toBe('Lead score')
   })
+
+  it('returns config without emailId when the Arena gate is off', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([{ ...deployedRow, requireArenaEmailId: false }])
+    const req = new NextRequest('http://localhost:3000/api/gui-apps/lead-score')
+    const response = await GET(req, { params: Promise.resolve({ identifier: 'lead-score' }) })
+    expect(response.status).toBe(200)
+  })
 })
 
 describe('Deployed app auth POST', () => {

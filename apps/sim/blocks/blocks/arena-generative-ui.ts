@@ -38,12 +38,12 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
   name: 'Arena Generative UI',
   description: 'Generate multi-page Arena apps with json-render and CTA APIs',
   longDescription:
-    'Creates a multi-page json-render draft (home, results, and more) with in-app navigation and optional CTA bindings to deployed workflows or allowlisted HTTP APIs. Run the block to save a draft, then publish from Deploy → Generative App to get a public /gui-apps/{identifier} URL.',
+    'Creates a multi-page json-render draft (home, results, and more) with in-app navigation and optional CTA bindings to deployed workflows or allowlisted HTTP APIs. Run the block to save a draft, then publish from Deploy → GUI App to get a public /gui-apps/{identifier} URL.',
   bestPractices: `
   - Use Generate for a new draft. List pages as JSON [{ "path": "home", "title": "Form" }, { "path": "results", "title": "Score" }] when you want a fixed sitemap.
   - Describe navigation in User Input: NavLinks, Back buttons, and "submit then go to results".
   - Add apiBindings JSON to allow CTAs to call a deployed workflow or HTTP URL. The model can only use keys you declare.
-  - After a successful run, open Deploy → Generative App, pick the draft, set an identifier, and Launch. The public URL is /gui-apps/{identifier}.
+  - After a successful run, open Deploy → GUI App, pick the draft, set an identifier, and Launch. The public URL is /gui-apps/{identifier}.
   - Use Edit mode with an existing draft to change pages, copy, or CTA wiring.
   `,
   docsLink: 'https://docs.sim.ai/blocks/development',
@@ -71,7 +71,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
         'Describe pages, navigation, CTAs, and copy. Example: Home form submits qualify_lead then goes to Results. Results has Back.',
       wandConfig: {
         enabled: true,
-        prompt: `You are an expert product designer for Arena iframe apps. Expand the user's idea into a brief for a multi-page json-render UI.
+        prompt: `You are an expert product designer for Sim GUI apps that may open as a page or in an Arena iframe. Expand the user's idea into a brief for a multi-page json-render UI.
 
 Include:
 - App name and purpose
@@ -167,7 +167,7 @@ Return ONLY the specification text.`,
     designNotes: { type: 'string', description: 'Optional design notes' },
   },
   outputs: {
-    draftId: { type: 'string', description: 'Draft id for Deploy → Generative App' },
+    draftId: { type: 'string', description: 'Draft id for Deploy → GUI App' },
     revisionId: { type: 'string', description: 'Revision snapshot id' },
     entryPath: { type: 'string', description: 'Opening page path' },
     pages: { type: 'json', description: 'Generated pages' },

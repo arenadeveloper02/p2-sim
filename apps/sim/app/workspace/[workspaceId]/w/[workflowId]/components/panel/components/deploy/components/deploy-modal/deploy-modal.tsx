@@ -42,6 +42,7 @@ import type { DeployReadiness } from '@/app/workspace/[workspaceId]/w/[workflowI
 import { runPreDeployChecks } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/hooks/use-predeploy-checks'
 import { normalizeName, startsWithUuid } from '@/executor/constants'
 import { useApiKeys } from '@/hooks/queries/api-keys'
+import { useGenerativeAppStatus } from '@/hooks/queries/arena-generative-apps'
 import {
   invalidateDeploymentQueries,
   useActivateDeploymentVersion,
@@ -182,6 +183,13 @@ export function DeployModal({
     existingChat,
     refetch: refetchChatInfo,
   } = useChatDeploymentInfo(workflowId, { enabled: open })
+
+  const { data: generativeAppStatus } = useGenerativeAppStatus(workflowId || undefined, {
+    enabled: open,
+  })
+  const isExistingGenerativeAppDeployment = Boolean(
+    generativeAppStatus?.isDeployed && generativeAppStatus.deployment
+  )
 
   const { data: mcpServers = [] } = useWorkflowMcpServers(workflowWorkspaceId || '')
   const hasMcpServers = mcpServers.length > 0
@@ -631,9 +639,7 @@ export function DeployModal({
               {!permissionConfig.hideDeployChatbot && (
                 <ModalTabsTrigger value='app'>App</ModalTabsTrigger>
               )}
-              {!permissionConfig.hideDeployChatbot && (
-                <ModalTabsTrigger value='generative_app'>Generative App</ModalTabsTrigger>
-              )}
+              <ModalTabsTrigger value='generative_app'>GUI App</ModalTabsTrigger>
             </ModalTabsList>
 
             <ModalBody className='min-h-0 flex-1'>
@@ -872,10 +878,16 @@ export function DeployModal({
                   disabled={generativeAppSubmitting || !isGenerativeAppFormValid}
                 >
                   {generativeAppSuccess
-                    ? 'Launched'
+                    ? isExistingGenerativeAppDeployment
+                      ? 'Updated'
+                      : 'Launched'
                     : generativeAppSubmitting
-                      ? 'Launching...'
-                      : 'Launch App'}
+                      ? isExistingGenerativeAppDeployment
+                        ? 'Updating...'
+                        : 'Launching...'
+                      : isExistingGenerativeAppDeployment
+                        ? 'Update GUI App'
+                        : 'Launch GUI App'}
                 </Button>
               </div>
             </ModalFooter>

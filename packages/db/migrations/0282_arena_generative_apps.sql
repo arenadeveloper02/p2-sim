@@ -37,7 +37,7 @@ CREATE TABLE "deployed_app" (
 	"auth_type" text DEFAULT 'public' NOT NULL,
 	"password" text,
 	"allowed_emails" json DEFAULT '[]',
-	"require_arena_email_id" boolean DEFAULT true NOT NULL,
+	"require_arena_email_id" boolean DEFAULT false NOT NULL,
 	"draft_id" text,
 	"revision_id" text,
 	"manifest" jsonb NOT NULL,

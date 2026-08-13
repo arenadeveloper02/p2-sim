@@ -141,18 +141,6 @@ const RunAgentExternalChat = ({
     const fetchChatUrl = async () => {
       try {
         setIsLoading(true)
-        // boundary-raw-fetch: control-bar Open URL lookup for a deployed generative app
-        const appResponse = await fetch(
-          `${ARENA_GENERATIVE_APP_API_BASE_PATH}/status?workflowId=${workflowId}`
-        )
-        if (appResponse.ok) {
-          const appData = await appResponse.json()
-          if (appData.isDeployed && appData.deployment?.identifier) {
-            setChatUrl(`${ARENA_GENERATIVE_APP_BASE_PATH}/${appData.deployment.identifier}`)
-            return
-          }
-        }
-
         // boundary-raw-fetch: control-bar Open URL lookup for a deployed chat
         const response = await fetch(`/api/workflows/${workflowId}/chat/status`)
         if (response.ok) {
@@ -164,12 +152,23 @@ const RunAgentExternalChat = ({
               const url = `/chat/${data.deployment.identifier}?workspaceId=${workspaceId}&fromControlBar=true`
               setChatUrl(url)
             }
-          } else {
-            setChatUrl(null)
+            return
           }
-        } else {
-          setChatUrl(null)
         }
+
+        // boundary-raw-fetch: control-bar Open URL lookup for a deployed GUI app
+        const appResponse = await fetch(
+          `${ARENA_GENERATIVE_APP_API_BASE_PATH}/status?workflowId=${workflowId}`
+        )
+        if (appResponse.ok) {
+          const appData = await appResponse.json()
+          if (appData.isDeployed && appData.deployment?.identifier) {
+            setChatUrl(`${ARENA_GENERATIVE_APP_BASE_PATH}/${appData.deployment.identifier}`)
+            return
+          }
+        }
+
+        setChatUrl(null)
       } catch (error) {
         logger.error('Error fetching chat status:', error)
         setChatUrl(null)

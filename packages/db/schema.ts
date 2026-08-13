@@ -5377,7 +5377,7 @@ export const generativeAppDraftRevision = pgTable(
 )
 
 /**
- * Published Arena Generative UI app, hosted at /apps/{identifier}.
+ * Published Arena Generative UI app, hosted at /gui-apps/{identifier}.
  */
 export const deployedApp = pgTable(
   'deployed_app',
@@ -5401,7 +5401,7 @@ export const deployedApp = pgTable(
     authType: text('auth_type').notNull().default('public'),
     password: text('password'),
     allowedEmails: json('allowed_emails').default('[]'),
-    requireArenaEmailId: boolean('require_arena_email_id').notNull().default(true),
+    requireArenaEmailId: boolean('require_arena_email_id').notNull().default(false),
     draftId: text('draft_id').references(() => generativeAppDraft.id, { onDelete: 'set null' }),
     revisionId: text('revision_id').references(() => generativeAppDraftRevision.id, {
       onDelete: 'set null',

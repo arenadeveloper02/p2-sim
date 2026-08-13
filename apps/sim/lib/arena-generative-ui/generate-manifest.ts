@@ -86,7 +86,7 @@ export async function generateArenaGenerativeManifest(
   const systemPrompt = arenaGenerativeUiCatalog.prompt({
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
-      'This UI is embedded in an Arena iframe. Assume visitors arrive with ?emailId= on the host URL. Do not invent a login form.',
+      'This UI may be opened as a Sim page or embedded in an Arena iframe. emailId is optional. Do not invent a login form.',
       'Prefer Arena-like surfaces: calm layout, clear hierarchy, one primary CTA per page.',
     ],
   })
