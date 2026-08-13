@@ -5,7 +5,7 @@ import { START_FILES_REF } from '@/executor/constants'
 import type { ToolParameterConfig } from '@/tools/params'
 
 /** Agent tools whose LLM-facing params should not be locked by block UI defaults on add. */
-const AGENT_TOOLS_SKIP_LLM_DEFAULT_SEEDING = new Set(['image_generator_v2'])
+const AGENT_TOOLS_SKIP_LLM_DEFAULT_SEEDING = new Set(['image_generator_v2', 'storyboard'])
 
 /**
  * Builds initial StoredTool.params when a block is added to the Agent tool picker.
