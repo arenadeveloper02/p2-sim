@@ -33,11 +33,13 @@ import {
   executeMothershipDelegatedTool,
   isMothershipDelegatedTool,
 } from '@/local-copilot/lib/tools/mothership-delegated-tools'
+import { normalizeLocalEditConnections } from '@/local-copilot/lib/tools/normalize-edit-connections'
 import { guardDelegatedCreateWhenExistingAvailable } from '@/local-copilot/lib/tools/reuse-existing-guards'
 import {
   normalizeBlockIdsArgs,
   resolveBlockIdsArg,
 } from '@/local-copilot/lib/tools/resolve-block-ids-arg'
+import { resolveWorkflowStateForLocalTool } from '@/local-copilot/lib/tools/resolve-workflow-state'
 import {
   executeLoadUserSkill,
   LOAD_USER_SKILL_TOOL_NAME,
@@ -124,15 +126,6 @@ export interface ToolExecutionContext {
   activeToolCallId?: string
   /** Turn-scoped store for oversized tool-result artifacts. */
   artifactStore?: import('@/local-copilot/lib/context/artifacts').ArtifactStore
-}
-
-function requireWorkflowContext(
-  ctx: ToolExecutionContext
-): NonNullable<LocalCopilotStructuredContext['workflow']> {
-  if (!ctx.workflowId || !ctx.structuredContext.workflow) {
-    throw new Error('Open a workflow in the editor to use this action.')
-  }
-  return ctx.structuredContext.workflow
 }
 
 export interface ToolExecutionResult {
@@ -346,6 +339,25 @@ export async function executeLocalCopilotTool(
   args: Record<string, unknown>,
   ctx: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
+  try {
+    return await executeLocalCopilotToolInner(toolName, args, ctx)
+  } catch (error) {
+    const message = getErrorMessage(error, 'Tool execution failed')
+    logger.error('Arena Copilot tool threw', { toolName, error: message })
+    return {
+      toolName,
+      success: false,
+      error: message,
+      result: { error: message },
+    }
+  }
+}
+
+async function executeLocalCopilotToolInner(
+  toolName: string,
+  args: Record<string, unknown>,
+  ctx: ToolExecutionContext
+): Promise<ToolExecutionResult> {
   args = pinToolArgsToWorkspace(args, ctx.workspaceId)
   ctx.mutationIdempotency ??= new Map()
   ctx.listedIntegrationToolIds ??= new Set()
@@ -458,8 +470,14 @@ export async function executeLocalCopilotTool(
         }
       }
 
+      enrichedArgs.operations = normalizeLocalEditConnections(operations, {
+        blocks: ctx.structuredContext.workflow?.blocks,
+        edges: ctx.structuredContext.workflow?.edges,
+        availableBlocks: ctx.structuredContext.availableBlocks,
+      })
+
       const lookBefore = assertEditWorkflowLookBeforeWrite({
-        operations,
+        operations: enrichedArgs.operations,
         blocksMetadataByType: ctx.blocksMetadataByType,
       })
       if (!lookBefore.ok) {
@@ -489,7 +507,7 @@ export async function executeLocalCopilotTool(
           toolName,
           success: true,
           result: buildEditWorkflowDryRunResult({
-            operations,
+            operations: Array.isArray(enrichedArgs.operations) ? enrichedArgs.operations : operations,
             workflowId: targetWorkflowId,
             forcedByPolicy,
           }),
@@ -554,6 +572,7 @@ export async function executeLocalCopilotTool(
         mutation.output && typeof mutation.output === 'object'
           ? {
               ...(mutation.output as Record<string, unknown>),
+              workflowId: targetWorkflowId,
               ...(ctx.workflowRevision ? { revision: ctx.workflowRevision } : {}),
             }
           : mutation.output
@@ -950,7 +969,24 @@ export async function executeLocalCopilotTool(
         !Array.isArray(args.workflowJson)
           ? (args.workflowJson as Partial<WorkflowState>)
           : undefined
-      const state = override?.blocks ? override : requireWorkflowContext(ctx)
+
+      let state: Partial<WorkflowState>
+      let resolvedWorkflowId: string | undefined
+      if (override?.blocks) {
+        state = override
+      } else {
+        const resolved = await resolveWorkflowStateForLocalTool(ctx, args)
+        if (!resolved.ok) {
+          return {
+            toolName,
+            success: false,
+            error: resolved.error,
+            result: { error: resolved.error },
+          }
+        }
+        state = resolved.workflow
+        resolvedWorkflowId = resolved.workflow.id
+      }
 
       const validation = validateWorkflowState({
         blocks: state.blocks ?? {},
@@ -975,6 +1011,7 @@ export async function executeLocalCopilotTool(
         success: true,
         result: {
           ...validation,
+          ...(resolvedWorkflowId ? { workflowId: resolvedWorkflowId } : {}),
           workflowLint,
           ...(workflowLintMessage ? { workflowLintMessage } : {}),
         },
@@ -982,7 +1019,15 @@ export async function executeLocalCopilotTool(
     }
 
     case 'generate_workflow_patch': {
-      requireWorkflowContext(ctx)
+      const resolved = await resolveWorkflowStateForLocalTool(ctx, args)
+      if (!resolved.ok) {
+        return {
+          toolName,
+          success: false,
+          error: resolved.error,
+          result: { error: resolved.error },
+        }
+      }
       const userRequest = String(args.userRequest ?? '')
       const targetBlockId =
         typeof args.targetBlockId === 'string' ? args.targetBlockId : ctx.selectedBlockId
@@ -1069,7 +1114,16 @@ export async function executeLocalCopilotTool(
     }
 
     case 'propose_workflow_patch': {
-      const workflowState = requireWorkflowContext(ctx)
+      const resolved = await resolveWorkflowStateForLocalTool(ctx, args)
+      if (!resolved.ok) {
+        return {
+          toolName,
+          success: false,
+          error: resolved.error,
+          result: { error: resolved.error },
+        }
+      }
+      const workflowState = resolved.workflow
       const patch: WorkflowPatch = {
         type: 'workflow_patch',
         summary: String(args.summary ?? 'Workflow changes'),

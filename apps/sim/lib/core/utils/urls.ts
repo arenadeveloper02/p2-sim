@@ -224,7 +224,7 @@ export function getArenaHubAgentsUrl(hostname?: string): string | null {
   const host = hostname ?? (typeof window !== 'undefined' ? window.location.hostname : undefined)
   if (!host) return null
 
-  if (LOCALHOST_HOSTNAMES.has(host) || host.includes('localhost')) {
+  if (isLoopbackHostname(host) || host.includes('localhost')) {
     return 'http://localhost:3001/hub/agents'
   }
   if (host === 'dev-agent.thearena.ai' || host.includes('dev-agent')) {
