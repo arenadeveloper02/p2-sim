@@ -1,36 +1,20 @@
 import { GenerativeUiIcon } from '@/components/icons'
-import { ARENA_GENERATIVE_APP_API_BASE_PATH } from '@/lib/arena-generative-ui/types'
 import type { BlockConfig } from '@/blocks/types'
 import { IntegrationType } from '@/blocks/types'
+import { requestJson } from '@/lib/api/client/request'
+import { listGenerativeAppDraftsContract } from '@/lib/api/contracts/arena-generative-apps'
+import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { ArenaGenerativeUiResponse } from '@/tools/arena-generative-ui/types'
 
-let _inflightDraftFetch: Promise<Array<{ label: string; id: string }>> | null = null
-
 async function fetchGenerativeAppDrafts(): Promise<Array<{ label: string; id: string }>> {
-  if (_inflightDraftFetch) {
-    return _inflightDraftFetch
-  }
-
-  _inflightDraftFetch =
-    // boundary-raw-fetch: internal JSON GET for Arena Generative UI draft dropdown hydration
-    fetch(`${ARENA_GENERATIVE_APP_API_BASE_PATH}/drafts`, { credentials: 'same-origin' })
-      .then((response) => response.json())
-      .then((data) => {
-        _inflightDraftFetch = null
-        if (!Array.isArray(data?.drafts)) {
-          return []
-        }
-        return data.drafts.map((draft: { id: string; title: string; revision?: number }) => ({
-          id: draft.id,
-          label: draft.revision ? `${draft.title} (r${draft.revision})` : draft.title,
-        }))
-      })
-      .catch(() => {
-        _inflightDraftFetch = null
-        return []
-      })
-
-  return _inflightDraftFetch
+  const workflowId = useWorkflowRegistry.getState().activeWorkflowId
+  const data = await requestJson(listGenerativeAppDraftsContract, {
+    query: workflowId ? { workflowId } : {},
+  })
+  return data.drafts.map((draft) => ({
+    id: draft.id,
+    label: draft.revision ? `${draft.title} (r${draft.revision})` : draft.title,
+  }))
 }
 
 export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
@@ -68,7 +52,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
       type: 'long-input',
       required: true,
       placeholder:
-        'Describe pages, navigation, CTAs, and copy. Example: Home form submits qualify_lead then goes to Results. Results has Back.',
+        'Generate: describe the app. Edit: describe the changes (copy, layout, pages, CTAs).',
       wandConfig: {
         enabled: true,
         prompt: `You are an expert product designer for Sim GUI apps that may open as a page or in an Arena iframe. Expand the user's idea into a brief for a multi-page json-render UI.
@@ -90,8 +74,12 @@ Return ONLY the specification text.`,
       type: 'dropdown',
       required: { field: 'operation', value: 'edit' },
       condition: { field: 'operation', value: 'edit' },
-      description: 'Select an existing generative app draft to edit.',
+      description:
+        'Required in Edit mode. Pick the draft this block created (usually the latest on this workflow).',
+      placeholder: 'Select a draft',
       options: [],
+      searchable: true,
+      dependsOn: ['operation'],
       fetchOptions: async () => fetchGenerativeAppDrafts(),
       fetchOptionById: async (_blockId: string, optionId: string) => {
         const drafts = await fetchGenerativeAppDrafts()
@@ -106,16 +94,14 @@ Return ONLY the specification text.`,
       language: 'json',
       placeholder: '[]',
       description:
-        'Optional sitemap. Leave blank (or []) and the model chooses pages from User Input.',
-      condition: { field: 'operation', value: 'generate' },
+        'Optional sitemap. Leave blank to let the model choose (Generate) or keep the current pages (Edit).',
     },
     {
       id: 'entryPath',
       title: 'Entry Path',
       type: 'short-input',
       placeholder: 'home',
-      description: 'First page after open. Defaults to home.',
-      condition: { field: 'operation', value: 'generate' },
+      description: 'First page after open. Defaults to home. Leave blank in Edit to keep the current entry.',
     },
     {
       id: 'apiBindings',

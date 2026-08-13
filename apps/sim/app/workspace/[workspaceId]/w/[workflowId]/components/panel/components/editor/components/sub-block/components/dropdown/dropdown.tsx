@@ -277,11 +277,25 @@ export const Dropdown = memo(function Dropdown({
 
     if (clearable) return
 
-    const persistedSubBlock = useWorkflowStore.getState().blocks[blockId]?.subBlocks?.[subBlockId]
-    if (persistedSubBlock !== undefined) return
+    // Static options seed only on first insert. Fetched lists arrive after mount,
+    // so an empty required field (e.g. Edit → Draft) would stay blank forever if
+    // we also required the subblock to be absent from the graph.
+    if (!fetchOptions) {
+      const persistedSubBlock = useWorkflowStore.getState().blocks[blockId]?.subBlocks?.[subBlockId]
+      if (persistedSubBlock !== undefined) return
+    }
 
     setStoreValue(defaultOptionValue)
-  }, [storeValue, defaultOptionValue, setStoreValue, multiSelect, clearable, blockId, subBlockId])
+  }, [
+    storeValue,
+    defaultOptionValue,
+    setStoreValue,
+    multiSelect,
+    clearable,
+    blockId,
+    subBlockId,
+    fetchOptions,
+  ])
 
   /**
    * Normalizes variable references in JSON strings by wrapping them in quotes
