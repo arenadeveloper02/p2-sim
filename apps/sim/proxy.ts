@@ -349,8 +349,8 @@ export async function proxy(request: NextRequest) {
     return track(request, response)
   }
 
-  // Chat pages are publicly accessible embeds — CSP is set in next.config.ts headers
-  if (url.pathname.startsWith('/chat/')) {
+  // Chat pages and generative apps are publicly accessible embeds — CSP is set in next.config.ts headers
+  if (url.pathname.startsWith('/chat/') || url.pathname.startsWith('/gui-apps/')) {
     return track(request, NextResponse.next())
   }
 

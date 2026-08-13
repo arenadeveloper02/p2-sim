@@ -5320,3 +5320,106 @@ export const sandboxImage = pgTable(
     lastUsedIdx: index('sandbox_image_last_used_idx').on(table.lastUsedAt),
   })
 )
+
+/**
+ * Draft produced by the Arena Generative UI block (multi-page json-render manifest).
+ */
+export const generativeAppDraft = pgTable(
+  'generative_app_draft',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    entryPath: text('entry_path').notNull().default('home'),
+    revision: integer('revision').notNull().default(1),
+    manifest: jsonb('manifest').notNull(),
+    apiBindings: jsonb('api_bindings').notNull().default([]),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workflowIdx: index('generative_app_draft_workflow_idx').on(table.workflowId),
+    workspaceIdx: index('generative_app_draft_workspace_idx').on(table.workspaceId),
+  })
+)
+
+/**
+ * Immutable revisions of a generative app draft. Deploy publishes a specific revision.
+ */
+export const generativeAppDraftRevision = pgTable(
+  'generative_app_draft_revision',
+  {
+    id: text('id').primaryKey(),
+    draftId: text('draft_id')
+      .notNull()
+      .references(() => generativeAppDraft.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    title: text('title').notNull(),
+    entryPath: text('entry_path').notNull(),
+    manifest: jsonb('manifest').notNull(),
+    apiBindings: jsonb('api_bindings').notNull().default([]),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    draftRevisionUnique: uniqueIndex('generative_app_draft_revision_unique').on(
+      table.draftId,
+      table.revision
+    ),
+  })
+)
+
+/**
+ * Published Arena Generative UI app, hosted at /apps/{identifier}.
+ */
+export const deployedApp = pgTable(
+  'deployed_app',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    workflowId: text('workflow_id')
+      .notNull()
+      .references(() => workflow.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    identifier: text('identifier').notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    department: text('department'),
+    isActive: boolean('is_active').notNull().default(true),
+    customizations: json('customizations').default('{}'),
+    authType: text('auth_type').notNull().default('public'),
+    password: text('password'),
+    allowedEmails: json('allowed_emails').default('[]'),
+    requireArenaEmailId: boolean('require_arena_email_id').notNull().default(true),
+    draftId: text('draft_id').references(() => generativeAppDraft.id, { onDelete: 'set null' }),
+    revisionId: text('revision_id').references(() => generativeAppDraftRevision.id, {
+      onDelete: 'set null',
+    }),
+    manifest: jsonb('manifest').notNull(),
+    apiBindings: jsonb('api_bindings').notNull().default([]),
+    httpAllowlist: jsonb('http_allowlist').notNull().default([]),
+    archivedAt: timestamp('archived_at'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    identifierIdx: uniqueIndex('deployed_app_identifier_idx')
+      .on(table.identifier)
+      .where(sql`${table.archivedAt} IS NULL`),
+    workflowArchivedAtIdx: index('deployed_app_workflow_archived_idx').on(
+      table.workflowId,
+      table.archivedAt
+    ),
+  })
+)

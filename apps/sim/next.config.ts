@@ -217,6 +217,7 @@ const nextConfig: NextConfig = {
       './node_modules/@json-render/**/*',
       './node_modules/@react-email/**/*',
     ],
+    '/api/tools/arena_generative_ui/*': ['./node_modules/@json-render/**/*'],
     // The seed, merge, and persist endpoints all lazily `require('jsdom')` (via the collab-doc
     // converter), which is invisible to the standalone file tracer, so force jsdom (and its transitive
     // deps, followed from its static requires) into the trace — otherwise a Docker/standalone build
@@ -484,11 +485,26 @@ const nextConfig: NextConfig = {
           { key: 'Cross-Origin-Opener-Policy', value: 'unsafe-none' },
         ],
       },
+      {
+        source: '/gui-apps/:path*',
+        headers: [
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'Content-Security-Policy',
+            value: getChatEmbedCSPPolicy(),
+          },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'unsafe-none' },
+          { key: 'Cross-Origin-Opener-Policy', value: 'unsafe-none' },
+        ],
+      },
       // Apply security headers to routes not handled by middleware runtime CSP
       // Middleware handles: /, /login, /signup, /workspace/*
-      // Exclude chat routes which have their own permissive embed headers
+      // Exclude chat and gui-apps routes which have their own permissive embed headers
       {
-        source: '/((?!workspace|chat|login|signup|$).*)',
+        source: '/((?!workspace|chat|gui-apps|login|signup|$).*)',
         headers: [
           {
             key: 'X-Content-Type-Options',

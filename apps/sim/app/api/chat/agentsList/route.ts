@@ -1,10 +1,11 @@
 import { db } from '@sim/db'
-import { chat, user, workflow, workflowExecutionLogs } from '@sim/db/schema'
+import { chat, deployedApp, user, workflow, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import type { SQL } from 'drizzle-orm'
-import { and, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
+import { ARENA_GENERATIVE_APP_BASE_PATH } from '@/lib/arena-generative-ui/types'
 import {
   getAgentDepartmentLabelMap,
   labelFromDepartmentMap,
@@ -72,7 +73,41 @@ function toAgentListItem(row: AgentChatRow, departmentLabelMap: Map<string, stri
   }
 }
 
-type AgentListItem = ReturnType<typeof toAgentListItem>
+interface AgentGenerativeAppRow {
+  appId: string
+  title: string
+  authorEmail: string | null
+  workflowId: string
+  workflowName: string
+  workspaceId: string | null
+  department: string | null
+  createdAt: Date
+  allowedEmails: unknown
+  description: string | null
+  identifier: string
+}
+
+function toGenerativeAppListItem(row: AgentGenerativeAppRow, departmentLabelMap: Map<string, string>) {
+  return {
+    id: row.appId,
+    title: row.title,
+    author_email: row.authorEmail,
+    workflow_id: row.workflowId,
+    workflow_name: row.workflowName,
+    workspace_id: row.workspaceId,
+    department: labelFromDepartmentMap(departmentLabelMap, row.department),
+    created_at: row.createdAt.toISOString(),
+    workflow_description: row.description,
+    status: 'published',
+    identifier: row.identifier,
+    deployment_type: 'generative_app',
+    redirect_url: `${getBaseUrl()}${ARENA_GENERATIVE_APP_BASE_PATH}/${row.identifier}`,
+  }
+}
+
+type AgentListItem =
+  | ReturnType<typeof toAgentListItem>
+  | ReturnType<typeof toGenerativeAppListItem>
 
 /**
  * Returns execution log rows for the given workflowIds and userId, ordered by started_at desc.
@@ -154,7 +189,10 @@ function mergeAgentListsById(...lists: AgentListItem[][]): AgentListItem[] {
   return Array.from(byId.values())
 }
 
-const getAgentsListAllowedEmail = (chats: AgentChatRow[], emailId: string) => {
+const getAgentsListAllowedEmail = <T extends { allowedEmails: unknown }>(
+  chats: T[],
+  emailId: string
+): T[] => {
   return chats.filter((chatRecord) => {
     if (chatRecord.allowedEmails) {
       const allowedEmailsList = Array.isArray(chatRecord.allowedEmails)
@@ -202,6 +240,30 @@ async function fetchAgentChats(whereConditions: SQL<unknown> | undefined): Promi
     .orderBy(desc(chat.updatedAt))
 }
 
+async function fetchGenerativeApps(
+  whereConditions: SQL<unknown> | undefined
+): Promise<AgentGenerativeAppRow[]> {
+  return await db
+    .select({
+      appId: deployedApp.id,
+      title: deployedApp.title,
+      workflowId: deployedApp.workflowId,
+      allowedEmails: deployedApp.allowedEmails,
+      department: deployedApp.department,
+      createdAt: deployedApp.createdAt,
+      workflowName: workflow.name,
+      workspaceId: workflow.workspaceId,
+      authorEmail: user.email,
+      description: deployedApp.description,
+      identifier: deployedApp.identifier,
+    })
+    .from(deployedApp)
+    .innerJoin(workflow, eq(deployedApp.workflowId, workflow.id))
+    .innerJoin(user, eq(workflow.userId, user.id))
+    .where(whereConditions)
+    .orderBy(desc(deployedApp.updatedAt))
+}
+
 /**
  * Returns agents (chats) whose workflow was created by the user with the given email.
  * Creator is determined by workflow.userId, not chat.userId.
@@ -230,10 +292,17 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
    * - And that are explicitly accessible via `allowedEmails` (exact email or domain pattern)
    */
   const accessibleChats = getAgentsListAllowedEmail(chats, emailId)
+  const apps = await fetchGenerativeApps(
+    and(eq(deployedApp.isActive, true), eq(workflow.userId, creatorUserId), isNull(deployedApp.archivedAt))
+  )
+  const accessibleApps = getAgentsListAllowedEmail(apps, emailId)
 
   const departmentLabelMap = await getAgentDepartmentLabelMap()
   const agentList = await sortAgentListByRecentUsage(
-    accessibleChats.map((row) => toAgentListItem(row, departmentLabelMap)),
+    [
+      ...accessibleChats.map((row) => toAgentListItem(row, departmentLabelMap)),
+      ...accessibleApps.map((row) => toGenerativeAppListItem(row, departmentLabelMap)),
+    ],
     creatorUserId
   )
 
@@ -285,7 +354,16 @@ async function getSharedWithMeAgentsList(emailId: string): Promise<NextResponse>
 
   const sharedChats = await fetchSharedWithMeChats(emailId, userRecord[0].id)
   const departmentLabelMap = await getAgentDepartmentLabelMap()
-  const agentList = sharedChats.map((row) => toAgentListItem(row, departmentLabelMap))
+  const sharedApps = getAgentsListAllowedEmail(
+    await fetchGenerativeApps(
+      and(eq(deployedApp.isActive, true), ne(workflow.userId, userRecord[0].id), isNull(deployedApp.archivedAt))
+    ),
+    emailId
+  )
+  const agentList = [
+    ...sharedChats.map((row) => toAgentListItem(row, departmentLabelMap)),
+    ...sharedApps.map((row) => toGenerativeAppListItem(row, departmentLabelMap)),
+  ]
 
   logger.info(
     `agentsList (sharedwithme): returning ${agentList.length} chats for ${emailId} (in allowedEmails, not created by user)`
@@ -327,10 +405,42 @@ async function getGlobalAgentsList(
     .filter((row) => hasAllowedEmailStartingWithAtSymbol(row.allowedEmails, userEmailDomain))
     .map((row) => toAgentListItem(row, departmentLabelMap))
 
+  const globalApps = await fetchGenerativeApps(
+    departmentValue !== undefined
+      ? and(
+          eq(deployedApp.isActive, true),
+          eq(deployedApp.department, departmentValue),
+          isNull(deployedApp.archivedAt)
+        )
+      : and(eq(deployedApp.isActive, true), isNull(deployedApp.archivedAt))
+  )
+  const globalAppList = globalApps
+    .filter((row) => hasAllowedEmailStartingWithAtSymbol(row.allowedEmails, userEmailDomain))
+    .map((row) => toGenerativeAppListItem(row, departmentLabelMap))
+
   const sharedChats = await fetchSharedWithMeChats(emailId, userId, departmentValue)
   const sharedAgentList = sharedChats.map((row) => toAgentListItem(row, departmentLabelMap))
+  const sharedApps = getAgentsListAllowedEmail(
+    await fetchGenerativeApps(
+      departmentValue !== undefined
+        ? and(
+            eq(deployedApp.isActive, true),
+            eq(deployedApp.department, departmentValue),
+            ne(workflow.userId, userId),
+            isNull(deployedApp.archivedAt)
+          )
+        : and(eq(deployedApp.isActive, true), ne(workflow.userId, userId), isNull(deployedApp.archivedAt))
+    ),
+    emailId
+  )
+  const sharedAppList = sharedApps.map((row) => toGenerativeAppListItem(row, departmentLabelMap))
 
-  const mergedAgentList = mergeAgentListsById(globalAgentList, sharedAgentList)
+  const mergedAgentList = mergeAgentListsById(
+    globalAgentList,
+    globalAppList,
+    sharedAgentList,
+    sharedAppList
+  )
   const agentList = await sortAgentListByRecentUsage(mergedAgentList, userId)
 
   logger.info(

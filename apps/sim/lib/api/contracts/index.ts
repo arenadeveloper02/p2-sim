@@ -1,4 +1,5 @@
 export * from './admin'
+export * from './arena-generative-apps'
 export * from './api-keys'
 export * from './audit-logs'
 export * from './byok-keys'

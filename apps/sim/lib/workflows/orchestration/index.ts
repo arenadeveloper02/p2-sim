@@ -3,6 +3,10 @@ export {
   performChatUndeploy,
 } from './chat-deploy'
 export {
+  performGenerativeAppDeploy,
+  performGenerativeAppUndeploy,
+} from './app-deploy'
+export {
   getWorkflowDeploymentSummary,
   performActivateVersion,
   performFullDeploy,

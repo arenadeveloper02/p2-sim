@@ -20,6 +20,11 @@ export const AuditAction = {
   CHAT_DELETED: 'chat.deleted',
   CHAT_PASSWORD_VIEWED: 'chat.password_viewed',
 
+  // Arena Generative App
+  GENERATIVE_APP_DEPLOYED: 'generative_app.deployed',
+  GENERATIVE_APP_UPDATED: 'generative_app.updated',
+  GENERATIVE_APP_DELETED: 'generative_app.deleted',
+
   // Custom Blocks (deploy-as-block)
   CUSTOM_BLOCK_PUBLISHED: 'custom_block.published',
   CUSTOM_BLOCK_UPDATED: 'custom_block.updated',
@@ -231,6 +236,7 @@ export const AuditResourceType = {
   ENVIRONMENT: 'environment',
   FILE: 'file',
   FOLDER: 'folder',
+  GENERATIVE_APP: 'generative_app',
   KNOWLEDGE_BASE: 'knowledge_base',
   MCP_SERVER: 'mcp_server',
   OAUTH: 'oauth',

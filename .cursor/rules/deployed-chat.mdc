@@ -1,0 +1,41 @@
+---
+description: Deployed chat UI contracts and regression checklist — apply when editing deployed chat surfaces
+globs:
+  - apps/sim/app/(interfaces)/chat/**/*
+  - apps/sim/lib/chat/deployed-chat*.ts
+  - apps/sim/hooks/queries/deployed-chat-threads.ts
+  - apps/sim/lib/api/contracts/deployed-chat-threads.ts
+---
+
+# Deployed Chat
+
+Before finishing edits under these globs, read and satisfy:
+
+[`apps/sim/app/(interfaces)/chat/REGRESSION_CHECKLIST.md`](apps/sim/app/(interfaces)/chat/REGRESSION_CHECKLIST.md)
+
+## Non-negotiable contracts (do not regress)
+
+### Thread row (`leftNavThread.tsx`)
+
+- Never reintroduce a per-thread refresh (`RefreshCw`) button next to the ⋮ menu.
+- Never hide Export behind `isActive &&`. Always render Export when `onExportChat` is provided; use `disabled={!isActive}` for inactive threads.
+- Do not add Copy link back to the thread ⋮ menu.
+
+### Landing copy (`clip-description.ts` / `DeployedChatLanding.tsx`)
+
+- Landing shows welcome message only — not chat `description`.
+- `resolveDeployedChatLandingDescription` must not take or prefer `description`.
+
+### Start-block summary (`ArenaDeployedChat.tsx`)
+
+- “Inputs received: …” is `type: 'user'` with `isStartBlockInputsSummary: true` so assistant actions (copy / regenerate / feedback) do not apply.
+
+### Feedback markdown links (`markdown-renderer.tsx`)
+
+- Plain links only — no URL hover popover. Hover color uses `--color-ds-text-link-hover`.
+
+## Edit discipline
+
+- Prefer surgical diffs. Do not rewrite entire ThreadRow / welcome / feedback blocks for a one-line change.
+- One feature per commit when possible. Do not bundle unrelated chrome changes into a catch-all commit.
+- After merges into this area, re-check the thread-history and landing sections of the checklist even if there were no conflict markers.

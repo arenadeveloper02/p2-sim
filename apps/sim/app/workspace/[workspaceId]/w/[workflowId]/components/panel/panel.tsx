@@ -39,6 +39,7 @@ import {
   deleteCopilotChatContract,
 } from '@/lib/api/contracts/copilot'
 import { getWorkflowNormalizedStateContract } from '@/lib/api/contracts/workflows'
+import { ARENA_GENERATIVE_APP_API_BASE_PATH, ARENA_GENERATIVE_APP_BASE_PATH } from '@/lib/arena-generative-ui/types'
 import { useSession } from '@/lib/auth/auth-client'
 import { getWorkspaceUsageLimitAction } from '@/lib/billing/workspace-permissions'
 import { isChatEnabled } from '@/lib/core/config/env-flags'
@@ -140,6 +141,19 @@ const RunAgentExternalChat = ({
     const fetchChatUrl = async () => {
       try {
         setIsLoading(true)
+        // boundary-raw-fetch: control-bar Open URL lookup for a deployed generative app
+        const appResponse = await fetch(
+          `${ARENA_GENERATIVE_APP_API_BASE_PATH}/status?workflowId=${workflowId}`
+        )
+        if (appResponse.ok) {
+          const appData = await appResponse.json()
+          if (appData.isDeployed && appData.deployment?.identifier) {
+            setChatUrl(`${ARENA_GENERATIVE_APP_BASE_PATH}/${appData.deployment.identifier}`)
+            return
+          }
+        }
+
+        // boundary-raw-fetch: control-bar Open URL lookup for a deployed chat
         const response = await fetch(`/api/workflows/${workflowId}/chat/status`)
         if (response.ok) {
           const data = await response.json()

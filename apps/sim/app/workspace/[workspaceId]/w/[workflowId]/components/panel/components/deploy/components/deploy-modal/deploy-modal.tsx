@@ -65,6 +65,7 @@ import { mergeSubblockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 import { ApiDeploy, ChatDeploy, type ExistingChat, GeneralDeploy, McpDeploy } from './components'
+import { GenerativeAppDeploy } from './components/generative-app'
 import { ApiInfoModal } from './components/general/components/api-info-modal'
 
 const logger = createLogger('DeployModal')
@@ -91,9 +92,9 @@ interface WorkflowDeploymentInfoUI {
   isPublicApi: boolean
 }
 
-type TabView = 'general' | 'api' | 'chat' | 'app' | 'mcp'
+type TabView = 'general' | 'api' | 'chat' | 'app' | 'mcp' | 'generative_app'
 
-const DEPLOY_MODAL_TABS = new Set<TabView>(['general', 'api', 'chat', 'app', 'mcp'])
+const DEPLOY_MODAL_TABS = new Set<TabView>(['general', 'api', 'chat', 'app', 'mcp', 'generative_app'])
 
 function isDeployModalTab(value: unknown): value is TabView {
   return typeof value === 'string' && DEPLOY_MODAL_TABS.has(value as TabView)
@@ -128,6 +129,10 @@ export function DeployModal({
   const [isActivatingVersion, setIsActivatingVersion] = useState(false)
   const [isChatFormValid, setIsChatFormValid] = useState(false)
   const [isAppFormValid, setIsAppFormValid] = useState(false)
+  const [isGenerativeAppFormValid, setIsGenerativeAppFormValid] = useState(false)
+  const [generativeAppSubmitting, setGenerativeAppSubmitting] = useState(false)
+  const [generativeAppSuccess, setGenerativeAppSuccess] = useState(false)
+  const generativeAppSuccessTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [selectedStreamingOutputs, setSelectedStreamingOutputs] = useState<string[]>([])
 
   const [undeployTargetWorkflowId, setUndeployTargetWorkflowId] = useState<string | null>(null)
@@ -626,6 +631,9 @@ export function DeployModal({
               {!permissionConfig.hideDeployChatbot && (
                 <ModalTabsTrigger value='app'>App</ModalTabsTrigger>
               )}
+              {!permissionConfig.hideDeployChatbot && (
+                <ModalTabsTrigger value='generative_app'>Generative App</ModalTabsTrigger>
+              )}
             </ModalTabsList>
 
             <ModalBody className='min-h-0 flex-1'>
@@ -703,6 +711,25 @@ export function DeployModal({
                   onDeployed={handleAppDeployed}
                   onVersionActivated={() => {}}
                   chatAlreadyExists={isExistingAppDeployment}
+                />
+              </ModalTabsContent>
+
+              <ModalTabsContent value='generative_app'>
+                <GenerativeAppDeploy
+                  workflowId={workflowId || ''}
+                  submitting={generativeAppSubmitting}
+                  setSubmitting={setGenerativeAppSubmitting}
+                  onValidationChange={setIsGenerativeAppFormValid}
+                  onDeployed={() => {
+                    if (generativeAppSuccessTimeoutRef.current) {
+                      clearTimeout(generativeAppSuccessTimeoutRef.current)
+                    }
+                    setGenerativeAppSuccess(true)
+                    generativeAppSuccessTimeoutRef.current = setTimeout(
+                      () => setGenerativeAppSuccess(false),
+                      2000
+                    )
+                  }}
                 />
               </ModalTabsContent>
 
@@ -825,6 +852,30 @@ export function DeployModal({
                       : isExistingAppDeployment
                         ? 'Update'
                         : 'Launch App'}
+                </Button>
+              </div>
+            </ModalFooter>
+          )}
+          {activeTab === 'generative_app' && (
+            <ModalFooter className='items-center justify-between'>
+              <div />
+              <div className='flex items-center gap-2'>
+                <Button
+                  type='button'
+                  variant='tertiary'
+                  onClick={() => {
+                    const form = document.getElementById(
+                      'generative-app-deploy-form'
+                    ) as HTMLFormElement
+                    form?.requestSubmit()
+                  }}
+                  disabled={generativeAppSubmitting || !isGenerativeAppFormValid}
+                >
+                  {generativeAppSuccess
+                    ? 'Launched'
+                    : generativeAppSubmitting
+                      ? 'Launching...'
+                      : 'Launch App'}
                 </Button>
               </div>
             </ModalFooter>

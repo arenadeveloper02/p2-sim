@@ -15,6 +15,7 @@ import { ApolloBlock, ApolloBlockMeta } from '@/blocks/blocks/apollo'
 import { AppConfigBlock, AppConfigBlockMeta } from '@/blocks/blocks/appconfig'
 import { ArenaBlock } from '@/blocks/blocks/arena'
 import { ArenaDevelopmentBlock } from '@/blocks/blocks/arena-development'
+import { ArenaGenerativeUiBlock } from '@/blocks/blocks/arena-generative-ui'
 import { ArxivBlock, ArxivBlockMeta } from '@/blocks/blocks/arxiv'
 import { AsanaBlock, AsanaBlockMeta } from '@/blocks/blocks/asana'
 import { AshbyBlock, AshbyBlockMeta } from '@/blocks/blocks/ashby'
@@ -389,6 +390,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   appconfig: AppConfigBlock,
   apollo: ApolloBlock,
   arena_development: ArenaDevelopmentBlock,
+  arena_generative_ui: ArenaGenerativeUiBlock,
   arxiv: ArxivBlock,
   asana: AsanaBlock,
   ashby: AshbyBlock,
