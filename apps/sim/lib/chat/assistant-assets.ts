@@ -167,6 +167,9 @@ function addGeneratedImageUrl(
   })
 }
 
+/** Video files are never renderable images, even when stored under agent-generated-images. */
+const VIDEO_FILE_URL_PATTERN = /\.(mp4|webm|mov|m4v)(\?|#|%|$)/i
+
 /**
  * Returns whether the value is a renderable image URL we can show in chat.
  */
@@ -176,6 +179,7 @@ export function isAssistantImageUrl(value: unknown): value is string {
     value.length > 0 &&
     (isDataImageUrl(value) ||
       ((value.startsWith('http') || value.startsWith('/api/files/serve/')) &&
+        !VIDEO_FILE_URL_PATTERN.test(value.trim()) &&
         (/\.(png|jpg|jpeg|gif|webp)(\?|#|%|$)/i.test(value.trim()) ||
           value.includes('agent-generated-images'))))
   )

@@ -5,6 +5,7 @@ import {
   extractChartsFromData,
   hasRenderableChartDeployOutput,
 } from '@/lib/chart-generation/echarts-option'
+import { extractGeneratedImagesFromData } from '@/lib/chat/assistant-assets'
 import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
 import {
   extractBlockIdFromOutputId,
@@ -414,6 +415,78 @@ function attachToolCallCharts(
   }
 }
 
+/**
+ * Attaches generated images that live deeper in a selected block's output than
+ * the selected path itself — specifically an Agent block that called an
+ * image-producing tool (Image Generator, Storyboard), where the image URLs land
+ * in `toolCalls.list[].result.images` while the selected path is `content`
+ * (plain text). Without this, deployed chat receives only the text because the
+ * final payload is minimized to the selected paths.
+ *
+ * Images whose URL already appears in the streamed text or the minimized output
+ * are skipped, so nothing renders twice. Attaching is best-effort: if it would
+ * exceed the inline byte budget it is skipped rather than failing the response.
+ */
+function attachToolCallImages(
+  output: Record<string, unknown>,
+  logs: BlockLog[] | undefined,
+  selectedOutputs: string[] | undefined,
+  streamedContent: Map<string, string>,
+  requestId: string
+): void {
+  if (!logs?.length || !selectedOutputs?.length) {
+    return
+  }
+
+  for (const { blockId } of getSelectedOutputDescriptors(selectedOutputs)) {
+    if (isDangerousKey(blockId)) {
+      continue
+    }
+
+    const blockLog = logs.find((log: BlockLog) => log.blockId === blockId)
+    if (!blockLog?.output) {
+      continue
+    }
+
+    const allImages = extractGeneratedImagesFromData(blockLog.output)
+    if (allImages.length === 0) {
+      continue
+    }
+
+    const streamedText = streamedContent.get(blockId) ?? ''
+    const existing = output[blockId]
+    const existingUrls = new Set(extractGeneratedImagesFromData(existing).map((image) => image.url))
+
+    const newUrls = allImages
+      .map((image) => image.url)
+      .filter((url) => url && !existingUrls.has(url) && !streamedText.includes(url))
+    if (newUrls.length === 0) {
+      continue
+    }
+
+    const previous = output[blockId]
+    if (!previous) {
+      output[blockId] = Object.create(null) as Record<string, unknown>
+    }
+    const blockOutput = output[blockId] as Record<string, unknown>
+    const priorImagesField = blockOutput.images
+    blockOutput.images = Array.isArray(priorImagesField)
+      ? [...priorImagesField, ...newUrls]
+      : newUrls
+
+    try {
+      assertSelectedOutputBytes(output)
+    } catch {
+      logger.warn(`[${requestId}] Tool-call images exceeded inline budget; omitting`, { blockId })
+      if (previous) {
+        blockOutput.images = priorImagesField
+      } else {
+        output[blockId] = undefined
+      }
+    }
+  }
+}
+
 /** Tool-call payload keys that must never ride a public `final` envelope. */
 const TOOL_PAYLOAD_KEYS = ['arguments', 'input', 'result', 'output'] as const
 
@@ -694,6 +767,14 @@ async function buildMinimalResult(
   }
 
   attachToolCallCharts(
+    minimalResult.output,
+    result.logs,
+    selectedOutputs,
+    streamedContent,
+    requestId
+  )
+
+  attachToolCallImages(
     minimalResult.output,
     result.logs,
     selectedOutputs,
