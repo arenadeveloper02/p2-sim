@@ -29,6 +29,16 @@ const DEFAULT_SCENE_COUNT = 4
 const MIN_SCENE_COUNT = 1
 const MAX_SCENE_COUNT = 10
 
+/**
+ * 'scenes'   — ordered scenes of ONE video (saved, renderable).
+ * 'concepts' — N independent ad ideas to pick from (never saved, never renderable).
+ */
+export type StoryboardMode = 'scenes' | 'concepts'
+
+function asMode(value: unknown): StoryboardMode {
+  return asString(value).toLowerCase() === 'concepts' ? 'concepts' : 'scenes'
+}
+
 export interface StoryboardScene {
   index: number
   prompt: string
@@ -74,10 +84,28 @@ async function planScenes(options: {
   model: string
   apiKey: string
   provider: string
+  mode: StoryboardMode
 }): Promise<Array<{ description: string; prompt: string }>> {
-  const { topic, sceneCount, stylePrompt, model, apiKey, provider } = options
+  const { topic, sceneCount, stylePrompt, model, apiKey, provider, mode } = options
 
-  const systemPrompt = `You are a storyboard planner for short AI-generated videos.
+  const systemPrompt =
+    mode === 'concepts'
+      ? `You are a creative director pitching short video ad ideas.
+
+Turn the user's brief into exactly ${sceneCount} INDEPENDENT ad concepts. Each concept is a complete, standalone video idea — NOT scenes of one story.
+
+Return ONLY a JSON object, no markdown, in this exact shape:
+{"scenes":[{"description":"one-sentence pitch of this ad concept","prompt":"detailed visual image-generation prompt for this concept's key frame"}]}
+
+Rules:
+- Exactly ${sceneCount} concepts.
+- Every concept must be clearly different from the others: different setting, mood, visual style, or creative angle.
+- "prompt" must be a rich, self-contained visual description (subject, setting, lighting, camera angle, mood) of the concept's single most representative frame. It is fed directly to an image generator.
+- "description" must summarize the whole ad idea in one sentence so a person can pick between them.
+- Do not include any text, captions, watermarks, or letters in the images.${
+          stylePrompt ? `\n- Apply this overall visual style to every concept: ${stylePrompt}` : ''
+        }`
+      : `You are a storyboard planner for short AI-generated videos.
 
 Split the user's idea into exactly ${sceneCount} ordered scenes that tell a coherent story.
 
@@ -90,8 +118,8 @@ Rules:
 - Every scene must be visually distinct from the others.
 - Keep characters, art style, and color palette consistent across all scenes so the scenes look like one video.
 - Do not include any text, captions, watermarks, or letters in the images.${
-    stylePrompt ? `\n- Apply this overall visual style to every scene: ${stylePrompt}` : ''
-  }`
+          stylePrompt ? `\n- Apply this overall visual style to every scene: ${stylePrompt}` : ''
+        }`
 
   const response = (await executeProviderRequest(provider, {
     model,
@@ -150,6 +178,7 @@ export async function runStoryboardGenerate(
     asString(params.conversationId) ||
     (context.workflowId ? `wf:${context.workflowId}` : `user:${context.userId ?? 'unknown'}`)
 
+  const mode = asMode(params.mode)
   const sceneCount = clampSceneCount(params.sceneCount)
   const stylePrompt = asString(params.stylePrompt)
 
@@ -166,7 +195,8 @@ export async function runStoryboardGenerate(
   const aspectRatio = asString(params.aspectRatio) || '16:9'
   const falApiKey = asString(params.falApiKey) || getFalApiKey()
 
-  logger.info(`[${requestId}] Planning storyboard scenes`, {
+  logger.info(`[${requestId}] Planning storyboard ${mode}`, {
+    mode,
     sceneCount,
     planningProvider,
     planningModel,
@@ -181,6 +211,7 @@ export async function runStoryboardGenerate(
     model: planningModel,
     apiKey: planningApiKey,
     provider: planningProvider,
+    mode,
   })
 
   logger.info(`[${requestId}] Generating scene images via Fal.ai`, { count: planned.length })
@@ -212,6 +243,29 @@ export async function runStoryboardGenerate(
       description: scene.description,
       imageUrl: image.imageUrl,
     })
+  }
+
+  // Concepts are pitches to choose between, not scenes of a video. They are
+  // deliberately NOT saved to `storyboards`, so the render step (which falls
+  // back to the latest saved storyboard) can never turn them into a video.
+  if (mode === 'concepts') {
+    const conceptLines = scenes.map((s) => `${s.index}. ${s.description}`).join('\n')
+    const content = `Here are ${scenes.length} ad concepts for "${topic}":\n\n${conceptLines}\n\nWhich concept do you want? Reply with a number 1-${scenes.length}. You can also add changes, for example "3 but at night".`
+
+    logger.info(`[${requestId}] Concepts generated (not persisted)`, {
+      conversationId,
+      conceptCount: scenes.length,
+    })
+
+    return {
+      storyboardId: '',
+      conversationId,
+      topic,
+      scenes,
+      images: scenes.map((s) => s.imageUrl),
+      sceneCount: scenes.length,
+      content,
+    }
   }
 
   const inserted = await db.execute(

@@ -2,6 +2,7 @@ import type { ToolConfig, ToolResponse } from '@/tools/types'
 
 export interface StoryboardGenerateParams {
   topic: string
+  mode?: string
   sceneCount?: number
   stylePrompt?: string
   conversationId?: string
@@ -53,6 +54,13 @@ export const storyboardGenerateTool: ToolConfig<
       required: true,
       visibility: 'user-or-llm',
       description: 'The video idea to turn into a storyboard',
+    },
+    mode: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        '"scenes" (default): ordered scenes of one video, saved for rendering. "concepts": independent ad ideas to pick between — one image each, never rendered as a video.',
     },
     sceneCount: {
       type: 'number',
