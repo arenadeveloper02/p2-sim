@@ -47,6 +47,13 @@ export const LOCAL_COPILOT_CATALOG = [
     model: 'anthropic.claude-sonnet-5',
   },
   {
+    id: 'bedrock-zai-glm-5',
+    providerGroup: 'bedrock',
+    label: 'GLM 5',
+    provider: 'bedrock' as LocalCopilotProviderId,
+    model: 'zai.glm-5',
+  },
+  {
     id: 'bedrock-nemotron-super-3-120b',
     providerGroup: 'bedrock',
     label: 'Nemotron Super 3',
@@ -66,7 +73,7 @@ export const LOCAL_COPILOT_CATALOG = [
     label: 'Llama 3.3 70B',
     provider: 'bedrock' as LocalCopilotProviderId,
     model: 'meta.llama3-3-70b-instruct-v1:0',
-  }
+  },
 ] as const
 
 export type LocalCopilotCatalogId = (typeof LOCAL_COPILOT_CATALOG)[number]['id']
