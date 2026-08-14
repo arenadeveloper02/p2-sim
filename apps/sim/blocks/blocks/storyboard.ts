@@ -119,6 +119,8 @@ export const StoryboardBlock: BlockConfig<StoryboardGenerateResponse> = {
       params: (params) => ({
         topic: params.topic,
         mode: params.mode,
+        sceneNumber: params.sceneNumber,
+        instruction: params.instruction,
         sceneCount: params.sceneCount,
         stylePrompt: params.stylePrompt,
         conversationId: params.conversationId,
@@ -135,8 +137,11 @@ export const StoryboardBlock: BlockConfig<StoryboardGenerateResponse> = {
     topic: { type: 'string', description: 'The video idea to turn into a storyboard' },
     mode: {
       type: 'string',
-      description: '"scenes" (default) for one video\'s scenes, "concepts" for independent ad ideas',
+      description:
+        '"scenes" (default) for one video\'s frames, "concepts" for independent ad ideas, "edit" to regenerate one frame',
     },
+    sceneNumber: { type: 'number', description: 'Edit mode: which frame to change (1-based)' },
+    instruction: { type: 'string', description: 'Edit mode: the change to apply to that frame' },
     sceneCount: { type: 'number', description: 'How many scenes to generate (1-10)' },
     stylePrompt: { type: 'string', description: 'Overall visual style for every scene' },
     conversationId: { type: 'string', description: 'Conversation the storyboard belongs to' },

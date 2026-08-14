@@ -32,11 +32,15 @@ const MAX_SCENE_COUNT = 10
 /**
  * 'scenes'   — ordered scenes of ONE video (saved, renderable).
  * 'concepts' — N independent ad ideas to pick from (never saved, never renderable).
+ * 'edit'     — regenerate ONE frame of the latest saved storyboard in place.
  */
-export type StoryboardMode = 'scenes' | 'concepts'
+export type StoryboardMode = 'scenes' | 'concepts' | 'edit'
 
 function asMode(value: unknown): StoryboardMode {
-  return asString(value).toLowerCase() === 'concepts' ? 'concepts' : 'scenes'
+  const normalized = asString(value).toLowerCase()
+  if (normalized === 'concepts') return 'concepts'
+  if (normalized === 'edit') return 'edit'
+  return 'scenes'
 }
 
 export interface StoryboardScene {
@@ -157,6 +161,134 @@ Rules:
   })
 }
 
+type StoryboardQueryRow = { id: string; topic: string | null; scenes: unknown }
+
+/**
+ * Finds the latest saved storyboard using the same fallback chain as the
+ * render step (conversation key → workflow key → workflow id → user id).
+ */
+async function loadLatestStoryboard(
+  conversationId: string,
+  context: RunStoryboardGenerateContext
+): Promise<{ id: string; topic: string; scenes: StoryboardScene[] }> {
+  const attempts: Array<() => Promise<unknown>> = []
+
+  if (conversationId) {
+    attempts.push(() =>
+      db.execute(
+        sql`SELECT id, topic, scenes FROM storyboards
+            WHERE conversation_id = ${conversationId}
+            ORDER BY created_at DESC LIMIT 1`
+      )
+    )
+  }
+
+  if (context.workflowId) {
+    const workflowKey = `wf:${context.workflowId}`
+    attempts.push(() =>
+      db.execute(
+        sql`SELECT id, topic, scenes FROM storyboards
+            WHERE conversation_id = ${workflowKey}
+            ORDER BY created_at DESC LIMIT 1`
+      )
+    )
+    attempts.push(() =>
+      db.execute(
+        sql`SELECT id, topic, scenes FROM storyboards
+            WHERE workflow_id = ${context.workflowId}
+            ORDER BY created_at DESC LIMIT 1`
+      )
+    )
+  }
+
+  if (context.userId) {
+    attempts.push(() =>
+      db.execute(
+        sql`SELECT id, topic, scenes FROM storyboards
+            WHERE user_id = ${context.userId}
+            ORDER BY created_at DESC LIMIT 1`
+      )
+    )
+  }
+
+  let row: StoryboardQueryRow | undefined
+  for (const attempt of attempts) {
+    const rows = (await attempt()) as unknown as StoryboardQueryRow[]
+    if (rows[0]) {
+      row = rows[0]
+      break
+    }
+  }
+
+  if (!row) {
+    throw new Error('No storyboard found yet. Generate the frames before editing one.')
+  }
+
+  const scenes = (
+    typeof row.scenes === 'string' ? JSON.parse(row.scenes) : row.scenes
+  ) as StoryboardScene[]
+  if (!Array.isArray(scenes) || scenes.length === 0) {
+    throw new Error('The saved storyboard has no frames')
+  }
+
+  return { id: row.id, topic: row.topic ?? '', scenes }
+}
+
+/**
+ * Applies the user's modification to one frame's image prompt, keeping the
+ * frame consistent with the rest of the story.
+ */
+async function rewriteScenePrompt(options: {
+  scene: StoryboardScene
+  instruction: string
+  storyTopic: string
+  model: string
+  apiKey: string
+  provider: string
+}): Promise<{ description: string; prompt: string }> {
+  const { scene, instruction, storyTopic, model, apiKey, provider } = options
+
+  const systemPrompt = `You update ONE frame of a video storyboard.
+
+Return ONLY a JSON object, no markdown, in this exact shape:
+{"description":"short human-readable summary of the updated frame","prompt":"detailed visual image-generation prompt for the updated frame"}
+
+Rules:
+- Apply the user's modification to the existing frame while keeping everything they did not ask to change (subject, setting, style, mood) as close to the original as possible, so the frame still fits the story.
+- "prompt" must be a rich, self-contained visual description. It is fed directly to an image generator.
+- Do not include any text, captions, watermarks, or letters in the image.`
+
+  const userMessage = `Story: ${storyTopic || 'n/a'}
+
+Existing frame description: ${scene.description}
+Existing image prompt: ${scene.prompt}
+
+Modification requested by the user: ${instruction}`
+
+  const response = (await executeProviderRequest(provider, {
+    model,
+    systemPrompt,
+    messages: [{ role: 'user', content: userMessage }],
+    apiKey,
+    temperature: 0.5,
+    maxTokens: 2048,
+  })) as ProviderResponse
+
+  const content =
+    typeof response === 'string' ? response : 'content' in response ? response.content : ''
+  if (!content || typeof content !== 'string') {
+    throw new Error('Frame rewrite returned no content')
+  }
+
+  const jsonMatch = content.match(/\{[\s\S]*\}/)
+  const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content)
+  const prompt = asString(parsed?.prompt)
+  if (!prompt) {
+    throw new Error('Frame rewrite returned no prompt')
+  }
+  return { description: asString(parsed?.description) || prompt, prompt }
+}
+
 /**
  * Generates a storyboard: plans scenes, renders one image per scene, persists it.
  */
@@ -167,7 +299,7 @@ export async function runStoryboardGenerate(
   const requestId = context.requestId ?? crypto.randomUUID().slice(0, 8)
 
   const topic = asString(params.topic)
-  if (!topic) {
+  if (!topic && asMode(params.mode) !== 'edit') {
     throw new Error('A video idea (topic) is required to build a storyboard')
   }
 
@@ -194,6 +326,87 @@ export async function runStoryboardGenerate(
   const imageModel = asString(params.imageModel) || 'nano-banana-2'
   const aspectRatio = asString(params.aspectRatio) || '16:9'
   const falApiKey = asString(params.falApiKey) || getFalApiKey()
+
+  // Edit mode: regenerate ONE frame of the latest storyboard in place. The
+  // row is updated (not re-inserted), so the render step's latest-storyboard
+  // lookup keeps finding the same, now-edited storyboard.
+  if (mode === 'edit') {
+    const sceneNumber = clampSceneCount(params.sceneNumber)
+    const instruction = asString(params.instruction) || topic
+    if (!instruction) {
+      throw new Error('Describe the change you want for the frame (instruction)')
+    }
+
+    const storyboard = await loadLatestStoryboard(conversationId, context)
+    if (sceneNumber > storyboard.scenes.length) {
+      throw new Error(
+        `Frame ${sceneNumber} does not exist — this storyboard has frames 1-${storyboard.scenes.length}`
+      )
+    }
+
+    const scene = storyboard.scenes[sceneNumber - 1]
+
+    logger.info(`[${requestId}] Editing storyboard frame`, {
+      storyboardId: storyboard.id,
+      sceneNumber,
+      instruction: instruction.slice(0, 120),
+    })
+
+    const rewritten = await rewriteScenePrompt({
+      scene,
+      instruction,
+      storyTopic: storyboard.topic,
+      model: planningModel,
+      apiKey: planningApiKey,
+      provider: planningProvider,
+    })
+
+    const imageBody = buildImageToolBodyFromExecutionParams({
+      provider: imageProvider,
+      model: imageModel,
+      apiKey: falApiKey,
+      prompt: stylePrompt ? `${rewritten.prompt}\n\nOverall style: ${stylePrompt}` : rewritten.prompt,
+      aspectRatio,
+      workflowId: context.workflowId,
+      workspaceId: context.workspaceId,
+      userId: context.userId,
+    })
+
+    const image = await runImageToolGeneration(imageBody, {
+      userId: context.userId ?? 'unknown',
+      requestId: `${requestId}-edit${sceneNumber}`,
+    })
+
+    const updatedScenes = storyboard.scenes.map((s) =>
+      s.index === scene.index
+        ? { ...s, description: rewritten.description, prompt: rewritten.prompt, imageUrl: image.imageUrl }
+        : s
+    )
+
+    await db.execute(
+      sql`UPDATE storyboards
+          SET scenes = ${JSON.stringify(updatedScenes)}::jsonb
+          WHERE id = ${storyboard.id}::uuid`
+    )
+
+    logger.info(`[${requestId}] Storyboard frame updated`, {
+      storyboardId: storyboard.id,
+      sceneNumber,
+    })
+
+    const frameLines = updatedScenes.map((s) => `${s.index}. ${s.description}`).join('\n')
+    const content = `Frame ${sceneNumber} updated:\n\n${frameLines}\n\nAny other change, or reply "stitch" to make the video.`
+
+    return {
+      storyboardId: storyboard.id,
+      conversationId,
+      topic: storyboard.topic,
+      scenes: updatedScenes,
+      images: updatedScenes.map((s) => s.imageUrl),
+      sceneCount: updatedScenes.length,
+      content,
+    }
+  }
 
   logger.info(`[${requestId}] Planning storyboard ${mode}`, {
     mode,

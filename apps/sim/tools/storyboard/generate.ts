@@ -1,9 +1,11 @@
 import type { ToolConfig, ToolResponse } from '@/tools/types'
 
 export interface StoryboardGenerateParams {
-  topic: string
+  topic?: string
   mode?: string
   sceneCount?: number
+  sceneNumber?: number
+  instruction?: string
   stylePrompt?: string
   conversationId?: string
   planningProvider?: string
@@ -51,16 +53,28 @@ export const storyboardGenerateTool: ToolConfig<
   params: {
     topic: {
       type: 'string',
-      required: true,
+      required: false,
       visibility: 'user-or-llm',
-      description: 'The video idea to turn into a storyboard',
+      description: 'The video idea to turn into a storyboard (not needed in edit mode)',
     },
     mode: {
       type: 'string',
       required: false,
       visibility: 'user-or-llm',
       description:
-        '"scenes" (default): ordered scenes of one video, saved for rendering. "concepts": independent ad ideas to pick between — one image each, never rendered as a video.',
+        '"scenes" (default): ordered frames of one video, saved for rendering. "concepts": independent ad ideas to pick between — never rendered as a video. "edit": regenerate one frame of the latest storyboard (requires sceneNumber and instruction).',
+    },
+    sceneNumber: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Edit mode: which frame to change (1-based, e.g. 3)',
+    },
+    instruction: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description: 'Edit mode: the change the user wants for that frame, e.g. "make it at night"',
     },
     sceneCount: {
       type: 'number',
