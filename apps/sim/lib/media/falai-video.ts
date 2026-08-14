@@ -25,6 +25,12 @@ interface FalVideoModelConfig {
 // Endpoints mirror app/api/tools/video/route.ts (FALAI_MODEL_CONFIGS), scoped to
 // the latest-gen models the generate_video tool exposes.
 const VIDEO_MODELS: Record<string, FalVideoModelConfig> = {
+  'minimax-h3': {
+    endpoint: 'minimax/h3/text-to-video',
+    i2vEndpoint: 'minimax/h3/image-to-video',
+    durationFormat: 'number',
+    supportsResolution: true,
+  },
   'veo-3.1': {
     endpoint: 'fal-ai/veo3.1',
     i2vEndpoint: 'fal-ai/veo3.1/image-to-video',
@@ -158,10 +164,24 @@ export async function generateFalVideo(params: GenerateFalVideoParams): Promise<
     input.image_url = params.imageDataUri
   }
 
-  const duration = formatDuration(config.durationFormat, params.duration)
+  // MiniMax H3 accepts 5–15 seconds and uppercase resolution IDs. Story Mode's
+  // shared controls use 4/6/8 seconds and 720p/1080p, so normalize those values
+  // here rather than sending an invalid request to Fal.
+  const requestedDuration =
+    model === 'minimax-h3' && params.duration !== undefined
+      ? Math.min(15, Math.max(5, params.duration))
+      : params.duration
+  const requestedResolution =
+    model === 'minimax-h3'
+      ? ({ '480p': '480P', '720p': '768P', '768p': '768P', '1080p': '2K', '2k': '2K', '4k': '4K' }[
+          params.resolution?.toLowerCase() ?? ''
+        ] ?? params.resolution)
+      : params.resolution
+
+  const duration = formatDuration(config.durationFormat, requestedDuration)
   if (duration !== undefined) input.duration = duration
   if (config.supportsAspectRatio && params.aspectRatio) input.aspect_ratio = params.aspectRatio
-  if (config.supportsResolution && params.resolution) input.resolution = params.resolution
+  if (config.supportsResolution && requestedResolution) input.resolution = requestedResolution
   if (config.supportsGenerateAudio && params.generateAudio !== undefined) {
     input.generate_audio = params.generateAudio
   }

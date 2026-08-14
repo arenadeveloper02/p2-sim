@@ -25,6 +25,7 @@ const logger = createLogger('StoryboardRender')
 
 /** Image-to-video capable Fal.ai models (must have an i2vEndpoint in falai-video.ts). */
 const I2V_MODELS = new Set([
+  'minimax-h3',
   'veo-3.1',
   'veo-3.1-fast',
   'veo-3.1-lite',

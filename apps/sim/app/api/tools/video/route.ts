@@ -911,6 +911,15 @@ interface FalAIRequestBody {
 }
 
 const FALAI_MODEL_CONFIGS: Record<string, FalAIModelConfig> = {
+  'minimax-h3': {
+    endpoint: 'minimax/h3/text-to-video',
+    durationFormat: 'number',
+    durationOptions: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    supportsAspectRatio: true,
+    aspectRatioOptions: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+    supportsResolution: true,
+    resolutionOptions: ['480P', '768P', '2K', '4K'],
+  },
   'veo-3.1': {
     endpoint: 'fal-ai/veo3.1',
     durationFormat: 'seconds',

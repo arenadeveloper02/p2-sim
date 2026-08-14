@@ -15,6 +15,7 @@ const FALAI_PREVIOUS_MODEL_OPTIONS = [
 ]
 
 const FALAI_LATEST_MODEL_OPTIONS = [
+  { label: 'MiniMax H3 (Latest)', id: 'minimax-h3' },
   { label: 'Google Veo 3.1', id: 'veo-3.1' },
   { label: 'Google Veo 3.1 Fast', id: 'veo-3.1-fast' },
   { label: 'OpenAI Sora 2', id: 'sora-2' },
@@ -41,6 +42,7 @@ const FALAI_KLING_LATEST_MODELS = ['kling-v3-pro', 'kling-v3-4k', 'kling-o3-pro'
 const FALAI_KLING_LEGACY_MODELS = ['kling-2.5-turbo-pro', 'kling-2.1-pro']
 const FALAI_MINIMAX_STANDARD_MODELS = ['minimax-hailuo-2.3-standard', 'minimax-hailuo-02-standard']
 const FALAI_MINIMAX_PRO_MODELS = ['minimax-hailuo-2.3-pro', 'minimax-hailuo-02-pro']
+const FALAI_MINIMAX_H3_MODELS = ['minimax-h3']
 const FALAI_WAN_MODELS = ['wan-2.2-a14b-turbo']
 const FALAI_LTX_MODELS = ['ltx-2.3', 'ltx-2.3-fast']
 const FALAI_AUDIO_DEFAULT_ON_MODELS = [
@@ -243,6 +245,32 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
       required: false,
     },
 
+    {
+      id: 'duration',
+      title: 'Duration (seconds)',
+      type: 'dropdown',
+      condition: {
+        field: 'provider',
+        value: 'falai',
+        and: { field: 'model', value: FALAI_MINIMAX_H3_MODELS },
+      },
+      options: [
+        { label: '5', id: '5' },
+        { label: '6', id: '6' },
+        { label: '7', id: '7' },
+        { label: '8', id: '8' },
+        { label: '9', id: '9' },
+        { label: '10', id: '10' },
+        { label: '11', id: '11' },
+        { label: '12', id: '12' },
+        { label: '13', id: '13' },
+        { label: '14', id: '14' },
+        { label: '15', id: '15' },
+      ],
+      value: () => '5',
+      dependsOn: ['model'],
+      required: false,
+    },
     {
       id: 'duration',
       title: 'Duration (seconds)',
@@ -467,6 +495,27 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
       condition: {
         field: 'provider',
         value: 'falai',
+        and: { field: 'model', value: FALAI_MINIMAX_H3_MODELS },
+      },
+      options: [
+        { label: '21:9', id: '21:9' },
+        { label: '16:9', id: '16:9' },
+        { label: '4:3', id: '4:3' },
+        { label: '1:1', id: '1:1' },
+        { label: '3:4', id: '3:4' },
+        { label: '9:16', id: '9:16' },
+      ],
+      value: () => '16:9',
+      dependsOn: ['model'],
+      required: false,
+    },
+    {
+      id: 'aspectRatio',
+      title: 'Aspect Ratio',
+      type: 'dropdown',
+      condition: {
+        field: 'provider',
+        value: 'falai',
         and: {
           field: 'model',
           value: [...FALAI_VEO_MODELS, ...FALAI_SORA_MODELS, ...FALAI_LTX_MODELS],
@@ -570,6 +619,25 @@ export const VideoGeneratorBlock: BlockConfig<VideoBlockResponse> = {
       ],
       value: () => '1080p',
       dependsOn: ['provider'],
+      required: false,
+    },
+    {
+      id: 'resolution',
+      title: 'Resolution',
+      type: 'dropdown',
+      condition: {
+        field: 'provider',
+        value: 'falai',
+        and: { field: 'model', value: FALAI_MINIMAX_H3_MODELS },
+      },
+      options: [
+        { label: '480P', id: '480P' },
+        { label: '768P', id: '768P' },
+        { label: '2K', id: '2K' },
+        { label: '4K', id: '4K' },
+      ],
+      value: () => '768P',
+      dependsOn: ['model'],
       required: false,
     },
     {
@@ -1033,6 +1101,32 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
       condition: {
         field: 'provider',
         value: 'falai',
+        and: { field: 'model', value: FALAI_MINIMAX_H3_MODELS },
+      },
+      options: [
+        { label: '5', id: '5' },
+        { label: '6', id: '6' },
+        { label: '7', id: '7' },
+        { label: '8', id: '8' },
+        { label: '9', id: '9' },
+        { label: '10', id: '10' },
+        { label: '11', id: '11' },
+        { label: '12', id: '12' },
+        { label: '13', id: '13' },
+        { label: '14', id: '14' },
+        { label: '15', id: '15' },
+      ],
+      value: () => '5',
+      dependsOn: ['model'],
+      required: false,
+    },
+    {
+      id: 'duration',
+      title: 'Duration (seconds)',
+      type: 'dropdown',
+      condition: {
+        field: 'provider',
+        value: 'falai',
         and: { field: 'model', value: FALAI_VEO_MODELS },
       },
       options: [
@@ -1212,6 +1306,27 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
       id: 'aspectRatio',
       title: 'Aspect Ratio',
       type: 'dropdown',
+      condition: {
+        field: 'provider',
+        value: 'falai',
+        and: { field: 'model', value: FALAI_MINIMAX_H3_MODELS },
+      },
+      options: [
+        { label: '21:9', id: '21:9' },
+        { label: '16:9', id: '16:9' },
+        { label: '4:3', id: '4:3' },
+        { label: '1:1', id: '1:1' },
+        { label: '3:4', id: '3:4' },
+        { label: '9:16', id: '9:16' },
+      ],
+      value: () => '16:9',
+      dependsOn: ['model'],
+      required: false,
+    },
+    {
+      id: 'aspectRatio',
+      title: 'Aspect Ratio',
+      type: 'dropdown',
       condition: { field: 'provider', value: 'runway' },
       options: [
         { label: '16:9', id: '16:9' },
@@ -1338,6 +1453,25 @@ export const VideoGeneratorV2Block: BlockConfig<VideoBlockResponse> = {
       ],
       value: () => '1080p',
       dependsOn: ['provider'],
+      required: false,
+    },
+    {
+      id: 'resolution',
+      title: 'Resolution',
+      type: 'dropdown',
+      condition: {
+        field: 'provider',
+        value: 'falai',
+        and: { field: 'model', value: FALAI_MINIMAX_H3_MODELS },
+      },
+      options: [
+        { label: '480P', id: '480P' },
+        { label: '768P', id: '768P' },
+        { label: '2K', id: '2K' },
+        { label: '4K', id: '4K' },
+      ],
+      value: () => '768P',
+      dependsOn: ['model'],
       required: false,
     },
     {
@@ -1679,6 +1813,7 @@ const STORYBOARD_MODE_SUBBLOCKS: SubBlockConfig[] = [
     type: 'dropdown',
     condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
     options: [
+      { label: 'MiniMax H3 (Latest, Native Audio)', id: 'minimax-h3' },
       { label: 'Google Veo 3.1 Fast', id: 'veo-3.1-fast' },
       { label: 'Google Veo 3.1', id: 'veo-3.1' },
       { label: 'ByteDance Seedance 2.0', id: 'seedance-2.0' },

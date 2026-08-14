@@ -7,7 +7,7 @@ export const falaiVideoTool: ToolConfig<VideoParams, VideoResponse> = {
   id: 'video_falai',
   name: 'Fal.ai Video Generation',
   description:
-    'Generate videos using Fal.ai with access to Veo 3.1, Sora 2, Seedance 2.0, Kling 3.0, MiniMax Hailuo 2.3, WAN 2.2, LTX 2.3, and previously supported models',
+    'Generate videos using Fal.ai with access to MiniMax H3, Veo 3.1, Sora 2, Seedance 2.0, Kling 3.0, MiniMax Hailuo 2.3, WAN 2.2, LTX 2.3, and previously supported models',
   version: '1.0.0',
 
   params: {
@@ -28,7 +28,7 @@ export const falaiVideoTool: ToolConfig<VideoParams, VideoResponse> = {
       required: true,
       visibility: 'user-or-llm',
       description:
-        'Fal.ai model: veo-3.1, veo-3.1-fast, sora-2, sora-2-pro, seedance-2.0, seedance-2.0-fast, kling-v3-pro, kling-v3-4k, kling-o3-pro, kling-o3-4k, minimax-hailuo-2.3-pro, minimax-hailuo-2.3-standard, wan-2.2-a14b-turbo, ltx-2.3, ltx-2.3-fast, plus previously supported model IDs',
+        'Fal.ai model: minimax-h3, veo-3.1, veo-3.1-fast, sora-2, sora-2-pro, seedance-2.0, seedance-2.0-fast, kling-v3-pro, kling-v3-4k, kling-o3-pro, kling-o3-4k, minimax-hailuo-2.3-pro, minimax-hailuo-2.3-standard, wan-2.2-a14b-turbo, ltx-2.3, ltx-2.3-fast, plus previously supported model IDs',
     },
     prompt: {
       type: 'string',
