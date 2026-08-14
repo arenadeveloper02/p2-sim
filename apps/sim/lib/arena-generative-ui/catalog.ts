@@ -56,7 +56,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         color: z.string().nullable(),
         size: z.string().nullable(),
       }),
-      description: 'Paragraph text',
+      description: 'Paragraph text. Markdown is rendered (emphasis, lists, links).',
     },
     DataText: {
       props: z.object({
@@ -65,14 +65,15 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         color: z.string().nullable(),
         size: z.string().nullable(),
       }),
-      description: 'Displays a value from host state using a dotted path (e.g. score)',
+      description:
+        'Displays a host-state value at a dotted path (e.g. output.content). Markdown is rendered.',
     },
     Alert: {
       props: z.object({
         text: z.string(),
         tone: z.enum(['info', 'success', 'warning', 'error']).nullable(),
       }),
-      description: 'Inline status message',
+      description: 'Inline status message. Markdown is rendered.',
     },
     Spinner: {
       props: z.object({
@@ -175,7 +176,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       props: z.object({
         text: z.string(),
       }),
-      description: 'List item text',
+      description: 'List item text. Markdown is rendered.',
     },
   },
   actions: {
@@ -215,4 +216,5 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'If no API bindings were declared, omit manifest.actions or leave it empty and use navigation only.',
   'onSuccess.navigate and NavLink.to / Button.navigateTo / navigate action `to` must be existing page paths.',
   'Every page must be reachable from entryPath via NavLink, navigateTo, navigate, or onSuccess.navigate.',
+  'DataText, Text, Alert, and ListItem render markdown. Put API bodies on DataText (e.g. output.content); do not split markdown into Heading/List elements.',
 ] as const

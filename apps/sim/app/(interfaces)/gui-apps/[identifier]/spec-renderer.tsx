@@ -3,6 +3,7 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useState } from 'react'
 import type { Spec } from '@json-render/core'
 import { cn } from '@sim/emcn'
+import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
 
 interface SpecElement {
   type?: string
@@ -123,18 +124,22 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       }
       case 'Text':
         return (
-          <p className='text-[var(--color-ds-grey-700,#3d414d)]' style={styleFromProps(props)}>
-            {asString(props.text)}
-          </p>
+          <MarkdownText
+            className='text-[var(--color-ds-grey-700,#3d414d)]'
+            style={styleFromProps(props)}
+            content={asString(props.text)}
+          />
         )
       case 'DataText': {
         const value = readStatePath(state, asString(props.statePath))
         const display =
           value === undefined || value === null ? asString(props.fallback, '') : String(value)
         return (
-          <p className='whitespace-pre-wrap font-medium' style={styleFromProps(props)}>
-            {display}
-          </p>
+          <MarkdownText
+            className='font-medium'
+            style={styleFromProps(props)}
+            content={display}
+          />
         )
       }
       case 'Alert': {
@@ -149,7 +154,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
               tone === 'info' && 'bg-sky-50 text-sky-900'
             )}
           >
-            {asString(props.text)}
+            <MarkdownText content={asString(props.text)} />
           </div>
         )
       }
@@ -311,7 +316,11 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         return <Tag className='list-inside pl-1'>{children}</Tag>
       }
       case 'ListItem':
-        return <li>{asString(props.text)}</li>
+        return (
+          <li>
+            <MarkdownText content={asString(props.text)} />
+          </li>
+        )
       default:
         return <div>{children}</div>
     }
