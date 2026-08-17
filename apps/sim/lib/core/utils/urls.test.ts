@@ -20,6 +20,8 @@ import {
   isLocalhostUrl,
   isNonCanonicalSimHost,
   isSafeHttpUrl,
+  isSearchIndexableAppUrl,
+  isSearchIndexableHost,
   parseOriginList,
 } from '@/lib/core/utils/urls'
 
@@ -271,5 +273,46 @@ describe('isNonCanonicalSimHost', () => {
 
   it('does not throw on an empty host', () => {
     expect(isNonCanonicalSimHost('')).toBe(false)
+  })
+})
+
+describe('isSearchIndexableHost', () => {
+  it('allows only production agent.thearena.ai', () => {
+    expect(isSearchIndexableHost('agent.thearena.ai')).toBe(true)
+    expect(isSearchIndexableHost('agent.thearena.ai:443')).toBe(true)
+  })
+
+  it.each([
+    'dev-agent.thearena.ai',
+    'test-agent.thearena.ai',
+    'sandbox-agent.thearena.ai',
+    'thearena.ai',
+    'localhost:3000',
+    '',
+  ])('blocks %s', (host) => {
+    expect(isSearchIndexableHost(host)).toBe(false)
+  })
+
+  it('classifies a comma-joined forwarded host by its first entry', () => {
+    expect(isSearchIndexableHost('agent.thearena.ai, dev-agent.thearena.ai')).toBe(true)
+    expect(isSearchIndexableHost('dev-agent.thearena.ai, agent.thearena.ai')).toBe(false)
+  })
+})
+
+describe('isSearchIndexableAppUrl', () => {
+  it('allows only https://agent.thearena.ai', () => {
+    expect(isSearchIndexableAppUrl('https://agent.thearena.ai')).toBe(true)
+    expect(isSearchIndexableAppUrl('https://agent.thearena.ai/')).toBe(true)
+  })
+
+  it.each([
+    'https://dev-agent.thearena.ai',
+    'https://test-agent.thearena.ai',
+    'https://sandbox-agent.thearena.ai',
+    'http://localhost:3000',
+    undefined,
+    '',
+  ])('blocks %s', (url) => {
+    expect(isSearchIndexableAppUrl(url)).toBe(false)
   })
 })

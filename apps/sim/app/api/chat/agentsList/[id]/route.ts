@@ -5,6 +5,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
 import { getAgentDepartmentLabel } from '@/lib/chat/arena-departments'
+import { getUniqueBlockNamesByWorkflowId } from '@/lib/chat/workflow-block-names'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 const logger = createLogger('DeployedChatAgentDetailAPI')
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const row = rows[0]
     const appRedirectUrl = row.deploymentType === 'app' && row.redirectUrl ? row.redirectUrl : null
+    const blockNamesByWorkflowId = await getUniqueBlockNamesByWorkflowId([row.workflowId])
 
     const agent = {
       id: row.chatId,
@@ -75,6 +77,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       redirect_url:
         appRedirectUrl ??
         `${getBaseUrl()}/chat/${row.identifier || row.workflowId}?workspaceId=${row.workspaceId}`,
+      block_names: blockNamesByWorkflowId.get(row.workflowId) ?? [],
     }
 
     return NextResponse.json({ success: true, agent }, { status: 200 })

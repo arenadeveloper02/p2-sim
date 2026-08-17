@@ -143,6 +143,8 @@ const GEO_PROFILE_UNSUPPORTED_MODEL_IDS = new Set([
   'moonshotai.kimi-k2.5',
   // NVIDIA Nemotron 3 Super: docs invoke the bare on-demand model ID.
   'nvidia.nemotron-super-3-120b',
+  // Z.AI GLM 5 model cards list Geo inference ID as "Not supported".
+  'zai.glm-5',
 ])
 
 /** Cross-region inference profile prefixes Bedrock prepends to a base model ID. */

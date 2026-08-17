@@ -7,7 +7,7 @@ import { isAuthDisabled, isDev } from './lib/core/config/env-flags'
 import { apiCorsPatch } from './lib/core/security/api-cors'
 import { generateRuntimeCSP } from './lib/core/security/csp'
 import { getClientIp } from './lib/core/utils/request'
-import { getLoginRedirectUrl, isNonCanonicalSimHost } from './lib/core/utils/urls'
+import { getLoginRedirectUrl, isSearchIndexableHost } from './lib/core/utils/urls'
 
 const logger = createLogger('Proxy')
 
@@ -397,7 +397,8 @@ export async function proxy(request: NextRequest) {
 }
 
 /**
- * Keeps non-production sim.ai deployments out of search results.
+ * Keeps non-production Arena agent hosts (dev/test/sandbox) out of search results.
+ * Only `agent.thearena.ai` is indexable.
  *
  * `noindex` rather than a robots.txt `Disallow` is deliberate: a disallowed URL
  * can still be indexed when linked externally, and blocking the crawl stops
@@ -411,7 +412,7 @@ function applyIndexingPolicy(request: NextRequest, response: NextResponse): void
     request.headers.get('host') ||
     request.nextUrl.host
 
-  if (isNonCanonicalSimHost(host)) {
+  if (!isSearchIndexableHost(host)) {
     response.headers.set('X-Robots-Tag', 'noindex, nofollow')
   }
 }

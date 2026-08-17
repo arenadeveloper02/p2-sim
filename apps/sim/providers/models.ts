@@ -4093,6 +4093,21 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 262144,
         releaseDate: '2026-03-18',
       },
+      {
+        id: 'bedrock/zai.glm-5',
+        pricing: {
+          input: 1.0,
+          output: 3.2,
+          updatedAt: '2026-08-14',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 200000,
+        releaseDate: '2026-02-11',
+      }
     ],
   },
 }

@@ -10,6 +10,7 @@ import {
   labelFromDepartmentMap,
   resolveAgentDepartmentValue,
 } from '@/lib/chat/arena-departments'
+import { getUniqueBlockNamesByWorkflowId } from '@/lib/chat/workflow-block-names'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 const logger = createLogger('DeployedChatAgentsListAPI')
@@ -50,7 +51,11 @@ function hasAllowedEmailStartingWithAtSymbol(
 }
 
 /** Maps a DB row to the response agent list item shape. */
-function toAgentListItem(row: AgentChatRow, departmentLabelMap: Map<string, string>) {
+function toAgentListItem(
+  row: AgentChatRow,
+  departmentLabelMap: Map<string, string>,
+  blockNames: string[]
+) {
   const appRedirectUrl = row.deploymentType === 'app' && row.redirectUrl ? row.redirectUrl : null
   return {
     id: row.chatId,
@@ -68,11 +73,25 @@ function toAgentListItem(row: AgentChatRow, departmentLabelMap: Map<string, stri
     redirect_url:
       appRedirectUrl ??
       `${getBaseUrl()}/chat/${row.identifier || row.workflowId}?workspaceId=${row.workspaceId}`,
+    block_names: blockNames,
     // allowedEmails: row.allowedEmails,
   }
 }
 
 type AgentListItem = ReturnType<typeof toAgentListItem>
+
+/** Maps chat rows to list items, attaching unique workflow block types in one query. */
+async function toAgentListItems(
+  rows: AgentChatRow[],
+  departmentLabelMap: Map<string, string>
+): Promise<AgentListItem[]> {
+  const blockNamesByWorkflowId = await getUniqueBlockNamesByWorkflowId(
+    rows.map((row) => row.workflowId)
+  )
+  return rows.map((row) =>
+    toAgentListItem(row, departmentLabelMap, blockNamesByWorkflowId.get(row.workflowId) ?? [])
+  )
+}
 
 /**
  * Returns execution log rows for the given workflowIds and userId, ordered by started_at desc.
@@ -233,7 +252,7 @@ async function getMyAgentsList(emailId: string): Promise<NextResponse> {
 
   const departmentLabelMap = await getAgentDepartmentLabelMap()
   const agentList = await sortAgentListByRecentUsage(
-    accessibleChats.map((row) => toAgentListItem(row, departmentLabelMap)),
+    await toAgentListItems(accessibleChats, departmentLabelMap),
     creatorUserId
   )
 
@@ -285,7 +304,7 @@ async function getSharedWithMeAgentsList(emailId: string): Promise<NextResponse>
 
   const sharedChats = await fetchSharedWithMeChats(emailId, userRecord[0].id)
   const departmentLabelMap = await getAgentDepartmentLabelMap()
-  const agentList = sharedChats.map((row) => toAgentListItem(row, departmentLabelMap))
+  const agentList = await toAgentListItems(sharedChats, departmentLabelMap)
 
   logger.info(
     `agentsList (sharedwithme): returning ${agentList.length} chats for ${emailId} (in allowedEmails, not created by user)`
@@ -323,12 +342,15 @@ async function getGlobalAgentsList(
 
   const globalChats = await fetchAgentChats(globalWhereConditions)
   const departmentLabelMap = await getAgentDepartmentLabelMap()
-  const globalAgentList = globalChats
-    .filter((row) => hasAllowedEmailStartingWithAtSymbol(row.allowedEmails, userEmailDomain))
-    .map((row) => toAgentListItem(row, departmentLabelMap))
+  const globalAgentList = await toAgentListItems(
+    globalChats.filter((row) =>
+      hasAllowedEmailStartingWithAtSymbol(row.allowedEmails, userEmailDomain)
+    ),
+    departmentLabelMap
+  )
 
   const sharedChats = await fetchSharedWithMeChats(emailId, userId, departmentValue)
-  const sharedAgentList = sharedChats.map((row) => toAgentListItem(row, departmentLabelMap))
+  const sharedAgentList = await toAgentListItems(sharedChats, departmentLabelMap)
 
   const mergedAgentList = mergeAgentListsById(globalAgentList, sharedAgentList)
   const agentList = await sortAgentListByRecentUsage(mergedAgentList, userId)
