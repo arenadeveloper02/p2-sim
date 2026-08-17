@@ -110,8 +110,15 @@ function omitEmptyOptionalString(value: unknown): unknown {
   return value
 }
 
+function coerceUserInput(value: unknown): unknown {
+  if (typeof value === 'string') return value
+  if (value == null) return value
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
 export const arenaGenerativeGenerateBodySchema = z.object({
-  userInput: z.string().min(1, 'userInput is required').max(20_000),
+  userInput: z.preprocess(coerceUserInput, z.string().min(1, 'userInput is required').max(20_000)),
   pages: z.preprocess(
     omitEmptyOptionalJson,
     z.union([z.array(arenaGenerativePageHintSchema), z.string()]).optional()

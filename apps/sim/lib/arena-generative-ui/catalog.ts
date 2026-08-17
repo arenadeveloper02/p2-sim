@@ -31,7 +31,8 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         align: z.enum(['start', 'center', 'end', 'stretch']).nullable(),
       }),
       slots: ['default'],
-      description: 'Flex stack for vertical or horizontal layout',
+      description:
+        'Flex stack for vertical or horizontal layout. Prefer vertical; this UI is iframe-narrow.',
     },
     Card: {
       props: z.object({
@@ -157,7 +158,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         width: z.string().nullable(),
         height: z.string().nullable(),
       }),
-      description: 'Image element',
+      description: 'Content image only. Do not use for logos, wordmarks, or app branding.',
     },
     Divider: {
       props: z.object({
@@ -217,4 +218,11 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'onSuccess.navigate and NavLink.to / Button.navigateTo / navigate action `to` must be existing page paths.',
   'Every page must be reachable from entryPath via NavLink, navigateTo, navigate, or onSuccess.navigate.',
   'DataText, Text, Alert, and ListItem render markdown. Put API bodies on DataText (e.g. output.content); do not split markdown into Heading/List elements.',
+  'Layout: Page → Section (padding 24px, maxWidth 640px) → one Card. Do not dump a bare Stack of text on the page.',
+  'Typography: one Heading level h1 per page, then a short supporting Text. Never title a page "Page 1" or use lorem ipsum.',
+  'Actions: one primary Button or NavLink per page. Forms have labeled fields, one SubmitButton, and an optional Back NavLink.',
+  'Use catalog props (backgroundColor, padding, gap, maxWidth, color) so the layout is not the default grey dump.',
+  'Iframe: this UI usually renders inside a narrow Arena iframe. Single column only. No left sidebar, no persistent page nav, no app chrome.',
+  'Do not include a logo, wordmark, or decorative Image for branding. The host already provides chrome.',
+  'Navigation is in-content: Back NavLink, one primary Button/NavLink, or submit-then-navigate. Never a left nav listing every page.',
 ] as const

@@ -1,8 +1,8 @@
 import { GenerativeUiIcon } from '@/components/icons'
-import type { BlockConfig } from '@/blocks/types'
-import { IntegrationType } from '@/blocks/types'
 import { requestJson } from '@/lib/api/client/request'
 import { listGenerativeAppDraftsContract } from '@/lib/api/contracts/arena-generative-apps'
+import type { BlockConfig } from '@/blocks/types'
+import { IntegrationType } from '@/blocks/types'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { ArenaGenerativeUiResponse } from '@/tools/arena-generative-ui/types'
 
@@ -53,15 +53,15 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
       type: 'long-input',
       required: true,
       placeholder:
-        'Generate: describe the app. Edit: describe the changes (copy, layout, pages, CTAs).',
+        'Plain language, not JSON. Generate: describe the app. Edit: describe the changes. Only Pages and API Bindings are JSON.',
       wandConfig: {
         enabled: true,
-        prompt: `You are an expert product designer for Sim GUI apps that may open as a page or in an Arena iframe. Expand the user's idea into a brief for a multi-page json-render UI.
+        prompt: `You are an expert product designer for Sim GUI apps that usually render inside a narrow Arena iframe. Expand the user's idea into a brief for a multi-page json-render UI.
 
 Include:
 - App name and purpose
 - Page list with path, title, and purpose
-- Navigation between pages (tabs, Back, submit-then-navigate)
+- In-content navigation (Back, submit-then-navigate). No left nav, no logo, no app chrome.
 - CTA copy and which named API (if any) each CTA should call
 - Fields on each form
 
@@ -102,7 +102,8 @@ Return ONLY the specification text.`,
       title: 'Entry Path',
       type: 'short-input',
       placeholder: 'home',
-      description: 'First page after open. Defaults to home. Leave blank in Edit to keep the current entry.',
+      description:
+        'First page after open. Defaults to home. Leave blank in Edit to keep the current entry.',
     },
     {
       id: 'apiBindings',

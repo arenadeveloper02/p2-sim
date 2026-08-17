@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { arenaGenerativeGenerateBodySchema } from '@/lib/api/contracts/arena-generative-apps'
-import { parseApiBindings, parseLlmJsonObject, parsePageHints } from '@/lib/arena-generative-ui/parse-inputs'
+import {
+  parseApiBindings,
+  parseLlmJsonObject,
+  parsePageHints,
+} from '@/lib/arena-generative-ui/parse-inputs'
 
 describe('parseApiBindings', () => {
   it('treats an empty field as no bindings', () => {
@@ -31,9 +35,7 @@ describe('parseApiBindings', () => {
 
   it('strips leftover text after a valid bindings array', () => {
     expect(
-      parseApiBindings(
-        '[{"key":"qualify_lead","kind":"workflow","workflowId":"wf-1"}] ### next'
-      )
+      parseApiBindings('[{"key":"qualify_lead","kind":"workflow","workflowId":"wf-1"}] ### next')
     ).toEqual([
       {
         key: 'qualify_lead',
@@ -72,6 +74,28 @@ describe('arenaGenerativeGenerateBodySchema empty optionals', () => {
     })
     expect(parsed.success).toBe(true)
   })
+
+  it('accepts a plain-string userInput', () => {
+    const parsed = arenaGenerativeGenerateBodySchema.safeParse({
+      userInput: 'Lead qualifier. Home is a form; Results shows the score.',
+    })
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      expect(parsed.data.userInput).toBe('Lead qualifier. Home is a form; Results shows the score.')
+    }
+  })
+
+  it('coerces an object userInput to a JSON string', () => {
+    const parsed = arenaGenerativeGenerateBodySchema.safeParse({
+      userInput: { brief: 'Lead qualifier with home and results.' },
+    })
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      expect(parsed.data.userInput).toBe(
+        JSON.stringify({ brief: 'Lead qualifier with home and results.' })
+      )
+    }
+  })
 })
 
 describe('parsePageHints', () => {
@@ -91,9 +115,9 @@ describe('parsePageHints', () => {
 ### Entry Path`)
     ).toEqual([{ path: 'home', title: 'People', purpose: undefined }])
 
-    expect(
-      parsePageHints('[{"path":"home","title":"Form"}] extra commentary')
-    ).toEqual([{ path: 'home', title: 'Form', purpose: undefined }])
+    expect(parsePageHints('[{"path":"home","title":"Form"}] extra commentary')).toEqual([
+      { path: 'home', title: 'Form', purpose: undefined },
+    ])
   })
 
   it('accepts a trailing comma in the page list', () => {

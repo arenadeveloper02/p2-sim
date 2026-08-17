@@ -19,7 +19,12 @@ import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/uti
 
 const logger = createLogger('ArenaGenerativeUi')
 
-const DEFAULT_MODEL = 'claude-haiku-4-5'
+const DEFAULT_MODEL = 'claude-sonnet-4-6'
+const MAX_OUTPUT_TOKENS = 16_384
+
+/** Shown when the model reply is truncated or is not a JSON object. User Input is prose. */
+export const MODEL_JSON_PARSE_ERROR =
+  'The generator returned invalid JSON. User Input can be plain language — retry the run.'
 
 function extractMessageText(message: Anthropic.Messages.Message): string {
   return message.content
@@ -52,8 +57,11 @@ export async function generateArenaGenerativeManifest(
   const systemPrompt = arenaGenerativeUiCatalog.prompt({
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
-      'This UI may be opened as a Sim page or embedded in an Arena iframe. emailId is optional. Do not invent a login form.',
+      'This UI usually renders inside an Arena iframe (sometimes as a Sim page). emailId is optional. Do not invent a login form, left nav, or logo.',
       'Prefer Arena-like surfaces: calm layout, clear hierarchy, one primary CTA per page.',
+      'Each page is a padded Section wrapping one Card. Use Heading h1, a short supporting Text, then the primary action.',
+      'Iframe-friendly: single column, compact padding. No sidebar, no logo, no full-page app shell.',
+      'Use catalog padding, gap, maxWidth, and backgroundColor. No lorem or "Page 1" copy.',
     ],
   })
 
@@ -90,7 +98,7 @@ export async function generateArenaGenerativeManifest(
 
     const message = await createAnthropicMessage(anthropic, {
       model: modelId,
-      max_tokens: Math.min(getMaxOutputTokensForModel(modelId), 8192),
+      max_tokens: Math.min(getMaxOutputTokensForModel(modelId), MAX_OUTPUT_TOKENS),
       ...(supportsTemperature(modelId) ? { temperature: 0.2 } : {}),
       system: systemPrompt,
       messages: [{ role: 'user', content: userPayload }],
@@ -130,7 +138,20 @@ export async function generateArenaGenerativeManifest(
       manifest: validation.manifest,
     }
   } catch (error) {
+    const message = getErrorMessage(error, 'Failed to generate app')
     logger.error('Arena Generative UI generation failed', { error: toError(error).message })
-    return { success: false, error: getErrorMessage(error, 'Failed to generate app') }
+    if (isModelJsonParseError(message)) {
+      return { success: false, error: MODEL_JSON_PARSE_ERROR }
+    }
+    return { success: false, error: message }
   }
+}
+
+function isModelJsonParseError(message: string): boolean {
+  return (
+    /valid JSON/i.test(message) ||
+    /non-object JSON payload/i.test(message) ||
+    /Unexpected token/i.test(message) ||
+    /Unexpected end of JSON/i.test(message)
+  )
 }
