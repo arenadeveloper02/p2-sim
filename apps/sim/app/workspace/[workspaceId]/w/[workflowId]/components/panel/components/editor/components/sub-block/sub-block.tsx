@@ -8,6 +8,7 @@ import {
   Check,
   Clipboard,
   ExternalLink,
+  Info,
 } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import type { FilterRule, SortRule } from '@/lib/table/query-builder/constants'
@@ -305,6 +306,18 @@ const renderLabel = (
       <Label className='flex items-baseline gap-1.5 whitespace-nowrap'>
         {config.title}
         {required && <span className='ml-0.5'>*</span>}
+        {config.tooltip ? (
+          <Tooltip.Root>
+            <Tooltip.Trigger asChild>
+              <span className='inline-flex'>
+                <Info className='size-[14px] flex-shrink-0 cursor-default text-[var(--text-icon)]' />
+              </span>
+            </Tooltip.Trigger>
+            <Tooltip.Content side='top' className='max-w-sm'>
+              <p className='whitespace-pre-wrap'>{config.tooltip}</p>
+            </Tooltip.Content>
+          </Tooltip.Root>
+        ) : null}
         {labelSuffix}
         {config.type === 'code' &&
           config.language === 'json' &&

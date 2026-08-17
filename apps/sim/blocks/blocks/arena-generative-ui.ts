@@ -54,6 +54,8 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
       required: true,
       placeholder:
         'Plain language, not JSON. Generate: describe the app. Edit: describe the changes. Only Pages and API Bindings are JSON.',
+      tooltip:
+        'Plain language, not JSON. Name pages, fields, and navigation. If a form should call an API, use the same key you put in API Bindings (you invent that key).\n\nLead qualifier. Home is a form: company, role, notes. Submit calls qualify_lead, then go to Results. Results shows the score and a Back link.',
       wandConfig: {
         enabled: true,
         prompt: `You are an expert product designer for Sim GUI apps that usually render inside a narrow Arena iframe. Expand the user's idea into a brief for a multi-page json-render UI.
@@ -96,6 +98,8 @@ Return ONLY the specification text.`,
       placeholder: '[]',
       description:
         'Optional sitemap. Leave blank to let the model choose (Generate) or keep the current pages (Edit).',
+      tooltip:
+        'Optional JSON sitemap. Leave blank to let the model choose pages from User Input.\n\n[{"path":"home","title":"Form"},{"path":"results","title":"Score"}]',
     },
     {
       id: 'entryPath',
@@ -104,6 +108,7 @@ Return ONLY the specification text.`,
       placeholder: 'home',
       description:
         'First page after open. Defaults to home. Leave blank in Edit to keep the current entry.',
+      tooltip: 'First page after open. Kebab-case path. Defaults to home if blank.\n\nhome',
     },
     {
       id: 'apiBindings',
@@ -114,12 +119,16 @@ Return ONLY the specification text.`,
         '[{"key":"qualify_lead","kind":"workflow","workflowId":"...","label":"Qualify"}]',
       description:
         'Named APIs CTAs may call. Leave blank for a navigation-only app — the model cannot invent API keys.',
+      tooltip:
+        'Named CTA backends. Leave blank for navigation-only. You invent key; use that same string in User Input (e.g. "Submit calls qualify_lead"). workflowId is the deployed workflow id.\n\n[{"key":"qualify_lead","kind":"workflow","workflowId":"wf_...","label":"Qualify"}]',
     },
     {
       id: 'designNotes',
       title: 'Design Notes',
       type: 'long-input',
       placeholder: 'Optional Arena DS / brand / density notes',
+      tooltip:
+        'Optional. Tone and density only — iframe-first, no left nav, no logo.\n\nCalm Arena-like layout. One card per page. Primary button is Qualify.',
     },
   ],
   tools: {

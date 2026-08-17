@@ -65,3 +65,24 @@ describe('ArenaGenerativeUiBlock agent tool', () => {
     expect(schema.properties).toHaveProperty('pages')
   })
 })
+
+describe('ArenaGenerativeUiBlock field tooltips', () => {
+  const tooltips = Object.fromEntries(
+    ArenaGenerativeUiBlock.subBlocks.map((subBlock) => [subBlock.id, subBlock.tooltip])
+  )
+
+  it('explains User Input, Pages, Entry Path, API Bindings, and Design Notes', () => {
+    expect(tooltips.userInput).toBeTruthy()
+    expect(tooltips.pages).toBeTruthy()
+    expect(tooltips.entryPath).toBeTruthy()
+    expect(tooltips.apiBindings).toBeTruthy()
+    expect(tooltips.designNotes).toBeTruthy()
+  })
+
+  it('pairs the User Input prompt sample with the API Bindings key', () => {
+    expect(tooltips.userInput).toContain('qualify_lead')
+    expect(tooltips.userInput).toContain('Submit calls qualify_lead')
+    expect(tooltips.apiBindings).toContain('qualify_lead')
+    expect(tooltips.apiBindings).toContain('Submit calls qualify_lead')
+  })
+})
