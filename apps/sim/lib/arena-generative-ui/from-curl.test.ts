@@ -2,12 +2,19 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { httpBindingFromCurl } from '@/lib/arena-generative-ui/from-curl'
+import { curlLooksLikeStream, httpBindingFromCurl } from '@/lib/arena-generative-ui/from-curl'
 
 const ARTICLE_RECOMMENDATION_CURL = `curl -X POST \\
   -H "X-API-Key: $W_ARTICAL_RECOMMENDATION_AGENT_KEY” \\
   -H "Content-Type: application/json" \\
   -d '{"input":"example","conversationId":"example","files":[{"data":"data:application/pdf;base64,...","type":"file","name":"document.pdf","mime":"application/pdf"}],"keyword":"example","client":"example","email":"example"}' \\
+  https://agent.thearena.ai/api/workflows/09e8e4e6-4b9c-4126-95f2-cbfcfd025f63/execute`
+
+const SIM_STREAMING_CURL = `curl -X POST \\
+  -H "X-API-Key: $SIM_API_KEY" \\
+  -H "X-Sim-Stream-Protocol: agent-events-v1" \\
+  -H "Content-Type: application/json" \\
+  -d '{"input":"example","conversationId":"example","files":[{"data":"data:application/pdf;base64,...","type":"file","name":"document.pdf","mime":"application/pdf"}],"keyword":"example","client":"example","email":"example","stream":true,"includeThinking":true,"includeToolCalls":true}' \\
   https://agent.thearena.ai/api/workflows/09e8e4e6-4b9c-4126-95f2-cbfcfd025f63/execute`
 
 describe('httpBindingFromCurl', () => {
@@ -128,5 +135,109 @@ describe('httpBindingFromCurl', () => {
         curl: 'curl -X FOO https://api.example.com/lookup',
       })
     ).toThrow('Curl method is invalid')
+  })
+})
+
+describe('curlLooksLikeStream', () => {
+  it('is false for a plain JSON POST including the article-recommendation curl', () => {
+    expect(curlLooksLikeStream(ARTICLE_RECOMMENDATION_CURL)).toBe(false)
+    expect(
+      curlLooksLikeStream('curl -X POST -d \'{"input":"example"}\' https://api.example.com/execute')
+    ).toBe(false)
+  })
+
+  it('is true for -N and --no-buffer', () => {
+    expect(curlLooksLikeStream('curl -N https://api.example.com/stream')).toBe(true)
+    expect(curlLooksLikeStream('curl --no-buffer -X POST https://api.example.com/stream')).toBe(
+      true
+    )
+  })
+
+  it('is true for Sim streaming execute curls', () => {
+    expect(curlLooksLikeStream(SIM_STREAMING_CURL)).toBe(true)
+    expect(
+      curlLooksLikeStream(
+        'curl -H "X-Sim-Stream-Protocol: agent-events-v1" https://api.example.com/execute'
+      )
+    ).toBe(true)
+    expect(
+      curlLooksLikeStream(
+        'curl -d \'{"input":"hi","stream":true}\' https://api.example.com/execute'
+      )
+    ).toBe(true)
+  })
+
+  it('is true when Accept is text/event-stream', () => {
+    expect(
+      curlLooksLikeStream(
+        'curl -X POST -H "Accept: text/event-stream" https://api.example.com/stream'
+      )
+    ).toBe(true)
+    expect(
+      curlLooksLikeStream(
+        'curl --header "Accept: text/event-stream, text/plain" https://api.example.com/stream'
+      )
+    ).toBe(true)
+  })
+
+  it('does not treat other headers as streaming', () => {
+    expect(
+      curlLooksLikeStream(
+        'curl -H "X-API-Key: super-secret" -H "Content-Type: application/json" https://api.example.com/x'
+      )
+    ).toBe(false)
+  })
+
+  it('does not throw on incomplete curls', () => {
+    expect(curlLooksLikeStream('')).toBe(false)
+    expect(curlLooksLikeStream('curl -N -X')).toBe(true)
+    expect(curlLooksLikeStream('curl -d')).toBe(false)
+  })
+})
+
+describe('httpBindingFromCurl stream flag', () => {
+  it('omits stream on a non-streaming POST unless stream is requested', () => {
+    const binding = httpBindingFromCurl({
+      key: 'recommend_articles',
+      curl: ARTICLE_RECOMMENDATION_CURL,
+    })
+    expect(binding.stream).toBeUndefined()
+  })
+
+  it('sets stream: true when the caller requests it', () => {
+    const binding = httpBindingFromCurl({
+      key: 'recommend_articles',
+      curl: ARTICLE_RECOMMENDATION_CURL,
+      stream: true,
+    })
+    expect(binding.stream).toBe(true)
+  })
+
+  it('still omits stream when the curl looks like SSE but stream is not requested', () => {
+    const binding = httpBindingFromCurl({
+      key: 'stream_chat',
+      curl: 'curl -N -X POST https://api.example.com/stream',
+    })
+    expect(binding.stream).toBeUndefined()
+  })
+
+  it('keeps form fields and drops protocol keys from a Sim streaming curl', () => {
+    const binding = httpBindingFromCurl({
+      key: 'recommend_articles',
+      curl: SIM_STREAMING_CURL,
+      headersSecretName: 'SIM_API_KEY',
+      stream: true,
+    })
+    expect(binding.stream).toBe(true)
+    expect(binding.http?.headersSecretName).toBe('SIM_API_KEY')
+    expect(JSON.stringify(binding)).not.toContain('$SIM_API_KEY')
+    expect(binding.inputSchema).toEqual([
+      { name: 'input', type: 'string' },
+      { name: 'conversationId', type: 'string' },
+      { name: 'files', type: 'array' },
+      { name: 'keyword', type: 'string' },
+      { name: 'client', type: 'string' },
+      { name: 'email', type: 'string' },
+    ])
   })
 })

@@ -2,6 +2,7 @@ import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeHttpMethod,
 } from '@/lib/arena-generative-ui/types'
+import { AGENT_STREAM_PROTOCOL_HEADER } from '@/lib/workflows/streaming/agent-stream-protocol'
 
 const HTTP_METHODS = new Set<string>(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
 
@@ -29,6 +30,8 @@ const VALUE_FLAGS = new Set([
 ])
 
 const GET_FLAGS = new Set(['-G', '--get'])
+const STREAM_FLAGS = new Set(['-N', '--no-buffer'])
+const PROTOCOL_BODY_KEYS = new Set(['stream', 'includeThinking', 'includeToolCalls'])
 
 const SMART_QUOTES: Record<string, string> = {
   '\u2018': "'",
@@ -41,6 +44,17 @@ export interface HttpBindingFromCurlInput {
   key: string
   curl: string
   headersSecretName?: string
+  /** When true, the binding streams CTA tokens instead of waiting for JSON. */
+  stream?: boolean
+}
+
+/**
+ * True when the curl looks like a streaming request: `-N` / `--no-buffer`,
+ * `Accept: text/event-stream`, `X-Sim-Stream-Protocol`, or JSON body
+ * `"stream": true`. Incomplete curls still return a hint.
+ */
+export function curlLooksLikeStream(curl: string): boolean {
+  return inspectCurl(curl).looksLikeStream
 }
 
 /**
@@ -69,21 +83,22 @@ export function httpBindingFromCurl(input: HttpBindingFromCurlInput): ArenaGener
   if (parsed.inputSchema && parsed.inputSchema.length > 0) {
     binding.inputSchema = parsed.inputSchema
   }
+  if (input.stream === true) {
+    binding.stream = true
+  }
   return binding
 }
 
-function parseCurl(raw: string): {
-  method: ArenaGenerativeHttpMethod
-  url: string
-  inputSchema?: Array<{ name: string; type: string }>
+function inspectCurl(raw: string): {
+  methodRaw?: string
+  url?: string
+  body?: string
+  forceGet: boolean
+  looksLikeStream: boolean
 } {
   const tokens = tokenizeCurl(normalizeCurlText(raw))
-  if (tokens.length === 0) {
-    throw new Error('Curl is required')
-  }
-
   let index = 0
-  if (tokens[0] === 'curl' || tokens[0].endsWith('/curl')) {
+  if (tokens[0] === 'curl' || tokens[0]?.endsWith('/curl')) {
     index = 1
   }
 
@@ -91,19 +106,29 @@ function parseCurl(raw: string): {
   let url: string | undefined
   let body: string | undefined
   let forceGet = false
+  let looksLikeStream = false
 
   while (index < tokens.length) {
     const token = tokens[index]
     const { flag, inlineValue } = splitFlag(token)
 
     if (flag === '-X' || flag === '--request') {
-      methodRaw = nextValue(tokens, index, inlineValue, 'Curl method is missing')
-      index += inlineValue === undefined ? 2 : 1
+      const taken = takeFlagValue(tokens, index, inlineValue)
+      if (taken.value) methodRaw = taken.value
+      index += taken.consumed
       continue
     }
 
     if (flag === '-H' || flag === '--header') {
-      index += inlineValue === undefined ? 2 : 1
+      const header = inlineValue ?? tokens[index + 1]
+      if (header && !header.startsWith('-')) {
+        if (headerLooksLikeStream(header)) {
+          looksLikeStream = true
+        }
+        index += inlineValue === undefined ? 2 : 1
+      } else {
+        index += 1
+      }
       continue
     }
 
@@ -114,19 +139,27 @@ function parseCurl(raw: string): {
       flag === '--data-binary' ||
       flag === '--data-ascii'
     ) {
-      body = nextValue(tokens, index, inlineValue, 'Curl body is missing')
-      index += inlineValue === undefined ? 2 : 1
+      const taken = takeFlagValue(tokens, index, inlineValue)
+      if (taken.value) body = taken.value
+      index += taken.consumed
       continue
     }
 
     if (flag === '--url') {
-      url = nextValue(tokens, index, inlineValue, 'Curl is missing a valid URL')
-      index += inlineValue === undefined ? 2 : 1
+      const taken = takeFlagValue(tokens, index, inlineValue)
+      if (taken.value) url = taken.value
+      index += taken.consumed
       continue
     }
 
     if (GET_FLAGS.has(flag)) {
       forceGet = true
+      index += 1
+      continue
+    }
+
+    if (STREAM_FLAGS.has(flag)) {
+      looksLikeStream = true
       index += 1
       continue
     }
@@ -147,20 +180,63 @@ function parseCurl(raw: string): {
     index += 1
   }
 
-  if (!url || !isHttpUrl(url)) {
-    throw new Error('Curl is missing a valid URL')
+  if (bodyLooksLikeStream(body)) {
+    looksLikeStream = true
   }
 
-  const method = (methodRaw?.toUpperCase() || (forceGet ? 'GET' : 'POST')) as string
+  return { methodRaw, url, body, forceGet, looksLikeStream }
+}
+
+function parseCurl(raw: string): {
+  method: ArenaGenerativeHttpMethod
+  url: string
+  inputSchema?: Array<{ name: string; type: string }>
+} {
+  const inspected = inspectCurl(raw)
+  if (!inspected.url || !isHttpUrl(inspected.url)) {
+    throw new Error(raw.trim() ? 'Curl is missing a valid URL' : 'Curl is required')
+  }
+
+  const method = (inspected.methodRaw?.toUpperCase() ||
+    (inspected.forceGet ? 'GET' : 'POST')) as string
   if (!HTTP_METHODS.has(method)) {
     throw new Error('Curl method is invalid')
   }
 
   return {
     method: method as ArenaGenerativeHttpMethod,
-    url,
-    inputSchema: inputSchemaFromBody(body),
+    url: inspected.url,
+    inputSchema: inputSchemaFromBody(inspected.body),
   }
+}
+
+function headerLooksLikeStream(header: string): boolean {
+  const colon = header.indexOf(':')
+  const name = (colon >= 0 ? header.slice(0, colon) : header).trim().toLowerCase()
+  const value = (colon >= 0 ? header.slice(colon + 1) : '').toLowerCase()
+  if (name === 'accept' && value.includes('text/event-stream')) {
+    return true
+  }
+  return name === AGENT_STREAM_PROTOCOL_HEADER
+}
+
+function tryParseJsonObject(body: string | undefined): Record<string, unknown> | undefined {
+  if (!body?.trim() || body.startsWith('@')) {
+    return undefined
+  }
+  try {
+    const parsed: unknown = JSON.parse(body)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return undefined
+    }
+    return parsed as Record<string, unknown>
+  } catch {
+    return undefined
+  }
+}
+
+function bodyLooksLikeStream(body: string | undefined): boolean {
+  return tryParseJsonObject(body)?.stream === true
 }
 
 function normalizeCurlText(raw: string): string {
@@ -221,20 +297,19 @@ function splitFlag(token: string): { flag: string; inlineValue?: string } {
   return { flag: token }
 }
 
-function nextValue(
+function takeFlagValue(
   tokens: string[],
   index: number,
-  inlineValue: string | undefined,
-  missingMessage: string
-): string {
+  inlineValue: string | undefined
+): { value?: string; consumed: number } {
   if (inlineValue !== undefined) {
-    return inlineValue
+    return { value: inlineValue, consumed: 1 }
   }
   const value = tokens[index + 1]
   if (!value) {
-    throw new Error(missingMessage)
+    return { consumed: 1 }
   }
-  return value
+  return { value, consumed: 2 }
 }
 
 function isHttpUrl(value: string): boolean {
@@ -249,21 +324,17 @@ function isHttpUrl(value: string): boolean {
 function inputSchemaFromBody(
   body: string | undefined
 ): Array<{ name: string; type: string }> | undefined {
-  if (!body?.trim() || body.startsWith('@')) {
+  const parsed = tryParseJsonObject(body)
+  if (!parsed) {
     return undefined
   }
-  try {
-    const parsed: unknown = JSON.parse(body)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return undefined
-    }
-    return Object.entries(parsed as Record<string, unknown>).map(([name, value]) => ({
+  const fields = Object.entries(parsed)
+    .filter(([name]) => !PROTOCOL_BODY_KEYS.has(name))
+    .map(([name, value]) => ({
       name,
       type: schemaTypeFromValue(value),
     }))
-  } catch {
-    return undefined
-  }
+  return fields.length > 0 ? fields : undefined
 }
 
 function schemaTypeFromValue(value: unknown): string {

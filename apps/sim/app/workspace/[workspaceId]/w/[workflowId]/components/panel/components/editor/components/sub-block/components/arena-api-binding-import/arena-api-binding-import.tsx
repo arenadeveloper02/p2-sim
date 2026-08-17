@@ -10,13 +10,19 @@ import {
   ChipModalField,
   ChipModalFooter,
   ChipModalHeader,
+  ChipSwitch,
 } from '@sim/emcn'
 import { getErrorMessage } from '@sim/utils/errors'
 import { useParams } from 'next/navigation'
 import { appendApiBinding } from '@/lib/arena-generative-ui/append-api-binding'
-import { httpBindingFromCurl } from '@/lib/arena-generative-ui/from-curl'
+import { curlLooksLikeStream, httpBindingFromCurl } from '@/lib/arena-generative-ui/from-curl'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useAvailableEnvVarKeys } from '@/hooks/use-available-env-vars'
+
+const STREAM_SWITCH_OPTIONS = [
+  { value: 'off', label: 'JSON' },
+  { value: 'on', label: 'Stream' },
+] as const
 
 interface ArenaApiBindingImportHelperProps {
   blockId: string
@@ -44,6 +50,7 @@ export function ArenaApiBindingImportHelper({
   const [key, setKey] = useState('')
   const [secretVar, setSecretVar] = useState('')
   const [curl, setCurl] = useState('')
+  const [streamMode, setStreamMode] = useState<'off' | 'on'>('off')
   const [error, setError] = useState<string | null>(null)
 
   const envOptions = useMemo(() => {
@@ -60,6 +67,7 @@ export function ArenaApiBindingImportHelper({
     setKey('')
     setSecretVar('')
     setCurl('')
+    setStreamMode('off')
     setError(null)
   }
 
@@ -76,6 +84,7 @@ export function ArenaApiBindingImportHelper({
         key,
         curl,
         headersSecretName: secretVar,
+        stream: streamMode === 'on',
       })
       setStoreValue(appendApiBinding(storeValue ?? '', binding))
       handleOpenChange(false)
@@ -124,7 +133,12 @@ export function ArenaApiBindingImportHelper({
             type='textarea'
             title='Curl'
             value={curl}
-            onChange={setCurl}
+            onChange={(value) => {
+              setCurl(value)
+              if (curlLooksLikeStream(value)) {
+                setStreamMode('on')
+              }
+            }}
             required
             placeholder={`curl -X POST -d '{"input":"example"}' https://example.com/execute`}
             hint='Paste a curl command. Auth headers are ignored; use Secret var instead.'
@@ -133,6 +147,18 @@ export function ArenaApiBindingImportHelper({
             resizable
             mono
           />
+          <ChipModalField
+            type='custom'
+            title='Response'
+            hint='Stream shows live tokens. JSON waits for the full body.'
+          >
+            <ChipSwitch
+              value={streamMode}
+              onChange={setStreamMode}
+              aria-label='Response mode'
+              options={STREAM_SWITCH_OPTIONS}
+            />
+          </ChipModalField>
           <ChipModalError>{error}</ChipModalError>
         </ChipModalBody>
         <ChipModalFooter
