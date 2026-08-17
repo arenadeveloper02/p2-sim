@@ -67,6 +67,7 @@ import { ArenaProjectSelector } from './components/arena/arena-projects-selector
 import { ArenaStatesSelector } from './components/arena/arena-states-selector'
 import { ArenaTaskAndSubtaskSelector } from './components/arena/arena-task-and-subtask-selector'
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
+import { ArenaApiBindingImportHelper } from './components/arena-api-binding-import/arena-api-binding-import'
 import { SlackChannelSelector } from './components/slack-channel-selector'
 import { SlackClientSelector } from './components/slack-client-selector'
 
@@ -873,8 +874,8 @@ function SubBlockComponent({
           />
         )
 
-      case 'code':
-        return (
+      case 'code': {
+        const editor = (
           <Code
             blockId={blockId}
             subBlockId={config.id}
@@ -904,6 +905,20 @@ function SubBlockComponent({
             hideInternalWand={true}
           />
         )
+        if (config.importHelper === 'arena-api-binding') {
+          return (
+            <ArenaApiBindingImportHelper
+              blockId={blockId}
+              subBlockId={config.id}
+              isPreview={isPreview}
+              disabled={isDisabled}
+            >
+              {editor}
+            </ArenaApiBindingImportHelper>
+          )
+        }
+        return editor
+      }
 
       case 'switch':
         return (

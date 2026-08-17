@@ -489,6 +489,11 @@ export interface SubBlockConfig {
   clearable?: boolean
   /** Dropdown-specific: include static options as Cmd K search entries that preset this subblock. */
   commandSearchable?: boolean
+  /**
+   * Opt-in editor helper wrapping a `code` sub-block. `arena-api-binding`
+   * adds an "Add an API" curl importer that writes this field's JSON.
+   */
+  importHelper?: 'arena-api-binding'
   // Wand configuration for AI assistance
   wandConfig?: {
     enabled: boolean

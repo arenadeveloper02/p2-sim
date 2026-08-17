@@ -86,4 +86,11 @@ describe('ArenaGenerativeUiBlock field tooltips', () => {
     expect(tooltips.apiBindings).toContain('Submit calls qualify_lead')
     expect(tooltips.apiBindings).toContain('"stream": true')
   })
+
+  it('opts the API Bindings field into the curl import helper', () => {
+    const apiBindings = ArenaGenerativeUiBlock.subBlocks.find(
+      (subBlock) => subBlock.id === 'apiBindings'
+    )
+    expect(apiBindings?.importHelper).toBe('arena-api-binding')
+  })
 })
