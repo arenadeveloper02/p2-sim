@@ -1,6 +1,9 @@
 import type { Spec } from '@json-render/core'
 import { describe, expect, it } from 'vitest'
-import { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/validate-manifest'
+import {
+  GENERATOR_OMITTED_PAGES_ERROR,
+  validateArenaGenerativeManifest,
+} from '@/lib/arena-generative-ui/validate-manifest'
 
 function pageSpec(options: { root?: string; extra?: Record<string, unknown> } = {}): Spec {
   return {
@@ -90,6 +93,23 @@ describe('validateArenaGenerativeManifest', () => {
         pages: [
           { title: 'Home', path: 'home', spec: pageSpec() },
           { title: 'Results', path: 'results', spec: resultsSpec() },
+        ],
+        actions: {},
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.success).toBe(true)
+    expect(result.manifest?.pages.home.title).toBe('Home')
+    expect(result.manifest?.pages.results.title).toBe('Results')
+  })
+
+  it('folds a pages array without path using title and home', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: [
+          { title: 'Home', spec: pageSpec() },
+          { title: 'Results', spec: resultsSpec() },
         ],
         actions: {},
       },
@@ -206,7 +226,7 @@ describe('validateArenaGenerativeManifest', () => {
       { apiBindings: [], entryPath: 'home' }
     )
     expect(result.success).toBe(false)
-    expect(result.error).toBe('The generator omitted pages. Retry, or pin a JSON sitemap in Pages.')
+    expect(result.error).toBe(GENERATOR_OMITTED_PAGES_ERROR)
     expect(result.error).not.toMatch(/keyed by page path/)
   })
 })

@@ -82,6 +82,14 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       description: 'Loading indicator shown while an API action is in flight',
     },
+    ProgressSteps: {
+      props: z.object({
+        steps: z.string(),
+        durationMs: z.union([z.number(), z.string()]).nullable().optional(),
+      }),
+      description:
+        'Newline-separated step labels shown while a CTA is pending. Ticks complete over durationMs (default 150000). Use on streaming form pages.',
+    },
     Form: {
       props: z.object({
         actionId: z.string().nullable(),
@@ -229,4 +237,4 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */
 export const ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE =
-  'If a declared API binding has stream: true, put DataText with statePath "content" on the same page as the form so tokens appear live. Use onSuccess.navigate only after the stream finishes, or omit navigate.'
+  'If a declared API binding has stream: true, use one page: the form, ProgressSteps (newline-separated step labels, durationMs 150000) while pending, and DataText with statePath "content" below the form. Omit onSuccess.navigate.'

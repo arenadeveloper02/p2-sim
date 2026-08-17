@@ -14,6 +14,9 @@ interface FlatElement {
   children?: string[]
 }
 
+export const GENERATOR_OMITTED_PAGES_ERROR =
+  'The generator omitted pages. Retry, or pin a JSON sitemap in Pages.'
+
 export interface ManifestValidationResult {
   success: boolean
   error?: string
@@ -24,19 +27,51 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function kebabPagePath(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN.test(slug) ? slug : ''
+}
+
+function pathForArrayPage(
+  record: Record<string, unknown>,
+  index: number,
+  used: Set<string>
+): string {
+  let path = asString(record.path)
+  if (!ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN.test(path)) {
+    path = kebabPagePath(asString(record.title))
+  }
+  if (!path) {
+    path = index === 0 && !used.has('home') ? 'home' : `page-${index + 1}`
+  }
+  if (used.has(path)) {
+    let suffix = 2
+    while (used.has(`${path}-${suffix}`)) {
+      suffix += 1
+    }
+    path = `${path}-${suffix}`
+  }
+  used.add(path)
+  return path
+}
+
 /**
  * Models often emit `pages` as an array of `{ path, title, spec }`. Fold that
- * into the path-keyed record the host expects.
+ * into the path-keyed record the host expects. Missing path uses kebab-case
+ * title, else `home` / `page-N`.
  */
 function normalizePagesRecord(pagesRaw: unknown): Record<string, unknown> | null {
   if (Array.isArray(pagesRaw)) {
     const pages: Record<string, unknown> = {}
-    for (const item of pagesRaw) {
+    const used = new Set<string>()
+    for (const [index, item] of pagesRaw.entries()) {
       if (!item || typeof item !== 'object') continue
       const record = item as Record<string, unknown>
-      const path = asString(record.path)
-      if (!path) continue
-      pages[path] = record
+      const path = pathForArrayPage(record, index, used)
+      pages[path] = { ...record, path }
     }
     return Object.keys(pages).length > 0 ? pages : null
   }
@@ -147,7 +182,7 @@ export function validateArenaGenerativeManifest(
   if (!pagesRaw) {
     return {
       success: false,
-      error: 'The generator omitted pages. Retry, or pin a JSON sitemap in Pages.',
+      error: GENERATOR_OMITTED_PAGES_ERROR,
     }
   }
 

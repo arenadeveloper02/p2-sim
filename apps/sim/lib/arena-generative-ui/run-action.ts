@@ -21,7 +21,7 @@ import { LoggingSession } from '@/lib/logs/execution/logging-session'
 const logger = createLogger('ArenaGenerativeUiAction')
 
 const HTTP_TIMEOUT_MS = 15_000
-const HTTP_STREAM_TIMEOUT_MS = 120_000
+export const HTTP_STREAM_TIMEOUT_MS = 180_000
 const HTTP_MAX_BYTES = 1_048_576
 
 function mapActionInput(

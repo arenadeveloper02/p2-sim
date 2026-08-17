@@ -29,6 +29,7 @@ import {
   MODEL_JSON_PARSE_ERROR,
 } from '@/lib/arena-generative-ui/generate-manifest'
 import { twoPageManifest } from '@/lib/arena-generative-ui/two-page-app.fixture'
+import { GENERATOR_OMITTED_PAGES_ERROR } from '@/lib/arena-generative-ui/validate-manifest'
 
 function textMessage(text: string) {
   return { content: [{ type: 'text' as const, text }] }
@@ -115,7 +116,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(mockCreateAnthropicMessage).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        system: expect.stringContaining('statePath "content"'),
+        system: expect.stringContaining('ProgressSteps'),
         messages: [
           expect.objectContaining({
             content: expect.stringContaining('"stream": true'),
@@ -167,7 +168,43 @@ describe('generateArenaGenerativeManifest', () => {
     expect(result.manifest?.pages.results).toBeTruthy()
   })
 
-  it('returns a retry-or-pin message when the model omits pages', async () => {
+  it('retries once when the first reply omits pages', async () => {
+    mockCreateAnthropicMessage
+      .mockResolvedValueOnce(
+        textMessage(
+          JSON.stringify({ title: 'Team', content: 'ok', manifest: { entryPath: 'home' } })
+        )
+      )
+      .mockResolvedValueOnce(
+        textMessage(
+          JSON.stringify({
+            title: 'Lead qualifier',
+            content: 'ok',
+            manifest: { entryPath: 'home' },
+            pages: twoPageManifest.pages,
+            actions: twoPageManifest.actions,
+          })
+        )
+      )
+
+    const result = await generateArenaGenerativeManifest({
+      userInput: 'Lead qualifier. Home is a form; Results shows the score.',
+      apiBindings: [],
+    })
+
+    expect(result.success).toBe(true)
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
+    expect(mockCreateAnthropicMessage.mock.calls[1]?.[1].messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'user',
+          content: expect.stringContaining('manifest.pages must be a non-empty object'),
+        }),
+      ])
+    )
+  })
+
+  it('returns a retry-or-pin message when both replies omit pages', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(
       textMessage(JSON.stringify({ title: 'Team', content: 'ok', manifest: { entryPath: 'home' } }))
     )
@@ -178,7 +215,30 @@ describe('generateArenaGenerativeManifest', () => {
     })
 
     expect(result.success).toBe(false)
-    expect(result.error).toBe('The generator omitted pages. Retry, or pin a JSON sitemap in Pages.')
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
+    expect(result.error).toBe(GENERATOR_OMITTED_PAGES_ERROR)
     expect(result.error).not.toMatch(/keyed by page path/)
+  })
+
+  it('tells the model to use declared binding keys when Pages is empty', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({
+      userInput: 'Call gererate_reccomendations on submit.',
+      apiBindings: [
+        { key: 'recommend_articles', label: 'Recommend', kind: 'workflow', workflowId: 'wf-1' },
+      ],
+    })
+
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        messages: [
+          expect.objectContaining({
+            content: expect.stringContaining('recommend_articles'),
+          }),
+        ],
+      })
+    )
   })
 })

@@ -17,7 +17,10 @@ import type {
   ArenaGenerativeGenerateResult,
   ArenaGenerativePageHint,
 } from '@/lib/arena-generative-ui/types'
-import { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/validate-manifest'
+import {
+  GENERATOR_OMITTED_PAGES_ERROR,
+  validateArenaGenerativeManifest,
+} from '@/lib/arena-generative-ui/validate-manifest'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
 
@@ -29,6 +32,9 @@ const MAX_OUTPUT_TOKENS = 16_384
 /** Shown when the model reply is truncated or is not a JSON object. User Input is prose. */
 export const MODEL_JSON_PARSE_ERROR =
   'The generator returned invalid JSON. User Input can be plain language — retry the run.'
+
+const PAGES_RETRY_USER_MESSAGE =
+  'Return the same app as one JSON object; manifest.pages must be a non-empty object keyed by path (home, …).'
 
 function extractMessageText(message: Anthropic.Messages.Message): string {
   return message.content
@@ -80,6 +86,7 @@ export async function generateArenaGenerativeManifest(
     stream: binding.stream === true,
   }))
 
+  const bindingKeys = params.apiBindings.map((binding) => binding.key).filter(Boolean)
   const userPayload = [
     params.existingManifest
       ? `Mode: edit an existing app. Apply the requested changes and return a complete replacement manifest.`
@@ -87,7 +94,14 @@ export async function generateArenaGenerativeManifest(
     params.entryPath ? `Requested entryPath: ${params.entryPath}` : '',
     pageHints.length > 0
       ? `Requested pages (must emit exactly these paths as object keys, not an array):\n${JSON.stringify(pageHints, null, 2)}`
-      : 'No explicit page list. Infer a small coherent sitemap from the brief. Emit manifest.pages as an object keyed by path (home, person, …), never as an array.',
+      : [
+          'No explicit page list. Infer a small coherent sitemap from the brief. Emit manifest.pages as an object keyed by path (home, person, …), never as an array.',
+          bindingKeys.length > 0
+            ? `CTA apiKey values must be one of these declared binding keys: ${bindingKeys.join(', ')}. Do not invent keys from User Input.`
+            : '',
+        ]
+          .filter((line) => line.length > 0)
+          .join('\n'),
     bindingsSummary.length > 0
       ? `Declared API bindings (CTAs may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
       : 'No API bindings. Navigation and static content only.',
@@ -102,27 +116,56 @@ export async function generateArenaGenerativeManifest(
     const apiKey = getRotatingApiKey('anthropic')
     const anthropic = new Anthropic({ apiKey })
     const modelId = DEFAULT_MODEL
-
-    const message = await createAnthropicMessage(anthropic, {
+    const maxTokens = Math.min(getMaxOutputTokensForModel(modelId), MAX_OUTPUT_TOKENS)
+    const messageOptions = {
       model: modelId,
-      max_tokens: Math.min(getMaxOutputTokensForModel(modelId), MAX_OUTPUT_TOKENS),
+      max_tokens: maxTokens,
       ...(supportsTemperature(modelId) ? { temperature: 0.2 } : {}),
       system: systemPrompt,
+    }
+
+    const message = await createAnthropicMessage(anthropic, {
+      ...messageOptions,
       messages: [{ role: 'user', content: userPayload }],
     })
 
-    const rawText = extractMessageText(message)
+    let rawText = extractMessageText(message)
     if (!rawText) {
       return { success: false, error: 'Model returned an empty response' }
     }
 
-    const parsed = parseLlmJsonObject(rawText)
-    const manifestCandidate = extractManifestCandidate(parsed)
-    const validation = validateArenaGenerativeManifest(manifestCandidate, {
+    const validationOptions = {
       pageHints: pageHints.length > 0 ? pageHints : undefined,
       apiBindings: params.apiBindings,
       entryPath: params.entryPath,
-    })
+    }
+
+    let parsed = parseLlmJsonObject(rawText)
+    let validation = validateArenaGenerativeManifest(
+      extractManifestCandidate(parsed),
+      validationOptions
+    )
+
+    if (validation.error === GENERATOR_OMITTED_PAGES_ERROR) {
+      logger.warn('Arena Generative UI omitted pages; retrying once')
+      const retryMessage = await createAnthropicMessage(anthropic, {
+        ...messageOptions,
+        messages: [
+          { role: 'user', content: userPayload },
+          { role: 'assistant', content: rawText },
+          { role: 'user', content: PAGES_RETRY_USER_MESSAGE },
+        ],
+      })
+      rawText = extractMessageText(retryMessage)
+      if (!rawText) {
+        return { success: false, error: GENERATOR_OMITTED_PAGES_ERROR }
+      }
+      parsed = parseLlmJsonObject(rawText)
+      validation = validateArenaGenerativeManifest(
+        extractManifestCandidate(parsed),
+        validationOptions
+      )
+    }
 
     if (!validation.success || !validation.manifest) {
       logger.warn('Arena Generative UI manifest validation failed', { error: validation.error })

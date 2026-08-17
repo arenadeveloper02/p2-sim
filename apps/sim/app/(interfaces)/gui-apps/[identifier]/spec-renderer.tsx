@@ -1,6 +1,6 @@
 'use client'
 
-import { type CSSProperties, type FormEvent, type ReactNode, useState } from 'react'
+import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import type { Spec } from '@json-render/core'
 import { cn } from '@sim/emcn'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
@@ -25,6 +25,75 @@ function asString(value: unknown, fallback = ''): string {
 
 function asBoolean(value: unknown): boolean {
   return value === true
+}
+
+function asPositiveNumber(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed
+    }
+  }
+  return fallback
+}
+
+const DEFAULT_PROGRESS_DURATION_MS = 150_000
+
+interface ProgressStepsViewProps {
+  pending: boolean
+  steps: string[]
+  durationMs: number
+}
+
+function ProgressStepsView({ pending, steps, durationMs }: ProgressStepsViewProps) {
+  const [elapsedMs, setElapsedMs] = useState(0)
+
+  useEffect(() => {
+    if (!pending) {
+      setElapsedMs(0)
+      return
+    }
+    const startedAt = Date.now()
+    const timer = setInterval(() => {
+      setElapsedMs(Date.now() - startedAt)
+    }, 100)
+    return () => clearInterval(timer)
+  }, [pending])
+
+  if (!pending || steps.length === 0) {
+    return null
+  }
+
+  const sliceMs = durationMs / steps.length
+  const completedCount = Math.min(steps.length - 1, Math.floor(elapsedMs / sliceMs))
+
+  return (
+    <ol className='flex flex-col gap-2 text-sm'>
+      {steps.map((label, index) => {
+        const done = index < completedCount
+        const current = index === completedCount
+        return (
+          <li
+            key={`${index}-${label}`}
+            className={cn(
+              'flex items-center gap-2',
+              done && 'text-[var(--color-ds-grey-800,#1f232d)]',
+              current && 'text-[var(--color-ds-grey-800,#1f232d)]',
+              !done && !current && 'text-[var(--color-ds-grey-400,#a0a3ad)]'
+            )}
+          >
+            <span className='inline-flex size-5 items-center justify-center rounded-full border border-[var(--color-ds-grey-300,#c5c6cc)] text-xs'>
+              {done ? '✓' : current ? '…' : ''}
+            </span>
+            {label}
+          </li>
+        )
+      })}
+    </ol>
+  )
 }
 
 function readStatePath(state: Record<string, unknown>, path: string): unknown {
@@ -135,11 +204,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         const display =
           value === undefined || value === null ? asString(props.fallback, '') : String(value)
         return (
-          <MarkdownText
-            className='font-medium'
-            style={styleFromProps(props)}
-            content={display}
-          />
+          <MarkdownText className='font-medium' style={styleFromProps(props)} content={display} />
         )
       }
       case 'Alert': {
@@ -164,6 +229,19 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             {asString(props.label, 'Loading…')}
           </p>
         ) : null
+      case 'ProgressSteps': {
+        const steps = asString(props.steps)
+          .split('\n')
+          .map((step) => step.trim())
+          .filter(Boolean)
+        return (
+          <ProgressStepsView
+            pending={pending}
+            steps={steps}
+            durationMs={asPositiveNumber(props.durationMs, DEFAULT_PROGRESS_DURATION_MS)}
+          />
+        )
+      }
       case 'Form': {
         const actionId = asString(props.actionId)
         const handleSubmit = (event: FormEvent<HTMLFormElement>) => {

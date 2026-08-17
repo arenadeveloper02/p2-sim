@@ -15,6 +15,9 @@ function isEmptyJsonListInput(raw: unknown): boolean {
   if (typeof raw === 'string' && raw.trim() === '') {
     return true
   }
+  if (Array.isArray(raw) && raw.length === 0) {
+    return true
+  }
   if (typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length === 0) {
     return true
   }
@@ -74,8 +77,10 @@ function hasUsablePages(pages: unknown): boolean {
   if (Array.isArray(pages)) {
     return pages.some((item) => {
       if (!item || typeof item !== 'object') return false
-      const path = (item as { path?: unknown }).path
-      return typeof path === 'string' && path.trim().length > 0
+      const record = item as Record<string, unknown>
+      if (typeof record.path === 'string' && record.path.trim()) return true
+      if (typeof record.title === 'string' && record.title.trim()) return true
+      return Boolean(record.spec && typeof record.spec === 'object')
     })
   }
   return isRecord(pages) && Object.keys(pages).length > 0

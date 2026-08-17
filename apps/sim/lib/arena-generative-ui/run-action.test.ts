@@ -53,6 +53,7 @@ vi.mock('@sim/db', () => ({
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
 import {
   createGenerativeAppActionSseResponse,
+  HTTP_STREAM_TIMEOUT_MS,
   isStreamingAction,
   runDeployedAppAction,
   runGenerativeAppAction,
@@ -484,5 +485,9 @@ describe('streaming generative app actions', () => {
         'submit_lead'
       )
     ).toBe(true)
+  })
+
+  it('uses a 180s HTTP abort for streaming CTAs', () => {
+    expect(HTTP_STREAM_TIMEOUT_MS).toBe(180_000)
   })
 })

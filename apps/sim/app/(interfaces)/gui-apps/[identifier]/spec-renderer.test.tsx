@@ -61,6 +61,25 @@ const replySpec: Spec = {
   },
 }
 
+const progressSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Home' },
+      children: ['progress'],
+    },
+    progress: {
+      type: 'ProgressSteps',
+      props: {
+        steps: 'Connecting\nResearching',
+        durationMs: 1000,
+      },
+      children: [],
+    },
+  },
+}
+
 describe('SpecRenderer', () => {
   let unmount: (() => void) | undefined
 
@@ -72,6 +91,7 @@ describe('SpecRenderer', () => {
   function render(options?: {
     spec?: Spec
     state?: Record<string, unknown>
+    pending?: boolean
     onNavigate?: ReturnType<typeof vi.fn>
     onRunAction?: ReturnType<typeof vi.fn>
   }) {
@@ -86,7 +106,7 @@ describe('SpecRenderer', () => {
         <SpecRenderer
           spec={options?.spec ?? homeSpec}
           state={options?.state ?? {}}
-          pending={false}
+          pending={options?.pending ?? false}
           onNavigate={onNavigate}
           onRunAction={onRunAction}
         />
@@ -156,5 +176,31 @@ describe('SpecRenderer', () => {
     const { container } = render({ spec: replySpec, state: {} })
     expect(container.textContent).toContain('Waiting for a reply…')
     expect(container.querySelector('strong')).toBeNull()
+  })
+
+  it('hides ProgressSteps when not pending', () => {
+    const { container } = render({ spec: progressSpec, pending: false })
+    expect(container.textContent).not.toContain('Connecting')
+  })
+
+  it('ticks earlier ProgressSteps after elapsed time while pending', () => {
+    vi.useFakeTimers()
+    try {
+      const { container } = render({ spec: progressSpec, pending: true })
+      expect(container.textContent).toContain('Connecting')
+      expect(container.textContent).toContain('Researching')
+      const before = Array.from(container.querySelectorAll('li')).map((item) => item.textContent)
+      expect(before[0]).not.toContain('✓')
+
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+
+      const after = Array.from(container.querySelectorAll('li')).map((item) => item.textContent)
+      expect(after[0]).toContain('✓')
+      expect(after[1]).not.toContain('✓')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
