@@ -76,6 +76,13 @@ export const storyboardGenerateTool: ToolConfig<
       visibility: 'user-or-llm',
       description: 'Edit mode: the change the user wants for that frame, e.g. "make it at night"',
     },
+    aspectRatio: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Aspect ratio of the frames, decided by target platform: "16:9" (YouTube/LinkedIn), "9:16" (TikTok/Reels/Stories), "1:1" (feed posts). Default 16:9.',
+    },
     sceneCount: {
       type: 'number',
       required: false,
