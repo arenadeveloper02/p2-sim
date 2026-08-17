@@ -8,7 +8,11 @@ import { runGenerativeAppDraftActionContract } from '@/lib/api/contracts/arena-g
 import { parseRequest } from '@/lib/api/server'
 import { buildHttpAllowlist } from '@/lib/arena-generative-ui/http-allowlist'
 import { parseApiBindings } from '@/lib/arena-generative-ui/parse-inputs'
-import { runGenerativeAppAction } from '@/lib/arena-generative-ui/run-action'
+import {
+  createGenerativeAppActionSseResponse,
+  isStreamingAction,
+  runGenerativeAppAction,
+} from '@/lib/arena-generative-ui/run-action'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 import { getSession } from '@/lib/auth'
 import { isDev } from '@/lib/core/config/env-flags'
@@ -54,17 +58,27 @@ export const POST = withRouteHandler(
         return createErrorResponse(allowlist.error, 400)
       }
 
-      const result = await runGenerativeAppAction({
-        manifest: draft.manifest as ArenaGenerativeAppManifest,
+      const manifest = draft.manifest as ArenaGenerativeAppManifest
+      const actionId = parsed.data.params.actionId
+      const values = (parsed.data.body.values ?? {}) as Record<string, unknown>
+      const requestId = generateRequestId()
+      const runnerOptions = {
+        manifest,
         apiBindings,
         httpAllowlist: allowlist.hosts,
         userId: draft.userId,
         workspaceId: draft.workspaceId,
-        actionId: parsed.data.params.actionId,
-        values: (parsed.data.body.values ?? {}) as Record<string, unknown>,
-        requestId: generateRequestId(),
+        actionId,
+        values,
+        requestId,
         actorUserId: session.user.id,
-      })
+      }
+
+      if (isStreamingAction(manifest, apiBindings, actionId)) {
+        return createGenerativeAppActionSseResponse(runnerOptions)
+      }
+
+      const result = await runGenerativeAppAction(runnerOptions)
       return createSuccessResponse(result)
     } catch (error) {
       logger.error('Generative app draft action failed', { error: getErrorMessage(error) })

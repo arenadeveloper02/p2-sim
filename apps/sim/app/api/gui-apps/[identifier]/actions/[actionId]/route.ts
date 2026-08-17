@@ -7,7 +7,11 @@ import {
   authorizeDeployedAppRequest,
   findDeployedAppByIdentifier,
 } from '@/lib/arena-generative-ui/deployment'
-import { runDeployedAppAction } from '@/lib/arena-generative-ui/run-action'
+import {
+  createDeployedAppActionSseResponse,
+  isStreamingAction,
+  runDeployedAppAction,
+} from '@/lib/arena-generative-ui/run-action'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
@@ -33,11 +37,23 @@ export const POST = withRouteHandler(
     })
     if (!authorized.ok) return authorized.response
 
+    const actionId = parsed.data.params.actionId
+    const values = (parsed.data.body.values ?? {}) as Record<string, unknown>
+
+    if (isStreamingAction(deployment.manifest, deployment.apiBindings, actionId)) {
+      return createDeployedAppActionSseResponse({
+        deployment,
+        actionId,
+        values,
+        requestId: authorized.requestId,
+      })
+    }
+
     try {
       const result = await runDeployedAppAction({
         deployment,
-        actionId: parsed.data.params.actionId,
-        values: (parsed.data.body.values ?? {}) as Record<string, unknown>,
+        actionId,
+        values,
         requestId: authorized.requestId,
       })
       return createSuccessResponse(result)

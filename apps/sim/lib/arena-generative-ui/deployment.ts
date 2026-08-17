@@ -10,6 +10,7 @@ import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeAppManifest,
 } from '@/lib/arena-generative-ui/types'
+import { streamingActionIdsFrom } from '@/lib/arena-generative-ui/types'
 import { setDeploymentAuthCookie } from '@/lib/core/security/deployment'
 import {
   type DeploymentAuthResult,
@@ -55,6 +56,7 @@ export function toDeployedAppConfig(deployment: DeployedAppRecord) {
     requireArenaEmailId: deployment.requireArenaEmailId,
     entryPath: deployment.manifest.entryPath,
     pages: pageSummariesFromManifest(deployment.manifest),
+    streamingActionIds: streamingActionIdsFrom(deployment.manifest, deployment.apiBindings),
   }
 }
 

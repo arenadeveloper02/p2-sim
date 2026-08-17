@@ -5,9 +5,16 @@ import { authMockFns, dbChainMockFns, resetDbChainMock } from '@sim/testing'
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCheckWorkflowAccess, mockRunGenerativeAppAction } = vi.hoisted(() => ({
+const {
+  mockCheckWorkflowAccess,
+  mockRunGenerativeAppAction,
+  mockIsStreamingAction,
+  mockCreateGenerativeAppActionSseResponse,
+} = vi.hoisted(() => ({
   mockCheckWorkflowAccess: vi.fn(),
   mockRunGenerativeAppAction: vi.fn(),
+  mockIsStreamingAction: vi.fn(),
+  mockCreateGenerativeAppActionSseResponse: vi.fn(),
 }))
 
 vi.mock('@/app/api/chat/utils', () => ({
@@ -16,6 +23,9 @@ vi.mock('@/app/api/chat/utils', () => ({
 
 vi.mock('@/lib/arena-generative-ui/run-action', () => ({
   runGenerativeAppAction: (...args: unknown[]) => mockRunGenerativeAppAction(...args),
+  isStreamingAction: (...args: unknown[]) => mockIsStreamingAction(...args),
+  createGenerativeAppActionSseResponse: (...args: unknown[]) =>
+    mockCreateGenerativeAppActionSseResponse(...args),
 }))
 
 import { POST } from '@/app/api/gui-apps/drafts/[id]/actions/[actionId]/route'
@@ -53,6 +63,10 @@ describe('Generative app draft action route', () => {
     authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-1' } })
     mockCheckWorkflowAccess.mockResolvedValue({ hasAccess: true })
     mockRunGenerativeAppAction.mockResolvedValue({ ok: true, navigate: 'results' })
+    mockIsStreamingAction.mockReturnValue(false)
+    mockCreateGenerativeAppActionSseResponse.mockReturnValue(
+      new Response(null, { headers: { 'Content-Type': 'text/event-stream' } })
+    )
   })
 
   it('returns 401 when the user is not authenticated', async () => {
@@ -116,5 +130,28 @@ describe('Generative app draft action route', () => {
     const body = await response.json()
     expect(body.ok).toBe(false)
     expect(body.error).toMatch(/not deployed/i)
+  })
+
+  it('returns an SSE response for streaming bindings instead of JSON', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([
+      {
+        ...draftRow,
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            kind: 'workflow',
+            workflowId: 'wf-bound',
+            stream: true,
+          },
+        ],
+      },
+    ])
+    mockIsStreamingAction.mockReturnValue(true)
+    const response = await POST(actionRequest(), {
+      params: Promise.resolve({ id: 'draft-1', actionId: 'submit_lead' }),
+    })
+    expect(response.headers.get('content-type')).toMatch(/text\/event-stream/)
+    expect(mockCreateGenerativeAppActionSseResponse).toHaveBeenCalled()
+    expect(mockRunGenerativeAppAction).not.toHaveBeenCalled()
   })
 })

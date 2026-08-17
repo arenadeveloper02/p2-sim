@@ -1,5 +1,6 @@
 export {
   ARENA_GENERATIVE_UI_OUTPUT_RULES,
+  ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
   arenaGenerativeUiCatalog,
 } from '@/lib/arena-generative-ui/catalog'
 export {
@@ -15,7 +16,11 @@ export {
   inspectHttpBindingUrl,
   isHttpUrlAllowlisted,
 } from '@/lib/arena-generative-ui/http-allowlist'
-export { parseApiBindings, parsePageHints } from '@/lib/arena-generative-ui/parse-inputs'
+export {
+  extractManifestCandidate,
+  parseApiBindings,
+  parsePageHints,
+} from '@/lib/arena-generative-ui/parse-inputs'
 export { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
 export { runDeployedAppAction, runGenerativeAppAction } from '@/lib/arena-generative-ui/run-action'
 export type {

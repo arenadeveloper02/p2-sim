@@ -67,7 +67,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         size: z.string().nullable(),
       }),
       description:
-        'Displays a host-state value at a dotted path (e.g. output.content). Markdown is rendered.',
+        'Displays a host-state value at a dotted path (e.g. content or output.content). Markdown is rendered. For stream: true CTAs, bind statePath to content on the form page.',
     },
     Alert: {
       props: z.object({
@@ -226,3 +226,7 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Do not include a logo, wordmark, or decorative Image for branding. The host already provides chrome.',
   'Navigation is in-content: Back NavLink, one primary Button/NavLink, or submit-then-navigate. Never a left nav listing every page.',
 ] as const
+
+/** Added to the generator prompt only when a declared binding has `stream: true`. */
+export const ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE =
+  'If a declared API binding has stream: true, put DataText with statePath "content" on the same page as the form so tokens appear live. Use onSuccess.navigate only after the stream finishes, or omit navigate.'

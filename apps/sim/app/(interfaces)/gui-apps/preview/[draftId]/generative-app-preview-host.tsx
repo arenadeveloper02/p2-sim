@@ -1,16 +1,21 @@
 'use client'
 
-import { flushSync } from 'react-dom'
+import { useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
+import { flushSync } from 'react-dom'
+import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
+import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import {
   ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
   isJsonRenderSpec,
+  streamingActionIdsFrom,
 } from '@/lib/arena-generative-ui/types'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import {
+  runGenerativeAppDraftActionStream,
   useGenerativeAppDraft,
   useRunGenerativeAppDraftAction,
 } from '@/hooks/queries/arena-generative-apps'
@@ -27,6 +32,7 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
   const draftQuery = useGenerativeAppDraft(draftId)
   const runAction = useRunGenerativeAppDraftAction(draftId)
   const { state, mergeState } = useGenerativeAppHostState()
+  const [streamPending, setStreamPending] = useState(false)
 
   const navigate = (path: string) => {
     router.push(`${ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH}/${draftId}/${path}`)
@@ -49,6 +55,10 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
     return <div className='p-8 text-center'>Page not found</div>
   }
 
+  const streamingIds = new Set(
+    streamingActionIdsFrom(draftQuery.data.manifest, draftQuery.data.apiBindings)
+  )
+
   return (
     <div className='min-h-screen'>
       <div className='border-[var(--border)] border-b bg-[var(--color-ds-grey-50,#f7f8f9)] px-4 py-2 text-[var(--text-secondary)] text-xs'>
@@ -57,23 +67,30 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
       <SpecRenderer
         spec={page.spec}
         state={state}
-        pending={runAction.isPending}
+        pending={runAction.isPending || streamPending}
         onNavigate={navigate}
         onRunAction={async (actionId, values) => {
           try {
+            if (streamingIds.has(actionId)) {
+              setStreamPending(true)
+              try {
+                const result = await runGenerativeAppDraftActionStream({
+                  draftId,
+                  actionId,
+                  values,
+                  onChunk: (accumulated) => {
+                    mergeState(streamingContentState(accumulated))
+                  },
+                })
+                applyPreviewActionResult(result, mergeState, navigate)
+              } finally {
+                setStreamPending(false)
+              }
+              return
+            }
+
             const result = await runAction.mutateAsync({ actionId, values })
-            const nextState = result.setState
-            if (nextState) {
-              flushSync(() => {
-                mergeState(nextState)
-              })
-            }
-            if (result.navigate) {
-              navigate(result.navigate)
-            }
-            if (!result.ok) {
-              logger.warn('Draft preview action returned an error', { error: result.error })
-            }
+            applyPreviewActionResult(result, mergeState, navigate)
           } catch (error) {
             logger.error('Draft preview action failed', { error: toError(error).message })
           }
@@ -81,4 +98,22 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
       />
     </div>
   )
+}
+
+function applyPreviewActionResult(
+  result: RunDeployedAppActionResult,
+  mergeState: (patch: Record<string, unknown>) => void,
+  navigate: (path: string) => void
+) {
+  if (result.setState) {
+    flushSync(() => {
+      mergeState(result.setState as Record<string, unknown>)
+    })
+  }
+  if (result.navigate) {
+    navigate(result.navigate)
+  }
+  if (!result.ok) {
+    logger.warn('Draft preview action returned an error', { error: result.error })
+  }
 }

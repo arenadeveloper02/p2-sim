@@ -1,15 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { flushSync } from 'react-dom'
 import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
+import { flushSync } from 'react-dom'
+import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
+import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import { ARENA_GENERATIVE_APP_BASE_PATH, isJsonRenderSpec } from '@/lib/arena-generative-ui/types'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import {
+  runDeployedAppActionStream,
   useDeployedAppConfig,
   useDeployedAppEmailOtpRequest,
   useDeployedAppEmailOtpVerify,
@@ -32,6 +35,7 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
   const { state, mergeState } = useGenerativeAppHostState()
   const pageQuery = useDeployedAppPage(identifier, pagePath, configQuery.data?.kind === 'config')
   const runAction = useRunDeployedAppAction(identifier)
+  const [streamPending, setStreamPending] = useState(false)
 
   const navigate = (path: string) => {
     const params = emailId ? `?emailId=${encodeURIComponent(emailId)}` : ''
@@ -77,37 +81,66 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
     return <div className='p-8 text-center'>Page not found</div>
   }
 
+  const streamingIds = new Set(configQuery.data.config.streamingActionIds ?? [])
+
   return (
     <SpecRenderer
       spec={pageQuery.data.spec}
       state={state}
-      pending={runAction.isPending}
+      pending={runAction.isPending || streamPending}
       onNavigate={navigate}
       onRunAction={async (actionId, values) => {
         try {
+          if (streamingIds.has(actionId)) {
+            setStreamPending(true)
+            try {
+              const result = await runDeployedAppActionStream({
+                identifier,
+                actionId,
+                values,
+                emailId: emailId || undefined,
+                onChunk: (accumulated) => {
+                  mergeState(streamingContentState(accumulated))
+                },
+              })
+              applyActionResult(result, mergeState, navigate, logger)
+            } finally {
+              setStreamPending(false)
+            }
+            return
+          }
+
           const result = await runAction.mutateAsync({
             actionId,
             values,
             emailId: emailId || undefined,
           })
-          const nextState = result.setState
-          if (nextState) {
-            flushSync(() => {
-              mergeState(nextState)
-            })
-          }
-          if (result.navigate) {
-            navigate(result.navigate)
-          }
-          if (!result.ok) {
-            logger.warn('App action returned an error', { error: result.error })
-          }
+          applyActionResult(result, mergeState, navigate, logger)
         } catch (error) {
           logger.error('App action failed', { error: toError(error).message })
         }
       }}
     />
   )
+}
+
+function applyActionResult(
+  result: RunDeployedAppActionResult,
+  mergeState: (patch: Record<string, unknown>) => void,
+  navigate: (path: string) => void,
+  actionLogger: { warn: (message: string, meta?: Record<string, unknown>) => void }
+) {
+  if (result.setState) {
+    flushSync(() => {
+      mergeState(result.setState as Record<string, unknown>)
+    })
+  }
+  if (result.navigate) {
+    navigate(result.navigate)
+  }
+  if (!result.ok) {
+    actionLogger.warn('App action returned an error', { error: result.error })
+  }
 }
 
 function PasswordGate({ identifier }: { identifier: string }) {

@@ -56,6 +56,8 @@ export interface ArenaGenerativeApiBinding {
   workflowId?: string
   http?: ArenaGenerativeHttpBinding
   inputSchema?: Array<{ name: string; type: string }>
+  /** When true, the host streams CTA tokens into DataText instead of waiting for JSON. */
+  stream?: boolean
 }
 
 export interface ArenaGenerativePageManifest {
@@ -88,4 +90,23 @@ export interface ArenaGenerativeGenerateResult {
   title?: string
   content?: string
   manifest?: ArenaGenerativeAppManifest
+}
+
+/** Host state path DataText should bind to while a streaming CTA is in flight. */
+export const ARENA_GENERATIVE_STREAM_CONTENT_KEY = 'content'
+
+/**
+ * Action ids whose API binding has `stream: true`.
+ */
+export function streamingActionIdsFrom(
+  manifest: ArenaGenerativeAppManifest,
+  bindings: ArenaGenerativeApiBinding[]
+): string[] {
+  const streamingKeys = new Set(
+    bindings.filter((binding) => binding.stream === true).map((binding) => binding.key)
+  )
+  if (streamingKeys.size === 0) return []
+  return Object.entries(manifest.actions)
+    .filter(([, action]) => streamingKeys.has(action.apiKey))
+    .map(([actionId]) => actionId)
 }

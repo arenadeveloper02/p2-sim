@@ -4,9 +4,13 @@ import { getErrorMessage, toError } from '@sim/utils/errors'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import {
   ARENA_GENERATIVE_UI_OUTPUT_RULES,
+  ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
   arenaGenerativeUiCatalog,
 } from '@/lib/arena-generative-ui/catalog'
-import { parseLlmJsonObject } from '@/lib/arena-generative-ui/parse-inputs'
+import {
+  extractManifestCandidate,
+  parseLlmJsonObject,
+} from '@/lib/arena-generative-ui/parse-inputs'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeAppManifest,
@@ -54,6 +58,7 @@ export async function generateArenaGenerativeManifest(
     return { success: false, error: 'userInput is required' }
   }
 
+  const hasStreamingBinding = params.apiBindings.some((binding) => binding.stream === true)
   const systemPrompt = arenaGenerativeUiCatalog.prompt({
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
@@ -62,6 +67,7 @@ export async function generateArenaGenerativeManifest(
       'Each page is a padded Section wrapping one Card. Use Heading h1, a short supporting Text, then the primary action.',
       'Iframe-friendly: single column, compact padding. No sidebar, no logo, no full-page app shell.',
       'Use catalog padding, gap, maxWidth, and backgroundColor. No lorem or "Page 1" copy.',
+      ...(hasStreamingBinding ? [ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE] : []),
     ],
   })
 
@@ -71,6 +77,7 @@ export async function generateArenaGenerativeManifest(
     label: binding.label,
     kind: binding.kind,
     inputSchema: binding.inputSchema ?? [],
+    stream: binding.stream === true,
   }))
 
   const userPayload = [
@@ -110,7 +117,7 @@ export async function generateArenaGenerativeManifest(
     }
 
     const parsed = parseLlmJsonObject(rawText)
-    const manifestCandidate = (parsed.manifest ?? parsed) as Record<string, unknown>
+    const manifestCandidate = extractManifestCandidate(parsed)
     const validation = validateArenaGenerativeManifest(manifestCandidate, {
       pageHints: pageHints.length > 0 ? pageHints : undefined,
       apiBindings: params.apiBindings,

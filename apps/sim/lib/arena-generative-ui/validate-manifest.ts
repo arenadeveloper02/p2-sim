@@ -145,7 +145,10 @@ export function validateArenaGenerativeManifest(
       : {}
 
   if (!pagesRaw) {
-    return { success: false, error: 'manifest.pages must be an object keyed by page path' }
+    return {
+      success: false,
+      error: 'The generator omitted pages. Retry, or pin a JSON sitemap in Pages.',
+    }
   }
 
   const pages: ArenaGenerativeAppManifest['pages'] = {}

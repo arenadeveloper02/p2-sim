@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { arenaGenerativeGenerateBodySchema } from '@/lib/api/contracts/arena-generative-apps'
 import {
+  extractManifestCandidate,
   parseApiBindings,
   parseLlmJsonObject,
   parsePageHints,
@@ -36,6 +37,43 @@ describe('parseApiBindings', () => {
   it('strips leftover text after a valid bindings array', () => {
     expect(
       parseApiBindings('[{"key":"qualify_lead","kind":"workflow","workflowId":"wf-1"}] ### next')
+    ).toEqual([
+      {
+        key: 'qualify_lead',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        label: 'qualify_lead',
+      },
+    ])
+  })
+
+  it('parses stream: true on a workflow binding', () => {
+    expect(
+      parseApiBindings([
+        {
+          key: 'summarize',
+          kind: 'workflow',
+          workflowId: 'wf-1',
+          label: 'Summarize',
+          stream: true,
+        },
+      ])
+    ).toEqual([
+      {
+        key: 'summarize',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        label: 'Summarize',
+        stream: true,
+      },
+    ])
+  })
+
+  it('omits stream when it is not true', () => {
+    expect(
+      parseApiBindings([
+        { key: 'qualify_lead', kind: 'workflow', workflowId: 'wf-1', stream: false },
+      ])
     ).toEqual([
       {
         key: 'qualify_lead',
@@ -141,5 +179,49 @@ describe('parseLlmJsonObject', () => {
       '{"title":"People","content":"ok","manifest":{"entryPath":"home","pages":{"home":{"path":"home"}},"actions":{}}}'
     )
     expect(parsed.manifest).toMatchObject({ entryPath: 'home' })
+  })
+
+  it('treats pages: [] as no pages so a later complete object wins', () => {
+    const parsed = parseLlmJsonObject(
+      '{"title":"Team","pages":[]}\n{"entryPath":"home","pages":{"home":{"path":"home","title":"People"}},"actions":{}}'
+    )
+    expect(parsed.entryPath).toBe('home')
+    expect(parsed.pages).toEqual({ home: { path: 'home', title: 'People' } })
+  })
+})
+
+describe('extractManifestCandidate', () => {
+  it('uses nested manifest when it already has pages', () => {
+    const candidate = extractManifestCandidate({
+      title: 'People',
+      manifest: {
+        entryPath: 'home',
+        pages: { home: { path: 'home', title: 'People' } },
+        actions: {},
+      },
+    })
+    expect(candidate.entryPath).toBe('home')
+    expect(candidate.pages).toEqual({ home: { path: 'home', title: 'People' } })
+  })
+
+  it('recovers wrapper-level pages onto a stub nested manifest', () => {
+    const candidate = extractManifestCandidate({
+      title: 'People',
+      content: 'ok',
+      manifest: { entryPath: 'home' },
+      pages: { home: { path: 'home', title: 'People' } },
+    })
+    expect(candidate.entryPath).toBe('home')
+    expect(candidate.pages).toEqual({ home: { path: 'home', title: 'People' } })
+  })
+
+  it('returns the stub nested manifest when pages are omitted', () => {
+    const candidate = extractManifestCandidate({
+      title: 'Team',
+      content: 'ok',
+      manifest: { entryPath: 'home' },
+    })
+    expect(candidate).toEqual({ entryPath: 'home' })
+    expect(candidate.pages).toBeUndefined()
   })
 })

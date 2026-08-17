@@ -84,5 +84,6 @@ describe('ArenaGenerativeUiBlock field tooltips', () => {
     expect(tooltips.userInput).toContain('Submit calls qualify_lead')
     expect(tooltips.apiBindings).toContain('qualify_lead')
     expect(tooltips.apiBindings).toContain('Submit calls qualify_lead')
+    expect(tooltips.apiBindings).toContain('"stream": true')
   })
 })

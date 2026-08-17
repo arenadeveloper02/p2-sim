@@ -199,4 +199,14 @@ describe('validateArenaGenerativeManifest', () => {
     expect(result.success).toBe(false)
     expect(result.error).toMatch(/Unreachable pages/)
   })
+
+  it('explains omitted pages without implying the Pages field must be filled', () => {
+    const result = validateArenaGenerativeManifest(
+      { entryPath: 'home' },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('The generator omitted pages. Retry, or pin a JSON sitemap in Pages.')
+    expect(result.error).not.toMatch(/keyed by page path/)
+  })
 })

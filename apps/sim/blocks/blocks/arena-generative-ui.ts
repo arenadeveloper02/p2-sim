@@ -26,7 +26,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
   bestPractices: `
   - Use Generate for a new draft. Leave Pages blank so the model chooses the sitemap, or pin paths as JSON [{ "path": "home", "title": "Form" }].
   - Describe navigation in User Input: NavLinks, Back buttons, and "submit then go to results".
-  - Add apiBindings JSON only when CTAs should call a deployed workflow or HTTP URL. Leave it blank for navigation-only; the model cannot invent keys.
+  - Add apiBindings JSON only when CTAs should call a deployed workflow or HTTP URL. Leave it blank for navigation-only; the model cannot invent keys. Set "stream": true to stream tokens into DataText on the form page.
   - After a successful run, open Deploy → GUI App, pick the draft, set an identifier, and Launch. The public URL is /gui-apps/{identifier}.
   - Use Edit mode with an existing draft to change pages, copy, or CTA wiring.
   - As an Agent tool: attach Arena Generative UI, pick Generate or Edit, then preview/launch from Deploy → GUI App on this workflow.
@@ -116,11 +116,11 @@ Return ONLY the specification text.`,
       type: 'code',
       language: 'json',
       placeholder:
-        '[{"key":"qualify_lead","kind":"workflow","workflowId":"...","label":"Qualify"}]',
+        '[{"key":"qualify_lead","kind":"workflow","workflowId":"...","label":"Qualify","stream":true}]',
       description:
         'Named APIs CTAs may call. Leave blank for a navigation-only app — the model cannot invent API keys.',
       tooltip:
-        'Named CTA backends. Leave blank for navigation-only. You invent key; use that same string in User Input (e.g. "Submit calls qualify_lead"). workflowId is the deployed workflow id.\n\n[{"key":"qualify_lead","kind":"workflow","workflowId":"wf_...","label":"Qualify"}]',
+        'Named CTA backends. Leave blank for navigation-only. You invent key; use that same string in User Input (e.g. "Submit calls qualify_lead"). workflowId is the deployed workflow id. Set "stream": true to stream tokens into DataText on the form page.\n\n[{"key":"qualify_lead","kind":"workflow","workflowId":"wf_...","label":"Qualify","stream":true}]',
     },
     {
       id: 'designNotes',

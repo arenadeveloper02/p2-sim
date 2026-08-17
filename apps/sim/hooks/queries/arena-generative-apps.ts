@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiClientError } from '@/lib/api/client/errors'
-import { requestJson } from '@/lib/api/client/request'
+import { requestJson, requestRaw } from '@/lib/api/client/request'
 import {
   authenticateDeployedAppContract,
   type CreateDeployedAppBody,
@@ -14,11 +14,15 @@ import {
   listGenerativeAppDraftsContract,
   requestGenerativeAppEmailOtpContract,
   runDeployedAppActionContract,
+  runDeployedAppActionStreamContract,
   runGenerativeAppDraftActionContract,
+  runGenerativeAppDraftActionStreamContract,
   type UpdateDeployedAppBody,
   updateDeployedAppContract,
   verifyGenerativeAppEmailOtpContract,
 } from '@/lib/api/contracts/arena-generative-apps'
+import { consumeGenerativeAppActionSse } from '@/lib/arena-generative-ui/consume-action-sse'
+import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 
 export const arenaGenerativeAppKeys = {
   all: ['arena-generative-apps'] as const,
@@ -205,6 +209,57 @@ export function useRunGenerativeAppDraftAction(draftId: string) {
         params: { id: draftId, actionId },
         body: { values },
       }),
+  })
+}
+
+/**
+ * Streams a published GUI-app CTA. Caller must only use this for streamingActionIds.
+ */
+export async function runDeployedAppActionStream(options: {
+  identifier: string
+  actionId: string
+  values: Record<string, unknown>
+  emailId?: string
+  onChunk: (accumulated: string) => void
+  signal?: AbortSignal
+}): Promise<RunDeployedAppActionResult> {
+  const response = await requestRaw(
+    runDeployedAppActionStreamContract,
+    {
+      params: { identifier: options.identifier, actionId: options.actionId },
+      body: { values: options.values, emailId: options.emailId },
+      signal: options.signal,
+    },
+    { headers: { Accept: 'text/event-stream' } }
+  )
+  return consumeGenerativeAppActionSse(response, {
+    onChunk: options.onChunk,
+    signal: options.signal,
+  })
+}
+
+/**
+ * Streams a draft-preview CTA. Caller must only use this for streaming bindings.
+ */
+export async function runGenerativeAppDraftActionStream(options: {
+  draftId: string
+  actionId: string
+  values: Record<string, unknown>
+  onChunk: (accumulated: string) => void
+  signal?: AbortSignal
+}): Promise<RunDeployedAppActionResult> {
+  const response = await requestRaw(
+    runGenerativeAppDraftActionStreamContract,
+    {
+      params: { id: options.draftId, actionId: options.actionId },
+      body: { values: options.values },
+      signal: options.signal,
+    },
+    { headers: { Accept: 'text/event-stream' } }
+  )
+  return consumeGenerativeAppActionSse(response, {
+    onChunk: options.onChunk,
+    signal: options.signal,
   })
 }
 

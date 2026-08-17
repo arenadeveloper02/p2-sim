@@ -28,6 +28,7 @@ import {
   generateArenaGenerativeManifest,
   MODEL_JSON_PARSE_ERROR,
 } from '@/lib/arena-generative-ui/generate-manifest'
+import { twoPageManifest } from '@/lib/arena-generative-ui/two-page-app.fixture'
 
 function textMessage(text: string) {
   return { content: [{ type: 'text' as const, text }] }
@@ -51,6 +52,7 @@ describe('generateArenaGenerativeManifest', () => {
       expect.objectContaining({
         model: 'claude-sonnet-4-6',
         max_tokens: 16_384,
+        system: expect.not.stringContaining('statePath "content"'),
       })
     )
   })
@@ -92,5 +94,91 @@ describe('generateArenaGenerativeManifest', () => {
 
     expect(result.success).toBe(false)
     expect(result.error).toBe(MODEL_JSON_PARSE_ERROR)
+  })
+
+  it('passes stream: true into the bindings summary and streaming DataText rules', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({
+      userInput: 'Stream a summary onto the form page.',
+      apiBindings: [
+        {
+          key: 'summarize',
+          label: 'Summarize',
+          kind: 'workflow',
+          workflowId: 'wf-1',
+          stream: true,
+        },
+      ],
+    })
+
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        system: expect.stringContaining('statePath "content"'),
+        messages: [
+          expect.objectContaining({
+            content: expect.stringContaining('"stream": true'),
+          }),
+        ],
+      })
+    )
+  })
+
+  it('omits the streaming DataText rule when no binding has stream: true', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({
+      userInput: 'Team directory.',
+      apiBindings: [
+        { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
+      ],
+    })
+
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        system: expect.not.stringContaining('statePath "content"'),
+      })
+    )
+  })
+
+  it('recovers wrapper-level pages when nested manifest is a stub', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(
+      textMessage(
+        JSON.stringify({
+          title: 'Lead qualifier',
+          content: 'ok',
+          manifest: { entryPath: 'home' },
+          pages: twoPageManifest.pages,
+          actions: twoPageManifest.actions,
+        })
+      )
+    )
+
+    const result = await generateArenaGenerativeManifest({
+      userInput: 'Lead qualifier. Home is a form; Results shows the score.',
+      apiBindings: [],
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.manifest?.entryPath).toBe('home')
+    expect(result.manifest?.pages.home).toBeTruthy()
+    expect(result.manifest?.pages.results).toBeTruthy()
+  })
+
+  it('returns a retry-or-pin message when the model omits pages', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(
+      textMessage(JSON.stringify({ title: 'Team', content: 'ok', manifest: { entryPath: 'home' } }))
+    )
+
+    const result = await generateArenaGenerativeManifest({
+      userInput: 'Team directory with home and person.',
+      apiBindings: [],
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe('The generator omitted pages. Retry, or pin a JSON sitemap in Pages.')
+    expect(result.error).not.toMatch(/keyed by page path/)
   })
 })

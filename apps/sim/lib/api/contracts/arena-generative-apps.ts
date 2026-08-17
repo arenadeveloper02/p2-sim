@@ -42,6 +42,7 @@ export const arenaGenerativeApiBindingSchema = z
       )
       .max(40)
       .optional(),
+    stream: z.boolean().optional(),
   })
   .superRefine((binding, ctx) => {
     if (binding.kind === 'workflow' && !binding.workflowId) {
@@ -327,6 +328,7 @@ export const deployedAppConfigSchema = z.object({
   requireArenaEmailId: z.boolean(),
   entryPath: z.string(),
   pages: z.array(arenaGenerativePageSummarySchema),
+  streamingActionIds: z.array(z.string()).optional().default([]),
 })
 export type DeployedAppConfig = z.output<typeof deployedAppConfigSchema>
 
@@ -402,6 +404,16 @@ export const runDeployedAppActionContract = defineRouteContract({
   },
 })
 
+export const runDeployedAppActionStreamContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/gui-apps/[identifier]/actions/[actionId]',
+  params: deployedAppActionParamsSchema,
+  body: runDeployedAppActionBodySchema,
+  response: {
+    mode: 'stream',
+  },
+})
+
 export const generativeAppDraftActionParamsSchema = z.object({
   id: z.string().min(1),
   actionId: z.string().min(1),
@@ -419,6 +431,16 @@ export const runGenerativeAppDraftActionContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: runDeployedAppActionResponseSchema,
+  },
+})
+
+export const runGenerativeAppDraftActionStreamContract = defineRouteContract({
+  method: 'POST',
+  path: '/api/gui-apps/drafts/[id]/actions/[actionId]',
+  params: generativeAppDraftActionParamsSchema,
+  body: runGenerativeAppDraftActionBodySchema,
+  response: {
+    mode: 'stream',
   },
 })
 

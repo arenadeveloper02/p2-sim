@@ -10,8 +10,10 @@ import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeAppManifest,
 } from '@/lib/arena-generative-ui/types'
+import { streamingActionIdsFrom } from '@/lib/arena-generative-ui/types'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
 import { isDev } from '@/lib/core/config/env-flags'
+import { encodeSSE, readSSELines, SSE_HEADERS } from '@/lib/core/utils/sse'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
@@ -19,6 +21,7 @@ import { LoggingSession } from '@/lib/logs/execution/logging-session'
 const logger = createLogger('ArenaGenerativeUiAction')
 
 const HTTP_TIMEOUT_MS = 15_000
+const HTTP_STREAM_TIMEOUT_MS = 120_000
 const HTTP_MAX_BYTES = 1_048_576
 
 function mapActionInput(
@@ -60,6 +63,7 @@ async function runWorkflowBinding(options: {
   mappedInput: Record<string, unknown>
   actorUserId: string
   requestId: string
+  onChunk?: (content: string) => void | Promise<void>
 }): Promise<{ ok: boolean; data?: unknown; error?: string }> {
   const workflowId = options.binding.workflowId
   if (!workflowId) {
@@ -138,8 +142,24 @@ async function runWorkflowBinding(options: {
         enabled: true,
         isSecureMode: true,
         workflowTriggerType: 'api',
-        executionMode: 'sync',
+        executionMode: options.onChunk ? 'stream' : 'sync',
         billingAttribution,
+        onStream: options.onChunk
+          ? async (streamingExec) => {
+              const reader = streamingExec.stream.getReader()
+              const decoder = new TextDecoder()
+              try {
+                while (true) {
+                  const { done, value } = await reader.read()
+                  if (done) break
+                  const chunk = decoder.decode(value, { stream: true })
+                  if (chunk) await options.onChunk?.(chunk)
+                }
+              } finally {
+                reader.releaseLock()
+              }
+            }
+          : undefined,
       },
       executionId
     )
@@ -165,6 +185,7 @@ async function runHttpBinding(options: {
   allowlist: string[]
   userId: string
   workspaceId: string
+  onChunk?: (content: string) => void | Promise<void>
 }): Promise<{ ok: boolean; data?: unknown; error?: string }> {
   const http = options.binding.http
   if (!http) {
@@ -184,13 +205,18 @@ async function runHttpBinding(options: {
 
   const method = http.method
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS)
+  const timeout = setTimeout(
+    () => controller.abort(),
+    options.onChunk ? HTTP_STREAM_TIMEOUT_MS : HTTP_TIMEOUT_MS
+  )
 
   try {
     const init: RequestInit = {
       method,
       headers: {
-        Accept: 'application/json',
+        Accept: options.onChunk
+          ? 'text/event-stream, text/plain, application/json'
+          : 'application/json',
         ...secretHeaders,
       },
       signal: controller.signal,
@@ -213,6 +239,9 @@ async function runHttpBinding(options: {
     }
 
     const response = await fetch(url, init)
+    if (options.onChunk) {
+      return await readHttpResponseStream(response, options.onChunk)
+    }
     const buffer = await response.arrayBuffer()
     if (buffer.byteLength > HTTP_MAX_BYTES) {
       return { ok: false, error: 'HTTP response exceeded size limit' }
@@ -241,6 +270,97 @@ async function runHttpBinding(options: {
   }
 }
 
+function contentFromSseData(raw: string): string {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed === 'string') return parsed
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>
+      if (typeof record.content === 'string') return record.content
+      if (typeof record.delta === 'string') return record.delta
+      if (typeof record.text === 'string') return record.text
+      if (typeof record.chunk === 'string') return record.chunk
+    }
+  } catch {
+    return raw
+  }
+  return raw
+}
+
+async function readHttpResponseStream(
+  response: Response,
+  onChunk: (content: string) => void | Promise<void>
+): Promise<{ ok: boolean; data?: unknown; error?: string }> {
+  const contentType = response.headers.get('content-type') ?? ''
+  try {
+    if (contentType.includes('text/event-stream')) {
+      let totalBytes = 0
+      let accumulated = ''
+      await readSSELines(response, {
+        onData: async (raw) => {
+          const piece = contentFromSseData(raw)
+          if (!piece) return
+          totalBytes += new TextEncoder().encode(piece).byteLength
+          if (totalBytes > HTTP_MAX_BYTES) {
+            throw new Error('HTTP response exceeded size limit')
+          }
+          accumulated += piece
+          await onChunk(piece)
+        },
+      })
+      if (!response.ok) {
+        return { ok: false, error: `HTTP ${response.status}`, data: { content: accumulated } }
+      }
+      return { ok: true, data: { content: accumulated } }
+    }
+
+    if (contentType.includes('text/plain') && response.body) {
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let totalBytes = 0
+      let accumulated = ''
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          totalBytes += value.byteLength
+          if (totalBytes > HTTP_MAX_BYTES) {
+            return { ok: false, error: 'HTTP response exceeded size limit' }
+          }
+          const chunk = decoder.decode(value, { stream: true })
+          if (!chunk) continue
+          accumulated += chunk
+          await onChunk(chunk)
+        }
+      } finally {
+        reader.releaseLock()
+      }
+      if (!response.ok) {
+        return { ok: false, error: `HTTP ${response.status}`, data: { content: accumulated } }
+      }
+      return { ok: true, data: { content: accumulated } }
+    }
+  } catch (error) {
+    return { ok: false, error: getErrorMessage(error, 'HTTP request failed') }
+  }
+
+  const buffer = await response.arrayBuffer()
+  if (buffer.byteLength > HTTP_MAX_BYTES) {
+    return { ok: false, error: 'HTTP response exceeded size limit' }
+  }
+  const text = new TextDecoder().decode(buffer)
+  let data: unknown = text
+  try {
+    data = text ? JSON.parse(text) : null
+  } catch {
+    data = text
+  }
+  if (!response.ok) {
+    return { ok: false, error: `HTTP ${response.status}`, data }
+  }
+  return { ok: true, data }
+}
+
 export interface RunDeployedAppActionResult {
   ok: boolean
   data?: unknown
@@ -259,6 +379,18 @@ export interface RunGenerativeAppActionOptions {
   values: Record<string, unknown>
   requestId: string
   actorUserId: string
+  onChunk?: (content: string) => void | Promise<void>
+}
+
+/**
+ * True when this action id is bound to an API with `stream: true`.
+ */
+export function isStreamingAction(
+  manifest: ArenaGenerativeAppManifest,
+  bindings: ArenaGenerativeApiBinding[],
+  actionId: string
+): boolean {
+  return streamingActionIdsFrom(manifest, bindings).includes(actionId)
 }
 
 /**
@@ -287,12 +419,14 @@ export async function runGenerativeAppAction(
           allowlist: options.httpAllowlist,
           userId: options.userId,
           workspaceId: options.workspaceId,
+          onChunk: options.onChunk,
         })
       : await runWorkflowBinding({
           binding,
           mappedInput,
           actorUserId: options.actorUserId,
           requestId: options.requestId,
+          onChunk: options.onChunk,
         })
 
   if (!result.ok) {
@@ -325,6 +459,47 @@ export async function runGenerativeAppAction(
 }
 
 /**
+ * SSE wrapper for a streaming CTA. Emits `{ type: "chunk" }` then `{ type: "done" }`.
+ */
+export function createGenerativeAppActionSseResponse(
+  options: RunGenerativeAppActionOptions
+): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        const result = await runGenerativeAppAction({
+          ...options,
+          onChunk: (content) => {
+            controller.enqueue(encodeSSE({ type: 'chunk', content }))
+          },
+        })
+        controller.enqueue(
+          encodeSSE({
+            type: 'done',
+            ok: result.ok,
+            data: result.data,
+            navigate: result.navigate,
+            setState: result.setState,
+            error: result.error,
+          })
+        )
+      } catch (error) {
+        controller.enqueue(
+          encodeSSE({
+            type: 'done',
+            ok: false,
+            error: getErrorMessage(error, 'Action failed'),
+          })
+        )
+      } finally {
+        controller.close()
+      }
+    },
+  })
+  return new Response(stream, { headers: SSE_HEADERS })
+}
+
+/**
  * Executes a published generative-app CTA (workflow or allowlisted HTTP).
  */
 export async function runDeployedAppAction(options: {
@@ -334,6 +509,25 @@ export async function runDeployedAppAction(options: {
   requestId: string
 }): Promise<RunDeployedAppActionResult> {
   return runGenerativeAppAction({
+    manifest: options.deployment.manifest,
+    apiBindings: options.deployment.apiBindings,
+    httpAllowlist: options.deployment.httpAllowlist,
+    userId: options.deployment.userId,
+    workspaceId: options.deployment.workspaceId,
+    actionId: options.actionId,
+    values: options.values,
+    requestId: options.requestId,
+    actorUserId: options.deployment.userId,
+  })
+}
+
+export function createDeployedAppActionSseResponse(options: {
+  deployment: DeployedAppRecord
+  actionId: string
+  values: Record<string, unknown>
+  requestId: string
+}): Response {
+  return createGenerativeAppActionSseResponse({
     manifest: options.deployment.manifest,
     apiBindings: options.deployment.apiBindings,
     httpAllowlist: options.deployment.httpAllowlist,

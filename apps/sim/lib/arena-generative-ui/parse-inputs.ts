@@ -70,10 +70,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+function hasUsablePages(pages: unknown): boolean {
+  if (Array.isArray(pages)) {
+    return pages.some((item) => {
+      if (!item || typeof item !== 'object') return false
+      const path = (item as { path?: unknown }).path
+      return typeof path === 'string' && path.trim().length > 0
+    })
+  }
+  return isRecord(pages) && Object.keys(pages).length > 0
+}
+
 function payloadHasPages(value: unknown): boolean {
   if (!isRecord(value)) return false
-  if (value.pages != null) return true
-  return isRecord(value.manifest) && value.manifest.pages != null
+  if (hasUsablePages(value.pages)) return true
+  return isRecord(value.manifest) && hasUsablePages(value.manifest.pages)
+}
+
+const MANIFEST_FIELD_KEYS = ['entryPath', 'pages', 'actions'] as const
+
+/**
+ * Picks the object to validate: nested `manifest` only when it has pages,
+ * otherwise wrapper-level `pages` merged onto a stub nested manifest.
+ */
+export function extractManifestCandidate(parsed: Record<string, unknown>): Record<string, unknown> {
+  const nested = isRecord(parsed.manifest) ? parsed.manifest : undefined
+  if (nested && hasUsablePages(nested.pages)) {
+    return nested
+  }
+  if (hasUsablePages(parsed.pages)) {
+    const candidate: Record<string, unknown> = nested ? { ...nested } : {}
+    for (const key of MANIFEST_FIELD_KEYS) {
+      if (parsed[key] !== undefined) {
+        candidate[key] = parsed[key]
+      }
+    }
+    return candidate
+  }
+  return nested ?? parsed
 }
 
 /**
@@ -265,6 +299,9 @@ export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
           name: field.name,
           type: typeof field.type === 'string' ? field.type : 'string',
         }))
+    }
+    if (record.stream === true) {
+      binding.stream = true
     }
     bindings.push(binding)
   }
