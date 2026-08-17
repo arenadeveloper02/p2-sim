@@ -97,7 +97,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(result.error).toBe(MODEL_JSON_PARSE_ERROR)
   })
 
-  it('passes stream: true into the bindings summary and streaming DataText rules', async () => {
+  it('passes stream: true into the bindings summary and localized streaming rules', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
 
     await generateArenaGenerativeManifest({
@@ -116,7 +116,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(mockCreateAnthropicMessage).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        system: expect.stringContaining('ProgressSteps'),
+        system: expect.stringContaining('statePath "content"'),
         messages: [
           expect.objectContaining({
             content: expect.stringContaining('"stream": true'),
@@ -124,6 +124,11 @@ describe('generateArenaGenerativeManifest', () => {
         ],
       })
     )
+    const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+    expect(system).toContain('onSuccess.navigate')
+    expect(system).toContain('only when the user asked')
+    expect(system).not.toContain('use one page')
+    expect(system).not.toContain('Omit onSuccess.navigate')
   })
 
   it('omits the streaming DataText rule when no binding has stream: true', async () => {

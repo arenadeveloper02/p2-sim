@@ -6,11 +6,13 @@ import type { Spec } from '@json-render/core'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockPush, mockMutateAsync, mockUseGenerativeAppDraft } = vi.hoisted(() => ({
-  mockPush: vi.fn(),
-  mockMutateAsync: vi.fn(),
-  mockUseGenerativeAppDraft: vi.fn(),
-}))
+const { mockPush, mockMutateAsync, mockUseGenerativeAppDraft, mockRunDraftActionStream } =
+  vi.hoisted(() => ({
+    mockPush: vi.fn(),
+    mockMutateAsync: vi.fn(),
+    mockUseGenerativeAppDraft: vi.fn(),
+    mockRunDraftActionStream: vi.fn(),
+  }))
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -26,6 +28,7 @@ vi.mock('@/hooks/queries/arena-generative-apps', () => ({
     isPending: false,
     mutateAsync: mockMutateAsync,
   }),
+  runGenerativeAppDraftActionStream: (...args: unknown[]) => mockRunDraftActionStream(...args),
 }))
 
 import { GenerativeAppHostStateProvider } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
@@ -57,6 +60,43 @@ const resultsSpec: Spec = {
   },
 }
 
+const streamingResultsSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Results' },
+      children: ['heading', 'progress', 'reply', 'back'],
+    },
+    heading: { type: 'Heading', props: { text: 'Results', level: 'h1' }, children: [] },
+    progress: {
+      type: 'ProgressSteps',
+      props: { steps: 'Connecting\nResearching', durationMs: 1000 },
+      children: [],
+    },
+    reply: {
+      type: 'DataText',
+      props: { statePath: 'content', fallback: 'Waiting…' },
+      children: [],
+    },
+    back: { type: 'Button', props: { label: 'Back', navigateTo: 'home' }, children: [] },
+  },
+}
+
+const streamingResultsPlainSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: { type: 'Page', props: { title: 'Results' }, children: ['heading', 'reply', 'back'] },
+    heading: { type: 'Heading', props: { text: 'Results', level: 'h1' }, children: [] },
+    reply: {
+      type: 'DataText',
+      props: { statePath: 'content', fallback: 'Waiting…' },
+      children: [],
+    },
+    back: { type: 'Button', props: { label: 'Back', navigateTo: 'home' }, children: [] },
+  },
+}
+
 const twoPageDraft = {
   id: 'draft-1',
   title: 'Lead qualifier',
@@ -84,6 +124,28 @@ const twoPageDraft = {
       },
     },
   },
+}
+
+function streamingDraft(resultsPageSpec: Spec) {
+  return {
+    ...twoPageDraft,
+    apiBindings: [
+      {
+        key: 'qualify_lead',
+        label: 'Qualify',
+        kind: 'workflow' as const,
+        workflowId: 'wf-bound',
+        stream: true,
+      },
+    ],
+    manifest: {
+      ...twoPageDraft.manifest,
+      pages: {
+        ...twoPageDraft.manifest.pages,
+        results: { title: 'Results', path: 'results', spec: resultsPageSpec },
+      },
+    },
+  }
 }
 
 describe('GenerativeAppPreviewHost two-page flow', () => {
@@ -203,5 +265,79 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     pagePath = 'missing'
     renderHost()
     expect(container.textContent).toContain('Page not found')
+  })
+
+  it('navigates immediately on a streaming CTA and streams content onto results', async () => {
+    let finishStream!: (result: { ok: boolean }) => void
+    const streamDone = new Promise<{ ok: boolean }>((resolve) => {
+      finishStream = resolve
+    })
+    mockUseGenerativeAppDraft.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: streamingDraft(streamingResultsPlainSpec),
+      error: null,
+    })
+    mockRunDraftActionStream.mockImplementation(
+      async (options: { onChunk: (content: string) => void }) => {
+        options.onChunk('Hello articles')
+        return streamDone
+      }
+    )
+    pagePath = 'home'
+    renderHost()
+
+    const form = container.querySelector('form')
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+
+    expect(mockPush).toHaveBeenCalledWith('/gui-apps/preview/draft-1/results')
+    expect(mockRunDraftActionStream).toHaveBeenCalled()
+    expect(container.textContent).toContain('Hello articles')
+    expect(container.textContent).toContain('Back')
+    expect(container.textContent).not.toContain('Connecting')
+
+    await act(async () => {
+      finishStream({ ok: true })
+      await streamDone
+    })
+  })
+
+  it('shows ProgressSteps on results while a streaming CTA is pending', async () => {
+    let finishStream!: (result: { ok: boolean }) => void
+    const streamDone = new Promise<{ ok: boolean }>((resolve) => {
+      finishStream = resolve
+    })
+    mockUseGenerativeAppDraft.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: streamingDraft(streamingResultsSpec),
+      error: null,
+    })
+    mockRunDraftActionStream.mockImplementation(
+      async (options: { onChunk: (content: string) => void }) => {
+        options.onChunk('Hello articles')
+        return streamDone
+      }
+    )
+    pagePath = 'home'
+    renderHost()
+
+    const form = container.querySelector('form')
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+
+    expect(container.textContent).toContain('Connecting')
+    expect(container.textContent).toContain('Researching')
+    expect(container.textContent).toContain('Hello articles')
+
+    await act(async () => {
+      finishStream({ ok: true })
+      await streamDone
+    })
+
+    expect(container.textContent).not.toContain('Connecting')
   })
 })

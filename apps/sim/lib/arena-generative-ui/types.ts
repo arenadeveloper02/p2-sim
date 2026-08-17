@@ -110,3 +110,21 @@ export function streamingActionIdsFrom(
     .filter(([, action]) => streamingKeys.has(action.apiKey))
     .map(([actionId]) => actionId)
 }
+
+/**
+ * Immediate navigate targets for streaming actions (`onSuccess.navigate`).
+ */
+export function streamingNavigateFrom(
+  manifest: ArenaGenerativeAppManifest,
+  bindings: ArenaGenerativeApiBinding[]
+): Record<string, string> {
+  const streamingIds = new Set(streamingActionIdsFrom(manifest, bindings))
+  const targets: Record<string, string> = {}
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    const path = action.onSuccess?.navigate
+    if (streamingIds.has(actionId) && path) {
+      targets[actionId] = path
+    }
+  }
+  return targets
+}

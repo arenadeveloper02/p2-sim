@@ -6,11 +6,12 @@ import {
   ARENA_ACCESS_DENIED_MESSAGE,
   resolveArenaEmailIdFromRequest,
 } from '@/lib/arena-generative-ui/email-gate'
-import type {
-  ArenaGenerativeApiBinding,
-  ArenaGenerativeAppManifest,
+import {
+  type ArenaGenerativeApiBinding,
+  type ArenaGenerativeAppManifest,
+  streamingActionIdsFrom,
+  streamingNavigateFrom,
 } from '@/lib/arena-generative-ui/types'
-import { streamingActionIdsFrom } from '@/lib/arena-generative-ui/types'
 import { setDeploymentAuthCookie } from '@/lib/core/security/deployment'
 import {
   type DeploymentAuthResult,
@@ -57,6 +58,7 @@ export function toDeployedAppConfig(deployment: DeployedAppRecord) {
     entryPath: deployment.manifest.entryPath,
     pages: pageSummariesFromManifest(deployment.manifest),
     streamingActionIds: streamingActionIdsFrom(deployment.manifest, deployment.apiBindings),
+    streamingNavigate: streamingNavigateFrom(deployment.manifest, deployment.apiBindings),
   }
 }
 

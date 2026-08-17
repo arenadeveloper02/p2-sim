@@ -329,6 +329,7 @@ export const deployedAppConfigSchema = z.object({
   entryPath: z.string(),
   pages: z.array(arenaGenerativePageSummarySchema),
   streamingActionIds: z.array(z.string()).optional().default([]),
+  streamingNavigate: z.record(z.string(), z.string()).optional().default({}),
 })
 export type DeployedAppConfig = z.output<typeof deployedAppConfigSchema>
 

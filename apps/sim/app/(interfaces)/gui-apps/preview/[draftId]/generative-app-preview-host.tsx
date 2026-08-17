@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
@@ -31,8 +30,7 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
   const router = useRouter()
   const draftQuery = useGenerativeAppDraft(draftId)
   const runAction = useRunGenerativeAppDraftAction(draftId)
-  const { state, mergeState } = useGenerativeAppHostState()
-  const [streamPending, setStreamPending] = useState(false)
+  const { state, mergeState, streamPending, setStreamPending } = useGenerativeAppHostState()
 
   const navigate = (path: string) => {
     router.push(`${ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH}/${draftId}/${path}`)
@@ -50,14 +48,14 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
     )
   }
 
-  const page = draftQuery.data.manifest.pages[pagePath]
+  const manifest = draftQuery.data.manifest
+  const apiBindings = draftQuery.data.apiBindings
+  const page = manifest.pages[pagePath]
   if (!page || !isJsonRenderSpec(page.spec)) {
     return <div className='p-8 text-center'>Page not found</div>
   }
 
-  const streamingIds = new Set(
-    streamingActionIdsFrom(draftQuery.data.manifest, draftQuery.data.apiBindings)
-  )
+  const streamingIds = new Set(streamingActionIdsFrom(manifest, apiBindings))
 
   return (
     <div className='min-h-screen'>
@@ -72,8 +70,12 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
         onRunAction={async (actionId, values) => {
           try {
             if (streamingIds.has(actionId)) {
+              const navigateTo = manifest.actions[actionId]?.onSuccess?.navigate
               setStreamPending(true)
               try {
+                if (navigateTo) {
+                  navigate(navigateTo)
+                }
                 const result = await runGenerativeAppDraftActionStream({
                   draftId,
                   actionId,
@@ -82,7 +84,7 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
                     mergeState(streamingContentState(accumulated))
                   },
                 })
-                applyPreviewActionResult(result, mergeState, navigate)
+                applyPreviewActionResult(result, mergeState, navigate, { skipNavigate: true })
               } finally {
                 setStreamPending(false)
               }
@@ -103,14 +105,15 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
 function applyPreviewActionResult(
   result: RunDeployedAppActionResult,
   mergeState: (patch: Record<string, unknown>) => void,
-  navigate: (path: string) => void
+  navigate: (path: string) => void,
+  options?: { skipNavigate?: boolean }
 ) {
   if (result.setState) {
     flushSync(() => {
       mergeState(result.setState as Record<string, unknown>)
     })
   }
-  if (result.navigate) {
+  if (!options?.skipNavigate && result.navigate) {
     navigate(result.navigate)
   }
   if (!result.ok) {

@@ -32,10 +32,9 @@ interface GenerativeAppHostProps {
 export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeAppHostProps) {
   const router = useRouter()
   const configQuery = useDeployedAppConfig(identifier)
-  const { state, mergeState } = useGenerativeAppHostState()
+  const { state, mergeState, streamPending, setStreamPending } = useGenerativeAppHostState()
   const pageQuery = useDeployedAppPage(identifier, pagePath, configQuery.data?.kind === 'config')
   const runAction = useRunDeployedAppAction(identifier)
-  const [streamPending, setStreamPending] = useState(false)
 
   const navigate = (path: string) => {
     const params = emailId ? `?emailId=${encodeURIComponent(emailId)}` : ''
@@ -82,6 +81,7 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
   }
 
   const streamingIds = new Set(configQuery.data.config.streamingActionIds ?? [])
+  const streamingNavigate = configQuery.data.config.streamingNavigate ?? {}
 
   return (
     <SpecRenderer
@@ -92,8 +92,12 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
       onRunAction={async (actionId, values) => {
         try {
           if (streamingIds.has(actionId)) {
+            const navigateTo = streamingNavigate[actionId]
             setStreamPending(true)
             try {
+              if (navigateTo) {
+                navigate(navigateTo)
+              }
               const result = await runDeployedAppActionStream({
                 identifier,
                 actionId,
@@ -103,7 +107,7 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
                   mergeState(streamingContentState(accumulated))
                 },
               })
-              applyActionResult(result, mergeState, navigate, logger)
+              applyActionResult(result, mergeState, navigate, logger, { skipNavigate: true })
             } finally {
               setStreamPending(false)
             }
@@ -128,14 +132,15 @@ function applyActionResult(
   result: RunDeployedAppActionResult,
   mergeState: (patch: Record<string, unknown>) => void,
   navigate: (path: string) => void,
-  actionLogger: { warn: (message: string, meta?: Record<string, unknown>) => void }
+  actionLogger: { warn: (message: string, meta?: Record<string, unknown>) => void },
+  options?: { skipNavigate?: boolean }
 ) {
   if (result.setState) {
     flushSync(() => {
       mergeState(result.setState as Record<string, unknown>)
     })
   }
-  if (result.navigate) {
+  if (!options?.skipNavigate && result.navigate) {
     navigate(result.navigate)
   }
   if (!result.ok) {

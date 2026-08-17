@@ -67,7 +67,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         size: z.string().nullable(),
       }),
       description:
-        'Displays a host-state value at a dotted path (e.g. content or output.content). Markdown is rendered. For stream: true CTAs, bind statePath to content on the form page.',
+        'Displays a host-state value at a dotted path (e.g. content or output.content). Markdown is rendered. For stream: true CTAs, bind statePath to content on the page or section that shows the result.',
     },
     Alert: {
       props: z.object({
@@ -88,7 +88,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         durationMs: z.union([z.number(), z.string()]).nullable().optional(),
       }),
       description:
-        'Newline-separated step labels shown while a CTA is pending. Ticks complete over durationMs (default 150000). Use on streaming form pages.',
+        'Optional. Newline-separated step labels shown while a CTA is pending. Ticks complete over durationMs (default 150000). Include only when the user asked for stepped progress; put it on the page that shows the streaming result.',
     },
     Form: {
       props: z.object({
@@ -237,4 +237,4 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */
 export const ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE =
-  'If a declared API binding has stream: true, use one page: the form, ProgressSteps (newline-separated step labels, durationMs 150000) while pending, and DataText with statePath "content" below the form. Omit onSuccess.navigate.'
+  'If a declared API binding has stream: true, still infer a multi-page sitemap from the brief. Put DataText with statePath "content" in the section or page that shows that API body (often a results page). If the result is not on the form page, set onSuccess.navigate to that page and add a Back NavLink to the form. Include ProgressSteps only when the user asked for stepped progress; otherwise omit it.'
