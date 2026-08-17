@@ -1824,6 +1824,15 @@ const STORYBOARD_MODE_SUBBLOCKS: SubBlockConfig[] = [
     description: 'Image-to-video model used for each scene clip',
   },
   {
+    id: 'targetDuration',
+    title: 'Total Length (seconds)',
+    type: 'short-input',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    placeholder: '30 — leave empty to use seconds per scene',
+    description:
+      'Total length of the finished video. Per-scene seconds are derived from this and snapped to what the model supports.',
+  },
+  {
     id: 'clipDuration',
     title: 'Seconds per Scene',
     type: 'dropdown',
@@ -1915,6 +1924,10 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
               // order is never silently dropped.
               order: params.sceneOrder || params.order,
               videoModel: params.storyVideoModel,
+              // Total length wins over seconds-per-scene: the user asks for a
+              // "30 second video", and the render step derives the per-clip
+              // seconds from it.
+              targetDuration: params.targetDuration ? Number(params.targetDuration) : undefined,
               clipDuration: params.clipDuration ? Number(params.clipDuration) : undefined,
               resolution: params.storyResolution,
               generateAudio: parseOptionalBooleanInput(params.storyAudio),
@@ -1930,6 +1943,10 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
     },
     sceneOrder: { type: 'string', description: 'Story Mode: scene order, e.g. "3,1,2"' },
     storyVideoModel: { type: 'string', description: 'Story Mode: image-to-video model' },
+    targetDuration: {
+      type: 'number',
+      description: 'Story Mode: total video length in seconds (overrides seconds per scene)',
+    },
     clipDuration: { type: 'number', description: 'Story Mode: seconds per scene clip' },
     storyResolution: { type: 'string', description: 'Story Mode: clip resolution' },
     storyAudio: { type: 'boolean', description: 'Story Mode: generate native audio per clip' },

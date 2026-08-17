@@ -36,6 +36,29 @@ const I2V_MODELS = new Set([
 const DEFAULT_RENDER_MODEL = 'veo-3.1-fast'
 const DEFAULT_CLIP_DURATION = 4
 
+/**
+ * Per-clip seconds each model actually accepts. A requested duration is snapped
+ * to the closest supported value rather than rejected, so a target length like
+ * "60 seconds" still renders on models with a coarse duration menu (Veo).
+ */
+const MODEL_CLIP_DURATIONS: Record<string, number[]> = {
+  'minimax-h3': [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+  'veo-3.1': [4, 6, 8],
+  'veo-3.1-fast': [4, 6, 8],
+  'veo-3.1-lite': [4, 6, 8],
+  'seedance-2.0': [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+  'seedance-2.0-fast': [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+  'kling-v3-pro': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+}
+
+function snapClipDuration(model: string, seconds: number): number {
+  const allowed = MODEL_CLIP_DURATIONS[model]
+  if (!allowed?.length) return Math.trunc(seconds)
+  return allowed.reduce((best, option) =>
+    Math.abs(option - seconds) < Math.abs(best - seconds) ? option : best
+  )
+}
+
 export interface RunStoryboardRenderResult {
   videoUrl: string
   storyboardId: string
@@ -224,11 +247,6 @@ export async function runStoryboardRender(
     )
   }
 
-  const clipDurationRaw = Number(params.clipDuration)
-  const clipDuration =
-    Number.isFinite(clipDurationRaw) && clipDurationRaw > 0
-      ? Math.trunc(clipDurationRaw)
-      : DEFAULT_CLIP_DURATION
   const resolution = asString(params.resolution) || '720p'
   const generateAudio = params.generateAudio === true || params.generateAudio === 'true'
 
@@ -236,11 +254,25 @@ export async function runStoryboardRender(
   const order = parseSceneOrder(asString(params.order), storyboard.scenes.length)
   const orderedScenes = order.map((index) => storyboard.scenes[index - 1])
 
+  // A requested total length wins over the per-scene setting: the user asks for
+  // "a 60 second video", not for "8 seconds per scene".
+  const targetDurationRaw = Number(params.targetDuration)
+  const clipDurationRaw = Number(params.clipDuration)
+  const requestedClipSeconds =
+    Number.isFinite(targetDurationRaw) && targetDurationRaw > 0
+      ? targetDurationRaw / orderedScenes.length
+      : Number.isFinite(clipDurationRaw) && clipDurationRaw > 0
+        ? clipDurationRaw
+        : DEFAULT_CLIP_DURATION
+  const clipDuration = snapClipDuration(model, requestedClipSeconds)
+
   logger.info(`[${requestId}] Rendering storyboard`, {
     storyboardId: storyboard.id,
     order,
     model,
     clipDuration,
+    targetDuration: Number.isFinite(targetDurationRaw) ? targetDurationRaw : undefined,
+    estimatedTotalSeconds: clipDuration * orderedScenes.length,
     resolution,
   })
 

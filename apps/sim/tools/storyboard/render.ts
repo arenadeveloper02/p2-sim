@@ -6,6 +6,7 @@ export interface StoryboardRenderParams {
   order?: string
   videoModel?: string
   clipDuration?: number
+  targetDuration?: number
   resolution?: string
   generateAudio?: boolean
   _context?: { userId?: string; workspaceId?: string; workflowId?: string }
@@ -53,6 +54,20 @@ export const storyboardRenderTool: ToolConfig<StoryboardRenderParams, Storyboard
       visibility: 'user-or-llm',
       description:
         'Scene order as numbers, e.g. "3,1,2". Empty keeps the original order. Scenes can be dropped by omitting them.',
+    },
+    targetDuration: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Total length of the finished video in seconds, e.g. 30. Per-scene duration is derived from this and snapped to what the video model supports. Takes priority over clipDuration.',
+    },
+    clipDuration: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Seconds per scene clip. Ignored when targetDuration is set. Defaults to 4 (5 on MiniMax H3).',
     },
   },
 
