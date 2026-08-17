@@ -3,6 +3,7 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import type { Spec } from '@json-render/core'
 import { cn } from '@sim/emcn'
+import { displayTextFromActionData } from '@/lib/arena-generative-ui/types'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
 
 interface SpecElement {
@@ -103,6 +104,30 @@ function readStatePath(state: Record<string, unknown>, path: string): unknown {
   }, state)
 }
 
+function displayFromStateValue(value: unknown, fallback: string): string {
+  if (value === undefined || value === null) return fallback
+  const fromAction = displayTextFromActionData(value)
+  if (fromAction) return fromAction
+  return String(value)
+}
+
+function submitButtonActionId(
+  elements: Record<string, SpecElement>,
+  childIds: string[]
+): string {
+  for (const childId of childIds) {
+    const child = elements[childId]
+    if (!child) continue
+    if (child.type === 'SubmitButton') {
+      const actionId = asString(child.props?.actionId)
+      if (actionId) return actionId
+    }
+    const nested = submitButtonActionId(elements, child.children ?? [])
+    if (nested) return nested
+  }
+  return ''
+}
+
 function styleFromProps(props: Record<string, unknown>): CSSProperties {
   const style: CSSProperties = {}
   const backgroundColor = asString(props.backgroundColor)
@@ -201,8 +226,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         )
       case 'DataText': {
         const value = readStatePath(state, asString(props.statePath))
-        const display =
-          value === undefined || value === null ? asString(props.fallback, '') : String(value)
+        const display = displayFromStateValue(value, asString(props.fallback, ''))
         return (
           <MarkdownText className='font-medium' style={styleFromProps(props)} content={display} />
         )
@@ -243,7 +267,8 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         )
       }
       case 'Form': {
-        const actionId = asString(props.actionId)
+        const actionId =
+          asString(props.actionId) || submitButtonActionId(elements, element.children ?? [])
         const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
           event.preventDefault()
           const form = new FormData(event.currentTarget)

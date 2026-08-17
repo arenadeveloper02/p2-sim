@@ -289,6 +289,10 @@ export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
           typeof http.headersSecretName === 'string' && http.headersSecretName.trim()
             ? http.headersSecretName.trim()
             : undefined,
+        authHeaderName:
+          typeof http.authHeaderName === 'string' && http.authHeaderName.trim()
+            ? http.authHeaderName.trim()
+            : undefined,
       }
     }
     if (Array.isArray(record.inputSchema)) {

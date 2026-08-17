@@ -24,6 +24,7 @@ export const arenaGenerativeHttpBindingSchema = z.object({
   method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
   url: z.string().url('HTTP binding URL must be valid').max(2048),
   headersSecretName: z.string().max(128).optional(),
+  authHeaderName: z.string().min(1).max(128).optional(),
 })
 
 export const arenaGenerativeApiBindingSchema = z

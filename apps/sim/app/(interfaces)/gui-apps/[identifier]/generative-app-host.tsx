@@ -144,6 +144,9 @@ function applyActionResult(
     navigate(result.navigate)
   }
   if (!result.ok) {
+    flushSync(() => {
+      mergeState({ error: result.error ?? 'Action failed' })
+    })
     actionLogger.warn('App action returned an error', { error: result.error })
   }
 }

@@ -156,6 +156,28 @@ describe('SpecRenderer', () => {
     )
   })
 
+  it('uses SubmitButton.actionId when Form.actionId is missing', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Chat' }, children: ['form'] },
+        form: { type: 'Form', props: {}, children: ['prompt', 'submit'] },
+        prompt: { type: 'TextInput', props: { name: 'input', label: 'Message' }, children: [] },
+        submit: {
+          type: 'SubmitButton',
+          props: { label: 'Send', actionId: 'ask_chat' },
+          children: [],
+        },
+      },
+    }
+    const { container, onRunAction } = render({ spec })
+    const form = container.querySelector('form')
+    act(() => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(onRunAction).toHaveBeenCalledWith('ask_chat', expect.any(Object))
+  })
+
   it('renders DataText markdown headings, emphasis, and lists', () => {
     const { container } = render({
       spec: replySpec,
@@ -176,6 +198,46 @@ describe('SpecRenderer', () => {
     const { container } = render({ spec: replySpec, state: {} })
     expect(container.textContent).toContain('Waiting for a reply…')
     expect(container.querySelector('strong')).toBeNull()
+  })
+
+  it('renders nested output.content when DataText is bound to content', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Chat' }, children: ['reply'] },
+        reply: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: 'Waiting…' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: { content: 'Hello from the model' },
+    })
+    expect(container.textContent).toContain('Hello from the model')
+    expect(container.textContent).not.toContain('Waiting…')
+  })
+
+  it('renders an object DataText value as nested text, not [object Object]', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Chat' }, children: ['reply'] },
+        reply: {
+          type: 'DataText',
+          props: { statePath: 'output', fallback: 'Waiting…' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: { output: { content: 'Nested reply' } },
+    })
+    expect(container.textContent).toContain('Nested reply')
+    expect(container.textContent).not.toContain('[object Object]')
   })
 
   it('hides ProgressSteps when not pending', () => {

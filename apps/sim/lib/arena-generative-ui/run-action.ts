@@ -6,11 +6,12 @@ import { generateId } from '@sim/utils/id'
 import { eq } from 'drizzle-orm'
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
 import { isHttpUrlAllowlisted } from '@/lib/arena-generative-ui/http-allowlist'
-import type {
-  ArenaGenerativeApiBinding,
-  ArenaGenerativeAppManifest,
+import {
+  type ArenaGenerativeApiBinding,
+  type ArenaGenerativeAppManifest,
+  displayTextFromActionData,
+  streamingActionIdsFrom,
 } from '@/lib/arena-generative-ui/types'
-import { streamingActionIdsFrom } from '@/lib/arena-generative-ui/types'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
 import { isDev } from '@/lib/core/config/env-flags'
 import { encodeSSE, readSSELines, SSE_HEADERS } from '@/lib/core/utils/sse'
@@ -23,6 +24,48 @@ const logger = createLogger('ArenaGenerativeUiAction')
 const HTTP_TIMEOUT_MS = 15_000
 export const HTTP_STREAM_TIMEOUT_MS = 180_000
 const HTTP_MAX_BYTES = 1_048_576
+const API_KEY_SECRET_NAME = /API[_-]?KEY$/i
+
+function parseSecretHeaders(
+  raw: string | undefined,
+  authHeaderName?: string
+): Record<string, string> {
+  if (!raw?.trim()) return {}
+  const trimmed = raw.trim()
+  try {
+    const parsed: unknown = JSON.parse(trimmed)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const headers: Record<string, string> = {}
+      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof value === 'string' && value) {
+          headers[key] = value
+        }
+      }
+      if (Object.keys(headers).length > 0) {
+        return headers
+      }
+    }
+  } catch {
+    // Secret is a bearer token rather than a JSON header map.
+  }
+  if (authHeaderName) {
+    return { [authHeaderName]: trimmed }
+  }
+  return { Authorization: trimmed.startsWith('Bearer ') ? trimmed : `Bearer ${trimmed}` }
+}
+
+function resolveAuthHeaderName(http: {
+  authHeaderName?: string
+  headersSecretName?: string
+}): string | undefined {
+  const explicit = http.authHeaderName?.trim()
+  if (explicit) return explicit
+  const secretName = http.headersSecretName?.trim()
+  if (secretName && API_KEY_SECRET_NAME.test(secretName)) {
+    return 'X-API-Key'
+  }
+  return undefined
+}
 
 function mapActionInput(
   values: Record<string, unknown>,
@@ -36,26 +79,6 @@ function mapActionInput(
     mapped[targetKey] = values[sourceKey] ?? values[targetKey]
   }
   return mapped
-}
-
-function parseSecretHeaders(raw: string | undefined): Record<string, string> {
-  if (!raw?.trim()) return {}
-  const trimmed = raw.trim()
-  try {
-    const parsed: unknown = JSON.parse(trimmed)
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const headers: Record<string, string> = {}
-      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-        if (typeof value === 'string' && value) {
-          headers[key] = value
-        }
-      }
-      return headers
-    }
-  } catch {
-    // Secret is a bearer token rather than a JSON header map.
-  }
-  return { Authorization: trimmed.startsWith('Bearer ') ? trimmed : `Bearer ${trimmed}` }
 }
 
 async function runWorkflowBinding(options: {
@@ -200,7 +223,7 @@ async function runHttpBinding(options: {
 
   const envVars = await getEffectiveDecryptedEnv(options.userId, options.workspaceId)
   const secretHeaders = http.headersSecretName
-    ? parseSecretHeaders(envVars[http.headersSecretName])
+    ? parseSecretHeaders(envVars[http.headersSecretName], resolveAuthHeaderName(http))
     : {}
 
   const method = http.method
@@ -438,17 +461,16 @@ export async function runGenerativeAppAction(
     }
   }
 
-  const setState =
-    action.onSuccess?.setState && Object.keys(action.onSuccess.setState).length > 0
-      ? {
-          ...(typeof result.data === 'object' && result.data
-            ? (result.data as Record<string, unknown>)
-            : {}),
-          ...action.onSuccess.setState,
-        }
-      : typeof result.data === 'object' && result.data
-        ? (result.data as Record<string, unknown>)
-        : { result: result.data }
+  const fromData =
+    typeof result.data === 'object' && result.data && !Array.isArray(result.data)
+      ? (result.data as Record<string, unknown>)
+      : { result: result.data }
+  const display = displayTextFromActionData(result.data)
+  const setState = {
+    ...(action.onSuccess?.setState ?? {}),
+    ...fromData,
+    ...(display ? { content: display } : {}),
+  }
 
   return {
     ok: true,

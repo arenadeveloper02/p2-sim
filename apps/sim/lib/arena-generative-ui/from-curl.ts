@@ -50,11 +50,18 @@ export interface HttpBindingFromCurlInput {
 
 /**
  * True when the curl looks like a streaming request: `-N` / `--no-buffer`,
- * `Accept: text/event-stream`, `X-Sim-Stream-Protocol`, or JSON body
- * `"stream": true`. Incomplete curls still return a hint.
+ * `Accept: text/event-stream`, or `X-Sim-Stream-Protocol`. JSON body
+ * `"stream": true` alone does not count. Incomplete curls still return a hint.
  */
 export function curlLooksLikeStream(curl: string): boolean {
   return inspectCurl(curl).looksLikeStream
+}
+
+/**
+ * True when the curl sets an auth header (`Authorization`, `X-API-Key`, …).
+ */
+export function curlHasAuthHeader(curl: string): boolean {
+  return Boolean(inspectCurl(curl).authHeaderName)
 }
 
 /**
@@ -78,6 +85,7 @@ export function httpBindingFromCurl(input: HttpBindingFromCurlInput): ArenaGener
       method: parsed.method,
       url: parsed.url,
       ...(secretName ? { headersSecretName: secretName } : {}),
+      ...(parsed.authHeaderName ? { authHeaderName: parsed.authHeaderName } : {}),
     },
   }
   if (parsed.inputSchema && parsed.inputSchema.length > 0) {
@@ -95,6 +103,7 @@ function inspectCurl(raw: string): {
   body?: string
   forceGet: boolean
   looksLikeStream: boolean
+  authHeaderName?: string
 } {
   const tokens = tokenizeCurl(normalizeCurlText(raw))
   let index = 0
@@ -107,6 +116,7 @@ function inspectCurl(raw: string): {
   let body: string | undefined
   let forceGet = false
   let looksLikeStream = false
+  let authHeaderName: string | undefined
 
   while (index < tokens.length) {
     const token = tokens[index]
@@ -124,6 +134,10 @@ function inspectCurl(raw: string): {
       if (header && !header.startsWith('-')) {
         if (headerLooksLikeStream(header)) {
           looksLikeStream = true
+        }
+        const authName = authHeaderNameFrom(header)
+        if (authName && !authHeaderName) {
+          authHeaderName = authName
         }
         index += inlineValue === undefined ? 2 : 1
       } else {
@@ -180,17 +194,14 @@ function inspectCurl(raw: string): {
     index += 1
   }
 
-  if (bodyLooksLikeStream(body)) {
-    looksLikeStream = true
-  }
-
-  return { methodRaw, url, body, forceGet, looksLikeStream }
+  return { methodRaw, url, body, forceGet, looksLikeStream, authHeaderName }
 }
 
 function parseCurl(raw: string): {
   method: ArenaGenerativeHttpMethod
   url: string
   inputSchema?: Array<{ name: string; type: string }>
+  authHeaderName?: string
 } {
   const inspected = inspectCurl(raw)
   if (!inspected.url || !isHttpUrl(inspected.url)) {
@@ -207,6 +218,7 @@ function parseCurl(raw: string): {
     method: method as ArenaGenerativeHttpMethod,
     url: inspected.url,
     inputSchema: inputSchemaFromBody(inspected.body),
+    authHeaderName: inspected.authHeaderName,
   }
 }
 
@@ -218,6 +230,33 @@ function headerLooksLikeStream(header: string): boolean {
     return true
   }
   return name === AGENT_STREAM_PROTOCOL_HEADER
+}
+
+function splitHeader(header: string): { name: string; value: string } {
+  const colon = header.indexOf(':')
+  if (colon < 0) {
+    return { name: header.trim(), value: '' }
+  }
+  return {
+    name: header.slice(0, colon).trim(),
+    value: header.slice(colon + 1).trim(),
+  }
+}
+
+function isAuthHeaderName(name: string): boolean {
+  const lower = name.toLowerCase()
+  return (
+    lower === 'authorization' ||
+    lower === 'x-api-key' ||
+    lower === 'api-key' ||
+    lower === 'x-apikey' ||
+    lower.endsWith('api-key')
+  )
+}
+
+function authHeaderNameFrom(header: string): string | undefined {
+  const { name } = splitHeader(header)
+  return isAuthHeaderName(name) ? name : undefined
 }
 
 function tryParseJsonObject(body: string | undefined): Record<string, unknown> | undefined {
@@ -233,10 +272,6 @@ function tryParseJsonObject(body: string | undefined): Record<string, unknown> |
   } catch {
     return undefined
   }
-}
-
-function bodyLooksLikeStream(body: string | undefined): boolean {
-  return tryParseJsonObject(body)?.stream === true
 }
 
 function normalizeCurlText(raw: string): string {

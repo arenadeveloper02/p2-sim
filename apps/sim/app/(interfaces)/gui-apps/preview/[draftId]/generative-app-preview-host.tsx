@@ -117,6 +117,9 @@ function applyPreviewActionResult(
     navigate(result.navigate)
   }
   if (!result.ok) {
+    flushSync(() => {
+      mergeState({ error: result.error ?? 'Action failed' })
+    })
     logger.warn('Draft preview action returned an error', { error: result.error })
   }
 }

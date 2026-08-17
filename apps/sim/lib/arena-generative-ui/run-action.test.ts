@@ -188,6 +188,154 @@ describe('runDeployedAppAction', () => {
     vi.unstubAllGlobals()
   })
 
+  it('puts nested output.content on setState.content for DataText', async () => {
+    mockGetEffectiveDecryptedEnv.mockResolvedValue({})
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () =>
+        new TextEncoder().encode(JSON.stringify({ output: { content: 'Hi' } })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: { method: 'POST', url: 'https://api.example.com/qualify' },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.setState?.content).toBe('Hi')
+    expect(result.setState).toMatchObject({ output: { content: 'Hi' } })
+    vi.unstubAllGlobals()
+  })
+
+  it('sends the secret on X-API-Key when authHeaderName is set', async () => {
+    mockGetEffectiveDecryptedEnv.mockResolvedValue({ SIM_API_KEY: 'secret-token' })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: {
+              method: 'POST',
+              url: 'https://api.example.com/qualify',
+              headersSecretName: 'SIM_API_KEY',
+              authHeaderName: 'X-API-Key',
+            },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.com/qualify',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-API-Key': 'secret-token' }),
+      })
+    )
+    const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>
+    expect(headers.Authorization).toBeUndefined()
+    vi.unstubAllGlobals()
+  })
+
+  it('defaults *_API_KEY secrets to X-API-Key when authHeaderName is missing', async () => {
+    mockGetEffectiveDecryptedEnv.mockResolvedValue({ SIM_API_KEY: 'secret-token' })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: {
+              method: 'POST',
+              url: 'https://api.example.com/qualify',
+              headersSecretName: 'SIM_API_KEY',
+            },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.com/qualify',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-API-Key': 'secret-token' }),
+      })
+    )
+    vi.unstubAllGlobals()
+  })
+
+  it('does not let empty onSuccess.setState wipe API content', async () => {
+    mockGetEffectiveDecryptedEnv.mockResolvedValue({})
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () =>
+        new TextEncoder().encode(JSON.stringify({ output: { content: 'Kept' } })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        actions: {
+          submit_lead: {
+            apiKey: 'qualify_lead',
+            onSuccess: { setState: { content: '' } },
+          },
+        },
+      },
+      apiBindings: [
+        {
+          key: 'qualify_lead',
+          label: 'Qualify',
+          kind: 'http',
+          http: { method: 'POST', url: 'https://api.example.com/qualify' },
+        },
+      ],
+      httpAllowlist: ['api.example.com'],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-keep-content',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(result.setState?.content).toBe('Kept')
+    vi.unstubAllGlobals()
+  })
+
   it('rejects HTTP hosts that are not allowlisted', async () => {
     const result = await runDeployedAppAction({
       deployment: baseDeployment({
@@ -224,7 +372,8 @@ describe('runDeployedAppAction', () => {
 
     expect(result.ok).toBe(true)
     expect(result.navigate).toBe('results')
-    expect(result.setState).toEqual({ score: 91 })
+    expect(result.setState).toMatchObject({ score: 91 })
+    expect(result.setState?.content).toBeDefined()
     expect(mockExecuteWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'wf-bound' }),
       'req-preview',
@@ -440,7 +589,8 @@ describe('streaming generative app actions', () => {
     expect(chunks).toEqual([])
     expect(result.ok).toBe(true)
     expect(result.navigate).toBe('results')
-    expect(result.setState).toEqual({ score: 12 })
+    expect(result.setState).toMatchObject({ score: 12 })
+    expect(result.setState?.content).toBeDefined()
     vi.unstubAllGlobals()
   })
 

@@ -47,6 +47,8 @@ export interface ArenaGenerativeHttpBinding {
   method: ArenaGenerativeHttpMethod
   url: string
   headersSecretName?: string
+  /** Header to send the secret on (e.g. `X-API-Key`). Omit to use Bearer. */
+  authHeaderName?: string
 }
 
 export interface ArenaGenerativeApiBinding {
@@ -94,6 +96,51 @@ export interface ArenaGenerativeGenerateResult {
 
 /** Host state path DataText should bind to while a streaming CTA is in flight. */
 export const ARENA_GENERATIVE_STREAM_CONTENT_KEY = 'content'
+
+/**
+ * Best-effort text for DataText `content` from a JSON action payload.
+ * Prefers string | .content | .output | .output.content | .text | .message.
+ */
+export function displayTextFromActionData(data: unknown): string | undefined {
+  if (typeof data === 'string') {
+    return data.trim() ? data : undefined
+  }
+  if (typeof data === 'number' || typeof data === 'boolean') {
+    return String(data)
+  }
+  if (!data || typeof data !== 'object') {
+    return undefined
+  }
+  if (Array.isArray(data)) {
+    return stringifyActionData(data)
+  }
+  const record = data as Record<string, unknown>
+  if (typeof record.content === 'string' && record.content.trim()) {
+    return record.content
+  }
+  if (typeof record.output === 'string' && record.output.trim()) {
+    return record.output
+  }
+  if (record.output && typeof record.output === 'object') {
+    const nested = displayTextFromActionData(record.output)
+    if (nested) return nested
+  }
+  if (typeof record.text === 'string' && record.text.trim()) {
+    return record.text
+  }
+  if (typeof record.message === 'string' && record.message.trim()) {
+    return record.message
+  }
+  return stringifyActionData(data)
+}
+
+function stringifyActionData(data: unknown): string | undefined {
+  try {
+    return JSON.stringify(data, null, 2)
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * Action ids whose API binding has `stream: true`.

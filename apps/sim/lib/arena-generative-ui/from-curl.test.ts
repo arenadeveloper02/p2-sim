@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { curlLooksLikeStream, httpBindingFromCurl } from '@/lib/arena-generative-ui/from-curl'
+import { curlHasAuthHeader, curlLooksLikeStream, httpBindingFromCurl } from '@/lib/arena-generative-ui/from-curl'
 
 const ARTICLE_RECOMMENDATION_CURL = `curl -X POST \\
   -H "X-API-Key: $W_ARTICAL_RECOMMENDATION_AGENT_KEY” \\
@@ -33,6 +33,7 @@ describe('httpBindingFromCurl', () => {
         method: 'POST',
         url: 'https://agent.thearena.ai/api/workflows/09e8e4e6-4b9c-4126-95f2-cbfcfd025f63/execute',
         headersSecretName: 'W_ARTICAL_RECOMMENDATION_AGENT_KEY',
+        authHeaderName: 'X-API-Key',
       },
       inputSchema: [
         { name: 'input', type: 'string' },
@@ -53,6 +54,7 @@ describe('httpBindingFromCurl', () => {
     })
     expect(JSON.stringify(binding)).not.toContain('super-secret')
     expect(binding.http?.headersSecretName).toBe('CRM_API_TOKEN')
+    expect(binding.http?.authHeaderName).toBe('X-API-Key')
   })
 
   it('omits headersSecretName when the secret var is blank', () => {
@@ -153,7 +155,7 @@ describe('curlLooksLikeStream', () => {
     )
   })
 
-  it('is true for Sim streaming execute curls', () => {
+  it('is true for Sim streaming execute curls via protocol header, not body stream:true', () => {
     expect(curlLooksLikeStream(SIM_STREAMING_CURL)).toBe(true)
     expect(
       curlLooksLikeStream(
@@ -164,7 +166,7 @@ describe('curlLooksLikeStream', () => {
       curlLooksLikeStream(
         'curl -d \'{"input":"hi","stream":true}\' https://api.example.com/execute'
       )
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('is true when Accept is text/event-stream', () => {
@@ -192,6 +194,22 @@ describe('curlLooksLikeStream', () => {
     expect(curlLooksLikeStream('')).toBe(false)
     expect(curlLooksLikeStream('curl -N -X')).toBe(true)
     expect(curlLooksLikeStream('curl -d')).toBe(false)
+  })
+})
+
+describe('curlHasAuthHeader', () => {
+  it('is true for X-API-Key and Authorization', () => {
+    expect(curlHasAuthHeader(ARTICLE_RECOMMENDATION_CURL)).toBe(true)
+    expect(
+      curlHasAuthHeader('curl -H "Authorization: Bearer secret" https://api.example.com/x')
+    ).toBe(true)
+  })
+
+  it('is false when there is no auth header', () => {
+    expect(curlHasAuthHeader('curl -X GET https://api.example.com/health')).toBe(false)
+    expect(
+      curlHasAuthHeader('curl -H "Content-Type: application/json" https://api.example.com/x')
+    ).toBe(false)
   })
 })
 
@@ -230,6 +248,7 @@ describe('httpBindingFromCurl stream flag', () => {
     })
     expect(binding.stream).toBe(true)
     expect(binding.http?.headersSecretName).toBe('SIM_API_KEY')
+    expect(binding.http?.authHeaderName).toBe('X-API-Key')
     expect(JSON.stringify(binding)).not.toContain('$SIM_API_KEY')
     expect(binding.inputSchema).toEqual([
       { name: 'input', type: 'string' },

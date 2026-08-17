@@ -15,7 +15,11 @@ import {
 import { getErrorMessage } from '@sim/utils/errors'
 import { useParams } from 'next/navigation'
 import { appendApiBinding } from '@/lib/arena-generative-ui/append-api-binding'
-import { curlLooksLikeStream, httpBindingFromCurl } from '@/lib/arena-generative-ui/from-curl'
+import {
+  curlHasAuthHeader,
+  curlLooksLikeStream,
+  httpBindingFromCurl,
+} from '@/lib/arena-generative-ui/from-curl'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useAvailableEnvVarKeys } from '@/hooks/use-available-env-vars'
 
@@ -80,6 +84,10 @@ export function ArenaApiBindingImportHelper({
 
   function handleSave() {
     try {
+      if (curlHasAuthHeader(curl) && !secretVar.trim()) {
+        setError('This curl sets an auth header. Select a Secret var — do not paste the key.')
+        return
+      }
       const binding = httpBindingFromCurl({
         key,
         curl,
