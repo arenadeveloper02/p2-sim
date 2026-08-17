@@ -368,6 +368,9 @@ describe.concurrent('Blocks Module', () => {
         expect(block?.subBlocks.length).toBeGreaterThanOrEqual(1)
         const languageSubBlock = block?.subBlocks.find((sb) => sb.id === 'language')
         const codeSubBlock = block?.subBlocks.find((sb) => sb.id === 'code')
+        const sandboxSubBlock = block?.subBlocks.find((sb) => sb.id === 'sandboxId')
+        expect(languageSubBlock?.showWhenEnvSet).toBeUndefined()
+        expect(sandboxSubBlock?.showWhenEnvSet).toBe('NEXT_PUBLIC_SANDBOXES_ENABLED')
         expect(codeSubBlock).toBeDefined()
         expect(codeSubBlock?.type).toBe('code')
       })
@@ -864,21 +867,89 @@ describe.concurrent('Blocks Module', () => {
       expect(getBlock('video_generator_v2')?.hideFromToolbar).toBe(true)
     })
 
-    it('should expose GPT Image 2 and hosted OpenAI/Gemini inputs on image generator v2', () => {
-      const imageGeneratorBlock = getBlock('image_generator_v2')
-      const modelSubBlock = imageGeneratorBlock?.subBlocks.find((sb) => sb.id === 'model')
-      const nonFalApiKeySubBlock = imageGeneratorBlock?.subBlocks.find(
-        (sb) =>
-          sb.id === 'apiKey' && sb.condition?.field === 'provider' && sb.condition.not === true
-      )
-      const geminiReferenceSubBlock = imageGeneratorBlock?.subBlocks.find(
-        (sb) => sb.id === 'inputImage' && sb.condition?.field === 'provider'
-      )
+    it('should keep the legacy openai block registered but out of discovery', () => {
+      const legacy = getBlock('openai')
+      const replacement = getBlock('embeddings')
 
-      expect(modelSubBlock?.options?.map((option) => option.id)).toContain('gpt-image-2')
-      expect(modelSubBlock?.condition).toBeUndefined()
-      expect(nonFalApiKeySubBlock).toBeUndefined()
-      expect(geminiReferenceSubBlock?.condition?.value).toEqual(['openai', 'gemini'])
+      // Placed instances must keep resolving and executing.
+      expect(legacy).toBeDefined()
+      expect(legacy?.tools.access).toContain('openai_embeddings')
+      // ...while the block itself is gone from the toolbar, search, and mentions.
+      expect(legacy?.hideFromToolbar).toBe(true)
+      expect(legacy?.sunset).toEqual({ status: 'legacy', replacedBy: 'embeddings' })
+      // The badge only renders when replacedBy resolves to a registered block.
+      expect(replacement).toBeDefined()
+      expect(replacement?.hideFromToolbar).not.toBe(true)
+    })
+
+    /**
+     * `openai_embeddings` is an alias of `embeddings_openai`, so the legacy
+     * block's runtime payload gained `provider` and `dimensions`. Undeclared,
+     * they were absent from the tag picker and unreferenceable downstream even
+     * though every run returned them.
+     */
+    it('should declare every output the legacy openai block returns at runtime', () => {
+      const legacy = getBlock('openai')
+      const replacement = getBlock('embeddings')
+
+      expect(Object.keys(legacy?.outputs ?? {}).sort()).toEqual([
+        'dimensions',
+        'embeddings',
+        'model',
+        'provider',
+        'usage',
+      ])
+      expect(legacy?.outputs?.provider).toEqual({
+        type: 'string',
+        description: 'Provider used',
+      })
+      expect(legacy?.outputs?.dimensions).toEqual({
+        type: 'number',
+        description: 'Dimensionality of each vector',
+      })
+      // Both blocks run the same tool, so neither may expose fields the other lacks.
+      expect(Object.keys(legacy?.outputs ?? {}).sort()).toEqual(
+        Object.keys(replacement?.outputs ?? {}).sort()
+      )
+    })
+
+    it('should offer every embeddings provider with a matching tool and model list', () => {
+      const block = getBlock('embeddings')
+      const providerSubBlock = block?.subBlocks.find((sb) => sb.id === 'provider')
+      const providerOptions = providerSubBlock?.options
+      const providerIds = Array.isArray(providerOptions)
+        ? providerOptions.map((option) => option.id)
+        : []
+
+      expect(providerSubBlock?.commandSearchable).toBe(true)
+      expect(providerSubBlock?.value?.()).toBe('openai')
+      expect(providerIds).toEqual(['openai', 'gemini', 'cohere', 'mistral', 'openrouter'])
+
+      for (const provider of providerIds) {
+        // Each provider routes to its own registered tool...
+        const toolId = block?.tools.config?.tool?.({ provider })
+        expect(block?.tools.access).toContain(toolId)
+        // ...and has either a static model list or a dynamic model loader.
+        const modelSubBlock = block?.subBlocks.find(
+          (sb) => sb.id === 'model' && sb.condition?.value === provider
+        )
+        if (provider === 'openrouter') {
+          expect(modelSubBlock?.fetchOptions).toBeTypeOf('function')
+        } else {
+          expect(
+            Array.isArray(modelSubBlock?.options) ? modelSubBlock.options.length : 0
+          ).toBeGreaterThan(0)
+        }
+      }
+    })
+
+    it('should default an embeddings block saved before the provider field existed to openai', () => {
+      const block = getBlock('embeddings')
+
+      // Serialization runs before variable resolution, so an absent provider
+      // must still resolve to the original OpenAI tool.
+      expect(block?.tools.config?.tool?.({})).toBe('embeddings_openai')
+      expect(block?.tools.config?.tool?.({ provider: 'gemini' })).toBe('embeddings_gemini')
     })
 
     it('should mark the agent model combobox as command-searchable', () => {
@@ -896,6 +967,39 @@ describe.concurrent('Blocks Module', () => {
       { id: 'verbosity', capable: 'gpt-5.1', incapable: 'claude-sonnet-5' },
       { id: 'thinkingLevel', capable: 'claude-sonnet-5', incapable: 'gpt-5.1' },
     ] as const
+
+    it('should let the agent model-tuning fields take a typed reference', () => {
+      const agentBlock = getBlock('agent')
+
+      for (const { id } of AGENT_MODEL_LEVEL_FIELDS) {
+        const subBlock = agentBlock?.subBlocks.find((sb) => sb.id === id)
+        // A combobox is editable, so a `<block.output>` / `{{ENV_VAR}}` reference can be
+        // typed into it; the option list still offers every level the model accepts.
+        expect(subBlock?.type).toBe('combobox')
+        expect(typeof subBlock?.condition).toBe('function')
+      }
+    })
+
+    it('should keep the agent model-tuning fields visible when the model is a reference', () => {
+      const agentBlock = getBlock('agent')
+
+      for (const { id, capable, incapable } of AGENT_MODEL_LEVEL_FIELDS) {
+        const subBlock = agentBlock?.subBlocks.find((sb) => sb.id === id)
+        const condition = subBlock?.condition
+        if (typeof condition !== 'function') throw new Error(`${id} condition is not a function`)
+
+        expect(evaluateSubBlockCondition(condition, { model: '<start.model>' })).toBe(true)
+        expect(evaluateSubBlockCondition(condition, { model: '{{MODEL_ID}}' })).toBe(true)
+        // Gating on the capability list is unchanged for a literal model.
+        expect(evaluateSubBlockCondition(condition, { model: capable })).toBe(true)
+        expect(evaluateSubBlockCondition(condition, { model: incapable })).toBe(false)
+      }
+    })
+
+    it('should hide generator API keys on hosted only for Fal.ai providers', () => {
+      for (const blockType of ['image_generator_v2', 'video_generator_v3']) {
+        const block = getBlock(blockType)
+        const apiKeySubBlocks = block?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
 
     it('should let the agent model-tuning fields take a typed reference', () => {
       const agentBlock = getBlock('agent')
@@ -953,8 +1057,8 @@ describe.concurrent('Blocks Module', () => {
     })
   })
 
-  describe('Block Consistency', () => {
-    it('should have consistent registry keys matching block types', () => {
+  describe('Block Consistency', () => 
+    it('should have consistent registry keys matching block types', () => 
       for (const block of getAllBlocks()) {
         const canonical = getBlock(block.type)
         if (canonical?.preview) {
@@ -964,8 +1068,7 @@ describe.concurrent('Blocks Module', () => {
           continue
         }
         expect(canonical).toBe(block)
-      }
-    })
+      })
 
     it('should have non-empty descriptions for all blocks', () => {
       const blocks = getAllBlocks()
@@ -979,8 +1082,7 @@ describe.concurrent('Blocks Module', () => {
       for (const block of blocks) {
         expect(block.name.trim().length).toBeGreaterThan(0)
       }
-    })
-  })
+    }))
 
   describe('Canonical Param Validation', () => {
     /**

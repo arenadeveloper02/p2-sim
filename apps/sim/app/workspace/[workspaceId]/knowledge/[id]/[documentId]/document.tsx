@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { Badge, ChipCombobox, ChipConfirmModal, Plus, Trash } from '@sim/emcn'
-import { Database } from '@sim/emcn/icons'
+import { ChevronDown, ChevronUp, Database, FileText, Pencil, TagIcon } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { truncate } from '@sim/utils/string'
-import { ChevronDown, ChevronUp, FileText, Pencil, Tag } from 'lucide-react'
-import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { useQueryStates } from 'nuqs'
 import type { ChunkData } from '@/lib/knowledge/types'
 import { formatTokenCount } from '@/lib/tokenization'
@@ -619,7 +618,7 @@ export function Document({
                 ...(userPermissions.canEdit
                   ? [
                       { label: 'Rename', icon: Pencil, onClick: handleStartDocRename },
-                      { label: 'Tags', icon: Tag, onClick: handleShowTags },
+                      { label: 'Tags', icon: TagIcon, onClick: handleShowTags },
                       { label: 'Delete', icon: Trash, onClick: handleShowDeleteDoc },
                     ]
                   : []),
@@ -718,7 +717,7 @@ export function Document({
     () => (
       <div className='flex w-[240px] flex-col gap-3 p-3'>
         <div className='flex flex-col gap-1.5'>
-          <span className='font-medium text-[var(--text-secondary)] text-caption'>Status</span>
+          <span className='text-[var(--text-secondary)] text-caption'>Status</span>
           <ChipCombobox
             options={[
               { value: 'enabled', label: 'Enabled' },

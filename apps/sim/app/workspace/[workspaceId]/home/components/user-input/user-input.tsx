@@ -35,7 +35,6 @@ import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/r
 import { MOTHERSHIP_ADD_CONTEXT_EVENT } from '@/lib/mothership/events'
 import { MOTHERSHIP_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
-import { SessionMemoryInspector } from '@/local-copilot/components/session-memory-inspector'
 import {
   AnimatedPlaceholderEffect,
   AttachedFilesList,
@@ -56,6 +55,7 @@ import type { AttachedFile } from '@/app/workspace/[workspaceId]/w/[workflowId]/
 import { mentionifyIntegrations } from '@/blocks/integration-matcher'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useSpeechToText } from '@/hooks/use-speech-to-text'
+import { SessionMemoryInspector } from '@/local-copilot/components/session-memory-inspector'
 import {
   getLocalCopilotCatalogEntriesForGroup,
   getLocalCopilotCatalogEntry,
@@ -629,8 +629,8 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     <div
       onClick={handleContainerClick}
       className={cn(
-        'relative z-10 mx-auto w-full max-w-[48rem] cursor-text rounded-2xl border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-2 dark:bg-[var(--surface-4)]',
-        isInitialView && 'shadow-sm'
+        'relative z-10 mx-auto w-full max-w-chat cursor-text rounded-2xl border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-2 dark:bg-[var(--surface-4)]',
+        isInitialView && 'shadow-ambient'
       )}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -654,7 +654,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         placeholder='Ask Arena to '
         onSubmit={handleEnterSubmit}
         onArrowUpOnEmpty={handleArrowUpOnEmpty}
-        className={isInitialView ? 'max-h-[30vh]' : 'max-h-[200px]'}
+        className={cn('max-h-[200px]', isInitialView && 'min-h-[56px]')}
       />
 
       <div className='flex items-center justify-between'>

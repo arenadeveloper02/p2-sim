@@ -10,12 +10,17 @@ import { getValidationErrorMessage, parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { CopilotFiles } from '@/lib/uploads'
-import { generateExecutionFileKey } from '@/lib/uploads/contexts/execution/utils'
+import { generateUniqueExecutionFileKey } from '@/lib/uploads/contexts/execution/utils'
 import { generateKnowledgeBaseFileKey } from '@/lib/uploads/contexts/knowledge-base/knowledge-base-file-manager'
 import { generateOrgLogoFileKey } from '@/lib/uploads/contexts/org-logos/utils'
 import { generateWorkspaceFileKey } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { generatePresignedUploadUrl, hasCloudStorage } from '@/lib/uploads/core/storage-service'
-import { insertFileMetadata, recordKnowledgeBaseFileOwnership } from '@/lib/uploads/server/metadata'
+import { signUploadToken } from '@/lib/uploads/core/upload-token'
+import {
+  insertImmutableFileMetadata,
+  recordKnowledgeBaseFileOwnership,
+} from '@/lib/uploads/server/metadata'
+import type { PresignedUrlResponse, StorageContext } from '@/lib/uploads/shared/types'
 import { isImageFileType } from '@/lib/uploads/utils/file-utils'
 import { validateAttachmentFileType, validateFileType } from '@/lib/uploads/utils/validation'
 import {
@@ -41,6 +46,29 @@ class ValidationError extends PresignedUrlError {
   constructor(message: string) {
     super(message, 'VALIDATION_ERROR', 400)
   }
+}
+
+function createDirectUploadToken(options: {
+  response: PresignedUrlResponse
+  userId: string
+  workspaceId: string
+  context: StorageContext
+  fileName: string
+  contentType: string
+  fileSize: number
+}): string | undefined {
+  if (!options.response.uploadId) return undefined
+  return signUploadToken({
+    uploadId: options.response.uploadId,
+    key: options.response.key,
+    userId: options.userId,
+    workspaceId: options.workspaceId,
+    context: options.context,
+    fileName: options.fileName,
+    contentType: options.contentType,
+    fileSize: options.fileSize,
+    uploadKind: 'direct',
+  })
 }
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
@@ -110,7 +138,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     logger.info(`Generating ${uploadType} presigned URL for ${fileName}`)
 
-    let presignedUrlResponse
+    let presignedUrlResponse: PresignedUrlResponse
+    let uploadToken: string | undefined
 
     if (uploadType === 'copilot') {
       try {
@@ -154,8 +183,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         expirationSeconds: 3600,
         metadata: { workspaceId },
       })
+      uploadToken = createDirectUploadToken({
+        response: presignedUrlResponse,
+        userId: sessionUserId,
+        workspaceId,
+        context: 'mothership',
+        fileName,
+        contentType,
+        fileSize,
+      })
 
-      await insertFileMetadata({
+      await insertImmutableFileMetadata({
         key: presignedUrlResponse.key,
         userId: sessionUserId,
         workspaceId,
@@ -187,7 +225,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         throw new ValidationError(fileValidationError.message)
       }
 
-      const customKey = generateExecutionFileKey({ workspaceId, workflowId, executionId }, fileName)
+      const customKey = generateUniqueExecutionFileKey(
+        { workspaceId, workflowId, executionId },
+        fileName
+      )
       presignedUrlResponse = await generatePresignedUploadUrl({
         fileName,
         contentType,
@@ -198,8 +239,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         expirationSeconds: 3600,
         metadata: { workspaceId, workflowId, executionId },
       })
+      uploadToken = createDirectUploadToken({
+        response: presignedUrlResponse,
+        userId: sessionUserId,
+        workspaceId,
+        context: 'execution',
+        fileName,
+        contentType,
+        fileSize,
+      })
 
-      await insertFileMetadata({
+      await insertImmutableFileMetadata({
         key: presignedUrlResponse.key,
         userId: sessionUserId,
         workspaceId,
@@ -239,8 +289,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         expirationSeconds: 3600,
         metadata: { workspaceId },
       })
+      uploadToken = createDirectUploadToken({
+        response: presignedUrlResponse,
+        userId: sessionUserId,
+        workspaceId,
+        context: 'workspace-logos',
+        fileName,
+        contentType,
+        fileSize,
+      })
 
-      await insertFileMetadata({
+      await insertImmutableFileMetadata({
         key: presignedUrlResponse.key,
         userId: sessionUserId,
         workspaceId,
@@ -318,6 +377,15 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         expirationSeconds: 3600,
         metadata: { workspaceId },
       })
+      uploadToken = createDirectUploadToken({
+        response: presignedUrlResponse,
+        userId: sessionUserId,
+        workspaceId,
+        context: 'knowledge-base',
+        fileName,
+        contentType,
+        fileSize,
+      })
 
       await recordKnowledgeBaseFileOwnership({
         key: presignedUrlResponse.key,
@@ -357,6 +425,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         type: contentType,
       },
       uploadHeaders: presignedUrlResponse.uploadHeaders,
+      ...(uploadToken ? { uploadToken } : {}),
       directUploadSupported: true,
     })
   } catch (error) {

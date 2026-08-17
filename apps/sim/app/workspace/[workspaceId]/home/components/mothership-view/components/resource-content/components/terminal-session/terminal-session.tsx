@@ -511,9 +511,8 @@ const TerminalView = memo(function TerminalView({
         // not that it shrank. Fitting to that would resize the pty to nonsense.
         if (!onscreenRef.current || host.clientWidth <= 0 || host.clientHeight <= 0) return
         try {
-          // Avoid `.fit()` call form — Biome's noFocusedTests false-positives on it (Jest `fit`).
-          const fitTerminal = fit.fit.bind(fit)
-          fitTerminal()
+          // biome-ignore lint/suspicious/noFocusedTests: xterm FitAddon.fit(), not a focused test
+          fit.fit()
         } catch {
           // Zero-sized while animating; the next observation refits.
         }

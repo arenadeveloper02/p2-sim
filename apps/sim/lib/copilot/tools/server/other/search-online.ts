@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { SearchOnline } from '@/lib/copilot/generated/tool-catalog-v1'
+import { projectToolErrorMessageForCopilot } from '@/lib/copilot/request/tools/resolved-secret-result'
 import type { BaseServerTool, ServerToolContext } from '@/lib/copilot/tools/server/base-tool'
 import { env } from '@/lib/core/config/env'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
@@ -72,10 +73,7 @@ function buildToolContext(context?: ServerToolContext): Record<string, unknown> 
 
 export const searchOnlineServerTool: BaseServerTool<OnlineSearchParams, SearchResponse> = {
   name: SearchOnline.id,
-  async execute(
-    params: OnlineSearchParams,
-    context?: ServerToolContext
-  ): Promise<SearchResponse> {
+  async execute(params: OnlineSearchParams, context?: ServerToolContext): Promise<SearchResponse> {
     const logger = createLogger('SearchOnlineServerTool')
     const { query, num = 10, type = 'search', gl, hl } = params
     if (!query || typeof query !== 'string') throw new Error('query is required')
@@ -100,6 +98,64 @@ export const searchOnlineServerTool: BaseServerTool<OnlineSearchParams, SearchRe
         type: 'auto',
         ...(exaApiKey ? { apiKey: exaApiKey } : {}),
         ...(toolContext ? { _context: toolContext } : {}),
+    // Try Exa first if available
+    if (hasExaApiKey) {
+      try {
+        const exaResult = await executeTool(
+          'exa_search',
+          {
+            query,
+            numResults: num,
+            type: 'auto',
+            // Exa omits page content unless it is requested, which would leave
+            // every snippet empty. Highlights keep the payload small.
+            highlights: true,
+            apiKey: env.EXA_API_KEY ?? '',
+          },
+          { resolvedSecretTraceRegistry: context?.resolvedSecretTraceRegistry }
+        )
+
+        const output = exaResult.output as
+          | {
+              results?: Array<{
+                title?: string
+                url?: string
+                text?: string
+                summary?: string
+                highlights?: string[]
+                publishedDate?: string
+              }>
+            }
+          | undefined
+        const exaResults = output?.results ?? []
+
+        if (exaResult.success && exaResults.length > 0) {
+          const transformedResults: SearchResult[] = exaResults.map((result, index) => ({
+            title: result.title ?? '',
+            link: result.url ?? '',
+            snippet: result.highlights?.join(' ') || result.text || result.summary || '',
+            date: result.publishedDate,
+            position: index + 1,
+          }))
+
+          return {
+            results: transformedResults,
+            query,
+            type,
+            totalResults: transformedResults.length,
+            source: 'exa',
+          }
+        }
+
+        logger.debug('exa_search returned no results, falling back to Serper')
+      } catch (exaError) {
+        const errorMessage = toError(exaError).message
+        logger.warn('exa_search failed, falling back to Serper', {
+          error: projectToolErrorMessageForCopilot(
+            errorMessage,
+            context?.resolvedSecretTraceRegistry
+          ),
+        })
       }
 
       const exaResult = await executeTool('exa_search', exaParams)
@@ -157,7 +213,9 @@ export const searchOnlineServerTool: BaseServerTool<OnlineSearchParams, SearchRe
       apiKey: env.SERPER_API_KEY ?? '',
     }
 
-    const result = await executeTool('serper_search', toolParams)
+    const result = await executeTool('serper_search', toolParams, {
+      resolvedSecretTraceRegistry: context?.resolvedSecretTraceRegistry,
+    })
     const output = result.output as { searchResults?: SearchResult[] } | undefined
     const results = output?.searchResults ?? []
 

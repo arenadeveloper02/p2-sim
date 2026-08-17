@@ -383,11 +383,8 @@ export const bedrockProvider: ProviderConfig = {
     const inferenceConfig = buildBedrockInferenceConfig({
       model: request.model,
       temperature:
-        request.temperature != null
-          ? Number.parseFloat(String(request.temperature))
-          : undefined,
-      maxTokens:
-        request.maxTokens != null ? Number.parseInt(String(request.maxTokens)) : undefined,
+        request.temperature != null ? Number.parseFloat(String(request.temperature)) : undefined,
+      maxTokens: request.maxTokens != null ? Number.parseInt(String(request.maxTokens)) : undefined,
       defaultTemperature: 0.7,
     })
 
@@ -669,9 +666,13 @@ export const bedrockProvider: ProviderConfig = {
             }
 
             const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-            const result = await executeProviderTool(toolName, executionParams, {
-              signal: request.abortSignal,
-            })
+            const { rawResponse, modelResponse } = await executeProviderTool(
+              toolName,
+              executionParams,
+              {
+                signal: request.abortSignal,
+              }
+            )
             const toolCallEndTime = Date.now()
 
             return {
@@ -679,7 +680,8 @@ export const bedrockProvider: ProviderConfig = {
               toolName,
               toolArgs: toolArgs ?? {},
               toolParams,
-              result,
+              result: rawResponse,
+              modelResult: modelResponse,
               startTime: toolCallStartTime,
               endTime: toolCallEndTime,
               duration: toolCallEndTime - toolCallStartTime,
@@ -733,6 +735,10 @@ export const bedrockProvider: ProviderConfig = {
             endTime,
             duration,
           } = executionResult
+          const modelResult =
+            'modelResult' in executionResult && executionResult.modelResult
+              ? executionResult.modelResult
+              : result
 
           timeSegments.push({
             type: 'tool',
@@ -755,6 +761,13 @@ export const bedrockProvider: ProviderConfig = {
               tool: toolName,
             }
           }
+          const modelResultContent = modelResult.success
+            ? (modelResult.output ?? null)
+            : {
+                error: true,
+                message: modelResult.error || 'Tool execution failed',
+                tool: toolName,
+              }
 
           toolCalls.push({
             name: toolName,
@@ -768,9 +781,9 @@ export const bedrockProvider: ProviderConfig = {
 
           const toolResultBlock: ToolResultBlock = {
             toolUseId,
-            content: [{ text: JSON.stringify(resultContent) }],
+            content: [{ text: JSON.stringify(modelResultContent) }],
             ...(supportsToolResultStatus(bedrockModelId)
-              ? { status: result.success ? 'success' : 'error' }
+              ? { status: modelResult.success ? 'success' : 'error' }
               : {}),
           }
           toolResultContent.push({ toolResult: toolResultBlock })

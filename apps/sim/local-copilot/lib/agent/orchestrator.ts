@@ -70,11 +70,11 @@ import {
   formatActiveDirectiveSystemMessage,
   formatSessionConstraintsSystemMessage,
 } from '@/local-copilot/lib/context/follow-up-directives'
-import { persistInferredUserMemories } from '@/local-copilot/lib/context/promote-durable-memory'
 import {
   applyMicrocompactInPlace,
   microcompactMessages,
 } from '@/local-copilot/lib/context/microcompact'
+import { persistInferredUserMemories } from '@/local-copilot/lib/context/promote-durable-memory'
 import { fitPromptWithSlots } from '@/local-copilot/lib/context/prompt-slots'
 import {
   ensureSessionMemory,
@@ -2231,4 +2231,3 @@ export async function* runLocalCopilotAgent(
 export function formatSSE(event: LocalCopilotStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`
 }
-

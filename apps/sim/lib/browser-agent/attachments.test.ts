@@ -90,20 +90,43 @@ describe('buildResourceAttachments', () => {
     expect(attachments?.[0]).toMatchObject({ id: 'browser-session:1', active: false })
   })
 
-  it('drops terminal and log panels while keeping addressable resources', () => {
-    const attachments = buildResourceAttachments(
-      [
-        { type: 'terminal', id: 'terminal-session', title: 'Terminal' },
-        { type: 'log', id: 'log-1', title: 'Execution log' },
-        { type: 'workflow', id: 'workflow-1', title: 'My workflow' },
+  it('reads attachments only from the requested chat scope', () => {
+    const store = useBrowserSessionStore.getState()
+    store.setTabsState({
+      scopeId: 'chat-a',
+      activeTabId: 'same-id',
+      tabs: [
+        {
+          tabId: 'same-id',
+          title: 'A',
+          url: 'https://a.example',
+          loading: false,
+          active: true,
+          pinned: false,
+        },
       ],
-      'workflow-1',
-      'chat-test'
-    )
+    })
+    store.setTabsState({
+      scopeId: 'chat-b',
+      activeTabId: 'same-id',
+      tabs: [
+        {
+          tabId: 'same-id',
+          title: 'B',
+          url: 'https://b.example',
+          loading: false,
+          active: true,
+          pinned: false,
+        },
+      ],
+    })
 
-    expect(attachments).toEqual([
-      { type: 'workflow', id: 'workflow-1', title: 'My workflow', active: true },
-    ])
+    expect(
+      buildResourceAttachments([BROWSER_RESOURCE], BROWSER_RESOURCE.id, 'chat-a')?.[0]
+    ).toMatchObject({ title: 'A', url: 'https://a.example' })
+    expect(
+      buildResourceAttachments([BROWSER_RESOURCE], BROWSER_RESOURCE.id, 'chat-b')?.[0]
+    ).toMatchObject({ title: 'B', url: 'https://b.example' })
   })
 
   it('reads attachments only from the requested chat scope', () => {

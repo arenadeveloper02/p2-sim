@@ -39,7 +39,6 @@ import {
 } from '@/lib/workspaces/permissions/utils'
 import {
   createIncompleteResolvedSecretTraceRegistry,
-  ResolvedSecretTraceProvenanceAccumulator,
   type ResolvedSecretTraceRegistry,
 } from '@/executor/utils/resolved-secret-trace-registry'
 import type { ChatContext } from '@/stores/panel'
@@ -61,7 +60,9 @@ function withPrivateProvenance<T extends Record<string, unknown>>(
   return {
     ...payload,
     ...(include && registry
-      ? { [RESOLVED_SECRET_PROVENANCE_FIELD]: registry.exportProvenance() }
+      ? {
+          [RESOLVED_SECRET_PROVENANCE_FIELD]: registry.exportCommittedProvenanceForInputPaths([]),
+        }
       : {}),
   }
 }
@@ -90,15 +91,6 @@ function encodeNdjson(value: unknown): Uint8Array {
   return ndjsonEncoder.encode(`${JSON.stringify(value)}\n`)
 }
 
-/**
- * Server-owned tools whose invocation the CALLER must see, even though they are
- * not client/integration tools. The scheduled-task runner branches on whether
- * the agent called complete_scheduled_task; filtering it out of the response
- * made that check permanently false, so a completed job was rescheduled by the
- * runner's own post-run bookkeeping.
- */
-export const CALLER_VISIBLE_SERVER_TOOLS = new Set(['complete_scheduled_task'])
-
 export function buildExecuteResponsePayload(
   result: Awaited<ReturnType<typeof runHeadlessCopilotLifecycle>>,
   effectiveChatId: string,
@@ -106,10 +98,7 @@ export function buildExecuteResponsePayload(
 ) {
   const clientToolNames = new Set(integrationTools.map((t) => t.name))
   const clientToolCalls = (result.toolCalls || []).filter(
-    (tc: { name: string }) =>
-      clientToolNames.has(tc.name) ||
-      tc.name.startsWith('mcp-') ||
-      CALLER_VISIBLE_SERVER_TOOLS.has(tc.name)
+    (tc: { name: string }) => clientToolNames.has(tc.name) || tc.name.startsWith('mcp-')
   )
 
   return {
@@ -196,33 +185,24 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       actorUserId: userId,
       workspaceId,
     })
-    if (includePrivateProvenance) {
-      const scope = { userId, workspaceId }
-      try {
-        const environment = await getPersonalAndWorkspaceEnv(userId, workspaceId, {
-          workspaceAccess,
-        })
-        environmentContext = await createCopilotEnvironmentContext(userId, workspaceId, environment)
-        resolvedSecretTraceRegistry = environmentContext.resolvedSecretTraceRegistry
-      } catch (error) {
-        logger.warn('Failed to build Mothership trace secret catalog', {
-          error: getErrorMessage(error),
-          userId,
-          workspaceId,
-        })
-        resolvedSecretTraceRegistry = createIncompleteResolvedSecretTraceRegistry(scope)
-      }
+    const scope = { userId, workspaceId }
+    let activeResolvedSecretTraceRegistry: ResolvedSecretTraceRegistry
+    try {
+      const environment = await getPersonalAndWorkspaceEnv(userId, workspaceId, {
+        workspaceAccess,
+      })
+      environmentContext = await createCopilotEnvironmentContext(userId, workspaceId, environment)
+      const registry = environmentContext.resolvedSecretTraceRegistry
+      if (!registry) throw new Error('Mothership model-egress secret catalog is unavailable')
+      activeResolvedSecretTraceRegistry = registry
+    } catch (error) {
+      logger.warn('Failed to build Mothership model-egress secret catalog', {
+        error: getErrorMessage(error),
+        userId,
+        workspaceId,
+      })
+      activeResolvedSecretTraceRegistry = createIncompleteResolvedSecretTraceRegistry(scope)
     }
-    const activeResolvedSecretTraceRegistry = resolvedSecretTraceRegistry
-    const mcpDiscoveryProvenance = new ResolvedSecretTraceProvenanceAccumulator({
-      userId,
-      workspaceId,
-    })
-    const recordMcpDiscoveryProvenance = includePrivateProvenance
-      ? (provenance: unknown): void => {
-          mcpDiscoveryProvenance.record(provenance)
-        }
-      : undefined
 
     const usage = await checkMothershipUsageLimits(userId, workspaceId)
     if (usage.isExceeded) {
@@ -235,6 +215,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       )
     }
 
+    resolvedSecretTraceRegistry = activeResolvedSecretTraceRegistry
     const effectiveChatId = chatId || generateId()
     messageId = providedMessageId || generateId()
     requestId = providedRequestId || generateId()
@@ -244,7 +225,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       workflowId,
       executionId,
     })
-    const lastUserMessage = messages.filter((m) => m.role === 'user').at(-1)?.content
+    const lastUserMessage = messages.filter((message) => message.role === 'user').at(-1)?.content
     // double-cast-allowed: the contract validates contexts as open kind/label objects; processContextsServer narrows on `kind` at runtime
     const agentMentions = contexts as unknown as ChatContext[] | undefined
     const taggedMcpServerIds = (agentMentions ?? []).flatMap((context) =>
@@ -253,25 +234,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     const nonMcpAgentMentions = agentMentions?.filter((context) => context.kind !== 'mcp')
     const userPermission = workspaceAccess.permission
     const mothershipToolsPromise = Promise.allSettled([
-      buildSelectedMcpToolSchemas(
-        userId,
-        workspaceId,
-        mcpTools ?? [],
-        recordMcpDiscoveryProvenance
-      ),
-      buildTaggedMcpToolSchemas(
-        userId,
-        workspaceId,
-        taggedMcpServerIds,
-        recordMcpDiscoveryProvenance
-      ),
-    ]).then(async (results) => {
-      if (activeResolvedSecretTraceRegistry) {
-        await activeResolvedSecretTraceRegistry.importProvenance(
-          mcpDiscoveryProvenance.exportProvenance(),
-          { trusted: true }
-        )
-      }
+      buildSelectedMcpToolSchemas(userId, workspaceId, mcpTools ?? []),
+      buildTaggedMcpToolSchemas(userId, workspaceId, taggedMcpServerIds),
+    ]).then((results) => {
       const groups = results.map((result) => {
         if (result.status === 'rejected') throw result.reason
         return result.value
@@ -281,7 +246,10 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
     })
     const [workspaceContext, integrationTools, mothershipTools, entitlements, agentContexts] =
       await Promise.all([
-        generateWorkspaceContext(workspaceId, userId, { workspaceAccess }),
+        generateWorkspaceContext(workspaceId, userId, {
+          workspaceAccess,
+          secretMountPolicy,
+        }),
         buildIntegrationToolSchemas(userId, messageId, undefined, workspaceId),
         mothershipToolsPromise,
         computeWorkspaceEntitlements(workspaceId, userId),
@@ -300,7 +268,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       ])
     const requestPayload: Record<string, unknown> = {
       messages,
-      responseFormat,
+      ...(responseFormat !== undefined ? { responseFormat } : {}),
       userId,
       // Go's auth middleware reads workspaceId off the request body to forward
       // to /api/copilot/api-keys/validate (per-member org usage gate). Omitting

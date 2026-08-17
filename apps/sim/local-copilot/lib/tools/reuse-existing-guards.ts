@@ -106,8 +106,7 @@ export function guardCreateKnowledgeBaseWhenExistingAvailable(
   const knowledgeBases = ctx.structuredContext.knowledgeBases ?? []
   if (knowledgeBases.length === 0) return null
 
-  const requestedName =
-    typeof args.name === 'string' ? normalizeName(args.name) : ''
+  const requestedName = typeof args.name === 'string' ? normalizeName(args.name) : ''
   const match =
     findNamedMatch(knowledgeBases, requestedName) ??
     (knowledgeBases.length === 1 ? knowledgeBases[0] : undefined)
@@ -156,8 +155,7 @@ export function guardCreateTableWhenExistingAvailable(
   const tables = ctx.structuredContext.tables ?? []
   if (tables.length === 0) return null
 
-  const requestedName =
-    typeof args.name === 'string' ? normalizeName(args.name) : ''
+  const requestedName = typeof args.name === 'string' ? normalizeName(args.name) : ''
   const match =
     findNamedMatch(tables, requestedName) ?? (tables.length === 1 ? tables[0] : undefined)
 

@@ -2,8 +2,8 @@ import type { ConverseStreamOutput } from '@aws-sdk/client-bedrock-runtime'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { randomFloat } from '@sim/utils/random'
-import type { AgentStreamEvent } from '@/providers/stream-events'
 import { getModelCapabilities, supportsTemperature } from '@/providers/models'
+import type { AgentStreamEvent } from '@/providers/stream-events'
 import { trackForcedToolUsage } from '@/providers/utils'
 
 const logger = createLogger('BedrockUtils')
@@ -267,8 +267,7 @@ export function buildBedrockInferenceConfig(options: {
   }
   if (bedrockAllowsTemperature(options.model)) {
     const isNova = /amazon\.nova/i.test(options.model)
-    config.temperature =
-      options.temperature ?? options.defaultTemperature ?? (isNova ? 0 : 0.2)
+    config.temperature = options.temperature ?? options.defaultTemperature ?? (isNova ? 0 : 0.2)
   }
   return config
 }

@@ -16,9 +16,7 @@ interface ResolveTurnCompletionParams {
 /**
  * Rolls mutation and verification outcomes into a turn-level completion label.
  */
-export function resolveTurnCompletion(
-  params: ResolveTurnCompletionParams
-): TurnCompletionStatus {
+export function resolveTurnCompletion(params: ResolveTurnCompletionParams): TurnCompletionStatus {
   const requiredMutations = params.mutationOutcomes.filter((outcome) =>
     mutationRequiresVerification(outcome.toolName)
   )

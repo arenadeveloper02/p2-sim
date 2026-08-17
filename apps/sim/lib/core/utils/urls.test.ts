@@ -14,7 +14,6 @@ vi.mock('@/lib/core/config/env', () => ({
 }))
 
 import {
-  getArenaHubAgentsUrl,
   getBaseUrl,
   getBrowserOrigin,
   getSocketUrl,

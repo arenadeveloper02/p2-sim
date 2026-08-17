@@ -43,7 +43,6 @@ import { workspaceFileServerTool } from '@/lib/copilot/tools/server/files/worksp
 import { validateGeneratedToolPayload } from '@/lib/copilot/tools/server/generated-schema'
 import { generateImageServerTool } from '@/lib/copilot/tools/server/image/generate-image'
 import { normalizeGenerateImageArgs } from '@/lib/copilot/tools/server/image/normalize-args'
-import { getJobLogsServerTool } from '@/lib/copilot/tools/server/jobs/get-job-logs'
 import { knowledgeBaseServerTool } from '@/lib/copilot/tools/server/knowledge/knowledge-base'
 import { searchKnowledgeBaseServerTool } from '@/lib/copilot/tools/server/knowledge/search-knowledge-base'
 import { ffmpegServerTool } from '@/lib/copilot/tools/server/media/ffmpeg'
@@ -77,14 +76,16 @@ const logger = createLogger('ServerToolRouter')
 const CUSTOM_BLOCK_OVERLAY_TOOLS = new Set(['edit_workflow', 'get_blocks_metadata'])
 
 /**
- * DISCOVERY tools that must run inside the viewer's block-visibility context so
- * gated (preview / kill-switched) blocks disappear from what the agent can
- * list. Deliberately a DIFFERENT set from {@link CUSTOM_BLOCK_OVERLAY_TOOLS}:
- * `edit_workflow` is excluded because its registry use is functional
- * (find-by-type over clones, never a discovery listing) and gating it would
- * only risk leaking display projections into persisted state.
+ * Discovery tools that consume the viewer's block-visibility context to hide
+ * gated blocks and credentials. `edit_workflow` establishes a narrower scope
+ * around operation validation after it resolves the workflow's actual
+ * workspace.
  */
-const VISIBILITY_GATED_TOOLS = new Set(['get_blocks_metadata', 'get_trigger_blocks'])
+const VISIBILITY_GATED_TOOLS = new Set([
+  'get_blocks_metadata',
+  'get_credentials',
+  'get_trigger_blocks',
+])
 
 const WRITE_ACTIONS: Record<string, string[]> = {
   [KnowledgeBase.id]: [
@@ -159,7 +160,6 @@ const baseServerToolRegistry: Record<string, BaseServerTool> = {
   [getTriggerBlocksServerTool.name]: getTriggerBlocksServerTool,
   [editWorkflowServerTool.name]: editWorkflowServerTool,
   [queryLogsServerTool.name]: queryLogsServerTool,
-  [getJobLogsServerTool.name]: getJobLogsServerTool,
   [searchDocumentationServerTool.name]: searchDocumentationServerTool,
   [searchOnlineServerTool.name]: searchOnlineServerTool,
   [userMemoryServerTool.name]: userMemoryServerTool,

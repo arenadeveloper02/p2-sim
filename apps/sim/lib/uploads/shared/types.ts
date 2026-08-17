@@ -26,6 +26,8 @@ export type StorageContext =
   | 'workspace-logos'
   | 'org-logos'
 
+export type MultipartCompletionPolicy = 'create-only' | 'replace' | 'reuse-existing'
+
 /**
  * Contexts exempt from storage quota checks. Includes system-internal contexts
  * (`logs` — written by the execution pipeline, not user-initiated) and small
@@ -110,4 +112,14 @@ export interface PresignedUrlResponse {
   url: string
   key: string
   uploadHeaders?: Record<string, string>
+  /** Opaque per-URL receipt persisted in object metadata for safe retry verification. */
+  uploadId?: string
 }
+
+export interface StoredObjectInfo {
+  size: number
+  contentType?: string
+  metadata?: Record<string, string>
+}
+
+export const PRESIGNED_UPLOAD_RECEIPT_METADATA_KEY = 'simuploadid'

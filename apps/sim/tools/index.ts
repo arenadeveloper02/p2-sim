@@ -2,9 +2,14 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { isValidUuid } from '@sim/utils/id'
+import { isPlainRecord } from '@sim/utils/object'
 import { backoffWithJitter, parseRetryAfter } from '@sim/utils/retry'
 import { getBYOKKey } from '@/lib/api-key/byok'
-import { generateInternalToken } from '@/lib/auth/internal'
+import {
+  generateInternalToken,
+  type InternalSandboxProfile,
+  type InternalTokenClaims,
+} from '@/lib/auth/internal'
 import {
   BILLING_ATTRIBUTION_HEADER,
   type BillingAttributionSnapshot,
@@ -31,11 +36,17 @@ import { isSameOrigin } from '@/lib/core/utils/validation'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
 import {
-  getPrivateToolMetadataField,
-  isPrivateToolMetadataType,
+  INTERNAL_EXECUTION_DEADLINE_HEADER,
+  serializeExecutionDeadlineHeader,
+} from '@/lib/execution/execution-deadline-header'
+import {
+  inspectPrivateToolMetadataEnvelope,
+  inspectPrivateToolMetadataResponseCapability,
+  MAX_PRIVATE_TOOL_METADATA_OVERHEAD_BYTES,
   PRIVATE_TOOL_METADATA_REQUEST_HEADER,
   PRIVATE_TOOL_METADATA_RESPONSE_HEADER,
   type PrivateToolMetadataType,
+  RESOLVED_SECRET_NAMES_DURABLE_FILES_METADATA_V2,
   RESOLVED_SECRET_NAMES_FIELD,
   RESOLVED_SECRET_NAMES_METADATA_V1,
   RESOLVED_SECRET_PROVENANCE_FIELD,
@@ -50,18 +61,28 @@ import { parseMcpToolId } from '@/lib/mcp/utils'
 import { hostedKeyMetrics } from '@/lib/monitoring/metrics'
 import { resolveUnipileExternalAccountId } from '@/lib/unipile/account-from-credential'
 import { resolveWorkspaceFileReference } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { markWorkspaceFileSecretProvenanceUnknown } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import { generateNanoBananaImage } from '@/app/api/google/api-service'
 import { assertPermissionsAllowed } from '@/ee/access-control/utils/permission-check'
 import { isCustomTool, isMcpTool } from '@/executor/constants'
 import { resolveSkillContent } from '@/executor/handlers/agent/skills-resolver'
 import type { ExecutionContext, UserFile } from '@/executor/types'
 import { resolveEnvVarReferences } from '@/executor/utils/reference-validation'
-import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
+import { projectResolvedSecretDiagnosticContent } from '@/executor/utils/resolved-secret-content-projection'
+import {
+  isResolvedSecretTraceProvenanceV1,
+  type ResolvedSecretTraceRegistry,
+} from '@/executor/utils/resolved-secret-trace-registry'
 import type { ErrorInfo } from '@/tools/error-extractors'
 import { extractErrorMessage } from '@/tools/error-extractors'
 import { HostedKeyRateLimitedError, HostedKeyUnavailableError } from '@/tools/errors'
 import { getImageGenerationWrapperBaseToolId } from '@/tools/image_generation/wrapper-ids'
 import { normalizeToolId } from '@/tools/normalize'
+import {
+  getOwnEnumerableDataEntries,
+  prepareToolRequest,
+  projectToolModelInputParams,
+} from '@/tools/request-transport'
 import type {
   BYOKProviderId,
   OAuthTokenPayload,
@@ -71,7 +92,6 @@ import type {
   ToolRetryConfig,
 } from '@/tools/types'
 import {
-  formatRequestParams,
   getTool,
   resolveToolId,
   safeStringify,
@@ -80,6 +100,26 @@ import {
 import * as toolsUtilsServer from '@/tools/utils.server'
 
 const logger = createLogger('Tools')
+const PRIVATE_TOOL_METADATA_ERROR_MESSAGE = 'Internal tool response metadata could not be verified'
+const PRIVATE_MODEL_INPUT_DIRECT_EXECUTION_ERROR_MESSAGE =
+  'Private model input provenance is not supported by direct execution'
+const PRIVATE_SECRET_PROVENANCE_DIRECT_EXECUTION_ERROR_MESSAGE =
+  'Private secret provenance is not supported by direct execution'
+
+function projectToolLogMetadata(
+  metadata: Record<string, unknown>,
+  registry: ResolvedSecretTraceRegistry | undefined,
+  structuralFallback: Record<string, unknown>,
+  structuralOnly = false
+): Record<string, unknown> {
+  if (structuralOnly) return { ...structuralFallback, redacted: true }
+  if (!registry) return metadata
+
+  const projection = projectResolvedSecretDiagnosticContent(metadata, registry)
+  return projection.safe && isPlainRecord(projection.value)
+    ? projection.value
+    : { ...structuralFallback, redacted: true }
+}
 
 interface ToolExecutionScope {
   workspaceId?: string
@@ -480,7 +520,9 @@ async function resolveCopilotEnvReferences(
         allowEmbedded: false,
         missingKeys,
         onResolved: (name, resolvedValue) => {
-          resolvedSecretTraceRegistry?.recordResolved(name, resolvedValue)
+          resolvedSecretTraceRegistry?.recordResolvedAtInputPath(name, resolvedValue, [paramId], {
+            propagated: true,
+          })
         },
       })
       if (missingKeys.length > 0) {
@@ -493,6 +535,11 @@ async function resolveCopilotEnvReferences(
         )
       }
       params[paramId] = resolved as string
+      resolvedSecretTraceRegistry?.recordResolvedInputProjection(
+        [paramId],
+        resolved as string,
+        value
+      )
     }
   } finally {
     completePendingActivation?.()
@@ -1160,7 +1207,6 @@ async function applyHostedKeyCostToResult(
 const INTERNAL_ROUTE_MAX_REQUEST_BODY_SIZE_BYTES = 9.5 * 1024 * 1024
 const MAX_REQUEST_BODY_SIZE_BYTES = 100 * 1024 * 1024 // 10MB
 const MAX_TOOL_RESPONSE_BODY_BYTES = 10 * 1024 * 1024 // 10MB
-const MAX_PRIVATE_TOOL_METADATA_OVERHEAD_BYTES = 10 * 1024 * 1024 // 10MB
 
 /**
  * User-friendly error message for body size limit exceeded
@@ -1225,13 +1271,27 @@ function isBodySizeLimitError(errorMessage: string): boolean {
  * @throws Error with user-friendly message if it's a size limit error
  * @returns false if not a size limit error (caller should continue handling)
  */
-function handleBodySizeLimitError(error: unknown, requestId: string, context: string): boolean {
+function handleBodySizeLimitError(
+  error: unknown,
+  requestId: string,
+  context: string,
+  resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry,
+  structuralOnlyWithoutRegistry = false
+): boolean {
   const errorMessage = toError(error).message
 
   if (isBodySizeLimitError(errorMessage)) {
-    logger.error(`[${requestId}] Request body size limit exceeded for ${context}:`, {
-      originalError: errorMessage,
-    })
+    logger.error(
+      `[${requestId}] Request body size limit exceeded for ${context}:`,
+      projectToolLogMetadata(
+        { originalError: errorMessage },
+        resolvedSecretTraceRegistry,
+        {
+          hasOriginalError: errorMessage.length > 0,
+        },
+        structuralOnlyWithoutRegistry
+      )
+    )
     throw new Error(BODY_SIZE_LIMIT_ERROR_MESSAGE)
   }
 
@@ -1293,7 +1353,7 @@ async function readToolResponseBody(
     logger.warn(
       `[${options.requestId}] Failed to read non-OK response body for ${options.toolId}`,
       {
-        error: toError(error).message,
+        errorName: toError(error).name,
       }
     )
     return Buffer.alloc(0)
@@ -1371,7 +1431,22 @@ async function processFileOutputs(
       output: processedOutput,
     }
   } catch (error) {
-    logger.error(`Error processing file outputs for tool ${tool.id}:`, error)
+    const normalizedError = toError(error)
+    logger.error(
+      `Error processing file outputs for tool ${tool.id}:`,
+      projectToolLogMetadata(
+        {
+          error: normalizedError.message,
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        executionContext.resolvedSecretTraceRegistry,
+        {
+          errorName: normalizedError.name,
+          hasStack: Boolean(error instanceof Error && error.stack),
+        },
+        tool.id === 'function_execute' || isCustomTool(tool.id)
+      )
+    )
     // Return original result if file processing fails
     return result
   }
@@ -1382,51 +1457,81 @@ export interface ExecuteToolOptions {
   executionContext?: ExecutionContext
   signal?: AbortSignal
   resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry
+  /** Trusted base image claim for an internal Function execution. */
+  internalSandboxProfile?: InternalSandboxProfile
 }
 
 interface PrivateToolResponseMetadataResult {
   response: Response
-  consumed: boolean
+}
+
+interface PrivateToolMetadataPolicy {
+  type: PrivateToolMetadataType
+  incomplete: 'reject' | 'propagate'
+}
+
+type PrivateToolMetadataConsumption = 'verified' | 'incomplete' | 'invalid'
+
+function getFunctionExportedWorkspaceFileIds(payload: Record<string, unknown>): string[] {
+  const ids = new Set<string>()
+  const addId = (value: unknown): void => {
+    if (typeof value === 'string' && value.length > 0) ids.add(value)
+  }
+  const output = isPlainRecord(payload.output) ? payload.output : undefined
+  const result = output && isPlainRecord(output.result) ? output.result : undefined
+  if (result) {
+    addId(result.fileId)
+    if (Array.isArray(result.files)) {
+      for (const file of result.files) {
+        if (isPlainRecord(file)) addId(file.fileId)
+      }
+    }
+  }
+  if (Array.isArray(payload.resources)) {
+    for (const resource of payload.resources) {
+      if (isPlainRecord(resource) && resource.type === 'file') addId(resource.id)
+    }
+  }
+  return [...ids]
 }
 
 function consumeResolvedSecretNames(
   payload: unknown,
   params: Record<string, any>,
   registry?: ResolvedSecretTraceRegistry
-): void {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return
+): boolean {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
 
   const response = payload as Record<string, unknown>
-  if (!Object.hasOwn(response, RESOLVED_SECRET_NAMES_FIELD)) return
+  if (!Object.hasOwn(response, RESOLVED_SECRET_NAMES_FIELD)) return false
 
   const names = response[RESOLVED_SECRET_NAMES_FIELD]
   response[RESOLVED_SECRET_NAMES_FIELD] = undefined
-  if (!registry) return
-
   if (!Array.isArray(names) || !names.every((name) => typeof name === 'string')) {
-    registry.markIncomplete()
-    return
+    return false
   }
 
   const envVars = params.envVars
   if (!envVars || typeof envVars !== 'object' || Array.isArray(envVars)) {
-    registry.markIncomplete()
-    return
+    return false
   }
 
+  const targetRegistry = registry?.forkForToolCall()
   for (const name of names) {
     const value = (envVars as Record<string, unknown>)[name]
-    if (typeof value !== 'string') {
-      registry.markIncomplete()
-      continue
+    if (typeof value !== 'string') return false
+    if (targetRegistry && !targetRegistry.recordResolved(name, value, { propagated: true })) {
+      return false
     }
-    registry.recordResolved(name, value)
   }
+  if (registry && targetRegistry) registry.mergeToolCallRegistry(targetRegistry)
+  return true
 }
 
 async function consumeResolvedSecretProvenance(
   payload: unknown,
-  registry?: ResolvedSecretTraceRegistry
+  registry: ResolvedSecretTraceRegistry | undefined,
+  toolId: string
 ): Promise<boolean> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
 
@@ -1435,9 +1540,16 @@ async function consumeResolvedSecretProvenance(
 
   const provenance = response[RESOLVED_SECRET_PROVENANCE_FIELD]
   response[RESOLVED_SECRET_PROVENANCE_FIELD] = undefined
-  if (registry) {
-    await registry.importCrossingProvenance(provenance, response, { trusted: true })
-  }
+  if (!isResolvedSecretTraceProvenanceV1(provenance)) return false
+  if (!registry) return true
+
+  const targetRegistry = registry.forkForToolCall()
+  const imported = await targetRegistry.importCrossingProvenance(provenance, response, {
+    trusted: true,
+    origin: `tool.${toolId}`,
+  })
+  if (!imported) return false
+  registry.mergeToolCallRegistry(targetRegistry)
   return true
 }
 
@@ -1458,18 +1570,20 @@ function rebuildResponseWithoutPrivateToolMetadata(
 }
 
 function rebuildSafePrivateToolResponse(response: Response): Response {
-  const headers = new Headers(response.headers)
-  headers.delete('content-length')
-  headers.delete(PRIVATE_TOOL_METADATA_RESPONSE_HEADER)
-  headers.set('content-type', 'application/json')
+  const hasHttpErrorStatus = response.status >= 400 && response.status <= 599
+  const status = hasHttpErrorStatus ? response.status : 502
+  const error = hasHttpErrorStatus
+    ? `Internal tool request failed (HTTP ${response.status})`
+    : PRIVATE_TOOL_METADATA_ERROR_MESSAGE
+  const headers = new Headers({ 'content-type': 'application/json' })
   return new Response(
     JSON.stringify({
       success: false,
-      error: 'Internal tool response metadata could not be verified',
+      error,
     }),
     {
-      status: response.status,
-      statusText: response.statusText,
+      status,
+      ...(!hasHttpErrorStatus ? { statusText: 'Bad Gateway' } : {}),
       headers,
     }
   )
@@ -1480,93 +1594,188 @@ async function consumePrivateToolPayloadMetadata(
   headers: Headers,
   requestedType: PrivateToolMetadataType | undefined,
   params: Record<string, any>,
-  registry?: ResolvedSecretTraceRegistry
-): Promise<boolean> {
-  if (!requestedType) return true
+  registry: ResolvedSecretTraceRegistry | undefined,
+  toolId: string
+): Promise<PrivateToolMetadataConsumption> {
+  if (!requestedType) return 'verified'
 
-  const metadataType = headers.get(PRIVATE_TOOL_METADATA_RESPONSE_HEADER)
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    registry?.markIncomplete()
-    return false
+  const inspection = inspectPrivateToolMetadataEnvelope(headers, payload, requestedType)
+  const record =
+    payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : undefined
+
+  if (requestedType === RESOLVED_SECRET_NAMES_DURABLE_FILES_METADATA_V2 && record) {
+    const capability = inspectPrivateToolMetadataResponseCapability(headers, requestedType)
+    const isLegacyNamesProducer =
+      capability.status === 'mismatched' &&
+      capability.receivedType === RESOLVED_SECRET_NAMES_METADATA_V1
+    if (capability.status === 'unsupported' || isLegacyNamesProducer) {
+      if (isLegacyNamesProducer) {
+        const legacyInspection = inspectPrivateToolMetadataEnvelope(
+          headers,
+          record,
+          RESOLVED_SECRET_NAMES_METADATA_V1
+        )
+        if (legacyInspection.status !== 'verified') return 'invalid'
+        if (!consumeResolvedSecretNames(record, params, registry)) return 'invalid'
+      } else {
+        if (inspection.status !== 'unsupported') return 'invalid'
+      }
+
+      const fileIds = getFunctionExportedWorkspaceFileIds(record)
+      if (fileIds.length > 0) {
+        const workspaceId =
+          typeof params.workspaceId === 'string'
+            ? params.workspaceId
+            : typeof params._context?.workspaceId === 'string'
+              ? params._context.workspaceId
+              : undefined
+        if (!workspaceId) return 'invalid'
+        await markWorkspaceFileSecretProvenanceUnknown(workspaceId, fileIds)
+      }
+      record[RESOLVED_SECRET_NAMES_FIELD] = undefined
+      return registry?.isPermanentlyIncomplete() ? 'incomplete' : 'verified'
+    }
   }
 
-  const record = payload as Record<string, unknown>
-  const markerMatches = metadataType === requestedType
-  if (!markerMatches) {
-    registry?.markIncomplete()
-  } else {
-    const metadataKey = getPrivateToolMetadataField(metadataType)
-    if (!Object.hasOwn(record, metadataKey)) {
-      registry?.markIncomplete()
+  if (inspection.status === 'unsupported') {
+    return 'verified'
+  }
+
+  if (inspection.status === 'invalid' || !record) {
+    return 'invalid'
+  }
+
+  try {
+    if (
+      requestedType === RESOLVED_SECRET_NAMES_METADATA_V1 ||
+      requestedType === RESOLVED_SECRET_NAMES_DURABLE_FILES_METADATA_V2
+    ) {
+      if (!consumeResolvedSecretNames(record, params, registry)) return 'invalid'
     } else {
-      try {
-        if (metadataType === RESOLVED_SECRET_NAMES_METADATA_V1) {
-          consumeResolvedSecretNames(record, params, registry)
-        } else {
-          await consumeResolvedSecretProvenance(record, registry)
-        }
-      } catch {
-        registry?.markIncomplete()
-      }
+      if (!(await consumeResolvedSecretProvenance(record, registry, toolId))) return 'invalid'
     }
+  } catch {
+    return 'invalid'
   }
 
   record[RESOLVED_SECRET_NAMES_FIELD] = undefined
   record[RESOLVED_SECRET_PROVENANCE_FIELD] = undefined
-  return markerMatches
+  return registry?.isPermanentlyIncomplete() ? 'incomplete' : 'verified'
 }
 
 async function consumePrivateToolResponseMetadata(
   response: Response,
   requestedType: PrivateToolMetadataType | undefined,
   params: Record<string, any>,
-  registry?: ResolvedSecretTraceRegistry
+  registry: ResolvedSecretTraceRegistry | undefined,
+  toolId: string
 ): Promise<PrivateToolResponseMetadataResult> {
-  if (!requestedType) return { response, consumed: true }
-  const metadataType = response.headers.get(PRIVATE_TOOL_METADATA_RESPONSE_HEADER)
+  if (!requestedType) return { response }
 
   let payload: unknown
   try {
     payload = await response.clone().json()
   } catch {
-    registry?.markIncomplete()
-    return isPrivateToolMetadataType(metadataType)
-      ? { response: rebuildSafePrivateToolResponse(response), consumed: false }
-      : { response, consumed: false }
+    const inspection = inspectPrivateToolMetadataEnvelope(
+      response.headers,
+      undefined,
+      requestedType
+    )
+    if (inspection.status === 'invalid') {
+      return { response: rebuildSafePrivateToolResponse(response) }
+    }
+    return { response }
   }
 
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    registry?.markIncomplete()
-    return isPrivateToolMetadataType(metadataType)
-      ? { response: rebuildSafePrivateToolResponse(response), consumed: false }
-      : { response, consumed: false }
-  }
-
-  const record = payload as Record<string, unknown>
-  const hadPrivateMetadata =
-    Object.hasOwn(record, RESOLVED_SECRET_NAMES_FIELD) ||
-    Object.hasOwn(record, RESOLVED_SECRET_PROVENANCE_FIELD)
-  const consumed = await consumePrivateToolPayloadMetadata(
-    record,
+  const consumption = await consumePrivateToolPayloadMetadata(
+    payload,
     response.headers,
     requestedType,
     params,
-    registry
+    registry,
+    toolId
   )
-
-  if (!consumed && !hadPrivateMetadata) return { response, consumed: false }
-
-  return {
-    response: rebuildResponseWithoutPrivateToolMetadata(response, record),
-    consumed,
+  if (consumption === 'invalid') {
+    return { response: rebuildSafePrivateToolResponse(response) }
   }
+
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { response }
+  }
+  return {
+    response: rebuildResponseWithoutPrivateToolMetadata(
+      response,
+      payload as Record<string, unknown>
+    ),
+  }
+}
+
+function getPrivateToolMetadataPolicy(toolId: string): PrivateToolMetadataPolicy | undefined {
+  const normalizedToolId = normalizeToolId(toolId)
+  if (normalizedToolId === 'file_get_content' || isMcpTool(normalizedToolId)) {
+    return { type: RESOLVED_SECRET_PROVENANCE_METADATA_V1, incomplete: 'reject' }
+  }
+  if (normalizedToolId === 'function_execute' || isCustomTool(normalizedToolId)) {
+    return { type: RESOLVED_SECRET_NAMES_DURABLE_FILES_METADATA_V2, incomplete: 'reject' }
+  }
+  const configured = getTool(normalizedToolId)?.request.secretProvenance?.response
+  if (configured) {
+    return { type: RESOLVED_SECRET_PROVENANCE_METADATA_V1, incomplete: configured.incomplete }
+  }
+  return undefined
+}
+
+/**
+ * Runs private-provenance tools against an isolated registry. Unavailable authenticated lineage
+ * marks the parent unknown without replacing the tool's functional result; malformed metadata is
+ * rejected inside the transport consumer and never committed to the parent.
+ */
+export async function executeTool(
+  toolId: string,
+  params: Record<string, any>,
+  options: ExecuteToolOptions = {}
+): Promise<ToolResponse> {
+  const parentRegistry =
+    options.resolvedSecretTraceRegistry ?? options.executionContext?.resolvedSecretTraceRegistry
+  const privateMetadataPolicy = getPrivateToolMetadataPolicy(toolId)
+  if (!parentRegistry || !privateMetadataPolicy) {
+    return executeToolImplementation(toolId, params, options)
+  }
+  if (privateMetadataPolicy.incomplete === 'propagate') {
+    return executeToolImplementation(toolId, params, options)
+  }
+
+  const paramEntries = getOwnEnumerableDataEntries(params)
+  const toolRegistry = paramEntries
+    ? parentRegistry.forkForInputPaths(paramEntries.map(([key]) => [key] as const))
+    : parentRegistry.forkForToolCall()
+  if (!paramEntries) toolRegistry.markIncomplete()
+  const executionContext = options.executionContext
+    ? { ...options.executionContext, resolvedSecretTraceRegistry: toolRegistry }
+    : undefined
+  let result: ToolResponse
+  try {
+    result = await executeToolImplementation(toolId, params, {
+      ...options,
+      ...(executionContext ? { executionContext } : {}),
+      resolvedSecretTraceRegistry: toolRegistry,
+    })
+  } catch (error) {
+    parentRegistry.mergeToolCallRegistry(toolRegistry)
+    throw error
+  }
+
+  parentRegistry.mergeToolCallRegistry(toolRegistry)
+  return result
 }
 
 /**
  * Execute a tool by making the appropriate HTTP request
  * All requests go directly - internal routes use regular fetch, external use SSRF-protected fetch
  */
-export async function executeTool(
+async function executeToolImplementation(
   toolId: string,
   params: Record<string, any>,
   options: ExecuteToolOptions = {}
@@ -1576,6 +1785,7 @@ export async function executeTool(
     executionContext,
     signal,
     resolvedSecretTraceRegistry: explicitResolvedSecretTraceRegistry,
+    internalSandboxProfile,
   } = options
   const resolvedSecretTraceRegistry =
     explicitResolvedSecretTraceRegistry ?? executionContext?.resolvedSecretTraceRegistry
@@ -1592,6 +1802,13 @@ export async function executeTool(
   const startTime = new Date()
   const startTimeISO = startTime.toISOString()
   const requestId = generateRequestId()
+  const privateToolMetadataPolicy = resolvedSecretTraceRegistry
+    ? getPrivateToolMetadataPolicy(toolId)
+    : undefined
+  const structuralOnlyToolLogs =
+    normalizeToolId(toolId) === 'function_execute' ||
+    isCustomTool(toolId) ||
+    privateToolMetadataPolicy !== undefined
 
   // Hoisted so the outer catch can attribute a thrown failure to the chosen key.
   let hostedKeyForMetrics: { provider: string; tool: string; key: string } | undefined
@@ -1602,6 +1819,9 @@ export async function executeTool(
 
     // Normalize tool ID to strip resource suffixes (e.g., workflow_executor_<uuid> -> workflow_executor)
     const normalizedToolId = normalizeToolId(toolId)
+    if (internalSandboxProfile && normalizedToolId !== 'function_execute') {
+      throw new Error('An internal sandbox profile may only be used with function_execute')
+    }
 
     const scope = resolveToolScope(params, executionContext)
 
@@ -1613,13 +1833,11 @@ export async function executeTool(
           : isMcpTool(normalizedToolId)
             ? 'mcp'
             : undefined
-    const privateToolMetadataType: PrivateToolMetadataType | undefined =
-      resolvedSecretTraceRegistry && normalizedToolId === 'workflow_executor'
-        ? RESOLVED_SECRET_PROVENANCE_METADATA_V1
-        : resolvedSecretTraceRegistry &&
-            (normalizedToolId === 'function_execute' || toolKind === 'custom')
-          ? RESOLVED_SECRET_NAMES_METADATA_V1
-          : undefined
+    const privateToolMetadataType = privateToolMetadataPolicy?.type
+
+    if (resolvedSecretTraceRegistry && privateToolMetadataType) {
+      completePendingSecretActivation = resolvedSecretTraceRegistry.beginPendingActivation()
+    }
 
     if (resolvedSecretTraceRegistry && (privateToolMetadataType || toolKind === 'mcp')) {
       completePendingSecretActivation = resolvedSecretTraceRegistry.beginPendingActivation()
@@ -1677,7 +1895,8 @@ export async function executeTool(
         requestId,
         startTimeISO,
         effectiveSignal,
-        resolvedSecretTraceRegistry
+        resolvedSecretTraceRegistry,
+        privateToolMetadataType
       )
     } else {
       // Copilot/mothership agent schemas omit `_vN`; canvas blocks serialize exact registry ids.
@@ -1966,7 +2185,22 @@ export async function executeTool(
                   : tool.directExecution
     if (directExecution) {
       logger.info(`[${requestId}] Using directExecution for ${toolId}`)
-      const result = await directExecution(contextParams, effectiveSignal)
+      if (
+        tool.request.modelInput?.mode === 'private-provenance' ||
+        (tool.request.modelInput?.mode === 'project' &&
+          tool.request.modelInput.privateInputPaths !== undefined)
+      ) {
+        throw new Error(PRIVATE_MODEL_INPUT_DIRECT_EXECUTION_ERROR_MESSAGE)
+      }
+      if (tool.request.secretProvenance) {
+        throw new Error(PRIVATE_SECRET_PROVENANCE_DIRECT_EXECUTION_ERROR_MESSAGE)
+      }
+      const directExecutionInput = projectToolModelInputParams(
+        tool,
+        contextParams,
+        resolvedSecretTraceRegistry
+      )
+      const result = await directExecution(directExecutionInput, effectiveSignal)
 
       // Apply post-processing if available and not skipped
       let finalResult = result
@@ -1974,9 +2208,16 @@ export async function executeTool(
         try {
           finalResult = await tool.postProcess(result, contextParams, executeNestedTool)
         } catch (error) {
-          logger.error(`[${requestId}] Post-processing error for ${toolId}:`, {
-            error: toError(error).message,
-          })
+          const normalizedError = toError(error)
+          logger.error(
+            `[${requestId}] Post-processing error for ${toolId}:`,
+            projectToolLogMetadata(
+              { error: normalizedError.message },
+              resolvedSecretTraceRegistry,
+              { errorName: normalizedError.name },
+              structuralOnlyToolLogs
+            )
+          )
           finalResult = result
         }
       }
@@ -2026,7 +2267,8 @@ export async function executeTool(
               contextParams,
               effectiveSignal,
               privateToolMetadataType,
-              resolvedSecretTraceRegistry
+              resolvedSecretTraceRegistry,
+              internalSandboxProfile
             ),
           {
             requestId,
@@ -2052,7 +2294,8 @@ export async function executeTool(
                   contextParams,
                   effectiveSignal,
                   privateToolMetadataType,
-                  resolvedSecretTraceRegistry
+                  resolvedSecretTraceRegistry,
+                  internalSandboxProfile
                 )
             },
           }
@@ -2063,7 +2306,8 @@ export async function executeTool(
           contextParams,
           effectiveSignal,
           privateToolMetadataType,
-          resolvedSecretTraceRegistry
+          resolvedSecretTraceRegistry,
+          internalSandboxProfile
         )
 
     // Apply post-processing if available and not skipped
@@ -2072,9 +2316,18 @@ export async function executeTool(
       try {
         finalResult = await tool.postProcess(result, contextParams, executeNestedTool)
       } catch (error) {
-        logger.error(`[${requestId}] Post-processing error for ${toolId}:`, {
-          error: toError(error).message,
-        })
+        const normalizedError = toError(error)
+        logger.error(
+          `[${requestId}] Post-processing error for ${toolId}:`,
+          projectToolLogMetadata(
+            { error: normalizedError.message },
+            resolvedSecretTraceRegistry,
+            {
+              errorName: normalizedError.name,
+            },
+            structuralOnlyToolLogs
+          )
+        )
         finalResult = result
       }
     }
@@ -2112,10 +2365,22 @@ export async function executeTool(
       },
     }
   } catch (error: any) {
-    logger.error(`[${requestId}] Error executing tool ${toolId}:`, {
-      error: toError(error).message,
-      stack: error instanceof Error ? error.stack : undefined,
-    })
+    const normalizedError = toError(error)
+    logger.error(
+      `[${requestId}] Error executing tool ${toolId}:`,
+      projectToolLogMetadata(
+        {
+          error: normalizedError.message,
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        resolvedSecretTraceRegistry,
+        {
+          errorName: normalizedError.name,
+          hasStack: Boolean(error instanceof Error && error.stack),
+        },
+        structuralOnlyToolLogs
+      )
+    )
 
     if (hostedKeyForMetrics) {
       hostedKeyMetrics.recordFailed({
@@ -2275,12 +2540,15 @@ async function addInternalAuthIfNeeded(
   isInternalRoute: boolean,
   requestId: string,
   context: string,
-  userId?: string
+  userId?: string,
+  claims?: InternalTokenClaims
 ): Promise<void> {
   if (typeof window === 'undefined') {
     if (isInternalRoute) {
       try {
-        const internalToken = await generateInternalToken(userId)
+        const internalToken = claims
+          ? await generateInternalToken(userId, claims)
+          : await generateInternalToken(userId)
         if (headers instanceof Headers) {
           headers.set('Authorization', `Bearer ${internalToken}`)
         } else {
@@ -2364,45 +2632,18 @@ async function executeToolRequest(
   params: Record<string, any>,
   signal?: AbortSignal,
   privateToolMetadataType?: PrivateToolMetadataType,
-  resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry
+  resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry,
+  internalSandboxProfile?: InternalSandboxProfile
 ): Promise<ToolResponse> {
   const requestId = generateRequestId()
-
-  const requestParams = await formatRequestParams(tool, params)
-  let privateMetadataConsumed = privateToolMetadataType === undefined
-
+  const structuralOnlyToolLogs =
+    normalizeToolId(toolId) === 'function_execute' ||
+    isCustomTool(toolId) ||
+    privateToolMetadataType !== undefined
   try {
-    const resolvedEndpointUrl: unknown =
-      typeof tool.request.url === 'function' ? tool.request.url(params) : tool.request.url
-
-    // Check if the URL function returned an error response
-    if (
-      resolvedEndpointUrl &&
-      typeof resolvedEndpointUrl === 'object' &&
-      '_errorResponse' in resolvedEndpointUrl
-    ) {
-      const errorResponse = (
-        resolvedEndpointUrl as {
-          _errorResponse?: {
-            data?: {
-              error?: { message?: string }
-              message?: string
-            }
-          }
-        }
-      )._errorResponse
-      return {
-        success: false,
-        output: errorResponse?.data || {},
-        error:
-          errorResponse?.data?.error?.message ||
-          errorResponse?.data?.message ||
-          'Tool execution failed',
-      }
-    }
-
-    const endpointUrl = String(resolvedEndpointUrl)
-    const isInternalRoute = endpointUrl.startsWith('/api/')
+    const requestParams = prepareToolRequest(tool, params, resolvedSecretTraceRegistry)
+    const endpointUrl = requestParams.url
+    const { headers, isInternalRoute } = requestParams
     const baseUrl = isInternalRoute ? getInternalApiBaseUrl() : getBaseUrl()
     const fullUrlObj = new URL(endpointUrl, baseUrl)
 
@@ -2424,8 +2665,13 @@ async function executeToolRequest(
 
     const fullUrl = fullUrlObj.toString()
 
-    if (isCustomTool(toolId) && tool.request.body) {
-      const requestBody = tool.request.body(params)
+    if (isCustomTool(toolId) && requestParams.body) {
+      let requestBody: unknown
+      try {
+        requestBody = JSON.parse(requestParams.body)
+      } catch {
+        requestBody = undefined
+      }
       if (
         typeof requestBody === 'object' &&
         requestBody !== null &&
@@ -2449,17 +2695,13 @@ async function executeToolRequest(
         }
       }
     }
-
-    const headers = new Headers(requestParams.headers)
-    if (!headers.has('User-Agent')) {
-      headers.set('User-Agent', 'Sim')
-    }
     await addInternalAuthIfNeeded(
       headers,
       isInternalRoute,
       requestId,
       toolId,
-      params._context?.userId
+      params._context?.userId,
+      internalSandboxProfile ? { sandboxProfile: internalSandboxProfile } : undefined
     )
     if (isInternalRoute && params._context?.billingAttribution) {
       headers.set(
@@ -2469,6 +2711,12 @@ async function executeToolRequest(
     }
     if (isInternalRoute && privateToolMetadataType) {
       headers.set(PRIVATE_TOOL_METADATA_REQUEST_HEADER, privateToolMetadataType)
+    }
+    if (isInternalRoute) {
+      const executionDeadline = serializeExecutionDeadlineHeader(signal)
+      if (executionDeadline) {
+        headers.set(INTERNAL_EXECUTION_DEADLINE_HEADER, executionDeadline)
+      }
     }
 
     const shouldPropagateCallChain = isInternalRoute || isSelfOriginUrl(fullUrl)
@@ -2506,22 +2754,23 @@ async function executeToolRequest(
       try {
         if (isInternalRoute) {
           const controller = new AbortController()
+          let didTimeout = false
           // With a caller/execution abort signal present, the plan-based timeout bounds the call and
           // this only acts as a ceiling; without one, keep the tighter default as the hang safety net.
           const timeout =
             requestParams.timeout ||
             (signal ? getMaxExecutionTimeout() : DEFAULT_EXECUTION_TIMEOUT_MS)
-          const timeoutId = setTimeout(
-            () => controller.abort(`timeout:internal_tool_fetch:${timeout}ms`),
-            timeout
-          )
+          const timeoutId = setTimeout(() => {
+            didTimeout = true
+            controller.abort(new DOMException('timeout', 'AbortError'))
+          }, timeout)
 
           let abortListener: (() => void) | null = null
           if (signal) {
             if (signal.aborted) {
-              controller.abort('caller_aborted')
+              controller.abort(signal.reason)
             } else {
-              abortListener = () => controller.abort('caller_aborted')
+              abortListener = () => controller.abort(signal.reason)
               signal.addEventListener('abort', abortListener, { once: true })
             }
           }
@@ -2567,11 +2816,14 @@ async function executeToolRequest(
               })
             }
           } catch (error) {
-            if (error instanceof Error && error.name === 'AbortError') {
+            if (
+              controller.signal.aborted ||
+              (error instanceof Error && error.name === 'AbortError')
+            ) {
               // Distinguish caller cancellation from local timeout: rethrow the AbortError
               // when the caller's signal triggered the abort so cancellation propagates as-is.
-              if (signal?.aborted) {
-                throw error
+              if (signal?.aborted && !didTimeout) {
+                throw signal.reason ?? error
               }
               throw new Error(`Request timed out after ${timeout}ms`)
             }
@@ -2651,7 +2903,7 @@ async function executeToolRequest(
         }
       } catch (error) {
         lastError = error
-        if (!retryConfig || isLastAttempt || !isRetryableFailure(error)) {
+        if (signal?.aborted || !retryConfig || isLastAttempt || !isRetryableFailure(error)) {
           throw error
         }
         const delayMs = backoffWithJitter(attempt + 1, null, {
@@ -2716,10 +2968,10 @@ async function executeToolRequest(
       response,
       privateToolMetadataType,
       params,
-      resolvedSecretTraceRegistry
+      resolvedSecretTraceRegistry,
+      toolId
     )
     response = privateMetadata.response
-    privateMetadataConsumed = privateMetadata.consumed
 
     if (privateToolMetadataType) {
       const functionalBody = await readToolResponseBody(response, {
@@ -2727,7 +2979,11 @@ async function executeToolRequest(
         toolId,
         signal,
       })
-      response = new Response(new Uint8Array(functionalBody), {
+      const body =
+        response.status === 204 || response.status === 205 || response.status === 304
+          ? null
+          : new Uint8Array(functionalBody)
+      response = new Response(body, {
         status: response.status,
         statusText: response.statusText,
         headers: cloneResponseHeaders(response.headers),
@@ -2762,18 +3018,41 @@ async function executeToolRequest(
         ('error' in errorData || 'message' in errorData)
 
       if (response.status === 413 && !hasStructuredErrorPayload) {
-        logger.error(`[${requestId}] Request body too large for ${toolId} (HTTP 413):`, {
-          status: response.status,
-          statusText: response.statusText,
-          errorData,
-        })
+        logger.error(
+          `[${requestId}] Request body too large for ${toolId} (HTTP 413):`,
+          projectToolLogMetadata(
+            {
+              status: response.status,
+              statusText: response.statusText,
+              errorData,
+            },
+            resolvedSecretTraceRegistry,
+            {
+              status: response.status,
+              statusText: response.statusText,
+              hasErrorData: errorData !== null,
+            },
+            structuralOnlyToolLogs
+          )
+        )
         throw new Error(BODY_SIZE_LIMIT_ERROR_MESSAGE)
       }
 
-      logger.error(`[${requestId}] Internal API error for ${toolId}:`, {
-        status: errorInfo.status,
-        errorData: errorInfo.data,
-      })
+      logger.error(
+        `[${requestId}] Internal API error for ${toolId}:`,
+        projectToolLogMetadata(
+          {
+            status: errorInfo.status,
+            errorData: errorInfo.data,
+          },
+          resolvedSecretTraceRegistry,
+          {
+            status: errorInfo.status,
+            hasErrorData: errorInfo.data !== null,
+          },
+          structuralOnlyToolLogs
+        )
+      )
 
       throw errorToTransform
     }
@@ -2786,9 +3065,16 @@ async function executeToolRequest(
       try {
         responseData = await response.json()
       } catch (jsonError) {
-        logger.error(`[${requestId}] JSON parse error for ${toolId}:`, {
-          error: jsonError instanceof Error ? jsonError.message : String(jsonError),
-        })
+        const normalizedError = toError(jsonError)
+        logger.error(
+          `[${requestId}] JSON parse error for ${toolId}:`,
+          projectToolLogMetadata(
+            { error: normalizedError.message },
+            resolvedSecretTraceRegistry,
+            { errorName: normalizedError.name },
+            structuralOnlyToolLogs
+          )
+        )
         throw new Error(`Failed to parse response from ${toolId}: ${jsonError}`)
       }
     } else {
@@ -2802,10 +3088,21 @@ async function executeToolRequest(
       // Handle error case
       const errorToTransform = createTransformedErrorFromErrorInfo(errorInfo, tool.errorExtractor)
 
-      logger.error(`[${requestId}] Internal API error for ${toolId}:`, {
-        status: errorInfo?.status,
-        errorData: errorInfo?.data,
-      })
+      logger.error(
+        `[${requestId}] Internal API error for ${toolId}:`,
+        projectToolLogMetadata(
+          {
+            status: errorInfo?.status,
+            errorData: errorInfo?.data,
+          },
+          resolvedSecretTraceRegistry,
+          {
+            status: errorInfo?.status,
+            hasErrorData: errorInfo?.data !== null && errorInfo?.data !== undefined,
+          },
+          structuralOnlyToolLogs
+        )
+      )
 
       throw errorToTransform
     }
@@ -2851,9 +3148,18 @@ async function executeToolRequest(
         const data = await tool.transformResponse(mockResponse, params)
         return data
       } catch (transformError) {
-        logger.error(`[${requestId}] Transform response error for ${toolId}:`, {
-          error: toError(transformError).message,
-        })
+        const normalizedError = toError(transformError)
+        logger.error(
+          `[${requestId}] Transform response error for ${toolId}:`,
+          projectToolLogMetadata(
+            { error: normalizedError.message },
+            resolvedSecretTraceRegistry,
+            {
+              errorName: normalizedError.name,
+            },
+            structuralOnlyToolLogs
+          )
+        )
         throw transformError
       }
     }
@@ -2865,17 +3171,29 @@ async function executeToolRequest(
       error: undefined,
     }
   } catch (error: any) {
-    if (privateToolMetadataType && !privateMetadataConsumed) {
-      resolvedSecretTraceRegistry?.markIncomplete()
-    }
     handleResponseSizeLimitError(error, requestId, toolId)
 
     // Check if this is a body size limit error and throw user-friendly message
-    handleBodySizeLimitError(error, requestId, toolId)
+    handleBodySizeLimitError(
+      error,
+      requestId,
+      toolId,
+      resolvedSecretTraceRegistry,
+      structuralOnlyToolLogs
+    )
 
-    logger.error(`[${requestId}] Internal request error for ${toolId}:`, {
-      error: toError(error).message,
-    })
+    const normalizedError = toError(error)
+    logger.error(
+      `[${requestId}] Internal request error for ${toolId}:`,
+      projectToolLogMetadata(
+        { error: normalizedError.message },
+        resolvedSecretTraceRegistry,
+        {
+          errorName: normalizedError.name,
+        },
+        structuralOnlyToolLogs
+      )
+    )
 
     // Let the error bubble up to be handled in the main executeTool function
     throw error
@@ -3081,7 +3399,8 @@ async function executeMcpTool(
   requestId?: string,
   startTimeISO?: string,
   signal?: AbortSignal,
-  resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry
+  resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry,
+  privateToolMetadataType?: PrivateToolMetadataType
 ): Promise<ToolResponse> {
   const actualRequestId = requestId || generateRequestId()
   const actualStartTime = startTimeISO || new Date().toISOString()
@@ -3096,8 +3415,8 @@ async function executeMcpTool(
     const mcpScope = resolveToolScope(params, executionContext)
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (resolvedSecretTraceRegistry) {
-      headers[PRIVATE_TOOL_METADATA_REQUEST_HEADER] = RESOLVED_SECRET_PROVENANCE_METADATA_V1
+    if (privateToolMetadataType) {
+      headers[PRIVATE_TOOL_METADATA_REQUEST_HEADER] = privateToolMetadataType
     }
 
     if (typeof window === 'undefined') {
@@ -3120,7 +3439,11 @@ async function executeMcpTool(
         try {
           toolArguments = JSON.parse(params.arguments)
         } catch (error) {
-          logger.warn(`[${actualRequestId}] Failed to parse MCP arguments JSON:`, params.arguments)
+          logger.warn(`[${actualRequestId}] Failed to parse MCP arguments JSON`, {
+            errorName: toError(error).name,
+            argumentsType: 'string',
+            argumentsLength: params.arguments.length,
+          })
           toolArguments = {}
         }
       } else {
@@ -3140,6 +3463,10 @@ async function executeMcpTool(
       headers[BILLING_ATTRIBUTION_HEADER] = serializeBillingAttributionHeader(
         mcpScope.billingAttribution
       )
+    }
+    const executionDeadline = serializeExecutionDeadlineHeader(signal)
+    if (executionDeadline) {
+      headers[INTERNAL_EXECUTION_DEADLINE_HEADER] = executionDeadline
     }
 
     if (!mcpScope.workspaceId) {
@@ -3190,12 +3517,21 @@ async function executeMcpTool(
       mcpUrl.searchParams.set('userId', mcpScope.userId)
     }
 
-    const response = await fetch(mcpUrl.toString(), {
+    let response = await fetch(mcpUrl.toString(), {
       method: 'POST',
       headers,
       body,
       signal,
     })
+    response = (
+      await consumePrivateToolResponseMetadata(
+        response,
+        privateToolMetadataType,
+        params,
+        resolvedSecretTraceRegistry,
+        toolId
+      )
+    ).response
 
     const endTime = new Date()
     const endTimeISO = endTime.toISOString()
@@ -3221,18 +3557,8 @@ async function executeMcpTool(
 
       try {
         const errorData = await response.json()
-        await consumePrivateToolPayloadMetadata(
-          errorData,
-          response.headers,
-          resolvedSecretTraceRegistry ? RESOLVED_SECRET_PROVENANCE_METADATA_V1 : undefined,
-          params,
-          resolvedSecretTraceRegistry
-        )
-        if (errorData.error) {
-          errorMessage = errorData.error
-        }
+        if (errorData.error) errorMessage = errorData.error
       } catch {
-        resolvedSecretTraceRegistry?.markIncomplete()
         // Failed to parse error response, use default message
       }
 
@@ -3249,14 +3575,6 @@ async function executeMcpTool(
     }
 
     const result = await response.json()
-    await consumePrivateToolPayloadMetadata(
-      result,
-      response.headers,
-      resolvedSecretTraceRegistry ? RESOLVED_SECRET_PROVENANCE_METADATA_V1 : undefined,
-      params,
-      resolvedSecretTraceRegistry
-    )
-
     if (!result.success) {
       return {
         success: false,
@@ -3282,7 +3600,6 @@ async function executeMcpTool(
       },
     }
   } catch (error) {
-    resolvedSecretTraceRegistry?.markIncomplete()
     const endTime = new Date()
     const endTimeISO = endTime.toISOString()
     const duration = endTime.getTime() - new Date(actualStartTime).getTime()
@@ -3290,9 +3607,12 @@ async function executeMcpTool(
     // Check if this is a body size limit error
     const errorMsg = toError(error).message
     if (isBodySizeLimitError(errorMsg)) {
-      logger.error(`[${actualRequestId}] Request body size limit exceeded for mcp:${toolId}:`, {
-        originalError: errorMsg,
-      })
+      logger.error(
+        `[${actualRequestId}] Request body size limit exceeded for mcp:${toolId}:`,
+        projectToolLogMetadata({ originalError: errorMsg }, resolvedSecretTraceRegistry, {
+          hasOriginalError: errorMsg.length > 0,
+        })
+      )
       return {
         success: false,
         output: {},
@@ -3305,7 +3625,21 @@ async function executeMcpTool(
       }
     }
 
-    logger.error(`[${actualRequestId}] Error executing MCP tool ${toolId}:`, error)
+    const normalizedError = toError(error)
+    logger.error(
+      `[${actualRequestId}] Error executing MCP tool ${toolId}:`,
+      projectToolLogMetadata(
+        {
+          error: normalizedError.message,
+          stack: error instanceof Error ? error.stack : undefined,
+        },
+        resolvedSecretTraceRegistry,
+        {
+          errorName: normalizedError.name,
+          hasStack: Boolean(error instanceof Error && error.stack),
+        }
+      )
+    )
 
     const errorMessage = getErrorMessage(error, `Failed to execute MCP tool ${toolId}`)
 

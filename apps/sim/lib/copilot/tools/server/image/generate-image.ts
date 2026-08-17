@@ -7,6 +7,10 @@ import {
   type BaseServerTool,
   type ServerToolContext,
 } from '@/lib/copilot/tools/server/base-tool'
+import {
+  assertOpaqueWorkspaceFileModelSafe,
+  ServerToolModelInputError,
+} from '@/lib/copilot/tools/server/model-input'
 import { writeWorkspaceFileByPath } from '@/lib/copilot/vfs/resource-writer'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import {
@@ -135,8 +139,7 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
       return { success: false, message: 'Workspace ID is required' }
     }
 
-    const { prompt } = params
-    if (!prompt) {
+    if (!params.prompt) {
       return { success: false, message: 'prompt is required' }
     }
 
@@ -158,6 +161,7 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
           try {
             const fileRecord = await resolveWorkspaceFileReference(workspaceId, filePath)
             if (fileRecord) {
+              await assertOpaqueWorkspaceFileModelSafe({ workspaceId, file: fileRecord })
               const buffer = await fetchWorkspaceFileBuffer(fileRecord)
               const base64 = buffer.toString('base64')
               const mime = fileRecord.type || 'image/png'
@@ -174,6 +178,7 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
               logger.warn('Reference file not found, skipping', { filePath })
             }
           } catch (err) {
+            if (err instanceof ServerToolModelInputError) throw err
             logger.warn('Failed to load reference image, skipping', {
               filePath,
               error: toError(err).message,

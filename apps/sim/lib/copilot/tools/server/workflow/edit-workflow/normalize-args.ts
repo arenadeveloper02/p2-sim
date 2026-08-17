@@ -2,9 +2,7 @@
  * Coerces common model aliases into the canonical edit_workflow `operations` field
  * before AJV / local validation.
  */
-export function normalizeEditWorkflowArgs(
-  args: Record<string, unknown>
-): Record<string, unknown> {
+export function normalizeEditWorkflowArgs(args: Record<string, unknown>): Record<string, unknown> {
   const operations = resolveEditWorkflowOperations(args)
   if (!operations) return { ...args }
   return { ...args, operations }

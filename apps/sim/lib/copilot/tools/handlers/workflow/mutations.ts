@@ -144,7 +144,7 @@ async function executeCopilotWorkflowTarget(params: {
       await params.context.resolvedSecretTraceRegistry.importCrossingProvenance(
         result.executionState?.resolvedSecretTraceProvenance,
         { output: result.output, logs: result.logs, error: result.error },
-        { trusted: true }
+        { trusted: true, origin: 'copilotWorkflowMutation.runCrossing' }
       )
     }
     return result
@@ -159,7 +159,7 @@ async function executeCopilotWorkflowTarget(params: {
           error: executionResult?.error,
           thrownMessage: toError(error).message,
         },
-        { trusted: true }
+        { trusted: true, origin: 'copilotWorkflowMutation.failedRunCrossing' }
       )
     }
     if (admission.targetReservation) {

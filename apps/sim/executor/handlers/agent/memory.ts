@@ -1,17 +1,40 @@
 import { db } from '@sim/db'
-import { memory } from '@sim/db/schema'
+import { memory, memorySecretProvenance } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { isPlainRecord } from '@sim/utils/object'
 import { and, eq, sql } from 'drizzle-orm'
-import { generateRequestId } from '@/lib/core/utils/request'
+import {
+  bindDurableSecretProvenanceToValue,
+  durableSecretProvenanceFromRegistry,
+  filterDurableSecretProvenanceBySourceValues,
+  importDurableSecretProvenance,
+  mergeDurableSecretProvenance,
+} from '@/lib/execution/durable-secret-provenance'
+import {
+  isDurableSecretProvenanceEnforced,
+  reportUnrecordedDurableProvenance,
+} from '@/lib/execution/durable-secret-provenance-enforcement'
 import { redactObjectStrings } from '@/lib/logs/execution/pii-redaction'
+import {
+  readBoundMemorySecretProvenance,
+  replaceMemorySecretProvenanceInTx,
+} from '@/lib/memory/secret-provenance'
 import { getAccurateTokenCount } from '@/lib/tokenization/estimators'
 import { MEMORY } from '@/executor/constants'
 import type { AgentInputs, Message } from '@/executor/handlers/agent/types'
 import type { ExecutionContext } from '@/executor/types'
+import {
+  projectResolvedSecretModelContent,
+  projectResolvedSecretModelJsonStrings,
+} from '@/executor/utils/resolved-secret-content-projection'
+import { refuseResolvedSecretProjection } from '@/executor/utils/resolved-secret-projection-refusal'
+import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import { PROVIDER_DEFINITIONS } from '@/providers/models'
 
 const logger = createLogger('Memory')
+
+const MEMORY_CONTENT_REFUSAL = 'Memory content could not be safely projected'
 
 export class Memory {
   async getMemoryContextMessages(ctx: ExecutionContext, inputs: AgentInputs): Promise<Message[]> {
@@ -69,420 +92,118 @@ export class Memory {
       return []
     }
 
-    // This method is no longer used since we use semantic search instead
-    // Keeping for backward compatibility but returning empty array
-    // Conversation history is now retrieved via searchMemories in buildMessages
-    return []
-  }
+    const workspaceId = this.requireWorkspaceId(ctx)
+    this.validateConversationId(inputs.conversationId)
 
-  /**
-   * Search memories using semantic search API
-   * Replaces chronological memory fetch with semantic search
-   */
-  async searchMemories(
-    ctx: ExecutionContext,
-    inputs: AgentInputs,
-    blockId: string,
-    userPrompt?: string,
-    isConversation?: boolean,
-    includeConversationId?: boolean
-  ): Promise<Message[]> {
-    // Only call Mem0 API for chat trigger type
-    const triggerType = ctx.metadata?.triggerType
-    if (triggerType !== 'chat') {
-      logger.debug('Skipping memory search: triggerType is not "chat"', { triggerType })
-      return []
-    }
+    const stored = await this.fetchMemory(workspaceId, inputs.conversationId!)
+    let messages: Message[]
 
-    // Skip if userId is not available (required for search API)
-    if (!ctx.userId) {
-      logger.warn('Cannot search memories without userId in execution context')
-      return []
-    }
+    switch (inputs.memoryType) {
+      case 'conversation':
+        messages = this.applyContextWindowLimit(stored.messages, inputs.model)
+        break
 
-    try {
-      // Extract query from user prompt
-      // Allow empty query to fetch recent messages when needed
-      const query = userPrompt || ''
-
-      // Build filters object with conversationId if present, otherwise filter by userId only
-      const filters: Record<string, any> = {}
-
-      // If conversationId is present, filter by it; otherwise filter by userId only
-      if (includeConversationId && inputs.conversationId) {
-        filters.conversation_id = inputs.conversationId
-      }
-      // Note: userId is automatically included in the searchMemoryAPI call
-
-      if (isConversation === true) {
-        filters.memory_type = 'conversation'
-      } else {
-        filters.memory_type = 'fact'
+      case 'sliding_window': {
+        const limit = this.parsePositiveInt(
+          inputs.slidingWindowSize,
+          MEMORY.DEFAULT_SLIDING_WINDOW_SIZE
+        )
+        messages = this.applyWindow(stored.messages, limit)
+        break
       }
 
-      const isDeployed = ctx.isDeployedContext ?? false
+      case 'sliding_window_tokens': {
+        const maxTokens = this.parsePositiveInt(
+          inputs.slidingWindowTokens,
+          MEMORY.DEFAULT_SLIDING_WINDOW_TOKENS
+        )
+        messages = this.applyTokenWindow(stored.messages, maxTokens, inputs.model)
+        break
+      }
 
-      const requestId = generateRequestId()
+      default:
+        messages = stored.messages
+    }
 
-      // Dynamically import searchMemoryAPI to avoid circular dependencies
-      const { searchMemoryAPI } = await import('@/app/api/chat/memory-api')
-
-      // Call search API
-      // run_id and agent_id are not provided (optional and not needed)
-      const searchResults = await searchMemoryAPI(
-        requestId,
-        query,
-        ctx.userId,
-        Object.keys(filters).length > 0 ? filters : undefined,
-        undefined, // runId
-        undefined, // agentId
-        isDeployed
-      )
-
-      if (!searchResults) {
-        logger.debug('No search results returned from memory API', {
-          requestId,
+    const selectedProvenance = filterDurableSecretProvenanceBySourceValues(
+      stored.provenance,
+      messages
+    )
+    /**
+     * Unrecorded provenance is checked through the same policy the shared import uses, so stored
+     * memory written by a run that could not vouch does not permanently refuse every later turn.
+     */
+    let refuseStoredProvenance: boolean
+    if (selectedProvenance.status === 'unknown') {
+      refuseStoredProvenance = isDurableSecretProvenanceEnforced('memory')
+      if (!refuseStoredProvenance) {
+        reportUnrecordedDurableProvenance({
+          surface: 'memory',
+          cause: 'stored-memory-provenance-unknown',
+          ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
         })
-        return []
       }
-
-      // Filter results by score threshold
-      // 1. Ignore results where score = 0
-      // 2. Ignore results where score > 0.50 (threshold)
-      const SCORE_THRESHOLD = 0.5
-
-      // Extract original count for logging
-      let originalCount = 0
-      if (Array.isArray(searchResults)) {
-        originalCount = searchResults.length
-      } else if (searchResults?.results && Array.isArray(searchResults.results)) {
-        originalCount = searchResults.results.length
-      } else if (searchResults?.memories && Array.isArray(searchResults.memories)) {
-        originalCount = searchResults.memories.length
-      } else if (searchResults?.data && Array.isArray(searchResults.data)) {
-        originalCount = searchResults.data.length
-      }
-
-      const filteredSearchResults = this.filterResultsByThreshold(searchResults, SCORE_THRESHOLD)
-
-      // Extract filtered count for logging
-      let filteredCount = 0
-      if (Array.isArray(filteredSearchResults)) {
-        filteredCount = filteredSearchResults.length
-      } else if (filteredSearchResults?.results && Array.isArray(filteredSearchResults.results)) {
-        filteredCount = filteredSearchResults.results.length
-      } else if (filteredSearchResults?.memories && Array.isArray(filteredSearchResults.memories)) {
-        filteredCount = filteredSearchResults.memories.length
-      } else if (filteredSearchResults?.data && Array.isArray(filteredSearchResults.data)) {
-        filteredCount = filteredSearchResults.data.length
-      }
-
-      // Convert search results to Message[] format
-      const messages = this.convertSearchResultsToMessages(filteredSearchResults)
-
-      logger.debug('Converted search results to messages', {
-        requestId,
-        originalResultsCount: originalCount,
-        filteredResultsCount: filteredCount,
-        outputMessageCount: messages.length,
-      })
-
-      return messages
-    } catch (error) {
-      logger.error('Failed to search memories:', error)
-      return []
+    } else {
+      refuseStoredProvenance =
+        (selectedProvenance.entries.length > 0 && !ctx.resolvedSecretTraceRegistry) ||
+        (ctx.resolvedSecretTraceRegistry !== undefined &&
+          !(await importDurableSecretProvenance(
+            ctx.resolvedSecretTraceRegistry,
+            selectedProvenance,
+            messages,
+            'memory'
+          )))
     }
-  }
-
-  /**
-   * Filter search results by score threshold
-   * 1. Ignore results where score = 0
-   * 2. Ignore results where score > threshold
-   * Preserves the original response structure
-   */
-  private filterResultsByThreshold(searchResults: any, threshold: number): any {
-    try {
-      // Handle different possible response structures
-      let results: any[] = []
-      let originalStructure: 'array' | 'results' | 'memories' | 'data' = 'array'
-
-      if (Array.isArray(searchResults)) {
-        results = searchResults
-        originalStructure = 'array'
-      } else if (searchResults.results && Array.isArray(searchResults.results)) {
-        results = searchResults.results
-        originalStructure = 'results'
-      } else if (searchResults.memories && Array.isArray(searchResults.memories)) {
-        results = searchResults.memories
-        originalStructure = 'memories'
-      } else if (searchResults.data && Array.isArray(searchResults.data)) {
-        results = searchResults.data
-        originalStructure = 'data'
-      }
-
-      // Filter results by score threshold
-      const filteredResults = results.filter((result) => {
-        const score = result.score ?? 1.0 // Default to 1.0 if score is missing
-        return score !== 0 && score <= threshold
+    if (refuseStoredProvenance) {
+      refuseResolvedSecretProjection({
+        site: 'memory.storedProvenanceImport',
+        message: MEMORY_CONTENT_REFUSAL,
+        registry: ctx.resolvedSecretTraceRegistry,
+        inputPath: 'messages',
       })
-
-      // Reconstruct the response in the same format
-      if (originalStructure === 'array') {
-        return filteredResults
-      }
-      if (originalStructure === 'results') {
-        return { ...searchResults, results: filteredResults }
-      }
-      if (originalStructure === 'memories') {
-        return { ...searchResults, memories: filteredResults }
-      }
-      if (originalStructure === 'data') {
-        return { ...searchResults, data: filteredResults }
-      }
-
-      // Fallback: return original if structure is unknown
-      return searchResults
-    } catch (error) {
-      logger.error('Error filtering search results by threshold:', error)
-      return searchResults
     }
-  }
 
-  /**
-   * Convert search API results to Message[] format
-   * Handles different response structures from the search API
-   */
-  private convertSearchResultsToMessages(searchResults: any): Message[] {
-    const messages: Message[] = []
-
-    try {
-      // Handle different possible response structures
-      let results: any[] = []
-
-      if (Array.isArray(searchResults)) {
-        results = searchResults
-      } else if (searchResults.results && Array.isArray(searchResults.results)) {
-        results = searchResults.results
-      } else if (searchResults.memories && Array.isArray(searchResults.memories)) {
-        results = searchResults.memories
-      } else if (searchResults.data && Array.isArray(searchResults.data)) {
-        results = searchResults.data
-      }
-
-      for (const result of results) {
-        // The search API returns results with structure:
-        // { id, memory (content string), role (optional), metadata, score, ... }
-        // Fact memories may not have a role field
-        if (result && typeof result === 'object') {
-          // Check if result has memory (content) and role fields directly
-          if (result.memory && typeof result.memory === 'string' && result.role) {
-            // Direct structure: { memory: "content", role: "user|assistant" }
-            messages.push({
-              role: result.role as 'system' | 'user' | 'assistant',
-              content: result.memory,
-            })
-          } else if (result.memory && typeof result.memory === 'string' && !result.role) {
-            // Fact memories: { memory: "content" } without role field - default to 'user'
-            messages.push({
-              role: 'user',
-              content: result.memory,
-            })
-          } else if (result.content && result.role) {
-            // Alternative structure: { content: "text", role: "user|assistant" }
-            messages.push({
-              role: result.role as 'system' | 'user' | 'assistant',
-              content: result.content,
-            })
-          } else if (result.content && !result.role) {
-            // Content without role field - default to 'user'
-            messages.push({
-              role: 'user',
-              content: result.content,
-            })
-          } else if (result.messages && Array.isArray(result.messages)) {
-            // If result contains messages array
-            for (const msg of result.messages) {
-              if (msg && typeof msg === 'object' && msg.role && msg.content) {
-                messages.push({
-                  role: msg.role as 'system' | 'user' | 'assistant',
-                  content: msg.content,
-                })
-              }
-            }
-          } else if (result.memory && typeof result.memory === 'object') {
-            // If memory is an object, check for nested structure
-            const memory = result.memory
-            if (memory.messages && Array.isArray(memory.messages)) {
-              for (const msg of memory.messages) {
-                if (msg && typeof msg === 'object' && msg.role && msg.content) {
-                  messages.push({
-                    role: msg.role as 'system' | 'user' | 'assistant',
-                    content: msg.content,
-                  })
-                }
-              }
-            } else if (memory.role && memory.content) {
-              messages.push({
-                role: memory.role as 'system' | 'user' | 'assistant',
-                content: memory.content,
-              })
-            }
-          }
+    return Promise.all(
+      messages.map(async (message) => {
+        const messageProvenance = filterDurableSecretProvenanceBySourceValues(selectedProvenance, [
+          message,
+        ])
+        const modelRegistry = new ResolvedSecretTraceRegistry(
+          [],
+          ctx.resolvedSecretTraceRegistry?.exportProvenance().scope
+        )
+        if (
+          !(await importDurableSecretProvenance(
+            modelRegistry,
+            messageProvenance,
+            message,
+            'memory'
+          ))
+        ) {
+          refuseResolvedSecretProjection({
+            site: 'memory.messageProvenanceImport',
+            message: MEMORY_CONTENT_REFUSAL,
+            registry: modelRegistry,
+            inputPath: 'messages',
+          })
         }
-      }
-
-      logger.debug('Converted search results to messages', {
-        inputResults: results.length,
-        outputMessages: messages.length,
+        return this.projectMessageForModel(modelRegistry, message)
       })
-    } catch (error) {
-      logger.error('Error converting search results to messages:', error)
-    }
-
-    return messages
+    )
   }
 
-  /**
-   * Call Mem0 API to store memories in external service
-   * This is an add-on feature that doesn't block main memory operations
-   * Calls the API twice: once for conversation memory, once for fact memory
-   * - Conversation memory: sends the current turn (last user message + assistant message)
-   * - Fact memory: sends only the user message (no assistant response)
-   * @param ctx - Execution context
-   * @param inputs - Agent inputs containing conversationId
-   * @param assistantMessage - The assistant message that was just persisted
-   * @param blockId - Block ID for metadata
-   * @param lastUserMessage - The last user message (used for fact memory)
-   */
-  async callMem0API(
-    ctx: ExecutionContext,
-    inputs: AgentInputs,
-    assistantMessage: Message,
-    blockId: string,
-    lastUserMessage: Message | null
-  ): Promise<void> {
-    // Only call Mem0 API for chat trigger type
-    const triggerType = ctx.metadata?.triggerType
-    if (triggerType !== 'chat') {
-      logger.debug('Skipping Mem0 API call: triggerType is not "chat"', { triggerType })
-      return
-    }
-
-    // Skip if userId is not available (required for Mem0 API)
-    if (!ctx.userId) {
-      logger.debug('Skipping Mem0 API call: userId not available in execution context')
-      return
-    }
-
-    // If no user message provided, try to search for it in Mem0
-    const userMessage: Message | null = lastUserMessage
-
-    if (!userMessage) {
-      // If no user message provided and we have conversationId, try to get it from recent messages
-      // Note: This is a fallback - ideally the user message should be passed when storing assistant message
-      logger.debug(
-        'No user message provided to callMem0API, will attempt to find it from Mem0 if conversationId exists'
+  private captureMessagesProvenance(
+    registry: ResolvedSecretTraceRegistry,
+    messages: readonly Message[]
+  ): ReturnType<typeof durableSecretProvenanceFromRegistry> {
+    return mergeDurableSecretProvenance(
+      ...messages.map((message) =>
+        bindDurableSecretProvenanceToValue(
+          durableSecretProvenanceFromRegistry(registry, message),
+          message
+        )
       )
-    }
-
-    // If still no user message, we can't store the turn properly
-    if (!userMessage) {
-      logger.debug('Skipping Mem0 API call: no user message found')
-      return
-    }
-
-    try {
-      // For conversation memory: send the current turn (last user message + assistant message)
-      const currentTurnMessages: Message[] = [userMessage, assistantMessage]
-
-      // For fact memory: only send the user message (no assistant response)
-      const currentTurnFactMessages: Message[] = [userMessage]
-
-      // Convert Message[] to the format expected by callMemoryAPI
-      const messagesForAPI = currentTurnMessages.map((msg) => ({
-        role: msg.role,
-        content: msg.content,
-      }))
-
-      // Convert fact messages to the format expected by callMemoryAPI (only user message)
-      const factMessagesForAPI = currentTurnFactMessages.map((msg) => ({
-        role: msg.role,
-        content: msg.content,
-      }))
-
-      // Use executionId as chatId, fallback to workflowId
-      const chatId = ctx.executionId || ctx.workflowId
-
-      const requestId = generateRequestId()
-      const isDeployed = ctx.isDeployedContext ?? false
-
-      // Dynamically import callMemoryAPI to avoid circular dependencies
-      const { callMemoryAPI } = await import('@/app/api/chat/memory-api')
-
-      // Call 1: Store as fact memory (infer: true)
-      // Only user message is sent for fact memory, not assistant response
-      try {
-        await callMemoryAPI(
-          requestId,
-          factMessagesForAPI,
-          ctx.userId,
-          chatId,
-          inputs.conversationId, // Can be undefined, Mem0 will handle it
-          true, // infer: true
-          'fact', // memoryType: 'fact'
-          blockId,
-          isDeployed,
-          ctx.workflowId,
-          ctx.workspaceId
-        )
-        logger.debug('Successfully called Mem0 API for fact memory', {
-          workflowId: ctx.workflowId,
-          conversationId: inputs.conversationId,
-          blockId,
-          messageCount: factMessagesForAPI.length,
-        })
-      } catch (error) {
-        logger.warn('Failed to call Mem0 API for fact memory (non-blocking)', {
-          error,
-          workflowId: ctx.workflowId,
-        })
-      }
-
-      // Call 2: Store as conversation memory (infer: false)
-      try {
-        await callMemoryAPI(
-          requestId,
-          messagesForAPI,
-          ctx.userId,
-          chatId,
-          inputs.conversationId, // Can be undefined, Mem0 will handle it
-          false, // infer: false
-          'conversation', // memoryType: 'conversation'
-          blockId,
-          isDeployed,
-          ctx.workflowId,
-          ctx.workspaceId
-        )
-        logger.debug('Successfully called Mem0 API for conversation memory', {
-          workflowId: ctx.workflowId,
-          conversationId: inputs.conversationId,
-          blockId,
-          messageCount: messagesForAPI.length,
-        })
-      } catch (error) {
-        logger.warn('Failed to call Mem0 API for conversation memory (non-blocking)', {
-          error,
-          workflowId: ctx.workflowId,
-        })
-      }
-    } catch (error) {
-      // Log but don't throw - this is an add-on feature
-      logger.warn('Error in Mem0 API integration (non-blocking)', {
-        error,
-        workflowId: ctx.workflowId,
-        blockId,
-      })
-    }
+    )
   }
 
   async appendToMemory(
@@ -503,30 +224,17 @@ export class Memory {
 
     this.validateContent(message.content)
 
-    if (!ctx.workspaceId) {
-      logger.warn('Skipping memory storage: workspaceId not available', {
-        workflowId: ctx.workflowId,
-      })
-      return
-    }
+    const key = inputs.conversationId!
+    const provenance = ctx.resolvedSecretTraceRegistry
+      ? this.captureMessagesProvenance(ctx.resolvedSecretTraceRegistry, [message])
+      : undefined
 
-    const conversationId = inputs.conversationId
-    if (!conversationId) {
-      return
-    }
+    await this.appendMessage(workspaceId, key, message, provenance)
 
-    this.validateConversationId(conversationId)
-
-    if (message.role === 'assistant') {
-      if (lastUserMessage) {
-        this.validateContent(lastUserMessage.content)
-        await this.appendMessage(ctx.workspaceId, conversationId, lastUserMessage)
-      }
-      await this.appendMessage(ctx.workspaceId, conversationId, message)
-      return
-    }
-
-    await this.appendMessage(ctx.workspaceId, conversationId, message)
+    logger.debug('Appended message to memory', {
+      workspaceId,
+      role: message.role,
+    })
   }
 
   async seedMemory(ctx: ExecutionContext, inputs: AgentInputs, messages: Message[]): Promise<void> {
@@ -566,12 +274,14 @@ export class Memory {
       messagesToStore.map((message) => this.maskContentForStorage(ctx, message))
     )
 
-    await this.seedMemoryRecord(ctx.workspaceId, conversationId, conversationMessages)
+    const provenance = ctx.resolvedSecretTraceRegistry
+      ? this.captureMessagesProvenance(ctx.resolvedSecretTraceRegistry, messagesToStore)
+      : undefined
+    await this.seedMemoryRecord(workspaceId, key, messagesToStore, provenance)
 
     logger.debug('Seeded memory', {
-      workspaceId: ctx.workspaceId,
-      key: conversationId,
-      count: conversationMessages.length,
+      workspaceId,
+      count: messagesToStore.length,
     })
   }
 
@@ -594,6 +304,141 @@ export class Memory {
         onFailure: 'throw',
       }),
     }
+  }
+
+  private projectMessageForModel(registry: ResolvedSecretTraceRegistry, message: Message): Message {
+    const functionArguments = this.readFunctionCallArguments(
+      message.function_call,
+      registry,
+      'function_call'
+    )
+    const toolArguments = message.tool_calls?.map((toolCall) => {
+      if (!isPlainRecord(toolCall)) {
+        refuseResolvedSecretProjection({
+          site: 'memory.toolCallShape',
+          message: MEMORY_CONTENT_REFUSAL,
+          registry,
+          inputPath: 'tool_calls',
+        })
+      }
+      return this.readFunctionCallArguments(toolCall.function, registry, 'tool_calls.function')
+    })
+    const contentProjection = projectResolvedSecretModelContent(message.content, registry)
+    const argumentProjection = projectResolvedSecretModelJsonStrings(
+      [functionArguments, ...(toolArguments ?? [])],
+      registry
+    )
+    if (
+      !contentProjection.safe ||
+      typeof contentProjection.value !== 'string' ||
+      !argumentProjection.safe ||
+      !Array.isArray(argumentProjection.value) ||
+      argumentProjection.value.length !== 1 + (toolArguments?.length ?? 0)
+    ) {
+      refuseResolvedSecretProjection({
+        site: 'memory.messageContentProjection',
+        message: MEMORY_CONTENT_REFUSAL,
+        registry,
+        inputPath: 'content,function_call,tool_calls',
+      })
+    }
+
+    const content = contentProjection.value
+    const [projectedFunctionArguments, ...projectedToolArguments] = argumentProjection.value
+    if (
+      (functionArguments !== undefined && typeof projectedFunctionArguments !== 'string') ||
+      (functionArguments === undefined && projectedFunctionArguments !== undefined)
+    ) {
+      refuseResolvedSecretProjection({
+        site: 'memory.functionCallArgumentProjection',
+        message: MEMORY_CONTENT_REFUSAL,
+        registry,
+        inputPath: 'function_call.arguments',
+      })
+    }
+    if (
+      (toolArguments !== undefined && projectedToolArguments.length !== toolArguments.length) ||
+      (toolArguments === undefined && projectedToolArguments.length !== 0)
+    ) {
+      refuseResolvedSecretProjection({
+        site: 'memory.toolCallArgumentArity',
+        message: MEMORY_CONTENT_REFUSAL,
+        registry,
+        inputPath: 'tool_calls.function.arguments',
+      })
+    }
+
+    const projectedToolCalls = message.tool_calls?.map((toolCall, index) => {
+      const argument = (projectedToolArguments as unknown[])[index]
+      const originalFunction = isPlainRecord(toolCall) ? toolCall.function : undefined
+      if (originalFunction === undefined || originalFunction === null) return toolCall
+      if (!isPlainRecord(originalFunction)) {
+        refuseResolvedSecretProjection({
+          site: 'memory.toolCallFunctionShape',
+          message: MEMORY_CONTENT_REFUSAL,
+          registry,
+          inputPath: 'tool_calls.function',
+        })
+      }
+      if (!Object.hasOwn(originalFunction, 'arguments')) return toolCall
+      if (typeof argument !== 'string') {
+        refuseResolvedSecretProjection({
+          site: 'memory.toolCallArgumentType',
+          message: MEMORY_CONTENT_REFUSAL,
+          registry,
+          inputPath: 'tool_calls.function.arguments',
+        })
+      }
+      return {
+        ...toolCall,
+        function: { ...originalFunction, arguments: argument },
+      }
+    })
+
+    let projectedFunctionCall = message.function_call
+    if (isPlainRecord(message.function_call) && Object.hasOwn(message.function_call, 'arguments')) {
+      projectedFunctionCall = {
+        ...message.function_call,
+        arguments: projectedFunctionArguments,
+      }
+    }
+
+    return {
+      ...message,
+      content,
+      ...(message.function_call !== undefined ? { function_call: projectedFunctionCall } : {}),
+      ...(projectedToolCalls !== undefined ? { tool_calls: projectedToolCalls } : {}),
+    }
+  }
+
+  /**
+   * Takes the registry and path from its caller so a refusal here reports the run that failed.
+   * Without them the refusal would deduplicate process-wide and name no cause.
+   */
+  private readFunctionCallArguments(
+    functionCall: unknown,
+    registry: ResolvedSecretTraceRegistry,
+    inputPath: string
+  ): string | undefined {
+    if (functionCall === undefined || functionCall === null) return undefined
+    if (!isPlainRecord(functionCall)) {
+      refuseResolvedSecretProjection({
+        site: 'memory.functionCallShape',
+        message: MEMORY_CONTENT_REFUSAL,
+        registry,
+        inputPath,
+      })
+    }
+    if (!Object.hasOwn(functionCall, 'arguments')) return undefined
+    if (typeof functionCall.arguments !== 'string') {
+      refuseResolvedSecretProjection({
+        site: 'memory.functionCallArgumentType',
+        message: MEMORY_CONTENT_REFUSAL,
+        registry,
+        inputPath,
+      })
+    }
+    return functionCall.arguments
   }
 
   private requireWorkspaceId(ctx: ExecutionContext): string {
@@ -655,19 +500,39 @@ export class Memory {
     return messages
   }
 
-  private async fetchMemory(workspaceId: string, key: string): Promise<Message[]> {
+  private async fetchMemory(
+    workspaceId: string,
+    key: string
+  ): Promise<{
+    messages: Message[]
+    provenance: ReturnType<typeof readBoundMemorySecretProvenance>
+  }> {
     const result = await db
-      .select({ data: memory.data })
+      .select({
+        data: memory.data,
+        secretProvenanceVersion: memory.secretProvenanceVersion,
+        provenanceContentHash: memorySecretProvenance.contentHash,
+        provenanceStatus: memorySecretProvenance.status,
+        provenanceEntries: memorySecretProvenance.entries,
+      })
       .from(memory)
+      .leftJoin(memorySecretProvenance, eq(memorySecretProvenance.memoryId, memory.id))
       .where(and(eq(memory.workspaceId, workspaceId), eq(memory.key, key)))
       .limit(1)
 
-    if (result.length === 0) return []
+    if (result.length === 0) {
+      return { messages: [], provenance: { status: 'exact', entries: [] } }
+    }
 
     const data = result[0].data
-    if (!Array.isArray(data)) return []
-
-    return data
+    const provenance = readBoundMemorySecretProvenance({
+      secretProvenanceVersion: result[0].secretProvenanceVersion,
+      data,
+      provenanceContentHash: result[0].provenanceContentHash,
+      status: result[0].provenanceStatus,
+      entries: result[0].provenanceEntries,
+    })
+    const messages = (Array.isArray(data) ? data : [])
       .filter(
         (msg): msg is Message =>
           msg &&
@@ -678,52 +543,111 @@ export class Memory {
           typeof msg.content === 'string'
       )
       .map((msg) => this.sanitizeMessageForStorage(msg))
+    return { messages, provenance }
   }
 
   private async seedMemoryRecord(
     workspaceId: string,
     key: string,
-    messages: Message[]
+    messages: Message[],
+    provenance: ReturnType<typeof durableSecretProvenanceFromRegistry> | undefined
   ): Promise<void> {
     const now = new Date()
 
     const sanitizedMessages = messages.map((message) => this.sanitizeMessageForStorage(message))
 
-    await db
-      .insert(memory)
-      .values({
-        id: generateId(),
-        workspaceId,
-        key,
-        data: sanitizedMessages,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing()
+    await db.transaction(async (tx) => {
+      const id = generateId()
+      const [inserted] = await tx
+        .insert(memory)
+        .values({
+          id,
+          workspaceId,
+          key,
+          data: sanitizedMessages,
+          secretProvenanceVersion: provenance ? 1 : null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing()
+        .returning({ id: memory.id })
+      if (inserted && provenance) {
+        await replaceMemorySecretProvenanceInTx(tx, id, sanitizedMessages, provenance)
+      }
+    })
   }
 
-  private async appendMessage(workspaceId: string, key: string, message: Message): Promise<void> {
+  private async appendMessage(
+    workspaceId: string,
+    key: string,
+    message: Message,
+    messageProvenance: ReturnType<typeof durableSecretProvenanceFromRegistry> | undefined
+  ): Promise<void> {
     const now = new Date()
 
     const sanitizedMessage = this.sanitizeMessageForStorage(message)
 
-    await db
-      .insert(memory)
-      .values({
-        id: generateId(),
-        workspaceId,
-        key,
-        data: [sanitizedMessage],
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [memory.workspaceId, memory.key],
-        set: {
-          data: sql`${memory.data} || ${JSON.stringify([sanitizedMessage])}::jsonb`,
+    await db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select({
+          id: memory.id,
+          data: memory.data,
+          updatedAt: memory.updatedAt,
+          secretProvenanceVersion: memory.secretProvenanceVersion,
+        })
+        .from(memory)
+        .where(and(eq(memory.workspaceId, workspaceId), eq(memory.key, key)))
+        .limit(1)
+        .for('update')
+
+      if (!existing) {
+        const id = generateId()
+        await tx.insert(memory).values({
+          id,
+          workspaceId,
+          key,
+          data: [sanitizedMessage],
+          secretProvenanceVersion: messageProvenance ? 1 : null,
+          createdAt: now,
           updatedAt: now,
-        },
+        })
+        if (messageProvenance) {
+          await replaceMemorySecretProvenanceInTx(tx, id, [sanitizedMessage], messageProvenance)
+        }
+        return
+      }
+
+      const [sidecar] = await tx
+        .select()
+        .from(memorySecretProvenance)
+        .where(eq(memorySecretProvenance.memoryId, existing.id))
+        .limit(1)
+      const previousProvenance = readBoundMemorySecretProvenance({
+        secretProvenanceVersion: existing.secretProvenanceVersion,
+        data: existing.data,
+        provenanceContentHash: sidecar?.contentHash ?? null,
+        status: sidecar?.status ?? null,
+        entries: sidecar?.entries,
       })
+      const previousData = Array.isArray(existing.data) ? existing.data : []
+      const nextData = [...previousData, sanitizedMessage]
+      await tx
+        .update(memory)
+        .set({
+          data: sql`${memory.data} || ${JSON.stringify([sanitizedMessage])}::jsonb`,
+          secretProvenanceVersion: messageProvenance ? 1 : existing.secretProvenanceVersion,
+          updatedAt: now,
+        })
+        .where(eq(memory.id, existing.id))
+      if (messageProvenance) {
+        await replaceMemorySecretProvenanceInTx(
+          tx,
+          existing.id,
+          nextData,
+          mergeDurableSecretProvenance(previousProvenance, messageProvenance)
+        )
+      }
+    })
   }
 
   private parsePositiveInt(value: string | undefined, defaultValue: number): number {

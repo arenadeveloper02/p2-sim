@@ -12,11 +12,6 @@ export const executionIdParamsSchema = z.object({
   executionId: z.string().min(1),
 })
 
-export const cancelWorkflowExecutionParamsSchema = z.object({
-  id: z.string().min(1, 'Invalid workflow ID'),
-  executionId: z.string().min(1, 'Invalid execution ID'),
-})
-
 const logFilterQuerySchema = z.object({
   workspaceId: z.string(),
   level: z.string().optional(),
@@ -251,6 +246,7 @@ export const workflowLogSummarySchema = z.object({
   status: z.string().nullable(),
   duration: z.string().nullable(),
   trigger: z.string().nullable(),
+  executionOrigin: z.enum(['workflow_group']).nullable(),
   createdAt: z.string(),
   workflow: workflowSummarySchema.nullable(),
   jobTitle: z.string().nullable(),
@@ -336,21 +332,10 @@ export const triggersQuerySchema = z.object({
 })
 export type TriggersQuery = z.output<typeof triggersQuerySchema>
 
-export const cancelWorkflowExecutionResponseSchema = z.object({
-  success: z.boolean(),
-  executionId: z.string(),
-  redisAvailable: z.boolean(),
-  durablyRecorded: z.boolean(),
-  locallyAborted: z.boolean(),
-  pausedCancelled: z.boolean(),
-  reason: z.enum(['recorded', 'redis_unavailable', 'redis_write_failed']),
-})
-
 export type SegmentStats = z.output<typeof segmentStatsSchema>
 export type WorkflowStats = z.output<typeof workflowStatsSchema>
 export type DashboardStatsResponse = z.output<typeof dashboardStatsResponseSchema>
 export type ExecutionSnapshotData = z.output<typeof executionSnapshotDataSchema>
-export type CancelWorkflowExecutionResponse = z.output<typeof cancelWorkflowExecutionResponseSchema>
 
 export const listLogsContract = defineRouteContract({
   method: 'GET',

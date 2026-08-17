@@ -30,6 +30,12 @@ import {
   waitForLocalToolConfirmation,
 } from '@/local-copilot/lib/security/request-tool-confirmation'
 import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
+import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
+import {
+  formatToolResultForLlm,
+  sortToolCallsForExecution,
+} from '@/local-copilot/lib/tools/format-tool-result'
+import type { LocalCopilotStreamEvent, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 import { mutationRequiresVerification } from '@/local-copilot/lib/verification/policy'
 import { runPostMutationVerification } from '@/local-copilot/lib/verification/run-verification'
 import { buildSpecialistStructuredResult } from '@/local-copilot/lib/verification/specialist-result'
@@ -38,12 +44,6 @@ import type {
   SpecialistStructuredResult,
   VerificationRecord,
 } from '@/local-copilot/lib/verification/types'
-import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
-import {
-  formatToolResultForLlm,
-  sortToolCallsForExecution,
-} from '@/local-copilot/lib/tools/format-tool-result'
-import type { LocalCopilotStreamEvent, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotSpecialistPass')
 
@@ -446,9 +446,13 @@ export async function executeSpecialistLoop(
           params.toolCtx.workflowRevision = refreshed.workflowRevision
         }
 
-        const llmPayload = formatToolResultForLlm(call.name, toolResult.result ?? toolResult.error, {
-          artifactStore: params.toolCtx.artifactStore,
-        })
+        const llmPayload = formatToolResultForLlm(
+          call.name,
+          toolResult.result ?? toolResult.error,
+          {
+            artifactStore: params.toolCtx.artifactStore,
+          }
+        )
         findings.push(truncate(`[${call.name}] ${llmPayload}`, 4_000))
         if (!toolResult.success && toolResult.error) {
           errors.push(toolResult.error)
@@ -498,9 +502,7 @@ export async function executeSpecialistLoop(
               params.onEvent
             )
             if (verification.status === 'failed') {
-              errors.push(
-                `${verification.verifierToolName} failed for ${verification.toolName}`
-              )
+              errors.push(`${verification.verifierToolName} failed for ${verification.toolName}`)
             }
           }
         }
@@ -512,7 +514,10 @@ export async function executeSpecialistLoop(
       }
     }
 
-    const findingsText = truncate(findings.filter(Boolean).join('\n\n'), SPECIALIST_FINDINGS_MAX_CHARS)
+    const findingsText = truncate(
+      findings.filter(Boolean).join('\n\n'),
+      SPECIALIST_FINDINGS_MAX_CHARS
+    )
 
     if (signal.aborted && chatId) {
       await persistSpecialistCheckpoint(chatId, params.userId, {

@@ -9,7 +9,6 @@ import { encryptSecret } from '@/lib/core/security/encryption'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import {
   getWorkflowDeploymentSummary,
-  type PerformFullDeployParams,
   performFullDeploy,
 } from '@/lib/workflows/orchestration/deploy'
 import { checkNeedsRedeployment } from '@/app/api/workflows/utils'
@@ -40,7 +39,6 @@ export interface ChatDeployPayload {
   /** When true, public SSE may expose tool lifecycle if the client opts into agent-events-v1. */
   includeToolCalls?: boolean
   workspaceId?: string | null
-  deployOptions?: Pick<PerformFullDeployParams, 'requestId' | 'actorId'>
   /** Stable identity for the underlying workflow deployment operation. */
   idempotencyKey?: string
 }

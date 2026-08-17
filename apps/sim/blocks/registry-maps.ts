@@ -65,9 +65,11 @@ import { DSPyBlock, DSPyBlockMeta } from '@/blocks/blocks/dspy'
 import { DubBlock, DubBlockMeta } from '@/blocks/blocks/dub'
 import { DuckDuckGoBlock, DuckDuckGoBlockMeta } from '@/blocks/blocks/duckduckgo'
 import { DynamoDBBlock, DynamoDBBlockMeta } from '@/blocks/blocks/dynamodb'
+import { DynatraceBlock, DynatraceBlockMeta } from '@/blocks/blocks/dynatrace'
 import { ElasticsearchBlock, ElasticsearchBlockMeta } from '@/blocks/blocks/elasticsearch'
 import { ElevenLabsBlock, ElevenLabsBlockMeta } from '@/blocks/blocks/elevenlabs'
 import { EmailBisonBlock, EmailBisonBlockMeta } from '@/blocks/blocks/emailbison'
+import { EmbeddingsBlock, EmbeddingsBlockMeta } from '@/blocks/blocks/embeddings'
 import { EnrichBlock, EnrichBlockMeta } from '@/blocks/blocks/enrich'
 import { EnrichmentBlock, EnrichmentBlockMeta } from '@/blocks/blocks/enrichment'
 import { EnrowBlock, EnrowBlockMeta } from '@/blocks/blocks/enrow'
@@ -212,6 +214,7 @@ import {
 import { MicrosoftPlannerBlock, MicrosoftPlannerBlockMeta } from '@/blocks/blocks/microsoft_planner'
 import { MicrosoftTeamsBlock, MicrosoftTeamsBlockMeta } from '@/blocks/blocks/microsoft_teams'
 import { MillionVerifierBlock, MillionVerifierBlockMeta } from '@/blocks/blocks/millionverifier'
+import { MintlifyBlock, MintlifyBlockMeta } from '@/blocks/blocks/mintlify'
 import {
   MistralParseBlock,
   MistralParseBlockMeta,
@@ -292,7 +295,9 @@ import { SimilarwebBlock, SimilarwebBlockMeta } from '@/blocks/blocks/similarweb
 import { SixtyfourBlock, SixtyfourBlockMeta } from '@/blocks/blocks/sixtyfour'
 import { SkyvernBlock, SkyvernBlockMeta } from '@/blocks/blocks/skyvern'
 import { SlackBlock, SlackBlockMeta, SlackV2Block } from '@/blocks/blocks/slack'
+import { SmartleadBlock, SmartleadBlockMeta } from '@/blocks/blocks/smartlead'
 import { SmtpBlock, SmtpBlockMeta } from '@/blocks/blocks/smtp'
+import { SnowflakeBlock, SnowflakeBlockMeta } from '@/blocks/blocks/snowflake'
 import { SportmonksBlock, SportmonksBlockMeta } from '@/blocks/blocks/sportmonks'
 import { SpotifyBlock, SpotifyBlockMeta } from '@/blocks/blocks/spotify'
 import { SpyfuBlock } from '@/blocks/blocks/spyfu'
@@ -440,9 +445,11 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   dub: DubBlock,
   duckduckgo: DuckDuckGoBlock,
   dynamodb: DynamoDBBlock,
+  dynatrace: DynatraceBlock,
   elasticsearch: ElasticsearchBlock,
   elevenlabs: ElevenLabsBlock,
   emailbison: EmailBisonBlock,
+  embeddings: EmbeddingsBlock,
   enrich: EnrichBlock,
   enrichment: EnrichmentBlock,
   enrow: EnrowBlock,
@@ -557,6 +564,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   microsoft_excel_v2: MicrosoftExcelV2Block,
   microsoft_planner: MicrosoftPlannerBlock,
   microsoft_teams: MicrosoftTeamsBlock,
+  mintlify: MintlifyBlock,
   mistral_parse: MistralParseBlock,
   mistral_parse_v2: MistralParseV2Block,
   mistral_parse_v3: MistralParseV3Block,
@@ -632,7 +640,9 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
   skyvern: SkyvernBlock,
   slack: SlackBlock,
   slack_v2: SlackV2Block,
+  smartlead: SmartleadBlock,
   smtp: SmtpBlock,
+  snowflake: SnowflakeBlock,
   sportmonks: SportmonksBlock,
   spotify: SpotifyBlock,
   sqs: SQSBlock,
@@ -770,9 +780,11 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   dub: DubBlockMeta,
   duckduckgo: DuckDuckGoBlockMeta,
   dynamodb: DynamoDBBlockMeta,
+  dynatrace: DynatraceBlockMeta,
   elasticsearch: ElasticsearchBlockMeta,
   elevenlabs: ElevenLabsBlockMeta,
   emailbison: EmailBisonBlockMeta,
+  embeddings: EmbeddingsBlockMeta,
   enrich: EnrichBlockMeta,
   enrichment: EnrichmentBlockMeta,
   enrow: EnrowBlockMeta,
@@ -864,6 +876,7 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   microsoft_planner: MicrosoftPlannerBlockMeta,
   microsoft_teams: MicrosoftTeamsBlockMeta,
   millionverifier: MillionVerifierBlockMeta,
+  mintlify: MintlifyBlockMeta,
   mistral_parse: MistralParseBlockMeta,
   monday: MondayBlockMeta,
   mongodb: MongoDBBlockMeta,
@@ -925,7 +938,9 @@ export const BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
   sixtyfour: SixtyfourBlockMeta,
   skyvern: SkyvernBlockMeta,
   slack: SlackBlockMeta,
+  smartlead: SmartleadBlockMeta,
   smtp: SmtpBlockMeta,
+  snowflake: SnowflakeBlockMeta,
   sportmonks: SportmonksBlockMeta,
   spotify: SpotifyBlockMeta,
   sqs: SQSBlockMeta,

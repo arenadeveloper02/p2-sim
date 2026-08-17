@@ -1,56 +1,67 @@
 /**
  * @vitest-environment node
  */
+import { dbChainMockFns, resetDbChainMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockUploadFile, mockGetBaseUrl } = vi.hoisted(() => ({
-  mockUploadFile: vi.fn(),
-  mockGetBaseUrl: vi.fn(),
+const { mockUploadToS3, mockGetPresignedUrlWithConfig } = vi.hoisted(() => ({
+  mockUploadToS3: vi.fn(),
+  mockGetPresignedUrlWithConfig: vi.fn(),
 }))
 
-vi.mock('@/lib/uploads', () => ({
-  StorageService: {
-    uploadFile: mockUploadFile,
-  },
+vi.mock('@/lib/uploads/config', () => ({
+  USE_S3_STORAGE: true,
+  USE_BLOB_STORAGE: false,
+  USE_GCS_STORAGE: false,
+  getStorageConfig: () => ({ bucket: 'bucket', region: 'us-east-1' }),
 }))
 
-vi.mock('@/lib/core/utils/urls', () => ({
-  getBaseUrl: mockGetBaseUrl,
+vi.mock('@/lib/uploads/providers/s3/client', () => ({
+  uploadToS3: mockUploadToS3,
+  getPresignedUrlWithConfig: mockGetPresignedUrlWithConfig,
 }))
 
 import { uploadExecutionFile } from '@/lib/uploads/contexts/execution/execution-file-manager'
 
-describe('uploadExecutionFile', () => {
+const context = {
+  workspaceId: 'workspace-1',
+  workflowId: 'workflow-1',
+  executionId: 'execution-1',
+}
+
+describe('uploadExecutionFile key allocation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetBaseUrl.mockReturnValue('https://agent.thearena.ai')
-    mockUploadFile.mockResolvedValue({
-      key: 'execution/workspace-1/workflow-1/execution-1/generated.png',
-      path: '/api/files/serve/execution%2Fworkspace-1%2Fworkflow-1%2Fexecution-1%2Fgenerated.png',
-    })
+    resetDbChainMock()
+    mockUploadToS3.mockImplementation(async (file: Buffer, key: string, contentType: string) => ({
+      key,
+      path: `/api/files/serve/${encodeURIComponent(key)}`,
+      name: key,
+      size: file.length,
+      type: contentType,
+    }))
+    mockGetPresignedUrlWithConfig.mockResolvedValue('https://example.com/download')
+    dbChainMockFns.limit.mockResolvedValue([])
+    dbChainMockFns.returning.mockResolvedValue([{ id: 'file-1' }])
   })
 
-  it('returns storage metadata without eager base64 payload', async () => {
-    const result = await uploadExecutionFile(
-      {
-        workspaceId: 'workspace-1',
-        workflowId: 'workflow-1',
-        executionId: 'execution-1',
-      },
-      Buffer.from('image-bytes'),
-      'generated.png',
+  it('gives same-named files in one execution distinct keys', async () => {
+    const first = await uploadExecutionFile(
+      context,
+      Buffer.alloc(13575),
+      'image.png',
+      'image/png',
+      'user-1'
+    )
+    const second = await uploadExecutionFile(
+      context,
+      Buffer.alloc(37226),
+      'image.png',
       'image/png',
       'user-1'
     )
 
-    expect(result).toMatchObject({
-      name: 'generated.png',
-      size: 11,
-      type: 'image/png',
-      url: 'https://agent.thearena.ai/api/files/serve/execution%2Fworkspace-1%2Fworkflow-1%2Fexecution-1%2Fgenerated.png',
-      key: 'execution/workspace-1/workflow-1/execution-1/generated.png',
-      context: 'execution',
-    })
-    expect(result).not.toHaveProperty('base64')
+    expect(first.key).not.toBe(second.key)
+    expect(dbChainMockFns.insert).toHaveBeenCalledTimes(2)
   })
 })

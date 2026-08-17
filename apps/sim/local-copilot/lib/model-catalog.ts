@@ -66,7 +66,7 @@ export const LOCAL_COPILOT_CATALOG = [
     label: 'Llama 3.3 70B',
     provider: 'bedrock' as LocalCopilotProviderId,
     model: 'meta.llama3-3-70b-instruct-v1:0',
-  }
+  },
 ] as const
 
 export type LocalCopilotCatalogId = (typeof LOCAL_COPILOT_CATALOG)[number]['id']

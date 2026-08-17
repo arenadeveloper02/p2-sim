@@ -1303,6 +1303,7 @@ Return ONLY the comment text - no explanations, no quotes, no extra formatting.`
           uploadFolderId,
           createFolderParentId,
           listFolderId,
+          searchFolderId,
           copyDestFolderId,
           moveDestFolderId,
           // File canonical params (per-operation)
@@ -1360,6 +1361,9 @@ Return ONLY the comment text - no explanations, no quotes, no extra formatting.`
             break
           case 'list':
             effectiveFolderId = listFolderId?.trim() || undefined
+            break
+          case 'search':
+            effectiveFolderId = searchFolderId?.trim() || undefined
             break
         }
 

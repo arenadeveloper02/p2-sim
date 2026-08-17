@@ -32,9 +32,7 @@ export function isHighImpactEdit(operations: unknown[]): boolean {
   const operationNames = operations.map(operationName)
   if (operationNames.some((name) => DESTRUCTIVE_EDIT_OPERATIONS.has(name))) return true
 
-  const existingResourceEdits = operationNames.filter(
-    (name) => !ADDITIVE_EDIT_OPERATIONS.has(name)
-  )
+  const existingResourceEdits = operationNames.filter((name) => !ADDITIVE_EDIT_OPERATIONS.has(name))
   return existingResourceEdits.length >= HIGH_IMPACT_EDIT_OP_THRESHOLD
 }
 
