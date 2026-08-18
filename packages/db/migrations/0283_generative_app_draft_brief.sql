@@ -1,0 +1,1 @@
+ALTER TABLE "generative_app_draft" ADD COLUMN "brief" text;

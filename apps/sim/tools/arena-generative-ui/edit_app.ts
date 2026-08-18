@@ -15,11 +15,12 @@ export const arenaGenerativeUiEditTool: ToolConfig<
   description: 'Edit an existing Arena Generative UI draft and save a new revision',
   version: '1.0.0',
   params: {
-    userInput: {
+    editInstructions: {
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'Requested changes to the existing draft',
+      description:
+        'Only the requested changes. Anything not mentioned is kept exactly as it is, so do not resend the original brief',
     },
     existingDraftId: {
       type: 'string',
@@ -58,7 +59,7 @@ export const arenaGenerativeUiEditTool: ToolConfig<
     timeout: ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS,
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) => ({
-      userInput: params.userInput,
+      editInstructions: params.editInstructions,
       existingDraftId: params.existingDraftId,
       pages: params.pages,
       entryPath: params.entryPath,

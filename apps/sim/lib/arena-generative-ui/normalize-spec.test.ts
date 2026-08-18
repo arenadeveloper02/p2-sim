@@ -315,10 +315,7 @@ describe('normalizeGeneratedSpec', () => {
           type: 'Table',
           props: {
             columns: [{ key: 'time' }, { label: 'Records' }],
-            rows: [
-              ['10:00', '1200'],
-              { time: '11:00', rps: '1450' },
-            ],
+            rows: [['10:00', '1200'], { time: '11:00', rps: '1450' }],
           },
           children: [],
         },
@@ -407,5 +404,61 @@ describe('normalizeGeneratedSpec', () => {
     })
     expect(spec).not.toBeNull()
     expect(arenaGenerativeUiCatalog.validate(spec).success).toBe(true)
+  })
+
+  describe('layout value coercion', () => {
+    function stackProps(props: Record<string, unknown>): Record<string, unknown> {
+      const spec = normalizeGeneratedSpec({
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['row'] },
+          row: { type: 'Stack', props, children: [] },
+        },
+      })
+      return elements(spec).row.props
+    }
+
+    it('maps CSS flexbox justify spellings onto the catalog enum', () => {
+      expect(stackProps({ justify: 'space-between' }).justify).toBe('between')
+      expect(stackProps({ justify: 'flex-start' }).justify).toBe('start')
+      expect(stackProps({ justify: 'flex-end' }).justify).toBe('end')
+      expect(stackProps({ justify: 'centre' }).justify).toBe('center')
+    })
+
+    it('maps CSS flexbox align spellings onto the catalog enum', () => {
+      expect(stackProps({ align: 'flex-end' }).align).toBe('end')
+      expect(stackProps({ align: 'top' }).align).toBe('start')
+      expect(stackProps({ align: 'centre' }).align).toBe('center')
+    })
+
+    it('leaves catalog values and unrelated props alone', () => {
+      expect(stackProps({ justify: 'center', align: 'stretch' })).toMatchObject({
+        justify: 'center',
+        align: 'stretch',
+      })
+      expect(stackProps({ justify: 'nonsense' }).justify).toBe('nonsense')
+    })
+
+    it('centres a search row that used CSS spellings', () => {
+      const spec = normalizeGeneratedSpec({
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['form'] },
+          form: { type: 'Form', props: { actionId: 'search', align: 'centre' }, children: ['row'] },
+          row: {
+            type: 'Stack',
+            props: { direction: 'row', justify: 'space-between', align: 'flex-end' },
+            children: [],
+          },
+        },
+      })
+      expect(elements(spec).form.props.align).toBe('center')
+      expect(elements(spec).row.props).toMatchObject({
+        direction: 'horizontal',
+        justify: 'between',
+        align: 'end',
+      })
+      expect(arenaGenerativeUiCatalog.validate(spec).success).toBe(true)
+    })
   })
 })

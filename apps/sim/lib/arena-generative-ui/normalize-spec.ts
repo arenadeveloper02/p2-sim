@@ -56,6 +56,35 @@ const SPACING_TOKENS: Record<string, string> = {
 
 const SPACING_PROPS = ['gap', 'padding'] as const
 
+/**
+ * CSS flexbox spellings the model reaches for. The renderer only maps the catalog enum, so an
+ * unmapped near-miss silently drops the requested layout instead of failing loudly.
+ */
+const JUSTIFY_ALIASES: Record<string, string> = {
+  'space-between': 'between',
+  space_between: 'between',
+  spacebetween: 'between',
+  'flex-start': 'start',
+  left: 'start',
+  'flex-end': 'end',
+  right: 'end',
+  centre: 'center',
+  middle: 'center',
+}
+
+const ALIGN_ALIASES: Record<string, string> = {
+  'flex-start': 'start',
+  top: 'start',
+  left: 'start',
+  'flex-end': 'end',
+  bottom: 'end',
+  right: 'end',
+  centre: 'center',
+  middle: 'center',
+  baseline: 'start',
+  fill: 'stretch',
+}
+
 /** Types whose primary text may arrive as `content` instead of `text`. */
 const CONTENT_TEXT_TYPES = new Set(['Text', 'Alert', 'ListItem', 'Heading'])
 
@@ -254,6 +283,7 @@ function normalizeProps(
     }
   }
   normalizeDirection(props)
+  normalizeLayoutValues(props)
   normalizeSpacing(props)
   normalizeTypeProps(type, props)
   return props
@@ -298,6 +328,16 @@ function normalizeDirection(props: Record<string, unknown>): void {
   const direction = asString(props.direction)
   if (direction === 'column') props.direction = 'vertical'
   if (direction === 'row') props.direction = 'horizontal'
+}
+
+function normalizeLayoutValues(props: Record<string, unknown>): void {
+  const justify = asString(props.justify).toLowerCase()
+  const mappedJustify = JUSTIFY_ALIASES[justify]
+  if (mappedJustify) props.justify = mappedJustify
+
+  const align = asString(props.align).toLowerCase()
+  const mappedAlign = ALIGN_ALIASES[align]
+  if (mappedAlign) props.align = mappedAlign
 }
 
 function normalizeSpacing(props: Record<string, unknown>): void {

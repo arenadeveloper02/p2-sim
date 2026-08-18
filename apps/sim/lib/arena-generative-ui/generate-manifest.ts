@@ -56,7 +56,25 @@ export interface GenerateArenaGenerativeManifestParams {
   apiBindings: ArenaGenerativeApiBinding[]
   designNotes?: string
   existingManifest?: ArenaGenerativeAppManifest
+  /** Brief the existing draft was generated from. Context only — it is already implemented. */
+  existingBrief?: string
 }
+
+/**
+ * Edit is a delta, not a regeneration: everything the change request does not name must survive
+ * byte-identical, or an unrelated instruction silently re-themes the whole app.
+ */
+export const EDIT_PRESERVATION_INSTRUCTION = [
+  'Mode: edit an existing app. Apply ONLY the requested changes and return the complete manifest.',
+  'Every page, element, prop, action, copy string, and page path that the change request does not name must stay byte-identical to the existing manifest.',
+  'Do not re-theme, re-layout, reword, reorder, rename, add, or remove anything that was not asked for.',
+].join(' ')
+
+const EDIT_KEEP_PAGES_INSTRUCTION =
+  'No page list was supplied. Keep exactly the pages in the existing manifest — same paths, same keys, same titles — unless the change request asks to add or remove one.'
+
+const EDIT_KEEP_ENTRY_PATH_INSTRUCTION =
+  'No entryPath was supplied. Keep the existing manifest entryPath.'
 
 /**
  * Generates or patches a multi-page Arena Generative UI manifest with Claude.
@@ -95,18 +113,25 @@ export async function generateArenaGenerativeManifest(
   }))
 
   const bindingKeys = params.apiBindings.map((binding) => binding.key).filter(Boolean)
+  const isEdit = Boolean(params.existingManifest)
+  const bindingKeyLine =
+    bindingKeys.length > 0
+      ? `CTA apiKey values must be one of these declared binding keys: ${bindingKeys.join(', ')}. Do not invent keys from User Input.`
+      : ''
   const userPayload = [
-    params.existingManifest
-      ? `Mode: edit an existing app. Apply the requested changes and return a complete replacement manifest.`
-      : `Mode: generate a new multi-page app.`,
-    params.entryPath ? `Requested entryPath: ${params.entryPath}` : '',
+    isEdit ? EDIT_PRESERVATION_INSTRUCTION : 'Mode: generate a new multi-page app.',
+    params.entryPath
+      ? `Requested entryPath: ${params.entryPath}`
+      : isEdit
+        ? EDIT_KEEP_ENTRY_PATH_INSTRUCTION
+        : '',
     pageHints.length > 0
       ? `Requested pages (must emit exactly these paths as object keys, not an array):\n${JSON.stringify(pageHints, null, 2)}`
       : [
-          'No explicit page list. Infer a small coherent sitemap from the brief. Emit manifest.pages as an object keyed by path (home, person, …), never as an array.',
-          bindingKeys.length > 0
-            ? `CTA apiKey values must be one of these declared binding keys: ${bindingKeys.join(', ')}. Do not invent keys from User Input.`
-            : '',
+          isEdit
+            ? EDIT_KEEP_PAGES_INSTRUCTION
+            : 'No explicit page list. Infer a small coherent sitemap from the brief. Emit manifest.pages as an object keyed by path (home, person, …), never as an array.',
+          bindingKeyLine,
         ]
           .filter((line) => line.length > 0)
           .join('\n'),
@@ -114,8 +139,11 @@ export async function generateArenaGenerativeManifest(
       ? `Declared API bindings (CTAs may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
       : 'No API bindings. Navigation and static content only.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
+    isEdit && params.existingBrief?.trim()
+      ? `Original brief (context only — already implemented, do not re-apply it):\n${params.existingBrief.trim()}`
+      : '',
     params.existingManifest ? `Existing manifest:\n${JSON.stringify(params.existingManifest)}` : '',
-    `User request:\n${userInput}`,
+    isEdit ? `Requested changes:\n${userInput}` : `User request:\n${userInput}`,
   ]
     .filter((section) => section.length > 0)
     .join('\n\n')

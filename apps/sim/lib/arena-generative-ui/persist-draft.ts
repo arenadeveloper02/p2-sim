@@ -16,6 +16,8 @@ export interface PersistDraftInput {
   entryPath: string
   manifest: ArenaGenerativeAppManifest
   apiBindings: ArenaGenerativeApiBinding[]
+  /** Original generate brief. Only stored on create; an edit must not overwrite it with its delta. */
+  brief?: string
 }
 
 export interface PersistedDraft {
@@ -41,6 +43,7 @@ export async function persistGenerativeAppDraft(input: PersistDraftInput): Promi
       title: input.title,
       entryPath: input.entryPath,
       revision: 1,
+      brief: input.brief ?? null,
       manifest: input.manifest,
       apiBindings: input.apiBindings,
       createdAt: now,

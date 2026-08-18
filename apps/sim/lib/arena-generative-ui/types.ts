@@ -241,17 +241,16 @@ export function streamingActionIdsFrom(
 }
 
 /**
- * Immediate navigate targets for streaming actions (`onSuccess.navigate`).
+ * `onSuccess.navigate` target per action. Hosts navigate to it before the request starts so the
+ * result page mounts while the action is still pending and its loading placeholders can show.
  */
-export function streamingNavigateFrom(
-  manifest: ArenaGenerativeAppManifest,
-  bindings: ArenaGenerativeApiBinding[]
+export function actionNavigateFrom(
+  manifest: Pick<ArenaGenerativeAppManifest, 'actions'>
 ): Record<string, string> {
-  const streamingIds = new Set(streamingActionIdsFrom(manifest, bindings))
   const targets: Record<string, string> = {}
   for (const [actionId, action] of Object.entries(manifest.actions)) {
     const path = action.onSuccess?.navigate
-    if (streamingIds.has(actionId) && path) {
+    if (path) {
       targets[actionId] = path
     }
   }

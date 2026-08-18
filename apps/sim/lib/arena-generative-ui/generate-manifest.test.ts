@@ -25,6 +25,7 @@ vi.mock('@/providers/utils', () => ({
 }))
 
 import {
+  EDIT_PRESERVATION_INSTRUCTION,
   generateArenaGenerativeManifest,
   MODEL_JSON_PARSE_ERROR,
 } from '@/lib/arena-generative-ui/generate-manifest'
@@ -355,6 +356,79 @@ describe('generateArenaGenerativeManifest', () => {
         ],
       })
     )
+  })
+
+  describe('edit mode', () => {
+    async function editPayload(
+      params: Partial<Parameters<typeof generateArenaGenerativeManifest>[0]> = {}
+    ): Promise<string> {
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+      await generateArenaGenerativeManifest({
+        userInput: 'Centre the search row.',
+        apiBindings: [],
+        existingManifest: twoPageManifest,
+        ...params,
+      })
+      return mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+    }
+
+    it('demands only the requested changes instead of a fresh app', async () => {
+      const payload = await editPayload()
+
+      expect(payload).toContain(EDIT_PRESERVATION_INSTRUCTION)
+      expect(payload).toContain('Requested changes:\nCentre the search row.')
+      expect(payload).not.toContain('Mode: generate a new multi-page app.')
+      expect(payload).not.toContain('User request:')
+    })
+
+    it('keeps the existing pages and entryPath when neither is pinned', async () => {
+      const payload = await editPayload()
+
+      expect(payload).toContain('Keep exactly the pages in the existing manifest')
+      expect(payload).toContain('Keep the existing manifest entryPath')
+      expect(payload).not.toContain('Infer a small coherent sitemap')
+    })
+
+    it('still honours a pinned sitemap and entryPath', async () => {
+      const payload = await editPayload({
+        pages: [{ path: 'home', title: 'Form' }],
+        entryPath: 'home',
+      })
+
+      expect(payload).toContain('Requested pages')
+      expect(payload).toContain('Requested entryPath: home')
+      expect(payload).not.toContain('Keep exactly the pages in the existing manifest')
+      expect(payload).not.toContain('Keep the existing manifest entryPath')
+    })
+
+    it('sends the original brief as context that must not be re-applied', async () => {
+      const payload = await editPayload({ existingBrief: 'Lead qualifier with a results page.' })
+
+      expect(payload).toContain('Original brief (context only')
+      expect(payload).toContain('Lead qualifier with a results page.')
+      expect(payload.indexOf('Original brief')).toBeLessThan(payload.indexOf('Requested changes:'))
+    })
+
+    it('omits the brief section entirely when the draft has none', async () => {
+      const payload = await editPayload()
+
+      expect(payload).not.toContain('Original brief')
+    })
+
+    it('leaves generate mode untouched', async () => {
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+      await generateArenaGenerativeManifest({
+        userInput: 'Team directory.',
+        apiBindings: [],
+        existingBrief: 'ignored without a manifest',
+      })
+      const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+
+      expect(payload).toContain('Mode: generate a new multi-page app.')
+      expect(payload).toContain('User request:\nTeam directory.')
+      expect(payload).toContain('Infer a small coherent sitemap')
+      expect(payload).not.toContain('Original brief')
+    })
   })
 
   it('rewrites opaque model fetch failed into a retryable network error', async () => {

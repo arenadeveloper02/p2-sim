@@ -1982,6 +1982,13 @@
       "when": 1786591949056,
       "tag": "0282_arena_generative_apps",
       "breakpoints": true
+    },
+    {
+      "idx": 283,
+      "version": "7",
+      "when": 1787051984447,
+      "tag": "0283_generative_app_draft_brief",
+      "breakpoints": true
     }
   ]
 }

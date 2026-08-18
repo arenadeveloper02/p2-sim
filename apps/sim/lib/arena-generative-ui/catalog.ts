@@ -187,10 +187,11 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
     Form: {
       props: z.object({
         actionId: z.string().nullable(),
+        align: z.enum(['start', 'center', 'end', 'stretch']).nullable(),
       }),
       slots: ['default'],
       description:
-        'Form wrapper. actionId must match a manifest actions key that calls a declared API.',
+        'Form wrapper. actionId must match a manifest actions key that calls a declared API. align controls cross-axis placement of its rows and defaults to stretch; use align "center" only when the user asked for a centred form.',
     },
     TextInput: {
       props: z.object({
@@ -330,12 +331,14 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Surfaces: there are exactly two — the page canvas and the white Card/Stat surface, both supplied by the host. Do not set backgroundColor unless the brief names a specific colour. Build hierarchy from heading level, weight and whitespace instead of coloured fills or borders.',
   'Collections: render a list of items as a Grid of Cards (columns 2 or 3), or a Table when the items share the same fields. Never one full-width Card per item stacked vertically.',
   'Tabular data goes in Table, metrics go in Stat inside a Grid, record details go in KeyValue, short statuses go in Badge.',
-  'Forms: every interactive field carries an explicit label. Pair short related fields side by side in a Grid (columns 2) and keep long free-text fields full width. Forms have one SubmitButton and an optional Back NavLink, and stay left-aligned — never centre a form field.',
+  'Forms: every interactive field carries an explicit label. Pair short related fields side by side in a Grid (columns 2) and keep long free-text fields full width. Forms have one SubmitButton and an optional Back NavLink, and default to left-aligned.',
+  'Centring: only centre when the user asked for it, and use the props that actually centre — a search field beside its button is {"type":"Stack","props":{"direction":"horizontal","justify":"center","align":"end","gap":"12px"}} wrapping the TextInput and SubmitButton, and a whole form centres with Form align "center". justify accepts exactly start, center, between, end (never "space-between" or a CSS value), and SubmitButton has no align or width prop of its own — wrap it instead.',
   'Chrome: start a page with PageHeader (title, subtitle, primary action as its child) instead of a bare Heading. Use Toolbar for a row of filters or secondary buttons, and Columns for a main area beside a supporting sidebar.',
   'Navigation: when the app has three or more pages, put a Tabs element with one "Label|path" line per top-level page at the top of each page and set activePath to the current path. Detail pages are reached with NavLink/navigateTo and offer a Back NavLink.',
   'Typography: one h1-level page title per page (PageHeader.title counts), then a short supporting subtitle. Never title a page "Page 1" or use lorem ipsum.',
   'Heading order: nest levels sequentially and never skip or invert them. PageHeader.title is the page h1 and Card.title renders an h2, so a Heading inside a Card starts at h3.',
-  'Loading: any region that fills from a CTA response must have a loading state. Table, Stat, KeyValue and DataText bound to a statePath already show a placeholder automatically, so add nothing there. For a region you build from static children, add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]} — variant is text, stat, table, card or form. Use Spinner only for a short inline wait, never as the sole feedback for a long run.',
+  'Loading: any region that fills from a CTA response must have a loading state. Table, Stat, KeyValue and DataText bound to a statePath show a placeholder automatically, but only while that state value is still empty — so bind the result region to a statePath rather than hard-coding static children. A Stat with a literal value prop and a Table with literal rows never show one. For a region built from static children add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]} — variant is text, stat, table, card or form. Use Spinner only for a short inline wait, never as the sole feedback for a long run.',
+  'Result pages: when onSuccess.navigate sends the user to another page, the host navigates there immediately and the action stays pending, so put the loading state on the destination page — its bound Table/Stat/KeyValue/DataText, or an explicit Skeleton — not on the form page the user has already left.',
   'Do not include a logo, wordmark, or decorative Image for branding. The host already provides the outer shell.',
 ] as const
 

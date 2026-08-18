@@ -5340,6 +5340,8 @@ export const generativeAppDraft = pgTable(
     title: text('title').notNull(),
     entryPath: text('entry_path').notNull().default('home'),
     revision: integer('revision').notNull().default(1),
+    /** Original generate brief, kept so Edit can send it as context without resending it as a request. */
+    brief: text('brief'),
     manifest: jsonb('manifest').notNull(),
     apiBindings: jsonb('api_bindings').notNull().default([]),
     createdAt: timestamp('created_at').notNull().defaultNow(),

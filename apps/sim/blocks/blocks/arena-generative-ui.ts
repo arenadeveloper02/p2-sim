@@ -28,7 +28,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
   - Describe navigation in User Input: NavLinks, Back buttons, and "submit then go to results".
   - Add apiBindings JSON only when CTAs should call a deployed workflow or HTTP URL. Leave it blank for navigation-only; the model cannot invent keys. Set "stream": true to stream tokens into DataText on the form page.
   - After a successful run, open Deploy → GUI App, pick the draft, set an identifier, and Launch. The public URL is /gui-apps/{identifier}.
-  - Use Edit mode with an existing draft to change pages, copy, or CTA wiring.
+  - Use Edit mode with an existing draft to change pages, copy, or CTA wiring. Put only the delta in Requested Changes — the draft already carries the original brief, and anything you do not mention is kept as-is.
   - As an Agent tool: attach Arena Generative UI, pick Generate or Edit, then preview/launch from Deploy → GUI App on this workflow.
   `,
   docsLink: 'https://docs.sim.ai/blocks/development',
@@ -51,9 +51,10 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
       id: 'userInput',
       title: 'User Input',
       type: 'long-input',
-      required: true,
+      required: { field: 'operation', value: 'generate' },
+      condition: { field: 'operation', value: 'generate' },
       placeholder:
-        'Plain language, not JSON. Generate: describe the app. Edit: describe the changes. Only Pages and API Bindings are JSON.',
+        'Plain language, not JSON. Describe the app. Only Pages and API Bindings are JSON.',
       tooltip:
         'Plain language, not JSON. Name pages, fields, and navigation. If a form should call an API, use the same key you put in API Bindings (you invent that key).\n\nLead qualifier. Home is a form: company, role, notes. Submit calls qualify_lead, then go to Results. Results shows the score and a Back link.',
       wandConfig: {
@@ -70,6 +71,19 @@ Include:
 Return ONLY the specification text.`,
         placeholder: 'Describe the Arena app you want to generate...',
       },
+    },
+    {
+      id: 'editInstructions',
+      title: 'Requested Changes',
+      type: 'long-input',
+      required: { field: 'operation', value: 'edit' },
+      condition: { field: 'operation', value: 'edit' },
+      placeholder:
+        'Only what should change. Everything you do not mention is kept exactly as it is.',
+      description:
+        'Only the changes. The draft already holds the original brief — do not paste it again.',
+      tooltip:
+        'Describe only the delta. Anything you do not mention stays byte-identical, so a short instruction is safer than a rewritten brief.\n\nCentre the search input and its submit button in one row. Show a loader on the results page while the API runs.',
     },
     {
       id: 'existingDraftId',
@@ -97,9 +111,9 @@ Return ONLY the specification text.`,
       language: 'json',
       placeholder: '[]',
       description:
-        'Optional sitemap. Leave blank to let the model choose (Generate) or keep the current pages (Edit).',
+        'Optional sitemap. Blank lets the model choose (Generate) or keeps the current pages untouched (Edit).',
       tooltip:
-        'Optional JSON sitemap. Leave blank to let the model choose pages from User Input.\n\n[{"path":"home","title":"Form"},{"path":"results","title":"Score"}]',
+        'Optional JSON sitemap. Leave blank to let the model choose pages from User Input. In Edit, blank keeps the existing pages exactly as they are.\n\n[{"path":"home","title":"Form"},{"path":"results","title":"Score"}]',
     },
     {
       id: 'entryPath',
@@ -107,8 +121,9 @@ Return ONLY the specification text.`,
       type: 'short-input',
       placeholder: 'home',
       description:
-        'First page after open. Defaults to home. Leave blank in Edit to keep the current entry.',
-      tooltip: 'First page after open. Kebab-case path. Defaults to home if blank.\n\nhome',
+        'First page after open. Defaults to home. Blank in Edit keeps the current entry.',
+      tooltip:
+        'First page after open. Kebab-case path. Defaults to home if blank on Generate, and keeps the existing entry if blank on Edit.\n\nhome',
     },
     {
       id: 'apiBindings',
@@ -140,7 +155,7 @@ Return ONLY the specification text.`,
       params: (params) =>
         params.operation === 'edit'
           ? {
-              userInput: params.userInput,
+              editInstructions: params.editInstructions,
               existingDraftId: params.existingDraftId,
               pages: params.pages,
               entryPath: params.entryPath,
@@ -158,7 +173,8 @@ Return ONLY the specification text.`,
   },
   inputs: {
     operation: { type: 'string', description: 'generate or edit' },
-    userInput: { type: 'string', description: 'App brief or edit instructions' },
+    userInput: { type: 'string', description: 'App brief (Generate)' },
+    editInstructions: { type: 'string', description: 'Requested changes only (Edit)' },
     existingDraftId: { type: 'string', description: 'Draft to edit' },
     pages: { type: 'json', description: 'Optional page sitemap' },
     entryPath: { type: 'string', description: 'Opening page path' },

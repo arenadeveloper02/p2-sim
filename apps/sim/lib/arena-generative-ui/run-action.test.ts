@@ -58,7 +58,7 @@ import {
   runGenerativeAppAction,
 } from '@/lib/arena-generative-ui/run-action'
 import { twoPageApiBindings, twoPageManifest } from '@/lib/arena-generative-ui/two-page-app.fixture'
-import { streamingNavigateFrom } from '@/lib/arena-generative-ui/types'
+import { actionNavigateFrom } from '@/lib/arena-generative-ui/types'
 import { encodeSSE, readSSEEvents } from '@/lib/core/utils/sse'
 import type { StreamingExecution } from '@/executor/types'
 
@@ -1098,11 +1098,14 @@ describe('streaming generative app actions', () => {
     ).toBe(true)
   })
 
-  it('maps streaming actions to onSuccess.navigate targets', () => {
-    expect(streamingNavigateFrom(twoPageManifest, twoPageApiBindings)).toEqual({})
+  it('maps every action to its onSuccess.navigate target, streaming or not', () => {
+    expect(actionNavigateFrom(twoPageManifest)).toEqual({ submit_lead: 'results' })
     expect(
-      streamingNavigateFrom(twoPageManifest, [{ ...twoPageApiBindings[0], stream: true }])
-    ).toEqual({ submit_lead: 'results' })
+      actionNavigateFrom({
+        ...twoPageManifest,
+        actions: { submit_lead: { apiKey: 'qualify_lead' } },
+      })
+    ).toEqual({})
   })
 
   it('uses a 180s HTTP abort for streaming CTAs', () => {

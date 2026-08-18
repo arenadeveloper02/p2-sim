@@ -1,6 +1,9 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import type { ArenaGenerativeGenerateBody } from '@/lib/api/contracts/arena-generative-apps'
+import type {
+  ParsedArenaGenerativeEditBody,
+  ParsedArenaGenerativeGenerateBody,
+} from '@/lib/api/contracts/arena-generative-apps'
 import { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/generate-manifest'
 import { parseApiBindings, parsePageHints } from '@/lib/arena-generative-ui/parse-inputs'
 import { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
@@ -21,13 +24,15 @@ export interface ArenaGenerativeToolOutput {
  * Shared generate/edit pipeline used by tool API routes.
  */
 export async function runArenaGenerativeUi(options: {
-  body: ArenaGenerativeGenerateBody
+  body: ParsedArenaGenerativeGenerateBody | ParsedArenaGenerativeEditBody
   userId: string
   requireExistingDraft: boolean
 }): Promise<
   { success: true; output: ArenaGenerativeToolOutput } | { success: false; error: string }
 > {
   const { body, userId, requireExistingDraft } = options
+  const editInstructions =
+    'editInstructions' in body ? String(body.editInstructions ?? '').trim() : ''
   const workspaceId = body.workspaceId?.trim()
   const workflowId = body.workflowId?.trim()
   if (!workspaceId || !workflowId) {
@@ -44,6 +49,7 @@ export async function runArenaGenerativeUi(options: {
   }
 
   let existingManifest: ArenaGenerativeAppManifest | undefined
+  let existingBrief: string | undefined
   if (requireExistingDraft || body.existingDraftId) {
     if (!body.existingDraftId) {
       return { success: false, error: 'existingDraftId is required' }
@@ -65,19 +71,29 @@ export async function runArenaGenerativeUi(options: {
       return { success: false, error: 'Draft not found' }
     }
     existingManifest = draft.manifest as ArenaGenerativeAppManifest
+    existingBrief = draft.brief ?? undefined
     if (apiBindings.length === 0 && Array.isArray(draft.apiBindings)) {
       apiBindings = draft.apiBindings as typeof apiBindings
     }
   }
 
+  const userInput = editInstructions || String(body.userInput ?? '').trim()
+  if (!userInput) {
+    return {
+      success: false,
+      error: requireExistingDraft ? 'editInstructions is required' : 'userInput is required',
+    }
+  }
+
   const generateStartedAt = Date.now()
   const generated = await generateArenaGenerativeManifest({
-    userInput: body.userInput,
+    userInput,
     pages,
     entryPath: body.entryPath,
     apiBindings,
     designNotes: body.designNotes,
     existingManifest,
+    existingBrief,
   })
   logger.info('Generated Arena Generative UI manifest', {
     workspaceId,
@@ -103,6 +119,7 @@ export async function runArenaGenerativeUi(options: {
       entryPath: generated.manifest.entryPath,
       manifest: generated.manifest,
       apiBindings,
+      brief: body.existingDraftId ? undefined : userInput,
     })
     logger.info('Persisted Arena Generative UI draft', {
       workspaceId,

@@ -5,8 +5,8 @@ import { createContext, type ReactNode, useCallback, useContext, useMemo, useSta
 interface GenerativeAppHostStateValue {
   state: Record<string, unknown>
   mergeState: (patch: Record<string, unknown>) => void
-  streamPending: boolean
-  setStreamPending: (pending: boolean) => void
+  actionPending: boolean
+  setActionPending: (pending: boolean) => void
 }
 
 const GenerativeAppHostStateContext = createContext<GenerativeAppHostStateValue | null>(null)
@@ -16,18 +16,19 @@ interface GenerativeAppHostStateProviderProps {
 }
 
 /**
- * Holds CTA `setState` and stream pending above the `[[...path]]` page so
- * in-app navigation does not remount the host and drop the API result.
+ * Holds CTA `setState` and the action-pending flag above the `[[...path]]` page. Both must outlive
+ * navigation: a CTA navigates to its result page before the request finishes, so a remount here
+ * would drop the API result and clear the flag that drives every loading placeholder.
  */
 export function GenerativeAppHostStateProvider({ children }: GenerativeAppHostStateProviderProps) {
   const [state, setState] = useState<Record<string, unknown>>({})
-  const [streamPending, setStreamPending] = useState(false)
+  const [actionPending, setActionPending] = useState(false)
   const mergeState = useCallback((patch: Record<string, unknown>) => {
     setState((current) => ({ ...current, ...patch }))
   }, [])
   const value = useMemo(
-    () => ({ state, mergeState, streamPending, setStreamPending }),
-    [state, mergeState, streamPending]
+    () => ({ state, mergeState, actionPending, setActionPending }),
+    [state, mergeState, actionPending]
   )
   return (
     <GenerativeAppHostStateContext.Provider value={value}>
@@ -43,7 +44,7 @@ export function GenerativeAppHostStateProvider({ children }: GenerativeAppHostSt
 export function useGenerativeAppHostState(): GenerativeAppHostStateValue {
   const context = useContext(GenerativeAppHostStateContext)
   const [localState, setLocalState] = useState<Record<string, unknown>>({})
-  const [localStreamPending, setLocalStreamPending] = useState(false)
+  const [localActionPending, setLocalActionPending] = useState(false)
   const mergeLocalState = useCallback((patch: Record<string, unknown>) => {
     setLocalState((current) => ({ ...current, ...patch }))
   }, [])
@@ -51,10 +52,10 @@ export function useGenerativeAppHostState(): GenerativeAppHostStateValue {
     () => ({
       state: localState,
       mergeState: mergeLocalState,
-      streamPending: localStreamPending,
-      setStreamPending: setLocalStreamPending,
+      actionPending: localActionPending,
+      setActionPending: setLocalActionPending,
     }),
-    [localState, mergeLocalState, localStreamPending]
+    [localState, mergeLocalState, localActionPending]
   )
   return context ?? localValue
 }

@@ -570,6 +570,62 @@ describe('SpecRenderer', () => {
       })
       expect(skeletonCount(container)).toBe(0)
     })
+
+    it('skeletons a pending DataText even when it declares a fallback', () => {
+      const spec = skeletonSpec('DataText', {
+        statePath: 'summary',
+        fallback: 'Run the report to see a summary.',
+      })
+
+      const busy = render({ spec, pending: true, state: {} })
+      expect(skeletonCount(busy.container)).toBe(1)
+      expect(busy.container.textContent).not.toContain('Run the report')
+      unmount?.()
+      unmount = undefined
+
+      const idle = render({ spec, pending: false, state: {} })
+      expect(skeletonCount(idle.container)).toBe(0)
+      expect(idle.container.textContent).toContain('Run the report')
+    })
+  })
+
+  describe('centring', () => {
+    it('centres a search row and its submit button through Stack and Form align', () => {
+      const { container } = render({
+        spec: {
+          root: 'page',
+          elements: {
+            page: { type: 'Page', props: {}, children: ['form'] },
+            form: {
+              type: 'Form',
+              props: { actionId: 'search', align: 'center' },
+              children: ['row'],
+            },
+            row: {
+              type: 'Stack',
+              props: { direction: 'horizontal', justify: 'center', align: 'end' },
+              children: ['query', 'submit'],
+            },
+            query: { type: 'TextInput', props: { name: 'query', label: 'Query' }, children: [] },
+            submit: { type: 'SubmitButton', props: { label: 'Search' }, children: [] },
+          },
+        },
+      })
+
+      const form = container.querySelector('form') as HTMLElement
+      expect(form.className).toContain('items-center')
+      const row = form.firstElementChild as HTMLElement
+      expect(row.className).toContain('flex-row')
+      expect(row.className).toContain('justify-center')
+      expect(row.className).toContain('items-end')
+    })
+
+    it('leaves a form stretched by default', () => {
+      const { container } = render()
+      const form = container.querySelector('form') as HTMLElement
+      expect(form.className).toContain('items-stretch')
+      expect(form.className).not.toContain('items-center')
+    })
   })
 
   it('ticks earlier ProgressSteps after elapsed time while pending', () => {

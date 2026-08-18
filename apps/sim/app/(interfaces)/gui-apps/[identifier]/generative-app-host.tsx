@@ -32,7 +32,7 @@ interface GenerativeAppHostProps {
 export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeAppHostProps) {
   const router = useRouter()
   const configQuery = useDeployedAppConfig(identifier)
-  const { state, mergeState, streamPending, setStreamPending } = useGenerativeAppHostState()
+  const { state, mergeState, actionPending, setActionPending } = useGenerativeAppHostState()
   const pageQuery = useDeployedAppPage(identifier, pagePath, configQuery.data?.kind === 'config')
   const runAction = useRunDeployedAppAction(identifier)
 
@@ -81,24 +81,23 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
   }
 
   const streamingIds = new Set(configQuery.data.config.streamingActionIds ?? [])
-  const streamingNavigate = configQuery.data.config.streamingNavigate ?? {}
+  const actionNavigate = configQuery.data.config.actionNavigate ?? {}
 
   return (
     <SpecRenderer
       spec={pageQuery.data.spec}
       state={state}
-      pending={runAction.isPending || streamPending}
+      pending={runAction.isPending || actionPending}
       onNavigate={navigate}
       onRunAction={async (actionId, values) => {
+        const navigateTo = actionNavigate[actionId]
+        setActionPending(true)
         try {
-          if (streamingIds.has(actionId)) {
-            const navigateTo = streamingNavigate[actionId]
-            setStreamPending(true)
-            try {
-              if (navigateTo) {
-                navigate(navigateTo)
-              }
-              const result = await runDeployedAppActionStream({
+          if (navigateTo) {
+            navigate(navigateTo)
+          }
+          const result = streamingIds.has(actionId)
+            ? await runDeployedAppActionStream({
                 identifier,
                 actionId,
                 values,
@@ -107,21 +106,19 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
                   mergeState(streamingContentState(accumulated))
                 },
               })
-              applyActionResult(result, mergeState, navigate, logger, { skipNavigate: true })
-            } finally {
-              setStreamPending(false)
-            }
-            return
-          }
-
-          const result = await runAction.mutateAsync({
-            actionId,
-            values,
-            emailId: emailId || undefined,
+            : await runAction.mutateAsync({
+                actionId,
+                values,
+                emailId: emailId || undefined,
+              })
+          applyActionResult(result, mergeState, navigate, logger, {
+            skipNavigate: Boolean(navigateTo),
           })
-          applyActionResult(result, mergeState, navigate, logger)
         } catch (error) {
           logger.error('App action failed', { error: toError(error).message })
+          mergeState({ error: toError(error).message || 'Action failed' })
+        } finally {
+          setActionPending(false)
         }
       }}
     />

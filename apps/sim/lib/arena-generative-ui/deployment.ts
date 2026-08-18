@@ -9,8 +9,8 @@ import {
 import {
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
+  actionNavigateFrom,
   streamingActionIdsFrom,
-  streamingNavigateFrom,
 } from '@/lib/arena-generative-ui/types'
 import { setDeploymentAuthCookie } from '@/lib/core/security/deployment'
 import {
@@ -58,7 +58,7 @@ export function toDeployedAppConfig(deployment: DeployedAppRecord) {
     entryPath: deployment.manifest.entryPath,
     pages: pageSummariesFromManifest(deployment.manifest),
     streamingActionIds: streamingActionIdsFrom(deployment.manifest, deployment.apiBindings),
-    streamingNavigate: streamingNavigateFrom(deployment.manifest, deployment.apiBindings),
+    actionNavigate: actionNavigateFrom(deployment.manifest),
   }
 }
 

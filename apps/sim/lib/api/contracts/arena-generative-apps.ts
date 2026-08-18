@@ -146,6 +146,8 @@ export const arenaGenerativeGenerateBodySchema = z.object({
   executionId: z.string().optional(),
 })
 export type ArenaGenerativeGenerateBody = z.input<typeof arenaGenerativeGenerateBodySchema>
+/** Post-validation shape, as handed to the route by `parseRequest`. */
+export type ParsedArenaGenerativeGenerateBody = z.output<typeof arenaGenerativeGenerateBodySchema>
 
 export const arenaGenerativeGenerateOutputSchema = z.object({
   draftId: z.string(),
@@ -171,12 +173,26 @@ export const arenaGenerativeGenerateContract = defineRouteContract({
   },
 })
 
+/**
+ * Edit sends only the delta. `editInstructions` replaces `userInput` as the request text so the
+ * original brief is never resent — the server reads it from the stored draft as context instead.
+ */
+export const arenaGenerativeEditBodySchema = arenaGenerativeGenerateBodySchema.extend({
+  userInput: z.preprocess(omitEmptyOptionalString, z.string().max(20_000).optional()),
+  editInstructions: z.preprocess(
+    coerceUserInput,
+    z.string().min(1, 'editInstructions is required').max(20_000)
+  ),
+  existingDraftId: z.string().min(1, 'existingDraftId is required'),
+})
+export type ArenaGenerativeEditBody = z.input<typeof arenaGenerativeEditBodySchema>
+/** Post-validation shape, as handed to the route by `parseRequest`. */
+export type ParsedArenaGenerativeEditBody = z.output<typeof arenaGenerativeEditBodySchema>
+
 export const arenaGenerativeEditContract = defineRouteContract({
   method: 'POST',
   path: '/api/tools/arena_generative_ui/edit',
-  body: arenaGenerativeGenerateBodySchema.extend({
-    existingDraftId: z.string().min(1, 'existingDraftId is required'),
-  }),
+  body: arenaGenerativeEditBodySchema,
   response: {
     mode: 'json',
     schema: z.union([
@@ -339,7 +355,7 @@ export const deployedAppConfigSchema = z.object({
   entryPath: z.string(),
   pages: z.array(arenaGenerativePageSummarySchema),
   streamingActionIds: z.array(z.string()).optional().default([]),
-  streamingNavigate: z.record(z.string(), z.string()).optional().default({}),
+  actionNavigate: z.record(z.string(), z.string()).optional().default({}),
 })
 export type DeployedAppConfig = z.output<typeof deployedAppConfigSchema>
 

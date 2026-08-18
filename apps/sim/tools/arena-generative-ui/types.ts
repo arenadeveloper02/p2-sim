@@ -2,7 +2,10 @@ import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types
 import type { ToolResponse, WorkflowToolExecutionContext } from '@/tools/types'
 
 export interface ArenaGenerativeUiParams {
-  userInput: string
+  /** App brief. Required on generate; edit sends `editInstructions` instead. */
+  userInput?: string
+  /** Requested changes only, used by edit so the original brief is not resent. */
+  editInstructions?: string
   pages?: unknown
   entryPath?: string
   apiBindings?: unknown

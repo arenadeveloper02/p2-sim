@@ -73,7 +73,7 @@ describe('GenerativeAppHost non-streaming JSON', () => {
         kind: 'config',
         config: {
           streamingActionIds: [],
-          streamingNavigate: {},
+          actionNavigate: {},
         },
       },
       error: null,
@@ -122,5 +122,46 @@ describe('GenerativeAppHost non-streaming JSON', () => {
     })
     expect(container.textContent).toContain('Hi')
     expect(container.textContent).not.toContain('Waiting…')
+  })
+
+  it('navigates to the result page before the request resolves and keeps a loading placeholder', async () => {
+    mockUseDeployedAppConfig.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        kind: 'config',
+        config: { streamingActionIds: [], actionNavigate: { ask_chat: 'results' } },
+      },
+      error: null,
+    })
+    let resolveAction: (value: unknown) => void = () => {}
+    mockMutateAsync.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAction = resolve
+      })
+    )
+    act(() => {
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <GenerativeAppHost identifier='gui-chatapp' pagePath='chat' emailId='' />
+        </GenerativeAppHostStateProvider>
+      )
+    })
+
+    const form = container.querySelector('form')
+    act(() => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+
+    expect(mockPush).toHaveBeenCalledWith('/gui-apps/gui-chatapp/results')
+    expect(container.querySelector('[data-testid="skeleton"]')).toBeTruthy()
+    expect(container.textContent).not.toContain('Waiting…')
+
+    await act(async () => {
+      resolveAction({ ok: true, setState: { content: 'Hi' } })
+    })
+
+    expect(container.querySelector('[data-testid="skeleton"]')).toBeNull()
+    expect(container.textContent).toContain('Hi')
   })
 })

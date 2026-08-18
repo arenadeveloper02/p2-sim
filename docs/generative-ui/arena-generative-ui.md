@@ -24,9 +24,9 @@ A published GUI app is a Sim page at `/gui-apps/{identifier}`, the same way `/ch
 6. Set identifier / title / category / access, then **Launch GUI App**.
 7. Share `{base}/gui-apps/{identifier}`. For Arena embeds, add `?emailId=` and turn on Require Arena emailId.
 
-Edit later by switching the block to **Edit Existing Draft**, running again (new revision), then launching from Deploy again.
+Edit later by switching the block to **Edit Existing Draft**, describing only what should change in **Requested Changes**, running again (new revision), then launching from Deploy again.
 
-You can also attach **Arena Generative UI** as an Agent tool (Built-in Tools). Pick Generate or Edit on the tool. Drafts still belong to this workflow — preview and Launch from **Deploy → GUI App**. For Edit, pin a Draft or let the agent pass `existingDraftId` from a prior generate.
+You can also attach **Arena Generative UI** as an Agent tool (Built-in Tools). Pick Generate or Edit on the tool. Drafts still belong to this workflow — preview and Launch from **Deploy → GUI App**. For Edit, pin a Draft or let the agent pass `existingDraftId` from a prior generate; the agent supplies `editInstructions` (the delta) rather than a brief.
 
 ---
 
@@ -48,9 +48,9 @@ From **Deploy → GUI App**, pick a draft and open **Preview**. That loads `{bas
 ### Mode
 
 - **Generate New App** — create a new draft on this workflow.
-- **Edit Existing Draft** — load a draft, apply the User Input as change instructions, save a new revision.
+- **Edit Existing Draft** — apply only what you type in **Requested Changes** to a draft, and save a new revision.
 
-### User Input (required)
+### User Input (Generate only, required)
 
 Describe the app in **plain language**. This field is prose, not JSON. Only **Pages** and **API Bindings** are JSON — leave them empty unless you are pinning a sitemap or wiring CTAs.
 
@@ -74,9 +74,22 @@ Results shows score and a Back link.
 
 Use the wand on this field if you want the brief expanded before you run.
 
-### Pages (Generate only, optional JSON)
+The brief is stored on the draft, so Edit can send it as background context without you retyping it.
 
-Pin the sitemap. If you leave this empty, the model proposes a small set of pages from User Input.
+### Requested Changes (Edit only, required)
+
+**An edit is a delta, not a rewrite.** Type only what should change; everything you do not mention — every page, element, prop, action, and copy string — is kept as it is. Do not paste the original brief again: the draft already carries it, and resending it invites the model to rebuild the app from scratch.
+
+```
+Center the search input and its submit button in one row.
+Show a loader on the results page while the API runs.
+```
+
+The field starts empty on every run. **User Input** is hidden in Edit mode for the same reason.
+
+### Pages (optional JSON)
+
+Pin the sitemap. On Generate, leaving this empty lets the model propose a small set of pages from User Input. On Edit, leaving it empty keeps the draft's current pages exactly as they are — the same applies to a blank **Entry Path**.
 
 Each path must be kebab-case (`home`, `results`, `team-detail`).
 
@@ -117,7 +130,7 @@ Two kinds:
 ]
 ```
 
-**HTTP** — server-side fetch to an allowlisted URL. Production requires `https`. Private/loopback hosts are rejected. Optional `headersSecretName` is a **workspace environment variable** name; the secret is never sent to the browser.
+**HTTP** — server-side fetch to an allowlisted URL. Production requires `https`. Private/loopback hosts are rejected. Optional `headersSecretName` is a workspace or personal **secret name**; the value is never sent to the browser (see **HTTP secrets** below).
 
 ```json
 [
@@ -143,6 +156,22 @@ Two kinds:
 
 `inputSchema` is a hint for the generator (field names to collect and map). It is not a runtime validator.
 
+### HTTP secrets (`headersSecretName`)
+
+The binding stores **only the secret name** (and the header name, e.g. `X-API-Key`). Curl header **values are discarded** and never written to the draft, the model, or the browser.
+
+Add the real token in **Settings → Secrets** (workspace or personal) under that same name, then pick it in **Add an API → Secret var**.
+
+| When | What happens |
+|---|---|
+| You save in Settings → Secrets | The server encrypts the value with AES-256-GCM using `ENCRYPTION_KEY` (64-character hex). Postgres stores `iv:ciphertext:authTag` only. |
+| You pick Secret var / paste curl | The draft keeps `headersSecretName` (e.g. `LINKEDIN_API_KEY`) and `authHeaderName`. Not the token. |
+| Preview or published CTA runs | Sim decrypts **on the server** for the signed-in actor in that workspace, attaches the header, and fetches the allowlisted URL. The browser never sees the plaintext. |
+
+Decrypt uses the **same** `ENCRYPTION_KEY` as encrypt. If `.env` has the example placeholder `your_encryption_key`, or a different key than the one that saved the secret, lookup finds the name but decrypt fails. Restart the Next.js process after changing `ENCRYPTION_KEY`.
+
+`*_API_KEY` names default to the `X-API-Key` header when `authHeaderName` is omitted. Set `authHeaderName` explicitly if the remote API expects something else (`Authorization`, etc.).
+
 ### Output format (`outputSchema`)
 
 `outputSchema` tells the generator what the API returns so it can lay the result out as a `Table`, `Stat`, or `KeyValue` instead of dumping one blob of text. Like `inputSchema` it is a generator hint only — nothing is validated against the live response, and a wrong entry cannot break a CTA.
@@ -158,6 +187,8 @@ Field names are ready-to-use `statePath` values, because of how a successful CTA
 | anything | text rendering of the whole body | `content` |
 
 So `statePath` is the response key itself — `articles`, never `data.articles` or `output.articles`. An `articles[].title` entry means `articles` is an array of objects with a `title`, which the generator turns into `Table statePath="articles" columns="title, url"`.
+
+When a binding has `stream: true`, prose still binds to `DataText statePath="content"`. If **Output format** also describes structured fields (for example `companies`), new drafts bind those as `Table` / `Stat` / `KeyValue` instead of dumping the whole body. Existing drafts keep their current layout until you **Edit Existing Draft** or generate again. Host state strips execution telemetry (`tokens`, `finishReason`, `model`) so it never appears as the report. JSON-mode workflow answers may still flush as one chunk; the UI formats that chunk rather than printing the executor envelope.
 
 Derivation walks 3 object levels, describes arrays from their first element, and caps at 40 fields.
 
@@ -277,7 +308,7 @@ Control-bar **Open** uses Chat/App first when those exist. If only a GUI App is 
 Clicks never call third-party APIs from the browser. The published host POSTs to `/api/gui-apps/{identifier}/actions/{actionId}`. Draft preview POSTs to `/api/gui-apps/drafts/{id}/actions/{actionId}` (session required).
 
 - **Workflow** — `executeWorkflow` on the bound workflow. That workflow must be **deployed**. Inputs are the form values, optionally remapped by `inputMapping` in the manifest.
-- **HTTP** — server fetch. Host must match the allowlist frozen at publish time. Timeout 15s, response cap 1MB. Auth headers come from the workspace env var named in `headersSecretName`.
+- **HTTP** — server fetch. Host must match the allowlist frozen at publish time. Timeout 15s, response cap 1MB. Auth headers come from the workspace or personal env var named in `headersSecretName`. The value is decrypted on the server at request time (see **HTTP secrets** above); it is never sent to the client.
 
 On success the host may navigate (`onSuccess.navigate`) and merge `setState` so `DataText` can show results (for example `score`).
 
@@ -323,9 +354,21 @@ The same pass repairs shape as well as names: a nested `children` tree of object
 
 Every region that fills from a CTA response gets a placeholder while the action is in flight:
 
-- **Automatic.** `Table`, `Stat`, `KeyValue` and `DataText` bound to a `statePath` render a shape-matched skeleton whenever an action is pending and the value is still empty. Nothing is needed in the manifest, so apps generated before this existed gain the behaviour too.
-- **Explicit.** `Skeleton` covers regions built from static children. It renders only while an action is pending, so it disappears on its own.
+- **Automatic.** `Table`, `Stat`, `KeyValue` and `DataText` bound to a `statePath` render a shape-matched skeleton whenever an action is pending and the value is still empty. Nothing is needed in the manifest, so apps generated before this existed gain the behaviour too. A `DataText` `fallback` is empty-state copy, not loading copy — it no longer suppresses the skeleton.
+- **Explicit.** `Skeleton` covers regions built from static children. It renders only while an action is pending, so it disappears on its own. A `Stat` with a literal `value`, or a `Table` with literal `rows`, is not bound to anything and needs one.
 - `Spinner` remains for short inline waits, and `ProgressSteps` for a stepped run the user explicitly asked for.
+
+**Loaders survive `onSuccess.navigate`.** A CTA that navigates on success sends the user to the destination page *before* the request is issued, and the action stays pending until it resolves — so the loading state belongs on the destination page, not on the form page the user has already left. This holds for streaming and non-streaming CTAs alike. If the action fails, the error is written to state and the user stays where they landed.
+
+### Alignment
+
+Fields are left-aligned by default. To centre a search field beside its button, wrap both in a horizontal `Stack`:
+
+```json
+{ "type": "Stack", "props": { "direction": "horizontal", "justify": "center", "align": "end", "gap": "12px" } }
+```
+
+`justify` accepts `start`, `center`, `between`, `end`; `align` accepts `start`, `center`, `end`, `stretch`. CSS spellings such as `space-between` or `flex-end` are rewritten to the catalog value rather than dropped. A whole form centres with `Form` `align: "center"`. `SubmitButton` has no alignment prop of its own — wrap it.
 
 ---
 
@@ -359,9 +402,12 @@ Same as above with `kind: "http"`. Put tokens in a workspace env var and referen
 | Generation error about pages / API keys | Pages JSON paths kebab-case; CTA keys ⊆ API Bindings |
 | CTA fails with “Bound workflow is not deployed” | Deploy the target workflow, then republish the app |
 | CTA fails with host not allowlisted | HTTP URL host is locked at publish. Change the binding, regenerate, Launch again |
+| CTA: Secret `"NAME"` was not found | Name in Secret var must match Settings → Secrets. Accessible names are listed in the error. Try `W_NAME` vs `NAME`. |
+| CTA: Secret exists but could not be decrypted | `ENCRYPTION_KEY` must be a 64-char hex string and match the key used when the secret was saved. Restart the app after changing `.env`, then re-save the secret if the key changed. |
 | “Do not have access” | Gate is on and `emailId` is missing. Add `?emailId=` or turn off Require Arena emailId |
 | Open goes to chat or an external App URL | Control-bar Open prefers Chat/App. Use Launch GUI App from Deploy → GUI App |
 | Edit cannot find the draft | Draft must belong to this workflow; Generate created it on another workflow |
+| Block error `fetch failed` during generate/edit | Claude can take several minutes. Check **Deploy → GUI App** — a revision may already have been saved even if the block showed an error. Retry the run. |
 
 Tool APIs used by the block (you do not call these yourself):
 

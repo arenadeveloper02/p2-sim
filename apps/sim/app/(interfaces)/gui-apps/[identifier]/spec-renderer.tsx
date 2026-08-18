@@ -99,6 +99,20 @@ function sectionWidthClass(value: unknown): string {
   return SECTION_WIDTHS[width as keyof typeof SECTION_WIDTHS] ?? SECTION_WIDTHS.wide
 }
 
+const ALIGN_ITEMS_CLASSES = {
+  start: 'items-start',
+  center: 'items-center',
+  end: 'items-end',
+  stretch: 'items-stretch',
+} as const
+
+function alignItemsClass(value: unknown, fallback: keyof typeof ALIGN_ITEMS_CLASSES): string {
+  const align = asString(value, fallback)
+  return (
+    ALIGN_ITEMS_CLASSES[align as keyof typeof ALIGN_ITEMS_CLASSES] ?? ALIGN_ITEMS_CLASSES[fallback]
+  )
+}
+
 /**
  * `auto-fit` + `minmax` keeps the grid responsive without media queries, and
  * `min(100%, …)` stops a wide track from overflowing a narrow viewport.
@@ -425,6 +439,10 @@ function StateKeyValue({ pairs }: { pairs: Array<[string, string]> }) {
   )
 }
 
+/**
+ * `fallback` is empty-state copy, not loading copy, so a pending action still shows the skeleton —
+ * otherwise every DataText that declares a fallback silently opts out of its loading state.
+ */
 function DataTextView({
   value,
   fallback,
@@ -438,7 +456,7 @@ function DataTextView({
 }) {
   const structured = structuredFromDataText(value)
   const display = displayFromStateValue(value, fallback)
-  if (!structured && !display && pending) {
+  if (pending && !structured && isEmptyStateValue(value)) {
     return <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
   }
   if (structured?.kind === 'table') {
@@ -534,17 +552,13 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           </section>
         )
       case 'Stack': {
-        const align = asString(props.align, 'stretch')
         const justify = asString(props.justify, 'start')
         return (
           <div
             className={cn(
               'flex',
               asString(props.direction, 'vertical') === 'horizontal' ? 'flex-row' : 'flex-col',
-              align === 'center' && 'items-center',
-              align === 'end' && 'items-end',
-              align === 'start' && 'items-start',
-              align === 'stretch' && 'items-stretch',
+              alignItemsClass(props.align, 'stretch'),
               justify === 'center' && 'justify-center',
               justify === 'between' && 'justify-between',
               justify === 'end' && 'justify-end',
@@ -860,7 +874,10 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           }
         }
         return (
-          <form className='flex flex-col gap-4' onSubmit={handleSubmit}>
+          <form
+            className={cn('flex flex-col gap-4', alignItemsClass(props.align, 'stretch'))}
+            onSubmit={handleSubmit}
+          >
             {children}
           </form>
         )

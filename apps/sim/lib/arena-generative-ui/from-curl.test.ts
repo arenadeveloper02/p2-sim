@@ -2,7 +2,11 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { curlHasAuthHeader, curlLooksLikeStream, httpBindingFromCurl } from '@/lib/arena-generative-ui/from-curl'
+import {
+  curlHasAuthHeader,
+  curlLooksLikeStream,
+  httpBindingFromCurl,
+} from '@/lib/arena-generative-ui/from-curl'
 
 const ARTICLE_RECOMMENDATION_CURL = `curl -X POST \\
   -H "X-API-Key: $W_ARTICAL_RECOMMENDATION_AGENT_KEY” \\
