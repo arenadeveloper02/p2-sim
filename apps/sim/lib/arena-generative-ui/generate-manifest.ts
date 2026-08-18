@@ -6,6 +6,7 @@ import {
   ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
   ARENA_GENERATIVE_UI_ON_LOAD_RULE,
   ARENA_GENERATIVE_UI_OUTPUT_RULES,
+  ARENA_GENERATIVE_UI_PAGINATION_RULE,
   ARENA_GENERATIVE_UI_PERSONA,
   ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
   arenaGenerativeUiCatalog,
@@ -170,7 +171,11 @@ export async function generateArenaGenerativeManifest(
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
       'This app renders as a full page, embedded in Arena or opened directly. emailId is optional. Do not invent a login form or a logo.',
       ...(params.apiBindings.length > 0
-        ? [ARENA_GENERATIVE_UI_ACTION_RESULT_RULE, ARENA_GENERATIVE_UI_ON_LOAD_RULE]
+        ? [
+            ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
+            ARENA_GENERATIVE_UI_ON_LOAD_RULE,
+            ARENA_GENERATIVE_UI_PAGINATION_RULE,
+          ]
         : []),
       ...(hasStreamingBinding ? [ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE] : []),
     ],
@@ -197,6 +202,7 @@ export async function generateArenaGenerativeManifest(
     inputSchema: binding.inputSchema ?? [],
     outputSchema: binding.outputSchema ?? [],
     stream: binding.stream === true,
+    pagination: binding.pagination,
   }))
 
   const bindingKeys = params.apiBindings.map((binding) => binding.key).filter(Boolean)

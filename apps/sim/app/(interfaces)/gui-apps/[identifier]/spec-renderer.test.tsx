@@ -1054,6 +1054,37 @@ describe('SpecRenderer', () => {
       const button = renderButton({ label: 'Run', actionId: 'run' }, true)
       expect(button.disabled).toBe(true)
     })
+
+    it('hides a Load more button when hasMore is false', () => {
+      const { container } = render({
+        spec: buttonSpec({ label: 'Load more', actionId: 'load_list', showWhen: 'hasMore' }),
+        state: { hasMore: false },
+      })
+      expect(container.querySelector('button')).toBeNull()
+    })
+
+    it('shows a Load more button when hasMore is true', () => {
+      const { container } = render({
+        spec: buttonSpec({ label: 'Load more', actionId: 'load_list', showWhen: 'hasMore' }),
+        state: { hasMore: true, nextCursor: 'page-2' },
+      })
+      expect(container.querySelector('button')?.textContent).toBe('Load more')
+    })
+
+    it('sends nextCursor from host state on a Load more click', () => {
+      const { container, onRunAction } = render({
+        spec: buttonSpec({ label: 'Load more', actionId: 'load_list' }),
+        state: { nextCursor: 'page-2', articles: [{ id: '1' }] },
+      })
+      act(() => {
+        container.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onRunAction).toHaveBeenCalledWith(
+        'load_list',
+        expect.objectContaining({ nextCursor: 'page-2' })
+      )
+      expect(onRunAction.mock.calls[0]?.[1]).not.toHaveProperty('articles')
+    })
   })
 
   it('ticks earlier ProgressSteps after elapsed time while pending', () => {

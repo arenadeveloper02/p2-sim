@@ -2,12 +2,21 @@ import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
+import { backoffWithJitter, parseRetryAfter } from '@sim/utils/retry'
 import { truncate } from '@sim/utils/string'
 import { eq } from 'drizzle-orm'
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
 import { isHttpUrlAllowlisted } from '@/lib/arena-generative-ui/http-allowlist'
+import { outputSchemaWarning } from '@/lib/arena-generative-ui/output-schema'
 import {
+  applyPaginationToInput,
+  collectAppendKeys,
+  paginationStateFromData,
+} from '@/lib/arena-generative-ui/pagination'
+import {
+  ARENA_GENERATIVE_SCHEMA_WARNING_KEY,
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
   type ArenaGenerativeHttpBinding,
@@ -36,9 +45,14 @@ const DEFAULT_HTTP_TIMEOUT_MS = 60_000
 export const HTTP_STREAM_TIMEOUT_MS = 180_000
 const MIN_HTTP_TIMEOUT_MS = 1_000
 const MAX_HTTP_TIMEOUT_MS = 300_000
-const HTTP_MAX_BYTES = 1_048_576
+export const HTTP_MAX_BYTES = 1_048_576
+export const HTTP_RESPONSE_TOO_LARGE_ERROR =
+  'HTTP response exceeded 1 MB. Ask the API for a smaller page (pagination, limit, or a narrower field set) and retry.'
 const HTTP_ERROR_DETAIL_MAX_LENGTH = 300
 const API_KEY_SECRET_NAME = /API[_-]?KEY$/i
+const RETRYABLE_HTTP_STATUS = new Set([429, 502, 503, 504])
+const MAX_HTTP_ATTEMPTS = 3
+const IDEMPOTENT_HTTP_METHODS = new Set(['GET', 'DELETE'])
 
 function resolveHttpTimeoutMs(binding: ArenaGenerativeHttpBinding, streaming: boolean): number {
   const fallback = streaming ? HTTP_STREAM_TIMEOUT_MS : DEFAULT_HTTP_TIMEOUT_MS
@@ -377,6 +391,32 @@ async function runWorkflowBinding(options: {
   }
 }
 
+function retryAfterFromResponse(response: Response): number | null {
+  const headers = response.headers
+  if (!headers || typeof headers.get !== 'function') return null
+  return parseRetryAfter(headers.get('Retry-After'))
+}
+
+function isTimeoutAbort(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
+}
+
+async function readHttpJsonBody(
+  response: Response
+): Promise<{ tooLarge: true } | { tooLarge: false; data: unknown }> {
+  const buffer = await response.arrayBuffer()
+  if (buffer.byteLength > HTTP_MAX_BYTES) {
+    return { tooLarge: true }
+  }
+  const text = new TextDecoder().decode(buffer)
+  if (!text) return { tooLarge: false, data: null }
+  try {
+    return { tooLarge: false, data: JSON.parse(text) }
+  } catch {
+    return { tooLarge: false, data: text }
+  }
+}
+
 async function runHttpBinding(options: {
   binding: ArenaGenerativeApiBinding
   mappedInput: Record<string, unknown>
@@ -409,68 +449,81 @@ async function runHttpBinding(options: {
   const secretHeaders = secret.headers
 
   const method = http.method
-  const timeoutMs = resolveHttpTimeoutMs(http, Boolean(options.onChunk))
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  const streaming = Boolean(options.onChunk)
+  const timeoutMs = resolveHttpTimeoutMs(http, streaming)
+  const canRetry = !streaming && IDEMPOTENT_HTTP_METHODS.has(method)
+  const maxAttempts = canRetry ? MAX_HTTP_ATTEMPTS : 1
 
-  try {
-    const init: RequestInit = {
-      method,
-      headers: {
-        Accept: options.onChunk
-          ? 'text/event-stream, text/plain, application/json'
-          : 'application/json',
-        ...secretHeaders,
-      },
-      signal: controller.signal,
-    }
+  let lastFailure: { ok: false; error: string; data?: unknown } | null = null
 
-    let url = http.url
-    if (method === 'GET' || method === 'DELETE') {
-      const parsed = new URL(url)
-      for (const [key, value] of Object.entries(options.mappedInput)) {
-        if (value === undefined || value === null) continue
-        parsed.searchParams.set(key, String(value))
-      }
-      url = parsed.toString()
-    } else {
-      init.headers = {
-        ...(init.headers as Record<string, string>),
-        'Content-Type': 'application/json',
-      }
-      init.body = JSON.stringify(options.mappedInput)
-    }
-
-    const response = await fetch(url, init)
-    if (options.onChunk) {
-      return await readHttpResponseStream(response, options.onChunk, timeoutMs)
-    }
-    const buffer = await response.arrayBuffer()
-    if (buffer.byteLength > HTTP_MAX_BYTES) {
-      return { ok: false, error: 'HTTP response exceeded size limit' }
-    }
-    const text = new TextDecoder().decode(buffer)
-    let data: unknown = text
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      data = text ? JSON.parse(text) : null
-    } catch {
-      data = text
-    }
-
-    if (!response.ok) {
-      return {
-        ok: false,
-        error: httpErrorMessage(response.status, data),
-        data,
+      const init: RequestInit = {
+        method,
+        headers: {
+          Accept: streaming
+            ? 'text/event-stream, text/plain, application/json'
+            : 'application/json',
+          ...secretHeaders,
+        },
+        signal: controller.signal,
       }
-    }
 
-    return { ok: true, data }
-  } catch (error) {
-    return { ok: false, error: httpFailureMessage(error, timeoutMs) }
-  } finally {
-    clearTimeout(timeout)
+      let url = http.url
+      if (method === 'GET' || method === 'DELETE') {
+        const parsed = new URL(url)
+        for (const [key, value] of Object.entries(options.mappedInput)) {
+          if (value === undefined || value === null) continue
+          parsed.searchParams.set(key, String(value))
+        }
+        url = parsed.toString()
+      } else {
+        init.headers = {
+          ...(init.headers as Record<string, string>),
+          'Content-Type': 'application/json',
+        }
+        init.body = JSON.stringify(options.mappedInput)
+      }
+
+      const response = await fetch(url, init)
+      if (options.onChunk) {
+        return await readHttpResponseStream(response, options.onChunk, timeoutMs)
+      }
+
+      const body = await readHttpJsonBody(response)
+      if (body.tooLarge) {
+        return { ok: false, error: HTTP_RESPONSE_TOO_LARGE_ERROR }
+      }
+
+      if (response.ok) {
+        return { ok: true, data: body.data }
+      }
+
+      lastFailure = {
+        ok: false,
+        error: httpErrorMessage(response.status, body.data),
+        data: body.data,
+      }
+      const retryableStatus = RETRYABLE_HTTP_STATUS.has(response.status)
+      if (canRetry && retryableStatus && attempt < maxAttempts) {
+        await sleep(backoffWithJitter(attempt, retryAfterFromResponse(response)))
+        continue
+      }
+      return lastFailure
+    } catch (error) {
+      lastFailure = { ok: false, error: httpFailureMessage(error, timeoutMs) }
+      if (isTimeoutAbort(error) || !canRetry || attempt >= maxAttempts) {
+        return lastFailure
+      }
+      await sleep(backoffWithJitter(attempt, null))
+    } finally {
+      clearTimeout(timer)
+    }
   }
+
+  return lastFailure ?? { ok: false, error: 'HTTP request failed' }
 }
 
 function extractStreamPayloadText(raw: string): string {
@@ -586,7 +639,7 @@ async function readHttpResponseStream(
           if (!piece) return
           totalBytes += new TextEncoder().encode(piece).byteLength
           if (totalBytes > HTTP_MAX_BYTES) {
-            throw new Error('HTTP response exceeded size limit')
+            throw new Error(HTTP_RESPONSE_TOO_LARGE_ERROR)
           }
           accumulated += piece
           await onChunk(piece)
@@ -613,7 +666,7 @@ async function readHttpResponseStream(
           if (done) break
           totalBytes += value.byteLength
           if (totalBytes > HTTP_MAX_BYTES) {
-            return { ok: false, error: 'HTTP response exceeded size limit' }
+            return { ok: false, error: HTTP_RESPONSE_TOO_LARGE_ERROR }
           }
           const chunk = decoder.decode(value, { stream: true })
           if (!chunk) continue
@@ -633,24 +686,20 @@ async function readHttpResponseStream(
       return { ok: true, data: { content: accumulated } }
     }
   } catch (error) {
+    if (error instanceof Error && error.message === HTTP_RESPONSE_TOO_LARGE_ERROR) {
+      return { ok: false, error: HTTP_RESPONSE_TOO_LARGE_ERROR }
+    }
     return { ok: false, error: httpFailureMessage(error, timeoutMs) }
   }
 
-  const buffer = await response.arrayBuffer()
-  if (buffer.byteLength > HTTP_MAX_BYTES) {
-    return { ok: false, error: 'HTTP response exceeded size limit' }
-  }
-  const text = new TextDecoder().decode(buffer)
-  let data: unknown = text
-  try {
-    data = text ? JSON.parse(text) : null
-  } catch {
-    data = text
+  const body = await readHttpJsonBody(response)
+  if (body.tooLarge) {
+    return { ok: false, error: HTTP_RESPONSE_TOO_LARGE_ERROR }
   }
   if (!response.ok) {
-    return { ok: false, error: httpErrorMessage(response.status, data), data }
+    return { ok: false, error: httpErrorMessage(response.status, body.data), data: body.data }
   }
-  return { ok: true, data }
+  return { ok: true, data: body.data }
 }
 
 export interface RunDeployedAppActionResult {
@@ -659,6 +708,8 @@ export interface RunDeployedAppActionResult {
   navigate?: string
   setState?: Record<string, unknown>
   error?: string
+  appendKeys?: string[]
+  schemaWarning?: string
 }
 
 export interface RunGenerativeAppActionOptions {
@@ -701,7 +752,10 @@ export async function runGenerativeAppAction(
     return { ok: false, error: `Unknown API binding "${action.apiKey}"` }
   }
 
-  const mappedInput = mapActionInput(options.values, action.inputMapping)
+  const mappedInput = applyPaginationToInput(
+    binding.pagination,
+    mapActionInput(options.values, action.inputMapping)
+  )
 
   let streamedContent = ''
   const onChunk = options.onChunk
@@ -739,18 +793,34 @@ export async function runGenerativeAppAction(
   }
 
   const fromData = actionStateFromData(result.data)
+  const paginationPatch = binding.pagination
+    ? paginationStateFromData(binding.pagination, result.data, mappedInput)
+    : {}
   const display = streamedContent.trim() ? streamedContent : displayTextFromActionData(result.data)
-  const setState = {
+  const setState: Record<string, unknown> = {
     ...(action.onSuccess?.setState ?? {}),
     ...fromData,
+    ...paginationPatch,
     ...(display ? { content: display } : {}),
   }
+  const schemaWarning = outputSchemaWarning(binding.outputSchema, setState)
+  if (schemaWarning) {
+    logger.warn('Generative app outputSchema drift', {
+      actionId: options.actionId,
+      bindingKey: binding.key,
+      schemaWarning,
+    })
+    setState[ARENA_GENERATIVE_SCHEMA_WARNING_KEY] = schemaWarning
+  }
+  const appendKeys = collectAppendKeys(binding.pagination, mappedInput, action.append)
 
   return {
     ok: true,
     data: result.data,
     navigate: action.onSuccess?.navigate,
     setState,
+    appendKeys: appendKeys.length > 0 ? appendKeys : undefined,
+    schemaWarning,
   }
 }
 
@@ -777,6 +847,8 @@ export function createGenerativeAppActionSseResponse(
             navigate: result.navigate,
             setState: result.setState,
             error: result.error,
+            appendKeys: result.appendKeys,
+            schemaWarning: result.schemaWarning,
           })
         )
       } catch (error) {

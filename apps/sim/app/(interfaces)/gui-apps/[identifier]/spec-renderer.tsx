@@ -25,7 +25,7 @@ import {
   validateVisibleFields,
   valuesFromFormElement,
 } from '@/lib/arena-generative-ui/form-fields'
-import type { RepeatItemScope } from '@/lib/arena-generative-ui/types'
+import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
 import {
   displayTextFromActionData,
   interpolateRepeatProps,
@@ -656,9 +656,16 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
     ))
     const hasChildren = childIds.length > 0
     const fieldSnapshot = snapshotFormValues(specFormFields(elements), formValues, state, scope)
-    const actionValues = scope
-      ? { ...formValues, ...repeatItemActionValues(scope.item, scope.index) }
-      : formValues
+    const actionValues = {
+      ...paginationActionValues(state),
+      ...formValues,
+      ...(scope ? repeatItemActionValues(scope.item, scope.index) : {}),
+    }
+    const visibilityValues = {
+      ...state,
+      ...formValues,
+      ...(scope ? repeatItemActionValues(scope.item, scope.index) : {}),
+    }
 
     const setNamedValue = (name: string, value: unknown) => {
       setFormValues((current) => ({ ...current, [name]: value }))
@@ -1274,6 +1281,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         const navigateTo = asString(props.navigateTo)
         const actionId = asString(props.actionId)
         const className = buttonClass(props, 'secondary')
+        if (!fieldIsVisible(props, visibilityValues)) return null
         if (href) {
           return (
             <a href={href} className={className} style={styleFromProps(props)} rel='noreferrer'>

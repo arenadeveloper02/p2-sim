@@ -127,6 +127,31 @@ describe('parseApiBindings', () => {
     ])
     expect(binding.outputSchema).toBeUndefined()
   })
+
+  it('round-trips pagination on an HTTP binding', () => {
+    const [binding] = parseApiBindings([
+      {
+        key: 'list_articles',
+        kind: 'http',
+        http: { method: 'GET', url: 'https://api.example.com/articles' },
+        pagination: { mode: 'cursor', items: 'articles', limit: 20 },
+      },
+    ])
+    expect(binding.pagination).toEqual({ mode: 'cursor', items: 'articles', limit: 20 })
+  })
+
+  it('rejects a nested pagination items path', () => {
+    expect(() =>
+      parseApiBindings([
+        {
+          key: 'list_articles',
+          kind: 'http',
+          http: { method: 'GET', url: 'https://api.example.com/articles' },
+          pagination: { mode: 'cursor', items: 'data.articles' },
+        },
+      ])
+    ).toThrow('pagination.items must be a top-level array key')
+  })
 })
 
 describe('arenaGenerativeGenerateBodySchema empty optionals', () => {

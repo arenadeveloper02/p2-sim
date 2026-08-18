@@ -62,12 +62,32 @@ export interface ArenaGenerativeApiBinding {
   inputSchema?: Array<{ name: string; type: string }>
   /**
    * Response field names and types, usable as `statePath` values because the
-   * host merges an object response's top-level keys into app state. Generator
-   * metadata only — never validated against the live response.
+   * host merges an object response's top-level keys into app state. Missing
+   * top-level names warn in preview; the action still succeeds.
    */
   outputSchema?: Array<{ name: string; type: string }>
+  /** Cursor or offset paging; the host appends `items` on page 2+. */
+  pagination?: ArenaGenerativePagination
   /** When true, the host streams CTA tokens into DataText instead of waiting for JSON. */
   stream?: boolean
+}
+
+export interface ArenaGenerativePagination {
+  mode: 'cursor' | 'offset'
+  /** Top-level response array key to render and append, e.g. `articles`. */
+  items: string
+  /** Response field that holds the next cursor. Default `nextCursor`. */
+  cursor?: string
+  /** Request param that receives the cursor. Default `cursor`. */
+  cursorParam?: string
+  /** Request param that receives the offset. Default `offset`. */
+  offsetParam?: string
+  /** Request param that receives the page size. Default `limit`. */
+  limitParam?: string
+  /** Page size injected when the request omits it. Default 20, clamped 1–100. */
+  limit?: number
+  /** Optional top-level boolean (or truthy) response field for `hasMore`. */
+  hasMore?: string
 }
 
 export interface ArenaGenerativePageManifest {
@@ -85,6 +105,11 @@ export interface ArenaGenerativePageManifest {
 export interface ArenaGenerativeActionManifest {
   apiKey: string
   inputMapping?: Record<string, string>
+  /**
+   * State keys whose arrays concatenate on this action even on page 1.
+   * Pagination already appends `items` on page 2+; use this for a Load-more-only action.
+   */
+  append?: string[]
   onSuccess?: {
     navigate?: string
     setState?: Record<string, unknown>
@@ -114,6 +139,9 @@ export const ARENA_GENERATIVE_STREAM_CONTENT_KEY = 'content'
 /** Host state key a failed CTA writes its message to. */
 export const ARENA_GENERATIVE_ERROR_KEY = 'error'
 
+/** Host state key for a warn-only outputSchema mismatch. */
+export const ARENA_GENERATIVE_SCHEMA_WARNING_KEY = 'schemaWarning'
+
 /**
  * Message for a failed CTA, if any. Generated specs are not required to bind
  * `error` anywhere, so hosts read it directly rather than hoping the model
@@ -124,9 +152,18 @@ export function actionErrorFrom(state: Record<string, unknown>): string {
   return typeof value === 'string' && value.trim() ? value.trim() : ''
 }
 
-/** State patch that clears a previously surfaced CTA error. */
+/** Message for a warn-only outputSchema mismatch, if any. */
+export function actionSchemaWarningFrom(state: Record<string, unknown>): string {
+  const value = state[ARENA_GENERATIVE_SCHEMA_WARNING_KEY]
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
+/** State patch that clears a previously surfaced CTA error or schema warning. */
 export function clearedActionErrorState(): Record<string, unknown> {
-  return { [ARENA_GENERATIVE_ERROR_KEY]: undefined }
+  return {
+    [ARENA_GENERATIVE_ERROR_KEY]: undefined,
+    [ARENA_GENERATIVE_SCHEMA_WARNING_KEY]: undefined,
+  }
 }
 
 export interface ArenaGenerativeTabItem {

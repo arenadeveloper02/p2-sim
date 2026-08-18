@@ -11,6 +11,7 @@ import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-a
 import {
   ARENA_GENERATIVE_APP_BASE_PATH,
   actionErrorFrom,
+  actionSchemaWarningFrom,
   clearedActionErrorState,
   isJsonRenderSpec,
   navigationHref,
@@ -137,12 +138,15 @@ export function GenerativeAppHost({
 
   const actionNavigate = configQuery.data.config.actionNavigate ?? {}
   const actionError = actionErrorFrom(state)
+  const schemaWarning = actionSchemaWarningFrom(state)
+  const bannerMessage = actionError || schemaWarning
 
   return (
     <>
-      {actionError ? (
+      {bannerMessage ? (
         <ActionErrorBanner
-          message={actionError}
+          message={bannerMessage}
+          tone={actionError ? 'error' : 'warning'}
           onDismiss={() => mergeState(clearedActionErrorState())}
         />
       ) : null}
@@ -177,14 +181,14 @@ export function GenerativeAppHost({
 
 function applyActionResult(
   result: RunDeployedAppActionResult,
-  mergeState: (patch: Record<string, unknown>) => void,
+  mergeState: (patch: Record<string, unknown>, appendKeys?: readonly string[]) => void,
   navigate: (path: string) => void,
   actionLogger: { warn: (message: string, meta?: Record<string, unknown>) => void },
   options?: { skipNavigate?: boolean }
 ) {
   if (result.setState) {
     flushSync(() => {
-      mergeState(result.setState as Record<string, unknown>)
+      mergeState(result.setState as Record<string, unknown>, result.appendKeys)
     })
   }
   if (!options?.skipNavigate && result.navigate) {

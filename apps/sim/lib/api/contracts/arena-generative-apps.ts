@@ -59,6 +59,22 @@ export const arenaGenerativeApiBindingSchema = z
       .max(40, 'outputSchema is limited to 40 fields')
       .optional(),
     stream: z.boolean().optional(),
+    pagination: z
+      .object({
+        mode: z.enum(['cursor', 'offset']),
+        items: z
+          .string()
+          .min(1, 'pagination.items is required')
+          .max(64)
+          .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, 'pagination.items must be a top-level array key'),
+        cursor: z.string().min(1).max(64).optional(),
+        cursorParam: z.string().min(1).max(64).optional(),
+        offsetParam: z.string().min(1).max(64).optional(),
+        limitParam: z.string().min(1).max(64).optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+        hasMore: z.string().min(1).max(64).optional(),
+      })
+      .optional(),
   })
   .superRefine((binding, ctx) => {
     if (binding.kind === 'workflow' && !binding.workflowId) {
@@ -93,6 +109,7 @@ export const arenaGenerativeManifestSchema = z.object({
     z.object({
       apiKey: z.string(),
       inputMapping: z.record(z.string(), z.string()).optional(),
+      append: z.array(z.string().min(1).max(64)).max(8).optional(),
       onSuccess: z
         .object({
           navigate: z.string().optional(),

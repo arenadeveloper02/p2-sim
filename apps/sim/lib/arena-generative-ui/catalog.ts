@@ -300,9 +300,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         actionId: z.string().nullable(),
         variant: z.enum(['primary', 'secondary', 'ghost', 'destructive']).nullable(),
         size: z.enum(['sm', 'md']).nullable(),
+        showWhen: z.string().nullable(),
       }),
       description:
-        'Button. Prefer navigateTo for in-app pages, actionId for APIs, href only for true outbound links. variant sets emphasis and defaults to secondary: use primary for the single main action of a page, secondary for ordinary actions, ghost for low-emphasis ones such as Back or Cancel, destructive for delete.',
+        'Button. Prefer navigateTo for in-app pages, actionId for APIs, href only for true outbound links. variant sets emphasis and defaults to secondary: use primary for the single main action of a page, secondary for ordinary actions, ghost for low-emphasis ones such as Back or Cancel, destructive for delete. showWhen hides the button until host state or a form field matches (same syntax as form fields) — use "hasMore" for Load more.',
     },
     NavLink: {
       props: z.object({
@@ -376,7 +377,7 @@ export const ARENA_GENERATIVE_UI_PERSONA =
 
 export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Output a single complete JSON object. Do NOT wrap it in markdown fences. Do NOT output JSONL patches.',
-  'Shape: { "title": string, "content": string, "manifest": { "entryPath": string, "pages": { [path]: { "title", "path", "spec", "onLoad?" } }, "actions": { [actionId]: { "apiKey", "inputMapping?", "onSuccess?", "onError?" } } } }',
+  'Shape: { "title": string, "content": string, "manifest": { "entryPath": string, "pages": { [path]: { "title", "path", "spec", "onLoad?" } }, "actions": { [actionId]: { "apiKey", "inputMapping?", "append?", "onSuccess?", "onError?" } } } }',
   'manifest.pages MUST be an object keyed by kebab-case path, never an array. Example: { "home": { "path": "home", "title": "People", "spec": { ... } }, "person": { "path": "person", "title": "Profile", "spec": { ... } } }.',
   'Return one JSON object only. Do not emit a short summary object before the manifest.',
   'Each page spec is a json-render Spec: { "root": string, "elements": { [key]: { type, props, children } } }.',
@@ -414,6 +415,11 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
 export const ARENA_GENERATIVE_UI_ACTION_RESULT_RULE = [
   'CTA results: when an action succeeds the host merges the response object top-level keys into app state, so a statePath is the response key itself — use "articles", never "data.articles", "output.articles", or "response.articles". A response that is an array or a plain value lands under "result". "content" always holds a text rendering of the whole response.',
   'When a binding declares outputSchema, bind its field names as statePath instead of dumping "content": an array field such as "articles" with children "articles[].title" becomes Table statePath="articles" with columns from those child names, or Repeat inside a Grid when each item needs its own Card, link, or action; a single number or string becomes Stat or KeyValue; only fall back to DataText statePath="content" for prose or when the binding declares no outputSchema.',
+].join(' ')
+
+/** Added to the generator prompt only when at least one API binding is declared. */
+export const ARENA_GENERATIVE_UI_PAGINATION_RULE = [
+  'Pagination: when a binding declares pagination, the host injects limit and cursor/offset, writes hasMore plus nextCursor (cursor mode) or offset (offset mode) into state, and appends the items array on page 2+ so Load more does not replace the list. Put a Button with the same actionId, showWhen "hasMore", and inputMapping that sends state nextCursor (cursor: "nextCursor") or offset (offset: "offset"). Do not invent a second action for the next page.',
 ].join(' ')
 
 /** Added to the generator prompt only when at least one API binding is declared. */

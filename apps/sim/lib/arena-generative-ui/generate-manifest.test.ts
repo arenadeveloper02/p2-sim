@@ -173,6 +173,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('NumberInput')
     expect(system).toContain('showWhen')
     expect(system).toContain('MultiSelect')
+    expect(system).toContain('Load more')
   })
 
   it('opens with the engineer persona and a no-markdown instruction', async () => {
@@ -243,6 +244,8 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('top-level keys into app state')
     expect(system).toContain('never "data.articles"')
     expect(system).toContain('outputSchema')
+    expect(system).toContain('Load more')
+    expect(system).toContain('hasMore')
 
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('articles[].title')

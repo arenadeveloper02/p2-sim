@@ -3,6 +3,7 @@ import {
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
   type ArenaGenerativeApiBinding,
   type ArenaGenerativePageHint,
+  type ArenaGenerativePagination,
 } from '@/lib/arena-generative-ui/types'
 
 const JSON_FENCE_PREFIX = /^```(?:json)?\s*\r?\n?/i
@@ -247,6 +248,49 @@ function schemaFields(raw: unknown): Array<{ name: string; type: string }> | und
     }))
 }
 
+const TOP_LEVEL_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+function optionalParamName(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const trimmed = raw.trim()
+  return trimmed && TOP_LEVEL_KEY.test(trimmed) ? trimmed : undefined
+}
+
+/**
+ * Parses a binding's `pagination` block. Invalid objects throw so a typo does
+ * not silently disable Load more.
+ */
+function parsePagination(raw: unknown, index: number): ArenaGenerativePagination | undefined {
+  if (raw == null) return undefined
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`apiBindings[${index}].pagination must be an object`)
+  }
+  const record = raw as Record<string, unknown>
+  const mode = record.mode === 'offset' ? 'offset' : record.mode === 'cursor' ? 'cursor' : null
+  if (!mode) {
+    throw new Error(`apiBindings[${index}].pagination.mode must be cursor or offset`)
+  }
+  const items = typeof record.items === 'string' ? record.items.trim() : ''
+  if (!items || !TOP_LEVEL_KEY.test(items)) {
+    throw new Error(`apiBindings[${index}].pagination.items must be a top-level array key`)
+  }
+  const pagination: ArenaGenerativePagination = { mode, items }
+  const cursor = optionalParamName(record.cursor)
+  if (cursor) pagination.cursor = cursor
+  const cursorParam = optionalParamName(record.cursorParam)
+  if (cursorParam) pagination.cursorParam = cursorParam
+  const offsetParam = optionalParamName(record.offsetParam)
+  if (offsetParam) pagination.offsetParam = offsetParam
+  const limitParam = optionalParamName(record.limitParam)
+  if (limitParam) pagination.limitParam = limitParam
+  const hasMore = optionalParamName(record.hasMore)
+  if (hasMore) pagination.hasMore = hasMore
+  if (typeof record.limit === 'number' && Number.isFinite(record.limit)) {
+    pagination.limit = Math.min(Math.max(Math.trunc(record.limit), 1), 100)
+  }
+  return pagination
+}
+
 /**
  * Parses API bindings from a JSON array or already-parsed list.
  * Empty means no CTAs — the model must not invent keys.
@@ -329,6 +373,10 @@ export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
     const outputSchema = schemaFields(record.outputSchema)
     if (outputSchema) {
       binding.outputSchema = outputSchema
+    }
+    const pagination = parsePagination(record.pagination, index)
+    if (pagination) {
+      binding.pagination = pagination
     }
     if (record.stream === true) {
       binding.stream = true

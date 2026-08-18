@@ -18,7 +18,7 @@ interface UsePageLoadActionsOptions {
     actionId: string,
     values: Record<string, string>
   ) => Promise<RunDeployedAppActionResult>
-  mergeState: (patch: Record<string, unknown>) => void
+  mergeState: (patch: Record<string, unknown>, appendKeys?: readonly string[]) => void
   resetState: () => void
   setLoadPending: (pending: boolean) => void
 }
@@ -73,23 +73,21 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): void {
       )
       if (cancelled) return
 
-      const patch: Record<string, unknown> = {}
       let failure = ''
       for (const [index, result] of results.entries()) {
         if (result.status === 'rejected') {
           failure = failure || toError(result.reason).message || 'Failed to load this page'
           continue
         }
-        Object.assign(patch, result.value.setState ?? {})
+        if (result.value.setState) {
+          mergeState(result.value.setState, result.value.appendKeys)
+        }
         if (!result.value.ok) {
           failure = failure || result.value.error || `Action "${actionIds[index]}" failed`
         }
       }
       if (failure) {
-        patch.error = failure
-      }
-      if (Object.keys(patch).length > 0) {
-        mergeState(patch)
+        mergeState({ error: failure })
       }
       setLoadPending(false)
     })()

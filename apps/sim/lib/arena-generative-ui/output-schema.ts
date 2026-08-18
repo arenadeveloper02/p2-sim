@@ -86,3 +86,40 @@ function schemaTypeFromValue(value: unknown): string {
   if (typeof value === 'boolean') return 'boolean'
   return 'string'
 }
+
+/**
+ * Root name of an outputSchema path: `articles` from `articles[].title` or `meta` from `meta.total`.
+ */
+export function outputSchemaRootName(fieldName: string): string {
+  const trimmed = fieldName.trim()
+  if (!trimmed) return ''
+  const dot = trimmed.indexOf('.')
+  const bracket = trimmed.indexOf('[')
+  const separator = [dot, bracket].filter((index) => index >= 0).sort((a, b) => a - b)[0]
+  return separator == null ? trimmed : trimmed.slice(0, separator)
+}
+
+/**
+ * Warn-only check: declared top-level outputSchema names that are missing from
+ * the merged action state. Nested paths are not walked — a missing `articles`
+ * is enough to diagnose drift; a present array with different children is not.
+ */
+export function outputSchemaWarning(
+  schema: Array<{ name: string }> | undefined,
+  state: Record<string, unknown>
+): string | undefined {
+  if (!schema || schema.length === 0) return undefined
+  const missing: string[] = []
+  const seen = new Set<string>()
+  for (const field of schema) {
+    const root = outputSchemaRootName(field.name)
+    if (!root || seen.has(root)) continue
+    seen.add(root)
+    if (!Object.hasOwn(state, root)) {
+      missing.push(root)
+    }
+  }
+  if (missing.length === 0) return undefined
+  const noun = missing.length === 1 ? 'field' : 'fields'
+  return `Response is missing outputSchema ${noun}: ${missing.join(', ')}`
+}

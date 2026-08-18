@@ -9,6 +9,11 @@ const mockPreprocessExecution = vi.fn()
 const mockGetEffectiveEnvironmentSnapshot =
   environmentUtilsMockFns.mockGetEffectiveEnvironmentSnapshot
 const mockReleaseExecutionSlot = vi.fn()
+const mockSleep = vi.hoisted(() => vi.fn(async () => undefined))
+
+vi.mock('@sim/utils/helpers', () => ({
+  sleep: (...args: unknown[]) => mockSleep(...args),
+}))
 
 vi.mock('@/lib/workflows/executor/execute-workflow', () => ({
   executeWorkflow: (...args: unknown[]) => mockExecuteWorkflow(...args),
@@ -52,6 +57,8 @@ import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
 import {
   contentFromWorkflowStreamChunk,
   createGenerativeAppActionSseResponse,
+  HTTP_MAX_BYTES,
+  HTTP_RESPONSE_TOO_LARGE_ERROR,
   HTTP_STREAM_TIMEOUT_MS,
   isStreamingAction,
   runDeployedAppAction,
@@ -433,6 +440,289 @@ describe('runDeployedAppAction', () => {
 
     expect(result.ok).toBe(false)
     expect(result.error).toBe('HTTP request timed out after 5s')
+    vi.unstubAllGlobals()
+  })
+
+  it('retries GET on 503 then succeeds', async () => {
+    mockEnv({})
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        headers: { get: () => null },
+        arrayBuffer: async () => new TextEncoder().encode(''),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () =>
+          new TextEncoder().encode(JSON.stringify({ articles: [{ id: '1' }] })),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        manifest: {
+          ...baseDeployment().manifest,
+          actions: {
+            load_list: { apiKey: 'list_articles' },
+          },
+        },
+        apiBindings: [
+          {
+            key: 'list_articles',
+            label: 'List',
+            kind: 'http',
+            http: { method: 'GET', url: 'https://api.example.com/articles' },
+          },
+        ],
+      }),
+      actionId: 'load_list',
+      values: {},
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(mockSleep).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+
+  it('does not retry POST on 503', async () => {
+    mockEnv({})
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      arrayBuffer: async () => new TextEncoder().encode(''),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: { method: 'POST', url: 'https://api.example.com/qualify' },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: {},
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe('HTTP 503')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(mockSleep).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('honours Retry-After on GET 429', async () => {
+    mockEnv({})
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        headers: { get: (name: string) => (name.toLowerCase() === 'retry-after' ? '2' : null) },
+        arrayBuffer: async () => new TextEncoder().encode(''),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        manifest: {
+          ...baseDeployment().manifest,
+          actions: { load_list: { apiKey: 'list_articles' } },
+        },
+        apiBindings: [
+          {
+            key: 'list_articles',
+            label: 'List',
+            kind: 'http',
+            http: { method: 'GET', url: 'https://api.example.com/articles' },
+          },
+        ],
+      }),
+      actionId: 'load_list',
+      values: {},
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(mockSleep).toHaveBeenCalledWith(2000)
+    vi.unstubAllGlobals()
+  })
+
+  it('does not retry a GET that timed out', async () => {
+    mockEnv({})
+    const abortError = new Error('The operation was aborted')
+    abortError.name = 'AbortError'
+    const fetchMock = vi.fn().mockRejectedValue(abortError)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        manifest: {
+          ...baseDeployment().manifest,
+          actions: { load_list: { apiKey: 'list_articles' } },
+        },
+        apiBindings: [
+          {
+            key: 'list_articles',
+            label: 'List',
+            kind: 'http',
+            http: { method: 'GET', url: 'https://api.example.com/articles' },
+          },
+        ],
+      }),
+      actionId: 'load_list',
+      values: {},
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toMatch(/timed out/)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(mockSleep).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('returns a 1 MB cap error instead of a generic size-limit message', async () => {
+    mockEnv({})
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array(HTTP_MAX_BYTES + 1),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: { method: 'POST', url: 'https://api.example.com/qualify' },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: {},
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe(HTTP_RESPONSE_TOO_LARGE_ERROR)
+    vi.unstubAllGlobals()
+  })
+
+  it('warns on outputSchema drift without failing the action', async () => {
+    mockEnv({})
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ score: 12 })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: { method: 'POST', url: 'https://api.example.com/qualify' },
+            outputSchema: [
+              { name: 'articles', type: 'array' },
+              { name: 'count', type: 'number' },
+            ],
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.schemaWarning).toBe('Response is missing outputSchema fields: articles, count')
+    expect(result.setState?.schemaWarning).toBe(result.schemaWarning)
+    expect(result.setState?.score).toBe(12)
+    vi.unstubAllGlobals()
+  })
+
+  it('injects pagination params and appends items on the next page', async () => {
+    mockEnv({})
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () =>
+          new TextEncoder().encode(
+            JSON.stringify({ articles: [{ id: '1' }], nextCursor: 'page-2' })
+          ),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () =>
+          new TextEncoder().encode(JSON.stringify({ articles: [{ id: '2' }], nextCursor: '' })),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const deployment = baseDeployment({
+      manifest: {
+        ...baseDeployment().manifest,
+        actions: {
+          load_list: {
+            apiKey: 'list_articles',
+            inputMapping: { cursor: 'nextCursor' },
+          },
+        },
+      },
+      apiBindings: [
+        {
+          key: 'list_articles',
+          label: 'List',
+          kind: 'http',
+          http: { method: 'GET', url: 'https://api.example.com/articles' },
+          pagination: { mode: 'cursor', items: 'articles' },
+        },
+      ],
+    })
+
+    const first = await runDeployedAppAction({
+      deployment,
+      actionId: 'load_list',
+      values: {},
+      requestId: 'req-1',
+    })
+    expect(first.ok).toBe(true)
+    expect(first.appendKeys).toBeUndefined()
+    expect(first.setState).toMatchObject({
+      articles: [{ id: '1' }],
+      hasMore: true,
+      nextCursor: 'page-2',
+    })
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('limit=20')
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('cursor=')
+
+    const second = await runDeployedAppAction({
+      deployment,
+      actionId: 'load_list',
+      values: { nextCursor: 'page-2' },
+      requestId: 'req-2',
+    })
+    expect(second.ok).toBe(true)
+    expect(second.appendKeys).toEqual(['articles'])
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('cursor=page-2')
     vi.unstubAllGlobals()
   })
 

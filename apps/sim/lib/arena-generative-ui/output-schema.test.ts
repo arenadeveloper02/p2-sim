@@ -2,7 +2,10 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { outputSchemaFromSample } from '@/lib/arena-generative-ui/output-schema'
+import {
+  outputSchemaFromSample,
+  outputSchemaWarning,
+} from '@/lib/arena-generative-ui/output-schema'
 
 describe('outputSchemaFromSample', () => {
   it('returns nothing for a blank sample', () => {
@@ -86,5 +89,24 @@ describe('outputSchemaFromSample', () => {
     const fields = outputSchemaFromSample('{"email":"ada@example.com","note":"confidential"}')
     expect(JSON.stringify(fields)).not.toContain('ada@example.com')
     expect(JSON.stringify(fields)).not.toContain('confidential')
+  })
+})
+
+describe('outputSchemaWarning', () => {
+  it('returns nothing when every top-level name is present', () => {
+    expect(
+      outputSchemaWarning([{ name: 'articles' }, { name: 'articles[].title' }, { name: 'count' }], {
+        articles: [],
+        count: 0,
+      })
+    ).toBeUndefined()
+  })
+
+  it('names missing top-level fields without failing nested children separately', () => {
+    expect(
+      outputSchemaWarning([{ name: 'articles' }, { name: 'articles[].title' }, { name: 'count' }], {
+        score: 1,
+      })
+    ).toBe('Response is missing outputSchema fields: articles, count')
   })
 })

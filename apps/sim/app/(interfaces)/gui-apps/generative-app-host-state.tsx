@@ -1,10 +1,11 @@
 'use client'
 
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react'
+import { mergeHostState } from '@/lib/arena-generative-ui/merge-host-state'
 
 interface GenerativeAppHostStateValue {
   state: Record<string, unknown>
-  mergeState: (patch: Record<string, unknown>) => void
+  mergeState: (patch: Record<string, unknown>, appendKeys?: readonly string[]) => void
   resetState: () => void
   actionPending: boolean
   setActionPending: (pending: boolean) => void
@@ -22,9 +23,12 @@ function useHostStateValue(): GenerativeAppHostStateValue {
   const [state, setState] = useState<Record<string, unknown>>({})
   const [actionPending, setActionPending] = useState(false)
   const [loadPending, setLoadPending] = useState(false)
-  const mergeState = useCallback((patch: Record<string, unknown>) => {
-    setState((current) => ({ ...current, ...patch }))
-  }, [])
+  const mergeState = useCallback(
+    (patch: Record<string, unknown>, appendKeys?: readonly string[]) => {
+      setState((current) => mergeHostState(current, patch, appendKeys))
+    },
+    []
+  )
   const resetState = useCallback(() => {
     setState({})
   }, [])

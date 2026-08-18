@@ -11,6 +11,7 @@ import {
   ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
   actionErrorFrom,
   actionNavigateFrom,
+  actionSchemaWarningFrom,
   clearedActionErrorState,
   isJsonRenderSpec,
   navigationHref,
@@ -109,15 +110,18 @@ export function GenerativeAppPreviewHost({
 
   const actionNavigate = actionNavigateFrom(manifest)
   const actionError = actionErrorFrom(state)
+  const schemaWarning = actionSchemaWarningFrom(state)
+  const bannerMessage = actionError || schemaWarning
 
   return (
     <div className='min-h-screen'>
       <div className='border-[var(--border)] border-b bg-[var(--color-ds-grey-50,#f7f8f9)] px-4 py-2 text-[var(--text-secondary)] text-xs'>
         Preview — not published. CTAs run against this draft.
       </div>
-      {actionError ? (
+      {bannerMessage ? (
         <ActionErrorBanner
-          message={actionError}
+          message={bannerMessage}
+          tone={actionError ? 'error' : 'warning'}
           onDismiss={() => mergeState(clearedActionErrorState())}
         />
       ) : null}
@@ -152,13 +156,13 @@ export function GenerativeAppPreviewHost({
 
 function applyPreviewActionResult(
   result: RunDeployedAppActionResult,
-  mergeState: (patch: Record<string, unknown>) => void,
+  mergeState: (patch: Record<string, unknown>, appendKeys?: readonly string[]) => void,
   navigate: (path: string) => void,
   options?: { skipNavigate?: boolean }
 ) {
   if (result.setState) {
     flushSync(() => {
-      mergeState(result.setState as Record<string, unknown>)
+      mergeState(result.setState as Record<string, unknown>, result.appendKeys)
     })
   }
   if (!options?.skipNavigate && result.navigate) {

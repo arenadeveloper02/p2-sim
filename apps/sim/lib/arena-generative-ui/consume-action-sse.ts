@@ -11,6 +11,8 @@ export type ArenaGenerativeActionSseEvent =
       navigate?: string
       setState?: Record<string, unknown>
       error?: string
+      appendKeys?: string[]
+      schemaWarning?: string
     }
 
 /**
@@ -50,6 +52,8 @@ export async function consumeGenerativeAppActionSse(
           navigate: event.navigate,
           setState: event.setState,
           error: event.error,
+          appendKeys: event.appendKeys,
+          schemaWarning: event.schemaWarning,
         }
         return true
       }

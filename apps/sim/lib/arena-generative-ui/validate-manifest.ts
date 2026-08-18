@@ -320,6 +320,11 @@ export function validateArenaGenerativeManifest(
         action.inputMapping && typeof action.inputMapping === 'object'
           ? (action.inputMapping as Record<string, string>)
           : undefined,
+      append: Array.isArray(action.append)
+        ? action.append
+            .filter((key): key is string => typeof key === 'string' && key.trim().length > 0)
+            .map((key) => key.trim())
+        : undefined,
       onSuccess: onSuccess
         ? {
             navigate: navigate || undefined,
