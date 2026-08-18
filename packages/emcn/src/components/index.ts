@@ -19,15 +19,18 @@ export {
 export { ChipChevronDown } from './chip/chip-chevron'
 export {
   cellIconNodeClass,
+  chipActiveSurfaceClass,
   chipBorderShadowRing,
   chipContentGap,
   chipContentIconClass,
   chipContentLabelClass,
+  chipDropTargetSurfaceClass,
   chipFieldSurfaceClass,
   chipFieldTextClass,
   chipFilledFillTokens,
   chipFilledSurfaceTokens,
   chipGeometryClass,
+  chipHoverSurfaceClass,
   chipIconSlotClass,
   chipPrimaryFillTokens,
   disclosureChevronClass,
@@ -182,7 +185,9 @@ export {
   TabStrip,
   type TabStripItem,
   type TabStripProps,
+  type TabStripSelectionSource,
   tabDropIndex,
+  tabStripWheelPosition,
 } from './tab-strip/tab-strip'
 export {
   Table,
@@ -206,6 +211,7 @@ export {
   isFocusVisible,
   isTextClipped,
   Tooltip,
+  type UseFloatingTooltipOptions,
   useFloatingTooltip,
   useIsOverflowing,
 } from './tooltip/tooltip'

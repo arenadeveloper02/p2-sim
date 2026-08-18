@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { isRecordLike } from '@sim/utils/object'
 import { z } from 'zod'
 import { getBlockVisibilityForCopilot } from '@/lib/copilot/block-visibility'
 import {
@@ -105,6 +106,7 @@ const WRITE_ACTIONS: Record<string, string[]> = {
     'create_from_file',
     'import_file',
     'delete',
+    'rename',
     'insert_row',
     'batch_insert_rows',
     'update_row',
@@ -117,6 +119,13 @@ const WRITE_ACTIONS: Record<string, string[]> = {
     'rename_column',
     'delete_column',
     'update_column',
+    'add_workflow_group',
+    'update_workflow_group',
+    'delete_workflow_group',
+    'add_workflow_group_output',
+    'delete_workflow_group_output',
+    'run_column',
+    'cancel_table_runs',
     'add_enrichment',
   ],
   [ManageCustomTool.id]: ['add', 'edit', 'delete'],
@@ -225,11 +234,7 @@ export async function routeExecution(
   // nested "args" object. Unwrap that before validation so the generated
   // JSON Schema sees the flat tool contract shape.
   let normalizedPayload = payload ?? {}
-  if (
-    normalizedPayload &&
-    typeof normalizedPayload === 'object' &&
-    !Array.isArray(normalizedPayload)
-  ) {
+  if (isRecordLike(normalizedPayload)) {
     const raw = normalizedPayload as Record<string, unknown>
     if (raw.args && typeof raw.args === 'object' && !raw.operation) {
       const nested = raw.args as Record<string, unknown>

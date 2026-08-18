@@ -3,6 +3,7 @@ import { getOAuth2Tokens } from '@better-auth/core/oauth2'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { isRecordLike } from '@sim/utils/object'
 import type { GenericOAuthConfig } from 'better-auth/plugins'
 import { syntheticConnectorEmail } from '@/lib/auth/connector-email'
 import { env } from '@/lib/core/config/env'
@@ -12,8 +13,12 @@ import {
   readResponseTextWithLimit,
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { getDocusignOAuthUrl } from '@/lib/oauth/docusign'
 import { getMicrosoftUserInfoFromIdToken } from '@/lib/oauth/microsoft'
+import { SALESFORCE_LOGIN_HOSTS } from '@/lib/oauth/salesforce'
 import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
+import { MONDAY_API_URL, MONDAY_API_VERSION } from '@/tools/monday/utils'
+import { REDDIT_USER_AGENT } from '@/tools/reddit/constants'
 import { deriveZohoDeskBaseFromApiDomain } from '@/tools/zoho_desk/host-allowlist'
 
 /**
@@ -71,6 +76,61 @@ interface AttioWorkspaceMemberResponse {
     last_name?: string | null
     email_address?: string | null
     avatar_url?: string | null
+  }
+}
+
+/**
+ * Builds a Salesforce connector bound to one login host — `genericOAuth` takes
+ * static endpoints, so each authorization server needs its own registration.
+ * See {@link SALESFORCE_LOGIN_HOSTS} for why there are two.
+ */
+function salesforceConnector(providerId: string, loginHost: string): GenericOAuthConfig {
+  const userInfoUrl = `https://${loginHost}/services/oauth2/userinfo`
+  return {
+    providerId,
+    clientId: env.SALESFORCE_CLIENT_ID as string,
+    clientSecret: env.SALESFORCE_CLIENT_SECRET as string,
+    authorizationUrl: `https://${loginHost}/services/oauth2/authorize`,
+    tokenUrl: `https://${loginHost}/services/oauth2/token`,
+    userInfoUrl,
+    scopes: getCanonicalScopesForProvider('salesforce'),
+    pkce: true,
+    prompt: 'consent',
+    accessType: 'offline',
+    redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/${providerId}`,
+    getUserInfo: async (tokens) => {
+      try {
+        const response = await fetch(userInfoUrl, {
+          headers: {
+            Authorization: `Bearer ${tokens.accessToken}`,
+          },
+        })
+
+        if (!response.ok) {
+          await response.text().catch(() => {})
+          logger.error('Failed to fetch Salesforce user info', {
+            status: response.status,
+            providerId,
+          })
+          throw new Error('Failed to fetch user info')
+        }
+
+        const data = await response.json()
+
+        return {
+          id: `${(data.user_id || data.sub).toString()}-${generateId()}`,
+          name: data.name || 'Salesforce User',
+          email: data.email || syntheticConnectorEmail(providerId, data.user_id ?? data.sub),
+          emailVerified: data.email_verified === true,
+          image: data.picture || undefined,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }
+      } catch (error) {
+        logger.error('Error creating Salesforce user profile:', { error, providerId })
+        return null
+      }
+    },
   }
 }
 
@@ -935,51 +995,9 @@ export function buildConnectorProviders(): GenericOAuthConfig[] {
       },
     },
 
-    {
-      providerId: 'salesforce',
-      clientId: env.SALESFORCE_CLIENT_ID as string,
-      clientSecret: env.SALESFORCE_CLIENT_SECRET as string,
-      authorizationUrl: 'https://login.salesforce.com/services/oauth2/authorize',
-      tokenUrl: 'https://login.salesforce.com/services/oauth2/token',
-      userInfoUrl: 'https://login.salesforce.com/services/oauth2/userinfo',
-      scopes: getCanonicalScopesForProvider('salesforce'),
-      pkce: true,
-      prompt: 'consent',
-      accessType: 'offline',
-      redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/salesforce`,
-      getUserInfo: async (tokens) => {
-        try {
-          const response = await fetch('https://login.salesforce.com/services/oauth2/userinfo', {
-            headers: {
-              Authorization: `Bearer ${tokens.accessToken}`,
-            },
-          })
-
-          if (!response.ok) {
-            await response.text().catch(() => {})
-            logger.error('Failed to fetch Salesforce user info', {
-              status: response.status,
-            })
-            throw new Error('Failed to fetch user info')
-          }
-
-          const data = await response.json()
-
-          return {
-            id: `${(data.user_id || data.sub).toString()}-${generateId()}`,
-            name: data.name || 'Salesforce User',
-            email: data.email || syntheticConnectorEmail('salesforce', data.user_id ?? data.sub),
-            emailVerified: data.email_verified === true,
-            image: data.picture || undefined,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }
-        } catch (error) {
-          logger.error('Error creating Salesforce user profile:', { error })
-          return null
-        }
-      },
-    },
+    ...Object.entries(SALESFORCE_LOGIN_HOSTS).map(([providerId, loginHost]) =>
+      salesforceConnector(providerId, loginHost)
+    ),
 
     {
       providerId: 'zoho-desk',
@@ -1030,10 +1048,9 @@ export function buildConnectorProviders(): GenericOAuthConfig[] {
         // error_description: '...' }. The status-only guard therefore never
         // fires, so surface the actual error/description instead of collapsing
         // every failure into one opaque "no access token" string.
-        const errorObj =
-          data && typeof data === 'object' && !Array.isArray(data)
-            ? (data as { error?: unknown; error_description?: unknown })
-            : {}
+        const errorObj = isRecordLike(data)
+          ? (data as { error?: unknown; error_description?: unknown })
+          : {}
         const zohoError = typeof errorObj.error === 'string' ? errorObj.error : undefined
         const zohoErrorDescription =
           typeof errorObj.error_description === 'string' ? errorObj.error_description : undefined
@@ -1516,11 +1533,11 @@ export function buildConnectorProviders(): GenericOAuthConfig[] {
       redirectURI: `${getBaseUrl()}/api/auth/oauth2/callback/monday`,
       getUserInfo: async (tokens) => {
         try {
-          const response = await fetch('https://api.monday.com/v2', {
+          const response = await fetch(MONDAY_API_URL, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'API-Version': '2024-10',
+              'API-Version': MONDAY_API_VERSION,
               Authorization: tokens.accessToken ?? '',
             },
             body: JSON.stringify({ query: '{ me { id name email } }' }),
@@ -1574,7 +1591,7 @@ export function buildConnectorProviders(): GenericOAuthConfig[] {
           const response = await fetch('https://oauth.reddit.com/api/v1/me', {
             headers: {
               Authorization: `Bearer ${tokens.accessToken}`,
-              'User-Agent': 'sim-studio/1.0',
+              'User-Agent': REDDIT_USER_AGENT,
             },
           })
 
@@ -2305,9 +2322,9 @@ export function buildConnectorProviders(): GenericOAuthConfig[] {
       providerId: 'docusign',
       clientId: env.DOCUSIGN_CLIENT_ID as string,
       clientSecret: env.DOCUSIGN_CLIENT_SECRET as string,
-      authorizationUrl: 'https://account-d.docusign.com/oauth/auth',
-      tokenUrl: 'https://account-d.docusign.com/oauth/token',
-      userInfoUrl: 'https://account-d.docusign.com/oauth/userinfo',
+      authorizationUrl: getDocusignOAuthUrl('/oauth/auth'),
+      tokenUrl: getDocusignOAuthUrl('/oauth/token'),
+      userInfoUrl: getDocusignOAuthUrl('/oauth/userinfo'),
       scopes: getCanonicalScopesForProvider('docusign'),
       responseType: 'code',
       accessType: 'offline',
@@ -2317,7 +2334,7 @@ export function buildConnectorProviders(): GenericOAuthConfig[] {
         try {
           logger.info('Fetching DocuSign user profile')
 
-          const response = await fetch('https://account-d.docusign.com/oauth/userinfo', {
+          const response = await fetch(getDocusignOAuthUrl('/oauth/userinfo'), {
             headers: {
               Authorization: `Bearer ${tokens.accessToken}`,
             },

@@ -20,12 +20,20 @@ import {
   cn,
   FloatingTooltip,
   isTextClipped,
-  Loader,
   Tooltip,
-  Trash,
   useFloatingTooltip,
 } from '@sim/emcn'
-import { CircleAlert, Database, DatabaseX, Pencil, Plus, TagIcon, X } from '@sim/emcn/icons'
+import {
+  CircleAlert,
+  Database,
+  DatabaseX,
+  Loader,
+  Pencil,
+  Plus,
+  TagIcon,
+  Trash,
+  X,
+} from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
@@ -50,7 +58,17 @@ import type {
   SelectableConfig,
   SortConfig,
 } from '@/app/workspace/[workspaceId]/components'
-import { FloatingOverflowText, Resource } from '@/app/workspace/[workspaceId]/components'
+import {
+  FILTER_SECTION_LABEL_CLASS,
+  FloatingOverflowText,
+  Resource,
+} from '@/app/workspace/[workspaceId]/components'
+import {
+  FOLDERED_RESOURCE_HEADERS,
+  folderBreadcrumbItems,
+  folderedResourceListHref,
+  useFolderAncestors,
+} from '@/app/workspace/[workspaceId]/components/folders'
 import { DocumentTagsModal } from '@/app/workspace/[workspaceId]/knowledge/[id]/[documentId]/components'
 import {
   ActionBar,
@@ -67,18 +85,13 @@ import {
   documentFiltersParsers,
   documentFiltersUrlKeys,
   kbDocumentSortParams,
-  pageParam,
-  pageUrlKeys,
 } from '@/app/workspace/[workspaceId]/knowledge/[id]/search-params'
 import { getDocumentIcon } from '@/app/workspace/[workspaceId]/knowledge/components'
+import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/hooks'
 import { CONNECTOR_META_REGISTRY } from '@/connectors/registry'
-import {
-  useKnowledgeBase,
-  useKnowledgeBaseDocuments,
-  useKnowledgeBasesList,
-} from '@/hooks/kb/use-knowledge'
+import { useKnowledgeBase, useKnowledgeBaseDocuments } from '@/hooks/kb/use-knowledge'
 import {
   type TagDefinition,
   useKnowledgeBaseTagDefinitions,
@@ -117,8 +130,6 @@ const STATUS_FILTER_OPTIONS: ChipDropdownOption[] = [
   { value: 'enabled', label: 'Enabled' },
   { value: 'disabled', label: 'Disabled' },
 ]
-
-const FILTER_SECTION_LABEL_CLASS = 'text-[var(--text-muted)] text-small'
 
 interface KnowledgeBaseProps {
   id: string
@@ -271,14 +282,12 @@ export function KnowledgeBase({
   }, [id, passedKnowledgeBaseName, posthog])
 
   useOAuthReturnForKBConnectors(id)
-  const { removeKnowledgeBase } = useKnowledgeBasesList(workspaceId, { enabled: false })
   const userPermissions = useUserPermissionsContext()
 
   const { mutate: updateDocumentMutation, mutateAsync: updateDocumentAsync } = useUpdateDocument()
   const { mutate: deleteDocumentMutation } = useDeleteDocument()
-  const { mutate: deleteKnowledgeBaseMutation, isPending: isDeleting } =
-    useDeleteKnowledgeBase(workspaceId)
-  const { mutateAsync: updateKnowledgeBaseMutation } = useUpdateKnowledgeBase(workspaceId)
+  const { mutate: deleteKnowledgeBaseMutation, isPending: isDeleting } = useDeleteKnowledgeBase()
+  const { mutateAsync: updateKnowledgeBaseMutation } = useUpdateKnowledgeBase()
 
   const kbRename = useInlineRename({
     onSave: (kbId, name) =>
@@ -327,14 +336,13 @@ export function KnowledgeBase({
   const [documentToDelete, setDocumentToDelete] = useState<string | null>(null)
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false)
   const [showConnectorsModal, setShowConnectorsModal] = useState(false)
-  const [currentPage, setCurrentPage] = useQueryState(pageParam.key, {
-    ...pageParam.parser,
-    ...pageUrlKeys,
-  })
+  const [{ q: searchQuery, enabled: enabledFilter, page: currentPage }, setDocumentFilters] =
+    useQueryStates(documentFiltersParsers, documentFiltersUrlKeys)
 
-  const [{ q: searchQuery, enabled: enabledFilter }, setDocumentFilters] = useQueryStates(
-    documentFiltersParsers,
-    documentFiltersUrlKeys
+  /** Page 1 is the group's default, so it strips from the URL rather than lingering as `?page=1`. */
+  const setCurrentPage = useCallback(
+    (page: number) => void setDocumentFilters({ page }),
+    [setDocumentFilters]
   )
 
   /**
@@ -343,8 +351,7 @@ export function KnowledgeBase({
    * doesn't refetch on every keystroke. Changing the search resets pagination.
    */
   const handleSearchChange = useDebouncedSearchSetter((value, options) => {
-    setDocumentFilters({ q: value }, options)
-    setCurrentPage(1)
+    void setDocumentFilters({ q: value, page: 1 }, options)
   })
   const debouncedSearchQuery = useDebounce(searchQuery, SEARCH_DEBOUNCE_MS)
   /** Raw URL value drives the input; matching/highlighting always sees it trimmed. */
@@ -360,13 +367,12 @@ export function KnowledgeBase({
 
   const setEnabledFilter = useCallback(
     (value: 'all' | 'enabled' | 'disabled') => {
-      setDocumentFilters({ enabled: value })
-      setCurrentPage(1)
+      void setDocumentFilters({ enabled: value, page: 1 })
     },
-    [setDocumentFilters, setCurrentPage]
+    [setDocumentFilters]
   )
 
-  const [contextMenuDocument, setContextMenuDocument] = useState<DocumentData | null>(null)
+  const [contextMenuDocumentId, setContextMenuDocumentId] = useState<string | null>(null)
   const [showRenameModal, setShowRenameModal] = useState(false)
   const [documentToRename, setDocumentToRename] = useState<DocumentData | null>(null)
   const [showDocumentTagsModal, setShowDocumentTagsModal] = useState(false)
@@ -431,6 +437,15 @@ export function KnowledgeBase({
 
   const { tagDefinitions } = useKnowledgeBaseTagDefinitions(id)
 
+  /**
+   * The id, not the row: the document list polls every few seconds while anything is
+   * processing, so a menu holding the row it opened on would offer actions against a status
+   * that has since moved on.
+   */
+  const contextMenuDocument = contextMenuDocumentId
+    ? (documents.find((doc) => doc.id === contextMenuDocumentId) ?? null)
+    : null
+
   const prevHadSyncingRef = useRef(false)
   useEffect(() => {
     if (prevHadSyncingRef.current && !hasSyncingConnectors) {
@@ -444,10 +459,27 @@ export function KnowledgeBase({
   /**
    * Breadcrumb leaf label. Falls back to the canonical '…' placeholder while
    * the name loads (mirroring loading.tsx) instead of duplicating the root
-   * "Knowledge Base" crumb.
+   * "Knowledge bases" crumb.
    */
   const knowledgeBaseCrumbLabel = knowledgeBase?.name || passedKnowledgeBaseName || '…'
   const error = knowledgeBaseError || documentsError
+
+  /**
+   * The base's own folder trail, so the header reads `Knowledge Base / Research / Papers`
+   * exactly as the list does one level up.
+   */
+  const { ancestors: folderChain } = useFolderAncestors({
+    resourceType: 'knowledge_base',
+    workspaceId,
+    folderId: knowledgeBase?.folderId,
+  })
+
+  const handleNavigateToFolder = useCallback(
+    (folderId: string | null) => {
+      router.push(folderedResourceListHref('knowledge_base', workspaceId, folderId))
+    },
+    [router, workspaceId]
+  )
 
   const totalPages = Math.ceil(pagination.total / pagination.limit)
 
@@ -673,7 +705,6 @@ export function KnowledgeBase({
       { knowledgeBaseId: id },
       {
         onSuccess: () => {
-          removeKnowledgeBase(id)
           router.push(`/workspace/${workspaceId}/knowledge`)
         },
       }
@@ -683,6 +714,14 @@ export function KnowledgeBase({
   const handleAddDocuments = () => {
     setShowAddDocumentsModal(true)
   }
+
+  useRegisterGlobalCommands(() => [
+    { id: 'knowledge-base-new-documents', handler: () => setShowAddDocumentsModal(true) },
+    { id: 'knowledge-base-new-connector', handler: () => setShowAddConnectorModal(true) },
+    { id: 'knowledge-base-rename', handler: () => kbRename.startRename(id, knowledgeBaseName) },
+    { id: 'knowledge-base-tags', handler: () => setShowTagsModal(true) },
+    { id: 'knowledge-base-delete', handler: () => setShowDeleteDialog(true) },
+  ])
 
   /**
    * Handles bulk enabling of selected documents
@@ -851,83 +890,115 @@ export function KnowledgeBase({
         setSelectedDocuments(new Set([doc.id]))
       }
 
-      setContextMenuDocument(doc)
+      setContextMenuDocumentId(doc.id)
       baseHandleContextMenu(e)
     },
     [documents, selectedDocuments, baseHandleContextMenu]
   )
 
-  const handleEmptyContextMenu = useCallback(
-    (e: React.MouseEvent) => {
-      setContextMenuDocument(null)
-      baseHandleContextMenu(e)
-    },
-    [baseHandleContextMenu]
+  const handleEmptyContextMenu = (e: React.MouseEvent) => {
+    setContextMenuDocumentId(null)
+    baseHandleContextMenu(e)
+  }
+
+  const handleContextMenuClose = () => {
+    closeContextMenu()
+    setContextMenuDocumentId(null)
+  }
+
+  const breadcrumbs: BreadcrumbItem[] = useMemo(
+    () =>
+      folderBreadcrumbItems({
+        rootLabel: FOLDERED_RESOURCE_HEADERS.knowledge_base.rootLabel,
+        rootIcon: FOLDERED_RESOURCE_HEADERS.knowledge_base.rootIcon,
+        breadcrumbs: folderChain,
+        onNavigate: handleNavigateToFolder,
+        trailing: [
+          {
+            label: knowledgeBaseCrumbLabel,
+            icon: Database,
+            editing: kbRename.editingId
+              ? {
+                  isEditing: true,
+                  value: kbRename.editValue,
+                  onChange: kbRename.setEditValue,
+                  onSubmit: kbRename.submitRename,
+                  onCancel: kbRename.cancelRename,
+                  disabled: kbRename.isSaving,
+                }
+              : undefined,
+            dropdownItems: [
+              ...(userPermissions.canEdit || userPermissions.isLoading
+                ? [
+                    {
+                      label: 'Rename',
+                      icon: Pencil,
+                      disabled: !userPermissions.canEdit,
+                      onClick: () => kbRename.startRename(id, knowledgeBaseName),
+                    },
+                    {
+                      label: 'Tags',
+                      icon: TagIcon,
+                      disabled: !userPermissions.canEdit,
+                      onClick: () => setShowTagsModal(true),
+                    },
+                    {
+                      label: 'Delete',
+                      icon: Trash,
+                      disabled: !userPermissions.canEdit,
+                      onClick: () => setShowDeleteDialog(true),
+                    },
+                  ]
+                : []),
+            ],
+          },
+        ],
+      }),
+    [
+      folderChain,
+      handleNavigateToFolder,
+      knowledgeBaseCrumbLabel,
+      knowledgeBaseName,
+      id,
+      kbRename.editingId,
+      kbRename.editValue,
+      kbRename.isSaving,
+      kbRename.setEditValue,
+      kbRename.submitRename,
+      kbRename.cancelRename,
+      kbRename.startRename,
+      userPermissions.canEdit,
+      userPermissions.isLoading,
+    ]
   )
 
-  const handleContextMenuClose = useCallback(() => {
-    closeContextMenu()
-    setContextMenuDocument(null)
-  }, [closeContextMenu])
-
-  const breadcrumbs: BreadcrumbItem[] = [
-    {
-      label: 'Knowledge Base',
-      icon: Database,
-      onClick: () => router.push(`/workspace/${workspaceId}/knowledge`),
-    },
-    {
-      label: knowledgeBaseCrumbLabel,
-      icon: Database,
-      editing: kbRename.editingId
-        ? {
-            isEditing: true,
-            value: kbRename.editValue,
-            onChange: kbRename.setEditValue,
-            onSubmit: kbRename.submitRename,
-            onCancel: kbRename.cancelRename,
-            disabled: kbRename.isSaving,
-          }
-        : undefined,
-      dropdownItems: [
-        ...(userPermissions.canEdit || userPermissions.isLoading
-          ? [
-              {
-                label: 'Rename',
-                icon: Pencil,
-                disabled: !userPermissions.canEdit,
-                onClick: () => kbRename.startRename(id, knowledgeBaseName),
-              },
-              {
-                label: 'Tags',
-                icon: TagIcon,
-                disabled: !userPermissions.canEdit,
-                onClick: () => setShowTagsModal(true),
-              },
-              {
-                label: 'Delete',
-                icon: Trash,
-                disabled: !userPermissions.canEdit,
-                onClick: () => setShowDeleteDialog(true),
-              },
-            ]
-          : []),
-      ],
-    },
-  ]
-
-  const headerActions: ResourceAction[] = [
-    ...(userPermissions.canEdit || userPermissions.isLoading
-      ? [
-          {
-            text: 'New connector',
-            icon: Plus,
-            disabled: !userPermissions.canEdit,
-            onSelect: () => setShowAddConnectorModal(true),
-          },
-        ]
-      : []),
-  ]
+  const headerActions: ResourceAction[] = useMemo(
+    () => [
+      ...(userPermissions.canEdit || userPermissions.isLoading
+        ? [
+            {
+              text: 'New connector',
+              icon: Plus,
+              disabled: !userPermissions.canEdit,
+              onSelect: () => setShowAddConnectorModal(true),
+            },
+          ]
+        : []),
+      {
+        text: 'New documents',
+        icon: Plus,
+        onSelect: handleAddDocuments,
+        disabled: userPermissions.canEdit !== true,
+        variant: 'primary',
+      },
+    ],
+    [
+      userPermissions.canEdit,
+      userPermissions.isLoading,
+      setShowAddConnectorModal,
+      handleAddDocuments,
+    ]
+  )
 
   const sortConfig: SortConfig = useMemo(
     () => ({
@@ -1181,19 +1252,10 @@ export function KnowledgeBase({
     <>
       <Resource onContextMenu={handleEmptyContextMenu}>
         <Resource.Header
-          icon={Database}
-          title='Knowledge Base'
+          icon={FOLDERED_RESOURCE_HEADERS.knowledge_base.rootIcon}
+          title={FOLDERED_RESOURCE_HEADERS.knowledge_base.rootLabel}
           breadcrumbs={breadcrumbs}
-          actions={[
-            ...headerActions,
-            {
-              text: 'New documents',
-              icon: Plus,
-              onSelect: handleAddDocuments,
-              disabled: userPermissions.canEdit !== true,
-              variant: 'primary',
-            },
-          ]}
+          actions={headerActions}
         />
         <Resource.Options
           search={{

@@ -11,11 +11,12 @@ import { PageFooter } from '@/components/docs-layout/page-footer'
 import { PageNavigationArrows } from '@/components/docs-layout/page-navigation-arrows'
 import { LLMCopyButton } from '@/components/page-actions'
 import { StructuredData } from '@/components/structured-data'
+import { APIExampleSelector } from '@/components/ui/api-example-selector'
 import { CodeBlock } from '@/components/ui/code-block'
 import { Heading } from '@/components/ui/heading'
 import { ResponseSection } from '@/components/ui/response-section'
 import { i18n } from '@/lib/i18n'
-import { getApiSpecContent, openapi } from '@/lib/openapi'
+import { getApiSpecContent, getAuthenticatedCodeSamples, openapi } from '@/lib/openapi'
 import { type PageData, source } from '@/lib/source'
 import { DOCS_BASE_URL } from '@/lib/urls'
 
@@ -70,12 +71,17 @@ function stripLocalePrefix(url: string, lang: string): string {
 
 const APIPage = createAPIPage(openapi, {
   playground: { enabled: false },
+  generateCodeSamples: getAuthenticatedCodeSamples,
+  client: {
+    operation: { APIExampleSelector },
+  },
   content: {
-    renderOperationLayout: async (slots) => {
+    renderOperationLayout: (slots) => {
       return (
         <div className='flex @4xl:flex-row flex-col @4xl:items-start gap-x-6 gap-y-4'>
           <div className='min-w-0 flex-1'>
             {slots.header}
+            {slots.description}
             {slots.apiPlayground}
             {slots.authSchemes && <div className='api-section-divider'>{slots.authSchemes}</div>}
             {slots.parameters}
@@ -107,14 +113,21 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
   // Academy lessons are video-first: drop the "On this page" TOC and go full
   // width so the lesson hero/video gets the room (chapters live in-page instead).
   const isAcademy = slug?.[0] === 'academy'
+  const isCli = slug?.[0] === 'cli'
 
   const pageTreeRecord = source.pageTree as Record<string, Root>
   const pageTree = pageTreeRecord[lang] ?? pageTreeRecord.en ?? Object.values(pageTreeRecord)[0]
   const rawNeighbours = pageTree ? findNeighbour(pageTree, page.url) : null
-  // Academy and API Reference are self-contained sections; keep prev/next inside
-  // the section instead of spilling into the main documentation tree. Match both
-  // the section's pages (`/<slug>/...`) and its index (`/<slug>`).
-  const sectionSlug = isApiReference ? 'api-reference' : isAcademy ? 'academy' : null
+  // Academy, API Reference, and CLI are self-contained sections; keep prev/next
+  // inside the section instead of spilling into the main documentation tree.
+  // Match both the section's pages (`/<slug>/...`) and its index (`/<slug>`).
+  const sectionSlug = isApiReference
+    ? 'api-reference'
+    : isAcademy
+      ? 'academy'
+      : isCli
+        ? 'cli'
+        : null
   const inSection = (url?: string) =>
     url != null && (url.includes(`/${sectionSlug}/`) || url.endsWith(`/${sectionSlug}`))
   const neighbours = sectionSlug

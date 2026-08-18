@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { isRecordLike } from '@sim/utils/object'
 import { FunctionExecute, UserTable } from '@/lib/copilot/generated/tool-catalog-v1'
 import { CopilotOutputFileOutcome } from '@/lib/copilot/generated/trace-attribute-values-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
@@ -10,13 +11,12 @@ import { denyOutputWriteWithoutWritePermission } from '@/lib/copilot/request/too
 import { projectToolErrorMessageForCopilot } from '@/lib/copilot/request/tools/resolved-secret-result'
 import type { ExecutionContext, ToolCallResult } from '@/lib/copilot/request/types'
 import { decodeVfsPathSegments } from '@/lib/copilot/vfs/path-utils'
-import { writeWorkspaceFileByPath } from '@/lib/copilot/vfs/resource-writer'
+import { writeCopilotWorkspaceFileByPath } from '@/lib/copilot/vfs/resource-writer'
 import {
   createWorkspaceFileSecretProvenanceFromRegistry,
   type WorkspaceFileSecretProvenance,
   type WorkspaceFileSecretProvenanceRepresentation,
 } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
-import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 import type { ResolvedSecretMatcher } from '@/executor/utils/resolved-secret-matcher'
 import {
   createResolvedSecretMatcher,
@@ -85,7 +85,7 @@ export function extractTabularData(output: unknown): Record<string, unknown>[] |
   const obj = output as Record<string, unknown>
 
   // user_table query_rows shape: { data: { rows: [{ data: {...} }], totalCount } }
-  if (obj.data && typeof obj.data === 'object' && !Array.isArray(obj.data)) {
+  if (isRecordLike(obj.data)) {
     const data = obj.data as Record<string, unknown>
     if (Array.isArray(data.rows) && data.rows.length > 0) {
       const rows = data.rows as Record<string, unknown>[]
@@ -106,10 +106,6 @@ export function escapeCsvValue(value: unknown): string {
     return `"${str.replace(/"/g, '""')}"`
   }
   return str
-}
-
-export function convertRowsToCsv(rows: Record<string, unknown>[]): string {
-  return convertRowsToCsvWithProvenance(rows).content
 }
 
 export function normalizeOutputWorkspaceFileName(outputPath: string): string {
@@ -357,10 +353,9 @@ export async function maybeWriteOutputToFile(
   }
   const { userId, workspaceId } = context
 
-  const outputObject =
-    result.output && typeof result.output === 'object' && !Array.isArray(result.output)
-      ? (result.output as Record<string, unknown>)
-      : undefined
+  const outputObject = isRecordLike(result.output)
+    ? (result.output as Record<string, unknown>)
+    : undefined
   const resultObject =
     outputObject?.result &&
     typeof outputObject.result === 'object' &&
@@ -434,19 +429,13 @@ export async function maybeWriteOutputToFile(
         }
 
         const writtenFiles = []
-        // Resolved once so the writer's authorization check does not re-query per output file.
-        const workspaceAccess = preparedFiles.length
-          ? await checkWorkspaceAccess(workspaceId, userId)
-          : undefined
         for (const { outputFile, format, contentType, buffer, secretProvenance } of preparedFiles) {
           if (context.abortSignal?.aborted) {
             throw new Error('Request aborted before tool mutation could be applied')
           }
 
-          const written = await writeWorkspaceFileByPath({
+          const written = await writeCopilotWorkspaceFileByPath(context, {
             workspaceId,
-            userId,
-            workspaceAccess,
             target: {
               path: outputFile.path,
               mode: outputFile.mode ?? 'create',

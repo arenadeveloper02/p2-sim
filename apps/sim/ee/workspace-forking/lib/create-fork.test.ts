@@ -91,7 +91,7 @@ vi.mock('@/lib/workspaces/policy', () => ({
 
 import { createFork } from '@/ee/workspace-forking/lib/create-fork'
 
-const SOURCE = { id: 'src-ws', name: 'Parent' } as never
+const SOURCE = { id: 'src-ws', name: 'Parent', allowPersonalApiKeys: false } as never
 const POLICY = {
   organizationId: null,
   workspaceMode: 'personal',
@@ -134,10 +134,12 @@ describe('createFork storage headroom gate', () => {
       keyMap: new Map(),
       idMap: new Map(),
       blobTasks: [],
+      folderIdMap: new Map(),
     })
     mockCopyForkResourceContainers.mockResolvedValue({
       idMap: new Map(),
       mappingEntries: [],
+      folderIdMap: new Map(),
       contentPlan: {
         sourceWorkspaceId: 'src-ws',
         childWorkspaceId: 'child-ws',
@@ -210,11 +212,21 @@ describe('createFork storage headroom gate', () => {
     )
   })
 
+  it('preserves the source workspace personal API-key policy in the child', async () => {
+    const result = await createFork(forkParams())
+
+    expect(result.workspace.allowPersonalApiKeys).toBe(false)
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({ allowPersonalApiKeys: false })
+    )
+  })
+
   it('seeds identity mappings for copied FILES by storage key (a later sync must not re-offer them)', async () => {
     mockPlanForkFileCopies.mockResolvedValue({
       keyMap: new Map([['workspace/src-ws/a.png', 'workspace/child/a.png']]),
       idMap: new Map([['file-1', 'file-1-copy']]),
       blobTasks: [],
+      folderIdMap: new Map(),
     })
 
     await createFork(forkParams({ files: ['file-1'] }))

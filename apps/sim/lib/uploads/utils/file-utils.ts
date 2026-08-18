@@ -134,14 +134,6 @@ export function isVideoFileType(mimeType: string): boolean {
 }
 
 /**
- * Check if a MIME type is an audio or video type
- */
-export function isMediaFileType(mimeType: string): boolean {
-  const contentType = getContentType(mimeType)
-  return contentType === 'audio' || contentType === 'video'
-}
-
-/**
  * Convert a file buffer to base64
  */
 export function bufferToBase64(buffer: Buffer): string {
@@ -259,6 +251,22 @@ export const MAX_RENDERED_DOCUMENT_BYTES = 50 * 1024 * 1024
 /** True when `fileName` may be backed by a generation source rather than final bytes. */
 export function isRenderableDocumentName(fileName: string): boolean {
   return RENDERABLE_DOCUMENT_EXTENSIONS.has(getFileExtension(fileName))
+}
+
+/**
+ * True when a stored file must be resolved to its rendered artifact before being
+ * handed out. The recorded content type is the authoritative signal — a genuinely
+ * uploaded `.pdf` carries `application/pdf` and must NOT be routed through the
+ * generation-source path — so the extension is consulted only for records that
+ * carry no type at all.
+ */
+export function needsRenderedArtifact(
+  contentType: string | null | undefined,
+  fileName: string
+): boolean {
+  return contentType
+    ? isGeneratedDocumentSourceType(contentType)
+    : isRenderableDocumentName(fileName)
 }
 
 const ARCHIVE_EXTENSIONS = new Set<string>(SUPPORTED_ARCHIVE_EXTENSIONS)

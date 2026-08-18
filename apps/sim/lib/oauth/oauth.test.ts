@@ -65,6 +65,7 @@ afterAll(resetEnvMock)
 
 import { DEFAULT_MAX_ERROR_BODY_BYTES } from '@/lib/core/utils/stream-limits'
 import { refreshOAuthToken } from '@/lib/oauth'
+import { REDDIT_USER_AGENT } from '@/tools/reddit/constants'
 
 /**
  * Default OAuth token response for successful requests.
@@ -227,6 +228,13 @@ describe('OAuth Token Refresh', () => {
         endpoint: 'https://login.salesforce.com/services/oauth2/token',
       },
       {
+        // A sandbox refresh token is only redeemable at the authorization
+        // server that issued it; posting it to login.salesforce.com fails.
+        name: 'Salesforce sandbox',
+        providerId: 'salesforce-sandbox',
+        endpoint: 'https://test.salesforce.com/services/oauth2/token',
+      },
+      {
         name: 'Shopify',
         providerId: 'shopify',
         endpoint: 'https://accounts.shopify.com/oauth/token',
@@ -272,10 +280,18 @@ describe('OAuth Token Refresh', () => {
           expect(bodyParams.get('grant_type')).toBe('refresh_token')
           expect(bodyParams.get('refresh_token')).toBe(refreshToken)
 
-          const expectedClientId =
-            providerId === 'outlook' ? 'microsoft_client_id' : `${providerId}_client_id`
-          const expectedClientSecret =
-            providerId === 'outlook' ? 'microsoft_client_secret' : `${providerId}_client_secret`
+          // Two provider ids deliberately borrow another's OAuth client:
+          // `outlook` shares Microsoft's, and `salesforce-sandbox` shares
+          // Salesforce's (one Connected App's consumer key is valid at both
+          // login.salesforce.com and test.salesforce.com).
+          const clientEnvPrefix =
+            providerId === 'outlook'
+              ? 'microsoft'
+              : providerId === 'salesforce-sandbox'
+                ? 'salesforce'
+                : providerId
+          const expectedClientId = `${clientEnvPrefix}_client_id`
+          const expectedClientSecret = `${clientEnvPrefix}_client_secret`
 
           expect(bodyParams.get('client_id')).toBe(expectedClientId)
           expect(bodyParams.get('client_secret')).toBe(expectedClientSecret)
@@ -367,9 +383,12 @@ describe('OAuth Token Refresh', () => {
         string,
         { headers: Record<string, string>; body: string },
       ]
-      expect(requestOptions.headers['User-Agent']).toBe(
-        'sim-studio/1.0 (https://github.com/simstudioai/sim)'
-      )
+      expect(requestOptions.headers['User-Agent']).toBe(REDDIT_USER_AGENT)
+      /**
+       * Reddit rate-limits generic User-Agents, so the shared constant must keep
+       * the documented `<platform>:<app ID>:<version>` shape wherever it is used.
+       */
+      expect(REDDIT_USER_AGENT).toMatch(/^[a-z]+:[\w.-]+:v[\d.]+ \(.+\)$/)
     })
   })
 

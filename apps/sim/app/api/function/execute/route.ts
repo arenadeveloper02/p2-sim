@@ -1,6 +1,8 @@
+import type { Principal } from '@sim/auth/principal'
 import { createLogger } from '@sim/logger'
 import { sha256Hex } from '@sim/security/hash'
 import { getErrorMessage } from '@sim/utils/errors'
+import { toRecord } from '@sim/utils/object'
 import { type NextRequest, NextResponse } from 'next/server'
 import { functionExecuteContract } from '@/lib/api/contracts'
 import { parseRequest } from '@/lib/api/server'
@@ -79,15 +81,15 @@ import {
 } from '@/lib/execution/remote-sandbox/output-limits'
 import { isExecutionResourceLimitError } from '@/lib/execution/resource-errors'
 import {
-  fetchWorkspaceFileBuffer,
-  resolveWorkspaceFileReference,
-} from '@/lib/uploads/contexts/workspace/workspace-file-manager'
-import {
   EXACT_EMPTY_WORKSPACE_FILE_SECRET_PROVENANCE,
   mergeWorkspaceFileSecretProvenance,
   type WorkspaceFileSecretProvenance,
 } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import { getWorkflowById } from '@/lib/workflows/utils'
+import { createWorkspaceFileDelegatedPrincipal } from '@/lib/workspace-files/application/delegated-principal'
+import { fileOperations } from '@/lib/workspace-files/application/operations'
+import { readWorkspaceFileContent } from '@/lib/workspace-files/application/read-workspace-file-content'
+import { resolveWorkspaceFileReference } from '@/lib/workspace-files/application/resolve-workspace-file-reference'
 import {
   checkWorkspaceAccess,
   resolveWorkspaceAccess,
@@ -1029,12 +1031,6 @@ function inspectMountedWorkspaceFileProvenance(
   }
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
-}
-
 function getPositiveNumber(value: unknown): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     return undefined
@@ -1053,8 +1049,8 @@ function getBrokerFileArgs(args: unknown): {
   offset?: number
   length?: number
 } {
-  const record = asRecord(args)
-  const options = asRecord(record.options)
+  const record = toRecord(args)
+  const options = toRecord(record.options)
   return {
     file: record.file,
     maxBytes: clampInlineBytes(options.maxBytes),
@@ -1104,8 +1100,8 @@ function createFunctionRuntimeBrokers(
     'sim.files.readBase64Chunk': (args) => readFile(args, 'base64', true),
     'sim.files.readTextChunk': (args) => readFile(args, 'text', true),
     'sim.values.read': async (args) => {
-      const record = asRecord(args)
-      const options = asRecord(record.options)
+      const record = toRecord(args)
+      const options = toRecord(record.options)
       const ref = record.ref
       if (!isLargeValueRef(ref)) {
         throw new Error('Expected a large execution value reference.')
@@ -1124,8 +1120,8 @@ function createFunctionRuntimeBrokers(
       return value
     },
     'sim.values.readArray': async (args) => {
-      const record = asRecord(args)
-      const options = asRecord(record.options)
+      const record = toRecord(args)
+      const options = toRecord(record.options)
       const manifest = record.ref
       if (!isLargeArrayManifest(manifest)) {
         throw new Error('Expected a large array manifest.')
@@ -1179,9 +1175,9 @@ async function functionJsonResponse<T>(
 }
 
 function getFunctionResultProvenanceSurface(body: unknown): unknown {
-  const record = asRecord(body)
-  const output = asRecord(record.output)
-  const debug = asRecord(record.debug)
+  const record = toRecord(body)
+  const output = toRecord(record.output)
+  const debug = toRecord(record.debug)
   return [
     Object.hasOwn(record, 'error') ? record.error : undefined,
     Object.hasOwn(output, 'result') ? output.result : undefined,
@@ -1351,24 +1347,41 @@ async function appendPrivateResolvedSecretNames(
  * either a legitimately idempotent regeneration, or the incident signature of
  * code that never wrote to the declared sandboxPath (the file still holds the
  * mounted input). Only the model can tell those apart, so callers surface the
- * fact loudly in the receipt instead of failing the write. Comparison failures
- * never block the write; the current content is only downloaded when the sizes
- * already match.
+ * fact loudly in the receipt instead of failing the write. Comparison is
+ * advisory and never blocks the authoritative write; the current content is
+ * only downloaded when the sizes already match.
  */
 async function checkOverwriteTarget(
+  principal: Principal,
   workspaceId: string,
   targetPath: string,
   buffer: Buffer
 ): Promise<{ previousSize?: number; identical: boolean }> {
   try {
-    const existing = await resolveWorkspaceFileReference(workspaceId, targetPath)
-    if (!existing) return { identical: false }
+    const existing = await resolveWorkspaceFileReference({
+      principal,
+      operation: fileOperations.updateContent,
+      workspaceId,
+      reference: targetPath,
+    })
     if (existing.size !== buffer.length) {
       return { previousSize: existing.size, identical: false }
     }
-    const current = await fetchWorkspaceFileBuffer(existing)
+    const { content: current } = await readWorkspaceFileContent.execute({
+      principal,
+      input: {
+        fileId: existing.id,
+        assertedWorkspaceId: workspaceId,
+        maxBytes: buffer.length,
+      },
+    })
     return { previousSize: existing.size, identical: current.equals(buffer) }
-  } catch {
+  } catch (error) {
+    logger.warn('Unable to compare workspace overwrite target before export', {
+      workspaceId,
+      targetPath,
+      error: getErrorMessage(error),
+    })
     return { identical: false }
   }
 }
@@ -1512,11 +1525,18 @@ async function maybeExportSandboxFileToWorkspace(args: {
 
   const mode = outputMode ?? (overwriteFileId ? 'overwrite' : 'create')
   const targetPath = mode === 'create' ? outputPath : overwriteFileId || outputPath
+  const principal = createWorkspaceFileDelegatedPrincipal({
+    serviceId: 'executor',
+    subjectUserId: authUserId,
+    workspaceId: resolvedWorkspaceId,
+    delegationId: `function-execute:${routeContext.requestId}`,
+    executionId: routeContext.executionId,
+  })
 
   let previousSize: number | undefined
   let unchanged = false
   if (mode === 'overwrite') {
-    const check = await checkOverwriteTarget(resolvedWorkspaceId, targetPath, fileBuffer)
+    const check = await checkOverwriteTarget(principal, resolvedWorkspaceId, targetPath, fileBuffer)
     previousSize = check.previousSize
     unchanged = check.identical
   }
@@ -1525,8 +1545,7 @@ async function maybeExportSandboxFileToWorkspace(args: {
     const sha256 = sha256Hex(fileBuffer)
     const written = await writeWorkspaceFileByPath({
       workspaceId: resolvedWorkspaceId,
-      userId: authUserId,
-      workspaceAccess: access,
+      principal,
       target: {
         path: targetPath,
         mode,
@@ -1699,14 +1718,20 @@ async function maybeExportSandboxFilesToWorkspace(args: {
     })
   }
 
+  const principal = createWorkspaceFileDelegatedPrincipal({
+    serviceId: 'executor',
+    subjectUserId: args.authUserId,
+    workspaceId: resolvedWorkspaceId,
+    delegationId: `function-execute:${args.routeContext.requestId}`,
+    executionId: args.routeContext.executionId,
+  })
   let validationPaths: string[]
   try {
     const validations = await Promise.all(
       preparedFiles.map((prepared) =>
         validateWorkspaceFileWriteTarget({
           workspaceId: resolvedWorkspaceId,
-          userId: args.authUserId,
-          workspaceAccess: access,
+          principal,
           target: prepared.target,
         })
       )
@@ -1741,15 +1766,19 @@ async function maybeExportSandboxFilesToWorkspace(args: {
       let previousSize: number | undefined
       let unchanged = false
       if (prepared.target.mode === 'overwrite') {
-        const check = await checkOverwriteTarget(resolvedWorkspaceId, prepared.target.path, buffer)
+        const check = await checkOverwriteTarget(
+          principal,
+          resolvedWorkspaceId,
+          prepared.target.path,
+          buffer
+        )
         previousSize = check.previousSize
         unchanged = check.identical
       }
       const sha256 = sha256Hex(buffer)
       const written = await writeWorkspaceFileByPath({
         workspaceId: resolvedWorkspaceId,
-        userId: args.authUserId,
-        workspaceAccess: access,
+        principal,
         target: prepared.target,
         buffer,
         inferredMimeType: prepared.resolvedMimeType,

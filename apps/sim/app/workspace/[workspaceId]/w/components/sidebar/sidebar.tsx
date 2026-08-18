@@ -37,6 +37,7 @@ import Link from 'next/link'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { useSession } from '@/lib/auth/auth-client'
+import { focusVisibleBrowserOmnibox } from '@/lib/browser-agent/renderer-shortcuts'
 import { SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
 import { isChatEnabled } from '@/lib/core/config/env-flags'
 import { isMacPlatform } from '@/lib/core/utils/platform'
@@ -44,6 +45,7 @@ import { buildFolderTree, getFolderPathNames } from '@/lib/folders/tree'
 import { captureEvent } from '@/lib/posthog/client'
 import { CONNECT_MODE } from '@/app/workspace/[workspaceId]/integrations/connect-route'
 import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
+import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import type { SettingsSection } from '@/app/workspace/[workspaceId]/settings/navigation'
 import { createCommands } from '@/app/workspace/[workspaceId]/utils/commands-utils'
@@ -65,12 +67,17 @@ import {
   buildConnectedAccountSearchItems,
   buildIntegrationSearchItems,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/search-modal/integration-search-items'
+import type {
+  LogItem,
+  PageActionContext,
+} from '@/app/workspace/[workspaceId]/w/components/sidebar/components/search-modal/utils'
 import { ContextMenu } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/context-menu/context-menu'
 import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workflow-list/components/delete-modal/delete-modal'
 import {
   SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
   SIDEBAR_DIVIDER_PAD_BELOW_CLASS,
   SIDEBAR_ITEM_GAP_CLASS,
+  SIDEBAR_RAIL_CHIP_CLASS,
   SIDEBAR_SECTION_GAP_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
 import {
@@ -93,7 +100,7 @@ import { useImportWorkflow } from '@/app/workspace/[workspaceId]/w/hooks'
 import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
 import { useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useFolderMap, useFolders } from '@/hooks/queries/folders'
-import { useKnowledgeBasesQuery } from '@/hooks/queries/kb/knowledge'
+import { type LogFilters, useLogsList } from '@/hooks/queries/logs'
 import type { MothershipChatMetadata } from '@/hooks/queries/mothership-chats'
 import {
   useDeleteMothershipChat,
@@ -104,16 +111,15 @@ import {
   useRenameMothershipChat,
   useSetMothershipChatPinned,
 } from '@/hooks/queries/mothership-chats'
-import { useTablesList } from '@/hooks/queries/tables'
 import { useUpdateWorkflow } from '@/hooks/queries/workflows'
 import type { Workspace } from '@/hooks/queries/workspace'
-import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
 import { useMothershipChatEvents } from '@/hooks/use-mothership-chat-events'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { SIDEBAR_WIDTH } from '@/stores/constants'
 import { useFolderStore } from '@/stores/folders/store'
 import type { WorkflowFolder } from '@/stores/folders/types'
+import { useFilterStore } from '@/stores/logs/filters/store'
 import { useSearchModalStore } from '@/stores/modals/search/store'
 import { useProvidersStore } from '@/stores/providers'
 import { useSettingsDirtyStore } from '@/stores/settings/dirty/store'
@@ -129,6 +135,27 @@ const logger = createLogger('Sidebar')
 const EMPTY_CHATS: MothershipChatMetadata[] = []
 /** Stable identity while a folder list loads, so the search-row memos don't churn. */
 const EMPTY_FOLDER_MAP: Record<string, WorkflowFolder> = {}
+
+/** Recent runs shown in the palette's Logs section on the logs pages. */
+const SEARCH_MODAL_LOG_FILTERS: LogFilters = {
+  timeRange: 'All time',
+  level: 'all',
+  workflowIds: [],
+  folderIds: [],
+  triggers: [],
+  searchQuery: '',
+  limit: 50,
+  sortBy: 'date',
+  sortOrder: 'desc',
+}
+
+/** Short run/activity date for palette row receipts (logs, chats). */
+const SEARCH_MODAL_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+})
 
 const SLACK_COMMUNITY_URL =
   'https://join.slack.com/t/sim-ott9864/shared_invite/zt-43lp8tc5v-0qrrqHGBKUsvQlpoouH~TA'
@@ -329,6 +356,7 @@ const SidebarNavItem = memo(function SidebarNavItem({
       leftIcon={item.icon}
       active={active}
       fullWidth
+      className={SIDEBAR_RAIL_CHIP_CLASS}
       onClick={
         item.onClick
           ? (e) => {
@@ -348,6 +376,7 @@ const SidebarNavItem = memo(function SidebarNavItem({
       leftIcon={item.icon}
       active={active}
       fullWidth
+      className={SIDEBAR_RAIL_CHIP_CLASS}
       onClick={item.onClick}
     >
       {item.label}
@@ -422,11 +451,13 @@ export const Sidebar = memo(function Sidebar({
 
   const posthog = usePostHog()
   const { data: sessionData, isPending: sessionLoading } = useSession()
-  const { canEdit, isLoading: permissionsLoading } = useUserPermissionsContext()
+  const { workspace: routeWorkspace } = useWorkspaceHostContext()
+  const { canAdmin, canEdit, isLoading: permissionsLoading } = useUserPermissionsContext()
   const {
     config: permissionConfig,
     filterBlocks,
     isBlockAllowed,
+    isToolAllowed,
     integrationAvailability,
   } = usePermissionConfig()
   const { navigateToSettings } = useSettingsNavigation()
@@ -442,8 +473,14 @@ export const Sidebar = memo(function Sidebar({
   )
 
   useEffect(() => {
-    initializeSearchData(filterBlocks)
-  }, [initializeSearchData, filterBlocks, providerModelSignature, customBlockOverlayVersion])
+    initializeSearchData(filterBlocks, isToolAllowed)
+  }, [
+    initializeSearchData,
+    filterBlocks,
+    isToolAllowed,
+    providerModelSignature,
+    customBlockOverlayVersion,
+  ])
 
   const setSidebarWidth = useSidebarStore((state) => state.setSidebarWidth)
   const toggleCollapsed = useSidebarStore((state) => state.toggleCollapsed)
@@ -569,16 +606,6 @@ export const Sidebar = memo(function Sidebar({
 
   useFolders(workspaceId)
   const { data: folderMap = EMPTY_FOLDER_MAP } = useFolderMap(workspaceId)
-  // Tables and knowledge bases keep their folders in the generic folder tree,
-  // keyed by resource type, so each needs its own map to resolve a path.
-  const { data: tableFolderMap = EMPTY_FOLDER_MAP } = useFolderMap(
-    permissionConfig.hideTablesTab ? undefined : workspaceId,
-    'table'
-  )
-  const { data: knowledgeBaseFolderMap = EMPTY_FOLDER_MAP } = useFolderMap(
-    permissionConfig.hideKnowledgeBaseTab ? undefined : workspaceId,
-    'knowledge_base'
-  )
   const updateWorkflowMutation = useUpdateWorkflow()
 
   const folderTree = useMemo(
@@ -769,6 +796,8 @@ export const Sidebar = memo(function Sidebar({
         name: workspace.name,
         href: `/workspace/${workspace.id}/w`,
         isCurrent: workspace.id === workspaceId,
+        logoUrl: workspace.logoUrl,
+        color: workspace.color,
       })),
     [workspaces, workspaceId]
   )
@@ -819,7 +848,7 @@ export const Sidebar = memo(function Sidebar({
         },
         {
           id: 'knowledge-base',
-          label: 'Knowledge base',
+          label: 'Knowledge bases',
           icon: Database,
           href: `/workspace/${workspaceId}/knowledge`,
           hidden: permissionConfig.hideKnowledgeBaseTab,
@@ -865,56 +894,9 @@ export const Sidebar = memo(function Sidebar({
       fetchedChats.map((t) => ({
         ...t,
         href: `/workspace/${workspaceId}/chat/${t.id}`,
+        date: SEARCH_MODAL_DATE_FORMAT.format(t.updatedAt),
       })),
     [fetchedChats, workspaceId]
-  )
-
-  const { data: fetchedTables = [] } = useTablesList(workspaceId)
-  const { data: fetchedFiles = [] } = useWorkspaceFiles(workspaceId)
-  const { data: fetchedKnowledgeBases = [] } = useKnowledgeBasesQuery(workspaceId)
-
-  const searchModalTables = useMemo(
-    () =>
-      permissionConfig.hideTablesTab
-        ? []
-        : fetchedTables.map((t) => ({
-            id: t.id,
-            name: t.name,
-            href: `/workspace/${workspaceId}/tables/${t.id}`,
-            folderPath: getFolderPathNames(tableFolderMap, t.folderId),
-          })),
-    [fetchedTables, tableFolderMap, workspaceId, permissionConfig.hideTablesTab]
-  )
-
-  const searchModalFiles = useMemo(
-    () =>
-      permissionConfig.hideFilesTab
-        ? []
-        : fetchedFiles.map((f) => ({
-            id: f.id,
-            name: f.name,
-            href: `/workspace/${workspaceId}/files/${f.id}`,
-            folderPath: f.folderPath ? f.folderPath.split('/').filter(Boolean) : undefined,
-          })),
-    [fetchedFiles, workspaceId, permissionConfig.hideFilesTab]
-  )
-
-  const searchModalKnowledgeBases = useMemo(
-    () =>
-      permissionConfig.hideKnowledgeBaseTab
-        ? []
-        : fetchedKnowledgeBases.map((kb) => ({
-            id: kb.id,
-            name: kb.name,
-            href: `/workspace/${workspaceId}/knowledge/${kb.id}`,
-            folderPath: getFolderPathNames(knowledgeBaseFolderMap, kb.folderId),
-          })),
-    [
-      fetchedKnowledgeBases,
-      knowledgeBaseFolderMap,
-      workspaceId,
-      permissionConfig.hideKnowledgeBaseTab,
-    ]
   )
 
   const chatIds = useMemo(() => chats.map((t) => t.id), [chats])
@@ -1076,13 +1058,57 @@ export const Sidebar = memo(function Sidebar({
   }, [])
 
   const isOnSettingsPage = pathname?.startsWith(`/workspace/${workspaceId}/settings`) ?? false
-  const isOnIntegrationsPage =
-    pathname?.startsWith(`/workspace/${workspaceId}/integrations`) ?? false
+
+  const logsViewMode = useFilterStore((state) => state.viewMode)
+
+  /**
+   * Page whose registered palette commands are currently invocable. Matches
+   * only routes that mount the registering component: list pages exactly, and
+   * detail roots as a single path segment (deeper routes don't mount them).
+   */
+  const searchModalPageContext = useMemo((): PageActionContext | null => {
+    if (!pathname) return null
+    if (workflowId) return 'workflow'
+    const base = `/workspace/${workspaceId}`
+    const detailSegment = (prefix: string): string | null => {
+      if (!pathname.startsWith(prefix)) return null
+      const rest = pathname.slice(prefix.length)
+      return rest && !rest.includes('/') ? rest : null
+    }
+    if (pathname === `${base}/tables`) return 'tables'
+    if (detailSegment(`${base}/tables/`)) return 'tableDetail'
+    if (pathname === `${base}/files`) return 'files'
+    if (detailSegment(`${base}/files/`)) return 'fileDetail'
+    if (pathname === `${base}/knowledge`) return 'knowledge'
+    if (detailSegment(`${base}/knowledge/`)) return 'knowledgeBase'
+    if (pathname === `${base}/logs`) return logsViewMode === 'dashboard' ? 'logsDashboard' : 'logs'
+    return null
+  }, [pathname, workspaceId, workflowId, logsViewMode])
 
   const { data: fetchedCredentials = [] } = useWorkspaceCredentials({
     workspaceId,
-    enabled: isOnIntegrationsPage && !permissionConfig.hideIntegrationsTab,
+    enabled:
+      isSearchModalOpen &&
+      !permissionConfig.hideIntegrationsTab &&
+      searchModalPageContext !== 'workflow',
   })
+
+  const isOnLogsPage =
+    searchModalPageContext === 'logs' || searchModalPageContext === 'logsDashboard'
+  const logsPages = useLogsList(workspaceId, SEARCH_MODAL_LOG_FILTERS, {
+    enabled: isSearchModalOpen && isOnLogsPage,
+  })
+  const searchModalLogs = useMemo((): LogItem[] => {
+    const rows = logsPages.data?.pages[0]?.logs ?? []
+    return rows.map((log) => ({
+      id: log.id,
+      name: log.workflow?.name || log.jobTitle || 'Unknown workflow',
+      href: log.executionId
+        ? `/workspace/${workspaceId}/logs?executionId=${log.executionId}`
+        : `/workspace/${workspaceId}/logs`,
+      date: SEARCH_MODAL_DATE_FORMAT.format(new Date(log.createdAt)),
+    }))
+  }, [logsPages.data, workspaceId])
 
   const searchModalIntegrations = useMemo(
     () =>
@@ -1279,6 +1305,7 @@ export const Sidebar = memo(function Sidebar({
       {
         id: 'goto-logs',
         handler: () => {
+          if (focusVisibleBrowserOmnibox()) return
           try {
             const pathWorkspaceId = resolveWorkspaceIdFromPath()
             if (pathWorkspaceId) {
@@ -1295,7 +1322,8 @@ export const Sidebar = memo(function Sidebar({
       {
         id: 'open-search',
         handler: () => {
-          openSearchModal()
+          const searchModal = useSearchModalStore.getState()
+          searchModal.setOpen(!searchModal.isOpen)
         },
       },
       {
@@ -1333,7 +1361,7 @@ export const Sidebar = memo(function Sidebar({
       />
       <div className='relative h-full'>
         <aside
-          className='sidebar-container relative h-full overflow-hidden bg-[var(--surface-1)] [&_.group.cursor-pointer]:duration-0'
+          className='group/rail sidebar-container relative h-full overflow-hidden bg-[var(--surface-1)] [&_.group.cursor-pointer]:duration-0'
           data-collapsed={isCollapsed || undefined}
           aria-label='Workspace sidebar'
           onClick={handleSidebarClick}
@@ -1354,7 +1382,7 @@ export const Sidebar = memo(function Sidebar({
               )}
             >
               <WorkspaceHeader
-                activeWorkspace={activeWorkspace}
+                activeWorkspace={activeWorkspace ?? routeWorkspace}
                 workspaceId={workspaceId}
                 workspaces={workspaces}
                 pinnedWorkspaceIds={pinnedWorkspaceIds}
@@ -1386,11 +1414,24 @@ export const Sidebar = memo(function Sidebar({
                * between them. `gap-[1px]` rather than `gap-px`: the `px` spacing key
                * is remapped to `--border-width`, which thins to 0.5px on hidpi so
                * hairline rules stay hairlines.
+               *
+               * The expanded width is EXPLICIT (2 icon chips × 32px + the 1px gap;
+               * 32px when the desktop inset title bar hides the collapse chip), never
+               * `auto`: `w-0 → auto` cannot interpolate, so on expand the cluster
+               * snapped to full width while the rail was still 51px wide — and since
+               * the cluster refuses to flex-shrink (min-width: auto) while the
+               * workspace chip's wrapper is `min-w-0 flex-1`, the workspace chip
+               * crushed to zero and the hover-filled Search chip landed exactly under
+               * the cursor on the workspace icon: a visible flash on every expand.
+               * With both endpoints explicit, the width tweens in step with the rail
+               * and the workspace chip keeps its space throughout.
                */}
               <div
                 className={cn(
-                  'flex h-[30px] items-center gap-[1px] overflow-hidden transition-all duration-200',
-                  isCollapsed && 'w-0 opacity-0'
+                  'flex h-[30px] items-center gap-[1px] overflow-hidden transition-all duration-200 [transition-timing-function:cubic-bezier(0.25,0.1,0.25,1)]',
+                  isCollapsed
+                    ? 'w-0 opacity-0'
+                    : 'w-[65px] [[data-sim-desktop-title-bar=inset]_&]:w-[32px]'
                 )}
               >
                 <SidebarTooltip
@@ -1846,14 +1887,12 @@ export const Sidebar = memo(function Sidebar({
         workflows={searchModalWorkflows}
         workspaces={searchModalWorkspaces}
         chats={chats}
-        tables={searchModalTables}
-        files={searchModalFiles}
-        knowledgeBases={searchModalKnowledgeBases}
+        logs={searchModalLogs}
         integrations={searchModalIntegrations}
         connectedAccounts={searchModalConnectedAccounts}
-        isOnWorkflowPage={!!workflowId}
-        isOnIntegrationsPage={isOnIntegrationsPage}
+        pageContext={searchModalPageContext}
         canEdit={canEdit}
+        canAdmin={canAdmin}
         onCreateWorkflow={handleCreateWorkflow}
         onCreateFolder={handleCreateFolder}
         onImportWorkflow={handleImportWorkflow}

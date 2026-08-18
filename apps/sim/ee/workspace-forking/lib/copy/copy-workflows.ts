@@ -1,8 +1,11 @@
 import { folder as folderTable, workflow, workflowBlocks } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
+import { isRecordLike } from '@sim/utils/object'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
+import type { FolderResourceType } from '@/lib/api/contracts/folders'
 import type { DbOrTx } from '@/lib/db/types'
+import { assertFolderCollectionHasRoom } from '@/lib/folders/queries'
 import { remapConditionEdgeHandle } from '@/lib/workflows/condition-ids'
 import {
   remapConditionIdsInSubBlocks,
@@ -42,12 +45,17 @@ interface ResolveForkFolderMappingParams {
   userId: string
   now: Date
   /**
-   * Source folder ids that will directly hold copied content (workflows); null entries
+   * Which folder tree to mirror. `folder` rows are one table discriminated by this column, and
+   * the four folder-bearing families (`workflow`, `file`, `knowledge_base`, `table`) each own a
+   * disjoint tree, so a mapping run is always scoped to exactly one of them - reading across
+   * types would alias unrelated same-named folders onto each other.
+   */
+  resourceType: FolderResourceType
+  /**
+   * Source folder ids that will directly hold copied content of `resourceType`; null entries
    * (root-placed content) are ignored. A source folder is copied into the target only when
    * its subtree contains at least one of these, so a fork/sync never creates folders that
-   * would end up empty. Copied workspace FILES never influence this set: their folders are a
-   * separate tree (`folder` rows with `resourceType = 'file'`, which this copy only ever reads
-   * as `'workflow'`) and are flattened to root by the copy.
+   * would end up empty.
    */
   contentFolderIds: ReadonlyArray<string | null>
 }
@@ -59,8 +67,11 @@ interface ResolveForkFolderMappingParams {
  * parent are reused instead of duplicated. Folders whose subtree holds no copied content are
  * pruned - never created - though a pruned folder still maps onto an existing target folder
  * when one matches, so previously-synced content refs keep resolving. Returns a map from
- * source folder id to target folder id; a copied workflow whose folder is absent from the
+ * source folder id to target folder id; copied content whose folder is absent from the
  * map is placed at the target's root (see {@link copyWorkflowStateIntoTarget}).
+ *
+ * Call once per folder-bearing family being copied; the returned maps are disjoint (folder ids
+ * are globally unique) and safe to merge for content-reference rewriting.
  */
 export async function resolveForkFolderMapping({
   tx,
@@ -68,6 +79,7 @@ export async function resolveForkFolderMapping({
   targetWorkspaceId,
   userId,
   now,
+  resourceType,
   contentFolderIds,
 }: ResolveForkFolderMappingParams): Promise<Map<string, string>> {
   const map = new Map<string, string>()
@@ -78,7 +90,7 @@ export async function resolveForkFolderMapping({
     .where(
       and(
         eq(folderTable.workspaceId, sourceWorkspaceId),
-        eq(folderTable.resourceType, 'workflow'),
+        eq(folderTable.resourceType, resourceType),
         isNull(folderTable.deletedAt)
       )
     )
@@ -105,7 +117,7 @@ export async function resolveForkFolderMapping({
     .where(
       and(
         eq(folderTable.workspaceId, targetWorkspaceId),
-        eq(folderTable.resourceType, 'workflow'),
+        eq(folderTable.resourceType, resourceType),
         isNull(folderTable.deletedAt)
       )
     )
@@ -158,6 +170,21 @@ export async function resolveForkFolderMapping({
   }
 
   if (newFolders.length > 0) {
+    /**
+     * Charge the whole batch against the target workspace's folder ceiling in one check
+     * before writing any of it. Readers cap the active folder index at
+     * `MAX_FOLDERS_PER_WORKSPACE`, so a fork that mirrors a large source tree into an
+     * already-populated target could otherwise leave the target unreadable.
+     *
+     * Runs inside the fork transaction, after the `fork-target` advisory lock, so it is
+     * atomic against every other fork/promote into this target and a refusal rolls the
+     * whole copy back. It does NOT take the folder mutation lock: that helper resets the
+     * transaction's `lock_timeout`, which the fork sets deliberately, so an ordinary
+     * concurrent `createFolder` can still slip a row in between the count and the insert.
+     */
+    await assertFolderCollectionHasRoom(targetWorkspaceId, resourceType, tx, {
+      additionalRows: newFolders.length,
+    })
     await tx.insert(folderTable).values(newFolders)
   }
 
@@ -431,7 +458,7 @@ export async function copyWorkflowStateIntoTarget(
     const newBlockId = blockIdMapping.get(oldBlockId)!
 
     let updatedData = block.data
-    if (block.data && typeof block.data === 'object' && !Array.isArray(block.data)) {
+    if (isRecordLike(block.data)) {
       const dataObj = block.data as Record<string, unknown>
       if (typeof dataObj.parentId === 'string' && blockIdMapping.has(dataObj.parentId)) {
         updatedData = {

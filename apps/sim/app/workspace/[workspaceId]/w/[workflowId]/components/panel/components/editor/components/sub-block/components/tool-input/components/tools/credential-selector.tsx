@@ -251,6 +251,7 @@ export function ToolCredentialSelector({
                 providerId: effectiveProviderId,
                 preCount: credentials.length,
                 workspaceId,
+                reconnect: true,
                 requestedAt: Date.now(),
               })
               setShowOAuthModal(true)
@@ -292,6 +293,10 @@ export function ToolCredentialSelector({
           requiredScopes={getCanonicalScopesForProvider(effectiveProviderId)}
           newScopes={missingRequiredScopes}
           serviceId={serviceId}
+          // A reauthorize must return to the authorization server that issued
+          // the credential — deriving it from the service id would send a
+          // sandbox user to production, where they cannot sign in at all.
+          providerId={selectedCredential?.provider ?? effectiveProviderId}
         />
       )}
     </div>
