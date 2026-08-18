@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next'
-import { SITE_URL } from '@/lib/core/utils/urls'
+import { getEnv } from '@/lib/core/config/env'
+import { isSearchIndexableAppUrl, SITE_URL } from '@/lib/core/utils/urls'
 
 const DISALLOWED_PATHS = [
   '/api/',
@@ -14,6 +15,13 @@ const DISALLOWED_PATHS = [
 ]
 
 export default function robots(): MetadataRoute.Robots {
+  // Dev / test / sandbox share the same image; only prod agent may be crawled.
+  if (!isSearchIndexableAppUrl(getEnv('NEXT_PUBLIC_APP_URL'))) {
+    return {
+      rules: { userAgent: '*', disallow: '/' },
+    }
+  }
+
   return {
     rules: { userAgent: '*', allow: '/', disallow: DISALLOWED_PATHS },
     sitemap: [

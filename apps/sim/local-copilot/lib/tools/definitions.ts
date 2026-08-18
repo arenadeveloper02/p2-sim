@@ -30,7 +30,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'edit_workflow',
     description:
-      'Applies block operations to a workflow (add, edit, delete). Requires workflowId from create_workflow or an open workflow. CONNECTIONS: never add edges as separate operations or type "edge". Wire on the SOURCE block via params.connections — e.g. { source: "<target-block-id>" } on the Start block to connect Start → Agent. Call get_blocks_metadata ONCE with every block type you need before the first edit. Prefer one edit_workflow for all adds + Start connections. App-owned verification may run after success — do not claim verified yourself. Always pass operations as a non-empty array.',
+      'Applies block operations to a workflow (add, edit, delete). Requires workflowId from create_workflow or an open workflow. CONNECTIONS: never add edges as separate operations or type "edge". Wire on the SOURCE (upstream) block via params.connections — e.g. { source: "<target-block-id>" } on the Start block to connect Start → Agent. Never put connections on the downstream block and never point connections at Start/trigger. To reverse a wire, put connections on the new source only. Call get_blocks_metadata ONCE with every block type you need before the first edit. Prefer one edit_workflow for all adds + Start connections. App-owned verification may run after success — do not claim verified yourself. Always pass operations as a non-empty array.',
     parameters: {
       type: 'object',
       properties: {
@@ -160,10 +160,15 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'validate_workflow',
     description:
-      'Validates the current workflow for structural issues. Prefer letting app-owned post-mutation verification run this automatically. Call manually only when the user asks to validate or when repairing reported lint/errors.',
+      'Validates a workflow for structural issues. Prefer letting app-owned post-mutation verification run this automatically. On home chat, pass workflowId from workspaceWorkflows (or omit it when only one workflow exists). Call manually only when the user asks to validate or when repairing reported lint/errors.',
     parameters: {
       type: 'object',
       properties: {
+        workflowId: {
+          type: 'string',
+          description:
+            'Workflow to validate. Defaults to the open workflow, the workflow created this turn, or the only workspace workflow.',
+        },
         workflowJson: { type: 'object', description: 'Optional workflow state override' },
       },
       additionalProperties: false,

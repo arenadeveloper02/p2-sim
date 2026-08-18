@@ -1,61 +1,68 @@
 'use client'
 
-import { useEffect } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { createLogger } from '@sim/logger'
 
 const logger = createLogger('AutoLoginSessionMigrationProvider')
 
 /**
- * @deprecated One-time migration for next deploy only — remove this component and this file
- * from `app/layout.tsx` after the migration window. Clears cross-scope session cookies before
- * auto-login when an `email` cookie is present, then marks the run in localStorage.
+ * One-time clear of leftover Better Auth session cookies across host-only,
+ * `Domain=<agent host>`, and parent `Domain=thearena.ai` scopes. Needed when
+ * older deploys mixed cross-subdomain and host-only `__Secure-better-auth.*`
+ * cookies (same name, two Domain scopes → redirect / logout loops).
+ *
+ * Children (including AutoLoginProvider) mount only after the clear finishes
+ * so auto-login can mint a fresh session without racing the wipe.
+ *
+ * Bump the localStorage key when a new clear pass is required in production.
  */
-const AUTO_LOGIN_MIGRATION_KEY = 'sim_auth_auto_login_migration_v1'
+const AUTO_LOGIN_MIGRATION_KEY = 'sim_auth_session_cookie_scope_migration_v2'
 
-function getCookie(name: string): string | null {
-  if (typeof document === 'undefined') return null
-  const value = `; ${document.cookie}`
-  const parts = value.split(`; ${name}=`)
-  if (parts.length === 2) {
-    return parts.pop()?.split(';').shift() || null
-  }
-  return null
+interface AutoLoginSessionMigrationProviderProps {
+  children: ReactNode
 }
 
 /**
- * Renders nothing. Mount as a child of `AutoLoginProvider` (before other children) so this
- * effect runs before the parent auto-login `useEffect` schedules the 50ms sign-in.
+ * Gates children until the one-time cookie-scope clear has completed (or was
+ * already done in a prior visit).
  */
-export function AutoLoginSessionMigrationProvider() {
+export function AutoLoginSessionMigrationProvider({
+  children,
+}: AutoLoginSessionMigrationProviderProps) {
+  const [ready, setReady] = useState(() => {
+    if (typeof localStorage === 'undefined') return false
+    return localStorage.getItem(AUTO_LOGIN_MIGRATION_KEY) === '1'
+  })
+
   useEffect(() => {
+    if (ready) return
+
     const run = async () => {
-      if (typeof localStorage !== 'undefined' && localStorage.getItem(AUTO_LOGIN_MIGRATION_KEY)) {
-        return
-      }
-
-      if (!getCookie('email')) {
-        return
-      }
-
       try {
+        // boundary-raw-fetch: Set-Cookie clear must hit same-origin; not a JSON contract
         const res = await fetch('/api/auth/clear-domain-session-cookies', {
           method: 'POST',
           credentials: 'include',
         })
         if (!res.ok) {
-          logger.error('One-time session cookie clear before auto-login failed:', res.status)
-          return
-        }
-        if (typeof localStorage !== 'undefined') {
+          logger.error('Session cookie scope migration clear failed', { status: res.status })
+        } else if (typeof localStorage !== 'undefined') {
           localStorage.setItem(AUTO_LOGIN_MIGRATION_KEY, '1')
         }
       } catch (error) {
-        logger.error('One-time session cookie clear before auto-login failed:', error)
+        logger.error('Session cookie scope migration clear failed', { error })
+      } finally {
+        // Always unblock the tree — a failed clear must not leave the app blank.
+        setReady(true)
       }
     }
 
     void run()
-  }, [])
+  }, [ready])
 
-  return null
+  if (!ready) {
+    return null
+  }
+
+  return <>{children}</>
 }

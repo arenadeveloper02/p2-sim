@@ -10,6 +10,7 @@ import { normalizeMessage, type PersistedMessage } from '@/lib/copilot/chat/pers
 import { chatPubSub } from '@/lib/copilot/chat-status'
 import { requestChatTitle } from '@/lib/copilot/request/lifecycle/start'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { fetchStreamingPost } from '@/lib/core/utils/streaming-fetch'
 
 const logger = createLogger('AgentResolveWorkspaceExecute')
 
@@ -666,8 +667,7 @@ export async function POST(req: NextRequest) {
         }
 
         try {
-          const upstream = await fetch(executeUrl, {
-            method: 'POST',
+          const upstream = await fetchStreamingPost(executeUrl, {
             headers: {
               'X-API-Key': apiKey,
               'Content-Type': 'application/json',
@@ -683,12 +683,11 @@ export async function POST(req: NextRequest) {
           })
 
           if (!upstream.ok) {
-            const errorText = await upstream.text().catch(() => '')
             logger.error('Workflow execution API returned non-OK status', {
               userId,
               workflowId: body.workflowId,
               status: upstream.status,
-              error: errorText,
+              error: upstream.errorText,
             })
             emitTextEvent('Failed to execute workflow request. Please try again.')
             emitToolResultEvent({
@@ -709,7 +708,8 @@ export async function POST(req: NextRequest) {
             return
           }
 
-          if (!upstream.body) {
+          const upstreamBody = upstream.body
+          if (!upstreamBody) {
             logger.error('Workflow execution API returned empty stream body', {
               userId,
               workflowId: body.workflowId,
@@ -733,7 +733,7 @@ export async function POST(req: NextRequest) {
             return
           }
 
-          reader = upstream.body.getReader()
+          reader = upstreamBody.getReader()
           while (true) {
             const { done, value } = await reader.read()
             if (done) break
@@ -811,7 +811,9 @@ export async function POST(req: NextRequest) {
               await reader.cancel()
             } catch {}
           }
-          controller.close()
+          try {
+            controller.close()
+          } catch {}
         }
       },
     })

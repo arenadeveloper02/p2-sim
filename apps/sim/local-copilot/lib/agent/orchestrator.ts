@@ -202,6 +202,7 @@ Response format:
   - Never mention block UUIDs, internal IDs, tool names (\`edit_workflow\`, \`get_workflow_context\`, etc.), or operation internals in user-visible text.
   - Refer to blocks only by display name (e.g. "Writer", "Reviewer", "Fetch Emails"). Never write "Start block ID is …".
   - Do not narrate planned work ("Let me check…", "Now I'll grab metadata…", "I'm about to…"). Call the tool; speak only after outcomes that the user needs.
+  - Never tell the user about truncated context, bloated payloads, block IDs, metadata fetches, or which scope a block landed in. Those are internal. The final reply should name blocks by display name only (e.g. "Function 1 → Delay → Ad Links") and say what changed.
   - While tools are still running, keep user-visible text to a short status line or silence — save the full summary for the final reply.
   - If a tool fails, explain the blocker in plain language without dumping IDs or raw JSON.
 - Finish efficiently (CRITICAL — avoid thrash):
@@ -254,7 +255,8 @@ Rules:
   - Call get_blocks_metadata **once** with \`{ "blockIds": ["agent","start_trigger", …] }\` including every integration type you will add (e.g. gmail). Use returned field ids verbatim in params.inputs.
   - Never call get_blocks_metadata again for types already returned this turn.
   - When workflow context has \`detail: "compact"\`, call \`get_workflow_context\` with \`blockNames\` (preferred) or \`blockIds\` for every block you will edit BEFORE \`edit_workflow\`. Compact context omits prompt/message bodies.
-  - Never add edges as separate operations or with type "edge". Connections live on the SOURCE block: \`params.connections: { source: "<target-block-id>" }\`. To wire Start → Agent, edit the Start block (startBlockId from create_workflow) with connections pointing to the agent block_id — use that id only in the tool args, never in user-visible text.
+  - Never add edges as separate operations or with type "edge". Connections live on the SOURCE (upstream) block: \`params.connections: { source: "<target-block-id>" }\`. To wire Start → Agent, edit the Start block (startBlockId from create_workflow) with connections pointing to the agent block_id — use that id only in the tool args, never in user-visible text.
+  - Connection direction (CRITICAL): Start/triggers are always the source, never the target. Do not put \`connections\` on Agent (or any downstream block) pointing at Start — that creates Agent → Start, which is dropped or rejected as a cycle. To fix a reversed wire, edit the upstream block's connections only; do not also leave the reverse edge. Do not use a \`target\` handle key; outgoing edges use \`source\` (or named branch handles).
   - Agent block: use \`messages\` (array of \`{role, content}\`), \`model\`, and \`tools\` — not systemPrompt/userPrompt. If you only have a system prompt string, still pass it via \`messages: [{role:"system",content:"..."},{role:"user",content:"..."}]\` (legacy systemPrompt is auto-mapped, but \`messages\` is preferred). Exa web search tool entry: \`{ type: "exa", title: "Exa Search", toolId: "exa_search", usageControl: "auto" }\`.
   - Prefer one edit_workflow call with all add operations plus a final edit on the Start block for connections. deferredConnections in results are normal for forward references within the same batch — do not re-issue them unless the target id was wrong.
   - If workflowLintMessage reports orphan blocks, fix connections on the Start (or upstream) block before run_workflow.
@@ -1504,10 +1506,24 @@ export async function* runLocalCopilotAgent(
           toolCtx.workflowId = output.existingWorkflowId.trim()
         }
       } else if (call.name === 'edit_workflow' && toolResult.success) {
+        const output =
+          toolResult.result && typeof toolResult.result === 'object'
+            ? (toolResult.result as Record<string, unknown>)
+            : {}
+        const resolvedWorkflowId =
+          (typeof output.workflowId === 'string' && output.workflowId.trim()) ||
+          (typeof parsedArgs.workflowId === 'string' && parsedArgs.workflowId.trim()) ||
+          toolCtx.workflowId
+        if (resolvedWorkflowId) {
+          toolCtx.workflowId = resolvedWorkflowId
+        }
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext
         toolCtx.workflowRevision = refreshed.workflowRevision
-      } else if (toolResult.success && isWorkflowScopedDelegatedTool(call.name)) {
+      } else if (
+        toolResult.success &&
+        (isWorkflowScopedDelegatedTool(call.name) || call.name === 'validate_workflow')
+      ) {
         const output =
           toolResult.result && typeof toolResult.result === 'object'
             ? (toolResult.result as Record<string, unknown>)

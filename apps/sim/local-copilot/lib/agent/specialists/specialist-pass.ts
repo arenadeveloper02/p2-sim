@@ -441,6 +441,17 @@ export async function executeSpecialistLoop(
           params.toolCtx.structuredContext = refreshed.structuredContext
           params.toolCtx.workflowRevision = refreshed.workflowRevision
         } else if (call.name === 'edit_workflow' && toolResult.success) {
+          const output =
+            toolResult.result && typeof toolResult.result === 'object'
+              ? (toolResult.result as Record<string, unknown>)
+              : {}
+          const resolvedWorkflowId =
+            (typeof output.workflowId === 'string' && output.workflowId.trim()) ||
+            (typeof parsedArgs.workflowId === 'string' && parsedArgs.workflowId.trim()) ||
+            params.toolCtx.workflowId
+          if (resolvedWorkflowId) {
+            params.toolCtx.workflowId = resolvedWorkflowId
+          }
           const refreshed = await refreshToolContext(params.toolCtx)
           params.toolCtx.structuredContext = refreshed.structuredContext
           params.toolCtx.workflowRevision = refreshed.workflowRevision
