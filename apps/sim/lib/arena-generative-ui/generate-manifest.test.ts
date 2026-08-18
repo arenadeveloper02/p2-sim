@@ -170,6 +170,9 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('Repeat')
     expect(system).toContain('PageHeader')
     expect(system).toContain('Tabs')
+    expect(system).toContain('NumberInput')
+    expect(system).toContain('showWhen')
+    expect(system).toContain('MultiSelect')
   })
 
   it('opens with the engineer persona and a no-markdown instruction', async () => {

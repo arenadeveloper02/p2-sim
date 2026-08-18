@@ -1,0 +1,150 @@
+/**
+ * @vitest-environment node
+ */
+import { describe, expect, it } from 'vitest'
+import {
+  collectVisibleFieldValues,
+  fieldIsVisible,
+  listFormFields,
+  parseShowWhen,
+  resolveFieldValue,
+  validateVisibleFields,
+} from '@/lib/arena-generative-ui/form-fields'
+
+describe('parseShowWhen', () => {
+  it('treats a bare name as a truthy check', () => {
+    expect(parseShowWhen('notify')).toEqual([{ name: 'notify', op: 'truthy' }])
+  })
+
+  it('parses equality, inequality, and AND', () => {
+    expect(parseShowWhen('channel=email, channel!=sms')).toEqual([
+      { name: 'channel', op: 'eq', value: 'email' },
+      { name: 'channel', op: 'neq', value: 'sms' },
+    ])
+  })
+})
+
+describe('fieldIsVisible', () => {
+  it('is visible when showWhen is empty', () => {
+    expect(fieldIsVisible({}, {})).toBe(true)
+  })
+
+  it('requires every clause to match', () => {
+    expect(
+      fieldIsVisible({ showWhen: 'notify,channel=email' }, { notify: true, channel: 'email' })
+    ).toBe(true)
+    expect(
+      fieldIsVisible({ showWhen: 'notify,channel=email' }, { notify: true, channel: 'sms' })
+    ).toBe(false)
+  })
+})
+
+describe('resolveFieldValue', () => {
+  it('prefers a user edit over state and defaults', () => {
+    expect(
+      resolveFieldValue(
+        'TextInput',
+        { name: 'company', defaultValue: 'Acme', statePath: 'company' },
+        { company: 'Ada' },
+        { company: 'From state' }
+      )
+    ).toBe('Ada')
+  })
+
+  it('reads statePath before defaultValue', () => {
+    expect(
+      resolveFieldValue(
+        'TextInput',
+        { name: 'company', defaultValue: 'Acme', statePath: 'company' },
+        {},
+        { company: 'From state' }
+      )
+    ).toBe('From state')
+  })
+
+  it('defaults Checkbox from defaultChecked', () => {
+    expect(resolveFieldValue('Checkbox', { name: 'agree', defaultChecked: true }, {}, {})).toBe(
+      true
+    )
+    expect(resolveFieldValue('Switch', { name: 'notify', defaultValue: 'true' }, {}, {})).toBe(true)
+  })
+})
+
+describe('listFormFields', () => {
+  it('walks nested layout children and skips non-fields', () => {
+    const fields = listFormFields(
+      {
+        grid: { type: 'Grid', props: {}, children: ['name', 'agree'] },
+        name: { type: 'TextInput', props: { name: 'name' }, children: [] },
+        agree: { type: 'Checkbox', props: { name: 'agree' }, children: [] },
+        submit: { type: 'SubmitButton', props: { label: 'Go' }, children: [] },
+      },
+      ['grid', 'submit']
+    )
+    expect(fields.map((field) => field.props.name)).toEqual(['name', 'agree'])
+  })
+})
+
+describe('validateVisibleFields', () => {
+  it('requires a visible empty text field', () => {
+    const errors = validateVisibleFields(
+      [{ type: 'TextInput', props: { name: 'name', label: 'Name', required: true } }],
+      {},
+      {}
+    )
+    expect(errors.name).toBe('Name is required')
+  })
+
+  it('uses errorText and skips hidden fields', () => {
+    const errors = validateVisibleFields(
+      [
+        {
+          type: 'TextInput',
+          props: {
+            name: 'email',
+            label: 'Email',
+            required: true,
+            showWhen: 'notify',
+            errorText: 'Add an email',
+          },
+        },
+      ],
+      { notify: false },
+      {}
+    )
+    expect(errors).toEqual({})
+  })
+
+  it('enforces NumberInput min and max', () => {
+    const field = {
+      type: 'NumberInput' as const,
+      props: { name: 'count', label: 'Count', min: '2', max: '5' },
+    }
+    expect(validateVisibleFields([field], { count: '1' }, {}).count).toContain('at least 2')
+    expect(validateVisibleFields([field], { count: '9' }, {}).count).toContain('at most 5')
+    expect(validateVisibleFields([field], { count: '3' }, {})).toEqual({})
+  })
+})
+
+describe('collectVisibleFieldValues', () => {
+  it('omits hidden fields and coerces checkbox / number / multiselect', () => {
+    const values = collectVisibleFieldValues(
+      [
+        { type: 'Switch', props: { name: 'notify', defaultChecked: true } },
+        { type: 'TextInput', props: { name: 'email', showWhen: 'notify' } },
+        { type: 'NumberInput', props: { name: 'count', defaultValue: '4' } },
+        {
+          type: 'MultiSelect',
+          props: { name: 'tags', defaultValue: 'a, b', showWhen: 'notify=false' },
+        },
+      ],
+      { email: 'ada@example.com' },
+      {}
+    )
+    expect(values).toEqual({
+      notify: true,
+      email: 'ada@example.com',
+      count: 4,
+    })
+  })
+})

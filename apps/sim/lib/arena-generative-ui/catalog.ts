@@ -2,6 +2,19 @@ import { defineCatalog } from '@json-render/core'
 import { schema as reactSchema } from '@json-render/react/schema'
 import { z } from 'zod'
 
+function formFieldProps<T extends z.ZodRawShape>(extra: T) {
+  return z.object({
+    name: z.string(),
+    label: z.string().nullable(),
+    required: z.boolean().nullable(),
+    defaultValue: z.string().nullable(),
+    statePath: z.string().nullable(),
+    errorText: z.string().nullable(),
+    showWhen: z.string().nullable(),
+    ...extra,
+  })
+}
+
 /**
  * Interactive webpage catalog for Arena Generative UI (multi-page + CTA actions).
  */
@@ -205,31 +218,70 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         'Form wrapper. actionId must match a manifest actions key that calls a declared API. align controls cross-axis placement of its rows and defaults to stretch; use align "center" only when the user asked for a centred form.',
     },
     TextInput: {
-      props: z.object({
-        name: z.string(),
-        label: z.string().nullable(),
+      props: formFieldProps({
         placeholder: z.string().nullable(),
-        required: z.boolean().nullable(),
       }),
-      description: 'Single-line form field; name is used for API input mapping',
+      description:
+        'Single-line form field. name is the API input key. defaultValue seeds it; statePath reads host state instead when set. showWhen hides it until a sibling matches (see form-control rule).',
     },
     TextArea: {
-      props: z.object({
-        name: z.string(),
-        label: z.string().nullable(),
+      props: formFieldProps({
         placeholder: z.string().nullable(),
-        required: z.boolean().nullable(),
       }),
-      description: 'Multi-line form field',
+      description:
+        'Multi-line form field for prose. Same name / required / showWhen / defaultValue / statePath / errorText as TextInput.',
     },
     Select: {
-      props: z.object({
-        name: z.string(),
-        label: z.string().nullable(),
+      props: formFieldProps({
         options: z.string(),
-        required: z.boolean().nullable(),
       }),
-      description: 'Dropdown; options is a comma-separated list of labels',
+      description:
+        'Dropdown; options is a comma-separated list of labels. Prefer this over RadioGroup when there are more than five choices.',
+    },
+    RadioGroup: {
+      props: formFieldProps({
+        options: z.string(),
+      }),
+      description:
+        'Visible radio list for a short exclusive choice. options is comma-separated. Use Select when the list is long.',
+    },
+    MultiSelect: {
+      props: formFieldProps({
+        options: z.string(),
+      }),
+      description:
+        'Several of a comma-separated options list. Submits an array of the checked labels. defaultValue is comma-separated selected labels.',
+    },
+    NumberInput: {
+      props: formFieldProps({
+        placeholder: z.string().nullable(),
+        min: z.string().nullable(),
+        max: z.string().nullable(),
+        step: z.string().nullable(),
+      }),
+      description:
+        'Numeric field. min, max, and step are decimal strings. Submits a number. Use this instead of TextInput for counts, amounts, and scores.',
+    },
+    DateInput: {
+      props: formFieldProps({
+        min: z.string().nullable(),
+        max: z.string().nullable(),
+      }),
+      description: 'Date field. Value is YYYY-MM-DD. min and max are the same format.',
+    },
+    Checkbox: {
+      props: formFieldProps({
+        defaultChecked: z.boolean().nullable(),
+      }),
+      description:
+        'Labelled boolean. Submits true when checked. required means the user must check it. defaultChecked seeds it; defaultValue "true" also works.',
+    },
+    Switch: {
+      props: formFieldProps({
+        defaultChecked: z.boolean().nullable(),
+      }),
+      description:
+        'On/off setting. Submits true when on. Use for preferences; use Checkbox for an acknowledgement the user must tick.',
     },
     SubmitButton: {
       props: z.object({
@@ -344,7 +396,8 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Surfaces: there are exactly two — the page canvas and the white Card/Stat surface, both supplied by the host. Do not set backgroundColor unless the brief names a specific colour. Build hierarchy from heading level, weight and whitespace instead of coloured fills or borders.',
   'Collections: when each item is the same scalar fields with no per-row action, use Table. When each item needs its own Card, Badge, button, or link, put a Repeat inside a Grid (columns 2 or 3) or Stack, bound to the array statePath; Repeat\'s children are the per-item template and render once per element. Never unroll a live array into one static Card per item, and never wrap Grid in Repeat (that produces N grids). Bind per-item fields with statePath "item.field". Put per-item values into navigation and hrefs with "{item.id}" — NavLink.to "order?id={item.id}" opens the detail page so its onLoad receives that id. A Button.actionId inside Repeat sends the item fields as the action input.',
   'Tabular data goes in Table, metrics go in Stat inside a Grid, record details go in KeyValue, short statuses go in Badge.',
-  'Forms: every interactive field carries an explicit label. Pair short related fields side by side in a Grid (columns 2) and keep long free-text fields full width. Forms have one SubmitButton and an optional Back NavLink, and default to left-aligned.',
+  'Forms: every interactive field carries an explicit label. Pair short related fields (TextInput, NumberInput, DateInput, Select) side by side in a Grid (columns 2) and keep long free-text, RadioGroup, MultiSelect, Checkbox, and Switch full width. Forms have one SubmitButton and an optional Back NavLink, and default to left-aligned.',
+  'Form controls: TextInput (one line), TextArea (prose), NumberInput (counts and amounts; min/max/step as decimal strings), DateInput (YYYY-MM-DD), Select (one of a comma-separated options list), RadioGroup (a short visible exclusive list — use Select when there are more than five options), MultiSelect (several of that list, submitted as an array), Checkbox (must-tick boolean), Switch (on/off preference). Every field needs name and label. defaultValue seeds the control (comma-separated for MultiSelect); Checkbox/Switch also accept defaultChecked. statePath reads a host-state key instead when set. showWhen hides a field until a sibling matches: "notify" means that field is truthy, "channel=email" means equality, "channel!=sms" inequality, and comma-separated clauses are AND. Hidden fields are not submitted and are not validated. required plus optional errorText run on submit — do not add a second Text for the error. There is no file-upload field.',
   'Centring: only centre when the user asked for it, and use the props that actually centre — a search field beside its button is {"type":"Stack","props":{"direction":"horizontal","justify":"center","align":"end","gap":"12px"}} wrapping the TextInput and SubmitButton, and a whole form centres with Form align "center". justify accepts exactly start, center, between, end (never "space-between" or a CSS value), and SubmitButton has no align or width prop of its own — wrap it instead.',
   'Chrome: start a page with PageHeader (title, subtitle, primary action as its child) instead of a bare Heading. Use Toolbar for a row of filters or secondary buttons, and Columns for a main area beside a supporting sidebar.',
   'Emphasis: at most one Button with variant "primary" per page, and none on a page whose main action is a SubmitButton (that is already primary). Ordinary actions are "secondary", Back / Cancel / dismiss are "ghost", and delete or disconnect is "destructive". Never express emphasis with a colour — there is no colour prop on Button.',

@@ -65,6 +65,7 @@ describe('gold example', () => {
       'KeyValue',
       'Card',
       'Repeat',
+      'Switch',
     ]) {
       expect(serialized).toContain(`"${type}"`)
     }

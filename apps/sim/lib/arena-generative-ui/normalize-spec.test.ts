@@ -133,6 +133,12 @@ describe('normalizeGeneratedSpec', () => {
     ['SelectField', 'Select'],
     ['Dropdown', 'Select'],
     ['Textarea', 'TextArea'],
+    ['NumberField', 'NumberInput'],
+    ['DatePicker', 'DateInput'],
+    ['RadioButtons', 'RadioGroup'],
+    ['Toggle', 'Switch'],
+    ['CheckboxField', 'Checkbox'],
+    ['TagSelect', 'MultiSelect'],
     ['Paragraph', 'Text'],
     ['Loader', 'Skeleton'],
     ['Loading', 'Skeleton'],
@@ -318,6 +324,29 @@ describe('normalizeGeneratedSpec', () => {
     expect(elements(spec).priority.props.options).toBe(
       'Standard processing, High priority expedited'
     )
+  })
+
+  it('joins RadioGroup and MultiSelect options arrays the same way', () => {
+    const spec = normalizeGeneratedSpec({
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['channel', 'tags'] },
+        channel: {
+          type: 'RadioButtons',
+          props: { name: 'channel', options: [{ label: 'Email' }, { label: 'SMS' }] },
+          children: [],
+        },
+        tags: {
+          type: 'TagSelect',
+          props: { name: 'tags', options: ['alpha', 'beta'] },
+          children: [],
+        },
+      },
+    })
+    expect(elements(spec).channel.type).toBe('RadioGroup')
+    expect(elements(spec).channel.props.options).toBe('Email, SMS')
+    expect(elements(spec).tags.type).toBe('MultiSelect')
+    expect(elements(spec).tags.props.options).toBe('alpha, beta')
   })
 
   it('joins Table columns and rows arrays into the string encodings', () => {

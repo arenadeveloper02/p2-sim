@@ -26,8 +26,13 @@ type ElementMap = Record<string, FlatElement>
  */
 const TYPE_ALIASES: Record<string, string> = {
   Box: 'Stack',
+  CheckBox: 'Checkbox',
+  CheckboxField: 'Checkbox',
   Collection: 'Repeat',
   Container: 'Stack',
+  Date: 'DateInput',
+  DateField: 'DateInput',
+  DatePicker: 'DateInput',
   Dropdown: 'Select',
   ForEach: 'Repeat',
   Input: 'TextInput',
@@ -36,10 +41,20 @@ const TYPE_ALIASES: Record<string, string> = {
   Loader: 'Skeleton',
   Loading: 'Skeleton',
   Metric: 'Stat',
+  MultiSelectField: 'MultiSelect',
+  Number: 'NumberInput',
+  NumberField: 'NumberInput',
+  NumericInput: 'NumberInput',
   Paragraph: 'Text',
+  Radio: 'RadioGroup',
+  RadioButtons: 'RadioGroup',
   SelectField: 'Select',
+  SwitchField: 'Switch',
+  TagSelect: 'MultiSelect',
   Textarea: 'TextArea',
   TextareaField: 'TextArea',
+  Toggle: 'Switch',
+  ToggleSwitch: 'Switch',
 }
 
 /**
@@ -372,6 +387,8 @@ function normalizeTypeProps(type: string, props: Record<string, unknown>): void 
       }
       break
     case 'Select':
+    case 'RadioGroup':
+    case 'MultiSelect':
       setProp(props, 'options', joinOptions(props.options))
       break
     case 'Table':

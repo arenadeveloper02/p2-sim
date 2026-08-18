@@ -156,6 +156,148 @@ describe('SpecRenderer', () => {
     )
   })
 
+  describe('form controls', () => {
+    function formSpec(
+      fields: Record<string, { type: string; props: Record<string, unknown> }>
+    ): Spec {
+      return {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['form'] },
+          form: {
+            type: 'Form',
+            props: { actionId: 'save' },
+            children: [...Object.keys(fields), 'submit'],
+          },
+          ...Object.fromEntries(
+            Object.entries(fields).map(([id, field]) => [
+              id,
+              { type: field.type, props: field.props, children: [] },
+            ])
+          ),
+          submit: { type: 'SubmitButton', props: { label: 'Save' }, children: [] },
+        },
+      }
+    }
+
+    it('blocks submit and shows errorText when a required field is empty', () => {
+      const { container, onRunAction } = render({
+        spec: formSpec({
+          name: {
+            type: 'TextInput',
+            props: { name: 'name', label: 'Name', required: true, errorText: 'Name is required' },
+          },
+        }),
+      })
+      act(() => {
+        container
+          .querySelector('form')
+          ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      })
+      expect(onRunAction).not.toHaveBeenCalled()
+      expect(container.querySelector('[data-testid="field-error-name"]')?.textContent).toBe(
+        'Name is required'
+      )
+    })
+
+    it('hides a showWhen field and omits it from the action payload', () => {
+      const { container, onRunAction } = render({
+        spec: formSpec({
+          notify: {
+            type: 'Switch',
+            props: { name: 'notify', label: 'Notify', defaultChecked: false },
+          },
+          email: {
+            type: 'TextInput',
+            props: { name: 'email', label: 'Email', required: true, showWhen: 'notify' },
+          },
+        }),
+      })
+      expect(container.querySelector('input[name="email"]')).toBeNull()
+      act(() => {
+        container
+          .querySelector('form')
+          ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      })
+      expect(onRunAction).toHaveBeenCalledWith('save', expect.objectContaining({ notify: false }))
+      expect(onRunAction.mock.calls[0]?.[1]).not.toHaveProperty('email')
+    })
+
+    it('submits Checkbox, NumberInput, and MultiSelect with coerced types', () => {
+      const { container, onRunAction } = render({
+        spec: formSpec({
+          agree: {
+            type: 'Checkbox',
+            props: { name: 'agree', label: 'Agree', defaultChecked: true },
+          },
+          count: {
+            type: 'NumberInput',
+            props: { name: 'count', label: 'Count', defaultValue: '3' },
+          },
+          tags: {
+            type: 'MultiSelect',
+            props: {
+              name: 'tags',
+              label: 'Tags',
+              options: 'alpha, beta, gamma',
+              defaultValue: 'alpha, gamma',
+            },
+          },
+        }),
+      })
+      act(() => {
+        container
+          .querySelector('form')
+          ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      })
+      expect(onRunAction).toHaveBeenCalledWith('save', {
+        agree: true,
+        count: 3,
+        tags: ['alpha', 'gamma'],
+      })
+    })
+
+    it('seeds a field from host state via statePath', () => {
+      const { container } = render({
+        spec: formSpec({
+          company: {
+            type: 'TextInput',
+            props: { name: 'company', label: 'Company', statePath: 'company' },
+          },
+        }),
+        state: { company: 'Arena' },
+      })
+      expect((container.querySelector('input[name="company"]') as HTMLInputElement).value).toBe(
+        'Arena'
+      )
+    })
+
+    it('renders RadioGroup and DateInput', () => {
+      const { container } = render({
+        spec: formSpec({
+          channel: {
+            type: 'RadioGroup',
+            props: {
+              name: 'channel',
+              label: 'Channel',
+              options: 'email, sms',
+              defaultValue: 'sms',
+            },
+          },
+          start: {
+            type: 'DateInput',
+            props: { name: 'start', label: 'Start', defaultValue: '2026-08-18' },
+          },
+        }),
+      })
+      const sms = container.querySelector('input[type="radio"][value="sms"]') as HTMLInputElement
+      expect(sms.checked).toBe(true)
+      expect((container.querySelector('input[type="date"]') as HTMLInputElement).value).toBe(
+        '2026-08-18'
+      )
+    })
+  })
+
   it('uses SubmitButton.actionId when Form.actionId is missing', () => {
     const spec: Spec = {
       root: 'page',

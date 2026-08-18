@@ -11,6 +11,20 @@ import {
 import type { Spec } from '@json-render/core'
 import { cn } from '@sim/emcn'
 import { isPlainRecord } from '@sim/utils/object'
+import {
+  type ArenaGenerativeFormField,
+  asFieldString,
+  asFieldStringList,
+  collectVisibleFieldValues,
+  fieldIsVisible,
+  isFormFieldType,
+  listFormFields,
+  parseOptionList,
+  resolveFieldValue,
+  snapshotFormValues,
+  validateVisibleFields,
+  valuesFromFormElement,
+} from '@/lib/arena-generative-ui/form-fields'
 import type { RepeatItemScope } from '@/lib/arena-generative-ui/types'
 import {
   displayTextFromActionData,
@@ -560,6 +574,48 @@ function submitButtonActionId(elements: Record<string, SpecElement>, childIds: s
   return ''
 }
 
+const FIELD_INPUT_CLASS =
+  'w-full rounded-lg border border-[var(--color-ds-grey-300,#c5c6cc)] bg-white px-3 py-2 text-sm'
+
+function fieldErrorClass(error: string | undefined): string {
+  return error ? 'border-[var(--color-ds-red-600,#dc2626)]' : ''
+}
+
+function FieldShell({
+  name,
+  label,
+  htmlFor,
+  error,
+  children,
+}: {
+  name: string
+  label: string
+  htmlFor?: string
+  error?: string
+  children: ReactNode
+}) {
+  return (
+    <div className='flex flex-col gap-1 text-sm'>
+      {label ? htmlFor ? <label htmlFor={htmlFor}>{label}</label> : <span>{label}</span> : null}
+      {children}
+      {error ? (
+        <p
+          data-testid={`field-error-${name}`}
+          className='text-[var(--color-ds-red-600,#dc2626)] text-xs'
+        >
+          {error}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function specFormFields(elements: Record<string, SpecElement>): ArenaGenerativeFormField[] {
+  return Object.values(elements).flatMap((element) =>
+    isFormFieldType(element.type) ? [{ type: element.type, props: element.props ?? {} }] : []
+  )
+}
+
 /** `size` is a CSS length on text components but a scale token on buttons. */
 function isCssLength(value: string): boolean {
   return /\d/.test(value)
@@ -587,7 +643,8 @@ function styleFromProps(props: Record<string, unknown>): CSSProperties {
  */
 export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: SpecRendererProps) {
   const elements = (spec.elements ?? {}) as Record<string, SpecElement>
-  const [formValues, setFormValues] = useState<Record<string, string>>({})
+  const [formValues, setFormValues] = useState<Record<string, unknown>>({})
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const renderNode = (id: string, scope?: RepeatItemScope): ReactNode => {
     const element = elements[id]
@@ -598,9 +655,20 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       <Fragment key={childId}>{renderNode(childId, scope)}</Fragment>
     ))
     const hasChildren = childIds.length > 0
+    const fieldSnapshot = snapshotFormValues(specFormFields(elements), formValues, state, scope)
     const actionValues = scope
       ? { ...formValues, ...repeatItemActionValues(scope.item, scope.index) }
       : formValues
+
+    const setNamedValue = (name: string, value: unknown) => {
+      setFormValues((current) => ({ ...current, [name]: value }))
+      setFieldErrors((current) => {
+        if (!current[name]) return current
+        const next = { ...current }
+        delete next[name]
+        return next
+      })
+    }
 
     switch (element.type) {
       case 'Page':
@@ -978,10 +1046,20 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           asString(props.actionId) || submitButtonActionId(elements, element.children ?? [])
         const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
           event.preventDefault()
-          const form = new FormData(event.currentTarget)
-          const values: Record<string, unknown> = { ...actionValues }
-          for (const [key, value] of form.entries()) {
-            values[key] = String(value)
+          const fields = listFormFields(elements, element.children ?? [])
+          const mergedValues = {
+            ...formValues,
+            ...valuesFromFormElement(event.currentTarget),
+          }
+          const errors = validateVisibleFields(fields, mergedValues, state, scope)
+          if (Object.keys(errors).length > 0) {
+            setFieldErrors(errors)
+            return
+          }
+          setFieldErrors({})
+          const values = {
+            ...actionValues,
+            ...collectVisibleFieldValues(fields, mergedValues, state, scope),
           }
           if (actionId) {
             void onRunAction(actionId, values)
@@ -991,65 +1069,198 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           <form
             className={cn('flex flex-col gap-4', alignItemsClass(props.align, 'stretch'))}
             onSubmit={handleSubmit}
+            noValidate
           >
             {children}
           </form>
         )
       }
       case 'TextInput':
-      case 'TextArea': {
+      case 'TextArea':
+      case 'Select':
+      case 'RadioGroup':
+      case 'MultiSelect':
+      case 'NumberInput':
+      case 'DateInput':
+      case 'Checkbox':
+      case 'Switch': {
+        if (!isFormFieldType(element.type)) return null
+        if (!fieldIsVisible(props, fieldSnapshot)) return null
         const name = asString(props.name)
+        const label = asString(props.label)
         const fieldId = `field-${name}`
-        const common = {
-          id: fieldId,
-          name,
-          required: asBoolean(props.required),
-          placeholder: asString(props.placeholder) || undefined,
-          value: formValues[name] ?? '',
-          onChange: (event: { target: { value: string } }) =>
-            setFormValues((current) => ({ ...current, [name]: event.target.value })),
-          className:
-            'w-full rounded-lg border border-[var(--color-ds-grey-300,#c5c6cc)] bg-white px-3 py-2 text-sm',
+        const error = fieldErrors[name]
+        const value = resolveFieldValue(element.type, props, formValues, state, scope)
+        const required = asBoolean(props.required)
+        const inputClass = cn(FIELD_INPUT_CLASS, fieldErrorClass(error))
+
+        if (element.type === 'TextArea') {
+          return (
+            <FieldShell name={name} label={label} htmlFor={fieldId} error={error}>
+              <textarea
+                id={fieldId}
+                name={name}
+                required={required}
+                placeholder={asString(props.placeholder) || undefined}
+                rows={4}
+                value={asFieldString(value)}
+                onChange={(event) => setNamedValue(name, event.target.value)}
+                className={inputClass}
+              />
+            </FieldShell>
+          )
         }
+        if (element.type === 'Select') {
+          const options = parseOptionList(props.options)
+          return (
+            <FieldShell name={name} label={label} htmlFor={fieldId} error={error}>
+              <select
+                id={fieldId}
+                name={name}
+                required={required}
+                value={asFieldString(value)}
+                onChange={(event) => setNamedValue(name, event.target.value)}
+                className={inputClass}
+              >
+                <option value=''>Select</option>
+                {options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </FieldShell>
+          )
+        }
+        if (element.type === 'RadioGroup') {
+          const options = parseOptionList(props.options)
+          const selected = asFieldString(value)
+          return (
+            <FieldShell name={name} label={label} error={error}>
+              <div role='radiogroup' aria-label={label || name} className='flex flex-col gap-2'>
+                {options.map((option) => {
+                  const optionId = `${fieldId}-${option}`
+                  return (
+                    <label key={option} htmlFor={optionId} className='flex items-center gap-2'>
+                      <input
+                        id={optionId}
+                        type='radio'
+                        name={name}
+                        value={option}
+                        checked={selected === option}
+                        onChange={() => setNamedValue(name, option)}
+                      />
+                      <span>{option}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </FieldShell>
+          )
+        }
+        if (element.type === 'MultiSelect') {
+          const options = parseOptionList(props.options)
+          const selected = new Set(asFieldStringList(value))
+          return (
+            <FieldShell name={name} label={label} error={error}>
+              <div className='flex flex-col gap-2'>
+                {options.map((option) => {
+                  const optionId = `${fieldId}-${option}`
+                  return (
+                    <label key={option} htmlFor={optionId} className='flex items-center gap-2'>
+                      <input
+                        id={optionId}
+                        type='checkbox'
+                        name={name}
+                        value={option}
+                        checked={selected.has(option)}
+                        onChange={() => {
+                          const next = selected.has(option)
+                            ? asFieldStringList(value).filter((item) => item !== option)
+                            : [...asFieldStringList(value), option]
+                          setNamedValue(name, next)
+                        }}
+                      />
+                      <span>{option}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </FieldShell>
+          )
+        }
+        if (element.type === 'Checkbox' || element.type === 'Switch') {
+          const checked = value === true || value === 'true' || value === 'on'
+          if (element.type === 'Switch') {
+            return (
+              <FieldShell name={name} label='' error={error}>
+                <button
+                  type='button'
+                  role='switch'
+                  aria-checked={checked}
+                  aria-label={label || name}
+                  name={name}
+                  disabled={pending}
+                  onClick={() => setNamedValue(name, !checked)}
+                  className={cn(
+                    'flex items-center gap-2 text-sm',
+                    pending && 'cursor-not-allowed opacity-60'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
+                      checked
+                        ? 'bg-[var(--color-ds-blue-600,#2563eb)]'
+                        : 'bg-[var(--color-ds-grey-300,#c5c6cc)]'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'inline-block size-4 rounded-full bg-white transition-transform',
+                        checked ? 'translate-x-4' : 'translate-x-0.5'
+                      )}
+                    />
+                  </span>
+                  {label ? <span>{label}</span> : null}
+                </button>
+              </FieldShell>
+            )
+          }
+          return (
+            <FieldShell name={name} label='' error={error}>
+              <label htmlFor={fieldId} className='flex items-center gap-2'>
+                <input
+                  id={fieldId}
+                  type='checkbox'
+                  name={name}
+                  required={required}
+                  checked={checked}
+                  onChange={(event) => setNamedValue(name, event.target.checked)}
+                />
+                <span>{label}</span>
+              </label>
+            </FieldShell>
+          )
+        }
+        const inputType =
+          element.type === 'NumberInput' ? 'number' : element.type === 'DateInput' ? 'date' : 'text'
         return (
-          <div className='flex flex-col gap-1 text-sm'>
-            {asString(props.label) ? (
-              <label htmlFor={fieldId}>{asString(props.label)}</label>
-            ) : null}
-            {element.type === 'TextArea' ? (
-              <textarea {...common} rows={4} />
-            ) : (
-              <input {...common} type='text' />
-            )}
-          </div>
-        )
-      }
-      case 'Select': {
-        const name = asString(props.name)
-        const options = asString(props.options)
-          .split(',')
-          .map((option) => option.trim())
-          .filter(Boolean)
-        return (
-          <label className='flex flex-col gap-1 text-sm'>
-            {asString(props.label) ? <span>{asString(props.label)}</span> : null}
-            <select
+          <FieldShell name={name} label={label} htmlFor={fieldId} error={error}>
+            <input
+              id={fieldId}
               name={name}
-              required={asBoolean(props.required)}
-              value={formValues[name] ?? ''}
-              onChange={(event) =>
-                setFormValues((current) => ({ ...current, [name]: event.target.value }))
-              }
-              className='w-full rounded-lg border border-[var(--color-ds-grey-300,#c5c6cc)] bg-white px-3 py-2 text-sm'
-            >
-              <option value=''>Select</option>
-              {options.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
+              type={inputType}
+              required={required}
+              placeholder={asString(props.placeholder) || undefined}
+              min={asString(props.min) || undefined}
+              max={asString(props.max) || undefined}
+              step={asString(props.step) || undefined}
+              value={asFieldString(value)}
+              onChange={(event) => setNamedValue(name, event.target.value)}
+              className={inputClass}
+            />
+          </FieldShell>
         )
       }
       case 'SubmitButton':
