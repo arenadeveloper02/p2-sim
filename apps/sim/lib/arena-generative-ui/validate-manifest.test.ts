@@ -135,6 +135,51 @@ describe('validateArenaGenerativeManifest', () => {
     expect(result.success).toBe(true)
   })
 
+  it('accepts a Repeat navigation target whose path is a page and whose query is an item placeholder', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: {
+            title: 'Home',
+            path: 'home',
+            spec: pageSpec({
+              extra: {
+                stack: {
+                  type: 'Stack',
+                  props: { direction: 'vertical', gap: '12px', align: null },
+                  children: ['nav', 'form', 'list'],
+                },
+                list: {
+                  type: 'Repeat',
+                  props: { statePath: 'leads' },
+                  children: ['row'],
+                },
+                row: {
+                  type: 'NavLink',
+                  props: { label: '{item.name}', to: 'results?id={item.id}' },
+                  children: [],
+                },
+              },
+            }),
+          },
+          results: {
+            title: 'Results',
+            path: 'results',
+            spec: resultsSpec(),
+            onLoad: ['submit_lead'],
+          },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead' },
+        },
+      },
+      { apiBindings: bindings, entryPath: 'home' }
+    )
+    expect(result.error).toBeUndefined()
+    expect(result.success).toBe(true)
+  })
+
   it('still rejects a navigation target whose path half is not a page', () => {
     const result = validateArenaGenerativeManifest(
       {

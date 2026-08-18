@@ -160,6 +160,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).not.toContain('full-page app shell')
     expect(system).toContain('Grid')
     expect(system).toContain('Table')
+    expect(system).toContain('Repeat')
     expect(system).toContain('PageHeader')
     expect(system).toContain('Tabs')
   })

@@ -26,8 +26,10 @@ type ElementMap = Record<string, FlatElement>
  */
 const TYPE_ALIASES: Record<string, string> = {
   Box: 'Stack',
+  Collection: 'Repeat',
   Container: 'Stack',
   Dropdown: 'Select',
+  ForEach: 'Repeat',
   Input: 'TextInput',
   InputField: 'TextInput',
   KPI: 'Stat',
@@ -381,6 +383,18 @@ function normalizeTypeProps(type: string, props: Record<string, unknown>): void 
       break
     case 'KeyValue':
       setProp(props, 'items', joinKeyValueItems(props.items))
+      break
+    case 'Repeat':
+      if (!asString(props.statePath)) {
+        const fromAlias =
+          asString(props.items) ||
+          asString(props.data) ||
+          asString(props.source) ||
+          asString(props.of)
+        if (fromAlias) {
+          props.statePath = fromAlias
+        }
+      }
       break
     case 'ProgressSteps':
       setProp(props, 'steps', joinLines(props.steps))

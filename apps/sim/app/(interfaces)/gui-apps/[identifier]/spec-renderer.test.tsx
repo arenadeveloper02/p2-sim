@@ -389,6 +389,122 @@ describe('SpecRenderer', () => {
     ])
   })
 
+  describe('Repeat', () => {
+    const articles = [
+      { id: 'a1', title: 'First', score: 9, url: 'https://example.com/a' },
+      { id: 'a2', title: 'Second', score: 4, url: 'https://example.com/b' },
+    ]
+
+    const repeatSpec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['grid'] },
+        grid: { type: 'Grid', props: { columns: '2' }, children: ['repeat'] },
+        repeat: { type: 'Repeat', props: { statePath: 'articles' }, children: ['card'] },
+        card: {
+          type: 'Card',
+          props: { title: '{item.title}' },
+          children: ['open', 'score'],
+        },
+        open: {
+          type: 'NavLink',
+          props: { label: 'Open', to: 'article?id={item.id}' },
+          children: [],
+        },
+        score: {
+          type: 'DataText',
+          props: { statePath: 'item.score' },
+          children: [],
+        },
+      },
+    }
+
+    it('renders one Card per array item as a direct Grid child', () => {
+      const { container } = render({ spec: repeatSpec, state: { articles } })
+      const grid = container.querySelector('.grid') as HTMLElement
+      const cards = Array.from(grid.children)
+      expect(cards).toHaveLength(2)
+      expect(cards[0]?.querySelector('h2')?.textContent).toBe('First')
+      expect(cards[1]?.querySelector('h2')?.textContent).toBe('Second')
+      expect(container.textContent).toContain('9')
+      expect(container.textContent).toContain('4')
+    })
+
+    it('interpolates the row id into in-app navigation so onLoad can fetch that record', () => {
+      const { container, onNavigate } = render({ spec: repeatSpec, state: { articles } })
+      const links = Array.from(container.querySelectorAll('button')).filter(
+        (button) => button.textContent === 'Open'
+      )
+      act(() => {
+        links[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onNavigate).toHaveBeenCalledWith('article?id=a2')
+    })
+
+    it('sends the row fields when a Button inside Repeat runs an action', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat'] },
+          repeat: { type: 'Repeat', props: { statePath: 'articles' }, children: ['run'] },
+          run: {
+            type: 'Button',
+            props: { label: 'Save', actionId: 'save_article' },
+            children: [],
+          },
+        },
+      }
+      const { container, onRunAction } = render({ spec, state: { articles } })
+      const buttons = Array.from(container.querySelectorAll('button')).filter(
+        (button) => button.textContent === 'Save'
+      )
+      act(() => {
+        buttons[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onRunAction).toHaveBeenCalledWith(
+        'save_article',
+        expect.objectContaining({ id: 'a1', title: 'First' })
+      )
+    })
+
+    it('caps a large array so the page cannot mount thousands of Cards', () => {
+      const items = Array.from({ length: 60 }, (_, index) => ({
+        id: `n${index}`,
+        title: `Item ${index}`,
+      }))
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat'] },
+          repeat: { type: 'Repeat', props: { statePath: 'items' }, children: ['card'] },
+          card: { type: 'Card', props: { title: '{item.title}' }, children: [] },
+        },
+      }
+      const { container } = render({ spec, state: { items } })
+      expect(container.querySelectorAll('h2')).toHaveLength(48)
+    })
+
+    it('lets an inner Repeat bind to item.comments on the outer row', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['posts'] },
+          posts: { type: 'Repeat', props: { statePath: 'posts' }, children: ['post'] },
+          post: { type: 'Card', props: { title: '{item.title}' }, children: ['comments'] },
+          comments: { type: 'Repeat', props: { statePath: 'item.comments' }, children: ['note'] },
+          note: { type: 'Text', props: { text: '{item}' }, children: [] },
+        },
+      }
+      const { container } = render({
+        spec,
+        state: { posts: [{ title: 'Hello', comments: ['nice', 'meh'] }] },
+      })
+      expect(container.querySelector('h2')?.textContent).toBe('Hello')
+      expect(container.textContent).toContain('nice')
+      expect(container.textContent).toContain('meh')
+    })
+  })
+
   it('navigates to the Tabs item path and marks the active tab', () => {
     const spec: Spec = {
       root: 'page',
@@ -535,12 +651,24 @@ describe('SpecRenderer', () => {
 
     it.each([
       ['Table', { statePath: 'articles', columns: 'title' }],
+      ['Repeat', { statePath: 'articles' }],
       ['Stat', { label: 'Articles ranked', statePath: 'count' }],
       ['KeyValue', { statePath: 'meta' }],
       ['DataText', { statePath: 'summary' }],
     ])('auto-skeletons a bound %s while pending with no data', (type, props) => {
-      const { container } = render({ spec: skeletonSpec(type, props), pending: true, state: {} })
-      expect(skeletonCount(container)).toBe(1)
+      const spec =
+        type === 'Repeat'
+          ? ({
+              root: 'page',
+              elements: {
+                page: { type: 'Page', props: {}, children: ['target'] },
+                target: { type: 'Repeat', props, children: ['card'] },
+                card: { type: 'Card', props: { title: '{item.title}' }, children: [] },
+              },
+            } as Spec)
+          : skeletonSpec(type, props)
+      const { container } = render({ spec, pending: true, state: {} })
+      expect(skeletonCount(container)).toBeGreaterThan(0)
     })
 
     it.each([

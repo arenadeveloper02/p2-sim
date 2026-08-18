@@ -166,9 +166,9 @@ const goldHomeSpec: Spec = {
 }
 
 /**
- * Result page: bound Stat and Table read the CTA response straight from app
- * state, and the narrative body sits in a narrow Section so prose keeps a
- * readable measure while the tables above stay wide.
+ * Result page: bound Stat, KeyValue, and a Repeat of article Cards read the
+ * CTA response from app state. The narrative body sits in a narrow Section so
+ * prose keeps a readable measure while the collection above stays wide.
  */
 const goldReportSpec: Spec = {
   root: 'page',
@@ -218,11 +218,47 @@ const goldReportSpec: Spec = {
         padding: null,
         backgroundColor: null,
       },
-      children: ['articles_table'],
+      children: ['articles_grid'],
     },
-    articles_table: {
-      type: 'Table',
-      props: { statePath: 'articles', columns: 'title, score, url', rows: null },
+    articles_grid: {
+      type: 'Grid',
+      props: { columns: '2', gap: '16px', minItemWidth: null },
+      children: ['articles_repeat'],
+    },
+    articles_repeat: {
+      type: 'Repeat',
+      props: { statePath: 'articles' },
+      children: ['article_card'],
+    },
+    article_card: {
+      type: 'Card',
+      props: {
+        title: '{item.title}',
+        description: null,
+        padding: null,
+        backgroundColor: null,
+      },
+      children: ['article_meta'],
+    },
+    article_meta: {
+      type: 'Stack',
+      props: {
+        direction: 'horizontal',
+        gap: '12px',
+        align: 'center',
+        justify: 'between',
+        wrap: true,
+      },
+      children: ['article_score', 'article_link'],
+    },
+    article_score: {
+      type: 'Badge',
+      props: { text: '{item.score}', tone: 'info' },
+      children: [],
+    },
+    article_link: {
+      type: 'Link',
+      props: { label: 'Open', href: '{item.url}', color: null },
       children: [],
     },
     summary_section: {
@@ -295,8 +331,8 @@ export const goldExampleOutput = {
  */
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT',
-  'Match this structure and density, not its subject matter. Note the flat elements map with string child ids, the wide Section for dashboard content, the narrow Section for narrative prose, metrics in a Grid of Stat, form fields paired in a Grid, and result components bound by statePath.',
-  'Note also how the home page fills itself: it declares onLoad and binds each Stat by statePath, so the metrics arrive without the user clicking anything. The report page has no onLoad because its data comes from the CTA that navigated there.',
+  'Match this structure and density, not its subject matter. Note the flat elements map with string child ids, the wide Section for dashboard content, the narrow Section for narrative prose, metrics in a Grid of Stat, form fields paired in a Grid, a live collection as Repeat inside a Grid of Cards, and result components bound by statePath.',
+  'Note also how the home page fills itself: it declares onLoad and binds each Stat by statePath, so the metrics arrive without the user clicking anything. The report page has no onLoad because its data comes from the CTA that navigated there. Ranked articles are a Repeat template: Card.title uses "{item.title}", the outbound Link uses "{item.url}", and the Repeat sits inside the Grid so each article is one cell.',
   `Replace the actions apiKey values ("${GOLD_EXAMPLE_LOAD_API_KEY}", "${GOLD_EXAMPLE_API_KEY}") with declared API binding keys, and drop manifest.actions and every onLoad entirely when no bindings were declared.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')

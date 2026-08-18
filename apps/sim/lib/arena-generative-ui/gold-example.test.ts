@@ -56,7 +56,16 @@ describe('gold example', () => {
 
   it('demonstrates the layout primitives the rules ask for', () => {
     const serialized = JSON.stringify(goldExampleManifest)
-    for (const type of ['PageHeader', 'Grid', 'Columns', 'Stat', 'Table', 'KeyValue', 'Card']) {
+    for (const type of [
+      'PageHeader',
+      'Grid',
+      'Columns',
+      'Stat',
+      'Table',
+      'KeyValue',
+      'Card',
+      'Repeat',
+    ]) {
       expect(serialized).toContain(`"${type}"`)
     }
     expect(serialized).toContain('"width":"wide"')
@@ -72,6 +81,15 @@ describe('gold example', () => {
     expect(JSON.stringify(goldExampleManifest.pages.home.spec)).toContain(
       '"statePath":"totalReports"'
     )
+  })
+
+  it('teaches Repeat inside a Grid with per-item title and href placeholders', () => {
+    const report = JSON.stringify(goldExampleManifest.pages.report.spec)
+    expect(report).toContain('"type":"Repeat"')
+    expect(report).toContain('"statePath":"articles"')
+    expect(report).toContain('{item.title}')
+    expect(report).toContain('{item.url}')
+    expect(report.indexOf('"type":"Grid"')).toBeLessThan(report.indexOf('"type":"Repeat"'))
   })
 
   it('embeds the framing and the serialized manifest in the prompt section', () => {

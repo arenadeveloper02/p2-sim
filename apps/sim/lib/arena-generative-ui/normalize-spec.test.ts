@@ -136,6 +136,8 @@ describe('normalizeGeneratedSpec', () => {
     ['Paragraph', 'Text'],
     ['Loader', 'Skeleton'],
     ['Loading', 'Skeleton'],
+    ['ForEach', 'Repeat'],
+    ['Collection', 'Repeat'],
   ])('aliases %s to %s', (alias, canonical) => {
     const spec = normalizeGeneratedSpec({
       root: 'page',
@@ -145,6 +147,18 @@ describe('normalizeGeneratedSpec', () => {
       },
     })
     expect(elements(spec).target.type).toBe(canonical)
+  })
+
+  it('moves ForEach items onto Repeat statePath', () => {
+    const spec = normalizeGeneratedSpec({
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['list'] },
+        list: { type: 'ForEach', props: { items: 'articles' }, children: [] },
+      },
+    })
+    expect(elements(spec).list.type).toBe('Repeat')
+    expect(elements(spec).list.props.statePath).toBe('articles')
   })
 
   it('leaves an unknown component type in place so validation still reports it', () => {

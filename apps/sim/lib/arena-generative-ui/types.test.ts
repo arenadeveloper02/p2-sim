@@ -7,11 +7,17 @@ import { describe, expect, it } from 'vitest'
 import {
   actionStateFromData,
   displayTextFromActionData,
+  interpolateItemTemplate,
+  interpolateRepeatProps,
+  MAX_REPEAT_ITEMS,
   navigationHref,
   omitActionTelemetry,
   pageOnLoadFrom,
   pageParamsFromQuery,
   parseJsonLiteral,
+  readScopedStatePath,
+  repeatItemActionValues,
+  repeatItemKey,
 } from '@/lib/arena-generative-ui/types'
 
 const ENVELOPE = {
@@ -111,5 +117,50 @@ describe('pageOnLoadFrom', () => {
         },
       })
     ).toEqual({ home: ['load_metrics'] })
+  })
+})
+
+describe('Repeat item scope', () => {
+  const article = { id: 'a-9', title: 'Alpha', meta: { score: 4 } }
+
+  it('reads item paths from the current row and host paths from state', () => {
+    const state = { articles: [article], count: 3 }
+    const scope = { item: article, index: 2 }
+
+    expect(readScopedStatePath(state, 'item', scope)).toEqual(article)
+    expect(readScopedStatePath(state, 'item.title', scope)).toBe('Alpha')
+    expect(readScopedStatePath(state, 'item.meta.score', scope)).toBe(4)
+    expect(readScopedStatePath(state, 'count', scope)).toBe(3)
+    expect(readScopedStatePath(state, 'item.title')).toBeUndefined()
+  })
+
+  it('interpolates item fields and index into labels and navigation targets', () => {
+    const scope = { item: article, index: 2 }
+
+    expect(interpolateItemTemplate('order?id={item.id}', scope)).toBe('order?id=a-9')
+    expect(interpolateItemTemplate('{item.title} ({index})', scope)).toBe('Alpha (2)')
+    expect(interpolateItemTemplate('{item.meta.score}', scope)).toBe('4')
+    expect(interpolateItemTemplate('static', scope)).toBe('static')
+    expect(
+      interpolateRepeatProps({ title: '{item.title}', statePath: 'item.title' }, scope)
+    ).toEqual({ title: 'Alpha', statePath: 'item.title' })
+  })
+
+  it('leaves object placeholders empty so they cannot leak into hrefs', () => {
+    expect(interpolateItemTemplate('{item}', { item: article, index: 0 })).toBe('')
+  })
+
+  it('prefers id for the React key and always prefixes the index', () => {
+    expect(repeatItemKey(article, 2)).toBe('2-a-9')
+    expect(repeatItemKey('plain', 4)).toBe('4')
+  })
+
+  it('sends the row fields as action input so inputMapping can use id', () => {
+    expect(repeatItemActionValues(article, 2)).toEqual({ ...article, index: 2 })
+    expect(repeatItemActionValues('plain', 1)).toEqual({ item: 'plain', index: 1 })
+  })
+
+  it('caps Repeat at a page-safe number of items', () => {
+    expect(MAX_REPEAT_ITEMS).toBe(48)
   })
 })

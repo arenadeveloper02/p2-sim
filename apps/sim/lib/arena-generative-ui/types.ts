@@ -269,6 +269,119 @@ export function streamingActionIdsFrom(
 /** Most `onLoad` actions a single page may declare. */
 export const MAX_PAGE_ON_LOAD_ACTIONS = 6
 
+/**
+ * Most items a `Repeat` will render. Caps a large payload so a generated page
+ * cannot mount thousands of Cards from one response.
+ */
+export const MAX_REPEAT_ITEMS = 48
+
+/** Current row while rendering a `Repeat` child. Inner Repeats shadow this. */
+export interface RepeatItemScope {
+  item: unknown
+  index: number
+}
+
+const ITEM_TEMPLATE_PLACEHOLDER = /\{(item(?:\.[A-Za-z_][\w]*)*|index)\}/g
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+/**
+ * Walks a dotted path on a plain object. Missing segments resolve to undefined
+ * rather than throwing, so a bound region can fall through to its placeholder.
+ */
+export function readHostStatePath(root: unknown, path: string): unknown {
+  if (!path) return undefined
+  return path.split('.').reduce<unknown>((current, segment) => {
+    if (!current || typeof current !== 'object') return undefined
+    return (current as Record<string, unknown>)[segment]
+  }, root)
+}
+
+/**
+ * Resolves a `statePath` against the current Repeat item when it is `item` or
+ * `item.field`, otherwise against host state. Nested Repeats bind `item.field`
+ * to the inner row, so an inner Repeat can still read `item.comments` from
+ * the outer row via its own `statePath`.
+ */
+export function readScopedStatePath(
+  state: Record<string, unknown>,
+  path: string,
+  scope?: RepeatItemScope
+): unknown {
+  if (path === 'item' || path.startsWith('item.')) {
+    if (!scope) return undefined
+    if (path === 'item') return scope.item
+    return readHostStatePath(scope.item, path.slice('item.'.length))
+  }
+  return readHostStatePath(state, path)
+}
+
+function templatePlaceholderValue(token: string, scope: RepeatItemScope): string {
+  if (token === 'index') {
+    return String(scope.index)
+  }
+  const value =
+    token === 'item' ? scope.item : readHostStatePath(scope.item, token.slice('item.'.length))
+  if (value === undefined || value === null) return ''
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+  return ''
+}
+
+/**
+ * Substitutes `{item}`, `{item.field}`, and `{index}` in a string prop. Used
+ * for labels, hrefs, and navigation targets such as `order?id={item.id}`.
+ * `statePath` uses the dotted form without braces (`item.title`).
+ */
+export function interpolateItemTemplate(template: string, scope: RepeatItemScope): string {
+  if (!template.includes('{')) return template
+  return template.replace(ITEM_TEMPLATE_PLACEHOLDER, (_match, token: string) =>
+    templatePlaceholderValue(token, scope)
+  )
+}
+
+/**
+ * Interpolates every string prop on an element against the current Repeat item.
+ * Non-strings, and strings with no `{…}` placeholders, pass through unchanged.
+ */
+export function interpolateRepeatProps(
+  props: Record<string, unknown>,
+  scope?: RepeatItemScope
+): Record<string, unknown> {
+  if (!scope) return props
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(props)) {
+    next[key] = typeof value === 'string' ? interpolateItemTemplate(value, scope) : value
+  }
+  return next
+}
+
+/** Stable React key for one Repeat iteration. Prefers `id` / `key` / `slug`. */
+export function repeatItemKey(item: unknown, index: number): string {
+  if (isPlainRecord(item)) {
+    for (const field of ['id', 'key', 'slug'] as const) {
+      const value = item[field]
+      if (typeof value === 'string' && value) return `${index}-${value}`
+      if (typeof value === 'number' && Number.isFinite(value)) return `${index}-${value}`
+    }
+  }
+  return String(index)
+}
+
+/**
+ * Action input for a Button / Form inside Repeat: the row's own fields, so
+ * `inputMapping` can send `id` the same way page query params do.
+ */
+export function repeatItemActionValues(item: unknown, index: number): Record<string, unknown> {
+  if (isPlainRecord(item)) {
+    return { ...item, index }
+  }
+  return { item, index }
+}
+
 /** Query params the host owns; never forwarded to a page's load actions. */
 export const ARENA_GENERATIVE_RESERVED_QUERY_KEYS = ['emailId'] as const
 

@@ -11,11 +11,17 @@ import {
 import type { Spec } from '@json-render/core'
 import { cn } from '@sim/emcn'
 import { isPlainRecord } from '@sim/utils/object'
+import type { RepeatItemScope } from '@/lib/arena-generative-ui/types'
 import {
   displayTextFromActionData,
+  interpolateRepeatProps,
+  MAX_REPEAT_ITEMS,
   omitActionTelemetry,
   parseJsonLiteral,
   parseTabItems,
+  readScopedStatePath,
+  repeatItemActionValues,
+  repeatItemKey,
   splitNavTarget,
 } from '@/lib/arena-generative-ui/types'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
@@ -361,11 +367,12 @@ function isEmptyStateValue(value: unknown): boolean {
   return false
 }
 
-function readStatePath(state: Record<string, unknown>, path: string): unknown {
-  return path.split('.').reduce<unknown>((current, segment) => {
-    if (!current || typeof current !== 'object') return undefined
-    return (current as Record<string, unknown>)[segment]
-  }, state)
+function readStatePath(
+  state: Record<string, unknown>,
+  path: string,
+  scope?: RepeatItemScope
+): unknown {
+  return readScopedStatePath(state, path, scope)
 }
 
 function displayFromStateValue(value: unknown, fallback: string): string {
@@ -562,15 +569,18 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
   const elements = (spec.elements ?? {}) as Record<string, SpecElement>
   const [formValues, setFormValues] = useState<Record<string, string>>({})
 
-  const renderNode = (id: string): ReactNode => {
+  const renderNode = (id: string, scope?: RepeatItemScope): ReactNode => {
     const element = elements[id]
     if (!element) return null
-    const props = element.props ?? {}
+    const props = interpolateRepeatProps(element.props ?? {}, scope)
     const childIds = element.children ?? []
     const children = childIds.map((childId) => (
-      <Fragment key={childId}>{renderNode(childId)}</Fragment>
+      <Fragment key={childId}>{renderNode(childId, scope)}</Fragment>
     ))
     const hasChildren = childIds.length > 0
+    const actionValues = scope
+      ? { ...formValues, ...repeatItemActionValues(scope.item, scope.index) }
+      : formValues
 
     switch (element.type) {
       case 'Page':
@@ -624,6 +634,38 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             {children}
           </div>
         )
+      case 'Repeat': {
+        const statePath = asString(props.statePath)
+        const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
+        if (statePath && pending && isEmptyStateValue(stateValue)) {
+          return (
+            <>
+              {Array.from({ length: 3 }, (_, index) => (
+                <SkeletonBlock
+                  key={`repeat-skeleton-${index}`}
+                  variant='card'
+                  lines={DEFAULT_SKELETON_LINES.card}
+                />
+              ))}
+            </>
+          )
+        }
+        if (!Array.isArray(stateValue) || stateValue.length === 0) {
+          return null
+        }
+        const items = stateValue.slice(0, MAX_REPEAT_ITEMS)
+        return (
+          <>
+            {items.map((item, index) => (
+              <Fragment key={repeatItemKey(item, index)}>
+                {childIds.map((childId) => (
+                  <Fragment key={childId}>{renderNode(childId, { item, index })}</Fragment>
+                ))}
+              </Fragment>
+            ))}
+          </>
+        )
+      }
       case 'Columns': {
         const layout = asString(props.layout, 'equal')
         return (
@@ -702,7 +744,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       }
       case 'Table': {
         const statePath = asString(props.statePath)
-        const stateValue = statePath ? readStatePath(state, statePath) : undefined
+        const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         if (statePath && pending && isEmptyStateValue(stateValue)) {
           return <SkeletonBlock variant='table' lines={DEFAULT_SKELETON_LINES.table} />
         }
@@ -759,7 +801,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       }
       case 'Stat': {
         const statePath = asString(props.statePath)
-        const stateValue = statePath ? readStatePath(state, statePath) : undefined
+        const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         if (statePath && pending && isEmptyStateValue(stateValue) && !asString(props.value)) {
           return <SkeletonBlock variant='stat' lines={DEFAULT_SKELETON_LINES.stat} />
         }
@@ -806,7 +848,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         )
       case 'KeyValue': {
         const statePath = asString(props.statePath)
-        const stateValue = statePath ? readStatePath(state, statePath) : undefined
+        const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const pairs = keyValuePairs(props.items, stateValue)
         if (pairs.length === 0 && statePath && pending) {
           return <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
@@ -858,7 +900,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       case 'DataText': {
         return (
           <DataTextView
-            value={readStatePath(state, asString(props.statePath))}
+            value={readStatePath(state, asString(props.statePath), scope)}
             fallback={asString(props.fallback, '')}
             pending={pending}
             style={styleFromProps(props)}
@@ -906,7 +948,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
           event.preventDefault()
           const form = new FormData(event.currentTarget)
-          const values: Record<string, unknown> = { ...formValues }
+          const values: Record<string, unknown> = { ...actionValues }
           for (const [key, value] of form.entries()) {
             values[key] = String(value)
           }
@@ -1005,7 +1047,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             disabled={pending && Boolean(actionId)}
             onClick={() => {
               if (navigateTo) onNavigate(navigateTo)
-              if (actionId) void onRunAction(actionId, formValues)
+              if (actionId) void onRunAction(actionId, actionValues)
             }}
           >
             {asString(props.label)}
