@@ -1,11 +1,10 @@
+import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
 import { mapArenaGenerativeResultToToolResponse } from '@/tools/arena-generative-ui/map-response'
 import type {
   ArenaGenerativeUiParams,
   ArenaGenerativeUiResponse,
 } from '@/tools/arena-generative-ui/types'
 import type { ToolConfig } from '@/tools/types'
-
-const ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS = 25 * 60 * 1000
 
 export const arenaGenerativeUiEditTool: ToolConfig<
   ArenaGenerativeUiParams,

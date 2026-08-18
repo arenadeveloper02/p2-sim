@@ -354,4 +354,18 @@ describe('generateArenaGenerativeManifest', () => {
       })
     )
   })
+
+  it('rewrites opaque model fetch failed into a retryable network error', async () => {
+    mockCreateAnthropicMessage.mockRejectedValue(new TypeError('fetch failed'))
+
+    const result = await generateArenaGenerativeManifest({
+      userInput: 'Team directory.',
+      apiBindings: [],
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toBe(
+      'Model request failed (connection closed or timed out). Retry the run.'
+    )
+  })
 })

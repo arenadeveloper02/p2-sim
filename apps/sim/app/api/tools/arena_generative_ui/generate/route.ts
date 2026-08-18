@@ -12,7 +12,11 @@ import { mapArenaGenerativeResultToToolResponse } from '@/tools/arena-generative
 const logger = createLogger('ArenaGenerativeUiGenerateAPI')
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 180
+/**
+ * 25 minutes — matches `ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS`. Next.js requires a
+ * static literal for `maxDuration`, so this value must be kept in sync with that source.
+ */
+export const maxDuration = 1500
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const requestId = generateRequestId()

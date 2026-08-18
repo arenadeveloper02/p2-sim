@@ -579,6 +579,42 @@ describe('runDeployedAppAction', () => {
     vi.unstubAllGlobals()
   })
 
+  it('does not fetch when ENCRYPTION_KEY is not a 64-character hex string', async () => {
+    mockGetEffectiveEnvironmentSnapshot.mockRejectedValue(
+      new Error('ENCRYPTION_KEY must be set to a 64-character hex string (32 bytes)')
+    )
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: {
+              method: 'POST',
+              url: 'https://api.example.com/qualify',
+              headersSecretName: 'LINKEDIN_API_KEY',
+              authHeaderName: 'X-API-Key',
+            },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-encryption-key',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe(
+      'ENCRYPTION_KEY must be set to a 64-character hex string (32 bytes)'
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
   it('lists accessible secret names when the named secret is missing', async () => {
     mockEnv({ OTHER_KEY: 'token' })
     const fetchMock = vi.fn()

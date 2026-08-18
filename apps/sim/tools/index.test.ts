@@ -1260,6 +1260,88 @@ describe('Automatic Internal Route Detection', () => {
     Object.assign(tools, originalTools)
   })
 
+  it('rewrites opaque undici fetch failed on internal routes', async () => {
+    const mockTool = {
+      id: 'test_internal_fetch_failed_tool',
+      name: 'Test Internal Fetch Failed Tool',
+      description: 'A test tool whose internal fetch fails with undici fetch failed',
+      version: '1.0.0',
+      params: {},
+      request: {
+        url: '/api/test/slow',
+        method: 'POST',
+        timeout: 1_500_000,
+        headers: () => ({ 'Content-Type': 'application/json' }),
+      },
+      transformResponse: vi.fn(),
+    }
+
+    const originalTools = { ...tools }
+    ;(tools as any).test_internal_fetch_failed_tool = mockTool
+
+    const cause = new Error('Headers Timeout Error')
+    global.fetch = Object.assign(
+      vi.fn().mockRejectedValue(new TypeError('fetch failed', { cause })),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    const result = await executeTool('test_internal_fetch_failed_tool', {})
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Headers Timeout Error')
+    expect(result.error).toContain('1500000ms')
+    expect(result.error).not.toBe('fetch failed')
+    expect(mockTool.transformResponse).not.toHaveBeenCalled()
+
+    Object.assign(tools, originalTools)
+  })
+
+  it('passes an undici dispatcher so internal fetches can exceed 300s', async () => {
+    const mockTool = {
+      id: 'test_internal_dispatcher_tool',
+      name: 'Test Internal Dispatcher Tool',
+      description: 'A test tool that asserts the internal fetch dispatcher',
+      version: '1.0.0',
+      params: {},
+      request: {
+        url: '/api/test/dispatcher',
+        method: 'POST',
+        timeout: 1_500_000,
+        headers: () => ({ 'Content-Type': 'application/json' }),
+      },
+      transformResponse: vi.fn().mockResolvedValue({
+        success: true,
+        output: { result: 'ok' },
+      }),
+    }
+
+    const originalTools = { ...tools }
+    ;(tools as any).test_internal_dispatcher_tool = mockTool
+
+    const fetchMock = vi.fn().mockImplementation(async (_url, init) => {
+      expect(init.dispatcher).toBeDefined()
+      const responseData = { success: true }
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers(),
+        json: () => Promise.resolve(responseData),
+        text: () => Promise.resolve(JSON.stringify(responseData)),
+        arrayBuffer: () => Promise.resolve(new TextEncoder().encode(JSON.stringify(responseData))),
+        clone: vi.fn().mockReturnThis(),
+      }
+    })
+    global.fetch = Object.assign(fetchMock, { preconnect: vi.fn() }) as typeof fetch
+
+    const result = await executeTool('test_internal_dispatcher_tool', {})
+
+    expect(result.success).toBe(true)
+    expect(fetchMock).toHaveBeenCalled()
+
+    Object.assign(tools, originalTools)
+  })
+
   it('should detect external routes (full URLs) and call directly with SSRF protection', async () => {
     // This test verifies that external URLs are called directly (not via proxy)
     // with SSRF protection via secureFetchWithPinnedIP

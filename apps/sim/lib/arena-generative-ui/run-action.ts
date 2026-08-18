@@ -348,7 +348,12 @@ async function runHttpBinding(options: {
     return { ok: false, error: allowlisted.error ?? 'HTTP host is not allowlisted' }
   }
 
-  const snapshot = await getEffectiveEnvironmentSnapshot(options.actorUserId, options.workspaceId)
+  let snapshot: EnvironmentResolutionSnapshot
+  try {
+    snapshot = await getEffectiveEnvironmentSnapshot(options.actorUserId, options.workspaceId)
+  } catch (error) {
+    return { ok: false, error: getErrorMessage(error, 'Failed to load secrets') }
+  }
   const secret = resolveSecretHeaders(http, snapshot)
   if (!secret.ok) {
     return { ok: false, error: secret.error }

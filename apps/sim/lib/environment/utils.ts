@@ -241,11 +241,15 @@ export async function getPersonalAndWorkspaceEnv(
           const { decrypted } = await decryptSecret(v)
           return [k, decrypted] as const
         } catch (error) {
+          const message = getErrorMessage(error, 'Unknown error')
+          if (message.includes('ENCRYPTION_KEY must be set to a 64-character hex string')) {
+            throw error
+          }
           logger.error(`Failed to decrypt ${source} environment variable "${k}"`, {
             userId,
             workspaceId,
             source,
-            error: getErrorMessage(error, 'Unknown error'),
+            error: message,
           })
           decryptionFailures.push(k)
           return [k, ''] as const

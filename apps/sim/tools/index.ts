@@ -3,6 +3,7 @@ import { getErrorMessage, toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { isValidUuid } from '@sim/utils/id'
 import { backoffWithJitter, parseRetryAfter } from '@sim/utils/retry'
+import { Agent } from 'undici'
 import { getBYOKKey } from '@/lib/api-key/byok'
 import { generateInternalToken } from '@/lib/auth/internal'
 import {
@@ -20,6 +21,7 @@ import {
 } from '@/lib/core/security/input-validation.server'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { HttpError } from '@/lib/core/utils/http-error'
+import { formatInternalToolFetchError } from '@/lib/core/utils/opaque-fetch-error'
 import { generateRequestId } from '@/lib/core/utils/request'
 import {
   isPayloadSizeLimitError,
@@ -2544,13 +2546,26 @@ async function executeToolRequest(
             }
           }
 
+          /**
+           * undici's default headersTimeout/bodyTimeout is 300s. Internal tools such as
+           * Arena Generative UI do not send HTTP headers until Claude finishes, so the
+           * AbortController ceiling never fires unless these match `timeout`.
+           */
+          const dispatcher = new Agent({
+            headersTimeout: timeout,
+            bodyTimeout: timeout,
+            allowH2: false,
+          })
+
           try {
+            // double-cast-allowed: dispatcher is an undici RequestInit field not in the DOM lib
             const internalResponse = await fetch(fullUrl, {
               method: requestParams.method,
               headers: headers,
               body: requestParams.body,
               signal: controller.signal,
-            })
+              dispatcher,
+            } as unknown as RequestInit)
             if (
               nullBodyStatuses.has(internalResponse.status) ||
               shouldRetryWithoutReadingBody(
@@ -2593,21 +2608,13 @@ async function executeToolRequest(
               }
               throw new Error(`Request timed out after ${timeout}ms`)
             }
-            if (
-              error instanceof TypeError &&
-              error.message === 'fetch failed' &&
-              timeout >= DEFAULT_EXECUTION_TIMEOUT_MS
-            ) {
-              throw new Error(
-                `Internal tool request failed (connection closed or timed out after ${timeout}ms). Long-running tools may need a workflow with a Development block or async execution mode.`
-              )
-            }
-            throw error
+            throw formatInternalToolFetchError(error, timeout)
           } finally {
             clearTimeout(timeoutId)
             if (abortListener) {
               signal?.removeEventListener('abort', abortListener)
             }
+            void dispatcher.destroy().catch(() => {})
           }
         } else {
           const allowHttp = tool.request.allowHttp === true

@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createLogger } from '@sim/logger'
-import { getErrorMessage, toError } from '@sim/utils/errors'
+import { toError } from '@sim/utils/errors'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import {
   ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
@@ -14,6 +14,7 @@ import {
   extractManifestCandidate,
   parseLlmJsonObject,
 } from '@/lib/arena-generative-ui/parse-inputs'
+import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeAppManifest,
@@ -25,6 +26,7 @@ import {
   validateArenaGenerativeManifest,
 } from '@/lib/arena-generative-ui/validate-manifest'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
+import { formatProviderNetworkError } from '@/lib/core/utils/opaque-fetch-error'
 import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
 
 const logger = createLogger('ArenaGenerativeUi')
@@ -120,7 +122,10 @@ export async function generateArenaGenerativeManifest(
 
   try {
     const apiKey = getRotatingApiKey('anthropic')
-    const anthropic = new Anthropic({ apiKey })
+    const anthropic = new Anthropic({
+      apiKey,
+      timeout: ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS,
+    })
     const modelId = DEFAULT_MODEL
     const maxTokens = Math.min(getMaxOutputTokensForModel(modelId), MAX_OUTPUT_TOKENS)
     const messageOptions = {
@@ -194,7 +199,7 @@ export async function generateArenaGenerativeManifest(
       manifest: validation.manifest,
     }
   } catch (error) {
-    const message = getErrorMessage(error, 'Failed to generate app')
+    const message = formatProviderNetworkError(error, 'Failed to generate app')
     logger.error('Arena Generative UI generation failed', { error: toError(error).message })
     if (isModelJsonParseError(message)) {
       return { success: false, error: MODEL_JSON_PARSE_ERROR }
