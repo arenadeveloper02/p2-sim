@@ -411,6 +411,26 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Do not include a logo, wordmark, or decorative Image for branding. The host already provides the outer shell.',
 ] as const
 
+/**
+ * Appended for a page-scoped edit, where the model sees only the pages the change
+ * touches. These deliberately restate the envelope and override the whole-manifest
+ * shape rules above: the reply is still one complete JSON object with complete page
+ * specs, it simply carries fewer page keys. Saying so explicitly matters because
+ * the shape rules ban patch formats, and without this the model hedges, abbreviates
+ * a spec, or re-emits pages it was told to leave alone.
+ */
+export const ARENA_GENERATIVE_UI_SCOPED_EDIT_RULES = [
+  'SCOPED EDIT — the following overrides the shape rules above.',
+  'You are changing specific pages of an app that already exists. You were given the complete spec for those pages, and a short summary of the other pages.',
+  'Return ONE complete JSON object in the same envelope as before. This is NOT a patch: no markdown fences, no JSONL, no diff syntax, no operation lists. The only difference is that manifest.pages contains ONLY the pages you were asked to change.',
+  'Emit a full valid spec for every page you return — root, elements, and a children array on every element. Never abbreviate a spec, never emit a placeholder, and never use "..." or a comment to stand in for content you are keeping.',
+  'Do NOT return any page you were not asked to change. The host keeps those byte-identical; including one is an error and the reply will be rejected.',
+  'Keep every Tabs entry, NavLink.to, and Button.navigateTo target already present on the pages you return. The pages they point at still exist even though you were not shown them, and reachability is checked across the whole app after your reply is merged in.',
+  'Do not set entryPath. Do not restate theme unless the change request is about branding, colour, density, or typography.',
+  'Return manifest.actions only when the change alters a CTA, and then only the entries that changed — the host merges them over the existing actions, so omitting one keeps it.',
+  'Apply ONLY the requested change. Inside the pages you return, every element, prop, and copy string the change request does not name must stay byte-identical to what you were given.',
+] as const
+
 /** Added to the generator prompt only when at least one API binding is declared. */
 export const ARENA_GENERATIVE_UI_ACTION_RESULT_RULE = [
   'CTA results: when an action succeeds the host merges the response object top-level keys into app state, so a statePath is the response key itself — use "articles", never "data.articles", "output.articles", or "response.articles". A response that is an array or a plain value lands under "result". "content" always holds a text rendering of the whole response.',

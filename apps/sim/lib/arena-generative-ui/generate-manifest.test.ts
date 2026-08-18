@@ -34,10 +34,18 @@ import {
   EDIT_PRESERVATION_INSTRUCTION,
   generateArenaGenerativeManifest,
   MODEL_JSON_PARSE_ERROR,
+  SCOPED_EDIT_INSTRUCTION,
 } from '@/lib/arena-generative-ui/generate-manifest'
 import { ARENA_GENERATIVE_UI_GOLD_EXAMPLE } from '@/lib/arena-generative-ui/gold-example'
+import {
+  multiPageApiBindings,
+  multiPageManifest,
+} from '@/lib/arena-generative-ui/multi-page-app.fixture'
 import { twoPageManifest } from '@/lib/arena-generative-ui/two-page-app.fixture'
-import { GENERATOR_OMITTED_PAGES_ERROR } from '@/lib/arena-generative-ui/validate-manifest'
+import {
+  GENERATOR_OMITTED_PAGES_ERROR,
+  validateArenaGenerativeManifest,
+} from '@/lib/arena-generative-ui/validate-manifest'
 
 function textMessage(text: string) {
   return { content: [{ type: 'text' as const, text }] }
@@ -699,5 +707,245 @@ describe('generateArenaGenerativeManifest', () => {
     expect(result.error).toBe(
       'Model request failed (connection closed or timed out). Retry the run.'
     )
+  })
+
+  /**
+   * These drive the real scoping call through the shared `createAnthropicMessage`
+   * mock: on a manifest large enough to scope, call 0 is the scope call and call 1
+   * is the manifest call.
+   */
+  describe('scoped edit', () => {
+    const scopeReply = (overrides: Record<string, unknown> = {}) =>
+      textMessage(
+        JSON.stringify({
+          mode: 'pages',
+          pages: ['results'],
+          pageSetStable: true,
+          touchesActions: false,
+          touchesTheme: false,
+          ...overrides,
+        })
+      )
+
+    const editedResults = {
+      path: 'results',
+      title: 'Score',
+      spec: {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Score' }, children: ['stat'] },
+          stat: {
+            type: 'Stat',
+            props: { label: 'Score', statePath: 'score' },
+            children: [],
+          },
+        },
+      },
+    }
+
+    function manifestCall() {
+      return mockCreateAnthropicMessage.mock.calls[1]?.[1]
+    }
+
+    it('sends only the scoped page spec plus a summary of the rest', async () => {
+      mockCreateAnthropicMessage
+        .mockResolvedValueOnce(scopeReply())
+        .mockResolvedValueOnce(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'On results, show the score as a Stat.',
+        apiBindings: multiPageApiBindings,
+        existingManifest: multiPageManifest,
+      })
+
+      const payload = manifestCall().messages[0].content as string
+      expect(payload).toContain(SCOPED_EDIT_INSTRUCTION)
+      expect(payload).toContain('Pages to change')
+      expect(payload).toContain('"results"')
+      expect(payload).toContain('DO NOT return these')
+      expect(payload).not.toContain('Existing manifest:')
+      expect(payload).not.toContain(EDIT_PRESERVATION_INSTRUCTION)
+    })
+
+    it('withholds the untouched page specs while keeping their nav targets visible', async () => {
+      mockCreateAnthropicMessage
+        .mockResolvedValueOnce(scopeReply())
+        .mockResolvedValueOnce(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'On results, show the score as a Stat.',
+        apiBindings: multiPageApiBindings,
+        existingManifest: multiPageManifest,
+      })
+
+      const payload = manifestCall().messages[0].content as string
+      expect(payload).not.toContain('Qualify a lead')
+      expect(payload).toContain('"navigatesTo"')
+      expect(payload).toContain('"dashboard"')
+    })
+
+    it('drops the output budget to the scoped page count', async () => {
+      mockCreateAnthropicMessage
+        .mockResolvedValueOnce(scopeReply())
+        .mockResolvedValueOnce(textMessage('not json'))
+      await generateArenaGenerativeManifest({
+        userInput: 'On results, show the score as a Stat.',
+        apiBindings: multiPageApiBindings,
+        existingManifest: multiPageManifest,
+      })
+      const scopedBudget = manifestCall().max_tokens as number
+
+      vi.clearAllMocks()
+      mockCreateAnthropicMessage
+        .mockResolvedValueOnce(scopeReply({ mode: 'global', pages: [] }))
+        .mockResolvedValueOnce(textMessage('not json'))
+      await generateArenaGenerativeManifest({
+        userInput: 'Use a dark theme everywhere.',
+        apiBindings: multiPageApiBindings,
+        existingManifest: multiPageManifest,
+      })
+      const globalBudget = manifestCall().max_tokens as number
+
+      expect(scopedBudget).toBeLessThan(globalBudget)
+    })
+
+    /**
+     * A stored draft manifest is validator output, so the baseline here is the
+     * fixture run through the validator once — exactly what an edit loads from the
+     * database. That makes the byte comparison the same one production performs.
+     */
+    it('keeps every untouched page byte-identical through the merge', async () => {
+      const stored = validateArenaGenerativeManifest(multiPageManifest, {
+        apiBindings: multiPageApiBindings,
+      }).manifest
+      expect(stored).toBeDefined()
+      if (!stored) return
+
+      mockCreateAnthropicMessage.mockResolvedValueOnce(scopeReply()).mockResolvedValueOnce(
+        textMessage(
+          JSON.stringify({
+            title: 'Lead qualifier',
+            content: 'Updated results.',
+            manifest: { pages: { results: editedResults } },
+          })
+        )
+      )
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'On results, show the score as a Stat.',
+        apiBindings: multiPageApiBindings,
+        existingManifest: stored,
+      })
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+      const pages = result.manifest?.pages
+      expect(Object.keys(pages ?? {}).sort()).toEqual(['dashboard', 'home', 'results', 'settings'])
+      for (const path of ['home', 'dashboard', 'settings'] as const) {
+        expect(JSON.stringify(pages?.[path])).toBe(JSON.stringify(stored.pages[path]))
+      }
+      expect(JSON.stringify(pages?.results)).not.toBe(JSON.stringify(stored.pages.results))
+      expect(result.manifest?.entryPath).toBe('home')
+      expect(result.manifest?.actions).toEqual(stored.actions)
+    })
+
+    it('asks for a correction when the reply returns a page outside the scope', async () => {
+      mockCreateAnthropicMessage
+        .mockResolvedValueOnce(scopeReply())
+        .mockResolvedValueOnce(
+          textMessage(
+            JSON.stringify({
+              manifest: {
+                pages: { results: editedResults, home: multiPageManifest.pages.home },
+              },
+            })
+          )
+        )
+        .mockResolvedValueOnce(
+          textMessage(JSON.stringify({ manifest: { pages: { results: editedResults } } }))
+        )
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'On results, show the score as a Stat.',
+        apiBindings: multiPageApiBindings,
+        existingManifest: multiPageManifest,
+      })
+
+      expect(result.success).toBe(true)
+      const repair = mockCreateAnthropicMessage.mock.calls[2]?.[1].messages.at(-1)
+        ?.content as string
+      expect(repair).toContain('was not in scope')
+      expect(repair).toContain('only these page keys')
+    })
+
+    it('falls back to the full manifest edit when scoping fails', async () => {
+      mockCreateAnthropicMessage
+        .mockResolvedValueOnce(textMessage('not a scope object'))
+        .mockResolvedValueOnce(textMessage('not a scope object'))
+        .mockResolvedValueOnce(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'On results, show the score as a Stat.',
+        apiBindings: multiPageApiBindings,
+        existingManifest: multiPageManifest,
+      })
+
+      const payload = mockCreateAnthropicMessage.mock.calls[2]?.[1].messages[0].content as string
+      expect(payload).toContain(EDIT_PRESERVATION_INSTRUCTION)
+      expect(payload).toContain('Existing manifest:')
+      expect(payload).not.toContain(SCOPED_EDIT_INSTRUCTION)
+    })
+
+    it('pins the current page set on a global edit that keeps it stable', async () => {
+      mockCreateAnthropicMessage
+        .mockResolvedValueOnce(scopeReply({ mode: 'global', pages: [], pageSetStable: true }))
+        .mockResolvedValueOnce(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'Use a dark theme everywhere.',
+        apiBindings: multiPageApiBindings,
+        existingManifest: multiPageManifest,
+      })
+
+      const payload = manifestCall().messages[0].content as string
+      expect(payload).toContain('Requested pages')
+      expect(payload).toContain('"path": "settings"')
+      expect(payload).not.toContain('Keep exactly the pages in the existing manifest')
+    })
+
+    it('leaves the page set open when the edit adds or removes a page', async () => {
+      mockCreateAnthropicMessage
+        .mockResolvedValueOnce(scopeReply({ mode: 'global', pages: [], pageSetStable: false }))
+        .mockResolvedValueOnce(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'Add an audit page.',
+        apiBindings: multiPageApiBindings,
+        existingManifest: multiPageManifest,
+      })
+
+      const payload = manifestCall().messages[0].content as string
+      expect(payload).not.toContain('Requested pages')
+      expect(payload).toContain('Keep exactly the pages in the existing manifest')
+    })
+
+    it('spends no scoping call when the user pinned a sitemap', async () => {
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'On results, show the score as a Stat.',
+        apiBindings: multiPageApiBindings,
+        existingManifest: multiPageManifest,
+        pages: [
+          { path: 'home', title: 'Leads' },
+          { path: 'results', title: 'Score' },
+        ],
+      })
+
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
+      const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+      expect(payload).toContain(EDIT_PRESERVATION_INSTRUCTION)
+      expect(payload).not.toContain(SCOPED_EDIT_INSTRUCTION)
+    })
   })
 })

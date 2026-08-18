@@ -29,6 +29,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
   - Add apiBindings JSON only when CTAs should call a deployed workflow or HTTP URL. Leave it blank for navigation-only; the model cannot invent keys. Set "stream": true to stream tokens into DataText on the form page.
   - After a successful run, open Deploy → GUI App, pick the draft, set an identifier, and Launch. The public URL is /gui-apps/{identifier}.
   - Use Edit mode with an existing draft to change pages, copy, or CTA wiring. Put only the delta in Requested Changes — the draft already carries the original brief, and anything you do not mention is kept as-is.
+  - Name the page you mean in Requested Changes ("on the results page, ..."). Edits are scoped to the pages your request names, so a page it never mentions is left byte-identical and costs nothing to re-emit.
   - As an Agent tool: attach Arena Generative UI, pick Generate or Edit, then preview/launch from Deploy → GUI App on this workflow.
   `,
   docsLink: 'https://docs.sim.ai/blocks/development',
@@ -83,7 +84,7 @@ Return ONLY the specification text.`,
       description:
         'Only the changes. The draft already holds the original brief — do not paste it again.',
       tooltip:
-        'Describe only the delta. Anything you do not mention stays byte-identical, so a short instruction is safer than a rewritten brief.\n\nCentre the search input and its submit button in one row. Show a loader on the results page while the API runs.',
+        'Describe only the delta, and name the page it applies to. Pages your request does not name are never sent to the model and stay byte-identical, so a short instruction is both safer and cheaper than a rewritten brief.\n\nCentre the search input and its submit button in one row. Show a loader on the results page while the API runs.',
     },
     {
       id: 'existingDraftId',

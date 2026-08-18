@@ -5,6 +5,7 @@ import type {
   ParsedArenaGenerativeGenerateBody,
 } from '@/lib/api/contracts/arena-generative-apps'
 import { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/generate-manifest'
+import { summarizeManifestDiff } from '@/lib/arena-generative-ui/manifest-diff'
 import { parseApiBindings, parsePageHints } from '@/lib/arena-generative-ui/parse-inputs'
 import { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
@@ -50,6 +51,7 @@ export async function runArenaGenerativeUi(options: {
 
   let existingManifest: ArenaGenerativeAppManifest | undefined
   let existingBrief: string | undefined
+  let existingRevision = 0
   if (requireExistingDraft || body.existingDraftId) {
     if (!body.existingDraftId) {
       return { success: false, error: 'existingDraftId is required' }
@@ -72,6 +74,7 @@ export async function runArenaGenerativeUi(options: {
     }
     existingManifest = draft.manifest as ArenaGenerativeAppManifest
     existingBrief = draft.brief ?? undefined
+    existingRevision = draft.revision
     if (apiBindings.length === 0 && Array.isArray(draft.apiBindings)) {
       apiBindings = draft.apiBindings as typeof apiBindings
     }
@@ -129,6 +132,21 @@ export async function runArenaGenerativeUi(options: {
       revisionId: persisted.revisionId,
     })
 
+    /**
+     * An edit reports what actually moved. Scoped edits cannot touch a page the
+     * change request did not name, but an unscoped one still can, so the change
+     * list belongs in the block output rather than only in the Deploy panel.
+     */
+    const revisionDiff = existingManifest
+      ? summarizeManifestDiff(
+          existingManifest,
+          generated.manifest,
+          existingRevision,
+          persisted.revision
+        )
+      : null
+    const baseContent = generated.content ?? 'Generated app'
+
     return {
       success: true,
       output: {
@@ -139,7 +157,7 @@ export async function runArenaGenerativeUi(options: {
           path: page.path,
           title: page.title,
         })),
-        content: generated.content ?? 'Generated app',
+        content: revisionDiff ? `${baseContent}\n\n${revisionDiff.summary}` : baseContent,
         manifest: generated.manifest,
       },
     }

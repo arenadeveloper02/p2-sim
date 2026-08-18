@@ -10,12 +10,20 @@ export {
   setAppAuthCookie,
   toDeployedAppConfig,
 } from '@/lib/arena-generative-ui/deployment'
+export type { ArenaGenerativeEditScope } from '@/lib/arena-generative-ui/edit-scope'
+export {
+  MAX_SCOPED_EDIT_PAGES,
+  MIN_PAGES_FOR_SCOPED_EDIT,
+  planArenaGenerativeEditScope,
+} from '@/lib/arena-generative-ui/edit-scope'
 export { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/generate-manifest'
 export {
   buildHttpAllowlist,
   inspectHttpBindingUrl,
   isHttpUrlAllowlisted,
 } from '@/lib/arena-generative-ui/http-allowlist'
+export type { ScopedEditTarget } from '@/lib/arena-generative-ui/merge-scoped-edit'
+export { mergeScopedManifestEdit } from '@/lib/arena-generative-ui/merge-scoped-edit'
 export {
   extractManifestCandidate,
   parseApiBindings,

@@ -90,7 +90,7 @@ function normalizePagesRecord(pagesRaw: unknown): Record<string, unknown> | null
  * Page paths a spec navigates to. Targets may carry query params for the
  * destination's `onLoad`, so only the path half names a page.
  */
-function collectNavTargets(spec: Spec): string[] {
+export function collectNavTargets(spec: Spec): string[] {
   const elements = spec.elements as Record<string, FlatElement>
   const targets: string[] = []
   for (const element of Object.values(elements ?? {})) {

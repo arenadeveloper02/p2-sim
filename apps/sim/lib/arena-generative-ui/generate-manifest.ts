@@ -8,11 +8,18 @@ import {
   ARENA_GENERATIVE_UI_OUTPUT_RULES,
   ARENA_GENERATIVE_UI_PAGINATION_RULE,
   ARENA_GENERATIVE_UI_PERSONA,
+  ARENA_GENERATIVE_UI_SCOPED_EDIT_RULES,
   ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
   ARENA_GENERATIVE_UI_THEME_RULE,
   arenaGenerativeUiCatalog,
 } from '@/lib/arena-generative-ui/catalog'
+import {
+  type ArenaGenerativeEditScope,
+  planArenaGenerativeEditScope,
+  unscopedPageIndex,
+} from '@/lib/arena-generative-ui/edit-scope'
 import { ARENA_GENERATIVE_UI_GOLD_EXAMPLE } from '@/lib/arena-generative-ui/gold-example'
+import { mergeScopedManifestEdit } from '@/lib/arena-generative-ui/merge-scoped-edit'
 import {
   extractManifestCandidate,
   parseLlmJsonObject,
@@ -70,9 +77,15 @@ const PAGES_RETRY_USER_MESSAGE =
  * Follow-up for a reply that parsed but failed validation. Naming the failing
  * page, prop, or action turns the next attempt into a fix rather than a reroll.
  */
-function repairUserMessage(error: string): string {
+function repairUserMessage(error: string, scopedPaths: string[]): string {
   if (error === GENERATOR_OMITTED_PAGES_ERROR) {
     return PAGES_RETRY_USER_MESSAGE
+  }
+  if (scopedPaths.length > 0) {
+    return [
+      `That reply failed validation: ${error}`,
+      `Return one complete JSON object again, with manifest.pages containing only these page keys and their full specs: ${scopedPaths.join(', ')}. Fix only what the error names.`,
+    ].join('\n\n')
   }
   return [
     `That manifest failed validation: ${error}`,
@@ -81,17 +94,22 @@ function repairUserMessage(error: string): string {
 }
 
 /**
- * Pages this run has to emit. Edits re-emit the whole manifest, plus room for a
- * page the change request adds.
+ * Pages this run has to emit. A scoped edit emits only the pages in scope, which
+ * is where its output-token saving comes from. An unscoped edit re-emits the whole
+ * manifest, plus room for a page the change request adds.
  */
-function estimatePageCount(
-  pageHintCount: number,
+function estimatePageCount(options: {
+  pageHintCount: number
+  scopedPageCount?: number
   existingManifest?: ArenaGenerativeAppManifest
-): number {
-  if (pageHintCount > 0) {
-    return pageHintCount
+}): number {
+  if (options.scopedPageCount && options.scopedPageCount > 0) {
+    return options.scopedPageCount
   }
-  const existing = existingManifest ? Object.keys(existingManifest.pages).length : 0
+  if (options.pageHintCount > 0) {
+    return options.pageHintCount
+  }
+  const existing = options.existingManifest ? Object.keys(options.existingManifest.pages).length : 0
   return existing > 0 ? existing + 1 : ASSUMED_PAGE_COUNT
 }
 
@@ -136,6 +154,46 @@ const EDIT_KEEP_ENTRY_PATH_INSTRUCTION =
   'No entryPath was supplied. Keep the existing manifest entryPath.'
 
 /**
+ * Opening instruction for a page-scoped edit. Unlike {@link EDIT_PRESERVATION_INSTRUCTION}
+ * this makes no promise about untouched pages, because the host does not ask the model
+ * to preserve them — it never sends them and merges the reply over the originals.
+ */
+export const SCOPED_EDIT_INSTRUCTION = [
+  'Mode: edit specific pages of an existing app. Return ONLY the pages listed below, each with its complete spec.',
+  'Every other page is kept byte-identical by the host and must not appear in your reply.',
+  'Inside the pages you do return, everything the change request does not name must stay byte-identical.',
+].join(' ')
+
+/**
+ * Scoped-edit user payload: full specs for the pages in scope, and a summary of the
+ * rest so cross-page links survive without the model being shown their specs.
+ */
+function scopedEditSections(manifest: ArenaGenerativeAppManifest, scopedPaths: string[]): string[] {
+  const scopedPages: Record<string, ArenaGenerativeAppManifest['pages'][string]> = {}
+  for (const path of scopedPaths) {
+    const page = manifest.pages[path]
+    if (page) {
+      scopedPages[path] = page
+    }
+  }
+  const untouched = unscopedPageIndex(manifest, scopedPaths)
+  return [
+    `Pages to change (return exactly these keys in manifest.pages):\n${JSON.stringify(scopedPaths)}`,
+    `Their current definitions:\n${JSON.stringify(scopedPages, null, 2)}`,
+    untouched.length > 0
+      ? `Other pages in this app. DO NOT return these — the host keeps them unchanged. Listed so you keep links to them working:\n${JSON.stringify(untouched, null, 2)}`
+      : '',
+    `Existing actions (return only the entries this change alters):\n${JSON.stringify(manifest.actions)}`,
+    manifest.theme ? `Existing theme:\n${JSON.stringify(manifest.theme)}` : '',
+  ].filter((section) => section.length > 0)
+}
+
+/** Page hints taken from a manifest, so an unscoped edit is held to its current page set. */
+function pageHintsFromManifest(manifest: ArenaGenerativeAppManifest): ArenaGenerativePageHint[] {
+  return Object.values(manifest.pages).map((page) => ({ path: page.path, title: page.title }))
+}
+
+/**
  * Generates or patches a multi-page Arena Generative UI manifest with Claude.
  */
 export async function generateArenaGenerativeManifest(
@@ -167,6 +225,29 @@ export async function generateArenaGenerativeManifest(
     })
   }
 
+  /**
+   * A pinned sitemap already contracts the run and supplies the page hints a scope
+   * would have, so scoping it would only add a round trip.
+   */
+  const editScope: ArenaGenerativeEditScope | null =
+    params.existingManifest && pinnedPageHints.length === 0
+      ? await planArenaGenerativeEditScope({
+          editInstructions: userInput,
+          manifest: params.existingManifest,
+          apiBindings: params.apiBindings,
+        })
+      : null
+  const scopedPaths = params.existingManifest && editScope?.mode === 'pages' ? editScope.pages : []
+  const isScopedEdit = scopedPaths.length > 0
+  if (params.existingManifest) {
+    logger.info('Scoped Arena Generative UI edit', {
+      mode: isScopedEdit ? 'pages' : 'global',
+      scopedPaths,
+      pageSetStable: editScope?.pageSetStable,
+      totalPages: Object.keys(params.existingManifest.pages).length,
+    })
+  }
+
   const catalogPrompt = arenaGenerativeUiCatalog.prompt({
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
@@ -180,6 +261,7 @@ export async function generateArenaGenerativeManifest(
           ]
         : []),
       ...(hasStreamingBinding ? [ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE] : []),
+      ...(isScopedEdit ? ARENA_GENERATIVE_UI_SCOPED_EDIT_RULES : []),
     ],
   })
   const systemPrompt = [
@@ -191,12 +273,22 @@ export async function generateArenaGenerativeManifest(
     .filter((section) => section.length > 0)
     .join('\n\n')
 
+  /**
+   * An unscoped edit is otherwise free to drop a page: with no hints, the extra and
+   * missing page checks in `validateArenaGenerativeManifest` are both switched off.
+   * Only pin them when the scoper said the page set is stable — pinning them for an
+   * edit that means to add or remove a page would reject the very change requested.
+   */
+  const editPageHints =
+    isEdit && !isScopedEdit && editScope?.pageSetStable === true && params.existingManifest
+      ? pageHintsFromManifest(params.existingManifest)
+      : []
   const pageHints =
     pinnedPageHints.length > 0
       ? pinnedPageHints
       : structuredBrief
         ? pageHintsFromStructuredBrief(structuredBrief)
-        : []
+        : editPageHints
   const bindingsSummary = params.apiBindings.map((binding) => ({
     key: binding.key,
     label: binding.label,
@@ -213,24 +305,7 @@ export async function generateArenaGenerativeManifest(
       ? `CTA apiKey values must be one of these declared binding keys: ${bindingKeys.join(', ')}. Do not invent keys from User Input.`
       : ''
   const requestedEntryPath = params.entryPath || structuredBrief?.entryPath
-  const userPayload = [
-    isEdit ? EDIT_PRESERVATION_INSTRUCTION : 'Mode: generate a new multi-page app.',
-    requestedEntryPath
-      ? `Requested entryPath: ${requestedEntryPath}`
-      : isEdit
-        ? EDIT_KEEP_ENTRY_PATH_INSTRUCTION
-        : '',
-    pageHints.length > 0
-      ? `Requested pages (must emit exactly these paths as object keys, not an array):\n${JSON.stringify(pageHints, null, 2)}`
-      : [
-          isEdit
-            ? EDIT_KEEP_PAGES_INSTRUCTION
-            : 'No explicit page list. Infer a small coherent sitemap from the brief. Emit manifest.pages as an object keyed by path (home, person, …), never as an array.',
-          bindingKeyLine,
-        ]
-          .filter((line) => line.length > 0)
-          .join('\n'),
-    structuredBrief ? formatStructuredBriefForGenerator(structuredBrief) : '',
+  const sharedSections = [
     bindingsSummary.length > 0
       ? `Declared API bindings (CTAs may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
       : 'No API bindings. Navigation and static content only.',
@@ -238,9 +313,40 @@ export async function generateArenaGenerativeManifest(
     isEdit && params.existingBrief?.trim()
       ? `Original brief (context only — already implemented, do not re-apply it):\n${params.existingBrief.trim()}`
       : '',
-    params.existingManifest ? `Existing manifest:\n${JSON.stringify(params.existingManifest)}` : '',
-    isEdit ? `Requested changes:\n${userInput}` : `User request:\n${userInput}`,
   ]
+  const userPayload = (
+    isScopedEdit && params.existingManifest
+      ? [
+          SCOPED_EDIT_INSTRUCTION,
+          ...scopedEditSections(params.existingManifest, scopedPaths),
+          ...sharedSections,
+          `Requested changes:\n${userInput}`,
+        ]
+      : [
+          isEdit ? EDIT_PRESERVATION_INSTRUCTION : 'Mode: generate a new multi-page app.',
+          requestedEntryPath
+            ? `Requested entryPath: ${requestedEntryPath}`
+            : isEdit
+              ? EDIT_KEEP_ENTRY_PATH_INSTRUCTION
+              : '',
+          pageHints.length > 0
+            ? `Requested pages (must emit exactly these paths as object keys, not an array):\n${JSON.stringify(pageHints, null, 2)}`
+            : [
+                isEdit
+                  ? EDIT_KEEP_PAGES_INSTRUCTION
+                  : 'No explicit page list. Infer a small coherent sitemap from the brief. Emit manifest.pages as an object keyed by path (home, person, …), never as an array.',
+                bindingKeyLine,
+              ]
+                .filter((line) => line.length > 0)
+                .join('\n'),
+          structuredBrief ? formatStructuredBriefForGenerator(structuredBrief) : '',
+          ...sharedSections,
+          params.existingManifest
+            ? `Existing manifest:\n${JSON.stringify(params.existingManifest)}`
+            : '',
+          isEdit ? `Requested changes:\n${userInput}` : `User request:\n${userInput}`,
+        ]
+  )
     .filter((section) => section.length > 0)
     .join('\n\n')
 
@@ -255,7 +361,11 @@ export async function generateArenaGenerativeManifest(
       model: modelId,
       max_tokens: outputTokenBudget(
         modelId,
-        estimatePageCount(pageHints.length, params.existingManifest)
+        estimatePageCount({
+          pageHintCount: pageHints.length,
+          scopedPageCount: isScopedEdit ? scopedPaths.length : undefined,
+          existingManifest: params.existingManifest,
+        })
       ),
       ...(supportsTemperature(modelId) ? { temperature: 0.2 } : {}),
       system: systemPrompt,
@@ -282,10 +392,28 @@ export async function generateArenaGenerativeManifest(
       }
 
       parsed = parseLlmJsonObject(rawText)
-      validation = validateArenaGenerativeManifest(
-        extractManifestCandidate(parsed),
-        validationOptions
-      )
+      const candidate = extractManifestCandidate(parsed)
+      /**
+       * The scoped reply is folded into the existing manifest before validation, so
+       * every invariant — catalog shape, reachability, action keys — is still checked
+       * against the whole app, and untouched pages come through by reference.
+       */
+      const merged =
+        isScopedEdit && params.existingManifest && editScope
+          ? mergeScopedManifestEdit(params.existingManifest, candidate, {
+              pages: scopedPaths,
+              touchesActions: editScope.touchesActions,
+              touchesTheme: editScope.touchesTheme,
+            })
+          : null
+      if (merged && !merged.ok) {
+        validation = { success: false, error: merged.error }
+      } else {
+        validation = validateArenaGenerativeManifest(
+          merged ? merged.candidate : candidate,
+          validationOptions
+        )
+      }
       if (validation.success || attempt === MAX_REPAIR_ATTEMPTS) {
         break
       }
@@ -296,7 +424,7 @@ export async function generateArenaGenerativeManifest(
       })
       messages.push(
         { role: 'assistant', content: rawText },
-        { role: 'user', content: repairUserMessage(validation.error ?? '') }
+        { role: 'user', content: repairUserMessage(validation.error ?? '', scopedPaths) }
       )
     }
 
