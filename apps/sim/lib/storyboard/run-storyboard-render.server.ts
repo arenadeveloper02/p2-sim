@@ -18,8 +18,8 @@ import { sql } from 'drizzle-orm'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { generateFalVideo } from '@/lib/media/falai-video'
 import { type MediaFile, runFfmpegOperation } from '@/lib/media/ffmpeg'
-import { downloadFile, uploadFile } from '@/lib/uploads/core/storage-service'
 import type { StoryboardScene } from '@/lib/storyboard/run-storyboard-generate.server'
+import { downloadFile, uploadFile } from '@/lib/uploads/core/storage-service'
 
 const logger = createLogger('StoryboardRender')
 
@@ -124,7 +124,9 @@ async function fetchImageAsDataUri(imageUrl: string): Promise<string> {
       : 'image/png'
 
   if (imageUrl.includes(serveMarker)) {
-    const key = decodeURIComponent(imageUrl.slice(imageUrl.indexOf(serveMarker) + serveMarker.length))
+    const key = decodeURIComponent(
+      imageUrl.slice(imageUrl.indexOf(serveMarker) + serveMarker.length)
+    )
     const buffer = await downloadFile({ key, context: 'agent-generated-images' })
     return `data:${mimeFromUrl};base64,${buffer.toString('base64')}`
   }
@@ -136,6 +138,37 @@ async function fetchImageAsDataUri(imageUrl: string): Promise<string> {
   const mime = response.headers.get('content-type') || mimeFromUrl
   const buffer = Buffer.from(await response.arrayBuffer())
   return `data:${mime};base64,${buffer.toString('base64')}`
+}
+
+/**
+ * Prefers the Sim-hosted copy, then the public Fal CDN URL if the serve path fails.
+ * Older storyboards only have imageUrl; those still work via S3.
+ */
+async function fetchSceneImageAsDataUri(scene: StoryboardScene): Promise<string> {
+  const candidates = [scene.imageUrl, scene.falUrl].filter(
+    (url): url is string => typeof url === 'string' && url.trim().length > 0
+  )
+  if (candidates.length === 0) {
+    throw new Error(`Scene ${scene.index} is missing an image URL`)
+  }
+
+  let lastError: unknown
+  for (const url of candidates) {
+    try {
+      return await fetchImageAsDataUri(url)
+    } catch (error) {
+      lastError = error
+      logger.warn('Scene image download failed, trying next URL', {
+        sceneIndex: scene.index,
+        url: url.slice(0, 120),
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`Failed to download image for scene ${scene.index}`)
 }
 
 type StoryboardQueryRow = { id: string; topic: string | null; scenes: unknown }
@@ -285,7 +318,7 @@ export async function runStoryboardRender(
       sceneIndex: scene.index,
     })
 
-    const imageDataUri = await fetchImageAsDataUri(scene.imageUrl)
+    const imageDataUri = await fetchSceneImageAsDataUri(scene)
     const clip = await generateFalVideo({
       prompt: scene.prompt,
       model,

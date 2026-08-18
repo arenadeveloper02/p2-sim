@@ -47,7 +47,13 @@ export interface StoryboardScene {
   index: number
   prompt: string
   description: string
+  /** Sim-hosted serve URL. Requires a logged-in Sim session. */
   imageUrl: string
+  /**
+   * Original Fal.ai (or other provider) CDN URL. Publicly fetchable without a
+   * Sim session — this is what external UIs should render as the frame preview.
+   */
+  falUrl?: string
 }
 
 export interface RunStoryboardGenerateResult {
@@ -56,6 +62,8 @@ export interface RunStoryboardGenerateResult {
   topic: string
   scenes: StoryboardScene[]
   images: string[]
+  /** Public Fal CDN URLs, index-aligned with `scenes` / `images`. */
+  falUrls: string[]
   sceneCount: number
   content: string
 }
@@ -69,13 +77,51 @@ export interface RunStoryboardGenerateContext {
 
 function clampSceneCount(value: unknown): number {
   const parsed =
-    typeof value === 'number' ? value : typeof value === 'string' ? Number.parseInt(value, 10) : Number.NaN
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number.parseInt(value, 10)
+        : Number.NaN
   if (!Number.isFinite(parsed)) return DEFAULT_SCENE_COUNT
   return Math.min(MAX_SCENE_COUNT, Math.max(MIN_SCENE_COUNT, Math.trunc(parsed)))
 }
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * Keeps only a public http(s) provider URL. Sim serve URLs and data URIs are
+ * dropped so an external app never tries to fetch a 401-gated path.
+ */
+function asPublicHttpUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return undefined
+  if (trimmed.includes('/api/files/serve/')) return undefined
+  if (trimmed.startsWith('data:')) return undefined
+  return trimmed
+}
+
+function sceneFromGeneratedImage(options: {
+  index: number
+  prompt: string
+  description: string
+  imageUrl: string
+  sourceUrl?: string
+}): StoryboardScene {
+  const falUrl = asPublicHttpUrl(options.sourceUrl)
+  return {
+    index: options.index,
+    prompt: options.prompt,
+    description: options.description,
+    imageUrl: options.imageUrl,
+    ...(falUrl ? { falUrl } : {}),
+  }
+}
+
+function falUrlsFromScenes(scenes: StoryboardScene[]): string[] {
+  return scenes.map((scene) => scene.falUrl ?? '')
 }
 
 /**
@@ -365,7 +411,9 @@ export async function runStoryboardGenerate(
       provider: imageProvider,
       model: imageModel,
       apiKey: falApiKey,
-      prompt: stylePrompt ? `${rewritten.prompt}\n\nOverall style: ${stylePrompt}` : rewritten.prompt,
+      prompt: stylePrompt
+        ? `${rewritten.prompt}\n\nOverall style: ${stylePrompt}`
+        : rewritten.prompt,
       aspectRatio,
       workflowId: context.workflowId,
       workspaceId: context.workspaceId,
@@ -379,7 +427,13 @@ export async function runStoryboardGenerate(
 
     const updatedScenes = storyboard.scenes.map((s) =>
       s.index === scene.index
-        ? { ...s, description: rewritten.description, prompt: rewritten.prompt, imageUrl: image.imageUrl }
+        ? sceneFromGeneratedImage({
+            index: s.index,
+            prompt: rewritten.prompt,
+            description: rewritten.description,
+            imageUrl: image.imageUrl,
+            sourceUrl: image.sourceUrl,
+          })
         : s
     )
 
@@ -403,6 +457,7 @@ export async function runStoryboardGenerate(
       topic: storyboard.topic,
       scenes: updatedScenes,
       images: updatedScenes.map((s) => s.imageUrl),
+      falUrls: falUrlsFromScenes(updatedScenes),
       sceneCount: updatedScenes.length,
       content,
     }
@@ -450,12 +505,15 @@ export async function runStoryboardGenerate(
       requestId: `${requestId}-s${i + 1}`,
     })
 
-    scenes.push({
-      index: i + 1,
-      prompt: scene.prompt,
-      description: scene.description,
-      imageUrl: image.imageUrl,
-    })
+    scenes.push(
+      sceneFromGeneratedImage({
+        index: i + 1,
+        prompt: scene.prompt,
+        description: scene.description,
+        imageUrl: image.imageUrl,
+        sourceUrl: image.sourceUrl,
+      })
+    )
   }
 
   // Concepts are pitches to choose between, not scenes of a video. They are
@@ -476,6 +534,7 @@ export async function runStoryboardGenerate(
       topic,
       scenes,
       images: scenes.map((s) => s.imageUrl),
+      falUrls: falUrlsFromScenes(scenes),
       sceneCount: scenes.length,
       content,
     }
@@ -518,6 +577,7 @@ export async function runStoryboardGenerate(
     topic,
     scenes,
     images: scenes.map((s) => s.imageUrl),
+    falUrls: falUrlsFromScenes(scenes),
     sceneCount: scenes.length,
     content,
   }

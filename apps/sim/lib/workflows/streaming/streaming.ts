@@ -270,6 +270,43 @@ function isDangerousKey(key: string): boolean {
   return DANGEROUS_KEYS.includes(key)
 }
 
+/**
+ * Pulls public Fal CDN URLs out of a storyboard (or image) tool result so
+ * external UIs can render frames without a Sim session cookie.
+ */
+function extractPublicFalUrlsFromData(data: unknown): string[] {
+  const urls: string[] = []
+  const seen = new Set<string>()
+
+  const add = (value: unknown) => {
+    if (typeof value !== 'string') return
+    const trimmed = value.trim()
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return
+    if (trimmed.includes('/api/files/serve/')) return
+    if (seen.has(trimmed)) return
+    seen.add(trimmed)
+    urls.push(trimmed)
+  }
+
+  const visit = (value: unknown, depth: number) => {
+    if (!value || typeof value !== 'object' || depth > 8) return
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1)
+      return
+    }
+    const record = value as Record<string, unknown>
+    if (Array.isArray(record.falUrls)) {
+      for (const url of record.falUrls) add(url)
+    }
+    add(record.falUrl)
+    add(record.sourceUrl)
+    for (const nested of Object.values(record)) visit(nested, depth + 1)
+  }
+
+  visit(data, 0)
+  return urls
+}
+
 /** Knowledge base results (documentId, documentName, content, chunkIndex). Excluded from streamed content; chat shows them as references only. */
 function isKnowledgeResultsArray(value: unknown): value is Array<Record<string, unknown>> {
   return (
@@ -449,18 +486,28 @@ function attachToolCallImages(
     }
 
     const allImages = extractGeneratedImagesFromData(blockLog.output)
-    if (allImages.length === 0) {
+    const falUrls = extractPublicFalUrlsFromData(blockLog.output)
+    if (allImages.length === 0 && falUrls.length === 0) {
       continue
     }
 
     const streamedText = streamedContent.get(blockId) ?? ''
     const existing = output[blockId]
     const existingUrls = new Set(extractGeneratedImagesFromData(existing).map((image) => image.url))
+    const existingRecord =
+      existing && typeof existing === 'object' && !Array.isArray(existing)
+        ? (existing as Record<string, unknown>)
+        : undefined
+    const existingFalUrlList = Array.isArray(existingRecord?.falUrls)
+      ? existingRecord.falUrls.filter((url): url is string => typeof url === 'string')
+      : []
 
     const newUrls = allImages
       .map((image) => image.url)
       .filter((url) => url && !existingUrls.has(url) && !streamedText.includes(url))
-    if (newUrls.length === 0) {
+    const existingFalUrls = new Set(existingFalUrlList)
+    const newFalUrls = falUrls.filter((url) => !existingFalUrls.has(url))
+    if (newUrls.length === 0 && newFalUrls.length === 0) {
       continue
     }
 
@@ -470,9 +517,20 @@ function attachToolCallImages(
     }
     const blockOutput = output[blockId] as Record<string, unknown>
     const priorImagesField = blockOutput.images
-    blockOutput.images = Array.isArray(priorImagesField)
-      ? [...priorImagesField, ...newUrls]
-      : newUrls
+    const priorFalUrlsField = blockOutput.falUrls
+    if (newUrls.length > 0) {
+      blockOutput.images = Array.isArray(priorImagesField)
+        ? [...priorImagesField, ...newUrls]
+        : newUrls
+    }
+    if (newFalUrls.length > 0) {
+      blockOutput.falUrls = Array.isArray(priorFalUrlsField)
+        ? [
+            ...priorFalUrlsField.filter((url): url is string => typeof url === 'string'),
+            ...newFalUrls,
+          ]
+        : newFalUrls
+    }
 
     try {
       assertSelectedOutputBytes(output)
@@ -480,6 +538,7 @@ function attachToolCallImages(
       logger.warn(`[${requestId}] Tool-call images exceeded inline budget; omitting`, { blockId })
       if (previous) {
         blockOutput.images = priorImagesField
+        blockOutput.falUrls = priorFalUrlsField
       } else {
         output[blockId] = undefined
       }

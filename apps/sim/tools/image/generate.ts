@@ -408,6 +408,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       content?: string
       image?: string
       imageUrl?: string
+      sourceUrl?: string
       imageFile?: unknown
       fileName?: string
       contentType?: string
@@ -447,6 +448,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       const image = toImageFile(output.image ?? imageUrl, contentType)
       const images = normalizeImagesOutput(output.images, image, contentType)
       const metadata = output.metadata ?? { provider: '', model: '' }
+      const sourceUrl = output.sourceUrl || metadata.sourceUrl
 
       return {
         success: true,
@@ -455,6 +457,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
           image: image || images[0] || '',
           images,
           imageUrl,
+          ...(sourceUrl ? { sourceUrl } : {}),
           provider: output.provider || metadata.provider || '',
           model: output.model || metadata.model || '',
           metadata: {
@@ -475,6 +478,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
 
     const imageUrl = data.imageUrl || extractImageUrl(image)
     const images = normalizeImagesOutput(undefined, image, contentType)
+    const sourceUrl = data.sourceUrl || data.metadata?.sourceUrl
 
     return {
       success: true,
@@ -483,6 +487,7 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
         image: image || images[0] || '',
         images,
         imageUrl,
+        ...(sourceUrl ? { sourceUrl } : {}),
         provider: data.provider || data.metadata?.provider || '',
         model: data.model || data.metadata?.model || '',
         metadata: {
@@ -506,6 +511,11 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       items: { type: 'file', description: 'Generated image file' },
     },
     imageUrl: { type: 'string', description: 'Generated image URL' },
+    sourceUrl: {
+      type: 'string',
+      description:
+        'Original provider CDN URL (Fal.ai etc.) before Sim re-hosts the image. Publicly fetchable; imageUrl may require a Sim session.',
+    },
     provider: { type: 'string', description: 'Provider used' },
     model: { type: 'string', description: 'Model used' },
     metadata: {

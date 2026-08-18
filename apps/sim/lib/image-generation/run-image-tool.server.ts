@@ -124,6 +124,8 @@ function logGptImage2Route(
 export interface StoredImageResponse {
   content: string
   imageUrl: string
+  /** Original provider CDN URL (Fal.ai, OpenAI, etc.) before Sim re-hosts the bytes. */
+  sourceUrl?: string
   imageFile?: unknown
   fileName: string
   contentType: string
@@ -137,6 +139,7 @@ export interface StoredImageResponse {
     seed?: number
     jobId?: string
     contentType: string
+    sourceUrl?: string
   }
   __falaiCostDollars?: number
   __falaiBilling?: FalAICostMetadata
@@ -1363,9 +1366,11 @@ function buildStoredImageResponse(
   s3UploadFailed?: boolean
 ): StoredImageResponse {
   const imageBilling = buildImageBillingForBody(imageResult, body)
+  const sourceUrl = imageResult.sourceUrl
   return {
     content: imageUrl,
     imageUrl,
+    ...(sourceUrl ? { sourceUrl } : {}),
     imageFile,
     fileName: safeFileName,
     contentType: imageResult.contentType,
@@ -1379,6 +1384,7 @@ function buildStoredImageResponse(
       seed: imageResult.seed,
       jobId: imageResult.jobId,
       contentType: imageResult.contentType,
+      ...(sourceUrl ? { sourceUrl } : {}),
       ...(s3UploadFailed ? { s3UploadFailed } : {}),
     },
     __falaiCostDollars: imageResult.falaiCost?.costDollars,

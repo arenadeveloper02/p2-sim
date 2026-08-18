@@ -24,6 +24,7 @@ export interface StoryboardGenerateResponse extends ToolResponse {
     topic: string
     scenes: unknown[]
     images: string[]
+    falUrls: string[]
     sceneCount: number
     content: string
   }
@@ -103,9 +104,15 @@ export const storyboardGenerateTool: ToolConfig<
     topic: { type: 'string', description: 'The video idea used' },
     scenes: {
       type: 'json',
-      description: 'Ordered scenes: index, description, prompt and imageUrl',
+      description:
+        'Ordered scenes: index, description, prompt, imageUrl (Sim-hosted), falUrl (public Fal CDN URL for external UIs)',
     },
-    images: { type: 'array', description: 'Scene preview image URLs, in order' },
+    images: { type: 'array', description: 'Scene preview image URLs (Sim-hosted), in order' },
+    falUrls: {
+      type: 'array',
+      description:
+        'Public Fal.ai CDN URLs for each scene, index-aligned with images. Use these in external apps — imageUrl requires a Sim login.',
+    },
     sceneCount: { type: 'number', description: 'Number of scenes generated' },
     content: { type: 'string', description: 'Scene list and reorder instructions for chat' },
   },

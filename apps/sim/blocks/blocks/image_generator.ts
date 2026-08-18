@@ -1301,6 +1301,10 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
       description: 'All generated image files',
     },
     imageUrl: { type: 'string', description: 'Generated image URL' },
+    sourceUrl: {
+      type: 'string',
+      description: 'Original provider CDN URL before Sim re-hosts the image',
+    },
     provider: { type: 'string', description: 'Provider used' },
     model: { type: 'string', description: 'Model used' },
     metadata: { type: 'json', description: 'Generation metadata' },

@@ -153,9 +153,17 @@ export const StoryboardBlock: BlockConfig<StoryboardGenerateResponse> = {
   },
 
   outputs: {
-    images: { type: 'array', description: 'Scene preview image URLs, in order' },
+    images: { type: 'array', description: 'Scene preview image URLs (Sim-hosted), in order' },
+    falUrls: {
+      type: 'array',
+      description: 'Public Fal.ai CDN URLs for each scene, index-aligned with images',
+    },
     content: { type: 'string', description: 'Scene list and reorder instructions for chat' },
-    scenes: { type: 'json', description: 'Ordered scenes: index, description, prompt, imageUrl' },
+    scenes: {
+      type: 'json',
+      description:
+        'Ordered scenes: index, description, prompt, imageUrl (Sim-hosted), falUrl (public Fal CDN URL)',
+    },
     storyboardId: { type: 'string', description: 'Identifier of the saved storyboard' },
     conversationId: { type: 'string', description: 'Conversation the storyboard belongs to' },
     topic: { type: 'string', description: 'The video idea used' },

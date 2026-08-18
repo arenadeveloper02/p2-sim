@@ -31,6 +31,7 @@ export interface ImageGenerationResponse extends ToolResponse {
     image: unknown
     images: unknown[]
     imageUrl: string
+    sourceUrl?: string
     provider: string
     model: string
     metadata: {
@@ -41,6 +42,7 @@ export interface ImageGenerationResponse extends ToolResponse {
       seed?: number
       jobId?: string
       contentType?: string
+      sourceUrl?: string
       count?: number
       requested?: number
       failed?: number
