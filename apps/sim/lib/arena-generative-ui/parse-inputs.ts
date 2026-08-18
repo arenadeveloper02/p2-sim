@@ -225,6 +225,29 @@ export function parsePageHints(raw: unknown): ArenaGenerativePageHint[] {
 }
 
 /**
+ * Normalizes a binding's `inputSchema` / `outputSchema` list, dropping entries
+ * without a string `name` and defaulting a missing `type` to `string`.
+ * Returns undefined when the value is not an array so the key stays absent.
+ */
+function schemaFields(raw: unknown): Array<{ name: string; type: string }> | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined
+  }
+  return raw
+    .filter((field): field is { name: string; type?: unknown } => {
+      return (
+        Boolean(field) &&
+        typeof field === 'object' &&
+        typeof (field as { name?: unknown }).name === 'string'
+      )
+    })
+    .map((field) => ({
+      name: field.name,
+      type: typeof field.type === 'string' ? field.type : 'string',
+    }))
+}
+
+/**
  * Parses API bindings from a JSON array or already-parsed list.
  * Empty means no CTAs — the model must not invent keys.
  */
@@ -295,19 +318,13 @@ export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
             : undefined,
       }
     }
-    if (Array.isArray(record.inputSchema)) {
-      binding.inputSchema = record.inputSchema
-        .filter((field): field is { name: string; type: string } => {
-          return (
-            Boolean(field) &&
-            typeof field === 'object' &&
-            typeof (field as { name?: unknown }).name === 'string'
-          )
-        })
-        .map((field) => ({
-          name: field.name,
-          type: typeof field.type === 'string' ? field.type : 'string',
-        }))
+    const inputSchema = schemaFields(record.inputSchema)
+    if (inputSchema) {
+      binding.inputSchema = inputSchema
+    }
+    const outputSchema = schemaFields(record.outputSchema)
+    if (outputSchema) {
+      binding.outputSchema = outputSchema
     }
     if (record.stream === true) {
       binding.stream = true

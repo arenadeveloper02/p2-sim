@@ -43,6 +43,15 @@ export const arenaGenerativeApiBindingSchema = z
       )
       .max(40)
       .optional(),
+    outputSchema: z
+      .array(
+        z.object({
+          name: z.string().min(1, 'outputSchema field name cannot be empty'),
+          type: z.string().min(1).optional(),
+        })
+      )
+      .max(40, 'outputSchema is limited to 40 fields')
+      .optional(),
     stream: z.boolean().optional(),
   })
   .superRefine((binding, ctx) => {

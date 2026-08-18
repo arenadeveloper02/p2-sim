@@ -1,3 +1,4 @@
+import { outputSchemaFromSample } from '@/lib/arena-generative-ui/output-schema'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeHttpMethod,
@@ -46,6 +47,8 @@ export interface HttpBindingFromCurlInput {
   headersSecretName?: string
   /** When true, the binding streams CTA tokens instead of waiting for JSON. */
   stream?: boolean
+  /** Sample response JSON. Only field names and types are kept. */
+  outputSample?: string
 }
 
 /**
@@ -90,6 +93,10 @@ export function httpBindingFromCurl(input: HttpBindingFromCurlInput): ArenaGener
   }
   if (parsed.inputSchema && parsed.inputSchema.length > 0) {
     binding.inputSchema = parsed.inputSchema
+  }
+  const outputSchema = outputSchemaFromSample(input.outputSample ?? '')
+  if (outputSchema.length > 0) {
+    binding.outputSchema = outputSchema
   }
   if (input.stream === true) {
     binding.stream = true

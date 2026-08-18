@@ -306,7 +306,7 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'If no API bindings were declared, omit manifest.actions or leave it empty and use navigation only.',
   'onSuccess.navigate and NavLink.to / Button.navigateTo / navigate action `to` must be existing page paths.',
   'Every page must be reachable from entryPath via NavLink, navigateTo, navigate, or onSuccess.navigate.',
-  'DataText, Text, Alert, and ListItem render markdown. Put API bodies on DataText (e.g. output.content); do not split markdown into Heading/List elements.',
+  'DataText, Text, Alert, and ListItem render markdown. Put a prose API body on a single DataText; do not split markdown into Heading/List elements.',
   'Layout: each page is a full-page app screen. Page → Section (leave width at the wide default so it fills up to 1280px) → content. Use the horizontal space; do not stack every element in one narrow centre column. Do not set maxWidth unless the brief demands an exact cap.',
   'Collections: render a list of items as a Grid of Cards (columns 2 or 3), or a Table when the items share the same fields. Never one full-width Card per item stacked vertically.',
   'Tabular data goes in Table, metrics go in Stat inside a Grid, record details go in KeyValue, short statuses go in Badge.',
@@ -317,6 +317,12 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Use catalog props (backgroundColor, padding, gap, columns, justify, color) so the layout is not the default grey dump.',
   'Do not include a logo, wordmark, or decorative Image for branding. The host already provides the outer shell.',
 ] as const
+
+/** Added to the generator prompt only when at least one API binding is declared. */
+export const ARENA_GENERATIVE_UI_ACTION_RESULT_RULE = [
+  'CTA results: when an action succeeds the host merges the response object top-level keys into app state, so a statePath is the response key itself — use "articles", never "data.articles", "output.articles", or "response.articles". A response that is an array or a plain value lands under "result". "content" always holds a text rendering of the whole response.',
+  'When a binding declares outputSchema, bind its field names as statePath instead of dumping "content": an array field such as "articles" with children "articles[].title" becomes Table statePath="articles" with columns from those child names; a single number or string becomes Stat or KeyValue; only fall back to DataText statePath="content" for prose or when the binding declares no outputSchema.',
+].join(' ')
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */
 export const ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE =

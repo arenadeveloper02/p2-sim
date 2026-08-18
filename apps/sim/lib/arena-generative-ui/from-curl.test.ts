@@ -140,6 +140,61 @@ describe('httpBindingFromCurl', () => {
   })
 })
 
+describe('httpBindingFromCurl output format', () => {
+  it('omits outputSchema when no sample is given', () => {
+    const binding = httpBindingFromCurl({
+      key: 'recommend_articles',
+      curl: ARTICLE_RECOMMENDATION_CURL,
+    })
+    expect(binding.outputSchema).toBeUndefined()
+  })
+
+  it('derives outputSchema paths from a sample response', () => {
+    const binding = httpBindingFromCurl({
+      key: 'recommend_articles',
+      curl: ARTICLE_RECOMMENDATION_CURL,
+      outputSample: '{"articles":[{"title":"First","url":"https://example.com"}],"count":1}',
+    })
+    expect(binding.outputSchema).toEqual([
+      { name: 'articles', type: 'array' },
+      { name: 'articles[].title', type: 'string' },
+      { name: 'articles[].url', type: 'string' },
+      { name: 'count', type: 'number' },
+    ])
+  })
+
+  it('stores field names and types but never the sample values', () => {
+    const binding = httpBindingFromCurl({
+      key: 'crm_lookup',
+      curl: 'curl -X POST https://api.example.com/lookup',
+      outputSample: '{"email":"ada@example.com","plan":"enterprise"}',
+    })
+    const serialized = JSON.stringify(binding)
+    expect(serialized).toContain('email')
+    expect(serialized).not.toContain('ada@example.com')
+    expect(serialized).not.toContain('enterprise')
+  })
+
+  it('throws when the sample is not valid JSON', () => {
+    expect(() =>
+      httpBindingFromCurl({
+        key: 'lookup',
+        curl: 'curl -X POST https://api.example.com/lookup',
+        outputSample: 'title, url',
+      })
+    ).toThrow('Output format must be valid JSON')
+  })
+
+  it('ignores a blank sample', () => {
+    const binding = httpBindingFromCurl({
+      key: 'lookup',
+      curl: 'curl -X POST https://api.example.com/lookup',
+      outputSample: '   ',
+    })
+    expect(binding.outputSchema).toBeUndefined()
+  })
+})
+
 describe('curlLooksLikeStream', () => {
   it('is false for a plain JSON POST including the article-recommendation curl', () => {
     expect(curlLooksLikeStream(ARTICLE_RECOMMENDATION_CURL)).toBe(false)

@@ -3,6 +3,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import {
+  ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
   ARENA_GENERATIVE_UI_OUTPUT_RULES,
   ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
   arenaGenerativeUiCatalog,
@@ -68,11 +69,9 @@ export async function generateArenaGenerativeManifest(
   const systemPrompt = arenaGenerativeUiCatalog.prompt({
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
-      'This UI usually renders inside an Arena iframe (sometimes as a Sim page). emailId is optional. Do not invent a login form, left nav, or logo.',
-      'Prefer Arena-like surfaces: calm layout, clear hierarchy, one primary CTA per page.',
-      'Each page is a padded Section wrapping one Card. Use Heading h1, a short supporting Text, then the primary action.',
-      'Iframe-friendly: single column, compact padding. No sidebar, no logo, no full-page app shell.',
-      'Use catalog padding, gap, maxWidth, and backgroundColor. No lorem or "Page 1" copy.',
+      'This app renders as a full page, embedded in Arena or opened directly. emailId is optional. Do not invent a login form or a logo.',
+      'Prefer Arena-like surfaces: calm palette, clear hierarchy, generous whitespace between groups.',
+      ...(params.apiBindings.length > 0 ? [ARENA_GENERATIVE_UI_ACTION_RESULT_RULE] : []),
       ...(hasStreamingBinding ? [ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE] : []),
     ],
   })
@@ -83,6 +82,7 @@ export async function generateArenaGenerativeManifest(
     label: binding.label,
     kind: binding.kind,
     inputSchema: binding.inputSchema ?? [],
+    outputSchema: binding.outputSchema ?? [],
     stream: binding.stream === true,
   }))
 

@@ -58,6 +58,12 @@ export interface ArenaGenerativeApiBinding {
   workflowId?: string
   http?: ArenaGenerativeHttpBinding
   inputSchema?: Array<{ name: string; type: string }>
+  /**
+   * Response field names and types, usable as `statePath` values because the
+   * host merges an object response's top-level keys into app state. Generator
+   * metadata only — never validated against the live response.
+   */
+  outputSchema?: Array<{ name: string; type: string }>
   /** When true, the host streams CTA tokens into DataText instead of waiting for JSON. */
   stream?: boolean
 }

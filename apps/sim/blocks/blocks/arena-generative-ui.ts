@@ -121,7 +121,7 @@ Return ONLY the specification text.`,
       description:
         'Named APIs CTAs may call. Leave blank for a navigation-only app — the model cannot invent API keys.',
       tooltip:
-        'Named CTA backends. Leave blank for navigation-only. Use Add an API to paste a curl, or edit this JSON. You invent key; use that same string in User Input (e.g. "Submit calls qualify_lead"). workflowId is the deployed workflow id. Set "stream": true to stream tokens into DataText on the form page.\n\n[{"key":"qualify_lead","kind":"workflow","workflowId":"wf_...","label":"Qualify","stream":true}]',
+        'Named CTA backends. Leave blank for navigation-only. Use Add an API to paste a curl, or edit this JSON. You invent key; use that same string in User Input (e.g. "Submit calls qualify_lead"). workflowId is the deployed workflow id. Set "stream": true to stream tokens into DataText on the form page. Add "outputSchema" (or paste a sample in Add an API) so the result is laid out as a Table or Stat instead of one text blob.\n\n[{"key":"qualify_lead","kind":"workflow","workflowId":"wf_...","label":"Qualify","stream":true,"outputSchema":[{"name":"score","type":"number"}]}]',
     },
     {
       id: 'designNotes',

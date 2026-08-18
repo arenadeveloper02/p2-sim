@@ -55,6 +55,7 @@ export function ArenaApiBindingImportHelper({
   const [secretVar, setSecretVar] = useState('')
   const [curl, setCurl] = useState('')
   const [streamMode, setStreamMode] = useState<'off' | 'on'>('off')
+  const [outputSample, setOutputSample] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const envOptions = useMemo(() => {
@@ -72,6 +73,7 @@ export function ArenaApiBindingImportHelper({
     setSecretVar('')
     setCurl('')
     setStreamMode('off')
+    setOutputSample('')
     setError(null)
   }
 
@@ -93,6 +95,7 @@ export function ArenaApiBindingImportHelper({
         curl,
         headersSecretName: secretVar,
         stream: streamMode === 'on',
+        outputSample,
       })
       setStoreValue(appendApiBinding(storeValue ?? '', binding))
       handleOpenChange(false)
@@ -167,6 +170,18 @@ export function ArenaApiBindingImportHelper({
               options={STREAM_SWITCH_OPTIONS}
             />
           </ChipModalField>
+          <ChipModalField
+            type='textarea'
+            title='Output format'
+            value={outputSample}
+            onChange={setOutputSample}
+            placeholder={`{"articles":[{"title":"Example","url":"https://example.com"}]}`}
+            hint='Paste a sample response so the generator can lay out the result. Only field names and types are saved — values are discarded.'
+            rows={6}
+            minHeight={120}
+            resizable
+            mono
+          />
           <ChipModalError>{error}</ChipModalError>
         </ChipModalBody>
         <ChipModalFooter

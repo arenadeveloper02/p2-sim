@@ -87,6 +87,46 @@ describe('parseApiBindings', () => {
   it('rejects non-JSON bindings instead of inventing APIs', () => {
     expect(() => parseApiBindings('qualify_lead')).toThrow('apiBindings must be valid JSON')
   })
+
+  it('round-trips outputSchema on a hand-written workflow binding', () => {
+    expect(
+      parseApiBindings(
+        '[{"key":"summarize","kind":"workflow","workflowId":"wf-1","outputSchema":[{"name":"articles","type":"array"},{"name":"articles[].title","type":"string"}]}]'
+      )
+    ).toEqual([
+      {
+        key: 'summarize',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        label: 'summarize',
+        outputSchema: [
+          { name: 'articles', type: 'array' },
+          { name: 'articles[].title', type: 'string' },
+        ],
+      },
+    ])
+  })
+
+  it('defaults a missing schema field type to string and drops nameless entries', () => {
+    const [binding] = parseApiBindings([
+      {
+        key: 'lookup',
+        kind: 'http',
+        http: { method: 'POST', url: 'https://api.example.com/lookup' },
+        inputSchema: [{ name: 'email' }, { type: 'string' }, 'nope'],
+        outputSchema: [{ name: 'plan' }, null],
+      },
+    ])
+    expect(binding.inputSchema).toEqual([{ name: 'email', type: 'string' }])
+    expect(binding.outputSchema).toEqual([{ name: 'plan', type: 'string' }])
+  })
+
+  it('omits outputSchema when the binding does not declare one', () => {
+    const [binding] = parseApiBindings([
+      { key: 'qualify_lead', kind: 'workflow', workflowId: 'wf-1', outputSchema: 'articles' },
+    ])
+    expect(binding.outputSchema).toBeUndefined()
+  })
 })
 
 describe('arenaGenerativeGenerateBodySchema empty optionals', () => {

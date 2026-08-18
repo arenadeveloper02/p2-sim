@@ -109,10 +109,54 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).not.toContain('640px')
     expect(system).not.toContain('Single column only')
     expect(system).not.toContain('iframe-narrow')
+    expect(system).not.toContain('single column')
+    expect(system).not.toContain('one Card')
+    expect(system).not.toContain('one primary CTA per page')
+    expect(system).not.toContain('full-page app shell')
     expect(system).toContain('Grid')
     expect(system).toContain('Table')
     expect(system).toContain('PageHeader')
     expect(system).toContain('Tabs')
+  })
+
+  it('explains how a CTA response maps to statePath when bindings are declared', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({
+      userInput: 'Recommend articles.',
+      apiBindings: [
+        {
+          key: 'recommend_articles',
+          label: 'Recommend',
+          kind: 'workflow',
+          workflowId: 'wf-1',
+          outputSchema: [
+            { name: 'articles', type: 'array' },
+            { name: 'articles[].title', type: 'string' },
+          ],
+        },
+      ],
+    })
+
+    const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+    expect(system).toContain('top-level keys into app state')
+    expect(system).toContain('never "data.articles"')
+    expect(system).toContain('outputSchema')
+
+    const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+    expect(userMessage).toContain('articles[].title')
+  })
+
+  it('omits the CTA result rule when there are no bindings', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({
+      userInput: 'Static brochure.',
+      apiBindings: [],
+    })
+
+    const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+    expect(system).not.toContain('top-level keys into app state')
   })
 
   it('passes stream: true into the bindings summary and localized streaming rules', async () => {
