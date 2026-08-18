@@ -77,6 +77,19 @@ function toneClass(value: unknown, fallback: keyof typeof TONE_CLASSES = 'info')
   return TONE_CLASSES[tone as keyof typeof TONE_CLASSES] ?? TONE_CLASSES[fallback]
 }
 
+const DELTA_TONE_CLASSES = {
+  positive: 'text-emerald-700',
+  negative: 'text-red-700',
+  neutral: 'text-[var(--color-ds-grey-600,#5b5f6b)]',
+} as const
+
+function deltaToneClass(value: unknown): string {
+  const tone = asString(value, 'neutral')
+  return (
+    DELTA_TONE_CLASSES[tone as keyof typeof DELTA_TONE_CLASSES] ?? DELTA_TONE_CLASSES.neutral
+  )
+}
+
 function sectionWidthClass(value: unknown): string {
   const width = asString(value, 'wide')
   return SECTION_WIDTHS[width as keyof typeof SECTION_WIDTHS] ?? SECTION_WIDTHS.wide
@@ -196,6 +209,102 @@ function ProgressStepsView({ pending, steps, durationMs }: ProgressStepsViewProp
       })}
     </ol>
   )
+}
+
+const SKELETON_BAR = 'animate-pulse rounded bg-[var(--color-ds-grey-200,#e2e3e5)]'
+
+const DEFAULT_SKELETON_LINES: Record<SkeletonVariant, number> = {
+  text: 3,
+  stat: 1,
+  table: 4,
+  card: 3,
+  form: 3,
+}
+
+type SkeletonVariant = 'text' | 'stat' | 'table' | 'card' | 'form'
+
+function skeletonVariant(value: unknown): SkeletonVariant {
+  const variant = asString(value, 'text')
+  return variant in DEFAULT_SKELETON_LINES ? (variant as SkeletonVariant) : 'text'
+}
+
+interface SkeletonBlockProps {
+  variant: SkeletonVariant
+  lines: number
+}
+
+/**
+ * Shape-matched loading placeholder. Widths taper so a text block reads as prose
+ * rather than a solid slab.
+ */
+function SkeletonBlock({ variant, lines }: SkeletonBlockProps) {
+  const rows = Math.max(1, Math.min(12, lines))
+
+  if (variant === 'stat') {
+    return (
+      <div
+        aria-hidden
+        data-testid='skeleton'
+        className='flex flex-col gap-2 rounded-xl border border-[var(--color-ds-grey-200,#e2e3e5)] bg-white p-4'
+      >
+        <div className={cn(SKELETON_BAR, 'h-3 w-1/2')} />
+        <div className={cn(SKELETON_BAR, 'h-7 w-2/3')} />
+      </div>
+    )
+  }
+
+  if (variant === 'table') {
+    return (
+      <div aria-hidden data-testid='skeleton' className='flex w-full flex-col gap-2'>
+        <div className={cn(SKELETON_BAR, 'h-4 w-full opacity-70')} />
+        {Array.from({ length: rows }, (_, index) => (
+          <div key={index} className={cn(SKELETON_BAR, 'h-8 w-full')} />
+        ))}
+      </div>
+    )
+  }
+
+  const body = (
+    <div className='flex w-full flex-col gap-2'>
+      {Array.from({ length: rows }, (_, index) => (
+        <div
+          key={index}
+          className={cn(SKELETON_BAR, variant === 'form' ? 'h-9 w-full' : 'h-4')}
+          style={variant === 'form' ? undefined : { width: index === rows - 1 ? '60%' : '100%' }}
+        />
+      ))}
+    </div>
+  )
+
+  if (variant === 'card') {
+    return (
+      <div
+        aria-hidden
+        data-testid='skeleton'
+        className='rounded-xl border border-[var(--color-ds-grey-200,#e2e3e5)] bg-white p-5'
+      >
+        {body}
+      </div>
+    )
+  }
+
+  return (
+    <div aria-hidden data-testid='skeleton'>
+      {body}
+    </div>
+  )
+}
+
+/**
+ * True when a bound region has nothing to show yet, so a pending action can
+ * render a placeholder instead of collapsing to nothing.
+ */
+function isEmptyStateValue(value: unknown): boolean {
+  if (value === undefined || value === null) return true
+  if (typeof value === 'string') return value.trim().length === 0
+  if (Array.isArray(value)) return value.length === 0
+  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length === 0
+  return false
 }
 
 function readStatePath(state: Record<string, unknown>, path: string): unknown {
@@ -393,9 +502,11 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         )
       }
       case 'Table': {
-        const stateValue = asString(props.statePath)
-          ? readStatePath(state, asString(props.statePath))
-          : undefined
+        const statePath = asString(props.statePath)
+        const stateValue = statePath ? readStatePath(state, statePath) : undefined
+        if (statePath && pending && isEmptyStateValue(stateValue)) {
+          return <SkeletonBlock variant='table' lines={DEFAULT_SKELETON_LINES.table} />
+        }
         const declaredHeaders = asString(props.columns)
           .split(',')
           .map((header) => header.trim())
@@ -444,13 +555,16 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         )
       }
       case 'Stat': {
-        const stateValue = asString(props.statePath)
-          ? readStatePath(state, asString(props.statePath))
-          : undefined
+        const statePath = asString(props.statePath)
+        const stateValue = statePath ? readStatePath(state, statePath) : undefined
+        if (statePath && pending && isEmptyStateValue(stateValue) && !asString(props.value)) {
+          return <SkeletonBlock variant='stat' lines={DEFAULT_SKELETON_LINES.stat} />
+        }
         const value =
           stateValue === undefined
             ? asString(props.value)
             : displayFromStateValue(stateValue, asString(props.value))
+        const delta = asString(props.delta)
         return (
           <div
             className='flex flex-col gap-1 rounded-xl border border-[var(--color-ds-grey-200,#e2e3e5)] bg-white p-4'
@@ -459,7 +573,14 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             <span className='text-[var(--color-ds-grey-500,#8a8d99)] text-xs uppercase tracking-wide'>
               {asString(props.label)}
             </span>
-            <span className='font-semibold text-2xl'>{value}</span>
+            <div className='flex flex-wrap items-baseline gap-2'>
+              <span className='font-semibold text-2xl'>{value}</span>
+              {delta ? (
+                <span className={cn('font-medium text-xs', deltaToneClass(props.deltaTone))}>
+                  {delta}
+                </span>
+              ) : null}
+            </div>
             {asString(props.hint) ? (
               <span className='text-[var(--color-ds-grey-600,#5b5f6b)] text-xs'>
                 {asString(props.hint)}
@@ -481,10 +602,12 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           </span>
         )
       case 'KeyValue': {
-        const stateValue = asString(props.statePath)
-          ? readStatePath(state, asString(props.statePath))
-          : undefined
+        const statePath = asString(props.statePath)
+        const stateValue = statePath ? readStatePath(state, statePath) : undefined
         const pairs = keyValuePairs(props.items, stateValue)
+        if (pairs.length === 0 && statePath && pending) {
+          return <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
+        }
         if (pairs.length === 0) return null
         return (
           <dl className='grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-4 gap-y-2 text-sm'>
@@ -503,8 +626,17 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             className='rounded-xl border border-[var(--color-ds-grey-200,#e2e3e5)] bg-white p-5 shadow-sm'
             style={styleFromProps(props)}
           >
-            {asString(props.title) ? (
-              <h2 className='mb-3 font-semibold text-lg'>{asString(props.title)}</h2>
+            {asString(props.title) || asString(props.description) ? (
+              <div className='mb-3 flex flex-col gap-1'>
+                {asString(props.title) ? (
+                  <h2 className='font-semibold text-lg'>{asString(props.title)}</h2>
+                ) : null}
+                {asString(props.description) ? (
+                  <p className='text-[var(--color-ds-grey-600,#5b5f6b)] text-sm'>
+                    {asString(props.description)}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
             {children}
           </div>
@@ -533,6 +665,9 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       case 'DataText': {
         const value = readStatePath(state, asString(props.statePath))
         const display = displayFromStateValue(value, asString(props.fallback, ''))
+        if (!display && pending) {
+          return <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
+        }
         return (
           <MarkdownText className='font-medium' style={styleFromProps(props)} content={display} />
         )
@@ -549,6 +684,16 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             {asString(props.label, 'Loading…')}
           </p>
         ) : null
+      case 'Skeleton': {
+        if (!pending) return null
+        const variant = skeletonVariant(props.variant)
+        return (
+          <SkeletonBlock
+            variant={variant}
+            lines={asPositiveNumber(props.lines, DEFAULT_SKELETON_LINES[variant])}
+          />
+        )
+      }
       case 'ProgressSteps': {
         const steps = asString(props.steps)
           .split('\n')

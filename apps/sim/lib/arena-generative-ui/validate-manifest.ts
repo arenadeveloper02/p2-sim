@@ -1,5 +1,6 @@
 import type { Spec } from '@json-render/core'
 import { arenaGenerativeUiCatalog } from '@/lib/arena-generative-ui/catalog'
+import { normalizeGeneratedSpec } from '@/lib/arena-generative-ui/normalize-spec'
 import {
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
   type ArenaGenerativeApiBinding,
@@ -80,19 +81,6 @@ function normalizePagesRecord(pagesRaw: unknown): Record<string, unknown> | null
     return pagesRaw as Record<string, unknown>
   }
   return null
-}
-
-function normalizeSpec(raw: unknown): Spec | null {
-  if (!raw || typeof raw !== 'object') return null
-  const spec = structuredClone(raw) as Spec
-  const elements = spec.elements as Record<string, FlatElement> | undefined
-  if (!elements || typeof elements !== 'object') return spec
-  for (const element of Object.values(elements)) {
-    if (element && typeof element === 'object' && !Array.isArray(element.children)) {
-      element.children = []
-    }
-  }
-  return spec
 }
 
 function collectNavTargets(spec: Spec): string[] {
@@ -208,7 +196,7 @@ export function validateArenaGenerativeManifest(
     if (path !== key) {
       return { success: false, error: `Page key "${key}" must match path "${path}"` }
     }
-    const spec = normalizeSpec(page.spec)
+    const spec = normalizeGeneratedSpec(page.spec)
     if (!spec) {
       return { success: false, error: `Page "${key}" is missing a spec` }
     }

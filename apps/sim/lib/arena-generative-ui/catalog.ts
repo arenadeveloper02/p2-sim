@@ -84,11 +84,13 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
     Card: {
       props: z.object({
         title: z.string().nullable(),
+        description: z.string().nullable(),
         padding: z.string().nullable(),
         backgroundColor: z.string().nullable(),
       }),
       slots: ['default'],
-      description: 'Card container with optional title',
+      description:
+        'Card container with an optional title and a one-line description under it. Groups related content into a legible chunk.',
     },
     Heading: {
       props: z.object({
@@ -131,9 +133,11 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         value: z.string().nullable(),
         statePath: z.string().nullable(),
         hint: z.string().nullable(),
+        delta: z.string().nullable(),
+        deltaTone: z.enum(['positive', 'negative', 'neutral']).nullable(),
       }),
       description:
-        'Single metric with a label. Use value for static numbers or statePath to read one from host state. Place several inside a Grid.',
+        'Single metric with a label and a primary value. Use value for static numbers or statePath to read one from host state. delta is a short change indicator such as "+14.2%" and deltaTone colours it. Place several inside a Grid.',
     },
     Badge: {
       props: z.object({
@@ -161,7 +165,16 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       props: z.object({
         label: z.string().nullable(),
       }),
-      description: 'Loading indicator shown while an API action is in flight',
+      description:
+        'Small inline loading label shown while an API action is in flight. Prefer Skeleton for a region that will fill with data.',
+    },
+    Skeleton: {
+      props: z.object({
+        variant: z.enum(['text', 'stat', 'table', 'card', 'form']).nullable(),
+        lines: z.union([z.number(), z.string()]).nullable().optional(),
+      }),
+      description:
+        'Loading placeholder shown only while a CTA is pending. variant picks the shape (text lines, stat block, table rows, card, form rows) and lines sets how many rows. Table, Stat, KeyValue and DataText bound to a statePath already show a placeholder automatically, so add Skeleton for regions you build from static children.',
     },
     ProgressSteps: {
       props: z.object({
@@ -291,6 +304,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
   },
 })
 
+/** Role framing prepended to the generator system prompt. */
+export const ARENA_GENERATIVE_UI_PERSONA =
+  'You are an expert principal frontend engineer specializing in design systems, dashboards, and enterprise research platforms. Your only output is a single valid JSON object conforming to the schema below. Emit no markdown fences, no explanation, no preamble, and no trailing text.'
+
 export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Output a single complete JSON object. Do NOT wrap it in markdown fences. Do NOT output JSONL patches.',
   'Shape: { "title": string, "content": string, "manifest": { "entryPath": string, "pages": { [path]: { "title", "path", "spec" } }, "actions": { [actionId]: { "apiKey", "inputMapping?", "onSuccess?", "onError?" } } } }',
@@ -308,13 +325,17 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Every page must be reachable from entryPath via NavLink, navigateTo, navigate, or onSuccess.navigate.',
   'DataText, Text, Alert, and ListItem render markdown. Put a prose API body on a single DataText; do not split markdown into Heading/List elements.',
   'Layout: each page is a full-page app screen. Page → Section (leave width at the wide default so it fills up to 1280px) → content. Use the horizontal space; do not stack every element in one narrow centre column. Do not set maxWidth unless the brief demands an exact cap.',
+  'Measure: dashboards, collections and tables stay wide, but a narrative block — a report body, an analysis, a long DataText — goes in its own Section with width "narrow" or in the main column of Columns. Never let prose run the full 1280px.',
+  'Spacing: group related elements into a Card or Stack so data reads as chunks, and leave real space between groups. gap and padding take CSS lengths such as "16px" or "24px", never size words like "md" or "lg".',
+  'Surfaces: there are exactly two — the page canvas and the white Card/Stat surface, both supplied by the host. Do not set backgroundColor unless the brief names a specific colour. Build hierarchy from heading level, weight and whitespace instead of coloured fills or borders.',
   'Collections: render a list of items as a Grid of Cards (columns 2 or 3), or a Table when the items share the same fields. Never one full-width Card per item stacked vertically.',
   'Tabular data goes in Table, metrics go in Stat inside a Grid, record details go in KeyValue, short statuses go in Badge.',
-  'Forms: group related fields side by side in a Grid (columns 2) and keep only long free-text fields full width. Forms have labeled fields, one SubmitButton, and an optional Back NavLink.',
+  'Forms: every interactive field carries an explicit label. Pair short related fields side by side in a Grid (columns 2) and keep long free-text fields full width. Forms have one SubmitButton and an optional Back NavLink, and stay left-aligned — never centre a form field.',
   'Chrome: start a page with PageHeader (title, subtitle, primary action as its child) instead of a bare Heading. Use Toolbar for a row of filters or secondary buttons, and Columns for a main area beside a supporting sidebar.',
   'Navigation: when the app has three or more pages, put a Tabs element with one "Label|path" line per top-level page at the top of each page and set activePath to the current path. Detail pages are reached with NavLink/navigateTo and offer a Back NavLink.',
   'Typography: one h1-level page title per page (PageHeader.title counts), then a short supporting subtitle. Never title a page "Page 1" or use lorem ipsum.',
-  'Use catalog props (backgroundColor, padding, gap, columns, justify, color) so the layout is not the default grey dump.',
+  'Heading order: nest levels sequentially and never skip or invert them. PageHeader.title is the page h1 and Card.title renders an h2, so a Heading inside a Card starts at h3.',
+  'Loading: any region that fills from a CTA response must have a loading state. Table, Stat, KeyValue and DataText bound to a statePath already show a placeholder automatically, so add nothing there. For a region you build from static children, add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]} — variant is text, stat, table, card or form. Use Spinner only for a short inline wait, never as the sole feedback for a long run.',
   'Do not include a logo, wordmark, or decorative Image for branding. The host already provides the outer shell.',
 ] as const
 

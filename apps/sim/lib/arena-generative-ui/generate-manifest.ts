@@ -5,9 +5,11 @@ import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import {
   ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
   ARENA_GENERATIVE_UI_OUTPUT_RULES,
+  ARENA_GENERATIVE_UI_PERSONA,
   ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
   arenaGenerativeUiCatalog,
 } from '@/lib/arena-generative-ui/catalog'
+import { ARENA_GENERATIVE_UI_GOLD_EXAMPLE } from '@/lib/arena-generative-ui/gold-example'
 import {
   extractManifestCandidate,
   parseLlmJsonObject,
@@ -66,15 +68,19 @@ export async function generateArenaGenerativeManifest(
   }
 
   const hasStreamingBinding = params.apiBindings.some((binding) => binding.stream === true)
-  const systemPrompt = arenaGenerativeUiCatalog.prompt({
+  const catalogPrompt = arenaGenerativeUiCatalog.prompt({
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
       'This app renders as a full page, embedded in Arena or opened directly. emailId is optional. Do not invent a login form or a logo.',
-      'Prefer Arena-like surfaces: calm palette, clear hierarchy, generous whitespace between groups.',
       ...(params.apiBindings.length > 0 ? [ARENA_GENERATIVE_UI_ACTION_RESULT_RULE] : []),
       ...(hasStreamingBinding ? [ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE] : []),
     ],
   })
+  const systemPrompt = [
+    ARENA_GENERATIVE_UI_PERSONA,
+    catalogPrompt,
+    ARENA_GENERATIVE_UI_GOLD_EXAMPLE,
+  ].join('\n\n')
 
   const pageHints = params.pages?.filter((page) => page.path.trim().length > 0) ?? []
   const bindingsSummary = params.apiBindings.map((binding) => ({

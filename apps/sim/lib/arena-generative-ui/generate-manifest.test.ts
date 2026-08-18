@@ -28,6 +28,7 @@ import {
   generateArenaGenerativeManifest,
   MODEL_JSON_PARSE_ERROR,
 } from '@/lib/arena-generative-ui/generate-manifest'
+import { ARENA_GENERATIVE_UI_GOLD_EXAMPLE } from '@/lib/arena-generative-ui/gold-example'
 import { twoPageManifest } from '@/lib/arena-generative-ui/two-page-app.fixture'
 import { GENERATOR_OMITTED_PAGES_ERROR } from '@/lib/arena-generative-ui/validate-manifest'
 
@@ -117,6 +118,51 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('Table')
     expect(system).toContain('PageHeader')
     expect(system).toContain('Tabs')
+  })
+
+  it('opens with the engineer persona and a no-markdown instruction', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({ userInput: 'Team directory.', apiBindings: [] })
+
+    const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+    expect(system.startsWith('You are an expert principal frontend engineer')).toBe(true)
+    expect(system).toContain('no markdown fences')
+  })
+
+  it('appends the gold standard reference layout', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({ userInput: 'Team directory.', apiBindings: [] })
+
+    const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+    expect(system).toContain(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
+    expect(system).toContain('"entryPath": "home"')
+    expect(system).toContain('"type": "PageHeader"')
+  })
+
+  it('carries the design constraints translated from the master template', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({ userInput: 'Team directory.', apiBindings: [] })
+
+    const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+    expect(system).toContain('there are exactly two')
+    expect(system).toContain('never size words like "md" or "lg"')
+    expect(system).toContain('Never let prose run the full 1280px')
+    expect(system).toContain('nest levels sequentially')
+    expect(system).toContain('every interactive field carries an explicit label')
+    expect(system).toContain('Skeleton')
+  })
+
+  it('drops the old rule that told the model to paint backgrounds', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({ userInput: 'Team directory.', apiBindings: [] })
+
+    const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+    expect(system).not.toContain('default grey dump')
+    expect(system).not.toContain('calm palette')
   })
 
   it('explains how a CTA response maps to statePath when bindings are declared', async () => {

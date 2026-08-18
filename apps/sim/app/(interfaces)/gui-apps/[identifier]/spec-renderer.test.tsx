@@ -425,6 +425,120 @@ describe('SpecRenderer', () => {
     expect(container.querySelector('dd')?.textContent).toBe('arena')
   })
 
+  it('renders Card description under the title', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['card'] },
+        card: {
+          type: 'Card',
+          props: { title: 'System parameters', description: 'Configure the next run.' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('h2')?.textContent).toBe('System parameters')
+    expect(container.textContent).toContain('Configure the next run.')
+  })
+
+  it('renders a Stat delta with a tone class', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['up', 'down'] },
+        up: {
+          type: 'Stat',
+          props: { label: 'Reports', value: '12,480', delta: '+14.2%', deltaTone: 'positive' },
+          children: [],
+        },
+        down: {
+          type: 'Stat',
+          props: { label: 'Errors', value: '3', delta: '-2', deltaTone: 'negative' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.textContent).toContain('+14.2%')
+    const tones = Array.from(container.querySelectorAll('span')).map((node) => node.className)
+    expect(tones.some((name) => name.includes('text-emerald-700'))).toBe(true)
+    expect(tones.some((name) => name.includes('text-red-700'))).toBe(true)
+  })
+
+  describe('skeletons', () => {
+    const skeletonSpec = (type: string, props: Record<string, unknown>): Spec => ({
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['target'] },
+        target: { type, props, children: [] },
+      },
+    })
+
+    function skeletonCount(container: HTMLElement): number {
+      return container.querySelectorAll('[data-testid="skeleton"]').length
+    }
+
+    it('hides an explicit Skeleton when not pending and shows it while pending', () => {
+      const spec = skeletonSpec('Skeleton', { variant: 'card', lines: 3 })
+
+      const idle = render({ spec, pending: false })
+      expect(skeletonCount(idle.container)).toBe(0)
+      unmount?.()
+      unmount = undefined
+
+      const busy = render({ spec, pending: true })
+      expect(skeletonCount(busy.container)).toBe(1)
+    })
+
+    it('honours the Skeleton lines count', () => {
+      const { container } = render({
+        spec: skeletonSpec('Skeleton', { variant: 'text', lines: 5 }),
+        pending: true,
+      })
+      const skeleton = container.querySelector('[data-testid="skeleton"]') as HTMLElement
+      expect(skeleton.querySelectorAll('.animate-pulse').length).toBe(5)
+    })
+
+    it.each([
+      ['Table', { statePath: 'articles', columns: 'title' }],
+      ['Stat', { label: 'Articles ranked', statePath: 'count' }],
+      ['KeyValue', { statePath: 'meta' }],
+      ['DataText', { statePath: 'summary' }],
+    ])('auto-skeletons a bound %s while pending with no data', (type, props) => {
+      const { container } = render({ spec: skeletonSpec(type, props), pending: true, state: {} })
+      expect(skeletonCount(container)).toBe(1)
+    })
+
+    it.each([
+      ['Table', { statePath: 'articles', columns: 'title' }, { articles: [{ title: 'First' }] }],
+      ['Stat', { label: 'Articles ranked', statePath: 'count' }, { count: 3 }],
+      ['KeyValue', { statePath: 'meta' }, { meta: { source: 'arena' } }],
+      ['DataText', { statePath: 'summary' }, { summary: 'All done' }],
+    ])('drops the %s skeleton once data arrives', (type, props, state) => {
+      const { container } = render({ spec: skeletonSpec(type, props), pending: true, state })
+      expect(skeletonCount(container)).toBe(0)
+    })
+
+    it('leaves an unbound Table alone while pending', () => {
+      const { container } = render({
+        spec: skeletonSpec('Table', { columns: 'Name', rows: 'Ada' }),
+        pending: true,
+      })
+      expect(skeletonCount(container)).toBe(0)
+      expect(container.querySelector('table')).toBeTruthy()
+    })
+
+    it('does not auto-skeleton a bound region when nothing is pending', () => {
+      const { container } = render({
+        spec: skeletonSpec('Table', { statePath: 'articles', columns: 'title' }),
+        pending: false,
+        state: {},
+      })
+      expect(skeletonCount(container)).toBe(0)
+    })
+  })
+
   it('ticks earlier ProgressSteps after elapsed time while pending', () => {
     vi.useFakeTimers()
     try {
