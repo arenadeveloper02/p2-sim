@@ -10,7 +10,13 @@ import {
 } from 'react'
 import type { Spec } from '@json-render/core'
 import { cn } from '@sim/emcn'
-import { displayTextFromActionData, parseTabItems } from '@/lib/arena-generative-ui/types'
+import { isPlainRecord } from '@sim/utils/object'
+import {
+  displayTextFromActionData,
+  omitActionTelemetry,
+  parseJsonLiteral,
+  parseTabItems,
+} from '@/lib/arena-generative-ui/types'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
 
 interface SpecElement {
@@ -85,9 +91,7 @@ const DELTA_TONE_CLASSES = {
 
 function deltaToneClass(value: unknown): string {
   const tone = asString(value, 'neutral')
-  return (
-    DELTA_TONE_CLASSES[tone as keyof typeof DELTA_TONE_CLASSES] ?? DELTA_TONE_CLASSES.neutral
-  )
+  return DELTA_TONE_CLASSES[tone as keyof typeof DELTA_TONE_CLASSES] ?? DELTA_TONE_CLASSES.neutral
 }
 
 function sectionWidthClass(value: unknown): string {
@@ -321,6 +325,146 @@ function displayFromStateValue(value: unknown, fallback: string): string {
   return String(value)
 }
 
+function isRecordArray(value: unknown): value is Record<string, unknown>[] {
+  return Array.isArray(value) && value.length > 0 && value.every(isPlainRecord)
+}
+
+function hasProseDisplayField(record: Record<string, unknown>): boolean {
+  for (const key of ['content', 'assistantContent', 'output', 'text', 'message'] as const) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim() && parseJsonLiteral(value) === undefined) {
+      return true
+    }
+  }
+  return false
+}
+
+type StructuredDataText =
+  | { kind: 'table'; rows: Record<string, unknown>[] }
+  | { kind: 'object'; record: Record<string, unknown> }
+
+function structuredFromDataText(value: unknown): StructuredDataText | null {
+  let current: unknown = value
+  if (typeof current === 'string') {
+    const parsed = parseJsonLiteral(current)
+    if (parsed === undefined) return null
+    current = parsed
+  }
+  if (isRecordArray(current)) {
+    return { kind: 'table', rows: current }
+  }
+  if (isPlainRecord(current)) {
+    const record = omitActionTelemetry(current)
+    if (hasProseDisplayField(record)) return null
+    if (Object.keys(record).length === 0) return null
+    return { kind: 'object', record }
+  }
+  return null
+}
+
+function StateTable({
+  value,
+  columns,
+  style,
+}: {
+  value: unknown
+  columns?: string
+  style?: CSSProperties
+}) {
+  const declaredHeaders = (columns ?? '')
+    .split(',')
+    .map((header) => header.trim())
+    .filter(Boolean)
+  const headers = declaredHeaders.length > 0 ? declaredHeaders : tableHeadersFromState(value)
+  const rows = tableRowsFromState(value, headers)
+  if (headers.length === 0 && rows.length === 0) return null
+  return (
+    <div className='w-full overflow-x-auto' style={style}>
+      <table className='w-full border-collapse text-left text-sm'>
+        {headers.length > 0 ? (
+          <thead>
+            <tr className='border-[var(--color-ds-grey-200,#e2e3e5)] border-b'>
+              {headers.map((header) => (
+                <th key={header} className='px-3 py-2 font-medium'>
+                  {header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+        ) : null}
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr
+              key={`row-${rowIndex}`}
+              className='border-[var(--color-ds-grey-100,#f0f1f3)] border-b'
+            >
+              {row.map((cell, cellIndex) => (
+                <td key={`cell-${cellIndex}`} className='px-3 py-2 align-top'>
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function StateKeyValue({ pairs }: { pairs: Array<[string, string]> }) {
+  if (pairs.length === 0) return null
+  return (
+    <dl className='grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-4 gap-y-2 text-sm'>
+      {pairs.map(([key, value]) => (
+        <Fragment key={key}>
+          <dt className='text-[var(--color-ds-grey-500,#8a8d99)]'>{key}</dt>
+          <dd className='text-[var(--color-ds-grey-800,#1f232d)]'>{value}</dd>
+        </Fragment>
+      ))}
+    </dl>
+  )
+}
+
+function DataTextView({
+  value,
+  fallback,
+  pending,
+  style,
+}: {
+  value: unknown
+  fallback: string
+  pending: boolean
+  style?: CSSProperties
+}) {
+  const structured = structuredFromDataText(value)
+  const display = displayFromStateValue(value, fallback)
+  if (!structured && !display && pending) {
+    return <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
+  }
+  if (structured?.kind === 'table') {
+    return <StateTable value={structured.rows} style={style} />
+  }
+  if (structured?.kind === 'object') {
+    const arrayEntries = Object.entries(structured.record).filter(([, nested]) =>
+      isRecordArray(nested)
+    )
+    const scalars: Record<string, unknown> = {}
+    for (const [key, nested] of Object.entries(structured.record)) {
+      if (isRecordArray(nested)) continue
+      scalars[key] = nested
+    }
+    return (
+      <div className='flex flex-col gap-4' style={style}>
+        {arrayEntries.map(([key, rows]) => (
+          <StateTable key={key} value={rows} />
+        ))}
+        <StateKeyValue pairs={keyValuePairs(null, scalars)} />
+      </div>
+    )
+  }
+  return <MarkdownText className='font-medium' style={style} content={display} />
+}
+
 function submitButtonActionId(elements: Record<string, SpecElement>, childIds: string[]): string {
   for (const childId of childIds) {
     const child = elements[childId]
@@ -507,51 +651,55 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         if (statePath && pending && isEmptyStateValue(stateValue)) {
           return <SkeletonBlock variant='table' lines={DEFAULT_SKELETON_LINES.table} />
         }
-        const declaredHeaders = asString(props.columns)
-          .split(',')
-          .map((header) => header.trim())
-          .filter(Boolean)
-        const headers =
-          declaredHeaders.length > 0 ? declaredHeaders : tableHeadersFromState(stateValue)
-        const rows =
-          stateValue === undefined
-            ? asString(props.rows)
-                .split('\n')
-                .map((row) => row.trim())
-                .filter(Boolean)
-                .map(splitTableRow)
-            : tableRowsFromState(stateValue, headers)
-        if (headers.length === 0 && rows.length === 0) return null
+        if (stateValue === undefined) {
+          const headers = asString(props.columns)
+            .split(',')
+            .map((header) => header.trim())
+            .filter(Boolean)
+          const rows = asString(props.rows)
+            .split('\n')
+            .map((row) => row.trim())
+            .filter(Boolean)
+            .map(splitTableRow)
+          if (headers.length === 0 && rows.length === 0) return null
+          return (
+            <div className='w-full overflow-x-auto' style={styleFromProps(props)}>
+              <table className='w-full border-collapse text-left text-sm'>
+                {headers.length > 0 ? (
+                  <thead>
+                    <tr className='border-[var(--color-ds-grey-200,#e2e3e5)] border-b'>
+                      {headers.map((header) => (
+                        <th key={header} className='px-3 py-2 font-medium'>
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                ) : null}
+                <tbody>
+                  {rows.map((row, rowIndex) => (
+                    <tr
+                      key={`row-${rowIndex}`}
+                      className='border-[var(--color-ds-grey-100,#f0f1f3)] border-b'
+                    >
+                      {row.map((cell, cellIndex) => (
+                        <td key={`cell-${cellIndex}`} className='px-3 py-2 align-top'>
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        }
         return (
-          <div className='w-full overflow-x-auto' style={styleFromProps(props)}>
-            <table className='w-full border-collapse text-left text-sm'>
-              {headers.length > 0 ? (
-                <thead>
-                  <tr className='border-[var(--color-ds-grey-200,#e2e3e5)] border-b'>
-                    {headers.map((header) => (
-                      <th key={header} className='px-3 py-2 font-medium'>
-                        {header}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-              ) : null}
-              <tbody>
-                {rows.map((row, rowIndex) => (
-                  <tr
-                    key={`row-${rowIndex}`}
-                    className='border-[var(--color-ds-grey-100,#f0f1f3)] border-b'
-                  >
-                    {row.map((cell, cellIndex) => (
-                      <td key={`cell-${cellIndex}`} className='px-3 py-2 align-top'>
-                        {cell}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <StateTable
+            value={stateValue}
+            columns={asString(props.columns)}
+            style={styleFromProps(props)}
+          />
         )
       }
       case 'Stat': {
@@ -608,17 +756,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         if (pairs.length === 0 && statePath && pending) {
           return <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
         }
-        if (pairs.length === 0) return null
-        return (
-          <dl className='grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-4 gap-y-2 text-sm'>
-            {pairs.map(([key, value]) => (
-              <Fragment key={key}>
-                <dt className='text-[var(--color-ds-grey-500,#8a8d99)]'>{key}</dt>
-                <dd className='text-[var(--color-ds-grey-800,#1f232d)]'>{value}</dd>
-              </Fragment>
-            ))}
-          </dl>
-        )
+        return <StateKeyValue pairs={pairs} />
       }
       case 'Card':
         return (
@@ -663,13 +801,13 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           />
         )
       case 'DataText': {
-        const value = readStatePath(state, asString(props.statePath))
-        const display = displayFromStateValue(value, asString(props.fallback, ''))
-        if (!display && pending) {
-          return <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
-        }
         return (
-          <MarkdownText className='font-medium' style={styleFromProps(props)} content={display} />
+          <DataTextView
+            value={readStatePath(state, asString(props.statePath))}
+            fallback={asString(props.fallback, '')}
+            pending={pending}
+            style={styleFromProps(props)}
+          />
         )
       }
       case 'Alert':

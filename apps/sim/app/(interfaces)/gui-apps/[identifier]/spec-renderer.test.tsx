@@ -240,6 +240,39 @@ describe('SpecRenderer', () => {
     expect(container.textContent).not.toContain('[object Object]')
   })
 
+  it('renders a DataText JSON companies array as a table, not a wrapping paragraph', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Report' }, children: ['body'] },
+        body: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: 'Waiting…' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: {
+        content: JSON.stringify(
+          {
+            companies: [{ id: '1441', industry: 'Software Development' }],
+            tokens: { total: 10 },
+            finishReason: 'stop',
+          },
+          null,
+          2
+        ),
+      },
+    })
+    expect(container.querySelector('table')).toBeTruthy()
+    expect(container.textContent).toContain('Software Development')
+    expect(container.textContent).toContain('1441')
+    expect(container.textContent).not.toContain('finishReason')
+    expect(container.querySelector('p')?.textContent ?? '').not.toContain('tokens')
+  })
+
   it('hides ProgressSteps when not pending', () => {
     const { container } = render({ spec: progressSpec, pending: false })
     expect(container.textContent).not.toContain('Connecting')

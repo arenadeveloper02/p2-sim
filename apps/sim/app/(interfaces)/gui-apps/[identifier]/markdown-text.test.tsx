@@ -40,9 +40,13 @@ describe('MarkdownText', () => {
     expect(container.querySelector('p')).toBeNull()
   })
 
-  it('renders a plain fallback as a paragraph', () => {
-    const container = render('Waiting for a reply…')
-    expect(container.querySelector('p')?.textContent).toBe('Waiting for a reply…')
+  it('renders a JSON literal in a code block so indentation is kept', () => {
+    const container = render('{"id":"1441","industry":"Software"}')
+    expect(container.querySelector('pre')).toBeTruthy()
+    expect(container.textContent).toContain('Software')
+    expect(container.querySelector('p')?.textContent ?? '').not.toBe(
+      '{"id":"1441","industry":"Software"}'
+    )
   })
 
   it('opens markdown links in a new tab and drops javascript hrefs', () => {

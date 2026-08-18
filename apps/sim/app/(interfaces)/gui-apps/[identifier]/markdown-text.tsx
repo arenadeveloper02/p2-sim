@@ -115,18 +115,35 @@ interface MarkdownTextProps {
 }
 
 /**
- * Renders catalog copy and API bodies as markdown (GFM). Plain strings stay a
- * single paragraph. Empty content is omitted.
+ * Renders catalog copy and API bodies as markdown (GFM). JSON literals are
+ * fenced so they keep indentation instead of collapsing into a paragraph.
+ * Plain strings stay a single paragraph. Empty content is omitted.
  */
 export function MarkdownText({ content, className, style }: MarkdownTextProps) {
   const trimmed = content.trim()
   if (!trimmed) return null
 
+  const body =
+    looksLikeJsonLiteral(trimmed) && !trimmed.startsWith('```')
+      ? `\`\`\`json\n${trimmed}\n\`\`\``
+      : trimmed
+
   return (
     <div className={className} style={style}>
       <Streamdown mode='static' animated={false} components={COMPONENTS}>
-        {trimmed}
+        {body}
       </Streamdown>
     </div>
   )
+}
+
+function looksLikeJsonLiteral(value: string): boolean {
+  const trimmed = value.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return false
+  try {
+    JSON.parse(trimmed)
+    return true
+  } catch {
+    return false
+  }
 }

@@ -50,6 +50,7 @@ vi.mock('@sim/db', () => ({
 
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
 import {
+  contentFromWorkflowStreamChunk,
   createGenerativeAppActionSseResponse,
   HTTP_STREAM_TIMEOUT_MS,
   isStreamingAction,
@@ -59,6 +60,7 @@ import {
 import { twoPageApiBindings, twoPageManifest } from '@/lib/arena-generative-ui/two-page-app.fixture'
 import { streamingNavigateFrom } from '@/lib/arena-generative-ui/types'
 import { encodeSSE, readSSEEvents } from '@/lib/core/utils/sse'
+import type { StreamingExecution } from '@/executor/types'
 
 function mockEnv(
   vars: Record<string, string>,
@@ -502,10 +504,7 @@ describe('runDeployedAppAction', () => {
   })
 
   it('uses a non-empty personal secret when the workspace value is empty', async () => {
-    mockEnv(
-      { LINKEDIN_API_KEY: 'personal-token' },
-      { workspace: { LINKEDIN_API_KEY: '' } }
-    )
+    mockEnv({ LINKEDIN_API_KEY: 'personal-token' }, { workspace: { LINKEDIN_API_KEY: '' } })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
@@ -543,10 +542,7 @@ describe('runDeployedAppAction', () => {
   })
 
   it('does not fetch when the named secret failed to decrypt', async () => {
-    mockEnv(
-      { LINKEDIN_API_KEY: '' },
-      { decryptionFailures: ['LINKEDIN_API_KEY'] }
-    )
+    mockEnv({ LINKEDIN_API_KEY: '' }, { decryptionFailures: ['LINKEDIN_API_KEY'] })
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
@@ -608,9 +604,7 @@ describe('runDeployedAppAction', () => {
     })
 
     expect(result.ok).toBe(false)
-    expect(result.error).toBe(
-      'ENCRYPTION_KEY must be set to a 64-character hex string (32 bytes)'
-    )
+    expect(result.error).toBe('ENCRYPTION_KEY must be set to a 64-character hex string (32 bytes)')
     expect(fetchMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
@@ -750,16 +744,31 @@ function utf8Stream(parts: string[]): ReadableStream<Uint8Array> {
   })
 }
 
-async function mockStreamingWorkflow(chunks: string[], output: Record<string, unknown>) {
+async function mockStreamingWorkflow(
+  chunks: string[],
+  output: Record<string, unknown>,
+  extras?: {
+    subscribe?: StreamingExecution['subscribe']
+    clientStreamTransformed?: boolean
+  }
+) {
   mockExecuteWorkflow.mockImplementation(
     async (_workflow, _requestId, _input, _actor, streamConfig) => {
       const onStream = (
         streamConfig as {
-          onStream?: (execution: { stream: ReadableStream<Uint8Array> }) => Promise<void>
+          onStream?: (execution: {
+            stream: ReadableStream<Uint8Array>
+            subscribe?: StreamingExecution['subscribe']
+            clientStreamTransformed?: boolean
+          }) => Promise<void>
         }
       ).onStream
       if (onStream) {
-        await onStream({ stream: utf8Stream(chunks) })
+        await onStream({
+          stream: utf8Stream(chunks),
+          subscribe: extras?.subscribe,
+          clientStreamTransformed: extras?.clientStreamTransformed,
+        })
       }
       return { success: true, output }
     }
@@ -813,6 +822,102 @@ describe('streaming generative app actions', () => {
       expect.objectContaining({ executionMode: 'stream' }),
       expect.any(String)
     )
+  })
+
+  it('extracts stream:chunk frames instead of forwarding raw SSE bytes', async () => {
+    const frame = JSON.stringify({
+      type: 'stream:chunk',
+      data: { chunk: 'Hello' },
+    })
+    await mockStreamingWorkflow([`data: ${frame}\n\n`], {
+      content: 'Hello',
+      tokens: { total: 9 },
+      finishReason: 'stop',
+    })
+    const chunks: string[] = []
+    const result = await runGenerativeAppAction({
+      manifest: twoPageManifest,
+      apiBindings: [{ ...twoPageApiBindings[0], stream: true }],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-sse-chunk',
+      actorUserId: 'previewer-1',
+      onChunk: (content) => {
+        chunks.push(content)
+      },
+    })
+
+    expect(chunks).toEqual(['Hello'])
+    expect(result.setState?.content).toBe('Hello')
+    expect(result.setState).not.toHaveProperty('tokens')
+    expect(result.setState).not.toHaveProperty('finishReason')
+  })
+
+  it('keeps streamed tokens when done payload is an execution envelope', async () => {
+    await mockStreamingWorkflow(['Hel', 'lo'], {
+      companies: [{ id: '1441' }],
+      assistantContent: '{"companies":[{"id":"1441"}]}',
+      tokens: { total: 10 },
+      finishReason: 'stop',
+    })
+    const result = await runGenerativeAppAction({
+      manifest: twoPageManifest,
+      apiBindings: [{ ...twoPageApiBindings[0], stream: true }],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-keep-stream',
+      actorUserId: 'previewer-1',
+      onChunk: () => undefined,
+    })
+
+    expect(result.setState?.content).toBe('Hello')
+    expect(result.setState?.companies).toEqual([{ id: '1441' }])
+    expect(result.setState).not.toHaveProperty('tokens')
+  })
+
+  it('forwards sink text_delta and ignores the byte stream', async () => {
+    const subscribe: StreamingExecution['subscribe'] = (sink) => {
+      void sink.onEvent({ type: 'text_delta', text: 'Hi', turn: 'pending' })
+      void sink.onEvent({ type: 'text_delta', text: '!', turn: 'final' })
+      return () => {}
+    }
+    await mockStreamingWorkflow(['ignored'], { content: 'Hi!' }, { subscribe })
+    const chunks: string[] = []
+    const result = await runGenerativeAppAction({
+      manifest: twoPageManifest,
+      apiBindings: [{ ...twoPageApiBindings[0], stream: true }],
+      httpAllowlist: [],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-sink',
+      actorUserId: 'previewer-1',
+      onChunk: (content) => {
+        chunks.push(content)
+      },
+    })
+
+    expect(chunks).toEqual(['Hi', '!'])
+    expect(result.setState?.content).toBe('Hi!')
+  })
+
+  it('drops a raw execution envelope from the byte stream', () => {
+    expect(
+      contentFromWorkflowStreamChunk(
+        JSON.stringify({
+          companies: [{ id: '1' }],
+          tokens: { total: 3 },
+          finishReason: 'stop',
+        })
+      )
+    ).toBe('')
   })
 
   it('forwards HTTP text/plain body chunks without buffering first', async () => {

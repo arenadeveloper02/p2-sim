@@ -9,6 +9,7 @@ import { isHttpUrlAllowlisted } from '@/lib/arena-generative-ui/http-allowlist'
 import {
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
+  actionStateFromData,
   displayTextFromActionData,
   streamingActionIdsFrom,
 } from '@/lib/arena-generative-ui/types'
@@ -21,6 +22,7 @@ import {
 } from '@/lib/environment/utils'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
+import type { StreamingExecution } from '@/executor/types'
 
 const logger = createLogger('ArenaGenerativeUiAction')
 
@@ -296,18 +298,7 @@ async function runWorkflowBinding(options: {
         billingAttribution,
         onStream: options.onChunk
           ? async (streamingExec) => {
-              const reader = streamingExec.stream.getReader()
-              const decoder = new TextDecoder()
-              try {
-                while (true) {
-                  const { done, value } = await reader.read()
-                  if (done) break
-                  const chunk = decoder.decode(value, { stream: true })
-                  if (chunk) await options.onChunk?.(chunk)
-                }
-              } finally {
-                reader.releaseLock()
-              }
+              await consumeWorkflowExecutionStream(streamingExec, options.onChunk)
             }
           : undefined,
       },
@@ -427,21 +418,101 @@ async function runHttpBinding(options: {
   }
 }
 
-function contentFromSseData(raw: string): string {
+function extractStreamPayloadText(raw: string): string {
   try {
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed === 'string') return parsed
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const record = parsed as Record<string, unknown>
-      if (typeof record.content === 'string') return record.content
-      if (typeof record.delta === 'string') return record.delta
-      if (typeof record.text === 'string') return record.text
-      if (typeof record.chunk === 'string') return record.chunk
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return ''
     }
+    const record = parsed as Record<string, unknown>
+    const nested =
+      record.data && typeof record.data === 'object' && !Array.isArray(record.data)
+        ? (record.data as Record<string, unknown>)
+        : undefined
+    if (typeof nested?.chunk === 'string') {
+      return nested.chunk
+    }
+    if (typeof record.content === 'string') return record.content
+    if (typeof record.delta === 'string') return record.delta
+    if (typeof record.text === 'string') return record.text
+    if (typeof record.chunk === 'string') return record.chunk
+    return ''
   } catch {
     return raw
   }
-  return raw
+}
+
+function contentFromSseData(raw: string): string {
+  const extracted = extractStreamPayloadText(raw)
+  return extracted || raw
+}
+
+/**
+ * Pulls answer text out of a workflow byte-stream piece: SSE `stream:chunk`
+ * frames, `{ chunk }` JSON, or raw token text. Whole execution envelopes with
+ * no text field are dropped so they are not concatenated into DataText.
+ */
+export function contentFromWorkflowStreamChunk(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
+
+  if (trimmed.includes('data:')) {
+    const pieces: string[] = []
+    for (const block of trimmed.split(/\n\n+/)) {
+      const dataLines = block
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n')
+      if (!dataLines || dataLines === '[DONE]') continue
+      const extracted = extractStreamPayloadText(dataLines)
+      if (extracted) pieces.push(extracted)
+    }
+    if (pieces.length > 0) return pieces.join('')
+  }
+
+  return extractStreamPayloadText(trimmed)
+}
+
+/**
+ * Forwards live `text_delta` when the execution exposes a sink; otherwise
+ * extracts token text from the projected byte stream. Always drains the byte
+ * stream so the executor pump can finish.
+ */
+async function consumeWorkflowExecutionStream(
+  streamingExec: StreamingExecution,
+  onChunk?: (content: string) => void | Promise<void>
+): Promise<void> {
+  if (!onChunk) return
+
+  const useSink = Boolean(streamingExec.subscribe) && streamingExec.clientStreamTransformed !== true
+  let unsubscribe: (() => void) | undefined
+  if (useSink && streamingExec.subscribe) {
+    unsubscribe = streamingExec.subscribe({
+      onEvent: async (event) => {
+        if (event.type === 'text_delta' && event.turn !== 'intermediate' && event.text) {
+          await onChunk(event.text)
+        }
+      },
+    })
+  }
+
+  const reader = streamingExec.stream.getReader()
+  const decoder = new TextDecoder()
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (useSink) continue
+      const chunk = decoder.decode(value, { stream: true })
+      const text = contentFromWorkflowStreamChunk(chunk)
+      if (text) await onChunk(text)
+    }
+  } finally {
+    unsubscribe?.()
+    reader.releaseLock()
+  }
 }
 
 async function readHttpResponseStream(
@@ -568,6 +639,14 @@ export async function runGenerativeAppAction(
 
   const mappedInput = mapActionInput(options.values, action.inputMapping)
 
+  let streamedContent = ''
+  const onChunk = options.onChunk
+    ? async (content: string) => {
+        streamedContent += content
+        await options.onChunk?.(content)
+      }
+    : undefined
+
   const result =
     binding.kind === 'http'
       ? await runHttpBinding({
@@ -576,14 +655,14 @@ export async function runGenerativeAppAction(
           allowlist: options.httpAllowlist,
           actorUserId: options.actorUserId,
           workspaceId: options.workspaceId,
-          onChunk: options.onChunk,
+          onChunk,
         })
       : await runWorkflowBinding({
           binding,
           mappedInput,
           actorUserId: options.actorUserId,
           requestId: options.requestId,
-          onChunk: options.onChunk,
+          onChunk,
         })
 
   if (!result.ok) {
@@ -595,11 +674,8 @@ export async function runGenerativeAppAction(
     }
   }
 
-  const fromData =
-    typeof result.data === 'object' && result.data && !Array.isArray(result.data)
-      ? (result.data as Record<string, unknown>)
-      : { result: result.data }
-  const display = displayTextFromActionData(result.data)
+  const fromData = actionStateFromData(result.data)
+  const display = streamedContent.trim() ? streamedContent : displayTextFromActionData(result.data)
   const setState = {
     ...(action.onSuccess?.setState ?? {}),
     ...fromData,

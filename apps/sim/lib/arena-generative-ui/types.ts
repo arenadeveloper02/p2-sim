@@ -127,12 +127,71 @@ export function parseTabItems(raw: unknown): ArenaGenerativeTabItem[] {
   return items
 }
 
+/** Workflow/LLM envelope keys that must not appear in GUI-app state or DataText. */
+export const ACTION_TELEMETRY_KEYS = [
+  'tokens',
+  'providerTiming',
+  'finishReason',
+  'model',
+  'query',
+  'cost',
+  'usage',
+] as const
+
+const PREFERRED_DISPLAY_KEYS = ['content', 'assistantContent', 'output', 'text', 'message'] as const
+
+const MAX_DISPLAY_PARSE_DEPTH = 4
+
+/**
+ * Drops execution-envelope telemetry so Table/KeyValue bindings see business fields.
+ */
+export function omitActionTelemetry(record: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...record }
+  for (const key of ACTION_TELEMETRY_KEYS) {
+    delete next[key]
+  }
+  return next
+}
+
+/**
+ * Host state patch from a CTA payload: top-level business keys, no telemetry.
+ */
+export function actionStateFromData(data: unknown): Record<string, unknown> {
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    return omitActionTelemetry(data as Record<string, unknown>)
+  }
+  return { result: data }
+}
+
+/**
+ * Parses a JSON object or array literal. Returns undefined for prose or invalid JSON.
+ */
+export function parseJsonLiteral(value: string): unknown | undefined {
+  const trimmed = value.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    return undefined
+  }
+  try {
+    return JSON.parse(trimmed) as unknown
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Best-effort text for DataText `content` from a JSON action payload.
- * Prefers string | .content | .output | .output.content | .text | .message.
+ * Prefers string | .content | .assistantContent | .output | .text | .message.
+ * Nested JSON strings are parsed so the execution envelope is not dumped twice.
  */
-export function displayTextFromActionData(data: unknown): string | undefined {
+export function displayTextFromActionData(data: unknown, depth = 0): string | undefined {
+  if (depth > MAX_DISPLAY_PARSE_DEPTH) {
+    return undefined
+  }
   if (typeof data === 'string') {
+    const parsed = parseJsonLiteral(data)
+    if (parsed !== undefined) {
+      return displayTextFromActionData(parsed, depth + 1)
+    }
     return data.trim() ? data : undefined
   }
   if (typeof data === 'number' || typeof data === 'boolean') {
@@ -144,24 +203,17 @@ export function displayTextFromActionData(data: unknown): string | undefined {
   if (Array.isArray(data)) {
     return stringifyActionData(data)
   }
-  const record = data as Record<string, unknown>
-  if (typeof record.content === 'string' && record.content.trim()) {
-    return record.content
-  }
-  if (typeof record.output === 'string' && record.output.trim()) {
-    return record.output
-  }
-  if (record.output && typeof record.output === 'object') {
-    const nested = displayTextFromActionData(record.output)
+  const record = omitActionTelemetry(data as Record<string, unknown>)
+  for (const key of PREFERRED_DISPLAY_KEYS) {
+    const value = record[key]
+    if (value === undefined) continue
+    const nested = displayTextFromActionData(value, depth + 1)
     if (nested) return nested
   }
-  if (typeof record.text === 'string' && record.text.trim()) {
-    return record.text
+  if (Object.keys(record).length === 0) {
+    return undefined
   }
-  if (typeof record.message === 'string' && record.message.trim()) {
-    return record.message
-  }
-  return stringifyActionData(data)
+  return stringifyActionData(record)
 }
 
 function stringifyActionData(data: unknown): string | undefined {

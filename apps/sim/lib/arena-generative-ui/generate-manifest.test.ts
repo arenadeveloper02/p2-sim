@@ -235,6 +235,8 @@ describe('generateArenaGenerativeManifest', () => {
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
     expect(system).toContain('onSuccess.navigate')
     expect(system).toContain('only when the user asked')
+    expect(system).toContain('outputSchema')
+    expect(system).toContain('Table statePath="companies"')
     expect(system).not.toContain('use one page')
     expect(system).not.toContain('Omit onSuccess.navigate')
   })
