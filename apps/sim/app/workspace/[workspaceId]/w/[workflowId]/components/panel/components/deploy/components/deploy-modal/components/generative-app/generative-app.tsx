@@ -59,10 +59,10 @@ export function GenerativeAppDeploy({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [department, setDepartment] = useState('')
-  const [authType, setAuthType] = useState<AuthType>('public')
+  const [authType, setAuthType] = useState<AuthType>('email')
   const [password, setPassword] = useState('')
   const [emails, setEmails] = useState<string[]>([])
-  const [requireArenaEmailId, setRequireArenaEmailId] = useState(false)
+  const [requireArenaEmailId, setRequireArenaEmailId] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const selectedDraftQuery = useGenerativeAppDraft(draftId || undefined)

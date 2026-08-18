@@ -99,7 +99,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       authType,
       password: body.password,
       allowedEmails: body.allowedEmails,
-      requireArenaEmailId: body.requireArenaEmailId ?? false,
+      requireArenaEmailId: body.requireArenaEmailId ?? true,
     })
 
     if (!result.success || !result.id || !result.appUrl) {

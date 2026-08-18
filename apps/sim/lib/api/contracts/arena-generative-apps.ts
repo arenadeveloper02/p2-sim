@@ -281,7 +281,13 @@ export const validateGenerativeAppIdentifierContract = defineRouteContract({
   },
 })
 
-export const createDeployedAppBodySchema = z.object({
+/**
+ * Deploy fields without defaults, so the PATCH body can be a true partial.
+ * `.partial()` does not strip a `.default()` — an omitted key still parses to
+ * the default — and the update route reads `body.x ?? stored.x`, so a default
+ * here would overwrite stored access settings on every unrelated edit.
+ */
+const deployedAppFieldsSchema = z.object({
   workflowId: workflowIdSchema,
   draftId: z.string().min(1, 'Draft ID is required'),
   revisionId: z.string().min(1).optional(),
@@ -295,10 +301,17 @@ export const createDeployedAppBodySchema = z.object({
   title: z.string().min(1, 'Title is required').max(200),
   description: z.string().max(2000).optional(),
   department: z.string().max(200).optional(),
-  authType: chatAuthTypeSchema.default('public'),
+  authType: chatAuthTypeSchema,
   password: chatDeploymentPasswordSchema.optional(),
+  allowedEmails: z.array(z.string()),
+  requireArenaEmailId: z.boolean(),
+})
+
+export const createDeployedAppBodySchema = deployedAppFieldsSchema.extend({
+  authType: chatAuthTypeSchema.default('public'),
   allowedEmails: z.array(z.string()).optional().default([]),
-  requireArenaEmailId: z.boolean().optional().default(false),
+  /** Generated apps are Arena-gated unless the deployer opts out. */
+  requireArenaEmailId: z.boolean().optional().default(true),
 })
 export type CreateDeployedAppBody = z.input<typeof createDeployedAppBodySchema>
 
@@ -318,7 +331,7 @@ export const createDeployedAppContract = defineRouteContract({
   },
 })
 
-export const updateDeployedAppBodySchema = createDeployedAppBodySchema.partial().extend({
+export const updateDeployedAppBodySchema = deployedAppFieldsSchema.partial().extend({
   workflowId: workflowIdSchema.optional(),
   isActive: z.boolean().optional(),
 })

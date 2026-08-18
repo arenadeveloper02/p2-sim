@@ -1989,6 +1989,13 @@
       "when": 1787051984447,
       "tag": "0283_generative_app_draft_brief",
       "breakpoints": true
+    },
+    {
+      "idx": 284,
+      "version": "7",
+      "when": 1787061666183,
+      "tag": "0284_deployed_app_require_arena_email_id_default",
+      "breakpoints": true
     }
   ]
 }

@@ -5403,7 +5403,7 @@ export const deployedApp = pgTable(
     authType: text('auth_type').notNull().default('public'),
     password: text('password'),
     allowedEmails: json('allowed_emails').default('[]'),
-    requireArenaEmailId: boolean('require_arena_email_id').notNull().default(false),
+    requireArenaEmailId: boolean('require_arena_email_id').notNull().default(true),
     draftId: text('draft_id').references(() => generativeAppDraft.id, { onDelete: 'set null' }),
     revisionId: text('revision_id').references(() => generativeAppDraftRevision.id, {
       onDelete: 'set null',

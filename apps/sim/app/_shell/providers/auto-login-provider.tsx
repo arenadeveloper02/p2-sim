@@ -61,8 +61,13 @@ export function AutoLoginProvider({ children }: { children: React.ReactNode }) {
         }
 
         const pathname = typeof window !== 'undefined' ? window.location.pathname : ''
-        // Keep the user on the current URL for embeds and deployed chats; otherwise go to workspace.
-        const stayOnCurrentPath = pathname.includes('/embed') || pathname.startsWith('/chat/')
+        // Keep the user on the current URL for embeds, deployed chats, and deployed
+        // generative apps; otherwise go to workspace. Redirecting an Arena user away
+        // from a deployed surface would strand them on /workspace mid-session.
+        const stayOnCurrentPath =
+          pathname.includes('/embed') ||
+          pathname.startsWith('/chat/') ||
+          pathname.startsWith('/gui-apps/')
         const callbackURL =
           stayOnCurrentPath && typeof window !== 'undefined' ? window.location.href : '/workspace'
 

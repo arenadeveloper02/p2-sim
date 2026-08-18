@@ -24,6 +24,13 @@ import {
 
 const logger = createLogger('GenerativeAppManageAPI')
 
+/** The `allowed_emails` json column is untyped; a redeploy must not widen access on a bad read. */
+function storedAllowedEmails(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : []
+}
+
 async function loadManagedApp(id: string, userId: string) {
   const [row] = await db
     .select({
@@ -110,7 +117,7 @@ export const PATCH = withRouteHandler(
         department: body.department ?? managed.app.department,
         authType: (authType as 'public' | 'password' | 'email' | 'sso') ?? 'public',
         password: body.password,
-        allowedEmails: body.allowedEmails,
+        allowedEmails: body.allowedEmails ?? storedAllowedEmails(managed.app.allowedEmails),
         requireArenaEmailId: body.requireArenaEmailId ?? managed.app.requireArenaEmailId,
       })
 
