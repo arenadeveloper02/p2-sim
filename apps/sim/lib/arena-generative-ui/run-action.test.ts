@@ -1520,3 +1520,141 @@ describe('streaming generative app actions', () => {
     expect(HTTP_STREAM_TIMEOUT_MS).toBe(180_000)
   })
 })
+
+/**
+ * `arenaEmailId` lets an app be per-user. It is unverified, so the tests below pin
+ * both halves of the contract: it always comes from the server, and it never leaks
+ * to a third-party HTTP endpoint that did not opt in.
+ */
+describe('arenaEmailId forwarding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetEnvironmentUtilsMock()
+    mockEnv({})
+    mockPreprocessExecution.mockResolvedValue({
+      success: true,
+      actorUserId: 'user-1',
+      billingAttribution: {
+        actorUserId: 'user-1',
+        workspaceId: 'ws-1',
+        billingEntity: { type: 'user', id: 'user-1' },
+      },
+      executionActor: { type: 'user' },
+    })
+    mockExecuteWorkflow.mockResolvedValue({ success: true, output: { score: 91 } })
+  })
+
+  function workflowInput() {
+    return mockExecuteWorkflow.mock.calls[0]?.[2] as Record<string, unknown>
+  }
+
+  it('reaches a workflow binding even though inputMapping never lists it', async () => {
+    await runDeployedAppAction({
+      deployment: baseDeployment(),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+      arenaEmailId: 'ada@example.com',
+    })
+
+    expect(workflowInput()).toEqual({ name: 'Ada', arenaEmailId: 'ada@example.com' })
+  })
+
+  it('can be renamed by inputMapping', async () => {
+    const deployment = baseDeployment()
+    deployment.manifest.actions.submit_lead.inputMapping = { email: 'arenaEmailId' }
+
+    await runDeployedAppAction({
+      deployment,
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+      arenaEmailId: 'ada@example.com',
+    })
+
+    expect(workflowInput()).toMatchObject({
+      email: 'ada@example.com',
+      arenaEmailId: 'ada@example.com',
+    })
+  })
+
+  it('overwrites a value the caller tried to supply', async () => {
+    await runDeployedAppAction({
+      deployment: baseDeployment(),
+      actionId: 'submit_lead',
+      values: { name: 'Ada', arenaEmailId: 'attacker@evil.test' },
+      requestId: 'req-1',
+      arenaEmailId: 'ada@example.com',
+    })
+
+    expect(workflowInput().arenaEmailId).toBe('ada@example.com')
+  })
+
+  it('strips a caller-supplied value when the server resolved none', async () => {
+    await runDeployedAppAction({
+      deployment: baseDeployment(),
+      actionId: 'submit_lead',
+      values: { name: 'Ada', arenaEmailId: 'attacker@evil.test' },
+      requestId: 'req-1',
+    })
+
+    expect(workflowInput()).toEqual({ name: 'Ada' })
+  })
+
+  it('sends nothing extra when no emailId was resolved', async () => {
+    await runDeployedAppAction({
+      deployment: baseDeployment(),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+    })
+
+    expect(workflowInput()).toEqual({ name: 'Ada' })
+  })
+
+  function httpDeployment(forwardEmailId?: boolean) {
+    return baseDeployment({
+      apiBindings: [
+        {
+          key: 'qualify_lead',
+          label: 'Qualify',
+          kind: 'http',
+          http: { method: 'POST', url: 'https://api.example.com/qualify' },
+          ...(forwardEmailId === undefined ? {} : { forwardEmailId }),
+        },
+      ],
+    })
+  }
+
+  async function postedBody(forwardEmailId?: boolean) {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ score: 1 })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const deployment = httpDeployment(forwardEmailId)
+    deployment.manifest.actions.submit_lead.inputMapping = undefined
+
+    await runDeployedAppAction({
+      deployment,
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+      arenaEmailId: 'ada@example.com',
+    })
+
+    return JSON.parse((fetchMock.mock.calls[0]?.[1] as { body: string }).body)
+  }
+
+  it('withholds it from an HTTP binding that did not opt in', async () => {
+    expect(await postedBody()).toEqual({ name: 'Ada' })
+  })
+
+  it('withholds it from an HTTP binding that opted out explicitly', async () => {
+    expect(await postedBody(false)).toEqual({ name: 'Ada' })
+  })
+
+  it('sends it to an HTTP binding that opted in', async () => {
+    expect(await postedBody(true)).toEqual({ name: 'Ada', arenaEmailId: 'ada@example.com' })
+  })
+})

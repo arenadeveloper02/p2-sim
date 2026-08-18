@@ -128,13 +128,19 @@ export function emailIdDeniedResponse() {
 
 /**
  * Enforces Arena emailId then chat-style deployment auth for a public app request.
+ *
+ * Returns the resolved `arenaEmailId` so a CTA can be personalized. It is resolved
+ * even when the gate is off, and it is **not verified** — see
+ * `ARENA_GENERATIVE_ACTOR_EMAIL_KEY`.
  */
 export async function authorizeDeployedAppRequest(options: {
   request: NextRequest
   deployment: DeployedAppRecord
   bodyEmailId?: string
   parsedBody?: { password?: string; email?: string } | null
-}): Promise<{ ok: true; requestId: string } | { ok: false; response: NextResponse }> {
+}): Promise<
+  { ok: true; requestId: string; arenaEmailId: string } | { ok: false; response: NextResponse }
+> {
   const requestId = generateRequestId()
   const { request, deployment, bodyEmailId, parsedBody } = options
 
@@ -142,11 +148,9 @@ export async function authorizeDeployedAppRequest(options: {
     return { ok: false, response: createErrorResponse('This app is currently unavailable', 403) }
   }
 
-  if (deployment.requireArenaEmailId) {
-    const emailId = resolveArenaEmailIdFromRequest(request, bodyEmailId)
-    if (!emailId) {
-      return { ok: false, response: emailIdDeniedResponse() }
-    }
+  const arenaEmailId = resolveArenaEmailIdFromRequest(request, bodyEmailId)
+  if (deployment.requireArenaEmailId && !arenaEmailId) {
+    return { ok: false, response: emailIdDeniedResponse() }
   }
 
   const authResult = await validateAppDeploymentAuth(requestId, deployment, request, parsedBody)
@@ -161,5 +165,5 @@ export async function authorizeDeployedAppRequest(options: {
     return { ok: false, response }
   }
 
-  return { ok: true, requestId }
+  return { ok: true, requestId, arenaEmailId }
 }

@@ -381,6 +381,9 @@ export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
     if (record.stream === true) {
       binding.stream = true
     }
+    if (record.forwardEmailId === true) {
+      binding.forwardEmailId = true
+    }
     bindings.push(binding)
   }
   return bindings

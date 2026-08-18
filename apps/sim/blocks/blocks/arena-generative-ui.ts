@@ -27,6 +27,8 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
   - Use Generate for a new draft. Leave Pages blank so the model chooses the sitemap, or pin paths as JSON [{ "path": "home", "title": "Form" }].
   - Describe navigation in User Input: NavLinks, Back buttons, and "submit then go to results".
   - Add apiBindings JSON only when CTAs should call a deployed workflow or HTTP URL. Leave it blank for navigation-only; the model cannot invent keys. Set "stream": true to stream tokens into DataText on the form page.
+  - Use "Add an API" rather than writing bindings by hand: pick a workflow and Sim fills inputSchema from its deployed start block, or paste a curl for an HTTP endpoint.
+  - Every CTA input carries arenaEmailId, the visitor's Arena email. It is NOT verified, so never use it to decide what a user may see. HTTP bindings only receive it when the binding opts in.
   - After a successful run, open Deploy → GUI App, pick the draft, set an identifier, and Launch. The public URL is /gui-apps/{identifier}.
   - Use Edit mode with an existing draft to change pages, copy, or CTA wiring. Put only the delta in Requested Changes — the draft already carries the original brief, and anything you do not mention is kept as-is.
   - Name the page you mean in Requested Changes ("on the results page, ..."). Edits are scoped to the pages your request names, so a page it never mentions is left byte-identical and costs nothing to re-emit.
@@ -137,7 +139,7 @@ Return ONLY the specification text.`,
       description:
         'Named APIs CTAs may call. Leave blank for a navigation-only app — the model cannot invent API keys.',
       tooltip:
-        'Named CTA backends. Leave blank for navigation-only. Use Add an API to paste a curl, or edit this JSON. You invent key; use that same string in User Input (e.g. "Submit calls qualify_lead"). workflowId is the deployed workflow id. Set "stream": true to stream tokens into DataText on the form page. Add "outputSchema" (or paste a sample in Add an API) so the result is laid out as a Table or Stat instead of one text blob.\n\n[{"key":"qualify_lead","kind":"workflow","workflowId":"wf_...","label":"Qualify","stream":true,"outputSchema":[{"name":"score","type":"number"}]}]',
+        'Named CTA backends. Leave blank for navigation-only. Use Add an API to pick a workflow or paste a curl, or edit this JSON. You invent key; use that same string in User Input (e.g. "Submit calls qualify_lead"). Set "stream": true to stream tokens into DataText on the form page. Add "outputSchema" (or paste a sample in Add an API) so the result is laid out as a Table or Stat instead of one text blob. Set "forwardEmailId": true on an HTTP binding to send the visitor\'s unverified Arena email.\n\n[{"key":"qualify_lead","kind":"workflow","workflowId":"wf_...","label":"Qualify","stream":true,"outputSchema":[{"name":"score","type":"number"}]}]',
     },
     {
       id: 'designNotes',

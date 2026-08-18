@@ -16,6 +16,10 @@ export {
   MIN_PAGES_FOR_SCOPED_EDIT,
   planArenaGenerativeEditScope,
 } from '@/lib/arena-generative-ui/edit-scope'
+export {
+  inputSchemaFromWorkflowFields,
+  workflowBindingFromSelection,
+} from '@/lib/arena-generative-ui/from-workflow'
 export { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/generate-manifest'
 export {
   buildHttpAllowlist,
@@ -30,6 +34,10 @@ export {
   parsePageHints,
 } from '@/lib/arena-generative-ui/parse-inputs'
 export { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
+export {
+  checkGenerativeAppActionRateLimit,
+  GENERATIVE_APP_ACTION_IP_RATE_LIMIT,
+} from '@/lib/arena-generative-ui/rate-limit'
 export {
   HTTP_STREAM_TIMEOUT_MS,
   runDeployedAppAction,

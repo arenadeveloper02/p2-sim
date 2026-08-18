@@ -69,6 +69,37 @@ describe('parseApiBindings', () => {
     ])
   })
 
+  /**
+   * The parser rebuilds each binding from an allowlist, so a field it does not read
+   * is silently dropped on every save. These pin the new flag against that.
+   */
+  it('keeps forwardEmailId: true through the allowlist rebuild', () => {
+    expect(
+      parseApiBindings([
+        {
+          key: 'crm_lookup',
+          kind: 'http',
+          http: { method: 'POST', url: 'https://api.example.com/lookup' },
+          forwardEmailId: true,
+        },
+      ])[0]
+    ).toMatchObject({ key: 'crm_lookup', forwardEmailId: true })
+  })
+
+  it('omits forwardEmailId unless it is exactly true', () => {
+    for (const value of [false, undefined, 'true', 1]) {
+      const [binding] = parseApiBindings([
+        {
+          key: 'crm_lookup',
+          kind: 'http',
+          http: { method: 'POST', url: 'https://api.example.com/lookup' },
+          forwardEmailId: value,
+        },
+      ])
+      expect(binding.forwardEmailId).toBeUndefined()
+    }
+  })
+
   it('omits stream when it is not true', () => {
     expect(
       parseApiBindings([

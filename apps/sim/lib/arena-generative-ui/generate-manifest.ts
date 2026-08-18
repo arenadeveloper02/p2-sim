@@ -375,6 +375,12 @@ export async function generateArenaGenerativeManifest(
       pageHints: pageHints.length > 0 ? pageHints : undefined,
       apiBindings: params.apiBindings,
       entryPath: requestedEntryPath,
+      /**
+       * A scoped edit only authored the pages in scope, so a pre-existing defect on
+       * an untouched page must not block it. Generate and whole-manifest edits author
+       * everything, so they leave this undefined and every page is checked.
+       */
+      ...(isScopedEdit ? { authoredPagePaths: scopedPaths } : {}),
     }
 
     const messages: Anthropic.Messages.MessageParam[] = [{ role: 'user', content: userPayload }]

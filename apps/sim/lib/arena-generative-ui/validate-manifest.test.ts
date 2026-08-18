@@ -590,4 +590,115 @@ describe('validateArenaGenerativeManifest', () => {
     expect(result.error).toBe(GENERATOR_OMITTED_PAGES_ERROR)
     expect(result.error).not.toMatch(/keyed by page path/)
   })
+
+  /**
+   * A SubmitButton with no Form ancestor and no actionId submits nothing and runs
+   * nothing. The form-less-but-bound variant is explicitly allowed, because the
+   * host wires that one to a click.
+   */
+  describe('dead SubmitButton', () => {
+    function formlessPage(submitProps: Record<string, unknown>): Spec {
+      return {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Home', backgroundColor: null },
+            children: ['stack'],
+          },
+          stack: {
+            type: 'Stack',
+            props: { direction: 'vertical', gap: '12px', align: null },
+            children: ['nav', 'submit'],
+          },
+          nav: { type: 'NavLink', props: { label: 'Results', to: 'results' }, children: [] },
+          submit: { type: 'SubmitButton', props: submitProps, children: [] },
+        },
+      }
+    }
+
+    function manifestWith(spec: Spec) {
+      return {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: { submit_lead: { apiKey: 'qualify_lead' } },
+      }
+    }
+
+    it('rejects one with neither a Form ancestor nor an actionId', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWith(formlessPage({ label: 'Submit', actionId: null })),
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('not inside a Form and has no actionId')
+      expect(result.error).toContain('submit')
+    })
+
+    it('accepts one outside a Form that carries an actionId', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWith(formlessPage({ label: 'Submit', actionId: 'submit_lead' })),
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
+    it('ignores the defect on a page a scoped edit did not author', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWith(formlessPage({ label: 'Submit', actionId: null })),
+        { apiBindings: bindings, entryPath: 'home', authoredPagePaths: ['results'] }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
+    it('still reports it on a page the reply did author', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWith(formlessPage({ label: 'Submit', actionId: null })),
+        { apiBindings: bindings, entryPath: 'home', authoredPagePaths: ['home'] }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('not inside a Form and has no actionId')
+    })
+
+    it('accepts one nested deep inside a Form with no actionId of its own', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Home', backgroundColor: null },
+            children: ['nav', 'form'],
+          },
+          nav: { type: 'NavLink', props: { label: 'Results', to: 'results' }, children: [] },
+          form: { type: 'Form', props: { actionId: 'submit_lead' }, children: ['card'] },
+          card: {
+            type: 'Card',
+            props: { title: 'Details', description: null },
+            children: ['submit'],
+          },
+          submit: {
+            type: 'SubmitButton',
+            props: { label: 'Submit', actionId: null },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(manifestWith(spec), {
+        apiBindings: bindings,
+        entryPath: 'home',
+      })
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+  })
 })

@@ -73,6 +73,13 @@ export interface ArenaGenerativeApiBinding {
   pagination?: ArenaGenerativePagination
   /** When true, the host streams CTA tokens into DataText instead of waiting for JSON. */
   stream?: boolean
+  /**
+   * Send the visitor's Arena `emailId` to this HTTP endpoint as `arenaEmailId`.
+   * Off by default so no existing binding starts disclosing an end user's address
+   * to a third party. Workflow bindings receive it regardless — they run inside
+   * the same workspace.
+   */
+  forwardEmailId?: boolean
 }
 
 export interface ArenaGenerativePagination {
@@ -424,8 +431,26 @@ export function repeatItemActionValues(item: unknown, index: number): Record<str
   return { item, index }
 }
 
-/** Query params the host owns; never forwarded to a page's load actions. */
-export const ARENA_GENERATIVE_RESERVED_QUERY_KEYS = ['emailId'] as const
+/**
+ * Action input key carrying the visitor's Arena `emailId`.
+ *
+ * **This value is not verified.** `resolveArenaEmailIdFromRequest` accepts it from
+ * the request body, the query string, or the Arena cookie, and the emailId gate only
+ * checks that *something* is present — so a caller can supply any address. Treat it
+ * as a personalization hint, never as an authorization key: a workflow that scopes
+ * data by it can be made to return another user's data. The name deliberately reads
+ * as "the value Arena passed" rather than an identity.
+ */
+export const ARENA_GENERATIVE_ACTOR_EMAIL_KEY = 'arenaEmailId'
+
+/**
+ * Query params the host owns; never forwarded to a page's load actions.
+ * `arenaEmailId` is here so a page URL cannot inject the key the host sets itself.
+ */
+export const ARENA_GENERATIVE_RESERVED_QUERY_KEYS = [
+  'emailId',
+  ARENA_GENERATIVE_ACTOR_EMAIL_KEY,
+] as const
 
 /**
  * Page query params as flat action input. A repeated param keeps its first

@@ -1156,4 +1156,88 @@ describe('SpecRenderer', () => {
     const { container } = render({ spec: replySpec, state: {} })
     expect(container.querySelector('[aria-live="polite"]')).not.toBeNull()
   })
+
+  /**
+   * A SubmitButton outside a Form has nothing to submit. Before this it rendered a
+   * bare type="submit" with no handler, so the primary action of an already-published
+   * app silently did nothing.
+   */
+  describe('SubmitButton outside a Form', () => {
+    function formlessSpec(props: Record<string, unknown>): Spec {
+      return {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Search' }, children: ['stack'] },
+          stack: { type: 'Stack', props: { direction: 'horizontal' }, children: ['submit'] },
+          submit: { type: 'SubmitButton', props, children: [] },
+        },
+      }
+    }
+
+    it('runs its own actionId on click', () => {
+      const { container, onRunAction } = render({
+        spec: formlessSpec({ label: 'Search', actionId: 'run_search' }),
+      })
+      const button = container.querySelector('button')
+
+      expect(button?.getAttribute('type')).toBe('button')
+      act(() => {
+        button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(onRunAction).toHaveBeenCalledWith('run_search', expect.any(Object))
+    })
+
+    it('still submits normally when it is inside a Form', () => {
+      const { container, onRunAction } = render()
+      const button = container.querySelector('button[type="submit"]')
+      expect(button).not.toBeNull()
+
+      act(() => {
+        container
+          .querySelector('form')
+          ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      })
+      expect(onRunAction).toHaveBeenCalledWith('submit_lead', expect.any(Object))
+    })
+
+    it('is inside a Form even when nested below other elements', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Deep' }, children: ['form'] },
+          form: { type: 'Form', props: { actionId: 'save' }, children: ['card'] },
+          card: { type: 'Card', props: { title: 'Details' }, children: ['submit'] },
+          submit: { type: 'SubmitButton', props: { label: 'Save' }, children: [] },
+        },
+      }
+      const { container } = render({ spec })
+
+      expect(container.querySelector('button[type="submit"]')).not.toBeNull()
+      expect(container.querySelector('button[type="button"]')).toBeNull()
+    })
+
+    it('sends the Repeat row values when it sits inside a Repeat', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Rows' }, children: ['grid'] },
+          grid: { type: 'Grid', props: { columns: '2' }, children: ['repeat'] },
+          repeat: { type: 'Repeat', props: { statePath: 'rows' }, children: ['submit'] },
+          submit: {
+            type: 'SubmitButton',
+            props: { label: 'Pick', actionId: 'pick_row' },
+            children: [],
+          },
+        },
+      }
+      const { container, onRunAction } = render({ spec, state: { rows: [{ id: 'r1' }] } })
+
+      act(() => {
+        container.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+
+      expect(onRunAction).toHaveBeenCalledWith('pick_row', expect.objectContaining({ id: 'r1' }))
+    })
+  })
 })

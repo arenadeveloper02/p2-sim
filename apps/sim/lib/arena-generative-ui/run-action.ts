@@ -16,6 +16,7 @@ import {
   paginationStateFromData,
 } from '@/lib/arena-generative-ui/pagination'
 import {
+  ARENA_GENERATIVE_ACTOR_EMAIL_KEY,
   ARENA_GENERATIVE_SCHEMA_WARNING_KEY,
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
@@ -265,6 +266,27 @@ function resolveSecretHeaders(
     headerNames: Object.keys(headers),
   })
   return { ok: true, headers }
+}
+
+/**
+ * Replaces any caller-supplied `arenaEmailId` with the server's resolved value, so
+ * the key has exactly one source. Workflow bindings always receive it — they execute
+ * inside the same workspace. HTTP bindings receive it only when the binding sets
+ * `forwardEmailId`, so no existing binding starts disclosing a visitor's address to
+ * a third-party endpoint.
+ */
+function withActorEmail(
+  values: Record<string, unknown>,
+  binding: ArenaGenerativeApiBinding,
+  arenaEmailId?: string
+): Record<string, unknown> {
+  const next = { ...values }
+  delete next[ARENA_GENERATIVE_ACTOR_EMAIL_KEY]
+  const allowed = binding.kind === 'workflow' || binding.forwardEmailId === true
+  if (allowed && arenaEmailId?.trim()) {
+    next[ARENA_GENERATIVE_ACTOR_EMAIL_KEY] = arenaEmailId.trim()
+  }
+  return next
 }
 
 function mapActionInput(
@@ -722,6 +744,8 @@ export interface RunGenerativeAppActionOptions {
   values: Record<string, unknown>
   requestId: string
   actorUserId: string
+  /** Visitor's Arena emailId. Unverified — see `ARENA_GENERATIVE_ACTOR_EMAIL_KEY`. */
+  arenaEmailId?: string
   onChunk?: (content: string) => void | Promise<void>
 }
 
@@ -752,9 +776,17 @@ export async function runGenerativeAppAction(
     return { ok: false, error: `Unknown API binding "${action.apiKey}"` }
   }
 
+  /**
+   * Applied on both sides of `mapActionInput` on purpose. Before, so an
+   * `inputMapping` can rename it (`{ "email": "arenaEmailId" }`); after, because
+   * `inputMapping` is an allowlist and would otherwise drop a host-owned key the
+   * author never listed — which is most generated bindings.
+   */
+  const actorEmail = (values: Record<string, unknown>) =>
+    withActorEmail(values, binding, options.arenaEmailId)
   const mappedInput = applyPaginationToInput(
     binding.pagination,
-    mapActionInput(options.values, action.inputMapping)
+    actorEmail(mapActionInput(actorEmail(options.values), action.inputMapping))
   )
 
   let streamedContent = ''
@@ -875,18 +907,9 @@ export async function runDeployedAppAction(options: {
   actionId: string
   values: Record<string, unknown>
   requestId: string
+  arenaEmailId?: string
 }): Promise<RunDeployedAppActionResult> {
-  return runGenerativeAppAction({
-    manifest: options.deployment.manifest,
-    apiBindings: options.deployment.apiBindings,
-    httpAllowlist: options.deployment.httpAllowlist,
-    userId: options.deployment.userId,
-    workspaceId: options.deployment.workspaceId,
-    actionId: options.actionId,
-    values: options.values,
-    requestId: options.requestId,
-    actorUserId: options.deployment.userId,
-  })
+  return runGenerativeAppAction(deployedRunnerOptions(options))
 }
 
 export function createDeployedAppActionSseResponse(options: {
@@ -894,8 +917,19 @@ export function createDeployedAppActionSseResponse(options: {
   actionId: string
   values: Record<string, unknown>
   requestId: string
+  arenaEmailId?: string
 }): Response {
-  return createGenerativeAppActionSseResponse({
+  return createGenerativeAppActionSseResponse(deployedRunnerOptions(options))
+}
+
+function deployedRunnerOptions(options: {
+  deployment: DeployedAppRecord
+  actionId: string
+  values: Record<string, unknown>
+  requestId: string
+  arenaEmailId?: string
+}): RunGenerativeAppActionOptions {
+  return {
     manifest: options.deployment.manifest,
     apiBindings: options.deployment.apiBindings,
     httpAllowlist: options.deployment.httpAllowlist,
@@ -905,5 +939,6 @@ export function createDeployedAppActionSseResponse(options: {
     values: options.values,
     requestId: options.requestId,
     actorUserId: options.deployment.userId,
-  })
+    arenaEmailId: options.arenaEmailId,
+  }
 }

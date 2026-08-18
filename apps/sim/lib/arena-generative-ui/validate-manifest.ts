@@ -134,6 +134,35 @@ function collectActionIdsFromSpec(spec: Spec): string[] {
   return ids
 }
 
+/**
+ * Ids of every `SubmitButton` that is neither inside a `Form` nor carries its own
+ * `actionId`. Those submit nothing and run nothing, so they render as a dead
+ * button. A form-less `SubmitButton` that does carry an `actionId` is fine — the
+ * host runs it on click — so it is deliberately not reported here.
+ */
+function deadSubmitButtonIds(spec: Spec): string[] {
+  const elements = (spec.elements ?? {}) as Record<string, FlatElement>
+  const insideForm = new Set<string>()
+  const queue: string[] = []
+  for (const element of Object.values(elements)) {
+    if (element.type === 'Form') {
+      queue.push(...(element.children ?? []))
+    }
+  }
+  while (queue.length > 0) {
+    const id = queue.pop()
+    if (!id || insideForm.has(id)) continue
+    insideForm.add(id)
+    queue.push(...(elements[id]?.children ?? []))
+  }
+  return Object.entries(elements)
+    .filter(
+      ([id, element]) =>
+        element.type === 'SubmitButton' && !insideForm.has(id) && !asString(element.props?.actionId)
+    )
+    .map(([id]) => id)
+}
+
 function stripActionIds(spec: Spec): void {
   const elements = spec.elements as Record<string, FlatElement>
   for (const element of Object.values(elements ?? {})) {
@@ -182,8 +211,16 @@ export function validateArenaGenerativeManifest(
     pageHints?: ArenaGenerativePageHint[]
     apiBindings: ArenaGenerativeApiBinding[]
     entryPath?: string
+    /**
+     * Pages this reply actually authored. Quality checks that would otherwise
+     * reject a pre-existing page run only on these, so a scoped edit is never
+     * blocked by a defect on a page it did not touch. Omit to check every page,
+     * which is right for a generate or a whole-manifest edit.
+     */
+    authoredPagePaths?: string[]
   }
 ): ManifestValidationResult {
+  const authored = options.authoredPagePaths ? new Set(options.authoredPagePaths) : null
   if (!raw || typeof raw !== 'object') {
     return { success: false, error: 'Manifest must be an object' }
   }
@@ -236,6 +273,13 @@ export function validateArenaGenerativeManifest(
       return {
         success: false,
         error: `Page "${key}" declares ${onLoad.length} onLoad actions; at most ${MAX_PAGE_ON_LOAD_ACTIONS} are allowed`,
+      }
+    }
+    const deadSubmits = authored && !authored.has(key) ? [] : deadSubmitButtonIds(validation.data)
+    if (deadSubmits.length > 0) {
+      return {
+        success: false,
+        error: `Page "${key}" has a SubmitButton (${deadSubmits.join(', ')}) that is not inside a Form and has no actionId, so it would do nothing. Put it inside the Form it submits, or give it an actionId.`,
       }
     }
     pages[key] = {

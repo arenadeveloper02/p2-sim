@@ -662,13 +662,20 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
   const [formValues, setFormValues] = useState<Record<string, unknown>>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
-  const renderNode = (id: string, scope?: RepeatItemScope): ReactNode => {
+  /**
+   * `withinForm` tracks whether an ancestor is a `Form`. A `SubmitButton` outside one
+   * submits nothing, so it needs its `actionId` wired to a click instead. Computed
+   * here rather than threaded from the `Form` case because children are rendered
+   * before the switch runs.
+   */
+  const renderNode = (id: string, scope?: RepeatItemScope, withinForm = false): ReactNode => {
     const element = elements[id]
     if (!element) return null
     const props = interpolateRepeatProps(element.props ?? {}, scope)
     const childIds = element.children ?? []
+    const childWithinForm = withinForm || element.type === 'Form'
     const children = childIds.map((childId) => (
-      <Fragment key={childId}>{renderNode(childId, scope)}</Fragment>
+      <Fragment key={childId}>{renderNode(childId, scope, childWithinForm)}</Fragment>
     ))
     const hasChildren = childIds.length > 0
     const fieldSnapshot = snapshotFormValues(specFormFields(elements), formValues, state, scope)
@@ -1301,12 +1308,33 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           </FieldShell>
         )
       }
-      case 'SubmitButton':
+      case 'SubmitButton': {
+        const label = asString(props.label, 'Submit')
+        const className = buttonClass(props, 'primary')
+        const actionId = asString(props.actionId)
+        /**
+         * Outside a Form there is nothing to submit, so a bare `type="submit"` would
+         * be inert. Run the button's own `actionId` instead — this also revives
+         * already-published drafts whose primary button never did anything.
+         */
+        if (!withinForm && actionId) {
+          return (
+            <button
+              type='button'
+              disabled={pending}
+              className={className}
+              onClick={() => void onRunAction(actionId, actionValues)}
+            >
+              {label}
+            </button>
+          )
+        }
         return (
-          <button type='submit' disabled={pending} className={buttonClass(props, 'primary')}>
-            {asString(props.label, 'Submit')}
+          <button type='submit' disabled={pending} className={className}>
+            {label}
           </button>
         )
+      }
       case 'Button': {
         const href = asString(props.href)
         const navigateTo = asString(props.navigateTo)

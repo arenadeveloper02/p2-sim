@@ -20,12 +20,29 @@ import {
   curlLooksLikeStream,
   httpBindingFromCurl,
 } from '@/lib/arena-generative-ui/from-curl'
+import {
+  inputSchemaFromWorkflowFields,
+  workflowBindingFromSelection,
+} from '@/lib/arena-generative-ui/from-workflow'
+import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
+import { useDeployedWorkflowState } from '@/hooks/queries/deployments'
+import { useWorkflows } from '@/hooks/queries/workflows'
 import { useAvailableEnvVarKeys } from '@/hooks/use-available-env-vars'
 
 const STREAM_SWITCH_OPTIONS = [
   { value: 'off', label: 'JSON' },
   { value: 'on', label: 'Stream' },
+] as const
+
+const SOURCE_SWITCH_OPTIONS = [
+  { value: 'http', label: 'HTTP (curl)' },
+  { value: 'workflow', label: 'Workflow' },
+] as const
+
+const FORWARD_EMAIL_SWITCH_OPTIONS = [
+  { value: 'off', label: "Don't send" },
+  { value: 'on', label: 'Send' },
 ] as const
 
 interface ArenaApiBindingImportHelperProps {
@@ -37,8 +54,9 @@ interface ArenaApiBindingImportHelperProps {
 }
 
 /**
- * Canvas-only helper that turns a curl command into API Bindings JSON.
- * Writes the existing `apiBindings` code field; does not persist extra sub-block state.
+ * Canvas-only helper that turns a curl command or a deployed workflow into API
+ * Bindings JSON. Writes the existing `apiBindings` code field; does not persist
+ * extra sub-block state.
  */
 export function ArenaApiBindingImportHelper({
   blockId,
@@ -51,12 +69,27 @@ export function ArenaApiBindingImportHelper({
   const [storeValue, setStoreValue] = useSubBlockValue<string>(blockId, subBlockId)
   const envVarKeys = useAvailableEnvVarKeys(workspaceId)
   const [open, setOpen] = useState(false)
+  const [source, setSource] = useState<'http' | 'workflow'>('http')
   const [key, setKey] = useState('')
   const [secretVar, setSecretVar] = useState('')
   const [curl, setCurl] = useState('')
   const [streamMode, setStreamMode] = useState<'off' | 'on'>('off')
+  const [forwardEmail, setForwardEmail] = useState<'off' | 'on'>('off')
   const [outputSample, setOutputSample] = useState('')
+  const [workflowId, setWorkflowId] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  const { data: workflows, isLoading: workflowsLoading } = useWorkflows(workspaceId, {
+    enabled: open && source === 'workflow',
+  })
+  /**
+   * The deployed snapshot, not the draft: a CTA executes the deployed version, so the
+   * draft's start block could advertise inputs the running workflow does not accept.
+   */
+  const { data: deployedState, isLoading: deployedLoading } = useDeployedWorkflowState(
+    workflowId || null,
+    { enabled: open && source === 'workflow' && Boolean(workflowId) }
+  )
 
   const envOptions = useMemo(() => {
     if (!envVarKeys) return []
@@ -65,15 +98,41 @@ export function ArenaApiBindingImportHelper({
       .map((name) => ({ label: name, value: name }))
   }, [envVarKeys])
 
+  const workflowOptions = useMemo(
+    () =>
+      [...(workflows ?? [])]
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((workflow) => ({
+          value: workflow.id,
+          label: workflow.isDeployed ? workflow.name : `${workflow.name} — not deployed`,
+        })),
+    [workflows]
+  )
+
+  const selectedWorkflow = useMemo(
+    () => (workflows ?? []).find((workflow) => workflow.id === workflowId),
+    [workflows, workflowId]
+  )
+  const inputFields = useMemo(
+    () => extractInputFieldsFromBlocks(deployedState?.blocks),
+    [deployedState?.blocks]
+  )
+  const inputSchema = useMemo(() => inputSchemaFromWorkflowFields(inputFields), [inputFields])
+
   const launcherDisabled = isPreview || disabled
-  const canSave = key.trim().length > 0 && curl.trim().length > 0
+  const canSave =
+    key.trim().length > 0 &&
+    (source === 'http' ? curl.trim().length > 0 : workflowId.trim().length > 0)
 
   function resetForm() {
+    setSource('http')
     setKey('')
     setSecretVar('')
     setCurl('')
     setStreamMode('off')
+    setForwardEmail('off')
     setOutputSample('')
+    setWorkflowId('')
     setError(null)
   }
 
@@ -86,22 +145,36 @@ export function ArenaApiBindingImportHelper({
 
   function handleSave() {
     try {
-      if (curlHasAuthHeader(curl) && !secretVar.trim()) {
-        setError('This curl sets an auth header. Select a Secret var — do not paste the key.')
-        return
-      }
-      const binding = httpBindingFromCurl({
-        key,
-        curl,
-        headersSecretName: secretVar,
-        stream: streamMode === 'on',
-        outputSample,
-      })
+      const binding =
+        source === 'workflow'
+          ? workflowBindingFromSelection({
+              key,
+              workflowId,
+              label: selectedWorkflow?.name,
+              inputFields,
+              outputSample,
+              stream: streamMode === 'on',
+            })
+          : buildHttpBinding()
       setStoreValue(appendApiBinding(storeValue ?? '', binding))
       handleOpenChange(false)
     } catch (caught) {
       setError(getErrorMessage(caught, 'Could not add API binding'))
     }
+  }
+
+  function buildHttpBinding() {
+    if (curlHasAuthHeader(curl) && !secretVar.trim()) {
+      throw new Error('This curl sets an auth header. Select a Secret var — do not paste the key.')
+    }
+    const binding = httpBindingFromCurl({
+      key,
+      curl,
+      headersSecretName: secretVar,
+      stream: streamMode === 'on',
+      outputSample,
+    })
+    return forwardEmail === 'on' ? { ...binding, forwardEmailId: true } : binding
   }
 
   return (
@@ -114,6 +187,18 @@ export function ArenaApiBindingImportHelper({
         <ChipModalHeader onClose={() => handleOpenChange(false)}>Add an API</ChipModalHeader>
         <ChipModalBody>
           <ChipModalField
+            type='custom'
+            title='Source'
+            hint='Call a deployed workflow in this workspace, or an external HTTP endpoint.'
+          >
+            <ChipSwitch
+              value={source}
+              onChange={setSource}
+              aria-label='Binding source'
+              options={SOURCE_SWITCH_OPTIONS}
+            />
+          </ChipModalField>
+          <ChipModalField
             type='input'
             title='Key'
             value={key}
@@ -123,41 +208,103 @@ export function ArenaApiBindingImportHelper({
             hint='Use this same key in User Input for the CTA.'
             mono
           />
-          <ChipModalField
-            type='custom'
-            title='Secret var'
-            hint='Workspace or personal env var name. Do not paste the secret.'
-          >
-            {(aria) => (
-              <ChipCombobox
-                value={secretVar}
-                onChange={setSecretVar}
-                options={envOptions}
-                placeholder='Select or type an env var name'
-                editable
-                isLoading={envVarKeys === undefined}
-                inputProps={aria}
+          {source === 'workflow' ? (
+            <>
+              <ChipModalField
+                type='custom'
+                title='Workflow'
+                required
+                hint='The CTA runs the deployed version of this workflow.'
+              >
+                {(aria) => (
+                  <ChipCombobox
+                    value={workflowId}
+                    onChange={setWorkflowId}
+                    options={workflowOptions}
+                    placeholder='Select a workflow'
+                    isLoading={workflowsLoading}
+                    inputProps={aria}
+                  />
+                )}
+              </ChipModalField>
+              {selectedWorkflow && selectedWorkflow.isDeployed === false ? (
+                <ChipModalField
+                  type='custom'
+                  title='Not deployed'
+                  hint='Deploy this workflow before launching the app. The CTA fails until you do, and Launch GUI App will block.'
+                >
+                  <p className='text-[var(--text-secondary)] text-caption'>
+                    {selectedWorkflow.name} has no active deployment.
+                  </p>
+                </ChipModalField>
+              ) : null}
+              {workflowId ? (
+                <ChipModalField
+                  type='custom'
+                  title='Inputs'
+                  hint='Read from the deployed start block. Saved as inputSchema so the generator knows which fields to collect.'
+                >
+                  <p className='text-[var(--text-secondary)] text-caption'>
+                    {deployedLoading
+                      ? 'Reading the deployed start block…'
+                      : inputSchema.length > 0
+                        ? inputSchema.map((field) => `${field.name}: ${field.type}`).join(', ')
+                        : 'This workflow declares no start inputs. Form values are still sent as-is.'}
+                  </p>
+                </ChipModalField>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <ChipModalField
+                type='custom'
+                title='Secret var'
+                hint='Workspace or personal env var name. Do not paste the secret.'
+              >
+                {(aria) => (
+                  <ChipCombobox
+                    value={secretVar}
+                    onChange={setSecretVar}
+                    options={envOptions}
+                    placeholder='Select or type an env var name'
+                    editable
+                    isLoading={envVarKeys === undefined}
+                    inputProps={aria}
+                  />
+                )}
+              </ChipModalField>
+              <ChipModalField
+                type='textarea'
+                title='Curl'
+                value={curl}
+                onChange={(value) => {
+                  setCurl(value)
+                  if (curlLooksLikeStream(value)) {
+                    setStreamMode('on')
+                  }
+                }}
+                required
+                placeholder={`curl -X POST -d '{"input":"example"}' https://example.com/execute`}
+                hint='Paste a curl command. Auth headers are ignored; use Secret var instead.'
+                rows={8}
+                minHeight={160}
+                resizable
+                mono
               />
-            )}
-          </ChipModalField>
-          <ChipModalField
-            type='textarea'
-            title='Curl'
-            value={curl}
-            onChange={(value) => {
-              setCurl(value)
-              if (curlLooksLikeStream(value)) {
-                setStreamMode('on')
-              }
-            }}
-            required
-            placeholder={`curl -X POST -d '{"input":"example"}' https://example.com/execute`}
-            hint='Paste a curl command. Auth headers are ignored; use Secret var instead.'
-            rows={8}
-            minHeight={160}
-            resizable
-            mono
-          />
+              <ChipModalField
+                type='custom'
+                title="Visitor's email"
+                hint='Sends the unverified Arena emailId as arenaEmailId. Off unless this endpoint needs it — it leaves your workspace.'
+              >
+                <ChipSwitch
+                  value={forwardEmail}
+                  onChange={setForwardEmail}
+                  aria-label="Forward the visitor's email"
+                  options={FORWARD_EMAIL_SWITCH_OPTIONS}
+                />
+              </ChipModalField>
+            </>
+          )}
           <ChipModalField
             type='custom'
             title='Response'

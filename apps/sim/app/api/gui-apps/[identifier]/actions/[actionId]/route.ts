@@ -7,6 +7,7 @@ import {
   authorizeDeployedAppRequest,
   findDeployedAppByIdentifier,
 } from '@/lib/arena-generative-ui/deployment'
+import { checkGenerativeAppActionRateLimit } from '@/lib/arena-generative-ui/rate-limit'
 import {
   createDeployedAppActionSseResponse,
   isStreamingAction,
@@ -24,6 +25,12 @@ export const POST = withRouteHandler(
   ) => {
     const parsed = await parseRequest(runDeployedAppActionContract, request, context)
     if (!parsed.success) return parsed.response
+
+    const throttled = await checkGenerativeAppActionRateLimit(
+      parsed.data.params.identifier,
+      request
+    )
+    if (throttled) return throttled
 
     const deployment = await findDeployedAppByIdentifier(parsed.data.params.identifier)
     if (!deployment) {
@@ -46,6 +53,7 @@ export const POST = withRouteHandler(
         actionId,
         values,
         requestId: authorized.requestId,
+        arenaEmailId: authorized.arenaEmailId,
       })
     }
 
@@ -55,6 +63,7 @@ export const POST = withRouteHandler(
         actionId,
         values,
         requestId: authorized.requestId,
+        arenaEmailId: authorized.arenaEmailId,
       })
       return createSuccessResponse(result)
     } catch (error) {
