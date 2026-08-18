@@ -219,6 +219,14 @@ export function GenerativeAppDeploy({
             label: `${draft.title} (r${draft.revision})`,
           }))}
         />
+        {selectedDraftQuery.data?.revisionDiff?.summary ? (
+          <p
+            className='mt-1 text-[var(--text-secondary)] text-xs'
+            data-testid='revision-diff-summary'
+          >
+            {selectedDraftQuery.data.revisionDiff.summary}
+          </p>
+        ) : null}
       </div>
 
       <div>

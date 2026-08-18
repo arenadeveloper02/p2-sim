@@ -1,6 +1,7 @@
 import type { Spec } from '@json-render/core'
 import { arenaGenerativeUiCatalog } from '@/lib/arena-generative-ui/catalog'
 import { normalizeGeneratedSpec } from '@/lib/arena-generative-ui/normalize-spec'
+import { parseArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import {
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
   type ArenaGenerativeApiBinding,
@@ -398,12 +399,15 @@ export function validateArenaGenerativeManifest(
     }
   }
 
+  const theme = parseArenaGenerativeTheme(candidate.theme)
+
   return {
     success: true,
     manifest: {
       entryPath,
       pages,
       actions,
+      ...(theme ? { theme } : {}),
     },
   }
 }

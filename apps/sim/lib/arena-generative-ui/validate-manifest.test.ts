@@ -86,6 +86,46 @@ describe('validateArenaGenerativeManifest', () => {
     expect(result.success).toBe(true)
   })
 
+  it('keeps a valid manifest.theme and drops an invalid brand colour', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        theme: { brandColor: '#2563eb', radius: 'md', density: 'comfortable', extra: true },
+        pages: {
+          home: { title: 'Home', path: 'home', spec: pageSpec() },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+        },
+      },
+      { apiBindings: bindings, entryPath: 'home' }
+    )
+    expect(result.success).toBe(true)
+    expect(result.manifest?.theme).toEqual({
+      brandColor: '#2563eb',
+      radius: 'md',
+      density: 'comfortable',
+    })
+
+    const dropped = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        theme: { brandColor: 'blue' },
+        pages: {
+          home: { title: 'Home', path: 'home', spec: pageSpec() },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+        },
+      },
+      { apiBindings: bindings, entryPath: 'home' }
+    )
+    expect(dropped.success).toBe(true)
+    expect(dropped.manifest?.theme).toBeUndefined()
+  })
+
   it('keeps a page onLoad that names a declared action', () => {
     const result = validateArenaGenerativeManifest(
       {

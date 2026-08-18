@@ -26,8 +26,12 @@ vi.mock('@sim/emcn', () => ({
   InputOTP: ({ children }: { children?: unknown }) => <div>{children}</div>,
   InputOTPGroup: ({ children }: { children?: unknown }) => <div>{children}</div>,
   InputOTPSlot: () => <div />,
-  Label: ({ children }: { children?: unknown }) => <label>{children}</label>,
+  Label: ({ children, htmlFor }: { children?: unknown; htmlFor?: string }) => (
+    <label htmlFor={htmlFor}>{children}</label>
+  ),
 }))
+
+vi.mock('@/app/(interfaces)/gui-apps/generative-app-theme.css', () => ({}))
 
 vi.mock('@/hooks/queries/arena-generative-apps', () => ({
   useDeployedAppConfig: (...args: unknown[]) => mockUseDeployedAppConfig(...args),

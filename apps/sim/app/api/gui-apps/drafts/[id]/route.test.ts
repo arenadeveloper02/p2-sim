@@ -50,5 +50,29 @@ describe('Generative app draft GET (two-page app)', () => {
     expect(body.manifest.pages.home.path).toBe('home')
     expect(body.manifest.pages.results.path).toBe('results')
     expect(body.manifest.actions.submit_lead.onSuccess.navigate).toBe('results')
+    expect(body.revisionDiff).toBeNull()
+  })
+
+  it('summarizes what changed since the previous revision', async () => {
+    const previousManifest = twoPageManifest
+    const nextManifest = {
+      ...twoPageManifest,
+      pages: {
+        ...twoPageManifest.pages,
+        home: { ...twoPageManifest.pages.home, title: 'Updated form' },
+      },
+    }
+    dbChainMockFns.limit
+      .mockResolvedValueOnce([{ ...draftRow, revision: 2, manifest: nextManifest }])
+      .mockResolvedValueOnce([{ id: 'rev-2' }])
+      .mockResolvedValueOnce([{ manifest: previousManifest, revision: 1 }])
+    const req = new NextRequest('http://localhost:3000/api/gui-apps/drafts/draft-1')
+    const response = await GET(req, { params: Promise.resolve({ id: 'draft-1' }) })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.revisionDiff.fromRevision).toBe(1)
+    expect(body.revisionDiff.toRevision).toBe(2)
+    expect(body.revisionDiff.pagesChanged).toEqual(['home'])
+    expect(body.revisionDiff.summary).toContain('r1 → r2')
   })
 })

@@ -377,7 +377,7 @@ export const ARENA_GENERATIVE_UI_PERSONA =
 
 export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Output a single complete JSON object. Do NOT wrap it in markdown fences. Do NOT output JSONL patches.',
-  'Shape: { "title": string, "content": string, "manifest": { "entryPath": string, "pages": { [path]: { "title", "path", "spec", "onLoad?" } }, "actions": { [actionId]: { "apiKey", "inputMapping?", "append?", "onSuccess?", "onError?" } } } }',
+  'Shape: { "title": string, "content": string, "manifest": { "entryPath": string, "theme?", "pages": { [path]: { "title", "path", "spec", "onLoad?" } }, "actions": { [actionId]: { "apiKey", "inputMapping?", "append?", "onSuccess?", "onError?" } } } }',
   'manifest.pages MUST be an object keyed by kebab-case path, never an array. Example: { "home": { "path": "home", "title": "People", "spec": { ... } }, "person": { "path": "person", "title": "Profile", "spec": { ... } } }.',
   'Return one JSON object only. Do not emit a short summary object before the manifest.',
   'Each page spec is a json-render Spec: { "root": string, "elements": { [key]: { type, props, children } } }.',
@@ -394,7 +394,7 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Layout: each page is a full-page app screen. Page → Section (leave width at the wide default so it fills up to 1280px) → content. Use the horizontal space; do not stack every element in one narrow centre column. Do not set maxWidth unless the brief demands an exact cap.',
   'Measure: dashboards, collections and tables stay wide, but a narrative block — a report body, an analysis, a long DataText — goes in its own Section with width "narrow" or in the main column of Columns. Never let prose run the full 1280px.',
   'Spacing: group related elements into a Card or Stack so data reads as chunks, and leave real space between groups. gap and padding take CSS lengths such as "16px" or "24px", never size words like "md" or "lg".',
-  'Surfaces: there are exactly two — the page canvas and the white Card/Stat surface, both supplied by the host. Do not set backgroundColor unless the brief names a specific colour. Build hierarchy from heading level, weight and whitespace instead of coloured fills or borders.',
+  'Surfaces: there are exactly two — the page canvas and the Card/Stat surface, both supplied by the host from manifest.theme (or defaults). Do not set backgroundColor unless the brief names a specific colour. Build hierarchy from heading level, weight and whitespace instead of coloured fills or borders.',
   'Collections: when each item is the same scalar fields with no per-row action, use Table. When each item needs its own Card, Badge, button, or link, put a Repeat inside a Grid (columns 2 or 3) or Stack, bound to the array statePath; Repeat\'s children are the per-item template and render once per element. Never unroll a live array into one static Card per item, and never wrap Grid in Repeat (that produces N grids). Bind per-item fields with statePath "item.field". Put per-item values into navigation and hrefs with "{item.id}" — NavLink.to "order?id={item.id}" opens the detail page so its onLoad receives that id. A Button.actionId inside Repeat sends the item fields as the action input.',
   'Tabular data goes in Table, metrics go in Stat inside a Grid, record details go in KeyValue, short statuses go in Badge.',
   'Forms: every interactive field carries an explicit label. Pair short related fields (TextInput, NumberInput, DateInput, Select) side by side in a Grid (columns 2) and keep long free-text, RadioGroup, MultiSelect, Checkbox, and Switch full width. Forms have one SubmitButton and an optional Back NavLink, and default to left-aligned.',
@@ -427,6 +427,14 @@ export const ARENA_GENERATIVE_UI_ON_LOAD_RULE = [
   'Data on arrival: a page whose content comes from an API the user did not just submit must fetch it itself. Set page "onLoad" to an array of manifest.actions ids and the host runs them once when the page opens, merging the response into state exactly as a CTA does. A dashboard, a report, a list, or a record detail page needs onLoad; a form page does not.',
   'onLoad receives the page query params as its action input, mapped through the action inputMapping. A navigation target may carry those params — NavLink.to "report?range=30d" opens the report page and its onLoad action receives range "30d", and inside Repeat the same target can be "order?id={item.id}" so each row opens its own record — while the part before "?" must still be an existing page path. Give an onLoad action no onSuccess.navigate: the host ignores it rather than bouncing the user off the page they just opened.',
   'A page with onLoad still needs loading states: bind its Table, Repeat, Stat, KeyValue, and DataText to a statePath so the placeholder shows while the load is in flight.',
+].join(' ')
+
+/**
+ * Branding lives on `manifest.theme`, not free-text colour props. Always in the
+ * prompt so Design Notes that name a colour have somewhere to land.
+ */
+export const ARENA_GENERATIVE_UI_THEME_RULE = [
+  'Theme: optional manifest.theme { brandColor (hex #RGB or #RRGGBB), radius sm|md|lg, density compact|comfortable|roomy, font sans|serif, colorScheme light|dark|system }. Emit theme only when Design Notes name a brand colour, density, typeface, or dark mode. Do not set backgroundColor on Page or Card for branding — the host applies theme as CSS variables. Omit theme when Design Notes are silent.',
 ].join(' ')
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */

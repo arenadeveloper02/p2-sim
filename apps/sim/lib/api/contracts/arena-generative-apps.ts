@@ -6,6 +6,7 @@ import {
   toolSuccessResponseSchema,
 } from '@/lib/api/contracts/tool-primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
+import { parseArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import { isReservedGenerativeAppIdentifier } from '@/lib/arena-generative-ui/types'
 
 export const arenaGenerativePagePathSchema = z
@@ -93,8 +94,32 @@ export const arenaGenerativeApiBindingSchema = z
     }
   })
 
+export const arenaGenerativeThemeSchema = z.object({
+  brandColor: z.string().optional(),
+  radius: z.enum(['sm', 'md', 'lg']).optional(),
+  density: z.enum(['compact', 'comfortable', 'roomy']).optional(),
+  font: z.enum(['sans', 'serif']).optional(),
+  colorScheme: z.enum(['light', 'dark', 'system']).optional(),
+})
+
+export const arenaGenerativeRevisionDiffSchema = z.object({
+  fromRevision: z.number(),
+  toRevision: z.number(),
+  pagesAdded: z.array(z.string()),
+  pagesRemoved: z.array(z.string()),
+  pagesChanged: z.array(z.string()),
+  actionsAdded: z.array(z.string()),
+  actionsRemoved: z.array(z.string()),
+  themeChanged: z.boolean(),
+  summary: z.string(),
+})
+
 export const arenaGenerativeManifestSchema = z.object({
   entryPath: arenaGenerativePagePathSchema,
+  theme: z.preprocess(
+    (value) => parseArenaGenerativeTheme(value),
+    arenaGenerativeThemeSchema.optional()
+  ),
   pages: z.record(
     z.string(),
     z.object({
@@ -273,6 +298,7 @@ export const getGenerativeAppDraftContract = defineRouteContract({
       pages: z.array(arenaGenerativePageSummarySchema),
       apiBindings: z.array(arenaGenerativeApiBindingSchema),
       manifest: arenaGenerativeManifestSchema,
+      revisionDiff: arenaGenerativeRevisionDiffSchema.nullable(),
     }),
   },
 })
@@ -394,6 +420,7 @@ export const deployedAppConfigSchema = z.object({
   streamingActionIds: z.array(z.string()).optional().default([]),
   actionNavigate: z.record(z.string(), z.string()).optional().default({}),
   pageOnLoad: z.record(z.string(), z.array(z.string())).optional().default({}),
+  theme: arenaGenerativeThemeSchema.optional(),
 })
 export type DeployedAppConfig = z.output<typeof deployedAppConfigSchema>
 

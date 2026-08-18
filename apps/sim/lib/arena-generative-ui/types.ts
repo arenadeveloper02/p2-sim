@@ -1,4 +1,7 @@
 import type { Spec } from '@json-render/core'
+import type { ArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
+
+export type { ArenaGenerativeTheme }
 
 export const ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -123,6 +126,8 @@ export interface ArenaGenerativeAppManifest {
   entryPath: string
   pages: Record<string, ArenaGenerativePageManifest>
   actions: Record<string, ArenaGenerativeActionManifest>
+  /** Scoped `--gui-*` tokens. Omitted apps keep the host defaults. */
+  theme?: ArenaGenerativeTheme
 }
 
 export interface ArenaGenerativeGenerateResult {

@@ -174,6 +174,8 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('showWhen')
     expect(system).toContain('MultiSelect')
     expect(system).toContain('Load more')
+    expect(system).toContain('manifest.theme')
+    expect(system).toContain('brandColor')
   })
 
   it('opens with the engineer persona and a no-markdown instruction', async () => {

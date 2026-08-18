@@ -19,6 +19,8 @@ import {
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
+import { GenerativeAppThemeRoot } from '@/app/(interfaces)/gui-apps/generative-app-theme-root'
+import { SpecRenderErrorBoundary } from '@/app/(interfaces)/gui-apps/spec-render-error-boundary'
 import { usePageLoadActions } from '@/app/(interfaces)/gui-apps/use-page-load-actions'
 import {
   runDeployedAppActionStream,
@@ -142,7 +144,7 @@ export function GenerativeAppHost({
   const bannerMessage = actionError || schemaWarning
 
   return (
-    <>
+    <GenerativeAppThemeRoot theme={configQuery.data.config.theme}>
       {bannerMessage ? (
         <ActionErrorBanner
           message={bannerMessage}
@@ -150,32 +152,34 @@ export function GenerativeAppHost({
           onDismiss={() => mergeState(clearedActionErrorState())}
         />
       ) : null}
-      <SpecRenderer
-        spec={pageQuery.data.spec}
-        state={state}
-        pending={runAction.isPending || actionPending || loadPending}
-        onNavigate={navigate}
-        onRunAction={async (actionId, values) => {
-          const navigateTo = actionNavigate[actionId]
-          setActionPending(true)
-          mergeState(clearedActionErrorState())
-          try {
-            if (navigateTo) {
-              navigate(navigateTo)
+      <SpecRenderErrorBoundary key={pagePath} fallbackTitle='This page failed to render'>
+        <SpecRenderer
+          spec={pageQuery.data.spec}
+          state={state}
+          pending={runAction.isPending || actionPending || loadPending}
+          onNavigate={navigate}
+          onRunAction={async (actionId, values) => {
+            const navigateTo = actionNavigate[actionId]
+            setActionPending(true)
+            mergeState(clearedActionErrorState())
+            try {
+              if (navigateTo) {
+                navigate(navigateTo)
+              }
+              const result = await executeAction(actionId, values)
+              applyActionResult(result, mergeState, navigate, logger, {
+                skipNavigate: Boolean(navigateTo),
+              })
+            } catch (error) {
+              logger.error('App action failed', { error: toError(error).message })
+              mergeState({ error: toError(error).message || 'Action failed' })
+            } finally {
+              setActionPending(false)
             }
-            const result = await executeAction(actionId, values)
-            applyActionResult(result, mergeState, navigate, logger, {
-              skipNavigate: Boolean(navigateTo),
-            })
-          } catch (error) {
-            logger.error('App action failed', { error: toError(error).message })
-            mergeState({ error: toError(error).message || 'Action failed' })
-          } finally {
-            setActionPending(false)
-          }
-        }}
-      />
-    </>
+          }}
+        />
+      </SpecRenderErrorBoundary>
+    </GenerativeAppThemeRoot>
   )
 }
 

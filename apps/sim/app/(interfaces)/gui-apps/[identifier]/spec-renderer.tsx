@@ -105,14 +105,13 @@ function toneClass(value: unknown, fallback: keyof typeof TONE_CLASSES = 'info')
 }
 
 const BUTTON_BASE_CLASS =
-  'inline-flex items-center justify-center rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ds-blue-600,#2563eb)]'
+  'inline-flex items-center justify-center rounded-[var(--gui-radius,10px)] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gui-brand,#2563eb)]'
 
 const BUTTON_VARIANT_CLASSES = {
-  primary:
-    'bg-[var(--color-ds-blue-600,#2563eb)] text-white hover:bg-[var(--color-ds-blue-700,#1d4ed8)]',
+  primary: 'bg-[var(--gui-brand,#2563eb)] text-white hover:bg-[var(--gui-brand-hover,#1d4ed8)]',
   secondary:
-    'border border-[var(--color-ds-grey-300,#c5c6cc)] bg-white text-[var(--color-ds-grey-800,#1f232d)] hover:bg-[var(--color-ds-grey-50,#f7f8f9)]',
-  ghost: 'text-[var(--color-ds-grey-700,#3d414d)] hover:bg-[var(--color-ds-grey-100,#f0f1f3)]',
+    'border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] text-[var(--gui-text,#1f232d)] hover:bg-[var(--gui-canvas,#f7f8f9)]',
+  ghost: 'text-[var(--gui-text,#1f232d)] hover:bg-[var(--gui-canvas,#f7f8f9)]',
   destructive: 'bg-red-600 text-white hover:bg-red-700',
 } as const
 
@@ -319,7 +318,7 @@ function SkeletonBlock({ variant, lines }: SkeletonBlockProps) {
       <div
         aria-hidden
         data-testid='skeleton'
-        className='flex flex-col gap-2 rounded-xl border border-[var(--color-ds-grey-200,#e2e3e5)] bg-white p-4'
+        className='flex flex-col gap-2 rounded-[var(--gui-radius,10px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)]'
       >
         <div className={cn(SKELETON_BAR, 'h-3 w-1/2')} />
         <div className={cn(SKELETON_BAR, 'h-7 w-2/3')} />
@@ -355,7 +354,7 @@ function SkeletonBlock({ variant, lines }: SkeletonBlockProps) {
       <div
         aria-hidden
         data-testid='skeleton'
-        className='rounded-xl border border-[var(--color-ds-grey-200,#e2e3e5)] bg-white p-5'
+        className='rounded-[var(--gui-radius,10px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)]'
       >
         {body}
       </div>
@@ -534,10 +533,18 @@ function DataTextView({
   const structured = structuredFromDataText(value)
   const display = displayFromStateValue(value, fallback)
   if (pending && !structured && isEmptyStateValue(value)) {
-    return <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
+    return (
+      <div aria-live='polite' aria-busy='true'>
+        <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
+      </div>
+    )
   }
   if (structured?.kind === 'table') {
-    return <StateTable value={structured.rows} style={style} />
+    return (
+      <div aria-live='polite' aria-busy={pending || undefined}>
+        <StateTable value={structured.rows} style={style} />
+      </div>
+    )
   }
   if (structured?.kind === 'object') {
     const arrayEntries = Object.entries(structured.record).filter(([, nested]) =>
@@ -549,7 +556,12 @@ function DataTextView({
       scalars[key] = nested
     }
     return (
-      <div className='flex flex-col gap-4' style={style}>
+      <div
+        className='flex flex-col gap-4'
+        style={style}
+        aria-live='polite'
+        aria-busy={pending || undefined}
+      >
         {arrayEntries.map(([key, rows]) => (
           <StateTable key={key} value={rows} />
         ))}
@@ -557,7 +569,11 @@ function DataTextView({
       </div>
     )
   }
-  return <MarkdownText className='font-medium' style={style} content={display} />
+  return (
+    <div aria-live='polite' aria-busy={pending || undefined}>
+      <MarkdownText className='font-medium' style={style} content={display} />
+    </div>
+  )
 }
 
 function submitButtonActionId(elements: Record<string, SpecElement>, childIds: string[]): string {
@@ -575,7 +591,7 @@ function submitButtonActionId(elements: Record<string, SpecElement>, childIds: s
 }
 
 const FIELD_INPUT_CLASS =
-  'w-full rounded-lg border border-[var(--color-ds-grey-300,#c5c6cc)] bg-white px-3 py-2 text-sm'
+  'w-full rounded-[var(--gui-radius,10px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] px-3 py-2 text-sm text-[var(--gui-text,#1f232d)]'
 
 function fieldErrorClass(error: string | undefined): string {
   return error ? 'border-[var(--color-ds-red-600,#dc2626)]' : ''
@@ -678,16 +694,19 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
     }
 
     switch (element.type) {
-      case 'Page':
+      case 'Page': {
+        const hasPageHeader = childIds.some((childId) => elements[childId]?.type === 'PageHeader')
+        const title = asString(props.title)
         return (
           <div
-            className='min-h-full bg-[var(--color-ds-grey-50,#f7f8f9)]'
+            className='min-h-full bg-[var(--gui-canvas,#f7f8f9)] text-[var(--gui-text,#1f232d)]'
             style={styleFromProps(props)}
           >
-            {asString(props.title) ? <h1 className='sr-only'>{asString(props.title)}</h1> : null}
+            {title && !hasPageHeader ? <h1 className='sr-only'>{title}</h1> : null}
             {children}
           </div>
         )
+      }
       case 'Section':
         return (
           <section
@@ -710,7 +729,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
               justify === 'end' && 'justify-end',
               asBoolean(props.wrap) && 'flex-wrap'
             )}
-            style={{ gap: asString(props.gap, '12px'), ...styleFromProps(props) }}
+            style={{ gap: asString(props.gap, 'var(--gui-gap, 16px)'), ...styleFromProps(props) }}
           >
             {children}
           </div>
@@ -722,7 +741,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             className='grid w-full'
             style={{
               gridTemplateColumns: gridTemplateColumns(props),
-              gap: asString(props.gap, '16px'),
+              gap: asString(props.gap, 'var(--gui-gap, 16px)'),
               ...styleFromProps(props),
             }}
           >
@@ -772,7 +791,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
               layout === 'sidebar-right' && 'md:grid-cols-[1fr_280px]',
               layout === 'equal' && 'md:grid-cols-2'
             )}
-            style={{ gap: asString(props.gap, '16px'), ...styleFromProps(props) }}
+            style={{ gap: asString(props.gap, 'var(--gui-gap, 16px)'), ...styleFromProps(props) }}
           >
             {children}
           </div>
@@ -787,7 +806,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             <div className='flex flex-col gap-1'>
               <h1 className='font-semibold text-2xl tracking-tight'>{asString(props.title)}</h1>
               {asString(props.subtitle) ? (
-                <p className='text-[var(--color-ds-grey-600,#5b5f6b)] text-sm'>
+                <p className='text-[var(--gui-text-muted,#8a8d99)] text-sm'>
                   {asString(props.subtitle)}
                 </p>
               ) : null}
@@ -817,24 +836,28 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         if (items.length === 0) return null
         return (
           <nav
-            className='flex w-full flex-wrap items-center gap-1 border-[var(--color-ds-grey-200,#e2e3e5)] border-b'
+            className='flex w-full flex-wrap items-center gap-1 border-[var(--gui-border,#e2e3e5)] border-b'
             style={styleFromProps(props)}
           >
-            {items.map((item) => (
-              <button
-                key={item.path}
-                type='button'
-                onClick={() => onNavigate(item.path)}
-                className={cn(
-                  '-mb-px border-b-2 px-3 py-2 text-sm',
-                  splitNavTarget(item.path).path === splitNavTarget(activePath).path
-                    ? 'border-[var(--color-ds-blue-600,#2563eb)] font-medium text-[var(--color-ds-blue-600,#2563eb)]'
-                    : 'border-transparent text-[var(--color-ds-grey-600,#5b5f6b)]'
-                )}
-              >
-                {item.label}
-              </button>
-            ))}
+            {items.map((item) => {
+              const isActive = splitNavTarget(item.path).path === splitNavTarget(activePath).path
+              return (
+                <button
+                  key={item.path}
+                  type='button'
+                  aria-current={isActive ? 'page' : undefined}
+                  onClick={() => onNavigate(item.path)}
+                  className={cn(
+                    '-mb-px border-b-2 px-3 py-2 text-sm',
+                    isActive
+                      ? 'border-[var(--gui-brand,#2563eb)] font-medium text-[var(--gui-brand,#2563eb)]'
+                      : 'border-transparent text-[var(--gui-text-muted,#8a8d99)]'
+                  )}
+                >
+                  {item.label}
+                </button>
+              )
+            })}
           </nav>
         )
       }
@@ -915,10 +938,10 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         const delta = asString(props.delta)
         return (
           <div
-            className='flex flex-col gap-1 rounded-xl border border-[var(--color-ds-grey-200,#e2e3e5)] bg-white p-4'
+            className='flex flex-col gap-1 rounded-[var(--gui-radius,10px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)]'
             style={styleFromProps(props)}
           >
-            <span className='text-[var(--color-ds-grey-500,#8a8d99)] text-xs uppercase tracking-wide'>
+            <span className='text-[var(--gui-text-muted,#8a8d99)] text-xs uppercase tracking-wide'>
               {asString(props.label)}
             </span>
             <div className='flex flex-wrap items-baseline gap-2'>
@@ -930,7 +953,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
               ) : null}
             </div>
             {asString(props.hint) ? (
-              <span className='text-[var(--color-ds-grey-600,#5b5f6b)] text-xs'>
+              <span className='text-[var(--gui-text-muted,#8a8d99)] text-xs'>
                 {asString(props.hint)}
               </span>
             ) : null}
@@ -964,7 +987,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       case 'Card':
         return (
           <div
-            className='rounded-xl border border-[var(--color-ds-grey-200,#e2e3e5)] bg-white p-5 shadow-sm'
+            className='rounded-[var(--gui-radius,10px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)] shadow-sm'
             style={styleFromProps(props)}
           >
             {asString(props.title) || asString(props.description) ? (
@@ -973,7 +996,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
                   <h2 className='font-semibold text-lg'>{asString(props.title)}</h2>
                 ) : null}
                 {asString(props.description) ? (
-                  <p className='text-[var(--color-ds-grey-600,#5b5f6b)] text-sm'>
+                  <p className='text-[var(--gui-text-muted,#8a8d99)] text-sm'>
                     {asString(props.description)}
                   </p>
                 ) : null}
@@ -998,7 +1021,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       case 'Text':
         return (
           <MarkdownText
-            className='text-[var(--color-ds-grey-700,#3d414d)]'
+            className='text-[var(--gui-text,#1f232d)]'
             style={styleFromProps(props)}
             content={asString(props.text)}
           />
@@ -1021,7 +1044,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         )
       case 'Spinner':
         return pending ? (
-          <p className='text-[var(--color-ds-grey-500,#8a8d99)] text-sm'>
+          <p className='text-[var(--gui-text-muted,#8a8d99)] text-sm'>
             {asString(props.label, 'Loading…')}
           </p>
         ) : null
@@ -1199,38 +1222,46 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         if (element.type === 'Checkbox' || element.type === 'Switch') {
           const checked = value === true || value === 'true' || value === 'on'
           if (element.type === 'Switch') {
+            const switchLabelId = `${fieldId}-label`
             return (
               <FieldShell name={name} label='' error={error}>
-                <button
-                  type='button'
-                  role='switch'
-                  aria-checked={checked}
-                  aria-label={label || name}
-                  name={name}
-                  disabled={pending}
-                  onClick={() => setNamedValue(name, !checked)}
+                <div
                   className={cn(
                     'flex items-center gap-2 text-sm',
                     pending && 'cursor-not-allowed opacity-60'
                   )}
                 >
-                  <span
-                    className={cn(
-                      'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
-                      checked
-                        ? 'bg-[var(--color-ds-blue-600,#2563eb)]'
-                        : 'bg-[var(--color-ds-grey-300,#c5c6cc)]'
-                    )}
+                  <button
+                    id={fieldId}
+                    type='button'
+                    role='switch'
+                    aria-checked={checked}
+                    aria-labelledby={label ? switchLabelId : undefined}
+                    aria-label={label ? undefined : name}
+                    name={name}
+                    disabled={pending}
+                    onClick={() => setNamedValue(name, !checked)}
                   >
                     <span
                       className={cn(
-                        'inline-block size-4 rounded-full bg-white transition-transform',
-                        checked ? 'translate-x-4' : 'translate-x-0.5'
+                        'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
+                        checked ? 'bg-[var(--gui-brand,#2563eb)]' : 'bg-[var(--gui-border,#e2e3e5)]'
                       )}
-                    />
-                  </span>
-                  {label ? <span>{label}</span> : null}
-                </button>
+                    >
+                      <span
+                        className={cn(
+                          'inline-block size-4 rounded-full bg-[var(--gui-surface,#ffffff)] transition-transform',
+                          checked ? 'translate-x-4' : 'translate-x-0.5'
+                        )}
+                      />
+                    </span>
+                  </button>
+                  {label ? (
+                    <label id={switchLabelId} htmlFor={fieldId}>
+                      {label}
+                    </label>
+                  ) : null}
+                </div>
               </FieldShell>
             )
           }
@@ -1308,7 +1339,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         return (
           <button
             type='button'
-            className='text-[var(--color-ds-blue-600,#2563eb)] text-sm underline-offset-2 hover:underline'
+            className='text-[var(--gui-brand,#2563eb)] text-sm underline-offset-2 hover:underline'
             onClick={() => onNavigate(asString(props.to))}
           >
             {asString(props.label)}
@@ -1318,7 +1349,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         return (
           <a
             href={asString(props.href)}
-            className='text-[var(--color-ds-blue-600,#2563eb)] underline-offset-2 hover:underline'
+            className='text-[var(--gui-brand,#2563eb)] underline-offset-2 hover:underline'
             style={styleFromProps(props)}
             rel='noreferrer'
           >
@@ -1335,9 +1366,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           />
         )
       case 'Divider':
-        return (
-          <hr className='border-[var(--color-ds-grey-200,#e2e3e5)]' style={styleFromProps(props)} />
-        )
+        return <hr className='border-[var(--gui-border,#e2e3e5)]' style={styleFromProps(props)} />
       case 'List': {
         const Tag = asBoolean(props.ordered) ? 'ol' : 'ul'
         return <Tag className='list-inside pl-1'>{children}</Tag>

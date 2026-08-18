@@ -7,6 +7,7 @@ import type { NextRequest } from 'next/server'
 import { getGenerativeAppDraftContract } from '@/lib/api/contracts/arena-generative-apps'
 import { parseRequest } from '@/lib/api/server'
 import { pageSummariesFromManifest } from '@/lib/arena-generative-ui/deployment'
+import { summarizeManifestDiff } from '@/lib/arena-generative-ui/manifest-diff'
 import { parseApiBindings } from '@/lib/arena-generative-ui/parse-inputs'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 import { getSession } from '@/lib/auth'
@@ -58,6 +59,29 @@ export const GET = withRouteHandler(
         .limit(1)
 
       const manifest = draft.manifest as ArenaGenerativeAppManifest
+      let revisionDiff = null
+      if (draft.revision > 1) {
+        const [previous] = await db
+          .select({
+            manifest: generativeAppDraftRevision.manifest,
+            revision: generativeAppDraftRevision.revision,
+          })
+          .from(generativeAppDraftRevision)
+          .where(
+            and(
+              eq(generativeAppDraftRevision.draftId, draft.id),
+              eq(generativeAppDraftRevision.revision, draft.revision - 1)
+            )
+          )
+          .limit(1)
+        revisionDiff = summarizeManifestDiff(
+          previous?.manifest as ArenaGenerativeAppManifest | undefined,
+          manifest,
+          draft.revision - 1,
+          draft.revision
+        )
+      }
+
       return createSuccessResponse({
         id: draft.id,
         title: draft.title,
@@ -68,6 +92,7 @@ export const GET = withRouteHandler(
         pages: pageSummariesFromManifest(manifest),
         apiBindings: parseApiBindings(draft.apiBindings),
         manifest,
+        revisionDiff,
       })
     } catch (error) {
       logger.error('Failed to load generative app draft', { error: getErrorMessage(error) })

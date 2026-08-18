@@ -6,6 +6,7 @@ import {
   ARENA_ACCESS_DENIED_MESSAGE,
   resolveArenaEmailIdFromRequest,
 } from '@/lib/arena-generative-ui/email-gate'
+import { parseArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import {
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
@@ -61,6 +62,7 @@ export function toDeployedAppConfig(deployment: DeployedAppRecord) {
     streamingActionIds: streamingActionIdsFrom(deployment.manifest, deployment.apiBindings),
     actionNavigate: actionNavigateFrom(deployment.manifest),
     pageOnLoad: pageOnLoadFrom(deployment.manifest),
+    theme: parseArenaGenerativeTheme(deployment.manifest.theme),
   }
 }
 

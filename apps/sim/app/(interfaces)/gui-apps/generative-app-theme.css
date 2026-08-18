@@ -1,0 +1,40 @@
+/**
+ * Scoped tokens for Arena Generative UI hosts. Lives next to the host, not in
+ * global styles — `data-gui-theme` is applied on the page wrapper.
+ */
+[data-gui-theme] {
+  --gui-canvas: var(--color-ds-grey-50, #f7f8f9);
+  --gui-surface: #ffffff;
+  --gui-text: var(--color-ds-grey-800, #1f232d);
+  --gui-text-muted: var(--color-ds-grey-500, #8a8d99);
+  --gui-border: var(--color-ds-grey-200, #e2e3e5);
+  --gui-brand: var(--color-ds-blue-600, #2563eb);
+  --gui-brand-hover: var(--color-ds-blue-700, #1d4ed8);
+  --gui-radius: 10px;
+  --gui-gap: 16px;
+  --gui-pad: 16px;
+  color: var(--gui-text);
+  background-color: var(--gui-canvas);
+}
+
+[data-gui-theme="dark"] {
+  --gui-canvas: #12141a;
+  --gui-surface: #1c1f28;
+  --gui-text: #e8eaed;
+  --gui-text-muted: #9aa0a6;
+  --gui-border: #2e3340;
+  --gui-brand: #6b9bff;
+  --gui-brand-hover: #8ab0ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-gui-theme="system"] {
+    --gui-canvas: #12141a;
+    --gui-surface: #1c1f28;
+    --gui-text: #e8eaed;
+    --gui-text-muted: #9aa0a6;
+    --gui-border: #2e3340;
+    --gui-brand: #6b9bff;
+    --gui-brand-hover: #8ab0ff;
+  }
+}

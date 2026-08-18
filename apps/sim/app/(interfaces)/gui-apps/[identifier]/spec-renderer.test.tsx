@@ -12,6 +12,8 @@ vi.mock('@sim/emcn', () => ({
 
 vi.mock('streamdown/styles.css', () => ({}))
 
+vi.mock('@/app/(interfaces)/gui-apps/generative-app-theme.css', () => ({}))
+
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 
 const homeSpec: Spec = {
@@ -694,6 +696,8 @@ describe('SpecRenderer', () => {
     const buttons = Array.from(container.querySelectorAll('nav button'))
     expect(buttons.map((button) => button.textContent)).toEqual(['Home', 'Reports'])
     expect(buttons[0]?.className).toContain('font-medium')
+    expect(buttons[0]?.getAttribute('aria-current')).toBe('page')
+    expect(buttons[1]?.getAttribute('aria-current')).toBeNull()
     act(() => {
       buttons[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -1015,12 +1019,12 @@ describe('SpecRenderer', () => {
     it('defaults to the secondary variant so pages are not a wall of primaries', () => {
       const button = renderButton({ label: 'Export', navigateTo: 'report' })
       expect(button.className).toContain('border')
-      expect(button.className).not.toContain('bg-[var(--color-ds-blue-600,#2563eb)]')
+      expect(button.className).not.toContain('bg-[var(--gui-brand,#2563eb)]')
     })
 
     it('renders the primary variant as a filled button', () => {
       const button = renderButton({ label: 'Run', actionId: 'run', variant: 'primary' })
-      expect(button.className).toContain('bg-[var(--color-ds-blue-600,#2563eb)]')
+      expect(button.className).toContain('bg-[var(--gui-brand,#2563eb)]')
       expect(button.className).toContain('text-white')
     })
 
@@ -1106,5 +1110,50 @@ describe('SpecRenderer', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('skips the Page sr-only h1 when a PageHeader already provides one', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Home' }, children: ['header'] },
+        header: {
+          type: 'PageHeader',
+          props: { title: 'Recommendations', subtitle: 'Ranked for you' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const headings = Array.from(container.querySelectorAll('h1'))
+    expect(headings.map((heading) => heading.textContent)).toEqual(['Recommendations'])
+    expect(container.querySelector('h1.sr-only')).toBeNull()
+  })
+
+  it('associates a Switch with its visible label', () => {
+    const { container } = render({
+      spec: {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['form'] },
+          form: { type: 'Form', props: { actionId: 'save' }, children: ['notify'] },
+          notify: {
+            type: 'Switch',
+            props: { name: 'notify', label: 'Notify', defaultChecked: false },
+            children: [],
+          },
+        },
+      },
+    })
+    const toggle = container.querySelector('button[role="switch"]')
+    const label = container.querySelector('label[for="field-notify"]')
+    expect(toggle?.id).toBe('field-notify')
+    expect(label?.textContent).toBe('Notify')
+    expect(toggle?.getAttribute('aria-labelledby')).toBe('field-notify-label')
+  })
+
+  it('marks streamed DataText as a live region', () => {
+    const { container } = render({ spec: replySpec, state: {} })
+    expect(container.querySelector('[aria-live="polite"]')).not.toBeNull()
   })
 })

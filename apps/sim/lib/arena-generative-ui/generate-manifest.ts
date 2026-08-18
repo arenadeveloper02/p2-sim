@@ -9,6 +9,7 @@ import {
   ARENA_GENERATIVE_UI_PAGINATION_RULE,
   ARENA_GENERATIVE_UI_PERSONA,
   ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
+  ARENA_GENERATIVE_UI_THEME_RULE,
   arenaGenerativeUiCatalog,
 } from '@/lib/arena-generative-ui/catalog'
 import { ARENA_GENERATIVE_UI_GOLD_EXAMPLE } from '@/lib/arena-generative-ui/gold-example'
@@ -169,6 +170,7 @@ export async function generateArenaGenerativeManifest(
   const catalogPrompt = arenaGenerativeUiCatalog.prompt({
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
+      ARENA_GENERATIVE_UI_THEME_RULE,
       'This app renders as a full page, embedded in Arena or opened directly. emailId is optional. Do not invent a login form or a logo.',
       ...(params.apiBindings.length > 0
         ? [

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { poppins } from '@/app/_styles/fonts/poppins/poppins'
 import { GenerativeAppHostStateProvider } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import '@/app/(interfaces)/chat/arena-tokens.css'
+import '@/app/(interfaces)/gui-apps/generative-app-theme.css'
 
 export default function GenerativeAppLayout({ children }: { children: ReactNode }) {
   return (

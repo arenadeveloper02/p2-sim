@@ -22,6 +22,8 @@ vi.mock('@sim/emcn', () => ({
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
 }))
 
+vi.mock('@/app/(interfaces)/gui-apps/generative-app-theme.css', () => ({}))
+
 vi.mock('@/hooks/queries/arena-generative-apps', () => ({
   useGenerativeAppDraft: (...args: unknown[]) => mockUseGenerativeAppDraft(...args),
   useRunGenerativeAppDraftAction: () => ({
@@ -339,6 +341,43 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     })
 
     expect(container.textContent).not.toContain('Connecting')
+  })
+
+  it('surfaces unresolved statePath as copyable edit instructions', () => {
+    mockUseGenerativeAppDraft.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        ...twoPageDraft,
+        manifest: {
+          ...twoPageDraft.manifest,
+          pages: {
+            ...twoPageDraft.manifest.pages,
+            home: {
+              title: 'Lead qualifier',
+              path: 'home',
+              spec: {
+                root: 'page',
+                elements: {
+                  page: { type: 'Page', props: { title: 'Home' }, children: ['table'] },
+                  table: {
+                    type: 'Table',
+                    props: { statePath: 'articles', columns: 'title' },
+                    children: [],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      error: null,
+    })
+    pagePath = 'home'
+    renderHost()
+    expect(
+      container.querySelector('[data-testid="preview-diagnostics-banner"]')?.textContent
+    ).toContain('Unresolved statePath "articles"')
   })
 })
 

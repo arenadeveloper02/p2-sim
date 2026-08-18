@@ -22,6 +22,8 @@ vi.mock('@sim/emcn', () => ({
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
 }))
 
+vi.mock('@/app/(interfaces)/gui-apps/generative-app-theme.css', () => ({}))
+
 vi.mock('@sim/logger', () => ({
   createLogger: () => ({
     info: vi.fn(),

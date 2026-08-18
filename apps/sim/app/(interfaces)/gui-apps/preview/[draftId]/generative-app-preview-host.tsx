@@ -1,11 +1,15 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
 import { flushSync } from 'react-dom'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
+import {
+  collectRenderDiagnostics,
+  editInstructionsFromDiagnostics,
+} from '@/lib/arena-generative-ui/render-diagnostics'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import {
   ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
@@ -20,6 +24,9 @@ import {
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
+import { GenerativeAppThemeRoot } from '@/app/(interfaces)/gui-apps/generative-app-theme-root'
+import { PreviewDiagnosticsBanner } from '@/app/(interfaces)/gui-apps/preview-diagnostics-banner'
+import { SpecRenderErrorBoundary } from '@/app/(interfaces)/gui-apps/spec-render-error-boundary'
 import { usePageLoadActions } from '@/app/(interfaces)/gui-apps/use-page-load-actions'
 import {
   runGenerativeAppDraftActionStream,
@@ -55,6 +62,7 @@ export function GenerativeAppPreviewHost({
     loadPending,
     setLoadPending,
   } = useGenerativeAppHostState()
+  const [throwByKey, setThrowByKey] = useState<Record<string, string>>({})
 
   const manifest = draftQuery.data?.manifest
   const apiBindings = draftQuery.data?.apiBindings
@@ -112,45 +120,66 @@ export function GenerativeAppPreviewHost({
   const actionError = actionErrorFrom(state)
   const schemaWarning = actionSchemaWarningFrom(state)
   const bannerMessage = actionError || schemaWarning
+  const pending = runAction.isPending || actionPending || loadPending
+  const renderKey = `${pagePath}:${draftQuery.data.revision}`
+  const throwMessage = throwByKey[renderKey]
+  const diagnostics = [
+    ...collectRenderDiagnostics(page.spec, state, pending),
+    ...(throwMessage
+      ? [{ kind: 'throw' as const, message: `SpecRenderer threw: ${throwMessage}` }]
+      : []),
+  ]
+  const editInstructions = editInstructionsFromDiagnostics(diagnostics, pagePath)
 
   return (
-    <div className='min-h-screen'>
-      <div className='border-[var(--border)] border-b bg-[var(--color-ds-grey-50,#f7f8f9)] px-4 py-2 text-[var(--text-secondary)] text-xs'>
-        Preview — not published. CTAs run against this draft.
+    <GenerativeAppThemeRoot theme={manifest.theme}>
+      <div className='min-h-screen'>
+        <div className='border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-canvas,#f7f8f9)] px-4 py-2 text-[var(--gui-text-muted,#8a8d99)] text-xs'>
+          Preview — not published. CTAs run against this draft.
+        </div>
+        {bannerMessage ? (
+          <ActionErrorBanner
+            message={bannerMessage}
+            tone={actionError ? 'error' : 'warning'}
+            onDismiss={() => mergeState(clearedActionErrorState())}
+          />
+        ) : null}
+        <PreviewDiagnosticsBanner instructions={editInstructions} />
+        <SpecRenderErrorBoundary
+          key={renderKey}
+          fallbackTitle='This page failed to render'
+          onError={(message) => {
+            setThrowByKey((current) => ({ ...current, [renderKey]: message }))
+          }}
+        >
+          <SpecRenderer
+            spec={page.spec}
+            state={state}
+            pending={pending}
+            onNavigate={navigate}
+            onRunAction={async (actionId, values) => {
+              const navigateTo = actionNavigate[actionId]
+              setActionPending(true)
+              mergeState(clearedActionErrorState())
+              try {
+                if (navigateTo) {
+                  navigate(navigateTo)
+                }
+                const result = await executeAction(actionId, values)
+                applyPreviewActionResult(result, mergeState, navigate, {
+                  skipNavigate: Boolean(navigateTo),
+                })
+              } catch (error) {
+                logger.error('Draft preview action failed', { error: toError(error).message })
+                mergeState({ error: toError(error).message || 'Action failed' })
+              } finally {
+                setActionPending(false)
+              }
+            }}
+          />
+        </SpecRenderErrorBoundary>
       </div>
-      {bannerMessage ? (
-        <ActionErrorBanner
-          message={bannerMessage}
-          tone={actionError ? 'error' : 'warning'}
-          onDismiss={() => mergeState(clearedActionErrorState())}
-        />
-      ) : null}
-      <SpecRenderer
-        spec={page.spec}
-        state={state}
-        pending={runAction.isPending || actionPending || loadPending}
-        onNavigate={navigate}
-        onRunAction={async (actionId, values) => {
-          const navigateTo = actionNavigate[actionId]
-          setActionPending(true)
-          mergeState(clearedActionErrorState())
-          try {
-            if (navigateTo) {
-              navigate(navigateTo)
-            }
-            const result = await executeAction(actionId, values)
-            applyPreviewActionResult(result, mergeState, navigate, {
-              skipNavigate: Boolean(navigateTo),
-            })
-          } catch (error) {
-            logger.error('Draft preview action failed', { error: toError(error).message })
-            mergeState({ error: toError(error).message || 'Action failed' })
-          } finally {
-            setActionPending(false)
-          }
-        }}
-      />
-    </div>
+    </GenerativeAppThemeRoot>
   )
 }
 
