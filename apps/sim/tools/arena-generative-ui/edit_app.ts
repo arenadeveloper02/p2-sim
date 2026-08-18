@@ -5,6 +5,8 @@ import type {
 } from '@/tools/arena-generative-ui/types'
 import type { ToolConfig } from '@/tools/types'
 
+const ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS = 25 * 60 * 1000
+
 export const arenaGenerativeUiEditTool: ToolConfig<
   ArenaGenerativeUiParams,
   ArenaGenerativeUiResponse
@@ -54,7 +56,7 @@ export const arenaGenerativeUiEditTool: ToolConfig<
   request: {
     url: '/api/tools/arena_generative_ui/edit',
     method: 'POST',
-    timeout: 180_000,
+    timeout: ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS,
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) => ({
       userInput: params.userInput,

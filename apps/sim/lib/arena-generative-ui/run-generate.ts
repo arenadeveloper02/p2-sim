@@ -70,6 +70,7 @@ export async function runArenaGenerativeUi(options: {
     }
   }
 
+  const generateStartedAt = Date.now()
   const generated = await generateArenaGenerativeManifest({
     userInput: body.userInput,
     pages,
@@ -78,12 +79,21 @@ export async function runArenaGenerativeUi(options: {
     designNotes: body.designNotes,
     existingManifest,
   })
+  logger.info('Generated Arena Generative UI manifest', {
+    workspaceId,
+    workflowId,
+    ms: Date.now() - generateStartedAt,
+    pageCount: Object.keys(generated.manifest?.pages ?? {}).length,
+    bindingCount: apiBindings.length,
+    entryPath: generated.manifest?.entryPath,
+  })
 
   if (!generated.success || !generated.manifest) {
     return { success: false, error: generated.error ?? 'Failed to generate app' }
   }
 
   try {
+    const persistStartedAt = Date.now()
     const persisted = await persistGenerativeAppDraft({
       draftId: body.existingDraftId,
       workspaceId,
@@ -93,6 +103,13 @@ export async function runArenaGenerativeUi(options: {
       entryPath: generated.manifest.entryPath,
       manifest: generated.manifest,
       apiBindings,
+    })
+    logger.info('Persisted Arena Generative UI draft', {
+      workspaceId,
+      workflowId,
+      ms: Date.now() - persistStartedAt,
+      draftId: persisted.draftId,
+      revisionId: persisted.revisionId,
     })
 
     return {
