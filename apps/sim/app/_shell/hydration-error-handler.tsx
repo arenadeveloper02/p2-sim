@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { createLogger } from '@sim/logger'
+import { isReact19ScriptTagWarning } from '@/app/_shell/suppress-react19-script-warning'
 
 const logger = createLogger('RootLayout')
 
@@ -40,7 +41,7 @@ export function HydrationErrorHandler() {
           args.some((arg) => typeof arg === 'string' && arg.includes(attr))
         )
 
-        if (isExtensionError || isRadixIdMismatch(args)) {
+        if (isExtensionError || isRadixIdMismatch(args) || isReact19ScriptTagWarning(args)) {
           return
         }
 

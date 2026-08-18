@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import type { ThemeProviderProps } from 'next-themes'
 import { ThemeProvider as NextThemesProvider } from 'next-themes'
+import '@/app/_shell/suppress-react19-script-warning'
 
 export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
   const pathname = usePathname()

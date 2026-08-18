@@ -15,6 +15,7 @@ import {
   isReactScanEnabled,
 } from '@/lib/core/config/env-flags'
 import { DesktopUpdateGate } from '@/app/_shell/desktop-update-gate'
+import { BlockingInitScripts } from '@/app/_shell/blocking-init-scripts'
 import { HydrationErrorHandler } from '@/app/_shell/hydration-error-handler'
 import { AutoLoginProvider } from '@/app/_shell/providers/auto-login-provider'
 import { AutoLoginSessionMigrationProvider } from '@/app/_shell/providers/auto-login-session-migration-provider'
@@ -77,187 +78,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           />
         )}
 
-        {/* Theme initialization: set light theme by default, convert 'system' to 'light' */}
-        <Script
-          id='theme-initialization'
-          strategy='beforeInteractive'
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function () {
-                try {
-                  var theme = localStorage.getItem('sim-theme');
-                  // Convert 'system' to 'light' and set default to 'light'
-                  if (!theme || theme === 'system') {
-                    localStorage.setItem('sim-theme', 'light');
-                    theme = 'light';
-                  }
-                  // Apply theme class immediately to prevent flash
-                  document.documentElement.classList.remove('light', 'dark');
-                  if (theme === 'light' || theme === 'dark') {
-                    document.documentElement.classList.add(theme);
-                  } else {
-                    document.documentElement.classList.add('light');
-                  }
-                } catch (e) {
-                  // Fallback to light theme
-                  document.documentElement.classList.remove('light', 'dark');
-                  document.documentElement.classList.add('light');
-                }
-              })();
-            `,
-          }}
-        />
-
-        {/*
-          Workspace layout dimensions: set CSS vars before hydration to avoid layout jump.
-          
-          IMPORTANT: These hardcoded values must stay in sync with stores/constants.ts
-          We cannot use imports here since this is a blocking script that runs before React.
-        */}
-        <Script
-          id='workspace-layout-dimensions'
-          strategy='beforeInteractive'
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function () {
-                // The macOS desktop shell overlays native traffic lights on the
-                // workspace. Mark it before first paint so the sidebar reserves
-                // its inset title-bar lane without a post-hydration layout shift.
-                var collapsedSidebarWidth = 51;
-                try {
-                  if (window.simDesktop && /Mac/i.test(navigator.userAgent)) {
-                    document.documentElement.setAttribute('data-sim-desktop-title-bar', 'inset');
-                    collapsedSidebarWidth = 0;
-                  }
-                } catch (e) {}
-
-                try {
-                  var path = window.location.pathname;
-                  if (path.indexOf('/workspace/') === -1) {
-                    return;
-                  }
-                } catch (e) {
-                  return;
-                }
-
-                // Sidebar width. Mirror clampSidebarWidth() in stores/sidebar/store.ts:
-                // the upper bound can never fall below the 248px minimum, so a narrow
-                // window yields a width >= MIN instead of a sub-minimum sliver.
-                var defaultSidebarWidth = 248;
-                try {
-                  // Collapse comes from the cookie (independent of localStorage
-                  // parsing); the persisted width is read defensively below. Match the
-                  // value strictly so 'sidebar_collapsed=10' isn't read as collapsed.
-                  var cookieMatch = document.cookie.match(/(?:^|;\s*)sidebar_collapsed=([^;]*)/);
-                  var hasCookie = cookieMatch !== null;
-                  var collapsed = cookieMatch !== null && cookieMatch[1] === '1';
-
-                  var state = null;
-                  try {
-                    var stored = localStorage.getItem('sidebar-state');
-                    state = stored ? JSON.parse(stored).state : null;
-                  } catch (e) {}
-
-                  // One-time migration: seed the cookie from the legacy localStorage
-                  // flag for users who collapsed before the cookie existed.
-                  if (!hasCookie && state && typeof state.isCollapsed === 'boolean') {
-                    collapsed = state.isCollapsed;
-                    document.cookie = 'sidebar_collapsed=' + (collapsed ? '1' : '0') + '; path=/; max-age=31536000; samesite=lax';
-                  }
-
-                  // The expanded width is published unconditionally, even while
-                  // collapsed, because the desktop hover-peek renders the sidebar at
-                  // its restore width while --sidebar-width still reads collapsed.
-                  var width = state && state.sidebarWidth;
-                  var maxSidebarWidth = Math.max(248, window.innerWidth * 0.3);
-                  var expandedWidth =
-                    typeof width === 'number' && isFinite(width)
-                      ? Math.min(Math.max(width, 248), maxSidebarWidth)
-                      : defaultSidebarWidth;
-                  document.documentElement.style.setProperty(
-                    '--sidebar-expanded-width',
-                    expandedWidth + 'px'
-                  );
-                  document.documentElement.style.setProperty(
-                    '--sidebar-width',
-                    (collapsed ? collapsedSidebarWidth : expandedWidth) + 'px'
-                  );
-                } catch (e) {
-                  document.documentElement.style.setProperty('--sidebar-width', defaultSidebarWidth + 'px');
-                  document.documentElement.style.setProperty('--sidebar-expanded-width', defaultSidebarWidth + 'px');
-                }
-
-                // Panel width and active tab
-                try {
-                  var panelStored = localStorage.getItem('panel-state');
-                  if (panelStored) {
-                    var panelParsed = JSON.parse(panelStored);
-                    var panelState = panelParsed && panelParsed.state;
-                    var panelWidth = panelState && panelState.panelWidth;
-                    var maxPanelWidth = window.innerWidth * 0.4;
-
-                    if (panelWidth >= 290 && panelWidth <= maxPanelWidth) {
-                      document.documentElement.style.setProperty('--panel-width', panelWidth + 'px');
-                    } else if (panelWidth > maxPanelWidth) {
-                      document.documentElement.style.setProperty('--panel-width', maxPanelWidth + 'px');
-                    }
-
-                    var activeTab = panelState && panelState.activeTab;
-                    // A session that used the Chat tab before it was turned off still
-                    // has 'copilot' persisted; without this the CSS hides every tab
-                    // body and the panel paints empty.
-                    if (activeTab === 'copilot' && !${isChatEnabled}) {
-                      activeTab = 'toolbar';
-                    }
-                    if (activeTab) {
-                      document.documentElement.setAttribute('data-panel-active-tab', activeTab);
-                    }
-                  }
-                } catch (e) {
-                  // Fallback handled by CSS defaults
-                }
-
-                // Editor connections height
-                try {
-                  var editorStored = localStorage.getItem('panel-editor-state');
-                  if (editorStored) {
-                    var editorParsed = JSON.parse(editorStored);
-                    var editorState = editorParsed && editorParsed.state;
-                    var connectionsHeight = editorState && editorState.connectionsHeight;
-                    if (connectionsHeight !== undefined && connectionsHeight >= 30 && connectionsHeight <= 300) {
-                      document.documentElement.style.setProperty(
-                        '--editor-connections-height',
-                        connectionsHeight + 'px'
-                      );
-                    }
-                  }
-                } catch (e) {
-                  // Fallback handled by CSS defaults
-                }
-
-                // Terminal height
-                try {
-                  var terminalStored = localStorage.getItem('terminal-state');
-                  if (terminalStored) {
-                    var terminalParsed = JSON.parse(terminalStored);
-                    var terminalState = terminalParsed && terminalParsed.state;
-                    var terminalHeight = terminalState && terminalState.terminalHeight;
-                    var maxTerminalHeight = window.innerHeight * 0.7;
-
-                    if (terminalHeight >= 30 && terminalHeight <= maxTerminalHeight) {
-                      document.documentElement.style.setProperty('--terminal-height', terminalHeight + 'px');
-                    } else if (terminalHeight > maxTerminalHeight) {
-                      document.documentElement.style.setProperty('--terminal-height', maxTerminalHeight + 'px');
-                    }
-                  }
-                } catch (e) {
-                  // Fallback handled by CSS defaults
-                }
-              })();
-            `,
-          }}
-        />
-
         {/* Theme CSS Override */}
         {themeCSS && (
           <style
@@ -309,6 +129,7 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         {useRuntimePublicEnvScript() ? <RuntimePublicEnvScript /> : <PublicEnvScript />}
       </head>
       <body className={`${season.variable} font-season`} suppressHydrationWarning>
+        <BlockingInitScripts isChatEnabled={isChatEnabled} />
         {/* Google Tag Manager (noscript) — hosted only */}
         {isHosted && (
           <noscript>
