@@ -12,7 +12,9 @@ This is not the older **Generative UI** block. That block still emits a static H
 | Draft preview (session only) | `/gui-apps/preview/{draftId}` |
 | JSON APIs | `/api/gui-apps/...` |
 
-A published GUI app is a Sim page at `/gui-apps/{identifier}`, the same way `/chat/{identifier}` is a page. Open it in a new browser tab, or embed it in Arena. The block does not generate a login form. Turn on **Require Arena emailId** only when Arena should pass `?emailId=` on the iframe URL.
+A published GUI app is a Sim page at `/gui-apps/{identifier}`, the same way `/chat/{identifier}` is a page. Open it in a new browser tab, or embed it in Arena. The block does not generate a login form.
+
+Published apps are gated for authenticated Arena users by default, like deployed chats: **Require Arena emailId** is on and access control defaults to `email` against an allowlist. Turn the gate off deliberately if an app is meant to be reachable by anyone with the link.
 
 ## End-to-end flow
 
@@ -22,7 +24,9 @@ A published GUI app is a Sim page at `/gui-apps/{identifier}`, the same way `/ch
 4. Open **Deploy → GUI App** (not Deploy → App, which is the existing external-redirect flow).
 5. Pick the draft and click **Preview** (or **Preview draft**) to click through pages and run CTAs before publish.
 6. Set identifier / title / category / access, then **Launch GUI App**.
-7. Share `{base}/gui-apps/{identifier}`. For Arena embeds, add `?emailId=` and turn on Require Arena emailId.
+7. Share `{base}/gui-apps/{identifier}`. Arena embeds add `?emailId=`, which the default gate requires.
+
+Generate itself is two calls: a cheap structured brief (sitemap, archetype, per-page data) then the full manifest. You still type prose in User Input; the structured brief is not a field you fill in. Edit also makes two calls, but the first is a **scope** call rather than a plan — see **Requested Changes** below.
 
 Edit later by switching the block to **Edit Existing Draft**, describing only what should change in **Requested Changes**, running again (new revision), then launching from Deploy again.
 
@@ -39,6 +43,7 @@ From **Deploy → GUI App**, pick a draft and open **Preview**. That loads `{bas
 - Navigation and forms work against the latest draft revision.
 - CTAs use the same runner as production: bound workflows must already be deployed; HTTP hosts must pass the same allowlist rules.
 - Preview skips Arena `emailId` and the published password / email / SSO gates.
+- Preview captures runtime render problems (unresolved `statePath`, unknown component types, a SpecRenderer throw) and offers **Copy as edit instructions** to paste into **Requested Changes**.
 - `preview` is a reserved public identifier because it is a static `/gui-apps` segment.
 
 ---
@@ -55,6 +60,8 @@ From **Deploy → GUI App**, pick a draft and open **Preview**. That loads `{bas
 Describe the app in **plain language**. This field is prose, not JSON. Only **Pages** and **API Bindings** are JSON — leave them empty unless you are pinning a sitemap or wiring CTAs.
 
 The model uses this brief to invent pages, copy, forms, and navigation.
+
+Generation is two-stage: a short planning call first produces a structured brief (purpose, audience, archetype, pages, actions, empty copy). A second call renders that into the json-render manifest. The planner picks an archetype — dashboard, form→result, list→detail, or wizard — so the second call is not always taught the same dashboard example. If planning fails, generate still runs from the prose you typed. Edit runs its own two stages instead (scope, then rewrite the pages in scope).
 
 Include:
 
@@ -86,6 +93,24 @@ Show a loader on the results page while the API runs.
 ```
 
 The field starts empty on every run. **User Input** is hidden in Edit mode for the same reason.
+
+#### How an edit is scoped
+
+On an app of three or more pages, Edit first makes a cheap **scope** call that decides which pages your change request touches. Only those pages are sent to the model, and only those come back; Sim merges the reply over the stored draft, so **a page your request never mentions is byte-identical in the new revision — not because the model was asked to preserve it, but because it was never sent and never read back.**
+
+That also makes an edit cost roughly what it changes. A one-page tweak on a five-page app provisions about 16k output tokens instead of 56k.
+
+The edit falls back to rewriting the whole manifest when:
+
+- the change is app-wide — theme, brand colour, dark mode, density, typography, or "on every page"
+- it adds or removes a page, or changes which page opens first
+- it touches more than three pages
+- you pinned a sitemap in **Pages** (your pins already scope the run)
+- the scope call fails for any reason
+
+Nothing about this is a setting, and a fallback is not an error — it is the previous behaviour, which still works. The only visible difference is that the block's `content` output now ends with a one-line change list (`r2 → r3: changed results`), so you can see which pages actually moved without opening Deploy.
+
+The scope call can occasionally include a page your change did not need, which only costs tokens. If it *misses* the page you meant, the edit will appear to do nothing — name the page explicitly ("on the **results** page, …") and run again.
 
 ### Pages (optional JSON)
 
@@ -174,7 +199,7 @@ Decrypt uses the **same** `ENCRYPTION_KEY` as encrypt. If `.env` has the example
 
 ### Output format (`outputSchema`)
 
-`outputSchema` tells the generator what the API returns so it can lay the result out as a `Table`, `Stat`, or `KeyValue` instead of dumping one blob of text. Like `inputSchema` it is a generator hint only — nothing is validated against the live response, and a wrong entry cannot break a CTA.
+`outputSchema` tells the generator what the API returns so it can lay the result out as a `Table`, `Stat`, or `KeyValue` instead of dumping one blob of text. `inputSchema` is a generator hint only. `outputSchema` is also a hint for layout, plus a **warn-only** runtime check: if a declared top-level name is missing from the live response, the host logs a warning and preview shows an amber banner. The CTA still succeeds — schema drift is diagnosable, not a hard failure.
 
 The easiest way to fill it is the **Output format** field in **Add an API**: paste a sample response and Sim derives the field names and types in the browser. **Only names and types are saved** — the pasted values are discarded and never reach the database or the model, so a sample containing real data is safe.
 
@@ -200,7 +225,7 @@ Ask for `narrow` explicitly in Design Notes if you want the old focused single-c
 
 The generator is held to a few constraints you do not need to restate:
 
-- **Two surfaces only** — the page canvas and the white card. Hierarchy comes from heading level, weight and whitespace, not coloured fills. Name a specific colour in Design Notes if you want one.
+- **Two surfaces only** — the page canvas and the card. Hierarchy comes from heading level, weight and whitespace, not coloured fills. Name a brand colour, density, typeface, or dark mode in Design Notes and the generator emits `manifest.theme` instead of painting `backgroundColor` on Page/Card.
 - **Readable measure** — dashboards and tables stay wide, but narrative prose drops into a `narrow` Section so a report body never runs the full 1280px.
 - **Sequential headings** — `PageHeader.title` is the page `h1` and `Card.title` renders an `h2`, so levels never skip or invert.
 - **Labeled, left-aligned fields** — short related fields pair up in a `Grid`, long free-text stays full width.
@@ -229,7 +254,9 @@ Avoid:
 - Outbound `href` links for in-app pages. In-app nav uses `NavLink` / `navigateTo`.
 - CTA keys that are not in API Bindings.
 
-If generation fails validation, tighten Pages + API Bindings and rerun. Common failures: invented API keys, unreachable pages, invalid kebab-case paths.
+A manifest that fails validation is not thrown away. The generator sends the failing reply back to the model with the exact error and asks for a corrected manifest, up to two repair turns, so a single invented API key or unreachable page usually self-corrects inside one run. Only if all three attempts fail does the block surface the error. If that happens, tighten Pages + API Bindings and rerun. Common failures: invented API keys, unreachable pages, invalid kebab-case paths.
+
+The output token budget scales with the number of pages the run has to emit rather than sitting at a flat cap, because a truncated reply surfaces as a JSON parse error rather than a partial app. Pinning Pages makes that estimate exact, and a scoped edit counts only the pages in scope.
 
 ---
 
@@ -260,13 +287,13 @@ Fields:
 
 | Field | Notes |
 |---|---|
-| Draft | Latest drafts for **this workflow** |
+| Draft | Latest drafts for **this workflow**. After revision 1, a one-line summary of what changed vs the previous revision (pages added/removed/changed, actions, theme) |
 | Identifier | URL slug. Lowercase letters, numbers, hyphens. Unique among live apps. Live at `/gui-apps/{identifier}` |
 | Title | Shown on the hosted app |
 | Category | Required department/category |
 | Description | Optional |
-| Require Arena emailId | Off by default so Sim Open / direct URLs work like `/chat`. On: host returns “Do not have access” unless `?emailId=` or the `arena_email_id` cookie is present (for Arena embeds) |
-| Access control | `public`, `password`, `email`, or `sso` (SSO only when enabled). Same style as deployed chat. This is not the Arena emailId gate |
+| Require Arena emailId | **On by default.** Host returns “Do not have access” unless `?emailId=` or the `arena_email_id` cookie is present. Turn it off only for an app that should be reachable by link alone |
+| Access control | `public`, `password`, `email`, or `sso` (SSO only when enabled). **Defaults to `email`**, seeded with the deployer's address. Same style as deployed chat. This is a separate layer from the Arena emailId gate |
 | Allowed emails | Required for `email` / `sso`. Supports addresses and `@domain.com` |
 | API bindings | Read-only list from the selected draft |
 
@@ -287,7 +314,7 @@ https://{host}/gui-apps/{identifier}
 https://{host}/gui-apps/{identifier}/results
 ```
 
-Embed in Arena (optional). Turn on **Require Arena emailId** and pass the query:
+Embed in Arena by passing the query the default gate expects:
 
 ```
 https://{host}/gui-apps/{identifier}?emailId=user@example.com
@@ -297,9 +324,9 @@ When `emailId` is present, the host stores `arena_email_id` (HttpOnly, `Path=/`)
 
 If the emailId gate is on and there is no `emailId`, visitors see **Do not have access**.
 
-Then chat-style access control still applies (`password` / `email` OTP / `sso`) if you selected those.
+Chat-style access control then applies on top. Under the default `email` setting, an Arena user carrying the shared `email` cookie is signed in automatically by `AutoLoginProvider` and passes straight through when their address matches the allowlist; anyone else gets the OTP challenge. `password` and `sso` behave as they do for deployed chat.
 
-Control-bar **Open** uses Chat/App first when those exist. If only a GUI App is published, Open goes to `/gui-apps/{identifier}` without `emailId` (works when the gate is off). Launch GUI App from the Deploy tab always opens the Sim URL.
+Control-bar **Open** uses Chat/App first when those exist. If only a GUI App is published, Open goes to `/gui-apps/{identifier}` without `emailId` — that reaches the app only when the `arena_email_id` cookie is already set from a prior Arena visit, or when the gate has been turned off. Launch GUI App from the Deploy tab always opens the Sim URL.
 
 ---
 
@@ -308,29 +335,139 @@ Control-bar **Open** uses Chat/App first when those exist. If only a GUI App is 
 Clicks never call third-party APIs from the browser. The published host POSTs to `/api/gui-apps/{identifier}/actions/{actionId}`. Draft preview POSTs to `/api/gui-apps/drafts/{id}/actions/{actionId}` (session required).
 
 - **Workflow** — `executeWorkflow` on the bound workflow. That workflow must be **deployed**. Inputs are the form values, optionally remapped by `inputMapping` in the manifest.
-- **HTTP** — server fetch. Host must match the allowlist frozen at publish time. Timeout 15s, response cap 1MB. Auth headers come from the workspace or personal env var named in `headersSecretName`. The value is decrypted on the server at request time (see **HTTP secrets** above); it is never sent to the client.
+- **HTTP** — server fetch. Host must match the allowlist frozen at publish time. Auth headers come from the workspace or personal env var named in `headersSecretName`. The value is decrypted on the server at request time (see **HTTP secrets** above); it is never sent to the client.
+- **Retries** — GET and DELETE retry on 429 / 502 / 503 / 504 and on network failures, up to two extra attempts with jittered backoff (`Retry-After` is honoured on 429). POST / PUT / PATCH, streaming CTAs, and timeouts are not retried.
+- **Response size** — bodies over 1 MB fail with a clear error asking for a smaller page (pagination, `limit`, or fewer fields), not a generic size-limit message.
 
-On success the host may navigate (`onSuccess.navigate`) and merge `setState` so `DataText` can show results (for example `score`).
+Non-streaming HTTP bindings time out after 60s and streaming ones after 180s. A binding that fronts a slower endpoint can set `http.timeoutMs`, which the runner clamps to 1s–300s.
+
+On success the host may navigate (`onSuccess.navigate`) and merge `setState` so `DataText` can show results (for example `score`). Arrays listed in `appendKeys` concatenate into existing state instead of replacing, which is how Load more grows a list.
+
+When an action fails, the host writes the message to state under `error` and shows a dismissible banner above the page, so a failure is visible even when the generated spec never bound `error` anywhere. HTTP failures carry the upstream detail rather than a bare status: a 422 whose body is `{"error":"company is required"}` surfaces as `HTTP 422: company is required`. The banner clears on the next action and on navigation. An `outputSchema` mismatch uses a separate amber warning, not this error banner.
+
+### Data on page load (`onLoad`)
+
+A page whose content does not come from a form the user just submitted declares `onLoad` in the manifest — an array of up to six action ids the host runs once when the page opens:
+
+```json
+{
+  "pages": {
+    "dashboard": { "path": "dashboard", "title": "Operations", "spec": { }, "onLoad": ["load_metrics"] }
+  },
+  "actions": {
+    "load_metrics": { "apiKey": "fetch_dashboard_metrics" }
+  }
+}
+```
+
+Results merge into state exactly as a CTA's do, so the page's `Table`, `Repeat`, `Stat`, `KeyValue`, and `DataText` bind by `statePath` and get their loading placeholders for free. Without this a generated app can only be a form: dashboards, reports, lists, and record detail pages have no way to show anything on arrival.
+
+The page's query params are the action's input values, so a page opened at `report?range=30d` receives `{ range: "30d" }` and the action's `inputMapping` remaps it to whatever the binding expects. `emailId` is the host's own param and is never forwarded.
+
+Navigation targets carry those params: `NavLink.to`, `Button.navigateTo`, `Tabs.items` paths, and `onSuccess.navigate` all accept `page?key=value`. Only the part before `?` has to be an existing page path, and the host re-attaches `emailId` on top of whatever the target carried. Params also work on the entry URL, so an Arena link to `/gui-apps/{identifier}/order?id=ord_9` lands on a populated page.
+
+Three behaviours worth knowing:
+
+- **`onSuccess.navigate` is ignored for a load run.** Honouring it would bounce the user off the page they just opened. The same action can still navigate when a CTA invokes it.
+- **A plain arrival clears prior state first**, so a detail page never flashes the previous record's data. Arriving mid-CTA — because a CTA navigated here before its request resolved — skips that clear so the in-flight result is not discarded.
+- **Load-pending and action-pending are tracked separately**, so a page load finishing cannot clear the placeholders of a CTA that is still running.
+
+Load actions run in parallel, and a failure surfaces in the same error banner as a CTA failure.
+
+A Repeat template can put that row's id into the target: `NavLink.to` `"order?id={item.id}"` opens the detail page and its `onLoad` receives `{ id: "ord_9" }`. That is the list-to-detail path.
+
+### Pagination (`pagination` + Load more)
+
+A list API that returns pages declares `pagination` on the binding. The runner injects `limit` (default 20, max 100) and the cursor or offset, then writes `hasMore` plus `nextCursor` (cursor mode) or the next `offset` (offset mode) into state. Page 2+ **appends** the `items` array so Load more does not replace the rows already on screen. Appended lists cap at 96 items; hitting the cap turns `hasMore` off.
+
+```json
+{
+  "key": "list_articles",
+  "kind": "http",
+  "http": { "method": "GET", "url": "https://api.example.com/articles" },
+  "pagination": {
+    "mode": "cursor",
+    "items": "articles",
+    "cursor": "nextCursor",
+    "cursorParam": "cursor",
+    "limit": 20
+  }
+}
+```
+
+Offset mode uses `"mode": "offset"` with `offsetParam` / `limitParam` (defaults `offset` / `limit`). Optional `hasMore` names a boolean field on the response when the API does not use a next cursor.
+
+Load more is the **same action**, not a second binding. Put a Button with that `actionId`, `showWhen: "hasMore"`, and `inputMapping` `{ "cursor": "nextCursor" }` (or `{ "offset": "offset" }`). The host copies those pagination keys from state onto the click so the next request carries the cursor. A page's first `onLoad` has an empty cursor / offset 0, so it still **replaces** the list.
 
 ---
 
 ## UI catalog (what the model may emit)
 
-Layout: `Page`, `Section` (`width`: `narrow` / `wide` default / `full`), `Stack` (`direction`, `justify`, `wrap`), `Card`, `Grid` (`columns` 2–4, collapses to one column when narrow), `Columns` (`equal` / `sidebar-left` / `sidebar-right`)
+Layout: `Page`, `Section` (`width`: `narrow` / `wide` default / `full`), `Stack` (`direction`, `justify`, `wrap`), `Card`, `Grid` (`columns` 2–4, collapses to one column when narrow), `Columns` (`equal` / `sidebar-left` / `sidebar-right`), `Repeat` (children render once per element of a `statePath` array)
 
 Chrome: `PageHeader` (title, subtitle, trailing action), `Toolbar`, `Tabs` (`items` as newline-separated `Label|path`, `activePath`)
 
 Copy: `Heading`, `Text`, `DataText`, `Alert`, `List`, `ListItem`, `Divider`, `Image`
 
-Data display: `Table` (static `columns` + `rows`, or `statePath` bound to an array of objects), `Stat` (`label` + `value` or `statePath`, plus an optional `delta` / `deltaTone` change indicator), `KeyValue` (`key: value` rows or a `statePath` object), `Badge`
+Data display: `Table` (static `columns` + `rows`, or `statePath` bound to an array of objects), `Repeat` (per-item Card / action / link; bind fields with `statePath` `item.field` and put values into labels and hrefs with `{item.field}`), `Stat` (`label` + `value` or `statePath`, plus an optional `delta` / `deltaTone` change indicator), `KeyValue` (`key: value` rows or a `statePath` object), `Badge`
 
-Input: `Form`, `TextInput`, `TextArea`, `Select`, `SubmitButton`
+Input: `Form`, `TextInput`, `TextArea`, `NumberInput`, `DateInput`, `Select`, `RadioGroup`, `MultiSelect`, `Checkbox`, `Switch`, `SubmitButton`
 
 Loading: `Skeleton` (`variant`: `text` / `stat` / `table` / `card` / `form`, plus `lines`), `Spinner`, `ProgressSteps` (newline-separated step labels shown while a CTA is pending)
 
-Nav / CTA: `NavLink` (`to` = page path), `Button` (`navigateTo` / `actionId` / outbound `href`), `Link`
+Nav / CTA: `NavLink` (`to` = page path), `Button` (`navigateTo` / `actionId` / outbound `href`, plus `variant`, `size`, and `showWhen`), `Link`
+
+Theme (optional, on the manifest, not a component): `brandColor` (`#RGB` / `#RRGGBB`), `radius` (`sm` / `md` / `lg`), `density` (`compact` / `comfortable` / `roomy`), `font` (`sans` / `serif`), `colorScheme` (`light` / `dark` / `system`). The host applies these as scoped `--gui-*` CSS variables. Omit `theme` unless Design Notes name branding.
+
+`Button.variant` is `primary` / `secondary` / `ghost` / `destructive` and defaults to `secondary`; `size` is `sm` / `md`. `showWhen` uses the same clause syntax as form fields (`hasMore`, `status=ready`) so Load more can hide when there is no next page. At most one `primary` per page, and none on a page whose main action is a `SubmitButton` — that already renders as the primary. Emphasis has no colour prop: `Button` takes no `backgroundColor` or `color`.
 
 Paths listed in `Tabs.items` count as navigation, so a page reachable only through a tab still validates.
+
+### Repeat (collections)
+
+`Table` is still the right component when every item is the same scalar fields. Use `Repeat` when each item needs its own Card, Badge, button, or link.
+
+Put `Repeat` *inside* a `Grid` (or `Stack`). Its children are the per-item template and render once per element of the `statePath` array. Wrapping a Grid in Repeat produces N grids.
+
+- Bound fields: `statePath` `"item.title"` (no braces). Nested Repeats can bind `statePath` `"item.comments"` to an array on the outer row.
+- Labels, hrefs, and navigation: `"{item.id}"` — `NavLink.to` `"order?id={item.id}"` opens that row's detail page.
+- A `Button.actionId` inside Repeat sends the item's fields as the action input, so `inputMapping` can pass `id` the same way page query params do.
+- The host renders at most 48 items.
+- An empty array is not a blank hole: the host shows `emptyText` (default **No results**). Customise it when the brief names the collection.
+
+### Empty collections
+
+A successful call that returned zero rows used to make the region vanish. Bound `Table`, `Repeat`, and `KeyValue` now render a short empty message instead:
+
+| Component | Default copy | Override |
+| --- | --- | --- |
+| `Table`, `Repeat` | No results | `emptyText` |
+| `KeyValue` | No details | `emptyText` |
+| `DataText` | (none) | `fallback` — already empty-state copy, not loading copy |
+
+The message is skipped while an action is pending (the skeleton still wins) and is skipped for static `Table`/`KeyValue` that never bound a `statePath`. Inside a Grid, the empty message spans the full row so it does not shrink to a single card cell.
+
+### Form controls
+
+Beyond text and a dropdown, a form may use:
+
+| Component | Submits | When to use |
+| --- | --- | --- |
+| `NumberInput` | a number | counts, amounts, scores (`min` / `max` / `step` as decimal strings) |
+| `DateInput` | `YYYY-MM-DD` | dates |
+| `RadioGroup` | one label | a short exclusive list (use `Select` past about five options) |
+| `MultiSelect` | an array of labels | several of a comma-separated `options` list |
+| `Checkbox` | `true` / `false` | a must-tick acknowledgement |
+| `Switch` | `true` / `false` | an on/off preference |
+
+Every field needs `name` and `label`. Shared props:
+
+- `defaultValue` seeds the control (`defaultChecked` also works on Checkbox/Switch; MultiSelect takes a comma-separated list)
+- `statePath` reads a host-state key instead when that value is present
+- `required` plus optional `errorText` validate on submit and show inline — do not add a second `Text` for the error
+- `showWhen` hides the field until a sibling matches: `notify` (truthy), `channel=email`, `channel!=sms`. Comma-separated clauses are AND. Hidden fields are not submitted.
+
+There is no file-upload field in this catalog.
 
 There are no charts in this catalog. The chart and dashboard sketches in `charts-overview.md` target the separate static-HTML `generative_ui` block, not this one.
 
@@ -345,8 +482,15 @@ Models often reach for names from other design systems. Those are rewritten to t
 | `InputField`, `Input` | `TextInput` |
 | `SelectField`, `Dropdown` | `Select` |
 | `Textarea` | `TextArea` |
+| `Number`, `NumberField`, `NumericInput` | `NumberInput` |
+| `Date`, `DateField`, `DatePicker` | `DateInput` |
+| `Radio`, `RadioButtons` | `RadioGroup` |
+| `MultiSelectField`, `TagSelect` | `MultiSelect` |
+| `CheckBox`, `CheckboxField` | `Checkbox` |
+| `Toggle`, `ToggleSwitch`, `SwitchField` | `Switch` |
 | `Paragraph` | `Text` |
 | `Loader`, `Loading` | `Skeleton` |
+| `ForEach`, `Collection` | `Repeat` |
 
 The same pass repairs shape as well as names: a nested `children` tree of objects is flattened into the `{ root, elements }` map, a non-`Page` root is wrapped in `Page` (and `Section`), `Form.submitLabel` becomes a `SubmitButton` child, `Grid.cols: { default: 1, md: 3 }` becomes `columns: "3"`, spacing words such as `md` and `lg` become real lengths, and list props supplied as arrays (`Select.options`, `Table.rows`, `Tabs.items`) are joined into the string encodings the catalog expects. An unknown component type is left alone so validation still reports it instead of silently dropping content.
 
@@ -354,11 +498,13 @@ The same pass repairs shape as well as names: a nested `children` tree of object
 
 Every region that fills from a CTA response gets a placeholder while the action is in flight:
 
-- **Automatic.** `Table`, `Stat`, `KeyValue` and `DataText` bound to a `statePath` render a shape-matched skeleton whenever an action is pending and the value is still empty. Nothing is needed in the manifest, so apps generated before this existed gain the behaviour too. A `DataText` `fallback` is empty-state copy, not loading copy — it no longer suppresses the skeleton.
+- **Automatic.** `Table`, `Repeat`, `Stat`, `KeyValue` and `DataText` bound to a `statePath` render a shape-matched skeleton whenever an action is pending and the value is still empty. Nothing is needed in the manifest, so apps generated before this existed gain the behaviour too. A `DataText` `fallback` is empty-state copy, not loading copy — it no longer suppresses the skeleton. Once the action has finished, an empty array or object on `Table` / `Repeat` / `KeyValue` shows the empty message instead of disappearing.
 - **Explicit.** `Skeleton` covers regions built from static children. It renders only while an action is pending, so it disappears on its own. A `Stat` with a literal `value`, or a `Table` with literal `rows`, is not bound to anything and needs one.
 - `Spinner` remains for short inline waits, and `ProgressSteps` for a stepped run the user explicitly asked for.
 
 **Loaders survive `onSuccess.navigate`.** A CTA that navigates on success sends the user to the destination page *before* the request is issued, and the action stays pending until it resolves — so the loading state belongs on the destination page, not on the form page the user has already left. This holds for streaming and non-streaming CTAs alike. If the action fails, the error is written to state and the user stays where they landed.
+
+The same automatic placeholders cover a page's `onLoad` run, which is why a page that fetches its own data should bind its regions by `statePath` rather than hard-coding static children.
 
 ### Alignment
 
@@ -376,7 +522,7 @@ Fields are left-aligned by default. To centre a search field beside its button, 
 
 ### Navigation-only brochure
 
-Leave API Bindings empty. Describe pages and NavLinks. Publish as public. Turn on Require Arena emailId only for Arena embeds.
+Leave API Bindings empty. Describe pages and NavLinks. Keep the default Arena gate unless the page is genuinely meant for anyone with the link, in which case switch access control to `public` and turn Require Arena emailId off.
 
 ### Form → workflow → results
 
@@ -404,9 +550,11 @@ Same as above with `kind: "http"`. Put tokens in a workspace env var and referen
 | CTA fails with host not allowlisted | HTTP URL host is locked at publish. Change the binding, regenerate, Launch again |
 | CTA: Secret `"NAME"` was not found | Name in Secret var must match Settings → Secrets. Accessible names are listed in the error. Try `W_NAME` vs `NAME`. |
 | CTA: Secret exists but could not be decrypted | `ENCRYPTION_KEY` must be a 64-char hex string and match the key used when the secret was saved. Restart the app after changing `.env`, then re-save the secret if the key changed. |
-| “Do not have access” | Gate is on and `emailId` is missing. Add `?emailId=` or turn off Require Arena emailId |
+| “Do not have access” | The gate is on (the default) and `emailId` is missing. Add `?emailId=`, open the app from Arena so the cookie is set, or turn off Require Arena emailId |
 | Open goes to chat or an external App URL | Control-bar Open prefers Chat/App. Use Launch GUI App from Deploy → GUI App |
 | Edit cannot find the draft | Draft must belong to this workflow; Generate created it on another workflow |
+| Edit ran but nothing changed | The scope call may have missed the page you meant. Name the page in **Requested Changes** ("on the results page, …") and rerun. The block's `content` output lists which pages actually changed |
+| Preview shows unresolved statePath / unknown type | Copy **Copy as edit instructions** into the block's **Requested Changes** and rerun Edit. Bind a real top-level response field or add `onLoad`. |
 | Block error `fetch failed` during generate/edit | Claude can take several minutes. Check **Deploy → GUI App** — a revision may already have been saved even if the block showed an error. Retry the run. |
 
 Tool APIs used by the block (you do not call these yourself):

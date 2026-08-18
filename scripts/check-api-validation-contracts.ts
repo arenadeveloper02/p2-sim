@@ -8,13 +8,20 @@ const CONTRACTS_DIR = path.join(ROOT, 'apps/sim/lib/api/contracts')
 const QUERY_HOOKS_DIR = path.join(ROOT, 'apps/sim/hooks/queries')
 const SELECTOR_HOOKS_DIR = path.join(ROOT, 'apps/sim/hooks/selectors')
 
-const BASELINE = {
-  totalRoutes: 1137,
-  zodRoutes: 1074,
+/**
+ * Route-count ratchet. `totalRoutes` is a ceiling that must be raised
+ * deliberately when a route is legitimately added; `nonZodRoutes` is the ceiling
+ * that actually matters, because it caps how many routes bypass a contract.
+ * Keep `totalRoutes === zodRoutes + nonZodRoutes` — adding a contract-bound route
+ * raises the first two only, which is what keeps the debt ceiling honest.
+ */
+export const BASELINE = {
+  totalRoutes: 1138,
+  zodRoutes: 1075,
   nonZodRoutes: 63,
 } as const
 
-const BOUNDARY_POLICY_BASELINE = {
+export const BOUNDARY_POLICY_BASELINE = {
   routeZodImports: 0,
   routeLocalSchemaRoutes: 0,
   routeLocalSchemaConstructors: 0,
@@ -1207,13 +1214,44 @@ function printBoundaryContractDrift(
   }
 }
 
-function boundaryPolicyFailures(metrics: BoundaryPolicyMetric[]): string[] {
+/**
+ * Strict-mode ratchet: any boundary metric above its baseline is a failure. The
+ * baseline is injectable so the ratchet can be exercised without the repo's own
+ * current counts standing in for the fixture.
+ */
+export function boundaryPolicyFailures(
+  metrics: BoundaryPolicyMetric[],
+  baseline: Record<BoundaryPolicyKey, number> = BOUNDARY_POLICY_BASELINE
+): string[] {
   return metrics
-    .filter((metric) => metric.current > BOUNDARY_POLICY_BASELINE[metric.key])
-    .map(
-      (metric) =>
-        `${metric.label} increased from ${BOUNDARY_POLICY_BASELINE[metric.key]} to ${metric.current}`
+    .filter((metric) => metric.current > baseline[metric.key])
+    .map((metric) => `${metric.label} increased from ${baseline[metric.key]} to ${metric.current}`)
+}
+
+export interface RouteCounts {
+  totalRoutes: number
+  zodRoutes: number
+  nonZodRoutes: number
+}
+
+/**
+ * Route-count ratchet failures. Pure so the gate can be tested without walking
+ * the API directory.
+ */
+export function routeBaselineFailures(
+  counts: RouteCounts,
+  baseline: RouteCounts = BASELINE
+): string[] {
+  const failures: string[] = []
+  if (counts.totalRoutes > baseline.totalRoutes) {
+    failures.push(`route count increased from ${baseline.totalRoutes} to ${counts.totalRoutes}`)
+  }
+  if (counts.nonZodRoutes > baseline.nonZodRoutes) {
+    failures.push(
+      `non-Zod routes increased from ${baseline.nonZodRoutes} to ${counts.nonZodRoutes} (${counts.zodRoutes} Zod-backed routes)`
     )
+  }
+  return failures
 }
 
 async function auditQueryHooks(): Promise<QueryHookAudit[]> {
@@ -1354,15 +1392,7 @@ async function main() {
 
   if (!checkOnly) return
 
-  const failures: string[] = []
-  if (totalRoutes > BASELINE.totalRoutes) {
-    failures.push(`route count increased from ${BASELINE.totalRoutes} to ${totalRoutes}`)
-  }
-  if (nonZodRoutes > BASELINE.nonZodRoutes) {
-    failures.push(
-      `non-Zod routes increased from ${BASELINE.nonZodRoutes} to ${nonZodRoutes} (${zodRoutes} Zod-backed routes)`
-    )
-  }
+  const failures = routeBaselineFailures({ totalRoutes, zodRoutes, nonZodRoutes })
   if (enforceBoundaryBaseline) {
     failures.push(...boundaryPolicyFailures(ratchetedMetrics))
   }
@@ -1378,7 +1408,13 @@ async function main() {
   console.log('\nAPI validation audit passed.')
 }
 
-void main().catch((error) => {
-  console.error('API validation audit failed:', error)
-  process.exit(1)
-})
+/**
+ * Guarded so the module can be imported by its test without running the audit
+ * (and its `process.exit`), matching `check-migrations-safety.ts`.
+ */
+if (import.meta.main) {
+  void main().catch((error) => {
+    console.error('API validation audit failed:', error)
+    process.exit(1)
+  })
+}
