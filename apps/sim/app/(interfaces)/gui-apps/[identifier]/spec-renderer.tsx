@@ -1,9 +1,16 @@
 'use client'
 
-import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
+import {
+  type CSSProperties,
+  type FormEvent,
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useState,
+} from 'react'
 import type { Spec } from '@json-render/core'
 import { cn } from '@sim/emcn'
-import { displayTextFromActionData } from '@/lib/arena-generative-ui/types'
+import { displayTextFromActionData, parseTabItems } from '@/lib/arena-generative-ui/types'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
 
 interface SpecElement {
@@ -42,6 +49,100 @@ function asPositiveNumber(value: unknown, fallback: number): number {
 }
 
 const DEFAULT_PROGRESS_DURATION_MS = 150_000
+
+const SECTION_WIDTHS = {
+  narrow: 'max-w-2xl',
+  wide: 'max-w-[1280px]',
+  full: 'max-w-none',
+} as const
+
+/** Minimum track width per `Grid.columns` before the grid collapses. */
+const GRID_MIN_ITEM_WIDTHS: Record<string, string> = {
+  '2': '420px',
+  '3': '300px',
+  '4': '240px',
+}
+
+const DEFAULT_GRID_MIN_ITEM_WIDTH = '280px'
+
+const TONE_CLASSES = {
+  info: 'bg-sky-50 text-sky-900',
+  success: 'bg-emerald-50 text-emerald-800',
+  warning: 'bg-amber-50 text-amber-900',
+  error: 'bg-red-50 text-red-800',
+} as const
+
+function toneClass(value: unknown, fallback: keyof typeof TONE_CLASSES = 'info'): string {
+  const tone = asString(value, fallback)
+  return TONE_CLASSES[tone as keyof typeof TONE_CLASSES] ?? TONE_CLASSES[fallback]
+}
+
+function sectionWidthClass(value: unknown): string {
+  const width = asString(value, 'wide')
+  return SECTION_WIDTHS[width as keyof typeof SECTION_WIDTHS] ?? SECTION_WIDTHS.wide
+}
+
+/**
+ * `auto-fit` + `minmax` keeps the grid responsive without media queries, and
+ * `min(100%, …)` stops a wide track from overflowing a narrow viewport.
+ */
+function gridTemplateColumns(props: Record<string, unknown>): string {
+  const explicit = asString(props.minItemWidth)
+  const fromColumns = GRID_MIN_ITEM_WIDTHS[asString(props.columns)]
+  const minItemWidth = explicit || fromColumns || DEFAULT_GRID_MIN_ITEM_WIDTH
+  return `repeat(auto-fit, minmax(min(100%, ${minItemWidth}), 1fr))`
+}
+
+/** Splits `a | b | c` cells, keeping empty middles so columns stay aligned. */
+function splitTableRow(row: string): string[] {
+  return row.split('|').map((cell) => cell.trim())
+}
+
+function tableRowsFromState(value: unknown, headers: string[]): string[][] {
+  if (!Array.isArray(value)) return []
+  return value.map((entry) => {
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      const record = entry as Record<string, unknown>
+      return headers.map((header) => displayFromStateValue(record[header], ''))
+    }
+    return [displayFromStateValue(entry, '')]
+  })
+}
+
+function tableHeadersFromState(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const headers: string[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    for (const key of Object.keys(entry as Record<string, unknown>)) {
+      if (!headers.includes(key)) headers.push(key)
+    }
+  }
+  return headers
+}
+
+/** Parses `key: value` rows, or an object from host state, into pairs. */
+function keyValuePairs(items: unknown, stateValue: unknown): Array<[string, string]> {
+  if (stateValue && typeof stateValue === 'object' && !Array.isArray(stateValue)) {
+    return Object.entries(stateValue as Record<string, unknown>).map(([key, value]) => [
+      key,
+      displayFromStateValue(value, ''),
+    ])
+  }
+  if (typeof items !== 'string') return []
+  const pairs: Array<[string, string]> = []
+  for (const line of items.split('\n')) {
+    const row = line.trim()
+    if (!row) continue
+    const separator = row.indexOf(':')
+    if (separator < 0) {
+      pairs.push([row, ''])
+      continue
+    }
+    pairs.push([row.slice(0, separator).trim(), row.slice(separator + 1).trim()])
+  }
+  return pairs
+}
 
 interface ProgressStepsViewProps {
   pending: boolean
@@ -111,10 +212,7 @@ function displayFromStateValue(value: unknown, fallback: string): string {
   return String(value)
 }
 
-function submitButtonActionId(
-  elements: Record<string, SpecElement>,
-  childIds: string[]
-): string {
+function submitButtonActionId(elements: Record<string, SpecElement>, childIds: string[]): string {
   for (const childId of childIds) {
     const child = elements[childId]
     if (!child) continue
@@ -156,9 +254,11 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
     const element = elements[id]
     if (!element) return null
     const props = element.props ?? {}
-    const children = (element.children ?? []).map((childId) => (
-      <span key={childId}>{renderNode(childId)}</span>
+    const childIds = element.children ?? []
+    const children = childIds.map((childId) => (
+      <Fragment key={childId}>{renderNode(childId)}</Fragment>
     ))
+    const hasChildren = childIds.length > 0
 
     switch (element.type) {
       case 'Page':
@@ -173,24 +273,230 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         )
       case 'Section':
         return (
-          <section className='mx-auto w-full max-w-3xl px-6 py-8' style={styleFromProps(props)}>
+          <section
+            className={cn('mx-auto w-full px-6 py-8', sectionWidthClass(props.width))}
+            style={styleFromProps(props)}
+          >
             {children}
           </section>
         )
-      case 'Stack':
+      case 'Stack': {
+        const align = asString(props.align, 'stretch')
+        const justify = asString(props.justify, 'start')
         return (
           <div
             className={cn(
               'flex',
               asString(props.direction, 'vertical') === 'horizontal' ? 'flex-row' : 'flex-col',
-              asString(props.align) === 'center' && 'items-center',
-              asString(props.align) === 'end' && 'items-end'
+              align === 'center' && 'items-center',
+              align === 'end' && 'items-end',
+              align === 'start' && 'items-start',
+              align === 'stretch' && 'items-stretch',
+              justify === 'center' && 'justify-center',
+              justify === 'between' && 'justify-between',
+              justify === 'end' && 'justify-end',
+              asBoolean(props.wrap) && 'flex-wrap'
             )}
             style={{ gap: asString(props.gap, '12px'), ...styleFromProps(props) }}
           >
             {children}
           </div>
         )
+      }
+      case 'Grid':
+        return (
+          <div
+            className='grid w-full'
+            style={{
+              gridTemplateColumns: gridTemplateColumns(props),
+              gap: asString(props.gap, '16px'),
+              ...styleFromProps(props),
+            }}
+          >
+            {children}
+          </div>
+        )
+      case 'Columns': {
+        const layout = asString(props.layout, 'equal')
+        return (
+          <div
+            className={cn(
+              'grid w-full grid-cols-1',
+              layout === 'sidebar-left' && 'md:grid-cols-[280px_1fr]',
+              layout === 'sidebar-right' && 'md:grid-cols-[1fr_280px]',
+              layout === 'equal' && 'md:grid-cols-2'
+            )}
+            style={{ gap: asString(props.gap, '16px'), ...styleFromProps(props) }}
+          >
+            {children}
+          </div>
+        )
+      }
+      case 'PageHeader':
+        return (
+          <div
+            className='flex w-full flex-wrap items-center justify-between gap-3'
+            style={styleFromProps(props)}
+          >
+            <div className='flex flex-col gap-1'>
+              <h1 className='font-semibold text-2xl tracking-tight'>{asString(props.title)}</h1>
+              {asString(props.subtitle) ? (
+                <p className='text-[var(--color-ds-grey-600,#5b5f6b)] text-sm'>
+                  {asString(props.subtitle)}
+                </p>
+              ) : null}
+            </div>
+            {hasChildren ? <div className='flex items-center gap-2'>{children}</div> : null}
+          </div>
+        )
+      case 'Toolbar': {
+        const justify = asString(props.justify, 'start')
+        return (
+          <div
+            className={cn(
+              'flex w-full flex-wrap items-center gap-2',
+              justify === 'center' && 'justify-center',
+              justify === 'between' && 'justify-between',
+              justify === 'end' && 'justify-end'
+            )}
+            style={styleFromProps(props)}
+          >
+            {children}
+          </div>
+        )
+      }
+      case 'Tabs': {
+        const items = parseTabItems(props.items)
+        const activePath = asString(props.activePath)
+        if (items.length === 0) return null
+        return (
+          <nav
+            className='flex w-full flex-wrap items-center gap-1 border-[var(--color-ds-grey-200,#e2e3e5)] border-b'
+            style={styleFromProps(props)}
+          >
+            {items.map((item) => (
+              <button
+                key={item.path}
+                type='button'
+                onClick={() => onNavigate(item.path)}
+                className={cn(
+                  '-mb-px border-b-2 px-3 py-2 text-sm',
+                  item.path === activePath
+                    ? 'border-[var(--color-ds-blue-600,#2563eb)] font-medium text-[var(--color-ds-blue-600,#2563eb)]'
+                    : 'border-transparent text-[var(--color-ds-grey-600,#5b5f6b)]'
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        )
+      }
+      case 'Table': {
+        const stateValue = asString(props.statePath)
+          ? readStatePath(state, asString(props.statePath))
+          : undefined
+        const declaredHeaders = asString(props.columns)
+          .split(',')
+          .map((header) => header.trim())
+          .filter(Boolean)
+        const headers =
+          declaredHeaders.length > 0 ? declaredHeaders : tableHeadersFromState(stateValue)
+        const rows =
+          stateValue === undefined
+            ? asString(props.rows)
+                .split('\n')
+                .map((row) => row.trim())
+                .filter(Boolean)
+                .map(splitTableRow)
+            : tableRowsFromState(stateValue, headers)
+        if (headers.length === 0 && rows.length === 0) return null
+        return (
+          <div className='w-full overflow-x-auto' style={styleFromProps(props)}>
+            <table className='w-full border-collapse text-left text-sm'>
+              {headers.length > 0 ? (
+                <thead>
+                  <tr className='border-[var(--color-ds-grey-200,#e2e3e5)] border-b'>
+                    {headers.map((header) => (
+                      <th key={header} className='px-3 py-2 font-medium'>
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+              ) : null}
+              <tbody>
+                {rows.map((row, rowIndex) => (
+                  <tr
+                    key={`row-${rowIndex}`}
+                    className='border-[var(--color-ds-grey-100,#f0f1f3)] border-b'
+                  >
+                    {row.map((cell, cellIndex) => (
+                      <td key={`cell-${cellIndex}`} className='px-3 py-2 align-top'>
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+      case 'Stat': {
+        const stateValue = asString(props.statePath)
+          ? readStatePath(state, asString(props.statePath))
+          : undefined
+        const value =
+          stateValue === undefined
+            ? asString(props.value)
+            : displayFromStateValue(stateValue, asString(props.value))
+        return (
+          <div
+            className='flex flex-col gap-1 rounded-xl border border-[var(--color-ds-grey-200,#e2e3e5)] bg-white p-4'
+            style={styleFromProps(props)}
+          >
+            <span className='text-[var(--color-ds-grey-500,#8a8d99)] text-xs uppercase tracking-wide'>
+              {asString(props.label)}
+            </span>
+            <span className='font-semibold text-2xl'>{value}</span>
+            {asString(props.hint) ? (
+              <span className='text-[var(--color-ds-grey-600,#5b5f6b)] text-xs'>
+                {asString(props.hint)}
+              </span>
+            ) : null}
+          </div>
+        )
+      }
+      case 'Badge':
+        return (
+          <span
+            className={cn(
+              'inline-flex items-center rounded-full px-2 py-0.5 font-medium text-xs',
+              toneClass(props.tone)
+            )}
+            style={styleFromProps(props)}
+          >
+            {asString(props.text)}
+          </span>
+        )
+      case 'KeyValue': {
+        const stateValue = asString(props.statePath)
+          ? readStatePath(state, asString(props.statePath))
+          : undefined
+        const pairs = keyValuePairs(props.items, stateValue)
+        if (pairs.length === 0) return null
+        return (
+          <dl className='grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-4 gap-y-2 text-sm'>
+            {pairs.map(([key, value]) => (
+              <Fragment key={key}>
+                <dt className='text-[var(--color-ds-grey-500,#8a8d99)]'>{key}</dt>
+                <dd className='text-[var(--color-ds-grey-800,#1f232d)]'>{value}</dd>
+              </Fragment>
+            ))}
+          </dl>
+        )
+      }
       case 'Card':
         return (
           <div
@@ -231,22 +537,12 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           <MarkdownText className='font-medium' style={styleFromProps(props)} content={display} />
         )
       }
-      case 'Alert': {
-        const tone = asString(props.tone, 'info')
+      case 'Alert':
         return (
-          <div
-            className={cn(
-              'rounded-lg px-3 py-2 text-sm',
-              tone === 'error' && 'bg-red-50 text-red-800',
-              tone === 'success' && 'bg-emerald-50 text-emerald-800',
-              tone === 'warning' && 'bg-amber-50 text-amber-900',
-              tone === 'info' && 'bg-sky-50 text-sky-900'
-            )}
-          >
+          <div className={cn('rounded-lg px-3 py-2 text-sm', toneClass(props.tone))}>
             <MarkdownText content={asString(props.text)} />
           </div>
         )
-      }
       case 'Spinner':
         return pending ? (
           <p className='text-[var(--color-ds-grey-500,#8a8d99)] text-sm'>

@@ -97,6 +97,30 @@ export interface ArenaGenerativeGenerateResult {
 /** Host state path DataText should bind to while a streaming CTA is in flight. */
 export const ARENA_GENERATIVE_STREAM_CONTENT_KEY = 'content'
 
+export interface ArenaGenerativeTabItem {
+  label: string
+  path: string
+}
+
+/**
+ * Parses a `Tabs.items` string of newline-separated `Label|path` rows. A row
+ * without a separator uses its single value as both label and path.
+ */
+export function parseTabItems(raw: unknown): ArenaGenerativeTabItem[] {
+  if (typeof raw !== 'string') return []
+  const items: ArenaGenerativeTabItem[] = []
+  for (const line of raw.split('\n')) {
+    const row = line.trim()
+    if (!row) continue
+    const separator = row.indexOf('|')
+    const label = (separator >= 0 ? row.slice(0, separator) : row).trim()
+    const path = (separator >= 0 ? row.slice(separator + 1) : row).trim()
+    if (!label || !path) continue
+    items.push({ label, path })
+  }
+  return items
+}
+
 /**
  * Best-effort text for DataText `content` from a JSON action payload.
  * Prefers string | .content | .output | .output.content | .text | .message.

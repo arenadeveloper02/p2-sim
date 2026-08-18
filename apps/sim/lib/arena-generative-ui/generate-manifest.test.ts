@@ -97,6 +97,24 @@ describe('generateArenaGenerativeManifest', () => {
     expect(result.error).toBe(MODEL_JSON_PARSE_ERROR)
   })
 
+  it('asks for wide dense layouts instead of a narrow single column', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({
+      userInput: 'Team directory.',
+      apiBindings: [],
+    })
+
+    const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+    expect(system).not.toContain('640px')
+    expect(system).not.toContain('Single column only')
+    expect(system).not.toContain('iframe-narrow')
+    expect(system).toContain('Grid')
+    expect(system).toContain('Table')
+    expect(system).toContain('PageHeader')
+    expect(system).toContain('Tabs')
+  })
+
   it('passes stream: true into the bindings summary and localized streaming rules', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
 

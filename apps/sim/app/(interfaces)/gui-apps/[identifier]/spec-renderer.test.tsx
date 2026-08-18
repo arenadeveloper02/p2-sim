@@ -245,6 +245,186 @@ describe('SpecRenderer', () => {
     expect(container.textContent).not.toContain('Connecting')
   })
 
+  it('defaults Section to the wide cap and drops it for width full', () => {
+    const sectionSpec = (width?: string): Spec => ({
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['section'] },
+        section: { type: 'Section', props: width ? { width } : {}, children: [] },
+      },
+    })
+
+    const wide = render({ spec: sectionSpec() })
+    expect(wide.container.querySelector('section')?.className).toContain('max-w-[1280px]')
+    unmount?.()
+    unmount = undefined
+
+    const full = render({ spec: sectionSpec('full') })
+    expect(full.container.querySelector('section')?.className).toContain('max-w-none')
+    expect(full.container.querySelector('section')?.className).not.toContain('max-w-[1280px]')
+  })
+
+  it('renders Grid with auto-fit template columns sized from columns', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['grid'] },
+        grid: { type: 'Grid', props: { columns: '3' }, children: ['card'] },
+        card: { type: 'Card', props: { title: 'Item' }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    const grid = container.querySelector('.grid') as HTMLElement
+    expect(grid.style.gridTemplateColumns).toBe('repeat(auto-fit, minmax(min(100%, 300px), 1fr))')
+  })
+
+  it('makes a Card a direct child of a horizontal Stack instead of wrapping it in a span', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['stack'] },
+        stack: {
+          type: 'Stack',
+          props: { direction: 'horizontal', justify: 'between', wrap: true },
+          children: ['card'],
+        },
+        card: { type: 'Card', props: { title: 'Item' }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    const stack = container.querySelector('.flex-row') as HTMLElement
+    expect(stack.className).toContain('justify-between')
+    expect(stack.className).toContain('flex-wrap')
+    expect(container.querySelector('span > div')).toBeNull()
+    expect(stack.firstElementChild?.tagName).toBe('DIV')
+    expect(stack.firstElementChild?.textContent).toContain('Item')
+  })
+
+  it('renders Table rows from a statePath array', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['table'] },
+        table: {
+          type: 'Table',
+          props: { columns: 'title, score', statePath: 'output.items' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: {
+        output: {
+          items: [
+            { title: 'First', score: 9 },
+            { title: 'Second', score: 4 },
+          ],
+        },
+      },
+    })
+    const headers = Array.from(container.querySelectorAll('th')).map((cell) => cell.textContent)
+    expect(headers).toEqual(['title', 'score'])
+    const rows = Array.from(container.querySelectorAll('tbody tr')).map((row) =>
+      Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent)
+    )
+    expect(rows).toEqual([
+      ['First', '9'],
+      ['Second', '4'],
+    ])
+  })
+
+  it('renders static Table rows split on the pipe separator', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['table'] },
+        table: {
+          type: 'Table',
+          props: { columns: 'Name, Role', rows: 'Ada | Engineer\nGrace | Admiral' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const rows = Array.from(container.querySelectorAll('tbody tr')).map((row) =>
+      Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent)
+    )
+    expect(rows).toEqual([
+      ['Ada', 'Engineer'],
+      ['Grace', 'Admiral'],
+    ])
+  })
+
+  it('navigates to the Tabs item path and marks the active tab', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['tabs'] },
+        tabs: {
+          type: 'Tabs',
+          props: { items: 'Home|home\nReports|reports', activePath: 'home' },
+          children: [],
+        },
+      },
+    }
+    const { container, onNavigate } = render({ spec })
+    const buttons = Array.from(container.querySelectorAll('nav button'))
+    expect(buttons.map((button) => button.textContent)).toEqual(['Home', 'Reports'])
+    expect(buttons[0]?.className).toContain('font-medium')
+    act(() => {
+      buttons[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onNavigate).toHaveBeenCalledWith('reports')
+  })
+
+  it('renders PageHeader title, subtitle, and trailing action', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['header'] },
+        header: {
+          type: 'PageHeader',
+          props: { title: 'Recommendations', subtitle: 'Ranked for you' },
+          children: ['cta'],
+        },
+        cta: { type: 'Button', props: { label: 'Refresh', navigateTo: 'home' }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('h1')?.textContent).toBe('Recommendations')
+    expect(container.textContent).toContain('Ranked for you')
+    expect(container.textContent).toContain('Refresh')
+  })
+
+  it('renders Stat and KeyValue values from host state', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['stat', 'details'] },
+        stat: {
+          type: 'Stat',
+          props: { label: 'Matches', statePath: 'output.count', hint: 'this week' },
+          children: [],
+        },
+        details: {
+          type: 'KeyValue',
+          props: { statePath: 'output.meta' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: { output: { count: 42, meta: { source: 'arena' } } },
+    })
+    expect(container.textContent).toContain('Matches')
+    expect(container.textContent).toContain('42')
+    expect(container.textContent).toContain('this week')
+    expect(container.querySelector('dt')?.textContent).toBe('source')
+    expect(container.querySelector('dd')?.textContent).toBe('arena')
+  })
+
   it('ticks earlier ProgressSteps after elapsed time while pending', () => {
     vi.useFakeTimers()
     try {

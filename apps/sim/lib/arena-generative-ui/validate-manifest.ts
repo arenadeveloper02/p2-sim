@@ -6,6 +6,7 @@ import {
   type ArenaGenerativeAppManifest,
   type ArenaGenerativePageHint,
   isJsonRenderSpec,
+  parseTabItems,
 } from '@/lib/arena-generative-ui/types'
 
 interface FlatElement {
@@ -102,6 +103,11 @@ function collectNavTargets(spec: Spec): string[] {
     const to = asString(props.to) || asString(props.navigateTo)
     if (to) {
       targets.push(to)
+    }
+    if (element.type === 'Tabs') {
+      for (const item of parseTabItems(props.items)) {
+        targets.push(item.path)
+      }
     }
   }
   return targets

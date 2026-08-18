@@ -20,19 +20,66 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         padding: z.string().nullable(),
         backgroundColor: z.string().nullable(),
         maxWidth: z.string().nullable(),
+        width: z.enum(['narrow', 'wide', 'full']).nullable(),
       }),
       slots: ['default'],
-      description: 'Content section with optional padding and background',
+      description:
+        'Content section. width defaults to wide (fills up to 1280px); use narrow only for a focused single-column form, full to span the viewport. Leave maxWidth unset unless you need an exact cap.',
     },
     Stack: {
       props: z.object({
         direction: z.enum(['vertical', 'horizontal']).nullable(),
         gap: z.string().nullable(),
         align: z.enum(['start', 'center', 'end', 'stretch']).nullable(),
+        justify: z.enum(['start', 'center', 'between', 'end']).nullable(),
+        wrap: z.boolean().nullable(),
       }),
       slots: ['default'],
       description:
-        'Flex stack for vertical or horizontal layout. Prefer vertical; this UI is iframe-narrow.',
+        'Flex stack for vertical or horizontal layout. Use justify to distribute a horizontal row and wrap so it reflows on narrow screens. For collections of equal items use Grid instead.',
+    },
+    Grid: {
+      props: z.object({
+        columns: z.enum(['2', '3', '4']).nullable(),
+        gap: z.string().nullable(),
+        minItemWidth: z.string().nullable(),
+      }),
+      slots: ['default'],
+      description:
+        'Responsive grid that collapses to one column on narrow screens. Use for collections of Cards or Stats and for form fields that belong side by side. columns sets the target track count.',
+    },
+    Columns: {
+      props: z.object({
+        layout: z.enum(['equal', 'sidebar-left', 'sidebar-right']).nullable(),
+        gap: z.string().nullable(),
+      }),
+      slots: ['default'],
+      description:
+        'Two-column layout for asymmetric content: equal halves, or a 280px sidebar beside the main column. Stacks vertically on narrow screens.',
+    },
+    PageHeader: {
+      props: z.object({
+        title: z.string(),
+        subtitle: z.string().nullable(),
+      }),
+      slots: ['default'],
+      description:
+        'Page title with optional subtitle; default-slot children render right-aligned as the primary action. Use once at the top of a page instead of a bare Heading.',
+    },
+    Toolbar: {
+      props: z.object({
+        justify: z.enum(['start', 'center', 'between', 'end']).nullable(),
+      }),
+      slots: ['default'],
+      description: 'Horizontal row of controls (filters, buttons, badges) that wraps when narrow.',
+    },
+    Tabs: {
+      props: z.object({
+        items: z.string(),
+        activePath: z.string().nullable(),
+      }),
+      description:
+        'Top-level navigation across pages. items is newline-separated "Label|path" where each path is a manifest page path. activePath marks the current page.',
     },
     Card: {
       props: z.object({
@@ -68,6 +115,40 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       description:
         'Displays a host-state value at a dotted path (e.g. content or output.content). Markdown is rendered. For stream: true CTAs, bind statePath to content on the page or section that shows the result.',
+    },
+    Table: {
+      props: z.object({
+        columns: z.string().nullable(),
+        rows: z.string().nullable(),
+        statePath: z.string().nullable(),
+      }),
+      description:
+        'Tabular data. Either static: columns as comma-separated headers plus rows as newline-separated lines with "|" between cells. Or bound: statePath pointing at a host-state array of objects, where columns names the object keys to show. Prefer this over one stacked Card per row.',
+    },
+    Stat: {
+      props: z.object({
+        label: z.string(),
+        value: z.string().nullable(),
+        statePath: z.string().nullable(),
+        hint: z.string().nullable(),
+      }),
+      description:
+        'Single metric with a label. Use value for static numbers or statePath to read one from host state. Place several inside a Grid.',
+    },
+    Badge: {
+      props: z.object({
+        text: z.string(),
+        tone: z.enum(['info', 'success', 'warning', 'error']).nullable(),
+      }),
+      description: 'Small inline status pill for a state, category, or count.',
+    },
+    KeyValue: {
+      props: z.object({
+        items: z.string().nullable(),
+        statePath: z.string().nullable(),
+      }),
+      description:
+        'Two-column detail list. items is newline-separated "key: value" rows, or set statePath to a host-state object to list its entries.',
     },
     Alert: {
       props: z.object({
@@ -226,13 +307,15 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'onSuccess.navigate and NavLink.to / Button.navigateTo / navigate action `to` must be existing page paths.',
   'Every page must be reachable from entryPath via NavLink, navigateTo, navigate, or onSuccess.navigate.',
   'DataText, Text, Alert, and ListItem render markdown. Put API bodies on DataText (e.g. output.content); do not split markdown into Heading/List elements.',
-  'Layout: Page → Section (padding 24px, maxWidth 640px) → one Card. Do not dump a bare Stack of text on the page.',
-  'Typography: one Heading level h1 per page, then a short supporting Text. Never title a page "Page 1" or use lorem ipsum.',
-  'Actions: one primary Button or NavLink per page. Forms have labeled fields, one SubmitButton, and an optional Back NavLink.',
-  'Use catalog props (backgroundColor, padding, gap, maxWidth, color) so the layout is not the default grey dump.',
-  'Iframe: this UI usually renders inside a narrow Arena iframe. Single column only. No left sidebar, no persistent page nav, no app chrome.',
-  'Do not include a logo, wordmark, or decorative Image for branding. The host already provides chrome.',
-  'Navigation is in-content: Back NavLink, one primary Button/NavLink, or submit-then-navigate. Never a left nav listing every page.',
+  'Layout: each page is a full-page app screen. Page → Section (leave width at the wide default so it fills up to 1280px) → content. Use the horizontal space; do not stack every element in one narrow centre column. Do not set maxWidth unless the brief demands an exact cap.',
+  'Collections: render a list of items as a Grid of Cards (columns 2 or 3), or a Table when the items share the same fields. Never one full-width Card per item stacked vertically.',
+  'Tabular data goes in Table, metrics go in Stat inside a Grid, record details go in KeyValue, short statuses go in Badge.',
+  'Forms: group related fields side by side in a Grid (columns 2) and keep only long free-text fields full width. Forms have labeled fields, one SubmitButton, and an optional Back NavLink.',
+  'Chrome: start a page with PageHeader (title, subtitle, primary action as its child) instead of a bare Heading. Use Toolbar for a row of filters or secondary buttons, and Columns for a main area beside a supporting sidebar.',
+  'Navigation: when the app has three or more pages, put a Tabs element with one "Label|path" line per top-level page at the top of each page and set activePath to the current path. Detail pages are reached with NavLink/navigateTo and offer a Back NavLink.',
+  'Typography: one h1-level page title per page (PageHeader.title counts), then a short supporting subtitle. Never title a page "Page 1" or use lorem ipsum.',
+  'Use catalog props (backgroundColor, padding, gap, columns, justify, color) so the layout is not the default grey dump.',
+  'Do not include a logo, wordmark, or decorative Image for branding. The host already provides the outer shell.',
 ] as const
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */

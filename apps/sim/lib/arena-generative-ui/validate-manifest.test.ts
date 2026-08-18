@@ -220,6 +220,126 @@ describe('validateArenaGenerativeManifest', () => {
     expect(result.error).toMatch(/Unreachable pages/)
   })
 
+  it('treats Tabs item paths as navigation so tabbed pages are reachable', () => {
+    const tabbedSpec = (title: string): Spec => ({
+      root: 'page',
+      elements: {
+        page: {
+          type: 'Page',
+          props: { title, backgroundColor: null },
+          children: ['tabs'],
+        },
+        tabs: {
+          type: 'Tabs',
+          props: { items: 'Home|home\nReports|reports', activePath: 'home' },
+          children: [],
+        },
+      },
+    })
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec: tabbedSpec('Home') },
+          reports: { title: 'Reports', path: 'reports', spec: tabbedSpec('Reports') },
+        },
+        actions: {},
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects a Tabs item pointing at a path that is not a page', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: {
+            title: 'Home',
+            path: 'home',
+            spec: {
+              root: 'page',
+              elements: {
+                page: {
+                  type: 'Page',
+                  props: { title: 'Home', backgroundColor: null },
+                  children: ['tabs'],
+                },
+                tabs: {
+                  type: 'Tabs',
+                  props: { items: 'Home|home\nGhost|ghost', activePath: 'home' },
+                  children: [],
+                },
+              },
+            },
+          },
+        },
+        actions: {},
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/unknown path "ghost"/)
+  })
+
+  it('accepts layout and display components from the widened catalog', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: {
+            title: 'Home',
+            path: 'home',
+            spec: {
+              root: 'page',
+              elements: {
+                page: {
+                  type: 'Page',
+                  props: { title: 'Home', backgroundColor: null },
+                  children: ['section'],
+                },
+                section: {
+                  type: 'Section',
+                  props: {
+                    padding: '24px',
+                    backgroundColor: null,
+                    maxWidth: null,
+                    width: 'wide',
+                  },
+                  children: ['header', 'grid', 'table'],
+                },
+                header: {
+                  type: 'PageHeader',
+                  props: { title: 'Dashboard', subtitle: 'This week' },
+                  children: [],
+                },
+                grid: {
+                  type: 'Grid',
+                  props: { columns: '3', gap: '16px', minItemWidth: null },
+                  children: ['stat'],
+                },
+                stat: {
+                  type: 'Stat',
+                  props: { label: 'Matches', value: '42', statePath: null, hint: null },
+                  children: [],
+                },
+                table: {
+                  type: 'Table',
+                  props: { columns: 'Name, Role', rows: 'Ada | Engineer', statePath: null },
+                  children: [],
+                },
+              },
+            },
+          },
+        },
+        actions: {},
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.success).toBe(true)
+  })
+
   it('explains omitted pages without implying the Pages field must be filled', () => {
     const result = validateArenaGenerativeManifest(
       { entryPath: 'home' },
