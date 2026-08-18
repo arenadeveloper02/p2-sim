@@ -503,6 +503,37 @@ describe('SpecRenderer', () => {
       expect(container.textContent).toContain('nice')
       expect(container.textContent).toContain('meh')
     })
+
+    it('shows No results when the array is empty and nothing is pending', () => {
+      const { container } = render({ spec: repeatSpec, pending: false, state: { articles: [] } })
+      expect(container.querySelector('[data-testid="empty-state"]')?.textContent).toBe('No results')
+      expect(container.querySelector('h2')).toBeNull()
+    })
+
+    it('uses emptyText when the collection is empty', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat'] },
+          repeat: {
+            type: 'Repeat',
+            props: { statePath: 'articles', emptyText: 'No matching articles' },
+            children: ['card'],
+          },
+          card: { type: 'Card', props: { title: '{item.title}' }, children: [] },
+        },
+      }
+      const { container } = render({ spec, pending: false, state: { articles: [] } })
+      expect(container.querySelector('[data-testid="empty-state"]')?.textContent).toBe(
+        'No matching articles'
+      )
+    })
+
+    it('keeps the skeleton while pending so an empty array is not a false zero-result', () => {
+      const { container } = render({ spec: repeatSpec, pending: true, state: { articles: [] } })
+      expect(container.querySelector('[data-testid="empty-state"]')).toBeNull()
+      expect(container.querySelectorAll('[data-testid="skeleton"]').length).toBeGreaterThan(0)
+    })
   })
 
   it('navigates to the Tabs item path and marks the active tab', () => {
@@ -714,6 +745,73 @@ describe('SpecRenderer', () => {
       const idle = render({ spec, pending: false, state: {} })
       expect(skeletonCount(idle.container)).toBe(0)
       expect(idle.container.textContent).toContain('Run the report')
+    })
+  })
+
+  describe('empty states', () => {
+    it('shows No results for a bound Table whose array is empty', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['table'] },
+          table: {
+            type: 'Table',
+            props: { statePath: 'articles', columns: 'title' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({ spec, pending: false, state: { articles: [] } })
+      expect(container.querySelector('table')).toBeNull()
+      expect(container.querySelector('[data-testid="empty-state"]')?.textContent).toBe('No results')
+    })
+
+    it('shows No details for a bound KeyValue whose object is empty', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['details'] },
+          details: { type: 'KeyValue', props: { statePath: 'meta' }, children: [] },
+        },
+      }
+      const { container } = render({ spec, pending: false, state: { meta: {} } })
+      expect(container.querySelector('dl')).toBeNull()
+      expect(container.querySelector('[data-testid="empty-state"]')?.textContent).toBe('No details')
+    })
+
+    it('uses Table emptyText instead of the default collection copy', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['table'] },
+          table: {
+            type: 'Table',
+            props: { statePath: 'articles', columns: 'title', emptyText: 'No matching articles' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({ spec, pending: false, state: { articles: [] } })
+      expect(container.querySelector('[data-testid="empty-state"]')?.textContent).toBe(
+        'No matching articles'
+      )
+    })
+
+    it('leaves a static Table with no statePath as a table, not an empty state', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['table'] },
+          table: {
+            type: 'Table',
+            props: { columns: 'Name', rows: 'Ada' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({ spec, pending: false, state: {} })
+      expect(container.querySelector('table')).toBeTruthy()
+      expect(container.querySelector('[data-testid="empty-state"]')).toBeNull()
     })
   })
 

@@ -159,6 +159,7 @@ const goldHomeSpec: Spec = {
         columns: 'Time, Records/sec',
         rows: '10:00 | 1,200\n11:00 | 1,450\n12:00 | 1,900',
         statePath: null,
+        emptyText: null,
       },
       children: [],
     },
@@ -207,7 +208,7 @@ const goldReportSpec: Spec = {
     },
     run_meta: {
       type: 'KeyValue',
-      props: { statePath: 'meta', items: null },
+      props: { statePath: 'meta', items: null, emptyText: null },
       children: [],
     },
     articles_card: {
@@ -227,7 +228,7 @@ const goldReportSpec: Spec = {
     },
     articles_repeat: {
       type: 'Repeat',
-      props: { statePath: 'articles' },
+      props: { statePath: 'articles', emptyText: 'No articles ranked yet.' },
       children: ['article_card'],
     },
     article_card: {
@@ -332,7 +333,7 @@ export const goldExampleOutput = {
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT',
   'Match this structure and density, not its subject matter. Note the flat elements map with string child ids, the wide Section for dashboard content, the narrow Section for narrative prose, metrics in a Grid of Stat, form fields paired in a Grid, a live collection as Repeat inside a Grid of Cards, and result components bound by statePath.',
-  'Note also how the home page fills itself: it declares onLoad and binds each Stat by statePath, so the metrics arrive without the user clicking anything. The report page has no onLoad because its data comes from the CTA that navigated there. Ranked articles are a Repeat template: Card.title uses "{item.title}", the outbound Link uses "{item.url}", and the Repeat sits inside the Grid so each article is one cell.',
+  'Note also how the home page fills itself: it declares onLoad and binds each Stat by statePath, so the metrics arrive without the user clicking anything. The report page has no onLoad because its data comes from the CTA that navigated there. Ranked articles are a Repeat template: Card.title uses "{item.title}", the outbound Link uses "{item.url}", and the Repeat sits inside the Grid so each article is one cell. emptyText is the zero-result copy when that array is empty.',
   `Replace the actions apiKey values ("${GOLD_EXAMPLE_LOAD_API_KEY}", "${GOLD_EXAMPLE_API_KEY}") with declared API binding keys, and drop manifest.actions and every onLoad entirely when no bindings were declared.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')

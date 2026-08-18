@@ -482,6 +482,26 @@ function StateKeyValue({ pairs }: { pairs: Array<[string, string]> }) {
   )
 }
 
+const DEFAULT_EMPTY_TEXT = {
+  collection: 'No results',
+  details: 'No details',
+} as const
+
+/**
+ * Zero-result copy for a bound collection. `col-span-full` lets it span a parent
+ * Grid so an empty Repeat does not shrink to a single card cell.
+ */
+function EmptyState({ text }: { text: string }) {
+  return (
+    <p
+      data-testid='empty-state'
+      className='col-span-full py-8 text-center text-[var(--color-ds-grey-500,#8a8d99)] text-sm'
+    >
+      {text}
+    </p>
+  )
+}
+
 /**
  * `fallback` is empty-state copy, not loading copy, so a pending action still shows the skeleton —
  * otherwise every DataText that declares a fallback silently opts out of its loading state.
@@ -651,7 +671,8 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           )
         }
         if (!Array.isArray(stateValue) || stateValue.length === 0) {
-          return null
+          if (!statePath) return null
+          return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
         }
         const items = stateValue.slice(0, MAX_REPEAT_ITEMS)
         return (
@@ -747,6 +768,13 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         if (statePath && pending && isEmptyStateValue(stateValue)) {
           return <SkeletonBlock variant='table' lines={DEFAULT_SKELETON_LINES.table} />
+        }
+        if (statePath && !pending && isEmptyStateValue(stateValue)) {
+          const hasStatic =
+            asString(props.columns).trim().length > 0 || asString(props.rows).trim().length > 0
+          if (stateValue !== undefined || !hasStatic) {
+            return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
+          }
         }
         if (stateValue === undefined) {
           const headers = asString(props.columns)
@@ -852,6 +880,9 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         const pairs = keyValuePairs(props.items, stateValue)
         if (pairs.length === 0 && statePath && pending) {
           return <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
+        }
+        if (pairs.length === 0 && statePath && !pending) {
+          return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.details)} />
         }
         return <StateKeyValue pairs={pairs} />
       }

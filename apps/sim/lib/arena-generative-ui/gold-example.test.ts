@@ -89,6 +89,7 @@ describe('gold example', () => {
     expect(report).toContain('"statePath":"articles"')
     expect(report).toContain('{item.title}')
     expect(report).toContain('{item.url}')
+    expect(report).toContain('No articles ranked yet.')
     expect(report.indexOf('"type":"Grid"')).toBeLessThan(report.indexOf('"type":"Repeat"'))
   })
 

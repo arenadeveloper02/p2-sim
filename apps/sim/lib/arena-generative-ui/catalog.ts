@@ -51,10 +51,11 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
     Repeat: {
       props: z.object({
         statePath: z.string(),
+        emptyText: z.string().nullable(),
       }),
       slots: ['default'],
       description:
-        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.actionId inside Repeat sends the item\'s fields as the action input. Use Table instead when every item is the same scalar fields with no per-row action.',
+        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.actionId inside Repeat sends the item\'s fields as the action input. Use Table instead when every item is the same scalar fields with no per-row action. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that.',
     },
     Columns: {
       props: z.object({
@@ -131,9 +132,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         columns: z.string().nullable(),
         rows: z.string().nullable(),
         statePath: z.string().nullable(),
+        emptyText: z.string().nullable(),
       }),
       description:
-        'Tabular data. Either static: columns as comma-separated headers plus rows as newline-separated lines with "|" between cells. Or bound: statePath pointing at a host-state array of objects, where columns names the object keys to show. Prefer this over one stacked Card per row.',
+        'Tabular data. Either static: columns as comma-separated headers plus rows as newline-separated lines with "|" between cells. Or bound: statePath pointing at a host-state array of objects, where columns names the object keys to show. Prefer this over stacked Cards when every item is the same scalar fields. A bound table with no rows shows emptyText (default "No results").',
     },
     Stat: {
       props: z.object({
@@ -158,9 +160,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       props: z.object({
         items: z.string().nullable(),
         statePath: z.string().nullable(),
+        emptyText: z.string().nullable(),
       }),
       description:
-        'Two-column detail list. items is newline-separated "key: value" rows, or set statePath to a host-state object to list its entries.',
+        'Two-column detail list. items is newline-separated "key: value" rows, or set statePath to a host-state object to list its entries. A bound list with no entries shows emptyText (default "No details").',
     },
     Alert: {
       props: z.object({
@@ -349,6 +352,7 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Typography: one h1-level page title per page (PageHeader.title counts), then a short supporting subtitle. Never title a page "Page 1" or use lorem ipsum.',
   'Heading order: nest levels sequentially and never skip or invert them. PageHeader.title is the page h1 and Card.title renders an h2, so a Heading inside a Card starts at h3.',
   'Loading: any region that fills from a CTA response must have a loading state. Table, Repeat, Stat, KeyValue and DataText bound to a statePath show a placeholder automatically, but only while that state value is still empty — so bind the result region to a statePath rather than hard-coding static children. A Stat with a literal value prop and a Table with literal rows never show one. For a region built from static children add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]} — variant is text, stat, table, card or form. Use Spinner only for a short inline wait, never as the sole feedback for a long run.',
+  'Empty results: when a bound Table, Repeat, or KeyValue has loaded and the value is empty, the host shows emptyText (defaults: "No results" for Table and Repeat, "No details" for KeyValue). Do not add a second Text or Alert for that. A DataText fallback is the empty copy for prose. Customise emptyText when the brief names the collection ("No matching articles").',
   'Result pages: when onSuccess.navigate sends the user to another page, the host navigates there immediately and the action stays pending, so put the loading state on the destination page — its bound Table/Repeat/Stat/KeyValue/DataText, or an explicit Skeleton — not on the form page the user has already left.',
   'Do not include a logo, wordmark, or decorative Image for branding. The host already provides the outer shell.',
 ] as const
