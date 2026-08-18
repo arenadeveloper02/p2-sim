@@ -15,7 +15,10 @@ import {
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
 import { isDev } from '@/lib/core/config/env-flags'
 import { encodeSSE, readSSELines, SSE_HEADERS } from '@/lib/core/utils/sse'
-import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
+import {
+  type EnvironmentResolutionSnapshot,
+  getEffectiveEnvironmentSnapshot,
+} from '@/lib/environment/utils'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 
@@ -82,30 +85,110 @@ function resolveAuthHeaderName(http: {
   return undefined
 }
 
+/**
+ * Curl and Secrets often disagree on a `W_` workspace prefix. Try both.
+ */
+function secretNameCandidates(name: string): string[] {
+  if (/^W_/i.test(name)) {
+    return [name, name.replace(/^W_/i, '')]
+  }
+  return [name, `W_${name}`]
+}
+
+function findEnvKey(map: Record<string, string>, wanted: string): string | undefined {
+  if (Object.hasOwn(map, wanted)) {
+    return wanted
+  }
+  const lower = wanted.toLowerCase()
+  return Object.keys(map).find((key) => key.toLowerCase() === lower)
+}
+
+function lookupSecretValue(
+  snapshot: EnvironmentResolutionSnapshot,
+  secretName: string
+): { key: string; value: string } | undefined {
+  const sources = [snapshot.workspaceDecrypted, snapshot.personalDecrypted]
+  for (const candidate of secretNameCandidates(secretName)) {
+    for (const source of sources) {
+      const key = findEnvKey(source, candidate)
+      const value = key ? source[key] : undefined
+      if (key && value?.trim()) {
+        return { key, value }
+      }
+    }
+  }
+  return undefined
+}
+
+function knownSecretKeys(snapshot: EnvironmentResolutionSnapshot): string[] {
+  return [
+    ...new Set([
+      ...Object.keys(snapshot.personalEncrypted),
+      ...Object.keys(snapshot.workspaceEncrypted),
+      ...Object.keys(snapshot.personalDecrypted),
+      ...Object.keys(snapshot.workspaceDecrypted),
+    ]),
+  ].sort((left, right) => left.localeCompare(right))
+}
+
+function findKnownSecretKey(
+  snapshot: EnvironmentResolutionSnapshot,
+  secretName: string
+): string | undefined {
+  const keys = knownSecretKeys(snapshot)
+  for (const candidate of secretNameCandidates(secretName)) {
+    const exact = keys.find((key) => key === candidate)
+    if (exact) return exact
+    const lower = candidate.toLowerCase()
+    const match = keys.find((key) => key.toLowerCase() === lower)
+    if (match) return match
+  }
+  return undefined
+}
+
+function missingSecretError(secretName: string, accessibleNames: string[]): string {
+  if (accessibleNames.length === 0) {
+    return `Secret "${secretName}" was not found in workspace or personal environment`
+  }
+  const shown = accessibleNames.slice(0, 20)
+  const extra = accessibleNames.length > 20 ? ` (+${accessibleNames.length - 20} more)` : ''
+  return `Secret "${secretName}" was not found in workspace or personal environment. Accessible secrets: ${shown.join(', ')}${extra}`
+}
+
 function resolveSecretHeaders(
   http: { headersSecretName?: string; authHeaderName?: string },
-  envVars: Record<string, string>
+  snapshot: EnvironmentResolutionSnapshot
 ): { ok: true; headers: Record<string, string> } | { ok: false; error: string } {
   const secretName = normalizeSecretName(http.headersSecretName)
   if (!secretName) {
     return { ok: true, headers: {} }
   }
 
-  const raw = envVars[secretName]
-  if (!raw?.trim()) {
-    return {
-      ok: false,
-      error: `Secret "${secretName}" was not found in workspace or personal environment`,
+  const matched = lookupSecretValue(snapshot, secretName)
+  if (!matched) {
+    const knownKey = findKnownSecretKey(snapshot, secretName)
+    if (knownKey) {
+      const decryptFailed = snapshot.decryptionFailures.some(
+        (failed) => failed.toLowerCase() === knownKey.toLowerCase()
+      )
+      return {
+        ok: false,
+        error: decryptFailed
+          ? `Secret "${knownKey}" exists but could not be decrypted. Re-save it in Settings → Secrets.`
+          : `Secret "${knownKey}" is empty. Set a value in Settings → Secrets.`,
+      }
     }
+    return { ok: false, error: missingSecretError(secretName, knownSecretKeys(snapshot)) }
   }
 
   const authHeaderName = resolveAuthHeaderName({
     authHeaderName: http.authHeaderName,
     headersSecretName: secretName,
   })
-  const headers = parseSecretHeaders(raw, authHeaderName)
+  const headers = parseSecretHeaders(matched.value, authHeaderName)
   logger.info('Attached HTTP secret headers', {
     secretName,
+    resolvedSecretName: matched.key,
     headerNames: Object.keys(headers),
   })
   return { ok: true, headers }
@@ -265,8 +348,8 @@ async function runHttpBinding(options: {
     return { ok: false, error: allowlisted.error ?? 'HTTP host is not allowlisted' }
   }
 
-  const envVars = await getEffectiveDecryptedEnv(options.actorUserId, options.workspaceId)
-  const secret = resolveSecretHeaders(http, envVars)
+  const snapshot = await getEffectiveEnvironmentSnapshot(options.actorUserId, options.workspaceId)
+  const secret = resolveSecretHeaders(http, snapshot)
   if (!secret.ok) {
     return { ok: false, error: secret.error }
   }

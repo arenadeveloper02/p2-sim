@@ -1,11 +1,13 @@
 /**
  * @vitest-environment node
  */
+import { environmentUtilsMockFns, resetEnvironmentUtilsMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockExecuteWorkflow = vi.fn()
 const mockPreprocessExecution = vi.fn()
-const mockGetEffectiveDecryptedEnv = vi.fn()
+const mockGetEffectiveEnvironmentSnapshot =
+  environmentUtilsMockFns.mockGetEffectiveEnvironmentSnapshot
 const mockReleaseExecutionSlot = vi.fn()
 
 vi.mock('@/lib/workflows/executor/execute-workflow', () => ({
@@ -14,10 +16,6 @@ vi.mock('@/lib/workflows/executor/execute-workflow', () => ({
 
 vi.mock('@/lib/execution/preprocessing', () => ({
   preprocessExecution: (...args: unknown[]) => mockPreprocessExecution(...args),
-}))
-
-vi.mock('@/lib/environment/utils', () => ({
-  getEffectiveDecryptedEnv: (...args: unknown[]) => mockGetEffectiveDecryptedEnv(...args),
 }))
 
 vi.mock('@/lib/billing/calculations/usage-reservation', () => ({
@@ -61,6 +59,26 @@ import {
 import { twoPageApiBindings, twoPageManifest } from '@/lib/arena-generative-ui/two-page-app.fixture'
 import { streamingNavigateFrom } from '@/lib/arena-generative-ui/types'
 import { encodeSSE, readSSEEvents } from '@/lib/core/utils/sse'
+
+function mockEnv(
+  vars: Record<string, string>,
+  options?: {
+    workspace?: Record<string, string>
+    decryptionFailures?: string[]
+  }
+) {
+  mockGetEffectiveEnvironmentSnapshot.mockResolvedValue({
+    personalEncrypted: Object.fromEntries(Object.keys(vars).map((key) => [key, 'enc'])),
+    workspaceEncrypted: Object.fromEntries(
+      Object.keys(options?.workspace ?? {}).map((key) => [key, 'enc'])
+    ),
+    personalDecrypted: vars,
+    workspaceDecrypted: options?.workspace ?? {},
+    personalOwners: {},
+    conflicts: [],
+    decryptionFailures: options?.decryptionFailures ?? [],
+  })
+}
 
 function baseDeployment(overrides?: Partial<DeployedAppRecord>): DeployedAppRecord {
   return {
@@ -109,6 +127,8 @@ function baseDeployment(overrides?: Partial<DeployedAppRecord>): DeployedAppReco
 describe('runDeployedAppAction', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetEnvironmentUtilsMock()
+    mockEnv({})
     mockPreprocessExecution.mockResolvedValue({
       success: true,
       actorUserId: 'user-1',
@@ -150,7 +170,7 @@ describe('runDeployedAppAction', () => {
   })
 
   it('proxies allowlisted HTTP and injects secret headers', async () => {
-    mockGetEffectiveDecryptedEnv.mockResolvedValue({ api_token: 'secret-token' })
+    mockEnv({ api_token: 'secret-token' })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ score: 12 })),
@@ -189,7 +209,7 @@ describe('runDeployedAppAction', () => {
   })
 
   it('puts nested output.content on setState.content for DataText', async () => {
-    mockGetEffectiveDecryptedEnv.mockResolvedValue({})
+    mockEnv({})
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: async () =>
@@ -220,7 +240,7 @@ describe('runDeployedAppAction', () => {
   })
 
   it('sends the secret on X-API-Key when authHeaderName is set', async () => {
-    mockGetEffectiveDecryptedEnv.mockResolvedValue({ SIM_API_KEY: 'secret-token' })
+    mockEnv({ SIM_API_KEY: 'secret-token' })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
@@ -260,7 +280,7 @@ describe('runDeployedAppAction', () => {
   })
 
   it('defaults *_API_KEY secrets to X-API-Key when authHeaderName is missing', async () => {
-    mockGetEffectiveDecryptedEnv.mockResolvedValue({ SIM_API_KEY: 'secret-token' })
+    mockEnv({ SIM_API_KEY: 'secret-token' })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
@@ -297,7 +317,7 @@ describe('runDeployedAppAction', () => {
   })
 
   it('looks up HTTP secrets as the actor, not the draft owner', async () => {
-    mockGetEffectiveDecryptedEnv.mockResolvedValue({ SIM_API_KEY: 'secret-token' })
+    mockEnv({ SIM_API_KEY: 'secret-token' })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
@@ -328,13 +348,13 @@ describe('runDeployedAppAction', () => {
       actorUserId: 'previewer-1',
     })
 
-    expect(mockGetEffectiveDecryptedEnv).toHaveBeenCalledWith('previewer-1', 'ws-1')
-    expect(mockGetEffectiveDecryptedEnv).not.toHaveBeenCalledWith('owner-1', 'ws-1')
+    expect(mockGetEffectiveEnvironmentSnapshot).toHaveBeenCalledWith('previewer-1', 'ws-1')
+    expect(mockGetEffectiveEnvironmentSnapshot).not.toHaveBeenCalledWith('owner-1', 'ws-1')
     vi.unstubAllGlobals()
   })
 
   it('does not fetch when the named secret is missing', async () => {
-    mockGetEffectiveDecryptedEnv.mockResolvedValue({})
+    mockEnv({})
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
@@ -368,7 +388,7 @@ describe('runDeployedAppAction', () => {
   })
 
   it('strips $ and {{ }} from headersSecretName before env lookup', async () => {
-    mockGetEffectiveDecryptedEnv.mockResolvedValue({ W_FOO: 'secret-token' })
+    mockEnv({ W_FOO: 'secret-token' })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
@@ -405,8 +425,196 @@ describe('runDeployedAppAction', () => {
     vi.unstubAllGlobals()
   })
 
+  it('resolves LINKEDIN_API_KEY from a W_ workspace secret name', async () => {
+    mockEnv({}, { workspace: { W_LINKEDIN_API_KEY: 'secret-token' } })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: {
+              method: 'POST',
+              url: 'https://api.example.com/qualify',
+              headersSecretName: 'LINKEDIN_API_KEY',
+              authHeaderName: 'X-API-Key',
+            },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-w-prefix',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.com/qualify',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-API-Key': 'secret-token' }),
+      })
+    )
+    vi.unstubAllGlobals()
+  })
+
+  it('resolves a secret name case-insensitively', async () => {
+    mockEnv({ linkedin_api_key: 'secret-token' })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: {
+              method: 'POST',
+              url: 'https://api.example.com/qualify',
+              headersSecretName: 'LINKEDIN_API_KEY',
+              authHeaderName: 'X-API-Key',
+            },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-case',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.com/qualify',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-API-Key': 'secret-token' }),
+      })
+    )
+    vi.unstubAllGlobals()
+  })
+
+  it('uses a non-empty personal secret when the workspace value is empty', async () => {
+    mockEnv(
+      { LINKEDIN_API_KEY: 'personal-token' },
+      { workspace: { LINKEDIN_API_KEY: '' } }
+    )
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: {
+              method: 'POST',
+              url: 'https://api.example.com/qualify',
+              headersSecretName: 'LINKEDIN_API_KEY',
+              authHeaderName: 'X-API-Key',
+            },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-personal-fallback',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.com/qualify',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-API-Key': 'personal-token' }),
+      })
+    )
+    vi.unstubAllGlobals()
+  })
+
+  it('does not fetch when the named secret failed to decrypt', async () => {
+    mockEnv(
+      { LINKEDIN_API_KEY: '' },
+      { decryptionFailures: ['LINKEDIN_API_KEY'] }
+    )
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: {
+              method: 'POST',
+              url: 'https://api.example.com/qualify',
+              headersSecretName: 'LINKEDIN_API_KEY',
+              authHeaderName: 'X-API-Key',
+            },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-decrypt-fail',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe(
+      'Secret "LINKEDIN_API_KEY" exists but could not be decrypted. Re-save it in Settings → Secrets.'
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('lists accessible secret names when the named secret is missing', async () => {
+    mockEnv({ OTHER_KEY: 'token' })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: {
+              method: 'POST',
+              url: 'https://api.example.com/qualify',
+              headersSecretName: 'LINKEDIN_API_KEY',
+              authHeaderName: 'X-API-Key',
+            },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-list-names',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe(
+      'Secret "LINKEDIN_API_KEY" was not found in workspace or personal environment. Accessible secrets: OTHER_KEY'
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
   it('does not let empty onSuccess.setState wipe API content', async () => {
-    mockGetEffectiveDecryptedEnv.mockResolvedValue({})
+    mockEnv({})
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: async () =>
@@ -525,6 +733,8 @@ async function mockStreamingWorkflow(chunks: string[], output: Record<string, un
 describe('streaming generative app actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetEnvironmentUtilsMock()
+    mockEnv({})
     mockPreprocessExecution.mockResolvedValue({
       success: true,
       actorUserId: 'user-1',
@@ -570,7 +780,7 @@ describe('streaming generative app actions', () => {
   })
 
   it('forwards HTTP text/plain body chunks without buffering first', async () => {
-    mockGetEffectiveDecryptedEnv.mockResolvedValue({})
+    mockEnv({})
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       headers: { get: (name: string) => (name === 'content-type' ? 'text/plain' : null) },
@@ -617,7 +827,7 @@ describe('streaming generative app actions', () => {
   })
 
   it('forwards HTTP text/event-stream payloads as chunks', async () => {
-    mockGetEffectiveDecryptedEnv.mockResolvedValue({})
+    mockEnv({})
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         new ReadableStream({
@@ -663,7 +873,7 @@ describe('streaming generative app actions', () => {
   })
 
   it('keeps JSON HTTP as a single done payload without chunk events', async () => {
-    mockGetEffectiveDecryptedEnv.mockResolvedValue({})
+    mockEnv({})
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       headers: { get: (name: string) => (name === 'content-type' ? 'application/json' : null) },

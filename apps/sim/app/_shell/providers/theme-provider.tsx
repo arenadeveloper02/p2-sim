@@ -27,6 +27,13 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
     pathname.startsWith('/unsubscribe')
 
   const forcedTheme = isLightModePage ? 'light' : undefined
+  /**
+   * React 19 warns when next-themes renders a `<script>` during client replay.
+   * SSR still emits the real blocking script; the client pass uses a non-JS type
+   * so React does not try to execute it again.
+   */
+  const scriptProps =
+    typeof window === 'undefined' ? undefined : ({ type: 'application/json' } as const)
 
   return (
     <NextThemesProvider
@@ -35,6 +42,7 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
       enableSystem={false}
       disableTransitionOnChange
       storageKey='sim-theme'
+      scriptProps={scriptProps}
       {...(isLightModePage && { forcedTheme: 'light' })}
       {...props}
     >

@@ -78,8 +78,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         )}
 
         {/* Theme initialization: set light theme by default, convert 'system' to 'light' */}
-        <script
+        <Script
           id='theme-initialization'
+          strategy='beforeInteractive'
           dangerouslySetInnerHTML={{
             __html: `
               (function () {
@@ -107,14 +108,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
 
-        {/* 
+        {/*
           Workspace layout dimensions: set CSS vars before hydration to avoid layout jump.
           
           IMPORTANT: These hardcoded values must stay in sync with stores/constants.ts
           We cannot use imports here since this is a blocking script that runs before React.
         */}
-        <script
+        <Script
           id='workspace-layout-dimensions'
+          strategy='beforeInteractive'
           dangerouslySetInnerHTML={{
             __html: `
               (function () {
