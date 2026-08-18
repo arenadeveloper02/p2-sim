@@ -318,6 +318,124 @@ describe('runDeployedAppAction', () => {
     vi.unstubAllGlobals()
   })
 
+  it('surfaces the upstream error message instead of a bare status code', async () => {
+    mockEnv({})
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      arrayBuffer: async () =>
+        new TextEncoder().encode(JSON.stringify({ error: 'company is required' })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: { method: 'POST', url: 'https://api.example.com/qualify' },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: {},
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe('HTTP 422: company is required')
+    vi.unstubAllGlobals()
+  })
+
+  it('reads a nested error.message body', async () => {
+    mockEnv({})
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      arrayBuffer: async () =>
+        new TextEncoder().encode(JSON.stringify({ error: { message: 'upstream exploded' } })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: { method: 'POST', url: 'https://api.example.com/qualify' },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: {},
+      requestId: 'req-1',
+    })
+
+    expect(result.error).toBe('HTTP 500: upstream exploded')
+    vi.unstubAllGlobals()
+  })
+
+  it('falls back to the bare status when the body carries no message', async () => {
+    mockEnv({})
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      arrayBuffer: async () => new TextEncoder().encode(''),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: { method: 'POST', url: 'https://api.example.com/qualify' },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: {},
+      requestId: 'req-1',
+    })
+
+    expect(result.error).toBe('HTTP 503')
+    vi.unstubAllGlobals()
+  })
+
+  it('names the timeout when a slow binding aborts', async () => {
+    mockEnv({})
+    const abortError = new Error('The operation was aborted')
+    abortError.name = 'AbortError'
+    const fetchMock = vi.fn().mockRejectedValue(abortError)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: { method: 'POST', url: 'https://api.example.com/qualify', timeoutMs: 5_000 },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: {},
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe('HTTP request timed out after 5s')
+    vi.unstubAllGlobals()
+  })
+
   it('looks up HTTP secrets as the actor, not the draft owner', async () => {
     mockEnv({ SIM_API_KEY: 'secret-token' })
     const fetchMock = vi.fn().mockResolvedValue({

@@ -224,8 +224,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       props: z.object({
         label: z.string(),
         actionId: z.string().nullable(),
+        size: z.enum(['sm', 'md']).nullable(),
       }),
-      description: 'Submits the nearest Form or runs actionId via run_api',
+      description:
+        'Submits the nearest Form or runs actionId via run_api. Always renders as the primary action, so a form needs no other primary Button.',
     },
     Button: {
       props: z.object({
@@ -233,11 +235,11 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         href: z.string().nullable(),
         navigateTo: z.string().nullable(),
         actionId: z.string().nullable(),
-        backgroundColor: z.string().nullable(),
-        color: z.string().nullable(),
+        variant: z.enum(['primary', 'secondary', 'ghost', 'destructive']).nullable(),
+        size: z.enum(['sm', 'md']).nullable(),
       }),
       description:
-        'Button. Prefer navigateTo for in-app pages, actionId for APIs, href only for true outbound links.',
+        'Button. Prefer navigateTo for in-app pages, actionId for APIs, href only for true outbound links. variant sets emphasis and defaults to secondary: use primary for the single main action of a page, secondary for ordinary actions, ghost for low-emphasis ones such as Back or Cancel, destructive for delete.',
     },
     NavLink: {
       props: z.object({
@@ -334,6 +336,7 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Forms: every interactive field carries an explicit label. Pair short related fields side by side in a Grid (columns 2) and keep long free-text fields full width. Forms have one SubmitButton and an optional Back NavLink, and default to left-aligned.',
   'Centring: only centre when the user asked for it, and use the props that actually centre — a search field beside its button is {"type":"Stack","props":{"direction":"horizontal","justify":"center","align":"end","gap":"12px"}} wrapping the TextInput and SubmitButton, and a whole form centres with Form align "center". justify accepts exactly start, center, between, end (never "space-between" or a CSS value), and SubmitButton has no align or width prop of its own — wrap it instead.',
   'Chrome: start a page with PageHeader (title, subtitle, primary action as its child) instead of a bare Heading. Use Toolbar for a row of filters or secondary buttons, and Columns for a main area beside a supporting sidebar.',
+  'Emphasis: at most one Button with variant "primary" per page, and none on a page whose main action is a SubmitButton (that is already primary). Ordinary actions are "secondary", Back / Cancel / dismiss are "ghost", and delete or disconnect is "destructive". Never express emphasis with a colour — there is no colour prop on Button.',
   'Navigation: when the app has three or more pages, put a Tabs element with one "Label|path" line per top-level page at the top of each page and set activePath to the current path. Detail pages are reached with NavLink/navigateTo and offer a Back NavLink.',
   'Typography: one h1-level page title per page (PageHeader.title counts), then a short supporting subtitle. Never title a page "Page 1" or use lorem ipsum.',
   'Heading order: nest levels sequentially and never skip or invert them. PageHeader.title is the page h1 and Card.title renders an h2, so a Heading inside a Card starts at h3.',

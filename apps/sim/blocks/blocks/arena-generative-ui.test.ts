@@ -46,12 +46,13 @@ describe('ArenaGenerativeUiBlock agent tool', () => {
     expect(schema.required).toEqual(expect.arrayContaining(['userInput']))
   })
 
-  it('requires existingDraftId on the edit tool schema', async () => {
+  it('requires editInstructions and existingDraftId on the edit tool schema', async () => {
     const { schema } = await createLLMToolSchema(arenaGenerativeUiEditTool, {})
 
-    expect(schema.properties).toHaveProperty('userInput')
+    expect(schema.properties).toHaveProperty('editInstructions')
     expect(schema.properties).toHaveProperty('existingDraftId')
-    expect(schema.required).toEqual(expect.arrayContaining(['userInput', 'existingDraftId']))
+    expect(schema.properties).not.toHaveProperty('userInput')
+    expect(schema.required).toEqual(expect.arrayContaining(['editInstructions', 'existingDraftId']))
   })
 
   it('hides preconfigured generate params from the agent schema', async () => {

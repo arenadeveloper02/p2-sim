@@ -83,6 +83,41 @@ function toneClass(value: unknown, fallback: keyof typeof TONE_CLASSES = 'info')
   return TONE_CLASSES[tone as keyof typeof TONE_CLASSES] ?? TONE_CLASSES[fallback]
 }
 
+const BUTTON_BASE_CLASS =
+  'inline-flex items-center justify-center rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-ds-blue-600,#2563eb)]'
+
+const BUTTON_VARIANT_CLASSES = {
+  primary:
+    'bg-[var(--color-ds-blue-600,#2563eb)] text-white hover:bg-[var(--color-ds-blue-700,#1d4ed8)]',
+  secondary:
+    'border border-[var(--color-ds-grey-300,#c5c6cc)] bg-white text-[var(--color-ds-grey-800,#1f232d)] hover:bg-[var(--color-ds-grey-50,#f7f8f9)]',
+  ghost: 'text-[var(--color-ds-grey-700,#3d414d)] hover:bg-[var(--color-ds-grey-100,#f0f1f3)]',
+  destructive: 'bg-red-600 text-white hover:bg-red-700',
+} as const
+
+const BUTTON_SIZE_CLASSES = {
+  sm: 'px-3 py-1.5 text-xs',
+  md: 'px-4 py-2 text-sm',
+} as const
+
+/**
+ * `secondary` is the default so a page that names no emphasis still reads as a
+ * hierarchy rather than a wall of identical primary buttons.
+ */
+function buttonClass(
+  props: Record<string, unknown>,
+  fallbackVariant: keyof typeof BUTTON_VARIANT_CLASSES
+): string {
+  const variant = asString(props.variant, fallbackVariant)
+  const size = asString(props.size, 'md')
+  return cn(
+    BUTTON_BASE_CLASS,
+    BUTTON_VARIANT_CLASSES[variant as keyof typeof BUTTON_VARIANT_CLASSES] ??
+      BUTTON_VARIANT_CLASSES[fallbackVariant],
+    BUTTON_SIZE_CLASSES[size as keyof typeof BUTTON_SIZE_CLASSES] ?? BUTTON_SIZE_CLASSES.md
+  )
+}
+
 const DELTA_TONE_CLASSES = {
   positive: 'text-emerald-700',
   negative: 'text-red-700',
@@ -497,6 +532,11 @@ function submitButtonActionId(elements: Record<string, SpecElement>, childIds: s
   return ''
 }
 
+/** `size` is a CSS length on text components but a scale token on buttons. */
+function isCssLength(value: string): boolean {
+  return /\d/.test(value)
+}
+
 function styleFromProps(props: Record<string, unknown>): CSSProperties {
   const style: CSSProperties = {}
   const backgroundColor = asString(props.backgroundColor)
@@ -510,7 +550,7 @@ function styleFromProps(props: Record<string, unknown>): CSSProperties {
   if (padding) style.padding = padding
   if (maxWidth) style.maxWidth = maxWidth
   if (gap) style.gap = gap
-  if (size) style.fontSize = size
+  if (size && isCssLength(size)) style.fontSize = size
   return style
 }
 
@@ -940,11 +980,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       }
       case 'SubmitButton':
         return (
-          <button
-            type='submit'
-            disabled={pending}
-            className='rounded-lg bg-[var(--color-ds-blue-600,#2563eb)] px-4 py-2 font-medium text-sm text-white disabled:opacity-60'
-          >
+          <button type='submit' disabled={pending} className={buttonClass(props, 'primary')}>
             {asString(props.label, 'Submit')}
           </button>
         )
@@ -952,8 +988,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         const href = asString(props.href)
         const navigateTo = asString(props.navigateTo)
         const actionId = asString(props.actionId)
-        const className =
-          'inline-flex items-center rounded-lg bg-[var(--color-ds-blue-600,#2563eb)] px-4 py-2 font-medium text-sm text-white'
+        const className = buttonClass(props, 'secondary')
         if (href) {
           return (
             <a href={href} className={className} style={styleFromProps(props)} rel='noreferrer'>
@@ -966,7 +1001,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             type='button'
             className={className}
             style={styleFromProps(props)}
-            disabled={pending}
+            disabled={pending && Boolean(actionId)}
             onClick={() => {
               if (navigateTo) onNavigate(navigateTo)
               if (actionId) void onRunAction(actionId, formValues)

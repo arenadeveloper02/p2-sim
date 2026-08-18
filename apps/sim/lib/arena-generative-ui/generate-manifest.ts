@@ -23,6 +23,7 @@ import type {
 } from '@/lib/arena-generative-ui/types'
 import {
   GENERATOR_OMITTED_PAGES_ERROR,
+  type ManifestValidationResult,
   validateArenaGenerativeManifest,
 } from '@/lib/arena-generative-ui/validate-manifest'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
@@ -32,7 +33,22 @@ import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/uti
 const logger = createLogger('ArenaGenerativeUi')
 
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
-const MAX_OUTPUT_TOKENS = 16_384
+
+/** Envelope, entryPath, actions, and the model's own preamble budget. */
+const BASE_OUTPUT_TOKENS = 8_192
+/**
+ * A page spec is a flat element map that repeats every optional prop as an
+ * explicit null, so it costs far more than the rendered page suggests. A flat
+ * cap silently truncates larger apps into a JSON parse error, so the budget
+ * tracks how many pages this run has to emit.
+ */
+const OUTPUT_TOKENS_PER_PAGE = 8_000
+const MAX_OUTPUT_TOKENS = 64_000
+/** Pages a brief with no pinned sitemap is assumed to produce. */
+const ASSUMED_PAGE_COUNT = 4
+
+/** Repair turns allowed after the first reply fails validation. */
+const MAX_REPAIR_ATTEMPTS = 2
 
 /** Shown when the model reply is truncated or is not a JSON object. User Input is prose. */
 export const MODEL_JSON_PARSE_ERROR =
@@ -40,6 +56,40 @@ export const MODEL_JSON_PARSE_ERROR =
 
 const PAGES_RETRY_USER_MESSAGE =
   'Return the same app as one JSON object; manifest.pages must be a non-empty object keyed by path (home, …).'
+
+/**
+ * Follow-up for a reply that parsed but failed validation. Naming the failing
+ * page, prop, or action turns the next attempt into a fix rather than a reroll.
+ */
+function repairUserMessage(error: string): string {
+  if (error === GENERATOR_OMITTED_PAGES_ERROR) {
+    return PAGES_RETRY_USER_MESSAGE
+  }
+  return [
+    `That manifest failed validation: ${error}`,
+    'Return the corrected app as one complete JSON object in the same shape. Fix only what the error names and keep every other page, element, prop, and copy string identical.',
+  ].join('\n\n')
+}
+
+/**
+ * Pages this run has to emit. Edits re-emit the whole manifest, plus room for a
+ * page the change request adds.
+ */
+function estimatePageCount(
+  pageHintCount: number,
+  existingManifest?: ArenaGenerativeAppManifest
+): number {
+  if (pageHintCount > 0) {
+    return pageHintCount
+  }
+  const existing = existingManifest ? Object.keys(existingManifest.pages).length : 0
+  return existing > 0 ? existing + 1 : ASSUMED_PAGE_COUNT
+}
+
+function outputTokenBudget(modelId: string, pageCount: number): number {
+  const requested = BASE_OUTPUT_TOKENS + Math.max(pageCount, 1) * OUTPUT_TOKENS_PER_PAGE
+  return Math.min(getMaxOutputTokensForModel(modelId), MAX_OUTPUT_TOKENS, requested)
+}
 
 function extractMessageText(message: Anthropic.Messages.Message): string {
   return message.content
@@ -155,22 +205,14 @@ export async function generateArenaGenerativeManifest(
       timeout: ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS,
     })
     const modelId = DEFAULT_MODEL
-    const maxTokens = Math.min(getMaxOutputTokensForModel(modelId), MAX_OUTPUT_TOKENS)
     const messageOptions = {
       model: modelId,
-      max_tokens: maxTokens,
+      max_tokens: outputTokenBudget(
+        modelId,
+        estimatePageCount(pageHints.length, params.existingManifest)
+      ),
       ...(supportsTemperature(modelId) ? { temperature: 0.2 } : {}),
       system: systemPrompt,
-    }
-
-    const message = await createAnthropicMessage(anthropic, {
-      ...messageOptions,
-      messages: [{ role: 'user', content: userPayload }],
-    })
-
-    let rawText = extractMessageText(message)
-    if (!rawText) {
-      return { success: false, error: 'Model returned an empty response' }
     }
 
     const validationOptions = {
@@ -179,30 +221,36 @@ export async function generateArenaGenerativeManifest(
       entryPath: params.entryPath,
     }
 
-    let parsed = parseLlmJsonObject(rawText)
-    let validation = validateArenaGenerativeManifest(
-      extractManifestCandidate(parsed),
-      validationOptions
-    )
+    const messages: Anthropic.Messages.MessageParam[] = [{ role: 'user', content: userPayload }]
+    let parsed: Record<string, unknown> = {}
+    let validation: ManifestValidationResult = { success: false }
 
-    if (validation.error === GENERATOR_OMITTED_PAGES_ERROR) {
-      logger.warn('Arena Generative UI omitted pages; retrying once')
-      const retryMessage = await createAnthropicMessage(anthropic, {
-        ...messageOptions,
-        messages: [
-          { role: 'user', content: userPayload },
-          { role: 'assistant', content: rawText },
-          { role: 'user', content: PAGES_RETRY_USER_MESSAGE },
-        ],
-      })
-      rawText = extractMessageText(retryMessage)
+    for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt += 1) {
+      const message = await createAnthropicMessage(anthropic, { ...messageOptions, messages })
+      const rawText = extractMessageText(message)
       if (!rawText) {
-        return { success: false, error: GENERATOR_OMITTED_PAGES_ERROR }
+        return {
+          success: false,
+          error: validation.error ?? 'Model returned an empty response',
+        }
       }
+
       parsed = parseLlmJsonObject(rawText)
       validation = validateArenaGenerativeManifest(
         extractManifestCandidate(parsed),
         validationOptions
+      )
+      if (validation.success || attempt === MAX_REPAIR_ATTEMPTS) {
+        break
+      }
+
+      logger.warn('Arena Generative UI manifest failed validation; sending a repair turn', {
+        attempt: attempt + 1,
+        error: validation.error,
+      })
+      messages.push(
+        { role: 'assistant', content: rawText },
+        { role: 'user', content: repairUserMessage(validation.error ?? '') }
       )
     }
 

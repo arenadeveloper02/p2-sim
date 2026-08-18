@@ -628,6 +628,66 @@ describe('SpecRenderer', () => {
     })
   })
 
+  describe('Button emphasis', () => {
+    function buttonSpec(props: Record<string, unknown>): Spec {
+      return {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['action'] },
+          action: { type: 'Button', props, children: [] },
+        },
+      }
+    }
+
+    function renderButton(props: Record<string, unknown>, pending = false) {
+      const { container } = render({ spec: buttonSpec(props), pending })
+      return container.querySelector('button') as HTMLButtonElement
+    }
+
+    it('defaults to the secondary variant so pages are not a wall of primaries', () => {
+      const button = renderButton({ label: 'Export', navigateTo: 'report' })
+      expect(button.className).toContain('border')
+      expect(button.className).not.toContain('bg-[var(--color-ds-blue-600,#2563eb)]')
+    })
+
+    it('renders the primary variant as a filled button', () => {
+      const button = renderButton({ label: 'Run', actionId: 'run', variant: 'primary' })
+      expect(button.className).toContain('bg-[var(--color-ds-blue-600,#2563eb)]')
+      expect(button.className).toContain('text-white')
+    })
+
+    it('renders the destructive variant in red', () => {
+      const button = renderButton({ label: 'Delete', actionId: 'del', variant: 'destructive' })
+      expect(button.className).toContain('bg-red-600')
+    })
+
+    it('renders the ghost variant without a border or fill', () => {
+      const button = renderButton({ label: 'Back', navigateTo: 'home', variant: 'ghost' })
+      expect(button.className).not.toContain('border')
+      expect(button.className).not.toContain('bg-red-600')
+    })
+
+    it('applies the small size', () => {
+      const button = renderButton({ label: 'Filter', actionId: 'filter', size: 'sm' })
+      expect(button.className).toContain('text-xs')
+    })
+
+    it('never leaks a size token into the inline font size', () => {
+      const button = renderButton({ label: 'Filter', actionId: 'filter', size: 'sm' })
+      expect(button.style.fontSize).toBe('')
+    })
+
+    it('keeps a navigation-only button clickable while another action is pending', () => {
+      const button = renderButton({ label: 'Back', navigateTo: 'home' }, true)
+      expect(button.disabled).toBe(false)
+    })
+
+    it('disables an action button while an action is pending', () => {
+      const button = renderButton({ label: 'Run', actionId: 'run' }, true)
+      expect(button.disabled).toBe(true)
+    })
+  })
+
   it('ticks earlier ProgressSteps after elapsed time while pending', () => {
     vi.useFakeTimers()
     try {

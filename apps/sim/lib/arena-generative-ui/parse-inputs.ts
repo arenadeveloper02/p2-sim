@@ -316,6 +316,10 @@ export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
           typeof http.authHeaderName === 'string' && http.authHeaderName.trim()
             ? http.authHeaderName.trim()
             : undefined,
+        timeoutMs:
+          typeof http.timeoutMs === 'number' && Number.isFinite(http.timeoutMs)
+            ? http.timeoutMs
+            : undefined,
       }
     }
     const inputSchema = schemaFields(record.inputSchema)

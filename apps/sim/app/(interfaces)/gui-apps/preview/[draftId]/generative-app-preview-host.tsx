@@ -8,11 +8,14 @@ import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import {
   ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
+  actionErrorFrom,
   actionNavigateFrom,
+  clearedActionErrorState,
   isJsonRenderSpec,
   streamingActionIdsFrom,
 } from '@/lib/arena-generative-ui/types'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
+import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import {
   runGenerativeAppDraftActionStream,
@@ -34,6 +37,7 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
   const { state, mergeState, actionPending, setActionPending } = useGenerativeAppHostState()
 
   const navigate = (path: string) => {
+    mergeState(clearedActionErrorState())
     router.push(`${ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH}/${draftId}/${path}`)
   }
 
@@ -58,12 +62,19 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
 
   const streamingIds = new Set(streamingActionIdsFrom(manifest, apiBindings))
   const actionNavigate = actionNavigateFrom(manifest)
+  const actionError = actionErrorFrom(state)
 
   return (
     <div className='min-h-screen'>
       <div className='border-[var(--border)] border-b bg-[var(--color-ds-grey-50,#f7f8f9)] px-4 py-2 text-[var(--text-secondary)] text-xs'>
         Preview — not published. CTAs run against this draft.
       </div>
+      {actionError ? (
+        <ActionErrorBanner
+          message={actionError}
+          onDismiss={() => mergeState(clearedActionErrorState())}
+        />
+      ) : null}
       <SpecRenderer
         spec={page.spec}
         state={state}
@@ -72,6 +83,7 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
         onRunAction={async (actionId, values) => {
           const navigateTo = actionNavigate[actionId]
           setActionPending(true)
+          mergeState(clearedActionErrorState())
           try {
             if (navigateTo) {
               navigate(navigateTo)

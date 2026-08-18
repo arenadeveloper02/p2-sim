@@ -164,4 +164,57 @@ describe('GenerativeAppHost non-streaming JSON', () => {
     expect(container.querySelector('[data-testid="skeleton"]')).toBeNull()
     expect(container.textContent).toContain('Hi')
   })
+
+  async function submit() {
+    const form = container.querySelector('form')
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+  }
+
+  it('shows a banner when an action returns an error the spec never binds', async () => {
+    mockMutateAsync.mockResolvedValue({ ok: false, error: 'HTTP 422: company is required' })
+
+    await submit()
+
+    const banner = container.querySelector('[data-testid="action-error-banner"]')
+    expect(banner).toBeTruthy()
+    expect(banner?.textContent).toContain('HTTP 422: company is required')
+  })
+
+  it('shows a banner when the request itself throws', async () => {
+    mockMutateAsync.mockRejectedValue(new Error('Network unreachable'))
+
+    await submit()
+
+    expect(container.querySelector('[data-testid="action-error-banner"]')?.textContent).toContain(
+      'Network unreachable'
+    )
+  })
+
+  it('dismisses the banner on demand', async () => {
+    mockMutateAsync.mockResolvedValue({ ok: false, error: 'Boom' })
+    await submit()
+
+    const dismiss = container.querySelector(
+      '[data-testid="action-error-banner"] button'
+    ) as HTMLButtonElement
+    await act(async () => {
+      dismiss.click()
+    })
+
+    expect(container.querySelector('[data-testid="action-error-banner"]')).toBeNull()
+  })
+
+  it('clears a stale banner when the next attempt succeeds', async () => {
+    mockMutateAsync.mockResolvedValue({ ok: false, error: 'Boom' })
+    await submit()
+    expect(container.querySelector('[data-testid="action-error-banner"]')).toBeTruthy()
+
+    mockMutateAsync.mockResolvedValue({ ok: true, setState: { content: 'Hi' } })
+    await submit()
+
+    expect(container.querySelector('[data-testid="action-error-banner"]')).toBeNull()
+    expect(container.textContent).toContain('Hi')
+  })
 })

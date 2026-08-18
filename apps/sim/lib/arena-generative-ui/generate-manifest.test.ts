@@ -42,7 +42,7 @@ describe('generateArenaGenerativeManifest', () => {
     vi.clearAllMocks()
   })
 
-  it('uses Sonnet with a 16384 token cap', async () => {
+  it('uses Sonnet with a budget well above a single truncating page', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
 
     await generateArenaGenerativeManifest({
@@ -54,10 +54,53 @@ describe('generateArenaGenerativeManifest', () => {
       expect.anything(),
       expect.objectContaining({
         model: 'claude-sonnet-4-6',
-        max_tokens: 16_384,
+        max_tokens: expect.any(Number),
         system: expect.not.stringContaining('statePath "content"'),
       })
     )
+    const maxTokens = mockCreateAnthropicMessage.mock.calls[0]?.[1].max_tokens as number
+    expect(maxTokens).toBeGreaterThan(16_384)
+  })
+
+  it('scales the output budget with the number of pages it has to emit', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({
+      userInput: 'Two page app.',
+      apiBindings: [],
+      pages: [
+        { path: 'home', title: 'Home' },
+        { path: 'results', title: 'Results' },
+      ],
+    })
+    await generateArenaGenerativeManifest({
+      userInput: 'Six page app.',
+      apiBindings: [],
+      pages: Array.from({ length: 6 }, (_, index) => ({
+        path: `page-${index + 1}`,
+        title: `Page ${index + 1}`,
+      })),
+    })
+
+    const twoPageBudget = mockCreateAnthropicMessage.mock.calls[0]?.[1].max_tokens as number
+    const sixPageBudget = mockCreateAnthropicMessage.mock.calls[1]?.[1].max_tokens as number
+    expect(sixPageBudget).toBeGreaterThan(twoPageBudget)
+  })
+
+  it('never asks for more output tokens than the model supports', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({
+      userInput: 'Huge app.',
+      apiBindings: [],
+      pages: Array.from({ length: 60 }, (_, index) => ({
+        path: `page-${index + 1}`,
+        title: `Page ${index + 1}`,
+      })),
+    })
+
+    const maxTokens = mockCreateAnthropicMessage.mock.calls[0]?.[1].max_tokens as number
+    expect(maxTokens).toBeLessThanOrEqual(128_000)
   })
 
   it('maps truncated model JSON to a retry message instead of blaming User Input', async () => {
@@ -320,7 +363,7 @@ describe('generateArenaGenerativeManifest', () => {
     )
   })
 
-  it('returns a retry-or-pin message when both replies omit pages', async () => {
+  it('returns a retry-or-pin message when every reply omits pages', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(
       textMessage(JSON.stringify({ title: 'Team', content: 'ok', manifest: { entryPath: 'home' } }))
     )
@@ -331,9 +374,81 @@ describe('generateArenaGenerativeManifest', () => {
     })
 
     expect(result.success).toBe(false)
-    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(3)
     expect(result.error).toBe(GENERATOR_OMITTED_PAGES_ERROR)
     expect(result.error).not.toMatch(/keyed by page path/)
+  })
+
+  it('repairs a spec that references an undeclared API key instead of failing outright', async () => {
+    const brokenManifest = {
+      entryPath: 'home',
+      pages: twoPageManifest.pages,
+      actions: { qualify: { apiKey: 'invented_key' } },
+    }
+    mockCreateAnthropicMessage
+      .mockResolvedValueOnce(
+        textMessage(JSON.stringify({ title: 'Lead', content: 'ok', manifest: brokenManifest }))
+      )
+      .mockResolvedValueOnce(
+        textMessage(
+          JSON.stringify({
+            title: 'Lead',
+            content: 'ok',
+            manifest: {
+              entryPath: 'home',
+              pages: twoPageManifest.pages,
+              actions: {
+                submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+              },
+            },
+          })
+        )
+      )
+
+    const result = await generateArenaGenerativeManifest({
+      userInput: 'Lead qualifier.',
+      apiBindings: [
+        { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
+      ],
+    })
+
+    expect(result.success).toBe(true)
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
+    const repairTurn = mockCreateAnthropicMessage.mock.calls[1]?.[1].messages.at(-1) as {
+      role: string
+      content: string
+    }
+    expect(repairTurn.role).toBe('user')
+    expect(repairTurn.content).toContain('failed validation')
+    expect(repairTurn.content).toContain('invented_key')
+    expect(repairTurn.content).toContain('keep every other page')
+  })
+
+  it('stops repairing after two attempts and returns the last validation error', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(
+      textMessage(
+        JSON.stringify({
+          title: 'Lead',
+          content: 'ok',
+          manifest: {
+            entryPath: 'home',
+            pages: twoPageManifest.pages,
+            actions: { qualify: { apiKey: 'invented_key' } },
+          },
+        })
+      )
+    )
+
+    const result = await generateArenaGenerativeManifest({
+      userInput: 'Lead qualifier.',
+      apiBindings: [
+        { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
+      ],
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('invented_key')
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(3)
   })
 
   it('tells the model to use declared binding keys when Pages is empty', async () => {

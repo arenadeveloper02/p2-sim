@@ -49,6 +49,8 @@ export interface ArenaGenerativeHttpBinding {
   headersSecretName?: string
   /** Header to send the secret on (e.g. `X-API-Key`). Omit to use Bearer. */
   authHeaderName?: string
+  /** Request timeout override. Clamped by the runner; omit to use the default. */
+  timeoutMs?: number
 }
 
 export interface ArenaGenerativeApiBinding {
@@ -102,6 +104,24 @@ export interface ArenaGenerativeGenerateResult {
 
 /** Host state path DataText should bind to while a streaming CTA is in flight. */
 export const ARENA_GENERATIVE_STREAM_CONTENT_KEY = 'content'
+
+/** Host state key a failed CTA writes its message to. */
+export const ARENA_GENERATIVE_ERROR_KEY = 'error'
+
+/**
+ * Message for a failed CTA, if any. Generated specs are not required to bind
+ * `error` anywhere, so hosts read it directly rather than hoping the model
+ * authored a place to show it.
+ */
+export function actionErrorFrom(state: Record<string, unknown>): string {
+  const value = state[ARENA_GENERATIVE_ERROR_KEY]
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
+/** State patch that clears a previously surfaced CTA error. */
+export function clearedActionErrorState(): Record<string, unknown> {
+  return { [ARENA_GENERATIVE_ERROR_KEY]: undefined }
+}
 
 export interface ArenaGenerativeTabItem {
   label: string

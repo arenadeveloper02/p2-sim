@@ -25,6 +25,12 @@ export const arenaGenerativeHttpBindingSchema = z.object({
   url: z.string().url('HTTP binding URL must be valid').max(2048),
   headersSecretName: z.string().max(128).optional(),
   authHeaderName: z.string().min(1).max(128).optional(),
+  timeoutMs: z
+    .number()
+    .int('timeoutMs must be a whole number of milliseconds')
+    .min(1_000, 'timeoutMs must be at least 1000')
+    .max(300_000, 'timeoutMs must be at most 300000')
+    .optional(),
 })
 
 export const arenaGenerativeApiBindingSchema = z

@@ -8,8 +8,14 @@ import { useRouter } from 'next/navigation'
 import { flushSync } from 'react-dom'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
-import { ARENA_GENERATIVE_APP_BASE_PATH, isJsonRenderSpec } from '@/lib/arena-generative-ui/types'
+import {
+  ARENA_GENERATIVE_APP_BASE_PATH,
+  actionErrorFrom,
+  clearedActionErrorState,
+  isJsonRenderSpec,
+} from '@/lib/arena-generative-ui/types'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
+import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import {
   runDeployedAppActionStream,
@@ -37,6 +43,7 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
   const runAction = useRunDeployedAppAction(identifier)
 
   const navigate = (path: string) => {
+    mergeState(clearedActionErrorState())
     const params = emailId ? `?emailId=${encodeURIComponent(emailId)}` : ''
     router.push(`${ARENA_GENERATIVE_APP_BASE_PATH}/${identifier}/${path}${params}`)
   }
@@ -82,46 +89,56 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
 
   const streamingIds = new Set(configQuery.data.config.streamingActionIds ?? [])
   const actionNavigate = configQuery.data.config.actionNavigate ?? {}
+  const actionError = actionErrorFrom(state)
 
   return (
-    <SpecRenderer
-      spec={pageQuery.data.spec}
-      state={state}
-      pending={runAction.isPending || actionPending}
-      onNavigate={navigate}
-      onRunAction={async (actionId, values) => {
-        const navigateTo = actionNavigate[actionId]
-        setActionPending(true)
-        try {
-          if (navigateTo) {
-            navigate(navigateTo)
+    <>
+      {actionError ? (
+        <ActionErrorBanner
+          message={actionError}
+          onDismiss={() => mergeState(clearedActionErrorState())}
+        />
+      ) : null}
+      <SpecRenderer
+        spec={pageQuery.data.spec}
+        state={state}
+        pending={runAction.isPending || actionPending}
+        onNavigate={navigate}
+        onRunAction={async (actionId, values) => {
+          const navigateTo = actionNavigate[actionId]
+          setActionPending(true)
+          mergeState(clearedActionErrorState())
+          try {
+            if (navigateTo) {
+              navigate(navigateTo)
+            }
+            const result = streamingIds.has(actionId)
+              ? await runDeployedAppActionStream({
+                  identifier,
+                  actionId,
+                  values,
+                  emailId: emailId || undefined,
+                  onChunk: (accumulated) => {
+                    mergeState(streamingContentState(accumulated))
+                  },
+                })
+              : await runAction.mutateAsync({
+                  actionId,
+                  values,
+                  emailId: emailId || undefined,
+                })
+            applyActionResult(result, mergeState, navigate, logger, {
+              skipNavigate: Boolean(navigateTo),
+            })
+          } catch (error) {
+            logger.error('App action failed', { error: toError(error).message })
+            mergeState({ error: toError(error).message || 'Action failed' })
+          } finally {
+            setActionPending(false)
           }
-          const result = streamingIds.has(actionId)
-            ? await runDeployedAppActionStream({
-                identifier,
-                actionId,
-                values,
-                emailId: emailId || undefined,
-                onChunk: (accumulated) => {
-                  mergeState(streamingContentState(accumulated))
-                },
-              })
-            : await runAction.mutateAsync({
-                actionId,
-                values,
-                emailId: emailId || undefined,
-              })
-          applyActionResult(result, mergeState, navigate, logger, {
-            skipNavigate: Boolean(navigateTo),
-          })
-        } catch (error) {
-          logger.error('App action failed', { error: toError(error).message })
-          mergeState({ error: toError(error).message || 'Action failed' })
-        } finally {
-          setActionPending(false)
-        }
-      }}
-    />
+        }}
+      />
+    </>
   )
 }
 

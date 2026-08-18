@@ -3,12 +3,14 @@ import { workflow } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { truncate } from '@sim/utils/string'
 import { eq } from 'drizzle-orm'
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
 import { isHttpUrlAllowlisted } from '@/lib/arena-generative-ui/http-allowlist'
 import {
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
+  type ArenaGenerativeHttpBinding,
   actionStateFromData,
   displayTextFromActionData,
   streamingActionIdsFrom,
@@ -26,10 +28,65 @@ import type { StreamingExecution } from '@/executor/types'
 
 const logger = createLogger('ArenaGenerativeUiAction')
 
-const HTTP_TIMEOUT_MS = 15_000
+/**
+ * Generous by default: CTA bindings routinely front LLM or report endpoints, and
+ * a binding that needs longer can raise it up to `MAX_HTTP_TIMEOUT_MS`.
+ */
+const DEFAULT_HTTP_TIMEOUT_MS = 60_000
 export const HTTP_STREAM_TIMEOUT_MS = 180_000
+const MIN_HTTP_TIMEOUT_MS = 1_000
+const MAX_HTTP_TIMEOUT_MS = 300_000
 const HTTP_MAX_BYTES = 1_048_576
+const HTTP_ERROR_DETAIL_MAX_LENGTH = 300
 const API_KEY_SECRET_NAME = /API[_-]?KEY$/i
+
+function resolveHttpTimeoutMs(binding: ArenaGenerativeHttpBinding, streaming: boolean): number {
+  const fallback = streaming ? HTTP_STREAM_TIMEOUT_MS : DEFAULT_HTTP_TIMEOUT_MS
+  const requested = binding.timeoutMs
+  if (typeof requested !== 'number' || !Number.isFinite(requested)) {
+    return fallback
+  }
+  return Math.min(Math.max(requested, MIN_HTTP_TIMEOUT_MS), MAX_HTTP_TIMEOUT_MS)
+}
+
+/**
+ * Pulls a human message out of an error response body so the app shows what the
+ * upstream said instead of a bare status code.
+ */
+function httpErrorDetail(data: unknown): string {
+  if (typeof data === 'string') {
+    return truncate(data.trim(), HTTP_ERROR_DETAIL_MAX_LENGTH)
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return ''
+  }
+  const record = data as Record<string, unknown>
+  for (const key of ['error', 'message', 'detail', 'error_description'] as const) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) {
+      return truncate(value.trim(), HTTP_ERROR_DETAIL_MAX_LENGTH)
+    }
+    if (value && typeof value === 'object') {
+      const nested = (value as Record<string, unknown>).message
+      if (typeof nested === 'string' && nested.trim()) {
+        return truncate(nested.trim(), HTTP_ERROR_DETAIL_MAX_LENGTH)
+      }
+    }
+  }
+  return ''
+}
+
+function httpErrorMessage(status: number, data: unknown): string {
+  const detail = httpErrorDetail(data)
+  return detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`
+}
+
+function httpFailureMessage(error: unknown, timeoutMs: number): string {
+  if (error instanceof Error && error.name === 'AbortError') {
+    return `HTTP request timed out after ${Math.round(timeoutMs / 1000)}s`
+  }
+  return getErrorMessage(error, 'HTTP request failed')
+}
 
 /**
  * Env var names as stored on a binding may carry a `$` prefix or `{{ }}`
@@ -352,11 +409,9 @@ async function runHttpBinding(options: {
   const secretHeaders = secret.headers
 
   const method = http.method
+  const timeoutMs = resolveHttpTimeoutMs(http, Boolean(options.onChunk))
   const controller = new AbortController()
-  const timeout = setTimeout(
-    () => controller.abort(),
-    options.onChunk ? HTTP_STREAM_TIMEOUT_MS : HTTP_TIMEOUT_MS
-  )
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
     const init: RequestInit = {
@@ -388,7 +443,7 @@ async function runHttpBinding(options: {
 
     const response = await fetch(url, init)
     if (options.onChunk) {
-      return await readHttpResponseStream(response, options.onChunk)
+      return await readHttpResponseStream(response, options.onChunk, timeoutMs)
     }
     const buffer = await response.arrayBuffer()
     if (buffer.byteLength > HTTP_MAX_BYTES) {
@@ -405,14 +460,14 @@ async function runHttpBinding(options: {
     if (!response.ok) {
       return {
         ok: false,
-        error: `HTTP ${response.status}`,
+        error: httpErrorMessage(response.status, data),
         data,
       }
     }
 
     return { ok: true, data }
   } catch (error) {
-    return { ok: false, error: getErrorMessage(error, 'HTTP request failed') }
+    return { ok: false, error: httpFailureMessage(error, timeoutMs) }
   } finally {
     clearTimeout(timeout)
   }
@@ -517,7 +572,8 @@ async function consumeWorkflowExecutionStream(
 
 async function readHttpResponseStream(
   response: Response,
-  onChunk: (content: string) => void | Promise<void>
+  onChunk: (content: string) => void | Promise<void>,
+  timeoutMs: number
 ): Promise<{ ok: boolean; data?: unknown; error?: string }> {
   const contentType = response.headers.get('content-type') ?? ''
   try {
@@ -537,7 +593,11 @@ async function readHttpResponseStream(
         },
       })
       if (!response.ok) {
-        return { ok: false, error: `HTTP ${response.status}`, data: { content: accumulated } }
+        return {
+          ok: false,
+          error: httpErrorMessage(response.status, accumulated),
+          data: { content: accumulated },
+        }
       }
       return { ok: true, data: { content: accumulated } }
     }
@@ -564,12 +624,16 @@ async function readHttpResponseStream(
         reader.releaseLock()
       }
       if (!response.ok) {
-        return { ok: false, error: `HTTP ${response.status}`, data: { content: accumulated } }
+        return {
+          ok: false,
+          error: httpErrorMessage(response.status, accumulated),
+          data: { content: accumulated },
+        }
       }
       return { ok: true, data: { content: accumulated } }
     }
   } catch (error) {
-    return { ok: false, error: getErrorMessage(error, 'HTTP request failed') }
+    return { ok: false, error: httpFailureMessage(error, timeoutMs) }
   }
 
   const buffer = await response.arrayBuffer()
@@ -584,7 +648,7 @@ async function readHttpResponseStream(
     data = text
   }
   if (!response.ok) {
-    return { ok: false, error: `HTTP ${response.status}`, data }
+    return { ok: false, error: httpErrorMessage(response.status, data), data }
   }
   return { ok: true, data }
 }

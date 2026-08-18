@@ -33,8 +33,8 @@ const goldHomeSpec: Spec = {
         navigateTo: 'report',
         href: null,
         actionId: null,
-        backgroundColor: null,
-        color: null,
+        variant: 'secondary',
+        size: null,
       },
       children: [],
     },
@@ -136,7 +136,7 @@ const goldHomeSpec: Spec = {
     },
     submit: {
       type: 'SubmitButton',
-      props: { label: 'Execute run', actionId: null },
+      props: { label: 'Execute run', actionId: null, size: null },
       children: [],
     },
     velocity_card: {
