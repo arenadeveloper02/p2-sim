@@ -296,6 +296,115 @@ describe('runDeployedAppAction', () => {
     vi.unstubAllGlobals()
   })
 
+  it('looks up HTTP secrets as the actor, not the draft owner', async () => {
+    mockGetEffectiveDecryptedEnv.mockResolvedValue({ SIM_API_KEY: 'secret-token' })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runGenerativeAppAction({
+      manifest: twoPageManifest,
+      apiBindings: [
+        {
+          key: 'qualify_lead',
+          label: 'Qualify',
+          kind: 'http',
+          http: {
+            method: 'POST',
+            url: 'https://api.example.com/qualify',
+            headersSecretName: 'SIM_API_KEY',
+            authHeaderName: 'X-API-Key',
+          },
+        },
+      ],
+      httpAllowlist: ['api.example.com'],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-actor-env',
+      actorUserId: 'previewer-1',
+    })
+
+    expect(mockGetEffectiveDecryptedEnv).toHaveBeenCalledWith('previewer-1', 'ws-1')
+    expect(mockGetEffectiveDecryptedEnv).not.toHaveBeenCalledWith('owner-1', 'ws-1')
+    vi.unstubAllGlobals()
+  })
+
+  it('does not fetch when the named secret is missing', async () => {
+    mockGetEffectiveDecryptedEnv.mockResolvedValue({})
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: {
+              method: 'POST',
+              url: 'https://api.example.com/qualify',
+              headersSecretName: 'W_ARTICAL_RECOMMENDATION_AGENT_KEY',
+              authHeaderName: 'X-API-Key',
+            },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-missing-secret',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe(
+      'Secret "W_ARTICAL_RECOMMENDATION_AGENT_KEY" was not found in workspace or personal environment'
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('strips $ and {{ }} from headersSecretName before env lookup', async () => {
+    mockGetEffectiveDecryptedEnv.mockResolvedValue({ W_FOO: 'secret-token' })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode(JSON.stringify({ ok: true })),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: {
+              method: 'POST',
+              url: 'https://api.example.com/qualify',
+              headersSecretName: '{{$W_FOO}}',
+              authHeaderName: 'X-API-Key',
+            },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-normalize-secret',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.com/qualify',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-API-Key': 'secret-token' }),
+      })
+    )
+    vi.unstubAllGlobals()
+  })
+
   it('does not let empty onSuccess.setState wipe API content', async () => {
     mockGetEffectiveDecryptedEnv.mockResolvedValue({})
     const fetchMock = vi.fn().mockResolvedValue({

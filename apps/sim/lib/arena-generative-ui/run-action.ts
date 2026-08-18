@@ -26,6 +26,21 @@ export const HTTP_STREAM_TIMEOUT_MS = 180_000
 const HTTP_MAX_BYTES = 1_048_576
 const API_KEY_SECRET_NAME = /API[_-]?KEY$/i
 
+/**
+ * Env var names as stored on a binding may carry a `$` prefix or `{{ }}`
+ * wrappers from a pasted curl. Strip those so lookup matches the env map.
+ */
+export function normalizeSecretName(raw: string | undefined): string {
+  let name = raw?.trim() ?? ''
+  if (name.startsWith('{{') && name.endsWith('}}')) {
+    name = name.slice(2, -2).trim()
+  }
+  if (name.startsWith('$')) {
+    name = name.slice(1).trim()
+  }
+  return name
+}
+
 function parseSecretHeaders(
   raw: string | undefined,
   authHeaderName?: string
@@ -60,11 +75,40 @@ function resolveAuthHeaderName(http: {
 }): string | undefined {
   const explicit = http.authHeaderName?.trim()
   if (explicit) return explicit
-  const secretName = http.headersSecretName?.trim()
+  const secretName = normalizeSecretName(http.headersSecretName)
   if (secretName && API_KEY_SECRET_NAME.test(secretName)) {
     return 'X-API-Key'
   }
   return undefined
+}
+
+function resolveSecretHeaders(
+  http: { headersSecretName?: string; authHeaderName?: string },
+  envVars: Record<string, string>
+): { ok: true; headers: Record<string, string> } | { ok: false; error: string } {
+  const secretName = normalizeSecretName(http.headersSecretName)
+  if (!secretName) {
+    return { ok: true, headers: {} }
+  }
+
+  const raw = envVars[secretName]
+  if (!raw?.trim()) {
+    return {
+      ok: false,
+      error: `Secret "${secretName}" was not found in workspace or personal environment`,
+    }
+  }
+
+  const authHeaderName = resolveAuthHeaderName({
+    authHeaderName: http.authHeaderName,
+    headersSecretName: secretName,
+  })
+  const headers = parseSecretHeaders(raw, authHeaderName)
+  logger.info('Attached HTTP secret headers', {
+    secretName,
+    headerNames: Object.keys(headers),
+  })
+  return { ok: true, headers }
 }
 
 function mapActionInput(
@@ -206,7 +250,7 @@ async function runHttpBinding(options: {
   binding: ArenaGenerativeApiBinding
   mappedInput: Record<string, unknown>
   allowlist: string[]
-  userId: string
+  actorUserId: string
   workspaceId: string
   onChunk?: (content: string) => void | Promise<void>
 }): Promise<{ ok: boolean; data?: unknown; error?: string }> {
@@ -221,10 +265,12 @@ async function runHttpBinding(options: {
     return { ok: false, error: allowlisted.error ?? 'HTTP host is not allowlisted' }
   }
 
-  const envVars = await getEffectiveDecryptedEnv(options.userId, options.workspaceId)
-  const secretHeaders = http.headersSecretName
-    ? parseSecretHeaders(envVars[http.headersSecretName], resolveAuthHeaderName(http))
-    : {}
+  const envVars = await getEffectiveDecryptedEnv(options.actorUserId, options.workspaceId)
+  const secret = resolveSecretHeaders(http, envVars)
+  if (!secret.ok) {
+    return { ok: false, error: secret.error }
+  }
+  const secretHeaders = secret.headers
 
   const method = http.method
   const controller = new AbortController()
@@ -440,7 +486,7 @@ export async function runGenerativeAppAction(
           binding,
           mappedInput,
           allowlist: options.httpAllowlist,
-          userId: options.userId,
+          actorUserId: options.actorUserId,
           workspaceId: options.workspaceId,
           onChunk: options.onChunk,
         })
