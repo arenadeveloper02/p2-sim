@@ -3,8 +3,9 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCreateAnthropicMessage } = vi.hoisted(() => ({
+const { mockCreateAnthropicMessage, mockPlanBrief } = vi.hoisted(() => ({
   mockCreateAnthropicMessage: vi.fn(),
+  mockPlanBrief: vi.fn(),
 }))
 
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -19,9 +20,14 @@ vi.mock('@/lib/core/config/api-keys', () => ({
   getRotatingApiKey: () => 'test-key',
 }))
 
-vi.mock('@/providers/utils', () => ({
-  getMaxOutputTokensForModel: () => 128_000,
-  supportsTemperature: () => true,
+vi.mock('@/lib/arena-generative-ui/structured-brief', () => ({
+  planArenaGenerativeStructuredBrief: mockPlanBrief,
+  archetypeRecipe: (archetype: string) => `ARCHETYPE RECIPE: ${archetype}`,
+  formatStructuredBriefForGenerator: (brief: { title: string }) =>
+    `Structured brief (implement this information architecture; emit exactly these page paths as object keys):\n${JSON.stringify(brief, null, 2)}`,
+  pageHintsFromStructuredBrief: (brief: {
+    pages: Array<{ path: string; title: string; purpose: string }>
+  }) => brief.pages.map((page) => ({ path: page.path, title: page.title, purpose: page.purpose })),
 }))
 
 import {
@@ -40,6 +46,7 @@ function textMessage(text: string) {
 describe('generateArenaGenerativeManifest', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockPlanBrief.mockResolvedValue(null)
   })
 
   it('uses Sonnet with a budget well above a single truncating page', async () => {
@@ -544,6 +551,131 @@ describe('generateArenaGenerativeManifest', () => {
       expect(payload).toContain('User request:\nTeam directory.')
       expect(payload).toContain('Infer a small coherent sitemap')
       expect(payload).not.toContain('Original brief')
+    })
+  })
+
+  describe('two-stage generation', () => {
+    const plannedBrief = {
+      title: 'Orders',
+      purpose: 'Browse orders and open one record.',
+      audience: 'Ops',
+      archetype: 'list-detail' as const,
+      entryPath: 'home',
+      pages: [
+        {
+          path: 'home',
+          title: 'Orders',
+          purpose: 'Collection',
+          data: 'onLoad load_orders into orders',
+          actions: ['load_orders'],
+          emptyCopy: 'No orders yet.',
+        },
+        {
+          path: 'detail',
+          title: 'Order',
+          purpose: 'Record',
+          data: 'onLoad load_order from ?id',
+          actions: ['load_order'],
+        },
+      ],
+      actions: [],
+    }
+
+    it('plans a structured brief before asking for the manifest', async () => {
+      mockPlanBrief.mockResolvedValue(plannedBrief)
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'Order inbox with a detail page.',
+        apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }],
+      })
+
+      expect(mockPlanBrief).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userInput: 'Order inbox with a detail page.',
+        })
+      )
+      expect(mockPlanBrief.mock.invocationCallOrder[0]).toBeLessThan(
+        mockCreateAnthropicMessage.mock.invocationCallOrder[0]
+      )
+    })
+
+    it('skips planning when editing an existing manifest', async () => {
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'Centre the search row.',
+        apiBindings: [],
+        existingManifest: twoPageManifest,
+      })
+
+      expect(mockPlanBrief).not.toHaveBeenCalled()
+    })
+
+    it('selects the archetype recipe and contracts the sitemap to the brief', async () => {
+      mockPlanBrief.mockResolvedValue(plannedBrief)
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'Order inbox with a detail page.',
+        apiBindings: [],
+      })
+
+      const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+      const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+      expect(system).toContain('ARCHETYPE RECIPE: list-detail')
+      expect(system).toContain('GOLD STANDARD REFERENCE LAYOUT')
+      expect(payload).toContain('Structured brief')
+      expect(payload).toContain('"archetype": "list-detail"')
+      expect(payload).toContain('Requested pages')
+      expect(payload).toContain('"path": "detail"')
+      expect(payload).toContain('Requested entryPath: home')
+      expect(payload).not.toContain('Infer a small coherent sitemap')
+    })
+
+    it('uses the planned page count for the manifest output budget', async () => {
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'Two page app.',
+        apiBindings: [],
+      })
+      const assumedBudget = mockCreateAnthropicMessage.mock.calls[0]?.[1].max_tokens as number
+
+      vi.clearAllMocks()
+      mockPlanBrief.mockResolvedValue(plannedBrief)
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+      await generateArenaGenerativeManifest({
+        userInput: 'Order inbox with a detail page.',
+        apiBindings: [],
+      })
+      const plannedBudget = mockCreateAnthropicMessage.mock.calls[0]?.[1].max_tokens as number
+
+      expect(plannedBudget).toBeLessThan(assumedBudget)
+    })
+
+    it('still generates when planning returns nothing', async () => {
+      mockPlanBrief.mockResolvedValue(null)
+      mockCreateAnthropicMessage.mockResolvedValue(
+        textMessage(
+          JSON.stringify({
+            title: 'Lead qualifier',
+            content: 'ok',
+            manifest: { entryPath: 'home' },
+            pages: twoPageManifest.pages,
+            actions: twoPageManifest.actions,
+          })
+        )
+      )
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Lead qualifier. Home is a form; Results shows the score.',
+        apiBindings: [],
+      })
+
+      expect(result.success).toBe(true)
+      const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+      expect(system).not.toContain('ARCHETYPE RECIPE:')
     })
   })
 

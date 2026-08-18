@@ -15,6 +15,12 @@ import {
   extractManifestCandidate,
   parseLlmJsonObject,
 } from '@/lib/arena-generative-ui/parse-inputs'
+import {
+  archetypeRecipe,
+  formatStructuredBriefForGenerator,
+  pageHintsFromStructuredBrief,
+  planArenaGenerativeStructuredBrief,
+} from '@/lib/arena-generative-ui/structured-brief'
 import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
 import type {
   ArenaGenerativeApiBinding,
@@ -139,6 +145,26 @@ export async function generateArenaGenerativeManifest(
   }
 
   const hasStreamingBinding = params.apiBindings.some((binding) => binding.stream === true)
+  const isEdit = Boolean(params.existingManifest)
+  const pinnedPageHints = params.pages?.filter((page) => page.path.trim().length > 0) ?? []
+
+  const structuredBrief = isEdit
+    ? null
+    : await planArenaGenerativeStructuredBrief({
+        userInput,
+        pages: pinnedPageHints,
+        entryPath: params.entryPath,
+        apiBindings: params.apiBindings,
+        designNotes: params.designNotes,
+      })
+  if (structuredBrief) {
+    logger.info('Planned Arena Generative UI structured brief', {
+      archetype: structuredBrief.archetype,
+      pageCount: structuredBrief.pages.length,
+      entryPath: structuredBrief.entryPath,
+    })
+  }
+
   const catalogPrompt = arenaGenerativeUiCatalog.prompt({
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
@@ -153,9 +179,17 @@ export async function generateArenaGenerativeManifest(
     ARENA_GENERATIVE_UI_PERSONA,
     catalogPrompt,
     ARENA_GENERATIVE_UI_GOLD_EXAMPLE,
-  ].join('\n\n')
+    structuredBrief ? archetypeRecipe(structuredBrief.archetype) : '',
+  ]
+    .filter((section) => section.length > 0)
+    .join('\n\n')
 
-  const pageHints = params.pages?.filter((page) => page.path.trim().length > 0) ?? []
+  const pageHints =
+    pinnedPageHints.length > 0
+      ? pinnedPageHints
+      : structuredBrief
+        ? pageHintsFromStructuredBrief(structuredBrief)
+        : []
   const bindingsSummary = params.apiBindings.map((binding) => ({
     key: binding.key,
     label: binding.label,
@@ -166,15 +200,15 @@ export async function generateArenaGenerativeManifest(
   }))
 
   const bindingKeys = params.apiBindings.map((binding) => binding.key).filter(Boolean)
-  const isEdit = Boolean(params.existingManifest)
   const bindingKeyLine =
     bindingKeys.length > 0
       ? `CTA apiKey values must be one of these declared binding keys: ${bindingKeys.join(', ')}. Do not invent keys from User Input.`
       : ''
+  const requestedEntryPath = params.entryPath || structuredBrief?.entryPath
   const userPayload = [
     isEdit ? EDIT_PRESERVATION_INSTRUCTION : 'Mode: generate a new multi-page app.',
-    params.entryPath
-      ? `Requested entryPath: ${params.entryPath}`
+    requestedEntryPath
+      ? `Requested entryPath: ${requestedEntryPath}`
       : isEdit
         ? EDIT_KEEP_ENTRY_PATH_INSTRUCTION
         : '',
@@ -188,6 +222,7 @@ export async function generateArenaGenerativeManifest(
         ]
           .filter((line) => line.length > 0)
           .join('\n'),
+    structuredBrief ? formatStructuredBriefForGenerator(structuredBrief) : '',
     bindingsSummary.length > 0
       ? `Declared API bindings (CTAs may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
       : 'No API bindings. Navigation and static content only.',
@@ -221,7 +256,7 @@ export async function generateArenaGenerativeManifest(
     const validationOptions = {
       pageHints: pageHints.length > 0 ? pageHints : undefined,
       apiBindings: params.apiBindings,
-      entryPath: params.entryPath,
+      entryPath: requestedEntryPath,
     }
 
     const messages: Anthropic.Messages.MessageParam[] = [{ role: 'user', content: userPayload }]
