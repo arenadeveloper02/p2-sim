@@ -74,6 +74,12 @@ export interface ArenaGenerativePageManifest {
   title: string
   path: string
   spec: Spec
+  /**
+   * Action ids run once when the page mounts, before any user interaction, so a
+   * page can show data on arrival instead of waiting for a click. The page's
+   * query params are passed as the action values.
+   */
+  onLoad?: string[]
 }
 
 export interface ArenaGenerativeActionManifest {
@@ -248,8 +254,8 @@ function stringifyActionData(data: unknown): string | undefined {
  * Action ids whose API binding has `stream: true`.
  */
 export function streamingActionIdsFrom(
-  manifest: ArenaGenerativeAppManifest,
-  bindings: ArenaGenerativeApiBinding[]
+  manifest: Pick<ArenaGenerativeAppManifest, 'actions'>,
+  bindings: Array<Pick<ArenaGenerativeApiBinding, 'key' | 'stream'>>
 ): string[] {
   const streamingKeys = new Set(
     bindings.filter((binding) => binding.stream === true).map((binding) => binding.key)
@@ -258,6 +264,71 @@ export function streamingActionIdsFrom(
   return Object.entries(manifest.actions)
     .filter(([, action]) => streamingKeys.has(action.apiKey))
     .map(([actionId]) => actionId)
+}
+
+/** Most `onLoad` actions a single page may declare. */
+export const MAX_PAGE_ON_LOAD_ACTIONS = 6
+
+/** Query params the host owns; never forwarded to a page's load actions. */
+export const ARENA_GENERATIVE_RESERVED_QUERY_KEYS = ['emailId'] as const
+
+/**
+ * Page query params as flat action input. A repeated param keeps its first
+ * value because binding inputs are scalars.
+ */
+export function pageParamsFromQuery(
+  query: Record<string, string | string[] | undefined>
+): Record<string, string> {
+  const reserved = new Set<string>(ARENA_GENERATIVE_RESERVED_QUERY_KEYS)
+  const params: Record<string, string> = {}
+  for (const [key, value] of Object.entries(query)) {
+    if (reserved.has(key)) continue
+    const first = Array.isArray(value) ? value[0] : value
+    if (typeof first === 'string' && first) {
+      params[key] = first
+    }
+  }
+  return params
+}
+
+/**
+ * Splits a navigation target such as `order?id=ord_9` into its page path and
+ * raw query string. Navigation targets carry params so a page's `onLoad` has
+ * something to fetch by; only the path half identifies a page.
+ */
+export function splitNavTarget(target: string): { path: string; query: string } {
+  const separator = target.indexOf('?')
+  if (separator < 0) {
+    return { path: target.trim(), query: '' }
+  }
+  return { path: target.slice(0, separator).trim(), query: target.slice(separator + 1) }
+}
+
+/**
+ * Absolute URL for an in-app navigation target, preserving its query params and
+ * re-attaching the host-owned `emailId`.
+ */
+export function navigationHref(basePath: string, target: string, emailId?: string): string {
+  const { path, query } = splitNavTarget(target)
+  const params = new URLSearchParams(query)
+  if (emailId) {
+    params.set('emailId', emailId)
+  }
+  const search = params.toString()
+  return `${basePath}/${path}${search ? `?${search}` : ''}`
+}
+
+/** `onLoad` action ids per page path, for hosts that only hold the config. */
+export function pageOnLoadFrom(
+  manifest: Pick<ArenaGenerativeAppManifest, 'pages'>
+): Record<string, string[]> {
+  const byPath: Record<string, string[]> = {}
+  for (const [path, page] of Object.entries(manifest.pages)) {
+    if (page.onLoad && page.onLoad.length > 0) {
+      byPath[path] = page.onLoad
+    }
+  }
+  return byPath
 }
 
 /**

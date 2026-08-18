@@ -1,5 +1,6 @@
 'use client'
 
+import { useMemo } from 'react'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
@@ -12,11 +13,13 @@ import {
   actionNavigateFrom,
   clearedActionErrorState,
   isJsonRenderSpec,
+  navigationHref,
   streamingActionIdsFrom,
 } from '@/lib/arena-generative-ui/types'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
+import { usePageLoadActions } from '@/app/(interfaces)/gui-apps/use-page-load-actions'
 import {
   runGenerativeAppDraftActionStream,
   useGenerativeAppDraft,
@@ -28,24 +31,70 @@ const logger = createLogger('GenerativeAppPreviewHost')
 interface GenerativeAppPreviewHostProps {
   draftId: string
   pagePath: string
+  /** Page query params, passed as the input values for the page's `onLoad` actions. */
+  pageParams?: Record<string, string>
 }
 
-export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPreviewHostProps) {
+const NO_PAGE_PARAMS: Record<string, string> = {}
+
+export function GenerativeAppPreviewHost({
+  draftId,
+  pagePath,
+  pageParams = NO_PAGE_PARAMS,
+}: GenerativeAppPreviewHostProps) {
   const router = useRouter()
   const draftQuery = useGenerativeAppDraft(draftId)
   const runAction = useRunGenerativeAppDraftAction(draftId)
-  const { state, mergeState, actionPending, setActionPending } = useGenerativeAppHostState()
+  const {
+    state,
+    mergeState,
+    resetState,
+    actionPending,
+    setActionPending,
+    loadPending,
+    setLoadPending,
+  } = useGenerativeAppHostState()
 
-  const navigate = (path: string) => {
+  const manifest = draftQuery.data?.manifest
+  const apiBindings = draftQuery.data?.apiBindings
+  const streamingIds = useMemo(
+    () => new Set(manifest && apiBindings ? streamingActionIdsFrom(manifest, apiBindings) : []),
+    [manifest, apiBindings]
+  )
+
+  const executeAction = async (actionId: string, values: Record<string, unknown>) =>
+    streamingIds.has(actionId)
+      ? await runGenerativeAppDraftActionStream({
+          draftId,
+          actionId,
+          values,
+          onChunk: (accumulated) => {
+            mergeState(streamingContentState(accumulated))
+          },
+        })
+      : await runAction.mutateAsync({ actionId, values })
+
+  usePageLoadActions({
+    pagePath,
+    actionIds: manifest?.pages[pagePath]?.onLoad ?? [],
+    values: pageParams,
+    actionPending,
+    runAction: executeAction,
+    mergeState,
+    resetState,
+    setLoadPending,
+  })
+
+  const navigate = (target: string) => {
     mergeState(clearedActionErrorState())
-    router.push(`${ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH}/${draftId}/${path}`)
+    router.push(navigationHref(`${ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH}/${draftId}`, target))
   }
 
   if (draftQuery.isLoading) {
     return <p className='p-8 text-[var(--color-ds-grey-500,#8a8d99)] text-sm'>Loading…</p>
   }
 
-  if (draftQuery.isError || !draftQuery.data) {
+  if (draftQuery.isError || !draftQuery.data || !manifest) {
     return (
       <div className='p-8 text-center text-[var(--text-error)]'>
         {toError(draftQuery.error).message || 'Unable to load this draft'}
@@ -53,14 +102,11 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
     )
   }
 
-  const manifest = draftQuery.data.manifest
-  const apiBindings = draftQuery.data.apiBindings
   const page = manifest.pages[pagePath]
   if (!page || !isJsonRenderSpec(page.spec)) {
     return <div className='p-8 text-center'>Page not found</div>
   }
 
-  const streamingIds = new Set(streamingActionIdsFrom(manifest, apiBindings))
   const actionNavigate = actionNavigateFrom(manifest)
   const actionError = actionErrorFrom(state)
 
@@ -78,7 +124,7 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
       <SpecRenderer
         spec={page.spec}
         state={state}
-        pending={runAction.isPending || actionPending}
+        pending={runAction.isPending || actionPending || loadPending}
         onNavigate={navigate}
         onRunAction={async (actionId, values) => {
           const navigateTo = actionNavigate[actionId]
@@ -88,16 +134,7 @@ export function GenerativeAppPreviewHost({ draftId, pagePath }: GenerativeAppPre
             if (navigateTo) {
               navigate(navigateTo)
             }
-            const result = streamingIds.has(actionId)
-              ? await runGenerativeAppDraftActionStream({
-                  draftId,
-                  actionId,
-                  values,
-                  onChunk: (accumulated) => {
-                    mergeState(streamingContentState(accumulated))
-                  },
-                })
-              : await runAction.mutateAsync({ actionId, values })
+            const result = await executeAction(actionId, values)
             applyPreviewActionResult(result, mergeState, navigate, {
               skipNavigate: Boolean(navigateTo),
             })

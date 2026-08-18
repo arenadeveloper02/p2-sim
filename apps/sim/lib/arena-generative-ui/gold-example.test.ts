@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE,
   GOLD_EXAMPLE_API_KEY,
+  GOLD_EXAMPLE_LOAD_API_KEY,
   goldExampleManifest,
   goldExampleOutput,
 } from '@/lib/arena-generative-ui/gold-example'
@@ -18,6 +19,12 @@ const bindings: ArenaGenerativeApiBinding[] = [
     label: 'Compile report',
     kind: 'workflow',
     workflowId: 'wf_gold',
+  },
+  {
+    key: GOLD_EXAMPLE_LOAD_API_KEY,
+    label: 'Dashboard metrics',
+    kind: 'workflow',
+    workflowId: 'wf_gold_metrics',
   },
 ]
 
@@ -55,6 +62,16 @@ describe('gold example', () => {
     expect(serialized).toContain('"width":"wide"')
     expect(serialized).toContain('"width":"narrow"')
     expect(serialized).toContain('"deltaTone":"positive"')
+  })
+
+  it('teaches onLoad on the page that fetches its own data, not the CTA result page', () => {
+    const result = validateExample()
+
+    expect(result.manifest?.pages.home.onLoad).toEqual(['load_metrics'])
+    expect(result.manifest?.pages.report.onLoad).toBeUndefined()
+    expect(JSON.stringify(goldExampleManifest.pages.home.spec)).toContain(
+      '"statePath":"totalReports"'
+    )
   })
 
   it('embeds the framing and the serialized manifest in the prompt section', () => {

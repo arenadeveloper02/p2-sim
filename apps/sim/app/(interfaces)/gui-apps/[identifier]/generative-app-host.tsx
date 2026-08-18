@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
@@ -13,10 +13,12 @@ import {
   actionErrorFrom,
   clearedActionErrorState,
   isJsonRenderSpec,
+  navigationHref,
 } from '@/lib/arena-generative-ui/types'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
+import { usePageLoadActions } from '@/app/(interfaces)/gui-apps/use-page-load-actions'
 import {
   runDeployedAppActionStream,
   useDeployedAppConfig,
@@ -33,19 +35,65 @@ interface GenerativeAppHostProps {
   identifier: string
   pagePath: string
   emailId: string
+  /** Page query params, passed as the input values for the page's `onLoad` actions. */
+  pageParams?: Record<string, string>
 }
 
-export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeAppHostProps) {
+const NO_PAGE_PARAMS: Record<string, string> = {}
+
+export function GenerativeAppHost({
+  identifier,
+  pagePath,
+  emailId,
+  pageParams = NO_PAGE_PARAMS,
+}: GenerativeAppHostProps) {
   const router = useRouter()
   const configQuery = useDeployedAppConfig(identifier)
-  const { state, mergeState, actionPending, setActionPending } = useGenerativeAppHostState()
+  const {
+    state,
+    mergeState,
+    resetState,
+    actionPending,
+    setActionPending,
+    loadPending,
+    setLoadPending,
+  } = useGenerativeAppHostState()
   const pageQuery = useDeployedAppPage(identifier, pagePath, configQuery.data?.kind === 'config')
   const runAction = useRunDeployedAppAction(identifier)
 
-  const navigate = (path: string) => {
+  const config = configQuery.data?.kind === 'config' ? configQuery.data.config : undefined
+  const streamingIds = useMemo(
+    () => new Set(config?.streamingActionIds ?? []),
+    [config?.streamingActionIds]
+  )
+
+  const executeAction = async (actionId: string, values: Record<string, unknown>) =>
+    streamingIds.has(actionId)
+      ? await runDeployedAppActionStream({
+          identifier,
+          actionId,
+          values,
+          emailId: emailId || undefined,
+          onChunk: (accumulated) => {
+            mergeState(streamingContentState(accumulated))
+          },
+        })
+      : await runAction.mutateAsync({ actionId, values, emailId: emailId || undefined })
+
+  usePageLoadActions({
+    pagePath,
+    actionIds: config?.pageOnLoad?.[pagePath] ?? [],
+    values: pageParams,
+    actionPending,
+    runAction: executeAction,
+    mergeState,
+    resetState,
+    setLoadPending,
+  })
+
+  const navigate = (target: string) => {
     mergeState(clearedActionErrorState())
-    const params = emailId ? `?emailId=${encodeURIComponent(emailId)}` : ''
-    router.push(`${ARENA_GENERATIVE_APP_BASE_PATH}/${identifier}/${path}${params}`)
+    router.push(navigationHref(`${ARENA_GENERATIVE_APP_BASE_PATH}/${identifier}`, target, emailId))
   }
 
   if (configQuery.isLoading) {
@@ -87,7 +135,6 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
     return <div className='p-8 text-center'>Page not found</div>
   }
 
-  const streamingIds = new Set(configQuery.data.config.streamingActionIds ?? [])
   const actionNavigate = configQuery.data.config.actionNavigate ?? {}
   const actionError = actionErrorFrom(state)
 
@@ -102,7 +149,7 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
       <SpecRenderer
         spec={pageQuery.data.spec}
         state={state}
-        pending={runAction.isPending || actionPending}
+        pending={runAction.isPending || actionPending || loadPending}
         onNavigate={navigate}
         onRunAction={async (actionId, values) => {
           const navigateTo = actionNavigate[actionId]
@@ -112,21 +159,7 @@ export function GenerativeAppHost({ identifier, pagePath, emailId }: GenerativeA
             if (navigateTo) {
               navigate(navigateTo)
             }
-            const result = streamingIds.has(actionId)
-              ? await runDeployedAppActionStream({
-                  identifier,
-                  actionId,
-                  values,
-                  emailId: emailId || undefined,
-                  onChunk: (accumulated) => {
-                    mergeState(streamingContentState(accumulated))
-                  },
-                })
-              : await runAction.mutateAsync({
-                  actionId,
-                  values,
-                  emailId: emailId || undefined,
-                })
+            const result = await executeAction(actionId, values)
             applyActionResult(result, mergeState, navigate, logger, {
               skipNavigate: Boolean(navigateTo),
             })

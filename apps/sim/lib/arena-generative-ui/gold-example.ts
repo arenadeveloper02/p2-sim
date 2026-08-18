@@ -4,6 +4,10 @@ import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types
 /**
  * Dashboard entry page: metrics across the top, then a parameters form beside a
  * supporting card. Shows the wide default width and side-by-side form fields.
+ *
+ * The metrics are bound by `statePath` and filled by the page's `onLoad` action,
+ * which is also what gives them their loading placeholder. `delta` stays literal
+ * because the catalog has no binding for it — it is display copy, not data.
  */
 const goldHomeSpec: Spec = {
   root: 'page',
@@ -47,10 +51,10 @@ const goldHomeSpec: Spec = {
       type: 'Stat',
       props: {
         label: 'Total reports compiled',
-        value: '12,480',
+        value: null,
         delta: '+14.2%',
         deltaTone: 'positive',
-        statePath: null,
+        statePath: 'totalReports',
         hint: null,
       },
       children: [],
@@ -59,10 +63,10 @@ const goldHomeSpec: Spec = {
       type: 'Stat',
       props: {
         label: 'Active data pipelines',
-        value: '18',
+        value: null,
         delta: 'Stable',
         deltaTone: 'neutral',
-        statePath: null,
+        statePath: 'activePipelines',
         hint: null,
       },
       children: [],
@@ -71,10 +75,10 @@ const goldHomeSpec: Spec = {
       type: 'Stat',
       props: {
         label: 'Median compile time',
-        value: '42s',
+        value: null,
         delta: '-8.1%',
         deltaTone: 'positive',
-        statePath: null,
+        statePath: 'medianCompileTime',
         hint: null,
       },
       children: [],
@@ -252,13 +256,24 @@ const goldReportSpec: Spec = {
 /** Binding key the example's CTA points at, used by tests and prompt framing. */
 export const GOLD_EXAMPLE_API_KEY = 'compile_report'
 
+/** Binding key the example's `onLoad` points at, used by tests and prompt framing. */
+export const GOLD_EXAMPLE_LOAD_API_KEY = 'fetch_dashboard_metrics'
+
 export const goldExampleManifest: ArenaGenerativeAppManifest = {
   entryPath: 'home',
   pages: {
-    home: { path: 'home', title: 'Research operations', spec: goldHomeSpec },
+    home: {
+      path: 'home',
+      title: 'Research operations',
+      spec: goldHomeSpec,
+      onLoad: ['load_metrics'],
+    },
     report: { path: 'report', title: 'Compiled report', spec: goldReportSpec },
   },
   actions: {
+    load_metrics: {
+      apiKey: GOLD_EXAMPLE_LOAD_API_KEY,
+    },
     compile_report: {
       apiKey: GOLD_EXAMPLE_API_KEY,
       onSuccess: { navigate: 'report' },
@@ -281,6 +296,7 @@ export const goldExampleOutput = {
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT',
   'Match this structure and density, not its subject matter. Note the flat elements map with string child ids, the wide Section for dashboard content, the narrow Section for narrative prose, metrics in a Grid of Stat, form fields paired in a Grid, and result components bound by statePath.',
-  `Replace the actions apiKey ("${GOLD_EXAMPLE_API_KEY}") with a declared API binding key, and drop manifest.actions entirely when no bindings were declared.`,
+  'Note also how the home page fills itself: it declares onLoad and binds each Stat by statePath, so the metrics arrive without the user clicking anything. The report page has no onLoad because its data comes from the CTA that navigated there.',
+  `Replace the actions apiKey values ("${GOLD_EXAMPLE_LOAD_API_KEY}", "${GOLD_EXAMPLE_API_KEY}") with declared API binding keys, and drop manifest.actions and every onLoad entirely when no bindings were declared.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')

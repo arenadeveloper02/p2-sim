@@ -1,11 +1,16 @@
 /**
  * @vitest-environment node
  */
+
+import type { Spec } from '@json-render/core'
 import { describe, expect, it } from 'vitest'
 import {
   actionStateFromData,
   displayTextFromActionData,
+  navigationHref,
   omitActionTelemetry,
+  pageOnLoadFrom,
+  pageParamsFromQuery,
   parseJsonLiteral,
 } from '@/lib/arena-generative-ui/types'
 
@@ -57,5 +62,54 @@ describe('parseJsonLiteral', () => {
   it('parses objects and rejects prose', () => {
     expect(parseJsonLiteral('{"a":1}')).toEqual({ a: 1 })
     expect(parseJsonLiteral('hello')).toBeUndefined()
+  })
+})
+
+describe('pageParamsFromQuery', () => {
+  it('keeps page params and drops the host-owned emailId', () => {
+    expect(pageParamsFromQuery({ id: 'ord_1', tab: 'items', emailId: 'a@b.com' })).toEqual({
+      id: 'ord_1',
+      tab: 'items',
+    })
+  })
+
+  it('takes the first value of a repeated param and skips empty ones', () => {
+    expect(pageParamsFromQuery({ id: ['first', 'second'], q: '', missing: undefined })).toEqual({
+      id: 'first',
+    })
+  })
+})
+
+describe('navigationHref', () => {
+  it('keeps the target query params and adds emailId alongside them', () => {
+    expect(navigationHref('/gui-apps/ops', 'order?id=ord_9', 'a@b.com')).toBe(
+      '/gui-apps/ops/order?id=ord_9&emailId=a%40b.com'
+    )
+  })
+
+  it('adds no query string when there is nothing to carry', () => {
+    expect(navigationHref('/gui-apps/ops', 'home')).toBe('/gui-apps/ops/home')
+  })
+
+  it('adds emailId on its own for a bare target', () => {
+    expect(navigationHref('/gui-apps/ops', 'home', 'a@b.com')).toBe(
+      '/gui-apps/ops/home?emailId=a%40b.com'
+    )
+  })
+})
+
+describe('pageOnLoadFrom', () => {
+  const spec = { root: 'page', elements: {} } as Spec
+
+  it('indexes onLoad by page path and omits pages without one', () => {
+    expect(
+      pageOnLoadFrom({
+        pages: {
+          home: { path: 'home', title: 'Home', spec, onLoad: ['load_metrics'] },
+          report: { path: 'report', title: 'Report', spec },
+          empty: { path: 'empty', title: 'Empty', spec, onLoad: [] },
+        },
+      })
+    ).toEqual({ home: ['load_metrics'] })
   })
 })

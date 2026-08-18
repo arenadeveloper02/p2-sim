@@ -313,7 +313,7 @@ export const ARENA_GENERATIVE_UI_PERSONA =
 
 export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Output a single complete JSON object. Do NOT wrap it in markdown fences. Do NOT output JSONL patches.',
-  'Shape: { "title": string, "content": string, "manifest": { "entryPath": string, "pages": { [path]: { "title", "path", "spec" } }, "actions": { [actionId]: { "apiKey", "inputMapping?", "onSuccess?", "onError?" } } } }',
+  'Shape: { "title": string, "content": string, "manifest": { "entryPath": string, "pages": { [path]: { "title", "path", "spec", "onLoad?" } }, "actions": { [actionId]: { "apiKey", "inputMapping?", "onSuccess?", "onError?" } } } }',
   'manifest.pages MUST be an object keyed by kebab-case path, never an array. Example: { "home": { "path": "home", "title": "People", "spec": { ... } }, "person": { "path": "person", "title": "Profile", "spec": { ... } } }.',
   'Return one JSON object only. Do not emit a short summary object before the manifest.',
   'Each page spec is a json-render Spec: { "root": string, "elements": { [key]: { type, props, children } } }.',
@@ -324,7 +324,7 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'CTA forms that call APIs must set Form.actionId or SubmitButton.actionId to a key in manifest.actions.',
   'Every manifest.actions[actionId].apiKey MUST be one of the declared API binding keys. Do not invent API keys.',
   'If no API bindings were declared, omit manifest.actions or leave it empty and use navigation only.',
-  'onSuccess.navigate and NavLink.to / Button.navigateTo / navigate action `to` must be existing page paths.',
+  'onSuccess.navigate and NavLink.to / Button.navigateTo / navigate action `to` must be existing page paths, optionally followed by a query string such as "report?range=30d".',
   'Every page must be reachable from entryPath via NavLink, navigateTo, navigate, or onSuccess.navigate.',
   'DataText, Text, Alert, and ListItem render markdown. Put a prose API body on a single DataText; do not split markdown into Heading/List elements.',
   'Layout: each page is a full-page app screen. Page → Section (leave width at the wide default so it fills up to 1280px) → content. Use the horizontal space; do not stack every element in one narrow centre column. Do not set maxWidth unless the brief demands an exact cap.',
@@ -349,6 +349,13 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
 export const ARENA_GENERATIVE_UI_ACTION_RESULT_RULE = [
   'CTA results: when an action succeeds the host merges the response object top-level keys into app state, so a statePath is the response key itself — use "articles", never "data.articles", "output.articles", or "response.articles". A response that is an array or a plain value lands under "result". "content" always holds a text rendering of the whole response.',
   'When a binding declares outputSchema, bind its field names as statePath instead of dumping "content": an array field such as "articles" with children "articles[].title" becomes Table statePath="articles" with columns from those child names; a single number or string becomes Stat or KeyValue; only fall back to DataText statePath="content" for prose or when the binding declares no outputSchema.',
+].join(' ')
+
+/** Added to the generator prompt only when at least one API binding is declared. */
+export const ARENA_GENERATIVE_UI_ON_LOAD_RULE = [
+  'Data on arrival: a page whose content comes from an API the user did not just submit must fetch it itself. Set page "onLoad" to an array of manifest.actions ids and the host runs them once when the page opens, merging the response into state exactly as a CTA does. A dashboard, a report, a list, or a record detail page needs onLoad; a form page does not.',
+  'onLoad receives the page query params as its action input, mapped through the action inputMapping. A navigation target may carry those params — NavLink.to "report?range=30d" opens the report page and its onLoad action receives range "30d" — while the part before "?" must still be an existing page path. Give an onLoad action no onSuccess.navigate: the host ignores it rather than bouncing the user off the page they just opened.',
+  'A page with onLoad still needs loading states: bind its Table, Stat, KeyValue, and DataText to a statePath so the placeholder shows while the load is in flight.',
 ].join(' ')
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */

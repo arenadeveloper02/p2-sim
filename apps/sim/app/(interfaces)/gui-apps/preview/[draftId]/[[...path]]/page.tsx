@@ -2,7 +2,10 @@ import { db } from '@sim/db'
 import { generativeAppDraft } from '@sim/db/schema'
 import { eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
-import { ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH } from '@/lib/arena-generative-ui/types'
+import {
+  ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
+  pageParamsFromQuery,
+} from '@/lib/arena-generative-ui/types'
 import { getSession } from '@/lib/auth'
 import { isDev } from '@/lib/core/config/env-flags'
 import { GenerativeAppPreviewHost } from '@/app/(interfaces)/gui-apps/preview/[draftId]/generative-app-preview-host'
@@ -12,8 +15,10 @@ export const dynamic = 'force-dynamic'
 
 export default async function GenerativeAppPreviewPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ draftId: string; path?: string[] }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const session = await getSession()
   if (!session?.user?.id) {
@@ -21,6 +26,7 @@ export default async function GenerativeAppPreviewPage({
   }
 
   const { draftId, path } = await params
+  const query = await searchParams
   const [draft] = await db
     .select({
       workflowId: generativeAppDraft.workflowId,
@@ -52,5 +58,11 @@ export default async function GenerativeAppPreviewPage({
     redirect(`${ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH}/${draftId}/${draft.entryPath || 'home'}`)
   }
 
-  return <GenerativeAppPreviewHost draftId={draftId} pagePath={requested} />
+  return (
+    <GenerativeAppPreviewHost
+      draftId={draftId}
+      pagePath={requested}
+      pageParams={pageParamsFromQuery(query)}
+    />
+  )
 }

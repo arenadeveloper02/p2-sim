@@ -7,7 +7,10 @@ import {
   getArenaEmailIdFromRequest,
   persistArenaEmailIdCookie,
 } from '@/lib/arena-generative-ui/email-gate'
-import { ARENA_GENERATIVE_APP_BASE_PATH } from '@/lib/arena-generative-ui/types'
+import {
+  ARENA_GENERATIVE_APP_BASE_PATH,
+  pageParamsFromQuery,
+} from '@/lib/arena-generative-ui/types'
 import { GenerativeAppHost } from '@/app/(interfaces)/gui-apps/[identifier]/generative-app-host'
 
 export const dynamic = 'force-dynamic'
@@ -63,5 +66,12 @@ export default async function GenerativeAppPage({
     redirect(`${ARENA_GENERATIVE_APP_BASE_PATH}/${identifier}/${entryPath}${emailQuery}`)
   }
 
-  return <GenerativeAppHost identifier={identifier} pagePath={requested} emailId={emailId} />
+  return (
+    <GenerativeAppHost
+      identifier={identifier}
+      pagePath={requested}
+      emailId={emailId}
+      pageParams={pageParamsFromQuery(query)}
+    />
+  )
 }

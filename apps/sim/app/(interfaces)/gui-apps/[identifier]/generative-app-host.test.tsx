@@ -218,3 +218,227 @@ describe('GenerativeAppHost non-streaming JSON', () => {
     expect(container.textContent).toContain('Hi')
   })
 })
+
+const dashboardSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: { type: 'Page', props: { title: 'Dashboard' }, children: ['total', 'summary'] },
+    total: {
+      type: 'Stat',
+      props: { label: 'Total orders', value: null, statePath: 'totalOrders' },
+      children: [],
+    },
+    summary: {
+      type: 'DataText',
+      props: { statePath: 'content', fallback: 'No summary yet' },
+      children: [],
+    },
+  },
+}
+
+describe('GenerativeAppHost page onLoad', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  function mockConfig(overrides: Record<string, unknown> = {}) {
+    mockUseDeployedAppConfig.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        kind: 'config',
+        config: {
+          streamingActionIds: [],
+          actionNavigate: {},
+          pageOnLoad: { dashboard: ['load_dashboard'] },
+          ...overrides,
+        },
+      },
+      error: null,
+    })
+  }
+
+  function render(props: { pageParams?: Record<string, string>; pagePath?: string } = {}) {
+    act(() => {
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <GenerativeAppHost
+            identifier='gui-ops'
+            pagePath={props.pagePath ?? 'dashboard'}
+            emailId=''
+            pageParams={props.pageParams}
+          />
+        </GenerativeAppHostStateProvider>
+      )
+    })
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockConfig()
+    mockUseDeployedAppPage.mockReturnValue({
+      isLoading: false,
+      data: { path: 'dashboard', title: 'Dashboard', spec: dashboardSpec },
+    })
+    mockMutateAsync.mockResolvedValue({
+      ok: true,
+      setState: { totalOrders: 412, content: 'Steady week' },
+    })
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('fetches and shows the page data on arrival, with no user interaction', async () => {
+    await act(async () => {
+      render()
+    })
+
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1)
+    expect(mockMutateAsync).toHaveBeenCalledWith({
+      actionId: 'load_dashboard',
+      values: {},
+      emailId: undefined,
+    })
+    expect(container.textContent).toContain('412')
+    expect(container.textContent).toContain('Steady week')
+    expect(container.textContent).not.toContain('No summary yet')
+  })
+
+  it('passes the page query params as the load action input', async () => {
+    await act(async () => {
+      render({ pageParams: { id: 'ord_9', tab: 'items' } })
+    })
+
+    expect(mockMutateAsync).toHaveBeenCalledWith({
+      actionId: 'load_dashboard',
+      values: { id: 'ord_9', tab: 'items' },
+      emailId: undefined,
+    })
+  })
+
+  it('shows a loading placeholder until the load resolves', async () => {
+    let resolveLoad: (value: unknown) => void = () => {}
+    mockMutateAsync.mockReturnValue(
+      new Promise((resolve) => {
+        resolveLoad = resolve
+      })
+    )
+
+    render()
+
+    expect(container.querySelector('[data-testid="skeleton"]')).toBeTruthy()
+
+    await act(async () => {
+      resolveLoad({ ok: true, setState: { totalOrders: 412, content: 'Steady week' } })
+    })
+
+    expect(container.querySelector('[data-testid="skeleton"]')).toBeNull()
+    expect(container.textContent).toContain('412')
+  })
+
+  it('runs the load once even though each render passes a fresh pageParams object', async () => {
+    await act(async () => {
+      render({ pageParams: { id: 'ord_9' } })
+    })
+    await act(async () => {
+      render({ pageParams: { id: 'ord_9' } })
+    })
+
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1)
+  })
+
+  it('reloads when a page param changes, because it is a different record', async () => {
+    await act(async () => {
+      render({ pageParams: { id: 'ord_9' } })
+    })
+    await act(async () => {
+      render({ pageParams: { id: 'ord_10' } })
+    })
+
+    expect(mockMutateAsync).toHaveBeenCalledTimes(2)
+    expect(mockMutateAsync).toHaveBeenLastCalledWith({
+      actionId: 'load_dashboard',
+      values: { id: 'ord_10' },
+      emailId: undefined,
+    })
+  })
+
+  it('leaves a page without onLoad alone', async () => {
+    mockConfig({ pageOnLoad: {} })
+
+    await act(async () => {
+      render()
+    })
+
+    expect(mockMutateAsync).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('No summary yet')
+  })
+
+  it('reloads on return after a detour through a page that has no onLoad', async () => {
+    await act(async () => {
+      render()
+    })
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1)
+
+    mockUseDeployedAppPage.mockReturnValue({
+      isLoading: false,
+      data: { path: 'settings', title: 'Settings', spec: dashboardSpec },
+    })
+    await act(async () => {
+      render({ pagePath: 'settings' })
+    })
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1)
+
+    mockUseDeployedAppPage.mockReturnValue({
+      isLoading: false,
+      data: { path: 'dashboard', title: 'Dashboard', spec: dashboardSpec },
+    })
+    await act(async () => {
+      render({ pagePath: 'dashboard' })
+    })
+
+    expect(mockMutateAsync).toHaveBeenCalledTimes(2)
+  })
+
+  it('stays on the page when the load action declares onSuccess.navigate', async () => {
+    mockConfig({ actionNavigate: { load_dashboard: 'other' } })
+
+    await act(async () => {
+      render()
+    })
+
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a failed load in the error banner', async () => {
+    mockMutateAsync.mockResolvedValue({ ok: false, error: 'HTTP 503: upstream unavailable' })
+
+    await act(async () => {
+      render()
+    })
+
+    expect(container.querySelector('[data-testid="action-error-banner"]')?.textContent).toContain(
+      'HTTP 503: upstream unavailable'
+    )
+  })
+
+  it('surfaces a load that throws', async () => {
+    mockMutateAsync.mockRejectedValue(new Error('Network unreachable'))
+
+    await act(async () => {
+      render()
+    })
+
+    expect(container.querySelector('[data-testid="action-error-banner"]')?.textContent).toContain(
+      'Network unreachable'
+    )
+  })
+})

@@ -86,6 +86,162 @@ describe('validateArenaGenerativeManifest', () => {
     expect(result.success).toBe(true)
   })
 
+  it('keeps a page onLoad that names a declared action', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec: pageSpec(), onLoad: ['submit_lead'] },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+        },
+      },
+      { apiBindings: bindings, entryPath: 'home' }
+    )
+    expect(result.success).toBe(true)
+    expect(result.manifest?.pages.home.onLoad).toEqual(['submit_lead'])
+    expect(result.manifest?.pages.results.onLoad).toBeUndefined()
+  })
+
+  it('accepts a navigation target that carries query params for the destination onLoad', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: {
+            title: 'Home',
+            path: 'home',
+            spec: pageSpec({
+              extra: {
+                nav: { type: 'NavLink', props: { label: 'Results', to: 'results?id=lead_7' } },
+              },
+            }),
+          },
+          results: {
+            title: 'Results',
+            path: 'results',
+            spec: resultsSpec(),
+            onLoad: ['submit_lead'],
+          },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead' },
+        },
+      },
+      { apiBindings: bindings, entryPath: 'home' }
+    )
+    expect(result.success).toBe(true)
+  })
+
+  it('still rejects a navigation target whose path half is not a page', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: {
+            title: 'Home',
+            path: 'home',
+            spec: pageSpec({
+              extra: {
+                nav: { type: 'NavLink', props: { label: 'Nope', to: 'missing?id=1' } },
+              },
+            }),
+          },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+        },
+      },
+      { apiBindings: bindings, entryPath: 'home' }
+    )
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('navigates to unknown path "missing"')
+  })
+
+  it('accepts a single onLoad id emitted as a bare string and drops duplicates', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec: pageSpec(), onLoad: 'submit_lead' },
+          results: {
+            title: 'Results',
+            path: 'results',
+            spec: resultsSpec(),
+            onLoad: ['submit_lead', 'submit_lead'],
+          },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+        },
+      },
+      { apiBindings: bindings, entryPath: 'home' }
+    )
+    expect(result.success).toBe(true)
+    expect(result.manifest?.pages.home.onLoad).toEqual(['submit_lead'])
+    expect(result.manifest?.pages.results.onLoad).toEqual(['submit_lead'])
+  })
+
+  it('rejects an onLoad that names an action the manifest never declares', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec: pageSpec(), onLoad: ['load_metrics'] },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+        },
+      },
+      { apiBindings: bindings, entryPath: 'home' }
+    )
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('onLoad references unknown action "load_metrics"')
+  })
+
+  it('drops onLoad from a navigation-only app, which has no APIs to call', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec: pageSpec(), onLoad: ['submit_lead'] },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: {},
+      },
+      { apiBindings: [], entryPath: 'home' }
+    )
+    expect(result.success).toBe(true)
+    expect(result.manifest?.pages.home.onLoad).toBeUndefined()
+  })
+
+  it('rejects a page that declares more onLoad actions than the cap allows', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: {
+            title: 'Home',
+            path: 'home',
+            spec: pageSpec(),
+            onLoad: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7'],
+          },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+        },
+      },
+      { apiBindings: bindings, entryPath: 'home' }
+    )
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('at most 6 are allowed')
+  })
+
   it('accepts pages emitted as an array of { path, title, spec }', () => {
     const result = validateArenaGenerativeManifest(
       {

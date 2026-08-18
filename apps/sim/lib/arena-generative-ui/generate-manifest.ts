@@ -4,6 +4,7 @@ import { toError } from '@sim/utils/errors'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import {
   ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
+  ARENA_GENERATIVE_UI_ON_LOAD_RULE,
   ARENA_GENERATIVE_UI_OUTPUT_RULES,
   ARENA_GENERATIVE_UI_PERSONA,
   ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
@@ -142,7 +143,9 @@ export async function generateArenaGenerativeManifest(
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
       'This app renders as a full page, embedded in Arena or opened directly. emailId is optional. Do not invent a login form or a logo.',
-      ...(params.apiBindings.length > 0 ? [ARENA_GENERATIVE_UI_ACTION_RESULT_RULE] : []),
+      ...(params.apiBindings.length > 0
+        ? [ARENA_GENERATIVE_UI_ACTION_RESULT_RULE, ARENA_GENERATIVE_UI_ON_LOAD_RULE]
+        : []),
       ...(hasStreamingBinding ? [ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE] : []),
     ],
   })

@@ -7,7 +7,9 @@ import {
   type ArenaGenerativeAppManifest,
   type ArenaGenerativePageHint,
   isJsonRenderSpec,
+  MAX_PAGE_ON_LOAD_ACTIONS,
   parseTabItems,
+  splitNavTarget,
 } from '@/lib/arena-generative-ui/types'
 
 interface FlatElement {
@@ -83,6 +85,10 @@ function normalizePagesRecord(pagesRaw: unknown): Record<string, unknown> | null
   return null
 }
 
+/**
+ * Page paths a spec navigates to. Targets may carry query params for the
+ * destination's `onLoad`, so only the path half names a page.
+ */
 function collectNavTargets(spec: Spec): string[] {
   const elements = spec.elements as Record<string, FlatElement>
   const targets: string[] = []
@@ -90,15 +96,28 @@ function collectNavTargets(spec: Spec): string[] {
     const props = element.props ?? {}
     const to = asString(props.to) || asString(props.navigateTo)
     if (to) {
-      targets.push(to)
+      targets.push(splitNavTarget(to).path)
     }
     if (element.type === 'Tabs') {
       for (const item of parseTabItems(props.items)) {
-        targets.push(item.path)
+        targets.push(splitNavTarget(item.path).path)
       }
     }
   }
   return targets
+}
+
+/** Reads a page's `onLoad`, tolerating a single id emitted as a bare string. */
+function parseOnLoad(raw: unknown): string[] {
+  const list = typeof raw === 'string' ? [raw] : Array.isArray(raw) ? raw : []
+  const ids: string[] = []
+  for (const entry of list) {
+    const id = asString(entry)
+    if (id && !ids.includes(id)) {
+      ids.push(id)
+    }
+  }
+  return ids
 }
 
 function collectActionIdsFromSpec(spec: Spec): string[] {
@@ -143,8 +162,10 @@ function walkReachable(
     }
     for (const actionId of collectActionIdsFromSpec(page.spec)) {
       const navigate = actions[actionId]?.onSuccess?.navigate
-      if (navigate && pages[navigate] && !seen.has(navigate)) {
-        queue.push(navigate)
+      if (!navigate) continue
+      const target = splitNavTarget(navigate).path
+      if (pages[target] && !seen.has(target)) {
+        queue.push(target)
       }
     }
   }
@@ -209,10 +230,18 @@ export function validateArenaGenerativeManifest(
           .join('; ') ?? 'invalid spec'
       return { success: false, error: `Page "${key}" spec failed validation: ${issueSummary}` }
     }
+    const onLoad = parseOnLoad(page.onLoad)
+    if (onLoad.length > MAX_PAGE_ON_LOAD_ACTIONS) {
+      return {
+        success: false,
+        error: `Page "${key}" declares ${onLoad.length} onLoad actions; at most ${MAX_PAGE_ON_LOAD_ACTIONS} are allowed`,
+      }
+    }
     pages[key] = {
       path: key,
       title: asString(page.title) || key,
       spec: validation.data,
+      ...(onLoad.length > 0 ? { onLoad } : {}),
     }
   }
 
@@ -254,7 +283,7 @@ export function validateArenaGenerativeManifest(
           onSuccess && typeof onSuccess === 'object'
             ? asString((onSuccess as Record<string, unknown>).navigate)
             : ''
-        if (navigate && pages[navigate]) {
+        if (navigate && pages[splitNavTarget(navigate).path]) {
           reachabilityActions[actionId] = { apiKey: actionId, onSuccess: { navigate } }
         }
       }
@@ -279,7 +308,7 @@ export function validateArenaGenerativeManifest(
         ? (action.onSuccess as Record<string, unknown>)
         : undefined
     const navigate = onSuccess ? asString(onSuccess.navigate) : ''
-    if (navigate && !pages[navigate]) {
+    if (navigate && !pages[splitNavTarget(navigate).path]) {
       return {
         success: false,
         error: `Action "${actionId}" onSuccess.navigate "${navigate}" is not a page`,
@@ -333,6 +362,18 @@ export function validateArenaGenerativeManifest(
         return {
           success: false,
           error: `Page "${path}" references unknown action "${actionId}"`,
+        }
+      }
+    }
+    if (navigationOnly) {
+      page.onLoad = undefined
+      continue
+    }
+    for (const actionId of page.onLoad ?? []) {
+      if (!actions[actionId]) {
+        return {
+          success: false,
+          error: `Page "${path}" onLoad references unknown action "${actionId}"`,
         }
       }
     }

@@ -5,8 +5,11 @@ import { createContext, type ReactNode, useCallback, useContext, useMemo, useSta
 interface GenerativeAppHostStateValue {
   state: Record<string, unknown>
   mergeState: (patch: Record<string, unknown>) => void
+  resetState: () => void
   actionPending: boolean
   setActionPending: (pending: boolean) => void
+  loadPending: boolean
+  setLoadPending: (pending: boolean) => void
 }
 
 const GenerativeAppHostStateContext = createContext<GenerativeAppHostStateValue | null>(null)
@@ -15,21 +18,40 @@ interface GenerativeAppHostStateProviderProps {
   children: ReactNode
 }
 
-/**
- * Holds CTA `setState` and the action-pending flag above the `[[...path]]` page. Both must outlive
- * navigation: a CTA navigates to its result page before the request finishes, so a remount here
- * would drop the API result and clear the flag that drives every loading placeholder.
- */
-export function GenerativeAppHostStateProvider({ children }: GenerativeAppHostStateProviderProps) {
+function useHostStateValue(): GenerativeAppHostStateValue {
   const [state, setState] = useState<Record<string, unknown>>({})
   const [actionPending, setActionPending] = useState(false)
+  const [loadPending, setLoadPending] = useState(false)
   const mergeState = useCallback((patch: Record<string, unknown>) => {
     setState((current) => ({ ...current, ...patch }))
   }, [])
-  const value = useMemo(
-    () => ({ state, mergeState, actionPending, setActionPending }),
-    [state, mergeState, actionPending]
+  const resetState = useCallback(() => {
+    setState({})
+  }, [])
+  return useMemo(
+    () => ({
+      state,
+      mergeState,
+      resetState,
+      actionPending,
+      setActionPending,
+      loadPending,
+      setLoadPending,
+    }),
+    [state, mergeState, resetState, actionPending, loadPending]
   )
+}
+
+/**
+ * Holds CTA `setState` and the pending flags above the `[[...path]]` page. Both must outlive
+ * navigation: a CTA navigates to its result page before the request finishes, so a remount here
+ * would drop the API result and clear the flag that drives every loading placeholder.
+ *
+ * `actionPending` and `loadPending` are separate so a page's `onLoad` finishing cannot clear the
+ * placeholders belonging to a CTA that is still in flight, or the other way round.
+ */
+export function GenerativeAppHostStateProvider({ children }: GenerativeAppHostStateProviderProps) {
+  const value = useHostStateValue()
   return (
     <GenerativeAppHostStateContext.Provider value={value}>
       {children}
@@ -43,19 +65,6 @@ export function GenerativeAppHostStateProvider({ children }: GenerativeAppHostSt
  */
 export function useGenerativeAppHostState(): GenerativeAppHostStateValue {
   const context = useContext(GenerativeAppHostStateContext)
-  const [localState, setLocalState] = useState<Record<string, unknown>>({})
-  const [localActionPending, setLocalActionPending] = useState(false)
-  const mergeLocalState = useCallback((patch: Record<string, unknown>) => {
-    setLocalState((current) => ({ ...current, ...patch }))
-  }, [])
-  const localValue = useMemo(
-    () => ({
-      state: localState,
-      mergeState: mergeLocalState,
-      actionPending: localActionPending,
-      setActionPending: setLocalActionPending,
-    }),
-    [localState, mergeLocalState, localActionPending]
-  )
+  const localValue = useHostStateValue()
   return context ?? localValue
 }

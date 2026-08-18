@@ -16,6 +16,7 @@ import {
   omitActionTelemetry,
   parseJsonLiteral,
   parseTabItems,
+  splitNavTarget,
 } from '@/lib/arena-generative-ui/types'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
 
@@ -688,7 +689,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
                 onClick={() => onNavigate(item.path)}
                 className={cn(
                   '-mb-px border-b-2 px-3 py-2 text-sm',
-                  item.path === activePath
+                  splitNavTarget(item.path).path === splitNavTarget(activePath).path
                     ? 'border-[var(--color-ds-blue-600,#2563eb)] font-medium text-[var(--color-ds-blue-600,#2563eb)]'
                     : 'border-transparent text-[var(--color-ds-grey-600,#5b5f6b)]'
                 )}

@@ -85,6 +85,7 @@ export const arenaGenerativeManifestSchema = z.object({
       title: z.string(),
       path: z.string(),
       spec: unknownRecordSchema,
+      onLoad: z.array(z.string().min(1, 'onLoad action id cannot be empty')).max(6).optional(),
     })
   ),
   actions: z.record(
@@ -362,6 +363,7 @@ export const deployedAppConfigSchema = z.object({
   pages: z.array(arenaGenerativePageSummarySchema),
   streamingActionIds: z.array(z.string()).optional().default([]),
   actionNavigate: z.record(z.string(), z.string()).optional().default({}),
+  pageOnLoad: z.record(z.string(), z.array(z.string())).optional().default({}),
 })
 export type DeployedAppConfig = z.output<typeof deployedAppConfigSchema>
 

@@ -341,3 +341,72 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     expect(container.textContent).not.toContain('Connecting')
   })
 })
+
+describe('GenerativeAppPreviewHost page onLoad', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  const loadingDraft = {
+    ...twoPageDraft,
+    manifest: {
+      ...twoPageDraft.manifest,
+      pages: {
+        ...twoPageDraft.manifest.pages,
+        results: {
+          title: 'Results',
+          path: 'results',
+          spec: resultsSpec,
+          onLoad: ['submit_lead'],
+        },
+      },
+    },
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUseGenerativeAppDraft.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: loadingDraft,
+      error: null,
+    })
+    mockMutateAsync.mockResolvedValue({ ok: true, setState: { score: 91 } })
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  async function renderAt(pagePath: string, pageParams?: Record<string, string>) {
+    await act(async () => {
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <GenerativeAppPreviewHost draftId='draft-1' pagePath={pagePath} pageParams={pageParams} />
+        </GenerativeAppHostStateProvider>
+      )
+    })
+  }
+
+  it('runs the draft page onLoad against the draft and shows the result', async () => {
+    await renderAt('results', { id: 'lead_7' })
+
+    expect(mockMutateAsync).toHaveBeenCalledWith({
+      actionId: 'submit_lead',
+      values: { id: 'lead_7' },
+    })
+    expect(container.textContent).toContain('91')
+  })
+
+  it('leaves the form page alone, since only results declares onLoad', async () => {
+    await renderAt('home')
+
+    expect(mockMutateAsync).not.toHaveBeenCalled()
+  })
+})
