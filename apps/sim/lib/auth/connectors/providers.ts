@@ -14,7 +14,7 @@ import {
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { getDocusignOAuthUrl } from '@/lib/oauth/docusign'
-import { getMicrosoftUserInfoFromIdToken } from '@/lib/oauth/microsoft'
+import { getMicrosoftOAuthEndpoints, getMicrosoftUserInfoFromIdToken } from '@/lib/oauth/microsoft'
 import { SALESFORCE_LOGIN_HOSTS } from '@/lib/oauth/salesforce'
 import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
 import { MONDAY_API_URL, MONDAY_API_VERSION } from '@/tools/monday/utils'
