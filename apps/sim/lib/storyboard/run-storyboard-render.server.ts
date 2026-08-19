@@ -434,7 +434,21 @@ export async function runStoryboardRender(
   const generateAudio = params.generateAudio === true || params.generateAudio === 'true'
 
   const storyboard = await loadStoryboard(storyboardId, conversationId, context)
-  const order = parseSceneOrder(asString(params.order), storyboard.scenes.length)
+
+  // Single-scene mode: render ONE scene's clip (the per-frame approval flow).
+  // Distinct from `order`, which renders ALL scenes in a given sequence, and
+  // from `clipUrls`, which only joins existing clips.
+  const sceneNumberRaw = Number(params.sceneNumber)
+  const singleScene = Number.isFinite(sceneNumberRaw) && sceneNumberRaw > 0
+  if (singleScene && Math.trunc(sceneNumberRaw) > storyboard.scenes.length) {
+    throw new Error(
+      `Scene ${Math.trunc(sceneNumberRaw)} does not exist — this storyboard has scenes 1-${storyboard.scenes.length}`
+    )
+  }
+
+  const order = singleScene
+    ? [Math.trunc(sceneNumberRaw)]
+    : parseSceneOrder(asString(params.order), storyboard.scenes.length)
   const orderedScenes = order.map((index) => storyboard.scenes[index - 1])
 
   // A requested total length wins over the per-scene setting: the user asks for
@@ -502,15 +516,19 @@ export async function runStoryboardRender(
   // output only exists in Sim storage, so use the presigned link.
   const publicVideoUrl = clips.length === 1 && clipFalUrls[0] ? clipFalUrls[0] : stored.presignedUrl
 
-  await db.execute(
-    sql`UPDATE storyboards
-        SET status = 'rendered',
-            final_order = ${JSON.stringify(order)}::jsonb,
-            video_url = ${videoUrl},
-            rendered_at = now(),
-            updated_at = now()
-        WHERE id = ${storyboard.id}::uuid`
-  )
+  // A single-scene clip is a preview for approval, not the final video — it
+  // must not flip the storyboard to 'rendered' or overwrite its video_url.
+  if (!singleScene) {
+    await db.execute(
+      sql`UPDATE storyboards
+          SET status = 'rendered',
+              final_order = ${JSON.stringify(order)}::jsonb,
+              video_url = ${videoUrl},
+              rendered_at = now(),
+              updated_at = now()
+          WHERE id = ${storyboard.id}::uuid`
+    )
+  }
 
   logger.info(`[${requestId}] Storyboard rendered`, {
     storyboardId: storyboard.id,
@@ -520,6 +538,12 @@ export async function runStoryboardRender(
   })
 
   const topic = storyboard.topic || 'your video'
+  const content = singleScene
+    ? `Clip for scene ${order[0]} is ready.\n\n[Watch the clip](${videoUrl})`
+    : `Your video for "${topic}" is ready (${clips.length} scene${
+        clips.length === 1 ? '' : 's'
+      }, order ${order.join(',')}).\n\n[Watch the video](${videoUrl})`
+
   return {
     videoUrl,
     ...(publicVideoUrl ? { publicVideoUrl } : {}),
@@ -530,8 +554,6 @@ export async function runStoryboardRender(
     order,
     clipCount: clips.length,
     model,
-    content: `Your video for "${topic}" is ready (${clips.length} scene${
-      clips.length === 1 ? '' : 's'
-    }, order ${order.join(',')}).\n\n[Watch the video](${videoUrl})`,
+    content,
   }
 }

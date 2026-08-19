@@ -4,6 +4,7 @@ export interface StoryboardRenderParams {
   conversationId?: string
   storyboardId?: string
   order?: string
+  sceneNumber?: number
   clipUrls?: string[] | string
   videoModel?: string
   clipDuration?: number
@@ -57,6 +58,13 @@ export const storyboardRenderTool: ToolConfig<StoryboardRenderParams, Storyboard
       visibility: 'user-or-llm',
       description:
         'Scene order as numbers, e.g. "3,1,2". Empty keeps the original order. Scenes can be dropped by omitting them.',
+    },
+    sceneNumber: {
+      type: 'number',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        "Single-scene mode: render ONLY this scene's clip (1-based, e.g. 3). The other scenes are untouched and the storyboard is not marked rendered. Takes priority over order.",
     },
     clipUrls: {
       type: 'string',

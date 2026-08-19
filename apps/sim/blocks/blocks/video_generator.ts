@@ -1808,6 +1808,15 @@ const STORYBOARD_MODE_SUBBLOCKS: SubBlockConfig[] = [
     description: 'The order the user chose for the storyboard scenes',
   },
   {
+    id: 'sceneNumber',
+    title: 'Single Scene (Clip Mode)',
+    type: 'short-input',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    placeholder: '3 — leave empty to render all scenes',
+    description:
+      "Render only this one scene's clip for approval. The storyboard is not marked as rendered.",
+  },
+  {
     id: 'clipUrls',
     title: 'Clip URLs (Concat Mode)',
     type: 'long-input',
@@ -1932,6 +1941,7 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
               // underlying tool param (order); accept both so the user's chosen
               // order is never silently dropped.
               order: params.sceneOrder || params.order,
+              sceneNumber: params.sceneNumber ? Number(params.sceneNumber) : undefined,
               clipUrls: params.clipUrls,
               videoModel: params.storyVideoModel,
               // Total length wins over seconds-per-scene: the user asks for a
@@ -1952,6 +1962,10 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
       description: 'Story Mode: conversation whose saved storyboard to render',
     },
     sceneOrder: { type: 'string', description: 'Story Mode: scene order, e.g. "3,1,2"' },
+    sceneNumber: {
+      type: 'number',
+      description: "Story Mode: render only this one scene's clip (1-based)",
+    },
     clipUrls: {
       type: 'string',
       description:
