@@ -1,0 +1,30 @@
+# Keep in sync with .github/codeql/codeql-config.yml.
+# Do not ignore **/test/** or **/tests/** — those can be real Next.js routes
+# (e.g. apps/sim/app/api/organizations/[id]/data-drains/[drainId]/test/route.ts).
+
+**/*.test.ts
+**/*.test.tsx
+**/*.test.js
+**/*.spec.ts
+**/*.spec.tsx
+**/__tests__/
+**/__mocks__/
+**/__fixtures__/
+**/e2e/
+
+**/*.d.ts
+**/node_modules/
+**/dist/
+**/.next/
+**/.turbo/
+**/coverage/
+
+apps/docs/content/
+apps/sim/tools/generated/
+apps/sim/content/
+*.min.js
+*.lock
+bun.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

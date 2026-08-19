@@ -107,9 +107,18 @@ jobs:
       - name: Check committed secrets
         run: bun run check:secrets
 
+  sast:
+    name: SAST
+    needs: [reserve-image-tag]
+    uses: ./.github/workflows/sast.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
   build-ghcr-images:
     name: Build GHCR Images
-    needs: [secret-scan, reserve-image-tag]
+    needs: [secret-scan, reserve-image-tag, sast]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -179,7 +188,7 @@ jobs:
   release-failed-tag:
     name: Release tag on failure
     if: failure() && needs.reserve-image-tag.result == 'success'
-    needs: [reserve-image-tag, secret-scan, build-ghcr-images]
+    needs: [reserve-image-tag, secret-scan, sast, build-ghcr-images]
     runs-on: ubuntu-latest
     permissions:
       contents: write

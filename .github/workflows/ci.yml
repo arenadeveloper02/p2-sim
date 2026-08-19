@@ -319,10 +319,23 @@ jobs:
           fi
           bunx trigger.dev@4.5.7 deploy --env preview --branch dev-sim
 
+  # SAST before GHCR/ECR image publish so EC2 never pulls an unscanned build.
+  # Semgrep is the fast gate; CodeQL in codeql.yml is the deeper weekly/PR scan.
+  sast:
+    name: SAST
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
+    uses: ./.github/workflows/sast.yml
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
   # Main/staging: build AMD64 images and push to ECR + GHCR
   build-amd64:
     name: Build AMD64
-    needs: [secret-scan, test-build, detect-version, migrate]
+    needs: [secret-scan, test-build, detect-version, migrate, sast]
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')

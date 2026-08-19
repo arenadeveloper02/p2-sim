@@ -1,0 +1,87 @@
+name: SAST
+
+# Static analysis of source in GitHub Actions — before GHCR images are built
+# and pulled onto EC2. This job does not scan the running instance; DAST would
+# target the EC2 URL after deploy.
+#
+# Community Semgrep: no SEMGREP_APP_TOKEN. CodeQL remains the deeper JS/TS
+# scan in codeql.yml. This workflow is the fast gate on the image pipeline.
+#
+# The scan uploads SARIF to GitHub code scanning and an artifact for evidence.
+# It does not fail the job on findings (exit 0 unless Semgrep itself crashes).
+# Add `--error` to the scan command when you are ready to block merges.
+
+on:
+  pull_request:
+    branches: [main, staging]
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # Weekly safety net, offset from CodeQL (17 8 * * *).
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: sast-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Semgrep
+        run: pip install --disable-pip-version-check 'semgrep>=1.100,<2'
+
+      - name: Run Semgrep
+        # Registry packs download rules only; --metrics=off avoids sending stats.
+        # Findings do not fail the job unless --error is added.
+        run: |
+          semgrep scan \
+            --config p/owasp-top-ten \
+            --config p/javascript \
+            --config p/typescript \
+            --config p/react \
+            --config p/nextjs \
+            --config p/nodejs \
+            --config p/github-actions \
+            --config p/dockerfile \
+            --metrics=off \
+            --sarif \
+            --output semgrep.sarif
+
+      - name: Upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@18420e3271f74589575af831a523c833acda327f # codeql-bundle-v2.26.2
+        with:
+          sarif_file: semgrep.sarif
+          category: /sast/semgrep
+
+      - name: Upload SAST report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-semgrep-${{ github.run_id }}
+          path: semgrep.sarif
+          if-no-files-found: warn
+          retention-days: 90
