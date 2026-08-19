@@ -686,19 +686,6 @@ export async function resolveServableDoc(
     if (error instanceof DocCompileUserError) return { kind: 'unavailable' }
     throw error
   }
-  return { kind: 'unavailable' }
-}
-
-interface CompilableFormat {
-  magic: Buffer
-  taskId: SandboxTaskId
-  contentType: string
-}
-
-const COMPILABLE_FORMATS: Record<string, CompilableFormat> = {
-  '.pptx': { magic: ZIP_MAGIC, taskId: 'pptx-generate', contentType: PPTX_MIME },
-  '.docx': { magic: ZIP_MAGIC, taskId: 'docx-generate', contentType: DOCX_MIME },
-  '.pdf': { magic: PDF_MAGIC, taskId: 'pdf-generate', contentType: PDF_MIME },
 }
 
 const MAX_COMPILED_DOC_CACHE = 10

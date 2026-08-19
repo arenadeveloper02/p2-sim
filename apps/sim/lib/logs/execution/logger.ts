@@ -1825,12 +1825,6 @@ export class ExecutionLogger implements IExecutionLoggerService {
         return 0
       }
 
-      if (workflowRecord.workspaceId && !billingContext) {
-        throw new Error('Billing attribution is required for workspace execution usage')
-      }
-      const resolvedBillingContext =
-        billingContext ?? deriveBillingContext(userId, await getHighestPrioritySubscription(userId))
-
       // Matches the billedBefore key resolution (toFixed(8)): a delta below this
       // is finer than the idempotency key can distinguish across boundaries, so
       // ignoring it keeps the key and the gate consistent.

@@ -35,9 +35,7 @@ interface SearchResponse {
  * Resolve an Exa API key from platform env or workspace env.
  * When neither is set, omit the key so `executeTool` can inject BYOK / hosted keys.
  */
-async function resolveOptionalExaApiKey(
-  context?: ServerToolContext
-): Promise<string | undefined> {
+async function resolveOptionalExaApiKey(context?: ServerToolContext): Promise<string | undefined> {
   const platformKey = env.EXA_API_KEY
   if (typeof platformKey === 'string' && platformKey.trim().length > 0) {
     return platformKey.trim()
@@ -96,69 +94,14 @@ export const searchOnlineServerTool: BaseServerTool<OnlineSearchParams, SearchRe
         query,
         numResults: num,
         type: 'auto',
+        highlights: true,
         ...(exaApiKey ? { apiKey: exaApiKey } : {}),
         ...(toolContext ? { _context: toolContext } : {}),
-    // Try Exa first if available
-    if (hasExaApiKey) {
-      try {
-        const exaResult = await executeTool(
-          'exa_search',
-          {
-            query,
-            numResults: num,
-            type: 'auto',
-            // Exa omits page content unless it is requested, which would leave
-            // every snippet empty. Highlights keep the payload small.
-            highlights: true,
-            apiKey: env.EXA_API_KEY ?? '',
-          },
-          { resolvedSecretTraceRegistry: context?.resolvedSecretTraceRegistry }
-        )
-
-        const output = exaResult.output as
-          | {
-              results?: Array<{
-                title?: string
-                url?: string
-                text?: string
-                summary?: string
-                highlights?: string[]
-                publishedDate?: string
-              }>
-            }
-          | undefined
-        const exaResults = output?.results ?? []
-
-        if (exaResult.success && exaResults.length > 0) {
-          const transformedResults: SearchResult[] = exaResults.map((result, index) => ({
-            title: result.title ?? '',
-            link: result.url ?? '',
-            snippet: result.highlights?.join(' ') || result.text || result.summary || '',
-            date: result.publishedDate,
-            position: index + 1,
-          }))
-
-          return {
-            results: transformedResults,
-            query,
-            type,
-            totalResults: transformedResults.length,
-            source: 'exa',
-          }
-        }
-
-        logger.debug('exa_search returned no results, falling back to Serper')
-      } catch (exaError) {
-        const errorMessage = toError(exaError).message
-        logger.warn('exa_search failed, falling back to Serper', {
-          error: projectToolErrorMessageForCopilot(
-            errorMessage,
-            context?.resolvedSecretTraceRegistry
-          ),
-        })
       }
 
-      const exaResult = await executeTool('exa_search', exaParams)
+      const exaResult = await executeTool('exa_search', exaParams, {
+        resolvedSecretTraceRegistry: context?.resolvedSecretTraceRegistry,
+      })
 
       const output = exaResult.output as
         | {
@@ -167,6 +110,7 @@ export const searchOnlineServerTool: BaseServerTool<OnlineSearchParams, SearchRe
               url?: string
               text?: string
               summary?: string
+              highlights?: string[]
               publishedDate?: string
             }>
           }
@@ -177,7 +121,7 @@ export const searchOnlineServerTool: BaseServerTool<OnlineSearchParams, SearchRe
         const transformedResults: SearchResult[] = exaResults.map((result, index) => ({
           title: result.title ?? '',
           link: result.url ?? '',
-          snippet: result.text ?? result.summary ?? '',
+          snippet: result.highlights?.join(' ') || result.text || result.summary || '',
           date: result.publishedDate,
           position: index + 1,
         }))
@@ -193,8 +137,12 @@ export const searchOnlineServerTool: BaseServerTool<OnlineSearchParams, SearchRe
 
       logger.debug('exa_search returned no results, falling back to Serper')
     } catch (exaError) {
+      const errorMessage = toError(exaError).message
       logger.warn('exa_search failed, falling back to Serper', {
-        error: toError(exaError).message,
+        error: projectToolErrorMessageForCopilot(
+          errorMessage,
+          context?.resolvedSecretTraceRegistry
+        ),
       })
     }
 

@@ -6506,6 +6506,10 @@ export function SpyfuIcon(props: SVGProps<SVGSVGElement>) {
       />
       <circle cx='12' cy='24' r='2' fill='#E5E5E5' />
       <circle cx='18' cy='26' r='2' fill='#FCA311' />
+    </svg>
+  )
+}
+
 export function DynatraceIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...props} viewBox='0 0 89 90' xmlns='http://www.w3.org/2000/svg'>

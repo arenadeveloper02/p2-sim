@@ -186,6 +186,7 @@ export async function authorizeCredentialUseForAuth(
         eq(credential.accountId, credentialId),
         scopeWorkspaceId ? eq(credential.workspaceId, scopeWorkspaceId) : undefined
       )
+    )
     .orderBy(asc(credential.createdAt))
 
   let firstRejection: string | null = null

@@ -1648,21 +1648,6 @@ export class ResolvedSecretTraceRegistry {
     }
   }
 
-  /**
-   * Makes projections fail closed while an exact runtime substitution is being established.
-   * The returned completion callback is idempotent so every exit path can safely release it.
-   */
-  beginPendingActivation(): () => void {
-    this.pendingActivations += 1
-    let completed = false
-
-    return () => {
-      if (completed) return
-      completed = true
-      this.pendingActivations = Math.max(0, this.pendingActivations - 1)
-    }
-  }
-
   /** Serializes only encrypted active values; plaintext never enters execution state. */
   exportProvenance(): ResolvedSecretTraceProvenanceV1 {
     const complete = this.isComplete()

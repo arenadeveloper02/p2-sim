@@ -195,7 +195,9 @@ async function scoreHallucinationWithLLM(
   apiKey: string | undefined,
   providerCredentials: HallucinationValidationInput['providerCredentials'],
   workspaceId: string | undefined,
-  requestId: string
+  requestId: string,
+  resolvedSecretTraceRegistry: ResolvedSecretTraceRegistry,
+  abortSignal: AbortSignal | undefined
 ): Promise<{
   score: number
   reasoning: string
@@ -203,10 +205,6 @@ async function scoreHallucinationWithLLM(
   inputTokens: number
   outputTokens: number
 }> {
-  requestId: string,
-  resolvedSecretTraceRegistry: ResolvedSecretTraceRegistry,
-  abortSignal: AbortSignal | undefined
-): Promise<score: number; reasoning: string; cost: number > 
   try {
     const contextText = ragContext.join('\n\n---\n\n')
 
@@ -334,6 +332,7 @@ Evaluate the consistency and provide your score and reasoning in JSON format.`
     })
     throw new Error(`Failed to score confidence: ${error.message}`)
   }
+}
 
 /**
  * Validate user input against knowledge base using RAG + LLM scoring
@@ -423,8 +422,6 @@ export async function validateHallucination(
 
     // Step 2: Use LLM to score confidence
     const { score, reasoning, cost, inputTokens, outputTokens } = await scoreHallucinationWithLLM(
-      userInput,
-      ragContext,
       inputProjection.value,
       contextProjection.value,
       model,

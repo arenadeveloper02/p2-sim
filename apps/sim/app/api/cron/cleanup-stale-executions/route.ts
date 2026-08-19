@@ -138,6 +138,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
     let staleExecutionsFound = 0
     let cleaned = 0
     let failed = 0
+    let schedulesUnlocked = 0
     let currentWorkflowBatchSize = 0
 
     try {
@@ -156,7 +157,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         EXTRACT(EPOCH FROM (${cleanupTimestamp} - ${workflowExecutionLogs.startedAt})) / 60
       )::integer`
       const totalDurationMs = elapsedDurationMsSql(now)
-      const workflowRowsConsidered = 0
+      let workflowRowsConsidered = 0
       while (workflowRowsConsidered < WORKFLOW_EXECUTION_MAX_ROWS_PER_RUN) {
         const limit = Math.min(
           WORKFLOW_EXECUTION_MUTATION_BATCH_SIZE,
@@ -165,7 +166,12 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         currentWorkflowBatchSize = 0
         const { candidates, updatedExecutions } = await db.transaction(async (tx) => {
           const candidates = await tx
-            .select({ id: workflowExecutionLogs.id })
+            .select({
+              id: workflowExecutionLogs.id,
+              executionId: workflowExecutionLogs.executionId,
+              executionData: workflowExecutionLogs.executionData,
+              trigger: workflowExecutionLogs.trigger,
+            })
             .from(workflowExecutionLogs)
             .where(staleExecutionPredicate)
             .limit(limit)
@@ -207,23 +213,24 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
 
           return { candidates, updatedExecutions }
         })
-        currentWorkflowBatchSize = 0
+        workflowRowsConsidered += candidates.length
         staleExecutionsFound += candidates.length
         if (candidates.length === 0) break
 
-        cleaned++
+        cleaned += updatedExecutions.length
 
-        if (execution.trigger === 'schedule') {
-          const scheduleId = extractScheduleId(execution.executionData)
-          if (scheduleId) {
-            const unlocked = await unlockStaleSchedule(scheduleId, execution.executionId)
-            if (unlocked) schedulesUnlocked++
+        for (const execution of candidates) {
+          if (execution.trigger === 'schedule') {
+            const scheduleId = extractScheduleId(execution.executionData)
+            if (scheduleId) {
+              const unlocked = await unlockStaleSchedule(scheduleId, execution.executionId)
+              if (unlocked) schedulesUnlocked++
+            }
           }
         }
-      } catch (error) 
-        logger.error(`Failed to clean up execution $execution.executionId:`, 
-          error: toError(error).message,)
-        failed++
+
+        if (candidates.length < limit) break
+      }
 
       if (workflowRowsConsidered >= WORKFLOW_EXECUTION_MAX_ROWS_PER_RUN) {
         logger.info('Deferred remaining stale workflow executions after reaching the per-run cap', {

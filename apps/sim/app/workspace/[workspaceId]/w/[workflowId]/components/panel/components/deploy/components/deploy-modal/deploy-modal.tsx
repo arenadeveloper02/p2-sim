@@ -778,12 +778,7 @@ export function DeployModal({
               <div />
               <div className='flex items-center gap-2'>
                 {isExistingChatDeployment && (
-                  <Button
-                    type='button'
-                    variant='default'
-                    onClick={handleChatDelete}
-                    disabled={chatSubmitting}
-                  >
+                  <Chip type='button' onClick={handleChatDelete} disabled={chatSubmitting}>
                     Delete
                   </Chip>
                 )}
@@ -813,18 +808,13 @@ export function DeployModal({
               <div />
               <div className='flex items-center gap-2'>
                 {isExistingAppDeployment && (
-                  <Button
-                    type='button'
-                    variant='default'
-                    onClick={handleAppDelete}
-                    disabled={chatSubmitting}
-                  >
+                  <Chip type='button' onClick={handleAppDelete} disabled={chatSubmitting}>
                     Delete
-                  </Button>
+                  </Chip>
                 )}
-                <Button
+                <Chip
                   type='button'
-                  variant='tertiary'
+                  variant='primary'
                   onClick={handleAppFormSubmit}
                   disabled={chatSubmitting || !isAppFormValid}
                 >
@@ -839,7 +829,7 @@ export function DeployModal({
                       : isExistingAppDeployment
                         ? 'Update'
                         : 'Launch App'}
-                </Button>
+                </Chip>
               </div>
             </ModalFooter>
           )}

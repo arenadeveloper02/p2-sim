@@ -27,7 +27,7 @@ import { BubbleChatDelay, Download, Lock, Unlock } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useQueryClient } from '@tanstack/react-query'
-import { Plus, Square, Zap } from 'lucide-react'
+import { Play, Plus, Square, Zap } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
@@ -967,7 +967,7 @@ export const Panel = memo(function Panel() {
                   <Play className='h-[11.5px] w-[11.5px]' />
                 )}
                 {isExecuting ? 'Stop' : 'Test'}
-              </Button>
+              </Chip>
               <RunAgentExternalChat
                 workflowId={activeWorkflowId || ''}
                 workspaceId={workspaceId}

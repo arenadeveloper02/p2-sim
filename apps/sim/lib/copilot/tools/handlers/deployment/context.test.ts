@@ -48,3 +48,5 @@ describe('getHistoricalDeploymentAttemptError', () => {
     expect(getHistoricalDeploymentAttemptError({ isCurrent: false }, 'redeploy')).toContain(
       'Start a new tool call'
     )
+  })
+})

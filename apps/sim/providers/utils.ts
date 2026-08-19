@@ -877,10 +877,21 @@ export async function transformBlockTool(
     }
   }
 
-  const llmResult = await createLLMToolSchema(toolConfig, userProvidedParams)
-  let llmSchema = llmResult.schema
-  const enrichedDescription = llmResult.enrichedDescription
-  const modelBlockedParams = llmResult.modelBlockedParams
+  const canonicalGroups: CanonicalGroup[] = blockDef?.subBlocks
+    ? Object.values(buildCanonicalIndex(blockDef.subBlocks).groupsById).filter(isCanonicalPair)
+    : []
+
+  const resolvedResourceParams = resolveCanonicalResourceParams(
+    userProvidedParams,
+    canonicalGroups,
+    scopedCanonicalModes
+  )
+
+  let {
+    schema: llmSchema,
+    enrichedDescription,
+    modelBlockedParams,
+  } = await createLLMToolSchema(toolConfig, resolvedResourceParams, enrichmentContext)
 
   /**
    * Semrush URL reports (`url_*`) need a page URL. Models often populate `domain` instead because
@@ -935,22 +946,6 @@ export async function transformBlockTool(
       ),
     }
   }
-
-  const canonicalGroups: CanonicalGroup[] = blockDef?.subBlocks
-    ? Object.values(buildCanonicalIndex(blockDef.subBlocks).groupsById).filter(isCanonicalPair)
-    : []
-
-  const resolvedResourceParams = resolveCanonicalResourceParams(
-    userProvidedParams,
-    canonicalGroups,
-    scopedCanonicalModes
-  )
-
-  const {
-    schema: llmSchema,
-    enrichedDescription,
-    modelBlockedParams,
-  } = await createLLMToolSchema(toolConfig, resolvedResourceParams, enrichmentContext)
 
   let uniqueToolId = toolConfig.id
   let toolName = toolConfig.name

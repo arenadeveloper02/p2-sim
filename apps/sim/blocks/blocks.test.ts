@@ -997,39 +997,6 @@ describe.concurrent('Blocks Module', () => {
     })
 
     it('should hide generator API keys on hosted only for Fal.ai providers', () => {
-      for (const blockType of ['image_generator_v2', 'video_generator_v3']) {
-        const block = getBlock(blockType)
-        const apiKeySubBlocks = block?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
-
-    it('should let the agent model-tuning fields take a typed reference', () => {
-      const agentBlock = getBlock('agent')
-
-      for (const { id } of AGENT_MODEL_LEVEL_FIELDS) {
-        const subBlock = agentBlock?.subBlocks.find((sb) => sb.id === id)
-        // A combobox is editable, so a `<block.output>` / `{{ENV_VAR}}` reference can be
-        // typed into it; the option list still offers every level the model accepts.
-        expect(subBlock?.type).toBe('combobox')
-        expect(typeof subBlock?.condition).toBe('function')
-      }
-    })
-
-    it('should keep the agent model-tuning fields visible when the model is a reference', () => {
-      const agentBlock = getBlock('agent')
-
-      for (const { id, capable, incapable } of AGENT_MODEL_LEVEL_FIELDS) {
-        const subBlock = agentBlock?.subBlocks.find((sb) => sb.id === id)
-        const condition = subBlock?.condition
-        if (typeof condition !== 'function') throw new Error(`${id} condition is not a function`)
-
-        expect(evaluateSubBlockCondition(condition, { model: '<start.model>' })).toBe(true)
-        expect(evaluateSubBlockCondition(condition, { model: '{{MODEL_ID}}' })).toBe(true)
-        // Gating on the capability list is unchanged for a literal model.
-        expect(evaluateSubBlockCondition(condition, { model: capable })).toBe(true)
-        expect(evaluateSubBlockCondition(condition, { model: incapable })).toBe(false)
-      }
-    })
-
-    it('should hide generator API keys on hosted only for Fal.ai providers', () => {
       const imageBlock = getBlock('image_generator_v2')
       const imageApiKeySubBlocks = imageBlock?.subBlocks.filter((sb) => sb.id === 'apiKey') ?? []
 
@@ -1057,8 +1024,8 @@ describe.concurrent('Blocks Module', () => {
     })
   })
 
-  describe('Block Consistency', () => 
-    it('should have consistent registry keys matching block types', () => 
+  describe('Block Consistency', () => {
+    it('should have consistent registry keys matching block types', () => {
       for (const block of getAllBlocks()) {
         const canonical = getBlock(block.type)
         if (canonical?.preview) {
@@ -1068,7 +1035,8 @@ describe.concurrent('Blocks Module', () => {
           continue
         }
         expect(canonical).toBe(block)
-      })
+      }
+    })
 
     it('should have non-empty descriptions for all blocks', () => {
       const blocks = getAllBlocks()
@@ -1082,7 +1050,8 @@ describe.concurrent('Blocks Module', () => {
       for (const block of blocks) {
         expect(block.name.trim().length).toBeGreaterThan(0)
       }
-    }))
+    })
+  })
 
   describe('Canonical Param Validation', () => {
     /**
