@@ -34,6 +34,7 @@ import { DeleteModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/
 import { CreateWorkspaceModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/create-workspace-modal/create-workspace-modal'
 import { ViewInvitationsMenuItem } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/pending-invitations/view-invitations-menu-item'
 import { ViewInvitationsModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/pending-invitations/view-invitations-modal'
+import { SIDEBAR_RAIL_CHIP_CLASS } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
 import { invitationKeys } from '@/hooks/queries/invitations'
 import { useOrganizations } from '@/hooks/queries/organization'
 import {
@@ -485,34 +486,38 @@ function WorkspaceHeaderImpl({
           type='button'
           aria-label='Expand sidebar'
           onClick={onExpandSidebar}
-          className={chipVariants({ fullWidth: true })}
+          className={cn(chipVariants({ fullWidth: true }), SIDEBAR_RAIL_CHIP_CLASS)}
         >
           <div className='relative flex size-[16px] flex-shrink-0 items-center justify-center'>
-            {!activeWorkspaceFull ? (
-              <Skeleton className='size-[16px] rounded-sm' />
-            ) : (
+            {activeWorkspaceFull?.logoUrl ? (
               <>
-                {activeWorkspaceFull.logoUrl ? (
-                  <img
-                    src={activeWorkspaceFull.logoUrl}
-                    alt={activeWorkspaceFull.name || 'Workspace logo'}
-                    className='size-[16px] rounded-sm object-cover group-hover:invisible'
-                  />
-                ) : (
-                  <div
-                    className='flex size-[16px] items-center justify-center rounded-sm text-[9px] text-white leading-none group-hover:invisible'
-                    style={{
-                      backgroundColor: activeWorkspaceFull.color ?? 'var(--brand-accent)',
-                    }}
-                  >
-                    {workspaceInitial}
-                  </div>
-                )}
+                <img
+                  src={activeWorkspaceFull.logoUrl}
+                  alt={activeWorkspaceFull.name || 'Workspace logo'}
+                  className='size-[16px] rounded-sm object-cover group-hover:invisible'
+                />
                 <PanelLeft
                   aria-hidden
                   className='pointer-events-none invisible absolute inset-0 m-auto size-[16px] rotate-180 text-[var(--text-icon)] group-hover:visible'
                 />
               </>
+            ) : activeWorkspace ? (
+              <>
+                <div
+                  className='flex size-[16px] items-center justify-center rounded-sm text-[9px] text-white leading-none group-hover:invisible'
+                  style={{
+                    backgroundColor: activeWorkspaceFull?.color ?? 'var(--brand-accent)',
+                  }}
+                >
+                  {workspaceInitial}
+                </div>
+                <PanelLeft
+                  aria-hidden
+                  className='pointer-events-none invisible absolute inset-0 m-auto size-[16px] rotate-180 text-[var(--text-icon)] group-hover:visible'
+                />
+              </>
+            ) : (
+              <Skeleton className='size-[16px] rounded-sm' />
             )}
           </div>
         </button>
@@ -921,21 +926,19 @@ function WorkspaceHeaderImpl({
           title={activeWorkspace?.name}
           disabled
         >
-          {activeWorkspaceFull ? (
-            activeWorkspaceFull.logoUrl ? (
-              <img
-                src={activeWorkspaceFull.logoUrl}
-                alt={activeWorkspaceFull.name || 'Workspace logo'}
-                className='size-[16px] flex-shrink-0 rounded-sm object-cover'
-              />
-            ) : (
-              <div
-                className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
-                style={{ backgroundColor: activeWorkspaceFull.color ?? 'var(--brand-accent)' }}
-              >
-                {workspaceInitial}
-              </div>
-            )
+          {activeWorkspaceFull?.logoUrl ? (
+            <img
+              src={activeWorkspaceFull.logoUrl}
+              alt={activeWorkspaceFull.name || 'Workspace logo'}
+              className='size-[16px] flex-shrink-0 rounded-sm object-cover'
+            />
+          ) : activeWorkspace ? (
+            <div
+              className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-sm text-[9px] text-white leading-none'
+              style={{ backgroundColor: activeWorkspaceFull?.color ?? 'var(--brand-accent)' }}
+            >
+              {workspaceInitial}
+            </div>
           ) : (
             <Skeleton className='size-[16px] flex-shrink-0 rounded-sm' />
           )}

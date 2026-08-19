@@ -16,6 +16,7 @@ import {
 import type { HighestPrioritySubscription } from '@/lib/billing/core/plan'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/subscription'
 import {
+  type AdmissionErrorDescriptor,
   getReservationDenialDescriptor,
   type ReservationDenialReason,
 } from '@/lib/core/admission/transient-failure'
@@ -67,6 +68,12 @@ export interface PreprocessExecutionOptions {
   requestId: string
 
   checkRateLimit?: boolean
+  /**
+   * Which execution token bucket the rate-limit gate debits. Ignored when
+   * `checkRateLimit` is false. Defaults to `'sync'` — the historical behavior
+   * for every surface, including async-queued v1 runs.
+   */
+  rateLimitCounter?: 'sync' | 'async'
   checkDeployment?: boolean
   skipUsageLimits?: boolean
   /**
@@ -114,7 +121,28 @@ export interface PreprocessExecutionError {
   statusCode: number
   code?: string
   retryable?: boolean
+  /**
+   * How long the caller should wait before retrying, so surfaces can emit
+   * `Retry-After`. Set by rate-limit denials from the token bucket, and by
+   * admission denials from their descriptor's declared `retryAfterSeconds`.
+   */
+  retryAfterMs?: number
   cause?: Record<string, unknown>
+}
+
+/**
+ * Carries an admission descriptor's declared retry pacing to the transport,
+ * which speaks milliseconds.
+ *
+ * The descriptors in `lib/core/admission/transient-failure` already decide how
+ * long each denial should hold a caller off, but that value used to stop here:
+ * only `statusCode`, `code`, and `retryable` were copied onto the preprocess
+ * error, so a concurrency denial reached the client as a bare `429` with no
+ * `Retry-After` despite the policy layer having named the wait. The transport
+ * is not the right place to re-guess a number the policy already owns.
+ */
+function retryAfterMsFrom(retryAfterSeconds: number | undefined): { retryAfterMs?: number } {
+  return retryAfterSeconds === undefined ? {} : { retryAfterMs: retryAfterSeconds * 1000 }
 }
 
 export const WORKFLOW_NOT_DEPLOYED_CODE = 'WORKFLOW_NOT_DEPLOYED'
@@ -161,6 +189,7 @@ export async function preprocessExecution(
       triggerType !== 'chat' &&
       triggerType !== 'schedule' &&
       triggerType !== 'webhook',
+    rateLimitCounter = 'sync',
     checkDeployment = triggerType !== 'manual',
     skipUsageLimits = false,
     skipConcurrencyReservation = false,
@@ -654,7 +683,7 @@ export async function preprocessExecution(
         actorUserId,
         actorSubscription,
         triggerType,
-        false
+        rateLimitCounter === 'async'
       )
 
       if (!info.allowed) {
@@ -670,6 +699,13 @@ export async function preprocessExecution(
             error: {
               message: `Rate limit exceeded. Please try again later.`,
               statusCode: 429,
+              /**
+               * Distinguishes quota exhaustion from the concurrency-slot 429
+               * (`EXECUTION_CONCURRENCY_LIMIT`, retryable in seconds) — the two
+               * need different caller behavior.
+               */
+              code: 'RATE_LIMIT_EXCEEDED',
+              retryAfterMs: info.retryAfterMs ?? Math.max(0, info.resetAt.getTime() - Date.now()),
             },
           },
           recordError: {
@@ -767,7 +803,14 @@ export async function preprocessExecution(
       })
 
       if (!reservation.reserved) {
-        const descriptor = getReservationDenialDescriptor(reservation.reason)
+        /**
+         * Widened to the declared interface so the optional `retryAfterSeconds`
+         * is readable: the const descriptors narrow to literal shapes where the
+         * non-retryable 402 members simply omit the key.
+         */
+        const descriptor: AdmissionErrorDescriptor = getReservationDenialDescriptor(
+          reservation.reason
+        )
         const message = RESERVATION_DENIAL_MESSAGE[reservation.reason]
         logger.warn(`[${requestId}] Admission reservation full for user ${actorUserId}`, {
           workflowId,
@@ -794,6 +837,7 @@ export async function preprocessExecution(
             statusCode: descriptor.statusCode,
             code: descriptor.code,
             retryable: descriptor.retryable,
+            ...retryAfterMsFrom(descriptor.retryAfterSeconds),
             cause: {
               code: descriptor.code,
               constraint: reservation.reason,
@@ -820,6 +864,7 @@ export async function preprocessExecution(
           statusCode: unavailable.statusCode,
           code: unavailable.code,
           retryable: unavailable.retryable,
+          ...retryAfterMsFrom(unavailable.retryAfterSeconds),
           cause: {
             code: unavailable.code,
           },

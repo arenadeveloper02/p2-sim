@@ -7,7 +7,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { type BetterAuthOptions, betterAuth, type User } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { APIError, createAuthMiddleware, getSessionFromCtx } from 'better-auth/api'
+import { APIError, createAuthMiddleware, getOAuthState, getSessionFromCtx } from 'better-auth/api'
 import { nextCookies } from 'better-auth/next-js'
 import {
   admin,
@@ -38,6 +38,7 @@ import {
 } from '@/lib/auth/constants'
 import { getSessionCookieCacheVersion } from '@/lib/auth/security-policy'
 import { clampExpiryForSession } from '@/lib/auth/session-policy'
+import { getActiveOrganizationId } from '@/lib/auth/session-response'
 import { guardSubscriptionPlanWrites } from '@/lib/auth/stripe-adapter-guard'
 import { sendPlanWelcomeEmail } from '@/lib/billing'
 import {
@@ -45,6 +46,12 @@ import {
   authorizeSubscriptionReference,
   isPersonalCheckoutRequest,
 } from '@/lib/billing/authorization'
+import {
+  type CheckoutAdmissionClaim,
+  claimCheckoutAdmission,
+  releaseCheckoutAdmission,
+  resolveCheckoutReferenceId,
+} from '@/lib/billing/checkout-admission'
 import {
   getOrganizationIdForSubscriptionReference,
   syncSubscriptionPlan,
@@ -94,7 +101,11 @@ import {
   isLocalhostUrl,
   parseOriginList,
 } from '@/lib/core/utils/urls'
-import { processCredentialDraft } from '@/lib/credentials/draft-processor'
+import {
+  captureOAuthCredentialDraftBinding,
+  consumeOAuthCredentialDraftBinding,
+  processCredentialDraft,
+} from '@/lib/credentials/draft-processor'
 import { sendEmail } from '@/lib/messaging/email/mailer'
 import { getFromEmailAddress, getPersonalEmailFrom } from '@/lib/messaging/email/utils'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
@@ -105,7 +116,14 @@ import {
   getMicrosoftOAuthTenantId,
   getMicrosoftRefreshTokenExpiry,
   isMicrosoftProvider,
+  mapMicrosoftProfileToUser,
 } from '@/lib/oauth/microsoft'
+import {
+  isSalesforceLoginOrigin,
+  isSalesforceOAuthProviderId,
+  SALESFORCE_LOGIN_HOSTS,
+  withSalesforceInstanceScope,
+} from '@/lib/oauth/salesforce'
 import { extractSlackTeamId, fanOutSlackTokenChain } from '@/lib/oauth/slack'
 import { clearDeadFlag } from '@/lib/oauth/terminal-errors'
 import { getCanonicalScopesForProvider } from '@/lib/oauth/utils'
@@ -201,6 +219,41 @@ const trustedProxies = (env.AUTH_TRUSTED_PROXIES ?? '')
   .split(',')
   .map((entry) => entry.trim())
   .filter(Boolean)
+
+/**
+ * Resolves the org's API instance URL for a freshly linked Salesforce account.
+ *
+ * The token response never carries `instance_url`, but `/services/oauth2/userinfo`
+ * returns a `profile` URL rooted at the org's own host. A response still rooted
+ * at the login host means userinfo answered for the authorization server rather
+ * than an org, which is not an instance URL — hence the guard.
+ *
+ * @returns The instance URL origin, or undefined when it cannot be determined
+ * (the caller then leaves `scope` untouched rather than storing a wrong host).
+ */
+async function fetchSalesforceInstanceUrl(
+  providerId: string,
+  accessToken: string
+): Promise<string | undefined> {
+  const loginHost = SALESFORCE_LOGIN_HOSTS[providerId]
+  if (!loginHost) return undefined
+  try {
+    const response = await fetch(`https://${loginHost}/services/oauth2/userinfo`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (!response.ok) return undefined
+    const data = await response.json()
+    if (typeof data.profile !== 'string') return undefined
+    const url = new URL(data.profile)
+    // The origin becomes a tool base URL that carries the bearer token, so the
+    // scheme is pinned rather than inherited from whatever userinfo returned.
+    if (url.protocol !== 'https:' || isSalesforceLoginOrigin(url.origin)) return undefined
+    return url.origin
+  } catch (error) {
+    logger.error('Failed to fetch Salesforce instance URL', { error, providerId })
+    return undefined
+  }
+}
 
 export const auth = betterAuth({
   baseURL: getBaseUrl(),
@@ -404,33 +457,29 @@ export const auth = betterAuth({
     },
     account: {
       create: {
-        before: async (account) => {
+        before: async (account, context) => {
           const modifiedAccount = { ...account }
 
-          if (account.providerId === 'salesforce' && account.accessToken) {
+          if (context?.path.startsWith('/oauth2/callback/')) {
             try {
-              const response = await fetch(
-                'https://login.salesforce.com/services/oauth2/userinfo',
-                {
-                  headers: {
-                    Authorization: `Bearer ${account.accessToken}`,
-                  },
-                }
-              )
-
-              if (response.ok) {
-                const data = await response.json()
-
-                if (data.profile) {
-                  const match = data.profile.match(/^(https:\/\/[^/]+)/)
-                  if (match && match[1] !== 'https://login.salesforce.com') {
-                    const instanceUrl = match[1]
-                    modifiedAccount.scope = `__sf_instance__:${instanceUrl} ${account.scope}`
-                  }
-                }
-              }
+              await captureOAuthCredentialDraftBinding(context, () => getOAuthState())
             } catch (error) {
-              logger.error('Failed to fetch Salesforce instance URL', { error })
+              logger.error('[account.create.before] Failed to read OAuth credential draft state', {
+                userId: account.userId,
+                providerId: account.providerId,
+                error,
+              })
+              throw error
+            }
+          }
+
+          if (account.accessToken && isSalesforceOAuthProviderId(account.providerId)) {
+            const instanceUrl = await fetchSalesforceInstanceUrl(
+              account.providerId,
+              account.accessToken
+            )
+            if (instanceUrl) {
+              modifiedAccount.scope = withSalesforceInstanceScope(instanceUrl, account.scope)
             }
           }
 
@@ -450,7 +499,7 @@ export const auth = betterAuth({
 
           return { data: modifiedAccount }
         },
-        after: async (account) => {
+        after: async (account, context) => {
           /**
            * Migrate credentials from stale account rows to the newly created one.
            *
@@ -543,18 +592,33 @@ export const auth = betterAuth({
             }
           }
 
-          try {
-            await processCredentialDraft({
-              userId: account.userId,
-              providerId: account.providerId,
-              accountId: account.id,
-            })
-          } catch (error) {
-            logger.error('[account.create.after] Failed to process credential draft', {
-              userId: account.userId,
-              providerId: account.providerId,
-              error,
-            })
+          const isOAuth2Callback = context?.path.startsWith('/oauth2/callback/') === true
+          const credentialDraftBinding = context
+            ? consumeOAuthCredentialDraftBinding(context)
+            : undefined
+
+          if (isOAuth2Callback && !credentialDraftBinding) {
+            throw new Error(
+              'OAuth credential draft binding was not captured before account creation'
+            )
+          }
+
+          if (credentialDraftBinding) {
+            try {
+              await processCredentialDraft({
+                draftId: credentialDraftBinding.draftId,
+                userId: account.userId,
+                providerId: account.providerId,
+                accountId: account.id,
+              })
+            } catch (error) {
+              logger.error('[account.create.after] Failed to process credential draft', {
+                userId: account.userId,
+                providerId: account.providerId,
+                error,
+              })
+              if (credentialDraftBinding.draftId) throw error
+            }
           }
 
           try {
@@ -603,7 +667,7 @@ export const auth = betterAuth({
             )
           }
 
-          if (account.providerId === 'salesforce') {
+          if (isSalesforceOAuthProviderId(account.providerId)) {
             const updates: {
               accessTokenExpiresAt?: Date
               scope?: string
@@ -614,29 +678,12 @@ export const auth = betterAuth({
             }
 
             if (account.accessToken) {
-              try {
-                const response = await fetch(
-                  'https://login.salesforce.com/services/oauth2/userinfo',
-                  {
-                    headers: {
-                      Authorization: `Bearer ${account.accessToken}`,
-                    },
-                  }
-                )
-
-                if (response.ok) {
-                  const data = await response.json()
-
-                  if (data.profile) {
-                    const match = data.profile.match(/^(https:\/\/[^/]+)/)
-                    if (match && match[1] !== 'https://login.salesforce.com') {
-                      const instanceUrl = match[1]
-                      updates.scope = `__sf_instance__:${instanceUrl} ${account.scope}`
-                    }
-                  }
-                }
-              } catch (error) {
-                logger.error('Failed to fetch Salesforce instance URL', { error })
+              const instanceUrl = await fetchSalesforceInstanceUrl(
+                account.providerId,
+                account.accessToken
+              )
+              if (instanceUrl) {
+                updates.scope = withSalesforceInstanceScope(instanceUrl, account.scope)
               }
             }
 
@@ -806,6 +853,13 @@ export const auth = betterAuth({
             clientSecret: env.MICROSOFT_CLIENT_SECRET,
             tenantId: getMicrosoftOAuthTenantId(),
             scope: ['openid', 'profile', 'email'],
+            /**
+             * `/common/` otherwise silently reuses whichever Microsoft session
+             * the browser holds, stranding the user on an orphan Sim account
+             * under their personal address.
+             */
+            prompt: 'select_account' as const,
+            mapProfileToUser: mapMicrosoftProfileToUser,
           },
         }),
     },
@@ -1040,52 +1094,74 @@ export const auth = betterAuth({
       /**
        * Personal checkout guard. The Stripe plugin's `authorizeReference`
        * only runs for organization references (it skips references equal to
-       * the session user), so duplicate-coverage enforcement for personal
-       * checkouts lives here: a member of an org with an entitled paid
-       * subscription must not buy a personal plan on top of it.
+       * the session user), so personal checkout admission lives here. It
+       * prevents both a duplicate checkout while Stripe payment is pending
+       * and a personal plan for someone already covered by an organization.
        */
       if (isBillingEnabled && ctx.path === '/subscription/upgrade') {
         const session = await getSessionFromCtx(ctx)
         const sessionUserId = session?.user?.id
-        if (sessionUserId && isPersonalCheckoutRequest(ctx.body ?? {}, sessionUserId)) {
-          await assertPersonalCheckoutAllowed(sessionUserId)
+        if (sessionUserId) {
+          const requestBody = ctx.body ?? {}
+          const referenceId = resolveCheckoutReferenceId(
+            requestBody,
+            sessionUserId,
+            getActiveOrganizationId(session)
+          )
+          if (referenceId) {
+            const checkoutAdmissionClaim = await claimCheckoutAdmission(referenceId)
+            try {
+              if (isPersonalCheckoutRequest(requestBody, sessionUserId)) {
+                await assertPersonalCheckoutAllowed(sessionUserId)
+              }
+            } catch (error) {
+              await releaseCheckoutAdmission(checkoutAdmissionClaim)
+              throw error
+            }
+            return { context: { billingCheckoutAdmissionClaim: checkoutAdmissionClaim } }
+          }
         }
       }
 
       return
     }),
     after: createAuthMiddleware(async (ctx) => {
-      if (!ctx.path.startsWith('/sign-up/email')) {
-        return
+      if (ctx.path.startsWith('/sign-up/email')) {
+        const newSession = ctx.context.newSession
+        if (newSession?.user?.id) {
+          try {
+            const body = ctx.body as Record<string, unknown> | undefined
+            const organizationIdRaw =
+              body?.organizationId ??
+              body?.organization_id ??
+              ctx.headers?.get('x-organization-id') ??
+              ctx.headers?.get('X-Organization-Id')
+            const organizationId =
+              typeof organizationIdRaw === 'string' && organizationIdRaw.trim().length > 0
+                ? organizationIdRaw.trim()
+                : null
+
+            await ensurePersonalWorkspaceOnEmailSignup({
+              userId: newSession.user.id,
+              userName: newSession.user.name,
+              organizationId,
+            })
+          } catch (error) {
+            logger.error('[hooks.after] Failed to create personal workspace after email signup', {
+              userId: newSession.user.id,
+              error,
+            })
+          }
+        }
       }
 
-      const newSession = ctx.context.newSession
-      if (!newSession?.user?.id) {
-        return
-      }
-
-      try {
-        const body = ctx.body as Record<string, unknown> | undefined
-        const organizationIdRaw =
-          body?.organizationId ??
-          body?.organization_id ??
-          ctx.headers?.get('x-organization-id') ??
-          ctx.headers?.get('X-Organization-Id')
-        const organizationId =
-          typeof organizationIdRaw === 'string' && organizationIdRaw.trim().length > 0
-            ? organizationIdRaw.trim()
-            : null
-
-        await ensurePersonalWorkspaceOnEmailSignup({
-          userId: newSession.user.id,
-          userName: newSession.user.name,
-          organizationId,
-        })
-      } catch (error) {
-        logger.error('[hooks.after] Failed to create personal workspace after email signup', {
-          userId: newSession.user.id,
-          error,
-        })
+      if (isBillingEnabled && ctx.path === '/subscription/upgrade') {
+        const checkoutAdmissionClaim = ctx.context.billingCheckoutAdmissionClaim as
+          | CheckoutAdmissionClaim
+          | undefined
+        if (checkoutAdmissionClaim) {
+          await releaseCheckoutAdmission(checkoutAdmissionClaim)
+        }
       }
     }),
   },
@@ -1191,14 +1267,24 @@ export const auth = betterAuth({
       ? [
           sso({
             /**
-             * Honor the IdP's `email_verified` claim so the local account is
-             * verified rather than forced to false.
+             * MUST stay false. Better Auth's link gate is
+             * `!isTrustedProvider && !userInfo.emailVerified`, so a true
+             * `email_verified` claim substitutes for the domain binding
+             * entirely: an IdP could assert any address — including one from a
+             * domain it does not own — and auto-link into that user's existing
+             * account. Since a provider row can be registered by any Enterprise
+             * org admin (and by any signed-in user when self-hosted), trusting
+             * the claim makes every account reachable from any tenant's IdP.
              *
-             * This is not what enables linking — Entra omits the claim entirely,
-             * and SAML ignores it without an explicit `mapping.emailVerified`.
-             * `domainVerification` below establishes linking trust.
+             * Turning it on only ever set `emailVerified` on the local row; it
+             * was never what made linking work. Entra omits the claim, and SAML
+             * ignores it without an explicit `mapping.emailVerified` that the
+             * register contract does not accept — so SSO users are created
+             * unverified either way, and `domainVerification` below is the sole
+             * linking trust source, which is what `trustProviderByName: false`
+             * already assumes.
              */
-            trustEmailVerified: true,
+            trustEmailVerified: false,
             /**
              * Marks a provider authoritative for its domain, which is what lets an
              * SSO sign-in auto-link to an existing same-email account. Without it
@@ -1209,9 +1295,10 @@ export const auth = betterAuth({
              * proven by the `sso_domain` flow before registration, and the register
              * route mirrors that decision onto this flag.
              *
-             * It narrows nothing on its own — an IdP asserting `email_verified`
-             * links regardless of domain (see `trustEmailVerified` above). It
-             * exists so linking survives IdPs that omit the claim.
+             * With `trustEmailVerified` off this is the only path to linking, and
+             * it is domain-scoped: `isTrustedProvider` additionally requires
+             * `validateEmailDomain(userInfo.email, provider.domain)`, so a
+             * provider can only ever claim identities inside the domain it proved.
              */
             domainVerification: { enabled: true },
             organizationProvisioning: {

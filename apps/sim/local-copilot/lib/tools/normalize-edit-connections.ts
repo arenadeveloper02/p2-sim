@@ -94,7 +94,7 @@ export function normalizeLocalEditConnections(
       op.params = { ...op.params, connections: kept }
     } else if (op.params && 'connections' in op.params) {
       const nextParams = { ...op.params }
-      delete nextParams.connections
+      nextParams.connections = undefined
       op.params = nextParams
     }
   }
@@ -158,10 +158,7 @@ function cloneOperations(operations: unknown[]): MutableOp[] {
   return cloned
 }
 
-function collectTriggerIds(
-  ops: MutableOp[],
-  snapshot?: LocalEditConnectionSnapshot
-): Set<string> {
+function collectTriggerIds(ops: MutableOp[], snapshot?: LocalEditConnectionSnapshot): Set<string> {
   const triggerIds = new Set<string>()
   const categoryByType = new Map(
     (snapshot?.availableBlocks ?? []).map((block) => [block.id, block.category])
@@ -210,7 +207,7 @@ function getConnections(op: MutableOp): Record<string, unknown> | undefined {
 function aliasTargetHandleToSource(connections: Record<string, unknown>): boolean {
   if (!('target' in connections) || connections.target == null) return false
   const fromTarget = parseTargets(connections.target)
-  delete connections.target
+  connections.target = undefined
   if (fromTarget.length === 0) return true
 
   const existing = parseTargets(connections.source)
@@ -382,7 +379,7 @@ function stripDefaultTarget(ops: MutableOp[], sourceId: string, targetId: string
     op.params = { ...op.params, connections: kept }
   } else if (op.params) {
     const nextParams = { ...op.params }
-    delete nextParams.connections
+    nextParams.connections = undefined
     op.params = nextParams
   }
 }

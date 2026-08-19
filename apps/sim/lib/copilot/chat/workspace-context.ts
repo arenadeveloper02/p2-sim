@@ -12,6 +12,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { hasWorkspaceSandboxAccess } from '@/lib/billing/core/subscription'
+import { createCopilotWorkspaceContextFilePrincipal } from '@/lib/copilot/auth/file-delegation'
 import type { VfsSnapshotV1, VfsSnapshotV1Workflow } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import {
   filterSecretNamesByMountPolicy,
@@ -24,10 +25,10 @@ import {
   getAccessibleOAuthCredentials,
 } from '@/lib/credentials/environment'
 import { listWorkspaceSandboxes } from '@/lib/execution/remote-sandbox/workspace-sandboxes'
-import { listWorkspaceFiles } from '@/lib/uploads/contexts/workspace'
 import { listCustomBlockSummariesForWorkspace } from '@/lib/workflows/custom-blocks/operations'
 import { listCustomTools } from '@/lib/workflows/custom-tools/operations'
 import { listSkillsForUser } from '@/lib/workflows/skills/operations'
+import { listAllWorkspaceFiles } from '@/lib/workspace-files/application/list-workspace-files'
 import {
   assertActiveWorkspaceAccess,
   getUsersWithPermissions,
@@ -370,7 +371,7 @@ Reserve **function_execute** for data processing, API calls, and tabular/JSON ou
 async function buildWorkspaceMdData(
   workspaceId: string,
   userId: string,
-  options?: { workspaceAccess?: WorkspaceAccess }
+  options?: { workspaceAccess?: WorkspaceAccess; chatId?: string; executionId?: string }
 ): Promise<WorkspaceMdData | null> {
   try {
     // Reuse the caller's already-asserted access when provided (hot chat path);
@@ -450,7 +451,17 @@ async function buildWorkspaceMdData(
           )
         ),
 
-      listWorkspaceFiles(workspaceId),
+      listAllWorkspaceFiles
+        .execute({
+          principal: createCopilotWorkspaceContextFilePrincipal({
+            userId,
+            workspaceId,
+            chatId: options?.chatId,
+            executionId: options?.executionId,
+          }),
+          input: { workspaceId, scope: 'active' },
+        })
+        .then(({ files }) => files),
 
       getAccessibleOAuthCredentials(workspaceId, userId),
 
@@ -620,7 +631,12 @@ async function appendPosition2SlackNote(markdown: string, userId: string): Promi
 export async function generateWorkspaceContext(
   workspaceId: string,
   userId: string,
-  options?: { workspaceAccess?: WorkspaceAccess; secretMountPolicy?: SecretMountPolicy }
+  options?: {
+    workspaceAccess?: WorkspaceAccess
+    secretMountPolicy?: SecretMountPolicy
+    chatId?: string
+    executionId?: string
+  }
 ): Promise<string> {
   const data = await buildWorkspaceMdData(workspaceId, userId, options)
   if (!data) return WORKSPACE_CONTEXT_UNAVAILABLE_MD

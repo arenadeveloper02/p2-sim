@@ -606,7 +606,7 @@ function extractSubBlocks(block: SerializedBlock): Record<string, unknown> | und
   }
 
   const subBlocks = maybeWithSubBlocks.subBlocks
-  if (subBlocks && typeof subBlocks === 'object' && !Array.isArray(subBlocks)) {
+  if (isRecordLike(subBlocks)) {
     return subBlocks
   }
 

@@ -1284,7 +1284,8 @@ export function Chat() {
         </div>
 
         <div className='flex flex-shrink-0 items-center gap-2'>
-          <Popover variant='default' size='sm' open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
+          {/* More menu with actions */}
+          <Popover size='sm' open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant='ghost'

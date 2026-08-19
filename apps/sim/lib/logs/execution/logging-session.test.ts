@@ -1,10 +1,21 @@
+/**
+ * @vitest-environment node
+ */
+
+import { workflowExecutionLogs } from '@sim/db/schema'
 import { dbChainMockFns, resetDbChainMock } from '@sim/testing'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const dbMocks = vi.hoisted(() => ({
   eq: vi.fn(),
   and: vi.fn((...args: unknown[]) => ({ type: 'and', args })),
-  sql: vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values })),
+  sql: Object.assign(
+    vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values })),
+    {
+      /** `elapsedDurationMsSql` binds `ended_at` through the column's own mapper. */
+      param: vi.fn((value: unknown, encoder?: unknown) => ({ value, encoder })),
+    }
+  ),
 }))
 
 const {
@@ -305,8 +316,8 @@ describe('LoggingSession terminal provenance', () => {
     }
 
     await session.complete({
-      finalOutput: { result: 'Test' },
-      workflowInput: { token: 'Test' },
+      finalOutput: { result: 'TestValue' },
+      workflowInput: { token: 'TestValue' },
       executionState,
     })
 
@@ -786,7 +797,7 @@ describe('LoggingSession completion retries', () => {
         status: 'success',
         output: { apiKey: 'ordinary-value' },
         displayResolvedSecretTraceProvenance: createDisplayProvenance([
-          { plaintext: 'E', replacement: '{{X}}' },
+          { plaintext: 'EEEEEEEE', replacement: '{{X}}' },
         ]),
       },
     ]
@@ -799,13 +810,13 @@ describe('LoggingSession completion retries', () => {
       preview: '{{X}}',
     } as const
     session.setResolvedSecretTraceRegistry(
-      createSecretRegistry([{ plaintext: 'E', replacement: '{{X}}' }])
+      createSecretRegistry([{ plaintext: 'EEEEEEEE', replacement: '{{X}}' }])
     )
     prepareTraceSpansForProjectionMock.mockImplementationOnce(
       async ({ traceSpans }: { traceSpans: Array<Record<string, unknown>> }) =>
         traceSpans.map((span) => ({ ...span, output: { payload: ref } }))
     )
-    materializeLargeValueRefMock.mockResolvedValue({ value: 'hidden-E' })
+    materializeLargeValueRefMock.mockResolvedValue({ value: 'hidden-EEEEEEEE' })
 
     await session.safeComplete({ traceSpans: sourceTraceSpans as any })
 
@@ -977,7 +988,7 @@ describe('LoggingSession completion retries', () => {
 
   it('projects live block errors and terminal block logs without mutating raw callback data', async () => {
     const session = new LoggingSession('workflow-1', 'execution-display-safe', 'manual', 'req-1')
-    const secret = '1234'
+    const secret = '12345678'
     const rawError = `Reference Error: Line 1: return blah +${secret} - blah is not defined`
     const rawLog = {
       blockId: 'function-1',
@@ -1057,7 +1068,7 @@ describe('LoggingSession completion retries', () => {
   it('projects a numeric Function result produced by a resolved numeric secret', async () => {
     const session = new LoggingSession('workflow-1', 'execution-numeric-secret', 'manual', 'req-1')
     session.setResolvedSecretTraceRegistry(
-      createSecretRegistry([{ plaintext: '1234', replacement: '{{OPENAI_API_KEY}}' }])
+      createSecretRegistry([{ plaintext: '12345678', replacement: '{{OPENAI_API_KEY}}' }])
     )
     const rawLog = {
       blockId: 'function-1',
@@ -1068,10 +1079,10 @@ describe('LoggingSession completion retries', () => {
       durationMs: 1,
       success: true,
       executionOrder: 1,
-      input: { code: 'return 1234' },
-      output: { result: 1234, stdout: '' },
+      input: { code: 'return 12345678' },
+      output: { result: 12345678, stdout: '' },
       displayResolvedSecretTraceProvenance: createDisplayProvenance([
-        { plaintext: '1234', replacement: '{{OPENAI_API_KEY}}' },
+        { plaintext: '12345678', replacement: '{{OPENAI_API_KEY}}' },
       ]),
     }
 
@@ -1079,13 +1090,13 @@ describe('LoggingSession completion retries', () => {
 
     expect(displayLog.input).toEqual({ code: 'return {{OPENAI_API_KEY}}' })
     expect(displayLog.output).toEqual({ result: '{{OPENAI_API_KEY}}', stdout: '' })
-    expect(rawLog.output.result).toBe(1234)
+    expect(rawLog.output.result).toBe(12345678)
   })
 
   it('projects each block log with only its causal provenance', async () => {
     const session = new LoggingSession('workflow-1', 'execution-sibling-values', 'manual', 'req-1')
     session.setResolvedSecretTraceRegistry(
-      createSecretRegistry([{ plaintext: 'Test', replacement: '{{SHORT_SECRET}}' }])
+      createSecretRegistry([{ plaintext: 'TestValue', replacement: '{{SHORT_SECRET}}' }])
     )
     const baseLog = {
       blockName: 'Function',
@@ -1100,22 +1111,22 @@ describe('LoggingSession completion retries', () => {
         ...baseLog,
         blockId: 'secret-block',
         executionOrder: 1,
-        output: { result: 'Test' },
+        output: { result: 'TestValue' },
         displayResolvedSecretTraceProvenance: createDisplayProvenance([
-          { plaintext: 'Test', replacement: '{{SHORT_SECRET}}' },
+          { plaintext: 'TestValue', replacement: '{{SHORT_SECRET}}' },
         ]),
       },
       {
         ...baseLog,
         blockId: 'public-block',
         executionOrder: 2,
-        output: { result: 'Test' },
+        output: { result: 'TestValue' },
         displayResolvedSecretTraceProvenance: createDisplayProvenance([]),
       },
     ])
 
     expect(displayLogs[0].output).toEqual({ result: '{{SHORT_SECRET}}' })
-    expect(displayLogs[1].output).toEqual({ result: 'Test' })
+    expect(displayLogs[1].output).toEqual({ result: 'TestValue' })
     expect(displayLogs[0]).not.toHaveProperty('displayResolvedSecretTraceProvenance')
     expect(displayLogs[1]).not.toHaveProperty('displayResolvedSecretTraceProvenance')
   })
@@ -1681,6 +1692,38 @@ describe('LoggingSession.markExecutionAsFailed workflowId scoping', () => {
       .map(([strings]) => String(Array.from(strings)))
       .filter((query) => query.includes("!= 'cancelled'"))
     expect(statusGuards).toHaveLength(1)
+  })
+
+  it('terminalizes the row it force-fails: end timestamp, derived duration, deadline cleared', async () => {
+    await LoggingSession.markExecutionAsFailed('exec-terminal', 'boom', undefined, 'wf-1')
+
+    const payload = dbChainMockFns.set.mock.calls[0]?.[0] as {
+      level: string
+      status: string
+      endedAt: Date
+      totalDurationMs: { strings: TemplateStringsArray; values: unknown[] }
+      executionDeadlineAt: Date | null
+      executionData: unknown
+    }
+    expect(payload.level).toBe('error')
+    expect(payload.status).toBe('failed')
+    expect(payload.endedAt).toBeInstanceOf(Date)
+    expect(payload.executionDeadlineAt).toBeNull()
+
+    /**
+     * The duration is the derived SQL fragment, not a number the caller carried
+     * in — `elapsedDurationMsSql` measures against the row's own `started_at`
+     * and preserves what a paused row already banked.
+     */
+    expect(String(Array.from(payload.totalDurationMs.strings))).toContain("= 'pending' THEN ")
+    expect(payload.totalDurationMs.values).toContain(workflowExecutionLogs.totalDurationMs)
+
+    /**
+     * The end instant is bound through `started_at`'s encoder specifically.
+     * `endedAt`'s encoder renders identically and would silently subtract the
+     * timestamp from itself — a duration of zero on every force-failed run.
+     */
+    expect(dbMocks.sql.param).toHaveBeenCalledWith(payload.endedAt, workflowExecutionLogs.startedAt)
   })
 
   it('clears Redis markers when marking failed (terminal boundary outside completeWorkflowExecution)', async () => {

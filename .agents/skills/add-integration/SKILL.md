@@ -561,6 +561,7 @@ Run the documentation generator:
 ```bash
 bun run scripts/generate-docs.ts
 bun run integration-catalog:check
+bun run docs:check
 ```
 
 This creates `apps/docs/content/docs/en/integrations/{service}.mdx` — one page per service carrying the block's Actions and, if it has one, its Triggers section. Never hand-edit generated pages; the only editable region is the `{/* MANUAL-CONTENT */}` block (see `scripts/README.md`).
@@ -651,6 +652,9 @@ If creating V2 versions (API-aligned outputs):
 - [ ] Verified docs file created
 - [ ] Reviewed and committed the generated `apps/sim/lib/integrations/integrations.json` change
 - [ ] `bun run integration-catalog:check` passes
+- [ ] `bun run docs:check` passes — CI fails on stale generated docs, so commit the full generator
+      output, including catch-up regeneration for pages another PR left stale (never revert it as
+      "unrelated drift")
 
 ### Final Validation (Required)
 - [ ] Read every tool file and cross-referenced inputs/outputs against the API docs
@@ -768,9 +772,11 @@ tools: {
 }
 ```
 
-#### 3. Create Internal API Route
+#### 3. Create Special Internal Tool Execution Route
 
-Create `apps/sim/app/api/tools/{service}/{action}/route.ts`. Internal tool routes are HTTP boundaries and follow the same contract policy as public routes — define the request/response shape in `apps/sim/lib/api/contracts/tools/{service}.ts` (or an existing aggregate) and validate with canonical helpers from `@/lib/api/server`. Never write a route-local Zod schema.
+Create `apps/sim/app/api/tools/{service}/{action}/route.ts`. This raw route pattern is only for an integration's provider-execution boundary when it needs special file normalization, large-body handling, or protocol behavior. It is not the pattern for CRUD or other operations on protected Sim resources. For those, use the `migrate-application-operation` skill and an authorized application use case with the ordinary internal/v2 route builders.
+
+Internal tool routes are HTTP boundaries and follow the same contract policy as public routes — define the request/response shape in `apps/sim/lib/api/contracts/tools/{service}.ts` (or an existing aggregate) and validate with canonical helpers from `@/lib/api/server`. Never write a route-local Zod schema. Authenticate and perform cheap admission before parsing or downloading files.
 
 ```typescript
 // apps/sim/lib/api/contracts/tools/{service}.ts

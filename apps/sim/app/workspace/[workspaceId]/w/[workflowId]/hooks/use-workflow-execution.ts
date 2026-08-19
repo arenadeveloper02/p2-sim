@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
+import { isRecordLike } from '@sim/utils/object'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
@@ -61,7 +62,7 @@ import type { SerializableExecutionState } from '@/executor/execution/types'
 import type { BlockLog, BlockState, ExecutionResult, StreamingExecution } from '@/executor/types'
 import { hasExecutionResult } from '@/executor/utils/errors'
 import { coerceValue } from '@/executor/utils/start-block'
-import { subscriptionKeys } from '@/hooks/queries/subscription'
+import { scheduleUsageRefresh } from '@/hooks/queries/utils/invalidate-usage'
 import { getWorkflows } from '@/hooks/queries/utils/workflow-cache'
 import {
   isExecutionStreamHttpError,
@@ -141,60 +142,6 @@ async function persistExecutionPointerProgress(
   await saveExecutionPointer({ workflowId, executionId, lastEventId })
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
-function inferFileContextFromKey(key: string): string | undefined {
-  if (key.startsWith('agent-generated-images/')) return 'agent-generated-images'
-  if (key.startsWith('workspace/')) return 'workspace'
-  if (key.startsWith('execution/')) return 'execution'
-  return undefined
-}
-
-function resolveExistingStoredFile(
-  fileData: WorkflowInputFileData
-): Record<string, unknown> | null {
-  const fileUrl = fileData.dataUrl?.trim()
-  if (!fileUrl?.includes('/api/files/serve/')) {
-    return null
-  }
-
-  try {
-    const parsed = new URL(
-      fileUrl.startsWith('http') ? fileUrl : `${window.location.origin}${fileUrl}`
-    )
-    const prefix = '/api/files/serve/'
-    if (!parsed.pathname.startsWith(prefix)) {
-      return null
-    }
-
-    let key = decodeURIComponent(parsed.pathname.slice(prefix.length))
-    if (key.startsWith('s3/')) {
-      key = key.slice(3)
-    } else if (key.startsWith('blob/')) {
-      key = key.slice(5)
-    }
-    if (!key) {
-      return null
-    }
-
-    const context = parsed.searchParams.get('context') ?? inferFileContextFromKey(key)
-
-    return {
-      id: fileData.id || generateId(),
-      name: fileData.name,
-      url: parsed.toString(),
-      size: fileData.size > 0 ? fileData.size : 1,
-      type: fileData.type,
-      key,
-      ...(context ? { context } : {}),
-    }
-  } catch {
-    return null
-  }
-}
-
 function isRecoverableStreamRecoveryError(
   error: unknown
 ): error is SSEEventHandlerError | SSEStreamInterruptedError {
@@ -217,12 +164,12 @@ function normalizeErrorMessage(error: unknown): string {
     if (message) return message
   }
 
-  if (isRecord(error)) {
+  if (isRecordLike(error)) {
     const directMessage = sanitizeMessage(error.message)
     if (directMessage) return directMessage
 
     const nestedError = error.error
-    if (isRecord(nestedError)) {
+    if (isRecordLike(nestedError)) {
       const nestedMessage = sanitizeMessage(nestedError.message)
       if (nestedMessage) return nestedMessage
     } else {
@@ -240,7 +187,7 @@ interface ChatWorkflowInput {
 }
 
 function isChatWorkflowInput(value: unknown): value is ChatWorkflowInput {
-  return isRecord(value) && 'input' in value
+  return isRecordLike(value) && 'input' in value
 }
 
 export interface ChatWorkflowRunResult {
@@ -258,7 +205,7 @@ export class WorkflowAttachmentUploadError extends Error {
 
 export function isChatWorkflowRunResult(value: unknown): value is ChatWorkflowRunResult {
   return (
-    isRecord(value) &&
+    isRecordLike(value) &&
     value.success === true &&
     value.stream instanceof ReadableStream &&
     Array.isArray(value.uploadedAttachments)
@@ -981,9 +928,7 @@ export function useWorkflowExecution() {
                 }
 
                 // Invalidate subscription queries to update usage
-                setTimeout(() => {
-                  queryClient.invalidateQueries({ queryKey: subscriptionKeys.users() })
-                }, 1000)
+                scheduleUsageRefresh(queryClient)
 
                 safeEnqueue(encodeSSE({ event: 'final', data: result }))
                 // Note: Logs are already persisted server-side via execution-core.ts
@@ -1517,9 +1462,7 @@ export function useWorkflowExecution() {
                   setIsExecuting(activeWorkflowId, false)
                   setActiveBlocks(activeWorkflowId, new Set())
                 }
-                setTimeout(() => {
-                  queryClient.invalidateQueries({ queryKey: subscriptionKeys.users() })
-                }, 1000)
+                scheduleUsageRefresh(queryClient)
               }
             },
 
@@ -1751,10 +1694,11 @@ export function useWorkflowExecution() {
     }
 
     let notificationMessage = WORKFLOW_EXECUTION_FAILURE_MESSAGE
-    const requestError = isRecord(error) && isRecord(error.request) ? error.request : undefined
+    const requestError =
+      isRecordLike(error) && isRecordLike(error.request) ? error.request : undefined
     if (requestError && sanitizeMessage(requestError.url)) {
       notificationMessage += `: Request to ${(requestError.url as string).trim()} failed`
-      if (isRecord(error) && typeof error.status === 'number') {
+      if (isRecordLike(error) && typeof error.status === 'number') {
         notificationMessage += ` (Status: ${error.status})`
       }
     } else if (sanitizeMessage(errorResult.error)) {
@@ -1955,6 +1899,7 @@ export function useWorkflowExecution() {
     } else {
       executionStream.cancel(activeWorkflowId)
       currentChatExecutionIdRef.current = null
+      runFromBlockOwnerRef.current = null
       setIsExecuting(activeWorkflowId, false)
       setIsDebugging(activeWorkflowId, false)
       setActiveBlocks(activeWorkflowId, new Set())

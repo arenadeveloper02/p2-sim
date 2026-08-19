@@ -23,6 +23,7 @@ export type {
   WorkspaceResourceTagType,
 } from './special-tags'
 export {
+  BrowserTakeoverQuestion,
   CHART_TAG_TYPES,
   CREDENTIAL_TAG_TYPES,
   CredentialDisplay,

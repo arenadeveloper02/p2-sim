@@ -13,8 +13,8 @@ import {
   ChipModalHeader,
   type ComboboxOption,
   handleKeyboardActivation,
-  Trash,
 } from '@sim/emcn'
+import { Trash } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import type { TagUsageData } from '@/lib/api/contracts/knowledge'
 import {
@@ -406,7 +406,6 @@ export function BaseTagsModal({
         />
       </ChipModal>
 
-      {/* Delete Tag Confirmation Dialog */}
       <ChipConfirmModal
         open={deleteTagDialogOpen}
         onOpenChange={(openState) => {
@@ -445,7 +444,6 @@ export function BaseTagsModal({
         )}
       </ChipConfirmModal>
 
-      {/* View Documents Dialog */}
       <ChipModal
         open={viewDocumentsDialogOpen}
         onOpenChange={setViewDocumentsDialogOpen}

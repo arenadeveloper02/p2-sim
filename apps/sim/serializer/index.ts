@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { resolveBlockRetryConfig } from '@sim/workflow-types/workflow'
 import type { Edge } from 'reactflow'
 import type { CanonicalModeOverrides } from '@/lib/workflows/subblocks/visibility'
 import {
@@ -323,6 +324,8 @@ export class Serializer {
       })
     }
 
+    const retry = resolveBlockRetryConfig(block.retry)
+
     const serialized: SerializedBlock = {
       id: block.id,
       position: block.position,
@@ -342,6 +345,7 @@ export class Serializer {
         color: blockConfig.bgColor,
       },
       enabled: block.enabled,
+      ...(retry ? { retry } : {}),
     }
 
     const privateInputIds = new Set<string>()
@@ -456,6 +460,7 @@ export class Serializer {
         serializedBlock.config?.params?.triggerMode === true ||
         serializedBlock.metadata?.category === 'triggers',
       advancedMode: serializedBlock.config?.params?.advancedMode === true,
+      ...(serializedBlock.retry ? { retry: serializedBlock.retry } : {}),
     }
   }
 }

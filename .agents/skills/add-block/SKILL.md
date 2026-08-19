@@ -52,6 +52,12 @@ export const {ServiceName}Block: BlockConfig = {
   // Auth mode
   authMode: AuthMode.OAuth,             // or AuthMode.ApiKey
 
+  // Card summary sentences — see "Canvas Sentences" below
+  canvasPresentation: {
+    defaultTitle: '{Default Operation}',
+    sentences: { byOperation: { /* one per operation dropdown option id */ } },
+  },
+
   subBlocks: [
     // Define all UI fields here
   ],
@@ -945,6 +951,35 @@ Derive templates from the service's real use cases. Each prompt should name a co
 - **Ground every skill in operations the block actually exposes** — cross-check each skill's steps against `tools.access`. Never describe an action the integration cannot perform.
 - **Derive skills from real, popular use cases found online — never invent them.** Web-search the service's documented use cases (vendor use-case/solutions pages, official docs describing the workflow, reputable "top automations for X" articles) and only add a skill you can source as something people genuinely do with the service. Do not hallucinate skills.
 
+## Canvas Sentences
+
+Every block declares a one-line prose summary that replaces its card's field rows:
+
+```
+Slack                                    ← header (already names the block)
+Posts ⟨Ship it 🚀⟩ to ⟨#eng⟩             ← the sentence; ⟨…⟩ are live value chips
+```
+
+Write one `byOperation` entry per operation dropdown option (or a single `default`
+when the block has no operation dropdown).
+
+**The full authoring contract — voice, structure, and the two mistakes that break
+cards silently — is `apps/sim/blocks/AGENTS.md` → "Canvas sentences". Read it
+before writing any.** The two failures worth repeating here, because both are
+invisible at runtime:
+
+1. A clause naming only one member of a `canonicalParamId` pair drops the sentence
+   for every advanced-mode user. List all members:
+   `field: ['channelSelector', 'manualChannel']`.
+2. A clause referencing a subblock whose `condition` excludes that operation can
+   never render.
+
+Validate before finishing:
+
+```bash
+bun run apps/sim/scripts/check-canvas-sentences.ts --block={service}
+```
+
 ## Generated artifacts
 
 Adding a block on its own needs no **tool metadata** regeneration — a block references existing
@@ -958,12 +993,15 @@ After adding or changing one, run:
 ```bash
 bun run scripts/generate-docs.ts
 bun run integration-catalog:check
+bun run docs:check
 ```
 
 The catalog check independently derives deployment metadata from the executable block registry and
-compares it with the committed `apps/sim/lib/integrations/integrations.json`. Review the generated
-diff and keep only intentional changes.
-
+compares it with the committed `apps/sim/lib/integrations/integrations.json`. `docs:check` re-renders
+every generated docs artifact in memory and fails on any committed file that differs — it runs in CI
+via `check:audits`, so commit the full generator output. If the generator also trues up pages an
+earlier PR left stale, commit that catch-up too; reverting it as "unrelated drift" makes `docs:check`
+fail.
 ## Checklist Before Finishing
 
 - [ ] `integrationType` is set to the correct `IntegrationType` enum value
@@ -984,6 +1022,7 @@ diff and keep only intentional changes.
 - [ ] If any tool was added, changed or removed alongside the block: ran `bun run tool-metadata:generate` and committed the artifacts
 - [ ] Ran `bun run scripts/generate-docs.ts`, reviewed the generated diff, and committed the integration catalog changes
 - [ ] `bun run integration-catalog:check` passes
+- [ ] `bun run docs:check` passes (CI gate — fails on any stale generated docs page)
 - [ ] If icon missing: asked user to provide SVG
 - [ ] If triggers exist: `triggers` config set, trigger subBlocks spread
 - [ ] Optional/rarely-used fields set to `mode: 'advanced'`
@@ -991,6 +1030,7 @@ diff and keep only intentional changes.
 - [ ] Exported `{Service}BlockMeta` with at least 7 templates
 - [ ] `url` set on `{Service}BlockMeta` to the external service's verified homepage (omit only for first-party blocks with no external service)
 - [ ] `skills` added to `{Service}BlockMeta`, each grounded in `tools.access` and sourced from a real online use case (not invented)
+- [ ] `canvasPresentation.sentences` covers every operation, and `bun run apps/sim/scripts/check-canvas-sentences.ts --block={service}` passes with 100% coverage
 
 ## Final Validation (Required)
 

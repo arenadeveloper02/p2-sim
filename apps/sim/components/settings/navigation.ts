@@ -4,6 +4,7 @@ import {
   Clock,
   Credit,
   Database,
+  GridOffset,
   Key,
   // KeySquare,
   Lock,
@@ -62,6 +63,7 @@ export type OrganizationSettingsSection =
 export type WorkspaceSettingsSection =
   | 'teammates'
   | 'secrets'
+  | 'credential-groups'
   | 'byok'
   | 'sandboxes'
   | 'custom-tools'
@@ -97,6 +99,7 @@ export type UnifiedSettingsSection =
   | 'browser'
   | 'terminal'
   | 'secrets'
+  | 'credential-groups'
   | 'access-control'
   | 'custom-blocks'
   | 'audit-logs'
@@ -597,6 +600,22 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     },
   },
   {
+    label: 'Credential groups',
+    icon: GridOffset,
+    unified: {
+      id: 'credential-groups',
+      description: 'Collect and manage OAuth credentials for people outside this workspace.',
+      group: 'workspace',
+      order: 9,
+      requiresEnterprise: true,
+      allowNonOrgAdmin: true,
+      selfHostedOverride: true,
+    },
+    planes: {
+      workspace: { id: 'credential-groups', group: 'workspace', order: 4 },
+    },
+  },
+  {
     label: 'Custom tools',
     icon: Wrench,
     unified: {
@@ -726,7 +745,7 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       id: 'recently-deleted',
       description: 'Restore items deleted in the last 30 days.',
       group: 'workspace',
-      order: 9,
+      order: 10,
     },
     planes: {
       workspace: { id: 'recently-deleted', group: 'system', order: 9 },
@@ -1051,6 +1070,7 @@ export interface WorkspacePermissionConfig {
 
 export interface WorkspaceSettingsEntitlements {
   byok: boolean
+  credentialGroups: boolean
   customBlocks: boolean
   forks: boolean
   inbox: boolean
@@ -1085,6 +1105,7 @@ export interface ResolvedWorkspaceNavigationItem
 const WORKSPACE_MUTATION_PERMISSION: Record<WorkspaceSettingsSection, PermissionType> = {
   teammates: 'admin',
   secrets: 'write',
+  'credential-groups': 'admin',
   byok: 'admin',
   sandboxes: 'admin',
   'custom-tools': 'write',
@@ -1124,6 +1145,12 @@ export function resolveWorkspaceNavigation({
     if (item.id === 'mcp' && permissionConfig.disableMcpTools) return []
     if (item.id === 'custom-tools' && permissionConfig.disableCustomTools) return []
     if (item.id === 'forks' && (permission !== 'admin' || !entitlements.forks)) return []
+    if (
+      item.id === 'credential-groups' &&
+      (permission !== 'admin' || !entitlements.credentialGroups)
+    ) {
+      return []
+    }
     if (item.id === 'byok' && !entitlements.byok) return []
     if (item.id === 'custom-blocks' && !entitlements.customBlocks) return []
     // Absent on Sim Cloud, where the managed service owns these settings.

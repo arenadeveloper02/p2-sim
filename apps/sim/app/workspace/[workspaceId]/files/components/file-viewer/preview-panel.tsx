@@ -4,6 +4,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import '@sim/emcn/components/code/code.css'
 import { CSV_PREVIEW_MAX_ROWS } from '@/lib/api/contracts/workspace-file-table'
 import { getFileExtension } from '@/lib/uploads/utils/file-utils'
+import { useHorizontalWheelScroll } from '@/app/workspace/[workspaceId]/files/components/file-viewer/use-horizontal-wheel-scroll'
 import { type CsvImportFileDescriptor, useCsvTruncationImport } from './csv-import'
 import { DataTable } from './data-table'
 import { MermaidDiagram } from './mermaid-diagram'
@@ -43,6 +44,7 @@ interface PreviewPanelProps {
   mimeType: string | null
   filename: string
   workspaceId: string
+  fileId: string
   fileKey: string
   isStreaming?: boolean
   /**
@@ -58,6 +60,7 @@ export const PreviewPanel = memo(function PreviewPanel({
   mimeType,
   filename,
   workspaceId,
+  fileId,
   fileKey,
   isStreaming,
   readOnly,
@@ -70,7 +73,7 @@ export const PreviewPanel = memo(function PreviewPanel({
       <CsvPreview
         content={content}
         workspaceId={workspaceId}
-        file={{ key: fileKey, name: filename }}
+        file={{ id: fileId, key: fileKey, name: filename }}
         readOnly={readOnly}
       />
     )
@@ -281,6 +284,7 @@ const CsvPreview = memo(function CsvPreview({
   file: CsvImportFileDescriptor
   readOnly?: boolean
 }) {
+  const scrollRef = useHorizontalWheelScroll()
   const { headers, rows, truncated } = useMemo(() => parseCsv(content), [content])
   useCsvTruncationImport(workspaceId, file, truncated, readOnly)
 
@@ -293,7 +297,7 @@ const CsvPreview = memo(function CsvPreview({
   }
 
   return (
-    <div className='min-h-0 flex-1 overflow-auto p-6'>
+    <div ref={scrollRef} className='min-h-0 flex-1 overflow-auto p-6'>
       <DataTable headers={headers} rows={rows} />
     </div>
   )

@@ -1,5 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { isRecordLike } from '@sim/utils/object'
+import { messageForCopilotApplicationError } from '@/lib/copilot/application/error'
 import { projectToolErrorMessageForCopilot } from '@/lib/copilot/request/tools/resolved-secret-result'
 import type { ToolExecutionResult, ToolHandler } from '@/lib/copilot/tool-executor/types'
 import { normalizeGenerateImageArgs } from '@/lib/copilot/tools/server/image/normalize-args'
@@ -19,8 +21,7 @@ export function createServerToolHandler(toolId: string): ToolHandler {
     let enrichedParams = { ...params }
     if (!enrichedParams.workflowId && context.workflowId)
       enrichedParams.workflowId = context.workflowId
-    if (!enrichedParams.workspaceId && context.workspaceId)
-      enrichedParams.workspaceId = context.workspaceId
+    if (context.workspaceId) enrichedParams.workspaceId = context.workspaceId
 
     if (toolId === 'edit_workflow') {
       enrichedParams = normalizeEditWorkflowArgs(enrichedParams)
@@ -48,6 +49,9 @@ export function createServerToolHandler(toolId: string): ToolHandler {
       const result = await routeExecution(toolId, enrichedParams, {
         userId: context.userId,
         workspaceId: context.workspaceId,
+        executionId: context.executionId,
+        toolCallId: context.toolCallId,
+        copilotToolExecution: context.copilotToolExecution,
         billingAttribution: context.billingAttribution,
         userPermission: context.userPermission ?? undefined,
         chatId: context.chatId,
@@ -57,10 +61,7 @@ export function createServerToolHandler(toolId: string): ToolHandler {
         resolvedSecretTraceRegistry: context.resolvedSecretTraceRegistry,
       })
 
-      const rec =
-        result && typeof result === 'object' && !Array.isArray(result)
-          ? (result as Record<string, unknown>)
-          : null
+      const rec = isRecordLike(result) ? (result as Record<string, unknown>) : null
       if (rec?.success === false) {
         const message =
           (typeof rec.error === 'string' && rec.error) ||
@@ -70,15 +71,22 @@ export function createServerToolHandler(toolId: string): ToolHandler {
       }
       return { success: true, output: result }
     } catch (error) {
-      const message = toError(error).message
-      logger.error('Server tool execution failed', {
-        toolId,
-        error: projectToolErrorMessageForCopilot(message, context.resolvedSecretTraceRegistry),
-        abortSignalAborted: context.abortSignal?.aborted ?? false,
-      })
+      const caughtError = toError(error)
+      logger.error(
+        'Server tool execution failed',
+        {
+          toolId,
+          abortSignalAborted: context.abortSignal?.aborted ?? false,
+        },
+        caughtError
+      )
+      const safeMessage = projectToolErrorMessageForCopilot(
+        messageForCopilotApplicationError(error),
+        context.resolvedSecretTraceRegistry
+      )
       return {
         success: false,
-        error: `[${toolId}] ${message}`,
+        error: `[${toolId}] ${safeMessage}`,
       }
     }
   }

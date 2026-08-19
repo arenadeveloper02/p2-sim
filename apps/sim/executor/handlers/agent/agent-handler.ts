@@ -86,6 +86,7 @@ import { isAutoModel, SIM_AUTO_MODEL_ID } from '@/providers/models'
 import {
   type ProviderToolInputProvenance,
   registerProviderToolInputProvenance,
+  registerProviderToolModelInputRegistry,
 } from '@/providers/tool-input-provenance'
 import type { ProviderToolConfig } from '@/providers/types'
 import { getProviderFromModel, transformBlockTool } from '@/providers/utils'
@@ -401,6 +402,11 @@ export class AgentBlockHandler implements BlockHandler {
 
       const settledInputRegistry = ctx.resolvedSecretTraceRegistry
       const resultRegistry = settledInputRegistry?.forkForInputPaths([])
+      if (modelInputProjection.registry) {
+        for (const tool of formatted.tools) {
+          registerProviderToolModelInputRegistry(tool, modelInputProjection.registry)
+        }
+      }
       if (resultRegistry && settledInputRegistry) {
         for (const [tool, provenance] of formatted.inputProvenance) {
           registerProviderToolInputProvenance(tool, {
@@ -2541,6 +2547,7 @@ export class AgentBlockHandler implements BlockHandler {
           credentialId: providerRequest.vertexCredential,
           actingUserId: ctx.userId,
           workspaceId: ctx.workspaceId,
+          workflowId: ctx.workflowId,
           callerLabel: 'vertex-agent',
         })
       }
@@ -2594,6 +2601,7 @@ export class AgentBlockHandler implements BlockHandler {
         },
         {
           resolvedSecretTraceRegistry: modelRuntimeRegistry,
+          executionContext: ctx,
         }
       )
 

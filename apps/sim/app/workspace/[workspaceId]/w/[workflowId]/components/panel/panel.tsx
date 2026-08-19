@@ -5,6 +5,7 @@ import {
   BubbleChatClose,
   BubbleChatPreview,
   Button,
+  Chip,
   ChipConfirmModal,
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +14,6 @@ import {
   Duplicate,
   Layout,
   MoreHorizontal,
-  Play,
   Popover,
   PopoverContent,
   PopoverItem,
@@ -33,6 +33,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { useShallow } from 'zustand/react/shallow'
 import { VariableIcon } from '@/components/icons'
+import { ThinkingLoader } from '@/components/ui'
 import { requestJson } from '@/lib/api/client/request'
 import {
   createWorkflowCopilotChatContract,
@@ -630,7 +631,9 @@ export const Panel = memo(function Panel() {
       if (!detail?.message) return
       e.preventDefault()
       setActiveTab('copilot')
-      copilotSendMessage(detail.message, undefined, detail.contexts)
+      copilotSendMessage(detail.message, detail.fileAttachments, detail.contexts, {
+        ...(detail.resumeUserMessageId ? { resumeUserMessageId: detail.resumeUserMessageId } : {}),
+      })
     }
     window.addEventListener(MOTHERSHIP_SEND_MESSAGE_EVENT, handler)
     return () => window.removeEventListener(MOTHERSHIP_SEND_MESSAGE_EVENT, handler)
@@ -936,11 +939,27 @@ export const Panel = memo(function Panel() {
                 userPermissions={userPermissions}
                 disabled={workflowLocked}
               />
-              <Button
-                className='h-[30px] gap-2 px-2.5'
-                variant={isExecuting ? 'active' : 'tertiary'}
+              <Chip
+                variant={isExecuting ? undefined : 'primary'}
+                active={isExecuting}
                 onClick={isExecuting ? cancelWorkflow : () => runWorkflow()}
                 disabled={!isExecuting && isButtonDisabled}
+                aria-label={isExecuting ? 'Stop' : 'Run'}
+                leftAdornment={
+                  <span
+                    aria-hidden='true'
+                    className='inline-flex size-5 flex-shrink-0 items-center justify-center overflow-visible'
+                  >
+                    <ThinkingLoader
+                      variant={isExecuting ? undefined : 'play'}
+                      startVariant='play'
+                      startHoldMs={140}
+                      size={20}
+                      morphDurationMs={isExecuting ? 650 : 180}
+                      tone='inherit'
+                    />
+                  </span>
+                }
               >
                 {isExecuting ? (
                   <Square className='h-[11.5px] w-[11.5px] fill-current' />

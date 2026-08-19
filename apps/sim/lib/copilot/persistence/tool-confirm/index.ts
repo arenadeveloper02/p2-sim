@@ -143,7 +143,7 @@ export function publishToolConfirmation(event: AsyncCompletionEnvelope): void {
  */
 export async function waitForToolConfirmation(
   toolCallId: string,
-  timeoutMs: number,
+  timeoutMs: number | null,
   abortSignal?: AbortSignal,
   options: {
     acceptStatus?: (status: AsyncConfirmationState['status']) => boolean
@@ -222,7 +222,7 @@ export async function waitForToolConfirmation(
       })
     })
 
-    timeoutId = setTimeout(() => settle(null), timeoutMs)
+    if (timeoutMs !== null) timeoutId = setTimeout(() => settle(null), timeoutMs)
     if (abortSignal?.aborted) {
       settle(null)
       return

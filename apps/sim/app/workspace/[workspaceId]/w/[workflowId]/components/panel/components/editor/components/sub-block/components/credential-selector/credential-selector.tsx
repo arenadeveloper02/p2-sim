@@ -400,7 +400,9 @@ export function CredentialSelector({
 
   const comboboxOptions = useMemo(() => {
     if (isAllCredentials) {
-      const oauthCredentials = allWorkspaceCredentials.filter((c) => c.type === 'oauth')
+      const oauthCredentials = allWorkspaceCredentials.filter(
+        (credential) => credential.type === 'oauth'
+      )
       return oauthCredentials.map((cred) => ({ label: cred.displayName, value: cred.id }))
     }
     if (isMergedKinds) return []
@@ -671,7 +673,9 @@ export function CredentialSelector({
       }
 
       const matchedCred = (
-        isAllCredentials ? allWorkspaceCredentials.filter((c) => c.type === 'oauth') : credentials
+        isAllCredentials
+          ? allWorkspaceCredentials.filter((credential) => credential.type === 'oauth')
+          : credentials
       ).find((c) => c.id === value)
       if (matchedCred) {
         handleSelect(value)
@@ -741,6 +745,7 @@ export function CredentialSelector({
                 // inflate the count used to detect a newly-connected account.
                 preCount: credentials.filter((c) => c.type !== 'service_account').length,
                 workspaceId,
+                reconnect: true,
                 requestedAt: Date.now(),
               })
               setShowOAuthModal(true)
@@ -787,6 +792,10 @@ export function CredentialSelector({
           requiredScopes={reauthorizeRequiredScopes}
           newScopes={missingRequiredScopes}
           serviceId={reauthorizeServiceId}
+          // A reauthorize must return to the authorization server that issued
+          // the credential — deriving it from the service id would send a
+          // sandbox user to production, where they cannot sign in at all.
+          providerId={selectedCredential?.provider ?? effectiveProviderId}
         />
       )}
 

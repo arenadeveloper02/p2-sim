@@ -4,11 +4,8 @@ import type { StorageConfig, StorageContext } from '@/lib/uploads/shared/types'
 
 export type { StorageConfig, StorageContext } from '@/lib/uploads/shared/types'
 
-export const UPLOAD_DIR = '/uploads'
-
 const storageProvider = getConfiguredStorageProviderId()
 
-export const hasBlobConfig = storageProvider === 'azure'
 export const USE_BLOB_STORAGE = storageProvider === 'azure'
 export const USE_S3_STORAGE = storageProvider === 's3'
 export const USE_GCS_STORAGE = storageProvider === 'gcs'
@@ -230,6 +227,7 @@ function getS3Config(context: StorageContext): StorageConfig {
       }
     case 'mothership':
     case 'workspace':
+    case 'table-import':
       return {
         bucket: S3_CONFIG.bucket,
         region: S3_CONFIG.region,
@@ -298,6 +296,7 @@ function getBlobConfig(context: StorageContext): StorageConfig {
       }
     case 'mothership':
     case 'workspace':
+    case 'table-import':
       return {
         accountName: BLOB_CONFIG.accountName,
         accountKey: BLOB_CONFIG.accountKey,
@@ -358,6 +357,7 @@ function getGcsConfig(context: StorageContext): StorageConfig {
       return { bucket: GCS_EXECUTION_FILES_CONFIG.bucket || GCS_CONFIG.bucket }
     case 'mothership':
     case 'workspace':
+    case 'table-import':
       return { bucket: GCS_CONFIG.bucket }
     case 'profile-pictures':
       return { bucket: GCS_PROFILE_PICTURES_CONFIG.bucket || GCS_CONFIG.bucket }

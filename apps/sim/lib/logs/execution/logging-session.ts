@@ -8,6 +8,7 @@ import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attr
 import { isRetryableInfrastructureError } from '@/lib/core/errors/retryable-infrastructure'
 import { RESERVATION_TTL_BUFFER_MS } from '@/lib/core/execution-limits'
 import type { LargeValueStoreContext } from '@/lib/execution/payloads/store'
+import { terminalExecutionLogFields } from '@/lib/logs/execution/cancellation'
 import type { SecretSafeBlockLog } from '@/lib/logs/execution/display-types'
 import { executionLogger } from '@/lib/logs/execution/logger'
 import {
@@ -334,7 +335,7 @@ export class LoggingSession {
 
     if (!isResolvedSecretTraceProvenanceV1(provenance)) {
       const incomplete = new ResolvedSecretTraceRegistry()
-      incomplete.markIncomplete()
+      incomplete.markIncomplete('restored-provenance-untrusted')
       return incomplete
     }
 
@@ -828,7 +829,7 @@ export class LoggingSession {
         [],
         scopeUserId ? { userId: scopeUserId, workspaceId } : undefined
       )
-      if (skipLogCreation) this.resolvedSecretTraceRegistry.markIncomplete()
+      if (skipLogCreation) this.resolvedSecretTraceRegistry.markIncomplete('log-creation-skipped')
     }
 
     try {
@@ -1700,7 +1701,11 @@ export class LoggingSession {
 
       await execDb
         .update(workflowExecutionLogs)
-        .set({ level: 'error', status: 'failed', executionDeadlineAt: null, executionData })
+        .set({
+          level: 'error',
+          ...terminalExecutionLogFields('failed', new Date()),
+          executionData,
+        })
         .where(
           and(
             eq(workflowExecutionLogs.executionId, executionId),

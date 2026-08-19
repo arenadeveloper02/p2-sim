@@ -1,6 +1,6 @@
 'use client'
 
-import { createElement, lazy, Suspense, useMemo, useState } from 'react'
+import { createElement, lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight,
   Check,
@@ -13,7 +13,8 @@ import {
   Tooltip,
   toast,
 } from '@sim/emcn'
-import { Cursor, TerminalWindow } from '@sim/emcn/icons'
+import { TerminalWindow } from '@sim/emcn/icons'
+import { isRecordLike } from '@sim/utils/object'
 import { useParams } from 'next/navigation'
 import { ThinkingLoader } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
@@ -22,6 +23,7 @@ import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
 import { isBrowserAgentAvailable, sendBrowserPanelAction } from '@/lib/browser-agent/transport'
 import { isHosted } from '@/lib/core/config/env-flags'
 import { isSafeHttpUrl } from '@/lib/core/utils/urls'
+import { readLatestOAuthChatAttempt } from '@/lib/credentials/oauth-chat-attempt'
 import { getDesktopBridge } from '@/lib/desktop'
 import { desktopChatScopeId } from '@/lib/desktop/chat-scope'
 import {
@@ -40,14 +42,20 @@ import {
   InteractionCardInputRow,
   InteractionCardRecap,
 } from '@/app/workspace/[workspaceId]/home/components/message-content/components/interaction-card'
-import { QuestionDisplay } from '@/app/workspace/[workspaceId]/home/components/message-content/components/question'
+import {
+  parseQuestionAnswerMessage,
+  QuestionDisplay,
+} from '@/app/workspace/[workspaceId]/home/components/message-content/components/question'
 import { ChartDisplay } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/chart-display'
 import {
   findSingleSelectJson,
   hasIncompleteSingleSelectJson,
 } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/choice-blocks'
 import { ToolConfirmationDisplay } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/tool-confirmation-display'
-import { useOAuthChipConnection } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/use-oauth-chip-connection'
+import {
+  resolveOAuthChipTarget,
+  useOAuthChipConnection,
+} from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/use-oauth-chip-connection'
 import { WorkflowPatchDisplay } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags/workflow-patch-display'
 import type {
   ChatMessageContext,
@@ -402,22 +410,23 @@ export const SPECIAL_TAG_NAMES = [
   'workflow_patch',
 ] as const
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
 function isOptionsItemData(value: unknown): value is OptionsItemData {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value)) return false
   return typeof value.title === 'string' && typeof value.description === 'string'
 }
 
+/**
+ * Arrays are accepted alongside keyed objects: an agent that emits
+ * `<options>[{title,description},…]</options>` still renders, with the array
+ * index standing in as the option key.
+ */
 function isOptionsTagData(value: unknown): value is OptionsTagData {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value) && !Array.isArray(value)) return false
   return Object.values(value).every(isOptionsItemData)
 }
 
 function isUsageUpgradeTagData(value: unknown): value is UsageUpgradeTagData {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value)) return false
   return (
     typeof value.reason === 'string' &&
     typeof value.message === 'string' &&
@@ -427,7 +436,7 @@ function isUsageUpgradeTagData(value: unknown): value is UsageUpgradeTagData {
 }
 
 function isCredentialItemData(value: unknown): value is CredentialItemData {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value)) return false
   if (
     typeof value.type !== 'string' ||
     !(CREDENTIAL_TAG_TYPES as readonly string[]).includes(value.type)
@@ -531,7 +540,7 @@ export function parseLastCredentialTag(content: string): CredentialTagData | nul
 }
 
 function isMothershipErrorTagData(value: unknown): value is MothershipErrorTagData {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value)) return false
   return (
     typeof value.message === 'string' &&
     (value.code === undefined || typeof value.code === 'string') &&
@@ -540,7 +549,7 @@ function isMothershipErrorTagData(value: unknown): value is MothershipErrorTagDa
 }
 
 function isWorkspaceResourceTagData(value: unknown): value is WorkspaceResourceTagData {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value)) return false
   if (
     typeof value.type !== 'string' ||
     !(WORKSPACE_RESOURCE_TAG_TYPES as readonly string[]).includes(value.type)
@@ -604,7 +613,7 @@ function isChartTagData(value: unknown): value is ChartTagData {
 }
 
 function isQuestionOption(value: unknown): value is QuestionOption {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value)) return false
   return typeof value.id === 'string' && typeof value.label === 'string'
 }
 
@@ -622,7 +631,7 @@ const SELF_PROVIDED_OPTION_LABELS = new Set([
 ])
 
 function isQuestionItem(value: unknown): value is QuestionItem {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value)) return false
   if (
     typeof value.type !== 'string' ||
     !(QUESTION_TYPES as readonly string[]).includes(value.type)
@@ -676,7 +685,7 @@ function recoverQuestionPrompts(body: string): string | null {
     const parsed = JSON.parse(body) as unknown
     const items = Array.isArray(parsed) ? parsed : [parsed]
     const prompts = items
-      .filter(isRecord)
+      .filter(isRecordLike)
       .map((item) => (typeof item.prompt === 'string' ? item.prompt.trim() : ''))
       .filter((prompt) => prompt.length > 0)
     return prompts.length > 0 ? prompts.join('\n\n') : null
@@ -1625,6 +1634,8 @@ interface SpecialTagsProps {
   questionAnswers?: string[]
   /** Transcript-derived status payload for this message's credential card. */
   credentialSubmission?: CredentialSubmissionPayload
+  /** The user moved on without submitting this message's credential card. */
+  credentialAbandoned?: boolean
   onOptionSelect?: (id: string) => void
   onQuestionDismiss?: () => void
   onWorkspaceResourceSelect?: (resource: WorkspaceResourceRef) => void
@@ -1639,6 +1650,7 @@ export function SpecialTags({
   interactionId,
   questionAnswers,
   credentialSubmission,
+  credentialAbandoned,
   onOptionSelect,
   onQuestionDismiss,
   onWorkspaceResourceSelect,
@@ -1656,6 +1668,7 @@ export function SpecialTags({
           data={segment.data}
           interactionId={interactionId}
           submitted={credentialSubmission}
+          abandoned={credentialAbandoned}
           onContinue={onOptionSelect}
         />
       )
@@ -2138,42 +2151,65 @@ function FolderAccessDisplay({ data }: { data: CredentialItemData }) {
 }
 
 /**
- * Inline hand-back chip rendered while `browser_request_takeover` waits on
- * the user (`{"type":"browser_takeover","name":"Please sign in to LinkedIn"}`).
- * Same chip as the other credential actions; clicking hands control of the
- * agent browser back to Sim. Renders nothing outside the desktop app — there
- * is no agent browser to hand back.
+ * Shared browser hand-back question. While active it reports the selected
+ * answer; after completion the same component renders its answered recap.
  */
+export function BrowserTakeoverQuestion({
+  reason,
+  answer,
+  onAnswer,
+}: {
+  reason?: string
+  answer?: string
+  onAnswer?: (answer: string) => void
+}) {
+  const normalizedReason = reason?.trim() ?? ''
+  const normalizedAnswer = answer?.trim() ?? ''
+  const prompt = normalizedReason || 'Finish in the browser'
+  const questions: QuestionItem[] = [
+    {
+      type: 'single_select',
+      prompt,
+      options: [{ id: 'continue', label: 'Continue' }],
+    },
+  ]
+
+  return (
+    <QuestionDisplay
+      data={questions}
+      answers={normalizedAnswer ? [normalizedAnswer] : undefined}
+      dismissible={false}
+      onSelect={
+        onAnswer
+          ? (message) => {
+              const answer = parseQuestionAnswerMessage(questions, message)?.[0]?.trim()
+              if (answer) onAnswer(answer)
+            }
+          : undefined
+      }
+    />
+  )
+}
+
+/** Connects the active browser question to the desktop panel action. */
 function BrowserTakeoverDisplay({ data }: { data: CredentialItemData }) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const { chatId } = useChatSurface()
-  const [handedBack, setHandedBack] = useState(false)
 
   if (!isBrowserAgentAvailable()) return null
 
-  const reason = (data.name ?? '').trim()
-  const label = handedBack
-    ? 'Handed control back to Sim'
-    : reason || 'Take over in the browser, then hand control back'
-
   return (
-    <button
-      type='button'
-      onClick={() => {
-        if (handedBack) return
-        setHandedBack(true)
-        sendBrowserPanelAction('takeover-done', {}, desktopChatScopeId(workspaceId, chatId))
+    <BrowserTakeoverQuestion
+      reason={data.name}
+      onAnswer={(answer) => {
+        const takeoverResponse = answer !== 'Continue' ? answer : undefined
+        sendBrowserPanelAction(
+          'takeover-done',
+          takeoverResponse ? { takeoverResponse } : {},
+          desktopChatScopeId(workspaceId, chatId)
+        )
       }}
-      disabled={handedBack}
-      className={cn(
-        'flex w-full items-center gap-2 rounded-2xl border border-[var(--border-1)] px-3 py-2.5 text-left transition-colors',
-        !handedBack && 'hover-hover:bg-[var(--surface-5)]'
-      )}
-    >
-      <Cursor className='size-[16px] shrink-0' />
-      <span className='flex-1 text-[var(--text-body)] text-sm'>{label}</span>
-      {!handedBack && <ArrowRight className='size-[16px] shrink-0 text-[var(--text-icon)]' />}
-    </button>
+    />
   )
 }
 
@@ -2496,11 +2532,13 @@ function CredentialInputCard({
   data,
   interactionId,
   submitted,
+  abandoned,
   onContinue,
 }: {
   data: CredentialTagData
   interactionId?: string
   submitted?: CredentialSubmissionPayload
+  abandoned?: boolean
   onContinue?: (message: string) => void
 }) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
@@ -2515,6 +2553,47 @@ function CredentialInputCard({
   )
   const [locallySubmitted, setLocallySubmitted] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const controlIdPrefix = interactionId ?? 'credential-card'
+
+  /**
+   * An abandoned card recaps from progress its rows made, but it replaces those
+   * rows — so on a fresh mount nothing is left to report a connect the user
+   * already finished, and the recap would read "Skipped" over it. An OAuth
+   * connect records a row-scoped attempt that outlives the mount, so restore
+   * the verdict from there.
+   *
+   * Only OAuth rows need this. A secret is written solely by Submit, which ends
+   * the card as a real submission instead; a service-account connect never
+   * outlives its own row either way.
+   */
+  useEffect(() => {
+    if (!abandoned) return
+    const restored = new Set<number>()
+    let restoreIndex = 0
+    for (const [dataIndex, item] of data.entries()) {
+      if (item.type !== 'link' && item.type !== 'service_account') continue
+      const index = restoreIndex++
+      if (item.type !== 'link') continue
+      const { providerId, reconnectCredentialId } = resolveOAuthChipTarget(
+        item.value,
+        item.provider
+      )
+      if (!providerId) continue
+      const attempt = readLatestOAuthChatAttempt({
+        workspaceId,
+        providerId,
+        controlId: `${controlIdPrefix}:${dataIndex}`,
+        credentialId: reconnectCredentialId,
+      })
+      if (attempt?.status === 'connected') restored.add(index)
+    }
+    if (restored.size === 0) return
+    setConnectedIntegrationRows((current) => {
+      if (Array.from(restored).every((index) => current.has(index))) return current
+      return new Set([...current, ...restored])
+    })
+  }, [abandoned, controlIdPrefix, data, workspaceId])
+
   let integrationIndex = 0
   let secretIndex = 0
   const indexedRows = data.map((item, dataIndex) => ({
@@ -2547,7 +2626,7 @@ function CredentialInputCard({
       <CredentialItemDisplay
         key={`${item.type}-${item.provider ?? dataIndex}-${dataIndex}`}
         data={item}
-        controlId={`${interactionId ?? 'credential-card'}:${dataIndex}`}
+        controlId={`${controlIdPrefix}:${dataIndex}`}
         embedded
         divided={index > 0}
         onConnected={() =>
@@ -2664,7 +2743,11 @@ function CredentialInputCard({
     }),
   ]
 
-  if (submitted || locallySubmitted) {
+  // An abandoned card recaps from local progress only: a row the user connected
+  // or saved before moving on keeps its status, everything else reads "Skipped".
+  // Only a card that asked for something can be abandoned — a standalone
+  // `sim_key` row is a reveal widget, not a prompt, so it stays as it is.
+  if (submitted || locallySubmitted || (abandoned && needsContinuation)) {
     return (
       <InteractionCardRecap
         items={credentialSummary.map((item) => ({ label: item.label, values: [item.status] }))}
@@ -2702,11 +2785,13 @@ export function CredentialDisplay({
   data,
   interactionId,
   submitted,
+  abandoned,
   onContinue,
 }: {
   data: CredentialTagData
   interactionId?: string
   submitted?: CredentialSubmissionPayload
+  abandoned?: boolean
   onContinue?: (message: string) => void
 }) {
   const usesCredentialCard = data.every((item) => CREDENTIAL_CARD_TYPES.has(item.type))
@@ -2717,6 +2802,7 @@ export function CredentialDisplay({
         data={data}
         interactionId={interactionId}
         submitted={submitted}
+        abandoned={abandoned}
         onContinue={onContinue}
       />
     )

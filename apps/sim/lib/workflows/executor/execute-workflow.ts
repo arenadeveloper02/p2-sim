@@ -121,6 +121,16 @@ export interface ExecuteWorkflowOptions {
   triggeringChatId?: string
   /** Copilot run that triggered this run (rollup only). */
   triggeringRunId?: string
+  /**
+   * Whether the run has an identifiable caller to authorize against, from
+   * `principal.kind !== 'workspace_api_key'` (see {@link ExecutionMetadata.enforceCredentialAccess}).
+   * Streaming runs reach the executor through here rather than through the route's
+   * own metadata, so callers must forward it or secrets resolve as the workflow
+   * owner on the streaming path and as the caller everywhere else.
+   */
+  enforceCredentialAccess?: boolean
+  /** Anonymous public-API run (see {@link ExecutionMetadata.isPublicApiAccess}). */
+  isPublicApiAccess?: boolean
   /** Immutable actor/payer decision captured by preprocessing. */
   billingAttribution?: BillingAttributionSnapshot
   /** Server-issued run identity persisted with the execution log and snapshot. */
@@ -214,6 +224,8 @@ export async function executeWorkflow(
       useDraftState: streamConfig?.useDraftState ?? false,
       startTime: new Date().toISOString(),
       isClientSession: Boolean(sessionUserId),
+      enforceCredentialAccess: streamConfig?.enforceCredentialAccess ?? false,
+      isPublicApiAccess: streamConfig?.isPublicApiAccess ?? false,
       largeValueExecutionIds: Array.from(new Set([executionId])),
       largeValueKeys: streamConfig?.largeValueKeys,
       fileKeys: streamConfig?.fileKeys,

@@ -183,6 +183,8 @@ export interface ToolConfig<P = any, R = any> {
     body?: (params: P) => Record<string, any> | string | FormData | undefined
     /** Timeout in ms for external HTTP requests (default 30000). Use higher values for slow APIs (e.g. image generation). */
     timeout?: number
+    /** Selects the signed, workflow-scoped identity required by protected internal routes. */
+    internalAuth?: 'executor_delegation'
     /** Defines the exact request fields that may become model-visible. */
     modelInput?:
       | {
@@ -292,6 +294,7 @@ export interface OAuthTokenPayload {
   credentialId?: string
   credentialAccountUserId?: string
   providerId?: string
+  toolId?: string
   workflowId?: string
   impersonateEmail?: string
   scopes?: string[]

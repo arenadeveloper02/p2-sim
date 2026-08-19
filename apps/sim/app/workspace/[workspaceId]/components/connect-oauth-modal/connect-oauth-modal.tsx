@@ -26,7 +26,7 @@ import {
   parseProvider,
 } from '@/lib/oauth'
 import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
-import { getScopeDescription } from '@/lib/oauth/utils'
+import { getScopeDescription, getServiceConfigByProviderId } from '@/lib/oauth/utils'
 import { isAdminOrOwner } from '@/lib/workspaces/organization'
 import { useCreateCredentialDraft, useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useConnectOAuthService } from '@/hooks/queries/oauth/oauth-connections'
@@ -134,10 +134,33 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
   const { open, onOpenChange, mode } = props
   const isConnect = mode === 'connect'
 
-  const providerId = useMemo(
+  const declaredProviderId = useMemo(
     () => props.providerId ?? (props.serviceId ? getProviderIdFromServiceId(props.serviceId) : ''),
     [props.providerId, props.serviceId]
   )
+
+  /**
+   * Authorization servers this service can be connected through, when it has
+   * more than one (Salesforce production vs sandbox). Offered on connect only:
+   * a reauthorize must return to the server that issued the credential.
+   */
+  const { authServerOptions, authServerHint } = useMemo(() => {
+    const service = isConnect ? getServiceConfigByProviderId(declaredProviderId) : null
+    const labels = service?.providerIdLabels
+    if (!service?.additionalProviderIds?.length || !labels) {
+      return { authServerOptions: [], authServerHint: undefined }
+    }
+    return {
+      authServerOptions: [service.providerId, ...service.additionalProviderIds].map((value) => ({
+        value,
+        label: labels[value] ?? value,
+      })),
+      authServerHint: service.providerIdPickerHint,
+    }
+  }, [isConnect, declaredProviderId])
+
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
+  const providerId = selectedProviderId ?? declaredProviderId
 
   const [displayName, setDisplayName] = useState('')
   const [description, setDescription] = useState('')
@@ -228,6 +251,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
   useEffect(() => {
     if (!open) {
       prefilled.current = false
+      setSelectedProviderId(null)
       return
     }
     if (!isConnect || prefilled.current || credentialsLoading) return
@@ -258,6 +282,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
     setSubmitError(null)
     try {
       let connectorType: string | undefined
+      let draftId: string | undefined
 
       if (isConnect) {
         const trimmed = displayName.trim()
@@ -266,12 +291,13 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
           return
         }
 
-        await createDraft.mutateAsync({
+        const draft = await createDraft.mutateAsync({
           workspaceId,
           providerId,
           displayName: trimmed,
           description: description.trim() || undefined,
         })
+        draftId = draft.draftId
 
         const preCount = credentials.filter(
           (c) => c.type === 'oauth' && c.providerId === providerId
@@ -281,6 +307,15 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
           displayName: trimmed,
           providerId,
           preCount,
+          baselineCredentials: credentials
+            .filter(
+              (credential) => credential.type === 'oauth' && credential.providerId === providerId
+            )
+            .map((credential) => ({
+              id: credential.id,
+              accountId: credential.accountId,
+              updatedAt: credential.updatedAt,
+            })),
           workspaceId,
           requestedAt: Date.now(),
         }
@@ -321,6 +356,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
       await connectOAuthService.mutateAsync({
         providerId,
         callbackURL: callbackURL.toString(),
+        draftId,
       })
       handleClose()
     } catch (err: unknown) {
@@ -355,6 +391,18 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
           <p className='text-[var(--text-tertiary)] text-caption'>
             The "{props.toolName}" tool requires access to your account.
           </p>
+        )}
+
+        {authServerOptions.length > 0 && (
+          <ChipModalField
+            type='dropdown'
+            title='Environment'
+            value={providerId}
+            onChange={setSelectedProviderId}
+            options={authServerOptions}
+            align='start'
+            hint={authServerHint}
+          />
         )}
 
         {isConnect && (

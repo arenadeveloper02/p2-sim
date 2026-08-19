@@ -26,6 +26,7 @@ import {
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import type { DbTransaction } from '@/lib/db/types'
 import { extractScheduleId, unlockStaleSchedule } from '@/lib/execution/schedule-unlock'
+import { elapsedDurationMsSql } from '@/lib/logs/execution/duration'
 import { deleteFile } from '@/lib/uploads/core/storage-service'
 
 const logger = createLogger('CleanupStaleExecutions')
@@ -34,7 +35,6 @@ const STALE_THRESHOLD_MS = getExecutionReservationTtlMs()
 const STALE_THRESHOLD_MINUTES = Math.ceil(STALE_THRESHOLD_MS / 60000)
 const GENERIC_STALE_PROCESSING_ERROR = `Job terminated: stuck in processing for more than ${STALE_THRESHOLD_MINUTES} minutes`
 const EXECUTION_DEADLINE_ERROR = getTimeoutErrorMessage(undefined)
-const MAX_INT32 = 2_147_483_647
 /**
  * Table jobs run as detached workers with progress heartbeats, independently of workflow timeout
  * policy. Preserve their historical 90-minute task window plus five-minute cleanup grace.
@@ -155,10 +155,7 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       const staleDurationMinutes = sql<number>`ROUND(
         EXTRACT(EPOCH FROM (${cleanupTimestamp} - ${workflowExecutionLogs.startedAt})) / 60
       )::integer`
-      const totalDurationMs = sql<number>`LEAST(
-        ${MAX_INT32},
-        ROUND(EXTRACT(EPOCH FROM (${cleanupTimestamp} - ${workflowExecutionLogs.startedAt})) * 1000)
-      )::integer`
+      const totalDurationMs = elapsedDurationMsSql(now)
       const workflowRowsConsidered = 0
       while (workflowRowsConsidered < WORKFLOW_EXECUTION_MAX_ROWS_PER_RUN) {
         const limit = Math.min(
@@ -450,7 +447,6 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
       })
     }
 
-    // Delete completed/failed jobs older than retention period
     const retentionThreshold = new Date(Date.now() - JOB_RETENTION_HOURS * 60 * 60 * 1000)
     let asyncJobsDeleted = 0
 

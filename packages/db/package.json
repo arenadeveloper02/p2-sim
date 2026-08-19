@@ -20,6 +20,10 @@
     "./constants": {
       "types": "./constants.ts",
       "default": "./constants.ts"
+    },
+    "./timestamps": {
+      "types": "./timestamps.ts",
+      "default": "./timestamps.ts"
     }
   },
   "scripts": {

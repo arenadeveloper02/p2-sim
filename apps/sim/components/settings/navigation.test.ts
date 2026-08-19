@@ -52,6 +52,7 @@ describe('settings navigation boundaries', () => {
       'organization',
       'oauth-apps',
       'secrets',
+      'credential-groups',
       'custom-tools',
       'mcp',
       'apikeys',
@@ -88,6 +89,7 @@ describe('settings navigation boundaries', () => {
       'secrets',
       'byok',
       'sandboxes',
+      'credential-groups',
       'custom-tools',
       'mcp',
       'workflow-mcp-servers',
@@ -109,6 +111,7 @@ describe('settings navigation boundaries', () => {
         permissionConfig: {},
         entitlements: {
           byok: true,
+          credentialGroups: true,
           inbox: true,
           customBlocks: true,
           forks: true,
@@ -134,6 +137,7 @@ describe('settings navigation boundaries', () => {
         permissionConfig: {},
         entitlements: {
           byok: true,
+          credentialGroups: true,
           inbox: true,
           customBlocks: true,
           forks: true,
@@ -153,6 +157,7 @@ describe('settings navigation boundaries', () => {
         permissionConfig: {},
         entitlements: {
           byok: true,
+          credentialGroups: true,
           inbox: true,
           customBlocks: true,
           forks: true,
@@ -446,6 +451,7 @@ describe('settings navigation boundaries', () => {
         permissionConfig: {},
         entitlements: {
           byok: true,
+          credentialGroups: true,
           customBlocks: true,
           forks: true,
           inbox: true,
@@ -470,6 +476,7 @@ describe('settings navigation boundaries', () => {
       },
       entitlements: {
         byok: true,
+        credentialGroups: true,
         customBlocks: true,
         forks: true,
         inbox: true,
@@ -481,6 +488,7 @@ describe('settings navigation boundaries', () => {
       'teammates',
       'byok',
       'sandboxes',
+      'credential-groups',
       'workflow-mcp-servers',
       'recently-deleted',
       'forks',

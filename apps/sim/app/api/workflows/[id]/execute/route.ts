@@ -35,14 +35,11 @@ import {
   resolveWorkflowToolTargetId,
 } from '@/lib/copilot/tools/workflow-tools'
 import { admissionRejectedResponse, tryAdmit } from '@/lib/core/admission/gate'
-import { getJobQueue, shouldExecuteInline } from '@/lib/core/async-jobs'
-import { isAsyncJobEnqueueError } from '@/lib/core/async-jobs/types'
 import {
   createTimeoutAbortController,
   getTimeoutErrorMessage,
   isTimeoutAbortReason,
   isTimeoutError,
-  toTriggerMaxDurationSeconds,
 } from '@/lib/core/execution-limits'
 import { isCrossSiteSessionRequest } from '@/lib/core/security/same-origin'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -109,6 +106,8 @@ import {
   hydrateUserFilesWithBase64,
 } from '@/lib/uploads/utils/user-file-base64.server'
 import { getCustomBlockRowsForWorkspace } from '@/lib/workflows/custom-blocks/operations'
+import { checkNeedsRedeployment } from '@/lib/workflows/deployment-status'
+import { enqueueWorkflowExecution } from '@/lib/workflows/executor/enqueue-execution'
 import { executeWorkflow } from '@/lib/workflows/executor/execute-workflow'
 import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
 import {
@@ -149,8 +148,6 @@ import {
 } from '@/lib/workflows/streaming/streaming'
 import { createHttpResponseFromBlock, workflowHasResponseBlock } from '@/lib/workflows/utils'
 import { getWorkspaceBillingSettings } from '@/lib/workspaces/utils'
-import { checkNeedsRedeployment } from '@/app/api/workflows/utils'
-import { executeWorkflowJob, type WorkflowExecutionPayload } from '@/background/workflow-execution'
 import { withCustomBlockOverlay } from '@/blocks/custom/server-overlay'
 import {
   PublicApiNotAllowedError,
@@ -174,8 +171,6 @@ import { CORE_TRIGGER_TYPES, type CoreTriggerType } from '@/stores/logs/filters/
 const logger = createLogger('WorkflowExecuteAPI')
 const MAX_WORKFLOW_EXECUTE_BODY_BYTES = 10 * 1024 * 1024
 const SERVER_EXECUTION_ID_CLAIM_ATTEMPTS = 3
-const ASYNC_ENQUEUE_ATTEMPTS = 2
-const WORKFLOW_EXECUTION_JOB_ID_PREFIX = 'workflow-execution:'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -397,6 +392,8 @@ type AsyncExecutionParams = {
   executionId: string
   copilotToolCallId?: string
   callChain?: string[]
+  enforceCredentialAccess?: boolean
+  isPublicApiAccess?: boolean
   executionTimeoutMs: number
   trustedInitialResolvedSecretTraceProvenance?: ResolvedSecretTraceProvenanceV1
 }
@@ -443,59 +440,9 @@ function requirePreprocessedExecutionContext(
 }
 
 async function handleAsyncExecution(params: AsyncExecutionParams): Promise<AsyncExecutionResult> {
-  const {
-    requestId,
-    workflowId,
-    userId,
-    billingAttribution,
-    workspaceId,
-    input,
-    triggerType,
-    triggerBlockId,
-    executionId,
-    copilotToolCallId,
-    callChain,
-    executionTimeoutMs,
-    trustedInitialResolvedSecretTraceProvenance,
-  } = params
-  const asyncLogger = logger.withMetadata({
-    requestId,
-    workflowId,
-    workspaceId,
-    userId,
-    executionId,
-  })
-
-  const correlation = {
-    executionId,
-    requestId,
-    source: 'workflow' as const,
-    workflowId,
-    ...(copilotToolCallId ? { copilotToolCallId } : {}),
-    triggerType,
-  }
-
-  const payload: WorkflowExecutionPayload = {
-    workflowId,
-    userId,
-    billingAttribution,
-    workspaceId,
-    input,
-    triggerType,
-    triggerBlockId,
-    executionId,
-    requestId,
-    correlation,
-    callChain,
-    executionMode: 'async',
-    admissionCompleted: true,
-    executionTimeoutMs,
-    trustedInitialResolvedSecretTraceProvenance,
-  }
-
-  if (copilotToolCallId && (await checkNeedsRedeployment(workflowId))) {
+  if (params.copilotToolCallId && (await checkNeedsRedeployment(params.workflowId))) {
     const deploymentError = ASYNC_WORKFLOW_DEPLOYMENT_ERRORS.stale
-    await releaseExecutionSlot(executionId)
+    await releaseExecutionSlot(params.executionId)
     return {
       response: NextResponse.json(
         {
@@ -508,103 +455,38 @@ async function handleAsyncExecution(params: AsyncExecutionParams): Promise<Async
     }
   }
 
-  let jobQueue: Awaited<ReturnType<typeof getJobQueue>>
-  try {
-    jobQueue = await getJobQueue()
-  } catch (error) {
-    asyncLogger.error('Failed to initialize async execution queue', {
-      error: toError(error).message,
-    })
-    await releaseExecutionSlot(executionId)
+  const enqueue = await enqueueWorkflowExecution(params)
+
+  if (enqueue.outcome === 'rejected') {
     return {
       response: NextResponse.json({ error: 'Failed to queue async execution' }, { status: 500 }),
       retainExecutionClaim: false,
     }
   }
 
-  const deterministicJobId = `${WORKFLOW_EXECUTION_JOB_ID_PREFIX}${executionId}`
-  const executeInline = shouldExecuteInline()
-  const enqueueOptions = {
-    jobId: deterministicJobId,
-    metadata: { workflowId, workspaceId, userId, correlation },
-    maxDurationSeconds: toTriggerMaxDurationSeconds(executionTimeoutMs),
-    ...(executeInline
-      ? {
-          runner: (_queuedPayload: unknown, signal: AbortSignal) =>
-            executeWorkflowJob(payload, signal),
-        }
-      : {}),
-  }
-  let jobId: string | undefined
-  let enqueueError: unknown
-  let acceptanceCouldBeUnknown = false
-
-  for (let attempt = 1; attempt <= ASYNC_ENQUEUE_ATTEMPTS; attempt++) {
-    try {
-      jobId = await jobQueue.enqueue('workflow-execution', payload, enqueueOptions)
-      enqueueError = undefined
-      break
-    } catch (error) {
-      enqueueError = error
-      const classifiedError = isAsyncJobEnqueueError(error) ? error : undefined
-      const attemptAcceptance = classifiedError?.acceptance ?? 'unknown'
-      acceptanceCouldBeUnknown ||= attemptAcceptance === 'unknown'
-      asyncLogger.warn('Async workflow enqueue attempt failed', {
-        acceptance: attemptAcceptance,
-        attempt,
-        error: toError(error).message,
-        jobId: deterministicJobId,
-      })
-      if (classifiedError?.retryable === false || attempt === ASYNC_ENQUEUE_ATTEMPTS) {
-        break
-      }
-    }
-  }
-
-  if (!jobId) {
-    const acceptance = acceptanceCouldBeUnknown
-      ? 'unknown'
-      : isAsyncJobEnqueueError(enqueueError)
-        ? enqueueError.acceptance
-        : 'unknown'
-    asyncLogger.error('Failed to queue async execution', {
-      acceptance,
-      error: toError(enqueueError).message,
-      jobId: deterministicJobId,
-    })
-
-    if (acceptance === 'rejected') {
-      await releaseExecutionSlot(executionId)
-      return {
-        response: NextResponse.json({ error: 'Failed to queue async execution' }, { status: 500 }),
-        retainExecutionClaim: false,
-      }
-    }
-
+  if (enqueue.outcome === 'ambiguous') {
     return {
       response: NextResponse.json(
         {
           error: 'Async execution queue acceptance could not be confirmed',
           code: 'ASYNC_ENQUEUE_AMBIGUOUS',
-          executionId,
+          executionId: enqueue.executionId,
         },
-        { status: 503, headers: { [WORKFLOW_EXECUTION_ID_HEADER]: executionId } }
+        { status: 503, headers: { [WORKFLOW_EXECUTION_ID_HEADER]: enqueue.executionId } }
       ),
       retainExecutionClaim: true,
     }
   }
-
-  asyncLogger.info('Queued async workflow execution', { jobId })
 
   return {
     response: NextResponse.json(
       {
         success: true,
         async: true,
-        jobId,
-        executionId,
+        jobId: enqueue.jobId,
+        executionId: enqueue.executionId,
         message: 'Workflow execution queued',
-        statusUrl: `${getBaseUrl()}/api/jobs/${jobId}`,
+        statusUrl: `${getBaseUrl()}/api/jobs/${enqueue.jobId}`,
       },
       { status: 202 }
     ),
@@ -1206,6 +1088,21 @@ async function handleExecutePost(
     }
     const trustedInitialResolvedSecretTraceProvenance = inputProvenanceResolution.provenance
 
+    /**
+     * External callers may not override the trigger type because manual and chat
+     * executions bypass the API rate-limit path.
+     */
+    if (
+      (auth.authType === AuthType.API_KEY || isPublicApiAccess) &&
+      body.triggerType !== undefined &&
+      body.triggerType !== 'api'
+    ) {
+      return NextResponse.json(
+        { error: 'External callers cannot override triggerType' },
+        { status: 400 }
+      )
+    }
+
     const upstreamBillingAttribution =
       auth.authType === AuthType.INTERNAL_JWT && workflowAuthorization.workflow?.workspaceId
         ? requireBillingAttributionHeader(req.headers, {
@@ -1380,6 +1277,8 @@ async function handleExecutePost(
         executionId,
         copilotToolCallId,
         callChain,
+        enforceCredentialAccess: useAuthenticatedUserAsActor,
+        isPublicApiAccess,
         executionTimeoutMs: preprocessResult.executionTimeout.async,
         trustedInitialResolvedSecretTraceProvenance,
       })
@@ -1537,6 +1436,7 @@ async function handleExecutePost(
         startTime: new Date().toISOString(),
         isClientSession,
         enforceCredentialAccess: useAuthenticatedUserAsActor,
+        isPublicApiAccess,
         workflowStateOverride: effectiveWorkflowStateOverride,
         largeValueExecutionIds,
         largeValueKeys,
@@ -1787,7 +1687,13 @@ async function handleExecutePost(
       const streamVariables = cachedWorkflowData?.variables ?? (workflow as any).variables
       const streamWorkflow = {
         id: workflow.id,
-        userId: actorUserId,
+        /**
+         * The owner, not the actor: `executeWorkflow` reads this one field to set
+         * `workflowUserId`, which is the personal-environment fallback for runs with
+         * no identifiable caller. Passing the actor here made the streaming path
+         * resolve the actor where the JSON path resolves the owner.
+         */
+        userId: workflow.userId,
         workspaceId,
         isDeployed: workflow.isDeployed,
         variables: streamVariables,
@@ -1860,6 +1766,8 @@ async function handleExecutePost(
               sessionUserId: sessionUserId ?? undefined,
               abortSignal,
               executionMode: 'stream',
+              enforceCredentialAccess: useAuthenticatedUserAsActor,
+              isPublicApiAccess,
               billingAttribution,
               largeValueKeys,
               fileKeys,
@@ -2266,6 +2174,7 @@ async function handleExecutePost(
             startTime: new Date().toISOString(),
             isClientSession,
             enforceCredentialAccess: useAuthenticatedUserAsActor,
+            isPublicApiAccess,
             workflowStateOverride: effectiveWorkflowStateOverride,
             largeValueExecutionIds,
             largeValueKeys,
