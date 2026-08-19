@@ -449,7 +449,7 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Layout: each page is a full-page app screen. Page → Section (leave width at the wide default so it fills up to 1280px) → content. Use the horizontal space; do not stack every element in one narrow centre column. Do not set maxWidth unless the brief demands an exact cap.',
   'Measure: dashboards, collections and tables stay wide, but a narrative block — a report body, an analysis, a long DataText — goes in its own Section with width "narrow" or in the main column of Columns. Never let prose run the full 1280px.',
   'Spacing: group related elements into a Card or Stack so data reads as chunks, and leave real space between groups. gap and padding take CSS lengths such as "16px" or "24px", never size words like "md" or "lg".',
-  'Surfaces: there are exactly two — the page canvas and the Card/Stat surface, both supplied by the host from manifest.theme (or defaults). Do not set backgroundColor unless the brief names a specific colour. Build hierarchy from heading level, weight and whitespace instead of coloured fills or borders.',
+  'Surfaces: there are exactly two — the page canvas and the Card/Stat surface, both supplied by the host from the Arena Design System (manifest.theme or host defaults). Do not set backgroundColor unless the brief names a specific colour. Build hierarchy from PageHeader, Card grouping, heading level, and 24px gaps between groups — never coloured fills or borders.',
   'Collections: when each item is the same scalar fields with no per-row action, use Table. When each item needs its own Card, Badge, button, or link, put a Repeat inside a Grid (columns 2 or 3) or Stack, bound to the array statePath; Repeat\'s children are the per-item template and render once per element. Never unroll a live array into one static Card per item, and never wrap Grid in Repeat (that produces N grids). Bind per-item fields with statePath "item.field". Put per-item values into navigation and hrefs with "{item.id}" — NavLink.to "order?id={item.id}" opens the detail page so its onLoad receives that id. A Button.actionId inside Repeat sends the item fields as the action input.',
   'Tabular data goes in Table, metrics go in Stat inside a Grid, record details go in KeyValue, short statuses go in Badge.',
   'Forms: every interactive field carries an explicit label. Pair short related fields (TextInput, NumberInput, DateInput, Select) side by side in a Grid (columns 2) and keep long free-text, RadioGroup, MultiSelect, Checkbox, and Switch full width. Forms have one SubmitButton and an optional Back NavLink, and default to left-aligned.',
@@ -505,12 +505,23 @@ export const ARENA_GENERATIVE_UI_ON_LOAD_RULE = [
 ].join(' ')
 
 /**
- * Branding lives on `manifest.theme`, not free-text colour props. Always in the
- * prompt so Design Notes that name a colour have somewhere to land.
+ * Branding lives on `manifest.theme`. Always emit Arena DS defaults so the host
+ * is never left on a generic Tailwind palette.
  */
 export const ARENA_GENERATIVE_UI_THEME_RULE = [
-  'Theme: optional manifest.theme { brandColor (hex #RGB or #RRGGBB), radius sm|md|lg, density compact|comfortable|roomy, font sans|serif, colorScheme light|dark|system }. Emit theme only when Design Notes name a brand colour, density, typeface, or dark mode. Do not set backgroundColor on Page or Card for branding — the host applies theme as CSS variables. Omit theme when Design Notes are silent.',
+  'Theme: always emit manifest.theme { brandColor: "#1A73E8", radius: "md", density: "comfortable", font: "sans", colorScheme: "light" }. Override brandColor, radius, density, font, or colorScheme only when Design Notes name them. Do not set backgroundColor on Page or Card for branding — the host applies theme as CSS variables.',
 ].join(' ')
+
+/**
+ * Compressed Arena Design System for the generator. The host paints chrome;
+ * this tells the model how to compose catalog components so they land well.
+ */
+export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
+  'ARENA DESIGN SYSTEM',
+  'The host already paints Poppins, brand blue #1A73E8, grey text hierarchy, 12px radius, 40px controls, and card elevation. You compose catalog components; you do not invent hex, fonts, or CSS.',
+  'Every generate reply includes the default theme above. Page → Section (width wide, no maxWidth) → PageHeader, then groups of Grid / Columns / Card with gap "24px". Pair short form fields in a 2-column Grid. Metrics are a Grid of Stat. Collections are Table or Repeat-in-Grid. Record details are KeyValue. One primary SubmitButton per form; Back is a ghost Button or NavLink.',
+  'Copy is specific product language. Never title a page "Page 1" or use lorem ipsum. Do not add a logo or wordmark.',
+].join('\n')
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */
 export const ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE =

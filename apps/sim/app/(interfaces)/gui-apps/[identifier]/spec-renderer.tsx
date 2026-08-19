@@ -93,10 +93,13 @@ const GRID_MIN_ITEM_WIDTHS: Record<string, string> = {
 const DEFAULT_GRID_MIN_ITEM_WIDTH = '280px'
 
 const TONE_CLASSES = {
-  info: 'bg-sky-50 text-sky-900',
-  success: 'bg-emerald-50 text-emerald-800',
-  warning: 'bg-amber-50 text-amber-900',
-  error: 'bg-red-50 text-red-800',
+  info: 'border border-[var(--gui-info-border,#a3c7f6)] bg-[var(--gui-info-surface,#f3f8fe)] text-[var(--gui-info-text,#10458b)]',
+  success:
+    'border border-[var(--gui-success-border,#b1e9ce)] bg-[var(--gui-success-surface,#f5fcf9)] text-[var(--gui-success-text,#23784f)]',
+  warning:
+    'border border-[var(--gui-warning-border,#fdcdb5)] bg-[var(--gui-warning-surface,#fff9f5)] text-[var(--gui-warning-text,#974d29)]',
+  error:
+    'border border-[var(--gui-error-border,#faa3a3)] bg-[var(--gui-error-surface,#fff3f3)] text-[var(--gui-error-text,#921010)]',
 } as const
 
 function toneClass(value: unknown, fallback: keyof typeof TONE_CLASSES = 'info'): string {
@@ -105,19 +108,21 @@ function toneClass(value: unknown, fallback: keyof typeof TONE_CLASSES = 'info')
 }
 
 const BUTTON_BASE_CLASS =
-  'inline-flex items-center justify-center rounded-[var(--gui-radius,10px)] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gui-brand,#2563eb)]'
+  'inline-flex items-center justify-center rounded-[var(--gui-radius,12px)] font-medium transition-[background-color,color,border-color,transform,box-shadow] duration-100 ease-[cubic-bezier(0.4,0,0.2,1)] disabled:cursor-not-allowed disabled:opacity-[0.38] active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gui-brand,#1a73e8)]'
 
 const BUTTON_VARIANT_CLASSES = {
-  primary: 'bg-[var(--gui-brand,#2563eb)] text-white hover:bg-[var(--gui-brand-hover,#1d4ed8)]',
+  primary:
+    'bg-[var(--gui-brand,#1a73e8)] text-white hover:bg-[var(--gui-brand-hover,#155cba)] active:bg-[var(--gui-brand-pressed,#10458b)]',
   secondary:
-    'border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] text-[var(--gui-text,#1f232d)] hover:bg-[var(--gui-canvas,#f7f8f9)]',
-  ghost: 'text-[var(--gui-text,#1f232d)] hover:bg-[var(--gui-canvas,#f7f8f9)]',
-  destructive: 'bg-red-600 text-white hover:bg-red-700',
+    'border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] text-[var(--gui-text,#2c2d33)] hover:bg-[var(--gui-canvas,#f7f8f9)]',
+  ghost: 'text-[var(--gui-text,#2c2d33)] hover:bg-[var(--gui-canvas,#f7f8f9)]',
+  destructive:
+    'bg-[var(--gui-danger,#f31a1a)] text-white hover:bg-[var(--gui-danger-hover,#c21515)]',
 } as const
 
 const BUTTON_SIZE_CLASSES = {
-  sm: 'px-3 py-1.5 text-xs',
-  md: 'px-4 py-2 text-sm',
+  sm: 'h-8 px-3 text-sm',
+  md: 'h-10 px-4 text-base',
 } as const
 
 /**
@@ -139,15 +144,25 @@ function buttonClass(
 }
 
 const DELTA_TONE_CLASSES = {
-  positive: 'text-emerald-700',
-  negative: 'text-red-700',
-  neutral: 'text-[var(--color-ds-grey-600,#5b5f6b)]',
+  positive: 'text-[var(--gui-success-text,#23784f)]',
+  negative: 'text-[var(--gui-error-text,#921010)]',
+  neutral: 'text-[var(--gui-text-muted,#575a66)]',
 } as const
 
 function deltaToneClass(value: unknown): string {
   const tone = asString(value, 'neutral')
   return DELTA_TONE_CLASSES[tone as keyof typeof DELTA_TONE_CLASSES] ?? DELTA_TONE_CLASSES.neutral
 }
+
+const SURFACE_CARD =
+  'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)] shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]'
+
+const HEADING_SIZE_CLASSES = {
+  h1: 'text-[length:var(--gui-heading-size,32px)] leading-[var(--gui-heading-leading,40px)]',
+  h2: 'text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)]',
+  h3: 'text-xl leading-7',
+  h4: 'text-base leading-6',
+} as const
 
 function sectionWidthClass(value: unknown): string {
   const width = asString(value, 'wide')
@@ -268,12 +283,20 @@ function ProgressStepsView({ pending, steps, durationMs }: ProgressStepsViewProp
             key={`${index}-${label}`}
             className={cn(
               'flex items-center gap-2',
-              done && 'text-[var(--color-ds-grey-800,#1f232d)]',
-              current && 'text-[var(--color-ds-grey-800,#1f232d)]',
-              !done && !current && 'text-[var(--color-ds-grey-400,#a0a3ad)]'
+              done && 'text-[var(--gui-text,#2c2d33)]',
+              current && 'font-medium text-[var(--gui-brand,#1a73e8)]',
+              !done && !current && 'text-[var(--gui-text-tertiary,#8a8d99)]'
             )}
           >
-            <span className='inline-flex size-5 items-center justify-center rounded-full border border-[var(--color-ds-grey-300,#c5c6cc)] text-xs'>
+            <span
+              className={cn(
+                'inline-flex size-5 items-center justify-center rounded-full border text-xs',
+                done &&
+                  'border-[var(--gui-brand,#1a73e8)] bg-[var(--gui-brand,#1a73e8)] text-white',
+                current && 'border-[var(--gui-brand,#1a73e8)] text-[var(--gui-brand,#1a73e8)]',
+                !done && !current && 'border-[var(--gui-border,#e2e3e5)]'
+              )}
+            >
               {done ? '✓' : current ? '…' : ''}
             </span>
             {label}
@@ -284,7 +307,8 @@ function ProgressStepsView({ pending, steps, durationMs }: ProgressStepsViewProp
   )
 }
 
-const SKELETON_BAR = 'animate-pulse rounded bg-[var(--color-ds-grey-200,#e2e3e5)]'
+const SKELETON_BAR =
+  'animate-pulse rounded-[var(--gui-radius-sm,8px)] bg-[var(--gui-border,#e2e3e5)]'
 
 const DEFAULT_SKELETON_LINES: Record<SkeletonVariant, number> = {
   text: 3,
@@ -315,11 +339,7 @@ function SkeletonBlock({ variant, lines }: SkeletonBlockProps) {
 
   if (variant === 'stat') {
     return (
-      <div
-        aria-hidden
-        data-testid='skeleton'
-        className='flex flex-col gap-2 rounded-[var(--gui-radius,10px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)]'
-      >
+      <div aria-hidden data-testid='skeleton' className={cn('flex flex-col gap-2', SURFACE_CARD)}>
         <div className={cn(SKELETON_BAR, 'h-3 w-1/2')} />
         <div className={cn(SKELETON_BAR, 'h-7 w-2/3')} />
       </div>
@@ -351,11 +371,7 @@ function SkeletonBlock({ variant, lines }: SkeletonBlockProps) {
 
   if (variant === 'card') {
     return (
-      <div
-        aria-hidden
-        data-testid='skeleton'
-        className='rounded-[var(--gui-radius,10px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)]'
-      >
+      <div aria-hidden data-testid='skeleton' className={SURFACE_CARD}>
         {body}
       </div>
     )
@@ -449,13 +465,19 @@ function StateTable({
   const rows = tableRowsFromState(value, headers)
   if (headers.length === 0 && rows.length === 0) return null
   return (
-    <div className='w-full overflow-x-auto' style={style}>
-      <table className='w-full border-collapse text-left text-sm'>
+    <div
+      className='w-full overflow-x-auto rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)]'
+      style={style}
+    >
+      <table className='w-full border-collapse text-left text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]'>
         {headers.length > 0 ? (
           <thead>
-            <tr className='border-[var(--color-ds-grey-200,#e2e3e5)] border-b'>
+            <tr className='border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-canvas,#f7f8f9)]'>
               {headers.map((header) => (
-                <th key={header} className='px-3 py-2 font-medium'>
+                <th
+                  key={header}
+                  className='px-4 py-3 font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'
+                >
                   {header}
                 </th>
               ))}
@@ -466,10 +488,13 @@ function StateTable({
           {rows.map((row, rowIndex) => (
             <tr
               key={`row-${rowIndex}`}
-              className='border-[var(--color-ds-grey-100,#f0f1f3)] border-b'
+              className='border-[var(--gui-border,#e2e3e5)] border-b last:border-b-0'
             >
               {row.map((cell, cellIndex) => (
-                <td key={`cell-${cellIndex}`} className='px-3 py-2 align-top'>
+                <td
+                  key={`cell-${cellIndex}`}
+                  className='px-4 py-3 align-top text-[var(--gui-text,#2c2d33)]'
+                >
                   {cell}
                 </td>
               ))}
@@ -484,11 +509,13 @@ function StateTable({
 function StateKeyValue({ pairs }: { pairs: Array<[string, string]> }) {
   if (pairs.length === 0) return null
   return (
-    <dl className='grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-4 gap-y-2 text-sm'>
+    <dl className='grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-6 gap-y-3 text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]'>
       {pairs.map(([key, value]) => (
         <Fragment key={key}>
-          <dt className='text-[var(--color-ds-grey-500,#8a8d99)]'>{key}</dt>
-          <dd className='text-[var(--color-ds-grey-800,#1f232d)]'>{value}</dd>
+          <dt className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'>
+            {key}
+          </dt>
+          <dd className='text-[var(--gui-text,#2c2d33)]'>{value}</dd>
         </Fragment>
       ))}
     </dl>
@@ -508,7 +535,7 @@ function EmptyState({ text }: { text: string }) {
   return (
     <p
       data-testid='empty-state'
-      className='col-span-full py-8 text-center text-[var(--color-ds-grey-500,#8a8d99)] text-sm'
+      className='col-span-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] border-dashed bg-[var(--gui-surface,#ffffff)] px-6 py-10 text-center text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'
     >
       {text}
     </p>
@@ -591,10 +618,14 @@ function submitButtonActionId(elements: Record<string, SpecElement>, childIds: s
 }
 
 const FIELD_INPUT_CLASS =
-  'w-full rounded-[var(--gui-radius,10px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] px-3 py-2 text-sm text-[var(--gui-text,#1f232d)]'
+  'h-10 w-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] px-4 text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)] text-[var(--gui-text,#2c2d33)] outline-none transition-[border-color,box-shadow] duration-100 placeholder:text-[var(--gui-text-tertiary,#8a8d99)] focus-visible:border-[var(--gui-brand,#1a73e8)] focus-visible:shadow-[0_0_0_3px_var(--gui-focus,rgb(26_115_232_/_30%))]'
+const FIELD_TEXTAREA_CLASS =
+  'min-h-[96px] w-full rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] px-4 py-2.5 text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)] text-[var(--gui-text,#2c2d33)] outline-none transition-[border-color,box-shadow] duration-100 placeholder:text-[var(--gui-text-tertiary,#8a8d99)] focus-visible:border-[var(--gui-brand,#1a73e8)] focus-visible:shadow-[0_0_0_3px_var(--gui-focus,rgb(26_115_232_/_30%))]'
 
 function fieldErrorClass(error: string | undefined): string {
-  return error ? 'border-[var(--color-ds-red-600,#dc2626)]' : ''
+  return error
+    ? 'border-[var(--gui-danger,#f31a1a)] focus-visible:border-[var(--gui-danger,#f31a1a)]'
+    : ''
 }
 
 function FieldShell({
@@ -611,13 +642,26 @@ function FieldShell({
   children: ReactNode
 }) {
   return (
-    <div className='flex flex-col gap-1 text-sm'>
-      {label ? htmlFor ? <label htmlFor={htmlFor}>{label}</label> : <span>{label}</span> : null}
+    <div className='flex flex-col gap-1.5'>
+      {label ? (
+        htmlFor ? (
+          <label
+            htmlFor={htmlFor}
+            className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-label-leading,16px)] tracking-[0.25px]'
+          >
+            {label}
+          </label>
+        ) : (
+          <span className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-label-leading,16px)] tracking-[0.25px]'>
+            {label}
+          </span>
+        )
+      ) : null}
       {children}
       {error ? (
         <p
           data-testid={`field-error-${name}`}
-          className='text-[var(--color-ds-red-600,#dc2626)] text-xs'
+          className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-danger,#f31a1a)]'
         >
           {error}
         </p>
@@ -706,7 +750,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         const title = asString(props.title)
         return (
           <div
-            className='min-h-full bg-[var(--gui-canvas,#f7f8f9)] text-[var(--gui-text,#1f232d)]'
+            className='min-h-full bg-[var(--gui-canvas,#f7f8f9)] text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-body-leading,24px)]'
             style={styleFromProps(props)}
           >
             {title && !hasPageHeader ? <h1 className='sr-only'>{title}</h1> : null}
@@ -717,7 +761,10 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       case 'Section':
         return (
           <section
-            className={cn('mx-auto w-full px-6 py-8', sectionWidthClass(props.width))}
+            className={cn(
+              'mx-auto flex w-full flex-col gap-[var(--gui-section-gap,24px)] px-6 py-8',
+              sectionWidthClass(props.width)
+            )}
             style={styleFromProps(props)}
           >
             {children}
@@ -807,13 +854,15 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       case 'PageHeader':
         return (
           <div
-            className='flex w-full flex-wrap items-center justify-between gap-3'
+            className='flex w-full flex-wrap items-end justify-between gap-4 pb-1'
             style={styleFromProps(props)}
           >
-            <div className='flex flex-col gap-1'>
-              <h1 className='font-semibold text-2xl tracking-tight'>{asString(props.title)}</h1>
+            <div className='flex min-w-0 flex-col gap-1'>
+              <h1 className='font-semibold text-[length:var(--gui-heading-size,32px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-heading-leading,40px)] tracking-tight'>
+                {asString(props.title)}
+              </h1>
               {asString(props.subtitle) ? (
-                <p className='text-[var(--gui-text-muted,#8a8d99)] text-sm'>
+                <p className='text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-body-leading,24px)]'>
                   {asString(props.subtitle)}
                 </p>
               ) : null}
@@ -855,10 +904,10 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
                   aria-current={isActive ? 'page' : undefined}
                   onClick={() => onNavigate(item.path)}
                   className={cn(
-                    '-mb-px border-b-2 px-3 py-2 text-sm',
+                    '-mb-px border-b-2 px-4 py-2.5 text-[length:var(--gui-body-size,16px)]',
                     isActive
-                      ? 'border-[var(--gui-brand,#2563eb)] font-medium text-[var(--gui-brand,#2563eb)]'
-                      : 'border-transparent text-[var(--gui-text-muted,#8a8d99)]'
+                      ? 'border-[var(--gui-brand,#1a73e8)] font-medium text-[var(--gui-brand,#1a73e8)]'
+                      : 'border-transparent text-[var(--gui-text-muted,#575a66)] hover:text-[var(--gui-text,#2c2d33)]'
                   )}
                 >
                   {item.label}
@@ -893,13 +942,19 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             .map(splitTableRow)
           if (headers.length === 0 && rows.length === 0) return null
           return (
-            <div className='w-full overflow-x-auto' style={styleFromProps(props)}>
-              <table className='w-full border-collapse text-left text-sm'>
+            <div
+              className='w-full overflow-x-auto rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)]'
+              style={styleFromProps(props)}
+            >
+              <table className='w-full border-collapse text-left text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]'>
                 {headers.length > 0 ? (
                   <thead>
-                    <tr className='border-[var(--color-ds-grey-200,#e2e3e5)] border-b'>
+                    <tr className='border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-canvas,#f7f8f9)]'>
                       {headers.map((header) => (
-                        <th key={header} className='px-3 py-2 font-medium'>
+                        <th
+                          key={header}
+                          className='px-4 py-3 font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'
+                        >
                           {header}
                         </th>
                       ))}
@@ -910,10 +965,13 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
                   {rows.map((row, rowIndex) => (
                     <tr
                       key={`row-${rowIndex}`}
-                      className='border-[var(--color-ds-grey-100,#f0f1f3)] border-b'
+                      className='border-[var(--gui-border,#e2e3e5)] border-b last:border-b-0'
                     >
                       {row.map((cell, cellIndex) => (
-                        <td key={`cell-${cellIndex}`} className='px-3 py-2 align-top'>
+                        <td
+                          key={`cell-${cellIndex}`}
+                          className='px-4 py-3 align-top text-[var(--gui-text,#2c2d33)]'
+                        >
                           {cell}
                         </td>
                       ))}
@@ -944,23 +1002,22 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             : displayFromStateValue(stateValue, asString(props.value))
         const delta = asString(props.delta)
         return (
-          <div
-            className='flex flex-col gap-1 rounded-[var(--gui-radius,10px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)]'
-            style={styleFromProps(props)}
-          >
-            <span className='text-[var(--gui-text-muted,#8a8d99)] text-xs uppercase tracking-wide'>
+          <div className={cn('flex flex-col gap-2', SURFACE_CARD)} style={styleFromProps(props)}>
+            <span className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'>
               {asString(props.label)}
             </span>
             <div className='flex flex-wrap items-baseline gap-2'>
-              <span className='font-semibold text-2xl'>{value}</span>
+              <span className='font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-title-leading,32px)]'>
+                {value}
+              </span>
               {delta ? (
-                <span className={cn('font-medium text-xs', deltaToneClass(props.deltaTone))}>
+                <span className={cn('font-medium text-sm', deltaToneClass(props.deltaTone))}>
                   {delta}
                 </span>
               ) : null}
             </div>
             {asString(props.hint) ? (
-              <span className='text-[var(--gui-text-muted,#8a8d99)] text-xs'>
+              <span className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
                 {asString(props.hint)}
               </span>
             ) : null}
@@ -993,17 +1050,16 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       }
       case 'Card':
         return (
-          <div
-            className='rounded-[var(--gui-radius,10px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)] shadow-sm'
-            style={styleFromProps(props)}
-          >
+          <div className={cn('flex flex-col gap-4', SURFACE_CARD)} style={styleFromProps(props)}>
             {asString(props.title) || asString(props.description) ? (
-              <div className='mb-3 flex flex-col gap-1'>
+              <div className='flex flex-col gap-1'>
                 {asString(props.title) ? (
-                  <h2 className='font-semibold text-lg'>{asString(props.title)}</h2>
+                  <h2 className='font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-title-leading,32px)]'>
+                    {asString(props.title)}
+                  </h2>
                 ) : null}
                 {asString(props.description) ? (
-                  <p className='text-[var(--gui-text-muted,#8a8d99)] text-sm'>
+                  <p className='text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-body-leading,24px)]'>
                     {asString(props.description)}
                   </p>
                 ) : null}
@@ -1020,7 +1076,13 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           | 'h3'
           | 'h4'
         return (
-          <Tag className='font-semibold tracking-tight' style={styleFromProps(props)}>
+          <Tag
+            className={cn(
+              'font-semibold text-[var(--gui-text,#2c2d33)] tracking-tight',
+              HEADING_SIZE_CLASSES[Tag]
+            )}
+            style={styleFromProps(props)}
+          >
             {asString(props.text)}
           </Tag>
         )
@@ -1028,7 +1090,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       case 'Text':
         return (
           <MarkdownText
-            className='text-[var(--gui-text,#1f232d)]'
+            className='text-[var(--gui-text,#2c2d33)]'
             style={styleFromProps(props)}
             content={asString(props.text)}
           />
@@ -1045,13 +1107,15 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       }
       case 'Alert':
         return (
-          <div className={cn('rounded-lg px-3 py-2 text-sm', toneClass(props.tone))}>
+          <div
+            className={cn('rounded-[var(--gui-radius-sm,8px)] px-4 py-3', toneClass(props.tone))}
+          >
             <MarkdownText content={asString(props.text)} />
           </div>
         )
       case 'Spinner':
         return pending ? (
-          <p className='text-[var(--gui-text-muted,#8a8d99)] text-sm'>
+          <p className='text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'>
             {asString(props.label, 'Loading…')}
           </p>
         ) : null
@@ -1104,7 +1168,10 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         }
         return (
           <form
-            className={cn('flex flex-col gap-4', alignItemsClass(props.align, 'stretch'))}
+            className={cn(
+              'flex flex-col gap-[var(--gui-gap,16px)]',
+              alignItemsClass(props.align, 'stretch')
+            )}
             onSubmit={handleSubmit}
             noValidate
           >
@@ -1142,7 +1209,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
                 rows={4}
                 value={asFieldString(value)}
                 onChange={(event) => setNamedValue(name, event.target.value)}
-                className={inputClass}
+                className={cn(FIELD_TEXTAREA_CLASS, fieldErrorClass(error))}
               />
             </FieldShell>
           )
@@ -1251,8 +1318,8 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
                   >
                     <span
                       className={cn(
-                        'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
-                        checked ? 'bg-[var(--gui-brand,#2563eb)]' : 'bg-[var(--gui-border,#e2e3e5)]'
+                        'relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-100',
+                        checked ? 'bg-[var(--gui-brand,#1a73e8)]' : 'bg-[var(--gui-border,#e2e3e5)]'
                       )}
                     >
                       <span
@@ -1367,7 +1434,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         return (
           <button
             type='button'
-            className='text-[var(--gui-brand,#2563eb)] text-sm underline-offset-2 hover:underline'
+            className='font-medium text-[length:var(--gui-body-size,16px)] text-[var(--gui-brand,#1a73e8)] underline-offset-2 hover:text-[var(--gui-brand-hover,#155cba)] hover:underline'
             onClick={() => onNavigate(asString(props.to))}
           >
             {asString(props.label)}
@@ -1377,7 +1444,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         return (
           <a
             href={asString(props.href)}
-            className='text-[var(--gui-brand,#2563eb)] underline-offset-2 hover:underline'
+            className='font-medium text-[var(--gui-brand,#1a73e8)] underline-offset-2 hover:text-[var(--gui-brand-hover,#155cba)] hover:underline'
             style={styleFromProps(props)}
             rel='noreferrer'
           >

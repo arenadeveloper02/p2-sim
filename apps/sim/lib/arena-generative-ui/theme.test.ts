@@ -56,10 +56,12 @@ describe('arenaGenerativeThemeStyle', () => {
       })
     ).toMatchObject({
       '--gui-brand': '#112233',
-      '--gui-brand-hover': '#112233',
-      '--gui-radius': '6px',
+      '--gui-brand-hover': 'color-mix(in srgb, #112233 82%, #000)',
+      '--gui-brand-pressed': 'color-mix(in srgb, #112233 68%, #000)',
+      '--gui-radius': '8px',
       '--gui-gap': '24px',
       '--gui-pad': '24px',
+      '--gui-section-gap': '32px',
     })
   })
 

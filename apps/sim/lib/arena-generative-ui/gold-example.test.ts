@@ -72,6 +72,7 @@ describe('gold example', () => {
     expect(serialized).toContain('"width":"wide"')
     expect(serialized).toContain('"width":"narrow"')
     expect(serialized).toContain('"deltaTone":"positive"')
+    expect(serialized).toContain('"brandColor":"#1A73E8"')
   })
 
   it('teaches onLoad on the page that fetches its own data, not the CTA result page', () => {

@@ -184,6 +184,9 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('Load more')
     expect(system).toContain('manifest.theme')
     expect(system).toContain('brandColor')
+    expect(system).toContain('#1A73E8')
+    expect(system).toContain('always emit manifest.theme')
+    expect(system).toContain('ARENA DESIGN SYSTEM')
   })
 
   it('opens with the engineer persona and a no-markdown instruction', async () => {

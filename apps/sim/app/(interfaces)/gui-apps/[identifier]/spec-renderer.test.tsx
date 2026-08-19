@@ -788,8 +788,8 @@ describe('SpecRenderer', () => {
     const { container } = render({ spec })
     expect(container.textContent).toContain('+14.2%')
     const tones = Array.from(container.querySelectorAll('span')).map((node) => node.className)
-    expect(tones.some((name) => name.includes('text-emerald-700'))).toBe(true)
-    expect(tones.some((name) => name.includes('text-red-700'))).toBe(true)
+    expect(tones.some((name) => name.includes('text-[var(--gui-success-text,#23784f)]'))).toBe(true)
+    expect(tones.some((name) => name.includes('text-[var(--gui-error-text,#921010)]'))).toBe(true)
   })
 
   describe('skeletons', () => {
@@ -1019,29 +1019,30 @@ describe('SpecRenderer', () => {
     it('defaults to the secondary variant so pages are not a wall of primaries', () => {
       const button = renderButton({ label: 'Export', navigateTo: 'report' })
       expect(button.className).toContain('border')
-      expect(button.className).not.toContain('bg-[var(--gui-brand,#2563eb)]')
+      expect(button.className).not.toContain('bg-[var(--gui-brand,#1a73e8)]')
     })
 
     it('renders the primary variant as a filled button', () => {
       const button = renderButton({ label: 'Run', actionId: 'run', variant: 'primary' })
-      expect(button.className).toContain('bg-[var(--gui-brand,#2563eb)]')
+      expect(button.className).toContain('bg-[var(--gui-brand,#1a73e8)]')
       expect(button.className).toContain('text-white')
     })
 
     it('renders the destructive variant in red', () => {
       const button = renderButton({ label: 'Delete', actionId: 'del', variant: 'destructive' })
-      expect(button.className).toContain('bg-red-600')
+      expect(button.className).toContain('bg-[var(--gui-danger,#f31a1a)]')
     })
 
     it('renders the ghost variant without a border or fill', () => {
       const button = renderButton({ label: 'Back', navigateTo: 'home', variant: 'ghost' })
-      expect(button.className).not.toContain('border')
-      expect(button.className).not.toContain('bg-red-600')
+      expect(button.className).not.toContain('border-[var(--gui-border')
+      expect(button.className).not.toContain('bg-[var(--gui-danger,#f31a1a)]')
+      expect(button.className).not.toContain('bg-[var(--gui-brand,#1a73e8)]')
     })
 
     it('applies the small size', () => {
       const button = renderButton({ label: 'Filter', actionId: 'filter', size: 'sm' })
-      expect(button.className).toContain('text-xs')
+      expect(button.className).toContain('h-8')
     })
 
     it('never leaks a size token into the inline font size', () => {

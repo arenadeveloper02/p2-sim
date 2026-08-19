@@ -5,6 +5,7 @@ import { truncate } from '@sim/utils/string'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import {
   ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
+  ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
   ARENA_GENERATIVE_UI_ON_LOAD_RULE,
   ARENA_GENERATIVE_UI_OUTPUT_RULES,
   ARENA_GENERATIVE_UI_PAGINATION_RULE,
@@ -267,6 +268,7 @@ export async function generateArenaGenerativeManifest(
   })
   const systemPrompt = [
     ARENA_GENERATIVE_UI_PERSONA,
+    ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
     catalogPrompt,
     ARENA_GENERATIVE_UI_GOLD_EXAMPLE,
     structuredBrief ? archetypeRecipe(structuredBrief.archetype) : '',

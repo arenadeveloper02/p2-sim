@@ -75,7 +75,7 @@ const COMPONENTS = {
     return (
       <a
         href={safe}
-        className='text-[var(--color-ds-blue-600,#2563eb)] underline-offset-2 hover:underline'
+        className='text-[var(--color-ds-blue-600,#1a73e8)] underline-offset-2 hover:underline'
         target='_blank'
         rel='noreferrer'
       >

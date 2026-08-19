@@ -30,7 +30,7 @@ export function PreviewDiagnosticsBanner({ instructions }: PreviewDiagnosticsBan
             setCopied(false)
           }
         }}
-        className='shrink-0 rounded px-2 py-1 text-[var(--gui-brand,#2563eb)] text-xs hover:underline'
+        className='shrink-0 rounded px-2 py-1 text-[var(--gui-brand,#1a73e8)] text-xs hover:underline'
       >
         {copied ? 'Copied' : 'Copy as edit instructions'}
       </button>
