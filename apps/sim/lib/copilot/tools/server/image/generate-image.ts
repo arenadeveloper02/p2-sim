@@ -284,9 +284,8 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
         const mode = outputFile?.mode ?? 'create'
 
         assertServerToolNotAborted(context)
-        const written = await writeWorkspaceFileByPath({
+        const written = await writeCopilotWorkspaceFileByPath(context, {
           workspaceId,
-          userId: context.userId,
           target: {
             path: outputPath,
             mode,
@@ -315,32 +314,6 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
       }
 
       const firstFile = generatedFiles[0]
-      const ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? '.jpg' : '.png'
-      const outputFile = params.outputs?.files?.[0]
-      const outputPath = outputFile?.path || `files/generated-image${ext}`
-      const imageBuffer = Buffer.from(imageBase64, 'base64')
-      const mode = outputFile?.mode ?? 'create'
-
-      assertServerToolNotAborted(context)
-      const written = await writeCopilotWorkspaceFileByPath(context, {
-        workspaceId,
-        target: {
-          path: outputPath,
-          mode,
-          mimeType: outputFile?.mimeType,
-        },
-        buffer: imageBuffer,
-        inferredMimeType: mimeType,
-      })
-
-      logger.info('Generated image saved', {
-        fileId: written.id,
-        fileName: written.name,
-        vfsPath: written.vfsPath,
-        size: imageBuffer.length,
-        mimeType,
-      })
-
       return {
         success: true,
         message:

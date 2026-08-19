@@ -12,7 +12,7 @@ import {
   readResponseJsonWithLimit,
   readResponseTextWithLimit,
 } from '@/lib/core/utils/stream-limits'
-import { getBaseUrl } from '@/lib/core/utils/urls'
+import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { getDocusignOAuthUrl } from '@/lib/oauth/docusign'
 import { getMicrosoftOAuthEndpoints, getMicrosoftUserInfoFromIdToken } from '@/lib/oauth/microsoft'
 import { SALESFORCE_LOGIN_HOSTS } from '@/lib/oauth/salesforce'

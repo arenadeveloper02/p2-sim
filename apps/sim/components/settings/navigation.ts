@@ -8,7 +8,7 @@ import {
   Key,
   // KeySquare,
   Lock,
-  // LogIn,
+  LogIn,
   Palette,
   PanelLeft,
   // Send,

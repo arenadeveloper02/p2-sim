@@ -152,7 +152,7 @@ export function extractResourcesFromToolResult(
       const files = Array.isArray(result.files) ? result.files : []
       if (files.length > 0) {
         return files
-          .map((entry) => asRecord(entry))
+          .map((entry) => toRecord(entry))
           .filter((entry) => typeof entry.fileId === 'string' && entry.fileId.trim())
           .map((entry) => ({
             type: 'file' as const,

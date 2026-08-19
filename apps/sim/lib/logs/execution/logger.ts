@@ -10,7 +10,7 @@ import {
   workspace,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { getErrorMessage } from '@sim/utils/errors'
+import { getErrorMessage, getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { checkUsageStatus as checkResolvedUsageStatus } from '@/lib/billing/calculations/usage-monitor'
@@ -46,6 +46,7 @@ import {
   type ExecutionActor,
   type ExecutionActorType,
 } from '@/lib/execution/actor-resolution'
+import type { ExecutionLineage } from '@/lib/execution/lineage'
 import {
   collectLargeValueReferenceKeys,
   replaceLargeValueReferenceKeysWithClient,
@@ -659,6 +660,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
     conversationId?: string
     initialInput?: string
     deploymentVersionId?: string
+    executionDeadlineAt?: Date | null
+    lineage?: ExecutionLineage
+    executionActor?: ExecutionActor
   }): Promise<{
     workflowLog: WorkflowExecutionLog
     snapshot: WorkflowExecutionSnapshot
@@ -677,6 +681,9 @@ export class ExecutionLogger implements IExecutionLoggerService {
       conversationId,
       initialInput,
       deploymentVersionId,
+      executionDeadlineAt,
+      lineage,
+      executionActor,
     } = params
     const execLog = logger.withMetadata({ workflowId, workspaceId, executionId })
 
@@ -1683,7 +1690,8 @@ export class ExecutionLogger implements IExecutionLoggerService {
     billingContext?: BillingContext,
     /** Execution start time stamped onto usage_log.occurred_at. */
     occurredAt?: Date,
-    executionActor?: ExecutionActor
+    executionActor?: ExecutionActor,
+    executionLineage?: ExecutionLineage
   ): Promise<number> {
     // The usage ledger (recordUsage below) is written regardless of
     // BILLING_ENABLED so cost is available everywhere (incl. self-hosted).

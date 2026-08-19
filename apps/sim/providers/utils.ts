@@ -66,7 +66,6 @@ import type { SchemaProperty } from '@/tools/params'
 import { SPYFU_DEFAULT_OPERATION_ID } from '@/tools/spyfu/operations'
 import type { WorkflowToolExecutionContext } from '@/tools/types'
 
-xw
 const logger = createLogger('ProviderUtils')
 
 /** Log once per unknown model id so streaming paths do not spam warnings. */

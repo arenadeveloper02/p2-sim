@@ -13,6 +13,10 @@ import { toError } from '@sim/utils/errors'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { hasWorkspaceSandboxAccess } from '@/lib/billing/core/subscription'
 import { createCopilotWorkspaceContextFilePrincipal } from '@/lib/copilot/auth/file-delegation'
+import {
+  getHubSpotSharedAccountOptionIds,
+  mergeOAuthIntegrationPresence,
+} from '@/lib/copilot/chat/env-integration-presence'
 import type { VfsSnapshotV1, VfsSnapshotV1Workflow } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import {
   filterSecretNamesByMountPolicy,

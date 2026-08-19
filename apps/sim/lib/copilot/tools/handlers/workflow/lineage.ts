@@ -1,4 +1,4 @@
-import type { ExecutionContext } from '@/lib/copilot/tool-executor/types'
+import type { ToolExecutionContext } from '@/lib/copilot/tool-executor/types'
 import type { ExecuteWorkflowOptions } from '@/lib/workflows/executor/execute-workflow'
 
 /**
@@ -8,7 +8,7 @@ import type { ExecuteWorkflowOptions } from '@/lib/workflows/executor/execute-wo
  * triggering chat/run ids for rollup attribution.
  */
 export function buildCopilotWorkflowLineageOptions(
-  context: ExecutionContext
+  context: ToolExecutionContext
 ): Pick<
   ExecuteWorkflowOptions,
   'parentExecutionId' | 'parentRootExecutionId' | 'triggeringChatId' | 'triggeringRunId'

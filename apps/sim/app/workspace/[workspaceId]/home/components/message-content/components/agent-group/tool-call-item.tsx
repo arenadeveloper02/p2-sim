@@ -178,6 +178,7 @@ export function ToolCallItem({
     ? getWaitCountdownTitle(params, elapsedMs)
     : liveWorkspaceFileTitle || displayTitle
   const title = getToolStatusDisplayTitle(liveTitle, status, toolName)
+  const isMultilineTitle = title.includes('\n')
 
   // A waiting terminal handoff swaps its row for the hand-back chip, the same
   // way a browser takeover does: the row would otherwise spin with nothing

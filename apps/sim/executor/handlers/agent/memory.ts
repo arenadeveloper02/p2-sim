@@ -277,10 +277,10 @@ export class Memory {
     const provenance = ctx.resolvedSecretTraceRegistry
       ? this.captureMessagesProvenance(ctx.resolvedSecretTraceRegistry, messagesToStore)
       : undefined
-    await this.seedMemoryRecord(workspaceId, key, messagesToStore, provenance)
+    await this.seedMemoryRecord(ctx.workspaceId, key, messagesToStore, provenance)
 
     logger.debug('Seeded memory', {
-      workspaceId,
+      workspaceId: ctx.workspaceId,
       count: messagesToStore.length,
     })
   }

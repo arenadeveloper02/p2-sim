@@ -1,10 +1,17 @@
 import { db } from '@sim/db'
-import { document, knowledgeBase, knowledgeConnector, workspaceFiles } from '@sim/db/schema'
+import {
+  document,
+  knowledgeBase,
+  knowledgeConnector,
+  permissions,
+  workspace,
+  workspaceFiles,
+} from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getPostgresErrorCode } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import type { SQL } from 'drizzle-orm'
-import { and, count, eq, exists, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { and, count, eq, exists, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { V2KnowledgeBaseSortBy } from '@/lib/api/contracts/v2/knowledge'
 import type { CursorKey, KeysetKey, ListSortOrder } from '@/lib/api/list-query'
 import {

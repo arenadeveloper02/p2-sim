@@ -7,6 +7,8 @@ import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservati
 import type { BillingAttributionSnapshot } from '@/lib/billing/core/billing-attribution'
 import { isRetryableInfrastructureError } from '@/lib/core/errors/retryable-infrastructure'
 import { RESERVATION_TTL_BUFFER_MS } from '@/lib/core/execution-limits'
+import { type ExecutionActor } from '@/lib/execution/actor-resolution'
+import type { ExecutionLineage } from '@/lib/execution/lineage'
 import type { LargeValueStoreContext } from '@/lib/execution/payloads/store'
 import { terminalExecutionLogFields } from '@/lib/logs/execution/cancellation'
 import type { SecretSafeBlockLog } from '@/lib/logs/execution/display-types'

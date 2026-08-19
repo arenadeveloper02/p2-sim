@@ -18,6 +18,10 @@ import {
   type MothershipDelegatedToolName,
   WORKFLOW_SCOPED_DELEGATED_TOOLS,
 } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
+import type {
+  ToolExecutionContext,
+  ToolExecutionResult,
+} from '@/local-copilot/lib/tools/executor'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
 
 export {

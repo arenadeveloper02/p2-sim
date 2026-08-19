@@ -20,6 +20,7 @@ import {
   extractAssistantFilesFromData,
   extractGeneratedImagesFromData,
 } from '@/lib/chat/assistant-assets'
+import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import { readSSEEvents } from '@/lib/core/utils/sse'
 import {
   isChatChunkFrame,
@@ -705,6 +706,12 @@ function resolveNestedChartOutput(
   const newCharts = allCharts.filter((option) => !existingSignatures.has(JSON.stringify(option)))
 
   return formatChartsForChat(newCharts)
+}
+
+interface StreamFinalData {
+  success?: boolean
+  output?: Record<string, { results?: unknown } | undefined>
+  error?: string | { message?: string }
 }
 
 function resolveForkFallbackContent(finalData: StreamFinalData): string | undefined {

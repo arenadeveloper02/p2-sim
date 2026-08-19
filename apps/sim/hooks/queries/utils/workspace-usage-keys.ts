@@ -2,6 +2,8 @@
  * React Query key factory for the per-workspace credit and usage-gate reads. Standalone
  * for the same import-cycle reason as {@link file://./subscription-keys.ts}.
  */
+import { type WorkspaceUsageAnalyticsQuery } from '@/lib/api/contracts/workspace-usage'
+
 export const workspaceUsageKeys = {
   all: ['workspace-usage'] as const,
   analytics: () => [...workspaceUsageKeys.all, 'analytics'] as const,

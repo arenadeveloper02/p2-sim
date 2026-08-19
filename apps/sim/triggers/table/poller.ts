@@ -1,4 +1,5 @@
 import { Table } from '@sim/emcn/icons'
+import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import { requestJson } from '@/lib/api/client/request'
 import { listTablesContract } from '@/lib/api/contracts/tables'
 import type { TableDefinition } from '@/lib/table'

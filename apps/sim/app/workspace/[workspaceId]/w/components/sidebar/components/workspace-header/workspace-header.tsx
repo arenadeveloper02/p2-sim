@@ -19,7 +19,7 @@ import {
   Skeleton,
   Tooltip,
 } from '@sim/emcn'
-import { PanelLeft, Pin } from '@sim/emcn/icons'
+import { ManageWorkspace, PanelLeft, Pin } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
 import { MoreHorizontal, Search } from 'lucide-react'

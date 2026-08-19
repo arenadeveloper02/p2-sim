@@ -20,8 +20,10 @@ import {
   Upload,
 } from '@sim/emcn'
 import {
+  BookOpen,
   Database,
   Files,
+  HelpCircle,
   Integration,
   MoreHorizontal,
   PanelLeft,
@@ -33,6 +35,7 @@ import {
   Workflow,
 } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
+import { SlackIcon } from '@/components/icons'
 import Link from 'next/link'
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
@@ -1052,6 +1055,7 @@ export const Sidebar = memo(function Sidebar({
   )
 
   const [hasOverflowTop, setHasOverflowTop] = useState(false)
+  const [hasOverflowBottom, setHasOverflowBottom] = useState(false)
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -1059,6 +1063,9 @@ export const Sidebar = memo(function Sidebar({
 
     const updateScrollState = () => {
       setHasOverflowTop(container.scrollTop > 1)
+      setHasOverflowBottom(
+        container.scrollHeight - container.scrollTop - container.clientHeight > 1
+      )
     }
 
     updateScrollState()

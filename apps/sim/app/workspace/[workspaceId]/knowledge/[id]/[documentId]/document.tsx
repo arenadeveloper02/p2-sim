@@ -14,7 +14,7 @@ import {
 } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { truncate } from '@sim/utils/string'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQueryStates } from 'nuqs'
 import type { ChunkData } from '@/lib/knowledge/types'
 import { formatTokenCount } from '@/lib/tokenization'

@@ -458,7 +458,7 @@ function buildUnifiedStartOutput(
 
       // If field is not already in output, set it from workflowInput or empty string
       if (!Object.hasOwn(output, fieldName)) {
-        const workflowRecord = isPlainObject(workflowInput) ? workflowInput : undefined
+        const workflowRecord = isRecordLike(workflowInput) ? workflowInput : undefined
         if (workflowRecord && Object.hasOwn(workflowRecord, fieldName)) {
           output[fieldName] = workflowRecord[fieldName]
         } else {

@@ -488,7 +488,7 @@ function isCredentialItemData(value: unknown): value is CredentialItemData {
 }
 
 function isToolConfirmationTagData(value: unknown): value is ToolConfirmationTagData {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value)) return false
   const categories = ['destructive', 'production', 'credential', 'costly', 'external_write']
   return (
     typeof value.toolCallId === 'string' &&
@@ -506,7 +506,7 @@ function isToolConfirmationTagData(value: unknown): value is ToolConfirmationTag
 }
 
 function isWorkflowPatchTagData(value: unknown): value is WorkflowPatchTagData {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value)) return false
   return (
     typeof value.patchId === 'string' &&
     value.patchId.trim().length > 0 &&
@@ -579,7 +579,7 @@ function isChartPoint(value: unknown): value is number | [number, number] {
 }
 
 function isChartTagSeries(value: unknown): value is ChartTagSeries {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value)) return false
   if (value.name !== undefined && typeof value.name !== 'string') return false
   return (
     Array.isArray(value.data) &&
@@ -590,7 +590,7 @@ function isChartTagSeries(value: unknown): value is ChartTagSeries {
 }
 
 function isChartTagData(value: unknown): value is ChartTagData {
-  if (!isRecord(value)) return false
+  if (!isRecordLike(value)) return false
   if (
     typeof value.type !== 'string' ||
     !(CHART_TAG_TYPES as readonly string[]).includes(value.type)

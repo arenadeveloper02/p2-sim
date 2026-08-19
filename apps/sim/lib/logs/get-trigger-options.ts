@@ -13,6 +13,11 @@ export const ARENA_AGENT_TRIGGER_LABEL = 'Arena Agent'
 let cachedTriggerOptions: TriggerOption[] | null = null
 let cachedTriggerMetadataMap: Map<string, { label: string; color: string }> | null = null
 
+function resetTriggerOptionsCache() {
+  cachedTriggerOptions = null
+  cachedTriggerMetadataMap = null
+}
+
 /**
  * Dynamically generates trigger filter options from the trigger registry and block definitions.
  * Results are cached after first call for performance (~98% faster on subsequent calls).

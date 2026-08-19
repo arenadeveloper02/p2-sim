@@ -424,16 +424,6 @@ export const getExecutionSnapshotContract = defineRouteContract({
   },
 })
 
-export const cancelWorkflowExecutionContract = defineRouteContract({
-  method: 'POST',
-  path: '/api/workflows/[id]/executions/[executionId]/cancel',
-  params: cancelWorkflowExecutionParamsSchema,
-  response: {
-    mode: 'json',
-    schema: cancelWorkflowExecutionResponseSchema,
-  },
-})
-
 const reconciliationClassSchema = z.enum([
   'reconciled',
   'ledger_projection_drift',

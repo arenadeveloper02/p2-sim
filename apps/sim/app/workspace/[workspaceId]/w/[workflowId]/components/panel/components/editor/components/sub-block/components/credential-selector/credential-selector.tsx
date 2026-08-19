@@ -389,7 +389,7 @@ export function CredentialSelector({
         return {
           label: option.label,
           value: `__connect_account__:${option.serviceId}`,
-          iconElement: <ExternalLink className='size-3' />,
+          iconElement: <SquareArrowUpRight className='size-3' />,
           serviceId: option.serviceId,
           provider: optionProvider,
           credentialCount,
@@ -422,7 +422,7 @@ export function CredentialSelector({
         label:
           personalAccountCount > 0 ? 'Connect another HubSpot account' : 'Connect HubSpot account',
         value: '__connect_account__',
-        iconElement: <ExternalLink className='size-3' />,
+        iconElement: <SquareArrowUpRight className='size-3' />,
       })
       options.push(...additionalConnectItems)
 
@@ -446,7 +446,7 @@ export function CredentialSelector({
             ? 'Connect another LinkedIn account'
             : 'Connect LinkedIn account',
         value: '__connect_account__',
-        iconElement: <ExternalLink className='size-3' />,
+        iconElement: <SquareArrowUpRight className='size-3' />,
       })
 
       for (const option of unipileAccountOptions) {
@@ -454,7 +454,7 @@ export function CredentialSelector({
         options.push({
           label: `Reconnect ${option.label}`,
           value: `${UNIPILE_RECONNECT_PREFIX}${option.credentialId}`,
-          iconElement: <ExternalLink className='size-3' />,
+          iconElement: <SquareArrowUpRight className='size-3' />,
         })
       }
 

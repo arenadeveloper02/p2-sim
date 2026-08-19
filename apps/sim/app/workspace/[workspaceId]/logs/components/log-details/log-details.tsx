@@ -35,6 +35,7 @@ import {
   X,
 } from '@sim/emcn/icons'
 import { formatDuration } from '@sim/utils/formatting'
+import { getErrorMessage } from '@sim/utils/errors'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useQueryState } from 'nuqs'

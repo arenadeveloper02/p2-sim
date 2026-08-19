@@ -4,6 +4,7 @@ import { normalizeReferenceFileParams } from '@/lib/image-generation/reference-f
 import type { BlockConfig } from '@/blocks/types'
 import { AuthMode, IntegrationType } from '@/blocks/types'
 import {
+  getAgentModelOptions,
   getModelCapabilityCondition,
   getProviderCredentialSubBlocks,
   getSerializedModelProviderId,
