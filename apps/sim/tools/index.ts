@@ -83,6 +83,14 @@ import * as toolsUtilsServer from '@/tools/utils.server'
 
 const logger = createLogger('Tools')
 
+/**
+ * True when running on Bun, which accepts and ignores undici's `dispatcher`
+ * fetch option. Production runs on Bun; local `next dev` runs on Node.
+ */
+function isBunRuntime(): boolean {
+  return typeof process !== 'undefined' && Boolean((process.versions as { bun?: string }).bun)
+}
+
 interface ToolExecutionScope {
   workspaceId?: string
   workflowId?: string
@@ -1272,9 +1280,7 @@ function cloneResponseHeaders(headers: Headers | HeadersInit | undefined): Heade
  * `ReadableStream is locked` if we forward the spent stream.
  */
 function createReplayBodyStream(data: unknown): ReadableStream<Uint8Array> {
-  const encoded = new TextEncoder().encode(
-    typeof data === 'string' ? data : JSON.stringify(data)
-  )
+  const encoded = new TextEncoder().encode(typeof data === 'string' ? data : JSON.stringify(data))
   return new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(encoded)
@@ -2548,14 +2554,22 @@ async function executeToolRequest(
 
           /**
            * undici's default headersTimeout/bodyTimeout is 300s. Internal tools such as
-           * Arena Generative UI do not send HTTP headers until Claude finishes, so the
+           * Arena Generative UI do not send HTTP headers until the model finishes, so the
            * AbortController ceiling never fires unless these match `timeout`.
+           *
+           * Bun does not implement undici's `dispatcher` option — it is accepted and
+           * ignored, so an Agent built here would be allocated and destroyed per request
+           * for no effect. Bun's own fetch applies no header or idle timeout either, which
+           * leaves the AbortController above (plus whatever the network path between here
+           * and `fullUrl` enforces) as the only bound there.
            */
-          const dispatcher = new Agent({
-            headersTimeout: timeout,
-            bodyTimeout: timeout,
-            allowH2: false,
-          })
+          const dispatcher = isBunRuntime()
+            ? undefined
+            : new Agent({
+                headersTimeout: timeout,
+                bodyTimeout: timeout,
+                allowH2: false,
+              })
 
           try {
             // double-cast-allowed: dispatcher is an undici RequestInit field not in the DOM lib
@@ -2564,7 +2578,7 @@ async function executeToolRequest(
               headers: headers,
               body: requestParams.body,
               signal: controller.signal,
-              dispatcher,
+              ...(dispatcher ? { dispatcher } : {}),
             } as unknown as RequestInit)
             if (
               nullBodyStatuses.has(internalResponse.status) ||
@@ -2614,7 +2628,7 @@ async function executeToolRequest(
             if (abortListener) {
               signal?.removeEventListener('abort', abortListener)
             }
-            void dispatcher.destroy().catch(() => {})
+            void dispatcher?.destroy().catch(() => {})
           }
         } else {
           const allowHttp = tool.request.allowHttp === true

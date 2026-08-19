@@ -112,6 +112,69 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     expect(parsed?.actions).toEqual([])
   })
 
+  /**
+   * The shape a planner actually returns for a brief written in web-route
+   * language: every path is a URL, and root has no kebab-case spelling at all.
+   */
+  it('normalises URL-style paths from a planner that thinks in routes', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        entryPath: '/',
+        pages: [
+          { ...listDetailBrief.pages[0], path: '/' },
+          { ...listDetailBrief.pages[1], path: '/select-company' },
+        ],
+        actions: [
+          { ...listDetailBrief.actions[0], fromPage: '/' },
+          {
+            ...listDetailBrief.actions[1],
+            fromPage: '/select-company',
+            onSuccessNavigate: '/report?range=30d',
+          },
+        ],
+      },
+      {
+        apiBindings: [
+          { key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' },
+          { key: 'get_order', label: 'Get', kind: 'workflow', workflowId: 'wf-2' },
+        ],
+      }
+    )
+    expect(parsed?.entryPath).toBe('home')
+    expect(parsed?.pages.map((page) => page.path)).toEqual(['home', 'select-company'])
+    expect(parsed?.actions.map((action) => action.fromPage)).toEqual(['home', 'select-company'])
+    expect(parsed?.actions[1]?.onSuccessNavigate).toBe('report?range=30d')
+  })
+
+  it('folds a nested or spaced path into one kebab-case key', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        entryPath: '/company/analysis',
+        pages: [
+          { ...listDetailBrief.pages[0], path: '/company/analysis' },
+          { ...listDetailBrief.pages[1], path: 'Select Company' },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.pages.map((page) => page.path)).toEqual(['company-analysis', 'select-company'])
+    expect(parsed?.entryPath).toBe('company-analysis')
+  })
+
+  it('leaves a blank navigation target blank rather than pointing it at root', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        actions: [{ ...listDetailBrief.actions[0], onSuccessNavigate: '' }],
+      },
+      { apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }] }
+    )
+    expect(parsed?.actions[0]?.onSuccessNavigate).toBe('')
+  })
+
   it('keeps exactly the pinned page paths and fills gaps', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       { ...listDetailBrief, pages: [listDetailBrief.pages[0]] },

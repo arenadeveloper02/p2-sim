@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { truncate } from '@sim/utils/string'
 import { z } from 'zod'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { parseLlmJsonObject } from '@/lib/arena-generative-ui/parse-inputs'
@@ -35,34 +36,52 @@ const pagePathSchema = z
   .max(64)
   .regex(ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN, 'path must be kebab-case')
 
+const BRIEF_TRUNCATION_SUFFIX = '...'
+
+/**
+ * Descriptive prose the planner writes for the generator to read, clamped rather
+ * than bounded: a brief that describes a dense app runs past these lengths easily,
+ * and failing the whole plan over one long sentence costs two model calls and
+ * discards the sitemap. Identifiers are never clamped — a truncated path, action
+ * id, or apiKey would silently break the wiring, so those still fail validation.
+ */
+function briefProse(maxLength: number) {
+  return z
+    .string()
+    .min(1)
+    .transform((value) =>
+      truncate(value.trim(), maxLength - BRIEF_TRUNCATION_SUFFIX.length, BRIEF_TRUNCATION_SUFFIX)
+    )
+}
+
 const structuredBriefPageSchema = z.object({
   path: pagePathSchema,
-  title: z.string().min(1).max(80),
-  purpose: z.string().min(1).max(400),
+  title: briefProse(80),
+  purpose: briefProse(400),
   /** How the page gets its data: onLoad, CTA navigation, or static. */
-  data: z.string().min(1).max(400),
+  data: briefProse(400),
   actions: z.array(z.string().min(1).max(64)).max(8).default([]),
-  emptyCopy: z.string().max(200).optional(),
+  emptyCopy: briefProse(200).optional(),
 })
 
 const structuredBriefActionSchema = z.object({
   id: z.string().min(1).max(64),
   apiKey: z.string().min(1).max(64),
   fromPage: pagePathSchema,
-  purpose: z.string().min(1).max(400),
+  purpose: briefProse(400),
   onSuccessNavigate: z.string().max(80).nullable().optional(),
 })
 
 const structuredBriefSchema = z.object({
-  title: z.string().min(1).max(80),
-  purpose: z.string().min(1).max(400),
-  audience: z.string().min(1).max(200),
+  title: briefProse(80),
+  purpose: briefProse(400),
+  audience: briefProse(200),
   archetype: z.enum(ARENA_GENERATIVE_ARCHETYPES),
   entryPath: pagePathSchema,
   pages: z.array(structuredBriefPageSchema).min(1).max(8),
   actions: z.array(structuredBriefActionSchema).max(16).default([]),
-  emptyCopy: z.string().max(200).optional(),
-  errorCopy: z.string().max(200).optional(),
+  emptyCopy: briefProse(200).optional(),
+  errorCopy: briefProse(200).optional(),
 })
 
 export type ArenaGenerativeStructuredBrief = z.output<typeof structuredBriefSchema>
@@ -75,7 +94,8 @@ const PLANNER_SYSTEM_PROMPT = [
   '- list-detail: a collection (Repeat inside Grid, or Table) and a detail page opened with to "detail?id={item.id}" whose onLoad fetches that record.',
   '- wizard: three or more sequential steps with Next/Back; submit only on the last step.',
   'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "emptyCopy"?, "errorCopy"? }',
-  'pages[].path is kebab-case. 1–6 pages. data is one sentence (onLoad which action into which state keys, or CTA then navigate, or static).',
+  'pages[].path, entryPath, and actions[].fromPage are bare kebab-case keys — "home", "select-company" — never URL routes: no leading slash, no "/" for the entry page, no nested segments. Call the entry page "home" unless the brief names it.',
+  '1–6 pages. data is one sentence (onLoad which action into which state keys, or CTA then navigate, or static).',
   'A dashboard, list, report, or detail page names onLoad in data. A form page does not.',
   "emptyCopy is the zero-result sentence for that page's collection (becomes emptyText). errorCopy is the failure sentence.",
   'actions[].apiKey must be a declared binding key. When no bindings were declared, actions must be [].',
@@ -150,8 +170,84 @@ export function formatStructuredBriefForGenerator(brief: ArenaGenerativeStructur
   ].join('\n')
 }
 
+/** Page key used when a planner names the entry page "/" or leaves it empty. */
+const ROOT_PAGE_PATH = 'home'
+
 /**
- * Validates a model JSON object as a structured brief. Extra keys are stripped.
+ * Planners describe a sitemap in web-route language — `"/"`, `"/select-company"`,
+ * `"/company/analysis"` — but a page key here is one bare kebab-case segment, so
+ * every such path fails {@link pagePathSchema}. The repair turn cannot fix it
+ * either: there is no kebab-case spelling of `"/"`, so the brief was rejected
+ * twice and the run fell back to prose after two wasted model calls. Normalising
+ * keeps the planned sitemap instead of discarding it.
+ */
+function normalizePagePath(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    return value
+  }
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/[\s_/]+/g, '-')
+    .replace(/-{2,}/g, '-')
+  return normalized || ROOT_PAGE_PATH
+}
+
+/**
+ * Same normalisation for a navigation target, which may carry a query string
+ * (`"/report?range=30d"`). An empty target means "do not navigate" and is left
+ * alone rather than being turned into the root page.
+ */
+function normalizeNavTarget(value: unknown): unknown {
+  if (typeof value !== 'string' || !value.trim()) {
+    return value
+  }
+  const queryIndex = value.indexOf('?')
+  const path = queryIndex < 0 ? value : value.slice(0, queryIndex)
+  const query = queryIndex < 0 ? '' : value.slice(queryIndex)
+  const normalized = normalizePagePath(path)
+  return typeof normalized === 'string' ? `${normalized}${query}` : value
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** Rewrites every path-shaped field of a raw planner reply before validation. */
+function normalizeBriefPaths(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return value
+  }
+  const normalized: Record<string, unknown> = { ...value }
+  if ('entryPath' in value) {
+    normalized.entryPath = normalizePagePath(value.entryPath)
+  }
+  if (Array.isArray(value.pages)) {
+    normalized.pages = value.pages.map((page) =>
+      isRecord(page) && 'path' in page ? { ...page, path: normalizePagePath(page.path) } : page
+    )
+  }
+  if (Array.isArray(value.actions)) {
+    normalized.actions = value.actions.map((action) => {
+      if (!isRecord(action)) {
+        return action
+      }
+      return {
+        ...action,
+        ...('fromPage' in action ? { fromPage: normalizePagePath(action.fromPage) } : {}),
+        ...('onSuccessNavigate' in action
+          ? { onSuccessNavigate: normalizeNavTarget(action.onSuccessNavigate) }
+          : {}),
+      }
+    })
+  }
+  return normalized
+}
+
+/**
+ * Validates a model JSON object as a structured brief. Path-shaped fields are
+ * normalised to bare kebab-case keys first. Extra keys are stripped.
  */
 export function parseArenaGenerativeStructuredBrief(
   value: unknown,
@@ -161,7 +257,7 @@ export function parseArenaGenerativeStructuredBrief(
     apiBindings: ArenaGenerativeApiBinding[]
   }
 ): ArenaGenerativeStructuredBrief | null {
-  const parsed = structuredBriefSchema.safeParse(value)
+  const parsed = structuredBriefSchema.safeParse(normalizeBriefPaths(value))
   if (!parsed.success) {
     return null
   }
