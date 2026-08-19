@@ -122,6 +122,8 @@ export interface GenerateFalVideoParams {
 export interface GeneratedVideo {
   buffer: Buffer
   contentType: string
+  /** Original Fal CDN URL of the generated clip. Publicly fetchable without a Sim session. */
+  sourceUrl?: string
   width?: number
   height?: number
   model: string
@@ -203,6 +205,7 @@ export async function generateFalVideo(params: GenerateFalVideoParams): Promise<
   return {
     buffer,
     contentType: contentType.startsWith('video/') ? contentType : 'video/mp4',
+    sourceUrl: url.startsWith('http://') || url.startsWith('https://') ? url : undefined,
     width: getNumberProp(videoNode, 'width'),
     height: getNumberProp(videoNode, 'height'),
     model,

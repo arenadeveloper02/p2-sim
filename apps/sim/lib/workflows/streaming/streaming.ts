@@ -300,6 +300,7 @@ function extractPublicFalUrlsFromData(data: unknown): string[] {
     }
     add(record.falUrl)
     add(record.sourceUrl)
+    add(record.publicVideoUrl)
     for (const nested of Object.values(record)) visit(nested, depth + 1)
   }
 

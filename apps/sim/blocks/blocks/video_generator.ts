@@ -1956,5 +1956,13 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
     content: { type: 'string', description: 'Story Mode: confirmation text with video link' },
     storyboardId: { type: 'string', description: 'Story Mode: storyboard that was rendered' },
     clipCount: { type: 'number', description: 'Story Mode: number of stitched clips' },
+    publicVideoUrl: {
+      type: 'string',
+      description: 'Story Mode: publicly fetchable URL of the final video (no Sim session needed)',
+    },
+    falUrls: {
+      type: 'array',
+      description: 'Story Mode: public Fal CDN URL per clip, in rendered order',
+    },
   },
 }

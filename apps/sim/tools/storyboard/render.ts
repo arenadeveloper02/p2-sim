@@ -15,6 +15,8 @@ export interface StoryboardRenderParams {
 export interface StoryboardRenderResponse extends ToolResponse {
   output: {
     videoUrl: string
+    publicVideoUrl?: string
+    falUrls: string[]
     storyboardId: string
     conversationId: string
     topic: string
@@ -72,7 +74,20 @@ export const storyboardRenderTool: ToolConfig<StoryboardRenderParams, Storyboard
   },
 
   outputs: {
-    videoUrl: { type: 'string', description: 'URL of the final rendered video' },
+    videoUrl: {
+      type: 'string',
+      description: 'Sim-hosted URL of the final rendered video (requires a Sim session)',
+    },
+    publicVideoUrl: {
+      type: 'string',
+      description:
+        'Publicly fetchable URL of the final video (presigned, or the Fal CDN URL for a single clip). External apps should play this one.',
+    },
+    falUrls: {
+      type: 'array',
+      description:
+        'Public Fal CDN URL per clip in the rendered scene order (empty string when unavailable)',
+    },
     storyboardId: { type: 'string', description: 'Storyboard that was rendered' },
     conversationId: { type: 'string', description: 'Conversation the storyboard belongs to' },
     topic: { type: 'string', description: 'The original video idea' },

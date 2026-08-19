@@ -19,7 +19,11 @@ import { getBaseUrl } from '@/lib/core/utils/urls'
 import { generateFalVideo } from '@/lib/media/falai-video'
 import { type MediaFile, runFfmpegOperation } from '@/lib/media/ffmpeg'
 import type { StoryboardScene } from '@/lib/storyboard/run-storyboard-generate.server'
-import { downloadFile, uploadFile } from '@/lib/uploads/core/storage-service'
+import {
+  downloadFile,
+  generatePresignedDownloadUrl,
+  uploadFile,
+} from '@/lib/uploads/core/storage-service'
 
 const logger = createLogger('StoryboardRender')
 
@@ -60,7 +64,16 @@ function snapClipDuration(model: string, seconds: number): number {
 }
 
 export interface RunStoryboardRenderResult {
+  /** Sim-hosted serve URL. Requires a logged-in Sim session. */
   videoUrl: string
+  /**
+   * Publicly fetchable URL of the final video (presigned cloud URL, or the Fal
+   * CDN URL when the video is a single un-stitched clip). External UIs should
+   * play this one. Presigned URLs expire after PUBLIC_VIDEO_URL_TTL_SECONDS.
+   */
+  publicVideoUrl?: string
+  /** Public Fal CDN URL per clip, in the rendered scene order ('' when unavailable). */
+  falUrls: string[]
   storyboardId: string
   conversationId: string
   topic: string
@@ -69,6 +82,9 @@ export interface RunStoryboardRenderResult {
   model: string
   content: string
 }
+
+/** 7 days — the maximum S3 presign lifetime. */
+const PUBLIC_VIDEO_URL_TTL_SECONDS = 7 * 24 * 60 * 60
 
 export interface RunStoryboardRenderContext {
   userId?: string
@@ -312,6 +328,7 @@ export async function runStoryboardRender(
   // Sequential on purpose: each clip is expensive and Fal queues per key;
   // failing fast on clip N beats paying for N parallel failures.
   const clips: MediaFile[] = []
+  const clipFalUrls: string[] = []
   for (let i = 0; i < orderedScenes.length; i++) {
     const scene = orderedScenes[i]
     logger.info(`[${requestId}] Generating clip ${i + 1}/${orderedScenes.length}`, {
@@ -329,6 +346,7 @@ export async function runStoryboardRender(
     })
 
     clips.push({ buffer: clip.buffer, mimeType: clip.contentType })
+    clipFalUrls.push(clip.sourceUrl ?? '')
   }
 
   let finalBuffer: Buffer
@@ -363,6 +381,30 @@ export async function runStoryboardRender(
   })
   const videoUrl = `${getBaseUrl()}${fileInfo.path}`
 
+  // A public URL for the final video: single clip → its Fal CDN URL; stitched
+  // output only exists in Sim storage, so presign it. Best-effort — the render
+  // must not fail because a share link could not be built.
+  let publicVideoUrl: string | undefined
+  if (clips.length === 1 && clipFalUrls[0]) {
+    publicVideoUrl = clipFalUrls[0]
+  } else {
+    try {
+      publicVideoUrl = await generatePresignedDownloadUrl(
+        key,
+        'agent-generated-images',
+        PUBLIC_VIDEO_URL_TTL_SECONDS
+      )
+      if (publicVideoUrl.includes('/api/files/serve/')) {
+        // Local storage has no presigning — the serve URL is session-gated, not public.
+        publicVideoUrl = undefined
+      }
+    } catch (error) {
+      logger.warn(`[${requestId}] Could not presign final video URL`, {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   await db.execute(
     sql`UPDATE storyboards
         SET status = 'rendered',
@@ -383,6 +425,8 @@ export async function runStoryboardRender(
   const topic = storyboard.topic || 'your video'
   return {
     videoUrl,
+    ...(publicVideoUrl ? { publicVideoUrl } : {}),
+    falUrls: clipFalUrls,
     storyboardId: storyboard.id,
     conversationId,
     topic,
