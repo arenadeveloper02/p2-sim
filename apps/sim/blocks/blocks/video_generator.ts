@@ -1808,6 +1808,15 @@ const STORYBOARD_MODE_SUBBLOCKS: SubBlockConfig[] = [
     description: 'The order the user chose for the storyboard scenes',
   },
   {
+    id: 'clipUrls',
+    title: 'Clip URLs (Concat Mode)',
+    type: 'long-input',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    placeholder: 'https://…/clip1.mp4, https://…/clip2.mp4 — leave empty to generate clips',
+    description:
+      'Already-generated clips to join in this exact order. When set, nothing is generated — the clips are only stitched.',
+  },
+  {
     id: 'storyVideoModel',
     title: 'Video Model',
     type: 'dropdown',
@@ -1923,6 +1932,7 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
               // underlying tool param (order); accept both so the user's chosen
               // order is never silently dropped.
               order: params.sceneOrder || params.order,
+              clipUrls: params.clipUrls,
               videoModel: params.storyVideoModel,
               // Total length wins over seconds-per-scene: the user asks for a
               // "30 second video", and the render step derives the per-clip
@@ -1942,6 +1952,11 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
       description: 'Story Mode: conversation whose saved storyboard to render',
     },
     sceneOrder: { type: 'string', description: 'Story Mode: scene order, e.g. "3,1,2"' },
+    clipUrls: {
+      type: 'string',
+      description:
+        'Story Mode concat: URLs of already-generated clips to join in order (JSON array or comma-separated). Skips generation entirely.',
+    },
     storyVideoModel: { type: 'string', description: 'Story Mode: image-to-video model' },
     targetDuration: {
       type: 'number',

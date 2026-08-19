@@ -63,13 +63,13 @@ export const storyboardGenerateTool: ToolConfig<
       required: false,
       visibility: 'user-or-llm',
       description:
-        '"scenes" (default): ordered frames of one video, saved for rendering. "concepts": independent ad ideas to pick between — never rendered as a video. "edit": regenerate one frame of the latest storyboard (requires sceneNumber and instruction).',
+        '"scenes" (default): ordered frames of one video, saved for rendering. "concepts": independent ad ideas to pick between — never rendered as a video. "edit": regenerate one frame of the latest storyboard (requires sceneNumber and instruction). "plan": plan and save the scenes without generating any images — returns in seconds. "image": generate the image for one scene of the latest saved storyboard using its saved prompt (requires sceneNumber).',
     },
     sceneNumber: {
       type: 'number',
       required: false,
       visibility: 'user-or-llm',
-      description: 'Edit mode: which frame to change (1-based, e.g. 3)',
+      description: 'Edit/image mode: which frame to work on (1-based, e.g. 3)',
     },
     instruction: {
       type: 'string',

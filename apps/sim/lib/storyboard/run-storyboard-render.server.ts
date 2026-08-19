@@ -187,6 +187,93 @@ async function fetchSceneImageAsDataUri(scene: StoryboardScene): Promise<string>
     : new Error(`Failed to download image for scene ${scene.index}`)
 }
 
+/**
+ * Accepts clip URLs as a real array, a JSON array string, or a comma/space/
+ * newline separated string — whatever shape the Agent or an API caller sends.
+ */
+function parseClipUrls(value: unknown): string[] {
+  const fromArray = (items: unknown[]): string[] =>
+    items.map((item) => asString(item)).filter((url) => url.startsWith('http'))
+
+  if (Array.isArray(value)) return fromArray(value)
+
+  const raw = asString(value)
+  if (!raw) return []
+  if (raw.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return fromArray(parsed)
+    } catch {
+      // fall through to the separator-based parse
+    }
+  }
+  return raw.split(/[\s,]+/).filter((url) => url.startsWith('http'))
+}
+
+/** Downloads a clip (Sim serve URL or external URL) as a buffer. */
+async function downloadClipBuffer(clipUrl: string): Promise<Buffer> {
+  const serveMarker = '/api/files/serve/'
+  if (clipUrl.includes(serveMarker)) {
+    const key = decodeURIComponent(clipUrl.slice(clipUrl.indexOf(serveMarker) + serveMarker.length))
+    return downloadFile({ key, context: 'agent-generated-images' })
+  }
+
+  const response = await fetch(clipUrl)
+  if (!response.ok) {
+    throw new Error(`Failed to download clip (${response.status}): ${clipUrl.slice(0, 120)}`)
+  }
+  return Buffer.from(await response.arrayBuffer())
+}
+
+/**
+ * Uploads the final MP4 to Sim storage and best-effort presigns a public link.
+ * The render must not fail because a share link could not be built.
+ */
+async function storeFinalVideo(
+  buffer: Buffer,
+  context: RunStoryboardRenderContext,
+  requestId: string
+): Promise<{ videoUrl: string; presignedUrl?: string }> {
+  const safeSegment = (v: string | undefined) =>
+    (v || 'unknown').replace(/[/\\\0]/g, '').replace(/\.\./g, '') || 'unknown'
+  const key = `agent-generated-images/${safeSegment(context.workflowId)}/${safeSegment(
+    context.userId
+  )}/storyboard-video-${Date.now()}-${generateShortId()}.mp4`
+
+  const fileInfo = await uploadFile({
+    file: buffer,
+    fileName: key,
+    contentType: 'video/mp4',
+    context: 'agent-generated-images',
+    preserveKey: true,
+    metadata: {
+      workflowId: context.workflowId ?? '',
+      userId: context.userId ?? '',
+      purpose: 'storyboard-rendered-video',
+    },
+  })
+  const videoUrl = `${getBaseUrl()}${fileInfo.path}`
+
+  let presignedUrl: string | undefined
+  try {
+    presignedUrl = await generatePresignedDownloadUrl(
+      key,
+      'agent-generated-images',
+      PUBLIC_VIDEO_URL_TTL_SECONDS
+    )
+    if (presignedUrl.includes('/api/files/serve/')) {
+      // Local storage has no presigning — the serve URL is session-gated, not public.
+      presignedUrl = undefined
+    }
+  } catch (error) {
+    logger.warn(`[${requestId}] Could not presign final video URL`, {
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+
+  return { videoUrl, presignedUrl }
+}
+
 type StoryboardQueryRow = { id: string; topic: string | null; scenes: unknown }
 
 /**
@@ -286,6 +373,53 @@ export async function runStoryboardRender(
 ): Promise<RunStoryboardRenderResult> {
   const requestId = context.requestId ?? crypto.randomUUID().slice(0, 8)
 
+  // Concat mode: join already-generated, user-approved clips in the given
+  // order. No storyboard lookup and no model calls — pure final assembly.
+  const clipUrls = parseClipUrls(params.clipUrls)
+  if (clipUrls.length > 0) {
+    logger.info(`[${requestId}] Concat mode: joining ${clipUrls.length} approved clips`)
+
+    const buffers = await Promise.all(clipUrls.map(downloadClipBuffer))
+    const clips: MediaFile[] = buffers.map((buffer) => ({ buffer, mimeType: 'video/mp4' }))
+
+    let finalBuffer: Buffer
+    if (clips.length === 1) {
+      finalBuffer = clips[0].buffer
+    } else {
+      const stitched = await runFfmpegOperation('concat', clips)
+      if (!stitched.buffer) {
+        throw new Error('FFmpeg concat produced no output')
+      }
+      finalBuffer = stitched.buffer
+    }
+
+    const stored = await storeFinalVideo(finalBuffer, context, requestId)
+    const publicInputUrls = clipUrls.map((url) => (url.includes('/api/files/serve/') ? '' : url))
+    const publicVideoUrl =
+      clips.length === 1 && publicInputUrls[0] ? publicInputUrls[0] : stored.presignedUrl
+
+    logger.info(`[${requestId}] Concat complete`, {
+      clipCount: clips.length,
+      videoUrl: stored.videoUrl,
+      bytes: finalBuffer.length,
+    })
+
+    return {
+      videoUrl: stored.videoUrl,
+      ...(publicVideoUrl ? { publicVideoUrl } : {}),
+      falUrls: publicInputUrls,
+      storyboardId: '',
+      conversationId: asString(params.conversationId),
+      topic: 'approved clips',
+      order: clipUrls.map((_, i) => i + 1),
+      clipCount: clips.length,
+      model: 'concat',
+      content: `Final video assembled from ${clips.length} approved clip${
+        clips.length === 1 ? '' : 's'
+      }.\n\n[Watch the video](${stored.videoUrl})`,
+    }
+  }
+
   const conversationId = asString(params.conversationId)
   const storyboardId = asString(params.storyboardId)
 
@@ -361,49 +495,12 @@ export async function runStoryboardRender(
     finalBuffer = stitched.buffer
   }
 
-  const safeSegment = (v: string | undefined) =>
-    (v || 'unknown').replace(/[/\\\0]/g, '').replace(/\.\./g, '') || 'unknown'
-  const key = `agent-generated-images/${safeSegment(context.workflowId)}/${safeSegment(
-    context.userId
-  )}/storyboard-video-${Date.now()}-${generateShortId()}.mp4`
-
-  const fileInfo = await uploadFile({
-    file: finalBuffer,
-    fileName: key,
-    contentType: 'video/mp4',
-    context: 'agent-generated-images',
-    preserveKey: true,
-    metadata: {
-      workflowId: context.workflowId ?? '',
-      userId: context.userId ?? '',
-      purpose: 'storyboard-rendered-video',
-    },
-  })
-  const videoUrl = `${getBaseUrl()}${fileInfo.path}`
+  const stored = await storeFinalVideo(finalBuffer, context, requestId)
+  const videoUrl = stored.videoUrl
 
   // A public URL for the final video: single clip → its Fal CDN URL; stitched
-  // output only exists in Sim storage, so presign it. Best-effort — the render
-  // must not fail because a share link could not be built.
-  let publicVideoUrl: string | undefined
-  if (clips.length === 1 && clipFalUrls[0]) {
-    publicVideoUrl = clipFalUrls[0]
-  } else {
-    try {
-      publicVideoUrl = await generatePresignedDownloadUrl(
-        key,
-        'agent-generated-images',
-        PUBLIC_VIDEO_URL_TTL_SECONDS
-      )
-      if (publicVideoUrl.includes('/api/files/serve/')) {
-        // Local storage has no presigning — the serve URL is session-gated, not public.
-        publicVideoUrl = undefined
-      }
-    } catch (error) {
-      logger.warn(`[${requestId}] Could not presign final video URL`, {
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
+  // output only exists in Sim storage, so use the presigned link.
+  const publicVideoUrl = clips.length === 1 && clipFalUrls[0] ? clipFalUrls[0] : stored.presignedUrl
 
   await db.execute(
     sql`UPDATE storyboards

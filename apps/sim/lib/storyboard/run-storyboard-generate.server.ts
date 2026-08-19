@@ -33,13 +33,17 @@ const MAX_SCENE_COUNT = 10
  * 'scenes'   — ordered scenes of ONE video (saved, renderable).
  * 'concepts' — N independent ad ideas to pick from (never saved, never renderable).
  * 'edit'     — regenerate ONE frame of the latest saved storyboard in place.
+ * 'plan'     — plan and save the scenes WITHOUT images (fast; frames come later).
+ * 'image'    — generate the image for ONE scene of the latest saved storyboard.
  */
-export type StoryboardMode = 'scenes' | 'concepts' | 'edit'
+export type StoryboardMode = 'scenes' | 'concepts' | 'edit' | 'plan' | 'image'
 
 function asMode(value: unknown): StoryboardMode {
   const normalized = asString(value).toLowerCase()
   if (normalized === 'concepts') return 'concepts'
   if (normalized === 'edit') return 'edit'
+  if (normalized === 'plan') return 'plan'
+  if (normalized === 'image') return 'image'
   return 'scenes'
 }
 
@@ -344,8 +348,10 @@ export async function runStoryboardGenerate(
 ): Promise<RunStoryboardGenerateResult> {
   const requestId = context.requestId ?? crypto.randomUUID().slice(0, 8)
 
+  const mode = asMode(params.mode)
+
   const topic = asString(params.topic)
-  if (!topic && asMode(params.mode) !== 'edit') {
+  if (!topic && mode !== 'edit' && mode !== 'image') {
     throw new Error('A video idea (topic) is required to build a storyboard')
   }
 
@@ -355,8 +361,6 @@ export async function runStoryboardGenerate(
   const conversationId =
     asString(params.conversationId) ||
     (context.workflowId ? `wf:${context.workflowId}` : `user:${context.userId ?? 'unknown'}`)
-
-  const mode = asMode(params.mode)
   const sceneCount = clampSceneCount(params.sceneCount)
   const stylePrompt = asString(params.stylePrompt)
 
@@ -463,6 +467,70 @@ export async function runStoryboardGenerate(
     }
   }
 
+  // Image mode: generate the image for ONE scene of the latest saved storyboard
+  // using the prompt saved at plan time. Lets an app show frames one by one.
+  if (mode === 'image') {
+    const sceneNumber = clampSceneCount(params.sceneNumber)
+    const storyboard = await loadLatestStoryboard(conversationId, context)
+    if (sceneNumber > storyboard.scenes.length) {
+      throw new Error(
+        `Frame ${sceneNumber} does not exist — this storyboard has frames 1-${storyboard.scenes.length}`
+      )
+    }
+
+    const scene = storyboard.scenes[sceneNumber - 1]
+
+    logger.info(`[${requestId}] Generating single storyboard frame`, {
+      storyboardId: storyboard.id,
+      sceneNumber,
+    })
+
+    const imageBody = buildImageToolBodyFromExecutionParams({
+      provider: imageProvider,
+      model: imageModel,
+      apiKey: falApiKey,
+      prompt: stylePrompt ? `${scene.prompt}\n\nOverall style: ${stylePrompt}` : scene.prompt,
+      aspectRatio,
+      workflowId: context.workflowId,
+      workspaceId: context.workspaceId,
+      userId: context.userId,
+    })
+
+    const image = await runImageToolGeneration(imageBody, {
+      userId: context.userId ?? 'unknown',
+      requestId: `${requestId}-i${sceneNumber}`,
+    })
+
+    const updatedScenes = storyboard.scenes.map((s) =>
+      s.index === scene.index
+        ? sceneFromGeneratedImage({
+            index: s.index,
+            prompt: s.prompt,
+            description: s.description,
+            imageUrl: image.imageUrl,
+            sourceUrl: image.sourceUrl,
+          })
+        : s
+    )
+
+    await db.execute(
+      sql`UPDATE storyboards
+          SET scenes = ${JSON.stringify(updatedScenes)}::jsonb
+          WHERE id = ${storyboard.id}::uuid`
+    )
+
+    return {
+      storyboardId: storyboard.id,
+      conversationId,
+      topic: storyboard.topic,
+      scenes: updatedScenes,
+      images: updatedScenes.map((s) => s.imageUrl),
+      falUrls: falUrlsFromScenes(updatedScenes),
+      sceneCount: updatedScenes.length,
+      content: `Frame ${sceneNumber} image generated.`,
+    }
+  }
+
   logger.info(`[${requestId}] Planning storyboard ${mode}`, {
     mode,
     sceneCount,
@@ -482,39 +550,87 @@ export async function runStoryboardGenerate(
     mode,
   })
 
+  // Plan mode: save the storyboard with prompts but no images. Returns in
+  // seconds; the app then fills frames one by one with mode "image".
+  if (mode === 'plan') {
+    const scenes: StoryboardScene[] = planned.map((scene, i) => ({
+      index: i + 1,
+      prompt: scene.prompt,
+      description: scene.description,
+      imageUrl: '',
+    }))
+
+    const inserted = await db.execute(
+      sql`INSERT INTO storyboards (conversation_id, workflow_id, workspace_id, user_id, topic, scenes, status)
+          VALUES (
+            ${conversationId},
+            ${context.workflowId ?? null},
+            ${context.workspaceId ?? null},
+            ${context.userId ?? null},
+            ${topic},
+            ${JSON.stringify(scenes)}::jsonb,
+            'draft'
+          )
+          RETURNING id`
+    )
+    const rows = inserted as unknown as Array<{ id: string }>
+    const storyboardId = rows[0]?.id
+    if (!storyboardId) {
+      throw new Error('Failed to persist storyboard plan')
+    }
+
+    logger.info(`[${requestId}] Storyboard plan saved (no images yet)`, {
+      storyboardId,
+      conversationId,
+      sceneCount: scenes.length,
+    })
+
+    const sceneLines = scenes.map((s) => `${s.index}. ${s.description}`).join('\n')
+    return {
+      storyboardId,
+      conversationId,
+      topic,
+      scenes,
+      images: scenes.map(() => ''),
+      falUrls: scenes.map(() => ''),
+      sceneCount: scenes.length,
+      content: `Storyboard plan for "${topic}" — ${scenes.length} scenes (images not generated yet):\n\n${sceneLines}`,
+    }
+  }
+
   logger.info(`[${requestId}] Generating scene images via Fal.ai`, { count: planned.length })
 
-  // Sequential on purpose: image providers rate-limit aggressively, and a
-  // partial storyboard is worse than a slower one.
-  const scenes: StoryboardScene[] = []
-  for (let i = 0; i < planned.length; i++) {
-    const scene = planned[i]
-    const imageBody = buildImageToolBodyFromExecutionParams({
-      provider: imageProvider,
-      model: imageModel,
-      apiKey: falApiKey,
-      prompt: stylePrompt ? `${scene.prompt}\n\nOverall style: ${stylePrompt}` : scene.prompt,
-      aspectRatio,
-      workflowId: context.workflowId,
-      workspaceId: context.workspaceId,
-      userId: context.userId,
-    })
+  // Concurrent on purpose: each image takes ~20s and Fal queues per key, so N
+  // sequential scenes cost N×20s while parallel costs roughly one generation.
+  // Promise.all keeps the all-or-nothing behaviour — a partial storyboard is
+  // worse than a failed one.
+  const scenes: StoryboardScene[] = await Promise.all(
+    planned.map(async (scene, i) => {
+      const imageBody = buildImageToolBodyFromExecutionParams({
+        provider: imageProvider,
+        model: imageModel,
+        apiKey: falApiKey,
+        prompt: stylePrompt ? `${scene.prompt}\n\nOverall style: ${stylePrompt}` : scene.prompt,
+        aspectRatio,
+        workflowId: context.workflowId,
+        workspaceId: context.workspaceId,
+        userId: context.userId,
+      })
 
-    const image = await runImageToolGeneration(imageBody, {
-      userId: context.userId ?? 'unknown',
-      requestId: `${requestId}-s${i + 1}`,
-    })
+      const image = await runImageToolGeneration(imageBody, {
+        userId: context.userId ?? 'unknown',
+        requestId: `${requestId}-s${i + 1}`,
+      })
 
-    scenes.push(
-      sceneFromGeneratedImage({
+      return sceneFromGeneratedImage({
         index: i + 1,
         prompt: scene.prompt,
         description: scene.description,
         imageUrl: image.imageUrl,
         sourceUrl: image.sourceUrl,
       })
-    )
-  }
+    })
+  )
 
   // Concepts are pitches to choose between, not scenes of a video. They are
   // deliberately NOT saved to `storyboards`, so the render step (which falls

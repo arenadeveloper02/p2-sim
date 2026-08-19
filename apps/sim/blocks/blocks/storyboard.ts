@@ -138,9 +138,12 @@ export const StoryboardBlock: BlockConfig<StoryboardGenerateResponse> = {
     mode: {
       type: 'string',
       description:
-        '"scenes" (default) for one video\'s frames, "concepts" for independent ad ideas, "edit" to regenerate one frame',
+        '"scenes" (default) for one video\'s frames, "concepts" for independent ad ideas, "edit" to regenerate one frame, "plan" to save scenes without images, "image" to generate one scene\'s image',
     },
-    sceneNumber: { type: 'number', description: 'Edit mode: which frame to change (1-based)' },
+    sceneNumber: {
+      type: 'number',
+      description: 'Edit/image mode: which frame to work on (1-based)',
+    },
     instruction: { type: 'string', description: 'Edit mode: the change to apply to that frame' },
     sceneCount: { type: 'number', description: 'How many scenes to generate (1-10)' },
     stylePrompt: { type: 'string', description: 'Overall visual style for every scene' },
