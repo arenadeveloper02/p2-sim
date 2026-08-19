@@ -1,4 +1,3 @@
-import { getErrorMessage } from '@sim/utils/errors'
 import {
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
   type ArenaGenerativeApiBinding,
@@ -7,7 +6,6 @@ import {
 } from '@/lib/arena-generative-ui/types'
 
 const JSON_FENCE_PREFIX = /^```(?:json)?\s*\r?\n?/i
-const TRAILING_JSON_POSITION = /after JSON.*position\s+(\d+)/i
 
 function isEmptyJsonListInput(raw: unknown): boolean {
   if (raw == null || raw === '') {
@@ -38,28 +36,71 @@ function stripJsonFence(raw: string): string {
   return text.trim()
 }
 
-function parseJsonWithRest(text: string): { value: unknown; rest: string } | null {
-  try {
-    return { value: JSON.parse(text), rest: '' }
-  } catch (error) {
-    const message = getErrorMessage(error)
-    const match = message.match(TRAILING_JSON_POSITION)
-    if (match) {
-      const cut = Number(match[1])
-      if (Number.isFinite(cut) && cut > 0) {
-        try {
-          return { value: JSON.parse(text.slice(0, cut)), rest: text.slice(cut) }
-        } catch {
-          return null
-        }
+/**
+ * Index just past the first balanced `{…}` / `[…]` in `text`, or -1 when the text
+ * holds no complete value. Depth is counted directly rather than read off the
+ * `JSON.parse` error message: V8 reports `position N` for trailing content, but
+ * JavaScriptCore (the app runs on Bun) reports only `Unable to parse JSON string`,
+ * so a message-derived offset silently stops working in production.
+ */
+function firstJsonValueEnd(text: string): number {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+    if (char === '"') {
+      inString = true
+    } else if (char === '{' || char === '[') {
+      depth += 1
+    } else if (char === '}' || char === ']') {
+      depth -= 1
+      if (depth === 0) {
+        return index + 1
+      }
+      if (depth < 0) {
+        return -1
       }
     }
-    const withoutTrailingCommas = text.replace(/,\s*([}\]])/g, '$1')
-    if (withoutTrailingCommas !== text) {
-      return parseJsonWithRest(withoutTrailingCommas)
-    }
+  }
+  return -1
+}
+
+function tryParseJson(text: string): { value: unknown } | null {
+  try {
+    return { value: JSON.parse(text) }
+  } catch {
     return null
   }
+}
+
+function parseJsonWithRest(text: string): { value: unknown; rest: string } | null {
+  const whole = tryParseJson(text)
+  if (whole) {
+    return { value: whole.value, rest: '' }
+  }
+  const end = firstJsonValueEnd(text)
+  if (end > 0 && end < text.length) {
+    const prefix = tryParseJson(text.slice(0, end))
+    if (prefix) {
+      return { value: prefix.value, rest: text.slice(end) }
+    }
+  }
+  const withoutTrailingCommas = text.replace(/,\s*([}\]])/g, '$1')
+  if (withoutTrailingCommas !== text) {
+    return parseJsonWithRest(withoutTrailingCommas)
+  }
+  return null
 }
 
 function parseJsonAllowingTrailing(text: string): unknown {

@@ -371,6 +371,59 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
   },
 })
 
+const COMPONENTS_HEADING = /^AVAILABLE COMPONENTS/
+const SECTION_HEADING = /^[A-Z][A-Z0-9 ,/()-]*:$/
+
+let componentReference: string | null = null
+
+/**
+ * The `AVAILABLE COMPONENTS` block of the `@json-render/core` catalog prompt — the
+ * only part of it this generator can use.
+ *
+ * The rest of that prompt documents a runtime this app does not implement. Its
+ * output contract is RFC 6902 JSONL patches (`{"op":"add","path":"/elements/…"}`),
+ * with worked examples and rules 1-4, while this generator parses one manifest
+ * object; and it documents `$state`, `$bindState`, `visible`, `watch`, `on.press`,
+ * a `repeat` element field, and `setState`/`pushState` actions, none of which
+ * `gui-apps/[identifier]/spec-renderer.tsx` reads — it renders type/props/children
+ * plus this module's own `statePath` / `showWhen` / `Repeat` / `actionId`
+ * conventions. Two of its rules ("ALWAYS include a state field with realistic
+ * sample data", "Never leave data empty") also defeat the loading-state contract in
+ * {@link ARENA_GENERATIVE_UI_OUTPUT_RULES}, which needs bound regions left empty.
+ *
+ * Shipping both contracts made the model emit patch operations, which cost every
+ * scoped edit its first turn. So the rules come from this module alone.
+ */
+function arenaGenerativeUiComponentReference(): string {
+  if (componentReference !== null) {
+    return componentReference
+  }
+  const lines = arenaGenerativeUiCatalog.prompt().split('\n')
+  const start = lines.findIndex((line) => COMPONENTS_HEADING.test(line))
+  if (start < 0) {
+    throw new Error(
+      'The json-render catalog prompt no longer has an AVAILABLE COMPONENTS section; arena-generative-ui/catalog.ts must be updated to match it.'
+    )
+  }
+  const rest = lines.slice(start + 1)
+  const end = rest.findIndex((line) => SECTION_HEADING.test(line))
+  componentReference = (end < 0 ? lines.slice(start) : lines.slice(start, start + 1 + end))
+    .join('\n')
+    .trim()
+  return componentReference
+}
+
+/**
+ * Generator system prompt section: the component reference, then the numbered rules
+ * for this run. Sim owns every rule, so rule 1 is the output envelope.
+ */
+export function buildArenaGenerativeUiPrompt(options: { customRules: string[] }): string {
+  return [
+    arenaGenerativeUiComponentReference(),
+    ['RULES:', ...options.customRules.map((rule, index) => `${index + 1}. ${rule}`)].join('\n'),
+  ].join('\n\n')
+}
+
 /** Role framing prepended to the generator system prompt. */
 export const ARENA_GENERATIVE_UI_PERSONA =
   'You are an expert principal frontend engineer specializing in design systems, dashboards, and enterprise research platforms. Your only output is a single valid JSON object conforming to the schema below. Emit no markdown fences, no explanation, no preamble, and no trailing text.'
@@ -383,6 +436,8 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Each page spec is a json-render Spec: { "root": string, "elements": { [key]: { type, props, children } } }.',
   'Every page Spec root element must be type Page.',
   'Every element must include a children array (use [] for leaves).',
+  'Every element needs type, props, and children, under a unique descriptive key in its page elements map ("home-header", "stat-revenue").',
+  'Before finishing a page, walk its tree from root: every key in every children array must exist as its own entry in that page elements map. Add any element you referenced but did not define.',
   'Only use component types from the catalog.',
   'Use NavLink.to or Button.navigateTo for in-app navigation. Never use href for another page in this app.',
   'CTA forms that call APIs must set Form.actionId or SubmitButton.actionId to a key in manifest.actions.',

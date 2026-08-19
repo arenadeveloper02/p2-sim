@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { arenaGenerativeGenerateBodySchema } from '@/lib/api/contracts/arena-generative-apps'
 import {
   extractManifestCandidate,
@@ -283,6 +283,42 @@ describe('parseLlmJsonObject', () => {
     )
     expect(parsed.entryPath).toBe('home')
     expect(parsed.pages).toEqual({ home: { path: 'home', title: 'People' } })
+  })
+
+  it('recovers a reply that ends in one stray brace', () => {
+    const parsed = parseLlmJsonObject(
+      '{"title":"People","manifest":{"entryPath":"home","pages":{"home":{"path":"home"}},"actions":{}}}}'
+    )
+    expect(parsed.manifest).toMatchObject({ entryPath: 'home' })
+  })
+
+  /**
+   * The app runs on Bun, whose JavaScriptCore `JSON.parse` reports only
+   * `Unable to parse JSON string` with no offset, unlike V8's `position N`.
+   * Trailing-garbage recovery must not read the offset off the error message.
+   */
+  it('recovers trailing garbage on an engine whose parse error carries no position', () => {
+    const nativeParse = JSON.parse
+    const parseSpy = vi.spyOn(JSON, 'parse').mockImplementation(((
+      text: string,
+      reviver?: Parameters<typeof JSON.parse>[1]
+    ) => {
+      try {
+        return nativeParse(text, reviver)
+      } catch {
+        throw new SyntaxError('JSON Parse error: Unable to parse JSON string')
+      }
+    }) as typeof JSON.parse)
+
+    try {
+      const parsed = parseLlmJsonObject(
+        '{"entryPath":"home","pages":{"home":{"path":"home","title":"People"}},"actions":{}}}'
+      )
+      expect(parsed.entryPath).toBe('home')
+      expect(parsed.pages).toEqual({ home: { path: 'home', title: 'People' } })
+    } finally {
+      parseSpy.mockRestore()
+    }
   })
 })
 

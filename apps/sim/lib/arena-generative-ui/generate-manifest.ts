@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { truncate } from '@sim/utils/string'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import {
   ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
@@ -11,7 +12,7 @@ import {
   ARENA_GENERATIVE_UI_SCOPED_EDIT_RULES,
   ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
   ARENA_GENERATIVE_UI_THEME_RULE,
-  arenaGenerativeUiCatalog,
+  buildArenaGenerativeUiPrompt,
 } from '@/lib/arena-generative-ui/catalog'
 import {
   type ArenaGenerativeEditScope,
@@ -248,7 +249,7 @@ export async function generateArenaGenerativeManifest(
     })
   }
 
-  const catalogPrompt = arenaGenerativeUiCatalog.prompt({
+  const catalogPrompt = buildArenaGenerativeUiPrompt({
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
       ARENA_GENERATIVE_UI_THEME_RULE,
@@ -397,7 +398,19 @@ export async function generateArenaGenerativeManifest(
         }
       }
 
-      parsed = parseLlmJsonObject(rawText)
+      try {
+        parsed = parseLlmJsonObject(rawText)
+      } catch (error) {
+        logger.warn('Arena Generative UI reply held no parseable JSON object', {
+          attempt: attempt + 1,
+          stopReason: message.stop_reason,
+          maxOutputTokens: messageOptions.max_tokens,
+          outputTokens: message.usage?.output_tokens,
+          replyChars: rawText.length,
+          preview: truncate(rawText, 600),
+        })
+        throw error
+      }
       const candidate = extractManifestCandidate(parsed)
       /**
        * The scoped reply is folded into the existing manifest before validation, so

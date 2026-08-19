@@ -1,0 +1,49 @@
+/**
+ * @vitest-environment node
+ */
+import { describe, expect, it } from 'vitest'
+import { buildArenaGenerativeUiPrompt } from '@/lib/arena-generative-ui/catalog'
+
+describe('buildArenaGenerativeUiPrompt', () => {
+  const prompt = buildArenaGenerativeUiPrompt({ customRules: ['FIRST RULE', 'SECOND RULE'] })
+
+  it('keeps the catalog component reference', () => {
+    expect(prompt).toContain('AVAILABLE COMPONENTS')
+    for (const component of ['Page', 'Section', 'Repeat', 'Table', 'SubmitButton', 'Tabs']) {
+      expect(prompt).toContain(`- ${component}: {`)
+    }
+  })
+
+  it('numbers the supplied rules from one and contributes none of its own', () => {
+    expect(prompt).toContain('RULES:\n1. FIRST RULE\n2. SECOND RULE')
+    expect(prompt.trimEnd().endsWith('2. SECOND RULE')).toBe(true)
+  })
+
+  /**
+   * The library prompt's own output contract is RFC 6902 JSONL patches and its own
+   * runtime dialect is `$state` / `visible` / `on` / `watch`, none of which this app
+   * implements. Leaking either back in makes the generator emit patch operations.
+   */
+  it('drops the json-render output contract and runtime dialect', () => {
+    for (const leaked of [
+      '"op":"add"',
+      'RFC 6902',
+      'JSONL',
+      '$state',
+      '$bindState',
+      '$bindItem',
+      'on.press',
+      'INITIAL STATE:',
+      'AVAILABLE ACTIONS:',
+      'VISIBILITY CONDITIONS:',
+      'DYNAMIC PROPS:',
+      'STATE WATCHERS:',
+    ]) {
+      expect(prompt).not.toContain(leaked)
+    }
+  })
+
+  it('drops the instruction to seed sample data, which defeats loading states', () => {
+    expect(prompt).not.toMatch(/sample data/i)
+  })
+})
