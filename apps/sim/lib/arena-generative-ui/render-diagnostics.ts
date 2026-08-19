@@ -1,6 +1,6 @@
 import type { Spec } from '@json-render/core'
 
-const BOUND_TYPES = new Set(['Table', 'Repeat', 'Stat', 'KeyValue', 'DataText'])
+const BOUND_TYPES = new Set(['Table', 'Repeat', 'Stat', 'KeyValue', 'DataText', 'ProgressBar'])
 
 export interface RenderDiagnostic {
   kind: 'unresolved-state-path' | 'unknown-type' | 'throw'
@@ -103,6 +103,12 @@ const KNOWN_RENDERER_TYPES = new Set([
   'Skeleton',
   'Spinner',
   'ProgressSteps',
+  'ProgressBar',
+  'SearchField',
+  'Chip',
+  'Icon',
+  'Avatar',
+  'EntityHeader',
   'NavLink',
   'Button',
   'Link',

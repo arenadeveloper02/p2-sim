@@ -89,9 +89,9 @@ export type ArenaGenerativeStructuredBrief = z.output<typeof structuredBriefSche
 const PLANNER_SYSTEM_PROMPT = [
   'You plan multi-page Arena apps. Output one JSON object. No markdown fences, no explanation.',
   'Pick exactly one archetype:',
-  '- dashboard: data on arrival via onLoad; Grid of Stat, Table or Repeat; little or no form.',
-  '- form-result: a form submits a CTA, then onSuccess.navigate to a results page. Loading and empty copy live on results.',
-  '- list-detail: a collection (Repeat inside Grid, or Table) and a detail page opened with to "detail?id={item.id}" whose onLoad fetches that record.',
+  '- dashboard: data on arrival via onLoad; EntityHeader, Grid of display Stat, little or no form.',
+  '- form-result: a form submits a CTA, then onSuccess.navigate to a results page. A single query field is a centered SearchField hero. Loading and empty copy live on results.',
+  '- list-detail: a collection of entity Cards (Repeat inside Grid) and a detail page opened with to "detail?id={item.id}" whose onLoad fetches that record.',
   '- wizard: three or more sequential steps with Next/Back; submit only on the last step.',
   'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "emptyCopy"?, "errorCopy"? }',
   'pages[].path, entryPath, and actions[].fromPage are bare kebab-case keys — "home", "select-company" — never URL routes: no leading slash, no "/" for the entry page, no nested segments. Call the entry page "home" unless the brief names it.',
@@ -105,20 +105,21 @@ const PLANNER_SYSTEM_PROMPT = [
 const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
   dashboard: [
     'ARCHETYPE RECIPE: dashboard',
-    'Home is PageHeader plus a Grid of Stat bound by statePath, then the main collection as Table or Repeat inside a Grid.',
-    'Set page onLoad to the fetch action and bind every metric and collection; do not hard-code those values.',
+    'Home is EntityHeader (logo, title, badge, description, meta chips) plus Tabs, then a Grid of four Stat with size "display", then a summary Card. Bind metrics by statePath.',
+    'Set page onLoad to the fetch action and bind every metric and collection; do not hard-code those values. Do not put a parameters form beside the metrics unless the brief asked for one.',
     'Filters belong in a Toolbar. Extra top-level pages use Tabs. No form unless the brief asked for one.',
   ].join('\n'),
   'form-result': [
     'ARCHETYPE RECIPE: form-result',
-    'Home is PageHeader plus a Form whose fields sit in a Grid, one SubmitButton, no onLoad.',
-    'The submit action sets onSuccess.navigate to the results path. Results binds Stat, KeyValue, Repeat, or DataText to the response keys and offers a Back NavLink.',
-    'Loading and emptyText live on the results page — the host navigates there while the action is still pending.',
+    'If the form is a single prominent query field, home is a centered PageHeader (kicker, display title, measure subtitle) plus SearchField with suggestion Chips and a Grid of three Icon Cards. Do not use a labelled Grid for that query.',
+    'Multi-field forms stay a left-aligned PageHeader plus fields in a 2-column Grid, one SubmitButton, no onLoad.',
+    'The submit action sets onSuccess.navigate to the results path. Results binds Repeat entity Cards, Stat, KeyValue, or DataText to the response keys and offers a Back NavLink.',
+    'Loading and emptyText live on the results page — the host navigates there while the action is still pending. A run-progress page uses EntityHeader, ProgressBar, and nested ProgressSteps while pending.',
   ].join('\n'),
   'list-detail': [
     'ARCHETYPE RECIPE: list-detail',
-    'List page onLoad fills Repeat inside a Grid (or a Table when rows are scalars). Each Card uses NavLink.to "detail?id={item.id}" — never unroll the array into static Cards.',
-    'Detail page onLoad fetches the record (inputMapping id from the query), shows KeyValue or Stats, and a Back NavLink. emptyText names the collection.',
+    'List page onLoad fills Repeat inside a 2-column Grid of entity Cards (Avatar, title, subtitle, truncated description, footerText, footer Analyze Button) — not a Table — when items have a name, description, and action. Use Table only when every row is the same scalars with no per-row action. Each Card uses NavLink.to or Button.navigateTo "detail?id={item.id}" — never unroll the array into static Cards.',
+    'Detail page onLoad fetches the record (inputMapping id from the query), shows EntityHeader plus KeyValue or display Stats, and a Back NavLink. emptyText names the collection.',
     'Give those onLoad actions no onSuccess.navigate.',
   ].join('\n'),
   wizard: [

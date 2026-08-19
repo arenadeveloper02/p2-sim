@@ -6,6 +6,7 @@ import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE,
   GOLD_EXAMPLE_API_KEY,
   GOLD_EXAMPLE_LOAD_API_KEY,
+  GOLD_EXAMPLE_RUN_API_KEY,
   goldExampleManifest,
   goldExampleOutput,
 } from '@/lib/arena-generative-ui/gold-example'
@@ -16,13 +17,19 @@ import { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/valid
 const bindings: ArenaGenerativeApiBinding[] = [
   {
     key: GOLD_EXAMPLE_API_KEY,
-    label: 'Compile report',
+    label: 'Search companies',
     kind: 'workflow',
     workflowId: 'wf_gold',
   },
   {
+    key: GOLD_EXAMPLE_RUN_API_KEY,
+    label: 'Run analysis',
+    kind: 'workflow',
+    workflowId: 'wf_gold_run',
+  },
+  {
     key: GOLD_EXAMPLE_LOAD_API_KEY,
-    label: 'Dashboard metrics',
+    label: 'Company overview',
     kind: 'workflow',
     workflowId: 'wf_gold_metrics',
   },
@@ -44,60 +51,71 @@ describe('gold example', () => {
 
   it('keeps every page reachable from the entry path', () => {
     const result = validateExample()
-    expect(Object.keys(result.manifest?.pages ?? {})).toEqual(['home', 'report'])
+    expect(Object.keys(result.manifest?.pages ?? {})).toEqual([
+      'home',
+      'results',
+      'progress',
+      'overview',
+    ])
     expect(result.manifest?.entryPath).toBe('home')
   })
 
   it('is unchanged by normalization, so it models the canonical flat shape', () => {
     const result = validateExample()
     expect(result.manifest?.pages.home.spec).toEqual(goldExampleManifest.pages.home.spec)
-    expect(result.manifest?.pages.report.spec).toEqual(goldExampleManifest.pages.report.spec)
+    expect(result.manifest?.pages.results.spec).toEqual(goldExampleManifest.pages.results.spec)
+    expect(result.manifest?.pages.progress.spec).toEqual(goldExampleManifest.pages.progress.spec)
+    expect(result.manifest?.pages.overview.spec).toEqual(goldExampleManifest.pages.overview.spec)
   })
 
   it('demonstrates the layout primitives the rules ask for', () => {
     const serialized = JSON.stringify(goldExampleManifest)
     for (const type of [
       'PageHeader',
+      'SearchField',
+      'Chip',
+      'Icon',
+      'Avatar',
+      'EntityHeader',
+      'ProgressBar',
+      'ProgressSteps',
       'Grid',
-      'Columns',
       'Stat',
-      'Table',
-      'KeyValue',
       'Card',
       'Repeat',
-      'Switch',
+      'Tabs',
     ]) {
       expect(serialized).toContain(`"${type}"`)
     }
-    expect(serialized).toContain('"width":"wide"')
-    expect(serialized).toContain('"width":"narrow"')
-    expect(serialized).toContain('"deltaTone":"positive"')
+    expect(serialized).toContain('"align":"center"')
+    expect(serialized).toContain('"size":"display"')
     expect(serialized).toContain('"brandColor":"#1A73E8"')
   })
 
-  it('teaches onLoad on the page that fetches its own data, not the CTA result page', () => {
+  it('teaches onLoad on the page that fetches its own data, not the search hero', () => {
     const result = validateExample()
 
-    expect(result.manifest?.pages.home.onLoad).toEqual(['load_metrics'])
-    expect(result.manifest?.pages.report.onLoad).toBeUndefined()
-    expect(JSON.stringify(goldExampleManifest.pages.home.spec)).toContain(
-      '"statePath":"totalReports"'
+    expect(result.manifest?.pages.home.onLoad).toBeUndefined()
+    expect(result.manifest?.pages.overview.onLoad).toEqual(['load_overview'])
+    expect(JSON.stringify(goldExampleManifest.pages.overview.spec)).toContain(
+      '"statePath":"revenue"'
     )
   })
 
-  it('teaches Repeat inside a Grid with per-item title and href placeholders', () => {
-    const report = JSON.stringify(goldExampleManifest.pages.report.spec)
-    expect(report).toContain('"type":"Repeat"')
-    expect(report).toContain('"statePath":"articles"')
-    expect(report).toContain('{item.title}')
-    expect(report).toContain('{item.url}')
-    expect(report).toContain('No articles ranked yet.')
-    expect(report.indexOf('"type":"Grid"')).toBeLessThan(report.indexOf('"type":"Repeat"'))
+  it('teaches Repeat inside a Grid with per-item title and logo placeholders', () => {
+    const results = JSON.stringify(goldExampleManifest.pages.results.spec)
+    expect(results).toContain('"type":"Repeat"')
+    expect(results).toContain('"statePath":"companies"')
+    expect(results).toContain('{item.name}')
+    expect(results).toContain('{item.logo}')
+    expect(results).toContain('No matching companies.')
+    expect(results.indexOf('"type":"Grid"')).toBeLessThan(results.indexOf('"type":"Repeat"'))
   })
 
   it('embeds the framing and the serialized manifest in the prompt section', () => {
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('GOLD STANDARD REFERENCE LAYOUT')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain(GOLD_EXAMPLE_API_KEY)
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain(GOLD_EXAMPLE_RUN_API_KEY)
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('"entryPath": "home"')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).not.toContain('```')
   })

@@ -1040,6 +1040,18 @@ describe('SpecRenderer', () => {
       expect(button.className).not.toContain('bg-[var(--gui-brand,#1a73e8)]')
     })
 
+    it('renders the outline pill variant with a brand border', () => {
+      const button = renderButton({
+        label: 'View analysis history',
+        navigateTo: 'results',
+        variant: 'outline',
+        shape: 'pill',
+      })
+      expect(button.className).toContain('border-[var(--gui-brand,#1a73e8)]')
+      expect(button.className).toContain('rounded-full')
+      expect(button.className).not.toContain('bg-[var(--gui-brand,#1a73e8)]')
+    })
+
     it('applies the small size', () => {
       const button = renderButton({ label: 'Filter', actionId: 'filter', size: 'sm' })
       expect(button.className).toContain('h-8')
@@ -1240,5 +1252,186 @@ describe('SpecRenderer', () => {
 
       expect(onRunAction).toHaveBeenCalledWith('pick_row', expect.objectContaining({ id: 'r1' }))
     })
+  })
+
+  it('centers a PageHeader with kicker and display title', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['header'] },
+        header: {
+          type: 'PageHeader',
+          props: {
+            title: 'Find any company',
+            subtitle: 'Search a name or domain.',
+            kicker: 'Watchtower',
+            align: 'center',
+          },
+          children: ['history'],
+        },
+        history: {
+          type: 'Button',
+          props: { label: 'View analysis history', variant: 'outline', shape: 'pill' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.textContent).toContain('Watchtower')
+    expect(container.querySelector('h1')?.className).toContain('gui-display-size')
+    const copy = container.querySelector('h1')?.parentElement
+    expect(copy?.className).toContain('text-center')
+    expect(container.textContent).toContain('View analysis history')
+  })
+
+  it('renders SearchField with a nested submit and suggestion chips that fill the input', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['search'] },
+        search: {
+          type: 'SearchField',
+          props: {
+            name: 'query',
+            placeholder: 'Search a company',
+            actionId: 'search_companies',
+            suggestions: 'Stripe, Notion',
+            submitLabel: 'Search',
+          },
+          children: [],
+        },
+      },
+    }
+    const { container, onRunAction } = render({ spec })
+    const field = container.querySelector('[data-testid="search-field"]') as HTMLElement
+    expect(field).toBeTruthy()
+    expect(field.querySelector('button')?.textContent).toBe('Search')
+    const input = container.querySelector('input[name="query"]') as HTMLInputElement
+    const suggestion = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Stripe'
+    )
+    act(() => {
+      suggestion?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(input.value).toBe('Stripe')
+    act(() => {
+      container
+        .querySelector('form')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(onRunAction).toHaveBeenCalledWith(
+      'search_companies',
+      expect.objectContaining({ query: 'Stripe' })
+    )
+  })
+
+  it('fills a SearchField when a Chip setValue is clicked', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['search', 'chip'] },
+        search: {
+          type: 'SearchField',
+          props: { name: 'query', placeholder: 'Search', actionId: 'search_companies' },
+          children: [],
+        },
+        chip: {
+          type: 'Chip',
+          props: { text: 'Try Stripe', tone: 'muted', setValue: 'query=Stripe' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const input = container.querySelector('input[name="query"]') as HTMLInputElement
+    const chip = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Try Stripe'
+    )
+    act(() => {
+      chip?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(input.value).toBe('Stripe')
+  })
+
+  it('renders Card subtitle, media, and footer', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['card'] },
+        card: {
+          type: 'Card',
+          props: {
+            title: 'Stripe',
+            subtitle: 'stripe.com',
+            description: 'Payments infrastructure.',
+            footerText: 'Enterprise · 2010',
+          },
+          children: ['logo', 'analyze'],
+        },
+        logo: { type: 'Avatar', props: { initials: 'ST' }, children: [] },
+        analyze: {
+          type: 'Button',
+          props: { label: 'Analyze', variant: 'secondary' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('h2')?.textContent).toBe('Stripe')
+    expect(container.textContent).toContain('stripe.com')
+    expect(container.querySelector('[data-testid="avatar"]')?.textContent).toBe('ST')
+    const footer = container.querySelector('[data-testid="card-footer"]')
+    expect(footer?.textContent).toContain('Enterprise · 2010')
+    expect(footer?.textContent).toContain('Analyze')
+  })
+
+  it('renders ProgressBar percent and EntityHeader identity', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['entity', 'bar'] },
+        entity: {
+          type: 'EntityHeader',
+          props: {
+            title: 'Stripe',
+            description: 'Resolving company profile.',
+            badge: 'Running',
+            initials: 'ST',
+            meta: 'Payments, San Francisco',
+          },
+          children: [],
+        },
+        bar: { type: 'ProgressBar', props: { value: 40 }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('[data-testid="entity-header"]')?.textContent).toContain(
+      'Stripe'
+    )
+    expect(container.textContent).toContain('Running')
+    expect(container.textContent).toContain('Payments')
+    const bar = container.querySelector('[data-testid="progress-bar"]')
+    expect(bar?.getAttribute('aria-valuenow')).toBe('40')
+  })
+
+  it('indents nested ProgressSteps lines while pending', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['progress'] },
+        progress: {
+          type: 'ProgressSteps',
+          props: { steps: 'Resolving company profile\n  Registry lookup', durationMs: 1000 },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec, pending: true })
+    expect(container.textContent).toContain('Resolving company profile')
+    expect(container.textContent).toContain('Registry lookup')
+    const nested = Array.from(container.querySelectorAll('li')).find((item) =>
+      item.textContent?.includes('Registry lookup')
+    )
+    expect(nested?.className).toContain('pl-6')
   })
 })

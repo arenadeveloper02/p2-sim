@@ -144,6 +144,11 @@ describe('normalizeGeneratedSpec', () => {
     ['Loading', 'Skeleton'],
     ['ForEach', 'Repeat'],
     ['Collection', 'Repeat'],
+    ['Search', 'SearchField'],
+    ['Tag', 'Chip'],
+    ['Logo', 'Avatar'],
+    ['Progress', 'ProgressBar'],
+    ['HeroHeader', 'PageHeader'],
   ])('aliases %s to %s', (alias, canonical) => {
     const spec = normalizeGeneratedSpec({
       root: 'page',

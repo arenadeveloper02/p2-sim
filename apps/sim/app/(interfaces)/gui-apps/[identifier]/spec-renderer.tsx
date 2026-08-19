@@ -12,6 +12,20 @@ import type { Spec } from '@json-render/core'
 import { cn } from '@sim/emcn'
 import { isPlainRecord } from '@sim/utils/object'
 import {
+  BarChart3,
+  Building2,
+  Check,
+  FileText,
+  Globe,
+  Link2,
+  type LucideIcon,
+  MessageSquare,
+  Search,
+  Shield,
+  Sparkles,
+  Users,
+} from 'lucide-react'
+import {
   type ArenaGenerativeFormField,
   asFieldString,
   asFieldStringList,
@@ -33,6 +47,7 @@ import {
   omitActionTelemetry,
   parseJsonLiteral,
   parseTabItems,
+  type RepeatItemScope,
   readScopedStatePath,
   repeatItemActionValues,
   repeatItemKey,
@@ -73,6 +88,102 @@ function asPositiveNumber(value: unknown, fallback: number): number {
     }
   }
   return fallback
+}
+
+function asFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+const ICON_BY_NAME: Record<string, LucideIcon> = {
+  search: Search,
+  file: FileText,
+  chart: BarChart3,
+  shield: Shield,
+  building: Building2,
+  check: Check,
+  spark: Sparkles,
+  users: Users,
+  globe: Globe,
+  message: MessageSquare,
+  link: Link2,
+}
+
+const CHIP_TONE_CLASSES = {
+  muted:
+    'bg-[var(--gui-canvas,#f7f8f9)] text-[var(--gui-text-muted,#575a66)] hover:bg-[var(--gui-border,#e2e3e5)]',
+  brand:
+    'bg-[var(--gui-brand-surface,#f3f8fe)] text-[var(--gui-brand,#1a73e8)] hover:bg-[var(--gui-info-border,#a3c7f6)]',
+  info: 'bg-[var(--gui-info-surface,#f3f8fe)] text-[var(--gui-info-text,#10458b)] hover:bg-[var(--gui-info-border,#a3c7f6)]',
+} as const
+
+const CARD_MEDIA_TYPES = new Set(['Icon', 'Avatar'])
+const CARD_FOOTER_TYPES = new Set(['Button', 'Chip', 'NavLink', 'Link', 'Toolbar'])
+
+function looksLikeImageSrc(value: string): boolean {
+  return /^(https?:|data:|\/)/i.test(value) || /\.(png|jpe?g|gif|svg|webp)(\?|$)/i.test(value)
+}
+
+function initialsFromName(value: string): string {
+  const parts = value.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return ''
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`.toUpperCase()
+}
+
+interface AvatarModel {
+  src: string
+  initials: string
+}
+
+function avatarModel(
+  props: Record<string, unknown>,
+  state: Record<string, unknown>,
+  scope?: RepeatItemScope
+): AvatarModel {
+  let src = asString(props.src) || asString(props.logoSrc)
+  let initials = asString(props.initials)
+  const statePath = asString(props.statePath)
+  if (statePath) {
+    const fromState = readScopedStatePath(state, statePath, scope)
+    if (typeof fromState === 'string' && fromState.trim()) {
+      if (looksLikeImageSrc(fromState)) src = src || fromState
+      else initials = initials || initialsFromName(fromState)
+    }
+  }
+  if (!initials && src) initials = initialsFromName(asString(props.title) || asString(props.alt))
+  return { src, initials: initials || '?' }
+}
+
+function parseProgressStepLines(raw: string): Array<{ label: string; nested: boolean }> {
+  return raw
+    .split('\n')
+    .map((line) => {
+      if (!line.trim()) return null
+      return { label: line.trim(), nested: /^\s{2,}|\t/.test(line) }
+    })
+    .filter((step): step is { label: string; nested: boolean } => step !== null)
+}
+
+function firstSearchFieldName(elements: Record<string, SpecElement>): string {
+  for (const element of Object.values(elements)) {
+    if (element.type !== 'SearchField') continue
+    const name = asString(element.props?.name)
+    if (name) return name
+  }
+  return 'query'
+}
+
+function parseChipSetValue(raw: string): { name: string | null; value: string } {
+  const separator = raw.indexOf('=')
+  if (separator > 0) {
+    return { name: raw.slice(0, separator).trim(), value: raw.slice(separator + 1) }
+  }
+  return { name: null, value: raw }
 }
 
 const DEFAULT_PROGRESS_DURATION_MS = 150_000
@@ -116,6 +227,8 @@ const BUTTON_VARIANT_CLASSES = {
   secondary:
     'border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] text-[var(--gui-text,#2c2d33)] hover:bg-[var(--gui-canvas,#f7f8f9)]',
   ghost: 'text-[var(--gui-text,#2c2d33)] hover:bg-[var(--gui-canvas,#f7f8f9)]',
+  outline:
+    'border border-[var(--gui-brand,#1a73e8)] bg-transparent text-[var(--gui-brand,#1a73e8)] hover:bg-[var(--gui-brand-surface,#f3f8fe)]',
   destructive:
     'bg-[var(--gui-danger,#f31a1a)] text-white hover:bg-[var(--gui-danger-hover,#c21515)]',
 } as const
@@ -139,7 +252,8 @@ function buttonClass(
     BUTTON_BASE_CLASS,
     BUTTON_VARIANT_CLASSES[variant as keyof typeof BUTTON_VARIANT_CLASSES] ??
       BUTTON_VARIANT_CLASSES[fallbackVariant],
-    BUTTON_SIZE_CLASSES[size as keyof typeof BUTTON_SIZE_CLASSES] ?? BUTTON_SIZE_CLASSES.md
+    BUTTON_SIZE_CLASSES[size as keyof typeof BUTTON_SIZE_CLASSES] ?? BUTTON_SIZE_CLASSES.md,
+    asString(props.shape) === 'pill' && 'rounded-full'
   )
 }
 
@@ -155,7 +269,10 @@ function deltaToneClass(value: unknown): string {
 }
 
 const SURFACE_CARD =
-  'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-[var(--gui-pad,16px)] shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]'
+  'rounded-[var(--gui-radius,12px)] bg-[var(--gui-surface,#ffffff)] p-6 shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]'
+
+const SURFACE_STAT =
+  'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-6'
 
 const HEADING_SIZE_CLASSES = {
   h1: 'text-[length:var(--gui-heading-size,32px)] leading-[var(--gui-heading-leading,40px)]',
@@ -247,7 +364,7 @@ function keyValuePairs(items: unknown, stateValue: unknown): Array<[string, stri
 
 interface ProgressStepsViewProps {
   pending: boolean
-  steps: string[]
+  steps: Array<{ label: string; nested: boolean }>
   durationMs: number
 }
 
@@ -275,14 +392,15 @@ function ProgressStepsView({ pending, steps, durationMs }: ProgressStepsViewProp
 
   return (
     <ol className='flex flex-col gap-2 text-sm'>
-      {steps.map((label, index) => {
+      {steps.map((step, index) => {
         const done = index < completedCount
         const current = index === completedCount
         return (
           <li
-            key={`${index}-${label}`}
+            key={`${index}-${step.label}`}
             className={cn(
               'flex items-center gap-2',
+              step.nested && 'pl-6',
               done && 'text-[var(--gui-text,#2c2d33)]',
               current && 'font-medium text-[var(--gui-brand,#1a73e8)]',
               !done && !current && 'text-[var(--gui-text-tertiary,#8a8d99)]'
@@ -299,7 +417,7 @@ function ProgressStepsView({ pending, steps, durationMs }: ProgressStepsViewProp
             >
               {done ? '✓' : current ? '…' : ''}
             </span>
-            {label}
+            {step.label}
           </li>
         )
       })}
@@ -339,7 +457,7 @@ function SkeletonBlock({ variant, lines }: SkeletonBlockProps) {
 
   if (variant === 'stat') {
     return (
-      <div aria-hidden data-testid='skeleton' className={cn('flex flex-col gap-2', SURFACE_CARD)}>
+      <div aria-hidden data-testid='skeleton' className={cn('flex flex-col gap-2', SURFACE_STAT)}>
         <div className={cn(SKELETON_BAR, 'h-3 w-1/2')} />
         <div className={cn(SKELETON_BAR, 'h-7 w-2/3')} />
       </div>
@@ -670,6 +788,43 @@ function FieldShell({
   )
 }
 
+function CatalogIcon({ name, well }: { name: string; well: string }) {
+  const Glyph = ICON_BY_NAME[name] ?? Search
+  const wellClass =
+    well === 'circle' ? 'rounded-full' : well === 'square' ? 'rounded-[var(--gui-radius,12px)]' : ''
+  const icon = (
+    <Glyph
+      aria-hidden
+      className={cn(well === 'none' ? 'size-5' : 'size-5', 'text-[var(--gui-brand,#1a73e8)]')}
+    />
+  )
+  if (well === 'none') {
+    return <span className='inline-flex items-center justify-center'>{icon}</span>
+  }
+  return (
+    <span
+      data-testid='icon-well'
+      className={cn(
+        'inline-flex size-10 items-center justify-center bg-[var(--gui-brand-surface,#f3f8fe)]',
+        wellClass || 'rounded-full'
+      )}
+    >
+      {icon}
+    </span>
+  )
+}
+
+function AvatarView({ src, initials }: AvatarModel) {
+  return (
+    <span
+      data-testid='avatar'
+      className='inline-flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--gui-brand-surface,#f3f8fe)] font-medium text-[var(--gui-brand,#1a73e8)] text-sm'
+    >
+      {src ? <img src={src} alt='' className='size-full object-cover' /> : <span>{initials}</span>}
+    </span>
+  )
+}
+
 function specFormFields(elements: Record<string, SpecElement>): ArenaGenerativeFormField[] {
   return Object.values(elements).flatMap((element) =>
     isFormFieldType(element.type) ? [{ type: element.type, props: element.props ?? {} }] : []
@@ -851,25 +1006,68 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           </div>
         )
       }
-      case 'PageHeader':
+      case 'PageHeader': {
+        const align = asString(props.align, 'start')
+        const kicker = asString(props.kicker)
+        const subtitle = asString(props.subtitle)
+        const isCenter = align === 'center'
+        const title = (
+          <h1
+            className={cn(
+              'font-semibold text-[var(--gui-text,#2c2d33)] tracking-tight',
+              isCenter
+                ? 'text-[length:var(--gui-display-size,40px)] leading-[var(--gui-display-leading,48px)]'
+                : 'text-[length:var(--gui-heading-size,32px)] leading-[var(--gui-heading-leading,40px)]'
+            )}
+          >
+            {asString(props.title)}
+          </h1>
+        )
+        const copy = (
+          <div
+            className={cn(
+              'flex min-w-0 flex-col gap-2',
+              isCenter && 'mx-auto items-center text-center'
+            )}
+          >
+            {kicker ? (
+              <p className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-brand,#1a73e8)] uppercase tracking-[0.16em]'>
+                {kicker}
+              </p>
+            ) : null}
+            {title}
+            {subtitle ? (
+              <p
+                className={cn(
+                  'max-w-[var(--gui-measure,40rem)] text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)] leading-[1.5]',
+                  isCenter && 'mx-auto'
+                )}
+              >
+                {subtitle}
+              </p>
+            ) : null}
+          </div>
+        )
+        if (isCenter) {
+          return (
+            <div className='relative w-full pb-1' style={styleFromProps(props)}>
+              {hasChildren ? (
+                <div className='absolute top-0 right-0 flex items-center gap-2'>{children}</div>
+              ) : null}
+              {copy}
+            </div>
+          )
+        }
         return (
           <div
             className='flex w-full flex-wrap items-end justify-between gap-4 pb-1'
             style={styleFromProps(props)}
           >
-            <div className='flex min-w-0 flex-col gap-1'>
-              <h1 className='font-semibold text-[length:var(--gui-heading-size,32px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-heading-leading,40px)] tracking-tight'>
-                {asString(props.title)}
-              </h1>
-              {asString(props.subtitle) ? (
-                <p className='text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-body-leading,24px)]'>
-                  {asString(props.subtitle)}
-                </p>
-              ) : null}
-            </div>
+            {copy}
             {hasChildren ? <div className='flex items-center gap-2'>{children}</div> : null}
           </div>
         )
+      }
       case 'Toolbar': {
         const justify = asString(props.justify, 'start')
         return (
@@ -1001,13 +1199,21 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             ? asString(props.value)
             : displayFromStateValue(stateValue, asString(props.value))
         const delta = asString(props.delta)
+        const isDisplay = asString(props.size) === 'display'
         return (
-          <div className={cn('flex flex-col gap-2', SURFACE_CARD)} style={styleFromProps(props)}>
+          <div className={cn('flex flex-col gap-2', SURFACE_STAT)} style={styleFromProps(props)}>
             <span className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'>
               {asString(props.label)}
             </span>
             <div className='flex flex-wrap items-baseline gap-2'>
-              <span className='font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-title-leading,32px)]'>
+              <span
+                className={cn(
+                  'font-semibold text-[var(--gui-text,#2c2d33)]',
+                  isDisplay
+                    ? 'text-[length:var(--gui-stat-size,40px)] leading-[var(--gui-stat-leading,48px)]'
+                    : 'text-[length:var(--gui-title-size,24px)] leading-[var(--gui-title-leading,32px)]'
+                )}
+              >
                 {value}
               </span>
               {delta ? (
@@ -1036,6 +1242,104 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             {asString(props.text)}
           </span>
         )
+      case 'Chip': {
+        const tone = asString(props.tone, 'muted')
+        const text = asString(props.text)
+        const actionId = asString(props.actionId)
+        const navigateTo = asString(props.navigateTo)
+        const setValue = asString(props.setValue)
+        const interactive = Boolean(actionId || navigateTo || setValue)
+        const className = cn(
+          'inline-flex items-center rounded-full px-3 py-1.5 font-medium text-sm',
+          CHIP_TONE_CLASSES[tone as keyof typeof CHIP_TONE_CLASSES] ?? CHIP_TONE_CLASSES.muted
+        )
+        const runChip = () => {
+          if (setValue) {
+            const parsed = parseChipSetValue(setValue)
+            setNamedValue(parsed.name || firstSearchFieldName(elements), parsed.value)
+          }
+          if (navigateTo) onNavigate(navigateTo)
+          if (actionId) void onRunAction(actionId, actionValues)
+        }
+        if (!interactive) {
+          return (
+            <span className={className} style={styleFromProps(props)}>
+              {text}
+            </span>
+          )
+        }
+        return (
+          <button
+            type='button'
+            className={className}
+            style={styleFromProps(props)}
+            onClick={runChip}
+          >
+            {text}
+          </button>
+        )
+      }
+      case 'Icon':
+        return (
+          <CatalogIcon name={asString(props.name, 'spark')} well={asString(props.well, 'circle')} />
+        )
+      case 'Avatar':
+        return <AvatarView {...avatarModel(props, state, scope)} />
+      case 'EntityHeader': {
+        const avatar = avatarModel(props, state, scope)
+        const meta = parseOptionList(props.meta)
+        return (
+          <div
+            data-testid='entity-header'
+            className='flex w-full flex-col gap-3'
+            style={styleFromProps(props)}
+          >
+            <div className='flex items-start gap-4'>
+              <AvatarView {...avatar} />
+              <div className='flex min-w-0 flex-1 flex-col gap-2'>
+                <div className='flex flex-wrap items-center gap-2'>
+                  <h2 className='font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-title-leading,32px)]'>
+                    {asString(props.title)}
+                  </h2>
+                  {asString(props.badge) ? (
+                    <span
+                      className={cn(
+                        'inline-flex items-center rounded-full px-2 py-0.5 font-medium text-xs',
+                        toneClass(props.badgeTone)
+                      )}
+                    >
+                      {asString(props.badge)}
+                    </span>
+                  ) : null}
+                </div>
+                {asString(props.description) ? (
+                  <p className='max-w-[var(--gui-measure,40rem)] text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)] leading-[1.5]'>
+                    {asString(props.description)}
+                  </p>
+                ) : null}
+                {meta.length > 0 ? (
+                  <div className='flex flex-wrap gap-2'>
+                    {meta.map((item) => (
+                      <span
+                        key={item}
+                        className={cn(
+                          'inline-flex items-center rounded-full px-3 py-1 font-medium text-sm',
+                          CHIP_TONE_CLASSES.muted
+                        )}
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {hasChildren ? (
+                  <div className='flex flex-wrap items-center gap-3'>{children}</div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        )
+      }
       case 'KeyValue': {
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
@@ -1048,26 +1352,88 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         }
         return <StateKeyValue pairs={pairs} />
       }
-      case 'Card':
+      case 'Card': {
+        const mediaIds: string[] = []
+        const footerIds: string[] = []
+        const bodyIds: string[] = []
+        for (const childId of childIds) {
+          const childType = elements[childId]?.type ?? ''
+          if (CARD_MEDIA_TYPES.has(childType) && mediaIds.length === 0) {
+            mediaIds.push(childId)
+          } else if (CARD_FOOTER_TYPES.has(childType)) {
+            footerIds.push(childId)
+          } else {
+            bodyIds.push(childId)
+          }
+        }
+        const title = asString(props.title)
+        const subtitle = asString(props.subtitle)
+        const description = asString(props.description)
+        const footerText = asString(props.footerText)
+        const mediaType = mediaIds[0] ? elements[mediaIds[0]]?.type : undefined
+        const mediaBesideTitle = mediaType === 'Avatar'
+        const heading =
+          title || subtitle || description ? (
+            <div className='flex min-w-0 flex-col gap-1'>
+              {title ? (
+                <h2 className='font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-title-leading,32px)]'>
+                  {title}
+                </h2>
+              ) : null}
+              {subtitle ? (
+                <p className='text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-body-leading,24px)]'>
+                  {subtitle}
+                </p>
+              ) : null}
+              {description ? (
+                <p className='line-clamp-3 text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-body-leading,24px)]'>
+                  {description}
+                </p>
+              ) : null}
+            </div>
+          ) : null
         return (
           <div className={cn('flex flex-col gap-4', SURFACE_CARD)} style={styleFromProps(props)}>
-            {asString(props.title) || asString(props.description) ? (
-              <div className='flex flex-col gap-1'>
-                {asString(props.title) ? (
-                  <h2 className='font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-title-leading,32px)]'>
-                    {asString(props.title)}
-                  </h2>
-                ) : null}
-                {asString(props.description) ? (
-                  <p className='text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-body-leading,24px)]'>
-                    {asString(props.description)}
-                  </p>
-                ) : null}
+            {mediaBesideTitle ? (
+              <div className='flex items-start gap-3'>
+                {mediaIds.map((childId) => (
+                  <Fragment key={childId}>{renderNode(childId, scope, childWithinForm)}</Fragment>
+                ))}
+                {heading}
+              </div>
+            ) : (
+              <>
+                {mediaIds.map((childId) => (
+                  <Fragment key={childId}>{renderNode(childId, scope, childWithinForm)}</Fragment>
+                ))}
+                {heading}
+              </>
+            )}
+            {bodyIds.map((childId) => (
+              <Fragment key={childId}>{renderNode(childId, scope, childWithinForm)}</Fragment>
+            ))}
+            {footerText || footerIds.length > 0 ? (
+              <div
+                data-testid='card-footer'
+                className='flex flex-wrap items-center justify-between gap-2 border-[var(--gui-border,#e2e3e5)] border-t pt-4'
+              >
+                {footerText ? (
+                  <span className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
+                    {footerText}
+                  </span>
+                ) : (
+                  <span />
+                )}
+                <div className='flex flex-wrap items-center gap-2'>
+                  {footerIds.map((childId) => (
+                    <Fragment key={childId}>{renderNode(childId, scope, childWithinForm)}</Fragment>
+                  ))}
+                </div>
               </div>
             ) : null}
-            {children}
           </div>
         )
+      }
       case 'Heading': {
         const level = asString(props.level, 'h2')
         const Tag = (['h1', 'h2', 'h3', 'h4'].includes(level) ? level : 'h2') as
@@ -1130,16 +1496,43 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         )
       }
       case 'ProgressSteps': {
-        const steps = asString(props.steps)
-          .split('\n')
-          .map((step) => step.trim())
-          .filter(Boolean)
+        const steps = parseProgressStepLines(asString(props.steps))
         return (
           <ProgressStepsView
             pending={pending}
             steps={steps}
             durationMs={asPositiveNumber(props.durationMs, DEFAULT_PROGRESS_DURATION_MS)}
           />
+        )
+      }
+      case 'ProgressBar': {
+        const statePath = asString(props.statePath)
+        const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
+        const raw = stateValue === undefined ? props.value : stateValue
+        const parsed = asFiniteNumber(raw)
+        const percent = Math.min(100, Math.max(0, parsed ?? (pending ? 12 : 0)))
+        const label = asString(props.label)
+        return (
+          <div className='flex w-full flex-col gap-2' style={styleFromProps(props)}>
+            {label ? (
+              <span className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
+                {label}
+              </span>
+            ) : null}
+            <div
+              data-testid='progress-bar'
+              className='h-2 w-full overflow-hidden rounded-full bg-[var(--gui-border,#e2e3e5)]'
+              role='progressbar'
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(percent)}
+            >
+              <div
+                className='h-full rounded-full bg-[var(--gui-brand,#1a73e8)] transition-[width] duration-300'
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+          </div>
         )
       }
       case 'Form': {
@@ -1176,6 +1569,110 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             noValidate
           >
             {children}
+          </form>
+        )
+      }
+      case 'SearchField': {
+        if (!fieldIsVisible(props, fieldSnapshot)) return null
+        const name = asString(props.name, 'query')
+        const label = asString(props.label)
+        const fieldId = `field-${name}`
+        const error = fieldErrors[name]
+        const value = resolveFieldValue('SearchField', props, formValues, state, scope)
+        const suggestions = parseOptionList(props.suggestions)
+        const submitLabel = asString(props.submitLabel, 'Search')
+        const actionId = asString(props.actionId)
+        const required = asBoolean(props.required)
+        const searchInput = (
+          <div className='flex flex-col gap-3'>
+            {label ? (
+              <label
+                htmlFor={fieldId}
+                className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'
+              >
+                {label}
+              </label>
+            ) : (
+              <label htmlFor={fieldId} className='sr-only'>
+                {asString(props.placeholder, 'Search')}
+              </label>
+            )}
+            <div
+              data-testid='search-field'
+              className={cn(
+                'flex h-12 items-center gap-2 rounded-full border bg-[var(--gui-surface,#ffffff)] pr-1.5 pl-5 shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]',
+                error ? 'border-[var(--gui-danger,#f31a1a)]' : 'border-[var(--gui-border,#e2e3e5)]'
+              )}
+            >
+              <input
+                id={fieldId}
+                name={name}
+                required={required}
+                placeholder={asString(props.placeholder) || undefined}
+                value={asFieldString(value)}
+                onChange={(event) => setNamedValue(name, event.target.value)}
+                className='h-full min-w-0 flex-1 bg-transparent text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] outline-none placeholder:text-[var(--gui-text-tertiary,#8a8d99)]'
+              />
+              <button
+                type='submit'
+                disabled={pending}
+                className={buttonClass({ variant: 'primary', shape: 'pill' }, 'primary')}
+              >
+                {submitLabel}
+              </button>
+            </div>
+            {error ? (
+              <p
+                data-testid={`field-error-${name}`}
+                className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-danger,#f31a1a)]'
+              >
+                {error}
+              </p>
+            ) : null}
+            {suggestions.length > 0 ? (
+              <div className='flex flex-wrap justify-center gap-2'>
+                {suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type='button'
+                    className={cn(
+                      'inline-flex items-center rounded-full px-3 py-1.5 font-medium text-sm',
+                      CHIP_TONE_CLASSES.muted
+                    )}
+                    onClick={() => setNamedValue(name, suggestion)}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )
+        if (withinForm) return searchInput
+        const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
+          event.preventDefault()
+          const fields: ArenaGenerativeFormField[] = [{ type: 'SearchField', props }]
+          const mergedValues = {
+            ...formValues,
+            ...valuesFromFormElement(event.currentTarget),
+          }
+          const errors = validateVisibleFields(fields, mergedValues, state, scope)
+          if (Object.keys(errors).length > 0) {
+            setFieldErrors(errors)
+            return
+          }
+          setFieldErrors({})
+          const values = {
+            ...actionValues,
+            ...collectVisibleFieldValues(fields, mergedValues, state, scope),
+          }
+          if (actionId) {
+            void onRunAction(actionId, values)
+          }
+        }
+        return (
+          <form className='w-full' onSubmit={handleSearchSubmit} noValidate>
+            {searchInput}
           </form>
         )
       }

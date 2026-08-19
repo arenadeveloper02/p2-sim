@@ -9,7 +9,22 @@ describe('buildArenaGenerativeUiPrompt', () => {
 
   it('keeps the catalog component reference', () => {
     expect(prompt).toContain('AVAILABLE COMPONENTS')
-    for (const component of ['Page', 'Section', 'Repeat', 'Table', 'SubmitButton', 'Tabs']) {
+    for (const component of [
+      'Page',
+      'Section',
+      'Repeat',
+      'Table',
+      'SubmitButton',
+      'Tabs',
+      'PageHeader',
+      'SearchField',
+      'Chip',
+      'Icon',
+      'Avatar',
+      'EntityHeader',
+      'ProgressBar',
+      'Card',
+    ]) {
       expect(prompt).toContain(`- ${component}: {`)
     }
   })

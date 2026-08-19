@@ -202,6 +202,10 @@ describe('structured brief helpers', () => {
       expect(recipe).toContain(`ARCHETYPE RECIPE: ${archetype}`)
       expect(recipe).not.toContain('one Card')
     }
+    expect(archetypeRecipe('form-result')).toContain('SearchField')
+    expect(archetypeRecipe('list-detail')).toContain('entity Cards')
+    expect(archetypeRecipe('dashboard')).toContain('EntityHeader')
+    expect(archetypeRecipe('dashboard')).toContain('display')
   })
 
   it('turns planned pages into generator page hints', () => {

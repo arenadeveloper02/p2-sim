@@ -2,191 +2,217 @@ import type { Spec } from '@json-render/core'
 import { DEFAULT_ARENA_GENERATIVE_THEME } from '@/lib/arena-generative-ui/theme'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 
+const TABS_ITEMS = 'Search|home\nResults|results\nOverview|overview'
+
 /**
- * Dashboard entry page: metrics across the top, then a parameters form beside a
- * supporting card. Shows the wide default width and side-by-side form fields.
- *
- * The metrics are bound by `statePath` and filled by the page's `onLoad` action,
- * which is also what gives them their loading placeholder. `delta` stays literal
- * because the catalog has no binding for it — it is display copy, not data.
+ * Hero search: centered kicker and display title, pill SearchField, suggestion
+ * chips, and three icon-well feature cards.
  */
 const goldHomeSpec: Spec = {
   root: 'page',
   elements: {
     page: {
       type: 'Page',
-      props: { title: 'Research operations', backgroundColor: null },
+      props: { title: 'Company research', backgroundColor: null },
       children: ['section'],
     },
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['header', 'metrics', 'split'],
+      children: ['header', 'search', 'hints', 'features'],
     },
     header: {
       type: 'PageHeader',
       props: {
-        title: 'Research operations',
-        subtitle: 'Compilation throughput and run parameters.',
+        title: 'Find any company',
+        subtitle: 'Search a name or domain, pick a match, and run a structured analysis.',
+        kicker: 'Watchtower',
+        align: 'center',
       },
-      children: ['header_action'],
+      children: ['history'],
     },
-    header_action: {
+    history: {
       type: 'Button',
       props: {
-        label: 'View latest report',
-        navigateTo: 'report',
+        label: 'View analysis history',
+        navigateTo: 'results',
         href: null,
         actionId: null,
-        variant: 'secondary',
+        variant: 'outline',
         size: null,
+        shape: 'pill',
+        showWhen: null,
       },
       children: [],
     },
-    metrics: {
-      type: 'Grid',
-      props: { columns: '3', gap: '16px', minItemWidth: null },
-      children: ['metric_reports', 'metric_pipelines', 'metric_latency'],
-    },
-    metric_reports: {
-      type: 'Stat',
+    search: {
+      type: 'SearchField',
       props: {
-        label: 'Total reports compiled',
-        value: null,
-        delta: '+14.2%',
-        deltaTone: 'positive',
-        statePath: 'totalReports',
-        hint: null,
-      },
-      children: [],
-    },
-    metric_pipelines: {
-      type: 'Stat',
-      props: {
-        label: 'Active data pipelines',
-        value: null,
-        delta: 'Stable',
-        deltaTone: 'neutral',
-        statePath: 'activePipelines',
-        hint: null,
-      },
-      children: [],
-    },
-    metric_latency: {
-      type: 'Stat',
-      props: {
-        label: 'Median compile time',
-        value: null,
-        delta: '-8.1%',
-        deltaTone: 'positive',
-        statePath: 'medianCompileTime',
-        hint: null,
-      },
-      children: [],
-    },
-    split: {
-      type: 'Columns',
-      props: { layout: 'equal', gap: '24px' },
-      children: ['params_card', 'velocity_card'],
-    },
-    params_card: {
-      type: 'Card',
-      props: {
-        title: 'System parameters',
-        description: 'Configure compilation parameters for the next run.',
-        padding: null,
-        backgroundColor: null,
-      },
-      children: ['form'],
-    },
-    form: {
-      type: 'Form',
-      props: { actionId: 'compile_report' },
-      children: ['form_fields', 'notes', 'notify', 'submit'],
-    },
-    form_fields: {
-      type: 'Grid',
-      props: { columns: '2', gap: '16px', minItemWidth: null },
-      children: ['batch_name', 'priority'],
-    },
-    batch_name: {
-      type: 'TextInput',
-      props: {
-        name: 'batchName',
-        label: 'Batch target identifier',
-        placeholder: 'Q3-PROD-ALPHA',
+        name: 'query',
+        label: null,
+        placeholder: 'Search a company or domain',
         required: true,
         defaultValue: null,
         statePath: null,
         errorText: null,
         showWhen: null,
+        actionId: 'search_companies',
+        suggestions: 'Stripe, Notion, Figma',
+        submitLabel: 'Search',
       },
       children: [],
     },
-    priority: {
-      type: 'Select',
+    hints: {
+      type: 'Stack',
       props: {
-        name: 'priority',
-        label: 'Execution priority',
-        options: 'Standard processing, High priority expedited',
-        required: null,
-        defaultValue: null,
-        statePath: null,
-        errorText: null,
-        showWhen: null,
+        direction: 'horizontal',
+        gap: '8px',
+        align: 'center',
+        justify: 'center',
+        wrap: true,
       },
-      children: [],
+      children: ['try_stripe'],
     },
-    notes: {
-      type: 'TextArea',
+    try_stripe: {
+      type: 'Chip',
       props: {
-        name: 'notes',
-        label: 'Analyst notes',
-        placeholder: 'Optional context for this run',
-        required: null,
-        defaultValue: null,
-        statePath: null,
-        errorText: null,
-        showWhen: null,
+        text: 'Try Stripe',
+        tone: 'muted',
+        setValue: 'query=Stripe',
+        actionId: null,
+        navigateTo: null,
       },
       children: [],
     },
-    notify: {
-      type: 'Switch',
-      props: {
-        name: 'notifyOnComplete',
-        label: 'Email when the run completes',
-        required: null,
-        defaultValue: null,
-        defaultChecked: false,
-        statePath: null,
-        errorText: null,
-        showWhen: null,
-      },
-      children: [],
+    features: {
+      type: 'Grid',
+      props: { columns: '3', gap: '24px', minItemWidth: null },
+      children: ['feature_filings', 'feature_signals', 'feature_risk'],
     },
-    submit: {
-      type: 'SubmitButton',
-      props: { label: 'Execute run', actionId: null, size: null },
-      children: [],
-    },
-    velocity_card: {
+    feature_filings: {
       type: 'Card',
       props: {
-        title: 'Pipeline velocity',
-        description: 'Processed records per second.',
+        title: 'Filings',
+        subtitle: null,
+        description: 'SEC and registry documents in one place.',
+        footerText: null,
         padding: null,
         backgroundColor: null,
       },
-      children: ['velocity_table'],
+      children: ['icon_filings'],
     },
-    velocity_table: {
-      type: 'Table',
+    icon_filings: {
+      type: 'Icon',
+      props: { name: 'file', well: 'circle' },
+      children: [],
+    },
+    feature_signals: {
+      type: 'Card',
       props: {
-        columns: 'Time, Records/sec',
-        rows: '10:00 | 1,200\n11:00 | 1,450\n12:00 | 1,900',
-        statePath: null,
-        emptyText: null,
+        title: 'Signals',
+        subtitle: null,
+        description: 'Hiring, funding, and product momentum.',
+        footerText: null,
+        padding: null,
+        backgroundColor: null,
+      },
+      children: ['icon_signals'],
+    },
+    icon_signals: {
+      type: 'Icon',
+      props: { name: 'chart', well: 'circle' },
+      children: [],
+    },
+    feature_risk: {
+      type: 'Card',
+      props: {
+        title: 'Risk',
+        subtitle: null,
+        description: 'Litigation, sanctions, and exposure.',
+        footerText: null,
+        padding: null,
+        backgroundColor: null,
+      },
+      children: ['icon_risk'],
+    },
+    icon_risk: {
+      type: 'Icon',
+      props: { name: 'shield', well: 'circle' },
+      children: [],
+    },
+  },
+}
+
+/**
+ * Entity results: back link, kicker, Repeat in a 2-column Grid of Cards with
+ * Avatar, subtitle, truncated body, and footer Analyze.
+ */
+const goldResultsSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Matches', backgroundColor: null },
+      children: ['section'],
+    },
+    section: {
+      type: 'Section',
+      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['back', 'header', 'results_grid'],
+    },
+    back: {
+      type: 'NavLink',
+      props: { label: 'Back', to: 'home' },
+      children: [],
+    },
+    header: {
+      type: 'PageHeader',
+      props: {
+        title: 'Matching companies',
+        subtitle: 'Select a record to run analysis.',
+        kicker: 'Results',
+        align: 'start',
+      },
+      children: [],
+    },
+    results_grid: {
+      type: 'Grid',
+      props: { columns: '2', gap: '16px', minItemWidth: null },
+      children: ['results_repeat'],
+    },
+    results_repeat: {
+      type: 'Repeat',
+      props: { statePath: 'companies', emptyText: 'No matching companies.' },
+      children: ['company_card'],
+    },
+    company_card: {
+      type: 'Card',
+      props: {
+        title: '{item.name}',
+        subtitle: '{item.domain}',
+        description: '{item.summary}',
+        footerText: '{item.meta}',
+        padding: null,
+        backgroundColor: null,
+      },
+      children: ['company_logo', 'analyze'],
+    },
+    company_logo: {
+      type: 'Avatar',
+      props: { src: '{item.logo}', initials: '{item.initials}', statePath: null },
+      children: [],
+    },
+    analyze: {
+      type: 'Button',
+      props: {
+        label: 'Analyze',
+        actionId: 'run_analysis',
+        navigateTo: null,
+        href: null,
+        variant: 'secondary',
+        size: 'sm',
+        shape: 'pill',
+        showWhen: null,
       },
       children: [],
     },
@@ -194,161 +220,225 @@ const goldHomeSpec: Spec = {
 }
 
 /**
- * Result page: bound Stat, KeyValue, and a Repeat of article Cards read the
- * CTA response from app state. The narrative body sits in a narrow Section so
- * prose keeps a readable measure while the collection above stays wide.
+ * Run progress: EntityHeader, ProgressBar, and nested ProgressSteps while pending.
  */
-const goldReportSpec: Spec = {
+const goldProgressSpec: Spec = {
   root: 'page',
   elements: {
     page: {
       type: 'Page',
-      props: { title: 'Compiled report', backgroundColor: null },
-      children: ['section', 'summary_section'],
+      props: { title: 'Analysis', backgroundColor: null },
+      children: ['section'],
     },
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['header', 'metrics', 'articles_card'],
+      children: ['back', 'entity', 'bar', 'steps', 'continue'],
     },
-    header: {
-      type: 'PageHeader',
-      props: { title: 'Compiled report', subtitle: 'Ranked articles from the latest run.' },
+    back: {
+      type: 'NavLink',
+      props: { label: 'Back to results', to: 'results' },
       children: [],
     },
-    metrics: {
-      type: 'Grid',
-      props: { columns: '2', gap: '16px', minItemWidth: null },
-      children: ['metric_count', 'run_meta'],
+    entity: {
+      type: 'EntityHeader',
+      props: {
+        title: 'Company analysis',
+        description: 'Resolving company profile and source documents.',
+        badge: 'Running',
+        badgeTone: 'info',
+        logoSrc: null,
+        initials: 'CO',
+        statePath: 'company.logo',
+        meta: 'Enterprise, 2010',
+      },
+      children: [],
     },
-    metric_count: {
+    bar: {
+      type: 'ProgressBar',
+      props: { value: null, statePath: 'progress', label: null },
+      children: [],
+    },
+    steps: {
+      type: 'ProgressSteps',
+      props: {
+        steps:
+          'Queued\nResolving company profile\n  Registry lookup\n  Domain match\nScoring sources',
+        durationMs: null,
+      },
+      children: [],
+    },
+    continue: {
+      type: 'NavLink',
+      props: { label: 'Open overview', to: 'overview' },
+      children: [],
+    },
+  },
+}
+
+/**
+ * Entity dashboard: EntityHeader, Tabs, four display Stats, editorial summary Card.
+ */
+const goldOverviewSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Overview', backgroundColor: null },
+      children: ['section'],
+    },
+    section: {
+      type: 'Section',
+      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['tabs', 'entity', 'kpis', 'summary'],
+    },
+    tabs: {
+      type: 'Tabs',
+      props: { items: TABS_ITEMS, activePath: 'overview' },
+      children: [],
+    },
+    entity: {
+      type: 'EntityHeader',
+      props: {
+        title: 'Stripe',
+        description: 'Financial infrastructure for the internet.',
+        badge: 'Public',
+        badgeTone: 'success',
+        logoSrc: null,
+        initials: 'ST',
+        statePath: 'company.logo',
+        meta: 'Payments, San Francisco',
+      },
+      children: ['site_link'],
+    },
+    site_link: {
+      type: 'Link',
+      props: { label: 'stripe.com', href: 'https://stripe.com', color: null },
+      children: [],
+    },
+    kpis: {
+      type: 'Grid',
+      props: { columns: '4', gap: '16px', minItemWidth: null },
+      children: ['kpi_revenue', 'kpi_employees', 'kpi_funding', 'kpi_risk'],
+    },
+    kpi_revenue: {
       type: 'Stat',
       props: {
-        label: 'Articles ranked',
-        statePath: 'count',
+        label: 'Revenue',
         value: null,
+        statePath: 'revenue',
+        hint: null,
+        delta: '+12%',
+        deltaTone: 'positive',
+        size: 'display',
+      },
+      children: [],
+    },
+    kpi_employees: {
+      type: 'Stat',
+      props: {
+        label: 'Employees',
+        value: null,
+        statePath: 'employees',
+        hint: null,
         delta: null,
         deltaTone: null,
+        size: 'display',
+      },
+      children: [],
+    },
+    kpi_funding: {
+      type: 'Stat',
+      props: {
+        label: 'Funding',
+        value: null,
+        statePath: 'funding',
         hint: null,
+        delta: null,
+        deltaTone: null,
+        size: 'display',
       },
       children: [],
     },
-    run_meta: {
-      type: 'KeyValue',
-      props: { statePath: 'meta', items: null, emptyText: null },
+    kpi_risk: {
+      type: 'Stat',
+      props: {
+        label: 'Risk score',
+        value: null,
+        statePath: 'riskScore',
+        hint: null,
+        delta: 'Low',
+        deltaTone: 'positive',
+        size: 'display',
+      },
       children: [],
     },
-    articles_card: {
+    summary: {
       type: 'Card',
       props: {
-        title: 'Ranked articles',
-        description: 'Sorted by relevance score.',
-        padding: null,
-        backgroundColor: null,
-      },
-      children: ['articles_grid'],
-    },
-    articles_grid: {
-      type: 'Grid',
-      props: { columns: '2', gap: '16px', minItemWidth: null },
-      children: ['articles_repeat'],
-    },
-    articles_repeat: {
-      type: 'Repeat',
-      props: { statePath: 'articles', emptyText: 'No articles ranked yet.' },
-      children: ['article_card'],
-    },
-    article_card: {
-      type: 'Card',
-      props: {
-        title: '{item.title}',
+        title: 'Analyst summary',
+        subtitle: null,
         description: null,
+        footerText: null,
         padding: null,
         backgroundColor: null,
       },
-      children: ['article_meta'],
-    },
-    article_meta: {
-      type: 'Stack',
-      props: {
-        direction: 'horizontal',
-        gap: '12px',
-        align: 'center',
-        justify: 'between',
-        wrap: true,
-      },
-      children: ['article_score', 'article_link'],
-    },
-    article_score: {
-      type: 'Badge',
-      props: { text: '{item.score}', tone: 'info' },
-      children: [],
-    },
-    article_link: {
-      type: 'Link',
-      props: { label: 'Open', href: '{item.url}', color: null },
-      children: [],
-    },
-    summary_section: {
-      type: 'Section',
-      props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['summary_heading', 'summary_body', 'back'],
-    },
-    summary_heading: {
-      type: 'Heading',
-      props: { text: 'Analyst summary', level: 'h2', color: null },
-      children: [],
+      children: ['summary_body'],
     },
     summary_body: {
       type: 'DataText',
       props: {
         statePath: 'summary',
-        fallback: 'Execute a run to generate the summary.',
+        fallback: 'Run an analysis to generate the overview.',
         color: null,
         size: null,
       },
       children: [],
     },
-    back: {
-      type: 'NavLink',
-      props: { label: 'Back to parameters', to: 'home' },
-      children: [],
-    },
   },
 }
 
-/** Binding key the example's CTA points at, used by tests and prompt framing. */
-export const GOLD_EXAMPLE_API_KEY = 'compile_report'
+/** Binding key the example's search CTA points at. */
+export const GOLD_EXAMPLE_API_KEY = 'search_companies'
 
-/** Binding key the example's `onLoad` points at, used by tests and prompt framing. */
-export const GOLD_EXAMPLE_LOAD_API_KEY = 'fetch_dashboard_metrics'
+/** Binding key the example's analyze CTA points at. */
+export const GOLD_EXAMPLE_RUN_API_KEY = 'run_analysis'
+
+/** Binding key the overview `onLoad` points at. */
+export const GOLD_EXAMPLE_LOAD_API_KEY = 'fetch_company_overview'
 
 export const goldExampleManifest: ArenaGenerativeAppManifest = {
   entryPath: 'home',
   theme: DEFAULT_ARENA_GENERATIVE_THEME,
   pages: {
-    home: {
-      path: 'home',
-      title: 'Research operations',
-      spec: goldHomeSpec,
-      onLoad: ['load_metrics'],
+    home: { path: 'home', title: 'Company research', spec: goldHomeSpec },
+    results: { path: 'results', title: 'Matches', spec: goldResultsSpec },
+    progress: { path: 'progress', title: 'Analysis', spec: goldProgressSpec },
+    overview: {
+      path: 'overview',
+      title: 'Overview',
+      spec: goldOverviewSpec,
+      onLoad: ['load_overview'],
     },
-    report: { path: 'report', title: 'Compiled report', spec: goldReportSpec },
   },
   actions: {
-    load_metrics: {
-      apiKey: GOLD_EXAMPLE_LOAD_API_KEY,
-    },
-    compile_report: {
+    search_companies: {
       apiKey: GOLD_EXAMPLE_API_KEY,
-      onSuccess: { navigate: 'report' },
+      onSuccess: { navigate: 'results' },
+    },
+    run_analysis: {
+      apiKey: GOLD_EXAMPLE_RUN_API_KEY,
+      onSuccess: { navigate: 'progress' },
+    },
+    load_overview: {
+      apiKey: GOLD_EXAMPLE_LOAD_API_KEY,
     },
   },
 }
 
 export const goldExampleOutput = {
-  title: 'Research operations',
-  content: 'A two-page research operations app: run parameters and a compiled report.',
+  title: 'Company research',
+  content: 'Search a company, pick a match, run analysis, and read the overview.',
   manifest: goldExampleManifest,
 }
 
@@ -360,8 +450,8 @@ export const goldExampleOutput = {
  */
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT',
-  'Match this structure and density, not its subject matter. Note the default Arena theme, the flat elements map with string child ids, the wide Section for dashboard content, the narrow Section for narrative prose, metrics in a Grid of Stat, form fields paired in a Grid, a Switch for an on/off preference, a live collection as Repeat inside a Grid of Cards, and result components bound by statePath.',
-  'Note also how the home page fills itself: it declares onLoad and binds each Stat by statePath, so the metrics arrive without the user clicking anything. The report page has no onLoad because its data comes from the CTA that navigated there. Ranked articles are a Repeat template: Card.title uses "{item.title}", the outbound Link uses "{item.url}", and the Repeat sits inside the Grid so each article is one cell. emptyText is the zero-result copy when that array is empty.',
-  `Replace the actions apiKey values ("${GOLD_EXAMPLE_LOAD_API_KEY}", "${GOLD_EXAMPLE_API_KEY}") with declared API binding keys, and drop manifest.actions and every onLoad entirely when no bindings were declared.`,
+  'Match this structure and density, not its subject matter. Note the default Arena theme, the four screens (centered search hero, entity result cards, nested run progress, entity dashboard), SearchField with nested submit, Icon wells, Avatar on entity Cards, EntityHeader, ProgressBar, display Stats, and result components bound by statePath.',
+  'Note also how data moves: home has no onLoad — SearchField runs the search CTA and onSuccess navigates to results. Results is a Repeat of entity Cards inside a Grid; Card.title uses "{item.name}", Avatar.src uses "{item.logo}", and Analyze sends the item fields. Progress shows EntityHeader, ProgressBar, and indented ProgressSteps while that run is pending. Overview declares onLoad and binds each Stat by statePath. emptyText is the zero-result copy when the companies array is empty.',
+  `Replace the actions apiKey values ("${GOLD_EXAMPLE_LOAD_API_KEY}", "${GOLD_EXAMPLE_API_KEY}", "${GOLD_EXAMPLE_RUN_API_KEY}") with declared API binding keys, and drop manifest.actions and every onLoad entirely when no bindings were declared.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')

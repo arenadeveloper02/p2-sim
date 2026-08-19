@@ -254,7 +254,7 @@ export async function generateArenaGenerativeManifest(
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
       ARENA_GENERATIVE_UI_THEME_RULE,
-      'This app renders as a full page, embedded in Arena or opened directly. emailId is optional. Do not invent a login form or a logo.',
+      'This app renders as a full page, embedded in Arena or opened directly. emailId is optional. Do not invent a login form or an app wordmark.',
       ...(params.apiBindings.length > 0
         ? [
             ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,

@@ -10,6 +10,7 @@ export const ARENA_GENERATIVE_FORM_FIELD_TYPES = [
   'DateInput',
   'MultiSelect',
   'Switch',
+  'SearchField',
 ] as const
 
 export type ArenaGenerativeFormFieldType = (typeof ARENA_GENERATIVE_FORM_FIELD_TYPES)[number]

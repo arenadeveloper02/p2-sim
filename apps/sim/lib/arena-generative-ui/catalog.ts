@@ -83,10 +83,12 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       props: z.object({
         title: z.string(),
         subtitle: z.string().nullable(),
+        kicker: z.string().nullable(),
+        align: z.enum(['start', 'center']).nullable(),
       }),
       slots: ['default'],
       description:
-        'Page title with optional subtitle; default-slot children render right-aligned as the primary action. Use once at the top of a page instead of a bare Heading.',
+        'Page title with optional kicker (small brand-colored label above the title) and subtitle. align "center" stacks kicker/title/subtitle as a hero with a readable measure; children stay top-right (history, secondary). Default align is start. Use once at the top of a page instead of a bare Heading.',
     },
     Toolbar: {
       props: z.object({
@@ -106,13 +108,15 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
     Card: {
       props: z.object({
         title: z.string().nullable(),
+        subtitle: z.string().nullable(),
         description: z.string().nullable(),
+        footerText: z.string().nullable(),
         padding: z.string().nullable(),
         backgroundColor: z.string().nullable(),
       }),
       slots: ['default'],
       description:
-        'Card container with an optional title and a one-line description under it. Groups related content into a legible chunk.',
+        'Card with optional title, subtitle, and description. The first Icon or Avatar child is media (feature well or entity logo). Button, Chip, NavLink, Link, and Toolbar children render in a footer under a divider with optional footerText. Use this for entity result cards (logo, title, subtitle, truncated body, footer meta + Analyze) and for feature cards with an Icon well.',
     },
     Heading: {
       props: z.object({
@@ -158,9 +162,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         hint: z.string().nullable(),
         delta: z.string().nullable(),
         deltaTone: z.enum(['positive', 'negative', 'neutral']).nullable(),
+        size: z.enum(['default', 'display']).nullable(),
       }),
       description:
-        'Single metric with a label and a primary value. Use value for static numbers or statePath to read one from host state. delta is a short change indicator such as "+14.2%" and deltaTone colours it. Place several inside a Grid.',
+        'Single metric with a label and a primary value. size "display" is the large KPI used on dashboards; default is the compact metric. Use value for static numbers or statePath to read one from host state. delta is a short change indicator such as "+14.2%" and deltaTone colours it. Place several inside a Grid.',
     },
     Badge: {
       props: z.object({
@@ -206,7 +211,81 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         durationMs: z.union([z.number(), z.string()]).nullable().optional(),
       }),
       description:
-        'Optional. Newline-separated step labels shown while a CTA is pending. Ticks complete over durationMs (default 150000). Include only when the user asked for stepped progress; put it on the page that shows the streaming result.',
+        'Optional. Newline-separated step labels shown while a CTA is pending. Indent a child line with two spaces to nest it under the previous step (the resolving-profile tree). Ticks complete over durationMs (default 150000). Include when the user asked for stepped progress; put it on the page that shows the run.',
+    },
+    ProgressBar: {
+      props: z.object({
+        value: z.union([z.number(), z.string()]).nullable(),
+        statePath: z.string().nullable(),
+        label: z.string().nullable(),
+      }),
+      description:
+        'Horizontal 0–100 progress track. value is a percent, or statePath reads a number from host state. Shown during a pending run and whenever a bound value is present.',
+    },
+    SearchField: {
+      props: formFieldProps({
+        placeholder: z.string().nullable(),
+        actionId: z.string().nullable(),
+        suggestions: z.string().nullable(),
+        submitLabel: z.string().nullable(),
+      }),
+      description:
+        'One-line search with a nested primary submit inside a pill track. name is the query key. actionId runs when this field is not inside a Form; inside a Form the parent submits. suggestions is a comma-separated list of chips that fill the field. Use this for a one-field search hero — do not fake it with Stack + TextInput + SubmitButton.',
+    },
+    Chip: {
+      props: z.object({
+        text: z.string(),
+        tone: z.enum(['muted', 'brand', 'info']).nullable(),
+        actionId: z.string().nullable(),
+        navigateTo: z.string().nullable(),
+        setValue: z.string().nullable(),
+      }),
+      description:
+        'Compact pill. tone is muted, brand, or info. Optional actionId, navigateTo, or setValue (the string to put in a named field, as "query=Stripe" or a bare value that fills the page SearchField). Use for suggestion chips and entity meta.',
+    },
+    Icon: {
+      props: z.object({
+        name: z.enum([
+          'search',
+          'file',
+          'chart',
+          'shield',
+          'building',
+          'check',
+          'spark',
+          'users',
+          'globe',
+          'message',
+          'link',
+        ]),
+        well: z.enum(['circle', 'square', 'none']).nullable(),
+      }),
+      description:
+        'Catalog icon. well "circle" or "square" paints a 40px brand-tinted well with a 20px icon — the feature-card mark. well "none" is the bare glyph.',
+    },
+    Avatar: {
+      props: z.object({
+        src: z.string().nullable(),
+        initials: z.string().nullable(),
+        statePath: z.string().nullable(),
+      }),
+      description:
+        'Content logo or initials. src is an image URL, initials are two letters, statePath reads a URL or name from host state (including item.logo / item.name inside Repeat). Allowed for companies and people; do not use as an app wordmark.',
+    },
+    EntityHeader: {
+      props: z.object({
+        title: z.string(),
+        description: z.string().nullable(),
+        badge: z.string().nullable(),
+        badgeTone: z.enum(['info', 'success', 'warning', 'error']).nullable(),
+        logoSrc: z.string().nullable(),
+        initials: z.string().nullable(),
+        statePath: z.string().nullable(),
+        meta: z.string().nullable(),
+      }),
+      slots: ['default'],
+      description:
+        'Identity row: logo, title, badge, description, comma-separated meta chips, and default-slot children for links or actions. Use on dashboards and run-progress pages instead of stacking Avatar + Heading + Badge + Toolbar.',
     },
     Form: {
       props: z.object({
@@ -215,7 +294,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Form wrapper. actionId must match a manifest actions key that calls a declared API. align controls cross-axis placement of its rows and defaults to stretch; use align "center" only when the user asked for a centred form.',
+        'Form wrapper for multi-field forms. actionId must match a manifest actions key that calls a declared API. align controls cross-axis placement of its rows and defaults to stretch. A one-field search uses SearchField on its own instead of Form + TextInput.',
     },
     TextInput: {
       props: formFieldProps({
@@ -298,12 +377,13 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         href: z.string().nullable(),
         navigateTo: z.string().nullable(),
         actionId: z.string().nullable(),
-        variant: z.enum(['primary', 'secondary', 'ghost', 'destructive']).nullable(),
+        variant: z.enum(['primary', 'secondary', 'ghost', 'outline', 'destructive']).nullable(),
         size: z.enum(['sm', 'md']).nullable(),
+        shape: z.enum(['default', 'pill']).nullable(),
         showWhen: z.string().nullable(),
       }),
       description:
-        'Button. Prefer navigateTo for in-app pages, actionId for APIs, href only for true outbound links. variant sets emphasis and defaults to secondary: use primary for the single main action of a page, secondary for ordinary actions, ghost for low-emphasis ones such as Back or Cancel, destructive for delete. showWhen hides the button until host state or a form field matches (same syntax as form fields) — use "hasMore" for Load more.',
+        'Button. Prefer navigateTo for in-app pages, actionId for APIs, href only for true outbound links. variant sets emphasis and defaults to secondary: use primary for the single main action of a page, secondary for ordinary actions, outline for a brand-bordered pill such as "View analysis history", ghost for low-emphasis ones such as Back or Cancel, destructive for delete. shape "pill" fully rounds the control. showWhen hides the button until host state or a form field matches (same syntax as form fields) — use "hasMore" for Load more.',
     },
     NavLink: {
       props: z.object({
@@ -327,7 +407,8 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         width: z.string().nullable(),
         height: z.string().nullable(),
       }),
-      description: 'Content image only. Do not use for logos, wordmarks, or app branding.',
+      description:
+        'Content photograph or figure only. Company and person marks use Avatar or EntityHeader. Do not use Image for an app wordmark.',
     },
     Divider: {
       props: z.object({
@@ -447,23 +528,23 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Every page must be reachable from entryPath via NavLink, navigateTo, navigate, or onSuccess.navigate.',
   'DataText, Text, Alert, and ListItem render markdown. Put a prose API body on a single DataText; do not split markdown into Heading/List elements.',
   'Layout: each page is a full-page app screen. Page → Section (leave width at the wide default so it fills up to 1280px) → content. Use the horizontal space; do not stack every element in one narrow centre column. Do not set maxWidth unless the brief demands an exact cap.',
-  'Measure: dashboards, collections and tables stay wide, but a narrative block — a report body, an analysis, a long DataText — goes in its own Section with width "narrow" or in the main column of Columns. Never let prose run the full 1280px.',
+  'Measure: dashboards, collections and tables stay wide, but a narrative block — a report body, an analysis, a long DataText — goes in its own Section with width "narrow" or in the main column of Columns. A PageHeader subtitle and a search-hero subtitle keep a readable measure (the host caps them) even on a wide Section. Never let prose run the full 1280px.',
   'Spacing: group related elements into a Card or Stack so data reads as chunks, and leave real space between groups. gap and padding take CSS lengths such as "16px" or "24px", never size words like "md" or "lg".',
   'Surfaces: there are exactly two — the page canvas and the Card/Stat surface, both supplied by the host from the Arena Design System (manifest.theme or host defaults). Do not set backgroundColor unless the brief names a specific colour. Build hierarchy from PageHeader, Card grouping, heading level, and 24px gaps between groups — never coloured fills or borders.',
-  'Collections: when each item is the same scalar fields with no per-row action, use Table. When each item needs its own Card, Badge, button, or link, put a Repeat inside a Grid (columns 2 or 3) or Stack, bound to the array statePath; Repeat\'s children are the per-item template and render once per element. Never unroll a live array into one static Card per item, and never wrap Grid in Repeat (that produces N grids). Bind per-item fields with statePath "item.field". Put per-item values into navigation and hrefs with "{item.id}" — NavLink.to "order?id={item.id}" opens the detail page so its onLoad receives that id. A Button.actionId inside Repeat sends the item fields as the action input.',
-  'Tabular data goes in Table, metrics go in Stat inside a Grid, record details go in KeyValue, short statuses go in Badge.',
-  'Forms: every interactive field carries an explicit label. Pair short related fields (TextInput, NumberInput, DateInput, Select) side by side in a Grid (columns 2) and keep long free-text, RadioGroup, MultiSelect, Checkbox, and Switch full width. Forms have one SubmitButton and an optional Back NavLink, and default to left-aligned.',
-  'Form controls: TextInput (one line), TextArea (prose), NumberInput (counts and amounts; min/max/step as decimal strings), DateInput (YYYY-MM-DD), Select (one of a comma-separated options list), RadioGroup (a short visible exclusive list — use Select when there are more than five options), MultiSelect (several of that list, submitted as an array), Checkbox (must-tick boolean), Switch (on/off preference). Every field needs name and label. defaultValue seeds the control (comma-separated for MultiSelect); Checkbox/Switch also accept defaultChecked. statePath reads a host-state key instead when set. showWhen hides a field until a sibling matches: "notify" means that field is truthy, "channel=email" means equality, "channel!=sms" inequality, and comma-separated clauses are AND. Hidden fields are not submitted and are not validated. required plus optional errorText run on submit — do not add a second Text for the error. There is no file-upload field.',
-  'Centring: only centre when the user asked for it, and use the props that actually centre — a search field beside its button is {"type":"Stack","props":{"direction":"horizontal","justify":"center","align":"end","gap":"12px"}} wrapping the TextInput and SubmitButton, and a whole form centres with Form align "center". justify accepts exactly start, center, between, end (never "space-between" or a CSS value), and SubmitButton has no align or width prop of its own — wrap it instead.',
-  'Chrome: start a page with PageHeader (title, subtitle, primary action as its child) instead of a bare Heading. Use Toolbar for a row of filters or secondary buttons, and Columns for a main area beside a supporting sidebar.',
-  'Emphasis: at most one Button with variant "primary" per page, and none on a page whose main action is a SubmitButton (that is already primary). Ordinary actions are "secondary", Back / Cancel / dismiss are "ghost", and delete or disconnect is "destructive". Never express emphasis with a colour — there is no colour prop on Button.',
-  'Navigation: when the app has three or more pages, put a Tabs element with one "Label|path" line per top-level page at the top of each page and set activePath to the current path. Detail pages are reached with NavLink/navigateTo and offer a Back NavLink.',
+  'Collections: when each item is the same scalar fields with no per-row action, use Table. When items have a name, description, and action, use Repeat inside a Grid (columns 2) of entity Cards — Avatar, title, subtitle, truncated description, footerText plus a footer Button. When each item needs its own Card, Badge, button, or link more generally, put a Repeat inside a Grid (columns 2 or 3) or Stack, bound to the array statePath; Repeat\'s children are the per-item template and render once per element. Never unroll a live array into one static Card per item, and never wrap Grid in Repeat (that produces N grids). Bind per-item fields with statePath "item.field". Put per-item values into navigation and hrefs with "{item.id}" — NavLink.to "order?id={item.id}" opens the detail page so its onLoad receives that id. A Button.actionId inside Repeat sends the item fields as the action input.',
+  'Tabular data goes in Table, metrics go in Stat inside a Grid (size "display" for dashboard KPIs), record details go in KeyValue or EntityHeader, short statuses go in Badge or Chip.',
+  'Forms: every interactive field carries an explicit label. Pair short related fields (TextInput, NumberInput, DateInput, Select) side by side in a Grid (columns 2) and keep long free-text, RadioGroup, MultiSelect, Checkbox, and Switch full width. Multi-field forms have one SubmitButton and an optional Back NavLink, and default to left-aligned. A one-field search is SearchField (placeholder is enough; optional label) — never a labelled Grid of one TextInput.',
+  'Form controls: SearchField (pill query with nested submit and optional suggestion chips), TextInput (one line), TextArea (prose), NumberInput (counts and amounts; min/max/step as decimal strings), DateInput (YYYY-MM-DD), Select (one of a comma-separated options list), RadioGroup (a short visible exclusive list — use Select when there are more than five options), MultiSelect (several of that list, submitted as an array), Checkbox (must-tick boolean), Switch (on/off preference). Every field needs name; labelled fields also need label. defaultValue seeds the control (comma-separated for MultiSelect); Checkbox/Switch also accept defaultChecked. statePath reads a host-state key instead when set. showWhen hides a field until a sibling matches: "notify" means that field is truthy, "channel=email" means equality, "channel!=sms" inequality, and comma-separated clauses are AND. Hidden fields are not submitted and are not validated. required plus optional errorText run on submit — do not add a second Text for the error. There is no file-upload field.',
+  'Hero: a one-field search page uses PageHeader align "center" with a kicker plus SearchField — that is the default for that page, not an exception. Multi-field forms stay left-aligned. Collections, dashboards, and tables stay wide. A search field beside its button is SearchField, not a centred Stack of TextInput and SubmitButton. justify accepts exactly start, center, between, end (never "space-between" or a CSS value).',
+  'Chrome: start a page with PageHeader (kicker, title, subtitle, trailing action as its child) instead of a bare Heading. Use EntityHeader for a company or record identity row. Use Toolbar for a row of filters or secondary buttons, and Columns for a main area beside a supporting sidebar.',
+  'Emphasis: at most one Button with variant "primary" per page, and none on a page whose main action is a SubmitButton or SearchField (those are already primary). Ordinary actions are "secondary", outline + shape "pill" is the brand-bordered secondary such as "View analysis history", Back / Cancel / dismiss are "ghost", and delete or disconnect is "destructive". Never express emphasis with a colour — there is no colour prop on Button.',
+  'Navigation: when the app has three or more top-level destinations, put a Tabs element with one "Label|path" line per top-level page on those destination pages and set activePath to the current path. A search hero omits Tabs. Detail and progress pages are reached with NavLink/navigateTo and offer a Back NavLink.',
   'Typography: one h1-level page title per page (PageHeader.title counts), then a short supporting subtitle. Never title a page "Page 1" or use lorem ipsum.',
   'Heading order: nest levels sequentially and never skip or invert them. PageHeader.title is the page h1 and Card.title renders an h2, so a Heading inside a Card starts at h3.',
-  'Loading: any region that fills from a CTA response must have a loading state. Table, Repeat, Stat, KeyValue and DataText bound to a statePath show a placeholder automatically, but only while that state value is still empty — so bind the result region to a statePath rather than hard-coding static children. A Stat with a literal value prop and a Table with literal rows never show one. For a region built from static children add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]} — variant is text, stat, table, card or form. Use Spinner only for a short inline wait, never as the sole feedback for a long run.',
+  'Loading: any region that fills from a CTA response must have a loading state. Table, Repeat, Stat, KeyValue and DataText bound to a statePath show a placeholder automatically, but only while that state value is still empty — so bind the result region to a statePath rather than hard-coding static children. A Stat with a literal value prop and a Table with literal rows never show one. For a region built from static children add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]} — variant is text, stat, table, card or form. Use Spinner only for a short inline wait, never as the sole feedback for a long run. ProgressBar and ProgressSteps belong on the run page while the action is pending.',
   'Empty results: when a bound Table, Repeat, or KeyValue has loaded and the value is empty, the host shows emptyText (defaults: "No results" for Table and Repeat, "No details" for KeyValue). Do not add a second Text or Alert for that. A DataText fallback is the empty copy for prose. Customise emptyText when the brief names the collection ("No matching articles").',
-  'Result pages: when onSuccess.navigate sends the user to another page, the host navigates there immediately and the action stays pending, so put the loading state on the destination page — its bound Table/Repeat/Stat/KeyValue/DataText, or an explicit Skeleton — not on the form page the user has already left.',
-  'Do not include a logo, wordmark, or decorative Image for branding. The host already provides the outer shell.',
+  'Result pages: when onSuccess.navigate sends the user to another page, the host navigates there immediately and the action stays pending, so put the loading state on the destination page — its bound Table/Repeat/Stat/KeyValue/DataText, or ProgressBar/ProgressSteps, or an explicit Skeleton — not on the form page the user has already left.',
+  'Avatars: content logos and initials belong on Avatar or EntityHeader (src, initials, or statePath including "{item.logo}"). Do not add a decorative app wordmark or branding Image — the host already provides the outer shell.',
 ] as const
 
 /**
@@ -518,9 +599,9 @@ export const ARENA_GENERATIVE_UI_THEME_RULE = [
  */
 export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
   'ARENA DESIGN SYSTEM',
-  'The host already paints Poppins, brand blue #1A73E8, grey text hierarchy, 12px radius, 40px controls, and card elevation. You compose catalog components; you do not invent hex, fonts, or CSS.',
-  'Every generate reply includes the default theme above. Page → Section (width wide, no maxWidth) → PageHeader, then groups of Grid / Columns / Card with gap "24px". Pair short form fields in a 2-column Grid. Metrics are a Grid of Stat. Collections are Table or Repeat-in-Grid. Record details are KeyValue. One primary SubmitButton per form; Back is a ghost Button or NavLink.',
-  'Copy is specific product language. Never title a page "Page 1" or use lorem ipsum. Do not add a logo or wordmark.',
+  'The host already paints Poppins, brand blue #1A73E8, grey text hierarchy, 12px radius, 40px controls, display titles, and shadow-first cards. You compose catalog components; you do not invent hex, fonts, or CSS.',
+  'Every generate reply includes the default theme above. Page → Section (width wide, no maxWidth) → PageHeader, then groups of Grid / Columns / Card with gap "24px". A one-field search is a centered PageHeader (kicker + display title) plus SearchField and suggestion Chips, then a Grid of Icon Cards. Multi-field forms pair short fields in a 2-column Grid. Dashboard metrics are a Grid of Stat size "display" under EntityHeader and Tabs. Named collections are Repeat-in-Grid entity Cards (Avatar, subtitle, footer). Record details are EntityHeader or KeyValue. One primary SearchField or SubmitButton per form; history is outline + pill; Back is a ghost Button or NavLink.',
+  'Copy is specific product language. Never title a page "Page 1" or use lorem ipsum. Content avatars and company logos are allowed; do not add an app wordmark.',
 ].join('\n')
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */
