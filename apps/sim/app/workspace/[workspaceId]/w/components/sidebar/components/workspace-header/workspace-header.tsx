@@ -23,7 +23,7 @@ import { PanelLeft, Pin } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { useQueryClient } from '@tanstack/react-query'
 import { MoreHorizontal, Search } from 'lucide-react'
-import { useSession } from '@/lib/auth/auth-client'
+import { useActiveOrganization, useSession } from '@/lib/auth/auth-client'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 // import { env } from '@/lib/core/config/env'
 import { isAdminOrOwner } from '@/lib/workspaces/organization'
@@ -36,7 +36,6 @@ import { ViewInvitationsMenuItem } from '@/app/workspace/[workspaceId]/w/compone
 import { ViewInvitationsModal } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/workspace-header/components/pending-invitations/view-invitations-modal'
 import { SIDEBAR_RAIL_CHIP_CLASS } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
 import { invitationKeys } from '@/hooks/queries/invitations'
-import { useOrganizations } from '@/hooks/queries/organization'
 import {
   type Workspace,
   type WorkspaceCreationPolicy,
@@ -192,11 +191,8 @@ function WorkspaceHeaderImpl({
   const contextMenuClosedRef = useRef(true)
   const hasInputFocusedRef = useRef(false)
   const { data: session } = useSession()
-  const { data: organizationsData } = useOrganizations()
-  const isOrganizationAdmin = isAdminOrOwner(
-    organizationsData?.activeOrganization,
-    session?.user?.email
-  )
+  const { data: activeOrganization } = useActiveOrganization()
+  const isOrganizationAdmin = isAdminOrOwner(activeOrganization, session?.user?.email)
   const renameInputRef = useRef<HTMLInputElement | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const workspaceListRef = useRef<HTMLDivElement>(null)

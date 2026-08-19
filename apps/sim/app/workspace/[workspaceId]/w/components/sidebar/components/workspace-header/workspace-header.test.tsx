@@ -12,7 +12,10 @@ const onWorkspaceSwitch = vi.fn()
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn(), setQueryData: vi.fn() }),
 }))
-vi.mock('@/lib/auth/auth-client', () => ({ useActiveOrganization: () => ({ data: null }) }))
+vi.mock('@/lib/auth/auth-client', () => ({
+  useActiveOrganization: () => ({ data: null }),
+  useSession: () => ({ data: null }),
+}))
 vi.mock('@/hooks/use-settings-navigation', () => ({
   useSettingsNavigation: () => ({ navigateToSettings: mockNavigateToSettings }),
 }))

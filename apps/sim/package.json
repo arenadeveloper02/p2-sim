@@ -194,6 +194,7 @@
     "jszip": "3.10.1",
     "lib0": "0.2.117",
     "lru-cache": "11.3.6",
+    "lucide-react": "0.511.0",
     "mammoth": "^1.9.0",
     "marked": "17.0.4",
     "mermaid": "11.16.1",

@@ -15,7 +15,7 @@ import {
 } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { useSession } from '@/lib/auth/auth-client'
+import { useActiveOrganization, useSession } from '@/lib/auth/auth-client'
 import type { OAuthReturnContext } from '@/lib/credentials/client-state'
 import { ADD_CONNECTOR_SEARCH_PARAM, writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import { defaultCredentialDisplayName } from '@/lib/credentials/display-name'
@@ -30,7 +30,7 @@ import { getScopeDescription, getServiceConfigByProviderId } from '@/lib/oauth/u
 import { isAdminOrOwner } from '@/lib/workspaces/organization'
 import { useCreateCredentialDraft, useWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { useConnectOAuthService } from '@/hooks/queries/oauth/oauth-connections'
-import { useOrganization, useOrganizations } from '@/hooks/queries/organization'
+import { useOrganization } from '@/hooks/queries/organization'
 import { useOrganizationOAuthApps } from '@/hooks/queries/organization-oauth-apps'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 
@@ -182,8 +182,7 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
   const { data: workspaceSettings } = useWorkspaceSettings(workspaceId)
   const organizationId = workspaceSettings?.settings?.workspace?.organizationId ?? undefined
 
-  const { data: organizationsData } = useOrganizations()
-  const activeOrganization = organizationsData?.activeOrganization
+  const { data: activeOrganization } = useActiveOrganization()
   const { data: organization } = useOrganization(activeOrganization?.id || '')
   const isOrgAdmin = isAdminOrOwner(organization, session?.user?.email)
 

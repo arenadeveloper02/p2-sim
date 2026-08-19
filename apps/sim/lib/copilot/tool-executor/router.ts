@@ -30,6 +30,10 @@ export function isClientExecuted(toolId: string): boolean {
   return getToolEntry(toolId)?.route === 'client'
 }
 
+export function isGoExecuted(toolId: string): boolean {
+  return getToolEntry(toolId)?.route === 'go'
+}
+
 export function isKnownTool(toolId: string): boolean {
   return isToolInCatalog(toolId)
 }
