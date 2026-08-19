@@ -5,8 +5,7 @@ import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'create_workflow',
-    description:
-      'Creates a new empty workflow. ONLY when the user explicitly wants a brand-new workflow — never when an existing workspaceWorkflows entry can run or be edited instead. Pass confirmNewWorkflow: true.',
+    description: 'Creates a new empty workflow.',
     parameters: {
       type: 'object',
       properties: {
@@ -16,11 +15,6 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
         workspaceId: {
           type: 'string',
           description: 'Optional workspace ID (defaults to current workspace)',
-        },
-        confirmNewWorkflow: {
-          type: 'boolean',
-          description:
-            'Required true when creating a workflow while other workflows already exist in the workspace.',
         },
       },
       required: ['name'],

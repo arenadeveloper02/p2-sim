@@ -307,7 +307,7 @@ export function isSpecialistDomain(name: string): name is LocalCopilotCloudSpeci
 export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
   switch (domain) {
     case 'workflow':
-      return 'Focus on editing/running existing workflows first. If workspaceWorkflows lists anything suitable, call get_workflow_data / get_workflow_context (or get_workflow_run_options to run) — do not create_workflow unless the user explicitly wants a brand-new distinct workflow (confirmNewWorkflow: true).'
+      return 'Build, edit, and run workflows. Use get_workflow_data / get_workflow_context or get_workflow_run_options when inspecting an existing workflow; create_workflow when the user wants a new one.'
     case 'run':
       return 'Focus on running and debugging workflows (get_workflow_run_options, run_workflow, run_block, run_from_block, query_logs). Prefer existing workspaceWorkflows entries — never create a workflow just to run something.'
     case 'deploy':
@@ -315,9 +315,9 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'auth':
       return 'Focus on credentials, OAuth links, and API keys.'
     case 'knowledge':
-      return 'Focus on existing knowledge bases first. If knowledgeBases is non-empty, call knowledge_base get / list / query and reuse — create only when nothing suitable exists and the user wants a new KB (confirmCreateNew: true).'
+      return 'Query, create, and ingest knowledge bases (knowledge_base get / list / query / create / add_file).'
     case 'table':
-      return 'Focus on existing tables first. If tables is non-empty, call user_table get / get_schema / query_rows and reuse — create only when nothing suitable exists and the user wants a new table (confirmCreateNew: true).'
+      return 'Create and manage tables, rows, schemas, and enrichments (user_table).'
     case 'scheduled_task':
       return 'Focus on scheduled tasks (create/list/update/complete/logs).'
     case 'agent':
@@ -327,10 +327,10 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'media':
       return 'Focus on image/audio/video generation and ffmpeg.'
     case 'file':
-      return 'Focus on existing workspace files first. If workspaceFiles may match, glob then read, then update via workspace_file + edit_content — create_file only for a truly new path (confirmCreateNew: true). Chat uploads/ need materialize_file into files/ before function_execute.'
+      return 'Read, create, and update workspace files (glob, read, create_file, workspace_file, edit_content). Chat uploads/ need materialize_file into files/ before function_execute.'
     case 'superagent':
       return 'Focus on third-party integration actions. Authenticate if needed, then invoke the right integration tool.'
     default:
-      return 'Reuse existing workflows/tables/knowledge bases/files whenever present. Inspect with tools first; create new resources only when inventory has nothing suitable or the user explicitly asks for something brand-new.'
+      return 'Use the tools for this domain to complete the request.'
   }
 }

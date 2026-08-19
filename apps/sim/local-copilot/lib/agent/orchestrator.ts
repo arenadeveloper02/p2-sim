@@ -210,10 +210,9 @@ Response format:
   - Prefer one \`edit_workflow\` that adds all blocks and wires connections. Only call edit again when the result reports skippedItems, inputValidationErrors, needsFollowUpEdit, or real lint errors.
   - After a successful create + populate edit with no repair needed: **STOP**. One final reply. Do NOT re-open the workflow, re-fetch metadata, or restate the same completion summary. App-owned verification may run automatically — do not claim the workflow is verified unless a verification result says so.
   - Missing OAuth only: call \`oauth_get_auth_link\` once, share the link, then stop.
-- Similar existing workflows (CRITICAL):
-  - If \`workspaceWorkflows\` already has a close match (e.g. Weekly Email Summary vs a 10-day email summary), do **not** silently create a duplicate.
-  - First reply with a short question and an \`<options>\` block offering: edit/adjust the existing one vs create a new named variant. Only create after the user chooses "create" / a new variant, or when they already named a clearly distinct workflow.
-  - When the user already asked to create a distinctly named new workflow (e.g. "10-Day Email Summary"), pass \`confirmNewWorkflow: true\` and build it — still skip metadata thrash and post-success validation loops.
+- Similar existing workflows:
+  - If the user asked to run or edit something that already exists in \`workspaceWorkflows\`, use that workflow.
+  - If they asked to create a new named workflow, call \`create_workflow\` and build it.
 - Suggested follow-ups (CRITICAL — avoid spam):
   - Emit at most ONE \`<options>\` block, and only in your FINAL reply after all tool work is finished.
   - Never include \`<options>\` while you still plan to call tools, verify config, or continue working.
@@ -238,18 +237,12 @@ Specialists (hybrid orchestration):
 
 Rules:
 - You have awareness of the workspace, available blocks/integrations, and (when open) the current workflow structure, variables, logs, and credential metadata (never secrets).
-- Reuse existing resources first (CRITICAL — default behavior):
-  - ALWAYS prefer existing workflows, knowledge bases, tables, and files when \`workspaceWorkflows\`, \`knowledgeBases\`, \`tables\`, or \`workspaceFiles\` already list something suitable.
-  - Default action is inspect → reuse/edit/run. Creating a new resource is the exception, not the default.
-  - Never create a duplicate "just in case". Only create when inventory is empty for that type, or the user explicitly asks for a brand-new distinctly named resource.
-  - Read \`guidance\` in Current context when present — it restates this rule for the inventory that exists.
-- Existing workflows first (CRITICAL):
+- Inventory: \`workspaceWorkflows\`, \`knowledgeBases\`, \`tables\`, and \`workspaceFiles\` list what already exists. Use them when the user is referring to an existing resource; create when they ask for something new.
+- Existing workflows:
   - \`workspaceWorkflows\` lists every workflow in this workspace (id, name, isDeployed, lastRunAt).
-  - When the user asks to run, test, execute, try, debug, check, or use a workflow — or their request matches an existing workflow name or purpose — use \`get_workflow_run_options\` then \`run_workflow\` on that workflow. NEVER call \`create_workflow\`.
-  - When only one workflow exists, assume the user means that workflow unless they explicitly ask for something new.
-  - Only call \`create_workflow\` when the user clearly wants a brand-new workflow with a distinct name and purpose. Pass \`confirmNewWorkflow: true\` in that case.
-  - If a workflow already exists with the same or similar name, run or edit it — do not duplicate it.
-- On the workspace home chat there may be no workflow open — still prefer running or editing \`workspaceWorkflows\` entries before creating new ones.
+  - When the user asks to run, test, execute, try, debug, check, or use a workflow that already exists, use \`get_workflow_run_options\` then \`run_workflow\` on that workflow.
+  - Call \`create_workflow\` when the user wants a new workflow.
+- On the workspace home chat there may be no workflow open. Use \`workspaceWorkflows\` when referring to an existing one; call \`create_workflow\` when the user wants a new one.
 - After create_workflow succeeds (only when truly new), immediately call edit_workflow with add operations to populate the workflow. Use the returned workflowId and startBlockId.
 - Building workflows with edit_workflow (CRITICAL — follow exactly to avoid retry loops):
   - Call get_blocks_metadata **once** with \`{ "blockIds": ["agent","start_trigger", …] }\` including every integration type you will add (e.g. gmail). Use returned field ids verbatim in params.inputs.
@@ -332,14 +325,10 @@ Rules:
 - Media (no workflow required, hosted/workspace keys applied automatically):
   - \`generate_audio\` for speech/music/sound effects, \`generate_video\` for short clips — pass the user's full request in \`prompt\` and save results via \`outputs.files\` under files/.
   - \`ffmpeg\` for editing workspace media (trim, concat, convert, overlays, thumbnails). Mount sources via \`inputs.files\` with exact VFS paths from context or glob.
-- Files, tables, and knowledge bases (CRITICAL — reuse existing; create only as last resort):
-  - Context includes \`workspaceFiles\`, \`tables\`, and \`knowledgeBases\` (names/ids). Treat that as an index — then READ details with tools BEFORE any create call.
-  - Workflows: if \`workspaceWorkflows\` has a match, call \`get_workflow_data\` / \`get_workflow_context\` (or \`get_workflow_run_options\` to run) and show those details — do not create a duplicate.
-  - Tables: if \`tables\` is non-empty, call \`user_table\` with \`get\` / \`get_schema\` / \`query_rows\` first and reuse — never \`create\` / \`create_from_file\` unless nothing fits and the user wants a new table (\`confirmCreateNew: true\`).
-  - Knowledge bases: if \`knowledgeBases\` is non-empty, call \`knowledge_base\` with \`get\` / \`list\` / \`query\` first and reuse — never \`create\` unless nothing fits and the user wants a new KB (\`confirmCreateNew: true\`).
-  - Files: if \`workspaceFiles\` may match, \`glob\` then \`read\` the path and show contents/details — update via \`workspace_file\` + \`edit_content\` instead of \`create_file\` (\`confirmCreateNew: true\` only for an explicitly new path).
+- Files, tables, and knowledge bases:
+  - Context includes \`workspaceFiles\`, \`tables\`, and \`knowledgeBases\` (names/ids). Treat that as an index.
+  - When the user asks to create a new table, knowledge base, or file, call the matching create operation.
   - Chat uploads under \`uploads/\` are not sandbox-mounted — call \`materialize_file\` into \`files/...\` (or reuse an existing \`files/...\` path) before \`function_execute\`.
-  - Only create when inventory is empty for that type or the user explicitly demands a brand-new resource.
   - Find files: \`glob\` with a pattern like \`files/**/*.csv\`, then \`read\` using the exact path from results.
   - Create files: \`create_file_folder\` when needed, then \`create_file\` with \`content\` for markdown/text/json/csv (one step). Never call \`create_file\` without \`content\` for .md files unless you will immediately follow with \`workspace_file\` update + \`edit_content\`.
   - Rename/move/delete files: \`rename_file\`, \`move_file\`, \`delete_file\` (paths arrays). Folders: \`list_file_folders\`, \`rename_file_folder\`, \`move_file_folder\`, \`delete_file_folder\`. Delete only when the user explicitly asked.
@@ -1493,18 +1482,6 @@ export async function* runLocalCopilotAgent(
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext
         toolCtx.workflowRevision = refreshed.workflowRevision
-      } else if (call.name === 'create_workflow' && !toolResult.success) {
-        const output =
-          toolResult.result && typeof toolResult.result === 'object'
-            ? (toolResult.result as Record<string, unknown>)
-            : {}
-        if (
-          output.useRunWorkflowInstead === true &&
-          typeof output.existingWorkflowId === 'string' &&
-          output.existingWorkflowId.trim()
-        ) {
-          toolCtx.workflowId = output.existingWorkflowId.trim()
-        }
       } else if (call.name === 'edit_workflow' && toolResult.success) {
         const output =
           toolResult.result && typeof toolResult.result === 'object'
