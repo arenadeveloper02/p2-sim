@@ -135,7 +135,14 @@ First page after open. Defaults to `home`. Must match a page path.
 
 Named backends that CTAs may call. The model **cannot invent keys**. Leave this empty (or `[]` / `{}`) for a navigation-only app — no workflow/HTTP calls.
 
-Two kinds:
+Two kinds. You rarely need to write either by hand — **Add an API** builds both:
+
+| Source | What you give it |
+|---|---|
+| **Workflow** | Pick a workflow from this workspace. Sim reads the **deployed** start block and fills `inputSchema` for you. |
+| **HTTP (curl)** | Paste a curl command. Auth headers are discarded; pick a **Secret var** instead. |
+
+The workflow list marks anything without an active deployment as *not deployed*. You can still save that binding — wiring before deploying is normal — but the CTA fails until you deploy, and **Launch GUI App** blocks on it too.
 
 **Workflow** — runs another **already deployed** workflow through the host proxy. Form values become that workflow’s start inputs.
 
@@ -337,9 +344,31 @@ Clicks never call third-party APIs from the browser. The published host POSTs to
 - **Workflow** — `executeWorkflow` on the bound workflow. That workflow must be **deployed**. Inputs are the form values, optionally remapped by `inputMapping` in the manifest.
 - **HTTP** — server fetch. Host must match the allowlist frozen at publish time. Auth headers come from the workspace or personal env var named in `headersSecretName`. The value is decrypted on the server at request time (see **HTTP secrets** above); it is never sent to the client.
 - **Retries** — GET and DELETE retry on 429 / 502 / 503 / 504 and on network failures, up to two extra attempts with jittered backoff (`Retry-After` is honoured on 429). POST / PUT / PATCH, streaming CTAs, and timeouts are not retried.
+- **Rate limit** — 120 published CTA calls per 5 minutes per visitor IP per app, checked before the app is even looked up. Over that, the host returns 429 with `Retry-After`. It is a ceiling on abuse, not a pace for real use: ordinary clicking, including pages that run several `onLoad` actions, stays far below it. Draft preview is not limited.
 - **Response size** — bodies over 1 MB fail with a clear error asking for a smaller page (pagination, `limit`, or fewer fields), not a generic size-limit message.
 
 Non-streaming HTTP bindings time out after 60s and streaming ones after 180s. A binding that fronts a slower endpoint can set `http.timeoutMs`, which the runner clamps to 1s–300s.
+
+### The visitor's email (`arenaEmailId`)
+
+Every CTA input carries `arenaEmailId`, the Arena `emailId` for the visitor who clicked, so an app can be about *them* rather than the same thing for everyone.
+
+**It is not verified. Never use it to decide what a user is allowed to see.**
+
+The emailId gate checks only that *an* emailId is present, and the value can arrive in the query string, a cookie, or the request body — so a visitor can put any address there. A workflow that reads `arenaEmailId` and returns "that user's" records can be made to return anyone's. Use it to greet, prefill, tag, or log; use your own auth for anything that must be private.
+
+| Binding | Receives it |
+|---|---|
+| **Workflow** | Always. It runs inside your workspace. |
+| **HTTP** | Only when the binding sets `"forwardEmailId": true` — the **Visitor's email** switch in **Add an API**. Off by default, because an HTTP call leaves your workspace. |
+
+Sim always sets the value itself and discards anything a caller tried to send under that key, so there is exactly one source. It survives `inputMapping` even when the mapping does not list it, and a mapping can still rename it:
+
+```json
+{ "inputMapping": { "email": "arenaEmailId" } }
+```
+
+That sends both `email` and `arenaEmailId`. When no emailId resolves, the key is absent rather than empty.
 
 On success the host may navigate (`onSuccess.navigate`) and merge `setState` so `DataText` can show results (for example `score`). Arrays listed in `appendKeys` concatenate into existing state instead of replacing, which is how Load more grows a list.
 
@@ -420,6 +449,8 @@ Nav / CTA: `NavLink` (`to` = page path), `Button` (`navigateTo` / `actionId` / o
 Theme (optional, on the manifest, not a component): `brandColor` (`#RGB` / `#RRGGBB`), `radius` (`sm` / `md` / `lg`), `density` (`compact` / `comfortable` / `roomy`), `font` (`sans` / `serif`), `colorScheme` (`light` / `dark` / `system`). The host applies these as scoped `--gui-*` CSS variables. Omit `theme` unless Design Notes name branding.
 
 `Button.variant` is `primary` / `secondary` / `ghost` / `destructive` and defaults to `secondary`; `size` is `sm` / `md`. `showWhen` uses the same clause syntax as form fields (`hasMore`, `status=ready`) so Load more can hide when there is no next page. At most one `primary` per page, and none on a page whose main action is a `SubmitButton` — that already renders as the primary. Emphasis has no colour prop: `Button` takes no `backgroundColor` or `color`.
+
+A `SubmitButton` normally lives inside the `Form` it submits. One that sits **outside** a Form runs its own `actionId` on click instead, so a stray submit button still works — including in apps generated before this behaviour existed. A `SubmitButton` with neither a `Form` around it nor an `actionId` of its own can do nothing at all, so generation rejects it and the model is asked to fix it.
 
 Paths listed in `Tabs.items` count as navigation, so a page reachable only through a tab still validates.
 
@@ -554,6 +585,9 @@ Same as above with `kind: "http"`. Put tokens in a workspace env var and referen
 | Open goes to chat or an external App URL | Control-bar Open prefers Chat/App. Use Launch GUI App from Deploy → GUI App |
 | Edit cannot find the draft | Draft must belong to this workflow; Generate created it on another workflow |
 | Edit ran but nothing changed | The scope call may have missed the page you meant. Name the page in **Requested Changes** ("on the results page, …") and rerun. The block's `content` output lists which pages actually changed |
+| CTA fails with 429 / "Too many requests for this app" | The per-IP CTA limit (120 per 5 minutes per app) tripped. Wait for `Retry-After`. If real use hits it, the page is probably running `onLoad` actions on every navigation — cut them down or widen the limit |
+| A workflow CTA gets no `arenaEmailId` | It is only absent when no emailId resolved for that visitor. `inputMapping` does not drop it. For an **HTTP** binding it is withheld unless the binding sets `forwardEmailId` |
+| Generation error about a SubmitButton doing nothing | A `SubmitButton` ended up outside its `Form` with no `actionId`. Rerun; if it repeats, say in the brief which form the button submits |
 | Preview shows unresolved statePath / unknown type | Copy **Copy as edit instructions** into the block's **Requested Changes** and rerun Edit. Bind a real top-level response field or add `onLoad`. |
 | Block error `fetch failed` during generate/edit | Claude can take several minutes. Check **Deploy → GUI App** — a revision may already have been saved even if the block showed an error. Retry the run. |
 

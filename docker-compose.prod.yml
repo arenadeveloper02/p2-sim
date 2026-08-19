@@ -18,6 +18,7 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      - INTERNAL_API_BASE_URL=${INTERNAL_API_BASE_URL:-http://localhost:3000}
       # TRUSTED_ORIGINS: comma-separated public origins to trust for auth in
       # addition to NEXT_PUBLIC_APP_URL. Use when serving from multiple domains
       # (apex + www, alias hostnames, reverse-proxy IPs). Empty by default.
