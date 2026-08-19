@@ -13,7 +13,7 @@ name: SAST
 
 on:
   pull_request:
-    branches: [main, staging]
+    branches: [main, staging, version-5.2-main, feat/sast-test]
     types: [opened, synchronize, reopened, ready_for_review]
   schedule:
     # Weekly safety net, offset from CodeQL (17 8 * * *).

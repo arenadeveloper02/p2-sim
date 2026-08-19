@@ -325,7 +325,10 @@ jobs:
     name: SAST
     if: >-
       github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
+      (github.ref == 'refs/heads/main' ||
+        github.ref == 'refs/heads/staging' ||
+        github.ref == 'refs/heads/version-5.2-main' ||
+        github.ref == 'refs/heads/feat/sast-test')
     uses: ./.github/workflows/sast.yml
     permissions:
       contents: read
