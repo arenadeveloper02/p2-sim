@@ -55,7 +55,6 @@ import {
 import type { ChatContext } from '@/stores/panel'
 import {
   ChatSurfaceProvider,
-  CreditsChip,
   MothershipChat,
   MothershipResourcesProvider,
   SuggestedActions,
@@ -636,6 +635,7 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
   return (
     <div className={cn('relative flex h-full bg-[var(--bg)]', RESOURCE_HEADER_CLASSES.layout)}>
       <div className='relative flex h-full min-w-[240px] flex-1 flex-col'>
+        {/* Credits chip (links to billing) — hidden for Arena
         {showEmptyState && (
           <div
             className={cn(
@@ -655,6 +655,7 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
             <CreditsChip />
           </div>
         )}
+        */}
         {showEmptyState ? (
           <div className='h-full overflow-y-auto [scrollbar-gutter:stable_both-edges]'>
             {/* Asymmetric padding biases the group up so the full cluster (heading + input + suggestions) sits at the optical center */}

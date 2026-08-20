@@ -344,7 +344,7 @@ export function SidebarFooter({
           half-leading, which would deepen the bar below the chip. Collapsed, it
           stretches to the rail on its own and the chip fills it. */}
       <div className={cn('flex', !isCollapsed && 'flex-1')}>{profileMenu}</div>
-      {helpMenu}
+      {/* {helpMenu} */}
     </div>
   )
 }
