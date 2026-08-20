@@ -216,6 +216,7 @@ export const Panel = memo(function Panel() {
   const router = useRouter()
   const params = useParams()
   const workspaceId = params.workspaceId as string
+  const workflowIdFromUrl = typeof params.workflowId === 'string' ? params.workflowId : undefined
 
   const posthog = usePostHog()
   const posthogRef = useRef(posthog)
@@ -269,6 +270,7 @@ export const Panel = memo(function Panel() {
   // API returns { workspace: { name, ... } }, and hook returns { settings, permissions }
   const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
+  const editorWorkflowId = activeWorkflowId || workflowIdFromUrl
   const { handleAutoLayout: autoLayoutWithFitView } = useAutoLayout(activeWorkflowId || null)
 
   // Check for locked blocks (disables auto-layout)
@@ -374,12 +376,11 @@ export const Panel = memo(function Panel() {
   const canMutateWorkflow = userPermissions.canEdit && !workflowLocked
   const { isSnapshotView } = useCurrentWorkflow()
 
-  const { chatId: copilotChatId, setChatId: setCopilotChatId } = useCopilotChatSelection(
-    activeWorkflowId ?? undefined
-  )
+  const { chatId: copilotChatId, setChatId: setCopilotChatId } =
+    useCopilotChatSelection(editorWorkflowId)
 
   const { data: copilotChatList = EMPTY_COPILOT_CHATS } = useCopilotChats(
-    isCopilotTabAvailable ? (activeWorkflowId ?? undefined) : undefined
+    isCopilotTabAvailable ? editorWorkflowId : undefined
   )
   const [isCopilotHistoryOpen, setIsCopilotHistoryOpen] = useState(false)
 
@@ -391,9 +392,9 @@ export const Panel = memo(function Panel() {
 
   const queryClient = useQueryClient()
   const loadCopilotChats = useCallback(() => {
-    if (!activeWorkflowId) return
-    queryClient.invalidateQueries({ queryKey: copilotChatsKeys.list(activeWorkflowId) })
-  }, [activeWorkflowId, queryClient])
+    if (!editorWorkflowId) return
+    queryClient.invalidateQueries({ queryKey: copilotChatsKeys.list(editorWorkflowId) })
+  }, [editorWorkflowId, queryClient])
 
   // Auto-select most recent on first list arrival per workflow, and drop a
   // selection that no longer matches anything in the current list (e.g. the
@@ -403,7 +404,7 @@ export const Panel = memo(function Panel() {
     // The list query is skipped when the tab is unavailable, so an empty list
     // there means "not fetched", not "deleted elsewhere" — clearing on it would
     // discard the selection and latch the ref against ever restoring it.
-    if (!activeWorkflowId || !isCopilotTabAvailable) return
+    if (!editorWorkflowId || !isCopilotTabAvailable) return
 
     if (copilotChatId && !copilotChatList.find((c) => c.id === copilotChatId)) {
       setCopilotChatId(undefined)
@@ -411,11 +412,11 @@ export const Panel = memo(function Panel() {
     }
 
     if (copilotChatId) return
-    if (autoSelectAttemptedForRef.current.has(activeWorkflowId)) return
+    if (autoSelectAttemptedForRef.current.has(editorWorkflowId)) return
     if (copilotChatList.length === 0) return
-    autoSelectAttemptedForRef.current.add(activeWorkflowId)
+    autoSelectAttemptedForRef.current.add(editorWorkflowId)
     setCopilotChatId(copilotChatList[0].id)
-  }, [copilotChatList, copilotChatId, activeWorkflowId, isCopilotTabAvailable, setCopilotChatId])
+  }, [copilotChatList, copilotChatId, editorWorkflowId, isCopilotTabAvailable, setCopilotChatId])
 
   useEffect(() => {
     posthogRef.current = posthog
@@ -512,7 +513,7 @@ export const Panel = memo(function Panel() {
     workspaceId,
     copilotChatId,
     getWorkflowCopilotUseChatOptions({
-      workflowId: activeWorkflowId || undefined,
+      workflowId: editorWorkflowId,
       getCopilotBackend: () => copilotBackend,
       getLocalCopilotCatalogId: () => localCopilotCatalogId,
       onTitleUpdate: loadCopilotChats,
@@ -540,21 +541,22 @@ export const Panel = memo(function Panel() {
   )
 
   const handleCopilotNewChat = useCallback(() => {
-    if (!activeWorkflowId || !workspaceId) return
+    if (!editorWorkflowId || !workspaceId) return
+    const workflowId = editorWorkflowId
     requestJson(createWorkflowCopilotChatContract, {
-      body: { workspaceId, workflowId: activeWorkflowId },
+      body: { workspaceId, workflowId },
     })
       .then((data) => {
         // Seed the new chat into the list cache before selecting it. Without this, the
         // auto-select effect sees a selected id that isn't in the (still-stale) list and
         // deselects it, which leaves the panel detached from the freshly created row.
         queryClient.setQueryData<CopilotChatListItem[]>(
-          copilotChatsKeys.list(activeWorkflowId),
+          copilotChatsKeys.list(workflowId),
           (prev) => [
             {
               id: data.id,
               title: null,
-              workflowId: activeWorkflowId,
+              workflowId,
               updatedAt: new Date().toISOString(),
               activeStreamId: null,
             },
@@ -567,7 +569,7 @@ export const Panel = memo(function Panel() {
       .catch((err) => {
         logger.error('Failed to create copilot chat', { error: toError(err).message })
       })
-  }, [activeWorkflowId, workspaceId, loadCopilotChats, setCopilotChatId, queryClient])
+  }, [editorWorkflowId, workspaceId, loadCopilotChats, setCopilotChatId, queryClient])
 
   const prevResolvedRef = useRef<string | undefined>(undefined)
   useEffect(() => {

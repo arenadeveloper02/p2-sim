@@ -24,6 +24,7 @@ import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
 import { formatUxPhaseStatus } from '@/local-copilot/lib/agent/ux-phase'
 import type { LocalTurnCostSummary } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
+import { resolveOpenWorkflowId } from '@/local-copilot/lib/context/open-workflow'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import {
   DEFAULT_LOCAL_COPILOT_CATALOG_ID,
@@ -391,7 +392,14 @@ export async function runLocalCopilotMothershipLifecycle(
   const fileAttachments = extractFileAttachments(requestPayload.fileAttachments)
   const workspaceContext = extractString(requestPayload.workspaceContext)
   const workspaceSnapshot = extractWorkspaceSnapshot(requestPayload.vfs)
-  const workflowId = options.workflowId ?? extractString(requestPayload.workflowId)
+  const workflowId =
+    extractString(options.workflowId) ??
+    extractString(requestPayload.workflowId) ??
+    extractString(execContext.workflowId) ??
+    resolveOpenWorkflowId({
+      contexts,
+      snapshotWorkflows: workspaceSnapshot?.workflows,
+    })
   const workspaceId = options.workspaceId ?? extractString(requestPayload.workspaceId)
   const userId = options.userId
 

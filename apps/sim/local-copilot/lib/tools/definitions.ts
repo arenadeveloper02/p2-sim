@@ -79,10 +79,15 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'get_workflow_context',
     description:
-      'Returns the current workflow structure, variables, credentials metadata, and execution status. For large (compact) workflows, pass blockNames or blockIds to load full subBlock values (prompts/messages) for those blocks before edit_workflow.',
+      'Returns the current workflow structure, variables, credentials metadata, and execution status. Omit workflowId when a workflow is open. For large (compact) workflows, pass blockNames or blockIds to load full subBlock values (prompts/messages) for those blocks before edit_workflow.',
     parameters: {
       type: 'object',
       properties: {
+        workflowId: {
+          type: 'string',
+          description:
+            'Optional. Defaults to the open workflow, the workflow created this turn, or the only workspace workflow.',
+        },
         blockIds: {
           type: 'array',
           items: { type: 'string' },

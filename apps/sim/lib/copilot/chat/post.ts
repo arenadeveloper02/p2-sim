@@ -71,6 +71,7 @@ import {
   type PermissionType,
 } from '@/lib/workspaces/permissions/utils'
 import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
+import { extractWorkflowIdFromResources } from '@/local-copilot/lib/context/open-workflow'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import {
@@ -170,6 +171,31 @@ function dropUnaddressableAttachments(value: unknown): unknown {
     const id = (resource as { id?: unknown } | null)?.id
     return typeof id !== 'string' || hasAddressableId(id)
   })
+}
+
+/**
+ * Home chat sends an open canvas as a resource tab, not `workflowId`.
+ * Local Copilot needs the id so the live graph lands in system context after refresh.
+ */
+function resolveOpenWorkflowIdForLocalCopilot(params: {
+  branchWorkflowId?: string
+  chatWorkflowId?: string | null
+  resourceAttachments?: Array<{ type: string; id: string; active?: boolean }>
+  chatResources?: unknown
+}): string | undefined {
+  const fromBranch = params.branchWorkflowId?.trim()
+  if (fromBranch) return fromBranch
+
+  const attachments = params.resourceAttachments ?? []
+  const workflows = attachments.filter((attachment) => attachment.type === 'workflow')
+  const active = workflows.find((attachment) => attachment.active) ?? workflows[0]
+  if (active?.id) return active.id
+
+  const fromChatResources = extractWorkflowIdFromResources(params.chatResources)
+  if (fromChatResources) return fromChatResources
+
+  const fromChat = params.chatWorkflowId?.trim()
+  return fromChat || undefined
 }
 
 /** Non-strings pass through for the schema to reject; strings are sanitized. */
@@ -1547,6 +1573,27 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         activeOtelRoot.span.setAttribute(TraceAttr.WorkspaceId, workspaceId)
       }
 
+      const localOpenWorkflowId =
+        copilotBackend === 'local'
+          ? resolveOpenWorkflowIdForLocalCopilot({
+              branchWorkflowId: branch.kind === 'workflow' ? branch.workflowId : undefined,
+              chatWorkflowId:
+                currentChat && 'workflowId' in currentChat ? currentChat.workflowId : null,
+              resourceAttachments: body.resourceAttachments,
+              chatResources:
+                currentChat && 'resources' in currentChat ? currentChat.resources : undefined,
+            })
+          : undefined
+      const orchestratorWorkflowId =
+        localOpenWorkflowId ?? (branch.kind === 'workflow' ? branch.workflowId : undefined)
+
+      if (
+        orchestratorWorkflowId &&
+        !(typeof requestPayload.workflowId === 'string' && requestPayload.workflowId.trim())
+      ) {
+        requestPayload.workflowId = orchestratorWorkflowId
+      }
+
       const stream = createSSEStream({
         requestPayload,
         userId: authenticatedUserId,
@@ -1567,7 +1614,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           userId: authenticatedUserId,
           userEmail: authenticatedUserEmail,
           copilotBackend,
-          ...(branch.kind === 'workflow' ? { workflowId: branch.workflowId } : {}),
+          ...(orchestratorWorkflowId ? { workflowId: orchestratorWorkflowId } : {}),
           ...(workspaceId ? { workspaceId } : {}),
           chatId: actualChatId,
           executionId,

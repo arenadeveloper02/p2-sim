@@ -476,6 +476,16 @@ async function executeLocalCopilotToolInner(
           )
         : []
 
+      const resolved = await resolveWorkflowStateForLocalTool(ctx, args)
+      if (!resolved.ok) {
+        return {
+          toolName,
+          success: false,
+          error: resolved.error,
+          result: { workflow: null, error: resolved.error },
+        }
+      }
+
       return {
         toolName,
         success: true,

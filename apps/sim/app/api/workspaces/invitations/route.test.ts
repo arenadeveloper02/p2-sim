@@ -225,6 +225,8 @@ describe('POST /api/workspaces/invitations/batch', () => {
       organizationId: 'org-1',
       upgradeRequired: false,
     })
+    queueTableRows(schemaMock.user, [{ id: 'new-user', email: 'new@example.com' }])
+    mockGetUserOrganization.mockResolvedValueOnce(null)
     mockValidateSeatAvailability.mockResolvedValueOnce({
       canInvite: false,
       reason: 'No available seats. Currently using 5 of 5 seats.',
@@ -287,6 +289,52 @@ describe('POST /api/workspaces/invitations/batch', () => {
     const data = await response.json()
 
     expect(response.status).toBe(200)
+    expect(data.success).toBe(false)
+    expect(data.failed).toEqual([
+      {
+        email: 'new@example.com',
+        error:
+          'This user is already a member of another organization. They must leave it before joining this workspace.',
+      },
+    ])
+    expect(mockValidateSeatAvailability).not.toHaveBeenCalled()
+    expect(mockCreatePendingInvitation).not.toHaveBeenCalled()
+  })
+
+  it('creates an external invitation when seats are not reserved at invite time', async () => {
+    mockGetWorkspaceWithOwner.mockResolvedValueOnce({
+      id: 'workspace-1',
+      name: 'Org Workspace',
+      ownerId: 'user-1',
+      organizationId: 'org-1',
+      workspaceMode: 'organization',
+      billedAccountUserId: 'owner-1',
+    })
+    mockGetWorkspaceInvitePolicy.mockResolvedValueOnce({
+      allowed: true,
+      reason: null,
+      requiresSeat: false,
+      organizationId: 'org-1',
+      upgradeRequired: false,
+    })
+    mockGetUserOrganization.mockResolvedValue({
+      organizationId: 'org-2',
+      role: 'member',
+      memberId: 'member-1',
+    })
+    queueTableRows(schemaMock.user, [{ id: 'existing-user', email: 'new@example.com' }])
+    queueTableRows(schemaMock.user, [{ id: 'existing-user', email: 'new@example.com' }])
+
+    const request = createMockRequest('POST', {
+      workspaceIds: ['workspace-1'],
+      emails: ['new@example.com'],
+      permission: 'read',
+    })
+
+    const response = await POST(request)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
     expect(data.success).toBe(true)
     expect(data.invitations[0].membershipIntent).toBe('external')
     expect(mockValidateSeatAvailability).not.toHaveBeenCalled()
@@ -301,6 +349,42 @@ describe('POST /api/workspaces/invitations/batch', () => {
     )
   })
 
+  it('invites an existing user without crashing on the batch context', async () => {
+    mockGetWorkspaceWithOwner.mockResolvedValueOnce({
+      id: 'workspace-1',
+      name: 'Org Workspace',
+      ownerId: 'user-1',
+      organizationId: 'org-1',
+      workspaceMode: 'organization',
+      billedAccountUserId: 'owner-1',
+    })
+    mockGetWorkspaceInvitePolicy.mockResolvedValueOnce({
+      allowed: true,
+      reason: null,
+      requiresSeat: false,
+      organizationId: 'org-1',
+      upgradeRequired: false,
+    })
+    queueTableRows(schemaMock.user, [{ id: 'existing-user', email: 'member@example.com' }])
+    queueTableRows(schemaMock.user, [{ id: 'existing-user', email: 'member@example.com' }])
+    mockGetUserOrganization.mockResolvedValue(null)
+
+    const request = createMockRequest('POST', {
+      workspaceIds: ['workspace-1'],
+      emails: ['member@example.com'],
+      permission: 'write',
+    })
+
+    const response = await POST(request)
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.error).toBeUndefined()
+    expect(data.success).toBe(true)
+    expect(data.successful).toEqual(['member@example.com'])
+    expect(mockCreatePendingInvitation).toHaveBeenCalledTimes(1)
+  })
+
   it('creates a unified workspace invitation for a grandfathered workspace', async () => {
     mockGetWorkspaceWithOwner.mockResolvedValueOnce({
       id: 'workspace-1',
@@ -310,6 +394,8 @@ describe('POST /api/workspaces/invitations/batch', () => {
       workspaceMode: 'grandfathered_shared',
       billedAccountUserId: 'user-1',
     })
+    queueTableRows(schemaMock.user, [{ id: 'new-user', email: 'new@example.com' }])
+    queueTableRows(schemaMock.user, [{ id: 'new-user', email: 'new@example.com' }])
 
     const request = createMockRequest('POST', {
       workspaceIds: ['workspace-1'],
@@ -335,6 +421,11 @@ describe('POST /api/workspaces/invitations/batch', () => {
   })
 
   it('creates multiple workspace invitations in one batch request', async () => {
+    queueTableRows(schemaMock.user, [{ id: 'user-a', email: 'first@example.com' }])
+    queueTableRows(schemaMock.user, [{ id: 'user-a', email: 'first@example.com' }])
+    queueTableRows(schemaMock.user, [{ id: 'user-b', email: 'second@example.com' }])
+    queueTableRows(schemaMock.user, [{ id: 'user-b', email: 'second@example.com' }])
+
     const request = createMockRequest('POST', {
       workspaceIds: ['workspace-1'],
       emails: ['first@example.com', 'second@example.com'],
@@ -369,6 +460,8 @@ describe('POST /api/workspaces/invitations/batch', () => {
       organizationId: 'org-1',
       upgradeRequired: false,
     })
+    queueTableRows(schemaMock.user, [{ id: 'new-user', email: 'new@example.com' }])
+    queueTableRows(schemaMock.user, [{ id: 'new-user', email: 'new@example.com' }])
 
     const request = createMockRequest('POST', {
       workspaceIds: ['workspace-1', 'workspace-2'],
@@ -417,7 +510,8 @@ describe('POST /api/workspaces/invitations/batch', () => {
      */
     setEnvFlags({ isBillingEnabled: true })
     queueTableRows(schemaMock.user, [{ id: 'free-user', email: 'free@example.com' }])
-    mockGetUserOrganization.mockResolvedValueOnce(null)
+    queueTableRows(schemaMock.user, [{ id: 'free-user', email: 'free@example.com' }])
+    mockGetUserOrganization.mockResolvedValue(null)
     mockGetInvitePlanCategoryForUser.mockResolvedValueOnce('free')
 
     const request = createMockRequest('POST', {
@@ -446,6 +540,8 @@ describe('POST /api/workspaces/invitations/batch', () => {
       workspaceMode: 'organization',
       billedAccountUserId: 'owner-1',
     })
+    queueTableRows(schemaMock.user, [{ id: 'new-user', email: 'new@example.com' }])
+    queueTableRows(schemaMock.user, [{ id: 'new-user', email: 'new@example.com' }])
     mockSendInvitationEmail.mockResolvedValueOnce({
       success: false,
       error: 'mailer unavailable',
