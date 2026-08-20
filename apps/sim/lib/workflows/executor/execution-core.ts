@@ -269,8 +269,17 @@ async function finalizeExecutionOutcome(params: {
   requestId: string
   workflowInput: unknown
   abortSignal?: AbortSignal
+  triggerType?: string
 }): Promise<void> {
-  const { result, loggingSession, executionId, requestId, workflowInput, abortSignal } = params
+  const {
+    result,
+    loggingSession,
+    executionId,
+    requestId,
+    workflowInput,
+    abortSignal,
+    triggerType,
+  } = params
   const { traceSpans, totalDuration } = buildTraceSpans(result)
   const endedAt = new Date().toISOString()
 
@@ -306,6 +315,24 @@ async function finalizeExecutionOutcome(params: {
       }
       return
     } else {
+      let finalChatOutput: string | undefined
+      if (triggerType === 'chat' && result.success) {
+        const output = result.output
+        if (typeof output === 'string') {
+          finalChatOutput = output
+        } else if (output !== undefined && output !== null) {
+          if (
+            typeof output === 'object' &&
+            'content' in output &&
+            typeof output.content === 'string'
+          ) {
+            finalChatOutput = output.content
+          } else {
+            finalChatOutput = JSON.stringify(output)
+          }
+        }
+      }
+
       await loggingSession.safeComplete({
         endedAt,
         totalDurationMs: totalDuration || 0,
@@ -1153,6 +1180,7 @@ async function executeWorkflowCoreImpl(
             requestId,
             workflowInput: processedInput,
             abortSignal,
+            triggerType,
           })
 
           if (result.success && result.status !== 'paused' && result.status !== 'skipped') {

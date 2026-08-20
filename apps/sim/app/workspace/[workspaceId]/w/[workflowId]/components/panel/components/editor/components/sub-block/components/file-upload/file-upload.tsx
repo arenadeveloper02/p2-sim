@@ -231,14 +231,17 @@ export function FileUpload({
    * Persists a new value. In controlled mode the caller owns persistence; in
    * store mode we write through the subblock store and notify collaborators.
    */
-  const commitValue = (next: UploadedFile | UploadedFile[] | null) => {
-    if (isControlled) {
-      onValueChange(next)
-      return
-    }
-    setStoreValue(next)
-    useWorkflowStore.getState().triggerUpdate()
-  }
+  const commitValue = useCallback(
+    (next: UploadedFile | UploadedFile[] | null) => {
+      if (isControlled) {
+        onValueChange?.(next)
+        return
+      }
+      setStoreValue(next)
+      useWorkflowStore.getState().triggerUpdate()
+    },
+    [isControlled, onValueChange, setStoreValue]
+  )
   const [modelValue] = useSubBlockValue(blockId, 'model')
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -338,7 +341,7 @@ export function FileUpload({
   }, [activeWorkflowId, chatMessages, conversationFileMode, useCombinedChatReferenceMode])
 
   useEffect(() => {
-    if (isPreview || defaultValue === undefined) {
+    if (isControlled || isPreview || defaultValue === undefined) {
       return
     }
     if (appliedDefaultForFieldRef.current === fieldKey) {
@@ -349,7 +352,7 @@ export function FileUpload({
     if (storeValue === null || storeValue === undefined || storeValue === '') {
       setStoreValue(defaultValue)
     }
-  }, [fieldKey, storeValue, defaultValue, setStoreValue, isPreview])
+  }, [fieldKey, storeValue, defaultValue, setStoreValue, isPreview, isControlled])
 
   const maxSizeInBytes = useMemo(() => {
     const fallback = maxSize * 1024 * 1024
@@ -615,8 +618,7 @@ export function FileUpload({
 
           const newFiles = Array.from(uniqueFiles.values())
 
-          setStoreValue(newFiles)
-          useWorkflowStore.getState().triggerUpdate()
+          commitValue(newFiles)
         }
       } else {
         if (useCombinedChatReferenceMode && parsedReferenceValue) {
@@ -626,8 +628,7 @@ export function FileUpload({
             conversationImages: [],
           })
         } else {
-          setStoreValue(uploadedFiles[0] || null)
-          useWorkflowStore.getState().triggerUpdate()
+          commitValue(uploadedFiles[0] || null)
         }
       }
     } catch (error) {
@@ -690,8 +691,7 @@ export function FileUpload({
         uniqueFiles.set(uploadedFile.path, uploadedFile)
         const newFiles = Array.from(uniqueFiles.values())
 
-        setStoreValue(newFiles)
-        useWorkflowStore.getState().triggerUpdate()
+        commitValue(newFiles)
       }
     } else {
       if (useCombinedChatReferenceMode && parsedReferenceValue) {
@@ -701,7 +701,7 @@ export function FileUpload({
           conversationImages: [],
         })
       } else {
-        setStoreValue(uploadedFile)
+        commitValue(uploadedFile)
       }
     }
 
@@ -750,8 +750,7 @@ export function FileUpload({
         } else {
           const filesArray = Array.isArray(value) ? value : value ? [value] : []
           const updatedFiles = filesArray.filter((f) => f.path !== file.path)
-          setStoreValue(updatedFiles.length > 0 ? updatedFiles : null)
-          useWorkflowStore.getState().triggerUpdate()
+          commitValue(updatedFiles.length > 0 ? updatedFiles : null)
         }
       } else {
         if (useCombinedChatReferenceMode && parsedReferenceValue) {
@@ -760,7 +759,7 @@ export function FileUpload({
             workspaceFiles: [],
           })
         } else {
-          setStoreValue(null)
+          commitValue(null)
         }
       }
     } catch (error) {
