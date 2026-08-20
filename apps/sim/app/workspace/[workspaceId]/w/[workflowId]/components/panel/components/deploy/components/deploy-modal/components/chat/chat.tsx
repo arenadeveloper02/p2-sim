@@ -544,7 +544,7 @@ export function ChatDeploy({
         <div>
           <Label
             htmlFor={`${formId}-title`}
-            className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
+            className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'
           >
             Title
           </Label>
@@ -561,7 +561,7 @@ export function ChatDeploy({
 
         <div className='space-y-[12px]'>
           <div>
-            <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+            <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
               Category
             </Label>
             <CustomSelect
@@ -576,7 +576,7 @@ export function ChatDeploy({
             <p className='mt-1 text-destructive text-sm'>{errors.department}</p>
           )}
           <div>
-            <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+            <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
               Description
             </Label>
             <Textarea
@@ -601,7 +601,7 @@ export function ChatDeploy({
             <div>
               <Label
                 htmlFor={`${formId}-redirectUrl`}
-                className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
+                className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'
               >
                 Redirection URL
               </Label>
@@ -619,7 +619,7 @@ export function ChatDeploy({
             </div>
           ) : (
             <div>
-              <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
+              <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
                 Output
               </Label>
               <OutputSelect
@@ -686,7 +686,7 @@ export function ChatDeploy({
           <div>
             <Label
               htmlFor={`${formId}-welcomeMessage`}
-              className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'
+              className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'
             >
               Welcome message
             </Label>
@@ -1011,7 +1011,7 @@ function AuthSelector({
     <div className='space-y-[16px]'>
       {/* Access control selector intentionally commented — Arena deploy UX hides it.
       <div>
-        <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+        <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
           Access control
         </Label>
         <ButtonGroup
