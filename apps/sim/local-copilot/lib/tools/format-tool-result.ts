@@ -380,55 +380,43 @@ export function formatToolResultForLlm(
     }
   } else if (toolName === 'edit_workflow' || toolName === 'create_workflow') {
     const record = asRecord(result)
-    if (toolName === 'create_workflow' && record.useRunWorkflowInstead) {
-      formatted = {
-        ...record,
-        needsFollowUpRun: true,
-        followUpHint:
-          typeof record.followUpHint === 'string'
-            ? record.followUpHint
-            : 'Use get_workflow_run_options then run_workflow on the existing workflow instead of creating a new one.',
-      }
-    } else {
-      const { workflowState, workflowLint: _workflowLint, ...rest } = record
-      const next: Record<string, unknown> = { ...rest }
+    const { workflowState, workflowLint: _workflowLint, ...rest } = record
+    const next: Record<string, unknown> = { ...rest }
 
-      if (workflowState && typeof workflowState === 'object') {
-        const state = workflowState as WorkflowState
-        next.copilotSanitizedWorkflowState = sanitizeForCopilot({
-          blocks: state.blocks ?? {},
-          edges: state.edges ?? [],
-          loops: state.loops ?? {},
-          parallels: state.parallels ?? {},
-        })
-      } else if (record.copilotSanitizedWorkflowState) {
-        next.copilotSanitizedWorkflowState = record.copilotSanitizedWorkflowState
-      }
-
-      if (editWorkflowNeedsFollowUp(record)) {
-        next.needsFollowUpEdit = true
-        next.followUpHint =
-          'Some operations were skipped, inputs rejected, or lint issues remain. Call edit_workflow again with corrected operations before finishing.'
-      } else if (isOAuthOnlyEditResult(record)) {
-        next.needsOAuthConnect = true
-        next.followUpHint =
-          'Workflow structure is complete. The only remaining lint is a missing OAuth credential — call oauth_get_auth_link once, share the link, then STOP. Do not re-edit; edits cannot clear credential lint.'
-      }
-
-      if (
-        toolName === 'create_workflow' &&
-        record.success !== false &&
-        !record.useRunWorkflowInstead &&
-        typeof record.workflowId === 'string' &&
-        record.workflowId.trim()
-      ) {
-        next.needsFollowUpPopulate = true
-        next.followUpHint =
-          'New workflow created. Call get_blocks_metadata ONCE with every type you need (e.g. { blockIds: ["agent","start_trigger","gmail"] }), then ONE edit_workflow to add blocks and wire Start → downstream via connections on the Start block (startBlockId). Do not re-fetch metadata or validate after a clean edit.'
-      }
-
-      formatted = next
+    if (workflowState && typeof workflowState === 'object') {
+      const state = workflowState as WorkflowState
+      next.copilotSanitizedWorkflowState = sanitizeForCopilot({
+        blocks: state.blocks ?? {},
+        edges: state.edges ?? [],
+        loops: state.loops ?? {},
+        parallels: state.parallels ?? {},
+      })
+    } else if (record.copilotSanitizedWorkflowState) {
+      next.copilotSanitizedWorkflowState = record.copilotSanitizedWorkflowState
     }
+
+    if (editWorkflowNeedsFollowUp(record)) {
+      next.needsFollowUpEdit = true
+      next.followUpHint =
+        'Some operations were skipped, inputs rejected, or lint issues remain. Call edit_workflow again with corrected operations before finishing.'
+    } else if (isOAuthOnlyEditResult(record)) {
+      next.needsOAuthConnect = true
+      next.followUpHint =
+        'Workflow structure is complete. The only remaining lint is a missing OAuth credential — call oauth_get_auth_link once, share the link, then STOP. Do not re-edit; edits cannot clear credential lint.'
+    }
+
+    if (
+      toolName === 'create_workflow' &&
+      record.success !== false &&
+      typeof record.workflowId === 'string' &&
+      record.workflowId.trim()
+    ) {
+      next.needsFollowUpPopulate = true
+      next.followUpHint =
+        'New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to 5 sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.'
+    }
+
+    formatted = next
   }
 
   if (toolName === 'generate_api_key') {
