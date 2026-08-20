@@ -71,12 +71,14 @@ import { SlackClientSelector } from './components/slack-client-selector'
 
 const SLACK_OVERRIDES: SelectorOverrides = {
   transformContext: (context, deps) => {
-    // v1 gates on authMethod (raw bot token vs OAuth); v2 has one merged
-    // credential field for actions and customBotCredential for triggers.
+    // v1 gates on authMethod; v2 drops it and uses one credential picker.
+    // Custom Bot (bot_token) still stores the OAuth / custom-bot credential id
+    // in `credential` — only legacy paste / webhook setup writes `botToken`.
+    // Fall back so channel/user selectors fetch for Custom Bot, not only Sim Bot.
     const authMethod = deps.authMethod as string
     const oauthCredential =
       authMethod === 'bot_token'
-        ? String(deps.botToken ?? '')
+        ? String(deps.botToken || deps.credential || deps.customBotCredential || '')
         : String(deps.credential ?? deps.customBotCredential ?? '')
     return { ...context, oauthCredential }
   },
