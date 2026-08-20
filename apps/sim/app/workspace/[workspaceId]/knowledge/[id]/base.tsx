@@ -522,7 +522,7 @@ export function KnowledgeBase({
   }
 
   /**
-   * Handles retrying a failed document processing
+   * Handles retrying a pending or failed document's processing
    */
   const handleRetryDocument = (docId: string) => {
     updateDocument(docId, {
@@ -1442,6 +1442,15 @@ export function KnowledgeBase({
         onViewTags={
           contextMenuDocument && selectedDocuments.size === 1 && userPermissions.canEdit
             ? () => handleViewDocumentTags(contextMenuDocument)
+            : undefined
+        }
+        onRetry={
+          contextMenuDocument &&
+          selectedDocuments.size === 1 &&
+          userPermissions.canEdit &&
+          (contextMenuDocument.processingStatus === 'pending' ||
+            contextMenuDocument.processingStatus === 'failed')
+            ? () => handleRetryDocument(contextMenuDocument.id)
             : undefined
         }
         onDelete={

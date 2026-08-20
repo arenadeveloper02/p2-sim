@@ -14,12 +14,10 @@ import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
-// import { AuthType } from '@/lib/auth/hybrid'
-// import {
-//   checkAttributedUsageLimits,
-//   requireBillingAttributionHeader,
-//   resolveBillingAttribution,
-// } from '@/lib/billing/core/billing-attribution'
+import {
+  checkAttributedUsageLimits,
+  resolveBillingAttribution,
+} from '@/lib/billing/core/billing-attribution'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   bulkDocumentOperation,
@@ -182,30 +180,27 @@ export const POST = withRouteHandler(
       }
 
       const kbWorkspaceId = accessCheck.knowledgeBase?.workspaceId
-      // Billing attribution is disabled for Arena — the header/scope check fails when a
-      // workflow creates a document in a KB outside its own workspace.
-      // const billingAttribution = kbWorkspaceId
-      //   ? auth.authType === AuthType.INTERNAL_JWT
-      //     ? requireBillingAttributionHeader(req.headers, {
-      //         actorUserId: userId,
-      //         workspaceId: kbWorkspaceId,
-      //       })
-      //     : await resolveBillingAttribution({
-      //         actorUserId: userId,
-      //         workspaceId: kbWorkspaceId,
-      //       })
-      //   : undefined
-      const billingAttribution = undefined
+      /**
+       * Resolve attribution from the knowledge base workspace, not from an
+       * INTERNAL_JWT billing header. Workflows can write into a KB outside the
+       * calling workflow workspace; requiring a matching header left documents
+       * created-but-never-queued (`pending` forever).
+       */
+      const billingAttribution = kbWorkspaceId
+        ? await resolveBillingAttribution({
+            actorUserId: userId,
+            workspaceId: kbWorkspaceId,
+          })
+        : undefined
 
       /**
        * Gate the workspace payer and uploader before accepting indexing work.
        * Legacy workspace-less KBs retain account-only enforcement; asynchronous
        * connector, cron, and retry paths apply the same backstop.
        */
-      // const usage = billingAttribution
-      //   ? await checkAttributedUsageLimits(billingAttribution)
-      //   : await checkActorUsageLimits(userId)
-      const usage = await checkActorUsageLimits(userId)
+      const usage = billingAttribution
+        ? await checkAttributedUsageLimits(billingAttribution)
+        : await checkActorUsageLimits(userId)
       if (usage.isExceeded) {
         return NextResponse.json(
           {
