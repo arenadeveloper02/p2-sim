@@ -24,6 +24,8 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'EntityHeader',
       'ProgressBar',
       'Card',
+      'Sparkline',
+      'EmptyState',
     ]) {
       expect(prompt).toContain(`- ${component}: {`)
     }

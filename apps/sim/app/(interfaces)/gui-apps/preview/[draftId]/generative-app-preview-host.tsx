@@ -9,8 +9,10 @@ import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-
 import {
   collectRenderDiagnostics,
   editInstructionsFromDiagnostics,
+  pageEditPrompt,
 } from '@/lib/arena-generative-ui/render-diagnostics'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
+import type { ArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import {
   ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
   actionErrorFrom,
@@ -26,6 +28,7 @@ import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-bann
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import { GenerativeAppThemeRoot } from '@/app/(interfaces)/gui-apps/generative-app-theme-root'
 import { PreviewDiagnosticsBanner } from '@/app/(interfaces)/gui-apps/preview-diagnostics-banner'
+import { PreviewThemePicker } from '@/app/(interfaces)/gui-apps/preview-theme-picker'
 import { SpecRenderErrorBoundary } from '@/app/(interfaces)/gui-apps/spec-render-error-boundary'
 import { usePageLoadActions } from '@/app/(interfaces)/gui-apps/use-page-load-actions'
 import {
@@ -63,6 +66,8 @@ export function GenerativeAppPreviewHost({
     setLoadPending,
   } = useGenerativeAppHostState()
   const [throwByKey, setThrowByKey] = useState<Record<string, string>>({})
+  const [themeOverride, setThemeOverride] = useState<ArenaGenerativeTheme | undefined>(undefined)
+  const [copiedPagePrompt, setCopiedPagePrompt] = useState(false)
 
   const manifest = draftQuery.data?.manifest
   const apiBindings = draftQuery.data?.apiBindings
@@ -130,13 +135,31 @@ export function GenerativeAppPreviewHost({
       : []),
   ]
   const editInstructions = editInstructionsFromDiagnostics(diagnostics, pagePath)
+  const liveTheme = themeOverride ?? manifest.theme
+  const pagePrompt = pageEditPrompt(pagePath)
 
   return (
-    <GenerativeAppThemeRoot theme={manifest.theme}>
+    <GenerativeAppThemeRoot theme={liveTheme}>
       <div className='min-h-screen'>
-        <div className='border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-canvas,#f7f8f9)] px-4 py-2 text-[var(--gui-text-muted,#8a8d99)] text-xs'>
-          Preview — not published. CTAs run against this draft.
+        <div className='flex flex-wrap items-center justify-between gap-2 border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-canvas,#f7f8f9)] px-4 py-2 text-[var(--gui-text-muted,#8a8d99)] text-xs'>
+          <span>Preview — not published. CTAs run against this draft.</span>
+          <button
+            type='button'
+            data-testid='copy-page-edit-prompt'
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(pagePrompt)
+                setCopiedPagePrompt(true)
+              } catch {
+                setCopiedPagePrompt(false)
+              }
+            }}
+            className='text-[var(--gui-brand,#1a73e8)] hover:underline'
+          >
+            {copiedPagePrompt ? 'Copied' : 'Copy page edit prompt'}
+          </button>
         </div>
+        <PreviewThemePicker theme={liveTheme} onChange={setThemeOverride} />
         {bannerMessage ? (
           <ActionErrorBanner
             message={bannerMessage}

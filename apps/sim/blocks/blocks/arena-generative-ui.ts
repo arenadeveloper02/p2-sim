@@ -62,7 +62,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
         'Plain language, not JSON. Name pages, fields, and navigation. If a form should call an API, use the same key you put in API Bindings (you invent that key).\n\nLead qualifier. Home is a form: company, role, notes. Submit calls qualify_lead, then go to Results. Results shows the score and a Back link.',
       wandConfig: {
         enabled: true,
-        prompt: `You are an expert product designer for Sim GUI apps that usually render inside a narrow Arena iframe. Expand the user's idea into a brief for a multi-page json-render UI.
+        prompt: `You are an expert product designer for Sim GUI apps. They render as a full page (up to 1280px) and also embed in an Arena iframe — Grid and Columns collapse to one column when narrow.
 
 Include:
 - App name and purpose
@@ -147,7 +147,7 @@ Return ONLY the specification text.`,
       type: 'long-input',
       placeholder: 'Optional Arena DS / brand / density notes',
       tooltip:
-        'Optional. Tone and density only — iframe-first, no left nav, no logo.\n\nCalm Arena-like layout. One card per page. Primary button is Qualify.',
+        'Optional. Tone and density, or name a theme knob (brandColor, density, radius, colorScheme). Layout is full-page up to 1280px and stacks in a narrow Arena iframe.\n\nCalm Arena-like layout. Density compact. Dark mode.',
     },
   ],
   tools: {
@@ -189,7 +189,10 @@ Return ONLY the specification text.`,
     revisionId: { type: 'string', description: 'Revision snapshot id' },
     entryPath: { type: 'string', description: 'Opening page path' },
     pages: { type: 'json', description: 'Generated pages' },
-    content: { type: 'string', description: 'Generation summary' },
+    content: { type: 'string', description: 'Generation summary, including planner or edit scope' },
     manifest: { type: 'json', description: 'Full manifest JSON' },
+    structuredBrief: { type: 'json', description: 'Planner sitemap when generate planning succeeded' },
+    plannerError: { type: 'string', description: 'Why planning fell back to prose, if it did' },
+    editScope: { type: 'json', description: 'Pages rewritten on Edit, or theme-only' },
   },
 }

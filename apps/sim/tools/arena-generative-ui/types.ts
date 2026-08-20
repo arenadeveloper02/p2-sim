@@ -22,5 +22,16 @@ export interface ArenaGenerativeUiResponse extends ToolResponse {
     pages: Array<{ path: string; title: string }>
     content: string
     manifest: ArenaGenerativeAppManifest | Record<string, unknown>
+    structuredBrief?: {
+      title: string
+      archetype: string
+      entryPath: string
+      pages: Array<{ path: string; title: string }>
+    }
+    plannerError?: string
+    editScope?: {
+      mode: 'pages' | 'global' | 'theme'
+      pages: string[]
+    }
   }
 }

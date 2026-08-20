@@ -205,6 +205,10 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     expect(container.textContent).toContain('Lead qualifier')
     expect(container.textContent).toContain('Qualify')
     expect(container.textContent).not.toContain('Back')
+    expect(container.querySelector('[data-testid="copy-page-edit-prompt"]')?.textContent).toContain(
+      'Copy page edit prompt'
+    )
+    expect(container.querySelector('[data-testid="preview-theme-picker"]')).toBeTruthy()
   })
 
   it('navigates home → results → home without publishing', () => {

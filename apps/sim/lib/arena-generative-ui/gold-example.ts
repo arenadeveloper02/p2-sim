@@ -1,4 +1,10 @@
 import type { Spec } from '@json-render/core'
+import {
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
+} from '@/lib/arena-generative-ui/gold-example-archetypes'
+import type { ArenaGenerativeArchetype } from '@/lib/arena-generative-ui/structured-brief'
 import { DEFAULT_ARENA_GENERATIVE_THEME } from '@/lib/arena-generative-ui/theme'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 
@@ -449,9 +455,21 @@ export const goldExampleOutput = {
  * spec and teaches an invalid shape.
  */
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
-  'GOLD STANDARD REFERENCE LAYOUT',
+  'GOLD STANDARD REFERENCE LAYOUT (form-result)',
   'Match this structure and density, not its subject matter. Note the default Arena theme, the four screens (centered search hero, entity result cards, nested run progress, entity dashboard), SearchField with nested submit, Icon wells, Avatar on entity Cards, EntityHeader, ProgressBar, display Stats, and result components bound by statePath.',
   'Note also how data moves: home has no onLoad — SearchField runs the search CTA and onSuccess navigates to results. Results is a Repeat of entity Cards inside a Grid; Card.title uses "{item.name}", Avatar.src uses "{item.logo}", and Analyze sends the item fields. Progress shows EntityHeader, ProgressBar, and indented ProgressSteps while that run is pending. Overview declares onLoad and binds each Stat by statePath. emptyText is the zero-result copy when the companies array is empty.',
   `Replace the actions apiKey values ("${GOLD_EXAMPLE_LOAD_API_KEY}", "${GOLD_EXAMPLE_API_KEY}", "${GOLD_EXAMPLE_RUN_API_KEY}") with declared API binding keys, and drop manifest.actions and every onLoad entirely when no bindings were declared.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')
+
+/**
+ * Few-shot for the generator: the matching archetype only. A single Watchtower
+ * example taught every app to become a search hero; injecting all four at once
+ * would just restore that bias toward the longest one.
+ */
+export function goldExamplePromptForArchetype(archetype?: ArenaGenerativeArchetype): string {
+  if (archetype === 'dashboard') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD
+  if (archetype === 'list-detail') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL
+  if (archetype === 'wizard') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD
+  return ARENA_GENERATIVE_UI_GOLD_EXAMPLE
+}

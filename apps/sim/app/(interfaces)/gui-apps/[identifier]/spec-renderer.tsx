@@ -14,15 +14,19 @@ import { isPlainRecord } from '@sim/utils/object'
 import {
   BarChart3,
   Building2,
+  Calendar,
   Check,
   FileText,
   Globe,
+  Inbox,
   Link2,
   type LucideIcon,
   MessageSquare,
   Search,
   Shield,
   Sparkles,
+  Star,
+  TrendingUp,
   Users,
 } from 'lucide-react'
 import {
@@ -111,6 +115,10 @@ const ICON_BY_NAME: Record<string, LucideIcon> = {
   globe: Globe,
   message: MessageSquare,
   link: Link2,
+  inbox: Inbox,
+  calendar: Calendar,
+  star: Star,
+  trend: TrendingUp,
 }
 
 const CHIP_TONE_CLASSES = {
@@ -788,6 +796,40 @@ function FieldShell({
   )
 }
 
+function sparklinePoints(values: number[]): string {
+  if (values.length === 0) return ''
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const span = max - min || 1
+  return values
+    .map((value, index) => {
+      const x = values.length === 1 ? 50 : (index / (values.length - 1)) * 100
+      const y = 100 - ((value - min) / span) * 100
+      return `${x},${y}`
+    })
+    .join(' ')
+}
+
+function numbersFromSparklineProps(
+  props: Record<string, unknown>,
+  state: Record<string, unknown>,
+  scope?: RepeatItemScope
+): number[] {
+  const statePath = asString(props.statePath)
+  if (statePath) {
+    const raw = readScopedStatePath(state, statePath, scope)
+    if (Array.isArray(raw)) {
+      return raw.map((item) => Number(item)).filter((item) => Number.isFinite(item))
+    }
+  }
+  const literal = asString(props.values)
+  if (!literal) return []
+  return literal
+    .split(',')
+    .map((part) => Number(part.trim()))
+    .filter((item) => Number.isFinite(item))
+}
+
 function CatalogIcon({ name, well }: { name: string; well: string }) {
   const Glyph = ICON_BY_NAME[name] ?? Search
   const wellClass =
@@ -1230,6 +1272,68 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           </div>
         )
       }
+      case 'Sparkline': {
+        const series = numbersFromSparklineProps(props, state, scope)
+        const statePath = asString(props.statePath)
+        if (statePath && pending && series.length === 0) {
+          return <SkeletonBlock variant='stat' lines={1} />
+        }
+        const points = sparklinePoints(series)
+        const label = asString(props.label)
+        return (
+          <div
+            className='flex w-full flex-col gap-2'
+            data-testid='sparkline'
+            style={styleFromProps(props)}
+          >
+            {label ? (
+              <span className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'>
+                {label}
+              </span>
+            ) : null}
+            <svg
+              viewBox='0 0 100 100'
+              preserveAspectRatio='none'
+              className='h-10 w-full'
+              aria-hidden={label ? undefined : true}
+              role={label ? 'img' : undefined}
+            >
+              {label ? <title>{label}</title> : null}
+              {points ? (
+                <polyline
+                  fill='none'
+                  stroke='var(--gui-brand, #1a73e8)'
+                  strokeWidth='2'
+                  strokeLinejoin='round'
+                  strokeLinecap='round'
+                  points={points}
+                  vectorEffect='non-scaling-stroke'
+                />
+              ) : null}
+            </svg>
+          </div>
+        )
+      }
+      case 'EmptyState':
+        return (
+          <div
+            data-testid='empty-state'
+            className='flex w-full flex-col items-center gap-3 rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#fff)] px-6 py-10 text-center'
+            style={styleFromProps(props)}
+          >
+            {asString(props.icon) ? (
+              <CatalogIcon name={asString(props.icon)} well='circle' />
+            ) : null}
+            <p className='font-semibold text-[length:var(--gui-title-size,24px)] text-[var(--gui-text,#2c2d33)]'>
+              {asString(props.title)}
+            </p>
+            {asString(props.body) ? (
+              <p className='max-w-[var(--gui-measure,40rem)] text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'>
+                {asString(props.body)}
+              </p>
+            ) : null}
+          </div>
+        )
       case 'Badge':
         return (
           <span

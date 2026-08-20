@@ -4,6 +4,7 @@ import { toError } from '@sim/utils/errors'
 import { truncate } from '@sim/utils/string'
 import { z } from 'zod'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
+import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-prompt'
 import { parseLlmJsonObject } from '@/lib/arena-generative-ui/parse-inputs'
 import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
 import {
@@ -99,13 +100,14 @@ const PLANNER_SYSTEM_PROMPT = [
   'A dashboard, list, report, or detail page names onLoad in data. A form page does not.',
   "emptyCopy is the zero-result sentence for that page's collection (becomes emptyText). errorCopy is the failure sentence.",
   'actions[].apiKey must be a declared binding key. When no bindings were declared, actions must be [].',
+  'When a binding has no outputSchema, do not plan Table or Stat columns; results are prose (DataText content) unless the brief names exact keys.',
   'Give an onLoad action no onSuccessNavigate.',
 ].join('\n')
 
 const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
   dashboard: [
     'ARCHETYPE RECIPE: dashboard',
-    'Home is EntityHeader (logo, title, badge, description, meta chips) plus Tabs, then a Grid of four Stat with size "display", then a summary Card. Bind metrics by statePath.',
+    'Home is EntityHeader (logo, title, badge, description, meta chips) plus Tabs, then a Grid of four Stat with size "display", an optional Sparkline trend, then a summary Card. Bind metrics by statePath.',
     'Set page onLoad to the fetch action and bind every metric and collection; do not hard-code those values. Do not put a parameters form beside the metrics unless the brief asked for one.',
     'Filters belong in a Toolbar. Extra top-level pages use Tabs. No form unless the brief asked for one.',
   ].join('\n'),
@@ -335,15 +337,7 @@ function extractMessageText(message: Anthropic.Messages.Message): string {
 function plannerUserPayload(params: PlanStructuredBriefParams): string {
   const pageHints = params.pages?.filter((page) => page.path.trim().length > 0) ?? []
   const bindingKeys = params.apiBindings.map((binding) => binding.key).filter(Boolean)
-  const bindingsSummary = params.apiBindings.map((binding) => ({
-    key: binding.key,
-    label: binding.label,
-    kind: binding.kind,
-    inputSchema: binding.inputSchema ?? [],
-    outputSchema: binding.outputSchema ?? [],
-    outputHint: binding.outputHint,
-    stream: binding.stream === true,
-  }))
+  const bindingsSummary = bindingsSummaryForPrompt(params.apiBindings)
   return [
     'Mode: plan a new multi-page app. Do not emit page specs or a manifest.',
     params.entryPath ? `Requested entryPath: ${params.entryPath}` : '',
@@ -363,17 +357,23 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
 const BRIEF_REPAIR_USER_MESSAGE =
   'That was not a valid structured brief. Return one JSON object in the planner shape (title, purpose, audience, archetype, entryPath, pages[], actions[]). Do not emit a manifest.'
 
+export type PlanStructuredBriefOutcome = {
+  brief: ArenaGenerativeStructuredBrief | null
+  error?: string
+}
+
 /**
  * Cheap first-stage call: invents sitemap, archetype, and per-page data/actions
- * so the manifest call spends its budget on JSON rather than IA. Returns null
- * on any failure so generate can fall back to the prose brief.
+ * so the manifest call spends its budget on JSON rather than IA. Returns
+ * `{ brief: null, error }` on failure so generate can fall back to prose and
+ * still tell the user planning did not land.
  */
 export async function planArenaGenerativeStructuredBrief(
   params: PlanStructuredBriefParams
-): Promise<ArenaGenerativeStructuredBrief | null> {
+): Promise<PlanStructuredBriefOutcome> {
   const userInput = params.userInput.trim()
   if (!userInput) {
-    return null
+    return { brief: null, error: 'userInput is required' }
   }
 
   try {
@@ -412,7 +412,7 @@ export async function planArenaGenerativeStructuredBrief(
         brief = null
       }
       if (brief) {
-        return brief
+        return { brief }
       }
       if (attempt + 1 < MAX_BRIEF_ATTEMPTS) {
         messages.push(
@@ -422,11 +422,11 @@ export async function planArenaGenerativeStructuredBrief(
       }
     }
     logger.warn('Arena Generative UI structured brief was unusable; generating from prose')
-    return null
+    return { brief: null, error: 'Planner reply was not a valid structured brief' }
   } catch (error) {
     logger.warn('Arena Generative UI structured brief planning failed; generating from prose', {
       error: toError(error).message,
     })
-    return null
+    return { brief: null, error: toError(error).message }
   }
 }

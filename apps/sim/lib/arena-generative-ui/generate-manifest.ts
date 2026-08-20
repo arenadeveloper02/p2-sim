@@ -3,6 +3,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { truncate } from '@sim/utils/string'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
+import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-prompt'
 import {
   ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
   ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
@@ -20,18 +21,20 @@ import {
   planArenaGenerativeEditScope,
   unscopedPageIndex,
 } from '@/lib/arena-generative-ui/edit-scope'
-import { ARENA_GENERATIVE_UI_GOLD_EXAMPLE } from '@/lib/arena-generative-ui/gold-example'
+import { goldExamplePromptForArchetype } from '@/lib/arena-generative-ui/gold-example'
 import { mergeScopedManifestEdit } from '@/lib/arena-generative-ui/merge-scoped-edit'
 import {
   extractManifestCandidate,
   parseLlmJsonObject,
 } from '@/lib/arena-generative-ui/parse-inputs'
 import {
+  type ArenaGenerativeStructuredBrief,
   archetypeRecipe,
   formatStructuredBriefForGenerator,
   pageHintsFromStructuredBrief,
   planArenaGenerativeStructuredBrief,
 } from '@/lib/arena-generative-ui/structured-brief'
+import { applyThemeOnlyEdit, isThemeOnlyEdit } from '@/lib/arena-generative-ui/theme-from-edit'
 import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
 import type {
   ArenaGenerativeApiBinding,
@@ -118,6 +121,43 @@ function estimatePageCount(options: {
 function outputTokenBudget(modelId: string, pageCount: number): number {
   const requested = BASE_OUTPUT_TOKENS + Math.max(pageCount, 1) * OUTPUT_TOKENS_PER_PAGE
   return Math.min(getMaxOutputTokensForModel(modelId), MAX_OUTPUT_TOKENS, requested)
+}
+
+function formatPlannerStatus(
+  brief: ArenaGenerativeStructuredBrief | null,
+  plannerError?: string
+): string {
+  if (brief) {
+    const paths = brief.pages.map((page) => page.path).join(', ')
+    return `Planner: ${brief.archetype} · ${paths}.`
+  }
+  if (plannerError) {
+    return `Planner failed (${plannerError}); generated from the prose brief.`
+  }
+  return ''
+}
+
+function formatEditScopeStatus(scope: ArenaGenerativeEditScope | null, themeOnly: boolean): string {
+  if (themeOnly) return 'Edit scope: theme only (pages unchanged).'
+  if (!scope) return 'Edit scope: global rewrite.'
+  if (scope.mode === 'pages' && scope.pages.length > 0) {
+    return `Edit scope: pages [${scope.pages.join(', ')}].`
+  }
+  return 'Edit scope: global rewrite.'
+}
+
+function withStatusPrefix(content: string, ...lines: string[]): string {
+  const prefix = lines.filter((line) => line.length > 0).join('\n')
+  return prefix ? `${prefix}\n\n${content}` : content
+}
+
+function structuredBriefSummary(brief: ArenaGenerativeStructuredBrief) {
+  return {
+    title: brief.title,
+    archetype: brief.archetype,
+    entryPath: brief.entryPath,
+    pages: brief.pages.map((page) => ({ path: page.path, title: page.title })),
+  }
 }
 
 function extractMessageText(message: Anthropic.Messages.Message): string {
@@ -210,8 +250,23 @@ export async function generateArenaGenerativeManifest(
   const isEdit = Boolean(params.existingManifest)
   const pinnedPageHints = params.pages?.filter((page) => page.path.trim().length > 0) ?? []
 
-  const structuredBrief = isEdit
-    ? null
+  if (isEdit && params.existingManifest && isThemeOnlyEdit(userInput, null)) {
+    const manifest = applyThemeOnlyEdit(params.existingManifest, userInput, params.designNotes)
+    return {
+      success: true,
+      title:
+        params.existingManifest.pages[params.existingManifest.entryPath]?.title || 'Generated app',
+      content: withStatusPrefix(
+        'Updated theme without rewriting pages.',
+        formatEditScopeStatus(null, true)
+      ),
+      manifest,
+      editScope: { mode: 'theme', pages: [] },
+    }
+  }
+
+  const planned = isEdit
+    ? { brief: null as ArenaGenerativeStructuredBrief | null }
     : await planArenaGenerativeStructuredBrief({
         userInput,
         pages: pinnedPageHints,
@@ -219,6 +274,8 @@ export async function generateArenaGenerativeManifest(
         apiBindings: params.apiBindings,
         designNotes: params.designNotes,
       })
+  const structuredBrief = planned.brief
+  const plannerError = 'error' in planned ? planned.error : undefined
   if (structuredBrief) {
     logger.info('Planned Arena Generative UI structured brief', {
       archetype: structuredBrief.archetype,
@@ -254,7 +311,7 @@ export async function generateArenaGenerativeManifest(
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
       ARENA_GENERATIVE_UI_THEME_RULE,
-      'This app renders as a full page, embedded in Arena or opened directly. emailId is optional. Do not invent a login form or an app wordmark.',
+      'This app renders as a full page up to 1280px and also embeds in a narrow Arena iframe (Grid and Columns collapse). emailId is optional. Do not invent a login form or an app wordmark.',
       ...(params.apiBindings.length > 0
         ? [
             ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
@@ -270,7 +327,7 @@ export async function generateArenaGenerativeManifest(
     ARENA_GENERATIVE_UI_PERSONA,
     ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
     catalogPrompt,
-    ARENA_GENERATIVE_UI_GOLD_EXAMPLE,
+    goldExamplePromptForArchetype(structuredBrief?.archetype),
     structuredBrief ? archetypeRecipe(structuredBrief.archetype) : '',
   ]
     .filter((section) => section.length > 0)
@@ -292,16 +349,7 @@ export async function generateArenaGenerativeManifest(
       : structuredBrief
         ? pageHintsFromStructuredBrief(structuredBrief)
         : editPageHints
-  const bindingsSummary = params.apiBindings.map((binding) => ({
-    key: binding.key,
-    label: binding.label,
-    kind: binding.kind,
-    inputSchema: binding.inputSchema ?? [],
-    outputSchema: binding.outputSchema ?? [],
-    outputHint: binding.outputHint,
-    stream: binding.stream === true,
-    pagination: binding.pagination,
-  }))
+  const bindingsSummary = bindingsSummaryForPrompt(params.apiBindings)
 
   const bindingKeys = params.apiBindings.map((binding) => binding.key).filter(Boolean)
   const bindingKeyLine =
@@ -463,12 +511,25 @@ export async function generateArenaGenerativeManifest(
       typeof parsed.content === 'string' && parsed.content.trim()
         ? parsed.content.trim()
         : `Generated ${Object.keys(validation.manifest.pages).length} page(s).`
+    const statusLines = isEdit
+      ? [formatEditScopeStatus(editScope, false)]
+      : [formatPlannerStatus(structuredBrief, plannerError)]
 
     return {
       success: true,
       title,
-      content,
+      content: withStatusPrefix(content, ...statusLines),
       manifest: validation.manifest,
+      ...(structuredBrief ? { structuredBrief: structuredBriefSummary(structuredBrief) } : {}),
+      ...(plannerError ? { plannerError } : {}),
+      ...(isEdit
+        ? {
+            editScope: {
+              mode: isScopedEdit ? 'pages' : 'global',
+              pages: scopedPaths,
+            } as const,
+          }
+        : {}),
     }
   } catch (error) {
     const message = formatProviderNetworkError(error, 'Failed to generate app')

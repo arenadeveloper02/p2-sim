@@ -25,9 +25,11 @@ type ElementMap = Record<string, FlatElement>
  * the same chrome.
  */
 const TYPE_ALIASES: Record<string, string> = {
+  BarChart: 'Sparkline',
   Box: 'Stack',
   CheckBox: 'Checkbox',
   CheckboxField: 'Checkbox',
+  Chart: 'Sparkline',
   Collection: 'Repeat',
   Container: 'Stack',
   Date: 'DateInput',

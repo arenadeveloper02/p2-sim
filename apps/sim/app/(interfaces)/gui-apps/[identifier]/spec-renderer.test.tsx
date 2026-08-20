@@ -792,6 +792,44 @@ describe('SpecRenderer', () => {
     expect(tones.some((name) => name.includes('text-[var(--gui-error-text,#921010)]'))).toBe(true)
   })
 
+  it('renders a Sparkline from comma-separated values', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['chart'] },
+        chart: {
+          type: 'Sparkline',
+          props: { values: '1, 3, 2', label: 'Weekly orders' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('[data-testid="sparkline"]')?.textContent).toContain(
+      'Weekly orders'
+    )
+    expect(container.querySelector('polyline')?.getAttribute('points')).toBeTruthy()
+  })
+
+  it('renders EmptyState with title and body', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['empty'] },
+        empty: {
+          type: 'EmptyState',
+          props: { title: 'No orders yet', body: 'New orders will show up here.', icon: 'inbox' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('[data-testid="empty-state"]')?.textContent).toContain(
+      'No orders yet'
+    )
+    expect(container.textContent).toContain('New orders will show up here.')
+  })
+
   describe('skeletons', () => {
     const skeletonSpec = (type: string, props: Record<string, unknown>): Spec => ({
       root: 'page',

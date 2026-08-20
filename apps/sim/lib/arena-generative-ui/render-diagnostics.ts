@@ -1,6 +1,14 @@
 import type { Spec } from '@json-render/core'
 
-const BOUND_TYPES = new Set(['Table', 'Repeat', 'Stat', 'KeyValue', 'DataText', 'ProgressBar'])
+const BOUND_TYPES = new Set([
+  'Table',
+  'Repeat',
+  'Stat',
+  'KeyValue',
+  'DataText',
+  'ProgressBar',
+  'Sparkline',
+])
 
 export interface RenderDiagnostic {
   kind: 'unresolved-state-path' | 'unknown-type' | 'throw'
@@ -68,6 +76,8 @@ export function collectRenderDiagnostics(
 }
 
 const KNOWN_RENDERER_TYPES = new Set([
+  'Sparkline',
+  'EmptyState',
   'Page',
   'Section',
   'Stack',
@@ -117,6 +127,10 @@ const KNOWN_RENDERER_TYPES = new Set([
 
 function isKnownRendererType(type: string): boolean {
   return KNOWN_RENDERER_TYPES.has(type)
+}
+
+export function pageEditPrompt(pagePath: string): string {
+  return `On the "${pagePath}" page, `
 }
 
 /**

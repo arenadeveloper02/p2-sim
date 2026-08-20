@@ -9,7 +9,17 @@ import {
   GOLD_EXAMPLE_RUN_API_KEY,
   goldExampleManifest,
   goldExampleOutput,
+  goldExamplePromptForArchetype,
 } from '@/lib/arena-generative-ui/gold-example'
+import {
+  GOLD_DASHBOARD_LOAD_API_KEY,
+  GOLD_LIST_DETAIL_LIST_API_KEY,
+  GOLD_LIST_DETAIL_RECORD_API_KEY,
+  GOLD_WIZARD_SUBMIT_API_KEY,
+  goldDashboardManifest,
+  goldListDetailManifest,
+  goldWizardManifest,
+} from '@/lib/arena-generative-ui/gold-example-archetypes'
 import { extractManifestCandidate } from '@/lib/arena-generative-ui/parse-inputs'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
 import { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/validate-manifest'
@@ -118,5 +128,72 @@ describe('gold example', () => {
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain(GOLD_EXAMPLE_RUN_API_KEY)
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('"entryPath": "home"')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).not.toContain('```')
+  })
+})
+
+describe('per-archetype gold examples', () => {
+  it('injects only the matching archetype few-shot', () => {
+    expect(goldExamplePromptForArchetype('dashboard')).toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (dashboard)'
+    )
+    expect(goldExamplePromptForArchetype('dashboard')).not.toContain('Watchtower')
+    expect(goldExamplePromptForArchetype('list-detail')).toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (list-detail)'
+    )
+    expect(goldExamplePromptForArchetype('wizard')).toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (wizard)'
+    )
+    expect(goldExamplePromptForArchetype('form-result')).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
+    expect(goldExamplePromptForArchetype()).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
+  })
+
+  it('validates the dashboard gold including Sparkline', () => {
+    const result = validateArenaGenerativeManifest(goldDashboardManifest, {
+      apiBindings: [
+        {
+          key: GOLD_DASHBOARD_LOAD_API_KEY,
+          label: 'Dashboard',
+          kind: 'workflow',
+          workflowId: 'wf_dash',
+        },
+      ],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.success).toBe(true)
+    expect(JSON.stringify(goldDashboardManifest)).toContain('"Sparkline"')
+  })
+
+  it('validates the list-detail gold', () => {
+    const result = validateArenaGenerativeManifest(goldListDetailManifest, {
+      apiBindings: [
+        {
+          key: GOLD_LIST_DETAIL_LIST_API_KEY,
+          label: 'List',
+          kind: 'workflow',
+          workflowId: 'wf_list',
+        },
+        {
+          key: GOLD_LIST_DETAIL_RECORD_API_KEY,
+          label: 'Record',
+          kind: 'workflow',
+          workflowId: 'wf_record',
+        },
+      ],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('validates the wizard gold', () => {
+    const result = validateArenaGenerativeManifest(goldWizardManifest, {
+      apiBindings: [
+        {
+          key: GOLD_WIZARD_SUBMIT_API_KEY,
+          label: 'Submit',
+          kind: 'workflow',
+          workflowId: 'wf_onboard',
+        },
+      ],
+    })
+    expect(result.success).toBe(true)
   })
 })

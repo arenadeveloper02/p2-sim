@@ -17,21 +17,28 @@ export interface WorkflowBindingSelection {
 }
 
 /**
- * Maps a deployed workflow's start-block fields to a binding `inputSchema`. Only
- * names and types are kept — that is all the generator needs to lay out a form, and
- * it keeps descriptions and placeholders out of the prompt.
+ * Maps a deployed workflow's start-block fields to a binding `inputSchema`.
+ * Names, types, and descriptions are kept so the generator can label the form.
  */
 export function inputSchemaFromWorkflowFields(
   fields: WorkflowInputField[] | undefined
-): Array<{ name: string; type: string }> {
+): Array<{ name: string; type: string; description?: string }> {
   if (!fields) return []
   const seen = new Set<string>()
-  const schema: Array<{ name: string; type: string }> = []
+  const schema: Array<{ name: string; type: string; description?: string }> = []
   for (const field of fields) {
     const name = field.name?.trim()
     if (!name || seen.has(name)) continue
     seen.add(name)
-    schema.push({ name, type: field.type?.trim() || DEFAULT_INPUT_TYPE })
+    const mapped: { name: string; type: string; description?: string } = {
+      name,
+      type: field.type?.trim() || DEFAULT_INPUT_TYPE,
+    }
+    const description = field.description?.trim()
+    if (description) {
+      mapped.description = description.slice(0, 200)
+    }
+    schema.push(mapped)
   }
   return schema
 }

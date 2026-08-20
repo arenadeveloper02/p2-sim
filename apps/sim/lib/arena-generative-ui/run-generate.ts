@@ -8,7 +8,7 @@ import { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/gener
 import { summarizeManifestDiff } from '@/lib/arena-generative-ui/manifest-diff'
 import { parseApiBindings, parsePageHints } from '@/lib/arena-generative-ui/parse-inputs'
 import { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
-import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
+import type { ArenaGenerativeAppManifest, ArenaGenerativeGenerateResult } from '@/lib/arena-generative-ui/types'
 
 const logger = createLogger('ArenaGenerativeUiRun')
 
@@ -19,6 +19,9 @@ export interface ArenaGenerativeToolOutput {
   pages: Array<{ path: string; title: string }>
   content: string
   manifest: ArenaGenerativeAppManifest
+  structuredBrief?: ArenaGenerativeGenerateResult['structuredBrief']
+  plannerError?: string
+  editScope?: ArenaGenerativeGenerateResult['editScope']
 }
 
 /**
@@ -159,6 +162,9 @@ export async function runArenaGenerativeUi(options: {
         })),
         content: revisionDiff ? `${baseContent}\n\n${revisionDiff.summary}` : baseContent,
         manifest: generated.manifest,
+        ...(generated.structuredBrief ? { structuredBrief: generated.structuredBrief } : {}),
+        ...(generated.plannerError ? { plannerError: generated.plannerError } : {}),
+        ...(generated.editScope ? { editScope: generated.editScope } : {}),
       },
     }
   } catch (error) {

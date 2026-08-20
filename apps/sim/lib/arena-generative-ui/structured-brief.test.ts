@@ -206,6 +206,7 @@ describe('structured brief helpers', () => {
     expect(archetypeRecipe('list-detail')).toContain('entity Cards')
     expect(archetypeRecipe('dashboard')).toContain('EntityHeader')
     expect(archetypeRecipe('dashboard')).toContain('display')
+    expect(archetypeRecipe('dashboard')).toContain('Sparkline')
   })
 
   it('turns planned pages into generator page hints', () => {
@@ -231,7 +232,7 @@ describe('planArenaGenerativeStructuredBrief', () => {
   it('returns the planned brief from a JSON reply', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(textMessage(JSON.stringify(listDetailBrief)))
 
-    const brief = await planArenaGenerativeStructuredBrief({
+    const planned = await planArenaGenerativeStructuredBrief({
       userInput: 'Order inbox with a detail page.',
       apiBindings: [
         { key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' },
@@ -239,7 +240,7 @@ describe('planArenaGenerativeStructuredBrief', () => {
       ],
     })
 
-    expect(brief?.archetype).toBe('list-detail')
+    expect(planned.brief?.archetype).toBe('list-detail')
     expect(mockCreateAnthropicMessage).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -258,12 +259,12 @@ describe('planArenaGenerativeStructuredBrief', () => {
       .mockResolvedValueOnce(textMessage('{"title":"Nope"}'))
       .mockResolvedValueOnce(textMessage(JSON.stringify(listDetailBrief)))
 
-    const brief = await planArenaGenerativeStructuredBrief({
+    const planned = await planArenaGenerativeStructuredBrief({
       userInput: 'Order inbox.',
       apiBindings: [],
     })
 
-    expect(brief?.title).toBe('Orders')
+    expect(planned.brief?.title).toBe('Orders')
     expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
     const repair = mockCreateAnthropicMessage.mock.calls[1]?.[1].messages.at(-1) as {
       content: string
@@ -271,15 +272,18 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(repair.content).toContain('not a valid structured brief')
   })
 
-  it('returns null rather than throwing when every reply is unusable', async () => {
+  it('returns a planner error rather than throwing when every reply is unusable', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
 
-    const brief = await planArenaGenerativeStructuredBrief({
+    const planned = await planArenaGenerativeStructuredBrief({
       userInput: 'Team directory.',
       apiBindings: [],
     })
 
-    expect(brief).toBeNull()
+    expect(planned).toEqual({
+      brief: null,
+      error: 'Planner reply was not a valid structured brief',
+    })
     expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
   })
 

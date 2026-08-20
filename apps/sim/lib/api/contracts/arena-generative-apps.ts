@@ -46,6 +46,7 @@ export const arenaGenerativeApiBindingSchema = z
         z.object({
           name: z.string().min(1),
           type: z.string().min(1).optional(),
+          description: z.string().max(200).optional(),
         })
       )
       .max(40)
@@ -206,6 +207,21 @@ export const arenaGenerativeGenerateOutputSchema = z.object({
   pages: z.array(arenaGenerativePageSummarySchema),
   content: z.string(),
   manifest: arenaGenerativeManifestSchema,
+  structuredBrief: z
+    .object({
+      title: z.string(),
+      archetype: z.string(),
+      entryPath: z.string(),
+      pages: z.array(arenaGenerativePageSummarySchema),
+    })
+    .optional(),
+  plannerError: z.string().optional(),
+  editScope: z
+    .object({
+      mode: z.enum(['pages', 'global', 'theme']),
+      pages: z.array(z.string()),
+    })
+    .optional(),
 })
 
 export const arenaGenerativeGenerateContract = defineRouteContract({

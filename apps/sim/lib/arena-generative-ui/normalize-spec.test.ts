@@ -176,12 +176,23 @@ describe('normalizeGeneratedSpec', () => {
     const spec = normalizeGeneratedSpec({
       root: 'page',
       elements: {
-        page: { type: 'Page', props: {}, children: ['chart'] },
-        chart: { type: 'Chart', props: { chartType: 'area' }, children: [] },
+        page: { type: 'Page', props: {}, children: ['widget'] },
+        widget: { type: 'UnknownWidget', props: {}, children: [] },
       },
     })
-    expect(elements(spec).chart.type).toBe('Chart')
+    expect(elements(spec).widget.type).toBe('UnknownWidget')
     expect(arenaGenerativeUiCatalog.validate(spec).success).toBe(false)
+  })
+
+  it('aliases Chart onto Sparkline', () => {
+    const spec = normalizeGeneratedSpec({
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['chart'] },
+        chart: { type: 'Chart', props: { values: '1,2,3' }, children: [] },
+      },
+    })
+    expect(elements(spec).chart.type).toBe('Sparkline')
   })
 
   it('resolves spacing tokens to CSS lengths and passes raw lengths through', () => {

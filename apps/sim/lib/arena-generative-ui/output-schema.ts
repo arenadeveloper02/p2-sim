@@ -118,6 +118,37 @@ function schemaTypeFromValue(value: unknown): string {
 }
 
 /**
+ * Compact fake response object from outputSchema names/types so the generator
+ * can pick Stat vs Table vs DataText. Values are synthetic — never user PII.
+ */
+export function syntheticExampleFromOutputSchema(
+  schema: Array<{ name: string; type: string }> | undefined
+): Record<string, unknown> | undefined {
+  if (!schema || schema.length === 0) return undefined
+  const example: Record<string, unknown> = {}
+  let count = 0
+  for (const field of schema) {
+    if (count >= 8) break
+    const root = outputSchemaRootName(field.name)
+    if (!root || Object.hasOwn(example, root)) continue
+    const type = field.type.trim() || 'string'
+    if (type === 'array' || field.name.includes('[]')) {
+      example[root] = [{ title: 'Example', id: 'ex-1' }]
+    } else if (type === 'object') {
+      example[root] = { label: 'Example' }
+    } else if (type === 'number') {
+      example[root] = 72
+    } else if (type === 'boolean') {
+      example[root] = true
+    } else {
+      example[root] = 'example'
+    }
+    count += 1
+  }
+  return Object.keys(example).length > 0 ? example : undefined
+}
+
+/**
  * Root name of an outputSchema path: `articles` from `articles[].title` or `meta` from `meta.total`.
  */
 export function outputSchemaRootName(fieldName: string): string {

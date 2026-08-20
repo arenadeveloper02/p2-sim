@@ -273,7 +273,9 @@ export function parsePageHints(raw: unknown): ArenaGenerativePageHint[] {
  * without a string `name` and defaulting a missing `type` to `string`.
  * Returns undefined when the value is not an array so the key stays absent.
  */
-function schemaFields(raw: unknown): Array<{ name: string; type: string }> | undefined {
+function schemaFields(
+  raw: unknown
+): Array<{ name: string; type: string; description?: string }> | undefined {
   if (!Array.isArray(raw)) {
     return undefined
   }
@@ -285,10 +287,20 @@ function schemaFields(raw: unknown): Array<{ name: string; type: string }> | und
         typeof (field as { name?: unknown }).name === 'string'
       )
     })
-    .map((field) => ({
-      name: field.name,
-      type: typeof field.type === 'string' ? field.type : 'string',
-    }))
+    .map((field) => {
+      const mapped: { name: string; type: string; description?: string } = {
+        name: field.name,
+        type: typeof field.type === 'string' ? field.type : 'string',
+      }
+      const description =
+        typeof (field as { description?: unknown }).description === 'string'
+          ? (field as { description: string }).description.trim()
+          : ''
+      if (description) {
+        mapped.description = description.slice(0, 200)
+      }
+      return mapped
+    })
 }
 
 const TOP_LEVEL_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/

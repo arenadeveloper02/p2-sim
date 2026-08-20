@@ -167,6 +167,42 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       description:
         'Single metric with a label and a primary value. size "display" is the large KPI used on dashboards; default is the compact metric. Use value for static numbers or statePath to read one from host state. delta is a short change indicator such as "+14.2%" and deltaTone colours it. Place several inside a Grid.',
     },
+    Sparkline: {
+      props: z.object({
+        values: z.string().nullable(),
+        statePath: z.string().nullable(),
+        label: z.string().nullable(),
+      }),
+      description:
+        'Compact numeric series as a line. values is comma-separated numbers, or statePath reads a number array from host state. Use under a Stat or inside a dashboard Card. Not a full chart — do not invent axes, legends, or multiple series.',
+    },
+    EmptyState: {
+      props: z.object({
+        title: z.string(),
+        body: z.string().nullable(),
+        icon: z
+          .enum([
+            'search',
+            'file',
+            'chart',
+            'shield',
+            'building',
+            'check',
+            'spark',
+            'users',
+            'globe',
+            'message',
+            'link',
+            'inbox',
+            'calendar',
+            'star',
+            'trend',
+          ])
+          .nullable(),
+      }),
+      description:
+        'Designed empty region: title, optional body, optional catalog icon. Use when a page has no collection yet and emptyText on Table/Repeat is not enough. Do not use as a loading state.',
+    },
     Badge: {
       props: z.object({
         text: z.string(),
@@ -257,6 +293,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
           'globe',
           'message',
           'link',
+          'inbox',
+          'calendar',
+          'star',
+          'trend',
         ]),
         well: z.enum(['circle', 'square', 'none']).nullable(),
       }),
@@ -507,7 +547,7 @@ export function buildArenaGenerativeUiPrompt(options: { customRules: string[] })
 
 /** Role framing prepended to the generator system prompt. */
 export const ARENA_GENERATIVE_UI_PERSONA =
-  'You are an expert principal frontend engineer specializing in design systems, dashboards, and enterprise research platforms. Your only output is a single valid JSON object conforming to the schema below. Emit no markdown fences, no explanation, no preamble, and no trailing text.'
+  'You are an expert principal frontend engineer specializing in design systems, dashboards, multi-step forms, and operational tools. Your only output is a single valid JSON object conforming to the schema below. Emit no markdown fences, no explanation, no preamble, and no trailing text.'
 
 export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Output a single complete JSON object. Do NOT wrap it in markdown fences. Do NOT output JSONL patches.',
@@ -527,7 +567,7 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'onSuccess.navigate and NavLink.to / Button.navigateTo / navigate action `to` must be existing page paths, optionally followed by a query string such as "report?range=30d".',
   'Every page must be reachable from entryPath via NavLink, navigateTo, navigate, or onSuccess.navigate.',
   'DataText, Text, Alert, and ListItem render markdown. Put a prose API body on a single DataText; do not split markdown into Heading/List elements.',
-  'Layout: each page is a full-page app screen. Page → Section (leave width at the wide default so it fills up to 1280px) → content. Use the horizontal space; do not stack every element in one narrow centre column. Do not set maxWidth unless the brief demands an exact cap.',
+  'Layout: compose for a full page up to 1280px (Section width wide). Grid and Columns collapse to one column in a narrow Arena iframe — do not design as a permanently narrow single column, and do not assume the iframe is 1280px. Do not set maxWidth unless the brief demands an exact cap.',
   'Measure: dashboards, collections and tables stay wide, but a narrative block — a report body, an analysis, a long DataText — goes in its own Section with width "narrow" or in the main column of Columns. A PageHeader subtitle and a search-hero subtitle keep a readable measure (the host caps them) even on a wide Section. Never let prose run the full 1280px.',
   'Spacing: group related elements into a Card or Stack so data reads as chunks, and leave real space between groups. gap and padding take CSS lengths such as "16px" or "24px", never size words like "md" or "lg".',
   'Surfaces: there are exactly two — the page canvas and the Card/Stat surface, both supplied by the host from the Arena Design System (manifest.theme or host defaults). Do not set backgroundColor unless the brief names a specific colour. Build hierarchy from PageHeader, Card grouping, heading level, and 24px gaps between groups — never coloured fills or borders.',
@@ -571,6 +611,7 @@ export const ARENA_GENERATIVE_UI_SCOPED_EDIT_RULES = [
 export const ARENA_GENERATIVE_UI_ACTION_RESULT_RULE = [
   'CTA results: when an action succeeds the host merges the response object top-level keys into app state, so a statePath is the response key itself — use "articles", never "data.articles", "output.articles", or "response.articles". A response that is an array or a plain value lands under "result". "content" always holds a text rendering of the whole response.',
   'When a binding declares outputSchema, bind its field names as statePath instead of dumping "content": an array field such as "articles" with children "articles[].title" becomes Table statePath="articles" with columns from those child names, or Repeat inside a Grid when each item needs its own Card, link, or action; a single number or string becomes Stat or KeyValue; only fall back to DataText statePath="content" for prose or when the binding declares no outputSchema.',
+  'When a binding has no outputSchema and no outputHint, do not invent Table columns or Stat metrics. Bind DataText to "content" (or Repeat/Table only if the brief names the exact collection keys). Prefer a results page of prose until an output sample is provided.',
 ].join(' ')
 
 /** Added to the generator prompt only when at least one API binding is declared. */
@@ -600,7 +641,8 @@ export const ARENA_GENERATIVE_UI_THEME_RULE = [
 export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
   'ARENA DESIGN SYSTEM',
   'The host already paints Poppins, brand blue #1A73E8, grey text hierarchy, 12px radius, 40px controls, display titles, and shadow-first cards. You compose catalog components; you do not invent hex, fonts, or CSS.',
-  'Every generate reply includes the default theme above. Page → Section (width wide, no maxWidth) → PageHeader, then groups of Grid / Columns / Card with gap "24px". A one-field search is a centered PageHeader (kicker + display title) plus SearchField and suggestion Chips, then a Grid of Icon Cards. Multi-field forms pair short fields in a 2-column Grid. Dashboard metrics are a Grid of Stat size "display" under EntityHeader and Tabs. Named collections are Repeat-in-Grid entity Cards (Avatar, subtitle, footer). Record details are EntityHeader or KeyValue. One primary SearchField or SubmitButton per form; history is outline + pill; Back is a ghost Button or NavLink.',
+  'Viewport: full page up to 1280px; the same layout stacks in a narrow Arena iframe because Grid and Columns collapse. Do not author a permanently narrow centre column.',
+  'Every generate reply includes the default theme above. Page → Section (width wide, no maxWidth) → PageHeader, then groups of Grid / Columns / Card with gap "24px". A one-field search is a centered PageHeader (kicker + display title) plus SearchField and suggestion Chips, then a Grid of Icon Cards. Multi-field forms pair short fields in a 2-column Grid. Dashboard metrics are a Grid of Stat size "display" under EntityHeader, optional Sparkline, and Tabs. Named collections are Repeat-in-Grid entity Cards (Avatar, subtitle, footer). Record details are EntityHeader or KeyValue. One primary SearchField or SubmitButton per form; history is outline + pill; Back is a ghost Button or NavLink. A page with nothing to show yet uses EmptyState, not a blank canvas.',
   'Copy is specific product language. Never title a page "Page 1" or use lorem ipsum. Content avatars and company logos are allowed; do not add an app wordmark.',
 ].join('\n')
 

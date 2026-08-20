@@ -7,6 +7,7 @@ import {
   outputLayoutFromSample,
   outputSchemaFromSample,
   outputSchemaWarning,
+  syntheticExampleFromOutputSchema,
 } from '@/lib/arena-generative-ui/output-schema'
 
 describe('outputSchemaFromSample', () => {
@@ -138,5 +139,27 @@ describe('outputSchemaWarning', () => {
         score: 1,
       })
     ).toBe('Response is missing outputSchema fields: articles, count')
+  })
+})
+
+describe('syntheticExampleFromOutputSchema', () => {
+  it('builds fake values from types without copying sample PII', () => {
+    expect(
+      syntheticExampleFromOutputSchema([
+        { name: 'score', type: 'number' },
+        { name: 'articles', type: 'array' },
+        { name: 'articles[].title', type: 'string' },
+        { name: 'ok', type: 'boolean' },
+      ])
+    ).toEqual({
+      score: 72,
+      articles: [{ title: 'Example', id: 'ex-1' }],
+      ok: true,
+    })
+  })
+
+  it('returns nothing for an empty schema', () => {
+    expect(syntheticExampleFromOutputSchema(undefined)).toBeUndefined()
+    expect(syntheticExampleFromOutputSchema([])).toBeUndefined()
   })
 })

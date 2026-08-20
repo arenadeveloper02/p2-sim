@@ -62,7 +62,7 @@ export interface ArenaGenerativeApiBinding {
   kind: 'workflow' | 'http'
   workflowId?: string
   http?: ArenaGenerativeHttpBinding
-  inputSchema?: Array<{ name: string; type: string }>
+  inputSchema?: Array<{ name: string; type: string; description?: string }>
   /**
    * Response field names and types, usable as `statePath` values because the
    * host merges an object response's top-level keys into app state. Missing
@@ -148,6 +148,17 @@ export interface ArenaGenerativeGenerateResult {
   title?: string
   content?: string
   manifest?: ArenaGenerativeAppManifest
+  structuredBrief?: {
+    title: string
+    archetype: string
+    entryPath: string
+    pages: Array<{ path: string; title: string }>
+  }
+  plannerError?: string
+  editScope?: {
+    mode: 'pages' | 'global' | 'theme'
+    pages: string[]
+  }
 }
 
 /** Host state path DataText should bind to while a streaming CTA is in flight. */

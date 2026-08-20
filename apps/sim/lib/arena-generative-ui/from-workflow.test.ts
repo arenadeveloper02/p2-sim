@@ -9,14 +9,14 @@ import {
 import { parseApiBindings } from '@/lib/arena-generative-ui/parse-inputs'
 
 describe('inputSchemaFromWorkflowFields', () => {
-  it('keeps only names and types', () => {
+  it('keeps names, types, and descriptions', () => {
     expect(
       inputSchemaFromWorkflowFields([
         { id: 'f1', name: 'company', type: 'string', description: 'Legal name' },
         { id: 'f2', name: 'seats', type: 'number', placeholder: '10', required: true },
       ])
     ).toEqual([
-      { name: 'company', type: 'string' },
+      { name: 'company', type: 'string', description: 'Legal name' },
       { name: 'seats', type: 'number' },
     ])
   })

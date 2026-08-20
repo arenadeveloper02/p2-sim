@@ -7,6 +7,7 @@ import {
   collectRenderDiagnostics,
   editInstructionsFromDiagnostics,
   hostStateHasRoot,
+  pageEditPrompt,
 } from '@/lib/arena-generative-ui/render-diagnostics'
 
 const spec: Spec = {
@@ -60,5 +61,11 @@ describe('editInstructionsFromDiagnostics', () => {
     expect(text).toContain('Fix these render problems on page "home":')
     expect(text).toContain('Unresolved statePath "articles"')
     expect(text).toContain('Unknown component type "Chart"')
+  })
+})
+
+describe('pageEditPrompt', () => {
+  it('prefixes Requested Changes with the current page path', () => {
+    expect(pageEditPrompt('results')).toBe('On the "results" page, ')
   })
 })

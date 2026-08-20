@@ -44,6 +44,8 @@ From **Deploy → GUI App**, pick a draft and open **Preview**. That loads `{bas
 - CTAs use the same runner as production: bound workflows must already be deployed; HTTP hosts must pass the same allowlist rules.
 - Preview skips Arena `emailId` and the published password / email / SSO gates.
 - Preview captures runtime render problems (unresolved `statePath`, unknown component types, a SpecRenderer throw) and offers **Copy as edit instructions** to paste into **Requested Changes**.
+- Preview always offers **Copy page edit prompt**, which starts Requested Changes with `On the "{path}" page, ` so Edit scopes to that screen.
+- Preview includes a **theme picker** (brand, density, radius, light/dark). Changes are live in the iframe. Persist them by copying **Copy theme as edit instructions** into Requested Changes — theme-only edits skip the generator and patch `manifest.theme` in place.
 - `preview` is a reserved public identifier because it is a static `/gui-apps` segment.
 
 ---
@@ -61,7 +63,7 @@ Describe the app in **plain language**. This field is prose, not JSON. Only **Pa
 
 The model uses this brief to invent pages, copy, forms, and navigation.
 
-Generation is two-stage: a short planning call first produces a structured brief (purpose, audience, archetype, pages, actions, empty copy). A second call renders that into the json-render manifest. The planner picks an archetype — dashboard, form→result, list→detail, or wizard — so the second call is not always taught the same dashboard example. If planning fails, generate still runs from the prose you typed. Edit runs its own two stages instead (scope, then rewrite the pages in scope).
+Generation is two-stage: a short planning call first produces a structured brief (purpose, audience, archetype, pages, actions, empty copy). A second call renders that into the json-render manifest. The planner picks an archetype — dashboard, form→result, list→detail, or wizard — and the generator is shown **only that archetype's gold layout**, so a dashboard is not taught as a search hero. If planning fails, generate still runs from the prose you typed, and the block's `content` / `plannerError` outputs say so instead of failing silently. Edit runs its own two stages instead (scope, then rewrite the pages in scope), except **theme-only** Requested Changes (`dark mode`, `density compact`, a brand hex) which patch `manifest.theme` without an LLM call. The block `content` line starts with `Edit scope: pages [results].` or `Edit scope: theme only` so you can see what the run will rewrite.
 
 Include:
 
@@ -102,7 +104,7 @@ That also makes an edit cost roughly what it changes. A one-page tweak on a five
 
 The edit falls back to rewriting the whole manifest when:
 
-- the change is app-wide — theme, brand colour, dark mode, density, typography, or "on every page"
+- the change is app-wide **layout** — "on every page", add/remove a page, or rewire CTAs (pure theme/density/dark mode skips this path; see theme-only edits below)
 - it adds or removes a page, or changes which page opens first
 - it touches more than three pages
 - you pinned a sitemap in **Pages** (your pins already scope the run)
@@ -110,7 +112,11 @@ The edit falls back to rewriting the whole manifest when:
 
 Nothing about this is a setting, and a fallback is not an error — it is the previous behaviour, which still works. The only visible difference is that the block's `content` output now ends with a one-line change list (`r2 → r3: changed results`), so you can see which pages actually moved without opening Deploy.
 
-The scope call can occasionally include a page your change did not need, which only costs tokens. If it *misses* the page you meant, the edit will appear to do nothing — name the page explicitly ("on the **results** page, …") and run again.
+The scope call can occasionally include a page your change did not need, which only costs tokens. If it *misses* the page you meant, the edit will appear to do nothing — name the page explicitly ("on the **results** page, …") and run again. Preview's **Copy page edit prompt** pastes that prefix for you.
+
+#### Theme-only edits
+
+If Requested Changes is only branding (`dark mode`, `density compact`, `brandColor #1A73E8`, or the string copied from the preview theme picker), Sim patches `manifest.theme` and does **not** call the generator. Pages stay byte-identical. Mix in a layout word (`page`, `form`, `search`, `title`) and the usual edit path runs instead.
 
 ### Pages (optional JSON)
 
@@ -206,7 +212,11 @@ Decrypt uses the **same** `ENCRYPTION_KEY` as encrypt. If `.env` has the example
 
 ### Output format (`outputSchema`)
 
-`outputSchema` tells the generator what the API returns so it can lay the result out as a `Table`, `Stat`, or `KeyValue` instead of dumping one blob of text. `inputSchema` is a generator hint only. `outputSchema` is also a hint for layout, plus a **warn-only** runtime check: if a declared top-level name is missing from the live response, the host logs a warning and preview shows an amber banner. The CTA still succeeds — schema drift is diagnosable, not a hard failure.
+`outputSchema` tells the generator what the API returns so it can lay the result out as a `Table`, `Stat`, or `KeyValue` instead of dumping one blob of text. `inputSchema` is a generator hint only — **field descriptions from the workflow start block are kept** so form labels are not generic. The generator also sees a compact **synthetic** example object (`"score": 72`), never the pasted sample values.
+
+If a binding has neither `outputSchema` nor `outputHint`, results are treated as prose: bind `DataText` to `content` and do not invent Table columns. Paste an Output format sample when the results page should be a table or KPI grid.
+
+`outputSchema` is also a hint for layout, plus a **warn-only** runtime check: if a declared top-level name is missing from the live response, the host logs a warning and preview shows an amber banner. The CTA still succeeds — schema drift is diagnosable, not a hard failure.
 
 The easiest way to fill it is the **Output format** field in **Add an API**: paste a sample response and Sim derives the field names and types in the browser. **Only names and types are saved** — the pasted values are discarded and never reach the database or the model, so a sample containing real data is safe.
 
@@ -226,7 +236,7 @@ Derivation walks 3 object levels, describes arrays from their first element, and
 
 ### Design Notes (optional)
 
-Brand, density, tone. Generated apps are wide responsive full-page screens: the container fills the available width up to 1280px, collections become grids or tables, and `PageHeader` / `Tabs` carry the page chrome. No logo or wordmark — the host supplies the outer shell. Example: “Calm Arena-like layout, dense two-column dashboard, one primary CTA per screen.”
+Brand, density, tone, or a theme knob (`brandColor`, `density`, `radius`, `colorScheme`). Layout is a **full page up to 1280px**; Grid and Columns collapse to one column in a narrow Arena iframe — do not author a permanently narrow centre column. No logo or wordmark — the host supplies the outer shell. Example: “Calm Arena-like layout. Density compact. Dark mode.”
 
 Ask for `narrow` explicitly in Design Notes if you want the old focused single-column form look.
 
@@ -238,7 +248,7 @@ The generator is held to a few constraints you do not need to restate:
 - **Labeled, left-aligned fields** — short related fields pair up in a `Grid`, long free-text stays full width.
 - **Real spacing** — `gap` and `padding` are CSS lengths (`16px`), and size words are converted rather than silently dropped.
 
-The system prompt also carries a validated gold-standard reference layout ([gold-example.ts](../../apps/sim/lib/arena-generative-ui/gold-example.ts)), which a test asserts against `validateArenaGenerativeManifest` so the example can never drift into teaching an invalid shape.
+The system prompt also carries **one** validated gold-standard layout for the planned archetype ([gold-example.ts](../../apps/sim/lib/arena-generative-ui/gold-example.ts) for form-result, plus dashboard / list-detail / wizard in [gold-example-archetypes.ts](../../apps/sim/lib/arena-generative-ui/gold-example-archetypes.ts)). Tests assert each example against `validateArenaGenerativeManifest` so the few-shot never teaches an invalid shape.
 
 ### Draft (Edit mode)
 
@@ -277,8 +287,11 @@ After a successful run:
 | `revisionId` | Snapshot that Deploy publishes |
 | `entryPath` | Opening page |
 | `pages` | `{ path, title }[]` |
-| `content` | Short summary |
+| `content` | Short summary, prefixed with planner status or edit scope |
 | `manifest` | Full multi-page json-render JSON |
+| `structuredBrief` | Planner sitemap (`title`, `archetype`, `pages`) when planning succeeded |
+| `plannerError` | Why planning fell back to prose, if it did |
+| `editScope` | `{ mode: pages \| global \| theme, pages }` on Edit |
 
 The canvas preview of the workflow is **not** the hosted app. Open the published URL after Launch.
 
@@ -584,7 +597,7 @@ Same as above with `kind: "http"`. Put tokens in a workspace env var and referen
 | “Do not have access” | The gate is on (the default) and `emailId` is missing. Add `?emailId=`, open the app from Arena so the cookie is set, or turn off Require Arena emailId |
 | Open goes to chat or an external App URL | Control-bar Open prefers Chat/App. Use Launch GUI App from Deploy → GUI App |
 | Edit cannot find the draft | Draft must belong to this workflow; Generate created it on another workflow |
-| Edit ran but nothing changed | The scope call may have missed the page you meant. Name the page in **Requested Changes** ("on the results page, …") and rerun. The block's `content` output lists which pages actually changed |
+| Edit ran but nothing changed | The scope call may have missed the page you meant. Name the page in **Requested Changes** ("on the results page, …") or paste **Copy page edit prompt** from preview, then rerun. The block's `content` output lists which pages actually changed |
 | CTA fails with 429 / "Too many requests for this app" | The per-IP CTA limit (120 per 5 minutes per app) tripped. Wait for `Retry-After`. If real use hits it, the page is probably running `onLoad` actions on every navigation — cut them down or widen the limit |
 | A workflow CTA gets no `arenaEmailId` | It is only absent when no emailId resolved for that visitor. `inputMapping` does not drop it. For an **HTTP** binding it is withheld unless the binding sets `forwardEmailId` |
 | Generation error about a SubmitButton doing nothing | A `SubmitButton` ended up outside its `Form` with no `actionId`. Rerun; if it repeats, say in the brief which form the button submits |

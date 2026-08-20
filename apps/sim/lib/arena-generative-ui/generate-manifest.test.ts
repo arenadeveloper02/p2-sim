@@ -37,6 +37,7 @@ import {
   SCOPED_EDIT_INSTRUCTION,
 } from '@/lib/arena-generative-ui/generate-manifest'
 import { ARENA_GENERATIVE_UI_GOLD_EXAMPLE } from '@/lib/arena-generative-ui/gold-example'
+import { ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL } from '@/lib/arena-generative-ui/gold-example-archetypes'
 import {
   multiPageApiBindings,
   multiPageManifest,
@@ -54,7 +55,7 @@ function textMessage(text: string) {
 describe('generateArenaGenerativeManifest', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockPlanBrief.mockResolvedValue(null)
+    mockPlanBrief.mockResolvedValue({ brief: null })
   })
 
   it('uses Sonnet with a budget well above a single truncating page', async () => {
@@ -70,7 +71,6 @@ describe('generateArenaGenerativeManifest', () => {
       expect.objectContaining({
         model: 'claude-sonnet-4-6',
         max_tokens: expect.any(Number),
-        system: expect.not.stringContaining('statePath "content"'),
       })
     )
     const maxTokens = mockCreateAnthropicMessage.mock.calls[0]?.[1].max_tokens as number
@@ -169,10 +169,11 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).not.toContain('640px')
     expect(system).not.toContain('Single column only')
     expect(system).not.toContain('iframe-narrow')
-    expect(system).not.toContain('single column')
     expect(system).not.toContain('one Card')
     expect(system).not.toContain('one primary CTA per page')
     expect(system).not.toContain('full-page app shell')
+    expect(system).toContain('full page up to 1280px')
+    expect(system).toContain('narrow Arena iframe')
     expect(system).toContain('Grid')
     expect(system).toContain('Table')
     expect(system).toContain('Repeat')
@@ -196,6 +197,8 @@ describe('generateArenaGenerativeManifest', () => {
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
     expect(system.startsWith('You are an expert principal frontend engineer')).toBe(true)
+    expect(system).toContain('dashboards, multi-step forms, and operational tools')
+    expect(system).not.toContain('enterprise research platforms')
     expect(system).toContain('no markdown fences')
   })
 
@@ -262,6 +265,8 @@ describe('generateArenaGenerativeManifest', () => {
 
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('articles[].title')
+    expect(userMessage).toContain('"outputExample"')
+    expect(userMessage).toContain('bind outputSchema field names as statePath')
   })
 
   it('omits the CTA result rule when there are no bindings', async () => {
@@ -329,7 +334,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(mockCreateAnthropicMessage).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        system: expect.not.stringContaining('statePath "content"'),
+        system: expect.not.stringContaining('If a declared API binding has stream: true'),
       })
     )
   })
@@ -605,7 +610,7 @@ describe('generateArenaGenerativeManifest', () => {
     }
 
     it('plans a structured brief before asking for the manifest', async () => {
-      mockPlanBrief.mockResolvedValue(plannedBrief)
+      mockPlanBrief.mockResolvedValue({ brief: plannedBrief })
       mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
 
       await generateArenaGenerativeManifest({
@@ -636,7 +641,7 @@ describe('generateArenaGenerativeManifest', () => {
     })
 
     it('selects the archetype recipe and contracts the sitemap to the brief', async () => {
-      mockPlanBrief.mockResolvedValue(plannedBrief)
+      mockPlanBrief.mockResolvedValue({ brief: plannedBrief })
       mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
 
       await generateArenaGenerativeManifest({
@@ -647,7 +652,9 @@ describe('generateArenaGenerativeManifest', () => {
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
       expect(system).toContain('ARCHETYPE RECIPE: list-detail')
-      expect(system).toContain('GOLD STANDARD REFERENCE LAYOUT')
+      expect(system).toContain(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL)
+      expect(system).not.toContain('Watchtower')
+      expect(system).not.toContain('GOLD STANDARD REFERENCE LAYOUT (form-result)')
       expect(payload).toContain('Structured brief')
       expect(payload).toContain('"archetype": "list-detail"')
       expect(payload).toContain('Requested pages')
@@ -666,7 +673,7 @@ describe('generateArenaGenerativeManifest', () => {
       const assumedBudget = mockCreateAnthropicMessage.mock.calls[0]?.[1].max_tokens as number
 
       vi.clearAllMocks()
-      mockPlanBrief.mockResolvedValue(plannedBrief)
+      mockPlanBrief.mockResolvedValue({ brief: plannedBrief })
       mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
       await generateArenaGenerativeManifest({
         userInput: 'Order inbox with a detail page.',
@@ -678,7 +685,10 @@ describe('generateArenaGenerativeManifest', () => {
     })
 
     it('still generates when planning returns nothing', async () => {
-      mockPlanBrief.mockResolvedValue(null)
+      mockPlanBrief.mockResolvedValue({
+        brief: null,
+        error: 'Planner reply was not a valid structured brief',
+      })
       mockCreateAnthropicMessage.mockResolvedValue(
         textMessage(
           JSON.stringify({
@@ -697,8 +707,64 @@ describe('generateArenaGenerativeManifest', () => {
       })
 
       expect(result.success).toBe(true)
+      expect(result.content).toContain(
+        'Planner failed (Planner reply was not a valid structured brief)'
+      )
+      expect(result.plannerError).toBe('Planner reply was not a valid structured brief')
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
       expect(system).not.toContain('ARCHETYPE RECIPE:')
+    })
+
+    it('surfaces the planned sitemap on a successful generate', async () => {
+      mockPlanBrief.mockResolvedValue({
+        brief: {
+          ...plannedBrief,
+          pages: [
+            {
+              path: 'home',
+              title: 'Home',
+              purpose: 'Form',
+              data: 'CTA then navigate',
+              actions: [],
+            },
+            {
+              path: 'results',
+              title: 'Results',
+              purpose: 'Score',
+              data: 'bind score',
+              actions: [],
+            },
+          ],
+        },
+      })
+      mockCreateAnthropicMessage.mockResolvedValue(
+        textMessage(
+          JSON.stringify({
+            title: 'Orders',
+            content: 'ok',
+            manifest: { entryPath: 'home' },
+            pages: twoPageManifest.pages,
+            actions: twoPageManifest.actions,
+          })
+        )
+      )
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Order inbox with a detail page.',
+        apiBindings: [],
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.content).toContain('Planner: list-detail · home, results.')
+      expect(result.structuredBrief).toEqual({
+        title: 'Orders',
+        archetype: 'list-detail',
+        entryPath: 'home',
+        pages: [
+          { path: 'home', title: 'Home' },
+          { path: 'results', title: 'Results' },
+        ],
+      })
     })
   })
 
@@ -807,7 +873,7 @@ describe('generateArenaGenerativeManifest', () => {
         .mockResolvedValueOnce(scopeReply({ mode: 'global', pages: [] }))
         .mockResolvedValueOnce(textMessage('not json'))
       await generateArenaGenerativeManifest({
-        userInput: 'Use a dark theme everywhere.',
+        userInput: 'Add a Back NavLink on every page.',
         apiBindings: multiPageApiBindings,
         existingManifest: multiPageManifest,
       })
@@ -909,7 +975,7 @@ describe('generateArenaGenerativeManifest', () => {
         .mockResolvedValueOnce(textMessage('not json'))
 
       await generateArenaGenerativeManifest({
-        userInput: 'Use a dark theme everywhere.',
+        userInput: 'Add a Back NavLink on every page.',
         apiBindings: multiPageApiBindings,
         existingManifest: multiPageManifest,
       })
@@ -953,6 +1019,22 @@ describe('generateArenaGenerativeManifest', () => {
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
       expect(payload).toContain(EDIT_PRESERVATION_INSTRUCTION)
       expect(payload).not.toContain(SCOPED_EDIT_INSTRUCTION)
+    })
+
+    it('patches theme without calling the model', async () => {
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Set the theme to dark mode, density compact.',
+        apiBindings: [],
+        existingManifest: twoPageManifest,
+      })
+
+      expect(mockCreateAnthropicMessage).not.toHaveBeenCalled()
+      expect(result.success).toBe(true)
+      expect(result.editScope).toEqual({ mode: 'theme', pages: [] })
+      expect(result.content).toContain('Edit scope: theme only (pages unchanged).')
+      expect(result.manifest?.theme?.colorScheme).toBe('dark')
+      expect(result.manifest?.theme?.density).toBe('compact')
+      expect(JSON.stringify(result.manifest?.pages)).toBe(JSON.stringify(twoPageManifest.pages))
     })
   })
 })

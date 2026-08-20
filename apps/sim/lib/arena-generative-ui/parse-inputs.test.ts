@@ -175,6 +175,22 @@ describe('parseApiBindings', () => {
     expect(binding.outputSchema).toEqual([{ name: 'plan', type: 'string' }])
   })
 
+  it('keeps inputSchema descriptions', () => {
+    const [binding] = parseApiBindings([
+      {
+        key: 'qualify_lead',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        inputSchema: [
+          { name: 'company', type: 'string', description: 'Legal name of the account' },
+        ],
+      },
+    ])
+    expect(binding.inputSchema).toEqual([
+      { name: 'company', type: 'string', description: 'Legal name of the account' },
+    ])
+  })
+
   it('omits outputSchema when the binding does not declare one', () => {
     const [binding] = parseApiBindings([
       { key: 'qualify_lead', kind: 'workflow', workflowId: 'wf-1', outputSchema: 'articles' },
