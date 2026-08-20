@@ -3,6 +3,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  OUTPUT_HINT_MAX_LENGTH,
+  outputLayoutFromSample,
   outputSchemaFromSample,
   outputSchemaWarning,
 } from '@/lib/arena-generative-ui/output-schema'
@@ -89,6 +91,34 @@ describe('outputSchemaFromSample', () => {
     const fields = outputSchemaFromSample('{"email":"ada@example.com","note":"confidential"}')
     expect(JSON.stringify(fields)).not.toContain('ada@example.com')
     expect(JSON.stringify(fields)).not.toContain('confidential')
+  })
+})
+
+describe('outputLayoutFromSample', () => {
+  it('returns nothing for a blank sample', () => {
+    expect(outputLayoutFromSample('')).toEqual({})
+    expect(outputLayoutFromSample('   ', { stream: true })).toEqual({})
+  })
+
+  it('derives outputSchema from JSON in stream mode', () => {
+    expect(outputLayoutFromSample('{"companies":[]}', { stream: true })).toEqual({
+      outputSchema: [{ name: 'companies', type: 'array' }],
+    })
+  })
+
+  it('stores truncated prose as outputHint when streaming', () => {
+    expect(outputLayoutFromSample('# Hello', { stream: true })).toEqual({
+      outputHint: '# Hello',
+    })
+    const long = 'x'.repeat(OUTPUT_HINT_MAX_LENGTH + 50)
+    const layout = outputLayoutFromSample(long, { stream: true })
+    expect(layout.outputSchema).toBeUndefined()
+    expect(layout.outputHint?.startsWith('x')).toBe(true)
+    expect(layout.outputHint?.length).toBe(OUTPUT_HINT_MAX_LENGTH + 3)
+  })
+
+  it('still requires JSON when not streaming', () => {
+    expect(() => outputLayoutFromSample('# Hello')).toThrow('Output format must be valid JSON')
   })
 })
 

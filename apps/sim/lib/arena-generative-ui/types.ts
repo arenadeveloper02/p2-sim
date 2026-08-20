@@ -69,6 +69,11 @@ export interface ArenaGenerativeApiBinding {
    * top-level names warn in preview; the action still succeeds.
    */
   outputSchema?: Array<{ name: string; type: string }>
+  /**
+   * Truncated example of a streamed prose body. Prompt-only — the runner never
+   * sends this upstream. Used when stream is true and Output format is not JSON.
+   */
+  outputHint?: string
   /** Cursor or offset paging; the host appends `items` on page 2+. */
   pagination?: ArenaGenerativePagination
   /** When true, the host streams CTA tokens into DataText instead of waiting for JSON. */

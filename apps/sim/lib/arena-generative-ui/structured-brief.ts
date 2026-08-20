@@ -341,6 +341,7 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
     kind: binding.kind,
     inputSchema: binding.inputSchema ?? [],
     outputSchema: binding.outputSchema ?? [],
+    outputHint: binding.outputHint,
     stream: binding.stream === true,
   }))
   return [

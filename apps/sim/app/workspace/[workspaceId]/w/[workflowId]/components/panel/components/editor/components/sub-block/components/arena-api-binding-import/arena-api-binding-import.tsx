@@ -322,8 +322,16 @@ export function ArenaApiBindingImportHelper({
             title='Output format'
             value={outputSample}
             onChange={setOutputSample}
-            placeholder={`{"articles":[{"title":"Example","url":"https://example.com"}]}`}
-            hint='Paste a sample response so the generator can lay out the result. Only field names and types are saved — values are discarded.'
+            placeholder={
+              streamMode === 'on'
+                ? '# Company analysis\n\n## Summary\n...'
+                : `{"articles":[{"title":"Example","url":"https://example.com"}]}`
+            }
+            hint={
+              streamMode === 'on'
+                ? 'Leave blank, or paste an example of the tokens (markdown is fine) so the generator can match that shape. Paste JSON only if the API also returns a structured object at the end.'
+                : 'Paste a sample response so the generator can lay out the result. Only field names and types are saved — values are discarded.'
+            }
             rows={6}
             minHeight={120}
             resizable

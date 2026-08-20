@@ -1,5 +1,9 @@
+import { truncate } from '@sim/utils/string'
+
 const MAX_DEPTH = 3
 const MAX_FIELDS = 40
+/** Max characters kept from a streamed prose example in `outputHint`. */
+export const OUTPUT_HINT_MAX_LENGTH = 2000
 
 export interface ArenaGenerativeSchemaField {
   name: string
@@ -37,6 +41,32 @@ export function outputSchemaFromSample(sample: string): ArenaGenerativeSchemaFie
   const fields: ArenaGenerativeSchemaField[] = []
   collectFields(parsed, isPlainObject ? '' : NON_OBJECT_ROOT_PATH, 0, fields)
   return fields
+}
+
+/**
+ * Turns an Output format paste into either `outputSchema` (JSON sample) or, for
+ * streaming bindings, a truncated `outputHint` when the paste is prose.
+ */
+export function outputLayoutFromSample(
+  sample: string | undefined,
+  options?: { stream?: boolean }
+): {
+  outputSchema?: ArenaGenerativeSchemaField[]
+  outputHint?: string
+} {
+  const trimmed = sample?.trim() ?? ''
+  if (!trimmed) {
+    return {}
+  }
+  try {
+    const outputSchema = outputSchemaFromSample(trimmed)
+    return outputSchema.length > 0 ? { outputSchema } : {}
+  } catch {
+    if (options?.stream === true) {
+      return { outputHint: truncate(trimmed, OUTPUT_HINT_MAX_LENGTH) }
+    }
+    throw new Error('Output format must be valid JSON')
+  }
 }
 
 /**

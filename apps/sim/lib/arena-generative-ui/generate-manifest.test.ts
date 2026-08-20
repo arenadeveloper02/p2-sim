@@ -288,6 +288,7 @@ describe('generateArenaGenerativeManifest', () => {
           kind: 'workflow',
           workflowId: 'wf-1',
           stream: true,
+          outputHint: '# Company analysis',
         },
       ],
     })
@@ -307,9 +308,12 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('onSuccess.navigate')
     expect(system).toContain('only when the user asked')
     expect(system).toContain('outputSchema')
+    expect(system).toContain('outputHint')
     expect(system).toContain('Table statePath="companies"')
     expect(system).not.toContain('use one page')
     expect(system).not.toContain('Omit onSuccess.navigate')
+    const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+    expect(userMessage).toContain('# Company analysis')
   })
 
   it('omits the streaming DataText rule when no binding has stream: true', async () => {

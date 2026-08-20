@@ -189,6 +189,29 @@ describe('httpBindingFromCurl output format', () => {
     ).toThrow('Output format must be valid JSON')
   })
 
+  it('stores stream prose as outputHint instead of throwing', () => {
+    const binding = httpBindingFromCurl({
+      key: 'analyze',
+      curl: 'curl -X POST https://api.example.com/analyze',
+      stream: true,
+      outputSample: '# Company analysis\n\n## Summary\nAcme is growing.',
+    })
+    expect(binding.outputSchema).toBeUndefined()
+    expect(binding.outputHint).toBe('# Company analysis\n\n## Summary\nAcme is growing.')
+    expect(binding.stream).toBe(true)
+  })
+
+  it('still derives outputSchema from JSON when streaming', () => {
+    const binding = httpBindingFromCurl({
+      key: 'analyze',
+      curl: 'curl -X POST https://api.example.com/analyze',
+      stream: true,
+      outputSample: '{"companies":[]}',
+    })
+    expect(binding.outputHint).toBeUndefined()
+    expect(binding.outputSchema).toEqual([{ name: 'companies', type: 'array' }])
+  })
+
   it('ignores a blank sample', () => {
     const binding = httpBindingFromCurl({
       key: 'lookup',
@@ -214,7 +237,7 @@ describe('curlLooksLikeStream', () => {
     )
   })
 
-  it('is true for Sim streaming execute curls via protocol header, not body stream:true', () => {
+  it('is true for Sim streaming execute curls via protocol header or body stream:true', () => {
     expect(curlLooksLikeStream(SIM_STREAMING_CURL)).toBe(true)
     expect(
       curlLooksLikeStream(
@@ -224,6 +247,14 @@ describe('curlLooksLikeStream', () => {
     expect(
       curlLooksLikeStream(
         'curl -d \'{"input":"hi","stream":true}\' https://api.example.com/execute'
+      )
+    ).toBe(true)
+  })
+
+  it('is false when the JSON body sets stream to something other than true', () => {
+    expect(
+      curlLooksLikeStream(
+        'curl -d \'{"input":"hi","stream":false}\' https://api.example.com/execute'
       )
     ).toBe(false)
   })

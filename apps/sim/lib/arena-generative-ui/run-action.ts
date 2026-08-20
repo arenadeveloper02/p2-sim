@@ -506,7 +506,11 @@ async function runHttpBinding(options: {
           ...(init.headers as Record<string, string>),
           'Content-Type': 'application/json',
         }
-        init.body = JSON.stringify(options.mappedInput)
+        const body =
+          streaming && options.mappedInput.stream === undefined
+            ? { ...options.mappedInput, stream: true }
+            : options.mappedInput
+        init.body = JSON.stringify(body)
       }
 
       const response = await fetch(url, init)
@@ -548,6 +552,22 @@ async function runHttpBinding(options: {
   return lastFailure ?? { ok: false, error: 'HTTP request failed' }
 }
 
+function stringField(value: unknown): string | undefined {
+  return typeof value === 'string' && value ? value : undefined
+}
+
+function nestedRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined
+  }
+  return value as Record<string, unknown>
+}
+
+/**
+ * Pulls token text out of a streamed JSON payload: Sim `{ chunk }` / `{ content }`,
+ * OpenAI `choices[0].delta.content`, Anthropic `delta.text`, or a raw string.
+ * Objects with no text field return empty so they are not dumped into DataText.
+ */
 function extractStreamPayloadText(raw: string): string {
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -556,17 +576,31 @@ function extractStreamPayloadText(raw: string): string {
       return ''
     }
     const record = parsed as Record<string, unknown>
-    const nested =
-      record.data && typeof record.data === 'object' && !Array.isArray(record.data)
-        ? (record.data as Record<string, unknown>)
-        : undefined
-    if (typeof nested?.chunk === 'string') {
-      return nested.chunk
+    const nested = nestedRecord(record.data)
+    const fromNestedChunk = stringField(nested?.chunk)
+    if (fromNestedChunk) return fromNestedChunk
+    const fromContent = stringField(record.content)
+    if (fromContent) return fromContent
+    const fromDelta = stringField(record.delta)
+    if (fromDelta) return fromDelta
+    const fromText = stringField(record.text)
+    if (fromText) return fromText
+    const fromChunk = stringField(record.chunk)
+    if (fromChunk) return fromChunk
+
+    const choices = Array.isArray(record.choices) ? record.choices : []
+    const choice = nestedRecord(choices[0])
+    if (choice) {
+      const fromChoiceText = stringField(choice.text)
+      if (fromChoiceText) return fromChoiceText
+      const fromChoiceDelta = stringField(nestedRecord(choice.delta)?.content)
+      if (fromChoiceDelta) return fromChoiceDelta
+      const fromChoiceMessage = stringField(nestedRecord(choice.message)?.content)
+      if (fromChoiceMessage) return fromChoiceMessage
     }
-    if (typeof record.content === 'string') return record.content
-    if (typeof record.delta === 'string') return record.delta
-    if (typeof record.text === 'string') return record.text
-    if (typeof record.chunk === 'string') return record.chunk
+
+    const fromAnthropicDelta = stringField(nestedRecord(record.delta)?.text)
+    if (fromAnthropicDelta) return fromAnthropicDelta
     return ''
   } catch {
     return raw
@@ -574,8 +608,7 @@ function extractStreamPayloadText(raw: string): string {
 }
 
 function contentFromSseData(raw: string): string {
-  const extracted = extractStreamPayloadText(raw)
-  return extracted || raw
+  return extractStreamPayloadText(raw)
 }
 
 /**

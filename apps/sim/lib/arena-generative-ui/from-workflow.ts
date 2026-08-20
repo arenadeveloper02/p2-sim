@@ -1,4 +1,4 @@
-import { outputSchemaFromSample } from '@/lib/arena-generative-ui/output-schema'
+import { outputLayoutFromSample } from '@/lib/arena-generative-ui/output-schema'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
 import type { WorkflowInputField } from '@/lib/workflows/input-format'
 
@@ -11,7 +11,7 @@ export interface WorkflowBindingSelection {
   label?: string
   /** Start-block fields of the **deployed** workflow, which is the version a CTA runs. */
   inputFields?: WorkflowInputField[]
-  /** Optional sample response, same derivation the curl importer uses. */
+  /** JSON sample becomes outputSchema; streamed prose becomes outputHint. */
   outputSample?: string
   stream?: boolean
 }
@@ -57,9 +57,9 @@ export function workflowBindingFromSelection(
   }
 
   const inputSchema = inputSchemaFromWorkflowFields(selection.inputFields)
-  const outputSchema = selection.outputSample?.trim()
-    ? outputSchemaFromSample(selection.outputSample)
-    : []
+  const layout = outputLayoutFromSample(selection.outputSample, {
+    stream: selection.stream === true,
+  })
 
   return {
     key,
@@ -67,7 +67,8 @@ export function workflowBindingFromSelection(
     kind: 'workflow',
     workflowId,
     ...(inputSchema.length > 0 ? { inputSchema } : {}),
-    ...(outputSchema.length > 0 ? { outputSchema } : {}),
+    ...(layout.outputSchema ? { outputSchema: layout.outputSchema } : {}),
+    ...(layout.outputHint ? { outputHint: layout.outputHint } : {}),
     ...(selection.stream ? { stream: true } : {}),
   }
 }

@@ -1,4 +1,4 @@
-import { outputSchemaFromSample } from '@/lib/arena-generative-ui/output-schema'
+import { outputLayoutFromSample } from '@/lib/arena-generative-ui/output-schema'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeHttpMethod,
@@ -47,14 +47,14 @@ export interface HttpBindingFromCurlInput {
   headersSecretName?: string
   /** When true, the binding streams CTA tokens instead of waiting for JSON. */
   stream?: boolean
-  /** Sample response JSON. Only field names and types are kept. */
+  /** Sample response JSON, or streamed prose when `stream` is true. */
   outputSample?: string
 }
 
 /**
  * True when the curl looks like a streaming request: `-N` / `--no-buffer`,
- * `Accept: text/event-stream`, or `X-Sim-Stream-Protocol`. JSON body
- * `"stream": true` alone does not count. Incomplete curls still return a hint.
+ * `Accept: text/event-stream`, `X-Sim-Stream-Protocol`, or a JSON body with
+ * `"stream": true`. Incomplete curls still return a hint.
  */
 export function curlLooksLikeStream(curl: string): boolean {
   return inspectCurl(curl).looksLikeStream
@@ -94,9 +94,12 @@ export function httpBindingFromCurl(input: HttpBindingFromCurlInput): ArenaGener
   if (parsed.inputSchema && parsed.inputSchema.length > 0) {
     binding.inputSchema = parsed.inputSchema
   }
-  const outputSchema = outputSchemaFromSample(input.outputSample ?? '')
-  if (outputSchema.length > 0) {
-    binding.outputSchema = outputSchema
+  const layout = outputLayoutFromSample(input.outputSample, { stream: input.stream === true })
+  if (layout.outputSchema) {
+    binding.outputSchema = layout.outputSchema
+  }
+  if (layout.outputHint) {
+    binding.outputHint = layout.outputHint
   }
   if (input.stream === true) {
     binding.stream = true
@@ -201,6 +204,10 @@ function inspectCurl(raw: string): {
     index += 1
   }
 
+  if (!looksLikeStream && jsonBodyRequestsStream(body)) {
+    looksLikeStream = true
+  }
+
   return { methodRaw, url, body, forceGet, looksLikeStream, authHeaderName }
 }
 
@@ -264,6 +271,10 @@ function isAuthHeaderName(name: string): boolean {
 function authHeaderNameFrom(header: string): string | undefined {
   const { name } = splitHeader(header)
   return isAuthHeaderName(name) ? name : undefined
+}
+
+function jsonBodyRequestsStream(body: string | undefined): boolean {
+  return tryParseJsonObject(body)?.stream === true
 }
 
 function tryParseJsonObject(body: string | undefined): Record<string, unknown> | undefined {

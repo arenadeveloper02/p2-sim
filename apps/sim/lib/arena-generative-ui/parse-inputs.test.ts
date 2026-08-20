@@ -47,6 +47,29 @@ describe('parseApiBindings', () => {
     ])
   })
 
+  it('round-trips outputHint on a streaming binding', () => {
+    expect(
+      parseApiBindings([
+        {
+          key: 'summarize',
+          kind: 'workflow',
+          workflowId: 'wf-1',
+          stream: true,
+          outputHint: '# Company analysis',
+        },
+      ])
+    ).toEqual([
+      {
+        key: 'summarize',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        label: 'summarize',
+        stream: true,
+        outputHint: '# Company analysis',
+      },
+    ])
+  })
+
   it('parses stream: true on a workflow binding', () => {
     expect(
       parseApiBindings([

@@ -87,6 +87,27 @@ describe('workflowBindingFromSelection', () => {
     )
   })
 
+  it('stores stream prose as outputHint instead of throwing', () => {
+    const binding = workflowBindingFromSelection({
+      key: 'run',
+      workflowId: 'wf-1',
+      stream: true,
+      outputSample: '# Company analysis',
+    })
+    expect(binding.outputSchema).toBeUndefined()
+    expect(binding.outputHint).toBe('# Company analysis')
+  })
+
+  it('rejects non-JSON output format when not streaming', () => {
+    expect(() =>
+      workflowBindingFromSelection({
+        key: 'run',
+        workflowId: 'wf-1',
+        outputSample: '# Company analysis',
+      })
+    ).toThrow('Output format must be valid JSON')
+  })
+
   it('sets stream only when asked', () => {
     expect(workflowBindingFromSelection({ key: 'r', workflowId: 'w', stream: true }).stream).toBe(
       true

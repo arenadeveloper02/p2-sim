@@ -59,6 +59,7 @@ export const arenaGenerativeApiBindingSchema = z
       )
       .max(40, 'outputSchema is limited to 40 fields')
       .optional(),
+    outputHint: z.string().min(1).max(2048).optional(),
     stream: z.boolean().optional(),
     pagination: z
       .object({

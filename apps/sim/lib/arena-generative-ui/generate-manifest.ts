@@ -298,6 +298,7 @@ export async function generateArenaGenerativeManifest(
     kind: binding.kind,
     inputSchema: binding.inputSchema ?? [],
     outputSchema: binding.outputSchema ?? [],
+    outputHint: binding.outputHint,
     stream: binding.stream === true,
     pagination: binding.pagination,
   }))

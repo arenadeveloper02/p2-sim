@@ -1370,6 +1370,7 @@ describe('streaming generative app actions', () => {
         headers: expect.objectContaining({
           Accept: 'text/event-stream, text/plain, application/json',
         }),
+        body: JSON.stringify({ name: 'Ada', stream: true }),
       })
     )
     vi.unstubAllGlobals()
@@ -1418,6 +1419,98 @@ describe('streaming generative app actions', () => {
     expect(chunks).toEqual(['A', 'B'])
     expect(result.ok).toBe(true)
     expect(result.navigate).toBe('results')
+    vi.unstubAllGlobals()
+  })
+
+  it('extracts OpenAI and Anthropic nested SSE token fields instead of dumping JSON', async () => {
+    mockEnv({})
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encodeSSE({ choices: [{ delta: { role: 'assistant' } }] }))
+            controller.enqueue(encodeSSE({ choices: [{ delta: { content: 'Hel' } }] }))
+            controller.enqueue(encodeSSE({ delta: { type: 'text_delta', text: 'lo' } }))
+            controller.close()
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } }
+      )
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const chunks: string[] = []
+    const result = await runGenerativeAppAction({
+      manifest: twoPageManifest,
+      apiBindings: [
+        {
+          key: 'qualify_lead',
+          label: 'Qualify',
+          kind: 'http',
+          stream: true,
+          http: { method: 'POST', url: 'https://api.example.com/qualify' },
+        },
+      ],
+      httpAllowlist: ['api.example.com'],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-http-openai-sse',
+      actorUserId: 'previewer-1',
+      onChunk: (content) => {
+        chunks.push(content)
+      },
+    })
+
+    expect(chunks).toEqual(['Hel', 'lo'])
+    expect(result.ok).toBe(true)
+    expect(result.setState).toMatchObject({ content: 'Hello' })
+    vi.unstubAllGlobals()
+  })
+
+  it('does not overwrite stream when the mapped input already sets it', async () => {
+    mockEnv({})
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: (name: string) => (name === 'content-type' ? 'text/plain' : null) },
+      body: utf8Stream(['ok']),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runGenerativeAppAction({
+      manifest: {
+        ...twoPageManifest,
+        actions: {
+          submit_lead: {
+            apiKey: 'qualify_lead',
+            onSuccess: { navigate: 'results' },
+          },
+        },
+      },
+      apiBindings: [
+        {
+          key: 'qualify_lead',
+          label: 'Qualify',
+          kind: 'http',
+          stream: true,
+          http: { method: 'POST', url: 'https://api.example.com/qualify' },
+        },
+      ],
+      httpAllowlist: ['api.example.com'],
+      userId: 'owner-1',
+      workspaceId: 'ws-1',
+      actionId: 'submit_lead',
+      values: { name: 'Ada', stream: false },
+      requestId: 'req-http-stream-keep',
+      actorUserId: 'previewer-1',
+      onChunk: () => undefined,
+    })
+
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1].body as string)).toEqual({
+      name: 'Ada',
+      stream: false,
+    })
     vi.unstubAllGlobals()
   })
 
