@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, DashedDividerLine, FieldDivider, Loader, Tooltip } from '@sim/emcn'
 import {
-  BookOpen,
   Check,
   ChevronDown,
   ChevronUp,
@@ -564,7 +563,7 @@ export function Editor() {
               </Tooltip.Content>
             </Tooltip.Root>
           )} */}
-            <Tooltip.Root>
+            {/* <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <Button
                   variant='ghost'
@@ -578,7 +577,7 @@ export function Editor() {
               <Tooltip.Content side='top'>
                 <p>Open docs</p>
               </Tooltip.Content>
-            </Tooltip.Root>
+            </Tooltip.Root> */}
           </div>
         </div>
 

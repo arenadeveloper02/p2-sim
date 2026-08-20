@@ -238,7 +238,14 @@ export function ChatMessageContainer({
               })()
             )}
 
-            {isLoading && <DeployedResponseLoader isStreaming={isStreaming} />}
+            {isLoading &&
+              !messages.some(
+                (m) =>
+                  m.type === 'assistant' &&
+                  m.isStreaming &&
+                  ((typeof m.thinking === 'string' && m.thinking.length > 0) ||
+                    (Array.isArray(m.toolCalls) && m.toolCalls.length > 0))
+              ) && <DeployedResponseLoader isStreaming={isStreaming} />}
 
             <div ref={messagesEndRef} />
           </div>

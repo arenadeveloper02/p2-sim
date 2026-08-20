@@ -10,6 +10,10 @@ import { useRouter } from 'next/navigation'
 import { client } from '@/lib/auth/auth-client'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import {
+  AGENT_STREAM_PROTOCOL_HEADER,
+  AGENT_STREAM_PROTOCOL_V1,
+} from '@/lib/workflows/streaming/agent-stream-protocol'
 import type { InputFormatField } from '@/lib/workflows/types'
 import {
   ChatErrorState,
@@ -850,11 +854,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         files: payload.files ? `${payload.files.length} files` : undefined,
       })
 
+      // boundary-raw-fetch: deployed chat endpoint returns an SSE stream consumed by handleStreamedResponse via response.body.getReader()
       const response = await fetch(`/api/chat/${identifier}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
+          [AGENT_STREAM_PROTOCOL_HEADER]: AGENT_STREAM_PROTOCOL_V1,
         },
         body: JSON.stringify(payload),
         credentials: 'same-origin',
