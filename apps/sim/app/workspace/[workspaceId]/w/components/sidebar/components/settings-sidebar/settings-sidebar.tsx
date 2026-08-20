@@ -8,7 +8,6 @@ import type { DesktopSettingsSurface } from '@/components/settings/navigation'
 import { ORGANIZATION_PLANE_UNIFIED_SECTIONS } from '@/components/settings/navigation'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client'
-import { canManageWorkspaceBilling } from '@/lib/billing/workspace-permissions'
 import { isHosted } from '@/lib/core/config/env-flags'
 import { hasBrowserAgent, hasDesktopSettings, hasTerminal } from '@/lib/desktop'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
@@ -29,6 +28,7 @@ import { useForkingAvailable } from '@/ee/workspace-forking/hooks/use-forking-av
 import { prefetchWorkspaceCredentials } from '@/hooks/queries/credentials'
 import { prefetchGeneralSettings, useGeneralSettings } from '@/hooks/queries/general-settings'
 import { useInboxConfig } from '@/hooks/queries/inbox'
+import { useHasBillingNavAccess } from '@/hooks/queries/user-access'
 import { useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
@@ -75,6 +75,7 @@ export function SettingsSidebar({
     enabled: !isHosted,
   })
 
+  const { hasBillingNavAccess } = useHasBillingNavAccess()
   const { config: permissionConfig } = usePermissionConfig()
   const forkingAvailable = useForkingAvailable(workspaceId)
   const { canAdmin: canAdminWorkspace } = useUserPermissionsContext()
@@ -103,13 +104,6 @@ export function SettingsSidebar({
       }
 
       if (item.hideWhenBillingDisabled && !isBillingEnabled) {
-        return false
-      }
-
-      if (
-        (item.id === 'billing' || item.id === 'arena-billing') &&
-        !canManageWorkspaceBilling(hostContext, userId)
-      ) {
         return false
       }
 
@@ -189,6 +183,10 @@ export function SettingsSidebar({
         return false
       }
 
+      if (item.id === 'arena-billing' && !hasBillingNavAccess) {
+        return false
+      }
+
       return true
     })
   }, [
@@ -196,8 +194,6 @@ export function SettingsSidebar({
     hasEnterprisePlan,
     isEnterprisePlan,
     subscriptionAccess.hasUsableMaxAccess,
-    hostContext,
-    userId,
     isOrgAdminOrOwner,
     isSSOProviderOwner,
     ssoProvidersData?.providers?.length,
@@ -208,6 +204,7 @@ export function SettingsSidebar({
     forkingAvailable,
     canAdminWorkspace,
     desktopSurfaces,
+    hasBillingNavAccess,
   ])
 
   const activeSection = useMemo(() => {

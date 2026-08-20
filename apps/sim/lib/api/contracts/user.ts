@@ -297,22 +297,27 @@ const parseableDateSchema = z
   .refine((value) => !Number.isNaN(Date.parse(value)), { error: 'Invalid date' })
 
 /** Shared by the paginated list query and the export query — filters only, no pagination. */
-const usageLogsFilterSchema = z
-  .object({
-    source: usageLogSourceSchema.optional(),
-    /** Mutually exclusive with `source` — prefer this for Workflows / Mothership tabs. */
-    sourceGroup: usageLogSourceGroupSchema.optional(),
-    workspaceId: z.string().optional(),
-    period: usageLogPeriodSchema.optional().default('30d'),
-    /** Required when `period` is `'custom'`. */
-    startDate: parseableDateSchema.optional(),
-    /** Defaults to now when omitted for `'custom'`. */
-    endDate: parseableDateSchema.optional(),
-  })
-  .refine((query) => !(query.source && query.sourceGroup), {
-    error: 'Pass either source or sourceGroup, not both',
-    path: ['sourceGroup'],
-  })
+const usageLogsFilterObjectSchema = z.object({
+  source: usageLogSourceSchema.optional(),
+  /** Mutually exclusive with `source` — prefer this for Workflows / Mothership tabs. */
+  sourceGroup: usageLogSourceGroupSchema.optional(),
+  workspaceId: z.string().optional(),
+  period: usageLogPeriodSchema.optional().default('30d'),
+  /** Required when `period` is `'custom'`. */
+  startDate: parseableDateSchema.optional(),
+  /** Defaults to now when omitted for `'custom'`. */
+  endDate: parseableDateSchema.optional(),
+})
+
+const sourceXorSourceGroup = {
+  error: 'Pass either source or sourceGroup, not both',
+  path: ['sourceGroup'],
+} as const
+
+const usageLogsFilterSchema = usageLogsFilterObjectSchema.refine(
+  (query) => !(query.source && query.sourceGroup),
+  sourceXorSourceGroup
+)
 
 /** Both the list and export query schemas require startDate whenever period is 'custom'. */
 const startDateRequiredForCustomPeriod = {
@@ -320,7 +325,7 @@ const startDateRequiredForCustomPeriod = {
   path: ['startDate'],
 }
 
-export const usageLogsQuerySchema = usageLogsFilterSchema
+export const usageLogsQuerySchema = usageLogsFilterObjectSchema
   .extend({
     limit: z.coerce.number().min(1).max(100).optional().default(50),
     cursor: z.string().optional(),
@@ -331,6 +336,7 @@ export const usageLogsQuerySchema = usageLogsFilterSchema
      */
     includeCredits: booleanQueryFlagSchema.optional().default(true),
   })
+  .refine((query) => !(query.source && query.sourceGroup), sourceXorSourceGroup)
   .refine(
     (query) => query.period !== 'custom' || query.startDate !== undefined,
     startDateRequiredForCustomPeriod
@@ -430,6 +436,21 @@ export const subscriptionTransferContract = defineRouteContract({
     schema: z.object({
       success: z.literal(true),
       message: z.string(),
+    }),
+  },
+})
+
+export const userAccessCapabilitySchema = z.enum(['billing_nav'])
+
+export type UserAccessCapability = z.output<typeof userAccessCapabilitySchema>
+
+export const getUserAccessContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/users/me/access',
+  response: {
+    mode: 'json',
+    schema: z.object({
+      capabilities: z.array(userAccessCapabilitySchema),
     }),
   },
 })

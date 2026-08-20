@@ -59,6 +59,30 @@ export const user = pgTable('user', {
   banExpires: timestamp('ban_expires'),
 })
 
+/**
+ * Per-user capability grants. Presence of a row means the user has that
+ * capability (e.g. `billing_nav`). Absence is deny.
+ */
+export const userAccess = pgTable(
+  'user_access',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    capability: text('capability').notNull(),
+    grantedAt: timestamp('granted_at').notNull().defaultNow(),
+    grantedBy: text('granted_by').references(() => user.id, { onDelete: 'set null' }),
+  },
+  (table) => ({
+    userCapabilityUnique: uniqueIndex('user_access_user_capability_unique').on(
+      table.userId,
+      table.capability
+    ),
+    userIdIdx: index('user_access_user_id_idx').on(table.userId),
+  })
+)
+
 export const session = pgTable(
   'session',
   {
@@ -1557,6 +1581,30 @@ export const organization = pgTable('organization', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
+
+/**
+ * Maps an external client id (from Arena / partner systems) to a Sim organization.
+ * One client → one org; used by the admin ensure-member provisioning API.
+ */
+export const clientOrganization = pgTable(
+  'client_organization',
+  {
+    id: text('id').primaryKey(),
+    clientId: text('client_id').notNull(),
+    clientName: text('client_name').notNull(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    clientIdUnique: uniqueIndex('client_organization_client_id_unique').on(table.clientId),
+    organizationIdUnique: uniqueIndex('client_organization_organization_id_unique').on(
+      table.organizationId
+    ),
+  })
+)
 
 export const member = pgTable(
   'member',

@@ -64,8 +64,9 @@ export function getPlans(): BillingPlan[] {
     const creditValueDollars = tier.credits / CREDIT_MULTIPLIER
 
     if (proPrices?.monthly) {
+      const name = `pro_${tier.credits}`
       plans.push({
-        name: `pro_${tier.credits}`,
+        name,
         priceId: proPrices.monthly,
         annualDiscountPriceId: proPrices.annual || undefined,
         limits: { cost: creditValueDollars },

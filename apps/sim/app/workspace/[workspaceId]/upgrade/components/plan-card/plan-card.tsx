@@ -34,6 +34,8 @@ export interface UpgradePlanCardProps {
   onButtonClick: () => void
   /** Whether the CTA is disabled. */
   buttonDisabled?: boolean
+  /** When true, the CTA is omitted (no downgrade action). */
+  hideButton?: boolean
   /** When set, the CTA renders with the primary chip variant. */
   highlighted?: boolean
   /** Optional pill rendered in the top-right corner, e.g. `"Your plan"`. */
@@ -65,6 +67,7 @@ export function UpgradePlanCard({
   buttonText,
   onButtonClick,
   buttonDisabled,
+  hideButton = false,
   highlighted,
   bannerText,
   className,
@@ -92,21 +95,23 @@ export function UpgradePlanCard({
           <p className='text-[var(--text-muted)] text-base'>{priceSubtext ?? '\u00A0'}</p>
         </div>
 
-        <button
-          type='button'
-          onClick={onButtonClick}
-          disabled={buttonDisabled}
-          className={cn(
-            chipVariants({
-              variant: highlighted ? 'primary' : 'border-shadow',
-              fullWidth: true,
-              flush: true,
-            }),
-            'w-full justify-center'
-          )}
-        >
-          {buttonText}
-        </button>
+        {!hideButton && (
+          <button
+            type='button'
+            onClick={onButtonClick}
+            disabled={buttonDisabled}
+            className={cn(
+              chipVariants({
+                variant: highlighted ? 'primary' : 'border-shadow',
+                fullWidth: true,
+                flush: true,
+              }),
+              'w-full justify-center'
+            )}
+          >
+            {buttonText}
+          </button>
+        )}
 
         {/* Credits + refresh stats block — omitted on plans without a fixed credit amount */}
         {credits && (

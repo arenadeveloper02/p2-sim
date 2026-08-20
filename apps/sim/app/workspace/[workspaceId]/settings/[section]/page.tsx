@@ -16,6 +16,8 @@ import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
 import { canOpenOrganizationSettingsSection } from '@/lib/organizations/settings-access'
 import { isPlatformAdmin } from '@/lib/permissions/super-user'
+import { BILLING_NAV_CAPABILITY } from '@/lib/user-access/capabilities'
+import { userHasCapability } from '@/lib/user-access/has-user-access'
 import { getWorkspaceHostContextForViewer } from '@/lib/workspaces/host-context'
 import { getQueryClient } from '@/app/_shell/providers/get-query-client'
 import {
@@ -102,6 +104,11 @@ export default async function WorkspaceSettingsSectionPage({
   if (topLevelHref) redirect(topLevelHref)
   const parsed = parseSection(section)
   if (!parsed) notFound()
+
+  if (parsed === 'arena-billing') {
+    const allowed = await userHasCapability(session.user.id, BILLING_NAV_CAPABILITY)
+    if (!allowed) notFound()
+  }
 
   const hostContext = await getWorkspaceHostContextForViewer(workspaceId, session.user.id)
   if (!hostContext) notFound()

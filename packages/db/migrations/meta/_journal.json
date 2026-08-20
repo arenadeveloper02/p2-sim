@@ -1975,6 +1975,20 @@
       "when": 1785776917545,
       "tag": "0281_fixed_madame_web",
       "breakpoints": true
+    },
+    {
+      "idx": 282,
+      "version": "7",
+      "when": 1787130570096,
+      "tag": "0282_odd_amazoness",
+      "breakpoints": true
+    },
+    {
+      "idx": 283,
+      "version": "7",
+      "when": 1787220000000,
+      "tag": "0283_client_organization",
+      "breakpoints": true
     }
   ]
 }

@@ -441,7 +441,6 @@ export function Billing({
   }))
 
   const canManageBilling = permissions.canEditUsageLimit
-  const canExplorePlans = permissions.showUpgradePlans
   const showUsageLimit = subscription.isPaid && !subscription.isEnterprise
   const showOnDemand = hasUsablePaidAccess && !subscription.isEnterprise
 
@@ -454,9 +453,7 @@ export function Billing({
     subscription.isOrgScoped && organizationBilling
       ? organizationBilling.minimumBillingAmount
       : getPlanTierDollars(subscription.plan)
-  const explorePlansLabel = isOrganizationScope
-    ? 'Explore organization plans'
-    : 'Explore personal plans'
+  const explorePlansLabel = 'Explore plans'
   const subscriptionOwner = isOrganizationScope
     ? `${organizationBilling?.organizationName ?? 'The organization'}’s subscription`
     : 'Your personal subscription'
@@ -479,22 +476,21 @@ export function Billing({
             <span className='truncate text-[var(--text-muted)] text-caption'>{priceText}</span>
           </div>
         </div>
-        {!subscription.isEnterprise &&
-          (canExplorePlans && upgradeHref ? (
-            <ChipLink
-              href={upgradeHref}
-              variant='border-shadow'
-              flush
-              onMouseEnter={prefetchUpgrade}
-              onFocus={prefetchUpgrade}
-            >
-              {explorePlansLabel}
-            </ChipLink>
-          ) : (
-            <Chip variant='border-shadow' flush disabled>
-              {explorePlansLabel}
-            </Chip>
-          ))}
+        {upgradeHref ? (
+          <ChipLink
+            href={upgradeHref}
+            variant='border-shadow'
+            flush
+            onMouseEnter={prefetchUpgrade}
+            onFocus={prefetchUpgrade}
+          >
+            {explorePlansLabel}
+          </ChipLink>
+        ) : (
+          <Chip variant='border-shadow' flush disabled>
+            {explorePlansLabel}
+          </Chip>
+        )}
       </div>
 
       {showUsageLimit && (

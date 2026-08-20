@@ -12,6 +12,7 @@
 
 import type { AnyColumn } from 'drizzle-orm'
 import { eq, like, or, type SQL } from 'drizzle-orm'
+import { ARENA_MAX_DISPLAY_NAME } from '@/lib/billing/arena-max'
 import {
   CREDIT_TIERS,
   DEFAULT_PRO_TIER_COST_LIMIT,
@@ -140,12 +141,6 @@ export function getValidPlanNames(type: 'pro' | 'team'): string[] {
 }
 
 /**
- * Get the user-facing display name for a plan.
- * @example getDisplayPlanName('pro_25000') => 'Max'
- * @example getDisplayPlanName('team_6000') => 'Pro for Teams'
- * @example getDisplayPlanName('pro') => 'Legacy Pro'
- */
-/**
  * SQL-level plan filters for Drizzle queries.
  * These are the SQL equivalents of the JS helpers above.
  *
@@ -165,9 +160,15 @@ export function sqlIsPaid(column: AnyColumn): SQL | undefined {
   return or(sqlIsPro(column)!, sqlIsTeam(column)!, eq(column, 'enterprise'))
 }
 
+/**
+ * Get the user-facing display name for a plan.
+ * @example getDisplayPlanName('pro_25000') => 'Max'
+ * @example getDisplayPlanName('team_6000') => 'Pro for Teams'
+ * @example getDisplayPlanName('pro') => 'Legacy Pro'
+ */
 export function getDisplayPlanName(plan: string | null | undefined): string {
   if (!plan || isFree(plan)) return 'Free'
-  if (isEnterprise(plan)) return 'Enterprise'
+  if (isEnterprise(plan)) return ARENA_MAX_DISPLAY_NAME
   const credits = getPlanTierCredits(plan)
   const tier = CREDIT_TIERS.find((t) => t.credits === credits)
   const isLegacy = plan === 'pro' || plan === 'team'

@@ -279,7 +279,7 @@ describe('Billing payer scope', () => {
     expect(mockUseUsageLimitData).not.toHaveBeenCalled()
     expect(
       container.querySelector('a[href="/workspace/organization-workspace/upgrade"]')?.textContent
-    ).toBe('Explore organization plans')
+    ).toBe('Explore plans')
     expect(container.textContent).toContain('Organization Max for Teams plan')
     expect(container.textContent).toContain(
       'Target organization’s subscription governs Production.'
@@ -312,7 +312,7 @@ describe('Billing payer scope', () => {
 
     expect(
       container.querySelector('a[href="/workspace/personal-workspace/upgrade"]')?.textContent
-    ).toBe('Explore personal plans')
+    ).toBe('Explore plans')
     expect(container.textContent).toContain('Personal Pro plan')
     expect(container.textContent).toContain(
       'Your personal subscription governs Personal workspace.'
@@ -400,6 +400,6 @@ describe('Billing payer scope', () => {
     expect(container.querySelector('main > p')).toBeNull()
     expect(
       container.querySelector('a[href="/workspace/organization-workspace/upgrade"]')?.textContent
-    ).toBe('Explore organization plans')
+    ).toBe('Explore plans')
   })
 })

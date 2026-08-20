@@ -26,6 +26,11 @@ interface CreateOrganizationWithOwnerParams {
   name: string
   slug: string
   metadata?: Record<string, unknown>
+  /**
+   * Optional pooled usage limit in dollars (`organization.org_usage_limit`).
+   * Client orgs pass a free-tier dollar amount (e.g. 1000 credits → $5).
+   */
+  orgUsageLimitDollars?: number
 }
 
 interface EnsureOrganizationSlugAvailableParams {
@@ -81,7 +86,13 @@ export async function createOrganizationWithOwner(
  */
 export async function createOrganizationWithOwnerTx(
   tx: DbOrTx,
-  { ownerUserId, name, slug, metadata = {} }: CreateOrganizationWithOwnerParams
+  {
+    ownerUserId,
+    name,
+    slug,
+    metadata = {},
+    orgUsageLimitDollars,
+  }: CreateOrganizationWithOwnerParams
 ): Promise<CreateOrganizationWithOwnerResult> {
   validateOrganizationSlugOrThrow(slug)
 
@@ -105,6 +116,9 @@ export async function createOrganizationWithOwnerTx(
     name,
     slug,
     metadata,
+    ...(orgUsageLimitDollars !== undefined
+      ? { orgUsageLimit: orgUsageLimitDollars.toFixed(2) }
+      : {}),
     createdAt: now,
     updatedAt: now,
   })
