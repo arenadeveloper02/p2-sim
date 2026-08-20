@@ -74,6 +74,7 @@ import {
   applyMicrocompactInPlace,
   microcompactMessages,
 } from '@/local-copilot/lib/context/microcompact'
+import { resolveOpenWorkflowId } from '@/local-copilot/lib/context/open-workflow'
 import { persistInferredUserMemories } from '@/local-copilot/lib/context/promote-durable-memory'
 import { fitPromptWithSlots } from '@/local-copilot/lib/context/prompt-slots'
 import {
@@ -198,15 +199,20 @@ Identity:
 
 Response format:
 - Open with a warm, concise greeting when starting a conversation or after a long pause.
-- Briefly summarize what you see in the workspace (workflows, files, tables, knowledge bases) in plain prose. Do not greet with a generic capability bullet list.
+- Briefly summarize what you see in the workspace in plain prose. If a workflow is open, name it and a short chain of block display names. Do not greet with a generic capability bullet list.
 - Never mention cost, pricing, dollar amounts, or spend in user-facing replies — even if tool results include them (e.g. do not write "cost ~$0.016"). You may still mention runtime/duration when useful.
-- User-facing replies (CRITICAL):
-  - Never mention block UUIDs, internal IDs, tool names (\`edit_workflow\`, \`get_workflow_context\`, etc.), or operation internals in user-visible text.
+- User-facing replies (CRITICAL — IDs and full graph stay in this system context only):
+  - Never mention UUIDs, workflow IDs, block IDs, tool-call IDs, or labeled ids (\`workflowId\`, \`blockId\`, \`startBlockId\`) in user-visible text. Those exist only here and in tool arguments.
+  - Never paste agent prompts, human-review instructions, or the full graph. Do not list every agent plus human review with their configs. A short display-name chain is enough (e.g. "Warm accounts → Personas → Outreach → Human review").
   - Refer to blocks only by display name (e.g. "Writer", "Reviewer", "Fetch Emails"). Never write "Start block ID is …".
+  - Never mention tool names (\`edit_workflow\`, \`get_workflow_context\`, etc.) or operation internals in user-visible text.
   - Do not narrate planned work ("Let me check…", "Now I'll grab metadata…", "I'm about to…"). Call the tool; speak only after outcomes that the user needs.
-  - Never tell the user about truncated context, bloated payloads, block IDs, metadata fetches, or which scope a block landed in. Those are internal. The final reply should name blocks by display name only (e.g. "Function 1 → Delay → Ad Links") and say what changed.
+  - Never tell the user about truncated context, bloated payloads, metadata fetches, or which scope a block landed in. Those are internal.
   - While tools are still running, keep user-visible text to a short status line or silence — save the full summary for the final reply.
   - If a tool fails, explain the blocker in plain language without dumping IDs or raw JSON.
+- Open canvas (CRITICAL — survives page refresh):
+  - When Current context includes a \`workflow\` object, that canvas is already open. Do not recreate it and do not say it is missing.
+  - After a refresh, keep using that open workflow for edits. Do not call get_workflow_context just to restate the graph to the user.
 - Finish efficiently (CRITICAL — avoid thrash):
   - Call \`get_blocks_metadata\` **once** with every block type you need in that call (e.g. \`{ "blockIds": ["agent","start_trigger","gmail"] }\`). Do not re-fetch the same types.
   - Prefer one \`edit_workflow\` that adds all blocks and wires connections when it fits. For multi-agent graphs you may use up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls (one agent or review block per call). Only extra edits beyond that when the result reports skippedItems, inputValidationErrors, needsFollowUpEdit, or real lint errors.
@@ -454,12 +460,18 @@ export async function* runLocalCopilotAgent(
       ? { markdown: params.workspaceContext, snapshot: params.workspaceSnapshot }
       : undefined
 
+  const resolvedWorkflowId = resolveOpenWorkflowId({
+    workflowId: params.workflowId,
+    contexts: params.contexts,
+    snapshotWorkflows: params.workspaceSnapshot?.workflows,
+  })
+
   let structuredContext
   try {
     structuredContext = await buildLocalCopilotContext({
       userId: params.userId,
       workspaceId: params.workspaceId,
-      ...(params.workflowId ? { workflowId: params.workflowId } : {}),
+      ...(resolvedWorkflowId ? { workflowId: resolvedWorkflowId } : {}),
       selectedBlockId: params.selectedBlockId,
       executionId: params.executionId,
       ...(workspaceSnapshotBundle ? { workspaceSnapshot: workspaceSnapshotBundle } : {}),
@@ -467,7 +479,7 @@ export async function* runLocalCopilotAgent(
   } catch (error) {
     logger.error('Arena Copilot context build failed', {
       workspaceId: params.workspaceId,
-      workflowId: params.workflowId ?? null,
+      workflowId: resolvedWorkflowId ?? params.workflowId ?? null,
       error: getErrorMessage(error, 'context build failed'),
       memory: getLocalCopilotMemorySnapshot(),
     })
@@ -476,7 +488,8 @@ export async function* runLocalCopilotAgent(
 
   logger.info('Arena Copilot context built', {
     workspaceId: params.workspaceId,
-    workflowId: params.workflowId ?? null,
+    workflowId: resolvedWorkflowId ?? params.workflowId ?? null,
+    openWorkflowLoaded: Boolean(structuredContext.workflow),
     workspaceWorkflowCount: structuredContext.workspaceWorkflows?.length ?? 0,
     availableBlockCount: structuredContext.availableBlocks?.length ?? 0,
     durationMs: Date.now() - startedAt,
@@ -760,7 +773,7 @@ export async function* runLocalCopilotAgent(
   const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
-    workflowId: params.workflowId,
+    workflowId: resolvedWorkflowId ?? params.workflowId,
     chatId: params.chatId,
     messageId: usageTurnId,
     abortSignal: params.signal,
@@ -776,9 +789,9 @@ export async function* runLocalCopilotAgent(
     artifactStore: createArtifactStore(),
   }
 
-  if (params.workflowId) {
+  if (resolvedWorkflowId) {
     const { loadWorkflowRevision } = await import('@/local-copilot/lib/writes/workflow-access')
-    const loaded = await loadWorkflowRevision(params.workflowId, params.workspaceId)
+    const loaded = await loadWorkflowRevision(resolvedWorkflowId, params.workspaceId)
     if (loaded) toolCtx.workflowRevision = loaded.revision
   }
 

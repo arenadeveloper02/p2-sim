@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { readChatUpload } from '@/lib/copilot/tools/handlers/upload-file-reader'
 import { isImageFileType } from '@/lib/uploads/utils/file-utils'
+import { isWorkflowContextPointer } from '@/local-copilot/lib/context/open-workflow'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 import type { ChatMessage, ChatMessageContentPart } from '@/local-copilot/lib/providers/types'
 
@@ -30,10 +31,14 @@ export interface BuildLocalCopilotUserTurnParams {
 
 function formatContextEntry(entry: CopilotContextEntry): string {
   const tagPrefix = entry.tag ? `[${entry.tag}]\n` : ''
+  const path = entry.path?.trim() ?? ''
+  if (isWorkflowContextPointer(entry.type, path) && !entry.content.trim()) {
+    return `${tagPrefix}The currently open workflow is in the system context.`.trim()
+  }
   const body = entry.content.trim()
     ? entry.content
-    : entry.path
-      ? `Resource path: ${entry.path}\nRead with: read("${entry.path}")`
+    : path
+      ? `Resource path: ${path}\nRead with: read("${path}")`
       : ''
   return `${tagPrefix}${body}`.trim()
 }
