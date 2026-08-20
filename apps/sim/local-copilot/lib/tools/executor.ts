@@ -356,14 +356,14 @@ async function executeLocalCopilotToolInner(
       }
 
       if (shouldPreviewEditWorkflow(enrichedArgs)) {
-        const forcedByPolicy = enrichedArgs.dryRun !== true
         return {
           toolName,
           success: true,
           result: buildEditWorkflowDryRunResult({
-            operations: Array.isArray(enrichedArgs.operations) ? enrichedArgs.operations : operations,
+            operations: Array.isArray(enrichedArgs.operations)
+              ? enrichedArgs.operations
+              : operations,
             workflowId: targetWorkflowId,
-            forcedByPolicy,
           }),
         }
       }

@@ -47,6 +47,27 @@ export const LOCAL_COPILOT_CATALOG = [
     model: 'anthropic.claude-sonnet-5',
   },
   {
+    id: 'bedrock-claude-opus-4-8',
+    providerGroup: 'bedrock',
+    label: 'Claude Opus 4.8',
+    provider: 'bedrock' as LocalCopilotProviderId,
+    model: 'anthropic.claude-opus-4-8',
+  },
+  {
+    id: 'bedrock-claude-opus-4-6',
+    providerGroup: 'bedrock',
+    label: 'Claude Opus 4.6',
+    provider: 'bedrock' as LocalCopilotProviderId,
+    model: 'anthropic.claude-opus-4-6-v1',
+  },
+  {
+    id: 'bedrock-claude-sonnet-4-6',
+    providerGroup: 'bedrock',
+    label: 'Claude Sonnet 4.6',
+    provider: 'bedrock' as LocalCopilotProviderId,
+    model: 'anthropic.claude-sonnet-4-6',
+  },
+  {
     id: 'bedrock-zai-glm-5',
     providerGroup: 'bedrock',
     label: 'GLM 5',

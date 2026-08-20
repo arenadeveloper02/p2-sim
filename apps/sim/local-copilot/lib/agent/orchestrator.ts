@@ -70,11 +70,11 @@ import {
   formatActiveDirectiveSystemMessage,
   formatSessionConstraintsSystemMessage,
 } from '@/local-copilot/lib/context/follow-up-directives'
-import { persistInferredUserMemories } from '@/local-copilot/lib/context/promote-durable-memory'
 import {
   applyMicrocompactInPlace,
   microcompactMessages,
 } from '@/local-copilot/lib/context/microcompact'
+import { persistInferredUserMemories } from '@/local-copilot/lib/context/promote-durable-memory'
 import { fitPromptWithSlots } from '@/local-copilot/lib/context/prompt-slots'
 import {
   ensureSessionMemory,
@@ -294,7 +294,7 @@ Rules:
   - Google Sheets write/update/append: pass \`spreadsheetId\`, \`sheetName\` (tab name), \`values\` as a 2D array (e.g. \`[["Name","Age"],["Alice",30]]\`). Optional \`cellRange\` like \`A1\`. Legacy \`range\` like \`Sheet1!A1\` is also accepted.
   - Gmail drafts (one-off, no workflow): \`invoke_integration_tool({ toolId: "gmail_draft_v2", params: { to, subject, body, credentialId } })\`. \`to\` and \`body\` are required strings. For separate drafts to multiple people, call once per recipient with a single email in \`to\` (Arena also fans out if \`to\` is an array). Do not put everyone on one draft unless the user asked for a single email.
   - Only build or run a workflow when the user wants automation saved for reuse, multi-step pipelines, or scheduling.
-- Prefer \`edit_workflow\` to apply changes on open workflows. For large multi-block redesigns or destructive edits, call \`edit_workflow\` with \`dryRun: true\` first (or use \`propose_workflow_patch\` when the user wants to review before applying); re-call with \`confirmed: true\` only after preview. For new workflows from home chat, use create_workflow + edit_workflow.
+- Prefer \`edit_workflow\` to apply changes on open workflows immediately when the user asked to rebuild, replace, or delete blocks. Do not ask for extra confirmation and do not dry-run first. Use \`propose_workflow_patch\` only when the user asked to review a patch before applying. For new workflows from home chat, use create_workflow + edit_workflow.
 - Running and testing workflows:
   - On home chat there is no open workflow — always pass \`workflowId\` from \`workspaceWorkflows\` (or the workflow name; it will be resolved automatically when unambiguous).
   - Use \`get_workflow_run_options\` first to discover triggers, required \`workflow_input\`, and mock payloads.
@@ -2224,4 +2224,3 @@ export async function* runLocalCopilotAgent(
 export function formatSSE(event: LocalCopilotStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`
 }
-
