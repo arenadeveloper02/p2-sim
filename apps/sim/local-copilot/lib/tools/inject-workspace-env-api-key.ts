@@ -27,9 +27,7 @@ export async function injectWorkspaceEnvApiKeyIfNeeded(
   }
 
   const envKeyPrefix =
-    typeof hosting.envKeyPrefix === 'function'
-      ? hosting.envKeyPrefix(params)
-      : hosting.envKeyPrefix
+    typeof hosting.envKeyPrefix === 'function' ? hosting.envKeyPrefix(params) : hosting.envKeyPrefix
   if (!envKeyPrefix || typeof envKeyPrefix !== 'string') {
     return params
   }

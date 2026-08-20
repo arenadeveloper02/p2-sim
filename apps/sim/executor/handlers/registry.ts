@@ -11,6 +11,7 @@ import { ChartGeneratorBlockHandler } from '@/executor/handlers/chart-generator/
 import { ConditionBlockHandler } from '@/executor/handlers/condition/condition-handler'
 import { CostBlockHandler } from '@/executor/handlers/cost/cost-handler'
 import { CredentialBlockHandler } from '@/executor/handlers/credential/credential-handler'
+import { CredentialGroupBlockHandler } from '@/executor/handlers/credential-group/credential-group-handler'
 import { EvaluatorBlockHandler } from '@/executor/handlers/evaluator/evaluator-handler'
 import { FunctionBlockHandler } from '@/executor/handlers/function/function-handler'
 import { GenericBlockHandler } from '@/executor/handlers/generic/generic-handler'
@@ -48,6 +49,7 @@ export function createBlockHandlers(): BlockHandler[] {
     new WaitBlockHandler(),
     new EvaluatorBlockHandler(),
     new ChartGeneratorBlockHandler(),
+    new CredentialGroupBlockHandler(),
     new CredentialBlockHandler(),
     new CostBlockHandler(),
     new GenericBlockHandler(),

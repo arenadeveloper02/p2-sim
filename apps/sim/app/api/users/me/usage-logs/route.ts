@@ -5,6 +5,11 @@ import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { getUsageCreditsByLogId, getUserUsageLogs } from '@/lib/billing/core/usage-log'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
+import {
+  aggregateBillingUsageBySource,
+  toBillingUsageLogSource,
+  toInternalUsageLogSources,
+} from '@/lib/billing/usage-sources'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { resolveDateRange, resolveUsageLogSources } from '@/app/api/users/me/usage-logs/shared'
 import { resolveUsageLogSourceLabel } from '@/app/api/users/me/usage-logs/source-labels'
@@ -14,6 +19,7 @@ const logger = createLogger('UsageLogsAPI')
 /**
  * Lists the authenticated user's credit-consuming usage events (model, tool,
  * and fixed charges), converted to credits for display in Billing settings.
+ * Session-only — the API-key-facing equivalent is `GET /api/v2/billing/logs`.
  */
 export const GET = withRouteHandler(async (request: NextRequest) => {
   const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
@@ -36,7 +42,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   } = parsed.data.query
 
   const dateRange = resolveDateRange(period, startDate, endDate)
-  const sources = resolveUsageLogSources({ source, sourceGroup })
+  const sources = source
+    ? toInternalUsageLogSources(source)
+    : resolveUsageLogSources({ sourceGroup })
 
   const filter = {
     sources,
@@ -55,18 +63,17 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   const logs = result.logs.map((log) => ({
     id: log.id,
     createdAt: log.createdAt,
-    source: log.source,
+    source: toBillingUsageLogSource(log.source),
     sourceLabel: resolveUsageLogSourceLabel(log.source, log.metadata),
     workflowName: log.workflowName ?? null,
     creditCost: creditsByLogId[log.id] ?? 0,
-    dollarCost: log.cost,
+    hasCost: log.cost > 0,
   }))
 
   const bySourceCredits = Object.fromEntries(
-    Object.entries(result.summary.bySource).map(([sourceKey, cost]) => [
-      sourceKey,
-      dollarsToCredits(cost),
-    ])
+    Object.entries(aggregateBillingUsageBySource(result.summary.bySource)).map(
+      ([sourceKey, cost]) => [sourceKey, dollarsToCredits(cost)]
+    )
   )
 
   logger.debug('Retrieved usage logs', {

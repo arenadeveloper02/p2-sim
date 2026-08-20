@@ -1,7 +1,8 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { ChipCombobox, type ComboboxOption, Loader } from '@sim/emcn'
+import { ChipCombobox, type ComboboxOption } from '@sim/emcn'
+import { Loader } from '@sim/emcn/icons'
 import { SEARCH_DEBOUNCE_MS } from '@/lib/url-state'
 import { SELECTOR_CONTEXT_FIELDS } from '@/lib/workflows/subblocks/context'
 import type {
@@ -135,7 +136,7 @@ export function ConnectorSelectorField({
 
   if (isLoading && isEnabled) {
     return (
-      <div className='flex h-[30px] items-center gap-2 rounded-lg border border-[var(--border-1)] bg-[var(--surface-5)] px-2 font-medium text-[var(--text-muted)] text-small dark:bg-[var(--surface-4)]'>
+      <div className='flex h-[30px] items-center gap-2 rounded-lg border border-[var(--border-1)] bg-[var(--surface-5)] px-2 text-[var(--text-muted)] text-small dark:bg-[var(--surface-4)]'>
         <Loader className='size-3.5' animate />
         Loading…
       </div>

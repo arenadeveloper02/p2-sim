@@ -26,6 +26,17 @@ const logger = createLogger('ToolsUtils')
  */
 export { stripVersionSuffix } from '@sim/utils/string'
 
+/** Materialized HTTP request accepted by the legacy executeRequest helper. */
+export interface RequestParams {
+  url: string
+  method: string
+  headers: Record<string, string>
+  body?: string
+  timeout?: number
+  proxyUrl?: string
+  stripAuthOnRedirect?: boolean
+}
+
 /**
  * Filters a tools map to return only the latest version of each tool.
  * If both `notion_search` and `notion_search_v2` exist, only `notion_search_v2` is returned.

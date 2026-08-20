@@ -5,6 +5,7 @@ import {
   SIM_TRIGGER_PROVIDER,
   SIM_WORKSPACE_EVENT_TRIGGER_ID,
 } from '@/lib/workspace-events/constants'
+import { readWorkspaceWorkflowOptions } from '@/triggers/editor-state'
 import type { TriggerConfig } from '@/triggers/types'
 
 export const simWorkspaceEventTrigger: TriggerConfig = {
@@ -50,10 +51,7 @@ export const simWorkspaceEventTrigger: TriggerConfig = {
       required: false,
       mode: 'trigger',
       // A subscriber never receives events about itself, so exclude it.
-      fetchOptions: async () => {
-        const { fetchWorkspaceWorkflowOptions } = await import('@/lib/workflows/subblocks/options')
-        return fetchWorkspaceWorkflowOptions({ excludeActiveWorkflow: true })
-      },
+      fetchOptions: () => readWorkspaceWorkflowOptions({ excludeActiveWorkflow: true }),
     },
     {
       id: 'consecutiveFailures',

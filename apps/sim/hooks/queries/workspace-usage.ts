@@ -11,18 +11,7 @@ import {
   type WorkspaceCreditAvailability,
   type WorkspaceUsageGate,
 } from '@/lib/api/contracts/workspaces'
-
-export const workspaceUsageKeys = {
-  all: ['workspace-usage'] as const,
-  analytics: () => [...workspaceUsageKeys.all, 'analytics'] as const,
-  analytic: (workspaceId: string, query?: WorkspaceUsageAnalyticsQuery) =>
-    [...workspaceUsageKeys.analytics(), workspaceId, query ?? {}] as const,
-  creditAvailabilities: () => [...workspaceUsageKeys.all, 'credit-availability'] as const,
-  creditAvailability: (workspaceId: string) =>
-    [...workspaceUsageKeys.creditAvailabilities(), workspaceId] as const,
-  gates: () => [...workspaceUsageKeys.all, 'gate'] as const,
-  gate: (workspaceId: string) => [...workspaceUsageKeys.gates(), workspaceId] as const,
-}
+import { workspaceUsageKeys } from '@/hooks/queries/utils/workspace-usage-keys'
 
 export const WORKSPACE_USAGE_ANALYTICS_STALE_TIME = 60 * 1000
 export const WORKSPACE_CREDIT_AVAILABILITY_STALE_TIME = 30 * 1000

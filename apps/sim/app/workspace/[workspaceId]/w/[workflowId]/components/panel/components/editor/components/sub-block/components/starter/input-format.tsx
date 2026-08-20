@@ -17,8 +17,7 @@ import {
   languages,
   Tooltip,
 } from '@sim/emcn'
-import { Trash } from '@sim/emcn/icons'
-import { ArrowLeftRight, Plus } from 'lucide-react'
+import { ArrowLeftRight, Plus, Trash } from '@sim/emcn/icons'
 import Editor from 'react-simple-code-editor'
 import {
   createDefaultInputFormatField,
@@ -180,6 +179,8 @@ export function FieldFormat({
   const nameInputRefs = useRef<Record<string, HTMLInputElement>>({})
   const overlayRefs = useRef<Record<string, HTMLDivElement>>({})
   const nameOverlayRefs = useRef<Record<string, HTMLDivElement>>({})
+  const descriptionInputRefs = useRef<Record<string, HTMLInputElement>>({})
+  const descriptionOverlayRefs = useRef<Record<string, HTMLDivElement>>({})
   const accessiblePrefixes = useAccessibleReferencePrefixes(blockId)
   const [fileFieldModes, setFileFieldModes] = useState<Record<string, 'upload' | 'json'>>({})
 
@@ -355,6 +356,14 @@ export function FieldFormat({
   }
 
   /**
+   * Syncs scroll position between description input and overlay for text highlighting
+   */
+  const syncDescriptionOverlayScroll = (fieldId: string, scrollLeft: number) => {
+    const overlay = descriptionOverlayRefs.current[fieldId]
+    if (overlay) overlay.scrollLeft = scrollLeft
+  }
+
+  /**
    * Generates a unique field key for name inputs to avoid collision with value inputs
    */
   const getNameFieldKey = (fieldId: string) => `name-${fieldId}`
@@ -384,7 +393,7 @@ export function FieldFormat({
       (newValue) => updateField(field.id, 'name', newValue)
     )
 
-    const inputClassName = cn('text-transparent caret-foreground')
+    const inputClassName = cn('text-transparent [letter-spacing:inherit] caret-foreground')
 
     return (
       <>
@@ -416,7 +425,7 @@ export function FieldFormat({
             if (el) nameOverlayRefs.current[field.id] = el
           }}
           className={cn(
-            'absolute inset-0 flex items-center overflow-x-auto bg-transparent px-2 py-1.5 font-medium font-sans text-sm',
+            'absolute inset-0 flex items-center overflow-x-auto bg-transparent px-2 py-1.5 font-sans text-sm',
             !isReadOnly && 'pointer-events-none'
           )}
           style={{ scrollbarWidth: 'none' }}
@@ -550,7 +559,7 @@ export function FieldFormat({
       (newValue) => updateField(field.id, 'value', newValue)
     )
 
-    const inputClassName = cn('text-transparent caret-foreground')
+    const inputClassName = cn('text-transparent [letter-spacing:inherit] caret-foreground')
 
     const tagDropdown = fieldState.showTags && (
       <TagDropdown
@@ -573,7 +582,7 @@ export function FieldFormat({
         return Array.from({ length: lineCount }, (_, i) => (
           <div
             key={i}
-            className='font-medium font-mono text-[var(--text-muted)] text-xs'
+            className='font-mono text-[var(--text-muted)] text-xs'
             style={{ height: `${21}px`, lineHeight: `${21}px` }}
           >
             {i + 1}
@@ -608,7 +617,7 @@ export function FieldFormat({
         return Array.from({ length: lineCount }, (_, i) => (
           <div
             key={i}
-            className='font-medium font-mono text-[var(--text-muted)] text-xs'
+            className='font-mono text-[var(--text-muted)] text-xs'
             style={{ height: `${21}px`, lineHeight: `${21}px` }}
           >
             {i + 1}
@@ -667,7 +676,7 @@ export function FieldFormat({
         Array.from({ length: lineCount }, (_, i) => (
           <div
             key={i}
-            className='font-medium font-mono text-[var(--text-muted)] text-xs'
+            className='font-mono text-[var(--text-muted)] text-xs'
             style={{ height: `${21}px`, lineHeight: `${21}px` }}
           >
             {i + 1}
@@ -725,7 +734,7 @@ export function FieldFormat({
             if (el) overlayRefs.current[field.id] = el
           }}
           className={cn(
-            'absolute inset-0 flex items-center overflow-x-auto bg-transparent px-2 py-1.5 font-medium font-sans text-sm',
+            'absolute inset-0 flex items-center overflow-x-auto bg-transparent px-2 py-1.5 font-sans text-sm',
             !isReadOnly && 'pointer-events-none'
           )}
           style={{ scrollbarWidth: 'none' }}

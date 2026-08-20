@@ -1,17 +1,19 @@
-import { db } from '@sim/db'
-import { workflowSchedule } from '@sim/db/schema'
-import { and, eq, isNull } from 'drizzle-orm'
+import { executeCopilotFileUseCase } from '@/lib/copilot/application/execute-file-use-case'
+import { executeCopilotKnowledgeUseCase } from '@/lib/copilot/application/execute-knowledge-use-case'
 import type { ExecutionContext, ToolCallResult } from '@/lib/copilot/request/types'
 import { type MothershipResource, MothershipResourceType } from '@/lib/copilot/resources/types'
 import { canonicalWorkspaceFilePath } from '@/lib/copilot/vfs/path-utils'
-import { getKnowledgeBaseById } from '@/lib/knowledge/service'
+import { asOrchestrationError } from '@/lib/core/orchestration/types'
+import { readKnowledgeBase } from '@/lib/knowledge/application/knowledge-bases'
 import { getLogById } from '@/lib/logs/service'
 import { getTableById } from '@/lib/table/service'
 import {
-  getWorkspaceFile,
-  resolveWorkspaceFileReference,
+  findWorkspaceFileRecord,
+  type WorkspaceFileRecord,
 } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import { getWorkflowById } from '@/lib/workflows/utils'
+import { listAllWorkspaceFiles } from '@/lib/workspace-files/application/list-workspace-files'
+import { readWorkspaceFileMetadata } from '@/lib/workspace-files/application/read-workspace-file-metadata'
 import type { OpenResourceItem, OpenResourceParams, ValidOpenResourceParams } from './param-types'
 
 const VALID_OPEN_RESOURCE_TYPES = new Set(Object.values(MothershipResourceType))
@@ -28,11 +30,25 @@ async function resolveResource(
     if (!context.workspaceId)
       return { error: 'Opening a workspace file requires workspace context.' }
     const fileRef = item.path || item.id || ''
-    const record = item.path
-      ? await resolveWorkspaceFileReference(context.workspaceId, item.path)
-      : item.id
-        ? await getWorkspaceFile(context.workspaceId, item.id)
-        : null
+    let record: WorkspaceFileRecord | null
+    if (item.path) {
+      const { files } = await executeCopilotFileUseCase(context, listAllWorkspaceFiles, {
+        workspaceId: context.workspaceId,
+        scope: 'active',
+      })
+      record = findWorkspaceFileRecord(files, item.path)
+    } else if (item.id) {
+      record = (
+        await executeCopilotFileUseCase(
+          context,
+          readWorkspaceFileMetadata,
+          { fileId: item.id, assertedWorkspaceId: context.workspaceId },
+          { fileId: item.id }
+        )
+      ).file
+    } else {
+      record = null
+    }
     if (!record) return { error: `No workspace file found for "${fileRef}".` }
     resourceId = record.id
     title = record.name
@@ -63,10 +79,27 @@ async function resolveResource(
   }
   if (resourceType === 'knowledgebase') {
     if (!item.id) return { error: 'knowledgebase resources require `id`.' }
-    const kb = await getKnowledgeBaseById(item.id)
-    if (!kb) return { error: `No knowledge base with id "${item.id}".` }
-    if (context.workspaceId && kb.workspaceId !== context.workspaceId)
-      return { error: `Knowledge base not found in the current workspace.` }
+    if (!context.workspaceId) {
+      return { error: 'Opening a knowledge base requires workspace context.' }
+    }
+    let kb: Awaited<ReturnType<typeof readKnowledgeBase.execute>>['knowledgeBase']
+    try {
+      const result = await executeCopilotKnowledgeUseCase(context, readKnowledgeBase, {
+        knowledgeBaseId: item.id,
+        assertedWorkspaceId: context.workspaceId,
+      })
+      kb = result.knowledgeBase
+    } catch (error) {
+      const classified = asOrchestrationError(error)
+      if (
+        classified?.code === 'not_found' ||
+        classified?.code === 'forbidden' ||
+        classified?.code === 'unauthorized'
+      ) {
+        return { error: 'Knowledge base not found in the current workspace.' }
+      }
+      throw error
+    }
     resourceId = kb.id
     title = kb.name
   }
@@ -86,27 +119,6 @@ async function resolveResource(
     })
     title = `${workflowName} — ${timestamp}`
   }
-  if (resourceType === 'scheduledtask') {
-    if (!item.id) return { error: 'scheduledtask resources require `id`.' }
-    if (!context.workspaceId)
-      return { error: 'Opening a scheduled task requires workspace context.' }
-    const [schedule] = await db
-      .select({ id: workflowSchedule.id, jobTitle: workflowSchedule.jobTitle })
-      .from(workflowSchedule)
-      .where(
-        and(
-          eq(workflowSchedule.id, item.id),
-          eq(workflowSchedule.sourceWorkspaceId, context.workspaceId),
-          eq(workflowSchedule.sourceType, 'job'),
-          isNull(workflowSchedule.archivedAt)
-        )
-      )
-      .limit(1)
-    if (!schedule) return { error: `No scheduled task with id "${item.id}".` }
-    resourceId = schedule.id
-    title = schedule.jobTitle || 'Scheduled Task'
-  }
-
   return { type: resourceType, id: resourceId, title }
 }
 

@@ -4,6 +4,7 @@ import { exportUsageLogsContract } from '@/lib/api/contracts/user'
 import { parseRequest } from '@/lib/api/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { getUsageCreditsByLogId, getUserUsageLogs } from '@/lib/billing/core/usage-log'
+import { toInternalUsageLogSources } from '@/lib/billing/usage-sources'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { formatCsvValue, toCsvRow } from '@/lib/table/export-format'
 import { resolveDateRange, resolveUsageLogSources } from '@/app/api/users/me/usage-logs/shared'
@@ -39,7 +40,9 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
   const { source, sourceGroup, workspaceId, period, startDate, endDate } = parsed.data.query
 
   const dateRange = resolveDateRange(period, startDate, endDate)
-  const sources = resolveUsageLogSources({ source, sourceGroup })
+  const sources = source
+    ? toInternalUsageLogSources(source)
+    : resolveUsageLogSources({ sourceGroup })
   const filter = {
     sources,
     workspaceId,

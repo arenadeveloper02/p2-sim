@@ -4,6 +4,7 @@ import { Plus } from '@sim/emcn/icons'
 import { useReactFlow } from 'reactflow'
 import { SandboxCreateModal } from '@/app/workspace/[workspaceId]/settings/components/sandboxes/components/sandbox-create-modal'
 import type { SandboxLanguage } from '@/app/workspace/[workspaceId]/settings/components/sandboxes/utils'
+import { shouldClearMissingOption } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/combobox/missing-option'
 import { formatDisplayText } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/formatted-text'
 import { SubBlockInputController } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/sub-block-input-controller'
 import { getWorkflowSearchLabelHighlight } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/workflow-search-highlight'
@@ -14,7 +15,6 @@ import { useAccessibleReferencePrefixes } from '@/app/workspace/[workspaceId]/w/
 import type { SubBlockConfig } from '@/blocks/types'
 import { getDependsOnFields } from '@/blocks/utils'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
-import { getProviderFromModel } from '@/providers/utils'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 
@@ -108,36 +108,25 @@ export const ComboBox = memo(function ComboBox({
   const value = isPreview ? previewValue : propValue !== undefined ? propValue : storeValue
 
   // Permission-based filtering for model dropdowns
-  const {
-    isProviderAllowed,
-    isModelAllowed,
-    isLoading: isPermissionLoading,
-  } = usePermissionConfig()
+  const { isModelUsable, isLoading: isPermissionLoading } = usePermissionConfig()
 
   // Evaluate static options if provided as a function
   const staticOptions = useMemo(() => {
     const opts = typeof options === 'function' ? options() : options
 
     if (subBlockId === 'model') {
-      return opts.filter((opt) => {
-        const modelId = typeof opt === 'string' ? opt : opt.id
-        if (!isModelAllowed(modelId)) return false
-        try {
-          return isProviderAllowed(getProviderFromModel(modelId))
-        } catch {
-          return true
-        }
-      })
+      return opts.filter((opt) => isModelUsable(typeof opt === 'string' ? opt : opt.id))
     }
 
     return opts
-  }, [options, subBlockId, isProviderAllowed, isModelAllowed])
+  }, [options, subBlockId, isModelUsable])
 
   const {
     fetchedOptions,
     isLoadingOptions,
     fetchError,
     hydratedOption,
+    missingOptionId,
     refetch: refetchOptions,
   } = useFetchedOptions({
     blockId,
@@ -153,6 +142,30 @@ export const ComboBox = memo(function ComboBox({
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [createLanguage, setCreateLanguage] = useState<SandboxLanguage | undefined>(undefined)
   const [createdOption, setCreatedOption] = useState<{ label: string; id: string } | null>(null)
+
+  useEffect(() => {
+    const currentValue = useSubBlockStore.getState().getValue(blockId, subBlockId)
+    if (
+      !shouldClearMissingOption({
+        clearOnMissingOption: Boolean(config.clearOnMissingOption),
+        missingOptionId,
+        currentValue,
+        isPreview: Boolean(isPreview),
+        disabled: Boolean(disabled),
+      })
+    ) {
+      return
+    }
+    setStoreValue('')
+  }, [
+    blockId,
+    config.clearOnMissingOption,
+    disabled,
+    isPreview,
+    missingOptionId,
+    setStoreValue,
+    subBlockId,
+  ])
 
   /**
    * The pinned "create a new one" row, when the field declares one. Seeded from
@@ -185,15 +198,7 @@ export const ComboBox = memo(function ComboBox({
       fetchOptions && normalizedFetchedOptions.length > 0 ? normalizedFetchedOptions : staticOptions
 
     if (subBlockId === 'model' && fetchOptions && normalizedFetchedOptions.length > 0) {
-      opts = opts.filter((opt) => {
-        const modelId = typeof opt === 'string' ? opt : opt.id
-        if (!isModelAllowed(modelId)) return false
-        try {
-          return isProviderAllowed(getProviderFromModel(modelId))
-        } catch {
-          return true
-        }
-      })
+      opts = opts.filter((opt) => isModelUsable(typeof opt === 'string' ? opt : opt.id))
     }
 
     // Merge hydrated option if not already present
@@ -226,8 +231,7 @@ export const ComboBox = memo(function ComboBox({
     hydratedOption,
     createdOption,
     subBlockId,
-    isProviderAllowed,
-    isModelAllowed,
+    isModelUsable,
   ])
 
   // Convert options to Combobox format

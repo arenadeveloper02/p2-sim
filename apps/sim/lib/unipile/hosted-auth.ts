@@ -6,7 +6,7 @@ import { and, eq } from 'drizzle-orm'
 import { env } from '@/lib/core/config/env'
 import { handleCreateCredentialFromDraft } from '@/lib/credentials/draft-hooks'
 import { processCredentialDraft } from '@/lib/credentials/draft-processor'
-import { safeAccountInsert } from '@/app/api/auth/oauth/utils'
+import { safeAccountInsert } from '@/lib/oauth/credential-service'
 import { UNIPILE_BASE_URL } from '@/tools/unipile/types'
 
 const logger = createLogger('UnipileHostedAuth')

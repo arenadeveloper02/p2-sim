@@ -2,7 +2,10 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { indexWorkflowSearchMatches } from '@/lib/workflows/search-replace/indexer'
+import {
+  getToolInputParamConfigs,
+  indexWorkflowSearchMatches,
+} from '@/lib/workflows/search-replace/indexer'
 import { workflowSearchMatchMatchesQuery } from '@/lib/workflows/search-replace/resources'
 import {
   createSearchReplaceWorkflowFixture,
@@ -22,6 +25,37 @@ import { WORKFLOW_SEARCH_SUBFLOW_FIELD_IDS } from '@/lib/workflows/search-replac
 vi.unmock('@/tools/registry')
 
 describe('indexWorkflowSearchMatches', () => {
+  it('marks generic tool-param fallbacks as non-authoritative', () => {
+    expect(
+      getToolInputParamConfigs({
+        tool: { type: 'custom-tool', params: { apiKey: 'literal-secret' } },
+      })
+    ).toEqual([
+      expect.objectContaining({
+        paramId: 'apiKey',
+        authoritative: false,
+        value: 'literal-secret',
+      }),
+    ])
+  })
+
+  it.each(['custom-tool', 'mcp'])(
+    'keeps %s params non-authoritative when its tool ID collides with a built-in',
+    (type) => {
+      expect(
+        getToolInputParamConfigs({
+          tool: { type, toolId: 'gmail_send', params: { body: 'literal-secret' } },
+        })
+      ).toEqual([
+        expect.objectContaining({
+          paramId: 'body',
+          authoritative: false,
+          value: 'literal-secret',
+        }),
+      ])
+    }
+  )
+
   it('finds plain text matches across nested subblock values', () => {
     const workflow = createSearchReplaceWorkflowFixture()
 
@@ -91,6 +125,113 @@ describe('indexWorkflowSearchMatches', () => {
     })
 
     expect(matches.some((match) => match.target.kind === 'block-name')).toBe(false)
+  })
+
+  describe('block references search under the name the canvas shows', () => {
+    /**
+     * The panel's own pipeline: index everything, then keep what the query
+     * matches. Block references resolve no label of their own, so they reach the
+     * filter with `displayLabel` fallen back to the raw token, as the hydration
+     * hook leaves them.
+     */
+    function findReferenceMatches(query: string) {
+      const workflow = createSearchReplaceWorkflowFixture()
+      workflow.blocks['agent-1'].subBlocks.systemPrompt.value =
+        'Summarize <api1.output> and <deletedblock.output>, then loop <loop.index>.'
+
+      return indexWorkflowSearchMatches({
+        workflow,
+        query,
+        mode: 'all',
+        includeResourceMatchesWithoutQuery: true,
+        blockConfigs: SEARCH_REPLACE_BLOCK_CONFIGS,
+      })
+        .filter((match) => match.kind === 'workflow-reference')
+        .filter((match) =>
+          workflowSearchMatchMatchesQuery({ ...match, displayLabel: match.rawValue }, query)
+        )
+    }
+
+    it('matches a reference by the spaced block name', () => {
+      expect(findReferenceMatches('API 1').map((match) => match.rawValue)).toEqual([
+        '<api1.output>',
+      ])
+    })
+
+    it('still matches a reference by the token as stored', () => {
+      expect(findReferenceMatches('api1').map((match) => match.rawValue)).toEqual(['<api1.output>'])
+    })
+
+    it('reads the resolved name back as the block is titled', () => {
+      const [match] = findReferenceMatches('API 1')
+
+      expect(match.searchText).toBe('API 1.output')
+      expect(match.rawValue).toBe('<api1.output>')
+      expect(match.range).toEqual({ start: 10, end: 23 })
+    })
+
+    it('leaves a prefix that names no block as written', () => {
+      const matches = indexWorkflowSearchMatches({
+        workflow: (() => {
+          const workflow = createSearchReplaceWorkflowFixture()
+          workflow.blocks['agent-1'].subBlocks.systemPrompt.value =
+            'Summarize <api1.output> and <deletedblock.output>, then loop <loop.index>.'
+          return workflow
+        })(),
+        mode: 'all',
+        includeResourceMatchesWithoutQuery: true,
+        blockConfigs: SEARCH_REPLACE_BLOCK_CONFIGS,
+      })
+
+      expect(
+        matches
+          .filter((match) => match.kind === 'workflow-reference')
+          .map((match) => match.searchText)
+      ).toEqual(['API 1.output', 'deletedblock.output', 'loop.index'])
+    })
+
+    it('leaves an environment reference keyed by its variable name', () => {
+      const matches = indexWorkflowSearchMatches({
+        workflow: createSearchReplaceWorkflowFixture(),
+        mode: 'all',
+        includeResourceMatchesWithoutQuery: true,
+        blockConfigs: SEARCH_REPLACE_BLOCK_CONFIGS,
+      })
+
+      expect(
+        matches.filter((match) => match.kind === 'environment').map((match) => match.searchText)
+      ).toEqual(['OLD_SECRET', 'OLD_SECRET'])
+    })
+
+    /**
+     * Legacy workflows can hold two names that collide only now that
+     * `normalizeName` strips dots. `BlockResolver` gives the key to the dot-free
+     * name whichever order the blocks arrive in, so search has to name the same
+     * block or it would label the reference with a title that block does not own
+     * at execution time.
+     */
+    it.each([
+      ['dotted first', ['Hunter.io 1', 'Hunterio 1']],
+      ['dot-free first', ['Hunterio 1', 'Hunter.io 1']],
+    ])('names a legacy dot collision after the dot-free block (%s)', (_order, names) => {
+      const workflow = createSearchReplaceWorkflowFixture()
+      workflow.blocks['knowledge-1'].name = names[0]
+      workflow.blocks['api-1'].name = names[1]
+      workflow.blocks['agent-1'].subBlocks.systemPrompt.value = 'Read <hunterio1.email>.'
+
+      const matches = indexWorkflowSearchMatches({
+        workflow,
+        mode: 'all',
+        includeResourceMatchesWithoutQuery: true,
+        blockConfigs: SEARCH_REPLACE_BLOCK_CONFIGS,
+      })
+
+      expect(
+        matches
+          .filter((match) => match.kind === 'workflow-reference')
+          .map((match) => match.searchText)
+      ).toEqual(['Hunterio 1.email'])
+    })
   })
 
   it('does not index internal row metadata in structured subblock values', () => {

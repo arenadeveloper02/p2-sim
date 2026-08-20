@@ -1,7 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChipConfirmModal, chipVariants, cn } from '@sim/emcn'
+import {
+  ChipConfirmModal,
+  chipContentIconClass,
+  chipIconSlotClass,
+  chipVariants,
+  cn,
+} from '@sim/emcn'
+import { ChevronLeft } from '@sim/emcn/icons'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import type { DesktopSettingsSurface } from '@/components/settings/navigation'
@@ -19,8 +26,12 @@ import {
   isBillingEnabled,
   sectionConfig,
 } from '@/app/workspace/[workspaceId]/settings/navigation'
+import { SidebarSection } from '@/app/workspace/[workspaceId]/w/components/sidebar/components/sidebar-section'
 import {
+  SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
+  SIDEBAR_DIVIDER_PAD_BELOW_CLASS,
   SIDEBAR_ITEM_GAP_CLASS,
+  SIDEBAR_RAIL_CHIP_CLASS,
   SIDEBAR_SECTION_GAP_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
@@ -133,6 +144,12 @@ export function SettingsSidebar({
         return false
       }
       if (item.id === 'forks' && !(forkingAvailable && canAdminWorkspace)) {
+        return false
+      }
+      if (
+        item.id === 'credential-groups' &&
+        (!hostContext.features?.credentialGroups || !canAdminWorkspace)
+      ) {
         return false
       }
 
@@ -306,14 +323,20 @@ export function SettingsSidebar({
         className={cn(
           SIDEBAR_SECTION_GAP_CLASS,
           SIDEBAR_ITEM_GAP_CLASS,
-          'flex flex-shrink-0 flex-col px-2 pb-1.5'
+          SIDEBAR_DIVIDER_PAD_ABOVE_CLASS,
+          'flex flex-shrink-0 flex-col px-2'
         )}
       >
         <SidebarTooltip label='Back' enabled={showCollapsedTooltips}>
-          <button type='button' onClick={handleBack} className={chipVariants({ fullWidth: true })}>
-            <div className='flex size-[16px] flex-shrink-0 items-center justify-center text-[var(--text-icon)]'>
-              <ChevronDown className='size-[10px] rotate-90' />
-            </div>
+          <button
+            type='button'
+            onClick={handleBack}
+            className={cn(chipVariants({ fullWidth: true }), SIDEBAR_RAIL_CHIP_CLASS)}
+          >
+            {/* The 16px slot every settings row gives its icon, so Back's label starts on their baseline. */}
+            <span aria-hidden className={cn(chipIconSlotClass, 'text-[var(--text-icon)]')}>
+              <ChevronLeft className='size-[14px]' />
+            </span>
             <span className='sidebar-collapse-hide truncate text-[var(--text-body)]'>Back</span>
           </button>
         </SidebarTooltip>
@@ -323,7 +346,8 @@ export function SettingsSidebar({
       <div
         ref={isCollapsed ? undefined : scrollContainerRef}
         className={cn(
-          'flex flex-1 flex-col overflow-y-auto overflow-x-hidden border-t pt-1.5 pb-2 transition-colors duration-150',
+          SIDEBAR_DIVIDER_PAD_BELOW_CLASS,
+          'flex flex-1 flex-col overflow-y-auto overflow-x-hidden border-t pb-2 transition-colors duration-150',
           !hasOverflowTop && 'border-transparent'
         )}
       >
@@ -338,34 +362,35 @@ export function SettingsSidebar({
             }))
             .filter(({ items }) => items.length > 0)
             .map(({ key, title, items: sectionItems }, index) => (
-              <div
+              <SidebarSection
                 key={key}
-                className={cn(
-                  index > 0 && SIDEBAR_SECTION_GAP_CLASS,
-                  'flex flex-shrink-0 flex-col'
-                )}
+                title={title}
+                railCollapsed={isCollapsed}
+                className={cn(index > 0 && SIDEBAR_SECTION_GAP_CLASS, 'flex-shrink-0')}
               >
-                <div className='px-4 pb-2'>
-                  <div className='text-[var(--text-muted)] text-small'>{title}</div>
-                </div>
                 <div className={cn(SIDEBAR_ITEM_GAP_CLASS, 'flex flex-col px-2')}>
                   {sectionItems.map((item) => {
                     const Icon = item.icon
                     const active = activeSection === item.id
+                    const selfHostedUnlocked = Boolean(item.selfHostedOverride && !isHosted)
                     const isLocked =
+                      !selfHostedUnlocked &&
                       item.requiresMax &&
                       (item.id === 'inbox'
                         ? !inboxEntitled
                         : !subscriptionAccess.hasUsableMaxAccess)
-                    const itemClassName = chipVariants({ active, fullWidth: true })
+                    const itemClassName = cn(
+                      chipVariants({ active, fullWidth: true }),
+                      SIDEBAR_RAIL_CHIP_CLASS
+                    )
                     const content = (
                       <>
-                        <Icon className='size-[16px] flex-shrink-0 text-[var(--text-icon)]' />
+                        <Icon className={chipContentIconClass} />
                         <span className='sidebar-collapse-hide min-w-0 truncate text-[var(--text-body)]'>
                           {item.label}
                         </span>
                         {isLocked && (
-                          <span className='sidebar-collapse-hide ml-auto shrink-0 rounded-[3px] bg-[var(--surface-5)] px-1 py-[1px] font-medium text-[9px] text-[var(--text-icon)] uppercase tracking-wide'>
+                          <span className='sidebar-collapse-hide ml-auto shrink-0 rounded-[3px] bg-[var(--surface-5)] px-1 py-[1px] text-[9px] text-[var(--text-icon)] uppercase tracking-wide'>
                             Max
                           </span>
                         )}
@@ -410,7 +435,7 @@ export function SettingsSidebar({
                     )
                   })}
                 </div>
-              </div>
+              </SidebarSection>
             ))}
         </div>
       </div>

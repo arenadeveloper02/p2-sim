@@ -26,14 +26,8 @@ import {
   WORKSPACE_SETTINGS_PATH_ALIASES,
 } from '@/components/settings/navigation'
 
-/**
- * The Sandboxes section is dropped on a deployment with no sandbox provider, and
- * the env mock falls through to `process.env` — so without pinning this, every
- * assertion below would depend on whether the developer's untracked
- * `apps/sim/.env` sets the flag, passing locally and failing on CI.
- */
 beforeEach(() => {
-  setEnv({ NEXT_PUBLIC_SANDBOX_ENABLED: 'true', NEXT_PUBLIC_E2B_ENABLED: undefined })
+  setEnv({})
   resetEnvFlagsMock()
 })
 
@@ -58,6 +52,7 @@ describe('settings navigation boundaries', () => {
       'organization',
       'oauth-apps',
       'secrets',
+      'credential-groups',
       'custom-tools',
       'mcp',
       'apikeys',
@@ -94,6 +89,7 @@ describe('settings navigation boundaries', () => {
       'secrets',
       'byok',
       'sandboxes',
+      'credential-groups',
       'custom-tools',
       'mcp',
       'workflow-mcp-servers',
@@ -105,29 +101,24 @@ describe('settings navigation boundaries', () => {
     ])
   })
 
-  /**
-   * Entitlement decides whether a workspace may author sandboxes; this decides
-   * whether anything could run one. With no provider the tab is a dead end, so it
-   * is dropped rather than locked — an upgrade would not fix it. Both planes are
-   * asserted because each has its own filter.
-   */
-  it('drops the Sandboxes section when no sandbox provider is configured', () => {
-    setEnv({ NEXT_PUBLIC_SANDBOX_ENABLED: undefined, NEXT_PUBLIC_E2B_ENABLED: undefined })
+  it('keeps the Sandboxes section in the legacy self-hosted defaults', () => {
+    setEnv({ NEXT_PUBLIC_SANDBOXES_ENABLED: undefined, NEXT_PUBLIC_E2B_ENABLED: undefined })
 
-    expect(buildUnifiedSettingsNavigation().map(({ id }) => id)).not.toContain('sandboxes')
+    expect(buildUnifiedSettingsNavigation().map(({ id }) => id)).toContain('sandboxes')
     expect(
       resolveWorkspaceNavigation({
         permission: 'admin',
         permissionConfig: {},
         entitlements: {
           byok: true,
+          credentialGroups: true,
           inbox: true,
           customBlocks: true,
           forks: true,
           sandboxes: true,
         },
       }).map(({ id }) => id)
-    ).not.toContain('sandboxes')
+    ).toContain('sandboxes')
   })
 
   /**
@@ -146,6 +137,7 @@ describe('settings navigation boundaries', () => {
         permissionConfig: {},
         entitlements: {
           byok: true,
+          credentialGroups: true,
           inbox: true,
           customBlocks: true,
           forks: true,
@@ -165,6 +157,7 @@ describe('settings navigation boundaries', () => {
         permissionConfig: {},
         entitlements: {
           byok: true,
+          credentialGroups: true,
           inbox: true,
           customBlocks: true,
           forks: true,
@@ -186,12 +179,6 @@ describe('settings navigation boundaries', () => {
     expect(selfHost?.label).toBe('Self hosting')
     expect(markup).toContain('<svg')
     expect(markup).toContain('stroke="currentColor"')
-  })
-
-  it('keeps the Sandboxes section on the pre-Daytona E2B flag alone', () => {
-    setEnv({ NEXT_PUBLIC_SANDBOX_ENABLED: undefined, NEXT_PUBLIC_E2B_ENABLED: 'true' })
-
-    expect(buildUnifiedSettingsNavigation().map(({ id }) => id)).toContain('sandboxes')
   })
 
   it('has one registry source for every unified and plane item', () => {
@@ -464,6 +451,7 @@ describe('settings navigation boundaries', () => {
         permissionConfig: {},
         entitlements: {
           byok: true,
+          credentialGroups: true,
           customBlocks: true,
           forks: true,
           inbox: true,
@@ -488,6 +476,7 @@ describe('settings navigation boundaries', () => {
       },
       entitlements: {
         byok: true,
+        credentialGroups: true,
         customBlocks: true,
         forks: true,
         inbox: true,
@@ -499,6 +488,7 @@ describe('settings navigation boundaries', () => {
       'teammates',
       'byok',
       'sandboxes',
+      'credential-groups',
       'workflow-mcp-servers',
       'recently-deleted',
       'forks',

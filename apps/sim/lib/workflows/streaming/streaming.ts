@@ -16,10 +16,10 @@ import {
   getInlineJsonByteLength,
   materializeInlineExecutionValue,
 } from '@/lib/execution/payloads/inline-materialization.server'
+import { MAX_INLINE_MATERIALIZATION_BYTES } from '@/lib/execution/payloads/limits'
 import {
   assertInlineMaterializationSize,
   type ExecutionMaterializationContext,
-  MAX_INLINE_MATERIALIZATION_BYTES,
 } from '@/lib/execution/payloads/materialization.server'
 import { compactExecutionPayload } from '@/lib/execution/payloads/serializer'
 import { isExecutionResourceLimitError } from '@/lib/execution/resource-errors'
@@ -42,6 +42,7 @@ import {
   clientAcceptsAgentStreamProtocol,
 } from '@/lib/workflows/streaming/agent-stream-protocol'
 import type { BlockLog, ExecutionResult, StreamingExecution } from '@/executor/types'
+import { projectResolvedSecretDiagnosticError } from '@/executor/utils/resolved-secret-content-projection'
 import { navigatePathAsync } from '@/executor/variables/resolvers/reference-async.server'
 import type { ToolCallEndStatus } from '@/providers/stream-events'
 import { DEFAULT_MAX_THINKING_CHARS } from '@/providers/stream-pump'
@@ -948,7 +949,10 @@ export async function createStreamingResponse(
             }
           }
         } catch (error) {
-          logger.error(`[${requestId}] Error reading stream for block ${blockId}:`, error)
+          logger.error(
+            `[${requestId}] Error reading stream for block ${blockId}`,
+            projectResolvedSecretDiagnosticError(error, undefined)
+          )
           const frame: ChatStreamStreamErrorFrame = {
             event: 'stream_error',
             blockId,
@@ -1059,7 +1063,7 @@ export async function createStreamingResponse(
             logger.warn(`[${requestId}] Failed to materialize selected output`, {
               blockId,
               outputId: descriptor.outputId,
-              error,
+              ...projectResolvedSecretDiagnosticError(error, undefined),
             })
             const errorMessage = getSelectedOutputErrorMessage(error)
             state.selectedOutputError ??= errorMessage
@@ -1195,7 +1199,10 @@ export async function createStreamingResponse(
 
         controller.close()
       } catch (error) {
-        logger.error(`[${requestId}] Stream error:`, error)
+        logger.error(
+          `[${requestId}] Stream error`,
+          projectResolvedSecretDiagnosticError(error, undefined)
+        )
         const errorMessage =
           streamConfig.selectedOutputs?.length && isExecutionResourceLimitError(error)
             ? SELECTED_OUTPUT_TOO_LARGE_MESSAGE
@@ -1216,7 +1223,10 @@ export async function createStreamingResponse(
       }
     },
     async cancel(reason) {
-      logger.info(`[${requestId}] Streaming response cancelled`, { reason })
+      logger.info(
+        `[${requestId}] Streaming response cancelled`,
+        projectResolvedSecretDiagnosticError(reason, undefined)
+      )
       requestAborted = true
       timeoutController.abort()
       cleanupRequestAbort()
@@ -1225,7 +1235,10 @@ export async function createStreamingResponse(
         try {
           await cleanupExecutionBase64Cache(executionId)
         } catch (error) {
-          logger.error(`[${requestId}] Failed to cleanup base64 cache`, { error })
+          logger.error(
+            `[${requestId}] Failed to cleanup base64 cache`,
+            projectResolvedSecretDiagnosticError(error, undefined)
+          )
         }
       }
     },

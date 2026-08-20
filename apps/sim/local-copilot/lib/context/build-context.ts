@@ -19,11 +19,11 @@ import {
   oauthIntegrationsToCredentialMetadata,
 } from '@/local-copilot/lib/context/load-workspace-integrations'
 import { loadWorkspaceResourceSummaries } from '@/local-copilot/lib/context/load-workspace-resources'
-import { loadWorkspaceSkillSummaries } from '@/local-copilot/lib/tools/user-skills'
 import {
-  stampWorkspaceSnapshotBundle,
   type StampedWorkspaceSnapshotBundle,
+  stampWorkspaceSnapshotBundle,
 } from '@/local-copilot/lib/context/snapshot-freshness'
+import { loadWorkspaceSkillSummaries } from '@/local-copilot/lib/tools/user-skills'
 import type {
   LocalCopilotBlockSummary,
   LocalCopilotStructuredContext,

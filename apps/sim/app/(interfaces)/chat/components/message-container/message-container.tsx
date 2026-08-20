@@ -1,8 +1,8 @@
 'use client'
 
-import type { Ref } from 'react'
 import {
   type Dispatch,
+  type Ref,
   type RefObject,
   type SetStateAction,
   useCallback,
@@ -11,7 +11,8 @@ import {
   useState,
 } from 'react'
 import { Button } from '@sim/emcn'
-import { ArrowDown, MessageCircle } from 'lucide-react'
+import { ArrowDown } from '@sim/emcn/icons'
+import { MessageCircle } from 'lucide-react'
 import { DeployedResponseLoader } from '@/app/(interfaces)/chat/components/message/components/deployed-response-loader'
 import {
   DEPLOYED_CHAT_CANVAS_GRADIENT,
@@ -173,7 +174,6 @@ export function ChatMessageContainer({
       className='relative flex h-full min-h-0 flex-1 flex-col overflow-hidden'
       style={{ background: DEPLOYED_CHAT_CANVAS_GRADIENT }}
     >
-      {/* "Ask this in chat" tip - fixed near selection */}
       {selectionTip && onAskInChat && (
         <button
           ref={tipRef}
@@ -191,7 +191,6 @@ export function ChatMessageContainer({
         </button>
       )}
 
-      {/* Scrollable Messages Area */}
       <div
         ref={messagesContainerRef}
         className='!scroll-smooth min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-auto'
@@ -218,7 +217,6 @@ export function ChatMessageContainer({
                   .reverse()
                   .find((m) => m.type === 'assistant' && !m.isInitialMessage)?.id
                 return messages.map((message, index) => (
-                  // 40px gap between conversation turns: each new user message starts a turn
                   <div
                     key={message.id}
                     className={message.type === 'user' && index > 0 ? 'mt-10' : undefined}
@@ -242,7 +240,6 @@ export function ChatMessageContainer({
 
             {isLoading && <DeployedResponseLoader isStreaming={isStreaming} />}
 
-            {/* End of messages marker for scrolling */}
             <div ref={messagesEndRef} />
           </div>
         </div>

@@ -3,8 +3,8 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { truncate } from '@sim/utils/string'
 import { userMemoryServerTool } from '@/lib/copilot/tools/server/other/user-memory'
 import {
-  preferenceKeyFromText,
   type PreferenceMemoryCandidate,
+  preferenceKeyFromText,
 } from '@/local-copilot/lib/context/follow-up-directives'
 import type { SessionMemory } from '@/local-copilot/lib/context/session-memory'
 
@@ -17,7 +17,7 @@ export const INFERRED_USER_MEMORY_CONFIDENCE = 0.8
 export const MAX_DURABLE_PROMOTIONS_PER_REFRESH = 8
 
 const SECRET_PATTERN =
-  /\b(api[_-\s]?key|password|passwd|secret|token|credential|bearer\s+[a-z0-9._\-]+|sk-[a-z0-9]{10,}|AKIA[0-9A-Z]{16})\b/i
+  /\b(api[_-\s]?key|password|passwd|secret|token|credential|bearer\s+[a-z0-9._-]+|sk-[a-z0-9]{10,}|AKIA[0-9A-Z]{16})\b/i
 
 const PREFERENCE_LIKE_PATTERN =
   /\b(always|never|prefer|remember|don'?t|do not|from now on|instead of|use .+ instead)\b/i
@@ -111,7 +111,10 @@ export async function persistInferredUserMemories(params: {
   const batch = params.preferences.slice(0, MAX_DURABLE_PROMOTIONS_PER_REFRESH)
 
   for (const preference of batch) {
-    if (looksLikeSecretMemoryValue(preference.value) || looksLikeSecretMemoryValue(preference.key)) {
+    if (
+      looksLikeSecretMemoryValue(preference.value) ||
+      looksLikeSecretMemoryValue(preference.key)
+    ) {
       logger.info('Skipping inferred user_memory promotion; looks like a secret', {
         key: preference.key,
       })

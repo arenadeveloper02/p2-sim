@@ -7,6 +7,7 @@ import {
   getAgentModelOptions,
   getModelCapabilityCondition,
   getProviderCredentialSubBlocks,
+  getSerializedModelProviderId,
   RESPONSE_FORMAT_WAND_CONFIG,
 } from '@/blocks/utils'
 import { START_FILES_REF } from '@/executor/constants'
@@ -31,6 +32,9 @@ import type { ToolResponse } from '@/tools/types'
 
 const logger = createLogger('AgentBlock')
 const MODELS_WITHOUT_AGENT_TOOLS = ['gpt-4o-search-preview'] as const
+
+/** Model the agent block falls back to when `model` is unset or the auto pseudo-model. */
+const AGENT_FALLBACK_MODEL = 'gpt-5'
 const MODELS_WITH_REASONING_EFFORT = getModelsWithReasoningEffort()
 const MODELS_WITH_VERBOSITY = getModelsWithVerbosity()
 const MODELS_WITH_THINKING = getModelsWithThinking()
@@ -88,6 +92,16 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
   integrationType: IntegrationType.AI,
   bgColor: 'var(--brand)',
   icon: AgentIcon,
+  canvasPresentation: {
+    defaultTitle: 'Agent',
+    sentences: {
+      default: [
+        { text: 'Prompt', field: 'model', core: true },
+        { text: 'with', field: 'messages' },
+        { text: ', using', field: 'tools' },
+      ],
+    },
+  },
   subBlocks: [
     {
       id: 'messages',
@@ -509,21 +523,10 @@ Return ONLY the JSON array.`,
     ],
     config: {
       tool: (params: Record<string, any>) => {
-        const model = params.model || 'gpt-5'
-        if (!model) {
-          throw new Error('No model selected')
-        }
-        // sim-auto resolves to a concrete pool model at execution time, where
-        // the agent handler derives the provider from the resolved model and
-        // never reads this serialized value. Serialization still needs the
-        // same provider-id shape every other model stores, so look up the
-        // runtime fallback model's provider.
-        const lookupModel = isAutoModel(model) ? 'claude-sonnet-5' : model
-        const tool = getBaseModelProviders()[lookupModel]
-        if (!tool) {
-          throw new Error(`Invalid model selected: ${model}`)
-        }
-        return tool
+        const model = params.model || AGENT_FALLBACK_MODEL
+        // sim-auto has no provider of its own until the pool resolves it at execution time.
+        const lookupModel = isAutoModel(model) ? AGENT_FALLBACK_MODEL : model
+        return getSerializedModelProviderId(lookupModel, AGENT_FALLBACK_MODEL)
       },
       params: (params: Record<string, any>) => {
         if (MODELS_WITHOUT_AGENT_TOOLS.includes(params.model)) {
@@ -658,7 +661,10 @@ Return ONLY the JSON array.`,
     },
     temperature: { type: 'number', description: 'Response randomness level' },
     maxTokens: { type: 'number', description: 'Maximum number of tokens in the response' },
-    reasoningEffort: { type: 'string', description: 'Reasoning effort level for GPT-5 models' },
+    reasoningEffort: {
+      type: 'string',
+      description: 'Reasoning effort level for models that support it',
+    },
     verbosity: { type: 'string', description: 'Verbosity level for GPT-5 models' },
     thinkingLevel: {
       type: 'string',

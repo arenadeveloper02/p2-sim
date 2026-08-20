@@ -10,6 +10,7 @@ import {
   enrichEditContentArgs,
   enrichWorkspaceFileArgs,
 } from '@/local-copilot/lib/tools/enrich-file-tool-args'
+import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   buildMothershipDelegatedToolDefinitions,
   isMothershipDelegatedTool,

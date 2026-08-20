@@ -1,15 +1,41 @@
 /**
  * Defense-in-depth ceiling on the size of any single workspace file upload.
- * Enforced both server-side (presigned route) and client-side (Files tab) so
+ * Enforced both server-side (upload-session creation) and client-side (Files tab) so
  * users get fast feedback before bytes are streamed.
  */
 export const MAX_WORKSPACE_FILE_SIZE = 5 * 1024 * 1024 * 1024
+
+const MAX_POSTGRES_INTEGER = 2_147_483_647
+
+/**
+ * Keeps the legacy int4 metadata projection writable while `size_bytes` stores the exact value.
+ */
+export function toLegacyWorkspaceFileSize(size: number): number {
+  if (!Number.isSafeInteger(size) || size < 0)
+    throw new Error(`Invalid workspace file size: ${size}`)
+  return Math.min(size, MAX_POSTGRES_INTEGER)
+}
 
 /**
  * Cap on the legacy FormData upload route, which buffers the whole file in
  * worker memory. Direct-to-storage uploads use {@link MAX_WORKSPACE_FILE_SIZE}.
  */
 export const MAX_WORKSPACE_FORMDATA_FILE_SIZE = 100 * 1024 * 1024
+
+/** Maximum size accepted by the knowledge-document parsing pipeline. */
+export const MAX_KNOWLEDGE_DOCUMENT_FILE_SIZE = 100 * 1024 * 1024
+
+/**
+ * Rejection wording shared by every surface that admits a knowledge document.
+ *
+ * The size guards were upper-bound only, so a zero-byte file passed admission
+ * and was stored and registered — but the parsing pipeline refuses an empty
+ * buffer outright (`parseBuffer` throws before dispatching to a parser), so the
+ * document could never reach anything but `failed`. A file the pipeline is
+ * guaranteed to reject is a bad request, and admission is the only place a
+ * caller can be told so.
+ */
+export const EMPTY_KNOWLEDGE_DOCUMENT_MESSAGE = 'Knowledge document cannot be empty'
 
 export type StorageContext =
   | 'knowledge-base'
@@ -18,6 +44,7 @@ export type StorageContext =
   | 'mothership'
   | 'execution'
   | 'workspace'
+  | 'table-import'
   | 'profile-pictures'
   | 'og-images'
   | 'agent-generated-images'
@@ -26,16 +53,32 @@ export type StorageContext =
   | 'workspace-logos'
   | 'org-logos'
 
+export type MultipartCompletionPolicy = 'create-only' | 'replace' | 'reuse-existing'
+
+/**
+ * Storage contexts that support large direct-to-storage uploads via upload
+ * sessions (multipart when the object exceeds the single-PUT threshold). This
+ * replaces the legacy `/api/files/multipart` allowlist.
+ */
+export const ALLOWED_UPLOAD_CONTEXTS = new Set<StorageContext>([
+  'knowledge-base',
+  'chat',
+  'copilot',
+  'mothership',
+  'execution',
+  'workspace',
+  'profile-pictures',
+  'og-images',
+  'workspace-logos',
+  'org-logos',
+])
+
 /**
  * Contexts exempt from storage quota checks. Includes system-internal contexts
  * (`logs` — written by the execution pipeline, not user-initiated) and small
- * metadata assets (`profile-pictures`, `workspace-logos`, `og-images`).
- * Mothership chat attachments are also exempt because they are not counted as
- * durable workspace-file storage.
- *
- * The small-asset and system contexts are excluded from the multipart endpoint.
- * Mothership remains available there for large chat attachments while retaining
- * the same quota exemption as its single-part upload path.
+ * metadata assets (`profile-pictures`, `workspace-logos`, `og-images`,
+ * `org-logos`). Mothership chat attachments are also exempt because they are
+ * not counted as durable workspace-file storage.
  */
 export const QUOTA_EXEMPT_STORAGE_CONTEXTS = new Set<StorageContext>([
   'mothership',
@@ -91,23 +134,10 @@ export interface DeleteFileOptions {
   context?: StorageContext
 }
 
-export interface GeneratePresignedUrlOptions {
-  fileName: string
-  contentType: string
-  fileSize: number
-  context: StorageContext
-  userId?: string
-  expirationSeconds?: number
+export interface StoredObjectInfo {
+  size: number
+  contentType?: string
   metadata?: Record<string, string>
-  /**
-   * When provided, overrides the default `${context}/${timestamp}-${id}-${name}` key derivation.
-   * The caller takes responsibility for uniqueness and prefix conventions.
-   */
-  customKey?: string
-}
-
-export interface PresignedUrlResponse {
-  url: string
-  key: string
-  uploadHeaders?: Record<string, string>
+  uploadId?: string
+  version?: string
 }

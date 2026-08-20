@@ -1,5 +1,4 @@
-'use server'
-
+import type { Principal } from '@sim/auth/principal'
 import { createLogger, type Logger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
@@ -14,6 +13,11 @@ import {
 } from '@/lib/core/utils/stream-limits'
 import { StorageService } from '@/lib/uploads'
 import { isExecutionFile } from '@/lib/uploads/contexts/execution/utils'
+import {
+  isModelSafeWorkspaceFileKey,
+  MODEL_UNSAFE_WORKSPACE_FILE_ERROR_MESSAGE,
+  type WorkspaceFileSecretProvenanceIdentity,
+} from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import {
   extractStorageKey,
   extractWorkspaceIdFromExecutionKey,
@@ -57,6 +61,8 @@ export interface ResolveFileInputOptions {
    * the URL later than the current request (e.g. scheduled publishing).
    */
   presignExpirySeconds?: number
+  /** Rejects tracked files whose bytes cannot safely cross a model boundary. */
+  modelEgress?: boolean
 }
 
 /**
@@ -70,7 +76,15 @@ export interface ResolveFileInputOptions {
 export async function resolveFileInputToUrl(
   options: ResolveFileInputOptions
 ): Promise<FileResolutionResult> {
-  const { file, filePath, userId, requestId, logger, presignExpirySeconds = 5 * 60 } = options
+  const {
+    file,
+    filePath,
+    userId,
+    requestId,
+    logger,
+    presignExpirySeconds = 5 * 60,
+    modelEgress = false,
+  } = options
 
   if (file) {
     let userFile: UserFile
@@ -100,6 +114,15 @@ export async function resolveFileInputToUrl(
           context,
         })
         return { error: { status: 404, message: 'File not found' } }
+      }
+
+      if (modelEgress && !(await isModelSafeWorkspaceFileKey(userFile.key))) {
+        return {
+          error: {
+            status: 400,
+            message: MODEL_UNSAFE_WORKSPACE_FILE_ERROR_MESSAGE,
+          },
+        }
       }
 
       const fileUrl = await StorageService.generatePresignedDownloadUrl(
@@ -146,6 +169,17 @@ export async function resolveFileInputToUrl(
         return { error: resolution.error }
       }
       fileUrl = resolution.fileUrl || fileUrl
+      if (modelEgress) {
+        const storageKey = extractStorageKey(filePath)
+        if (!(await isModelSafeWorkspaceFileKey(storageKey))) {
+          return {
+            error: {
+              status: 400,
+              message: MODEL_UNSAFE_WORKSPACE_FILE_ERROR_MESSAGE,
+            },
+          }
+        }
+      }
     } else if (filePath.startsWith('/')) {
       logger.warn(`[${requestId}] Invalid internal path`, {
         userId,
@@ -379,6 +413,7 @@ export async function downloadFileForDelivery(
 export interface ServableFile {
   buffer: Buffer
   contentType: string
+  contributingFiles?: readonly WorkspaceFileSecretProvenanceIdentity[]
 }
 
 /**
@@ -401,7 +436,12 @@ export async function downloadServableFileFromStorage(
   userFile: UserFile,
   requestId: string,
   logger: Logger,
-  options: { maxBytes?: number; signal?: AbortSignal; ownerKey?: string } = {}
+  options: {
+    maxBytes?: number
+    signal?: AbortSignal
+    ownerKey?: string
+    filePrincipal?: Principal
+  } = {}
 ): Promise<ServableFile> {
   const buffer = await downloadFileFromStorage(userFile, requestId, logger, {
     maxBytes: options.maxBytes,
@@ -428,6 +468,7 @@ export async function downloadServableFileFromStorage(
     rawBuffer: buffer,
     fileName: userFile.name,
     workspaceId,
+    filePrincipal: options.filePrincipal,
     ownerKey: options.ownerKey,
     signal: options.signal,
   })

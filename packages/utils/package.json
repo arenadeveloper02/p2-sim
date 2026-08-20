@@ -18,6 +18,10 @@
       "types": "./src/random.ts",
       "default": "./src/random.ts"
     },
+    "./color": {
+      "types": "./src/color.ts",
+      "default": "./src/color.ts"
+    },
     "./errors": {
       "types": "./src/errors.ts",
       "default": "./src/errors.ts"
@@ -53,6 +57,10 @@
     "./sso-domain": {
       "types": "./src/sso-domain.ts",
       "default": "./src/sso-domain.ts"
+    },
+    "./sandbox-references": {
+      "types": "./src/sandbox-references.ts",
+      "default": "./src/sandbox-references.ts"
     }
   },
   "scripts": {

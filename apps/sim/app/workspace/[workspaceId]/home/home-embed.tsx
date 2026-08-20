@@ -35,7 +35,12 @@ import {
   UserInput,
 } from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
-import type { FileAttachmentForApi, MothershipResource, MothershipResourceType } from './types'
+import type {
+  FileAttachmentForApi,
+  MothershipResource,
+  MothershipResourceType,
+  WorkspaceResourceRef,
+} from './types'
 
 const logger = createLogger('HomeEmbed')
 
@@ -339,8 +344,15 @@ export function HomeEmbed({ chatId, embedBackHref }: HomeEmbedProps = {}) {
   )
 
   const handleWorkspaceResourceSelect = useCallback(
-    (resource: MothershipResource) => {
-      const wasAdded = addResource(resource)
+    (resource: WorkspaceResourceRef) => {
+      if (!resource.id) return
+      const resolved: MothershipResource = {
+        type: resource.type,
+        id: resource.id,
+        title: resource.title,
+        path: resource.path,
+      }
+      const wasAdded = addResource(resolved)
       if (!wasAdded) {
         setActiveResourceId(resource.id)
       }

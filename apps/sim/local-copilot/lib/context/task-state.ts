@@ -59,12 +59,21 @@ export function clampTaskState(task: CopilotTaskState): CopilotTaskState {
   return {
     objective: truncate(task.objective.trim(), 280, ''),
     status: task.status,
-    targetResources: [...new Set(task.targetResources.map((item) => item.trim()).filter(Boolean))].slice(
-      -8
-    ),
-    dependencies: task.dependencies.map((item) => item.trim()).filter(Boolean).slice(-8),
-    approvals: task.approvals.map((item) => item.trim()).filter(Boolean).slice(-8),
-    verification: task.verification.map((item) => item.trim()).filter(Boolean).slice(-8),
+    targetResources: [
+      ...new Set(task.targetResources.map((item) => item.trim()).filter(Boolean)),
+    ].slice(-8),
+    dependencies: task.dependencies
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(-8),
+    approvals: task.approvals
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(-8),
+    verification: task.verification
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(-8),
     updatedAt: task.updatedAt,
   }
 }
@@ -132,17 +141,11 @@ export function updateTaskStateFromTurn(params: {
   failed: boolean
   targetResources?: string[]
 }): CopilotTaskState | null {
-  const objective =
-    params.objectiveHint?.trim() ||
-    params.previous?.objective?.trim() ||
-    ''
+  const objective = params.objectiveHint?.trim() || params.previous?.objective?.trim() || ''
   if (!objective) return params.previous
 
-  const verificationLines = params.verification.map(
-    (item) => `${item.tool} ${item.status}`.trim()
-  )
-  const anyFailed =
-    params.failed || params.verification.some((item) => item.status === 'failed')
+  const verificationLines = params.verification.map((item) => `${item.tool} ${item.status}`.trim())
+  const anyFailed = params.failed || params.verification.some((item) => item.status === 'failed')
   const allPassed =
     params.verification.length > 0 &&
     params.verification.every(

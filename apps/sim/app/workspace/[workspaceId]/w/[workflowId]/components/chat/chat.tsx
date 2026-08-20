@@ -14,10 +14,10 @@ import {
   Tooltip,
   Trash,
 } from '@sim/emcn'
-import { Download } from '@sim/emcn/icons'
+import { CircleAlert, Download } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { AlertCircle, ArrowUp, MoreVertical, Paperclip, Square, X } from 'lucide-react'
+import { ArrowUp, MoreVertical, Paperclip, Square, X } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import { useSession } from '@/lib/auth/auth-client'
@@ -1231,9 +1231,7 @@ export function Chat() {
         className='flex h-[32px] flex-shrink-0 cursor-grab items-center justify-between gap-2.5 bg-[var(--surface-1)] p-0 active:cursor-grabbing'
         onMouseDown={handleMouseDown}
       >
-        <span className='flex-shrink-0 pr-0.5 font-medium text-[var(--text-primary)] text-sm'>
-          Chat
-        </span>
+        <span className='flex-shrink-0 pr-0.5 text-[var(--text-primary)] text-sm'>Chat</span>
 
         <div
           className='ml-auto flex min-w-0 flex-shrink items-center gap-1.5'
@@ -1256,7 +1254,7 @@ export function Chat() {
           {shouldShowConfigureStartInputsButton && (
             <button
               type='button'
-              className='flex flex-none cursor-pointer items-center whitespace-nowrap rounded-md border border-[var(--border-1)] bg-[var(--surface-5)] px-2.5 py-0.5 font-medium font-sans text-[var(--text-primary)] text-caption hover-hover:bg-[var(--surface-active)]'
+              className='flex flex-none cursor-pointer items-center whitespace-nowrap rounded-md border border-[var(--border-1)] bg-[var(--surface-5)] px-2.5 py-0.5 font-sans text-[var(--text-primary)] text-caption hover-hover:bg-[var(--surface-active)]'
               title='Add chat inputs to Start block'
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
@@ -1286,14 +1284,15 @@ export function Chat() {
         </div>
 
         <div className='flex flex-shrink-0 items-center gap-2'>
-          <Popover variant='default' size='sm' open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
+          {/* More menu with actions */}
+          <Popover size='sm' open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant='ghost'
                 className='!p-1.5 -m-1.5'
                 onClick={(e) => e.stopPropagation()}
               >
-                <MoreVertical className='size-[14px]' strokeWidth={2} />
+                <MoreVertical className='size-[14px]' />
               </Button>
             </PopoverTrigger>
             <PopoverContent
@@ -1368,9 +1367,9 @@ export function Chat() {
             <div>
               <div className='rounded-lg border border-[var(--terminal-status-error-border)] bg-[var(--terminal-status-error-bg)]'>
                 <div className='flex items-start gap-2'>
-                  <AlertCircle className='mt-0.5 size-3 shrink-0 text-[var(--text-error)]' />
+                  <CircleAlert className='mt-0.5 size-3 shrink-0 text-[var(--text-error)]' />
                   <div className='flex-1'>
-                    <div className='mb-1 font-medium text-[var(--text-error)] text-caption'>
+                    <div className='mb-1 text-[var(--text-error)] text-caption'>
                       File upload error
                     </div>
                     <div className='space-y-1'>
@@ -1486,10 +1485,7 @@ export function Chat() {
                         : 'bg-[var(--text-subtle)] dark:bg-[var(--text-subtle)]'
                     )}
                   >
-                    <ArrowUp
-                      className='h-3.5 w-3.5 text-white dark:text-black'
-                      strokeWidth={2.25}
-                    />
+                    <ArrowUp className='size-3.5 text-white dark:text-black' />
                   </Button>
                 )}
               </div>

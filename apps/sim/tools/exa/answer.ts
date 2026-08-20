@@ -41,6 +41,10 @@ export const answerTool: ToolConfig<ExaAnswerParams, ExaAnswerResponse> = {
   },
 
   request: {
+    modelInput: {
+      mode: 'project',
+      select: (params) => ({ query: params.query, outputSchema: params.outputSchema }),
+    },
     url: 'https://api.exa.ai/answer',
     method: 'POST',
     headers: (params) => ({
