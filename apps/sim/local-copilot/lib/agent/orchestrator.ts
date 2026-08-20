@@ -184,9 +184,11 @@ import { MAX_TOOL_ITERATIONS } from '@/providers'
 
 const logger = createLogger('LocalCopilotAgent')
 
-const MAX_FORCED_FOLLOW_UP_ROUNDS = 5
+const MAX_FORCED_FOLLOW_UP_ROUNDS = 6
 /** Cap for "I am applying…" prose with no tool call — avoid infinite nudge loops. */
-const MAX_INTENT_CONTINUATION_ROUNDS = 2
+const MAX_INTENT_CONTINUATION_ROUNDS = 5
+/** Successful create-then-edit_workflow calls before the post-build lock. */
+const MAX_POPULATE_EDITS = 4
 
 const SYSTEM_PROMPT = `You are Arena Copilot — the in-app AI assistant for building, debugging, and understanding workflows in this workspace.
 
@@ -207,8 +209,8 @@ Response format:
   - If a tool fails, explain the blocker in plain language without dumping IDs or raw JSON.
 - Finish efficiently (CRITICAL — avoid thrash):
   - Call \`get_blocks_metadata\` **once** with every block type you need in that call (e.g. \`{ "blockIds": ["agent","start_trigger","gmail"] }\`). Do not re-fetch the same types.
-  - Prefer one \`edit_workflow\` that adds all blocks and wires connections. Only call edit again when the result reports skippedItems, inputValidationErrors, needsFollowUpEdit, or real lint errors.
-  - After a successful create + populate edit with no repair needed: **STOP**. One final reply. Do NOT re-open the workflow, re-fetch metadata, or restate the same completion summary. App-owned verification may run automatically — do not claim the workflow is verified unless a verification result says so.
+  - Prefer one \`edit_workflow\` that adds all blocks and wires connections when it fits. For multi-agent graphs you may use up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls (one agent or review block per call). Only extra edits beyond that when the result reports skippedItems, inputValidationErrors, needsFollowUpEdit, or real lint errors.
+  - After create + populate is complete (all requested blocks added, no repair needed): **STOP**. One final reply. Do NOT re-open the workflow, re-fetch metadata, or restate the same completion summary. App-owned verification may run automatically — do not claim the workflow is verified unless a verification result says so.
   - Missing OAuth only: call \`oauth_get_auth_link\` once, share the link, then stop.
 - Similar existing workflows:
   - If the user asked to run or edit something that already exists in \`workspaceWorkflows\`, use that workflow.
@@ -243,15 +245,18 @@ Rules:
   - When the user asks to run, test, execute, try, debug, check, or use a workflow that already exists, use \`get_workflow_run_options\` then \`run_workflow\` on that workflow.
   - Call \`create_workflow\` when the user wants a new workflow.
 - On the workspace home chat there may be no workflow open. Use \`workspaceWorkflows\` when referring to an existing one; call \`create_workflow\` when the user wants a new one.
-- After create_workflow succeeds (only when truly new), immediately call edit_workflow with add operations to populate the workflow. Use the returned workflowId and startBlockId.
+- After create_workflow succeeds (only when truly new), immediately populate it:
+  - Use the returned workflowId and startBlockId. Do NOT call create_workflow again this turn.
+  - Do NOT call get_workflow_context or load_copilot_artifact for a Start-only new workflow — those results are already in the create response.
+  - Call get_blocks_metadata once, then edit_workflow. Human review / approval uses block type \`human_in_the_loop\`.
 - Building workflows with edit_workflow (CRITICAL — follow exactly to avoid retry loops):
-  - Call get_blocks_metadata **once** with \`{ "blockIds": ["agent","start_trigger", …] }\` including every integration type you will add (e.g. gmail). Use returned field ids verbatim in params.inputs.
+  - Call get_blocks_metadata **once** with \`{ "blockIds": ["agent","human_in_the_loop", …] }\` including every type you will add. Use returned field ids verbatim in params.inputs.
   - Never call get_blocks_metadata again for types already returned this turn.
-  - When workflow context has \`detail: "compact"\`, call \`get_workflow_context\` with \`blockNames\` (preferred) or \`blockIds\` for every block you will edit BEFORE \`edit_workflow\`. Compact context omits prompt/message bodies.
+  - When an *existing populated* workflow context has \`detail: "compact"\`, call \`get_workflow_context\` with \`blockNames\` (preferred) or \`blockIds\` for the blocks you will edit BEFORE \`edit_workflow\`. Compact context omits prompt/message bodies. Skip this for newly created empty workflows.
   - Never add edges as separate operations or with type "edge". Connections live on the SOURCE (upstream) block: \`params.connections: { source: "<target-block-id>" }\`. To wire Start → Agent, edit the Start block (startBlockId from create_workflow) with connections pointing to the agent block_id — use that id only in the tool args, never in user-visible text.
   - Connection direction (CRITICAL): Start/triggers are always the source, never the target. Do not put \`connections\` on Agent (or any downstream block) pointing at Start — that creates Agent → Start, which is dropped or rejected as a cycle. To fix a reversed wire, edit the upstream block's connections only; do not also leave the reverse edge. Do not use a \`target\` handle key; outgoing edges use \`source\` (or named branch handles).
   - Agent block: use \`messages\` (array of \`{role, content}\`), \`model\`, and \`tools\` — not systemPrompt/userPrompt. If you only have a system prompt string, still pass it via \`messages: [{role:"system",content:"..."},{role:"user",content:"..."}]\` (legacy systemPrompt is auto-mapped, but \`messages\` is preferred). Exa web search tool entry: \`{ type: "exa", title: "Exa Search", toolId: "exa_search", usageControl: "auto" }\`.
-  - Prefer one edit_workflow call with all add operations plus a final edit on the Start block for connections. deferredConnections in results are normal for forward references within the same batch — do not re-issue them unless the target id was wrong.
+  - Prefer one edit_workflow for small graphs. For multi-agent graphs, you may use up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls (add and wire one agent or human_in_the_loop per call) rather than stalling on a single oversized tool call.
   - If workflowLintMessage reports orphan blocks, fix connections on the Start (or upstream) block before run_workflow.
   - Always issue the \`edit_workflow\` tool call to apply changes. Never end a turn by only describing the intended edit.
   - Do not treat a clean edit_workflow success as verified by itself — wait for app-owned validation evidence before telling the user the workflow is verified.
@@ -897,6 +902,8 @@ export async function* runLocalCopilotAgent(
   let streamedCreateProgress = false
   let streamedEditProgress = false
   let workflowBuildCompleteNudgeSent = false
+  /** Successful populate edits after create_workflow this turn. */
+  let successfulPopulateEdits = 0
   /** Only gate tools after create→populate this turn — not after ordinary prompt edits. */
   let createdWorkflowThisTurn = false
   let postBuildToolMode: PostBuildToolMode = 'all'
@@ -1684,19 +1691,23 @@ export async function* runLocalCopilotAgent(
         (pendingFollowUps.length === 0 || pendingFollowUpsAreOauthOnly(pendingFollowUps)) &&
         !workflowBuildCompleteNudgeSent
       ) {
-        workflowBuildCompleteNudgeSent = true
-        const needsOauth =
-          pendingFollowUpsAreOauthOnly(pendingFollowUps) ||
-          /needsOAuthConnect|oauth_get_auth_link/i.test(formattedToolResult)
-        postBuildToolMode = needsOauth ? 'oauth_only' : 'final_only'
-        deferredSystemMessages.push({
-          role: 'system',
-          content: buildWorkflowBuildCompleteSystemMessage(postBuildToolMode),
-        })
-        logger.info('Arena Copilot post-build tool mode set', {
-          postBuildToolMode,
-          needsOauth,
-        })
+        successfulPopulateEdits += 1
+        if (successfulPopulateEdits >= MAX_POPULATE_EDITS) {
+          workflowBuildCompleteNudgeSent = true
+          const needsOauth =
+            pendingFollowUpsAreOauthOnly(pendingFollowUps) ||
+            /needsOAuthConnect|oauth_get_auth_link/i.test(formattedToolResult)
+          postBuildToolMode = needsOauth ? 'oauth_only' : 'final_only'
+          deferredSystemMessages.push({
+            role: 'system',
+            content: buildWorkflowBuildCompleteSystemMessage(postBuildToolMode),
+          })
+          logger.info('Arena Copilot post-build tool mode set', {
+            postBuildToolMode,
+            needsOauth,
+            successfulPopulateEdits,
+          })
+        }
       }
 
       if (call.name === 'generate_api_key' && toolResult.success) {

@@ -302,7 +302,7 @@ export function buildContextPromptPayload(
   )
 }
 
-function buildWorkflowPromptPayload(
+export function buildWorkflowPromptPayload(
   workflow: NonNullable<LocalCopilotStructuredContext['workflow']>,
   detail: WorkflowContextDetail,
   selectedBlockId?: string
@@ -332,6 +332,50 @@ function buildWorkflowPromptPayload(
     state: buildCompactWorkflowState(workflow, selectedBlockId),
     credentials: workflow.credentials,
   }
+}
+
+export interface GetWorkflowContextSelector {
+  blockIds?: string[]
+  blockNames?: string[]
+}
+
+/**
+ * Standalone get_workflow_context payload. Returns the open workflow only —
+ * never the full workspace snapshot (that is already in the system prompt and
+ * offloading it as an artifact stalls the following edit).
+ */
+export function buildGetWorkflowContextResult(
+  context: LocalCopilotStructuredContext,
+  selector: GetWorkflowContextSelector = {}
+): Record<string, unknown> {
+  const workflow = context.workflow
+  if (!workflow) {
+    return {
+      workflow: null,
+      message:
+        'No workflow is open. After create_workflow, use the returned workflowId and startBlockId with edit_workflow. Do not call get_workflow_context for workspace inventory.',
+    }
+  }
+
+  const blockIds = (selector.blockIds ?? []).filter((id) => id.trim().length > 0)
+  const blockNames = (selector.blockNames ?? []).filter((name) => name.trim().length > 0)
+  if (blockIds.length > 0 || blockNames.length > 0) {
+    return buildWorkflowBlockInspection(workflow, { blockIds, blockNames }) as Record<
+      string,
+      unknown
+    >
+  }
+
+  const detail = resolveWorkflowContextDetail(context)
+  const payload = buildWorkflowPromptPayload(workflow, detail, context.selectedBlockId)
+  const blockCount = Object.keys(workflow.blocks ?? {}).length
+  if (blockCount <= 1) {
+    return {
+      ...payload,
+      hint: 'Start-only workflow. Call edit_workflow to add blocks. Do not call get_workflow_context or load_copilot_artifact again.',
+    }
+  }
+  return payload
 }
 
 export interface WorkflowBlockInspectionSelector {

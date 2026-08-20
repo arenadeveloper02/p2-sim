@@ -11,14 +11,8 @@ import {
   loadArtifactFromRecord,
   loadArtifacts,
 } from '@/local-copilot/lib/context/artifacts'
-import {
-  buildLocalCopilotContext,
-  contextToPromptJson,
-} from '@/local-copilot/lib/context/build-context'
-import {
-  buildWorkflowBlockInspection,
-  resolveWorkflowContextDetail,
-} from '@/local-copilot/lib/context/context-budget'
+import { buildLocalCopilotContext } from '@/local-copilot/lib/context/build-context'
+import { buildGetWorkflowContextResult } from '@/local-copilot/lib/context/context-budget'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { generateWorkflowPatchFromRequest } from '@/local-copilot/lib/patches/generate'
 import { validateWorkflowPatch, validateWorkflowState } from '@/local-copilot/lib/patches/validate'
@@ -125,6 +119,12 @@ export interface ToolExecutionContext {
   activeToolCallId?: string
   /** Turn-scoped store for oversized tool-result artifacts. */
   artifactStore?: import('@/local-copilot/lib/context/artifacts').ArtifactStore
+  /** First successful create_workflow this turn — later creates must reuse it. */
+  createdWorkflowThisTurn?: {
+    workflowId: string
+    startBlockId?: string
+    workflowName?: string
+  }
 }
 
 export interface ToolExecutionResult {
@@ -276,6 +276,24 @@ async function executeLocalCopilotToolInner(
 
   switch (toolName) {
     case 'create_workflow': {
+      if (ctx.createdWorkflowThisTurn) {
+        const existing = ctx.createdWorkflowThisTurn
+        return {
+          toolName,
+          success: true,
+          createdWorkflowId: existing.workflowId,
+          result: {
+            success: true,
+            alreadyCreatedThisTurn: true,
+            workflowId: existing.workflowId,
+            startBlockId: existing.startBlockId,
+            workflowName: existing.workflowName,
+            message:
+              'Workflow already created this turn. Do not create another. Call get_blocks_metadata once if needed, then edit_workflow to add blocks.',
+          },
+        }
+      }
+
       const mutation = await runCreateWorkflowTool(args, {
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
@@ -287,8 +305,17 @@ async function executeLocalCopilotToolInner(
       const createdWorkflowId =
         typeof output?.workflowId === 'string' ? output.workflowId : undefined
       if (createdWorkflowId) {
-        ctx.allowedWorkflowIds.add(createdWorkflowId)
+        ctx.allowedWorkflowIds?.add(createdWorkflowId)
         ctx.workflowId = createdWorkflowId
+        ctx.createdWorkflowThisTurn = {
+          workflowId: createdWorkflowId,
+          ...(typeof output?.startBlockId === 'string' && output.startBlockId.trim()
+            ? { startBlockId: output.startBlockId.trim() }
+            : {}),
+          ...(typeof output?.workflowName === 'string' && output.workflowName.trim()
+            ? { workflowName: output.workflowName.trim() }
+            : {}),
+        }
       }
       const created = {
         toolName,
@@ -449,22 +476,10 @@ async function executeLocalCopilotToolInner(
           )
         : []
 
-      if ((blockIds.length > 0 || blockNames.length > 0) && ctx.structuredContext.workflow) {
-        return {
-          toolName,
-          success: true,
-          result: buildWorkflowBlockInspection(ctx.structuredContext.workflow, {
-            blockIds,
-            blockNames,
-          }),
-        }
-      }
-
-      const workflowDetail = resolveWorkflowContextDetail(ctx.structuredContext)
       return {
         toolName,
         success: true,
-        result: JSON.parse(contextToPromptJson(ctx.structuredContext, { workflowDetail })),
+        result: buildGetWorkflowContextResult(ctx.structuredContext, { blockIds, blockNames }),
       }
     }
 

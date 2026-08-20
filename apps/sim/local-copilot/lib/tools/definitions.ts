@@ -5,7 +5,8 @@ import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'create_workflow',
-    description: 'Creates a new empty workflow.',
+    description:
+      'Creates a new empty workflow. Call at most once per turn. After it succeeds, populate with edit_workflow — do not create again or call get_workflow_context.',
     parameters: {
       type: 'object',
       properties: {
@@ -24,7 +25,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'edit_workflow',
     description:
-      'Applies block operations to a workflow (add, edit, delete). Requires workflowId from create_workflow or an open workflow. CONNECTIONS: never add edges as separate operations or type "edge". Wire on the SOURCE (upstream) block via params.connections — e.g. { source: "<target-block-id>" } on the Start block to connect Start → Agent. Never put connections on the downstream block and never point connections at Start/trigger. To reverse a wire, put connections on the new source only. Call get_blocks_metadata ONCE with every block type you need before the first edit. Prefer one edit_workflow for all adds + Start connections. App-owned verification may run after success — do not claim verified yourself. Always pass operations as a non-empty array.',
+      'Applies block operations to a workflow (add, edit, delete). Requires workflowId from create_workflow or an open workflow. CONNECTIONS: never add edges as separate operations or type "edge". Wire on the SOURCE (upstream) block via params.connections — e.g. { source: "<target-block-id>" } on the Start block to connect Start → Agent. Never put connections on the downstream block and never point connections at Start/trigger. To reverse a wire, put connections on the new source only. Call get_blocks_metadata ONCE with every block type you need before the first edit. After create_workflow this turn, do not create again or call get_workflow_context — edit immediately. Up to 5 sequential edit_workflow calls are OK for multi-agent graphs. Human review uses type human_in_the_loop. App-owned verification may run after success — do not claim verified yourself. Always pass operations as a non-empty array.',
     parameters: {
       type: 'object',
       properties: {

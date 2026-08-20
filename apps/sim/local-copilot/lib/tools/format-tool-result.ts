@@ -413,7 +413,7 @@ export function formatToolResultForLlm(
     ) {
       next.needsFollowUpPopulate = true
       next.followUpHint =
-        'New workflow created. Call get_blocks_metadata ONCE with every type you need (e.g. { blockIds: ["agent","start_trigger","gmail"] }), then ONE edit_workflow to add blocks and wire Start → downstream via connections on the Start block (startBlockId). Do not re-fetch metadata or validate after a clean edit.'
+        'New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to 5 sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.'
     }
 
     formatted = next
