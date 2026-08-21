@@ -5,6 +5,8 @@ export interface StoryboardRenderParams {
   storyboardId?: string
   order?: string
   sceneNumber?: number
+  sourceImageUrl?: string
+  chainFrames?: boolean
   clipUrls?: string[] | string
   videoModel?: string
   clipDuration?: number
@@ -19,6 +21,7 @@ export interface StoryboardRenderResponse extends ToolResponse {
     videoUrl: string
     publicVideoUrl?: string
     falUrls: string[]
+    lastFrameUrls: string[]
     storyboardId: string
     conversationId: string
     topic: string
@@ -66,6 +69,20 @@ export const storyboardRenderTool: ToolConfig<StoryboardRenderParams, Storyboard
       description:
         "Single-scene mode: render ONLY this scene's clip (1-based, e.g. 3). The other scenes are untouched and the storyboard is not marked rendered. Takes priority over order.",
     },
+    sourceImageUrl: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        "Frame chaining: generate the (first) clip from this image instead of the scene's stored storyboard still — typically a previous clip's lastFrameUrl, so the new clip starts exactly where that one ended.",
+    },
+    chainFrames: {
+      type: 'boolean',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        "Full-render chaining: each scene's clip is generated from the LAST FRAME of the previous clip instead of its own storyboard still, so the video reads as one continuous piece. Slower (clips are strictly sequential).",
+    },
     clipUrls: {
       type: 'string',
       required: false,
@@ -103,6 +120,11 @@ export const storyboardRenderTool: ToolConfig<StoryboardRenderParams, Storyboard
       type: 'array',
       description:
         'Public Fal CDN URL per clip in the rendered scene order (empty string when unavailable)',
+    },
+    lastFrameUrls: {
+      type: 'array',
+      description:
+        "Image URL of each clip's LAST frame, in rendered order. Pass one as sourceImageUrl to chain the next clip off it.",
     },
     storyboardId: { type: 'string', description: 'Storyboard that was rendered' },
     conversationId: { type: 'string', description: 'Conversation the storyboard belongs to' },

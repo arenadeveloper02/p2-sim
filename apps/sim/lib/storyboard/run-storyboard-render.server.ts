@@ -17,7 +17,7 @@ import { generateShortId } from '@sim/utils/id'
 import { sql } from 'drizzle-orm'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { generateFalVideo } from '@/lib/media/falai-video'
-import { type MediaFile, runFfmpegOperation } from '@/lib/media/ffmpeg'
+import { extractLastFrame, type MediaFile, runFfmpegOperation } from '@/lib/media/ffmpeg'
 import type { StoryboardScene } from '@/lib/storyboard/run-storyboard-generate.server'
 import {
   downloadFile,
@@ -74,6 +74,12 @@ export interface RunStoryboardRenderResult {
   publicVideoUrl?: string
   /** Public Fal CDN URL per clip, in the rendered scene order ('' when unavailable). */
   falUrls: string[]
+  /**
+   * Last frame of each generated clip as an image URL (presigned when cloud
+   * storage is available), in the rendered scene order ('' when unavailable).
+   * Feed one back as `sourceImageUrl` to chain the next clip off it.
+   */
+  lastFrameUrls: string[]
   storyboardId: string
   conversationId: string
   topic: string
@@ -274,6 +280,57 @@ async function storeFinalVideo(
   return { videoUrl, presignedUrl }
 }
 
+/**
+ * Uploads a clip's last frame and returns a URL usable both by external apps
+ * and as a later `sourceImageUrl` (presigned when cloud storage is available,
+ * Sim serve URL otherwise). Best-effort: returns '' on failure so a missing
+ * frame never fails the render itself.
+ */
+async function storeLastFrame(
+  frame: Buffer,
+  clipIndex: number,
+  context: RunStoryboardRenderContext,
+  requestId: string
+): Promise<string> {
+  try {
+    const safeSegment = (v: string | undefined) =>
+      (v || 'unknown').replace(/[/\\\0]/g, '').replace(/\.\./g, '') || 'unknown'
+    const key = `agent-generated-images/${safeSegment(context.workflowId)}/${safeSegment(
+      context.userId
+    )}/storyboard-lastframe-${Date.now()}-${generateShortId()}-${clipIndex}.jpg`
+
+    const fileInfo = await uploadFile({
+      file: frame,
+      fileName: key,
+      contentType: 'image/jpeg',
+      context: 'agent-generated-images',
+      preserveKey: true,
+      metadata: {
+        workflowId: context.workflowId ?? '',
+        userId: context.userId ?? '',
+        purpose: 'storyboard-clip-last-frame',
+      },
+    })
+
+    try {
+      const presigned = await generatePresignedDownloadUrl(
+        key,
+        'agent-generated-images',
+        PUBLIC_VIDEO_URL_TTL_SECONDS
+      )
+      if (!presigned.includes('/api/files/serve/')) return presigned
+    } catch {
+      // fall through to the serve URL — still usable as a sourceImageUrl
+    }
+    return `${getBaseUrl()}${fileInfo.path}`
+  } catch (error) {
+    logger.warn(`[${requestId}] Could not store last frame for clip ${clipIndex + 1}`, {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return ''
+  }
+}
+
 type StoryboardQueryRow = { id: string; topic: string | null; scenes: unknown }
 
 /**
@@ -408,6 +465,7 @@ export async function runStoryboardRender(
       videoUrl: stored.videoUrl,
       ...(publicVideoUrl ? { publicVideoUrl } : {}),
       falUrls: publicInputUrls,
+      lastFrameUrls: [],
       storyboardId: '',
       conversationId: asString(params.conversationId),
       topic: 'approved clips',
@@ -473,17 +531,36 @@ export async function runStoryboardRender(
     resolution,
   })
 
+  // Frame chaining: the source image override lets one clip start from
+  // another clip's last frame instead of its own storyboard still, and
+  // chainFrames does that automatically for every scene of a full render —
+  // motion and composition carry across clip boundaries.
+  const sourceImageUrl = asString(params.sourceImageUrl)
+  const chainFrames = params.chainFrames === true || params.chainFrames === 'true'
+
   // Sequential on purpose: each clip is expensive and Fal queues per key;
-  // failing fast on clip N beats paying for N parallel failures.
+  // failing fast on clip N beats paying for N parallel failures. Chaining
+  // additionally REQUIRES it: clip N+1 starts from clip N's last frame.
   const clips: MediaFile[] = []
   const clipFalUrls: string[] = []
+  const lastFrames: Array<Buffer | undefined> = []
+  let previousLastFrameDataUri: string | undefined
   for (let i = 0; i < orderedScenes.length; i++) {
     const scene = orderedScenes[i]
     logger.info(`[${requestId}] Generating clip ${i + 1}/${orderedScenes.length}`, {
       sceneIndex: scene.index,
+      chained: chainFrames && i > 0,
     })
 
-    const imageDataUri = await fetchSceneImageAsDataUri(scene)
+    let imageDataUri: string
+    if (i === 0 && sourceImageUrl) {
+      imageDataUri = await fetchImageAsDataUri(sourceImageUrl)
+    } else if (chainFrames && previousLastFrameDataUri) {
+      imageDataUri = previousLastFrameDataUri
+    } else {
+      imageDataUri = await fetchSceneImageAsDataUri(scene)
+    }
+
     const clip = await generateFalVideo({
       prompt: scene.prompt,
       model,
@@ -495,7 +572,29 @@ export async function runStoryboardRender(
 
     clips.push({ buffer: clip.buffer, mimeType: clip.contentType })
     clipFalUrls.push(clip.sourceUrl ?? '')
+
+    // The last frame feeds chaining and the per-clip lastFrameUrls output.
+    // Best-effort: a failed extraction falls back to unchained behaviour.
+    try {
+      const frame = await extractLastFrame({ buffer: clip.buffer, mimeType: clip.contentType })
+      lastFrames.push(frame)
+      if (chainFrames) {
+        previousLastFrameDataUri = `data:image/jpeg;base64,${frame.toString('base64')}`
+      }
+    } catch (error) {
+      lastFrames.push(undefined)
+      previousLastFrameDataUri = undefined
+      logger.warn(`[${requestId}] Last-frame extraction failed for clip ${i + 1}`, {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
+
+  const lastFrameUrls = await Promise.all(
+    lastFrames.map((frame, i) =>
+      frame ? storeLastFrame(frame, i, context, requestId) : Promise.resolve('')
+    )
+  )
 
   let finalBuffer: Buffer
   if (clips.length === 1) {
@@ -548,6 +647,7 @@ export async function runStoryboardRender(
     videoUrl,
     ...(publicVideoUrl ? { publicVideoUrl } : {}),
     falUrls: clipFalUrls,
+    lastFrameUrls,
     storyboardId: storyboard.id,
     conversationId,
     topic,

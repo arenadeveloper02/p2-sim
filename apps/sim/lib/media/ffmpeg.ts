@@ -199,6 +199,38 @@ function runCommand(command: ffmpeg.FfmpegCommand, outputPath: string): Promise<
   })
 }
 
+/**
+ * Extracts the last frame of a video clip as a JPEG buffer (for frame
+ * chaining: the next clip is generated from where this one ended).
+ */
+export async function extractLastFrame(file: MediaFile): Promise<Buffer> {
+  return withTempDir(async (dir) => {
+    const inputPath = await writeInput(dir, file, 0)
+    const outputPath = path.join(dir, 'last.jpg')
+
+    try {
+      // -sseof seeks from the end of the file; grab the first decoded frame there.
+      const command = ffmpeg()
+        .input(inputPath)
+        .inputOptions(['-sseof', '-0.1'])
+        .outputOptions(['-frames:v', '1', '-q:v', '2', '-update', '1'])
+      await runCommand(command, outputPath)
+      return await fs.readFile(outputPath)
+    } catch {
+      // Some builds/containers mis-handle -sseof on VFR clips; fall back to an
+      // absolute seek just before the probed duration.
+      const probe = await probeFile(inputPath)
+      const seekTo = Math.max(0, (probe.durationSeconds || 1) - 0.5)
+      const command = ffmpeg()
+        .input(inputPath)
+        .seekInput(seekTo)
+        .outputOptions(['-frames:v', '1', '-q:v', '2', '-update', '1'])
+      await runCommand(command, outputPath)
+      return await fs.readFile(outputPath)
+    }
+  })
+}
+
 export async function probeMedia(file: MediaFile): Promise<MediaProbe> {
   return withTempDir(async (dir) => {
     const inputPath = await writeInput(dir, file, 0)

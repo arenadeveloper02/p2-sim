@@ -1817,6 +1817,23 @@ const STORYBOARD_MODE_SUBBLOCKS: SubBlockConfig[] = [
       "Render only this one scene's clip for approval. The storyboard is not marked as rendered.",
   },
   {
+    id: 'sourceImageUrl',
+    title: 'Source Image Override',
+    type: 'short-input',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    placeholder: "https://… — e.g. a previous clip's lastFrameUrl",
+    description:
+      "Generate the clip from this image instead of the scene's storyboard still. Used for frame chaining.",
+  },
+  {
+    id: 'chainFrames',
+    title: 'Chain Frames',
+    type: 'switch',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    description:
+      "Full render: start each clip from the previous clip's last frame so the video is one continuous piece (slower — clips render one after another)",
+  },
+  {
     id: 'clipUrls',
     title: 'Clip URLs (Concat Mode)',
     type: 'long-input',
@@ -1942,6 +1959,8 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
               // order is never silently dropped.
               order: params.sceneOrder || params.order,
               sceneNumber: params.sceneNumber ? Number(params.sceneNumber) : undefined,
+              sourceImageUrl: params.sourceImageUrl,
+              chainFrames: parseOptionalBooleanInput(params.chainFrames),
               clipUrls: params.clipUrls,
               videoModel: params.storyVideoModel,
               // Total length wins over seconds-per-scene: the user asks for a
@@ -1965,6 +1984,16 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
     sceneNumber: {
       type: 'number',
       description: "Story Mode: render only this one scene's clip (1-based)",
+    },
+    sourceImageUrl: {
+      type: 'string',
+      description:
+        "Story Mode: generate the clip from this image (e.g. a previous clip's lastFrameUrl) instead of the storyboard still",
+    },
+    chainFrames: {
+      type: 'boolean',
+      description:
+        "Story Mode: chain each clip off the previous clip's last frame for a continuous video",
     },
     clipUrls: {
       type: 'string',
@@ -1992,6 +2021,11 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
     falUrls: {
       type: 'array',
       description: 'Story Mode: public Fal CDN URL per clip, in rendered order',
+    },
+    lastFrameUrls: {
+      type: 'array',
+      description:
+        "Story Mode: image URL of each clip's last frame, in rendered order (for frame chaining)",
     },
   },
 }
