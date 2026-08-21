@@ -184,6 +184,7 @@ export function GenerativeAppPreviewHost({
             spec={compiledPages?.[pagePath]?.spec ?? page.spec}
             state={state}
             pending={pending}
+            currentPath={pagePath}
             onNavigate={navigate}
             onRunAction={async (actionId, values) => {
               const navigateTo = actionNavigate[actionId]

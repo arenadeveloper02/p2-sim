@@ -4,6 +4,7 @@ import {
   type CSSProperties,
   type FormEvent,
   Fragment,
+  type KeyboardEvent,
   type ReactNode,
   useEffect,
   useState,
@@ -69,6 +70,8 @@ interface SpecRendererProps {
   spec: Spec
   state: Record<string, unknown>
   pending: boolean
+  /** Current page path; Tabs use this when it matches an item, otherwise `activePath`. */
+  currentPath?: string
   onNavigate: (path: string) => void
   onRunAction: (actionId: string, values: Record<string, unknown>) => Promise<void>
 }
@@ -754,32 +757,60 @@ function fieldErrorClass(error: string | undefined): string {
     : ''
 }
 
+function RequiredMark({ show }: { show: boolean }) {
+  if (!show) return null
+  return (
+    <span aria-hidden className='text-[var(--gui-danger,#f31a1a)]'>
+      {' *'}
+    </span>
+  )
+}
+
+function ActionBusyMark({ show }: { show: boolean }) {
+  if (!show) return null
+  return (
+    <span
+      data-testid='action-busy'
+      aria-hidden
+      className='inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent'
+    />
+  )
+}
+
 function FieldShell({
   name,
   label,
   htmlFor,
   error,
+  required = false,
   children,
 }: {
   name: string
   label: string
   htmlFor?: string
   error?: string
+  required?: boolean
   children: ReactNode
 }) {
+  const title = label ? (
+    <>
+      {label}
+      <RequiredMark show={required} />
+    </>
+  ) : null
   return (
     <div className='flex flex-col gap-1.5'>
-      {label ? (
+      {title ? (
         htmlFor ? (
           <label
             htmlFor={htmlFor}
             className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-label-leading,16px)] tracking-[0.25px]'
           >
-            {label}
+            {title}
           </label>
         ) : (
           <span className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] leading-[var(--gui-label-leading,16px)] tracking-[0.25px]'>
-            {label}
+            {title}
           </span>
         )
       ) : null}
@@ -895,10 +926,113 @@ function styleFromProps(props: Record<string, unknown>): CSSProperties {
   return style
 }
 
+function CatalogTabs({
+  items,
+  activePath,
+  currentPath,
+  onNavigate,
+  style,
+}: {
+  items: Array<{ label: string; path: string }>
+  activePath: string
+  currentPath?: string
+  onNavigate: (path: string) => void
+  style?: CSSProperties
+}) {
+  const itemPaths = items.map((item) => splitNavTarget(item.path).path)
+  const routePath = currentPath ? splitNavTarget(currentPath).path : ''
+  const resolvedActive = itemPaths.includes(routePath) ? routePath : splitNavTarget(activePath).path
+
+  const focusTab = (event: KeyboardEvent<HTMLButtonElement>, index: number, key: string) => {
+    if (key !== 'ArrowLeft' && key !== 'ArrowRight') return
+    event.preventDefault()
+    const delta = key === 'ArrowRight' ? 1 : -1
+    const next = (index + delta + items.length) % items.length
+    const tabs = event.currentTarget.parentElement?.querySelectorAll('[role="tab"]')
+    const target = tabs?.[next]
+    if (target instanceof HTMLElement) target.focus()
+  }
+
+  return (
+    <nav
+      role='tablist'
+      className='flex w-full flex-wrap items-center gap-1 border-[var(--gui-border,#e2e3e5)] border-b'
+      style={style}
+    >
+      {items.map((item, index) => {
+        const isActive = splitNavTarget(item.path).path === resolvedActive
+        return (
+          <button
+            key={item.path}
+            type='button'
+            role='tab'
+            tabIndex={isActive ? 0 : -1}
+            aria-selected={isActive}
+            aria-current={isActive ? 'page' : undefined}
+            onClick={() => onNavigate(item.path)}
+            onKeyDown={(event) => focusTab(event, index, event.key)}
+            className={cn(
+              '-mb-px border-b-2 px-4 py-2.5 text-[length:var(--gui-body-size,16px)]',
+              isActive
+                ? 'border-[var(--gui-brand,#1a73e8)] font-medium text-[var(--gui-brand,#1a73e8)]'
+                : 'border-transparent text-[var(--gui-text-muted,#575a66)] hover:text-[var(--gui-text,#2c2d33)]'
+            )}
+          >
+            {item.label}
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
+function CatalogImage({
+  src,
+  alt,
+  width,
+  height,
+}: {
+  src: string
+  alt: string
+  width?: string
+  height?: string
+}) {
+  const [failed, setFailed] = useState(false)
+  if (!src || failed) {
+    return (
+      <div
+        data-testid='image-fallback'
+        role={alt ? 'img' : undefined}
+        aria-label={alt || undefined}
+        className='flex min-h-16 items-center justify-center bg-[var(--gui-canvas,#f7f8f9)] text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'
+      >
+        {alt}
+      </div>
+    )
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      width={width}
+      height={height}
+      loading='lazy'
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
 /**
  * Walks a json-render Spec and renders Arena Generative UI catalog components.
  */
-export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: SpecRendererProps) {
+export function SpecRenderer({
+  spec,
+  state,
+  pending,
+  currentPath,
+  onNavigate,
+  onRunAction,
+}: SpecRendererProps) {
   const elements = (spec.elements ?? {}) as Record<string, SpecElement>
   const [formValues, setFormValues] = useState<Record<string, unknown>>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -1128,33 +1262,15 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
       }
       case 'Tabs': {
         const items = parseTabItems(props.items)
-        const activePath = asString(props.activePath)
         if (items.length === 0) return null
         return (
-          <nav
-            className='flex w-full flex-wrap items-center gap-1 border-[var(--gui-border,#e2e3e5)] border-b'
+          <CatalogTabs
+            items={items}
+            activePath={asString(props.activePath)}
+            currentPath={currentPath}
+            onNavigate={onNavigate}
             style={styleFromProps(props)}
-          >
-            {items.map((item) => {
-              const isActive = splitNavTarget(item.path).path === splitNavTarget(activePath).path
-              return (
-                <button
-                  key={item.path}
-                  type='button'
-                  aria-current={isActive ? 'page' : undefined}
-                  onClick={() => onNavigate(item.path)}
-                  className={cn(
-                    '-mb-px border-b-2 px-4 py-2.5 text-[length:var(--gui-body-size,16px)]',
-                    isActive
-                      ? 'border-[var(--gui-brand,#1a73e8)] font-medium text-[var(--gui-brand,#1a73e8)]'
-                      : 'border-transparent text-[var(--gui-text-muted,#575a66)] hover:text-[var(--gui-text,#2c2d33)]'
-                  )}
-                >
-                  {item.label}
-                </button>
-              )
-            })}
-          </nav>
+          />
         )
       }
       case 'Table': {
@@ -1695,6 +1811,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
                 className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)]'
               >
                 {label}
+                <RequiredMark show={required} />
               </label>
             ) : (
               <label htmlFor={fieldId} className='sr-only'>
@@ -1720,8 +1837,13 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
               <button
                 type='submit'
                 disabled={pending}
-                className={buttonClass({ variant: 'primary', shape: 'pill' }, 'primary')}
+                aria-busy={pending || undefined}
+                className={cn(
+                  buttonClass({ variant: 'primary', shape: 'pill' }, 'primary'),
+                  pending && 'gap-2'
+                )}
               >
+                <ActionBusyMark show={pending} />
                 {submitLabel}
               </button>
             </div>
@@ -1801,7 +1923,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
 
         if (element.type === 'TextArea') {
           return (
-            <FieldShell name={name} label={label} htmlFor={fieldId} error={error}>
+            <FieldShell name={name} label={label} htmlFor={fieldId} error={error} required={required}>
               <textarea
                 id={fieldId}
                 name={name}
@@ -1818,7 +1940,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         if (element.type === 'Select') {
           const options = parseOptionList(props.options)
           return (
-            <FieldShell name={name} label={label} htmlFor={fieldId} error={error}>
+            <FieldShell name={name} label={label} htmlFor={fieldId} error={error} required={required}>
               <select
                 id={fieldId}
                 name={name}
@@ -1841,7 +1963,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           const options = parseOptionList(props.options)
           const selected = asFieldString(value)
           return (
-            <FieldShell name={name} label={label} error={error}>
+            <FieldShell name={name} label={label} error={error} required={required}>
               <div role='radiogroup' aria-label={label || name} className='flex flex-col gap-2'>
                 {options.map((option) => {
                   const optionId = `${fieldId}-${option}`
@@ -1867,7 +1989,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
           const options = parseOptionList(props.options)
           const selected = new Set(asFieldStringList(value))
           return (
-            <FieldShell name={name} label={label} error={error}>
+            <FieldShell name={name} label={label} error={error} required={required}>
               <div className='flex flex-col gap-2'>
                 {options.map((option) => {
                   const optionId = `${fieldId}-${option}`
@@ -1934,6 +2056,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
                   {label ? (
                     <label id={switchLabelId} htmlFor={fieldId}>
                       {label}
+                      <RequiredMark show={required} />
                     </label>
                   ) : null}
                 </div>
@@ -1951,7 +2074,10 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
                   checked={checked}
                   onChange={(event) => setNamedValue(name, event.target.checked)}
                 />
-                <span>{label}</span>
+                <span>
+                  {label}
+                  <RequiredMark show={required} />
+                </span>
               </label>
             </FieldShell>
           )
@@ -1959,7 +2085,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         const inputType =
           element.type === 'NumberInput' ? 'number' : element.type === 'DateInput' ? 'date' : 'text'
         return (
-          <FieldShell name={name} label={label} htmlFor={fieldId} error={error}>
+          <FieldShell name={name} label={label} htmlFor={fieldId} error={error} required={required}>
             <input
               id={fieldId}
               name={name}
@@ -1990,15 +2116,23 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             <button
               type='button'
               disabled={pending}
-              className={className}
+              aria-busy={pending || undefined}
+              className={cn(className, pending && 'gap-2')}
               onClick={() => void onRunAction(actionId, actionValues)}
             >
+              <ActionBusyMark show={pending} />
               {label}
             </button>
           )
         }
         return (
-          <button type='submit' disabled={pending} className={className}>
+          <button
+            type='submit'
+            disabled={pending}
+            aria-busy={pending || undefined}
+            className={cn(className, pending && 'gap-2')}
+          >
+            <ActionBusyMark show={pending} />
             {label}
           </button>
         )
@@ -2016,17 +2150,20 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
             </a>
           )
         }
+        const actionBusy = pending && Boolean(actionId)
         return (
           <button
             type='button'
-            className={className}
+            className={cn(className, actionBusy && 'gap-2')}
             style={styleFromProps(props)}
-            disabled={pending && Boolean(actionId)}
+            disabled={actionBusy}
+            aria-busy={actionBusy || undefined}
             onClick={() => {
               if (navigateTo) onNavigate(navigateTo)
               if (actionId) void onRunAction(actionId, actionValues)
             }}
           >
+            <ActionBusyMark show={actionBusy} />
             {asString(props.label)}
           </button>
         )
@@ -2054,7 +2191,7 @@ export function SpecRenderer({ spec, state, pending, onNavigate, onRunAction }: 
         )
       case 'Image':
         return (
-          <img
+          <CatalogImage
             src={asString(props.src)}
             alt={asString(props.alt)}
             width={asString(props.width) || undefined}

@@ -173,6 +173,7 @@ export function GenerativeAppHost({
           spec={compiledPageSpec}
           state={state}
           pending={runAction.isPending || actionPending || loadPending}
+          currentPath={pagePath}
           onNavigate={navigate}
           onRunAction={async (actionId, values) => {
             const navigateTo = actionNavigate[actionId]

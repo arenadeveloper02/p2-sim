@@ -94,6 +94,7 @@ describe('SpecRenderer', () => {
     spec?: Spec
     state?: Record<string, unknown>
     pending?: boolean
+    currentPath?: string
     onNavigate?: ReturnType<typeof vi.fn>
     onRunAction?: ReturnType<typeof vi.fn>
   }) {
@@ -109,6 +110,7 @@ describe('SpecRenderer', () => {
           spec={options?.spec ?? homeSpec}
           state={options?.state ?? {}}
           pending={options?.pending ?? false}
+          currentPath={options?.currentPath}
           onNavigate={onNavigate}
           onRunAction={onRunAction}
         />
@@ -1471,5 +1473,171 @@ describe('SpecRenderer', () => {
       item.textContent?.includes('Registry lookup')
     )
     expect(nested?.className).toContain('pl-6')
+  })
+
+  it('marks a required field label without changing validation copy', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['form'] },
+        form: { type: 'Form', props: { actionId: 'save' }, children: ['name'] },
+        name: {
+          type: 'TextInput',
+          props: { name: 'name', label: 'Name', required: true },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('label')?.textContent).toBe('Name *')
+  })
+
+  it('shows busy chrome on a pending action button but not on a nav-only button', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['run', 'back'] },
+        run: { type: 'Button', props: { label: 'Run', actionId: 'run' }, children: [] },
+        back: { type: 'Button', props: { label: 'Back', navigateTo: 'home' }, children: [] },
+      },
+    }
+    const { container } = render({ spec, pending: true })
+    const run = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Run')
+    )
+    const back = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Back'
+    )
+    expect(run?.disabled).toBe(true)
+    expect(run?.querySelector('[data-testid="action-busy"]')).toBeTruthy()
+    expect(back?.disabled).toBe(false)
+    expect(back?.querySelector('[data-testid="action-busy"]')).toBeNull()
+  })
+
+  it('shows busy chrome on a pending SubmitButton', () => {
+    const { container } = render({ pending: true })
+    const submit = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Submit')
+    )
+    expect(submit?.disabled).toBe(true)
+    expect(submit?.getAttribute('aria-busy')).toBe('true')
+    expect(submit?.querySelector('[data-testid="action-busy"]')).toBeTruthy()
+  })
+
+  it('shows busy chrome on a pending SearchField submit', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['search'] },
+        search: {
+          type: 'SearchField',
+          props: { name: 'query', actionId: 'search', submitLabel: 'Search' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec, pending: true })
+    const submit = container.querySelector('[data-testid="search-field"] button')
+    expect(submit?.getAttribute('disabled')).not.toBeNull()
+    expect(submit?.querySelector('[data-testid="action-busy"]')).toBeTruthy()
+  })
+
+  it('uses the current path for Tabs when it matches an item, otherwise activePath', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['tabs'] },
+        tabs: {
+          type: 'Tabs',
+          props: { items: 'Home|home\nReports|reports', activePath: 'home' },
+          children: [],
+        },
+      },
+    }
+    const matched = render({ spec, currentPath: 'reports' })
+    const matchedTabs = Array.from(matched.container.querySelectorAll('[role="tab"]'))
+    expect(matchedTabs[1]?.getAttribute('aria-current')).toBe('page')
+    expect(matchedTabs[0]?.getAttribute('aria-current')).toBeNull()
+    unmount?.()
+    const unmatched = render({ spec, currentPath: 'detail' })
+    const unmatchedTabs = Array.from(unmatched.container.querySelectorAll('[role="tab"]'))
+    expect(unmatchedTabs[0]?.getAttribute('aria-current')).toBe('page')
+  })
+
+  it('moves Tab focus with arrow keys without navigating', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['tabs'] },
+        tabs: {
+          type: 'Tabs',
+          props: { items: 'Home|home\nReports|reports', activePath: 'home' },
+          children: [],
+        },
+      },
+    }
+    const { container, onNavigate } = render({ spec })
+    const tabs = Array.from(container.querySelectorAll('[role="tab"]')) as HTMLButtonElement[]
+    act(() => {
+      tabs[0]?.focus()
+      tabs[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })
+    expect(document.activeElement).toBe(tabs[1])
+    expect(onNavigate).not.toHaveBeenCalled()
+  })
+
+  it('lazy-loads images and shows a fallback when src is empty', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['photo'] },
+        photo: {
+          type: 'Image',
+          props: { src: '', alt: 'Company logo', width: null, height: null },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('[data-testid="image-fallback"]')?.textContent).toBe(
+      'Company logo'
+    )
+    expect(container.querySelector('img')).toBeNull()
+  })
+
+  it('sets loading=lazy on a content image', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['photo'] },
+        photo: {
+          type: 'Image',
+          props: { src: 'https://example.com/logo.png', alt: 'Logo', width: null, height: null },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('img')?.getAttribute('loading')).toBe('lazy')
+  })
+
+  it('falls back when an image fails to load', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['photo'] },
+        photo: {
+          type: 'Image',
+          props: { src: 'https://example.com/broken.png', alt: 'Logo' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    act(() => {
+      container.querySelector('img')?.dispatchEvent(new Event('error'))
+    })
+    expect(container.querySelector('[data-testid="image-fallback"]')?.textContent).toBe('Logo')
+    expect(container.querySelector('img')).toBeNull()
   })
 })
