@@ -155,7 +155,7 @@ export function Spinner() {
 
 export function AgentIcon(props: Omit<ImageProps, 'src' | 'alt' | 'fill'>) {
   return (
-    <div className='relative flex h-full w-full items-center justify-center rounded-md bg-[linear-gradient(to_bottom,#8F50AC,#0086AB)]'>
+    <div className='relative flex h-full w-full items-center justify-center rounded-md bg-[linear-gradient(179.65deg,#7B4796_-0.59%,#017496_102.42%)]'>
       <Image
         src='https://arenav2image.s3.us-west-1.amazonaws.com/vimi-sparkle.png'
         alt='vimi-sparkle'
