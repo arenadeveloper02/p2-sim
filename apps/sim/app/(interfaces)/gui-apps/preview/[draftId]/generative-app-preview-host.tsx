@@ -23,6 +23,7 @@ import {
   navigationHref,
   streamingActionIdsFrom,
 } from '@/lib/arena-generative-ui/types'
+import { compileGenerativeUx } from '@/lib/arena-generative-ui/ux-compiler'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
@@ -73,6 +74,10 @@ export function GenerativeAppPreviewHost({
   const apiBindings = draftQuery.data?.apiBindings
   const streamingIds = useMemo(
     () => new Set(manifest && apiBindings ? streamingActionIdsFrom(manifest, apiBindings) : []),
+    [manifest, apiBindings]
+  )
+  const compiledPages = useMemo(
+    () => (manifest ? compileGenerativeUx(manifest, apiBindings ?? []).pages : undefined),
     [manifest, apiBindings]
   )
 
@@ -176,7 +181,7 @@ export function GenerativeAppPreviewHost({
           }}
         >
           <SpecRenderer
-            spec={page.spec}
+            spec={compiledPages?.[pagePath]?.spec ?? page.spec}
             state={state}
             pending={pending}
             onNavigate={navigate}

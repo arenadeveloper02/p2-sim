@@ -16,6 +16,10 @@ import {
   isJsonRenderSpec,
   navigationHref,
 } from '@/lib/arena-generative-ui/types'
+import {
+  compileGenerativePageSpec,
+  pageNeedsPendingChromeFromConfig,
+} from '@/lib/arena-generative-ui/ux-compiler'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
@@ -69,6 +73,18 @@ export function GenerativeAppHost({
     () => new Set(config?.streamingActionIds ?? []),
     [config?.streamingActionIds]
   )
+  const compiledPageSpec = useMemo(() => {
+    const spec = pageQuery.data?.spec
+    if (!spec || !isJsonRenderSpec(spec)) return undefined
+    return compileGenerativePageSpec(spec, {
+      needsPendingChrome: pageNeedsPendingChromeFromConfig({
+        pagePath,
+        spec,
+        onLoadIds: config?.pageOnLoad?.[pagePath] ?? [],
+        actionNavigate: config?.actionNavigate ?? {},
+      }),
+    }).spec
+  }, [pageQuery.data?.spec, pagePath, config?.pageOnLoad, config?.actionNavigate])
 
   const executeAction = async (actionId: string, values: Record<string, unknown>) =>
     streamingIds.has(actionId)
@@ -134,7 +150,7 @@ export function GenerativeAppHost({
     return <p className='p-8 text-[var(--color-ds-grey-500,#8a8d99)] text-sm'>Loading page…</p>
   }
 
-  if (!pageQuery.data || !isJsonRenderSpec(pageQuery.data.spec)) {
+  if (!pageQuery.data || !compiledPageSpec || !isJsonRenderSpec(compiledPageSpec)) {
     return <div className='p-8 text-center'>Page not found</div>
   }
 
@@ -154,7 +170,7 @@ export function GenerativeAppHost({
       ) : null}
       <SpecRenderErrorBoundary key={pagePath} fallbackTitle='This page failed to render'>
         <SpecRenderer
-          spec={pageQuery.data.spec}
+          spec={compiledPageSpec}
           state={state}
           pending={runAction.isPending || actionPending || loadPending}
           onNavigate={navigate}

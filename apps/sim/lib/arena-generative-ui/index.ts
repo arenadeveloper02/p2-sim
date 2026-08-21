@@ -58,4 +58,5 @@ export {
   isJsonRenderSpec,
   isReservedGenerativeAppIdentifier,
 } from '@/lib/arena-generative-ui/types'
+export { compileGenerativeUx } from '@/lib/arena-generative-ui/ux-compiler'
 export { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/validate-manifest'

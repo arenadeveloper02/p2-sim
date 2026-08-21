@@ -1,0 +1,255 @@
+import type { Spec } from '@json-render/core'
+import type {
+  ArenaGenerativeApiBinding,
+  ArenaGenerativeAppManifest,
+  ArenaGenerativePageManifest,
+} from '@/lib/arena-generative-ui/types'
+import { splitNavTarget } from '@/lib/arena-generative-ui/types'
+
+export type ArenaGenerativeAsyncKind = 'query' | 'mutation' | 'longRunning'
+
+export type ArenaGenerativeFallbackLoading = 'skeleton' | 'status'
+
+export interface ArenaGenerativeUxActionPlan {
+  kind: ArenaGenerativeAsyncKind
+  confirm: boolean
+  retry: boolean
+}
+
+export interface ArenaGenerativeUxPlan {
+  actions: Record<string, ArenaGenerativeUxActionPlan>
+  fallbackLoading: Record<string, ArenaGenerativeFallbackLoading>
+}
+
+export interface CompileGenerativeUxResult {
+  pages: Record<string, ArenaGenerativePageManifest>
+  uxPlan: ArenaGenerativeUxPlan
+}
+
+interface SpecElement {
+  type?: string
+  props?: Record<string, unknown>
+  children?: string[]
+}
+
+const EXPLICIT_LOADING_TYPES = new Set(['Skeleton', 'Spinner', 'ProgressBar', 'ProgressSteps'])
+const BOUND_LOADING_TYPES = new Set(['Table', 'Repeat', 'Stat', 'KeyValue', 'DataText'])
+const ACTION_ID_PROP_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip'])
+
+/** Element key for compiler-injected pending status. Must not collide with model keys. */
+export const UX_COMPILER_STATUS_KEY = 'ux-compiler-status'
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function specElements(spec: Spec): Record<string, SpecElement> {
+  const elements = spec.elements
+  if (!elements || typeof elements !== 'object' || Array.isArray(elements)) {
+    return {}
+  }
+  return elements as Record<string, SpecElement>
+}
+
+/**
+ * True when the spec already has a pending surface (explicit loader or a bound
+ * region the renderer auto-skeletons). Overlay must not add a second one.
+ */
+export function specHasLoadingSurface(spec: Spec): boolean {
+  for (const element of Object.values(specElements(spec))) {
+    const type = element.type ?? ''
+    if (EXPLICIT_LOADING_TYPES.has(type)) return true
+    if (BOUND_LOADING_TYPES.has(type) && asString(element.props?.statePath)) return true
+  }
+  return false
+}
+
+function actionIdsInSpec(spec: Spec): string[] {
+  const ids: string[] = []
+  for (const element of Object.values(specElements(spec))) {
+    if (!ACTION_ID_PROP_TYPES.has(element.type ?? '')) continue
+    const actionId = asString(element.props?.actionId)
+    if (actionId) ids.push(actionId)
+  }
+  return ids
+}
+
+/**
+ * Infers how the host should treat an action. `onLoad` is a query; streaming or
+ * workflow bindings are long-running; everything else is a mutation.
+ */
+export function inferAsyncKind(params: {
+  usedOnLoad: boolean
+  binding?: Pick<ArenaGenerativeApiBinding, 'kind' | 'stream'>
+}): ArenaGenerativeAsyncKind {
+  if (params.usedOnLoad) return 'query'
+  if (params.binding?.stream === true || params.binding?.kind === 'workflow') return 'longRunning'
+  return 'mutation'
+}
+
+function bindingByKey(
+  bindings: ArenaGenerativeApiBinding[]
+): Map<string, ArenaGenerativeApiBinding> {
+  return new Map(bindings.map((binding) => [binding.key, binding]))
+}
+
+function onLoadActionIds(manifest: ArenaGenerativeAppManifest): Set<string> {
+  const ids = new Set<string>()
+  for (const page of Object.values(manifest.pages)) {
+    for (const actionId of page.onLoad ?? []) {
+      ids.add(actionId)
+    }
+  }
+  return ids
+}
+
+function navigatePath(target: string | undefined): string {
+  if (!target) return ''
+  return splitNavTarget(target).path
+}
+
+/**
+ * Pages that can show pending UX: onLoad, navigate-first destinations, or
+ * same-page CTAs.
+ */
+export function pagesNeedingPendingChrome(manifest: ArenaGenerativeAppManifest): Set<string> {
+  const needed = new Set<string>()
+  for (const [path, page] of Object.entries(manifest.pages)) {
+    if ((page.onLoad ?? []).length > 0) needed.add(path)
+  }
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    const dest = navigatePath(action.onSuccess?.navigate)
+    if (dest) {
+      needed.add(dest)
+      continue
+    }
+    for (const [path, page] of Object.entries(manifest.pages)) {
+      if (actionIdsInSpec(page.spec).includes(actionId)) {
+        needed.add(path)
+      }
+    }
+  }
+  return needed
+}
+
+function findInsertParentId(spec: Spec): string | null {
+  const root = spec.root
+  const elements = specElements(spec)
+  const rootElement = elements[root]
+  if (!rootElement) return null
+  for (const childId of rootElement.children ?? []) {
+    if (elements[childId]?.type === 'Section') return childId
+  }
+  return root
+}
+
+function injectStatusSpinner(spec: Spec): Spec {
+  const elements = specElements(spec)
+  if (elements[UX_COMPILER_STATUS_KEY]) return spec
+  const parentId = findInsertParentId(spec)
+  if (!parentId || !elements[parentId]) return spec
+  const parent = elements[parentId]
+  const nextElements: Record<string, SpecElement> = { ...elements }
+  nextElements[UX_COMPILER_STATUS_KEY] = {
+    type: 'Spinner',
+    props: { label: 'Working…' },
+    children: [],
+  }
+  nextElements[parentId] = {
+    ...parent,
+    children: [UX_COMPILER_STATUS_KEY, ...(parent.children ?? [])],
+  }
+  return {
+    ...spec,
+    elements: nextElements,
+  }
+}
+
+/**
+ * True when this page can be pending: it loads data on arrival, is a
+ * navigate-first destination, or hosts a same-page CTA.
+ */
+export function pageNeedsPendingChromeFromConfig(params: {
+  pagePath: string
+  spec: Spec
+  onLoadIds?: string[]
+  actionNavigate?: Record<string, string>
+}): boolean {
+  if ((params.onLoadIds ?? []).length > 0) return true
+  const dests = Object.values(params.actionNavigate ?? {}).map((target) => navigatePath(target))
+  if (dests.includes(params.pagePath)) return true
+  return actionIdsInSpec(params.spec).some((actionId) => !params.actionNavigate?.[actionId])
+}
+
+export interface CompileGenerativePageSpecOptions {
+  needsPendingChrome: boolean
+}
+
+/**
+ * Overlay a single page spec. Returns a clone; injects indeterminate status
+ * only when the page can be pending and has no loading surface.
+ */
+export function compileGenerativePageSpec(
+  spec: Spec,
+  options: CompileGenerativePageSpecOptions
+): { spec: Spec; injected: boolean } {
+  const cloned = structuredClone(spec)
+  if (!options.needsPendingChrome || specHasLoadingSurface(cloned)) {
+    return { spec: cloned, injected: false }
+  }
+  const next = injectStatusSpinner(cloned)
+  const injected = Boolean(specElements(next)[UX_COMPILER_STATUS_KEY])
+  return { spec: next, injected }
+}
+
+function planActions(
+  manifest: ArenaGenerativeAppManifest,
+  bindings: ArenaGenerativeApiBinding[]
+): Record<string, ArenaGenerativeUxActionPlan> {
+  const byKey = bindingByKey(bindings)
+  const onLoadIds = onLoadActionIds(manifest)
+  const plan: Record<string, ArenaGenerativeUxActionPlan> = {}
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    plan[actionId] = {
+      kind: inferAsyncKind({
+        usedOnLoad: onLoadIds.has(actionId),
+        binding: byKey.get(action.apiKey),
+      }),
+      confirm: false,
+      retry: true,
+    }
+  }
+  return plan
+}
+
+/**
+ * Compiles a semantic manifest into in-memory page specs plus a UX plan.
+ * Never mutates the input. Well-wired pages stay deep-equal to a clone.
+ */
+export function compileGenerativeUx(
+  manifest: ArenaGenerativeAppManifest,
+  bindings: ArenaGenerativeApiBinding[] = []
+): CompileGenerativeUxResult {
+  const needed = pagesNeedingPendingChrome(manifest)
+  const fallbackLoading: Record<string, ArenaGenerativeFallbackLoading> = {}
+  const pages: Record<string, ArenaGenerativePageManifest> = {}
+  for (const [path, page] of Object.entries(manifest.pages)) {
+    const compiled = compileGenerativePageSpec(page.spec, {
+      needsPendingChrome: needed.has(path),
+    })
+    pages[path] = {
+      ...page,
+      spec: compiled.spec,
+    }
+    if (compiled.injected) {
+      fallbackLoading[path] = 'status'
+    }
+  }
+  return {
+    pages,
+    uxPlan: {
+      actions: planActions(manifest, bindings),
+      fallbackLoading,
+    },
+  }
+}

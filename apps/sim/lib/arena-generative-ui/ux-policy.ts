@@ -1,0 +1,45 @@
+/**
+ * Default UX policy for Arena Generative UI. The compiler and host enforce
+ * this; the generator may receive a short summary later.
+ */
+export const ARENA_GENERATIVE_UI_UX_PRINCIPLES = [
+  'Generate interfaces that feel production-ready.',
+  'Prefer clear visual hierarchy, obvious primary actions, predictable navigation, responsive layouts, accessible controls, progressive disclosure, contextual feedback, concise error messages, useful empty states, and skeleton loading for content.',
+  'Optimistic updates only when safe (navigate-first). Never invent API data. Never create fake progress.',
+  'Confirmation before destructive actions.',
+  'For every async operation the platform provides loading, error, retry, disabled, and success behavior.',
+].join('\n')
+
+/**
+ * One notification channel per event. Host chrome owns these; the LLM must not
+ * emit Alert/Toast/Modal for them.
+ */
+export const ARENA_GENERATIVE_UI_NOTIFICATION_POLICY = {
+  fieldError: 'inline',
+  apiFailure: 'banner',
+  saveSucceeded: 'toast',
+  destructive: 'confirmation',
+  pageFailure: 'error-state',
+  longRunning: 'progress-status',
+} as const
+
+/**
+ * Author preview keeps runner error copy (HTTP 422, missing secrets). No GUI
+ * sanitizer this pass.
+ */
+export const ARENA_GENERATIVE_UI_UX_NEVERS = [
+  'silently discard user input',
+  'silently fail an action',
+  'overwrite newer data with stale responses',
+  'show stale data as current without indication',
+  'create inaccessible interactive elements',
+  'create navigation that cannot be reached with keyboard',
+  'expose secrets/API keys beyond existing missing-secret diagnostics',
+  'submit the same mutation twice',
+  'destroy user data without confirmation',
+  'lose partial streaming results on failure',
+  'block the entire page for a background refresh',
+  'invent API data',
+  'create fake progress',
+  'trap the user in a page without recovery/navigation',
+] as const
