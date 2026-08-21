@@ -609,8 +609,8 @@ export const ARENA_GENERATIVE_UI_SCOPED_EDIT_RULES = [
 
 /** Added to the generator prompt only when at least one API binding is declared. */
 export const ARENA_GENERATIVE_UI_ACTION_INPUT_RULE = [
-  'CTA inputs: every inputSchema field whose source is "form" (or omitted) must be a form control whose name matches that field. Fields with source "visitorEmail" or "constant" are sent by the host — do not render a visible field for them, and do not invent a placeholder the user has to type.',
-  'For a visitorEmail field, set inputMapping { "<name>": "arenaEmailId" } so the workflow start input receives the logged-in address under its own name (email, userEmail, …). Constant fields need no form name and no inputMapping; the host stamps their value on every call.',
+  'CTA inputs: every inputSchema field whose source is "form" (or omitted) must be a form control whose name matches that field — including a field named "email", which is a typed lead/contact address, not the signed-in user. Fields with source "visitorEmail" or "constant" are sent by the host — do not render a visible field for them, and do not invent a placeholder the user has to type.',
+  'visitorEmail is the signed-in user only (typical names: userEmail, loggedInEmail, visitorEmail). Set inputMapping { "<name>": "arenaEmailId" } so that start input receives the logged-in address. Do not map a form "email" field to arenaEmailId. Constant fields need no form name and no inputMapping; the host stamps their value on every call.',
 ].join(' ')
 
 /** Added to the generator prompt only when at least one API binding is declared. */

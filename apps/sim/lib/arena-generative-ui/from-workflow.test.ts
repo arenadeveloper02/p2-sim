@@ -28,21 +28,22 @@ describe('inputSchemaFromWorkflowFields', () => {
     ])
   })
 
-  it('marks email-like start inputs as visitorEmail', () => {
+  it('marks actor-specific start inputs as visitorEmail and keeps email as form', () => {
     expect(
       inputSchemaFromWorkflowFields([
         { name: 'type', type: 'string' },
         { name: 'email', type: 'string' },
+        { name: 'userEmail', type: 'string' },
         { name: 'actor', type: 'string', description: "Logged-in user's email" },
       ])
     ).toEqual([
       { name: 'type', type: 'string' },
-      { name: 'email', type: 'string', source: 'visitorEmail' },
+      { name: 'email', type: 'string' },
+      { name: 'userEmail', type: 'string', source: 'visitorEmail' },
       {
         name: 'actor',
         type: 'string',
         description: "Logged-in user's email",
-        source: 'visitorEmail',
       },
     ])
   })

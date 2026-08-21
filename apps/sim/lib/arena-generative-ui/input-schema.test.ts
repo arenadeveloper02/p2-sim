@@ -11,20 +11,24 @@ import {
 } from '@/lib/arena-generative-ui/input-schema'
 
 describe('inferInputFieldSource', () => {
-  it('treats email-like names as visitorEmail', () => {
-    expect(inferInputFieldSource('email')).toBe('visitorEmail')
+  it('treats actor-specific names as the signed-in address', () => {
     expect(inferInputFieldSource('userEmail')).toBe('visitorEmail')
     expect(inferInputFieldSource('user_email')).toBe('visitorEmail')
     expect(inferInputFieldSource('loggedInEmail')).toBe('visitorEmail')
+    expect(inferInputFieldSource('visitorEmail')).toBe('visitorEmail')
+    expect(inferInputFieldSource('arenaEmailId')).toBe('visitorEmail')
   })
 
-  it('treats a description that names email as visitorEmail', () => {
-    expect(inferInputFieldSource('actor', "Logged-in user's email")).toBe('visitorEmail')
+  it('keeps a field named email as a typed form value', () => {
+    expect(inferInputFieldSource('email')).toBe('form')
+    expect(inferInputFieldSource('e-mail')).toBe('form')
+    expect(inferInputFieldSource('contactEmail')).toBe('form')
   })
 
   it('leaves ordinary start inputs as form', () => {
     expect(inferInputFieldSource('type')).toBe('form')
-    expect(inferInputFieldSource('company', 'Legal name')).toBe('form')
+    expect(inferInputFieldSource('company')).toBe('form')
+    expect(inferInputFieldSource('actor')).toBe('form')
   })
 })
 
@@ -96,6 +100,16 @@ describe('applyBindingInputSources', () => {
         'ada@example.com'
       )
     ).toEqual({ company: 'Acme' })
+  })
+
+  it('does not overwrite a typed lead email with the signed-in address', () => {
+    expect(
+      applyBindingInputSources(
+        { email: 'lead@acme.com' },
+        { inputSchema: [{ name: 'email', type: 'string' }] },
+        'ada@example.com'
+      )
+    ).toEqual({ email: 'lead@acme.com' })
   })
 })
 

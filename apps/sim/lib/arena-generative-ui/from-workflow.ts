@@ -36,8 +36,9 @@ export interface WorkflowBindingSelection {
 /**
  * Maps a deployed workflow's start-block fields to a binding `inputSchema`.
  * Names, types, and descriptions are kept so the generator can label the form.
- * Email-like names default to `visitorEmail` so the host sends the logged-in
- * address without a form field.
+ * Actor-specific names (`userEmail`, `loggedInEmail`, …) default to
+ * `visitorEmail` so the host sends the signed-in address without a form field.
+ * A field named `email` stays a form control — that is the lead/contact address.
  */
 export function inputSchemaFromWorkflowFields(
   fields: WorkflowInputField[] | undefined
@@ -55,7 +56,7 @@ export function inputSchemaFromWorkflowFields(
         name,
         type: field.type?.trim() || DEFAULT_INPUT_TYPE,
         ...(description ? { description: description.slice(0, 200) } : {}),
-        source: inferInputFieldSource(name, description),
+        source: inferInputFieldSource(name),
       })
     )
   }

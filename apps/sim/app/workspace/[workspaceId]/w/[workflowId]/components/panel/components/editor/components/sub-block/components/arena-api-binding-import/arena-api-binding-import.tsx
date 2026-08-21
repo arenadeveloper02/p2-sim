@@ -61,7 +61,7 @@ const FORWARD_EMAIL_SWITCH_OPTIONS = [
 
 const INPUT_SOURCE_OPTIONS = [
   { value: 'form', label: 'Form field' },
-  { value: 'visitorEmail', label: 'Visitor email' },
+  { value: 'visitorEmail', label: 'Logged-in email' },
   { value: 'constant', label: 'Constant' },
 ] as const
 
@@ -135,7 +135,7 @@ function InputSourceFields({
             hint={
               row.description
                 ? `${row.type} · ${row.description}`
-                : `${row.type}. Form field collects it in the app; visitor email sends the logged-in address; constant always sends the value you type.`
+                : `${row.type}. Form field is typed in the app (including a lead's email). Logged-in email sends the signed-in user's address and is not a form field. Constant always sends the value you type.`
             }
             value={row.source}
             onChange={(value) => onSourceChange(row.name, value as ArenaGenerativeInputSource)}
@@ -515,13 +515,13 @@ export function ArenaApiBindingImportHelper({
               ) : null}
               <ChipModalField
                 type='custom'
-                title="Visitor's email"
-                hint='Sends the unverified Arena emailId as arenaEmailId. Off unless this endpoint needs it — it leaves your workspace.'
+                title='arenaEmailId'
+                hint='Adds a separate arenaEmailId key with the signed-in address. Does not fill a form field named email. Off unless this endpoint needs it — it leaves your workspace.'
               >
                 <ChipSwitch
                   value={forwardEmail}
                   onChange={setForwardEmail}
-                  aria-label="Forward the visitor's email"
+                  aria-label='Send arenaEmailId'
                   options={FORWARD_EMAIL_SWITCH_OPTIONS}
                 />
               </ChipModalField>

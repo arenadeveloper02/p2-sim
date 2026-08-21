@@ -66,8 +66,9 @@ export interface ArenaGenerativeInputSchemaField {
   type: string
   description?: string
   /**
-   * Where the host gets this value. Omitted/`form` collects a named form field.
-   * `visitorEmail` copies the resolved Arena email. `constant` uses `value`.
+   * Where the host gets this value. Omitted/`form` collects a named form field
+   * (including a lead/contact `email`). `visitorEmail` copies the signed-in
+   * user's address. `constant` uses `value`.
    */
   source?: ArenaGenerativeInputSource
   /** Required when `source` is `constant`. */

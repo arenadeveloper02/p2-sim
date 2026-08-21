@@ -4,8 +4,13 @@ import type {
   ArenaGenerativeInputSource,
 } from '@/lib/arena-generative-ui/types'
 
-const EMAIL_FIELD_NAME =
-  /^(e-?mail|user_?e-?mail|logged_?in_?e-?mail|actor_?e-?mail|visitor_?e-?mail)$/i
+/**
+ * Names that mean the signed-in user's address, not a typed lead/contact email.
+ * Bare `email` / `e-mail` stay form fields — qualify-lead collects a prospect's
+ * address under that name.
+ */
+const LOGGED_IN_EMAIL_FIELD_NAME =
+  /^(user_?e-?mail|logged_?in_?e-?mail|actor_?e-?mail|visitor_?e-?mail|arena_?email_?id)$/i
 
 export interface ArenaGenerativeInputSourceOverride {
   source: ArenaGenerativeInputSource
@@ -24,18 +29,13 @@ export interface ArenaGenerativeInputFieldEditorRow {
 }
 
 /**
- * True when a start-block field is the logged-in / visitor email rather than a
- * form control. Name match is the common case (`email`, `userEmail`); description
- * is the fallback when the start block uses a generic name.
+ * True when a start-block field is the signed-in user's address rather than a
+ * form control. Only actor-specific names (`userEmail`, `loggedInEmail`,
+ * `visitorEmail`, `actorEmail`, `arenaEmailId`) qualify. A field named `email`
+ * is a typed value (lead, contact, prospect) unless the author overrides it.
  */
-export function inferInputFieldSource(
-  name: string,
-  description?: string
-): ArenaGenerativeInputSource {
-  if (EMAIL_FIELD_NAME.test(name.trim())) {
-    return 'visitorEmail'
-  }
-  if (description && /\bemail\b/i.test(description)) {
+export function inferInputFieldSource(name: string): ArenaGenerativeInputSource {
+  if (LOGGED_IN_EMAIL_FIELD_NAME.test(name.trim())) {
     return 'visitorEmail'
   }
   return 'form'
