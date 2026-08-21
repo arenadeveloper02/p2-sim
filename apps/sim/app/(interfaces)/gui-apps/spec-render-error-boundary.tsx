@@ -46,6 +46,15 @@ export class SpecRenderErrorBoundary extends Component<
         <p className='mt-2 text-[var(--gui-text-muted,var(--color-ds-grey-500,#8a8d99))]'>
           {this.state.message}
         </p>
+        <button
+          type='button'
+          data-testid='spec-render-error-retry'
+          autoFocus
+          className='mt-4 font-medium text-[var(--gui-brand,#1a73e8)] hover:underline'
+          onClick={() => this.setState({ message: '' })}
+        >
+          Retry
+        </button>
       </div>
     )
   }

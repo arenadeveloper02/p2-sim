@@ -201,7 +201,7 @@ describe('GenerativeAppHost non-streaming JSON', () => {
     await submit()
 
     const dismiss = container.querySelector(
-      '[data-testid="action-error-banner"] button'
+      '[data-testid="action-error-dismiss"]'
     ) as HTMLButtonElement
     await act(async () => {
       dismiss.click()
@@ -220,6 +220,53 @@ describe('GenerativeAppHost non-streaming JSON', () => {
 
     expect(container.querySelector('[data-testid="action-error-banner"]')).toBeNull()
     expect(container.textContent).toContain('Hi')
+  })
+
+  it('retries the last action from the error banner without changing the runner copy', async () => {
+    mockMutateAsync.mockResolvedValue({ ok: false, error: 'HTTP 422: company is required' })
+    await submit()
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1)
+
+    mockMutateAsync.mockResolvedValue({ ok: true, setState: { content: 'Hi' } })
+    const retry = container.querySelector('[data-testid="action-error-retry"]') as HTMLButtonElement
+    await act(async () => {
+      retry.click()
+    })
+
+    expect(mockMutateAsync).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('[data-testid="action-error-banner"]')).toBeNull()
+    expect(container.textContent).toContain('Hi')
+  })
+
+  it('toasts a same-page save that has no visible result patch', async () => {
+    mockMutateAsync.mockResolvedValue({ ok: true })
+    await submit()
+    expect(container.querySelector('[data-testid="action-success-toast"]')?.textContent).toBe(
+      'Saved'
+    )
+  })
+
+  it('does not toast when navigate-first takes the user to the next page', async () => {
+    mockUseDeployedAppConfig.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        kind: 'config',
+        config: { streamingActionIds: [], actionNavigate: { ask_chat: 'results' } },
+      },
+      error: null,
+    })
+    mockMutateAsync.mockResolvedValue({ ok: true, setState: { content: 'Hi' } })
+    act(() => {
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <GenerativeAppHost identifier='gui-chatapp' pagePath='chat' emailId='' />
+        </GenerativeAppHostStateProvider>
+      )
+    })
+    await submit()
+    expect(mockPush).toHaveBeenCalledWith('/gui-apps/gui-chatapp/results')
+    expect(container.querySelector('[data-testid="action-success-toast"]')).toBeNull()
   })
 })
 
@@ -444,5 +491,88 @@ describe('GenerativeAppHost page onLoad', () => {
     expect(container.querySelector('[data-testid="action-error-banner"]')?.textContent).toContain(
       'Network unreachable'
     )
+  })
+})
+
+const deleteSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: { type: 'Page', props: { title: 'Settings' }, children: ['remove'] },
+    remove: {
+      type: 'Button',
+      props: { label: 'Delete', actionId: 'delete_item', variant: 'destructive' },
+      children: [],
+    },
+  },
+}
+
+describe('GenerativeAppHost destructive confirm', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUseDeployedAppConfig.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { kind: 'config', config: { streamingActionIds: [], actionNavigate: {} } },
+      error: null,
+    })
+    mockUseDeployedAppPage.mockReturnValue({
+      isLoading: false,
+      data: { path: 'settings', title: 'Settings', spec: deleteSpec },
+    })
+    mockMutateAsync.mockResolvedValue({ ok: true })
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => {
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <GenerativeAppHost identifier='gui-chatapp' pagePath='settings' emailId='' />
+        </GenerativeAppHostStateProvider>
+      )
+    })
+  })
+
+  afterEach(() => {
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('waits for confirm before running a destructive action', async () => {
+    const del = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Delete')
+    )
+    await act(async () => {
+      del?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(mockMutateAsync).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="destructive-confirm"]')).toBeTruthy()
+
+    await act(async () => {
+      container.querySelector('[data-testid="destructive-confirm-cancel"]')?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true })
+      )
+    })
+    expect(mockMutateAsync).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="destructive-confirm"]')).toBeNull()
+
+    await act(async () => {
+      del?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      container.querySelector('[data-testid="destructive-confirm-accept"]')?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true })
+      )
+    })
+    expect(mockMutateAsync).toHaveBeenCalledWith({
+      actionId: 'delete_item',
+      values: expect.any(Object),
+      emailId: undefined,
+    })
   })
 })

@@ -30,6 +30,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react'
+import type { RunGenerativeAppActionMeta } from '@/lib/arena-generative-ui/action-runtime'
 import {
   type ArenaGenerativeFormField,
   asFieldString,
@@ -73,7 +74,11 @@ interface SpecRendererProps {
   /** Current page path; Tabs use this when it matches an item, otherwise `activePath`. */
   currentPath?: string
   onNavigate: (path: string) => void
-  onRunAction: (actionId: string, values: Record<string, unknown>) => Promise<void>
+  onRunAction: (
+    actionId: string,
+    values: Record<string, unknown>,
+    meta?: RunGenerativeAppActionMeta
+  ) => Promise<void>
 }
 
 function asString(value: unknown, fallback = ''): string {
@@ -2151,6 +2156,7 @@ export function SpecRenderer({
           )
         }
         const actionBusy = pending && Boolean(actionId)
+        const destructive = asString(props.variant) === 'destructive' && Boolean(actionId)
         return (
           <button
             type='button'
@@ -2159,6 +2165,10 @@ export function SpecRenderer({
             disabled={actionBusy}
             aria-busy={actionBusy || undefined}
             onClick={() => {
+              if (destructive) {
+                void onRunAction(actionId, actionValues, { destructive: true })
+                return
+              }
               if (navigateTo) onNavigate(navigateTo)
               if (actionId) void onRunAction(actionId, actionValues)
             }}

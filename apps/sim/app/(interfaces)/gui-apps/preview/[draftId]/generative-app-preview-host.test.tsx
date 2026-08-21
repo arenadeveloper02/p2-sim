@@ -347,6 +347,33 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     expect(container.textContent).not.toContain('Connecting')
   })
 
+  it('keeps streamed tokens when the stream fails', async () => {
+    mockUseGenerativeAppDraft.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: streamingDraft(streamingResultsPlainSpec),
+      error: null,
+    })
+    mockRunDraftActionStream.mockImplementation(
+      async (options: { onChunk: (content: string) => void }) => {
+        options.onChunk('Partial answer')
+        return { ok: false, error: 'HTTP 502: upstream', setState: { content: '' } }
+      }
+    )
+    pagePath = 'home'
+    renderHost()
+
+    const form = container.querySelector('form')
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+
+    expect(container.textContent).toContain('Partial answer')
+    expect(container.querySelector('[data-testid="action-error-banner"]')?.textContent).toContain(
+      'HTTP 502: upstream'
+    )
+  })
+
   it('surfaces unresolved statePath as copyable edit instructions', () => {
     mockUseGenerativeAppDraft.mockReturnValue({
       isLoading: false,

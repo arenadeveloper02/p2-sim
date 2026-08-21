@@ -4,14 +4,12 @@ import { useMemo, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
-import { flushSync } from 'react-dom'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import {
   collectRenderDiagnostics,
   editInstructionsFromDiagnostics,
   pageEditPrompt,
 } from '@/lib/arena-generative-ui/render-diagnostics'
-import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import type { ArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import {
   ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH,
@@ -27,10 +25,15 @@ import { compileGenerativeUx } from '@/lib/arena-generative-ui/ux-compiler'
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
+import {
+  ActionSuccessToast,
+  DestructiveConfirmDialog,
+} from '@/app/(interfaces)/gui-apps/generative-app-overlays'
 import { GenerativeAppThemeRoot } from '@/app/(interfaces)/gui-apps/generative-app-theme-root'
 import { PreviewDiagnosticsBanner } from '@/app/(interfaces)/gui-apps/preview-diagnostics-banner'
 import { PreviewThemePicker } from '@/app/(interfaces)/gui-apps/preview-theme-picker'
 import { SpecRenderErrorBoundary } from '@/app/(interfaces)/gui-apps/spec-render-error-boundary'
+import { useGenerativeAppRuntime } from '@/app/(interfaces)/gui-apps/use-generative-app-runtime'
 import { usePageLoadActions } from '@/app/(interfaces)/gui-apps/use-page-load-actions'
 import {
   runGenerativeAppDraftActionStream,
@@ -81,6 +84,8 @@ export function GenerativeAppPreviewHost({
     [manifest, apiBindings]
   )
 
+  const actionNavigate = manifest ? actionNavigateFrom(manifest) : {}
+
   const executeAction = async (actionId: string, values: Record<string, unknown>) =>
     streamingIds.has(actionId)
       ? await runGenerativeAppDraftActionStream({
@@ -93,21 +98,41 @@ export function GenerativeAppPreviewHost({
         })
       : await runAction.mutateAsync({ actionId, values })
 
+  const navigate = (target: string) => {
+    mergeState(clearedActionErrorState())
+    router.push(navigationHref(`${ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH}/${draftId}`, target))
+  }
+
+  const runtime = useGenerativeAppRuntime({
+    runJson: (actionId, values) => runAction.mutateAsync({ actionId, values }),
+    runStream: (actionId, values, onChunk) =>
+      runGenerativeAppDraftActionStream({
+        draftId,
+        actionId,
+        values,
+        onChunk,
+      }),
+    isStreaming: (actionId) => streamingIds.has(actionId),
+    actionNavigate,
+    navigate,
+    mergeState,
+    setActionPending,
+    logger,
+  })
+
   usePageLoadActions({
     pagePath,
     actionIds: manifest?.pages[pagePath]?.onLoad ?? [],
     values: pageParams,
     actionPending,
-    runAction: executeAction,
+    runAction: async (actionId, values) => {
+      if (!actionPending) runtime.rememberLoad(actionId, values)
+      return executeAction(actionId, values)
+    },
     mergeState,
     resetState,
     setLoadPending,
   })
-
-  const navigate = (target: string) => {
-    mergeState(clearedActionErrorState())
-    router.push(navigationHref(`${ARENA_GENERATIVE_APP_PREVIEW_BASE_PATH}/${draftId}`, target))
-  }
 
   if (draftQuery.isLoading) {
     return <p className='p-8 text-[var(--color-ds-grey-500,#8a8d99)] text-sm'>Loading…</p>
@@ -126,7 +151,6 @@ export function GenerativeAppPreviewHost({
     return <div className='p-8 text-center'>Page not found</div>
   }
 
-  const actionNavigate = actionNavigateFrom(manifest)
   const actionError = actionErrorFrom(state)
   const schemaWarning = actionSchemaWarningFrom(state)
   const bannerMessage = actionError || schemaWarning
@@ -169,7 +193,8 @@ export function GenerativeAppPreviewHost({
           <ActionErrorBanner
             message={bannerMessage}
             tone={actionError ? 'error' : 'warning'}
-            onDismiss={() => mergeState(clearedActionErrorState())}
+            onDismiss={runtime.dismissError}
+            onRetry={actionError ? runtime.retry : undefined}
           />
         ) : null}
         <PreviewDiagnosticsBanner instructions={editInstructions} />
@@ -186,50 +211,19 @@ export function GenerativeAppPreviewHost({
             pending={pending}
             currentPath={pagePath}
             onNavigate={navigate}
-            onRunAction={async (actionId, values) => {
-              const navigateTo = actionNavigate[actionId]
-              setActionPending(true)
-              mergeState(clearedActionErrorState())
-              try {
-                if (navigateTo) {
-                  navigate(navigateTo)
-                }
-                const result = await executeAction(actionId, values)
-                applyPreviewActionResult(result, mergeState, navigate, {
-                  skipNavigate: Boolean(navigateTo),
-                })
-              } catch (error) {
-                logger.error('Draft preview action failed', { error: toError(error).message })
-                mergeState({ error: toError(error).message || 'Action failed' })
-              } finally {
-                setActionPending(false)
-              }
-            }}
+            onRunAction={runtime.onRunAction}
           />
         </SpecRenderErrorBoundary>
+        {runtime.toast ? (
+          <ActionSuccessToast message={runtime.toast} onDone={runtime.clearToast} />
+        ) : null}
+        {runtime.confirm ? (
+          <DestructiveConfirmDialog
+            onCancel={runtime.cancelDestructive}
+            onConfirm={runtime.confirmDestructive}
+          />
+        ) : null}
       </div>
     </GenerativeAppThemeRoot>
   )
-}
-
-function applyPreviewActionResult(
-  result: RunDeployedAppActionResult,
-  mergeState: (patch: Record<string, unknown>, appendKeys?: readonly string[]) => void,
-  navigate: (path: string) => void,
-  options?: { skipNavigate?: boolean }
-) {
-  if (result.setState) {
-    flushSync(() => {
-      mergeState(result.setState as Record<string, unknown>, result.appendKeys)
-    })
-  }
-  if (!options?.skipNavigate && result.navigate) {
-    navigate(result.navigate)
-  }
-  if (!result.ok) {
-    flushSync(() => {
-      mergeState({ error: result.error ?? 'Action failed' })
-    })
-    logger.warn('Draft preview action returned an error', { error: result.error })
-  }
 }

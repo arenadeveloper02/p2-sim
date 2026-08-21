@@ -1073,6 +1073,23 @@ describe('SpecRenderer', () => {
       expect(button.className).toContain('bg-[var(--gui-danger,#f31a1a)]')
     })
 
+    it('asks the host to confirm a destructive action instead of navigating first', () => {
+      const { container, onNavigate, onRunAction } = render({
+        spec: buttonSpec({
+          label: 'Delete',
+          actionId: 'del',
+          navigateTo: 'home',
+          variant: 'destructive',
+        }),
+      })
+      const button = container.querySelector('button') as HTMLButtonElement
+      act(() => {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onNavigate).not.toHaveBeenCalled()
+      expect(onRunAction).toHaveBeenCalledWith('del', expect.any(Object), { destructive: true })
+    })
+
     it('renders the ghost variant without a border or fill', () => {
       const button = renderButton({ label: 'Back', navigateTo: 'home', variant: 'ghost' })
       expect(button.className).not.toContain('border-[var(--gui-border')

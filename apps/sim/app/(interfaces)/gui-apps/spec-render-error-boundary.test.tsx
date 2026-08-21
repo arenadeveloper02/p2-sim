@@ -40,5 +40,8 @@ describe('SpecRenderErrorBoundary', () => {
     )
     expect(container.textContent).toContain('Card exploded')
     expect(onError).toHaveBeenCalledWith('Card exploded')
+    expect(container.querySelector('[data-testid="spec-render-error-retry"]')?.textContent).toBe(
+      'Retry'
+    )
   })
 })

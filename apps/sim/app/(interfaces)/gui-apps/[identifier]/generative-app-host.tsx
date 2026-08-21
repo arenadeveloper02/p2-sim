@@ -5,9 +5,7 @@ import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from '@si
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
-import { flushSync } from 'react-dom'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
-import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import {
   ARENA_GENERATIVE_APP_BASE_PATH,
   actionErrorFrom,
@@ -23,8 +21,13 @@ import {
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
+import {
+  ActionSuccessToast,
+  DestructiveConfirmDialog,
+} from '@/app/(interfaces)/gui-apps/generative-app-overlays'
 import { GenerativeAppThemeRoot } from '@/app/(interfaces)/gui-apps/generative-app-theme-root'
 import { SpecRenderErrorBoundary } from '@/app/(interfaces)/gui-apps/spec-render-error-boundary'
+import { useGenerativeAppRuntime } from '@/app/(interfaces)/gui-apps/use-generative-app-runtime'
 import { usePageLoadActions } from '@/app/(interfaces)/gui-apps/use-page-load-actions'
 import {
   runDeployedAppActionStream,
@@ -99,21 +102,43 @@ export function GenerativeAppHost({
         })
       : await runAction.mutateAsync({ actionId, values, emailId: emailId || undefined })
 
+  const navigate = (target: string) => {
+    mergeState(clearedActionErrorState())
+    router.push(navigationHref(`${ARENA_GENERATIVE_APP_BASE_PATH}/${identifier}`, target, emailId))
+  }
+
+  const runtime = useGenerativeAppRuntime({
+    runJson: (actionId, values) =>
+      runAction.mutateAsync({ actionId, values, emailId: emailId || undefined }),
+    runStream: (actionId, values, onChunk) =>
+      runDeployedAppActionStream({
+        identifier,
+        actionId,
+        values,
+        emailId: emailId || undefined,
+        onChunk,
+      }),
+    isStreaming: (actionId) => streamingIds.has(actionId),
+    actionNavigate: config?.actionNavigate ?? {},
+    navigate,
+    mergeState,
+    setActionPending,
+    logger,
+  })
+
   usePageLoadActions({
     pagePath,
     actionIds: config?.pageOnLoad?.[pagePath] ?? [],
     values: pageParams,
     actionPending,
-    runAction: executeAction,
+    runAction: async (actionId, values) => {
+      if (!actionPending) runtime.rememberLoad(actionId, values)
+      return executeAction(actionId, values)
+    },
     mergeState,
     resetState,
     setLoadPending,
   })
-
-  const navigate = (target: string) => {
-    mergeState(clearedActionErrorState())
-    router.push(navigationHref(`${ARENA_GENERATIVE_APP_BASE_PATH}/${identifier}`, target, emailId))
-  }
 
   if (configQuery.isLoading) {
     return <p className='p-8 text-[var(--color-ds-grey-500,#8a8d99)] text-sm'>Loading…</p>
@@ -154,7 +179,6 @@ export function GenerativeAppHost({
     return <div className='p-8 text-center'>Page not found</div>
   }
 
-  const actionNavigate = configQuery.data.config.actionNavigate ?? {}
   const actionError = actionErrorFrom(state)
   const schemaWarning = actionSchemaWarningFrom(state)
   const bannerMessage = actionError || schemaWarning
@@ -165,7 +189,8 @@ export function GenerativeAppHost({
         <ActionErrorBanner
           message={bannerMessage}
           tone={actionError ? 'error' : 'warning'}
-          onDismiss={() => mergeState(clearedActionErrorState())}
+          onDismiss={runtime.dismissError}
+          onRetry={actionError ? runtime.retry : undefined}
         />
       ) : null}
       <SpecRenderErrorBoundary key={pagePath} fallbackTitle='This page failed to render'>
@@ -175,52 +200,20 @@ export function GenerativeAppHost({
           pending={runAction.isPending || actionPending || loadPending}
           currentPath={pagePath}
           onNavigate={navigate}
-          onRunAction={async (actionId, values) => {
-            const navigateTo = actionNavigate[actionId]
-            setActionPending(true)
-            mergeState(clearedActionErrorState())
-            try {
-              if (navigateTo) {
-                navigate(navigateTo)
-              }
-              const result = await executeAction(actionId, values)
-              applyActionResult(result, mergeState, navigate, logger, {
-                skipNavigate: Boolean(navigateTo),
-              })
-            } catch (error) {
-              logger.error('App action failed', { error: toError(error).message })
-              mergeState({ error: toError(error).message || 'Action failed' })
-            } finally {
-              setActionPending(false)
-            }
-          }}
+          onRunAction={runtime.onRunAction}
         />
       </SpecRenderErrorBoundary>
+      {runtime.toast ? (
+        <ActionSuccessToast message={runtime.toast} onDone={runtime.clearToast} />
+      ) : null}
+      {runtime.confirm ? (
+        <DestructiveConfirmDialog
+          onCancel={runtime.cancelDestructive}
+          onConfirm={runtime.confirmDestructive}
+        />
+      ) : null}
     </GenerativeAppThemeRoot>
   )
-}
-
-function applyActionResult(
-  result: RunDeployedAppActionResult,
-  mergeState: (patch: Record<string, unknown>, appendKeys?: readonly string[]) => void,
-  navigate: (path: string) => void,
-  actionLogger: { warn: (message: string, meta?: Record<string, unknown>) => void },
-  options?: { skipNavigate?: boolean }
-) {
-  if (result.setState) {
-    flushSync(() => {
-      mergeState(result.setState as Record<string, unknown>, result.appendKeys)
-    })
-  }
-  if (!options?.skipNavigate && result.navigate) {
-    navigate(result.navigate)
-  }
-  if (!result.ok) {
-    flushSync(() => {
-      mergeState({ error: result.error ?? 'Action failed' })
-    })
-    actionLogger.warn('App action returned an error', { error: result.error })
-  }
 }
 
 function PasswordGate({ identifier }: { identifier: string }) {
