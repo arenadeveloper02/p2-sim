@@ -1,7 +1,12 @@
+import {
+  compactInputSchemaField,
+  inferInputFieldSource,
+} from '@/lib/arena-generative-ui/input-schema'
 import { outputLayoutFromSample } from '@/lib/arena-generative-ui/output-schema'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeHttpMethod,
+  ArenaGenerativeInputSchemaField,
 } from '@/lib/arena-generative-ui/types'
 import { AGENT_STREAM_PROTOCOL_HEADER } from '@/lib/workflows/streaming/agent-stream-protocol'
 
@@ -214,7 +219,7 @@ function inspectCurl(raw: string): {
 function parseCurl(raw: string): {
   method: ArenaGenerativeHttpMethod
   url: string
-  inputSchema?: Array<{ name: string; type: string }>
+  inputSchema?: ArenaGenerativeInputSchemaField[]
   authHeaderName?: string
 } {
   const inspected = inspectCurl(raw)
@@ -376,17 +381,20 @@ function isHttpUrl(value: string): boolean {
 
 function inputSchemaFromBody(
   body: string | undefined
-): Array<{ name: string; type: string }> | undefined {
+): ArenaGenerativeInputSchemaField[] | undefined {
   const parsed = tryParseJsonObject(body)
   if (!parsed) {
     return undefined
   }
   const fields = Object.entries(parsed)
     .filter(([name]) => !PROTOCOL_BODY_KEYS.has(name))
-    .map(([name, value]) => ({
-      name,
-      type: schemaTypeFromValue(value),
-    }))
+    .map(([name, value]) =>
+      compactInputSchemaField({
+        name,
+        type: schemaTypeFromValue(value),
+        source: inferInputFieldSource(name),
+      })
+    )
   return fields.length > 0 ? fields : undefined
 }
 

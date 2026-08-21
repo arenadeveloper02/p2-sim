@@ -1708,6 +1708,37 @@ describe('arenaEmailId forwarding', () => {
     })
   })
 
+  it('fills constant and visitorEmail start inputs when the form payload is empty', async () => {
+    const deployment = baseDeployment()
+    deployment.manifest.actions.submit_lead.inputMapping = { name: 'name' }
+    deployment.apiBindings = [
+      {
+        key: 'qualify_lead',
+        label: 'Qualify',
+        kind: 'workflow',
+        workflowId: 'wf-bound',
+        inputSchema: [
+          { name: 'type', type: 'string', source: 'constant', value: 'history' },
+          { name: 'email', type: 'string', source: 'visitorEmail' },
+        ],
+      },
+    ]
+
+    await runDeployedAppAction({
+      deployment,
+      actionId: 'submit_lead',
+      values: {},
+      requestId: 'req-1',
+      arenaEmailId: 'ada@example.com',
+    })
+
+    expect(workflowInput()).toEqual({
+      type: 'history',
+      email: 'ada@example.com',
+      arenaEmailId: 'ada@example.com',
+    })
+  })
+
   it('overwrites a value the caller tried to supply', async () => {
     await runDeployedAppAction({
       deployment: baseDeployment(),

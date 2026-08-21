@@ -60,7 +60,9 @@ describe('Generative app draft action route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbChainMock()
-    authMockFns.mockGetSession.mockResolvedValue({ user: { id: 'user-1' } })
+    authMockFns.mockGetSession.mockResolvedValue({
+      user: { id: 'user-1', email: 'ada@example.com' },
+    })
     mockCheckWorkflowAccess.mockResolvedValue({ hasAccess: true })
     mockRunGenerativeAppAction.mockResolvedValue({ ok: true, navigate: 'results' })
     mockIsStreamingAction.mockReturnValue(false)
@@ -113,6 +115,7 @@ describe('Generative app draft action route', () => {
         userId: 'owner-1',
         workspaceId: 'ws-1',
         values: { name: 'Ada' },
+        arenaEmailId: 'ada@example.com',
       })
     )
   })

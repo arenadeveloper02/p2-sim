@@ -5,6 +5,7 @@ import { truncate } from '@sim/utils/string'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-prompt'
 import {
+  ARENA_GENERATIVE_UI_ACTION_INPUT_RULE,
   ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
   ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
   ARENA_GENERATIVE_UI_ON_LOAD_RULE,
@@ -314,6 +315,7 @@ export async function generateArenaGenerativeManifest(
       'This app renders as a full page up to 1280px and also embeds in a narrow Arena iframe (Grid and Columns collapse). emailId is optional. Do not invent a login form or an app wordmark.',
       ...(params.apiBindings.length > 0
         ? [
+            ARENA_GENERATIVE_UI_ACTION_INPUT_RULE,
             ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
             ARENA_GENERATIVE_UI_ON_LOAD_RULE,
             ARENA_GENERATIVE_UI_PAGINATION_RULE,

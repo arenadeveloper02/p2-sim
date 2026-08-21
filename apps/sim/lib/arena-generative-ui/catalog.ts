@@ -608,6 +608,12 @@ export const ARENA_GENERATIVE_UI_SCOPED_EDIT_RULES = [
 ] as const
 
 /** Added to the generator prompt only when at least one API binding is declared. */
+export const ARENA_GENERATIVE_UI_ACTION_INPUT_RULE = [
+  'CTA inputs: every inputSchema field whose source is "form" (or omitted) must be a form control whose name matches that field. Fields with source "visitorEmail" or "constant" are sent by the host — do not render a visible field for them, and do not invent a placeholder the user has to type.',
+  'For a visitorEmail field, set inputMapping { "<name>": "arenaEmailId" } so the workflow start input receives the logged-in address under its own name (email, userEmail, …). Constant fields need no form name and no inputMapping; the host stamps their value on every call.',
+].join(' ')
+
+/** Added to the generator prompt only when at least one API binding is declared. */
 export const ARENA_GENERATIVE_UI_ACTION_RESULT_RULE = [
   'CTA results: when an action succeeds the host merges the response object top-level keys into app state, so a statePath is the response key itself — use "articles", never "data.articles", "output.articles", or "response.articles". A response that is an array or a plain value lands under "result". "content" always holds a text rendering of the whole response.',
   'When a binding declares outputSchema, bind its field names as statePath instead of dumping "content": an array field such as "articles" with children "articles[].title" becomes Table statePath="articles" with columns from those child names, or Repeat inside a Grid when each item needs its own Card, link, or action; a single number or string becomes Stat or KeyValue; only fall back to DataText statePath="content" for prose or when the binding declares no outputSchema.',

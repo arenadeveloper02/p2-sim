@@ -62,6 +62,10 @@ export const POST = withRouteHandler(
       const actionId = parsed.data.params.actionId
       const values = (parsed.data.body.values ?? {}) as Record<string, unknown>
       const requestId = generateRequestId()
+      const arenaEmailId =
+        typeof session.user.email === 'string' && session.user.email.trim()
+          ? session.user.email.trim()
+          : undefined
       const runnerOptions = {
         manifest,
         apiBindings,
@@ -72,6 +76,7 @@ export const POST = withRouteHandler(
         values,
         requestId,
         actorUserId: session.user.id,
+        arenaEmailId,
       }
 
       if (isStreamingAction(manifest, apiBindings, actionId)) {

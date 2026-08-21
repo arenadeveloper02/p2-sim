@@ -50,4 +50,23 @@ describe('bindingsSummaryForPrompt', () => {
       { name: 'company', type: 'string', description: 'Legal name of the account' },
     ])
   })
+
+  it('includes input source and constant value so the generator does not invent form fields', () => {
+    const summary = bindingsSummaryForPrompt([
+      {
+        key: 'run_history',
+        label: 'Run history',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        inputSchema: [
+          { name: 'type', type: 'string', source: 'constant', value: 'history' },
+          { name: 'email', type: 'string', source: 'visitorEmail' },
+        ],
+      },
+    ])
+    expect(summary[0]?.inputSchema).toEqual([
+      { name: 'type', type: 'string', source: 'constant', value: 'history' },
+      { name: 'email', type: 'string', source: 'visitorEmail' },
+    ])
+  })
 })

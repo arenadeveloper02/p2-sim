@@ -3,6 +3,7 @@ import { OUTPUT_HINT_MAX_LENGTH } from '@/lib/arena-generative-ui/output-schema'
 import {
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
   type ArenaGenerativeApiBinding,
+  type ArenaGenerativeInputSchemaField,
   type ArenaGenerativePageHint,
   type ArenaGenerativePagination,
 } from '@/lib/arena-generative-ui/types'
@@ -274,8 +275,9 @@ export function parsePageHints(raw: unknown): ArenaGenerativePageHint[] {
  * Returns undefined when the value is not an array so the key stays absent.
  */
 function schemaFields(
-  raw: unknown
-): Array<{ name: string; type: string; description?: string }> | undefined {
+  raw: unknown,
+  options?: { input?: boolean }
+): ArenaGenerativeInputSchemaField[] | undefined {
   if (!Array.isArray(raw)) {
     return undefined
   }
@@ -288,7 +290,7 @@ function schemaFields(
       )
     })
     .map((field) => {
-      const mapped: { name: string; type: string; description?: string } = {
+      const mapped: ArenaGenerativeInputSchemaField = {
         name: field.name,
         type: typeof field.type === 'string' ? field.type : 'string',
       }
@@ -298,6 +300,16 @@ function schemaFields(
           : ''
       if (description) {
         mapped.description = description.slice(0, 200)
+      }
+      if (options?.input) {
+        const source = (field as { source?: unknown }).source
+        if (source === 'visitorEmail' || source === 'constant') {
+          mapped.source = source
+        }
+        const value = (field as { value?: unknown }).value
+        if (mapped.source === 'constant' && typeof value === 'string') {
+          mapped.value = value
+        }
       }
       return mapped
     })
@@ -421,7 +433,7 @@ export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
             : undefined,
       }
     }
-    const inputSchema = schemaFields(record.inputSchema)
+    const inputSchema = schemaFields(record.inputSchema, { input: true })
     if (inputSchema) {
       binding.inputSchema = inputSchema
     }

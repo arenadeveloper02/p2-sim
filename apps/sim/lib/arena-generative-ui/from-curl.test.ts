@@ -45,7 +45,7 @@ describe('httpBindingFromCurl', () => {
         { name: 'files', type: 'array' },
         { name: 'keyword', type: 'string' },
         { name: 'client', type: 'string' },
-        { name: 'email', type: 'string' },
+        { name: 'email', type: 'string', source: 'visitorEmail' },
       ],
     })
   })
@@ -346,7 +346,7 @@ describe('httpBindingFromCurl stream flag', () => {
       { name: 'files', type: 'array' },
       { name: 'keyword', type: 'string' },
       { name: 'client', type: 'string' },
-      { name: 'email', type: 'string' },
+      { name: 'email', type: 'string', source: 'visitorEmail' },
     ])
   })
 })

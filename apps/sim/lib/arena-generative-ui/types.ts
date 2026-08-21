@@ -56,13 +56,31 @@ export interface ArenaGenerativeHttpBinding {
   timeoutMs?: number
 }
 
+export const ARENA_GENERATIVE_INPUT_SOURCES = ['form', 'visitorEmail', 'constant'] as const
+
+/** How a CTA fills a bound workflow/HTTP start input. */
+export type ArenaGenerativeInputSource = (typeof ARENA_GENERATIVE_INPUT_SOURCES)[number]
+
+export interface ArenaGenerativeInputSchemaField {
+  name: string
+  type: string
+  description?: string
+  /**
+   * Where the host gets this value. Omitted/`form` collects a named form field.
+   * `visitorEmail` copies the resolved Arena email. `constant` uses `value`.
+   */
+  source?: ArenaGenerativeInputSource
+  /** Required when `source` is `constant`. */
+  value?: string
+}
+
 export interface ArenaGenerativeApiBinding {
   key: string
   label: string
   kind: 'workflow' | 'http'
   workflowId?: string
   http?: ArenaGenerativeHttpBinding
-  inputSchema?: Array<{ name: string; type: string; description?: string }>
+  inputSchema?: ArenaGenerativeInputSchemaField[]
   /**
    * Response field names and types, usable as `statePath` values because the
    * host merges an object response's top-level keys into app state. Missing

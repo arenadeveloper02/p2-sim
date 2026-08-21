@@ -9,6 +9,7 @@ import { truncate } from '@sim/utils/string'
 import { eq } from 'drizzle-orm'
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
 import { isHttpUrlAllowlisted } from '@/lib/arena-generative-ui/http-allowlist'
+import { applyBindingInputSources } from '@/lib/arena-generative-ui/input-schema'
 import { outputSchemaWarning } from '@/lib/arena-generative-ui/output-schema'
 import {
   applyPaginationToInput,
@@ -299,7 +300,10 @@ function mapActionInput(
   }
   const mapped: Record<string, unknown> = {}
   for (const [targetKey, sourceKey] of Object.entries(inputMapping)) {
-    mapped[targetKey] = values[sourceKey] ?? values[targetKey]
+    const value = values[sourceKey] ?? values[targetKey]
+    if (value !== undefined) {
+      mapped[targetKey] = value
+    }
   }
   return mapped
 }
@@ -811,16 +815,21 @@ export async function runGenerativeAppAction(
   }
 
   /**
-   * Applied on both sides of `mapActionInput` on purpose. Before, so an
-   * `inputMapping` can rename it (`{ "email": "arenaEmailId" }`); after, because
-   * `inputMapping` is an allowlist and would otherwise drop a host-owned key the
-   * author never listed — which is most generated bindings.
+   * Host-owned keys (`visitorEmail`, `constant`, `arenaEmailId`) are applied on
+   * both sides of `mapActionInput`. Before, so an `inputMapping` can rename them
+   * (`{ "email": "arenaEmailId" }`); after, because `inputMapping` is an
+   * allowlist and would otherwise drop keys the binding declared that the form
+   * never collected — which is most generated CTAs with an empty payload.
    */
-  const actorEmail = (values: Record<string, unknown>) =>
-    withActorEmail(values, binding, options.arenaEmailId)
+  const withHostInputs = (values: Record<string, unknown>) =>
+    withActorEmail(
+      applyBindingInputSources(values, binding, options.arenaEmailId),
+      binding,
+      options.arenaEmailId
+    )
   const mappedInput = applyPaginationToInput(
     binding.pagination,
-    actorEmail(mapActionInput(actorEmail(options.values), action.inputMapping))
+    withHostInputs(mapActionInput(withHostInputs(options.values), action.inputMapping))
   )
 
   let streamedContent = ''

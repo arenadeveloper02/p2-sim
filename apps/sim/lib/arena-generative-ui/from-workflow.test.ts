@@ -28,6 +28,25 @@ describe('inputSchemaFromWorkflowFields', () => {
     ])
   })
 
+  it('marks email-like start inputs as visitorEmail', () => {
+    expect(
+      inputSchemaFromWorkflowFields([
+        { name: 'type', type: 'string' },
+        { name: 'email', type: 'string' },
+        { name: 'actor', type: 'string', description: "Logged-in user's email" },
+      ])
+    ).toEqual([
+      { name: 'type', type: 'string' },
+      { name: 'email', type: 'string', source: 'visitorEmail' },
+      {
+        name: 'actor',
+        type: 'string',
+        description: "Logged-in user's email",
+        source: 'visitorEmail',
+      },
+    ])
+  })
+
   it('drops unnamed fields and de-duplicates repeats', () => {
     expect(
       inputSchemaFromWorkflowFields([
@@ -174,6 +193,7 @@ describe('workflowBindingFromSelection', () => {
       inputFields: [
         { name: 'company', type: 'string' },
         { name: 'seats', type: 'number' },
+        { name: 'email', type: 'string' },
       ],
       outputFields: [{ name: 'articles', type: 'array' }],
       outputSample: '{"score": 91}',

@@ -43,11 +43,23 @@ export const arenaGenerativeApiBindingSchema = z
     http: arenaGenerativeHttpBindingSchema.optional(),
     inputSchema: z
       .array(
-        z.object({
-          name: z.string().min(1),
-          type: z.string().min(1).optional(),
-          description: z.string().max(200).optional(),
-        })
+        z
+          .object({
+            name: z.string().min(1),
+            type: z.string().min(1).optional(),
+            description: z.string().max(200).optional(),
+            source: z.enum(['form', 'visitorEmail', 'constant']).optional(),
+            value: z.string().max(500).optional(),
+          })
+          .superRefine((field, ctx) => {
+            if (field.source === 'constant' && !field.value?.trim()) {
+              ctx.addIssue({
+                code: 'custom',
+                path: ['value'],
+                message: 'Constant inputs need a value',
+              })
+            }
+          })
       )
       .max(40)
       .optional(),

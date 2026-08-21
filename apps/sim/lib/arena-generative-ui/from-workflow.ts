@@ -1,8 +1,15 @@
 import {
+  compactInputSchemaField,
+  inferInputFieldSource,
+} from '@/lib/arena-generative-ui/input-schema'
+import {
   type ArenaGenerativeSchemaField,
   outputLayoutFromSample,
 } from '@/lib/arena-generative-ui/output-schema'
-import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
+import type {
+  ArenaGenerativeApiBinding,
+  ArenaGenerativeInputSchemaField,
+} from '@/lib/arena-generative-ui/types'
 import type { WorkflowInputField } from '@/lib/workflows/input-format'
 
 export { extractOutputSchemaFromBlocks } from '@/lib/arena-generative-ui/extract-workflow-output'
@@ -29,26 +36,28 @@ export interface WorkflowBindingSelection {
 /**
  * Maps a deployed workflow's start-block fields to a binding `inputSchema`.
  * Names, types, and descriptions are kept so the generator can label the form.
+ * Email-like names default to `visitorEmail` so the host sends the logged-in
+ * address without a form field.
  */
 export function inputSchemaFromWorkflowFields(
   fields: WorkflowInputField[] | undefined
-): Array<{ name: string; type: string; description?: string }> {
+): ArenaGenerativeInputSchemaField[] {
   if (!fields) return []
   const seen = new Set<string>()
-  const schema: Array<{ name: string; type: string; description?: string }> = []
+  const schema: ArenaGenerativeInputSchemaField[] = []
   for (const field of fields) {
     const name = field.name?.trim()
     if (!name || seen.has(name)) continue
     seen.add(name)
-    const mapped: { name: string; type: string; description?: string } = {
-      name,
-      type: field.type?.trim() || DEFAULT_INPUT_TYPE,
-    }
     const description = field.description?.trim()
-    if (description) {
-      mapped.description = description.slice(0, 200)
-    }
-    schema.push(mapped)
+    schema.push(
+      compactInputSchemaField({
+        name,
+        type: field.type?.trim() || DEFAULT_INPUT_TYPE,
+        ...(description ? { description: description.slice(0, 200) } : {}),
+        source: inferInputFieldSource(name, description),
+      })
+    )
   }
   return schema
 }

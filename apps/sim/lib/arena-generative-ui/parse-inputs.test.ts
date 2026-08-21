@@ -191,6 +191,42 @@ describe('parseApiBindings', () => {
     ])
   })
 
+  it('round-trips inputSchema source and constant value', () => {
+    const [binding] = parseApiBindings([
+      {
+        key: 'run_history',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        inputSchema: [
+          { name: 'type', type: 'string', source: 'constant', value: 'history' },
+          { name: 'email', type: 'string', source: 'visitorEmail' },
+        ],
+      },
+    ])
+    expect(binding.inputSchema).toEqual([
+      { name: 'type', type: 'string', source: 'constant', value: 'history' },
+      { name: 'email', type: 'string', source: 'visitorEmail' },
+    ])
+  })
+
+  it('drops form source and constant value on non-constant fields', () => {
+    const [binding] = parseApiBindings([
+      {
+        key: 'run_history',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        inputSchema: [
+          { name: 'type', type: 'string', source: 'form', value: 'ignored' },
+          { name: 'email', type: 'string', source: 'visitorEmail', value: 'ignored' },
+        ],
+      },
+    ])
+    expect(binding.inputSchema).toEqual([
+      { name: 'type', type: 'string' },
+      { name: 'email', type: 'string', source: 'visitorEmail' },
+    ])
+  })
+
   it('omits outputSchema when the binding does not declare one', () => {
     const [binding] = parseApiBindings([
       { key: 'qualify_lead', kind: 'workflow', workflowId: 'wf-1', outputSchema: 'articles' },

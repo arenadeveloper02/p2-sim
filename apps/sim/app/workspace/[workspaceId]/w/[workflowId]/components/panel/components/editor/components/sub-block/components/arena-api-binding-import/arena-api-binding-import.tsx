@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useMemo, useState } from 'react'
+import { Fragment, type ReactNode, useMemo, useState } from 'react'
 import {
   Chip,
   ChipCombobox,
@@ -11,6 +11,7 @@ import {
   ChipModalFooter,
   ChipModalHeader,
   ChipSwitch,
+  ChipTag,
 } from '@sim/emcn'
 import { getErrorMessage } from '@sim/utils/errors'
 import { useParams } from 'next/navigation'
@@ -25,7 +26,18 @@ import {
   inputSchemaFromWorkflowFields,
   workflowBindingFromSelection,
 } from '@/lib/arena-generative-ui/from-workflow'
+import {
+  type ArenaGenerativeInputSourceOverride,
+  applyInputSourceOverrides,
+  inputFieldRowNeedsValue,
+  resolveInputFieldEditorRow,
+} from '@/lib/arena-generative-ui/input-schema'
 import { outputSchemaRootName } from '@/lib/arena-generative-ui/output-schema'
+import type {
+  ArenaGenerativeApiBinding,
+  ArenaGenerativeInputSchemaField,
+  ArenaGenerativeInputSource,
+} from '@/lib/arena-generative-ui/types'
 import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useDeployedWorkflowState } from '@/hooks/queries/deployments'
@@ -47,19 +59,28 @@ const FORWARD_EMAIL_SWITCH_OPTIONS = [
   { value: 'on', label: 'Send' },
 ] as const
 
-function formatSchemaPreview(fields: Array<{ name: string; type: string }>): string {
+const INPUT_SOURCE_OPTIONS = [
+  { value: 'form', label: 'Form field' },
+  { value: 'visitorEmail', label: 'Visitor email' },
+  { value: 'constant', label: 'Constant' },
+] as const
+
+function outputPreviewTags(fields: Array<{ name: string; type: string }>): Array<{
+  name: string
+  type: string
+}> {
   const seen = new Set<string>()
-  const parts: string[] = []
+  const tags: Array<{ name: string; type: string }> = []
   for (const field of fields) {
     const root = outputSchemaRootName(field.name)
     if (!root || seen.has(root)) continue
     seen.add(root)
-    parts.push(`${root}: ${field.type}`)
+    tags.push({ name: root, type: field.type })
   }
-  return parts.join(', ')
+  return tags
 }
 
-function outputFormatHint(
+function sampleResponseHint(
   source: 'http' | 'workflow',
   workflowId: string,
   hasDeclaredOutput: boolean,
@@ -78,6 +99,65 @@ function outputFormatHint(
   return stream
     ? 'Leave blank, or paste an example of the tokens (markdown is fine) so the generator can match that shape. Paste JSON only if the API also returns a structured object at the end.'
     : 'Paste a sample response so the generator can lay out the result. Only field names and types are saved — values are discarded.'
+}
+
+function bindingWithInputOverrides(
+  binding: ArenaGenerativeApiBinding,
+  overrides: Record<string, ArenaGenerativeInputSourceOverride>
+): ArenaGenerativeApiBinding {
+  if (!binding.inputSchema?.length) {
+    return binding
+  }
+  return {
+    ...binding,
+    inputSchema: applyInputSourceOverrides(binding.inputSchema, overrides),
+  }
+}
+
+interface InputSourceFieldsProps {
+  rows: ReturnType<typeof resolveInputFieldEditorRow>[]
+  onSourceChange: (name: string, source: ArenaGenerativeInputSource) => void
+  onConstantValueChange: (name: string, value: string) => void
+}
+
+function InputSourceFields({
+  rows,
+  onSourceChange,
+  onConstantValueChange,
+}: InputSourceFieldsProps) {
+  return (
+    <>
+      {rows.map((row) => (
+        <Fragment key={row.name}>
+          <ChipModalField
+            type='dropdown'
+            title={row.name}
+            hint={
+              row.description
+                ? `${row.type} · ${row.description}`
+                : `${row.type}. Form field collects it in the app; visitor email sends the logged-in address; constant always sends the value you type.`
+            }
+            value={row.source}
+            onChange={(value) => onSourceChange(row.name, value as ArenaGenerativeInputSource)}
+            options={INPUT_SOURCE_OPTIONS}
+          />
+          {row.source === 'constant' ? (
+            <ChipModalField
+              type='input'
+              title={`${row.name} value`}
+              value={row.value}
+              onChange={(value) => onConstantValueChange(row.name, value)}
+              required
+              placeholder='history'
+              hint='Sent on every CTA. The generated app will not show a field for this.'
+              error={inputFieldRowNeedsValue(row) ? 'Enter a value for this constant.' : undefined}
+              mono
+            />
+          ) : null}
+        </Fragment>
+      ))}
+    </>
+  )
 }
 
 interface ArenaApiBindingImportHelperProps {
@@ -113,6 +193,9 @@ export function ArenaApiBindingImportHelper({
   const [outputSample, setOutputSample] = useState('')
   const [workflowId, setWorkflowId] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [inputSourceOverrides, setInputSourceOverrides] = useState<
+    Record<string, ArenaGenerativeInputSourceOverride>
+  >({})
 
   const { data: workflows, isLoading: workflowsLoading } = useWorkflows(workspaceId, {
     enabled: open && source === 'workflow',
@@ -157,10 +240,25 @@ export function ArenaApiBindingImportHelper({
     () => extractOutputSchemaFromBlocks(deployedState?.blocks),
     [deployedState?.blocks]
   )
+  const curlInputSchema = useMemo((): ArenaGenerativeInputSchemaField[] => {
+    if (source !== 'http' || !curl.trim()) return []
+    try {
+      return httpBindingFromCurl({ key: key.trim() || 'preview', curl }).inputSchema ?? []
+    } catch {
+      return []
+    }
+  }, [source, curl, key])
+
+  const editorInputSchema = source === 'workflow' ? inputSchema : curlInputSchema
+  const editorRows = editorInputSchema.map((field) =>
+    resolveInputFieldEditorRow(field, inputSourceOverrides[field.name])
+  )
+  const constantsMissingValue = editorRows.some((row) => inputFieldRowNeedsValue(row))
 
   const launcherDisabled = isPreview || disabled
   const canSave =
     key.trim().length > 0 &&
+    !constantsMissingValue &&
     (source === 'http' ? curl.trim().length > 0 : workflowId.trim().length > 0)
 
   function resetForm() {
@@ -173,6 +271,7 @@ export function ArenaApiBindingImportHelper({
     setOutputSample('')
     setWorkflowId('')
     setError(null)
+    setInputSourceOverrides({})
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -180,6 +279,23 @@ export function ArenaApiBindingImportHelper({
     if (!nextOpen) {
       resetForm()
     }
+  }
+
+  function handleInputSourceChange(name: string, nextSource: ArenaGenerativeInputSource) {
+    setInputSourceOverrides((previous) => ({
+      ...previous,
+      [name]: {
+        source: nextSource,
+        value: previous[name]?.value,
+      },
+    }))
+  }
+
+  function handleConstantValueChange(name: string, value: string) {
+    setInputSourceOverrides((previous) => ({
+      ...previous,
+      [name]: { source: 'constant', value },
+    }))
   }
 
   function handleSave() {
@@ -196,7 +312,9 @@ export function ArenaApiBindingImportHelper({
               stream: streamMode === 'on',
             })
           : buildHttpBinding()
-      setStoreValue(appendApiBinding(storeValue ?? '', binding))
+      setStoreValue(
+        appendApiBinding(storeValue ?? '', bindingWithInputOverrides(binding, inputSourceOverrides))
+      )
       handleOpenChange(false)
     } catch (caught) {
       setError(getErrorMessage(caught, 'Could not add API binding'))
@@ -217,6 +335,10 @@ export function ArenaApiBindingImportHelper({
     return forwardEmail === 'on' ? { ...binding, forwardEmailId: true } : binding
   }
 
+  const outputTags = outputPreviewTags(outputFields)
+  const showWorkflowInputs = source === 'workflow' && Boolean(workflowId)
+  const showHttpInputs = source === 'http' && curlInputSchema.length > 0
+
   return (
     <div className='flex flex-col gap-2'>
       <Chip onClick={() => setOpen(true)} disabled={launcherDisabled}>
@@ -233,7 +355,10 @@ export function ArenaApiBindingImportHelper({
           >
             <ChipSwitch
               value={source}
-              onChange={setSource}
+              onChange={(value) => {
+                setSource(value)
+                setInputSourceOverrides({})
+              }}
               aria-label='Binding source'
               options={SOURCE_SWITCH_OPTIONS}
             />
@@ -259,7 +384,10 @@ export function ArenaApiBindingImportHelper({
                 {(aria) => (
                   <ChipCombobox
                     value={workflowId}
-                    onChange={setWorkflowId}
+                    onChange={(value) => {
+                      setWorkflowId(value)
+                      setInputSourceOverrides({})
+                    }}
                     options={workflowOptions}
                     placeholder='Select a workflow'
                     isLoading={workflowsLoading}
@@ -278,42 +406,66 @@ export function ArenaApiBindingImportHelper({
                   </p>
                 </ChipModalField>
               ) : null}
-              {workflowId ? (
+              {showWorkflowInputs && deployedLoading ? (
                 <ChipModalField
                   type='custom'
                   title='Inputs'
-                  hint='Read from the deployed start block. Saved as inputSchema so the generator knows which fields to collect.'
+                  hint='Read from the deployed start block. Choose how each param is filled.'
                 >
                   <p className='text-[var(--text-secondary)] text-caption'>
-                    {deployedLoading
-                      ? 'Reading the deployed start block…'
-                      : inputSchema.length > 0
-                        ? formatSchemaPreview(inputSchema)
-                        : 'This workflow declares no start inputs. Form values are still sent as-is.'}
+                    Reading the deployed start block…
                   </p>
                 </ChipModalField>
               ) : null}
-              {workflowId ? (
+              {showWorkflowInputs && !deployedLoading && inputSchema.length === 0 ? (
+                <ChipModalField
+                  type='custom'
+                  title='Inputs'
+                  hint='Read from the deployed start block. Form values are still sent as-is.'
+                >
+                  <p className='text-[var(--text-secondary)] text-caption'>
+                    This workflow declares no start inputs. Form values are still sent as-is.
+                  </p>
+                </ChipModalField>
+              ) : null}
+              {showWorkflowInputs && !deployedLoading ? (
+                <InputSourceFields
+                  rows={editorRows}
+                  onSourceChange={handleInputSourceChange}
+                  onConstantValueChange={handleConstantValueChange}
+                />
+              ) : null}
+              {source === 'workflow' && workflowId ? (
                 <ChipModalField
                   type='custom'
                   title='Outputs'
                   hint={
                     deployedLoading
                       ? 'Read from the deployed Response block or Agent structured output.'
-                      : outputFields.length > 0
+                      : outputTags.length > 0
                         ? 'Read from the deployed Response block or Agent structured output. Saved as outputSchema so the generator can lay out the result.'
-                        : 'This workflow does not declare an output format. For better results, paste a sample JSON in Output format below.'
+                        : 'This workflow does not declare an output format. For better results, paste a sample JSON in Sample response below.'
                   }
                 >
-                  <p className='text-[var(--text-secondary)] text-caption'>
-                    {deployedLoading
-                      ? 'Reading the deployed workflow…'
-                      : outputFields.length > 0
-                        ? formatSchemaPreview(outputFields)
-                        : streamMode === 'on'
-                          ? 'No output format is available for this workflow. Leave blank to show streamed text, or paste an example below.'
-                          : 'No output format is available for this workflow. Paste a sample JSON below so the generator can lay out tables and stats instead of a single text blob.'}
-                  </p>
+                  {deployedLoading ? (
+                    <p className='text-[var(--text-secondary)] text-caption'>
+                      Reading the deployed workflow…
+                    </p>
+                  ) : outputTags.length > 0 ? (
+                    <div className='flex flex-wrap gap-1'>
+                      {outputTags.map((field) => (
+                        <ChipTag key={field.name} variant='gray'>
+                          {field.name}: {field.type}
+                        </ChipTag>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className='text-[var(--text-secondary)] text-caption'>
+                      {streamMode === 'on'
+                        ? 'No output format is available for this workflow. Leave blank to show streamed text, or paste an example below.'
+                        : 'No output format is available for this workflow. Paste a sample JSON below so the generator can lay out tables and stats instead of a single text blob.'}
+                    </p>
+                  )}
                 </ChipModalField>
               ) : null}
             </>
@@ -354,6 +506,13 @@ export function ArenaApiBindingImportHelper({
                 resizable
                 mono
               />
+              {showHttpInputs ? (
+                <InputSourceFields
+                  rows={editorRows}
+                  onSourceChange={handleInputSourceChange}
+                  onConstantValueChange={handleConstantValueChange}
+                />
+              ) : null}
               <ChipModalField
                 type='custom'
                 title="Visitor's email"
@@ -382,7 +541,7 @@ export function ArenaApiBindingImportHelper({
           </ChipModalField>
           <ChipModalField
             type='textarea'
-            title='Output format'
+            title='Sample response (optional)'
             value={outputSample}
             onChange={setOutputSample}
             placeholder={
@@ -390,7 +549,7 @@ export function ArenaApiBindingImportHelper({
                 ? '# Company analysis\n\n## Summary\n...'
                 : `{"articles":[{"title":"Example","url":"https://example.com"}]}`
             }
-            hint={outputFormatHint(
+            hint={sampleResponseHint(
               source,
               workflowId,
               outputFields.length > 0,
