@@ -13,9 +13,10 @@ import {
   ChipSwitch,
   ChipTag,
 } from '@sim/emcn'
+import { X } from '@sim/emcn/icons'
 import { getErrorMessage } from '@sim/utils/errors'
 import { useParams } from 'next/navigation'
-import { appendApiBinding } from '@/lib/arena-generative-ui/append-api-binding'
+import { appendApiBinding, removeApiBinding } from '@/lib/arena-generative-ui/append-api-binding'
 import {
   curlHasAuthHeader,
   curlLooksLikeStream,
@@ -33,6 +34,7 @@ import {
   resolveInputFieldEditorRow,
 } from '@/lib/arena-generative-ui/input-schema'
 import { outputSchemaRootName } from '@/lib/arena-generative-ui/output-schema'
+import { parseApiBindings } from '@/lib/arena-generative-ui/parse-inputs'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeInputSchemaField,
@@ -64,6 +66,14 @@ const INPUT_SOURCE_OPTIONS = [
   { value: 'visitorEmail', label: 'Logged-in email' },
   { value: 'constant', label: 'Constant' },
 ] as const
+
+function storedBindings(raw: unknown): ArenaGenerativeApiBinding[] {
+  try {
+    return parseApiBindings(raw)
+  } catch {
+    return []
+  }
+}
 
 function outputPreviewTags(fields: Array<{ name: string; type: string }>): Array<{
   name: string
@@ -321,6 +331,14 @@ export function ArenaApiBindingImportHelper({
     }
   }
 
+  function handleRemove(bindingKey: string) {
+    try {
+      setStoreValue(removeApiBinding(storeValue ?? '', bindingKey))
+    } catch (caught) {
+      setError(getErrorMessage(caught, 'Could not remove API binding'))
+    }
+  }
+
   function buildHttpBinding() {
     if (curlHasAuthHeader(curl) && !secretVar.trim()) {
       throw new Error('This curl sets an auth header. Select a Secret var — do not paste the key.')
@@ -338,12 +356,27 @@ export function ArenaApiBindingImportHelper({
   const outputTags = outputPreviewTags(outputFields)
   const showWorkflowInputs = source === 'workflow' && Boolean(workflowId)
   const showHttpInputs = source === 'http' && curlInputSchema.length > 0
+  const savedBindings = storedBindings(storeValue)
 
   return (
     <div className='flex flex-col gap-2'>
-      <Chip onClick={() => setOpen(true)} disabled={launcherDisabled}>
-        Add an API
-      </Chip>
+      <div className='flex flex-wrap items-center gap-1'>
+        <Chip onClick={() => setOpen(true)} disabled={launcherDisabled}>
+          Add an API
+        </Chip>
+        {savedBindings.map((binding) => (
+          <ChipTag
+            key={binding.key}
+            variant='invite'
+            rightIcon={X}
+            rightIconLabel={`Remove ${binding.key}`}
+            rightIconDisabled={launcherDisabled}
+            onRightIconClick={() => handleRemove(binding.key)}
+          >
+            {binding.key}
+          </ChipTag>
+        ))}
+      </div>
       {children}
       <ChipModal open={open} onOpenChange={handleOpenChange} srTitle='Add an API' size='lg'>
         <ChipModalHeader onClose={() => handleOpenChange(false)}>Add an API</ChipModalHeader>
