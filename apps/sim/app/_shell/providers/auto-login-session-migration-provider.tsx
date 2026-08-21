@@ -16,7 +16,7 @@ const logger = createLogger('AutoLoginSessionMigrationProvider')
  *
  * Bump the localStorage key when a new clear pass is required in production.
  */
-const AUTO_LOGIN_MIGRATION_KEY = 'sim_auth_session_cookie_scope_migration_v2'
+const AUTO_LOGIN_MIGRATION_KEY = 'sim_auth_session_cookie_scope_migration_v3'
 
 interface AutoLoginSessionMigrationProviderProps {
   children: ReactNode

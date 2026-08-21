@@ -1,40 +1,39 @@
-import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 import {
-  buildComprehensiveSessionCookieClearHeaderValues,
+  buildComprehensiveSessionCookieClearHeaderValuesForHostnames,
+  createSessionCookieClearResponse,
   isHttpsForSecureSessionCookies,
 } from '@/lib/auth/legacy-session-cookie-clears'
-import { resolvePublicUrlHostnameForCookieClearing } from '@/lib/auth/session-cookie-domain'
+import { resolveHostnamesForCookieClearing } from '@/lib/auth/session-cookie-domain'
 import { getBaseUrl } from '@/lib/core/utils/urls'
+import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
+
+export const dynamic = 'force-dynamic'
 
 /**
  * Clears session cookies for every scope Better Auth / browsers may have used: host-only,
- * `Domain=<NEXT_PUBLIC host>`, and parent `Domain` (e.g. `thearena.ai`) for cross-subdomain
- * session cookies. Host-only only on localhost.
+ * `Domain=<request host>`, `Domain=<NEXT_PUBLIC host>`, and parent `Domain` (e.g. `thearena.ai`
+ * and `.thearena.ai`) for cross-subdomain session cookies. Host-only only on localhost.
  */
 function respond(request: Request) {
   const publicAppUrlIsHttps = getBaseUrl().startsWith('https://')
   const useHttps = isHttpsForSecureSessionCookies(request, publicAppUrlIsHttps)
-  const hostname = resolvePublicUrlHostnameForCookieClearing()
-  const res = NextResponse.json({
-    ok: true,
-    hostnamesCleared: hostname
-      ? {
-          fromNextPublicAppUrl: hostname,
-          includeParentDomain: hostname.split('.').length >= 3,
-        }
-      : { mode: 'host-only' },
-  })
-  const lines = buildComprehensiveSessionCookieClearHeaderValues(hostname ?? 'localhost', useHttps)
-  for (const value of lines) {
-    res.headers.append('Set-Cookie', value)
-  }
-  return res
+  const hostnames = resolveHostnamesForCookieClearing(request)
+  const lines = buildComprehensiveSessionCookieClearHeaderValuesForHostnames(hostnames, useHttps)
+  return createSessionCookieClearResponse(
+    {
+      ok: true,
+      hostnamesCleared: hostnames.length
+        ? {
+            hostnames,
+            includeParentDomain: hostnames.some((hostname) => hostname.split('.').length >= 3),
+          }
+        : { mode: 'host-only' },
+    },
+    lines
+  )
 }
 
-export function GET(request: Request) {
-  return respond(request)
-}
+export const GET = withRouteHandler(async (request: NextRequest) => respond(request))
 
-export function POST(request: Request) {
-  return respond(request)
-}
+export const POST = withRouteHandler(async (request: NextRequest) => respond(request))

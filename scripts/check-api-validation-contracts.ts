@@ -51,6 +51,10 @@ const INDIRECT_ZOD_ROUTES = new Set([
   'apps/sim/app/api/auth/oauth/connections/route.ts',
   'apps/sim/app/api/auth/providers/route.ts',
   'apps/sim/app/api/auth/socket-token/route.ts',
+  // Cookie-clear endpoints: no client-supplied input; the contract is Set-Cookie
+  // headers, which the JSON contract framework cannot express.
+  'apps/sim/app/api/auth/clear-domain-session-cookies/route.ts',
+  'apps/sim/app/api/auth/clear-legacy-session-cookies/route.ts',
   'apps/sim/app/api/desktop/auth/handoff/route.ts',
   'apps/sim/app/api/workspaces/invitations/route.ts',
   // Internal cron entry point that authenticates via `Authorization: Bearer
