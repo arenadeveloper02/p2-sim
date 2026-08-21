@@ -19,6 +19,20 @@ export function canManageWorkspaceBilling(
 }
 
 /**
+ * Arena Billing settings visibility / route access: `billing_nav` capability
+ * or host org admin/owner (personal billed owner when there is no host org).
+ */
+export function canAccessArenaBillingSettings(
+  hostContext: WorkspaceHostContext | null | undefined,
+  viewerUserId: string | null | undefined,
+  hasBillingNavCapability: boolean
+): boolean {
+  if (hasBillingNavCapability) return true
+  if (!hostContext) return false
+  return canManageWorkspaceBilling(hostContext, viewerUserId)
+}
+
+/**
  * Resolves the workspace-safe action and copy for an exceeded usage gate.
  * Payer messages are intentionally replaced for viewers who cannot manage the
  * payer so they never receive a misleading personal upgrade instruction.

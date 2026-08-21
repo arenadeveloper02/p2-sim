@@ -110,7 +110,7 @@ describe('unified settings navigation', () => {
     expect(usage).not.toHaveProperty('requiresWorkspaceAdmin')
   })
 
-  it('keeps Arena billing visible without billing-disabled or payer gates', () => {
+  it('keeps Arena billing visible for capability or payer gates (enforced in sidebar)', () => {
     const arenaBilling = allNavigationItems.find(({ id }) => id === 'arena-billing')
     expect(arenaBilling?.section).toBe('subscription')
     expect(arenaBilling).not.toHaveProperty('hideWhenBillingDisabled')

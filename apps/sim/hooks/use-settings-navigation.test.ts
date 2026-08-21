@@ -66,7 +66,7 @@ describe('resolveSettingsHref unified settings navigation', () => {
     ).toBe('/workspace/workspace-b/settings/usage')
   })
 
-  it('sends non-admin org members away from arena billing to usage', () => {
+  it('keeps arena-billing reachable for viewers without payer access (gated elsewhere)', () => {
     expect(
       resolveSettingsHref({
         options: { section: 'arena-billing' },
@@ -74,7 +74,25 @@ describe('resolveSettingsHref unified settings navigation', () => {
         hostContext: HOST_CONTEXT,
         viewerUserId: 'external-a',
       })
-    ).toBe('/workspace/workspace-b/settings/usage')
+    ).toBe('/workspace/workspace-b/settings/arena-billing')
+  })
+
+  it('keeps host organization admins on arena-billing', () => {
+    expect(
+      resolveSettingsHref({
+        options: { section: 'arena-billing' },
+        workspaceId: 'workspace-b',
+        hostContext: {
+          ...HOST_CONTEXT,
+          viewer: {
+            ...HOST_CONTEXT.viewer,
+            isHostOrganizationMember: true,
+            isHostOrganizationAdmin: true,
+          },
+        },
+        viewerUserId: 'admin-b',
+      })
+    ).toBe('/workspace/workspace-b/settings/arena-billing')
   })
 
   it('keeps host organization admins in the unified workspace settings shell', () => {

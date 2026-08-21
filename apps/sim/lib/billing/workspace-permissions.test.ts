@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkspaceHostContext } from '@/lib/api/contracts/workspaces'
 import {
+  canAccessArenaBillingSettings,
   canManageWorkspaceBilling,
   getWorkspaceUsageLimitAction,
 } from '@/lib/billing/workspace-permissions'
@@ -71,6 +72,33 @@ describe('canManageWorkspaceBilling', () => {
         'owner-b'
       )
     ).toBe(true)
+  })
+})
+
+describe('canAccessArenaBillingSettings', () => {
+  it('allows billing_nav capability without org admin', () => {
+    expect(canAccessArenaBillingSettings(HOST_CONTEXT, 'external-a', true)).toBe(true)
+  })
+
+  it('allows host organization admins without billing_nav', () => {
+    expect(
+      canAccessArenaBillingSettings(
+        {
+          ...HOST_CONTEXT,
+          viewer: {
+            ...HOST_CONTEXT.viewer,
+            isHostOrganizationMember: true,
+            isHostOrganizationAdmin: true,
+          },
+        },
+        'admin-b',
+        false
+      )
+    ).toBe(true)
+  })
+
+  it('denies non-admin viewers without billing_nav', () => {
+    expect(canAccessArenaBillingSettings(HOST_CONTEXT, 'external-a', false)).toBe(false)
   })
 })
 

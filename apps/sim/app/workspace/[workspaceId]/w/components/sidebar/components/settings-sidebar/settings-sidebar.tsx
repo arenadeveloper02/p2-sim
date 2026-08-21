@@ -8,6 +8,7 @@ import type { DesktopSettingsSurface } from '@/components/settings/navigation'
 import { ORGANIZATION_PLANE_UNIFIED_SECTIONS } from '@/components/settings/navigation'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client'
+import { canAccessArenaBillingSettings } from '@/lib/billing/workspace-permissions'
 import { isHosted } from '@/lib/core/config/env-flags'
 import { hasBrowserAgent, hasDesktopSettings, hasTerminal } from '@/lib/desktop'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
@@ -183,7 +184,10 @@ export function SettingsSidebar({
         return false
       }
 
-      if (item.id === 'arena-billing' && !hasBillingNavAccess) {
+      if (
+        item.id === 'arena-billing' &&
+        !canAccessArenaBillingSettings(hostContext, userId, hasBillingNavAccess)
+      ) {
         return false
       }
 
@@ -205,6 +209,8 @@ export function SettingsSidebar({
     canAdminWorkspace,
     desktopSurfaces,
     hasBillingNavAccess,
+    hostContext,
+    userId,
   ])
 
   const activeSection = useMemo(() => {

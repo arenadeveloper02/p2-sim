@@ -39,8 +39,11 @@ export function resolveSettingsHref({
 }: ResolveSettingsHrefParams): string {
   if (!workspaceId) return '/workspace'
   const section = options?.section || 'general'
+  // Classic Subscription settings stay payer-gated. Arena Billing is gated by
+  // sidebar + server (`billing_nav` OR org admin/owner) — do not rewrite it to
+  // Usage or capability-granted / admin users bounce while already on Usage.
   if (
-    (section === 'billing' || section === 'arena-billing') &&
+    section === 'billing' &&
     hostContext &&
     !canManageWorkspaceBilling(hostContext, viewerUserId)
   ) {

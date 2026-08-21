@@ -12,6 +12,7 @@ import {
 import { getSession } from '@/lib/auth'
 import { isOrganizationOnEnterprisePlan } from '@/lib/billing'
 import { hasWorkspaceInboxAccess, hasWorkspaceSandboxAccess } from '@/lib/billing/core/subscription'
+import { canAccessArenaBillingSettings } from '@/lib/billing/workspace-permissions'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import { isBillingEnabled, isHosted } from '@/lib/core/config/env-flags'
 import { canOpenOrganizationSettingsSection } from '@/lib/organizations/settings-access'
@@ -105,13 +106,15 @@ export default async function WorkspaceSettingsSectionPage({
   const parsed = parseSection(section)
   if (!parsed) notFound()
 
-  if (parsed === 'arena-billing') {
-    const allowed = await userHasCapability(session.user.id, BILLING_NAV_CAPABILITY)
-    if (!allowed) notFound()
-  }
-
   const hostContext = await getWorkspaceHostContextForViewer(workspaceId, session.user.id)
   if (!hostContext) notFound()
+
+  if (parsed === 'arena-billing') {
+    const hasBillingNav = await userHasCapability(session.user.id, BILLING_NAV_CAPABILITY)
+    if (!canAccessArenaBillingSettings(hostContext, session.user.id, hasBillingNav)) {
+      notFound()
+    }
+  }
 
   if (parsed === 'admin' || parsed === 'mothership') {
     if (!(await isPlatformAdmin(session.user.id))) notFound()

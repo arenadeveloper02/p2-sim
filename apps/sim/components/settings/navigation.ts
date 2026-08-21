@@ -392,8 +392,8 @@ export const WORKSPACE_SETTINGS_GROUPS = [
 
 /**
  * Arena Agents billing — Subscription sidebar entry that opens billing-usage.
- * Sidebar visibility is gated to org admins / owners (and personal payers) via
- * `canManageWorkspaceBilling`; org members get remaining-credits stats on Usage.
+ * Visibility: `user_access.billing_nav` OR host org admin/owner (personal billed
+ * owner). Org members without either stay on Usage for remaining-credits stats.
  */
 const arenaAgentsBilling: SettingsSectionRegistryEntry = {
   label: 'Billing',
