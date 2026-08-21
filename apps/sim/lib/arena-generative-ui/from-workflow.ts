@@ -1,6 +1,11 @@
-import { outputLayoutFromSample } from '@/lib/arena-generative-ui/output-schema'
+import {
+  type ArenaGenerativeSchemaField,
+  outputLayoutFromSample,
+} from '@/lib/arena-generative-ui/output-schema'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
 import type { WorkflowInputField } from '@/lib/workflows/input-format'
+
+export { extractOutputSchemaFromBlocks } from '@/lib/arena-generative-ui/extract-workflow-output'
 
 /** Type a start-block field falls back to when it declares none. */
 const DEFAULT_INPUT_TYPE = 'string'
@@ -11,6 +16,11 @@ export interface WorkflowBindingSelection {
   label?: string
   /** Start-block fields of the **deployed** workflow, which is the version a CTA runs. */
   inputFields?: WorkflowInputField[]
+  /**
+   * Declared output fields from a Response block or Agent `responseFormat`.
+   * Used when the user does not paste a sample. A pasted sample always wins.
+   */
+  outputFields?: ArenaGenerativeSchemaField[]
   /** JSON sample becomes outputSchema; streamed prose becomes outputHint. */
   outputSample?: string
   stream?: boolean
@@ -67,6 +77,8 @@ export function workflowBindingFromSelection(
   const layout = outputLayoutFromSample(selection.outputSample, {
     stream: selection.stream === true,
   })
+  const derivedOutputSchema = outputSchemaFromWorkflowFields(selection.outputFields)
+  const outputSchema = layout.outputSchema ?? derivedOutputSchema
 
   return {
     key,
@@ -74,8 +86,30 @@ export function workflowBindingFromSelection(
     kind: 'workflow',
     workflowId,
     ...(inputSchema.length > 0 ? { inputSchema } : {}),
-    ...(layout.outputSchema ? { outputSchema: layout.outputSchema } : {}),
+    ...(outputSchema && outputSchema.length > 0 ? { outputSchema } : {}),
     ...(layout.outputHint ? { outputHint: layout.outputHint } : {}),
     ...(selection.stream ? { stream: true } : {}),
   }
+}
+
+/**
+ * Maps declared Response/Agent fields to a binding `outputSchema`. Names and
+ * types are kept so the generator can bind Table/Stat paths.
+ */
+export function outputSchemaFromWorkflowFields(
+  fields: ArenaGenerativeSchemaField[] | undefined
+): ArenaGenerativeSchemaField[] | undefined {
+  if (!fields || fields.length === 0) return undefined
+  const seen = new Set<string>()
+  const schema: ArenaGenerativeSchemaField[] = []
+  for (const field of fields) {
+    const name = field.name?.trim()
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    schema.push({
+      name,
+      type: field.type?.trim() || DEFAULT_INPUT_TYPE,
+    })
+  }
+  return schema.length > 0 ? schema : undefined
 }

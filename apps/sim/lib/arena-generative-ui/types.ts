@@ -244,14 +244,37 @@ export function omitActionTelemetry(record: Record<string, unknown>): Record<str
   return next
 }
 
+const RESPONSE_ENVELOPE_KEYS = new Set(['data', 'status', 'headers'])
+
+/**
+ * Response-block execution returns `{ data, status, headers }`. Host state
+ * should merge the JSON body keys (`articles`) so Table/Stat paths match the
+ * declared schema instead of `data.articles`.
+ */
+export function unwrapResponseBlockEnvelope(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return data
+  }
+  const record = data as Record<string, unknown>
+  const keys = Object.keys(record)
+  if (keys.length === 0 || !keys.every((key) => RESPONSE_ENVELOPE_KEYS.has(key))) {
+    return data
+  }
+  if (!Object.hasOwn(record, 'data') || typeof record.status !== 'number') {
+    return data
+  }
+  return record.data
+}
+
 /**
  * Host state patch from a CTA payload: top-level business keys, no telemetry.
  */
 export function actionStateFromData(data: unknown): Record<string, unknown> {
-  if (data && typeof data === 'object' && !Array.isArray(data)) {
-    return omitActionTelemetry(data as Record<string, unknown>)
+  const unwrapped = unwrapResponseBlockEnvelope(data)
+  if (unwrapped && typeof unwrapped === 'object' && !Array.isArray(unwrapped)) {
+    return omitActionTelemetry(unwrapped as Record<string, unknown>)
   }
-  return { result: data }
+  return { result: unwrapped }
 }
 
 /**
@@ -277,6 +300,9 @@ export function parseJsonLiteral(value: string): unknown | undefined {
 export function displayTextFromActionData(data: unknown, depth = 0): string | undefined {
   if (depth > MAX_DISPLAY_PARSE_DEPTH) {
     return undefined
+  }
+  if (depth === 0) {
+    data = unwrapResponseBlockEnvelope(data)
   }
   if (typeof data === 'string') {
     const parsed = parseJsonLiteral(data)

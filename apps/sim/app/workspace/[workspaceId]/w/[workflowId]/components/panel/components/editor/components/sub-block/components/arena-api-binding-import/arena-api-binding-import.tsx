@@ -21,9 +21,11 @@ import {
   httpBindingFromCurl,
 } from '@/lib/arena-generative-ui/from-curl'
 import {
+  extractOutputSchemaFromBlocks,
   inputSchemaFromWorkflowFields,
   workflowBindingFromSelection,
 } from '@/lib/arena-generative-ui/from-workflow'
+import { outputSchemaRootName } from '@/lib/arena-generative-ui/output-schema'
 import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useDeployedWorkflowState } from '@/hooks/queries/deployments'
@@ -44,6 +46,39 @@ const FORWARD_EMAIL_SWITCH_OPTIONS = [
   { value: 'off', label: "Don't send" },
   { value: 'on', label: 'Send' },
 ] as const
+
+function formatSchemaPreview(fields: Array<{ name: string; type: string }>): string {
+  const seen = new Set<string>()
+  const parts: string[] = []
+  for (const field of fields) {
+    const root = outputSchemaRootName(field.name)
+    if (!root || seen.has(root)) continue
+    seen.add(root)
+    parts.push(`${root}: ${field.type}`)
+  }
+  return parts.join(', ')
+}
+
+function outputFormatHint(
+  source: 'http' | 'workflow',
+  workflowId: string,
+  hasDeclaredOutput: boolean,
+  stream: boolean
+): string {
+  if (source === 'workflow' && workflowId) {
+    if (hasDeclaredOutput) {
+      return stream
+        ? 'Optional override. Paste JSON only if the live response differs from the declared schema, or markdown if you want streamed text to match a specific shape.'
+        : 'Optional override. Paste a sample only if the live response differs from the declared schema. Only field names and types are saved.'
+    }
+    return stream
+      ? 'This workflow has no declared output format. Leave blank to show streamed text, or paste an example of the tokens so the generator can match that shape.'
+      : 'This workflow has no declared output format. Paste a sample JSON so the generator can lay out tables and stats instead of a single text blob. Only field names and types are saved — values are discarded.'
+  }
+  return stream
+    ? 'Leave blank, or paste an example of the tokens (markdown is fine) so the generator can match that shape. Paste JSON only if the API also returns a structured object at the end.'
+    : 'Paste a sample response so the generator can lay out the result. Only field names and types are saved — values are discarded.'
+}
 
 interface ArenaApiBindingImportHelperProps {
   blockId: string
@@ -118,6 +153,10 @@ export function ArenaApiBindingImportHelper({
     [deployedState?.blocks]
   )
   const inputSchema = useMemo(() => inputSchemaFromWorkflowFields(inputFields), [inputFields])
+  const outputFields = useMemo(
+    () => extractOutputSchemaFromBlocks(deployedState?.blocks),
+    [deployedState?.blocks]
+  )
 
   const launcherDisabled = isPreview || disabled
   const canSave =
@@ -152,6 +191,7 @@ export function ArenaApiBindingImportHelper({
               workflowId,
               label: selectedWorkflow?.name,
               inputFields,
+              outputFields,
               outputSample,
               stream: streamMode === 'on',
             })
@@ -248,8 +288,31 @@ export function ArenaApiBindingImportHelper({
                     {deployedLoading
                       ? 'Reading the deployed start block…'
                       : inputSchema.length > 0
-                        ? inputSchema.map((field) => `${field.name}: ${field.type}`).join(', ')
+                        ? formatSchemaPreview(inputSchema)
                         : 'This workflow declares no start inputs. Form values are still sent as-is.'}
+                  </p>
+                </ChipModalField>
+              ) : null}
+              {workflowId ? (
+                <ChipModalField
+                  type='custom'
+                  title='Outputs'
+                  hint={
+                    deployedLoading
+                      ? 'Read from the deployed Response block or Agent structured output.'
+                      : outputFields.length > 0
+                        ? 'Read from the deployed Response block or Agent structured output. Saved as outputSchema so the generator can lay out the result.'
+                        : 'This workflow does not declare an output format. For better results, paste a sample JSON in Output format below.'
+                  }
+                >
+                  <p className='text-[var(--text-secondary)] text-caption'>
+                    {deployedLoading
+                      ? 'Reading the deployed workflow…'
+                      : outputFields.length > 0
+                        ? formatSchemaPreview(outputFields)
+                        : streamMode === 'on'
+                          ? 'No output format is available for this workflow. Leave blank to show streamed text, or paste an example below.'
+                          : 'No output format is available for this workflow. Paste a sample JSON below so the generator can lay out tables and stats instead of a single text blob.'}
                   </p>
                 </ChipModalField>
               ) : null}
@@ -327,11 +390,12 @@ export function ArenaApiBindingImportHelper({
                 ? '# Company analysis\n\n## Summary\n...'
                 : `{"articles":[{"title":"Example","url":"https://example.com"}]}`
             }
-            hint={
+            hint={outputFormatHint(
+              source,
+              workflowId,
+              outputFields.length > 0,
               streamMode === 'on'
-                ? 'Leave blank, or paste an example of the tokens (markdown is fine) so the generator can match that shape. Paste JSON only if the API also returns a structured object at the end.'
-                : 'Paste a sample response so the generator can lay out the result. Only field names and types are saved — values are discarded.'
-            }
+            )}
             rows={6}
             minHeight={120}
             resizable

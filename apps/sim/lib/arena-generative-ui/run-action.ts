@@ -24,6 +24,7 @@ import {
   actionStateFromData,
   displayTextFromActionData,
   streamingActionIdsFrom,
+  unwrapResponseBlockEnvelope,
 } from '@/lib/arena-generative-ui/types'
 import { releaseExecutionSlot } from '@/lib/billing/calculations/usage-reservation'
 import { isDev } from '@/lib/core/config/env-flags'
@@ -857,11 +858,12 @@ export async function runGenerativeAppAction(
     }
   }
 
-  const fromData = actionStateFromData(result.data)
+  const payload = unwrapResponseBlockEnvelope(result.data)
+  const fromData = actionStateFromData(payload)
   const paginationPatch = binding.pagination
-    ? paginationStateFromData(binding.pagination, result.data, mappedInput)
+    ? paginationStateFromData(binding.pagination, payload, mappedInput)
     : {}
-  const display = streamedContent.trim() ? streamedContent : displayTextFromActionData(result.data)
+  const display = streamedContent.trim() ? streamedContent : displayTextFromActionData(payload)
   const setState: Record<string, unknown> = {
     ...(action.onSuccess?.setState ?? {}),
     ...fromData,

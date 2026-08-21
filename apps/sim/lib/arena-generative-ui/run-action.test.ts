@@ -178,6 +178,43 @@ describe('runDeployedAppAction', () => {
     )
   })
 
+  it('unwraps a Response-block envelope so outputSchema fields match host state', async () => {
+    mockExecuteWorkflow.mockResolvedValue({
+      success: true,
+      output: {
+        data: { articles: [{ title: 'One' }], count: 1 },
+        status: 200,
+        headers: {},
+      },
+    })
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'workflow',
+            workflowId: 'wf-bound',
+            outputSchema: [
+              { name: 'articles', type: 'array' },
+              { name: 'count', type: 'number' },
+            ],
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.schemaWarning).toBeUndefined()
+    expect(result.setState?.articles).toEqual([{ title: 'One' }])
+    expect(result.setState?.count).toBe(1)
+    expect(result.setState?.data).toBeUndefined()
+  })
+
   it('proxies allowlisted HTTP and injects secret headers', async () => {
     mockEnv({ api_token: 'secret-token' })
     const fetchMock = vi.fn().mockResolvedValue({

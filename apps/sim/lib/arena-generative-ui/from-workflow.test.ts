@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   inputSchemaFromWorkflowFields,
+  outputSchemaFromWorkflowFields,
   workflowBindingFromSelection,
 } from '@/lib/arena-generative-ui/from-workflow'
 import { parseApiBindings } from '@/lib/arena-generative-ui/parse-inputs'
@@ -75,6 +76,41 @@ describe('workflowBindingFromSelection', () => {
     expect(binding.stream).toBeUndefined()
   })
 
+  it('derives outputSchema from declared Response/Agent fields without a sample', () => {
+    const binding = workflowBindingFromSelection({
+      key: 'run',
+      workflowId: 'wf-1',
+      outputFields: [
+        { name: 'articles', type: 'array' },
+        { name: 'count', type: 'number' },
+      ],
+    })
+
+    expect(binding.outputSchema).toEqual([
+      { name: 'articles', type: 'array' },
+      { name: 'count', type: 'number' },
+    ])
+  })
+
+  it('lets a pasted sample override the declared output fields', () => {
+    const binding = workflowBindingFromSelection({
+      key: 'run',
+      workflowId: 'wf-1',
+      outputFields: [{ name: 'articles', type: 'array' }],
+      outputSample: '{"score": 91}',
+    })
+
+    expect(binding.outputSchema?.map((field) => field.name)).toEqual(['score'])
+  })
+
+  it('omits outputSchema when nothing is declared and no sample is pasted', () => {
+    expect(
+      workflowBindingFromSelection({ key: 'run', workflowId: 'wf-1', outputFields: [] })
+        .outputSchema
+    ).toBeUndefined()
+    expect(outputSchemaFromWorkflowFields(undefined)).toBeUndefined()
+  })
+
   it('derives outputSchema from a sample response', () => {
     const binding = workflowBindingFromSelection({
       key: 'run',
@@ -139,6 +175,7 @@ describe('workflowBindingFromSelection', () => {
         { name: 'company', type: 'string' },
         { name: 'seats', type: 'number' },
       ],
+      outputFields: [{ name: 'articles', type: 'array' }],
       outputSample: '{"score": 91}',
       stream: true,
     })

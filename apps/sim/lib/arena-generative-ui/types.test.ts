@@ -18,6 +18,7 @@ import {
   readScopedStatePath,
   repeatItemActionValues,
   repeatItemKey,
+  unwrapResponseBlockEnvelope,
 } from '@/lib/arena-generative-ui/types'
 
 const ENVELOPE = {
@@ -61,6 +62,27 @@ describe('actionStateFromData', () => {
     })
     expect(actionStateFromData(ENVELOPE)).not.toHaveProperty('tokens')
     expect(actionStateFromData(['a'])).toEqual({ result: ['a'] })
+  })
+
+  it('unwraps a Response-block envelope so body keys land at the top level', () => {
+    const envelope = {
+      data: { articles: [{ title: 'One' }], count: 1 },
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }
+    expect(unwrapResponseBlockEnvelope(envelope)).toEqual(envelope.data)
+    expect(actionStateFromData(envelope)).toEqual({
+      articles: [{ title: 'One' }],
+      count: 1,
+    })
+    expect(displayTextFromActionData(envelope)).toContain('"title": "One"')
+    expect(displayTextFromActionData(envelope)).not.toContain('"status"')
+  })
+
+  it('leaves a business payload with data and status among other keys alone', () => {
+    const payload = { data: { nested: true }, status: 'ok', articles: [] }
+    expect(unwrapResponseBlockEnvelope(payload)).toEqual(payload)
+    expect(actionStateFromData(payload)).toEqual(payload)
   })
 })
 
