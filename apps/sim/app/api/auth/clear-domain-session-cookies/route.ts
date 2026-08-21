@@ -8,8 +8,8 @@ import { getBaseUrl } from '@/lib/core/utils/urls'
 
 /**
  * Clears session cookies for every scope Better Auth / browsers may have used: host-only,
- * `Domain=<NEXT_PUBLIC host>`, and parent `Domain` (e.g. `thearena.ai`) for cross-subdomain
- * session cookies. Host-only only on localhost.
+ * `Domain=<NEXT_PUBLIC host>`, and parent `Domain` (e.g. `thearena.ai` / `.thearena.ai`) for
+ * cross-subdomain session cookies. Host-only only on localhost.
  */
 function respond(request: Request) {
   const publicAppUrlIsHttps = getBaseUrl().startsWith('https://')
