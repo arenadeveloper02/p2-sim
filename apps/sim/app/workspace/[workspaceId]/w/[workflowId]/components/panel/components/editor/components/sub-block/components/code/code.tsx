@@ -212,6 +212,11 @@ interface CodeProps {
   wandControlRef?: React.MutableRefObject<WandControlHandlers | null>
   /** Whether to hide the internal wand button (controlled by parent) */
   hideInternalWand?: boolean
+  /**
+   * Caps editor height for compact read-only previews. Only `apiBindings` sets
+   * this; other code fields keep the default growing editor.
+   */
+  maxHeight?: number
 }
 
 export const Code = memo(function Code({
@@ -231,6 +236,7 @@ export const Code = memo(function Code({
   wandConfig,
   wandControlRef,
   hideInternalWand = false,
+  maxHeight,
 }: CodeProps) {
   const activeSearchTarget = useActiveSearchTarget()
   const params = useParams()
@@ -816,6 +822,12 @@ export const Code = memo(function Code({
     return numbers
   }
 
+  const editorProps = getCodeEditorProps({
+    isStreaming: isAiStreaming,
+    isPreview,
+    disabled,
+  })
+
   return (
     <>
       {showCopyButton && code && (
@@ -849,7 +861,13 @@ export const Code = memo(function Code({
         />
       )}
 
-      <CodeEditor.Container onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+      <CodeEditor.Container
+        className={
+          maxHeight != null ? '!min-h-[72px] max-h-[96px] min-h-[72px] overflow-y-auto' : undefined
+        }
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={handleDrop}
+      >
         <div className='absolute top-2 right-3 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100'>
           {wandConfig?.enabled &&
             !isAiStreaming &&
@@ -883,7 +901,8 @@ export const Code = memo(function Code({
             onFocus={handleEditorFocus}
             onBlur={handleEditorBlur}
             highlight={highlightCode}
-            {...getCodeEditorProps({ isStreaming: isAiStreaming, isPreview, disabled })}
+            {...editorProps}
+            className={cn(editorProps.className, maxHeight != null && '!min-h-[64px]')}
           />
 
           {showEnvVars && !isAiStreaming && !readOnly && (

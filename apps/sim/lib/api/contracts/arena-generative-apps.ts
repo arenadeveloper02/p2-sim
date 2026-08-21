@@ -316,6 +316,8 @@ export const getGenerativeAppDraftContract = defineRouteContract({
       apiBindings: z.array(arenaGenerativeApiBindingSchema),
       manifest: arenaGenerativeManifestSchema,
       revisionDiff: arenaGenerativeRevisionDiffSchema.nullable(),
+      /** Original generate prompt. Null on drafts created before brief was stored. */
+      brief: z.string().nullable(),
     }),
   },
 })

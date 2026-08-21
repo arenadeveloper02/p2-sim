@@ -93,5 +93,26 @@ describe('ArenaGenerativeUiBlock field tooltips', () => {
       (subBlock) => subBlock.id === 'apiBindings'
     )
     expect(apiBindings?.importHelper).toBe('arena-api-binding')
+    expect(apiBindings?.readOnly).toBe(true)
+    expect(apiBindings?.maxHeight).toBe(96)
+  })
+
+  it('gives User Input extra rows and previews the original brief in Edit', () => {
+    const userInput = ArenaGenerativeUiBlock.subBlocks.find(
+      (subBlock) => subBlock.id === 'userInput'
+    )
+    const editInstructions = ArenaGenerativeUiBlock.subBlocks.find(
+      (subBlock) => subBlock.id === 'editInstructions'
+    )
+    const designNotes = ArenaGenerativeUiBlock.subBlocks.find(
+      (subBlock) => subBlock.id === 'designNotes'
+    )
+    const existingDraftId = ArenaGenerativeUiBlock.subBlocks.find(
+      (subBlock) => subBlock.id === 'existingDraftId'
+    )
+    expect(userInput?.rows).toBe(10)
+    expect(editInstructions?.rows).toBeUndefined()
+    expect(designNotes?.rows).toBeUndefined()
+    expect(existingDraftId?.previewHelper).toBe('arena-draft-brief')
   })
 })

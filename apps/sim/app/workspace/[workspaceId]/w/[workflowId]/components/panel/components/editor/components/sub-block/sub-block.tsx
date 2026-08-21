@@ -68,6 +68,7 @@ import { ArenaStatesSelector } from './components/arena/arena-states-selector'
 import { ArenaTaskAndSubtaskSelector } from './components/arena/arena-task-and-subtask-selector'
 import { ArenaTaskSelector } from './components/arena/arena-tasks-selector'
 import { ArenaApiBindingImportHelper } from './components/arena-api-binding-import/arena-api-binding-import'
+import { ArenaDraftBriefPreview } from './components/arena-draft-brief-preview/arena-draft-brief-preview'
 import { SlackChannelSelector } from './components/slack-channel-selector'
 import { SlackClientSelector } from './components/slack-client-selector'
 
@@ -755,7 +756,7 @@ function SubBlockComponent({
           />
         )
 
-      case 'dropdown':
+      case 'dropdown': {
         // Use Slack-specific date range selector for Slack blocks with dateRange field
         if (blockType === 'slack' && config.id === 'dateRange') {
           return (
@@ -775,7 +776,7 @@ function SubBlockComponent({
             </div>
           )
         }
-        return (
+        const dropdown = (
           <div role='presentation' onMouseDown={handleMouseDown}>
             <Dropdown
               blockId={blockId}
@@ -804,6 +805,11 @@ function SubBlockComponent({
             />
           </div>
         )
+        if (config.previewHelper === 'arena-draft-brief') {
+          return <ArenaDraftBriefPreview blockId={blockId}>{dropdown}</ArenaDraftBriefPreview>
+        }
+        return dropdown
+      }
 
       case 'table-selector':
         return (
@@ -903,6 +909,7 @@ function SubBlockComponent({
             }
             wandControlRef={wandControlRef}
             hideInternalWand={true}
+            maxHeight={config.maxHeight}
           />
         )
         if (config.importHelper === 'arena-api-binding') {

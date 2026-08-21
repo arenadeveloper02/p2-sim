@@ -54,6 +54,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
       id: 'userInput',
       title: 'User Input',
       type: 'long-input',
+      rows: 10,
       required: { field: 'operation', value: 'generate' },
       condition: { field: 'operation', value: 'generate' },
       placeholder:
@@ -106,6 +107,7 @@ Return ONLY the specification text.`,
         const match = drafts.find((draft) => draft.id === optionId)
         return match ?? { id: optionId, label: optionId }
       },
+      previewHelper: 'arena-draft-brief',
     },
     {
       id: 'pages',
@@ -134,12 +136,14 @@ Return ONLY the specification text.`,
       type: 'code',
       language: 'json',
       importHelper: 'arena-api-binding',
+      readOnly: true,
+      maxHeight: 96,
       placeholder:
         '[{"key":"qualify_lead","kind":"workflow","workflowId":"...","label":"Qualify","stream":true}]',
       description:
         'Named APIs CTAs may call. Leave blank for a navigation-only app — the model cannot invent API keys.',
       tooltip:
-        'Named CTA backends. Leave blank for navigation-only. Use Add an API to pick a workflow or paste a curl, or edit this JSON. You invent key; use that same string in User Input (e.g. "Submit calls qualify_lead"). Set "stream": true to stream tokens into DataText on the form page. Add "outputSchema" (or paste a sample in Add an API) so the result is laid out as a Table or Stat instead of one text blob. Set "forwardEmailId": true on an HTTP binding to send the visitor\'s unverified Arena email.\n\n[{"key":"qualify_lead","kind":"workflow","workflowId":"wf_...","label":"Qualify","stream":true,"outputSchema":[{"name":"score","type":"number"}]}]',
+        'Named CTA backends. Leave blank for navigation-only. Use Add an API to pick a workflow or paste a curl. You invent key; use that same string in User Input (e.g. "Submit calls qualify_lead"). Set "stream": true to stream tokens into DataText on the form page. Add "outputSchema" (or paste a sample in Add an API) so the result is laid out as a Table or Stat instead of one text blob. Set "forwardEmailId": true on an HTTP binding to send the visitor\'s unverified Arena email.\n\n[{"key":"qualify_lead","kind":"workflow","workflowId":"wf_...","label":"Qualify","stream":true,"outputSchema":[{"name":"score","type":"number"}]}]',
     },
     {
       id: 'designNotes',
@@ -191,7 +195,10 @@ Return ONLY the specification text.`,
     pages: { type: 'json', description: 'Generated pages' },
     content: { type: 'string', description: 'Generation summary, including planner or edit scope' },
     manifest: { type: 'json', description: 'Full manifest JSON' },
-    structuredBrief: { type: 'json', description: 'Planner sitemap when generate planning succeeded' },
+    structuredBrief: {
+      type: 'json',
+      description: 'Planner sitemap when generate planning succeeded',
+    },
     plannerError: { type: 'string', description: 'Why planning fell back to prose, if it did' },
     editScope: { type: 'json', description: 'Pages rewritten on Edit, or theme-only' },
   },

@@ -93,6 +93,7 @@ export const GET = withRouteHandler(
         apiBindings: parseApiBindings(draft.apiBindings),
         manifest,
         revisionDiff,
+        brief: draft.brief ?? null,
       })
     } catch (error) {
       logger.error('Failed to load generative app draft', { error: getErrorMessage(error) })

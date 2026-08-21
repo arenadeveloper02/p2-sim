@@ -353,6 +353,7 @@ export interface SubBlockConfig {
   value?: (params: Record<string, any>) => string
   grouped?: boolean
   scrollable?: boolean
+  /** Pixel cap for compact `code` editors (`apiBindings`). Unused by most other types. */
   maxHeight?: number
   selectAllOption?: boolean
   condition?:
@@ -494,6 +495,11 @@ export interface SubBlockConfig {
    * adds an "Add an API" curl importer that writes this field's JSON.
    */
   importHelper?: 'arena-api-binding'
+  /**
+   * Opt-in preview under a dropdown. `arena-draft-brief` shows the selected
+   * generative-app draft's original generate brief (read-only).
+   */
+  previewHelper?: 'arena-draft-brief'
   // Wand configuration for AI assistance
   wandConfig?: {
     enabled: boolean
