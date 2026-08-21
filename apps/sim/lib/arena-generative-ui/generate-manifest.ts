@@ -43,6 +43,7 @@ import type {
   ArenaGenerativeGenerateResult,
   ArenaGenerativePageHint,
 } from '@/lib/arena-generative-ui/types'
+import { ARENA_GENERATIVE_UI_HOST_UX_PROMPT } from '@/lib/arena-generative-ui/ux-policy'
 import {
   GENERATOR_OMITTED_PAGES_ERROR,
   type ManifestValidationResult,
@@ -312,6 +313,7 @@ export async function generateArenaGenerativeManifest(
     customRules: [
       ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
       ARENA_GENERATIVE_UI_THEME_RULE,
+      ARENA_GENERATIVE_UI_HOST_UX_PROMPT,
       'This app renders as a full page up to 1280px and also embeds in a narrow Arena iframe (Grid and Columns collapse). emailId is optional. Do not invent a login form or an app wordmark.',
       ...(params.apiBindings.length > 0
         ? [

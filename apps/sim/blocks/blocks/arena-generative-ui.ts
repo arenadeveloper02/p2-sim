@@ -25,6 +25,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
     'Creates a multi-page json-render draft (home, results, and more) with in-app navigation and optional CTA bindings to deployed workflows or allowlisted HTTP APIs. Run the block to save a draft, then publish from Deploy → GUI App to get a public /gui-apps/{identifier} URL.',
   bestPractices: `
   - Use Generate for a new draft. Leave Pages blank so the model chooses the sitemap, or pin paths as JSON [{ "path": "home", "title": "Form" }].
+  - User Input describes the app: pages, copy, which API, navigation, empty states. Do not ask for loaders, toasts, or confirm dialogs — the host compiles those.
   - Describe navigation in User Input: NavLinks, Back buttons, and "submit then go to results".
   - Add apiBindings JSON only when CTAs should call a deployed workflow or HTTP URL. Leave it blank for navigation-only; the model cannot invent keys. Set "stream": true to stream tokens into DataText on the form page.
   - Use "Add an API" rather than writing bindings by hand: pick a workflow and Sim fills inputSchema from its deployed start block, or paste a curl for an HTTP endpoint.

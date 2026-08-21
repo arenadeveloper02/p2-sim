@@ -102,6 +102,7 @@ const PLANNER_SYSTEM_PROMPT = [
   'actions[].apiKey must be a declared binding key. When no bindings were declared, actions must be [].',
   'When a binding has no outputSchema, do not plan Table or Stat columns; results are prose (DataText content) unless the brief names exact keys.',
   'Give an onLoad action no onSuccessNavigate.',
+  'Plan sitemap, data, and actions — not loading widgets. Do not mention ProgressBar, ProgressSteps, Skeleton, or an error Alert in pages[].purpose or data; the host compiles those.',
 ].join('\n')
 
 const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
@@ -116,7 +117,7 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
     'If the form is a single prominent query field, home is a centered PageHeader (kicker, display title, measure subtitle) plus SearchField with suggestion Chips and a Grid of three Icon Cards. Do not use a labelled Grid for that query.',
     'Multi-field forms stay a left-aligned PageHeader plus fields in a 2-column Grid, one SubmitButton, no onLoad.',
     'The submit action sets onSuccess.navigate to the results path. Results binds Repeat entity Cards, Stat, KeyValue, or DataText to the response keys and offers a Back NavLink.',
-    'Loading and emptyText live on the results page — the host navigates there while the action is still pending. A run-progress page uses EntityHeader, ProgressBar, and nested ProgressSteps while pending.',
+    'Loading and emptyText live on the results page — bind Repeat, Stat, KeyValue, or DataText to the response. The host shows pending chrome. A long-running destination uses EntityHeader plus bound DataText, not ProgressSteps.',
   ].join('\n'),
   'list-detail': [
     'ARCHETYPE RECIPE: list-detail',

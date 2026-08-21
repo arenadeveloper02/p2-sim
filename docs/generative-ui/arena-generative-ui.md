@@ -28,6 +28,8 @@ Published apps are gated for authenticated Arena users by default, like deployed
 
 Generate itself is two calls: a cheap structured brief (sitemap, archetype, per-page data) then the full manifest. You still type prose in User Input; the structured brief is not a field you fill in. Edit also makes two calls, but the first is a **scope** call rather than a plan — see **Requested Changes** below.
 
+The published app then compiles UX at load: semantic manifest → host defaults (loading, error, retry, confirm, toast) → json-render → runtime. User Input describes the app, not that chrome.
+
 Edit later by switching the block to **Edit Existing Draft**, describing only what should change in **Requested Changes**, running again (new revision), then launching from Deploy again.
 
 You can also attach **Arena Generative UI** as an Agent tool (Built-in Tools). Pick Generate or Edit on the tool. Drafts still belong to this workflow — preview and Launch from **Deploy → GUI App**. For Edit, pin a Draft or let the agent pass `existingDraftId` from a prior generate; the agent supplies `editInstructions` (the delta) rather than a brief.
@@ -61,7 +63,7 @@ From **Deploy → GUI App**, pick a draft and open **Preview**. That loads `{bas
 
 Describe the app in **plain language**. This field is prose, not JSON. Only **Pages** and **API Bindings** are JSON — leave them empty unless you are pinning a sitemap or wiring CTAs.
 
-The model uses this brief to invent pages, copy, forms, and navigation.
+The model uses this brief to invent pages, copy, forms, and navigation. Do not describe loaders, toasts, or confirm dialogs — the host compiles those.
 
 Generation is two-stage: a short planning call first produces a structured brief (purpose, audience, archetype, pages, actions, empty copy). A second call renders that into the json-render manifest. The planner picks an archetype — dashboard, form→result, list→detail, or wizard — and the generator is shown **only that archetype's gold layout**, so a dashboard is not taught as a search hero. If planning fails, generate still runs from the prose you typed, and the block's `content` / `plannerError` outputs say so instead of failing silently. Edit runs its own two stages instead (scope, then rewrite the pages in scope), except **theme-only** Requested Changes (`dark mode`, `density compact`, a brand hex) which patch `manifest.theme` without an LLM call. The block `content` line starts with `Edit scope: pages [results].` or `Edit scope: theme only` so you can see what the run will rewrite.
 
@@ -455,7 +457,7 @@ Data display: `Table` (static `columns` + `rows`, or `statePath` bound to an arr
 
 Input: `Form`, `TextInput`, `TextArea`, `NumberInput`, `DateInput`, `Select`, `RadioGroup`, `MultiSelect`, `Checkbox`, `Switch`, `SubmitButton`
 
-Loading: `Skeleton` (`variant`: `text` / `stat` / `table` / `card` / `form`, plus `lines`), `Spinner`, `ProgressSteps` (newline-separated step labels shown while a CTA is pending)
+Loading: `Skeleton` (`variant`: `text` / `stat` / `table` / `card` / `form`, plus `lines`) for static-children regions. `Spinner` and `ProgressSteps` remain in the catalog for legacy specs; the host compiles pending chrome, so new apps should bind `statePath` instead of emitting them.
 
 Nav / CTA: `NavLink` (`to` = page path), `Button` (`navigateTo` / `actionId` / outbound `href`, plus `variant`, `size`, and `showWhen`), `Link`
 
@@ -544,7 +546,7 @@ Every region that fills from a CTA response gets a placeholder while the action 
 
 - **Automatic.** `Table`, `Repeat`, `Stat`, `KeyValue` and `DataText` bound to a `statePath` render a shape-matched skeleton whenever an action is pending and the value is still empty. Nothing is needed in the manifest, so apps generated before this existed gain the behaviour too. A `DataText` `fallback` is empty-state copy, not loading copy — it no longer suppresses the skeleton. Once the action has finished, an empty array or object on `Table` / `Repeat` / `KeyValue` shows the empty message instead of disappearing.
 - **Explicit.** `Skeleton` covers regions built from static children. It renders only while an action is pending, so it disappears on its own. A `Stat` with a literal `value`, or a `Table` with literal `rows`, is not bound to anything and needs one.
-- `Spinner` remains for short inline waits, and `ProgressSteps` for a stepped run the user explicitly asked for.
+- The host also compiles busy chrome on pending CTAs, an error banner with Retry, a same-page save toast, and a confirm step for destructive buttons. Do not emit `ProgressSteps` or a filling `ProgressBar` as loading theater. `ProgressBar` is only for a real 0–100 value from the API.
 
 **Loaders survive `onSuccess.navigate`.** A CTA that navigates on success sends the user to the destination page *before* the request is issued, and the action stays pending until it resolves — so the loading state belongs on the destination page, not on the form page the user has already left. This holds for streaming and non-streaming CTAs alike. If the action fails, the error is written to state and the user stays where they landed.
 

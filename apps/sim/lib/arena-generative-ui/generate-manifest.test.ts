@@ -227,6 +227,19 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('Skeleton')
   })
 
+  it('tells the model the host compiles UX and not to emit fake progress', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+    await generateArenaGenerativeManifest({ userInput: 'Team directory.', apiBindings: [] })
+
+    const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+    expect(system).toContain('HOST UX')
+    expect(system).toContain('Do not emit ProgressSteps')
+    expect(system).toContain('Never invent API rows')
+    expect(system).not.toContain('only when the user asked')
+    expect(system).not.toContain('ProgressBar and ProgressSteps belong')
+  })
+
   it('drops the old rule that told the model to paint backgrounds', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
 
@@ -311,7 +324,8 @@ describe('generateArenaGenerativeManifest', () => {
     )
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
     expect(system).toContain('onSuccess.navigate')
-    expect(system).toContain('only when the user asked')
+    expect(system).toContain('Do not emit ProgressSteps')
+    expect(system).not.toContain('only when the user asked')
     expect(system).toContain('outputSchema')
     expect(system).toContain('outputHint')
     expect(system).toContain('Table statePath="companies"')

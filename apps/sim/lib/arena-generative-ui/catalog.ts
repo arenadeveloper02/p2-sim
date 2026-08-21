@@ -224,14 +224,15 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         text: z.string(),
         tone: z.enum(['info', 'success', 'warning', 'error']).nullable(),
       }),
-      description: 'Inline status message. Markdown is rendered.',
+      description:
+        'In-content status the brief asked for (a disclaimer or legal note). Markdown is rendered. Do not use for field errors, API failures, save success, or confirm — the host shows those.',
     },
     Spinner: {
       props: z.object({
         label: z.string().nullable(),
       }),
       description:
-        'Small inline loading label shown while an API action is in flight. Prefer Skeleton for a region that will fill with data.',
+        'Optional short inline wait. Pending CTAs already show host busy chrome. Do not use Spinner as the only feedback for a long run.',
     },
     Skeleton: {
       props: z.object({
@@ -239,7 +240,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         lines: z.union([z.number(), z.string()]).nullable().optional(),
       }),
       description:
-        'Loading placeholder shown only while a CTA is pending. variant picks the shape (text lines, stat block, table rows, card, form rows) and lines sets how many rows. Table, Stat, KeyValue and DataText bound to a statePath already show a placeholder automatically, so add Skeleton for regions you build from static children.',
+        'Optional placeholder for a region built from static children. Table, Repeat, Stat, KeyValue and DataText bound to a statePath already skeleton automatically. Prefer binding statePath over emitting Skeleton.',
     },
     ProgressSteps: {
       props: z.object({
@@ -247,7 +248,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         durationMs: z.union([z.number(), z.string()]).nullable().optional(),
       }),
       description:
-        'Optional. Newline-separated step labels shown while a CTA is pending. Indent a child line with two spaces to nest it under the previous step (the resolving-profile tree). Ticks complete over durationMs (default 150000). Include when the user asked for stepped progress; put it on the page that shows the run.',
+        'Legacy. Do not emit — timed steps are fake progress. The host shows indeterminate status while a CTA is pending. Existing specs still render.',
     },
     ProgressBar: {
       props: z.object({
@@ -256,7 +257,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         label: z.string().nullable(),
       }),
       description:
-        'Horizontal 0–100 progress track. value is a percent, or statePath reads a number from host state. Shown during a pending run and whenever a bound value is present.',
+        'Horizontal 0–100 track only when a real percent exists (value or statePath from the API). Do not emit as loading theater; the host shows indeterminate status instead.',
     },
     SearchField: {
       props: formFieldProps({
@@ -325,7 +326,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Identity row: logo, title, badge, description, comma-separated meta chips, and default-slot children for links or actions. Use on dashboards and run-progress pages instead of stacking Avatar + Heading + Badge + Toolbar.',
+        'Identity row: logo, title, badge, description, comma-separated meta chips, and default-slot children for links or actions. Use on dashboards and record pages instead of stacking Avatar + Heading + Badge + Toolbar.',
     },
     Form: {
       props: z.object({
@@ -581,9 +582,9 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Navigation: when the app has three or more top-level destinations, put a Tabs element with one "Label|path" line per top-level page on those destination pages and set activePath to the current path. A search hero omits Tabs. Detail and progress pages are reached with NavLink/navigateTo and offer a Back NavLink.',
   'Typography: one h1-level page title per page (PageHeader.title counts), then a short supporting subtitle. Never title a page "Page 1" or use lorem ipsum.',
   'Heading order: nest levels sequentially and never skip or invert them. PageHeader.title is the page h1 and Card.title renders an h2, so a Heading inside a Card starts at h3.',
-  'Loading: any region that fills from a CTA response must have a loading state. Table, Repeat, Stat, KeyValue and DataText bound to a statePath show a placeholder automatically, but only while that state value is still empty — so bind the result region to a statePath rather than hard-coding static children. A Stat with a literal value prop and a Table with literal rows never show one. For a region built from static children add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]} — variant is text, stat, table, card or form. Use Spinner only for a short inline wait, never as the sole feedback for a long run. ProgressBar and ProgressSteps belong on the run page while the action is pending.',
+  'Loading: bind every CTA or onLoad result region to a statePath. Table, Repeat, Stat, KeyValue and DataText then show a placeholder automatically while pending and empty. A Stat with a literal value or a Table with literal rows never shows one. For a region built from static children you may add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]}. Do not emit ProgressSteps or a filling ProgressBar — the host compiles pending chrome.',
   'Empty results: when a bound Table, Repeat, or KeyValue has loaded and the value is empty, the host shows emptyText (defaults: "No results" for Table and Repeat, "No details" for KeyValue). Do not add a second Text or Alert for that. A DataText fallback is the empty copy for prose. Customise emptyText when the brief names the collection ("No matching articles").',
-  'Result pages: when onSuccess.navigate sends the user to another page, the host navigates there immediately and the action stays pending, so put the loading state on the destination page — its bound Table/Repeat/Stat/KeyValue/DataText, or ProgressBar/ProgressSteps, or an explicit Skeleton — not on the form page the user has already left.',
+  'Result pages: when onSuccess.navigate sends the user to another page, the host navigates there immediately and the action stays pending, so bind the destination Table/Repeat/Stat/KeyValue/DataText — not loaders on the form page the user has already left. The host supplies pending chrome.',
   'Avatars: content logos and initials belong on Avatar or EntityHeader (src, initials, or statePath including "{item.logo}"). Do not add a decorative app wordmark or branding Image — the host already provides the outer shell.',
 ] as const
 
@@ -654,4 +655,4 @@ export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */
 export const ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE =
-  'If a declared API binding has stream: true, still infer a multi-page sitemap from the brief. For prose streams, put DataText with statePath "content" in the section or page that shows that API body (often a results page). If the binding has outputHint, treat it as an example of the streamed body — match that shape in DataText and page copy; do not invent Table columns from it. If the binding also declares outputSchema, bind those fields as Table, Stat, or KeyValue instead of dumping content — an array field such as companies becomes Table statePath="companies". If the result is not on the form page, set onSuccess.navigate to that page and add a Back NavLink to the form. Include ProgressSteps only when the user asked for stepped progress; otherwise omit it.'
+  'If a declared API binding has stream: true, still infer a multi-page sitemap from the brief. For prose streams, put DataText with statePath "content" in the section or page that shows that API body (often a results page). If the binding has outputHint, treat it as an example of the streamed body — match that shape in DataText and page copy; do not invent Table columns from it. If the binding also declares outputSchema, bind those fields as Table, Stat, or KeyValue instead of dumping content — an array field such as companies becomes Table statePath="companies". If the result is not on the form page, set onSuccess.navigate to that page and add a Back NavLink to the form. Do not emit ProgressSteps; the host shows pending chrome on that page.'

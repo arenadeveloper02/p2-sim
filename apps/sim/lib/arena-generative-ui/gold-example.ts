@@ -226,7 +226,7 @@ const goldResultsSpec: Spec = {
 }
 
 /**
- * Run progress: EntityHeader, ProgressBar, and nested ProgressSteps while pending.
+ * Run destination: EntityHeader plus bound DataText. The host supplies pending chrome.
  */
 const goldProgressSpec: Spec = {
   root: 'page',
@@ -239,7 +239,7 @@ const goldProgressSpec: Spec = {
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['back', 'entity', 'bar', 'steps', 'continue'],
+      children: ['back', 'entity', 'reply', 'continue'],
     },
     back: {
       type: 'NavLink',
@@ -260,17 +260,13 @@ const goldProgressSpec: Spec = {
       },
       children: [],
     },
-    bar: {
-      type: 'ProgressBar',
-      props: { value: null, statePath: 'progress', label: null },
-      children: [],
-    },
-    steps: {
-      type: 'ProgressSteps',
+    reply: {
+      type: 'DataText',
       props: {
-        steps:
-          'Queued\nResolving company profile\n  Registry lookup\n  Domain match\nScoring sources',
-        durationMs: null,
+        statePath: 'content',
+        fallback: 'Waiting for analysis…',
+        color: null,
+        size: null,
       },
       children: [],
     },
@@ -456,8 +452,8 @@ export const goldExampleOutput = {
  */
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT (form-result)',
-  'Match this structure and density, not its subject matter. Note the default Arena theme, the four screens (centered search hero, entity result cards, nested run progress, entity dashboard), SearchField with nested submit, Icon wells, Avatar on entity Cards, EntityHeader, ProgressBar, display Stats, and result components bound by statePath.',
-  'Note also how data moves: home has no onLoad — SearchField runs the search CTA and onSuccess navigates to results. Results is a Repeat of entity Cards inside a Grid; Card.title uses "{item.name}", Avatar.src uses "{item.logo}", and Analyze sends the item fields. Progress shows EntityHeader, ProgressBar, and indented ProgressSteps while that run is pending. Overview declares onLoad and binds each Stat by statePath. emptyText is the zero-result copy when the companies array is empty.',
+  'Match this structure and density, not its subject matter. Note the default Arena theme, the four screens (centered search hero, entity result cards, analysis destination, entity dashboard), SearchField with nested submit, Icon wells, Avatar on entity Cards, EntityHeader, display Stats, and result components bound by statePath.',
+  'Note also how data moves: home has no onLoad — SearchField runs the search CTA and onSuccess navigates to results. Results is a Repeat of entity Cards inside a Grid; Card.title uses "{item.name}", Avatar.src uses "{item.logo}", and Analyze sends the item fields. Progress binds DataText to content (the host shows pending chrome). Overview declares onLoad and binds each Stat by statePath. emptyText is the zero-result copy when the companies array is empty.',
   `Replace the actions apiKey values ("${GOLD_EXAMPLE_LOAD_API_KEY}", "${GOLD_EXAMPLE_API_KEY}", "${GOLD_EXAMPLE_RUN_API_KEY}") with declared API binding keys, and drop manifest.actions and every onLoad entirely when no bindings were declared.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')

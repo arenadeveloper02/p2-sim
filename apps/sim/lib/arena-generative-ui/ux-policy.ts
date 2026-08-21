@@ -1,6 +1,6 @@
 /**
  * Default UX policy for Arena Generative UI. The compiler and host enforce
- * this; the generator may receive a short summary later.
+ * this. The generator sees `ARENA_GENERATIVE_UI_HOST_UX_PROMPT` only.
  */
 export const ARENA_GENERATIVE_UI_UX_PRINCIPLES = [
   'Generate interfaces that feel production-ready.',
@@ -43,3 +43,15 @@ export const ARENA_GENERATIVE_UI_UX_NEVERS = [
   'create fake progress',
   'trap the user in a page without recovery/navigation',
 ] as const
+
+/**
+ * Short generator summary. Enforcement stays in the compiler and host; this
+ * only stops the model from emitting a second copy of that chrome.
+ */
+export const ARENA_GENERATIVE_UI_HOST_UX_PROMPT = [
+  'HOST UX: the runtime compiles loading, error, retry, save confirmation, and destructive confirm. Describe pages, copy, forms, which API, navigation, and empty-state copy.',
+  'Bind every CTA or onLoad result region to a statePath so the host can skeleton it.',
+  'Do not emit ProgressSteps, a filling 0–100 ProgressBar, or Spinner as the only wait for a long run.',
+  'Do not emit Alert, Toast, or Modal for field errors, API failures, save success, or delete confirm — the host owns those. Alert is only for in-content status the brief asked for (a disclaimer).',
+  'Never invent API rows, never create fake timed progress, and never leave a results or detail page without a Back NavLink.',
+].join(' ')

@@ -87,16 +87,18 @@ describe('gold example', () => {
       'Icon',
       'Avatar',
       'EntityHeader',
-      'ProgressBar',
-      'ProgressSteps',
       'Grid',
       'Stat',
       'Card',
       'Repeat',
       'Tabs',
+      'DataText',
     ]) {
       expect(serialized).toContain(`"${type}"`)
     }
+    expect(serialized).toContain('"type":"DataText"')
+    expect(serialized).not.toContain('"type":"ProgressSteps"')
+    expect(serialized).not.toContain('"type":"ProgressBar"')
     expect(serialized).toContain('"align":"center"')
     expect(serialized).toContain('"size":"display"')
     expect(serialized).toContain('"brandColor":"#1A73E8"')

@@ -203,6 +203,8 @@ describe('structured brief helpers', () => {
       expect(recipe).not.toContain('one Card')
     }
     expect(archetypeRecipe('form-result')).toContain('SearchField')
+    expect(archetypeRecipe('form-result')).toContain('not ProgressSteps')
+    expect(archetypeRecipe('form-result')).not.toContain('nested ProgressSteps')
     expect(archetypeRecipe('list-detail')).toContain('entity Cards')
     expect(archetypeRecipe('dashboard')).toContain('EntityHeader')
     expect(archetypeRecipe('dashboard')).toContain('display')
@@ -249,6 +251,10 @@ describe('planArenaGenerativeStructuredBrief', () => {
         system: expect.stringContaining('Pick exactly one archetype'),
       })
     )
+    const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+    expect(system).toContain('Plan sitemap, data, and actions')
+    expect(system).toContain('the host compiles those')
+    expect(system).not.toContain('nested ProgressSteps')
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('Do not emit page specs')
     expect(userMessage).toContain('Order inbox with a detail page.')
