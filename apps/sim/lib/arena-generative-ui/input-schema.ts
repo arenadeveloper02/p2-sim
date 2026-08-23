@@ -12,6 +12,66 @@ import type {
 const LOGGED_IN_EMAIL_FIELD_NAME =
   /^(user_?e-?mail|logged_?in_?e-?mail|actor_?e-?mail|visitor_?e-?mail|arena_?email_?id)$/i
 
+/** API start-input names that take an address (`email`, `emailId`, or logged-in aliases). */
+const EMAIL_LIKE_API_INPUT_NAME =
+  /^(e-?mail|email_?id|user_?e-?mail|logged_?in_?e-?mail|actor_?e-?mail|visitor_?e-?mail|arena_?email_?id)$/i
+
+const BRIEF_EMAIL_FIELD_NAME =
+  /\b(userEmail|contactEmail|visitorEmail|loggedInEmail|actorEmail|user_?e-?mail|contact_?e-?mail|visitor_?e-?mail|logged_?in_?e-?mail)\b/i
+
+const BRIEF_EMAIL_LIST_FIELD =
+  /(?:^|\n)\s*[-*]\s+(?:(?:user|client|contact|visitor)\s+)?e-?mails?(?:\s+address)?\b/im
+
+const BRIEF_EMAIL_TYPED_FIELD = /\be-?mails?(?:\s+address)?\b\s*\((?:text|email|string|input)\b/i
+
+const BRIEF_EMAIL_NEAR_FIELD_WORD =
+  /(?:\be-?mails?(?:\s+address)?\b[^\n]{0,40}\b(placeholder|field|input|label)\b|\b(placeholder|field|input|label)\b[^\n]{0,40}\be-?mails?(?:\s+address)?\b)/i
+
+/**
+ * True when a workflow/curl input is an address the host can fill (`email`,
+ * `emailId`, `userEmail`, `arenaEmailId`). `contactEmail` stays a lead form
+ * field and is not treated as emailId.
+ */
+export function isEmailLikeApiInputName(name: string): boolean {
+  return EMAIL_LIKE_API_INPUT_NAME.test(name.trim())
+}
+
+/**
+ * Conservative scan of User Input / Requested Changes for an email *form field*.
+ * Empty brief and marketing copy ("we will email results") return false.
+ */
+export function briefHasEmailFormField(text: string): boolean {
+  const brief = text.trim()
+  if (!brief) return false
+  return (
+    BRIEF_EMAIL_FIELD_NAME.test(brief) ||
+    BRIEF_EMAIL_LIST_FIELD.test(brief) ||
+    BRIEF_EMAIL_TYPED_FIELD.test(brief) ||
+    BRIEF_EMAIL_NEAR_FIELD_WORD.test(brief)
+  )
+}
+
+/**
+ * Save-time overrides for Add-an-API. When the brief has no email form field,
+ * email-like API inputs are stamped `visitorEmail`. When it does, user
+ * overrides (or name-inferred defaults) win.
+ */
+export function inputSourceOverridesForSave(
+  fields: Array<{ name: string }>,
+  brief: string,
+  userOverrides: Record<string, ArenaGenerativeInputSourceOverride>
+): Record<string, ArenaGenerativeInputSourceOverride> {
+  if (briefHasEmailFormField(brief)) {
+    return userOverrides
+  }
+  const next = { ...userOverrides }
+  for (const field of fields) {
+    if (!isEmailLikeApiInputName(field.name)) continue
+    next[field.name] = { source: 'visitorEmail' }
+  }
+  return next
+}
+
 export interface ArenaGenerativeInputSourceOverride {
   source: ArenaGenerativeInputSource
   value?: string

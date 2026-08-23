@@ -5,8 +5,11 @@ import { describe, expect, it } from 'vitest'
 import {
   applyBindingInputSources,
   applyInputSourceOverrides,
+  briefHasEmailFormField,
   inferInputFieldSource,
   inputFieldRowNeedsValue,
+  inputSourceOverridesForSave,
+  isEmailLikeApiInputName,
   resolveInputFieldEditorRow,
 } from '@/lib/arena-generative-ui/input-schema'
 
@@ -142,5 +145,67 @@ describe('resolveInputFieldEditorRow', () => {
         value: 'history',
       })
     ).toBe(false)
+  })
+})
+
+describe('isEmailLikeApiInputName', () => {
+  it('treats email and emailId as address inputs', () => {
+    expect(isEmailLikeApiInputName('email')).toBe(true)
+    expect(isEmailLikeApiInputName('e-mail')).toBe(true)
+    expect(isEmailLikeApiInputName('emailId')).toBe(true)
+    expect(isEmailLikeApiInputName('email_id')).toBe(true)
+    expect(isEmailLikeApiInputName('userEmail')).toBe(true)
+    expect(isEmailLikeApiInputName('arenaEmailId')).toBe(true)
+  })
+
+  it('leaves lead and ordinary names alone', () => {
+    expect(isEmailLikeApiInputName('contactEmail')).toBe(false)
+    expect(isEmailLikeApiInputName('company')).toBe(false)
+    expect(isEmailLikeApiInputName('targetKeyword')).toBe(false)
+  })
+})
+
+describe('briefHasEmailFormField', () => {
+  it('returns false for an empty brief or a form without email', () => {
+    expect(briefHasEmailFormField('')).toBe(false)
+    expect(briefHasEmailFormField('  ')).toBe(false)
+    expect(briefHasEmailFormField('- Target Keyword (text)\n- Client / Brand')).toBe(false)
+  })
+
+  it('returns false for marketing copy that only mentions emailing', () => {
+    expect(briefHasEmailFormField('we will email results when the run finishes')).toBe(false)
+    expect(briefHasEmailFormField('Turn on email notifications for this workspace.')).toBe(false)
+  })
+
+  it('detects field-declaration phrasing', () => {
+    expect(briefHasEmailFormField('- email (text) — placeholder "you@acme.com"')).toBe(true)
+    expect(briefHasEmailFormField('Email address — placeholder "you@acme.com"')).toBe(true)
+    expect(briefHasEmailFormField('Fields:\n- userEmail\n- company')).toBe(true)
+    expect(briefHasEmailFormField('Add a contactEmail field on the form.')).toBe(true)
+  })
+})
+
+describe('inputSourceOverridesForSave', () => {
+  const fields = [{ name: 'email' }, { name: 'targetKeyword' }, { name: 'type' }]
+
+  it('stamps visitorEmail on email-like inputs when the brief has no email field', () => {
+    expect(
+      inputSourceOverridesForSave(fields, '- Target Keyword (text)', {
+        type: { source: 'constant', value: 'history' },
+      })
+    ).toEqual({
+      type: { source: 'constant', value: 'history' },
+      email: { source: 'visitorEmail' },
+    })
+  })
+
+  it('does not stamp when the brief declares an email field', () => {
+    expect(
+      inputSourceOverridesForSave(fields, '- email (text)\n- Target Keyword', {
+        type: { source: 'constant', value: 'history' },
+      })
+    ).toEqual({
+      type: { source: 'constant', value: 'history' },
+    })
   })
 })

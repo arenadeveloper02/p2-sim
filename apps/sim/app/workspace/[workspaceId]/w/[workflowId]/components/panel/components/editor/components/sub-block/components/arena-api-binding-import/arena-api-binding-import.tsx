@@ -30,7 +30,10 @@ import {
 import {
   type ArenaGenerativeInputSourceOverride,
   applyInputSourceOverrides,
+  briefHasEmailFormField,
   inputFieldRowNeedsValue,
+  inputSourceOverridesForSave,
+  isEmailLikeApiInputName,
   resolveInputFieldEditorRow,
 } from '@/lib/arena-generative-ui/input-schema'
 import { outputSchemaRootName } from '@/lib/arena-generative-ui/output-schema'
@@ -124,6 +127,24 @@ function bindingWithInputOverrides(
   }
 }
 
+function briefFromSubBlocks(userInput: unknown, editInstructions: unknown): string {
+  return [userInput, editInstructions]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join('\n')
+}
+
+function SchemaFieldTags({ fields }: { fields: Array<{ name: string; type: string }> }) {
+  return (
+    <div className='flex flex-wrap gap-1'>
+      {fields.map((field) => (
+        <ChipTag key={field.name} variant='gray'>
+          {field.name}: {field.type}
+        </ChipTag>
+      ))}
+    </div>
+  )
+}
+
 interface InputSourceFieldsProps {
   rows: ReturnType<typeof resolveInputFieldEditorRow>[]
   onSourceChange: (name: string, source: ArenaGenerativeInputSource) => void
@@ -192,6 +213,9 @@ export function ArenaApiBindingImportHelper({
 }: ArenaApiBindingImportHelperProps) {
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const [storeValue, setStoreValue] = useSubBlockValue<string>(blockId, subBlockId)
+  const [userInput] = useSubBlockValue<string>(blockId, 'userInput')
+  const [editInstructions] = useSubBlockValue<string>(blockId, 'editInstructions')
+  const briefHasEmail = briefHasEmailFormField(briefFromSubBlocks(userInput, editInstructions))
   const envVarKeys = useAvailableEnvVarKeys(workspaceId)
   const [open, setOpen] = useState(false)
   const [source, setSource] = useState<'http' | 'workflow'>('http')
@@ -260,10 +284,15 @@ export function ArenaApiBindingImportHelper({
   }, [source, curl, key])
 
   const editorInputSchema = source === 'workflow' ? inputSchema : curlInputSchema
+  const autoBindVisitorEmail = !briefHasEmail
   const editorRows = editorInputSchema.map((field) =>
     resolveInputFieldEditorRow(field, inputSourceOverrides[field.name])
   )
-  const constantsMissingValue = editorRows.some((row) => inputFieldRowNeedsValue(row))
+  const pickerRows = editorRows.filter((row) => briefHasEmail || !isEmailLikeApiInputName(row.name))
+  const autoBoundEmailFields = editorInputSchema.filter(
+    (field) => autoBindVisitorEmail && isEmailLikeApiInputName(field.name)
+  )
+  const constantsMissingValue = pickerRows.some((row) => inputFieldRowNeedsValue(row))
 
   const launcherDisabled = isPreview || disabled
   const canSave =
@@ -322,8 +351,10 @@ export function ArenaApiBindingImportHelper({
               stream: streamMode === 'on',
             })
           : buildHttpBinding()
+      const brief = briefFromSubBlocks(userInput, editInstructions)
+      const overrides = inputSourceOverridesForSave(editorInputSchema, brief, inputSourceOverrides)
       setStoreValue(
-        appendApiBinding(storeValue ?? '', bindingWithInputOverrides(binding, inputSourceOverrides))
+        appendApiBinding(storeValue ?? '', bindingWithInputOverrides(binding, overrides))
       )
       handleOpenChange(false)
     } catch (caught) {
@@ -443,7 +474,7 @@ export function ArenaApiBindingImportHelper({
                 <ChipModalField
                   type='custom'
                   title='Inputs'
-                  hint='Read from the deployed start block. Choose how each param is filled.'
+                  hint='Read from the deployed start block. Write User Input first if the form collects an email.'
                 >
                   <p className='text-[var(--text-secondary)] text-caption'>
                     Reading the deployed start block…
@@ -461,9 +492,22 @@ export function ArenaApiBindingImportHelper({
                   </p>
                 </ChipModalField>
               ) : null}
-              {showWorkflowInputs && !deployedLoading ? (
+              {showWorkflowInputs && !deployedLoading && inputSchema.length > 0 ? (
+                <ChipModalField
+                  type='custom'
+                  title='Inputs'
+                  hint={
+                    autoBoundEmailFields.length > 0
+                      ? 'Read from the deployed start block. Filled with the signed-in address because User Input has no email field.'
+                      : 'Read from the deployed start block. Choose how each param is filled.'
+                  }
+                >
+                  <SchemaFieldTags fields={inputSchema} />
+                </ChipModalField>
+              ) : null}
+              {showWorkflowInputs && !deployedLoading && pickerRows.length > 0 ? (
                 <InputSourceFields
-                  rows={editorRows}
+                  rows={pickerRows}
                   onSourceChange={handleInputSourceChange}
                   onConstantValueChange={handleConstantValueChange}
                 />
@@ -485,13 +529,7 @@ export function ArenaApiBindingImportHelper({
                       Reading the deployed workflow…
                     </p>
                   ) : outputTags.length > 0 ? (
-                    <div className='flex flex-wrap gap-1'>
-                      {outputTags.map((field) => (
-                        <ChipTag key={field.name} variant='gray'>
-                          {field.name}: {field.type}
-                        </ChipTag>
-                      ))}
-                    </div>
+                    <SchemaFieldTags fields={outputTags} />
                   ) : (
                     <p className='text-[var(--text-secondary)] text-caption'>
                       {streamMode === 'on'
@@ -540,8 +578,21 @@ export function ArenaApiBindingImportHelper({
                 mono
               />
               {showHttpInputs ? (
+                <ChipModalField
+                  type='custom'
+                  title='Inputs'
+                  hint={
+                    autoBoundEmailFields.length > 0
+                      ? 'Read from the curl JSON body. Filled with the signed-in address because User Input has no email field.'
+                      : 'Read from the curl JSON body. Choose how each param is filled.'
+                  }
+                >
+                  <SchemaFieldTags fields={curlInputSchema} />
+                </ChipModalField>
+              ) : null}
+              {showHttpInputs && pickerRows.length > 0 ? (
                 <InputSourceFields
-                  rows={editorRows}
+                  rows={pickerRows}
                   onSourceChange={handleInputSourceChange}
                   onConstantValueChange={handleConstantValueChange}
                 />
