@@ -272,6 +272,7 @@ describe('generateArenaGenerativeManifest', () => {
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
     expect(system).toContain('top-level keys into app state')
     expect(system).toContain('never "data.articles"')
+    expect(system).toContain('Submitted form fields land in host state under "inputs"')
     expect(system).toContain('outputSchema')
     expect(system).toContain('Load more')
     expect(system).toContain('hasMore')

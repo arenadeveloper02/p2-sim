@@ -33,6 +33,7 @@ interface SpecElement {
 }
 
 const EXPLICIT_LOADING_TYPES = new Set(['Skeleton', 'Spinner', 'ProgressBar', 'ProgressSteps'])
+const RELOCATABLE_LOADING_TYPES = new Set(['ProgressBar', 'ProgressSteps', 'Spinner'])
 const BOUND_LOADING_TYPES = new Set(['Table', 'Repeat', 'Stat', 'KeyValue', 'DataText'])
 const ACTION_ID_PROP_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip'])
 
@@ -106,6 +107,134 @@ function onLoadActionIds(manifest: ArenaGenerativeAppManifest): Set<string> {
 function navigatePath(target: string | undefined): string {
   if (!target) return ''
   return splitNavTarget(target).path
+}
+
+/**
+ * Destinations of every CTA on this page, or null when the page has no CTA or
+ * any CTA stays on the same page.
+ */
+function navigateFirstDestinations(
+  spec: Spec,
+  actionNavigate: Record<string, string>
+): string[] | null {
+  const actionIds = actionIdsInSpec(spec)
+  if (actionIds.length === 0) return null
+  const dests: string[] = []
+  for (const actionId of actionIds) {
+    const dest = navigatePath(actionNavigate[actionId])
+    if (!dest) return null
+    dests.push(dest)
+  }
+  return [...new Set(dests)]
+}
+
+function collectRelocatableLoaderIds(spec: Spec): string[] {
+  const elements = specElements(spec)
+  const ids: string[] = []
+  const visit = (id: string) => {
+    const element = elements[id]
+    if (!element) return
+    if (RELOCATABLE_LOADING_TYPES.has(element.type ?? '') && id !== UX_COMPILER_STATUS_KEY) {
+      ids.push(id)
+    }
+    for (const childId of element.children ?? []) {
+      visit(childId)
+    }
+  }
+  if (spec.root) visit(spec.root)
+  return ids
+}
+
+function stripElements(spec: Spec, ids: readonly string[]): Spec {
+  const remove = new Set(ids)
+  const next: Record<string, SpecElement> = {}
+  for (const [key, element] of Object.entries(specElements(spec))) {
+    if (remove.has(key)) continue
+    next[key] = {
+      ...element,
+      children: (element.children ?? []).filter((childId) => !remove.has(childId)),
+    }
+  }
+  return { ...spec, elements: next }
+}
+
+function uniqueElementKey(elements: Record<string, SpecElement>, preferred: string): string {
+  if (!elements[preferred]) return preferred
+  let suffix = 1
+  let key = `relocated-${preferred}`
+  while (elements[key]) {
+    suffix += 1
+    key = `relocated-${preferred}-${suffix}`
+  }
+  return key
+}
+
+function attachElements(spec: Spec, incoming: Array<{ key: string; element: SpecElement }>): Spec {
+  if (incoming.length === 0) return spec
+  const parentId = findInsertParentId(spec)
+  const elements = { ...specElements(spec) }
+  if (!parentId || !elements[parentId]) return spec
+  const insertedIds: string[] = []
+  for (const { key, element } of incoming) {
+    const nextKey = uniqueElementKey(elements, key)
+    elements[nextKey] = structuredClone(element)
+    insertedIds.push(nextKey)
+  }
+  const parent = elements[parentId]
+  elements[parentId] = {
+    ...parent,
+    children: [...insertedIds, ...(parent.children ?? [])],
+  }
+  return { ...spec, elements }
+}
+
+/**
+ * Moves ProgressBar / ProgressSteps / Spinner off a form whose CTAs all
+ * navigate away, onto each destination that has no pending surface yet.
+ */
+export function relocateNavigateFirstLoaders(
+  pages: Record<string, ArenaGenerativePageManifest>,
+  actions: ArenaGenerativeAppManifest['actions']
+): Record<string, ArenaGenerativePageManifest> {
+  const actionNavigate: Record<string, string> = {}
+  for (const [actionId, action] of Object.entries(actions)) {
+    const dest = navigatePath(action.onSuccess?.navigate)
+    if (dest) actionNavigate[actionId] = dest
+  }
+
+  const nextPages: Record<string, ArenaGenerativePageManifest> = {}
+  for (const [path, page] of Object.entries(pages)) {
+    nextPages[path] = { ...page, spec: structuredClone(page.spec) }
+  }
+
+  const moves: Array<{ dests: string[]; loaders: Array<{ key: string; element: SpecElement }> }> =
+    []
+  for (const [path, page] of Object.entries(nextPages)) {
+    const dests = navigateFirstDestinations(page.spec, actionNavigate)
+    if (!dests) continue
+    const loaderIds = collectRelocatableLoaderIds(page.spec)
+    if (loaderIds.length === 0) continue
+    const elements = specElements(page.spec)
+    const loaders = loaderIds.flatMap((id) => {
+      const element = elements[id]
+      return element ? [{ key: id, element }] : []
+    })
+    nextPages[path] = { ...page, spec: stripElements(page.spec, loaderIds) }
+    moves.push({ dests, loaders })
+  }
+
+  for (const move of moves) {
+    for (const dest of move.dests) {
+      const destPage = nextPages[dest]
+      if (!destPage || specHasLoadingSurface(destPage.spec)) continue
+      nextPages[dest] = {
+        ...destPage,
+        spec: attachElements(destPage.spec, move.loaders),
+      }
+    }
+  }
+
+  return nextPages
 }
 
 /**
@@ -231,9 +360,10 @@ export function compileGenerativeUx(
   bindings: ArenaGenerativeApiBinding[] = []
 ): CompileGenerativeUxResult {
   const needed = pagesNeedingPendingChrome(manifest)
+  const relocated = relocateNavigateFirstLoaders(manifest.pages, manifest.actions)
   const fallbackLoading: Record<string, ArenaGenerativeFallbackLoading> = {}
   const pages: Record<string, ArenaGenerativePageManifest> = {}
-  for (const [path, page] of Object.entries(manifest.pages)) {
+  for (const [path, page] of Object.entries(relocated)) {
     const compiled = compileGenerativePageSpec(page.spec, {
       needsPendingChrome: needed.has(path),
     })

@@ -48,7 +48,7 @@ import {
 import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
 import {
   displayTextFromActionData,
-  interpolateRepeatProps,
+  interpolateElementProps,
   MAX_REPEAT_ITEMS,
   omitActionTelemetry,
   parseJsonLiteral,
@@ -1051,7 +1051,7 @@ export function SpecRenderer({
   const renderNode = (id: string, scope?: RepeatItemScope, withinForm = false): ReactNode => {
     const element = elements[id]
     if (!element) return null
-    const props = interpolateRepeatProps(element.props ?? {}, scope)
+    const props = interpolateElementProps(element.props ?? {}, { state, scope, pending })
     const childIds = element.children ?? []
     const childWithinForm = withinForm || element.type === 'Form'
     const children = childIds.map((childId) => (
@@ -1735,6 +1735,9 @@ export function SpecRenderer({
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const raw = stateValue === undefined ? props.value : stateValue
         const parsed = asFiniteNumber(raw)
+        if (!pending && parsed === undefined) {
+          return null
+        }
         const percent = Math.min(100, Math.max(0, parsed ?? (pending ? 12 : 0)))
         const label = asString(props.label)
         return (

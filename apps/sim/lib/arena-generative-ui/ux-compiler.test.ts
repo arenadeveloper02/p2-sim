@@ -130,6 +130,108 @@ describe('compileGenerativeUx', () => {
     expect(section.children?.[0]).toBe(UX_COMPILER_STATUS_KEY)
   })
 
+  it('relocates ProgressSteps from a navigate-first form onto results', () => {
+    const homeWithSteps: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Form' }, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { padding: null, backgroundColor: null, maxWidth: null },
+          children: ['form', 'steps'],
+        },
+        form: {
+          type: 'Form',
+          props: { actionId: 'submit_lead' },
+          children: ['submit'],
+        },
+        submit: {
+          type: 'SubmitButton',
+          props: { label: 'Submit', actionId: null, size: null, variant: null, shape: null },
+          children: [],
+        },
+        steps: {
+          type: 'ProgressSteps',
+          props: { steps: 'Connecting\nScoring' },
+          children: [],
+        },
+      },
+    }
+    const resultsBare: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Results' }, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { padding: null, backgroundColor: null, maxWidth: null },
+          children: ['heading'],
+        },
+        heading: { type: 'Heading', props: { text: 'Score', level: 'h2' }, children: [] },
+      },
+    }
+    const manifest: ArenaGenerativeAppManifest = {
+      entryPath: 'home',
+      pages: {
+        home: { title: 'Form', path: 'home', spec: homeWithSteps },
+        results: { title: 'Score', path: 'results', spec: resultsBare },
+      },
+      actions: {
+        submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+      },
+    }
+    const compiled = compileGenerativeUx(manifest, twoPageApiBindings)
+    const homeTypes = Object.values(compiled.pages.home.spec.elements ?? {}).map(
+      (element) => (element as { type?: string }).type
+    )
+    const resultsTypes = Object.values(compiled.pages.results.spec.elements ?? {}).map(
+      (element) => (element as { type?: string }).type
+    )
+    expect(homeTypes).not.toContain('ProgressSteps')
+    expect(resultsTypes).toContain('ProgressSteps')
+    const resultsSection = compiled.pages.results.spec.elements?.section as { children?: string[] }
+    expect(resultsSection.children?.[0]).toBe('steps')
+  })
+
+  it('keeps ProgressSteps on a same-page submit', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Save' }, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { padding: null, backgroundColor: null, maxWidth: null },
+          children: ['form', 'steps'],
+        },
+        form: { type: 'Form', props: { actionId: 'save' }, children: ['submit'] },
+        submit: {
+          type: 'SubmitButton',
+          props: { label: 'Save', actionId: null, size: null, variant: null, shape: null },
+          children: [],
+        },
+        steps: {
+          type: 'ProgressSteps',
+          props: { steps: 'Saving' },
+          children: [],
+        },
+      },
+    }
+    const manifest: ArenaGenerativeAppManifest = {
+      entryPath: 'home',
+      pages: {
+        home: { title: 'Save', path: 'home', spec },
+      },
+      actions: {
+        save: { apiKey: 'save' },
+      },
+    }
+    const compiled = compileGenerativeUx(manifest, [{ key: 'save', label: 'Save', kind: 'http' }])
+    const types = Object.values(compiled.pages.home.spec.elements ?? {}).map(
+      (element) => (element as { type?: string }).type
+    )
+    expect(types).toContain('ProgressSteps')
+    expect(types).not.toContain('Spinner')
+  })
+
   it('does not inject ticking ProgressSteps', () => {
     const manifest: ArenaGenerativeAppManifest = {
       entryPath: 'home',

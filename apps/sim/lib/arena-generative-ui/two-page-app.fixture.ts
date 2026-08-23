@@ -56,11 +56,22 @@ export const twoPageResultsSpec: Spec = {
     section: {
       type: 'Section',
       props: { padding: null, backgroundColor: null, maxWidth: null },
-      children: ['heading', 'score', 'back'],
+      children: ['heading', 'name_chip', 'score', 'back'],
     },
     heading: {
       type: 'Heading',
       props: { text: 'Score', level: 'h2', color: null },
+      children: [],
+    },
+    name_chip: {
+      type: 'Chip',
+      props: {
+        text: 'Name: {name}',
+        tone: 'muted',
+        actionId: null,
+        navigateTo: null,
+        setValue: null,
+      },
       children: [],
     },
     score: {

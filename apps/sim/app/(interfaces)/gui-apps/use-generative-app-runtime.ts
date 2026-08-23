@@ -1,8 +1,8 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
 import { toError } from '@sim/utils/errors'
+import { flushSync } from 'react-dom'
 import {
   createActionGenerationClock,
   type GenerativeAppLastAction,
@@ -12,7 +12,7 @@ import {
 } from '@/lib/arena-generative-ui/action-runtime'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
-import { clearedActionErrorState } from '@/lib/arena-generative-ui/types'
+import { clearedActionErrorState, submittedInputsState } from '@/lib/arena-generative-ui/types'
 
 interface LastAction extends GenerativeAppLastAction {
   kind: 'cta' | 'load'
@@ -67,24 +67,21 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
     []
   )
 
-  const applyResult = useCallback(
-    (result: RunDeployedAppActionResult, skipNavigate: boolean) => {
-      const current = optionsRef.current
-      const { patch, appendKeys } = hostStatePatchFromResult(result)
-      if (Object.keys(patch).length > 0 || appendKeys?.length) {
-        flushSync(() => {
-          current.mergeState(patch, appendKeys)
-        })
-      }
-      if (!skipNavigate && result.navigate) {
-        current.navigate(result.navigate)
-      }
-      if (!result.ok) {
-        current.logger.warn('App action returned an error', { error: result.error })
-      }
-    },
-    []
-  )
+  const applyResult = useCallback((result: RunDeployedAppActionResult, skipNavigate: boolean) => {
+    const current = optionsRef.current
+    const { patch, appendKeys } = hostStatePatchFromResult(result)
+    if (Object.keys(patch).length > 0 || appendKeys?.length) {
+      flushSync(() => {
+        current.mergeState(patch, appendKeys)
+      })
+    }
+    if (!skipNavigate && result.navigate) {
+      current.navigate(result.navigate)
+    }
+    if (!result.ok) {
+      current.logger.warn('App action returned an error', { error: result.error })
+    }
+  }, [])
 
   const runCta = useCallback(
     async (actionId: string, values: Record<string, unknown>) => {
@@ -94,7 +91,12 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       const navigateTo = current.actionNavigate[actionId]
       const streaming = current.isStreaming(actionId)
       current.setActionPending(true)
-      current.mergeState(clearedActionErrorState())
+      flushSync(() => {
+        current.mergeState({
+          ...clearedActionErrorState(),
+          ...submittedInputsState(values),
+        })
+      })
       setToast(null)
       try {
         if (navigateTo) current.navigate(navigateTo)

@@ -115,6 +115,42 @@ describe('two-page GUI App draft preview', () => {
     expect(mockPush).toHaveBeenCalledWith('/gui-apps/preview/draft-1/results')
   })
 
+  it('shows the submitted name on results before the API resolves', async () => {
+    let resolveAction: (value: unknown) => void = () => {}
+    mockMutateAsync.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAction = resolve
+      })
+    )
+
+    render('home')
+    const input = container.querySelector('input[name="name"]') as HTMLInputElement
+    const form = container.querySelector('form')
+    act(() => {
+      input.value = 'Ada'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    act(() => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(mockPush).toHaveBeenCalledWith('/gui-apps/preview/draft-1/results')
+
+    render('results', 'results')
+    expect(container.textContent).toContain('Name: Ada')
+    expect(container.textContent).not.toContain('91')
+
+    await act(async () => {
+      resolveAction({
+        ok: true,
+        navigate: 'results',
+        setState: { score: '91' },
+      })
+    })
+    expect(container.textContent).toContain('Name: Ada')
+    expect(container.textContent).toContain('91')
+  })
+
   it('submits the home CTA, then shows the score on results', async () => {
     render('home')
     const input = container.querySelector('input[name="name"]') as HTMLInputElement

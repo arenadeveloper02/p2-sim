@@ -164,7 +164,7 @@ const goldResultsSpec: Spec = {
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['back', 'header', 'results_grid'],
+      children: ['back', 'header', 'query_chip', 'results_grid'],
     },
     back: {
       type: 'NavLink',
@@ -178,6 +178,17 @@ const goldResultsSpec: Spec = {
         subtitle: 'Select a record to run analysis.',
         kicker: 'Results',
         align: 'start',
+      },
+      children: [],
+    },
+    query_chip: {
+      type: 'Chip',
+      props: {
+        text: 'Query: {query}',
+        tone: 'muted',
+        actionId: null,
+        navigateTo: null,
+        setValue: null,
       },
       children: [],
     },
@@ -453,7 +464,7 @@ export const goldExampleOutput = {
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT (form-result)',
   'Match this structure and density, not its subject matter. Note the default Arena theme, the four screens (centered search hero, entity result cards, analysis destination, entity dashboard), SearchField with nested submit, Icon wells, Avatar on entity Cards, EntityHeader, display Stats, and result components bound by statePath.',
-  'Note also how data moves: home has no onLoad — SearchField runs the search CTA and onSuccess navigates to results. Results is a Repeat of entity Cards inside a Grid; Card.title uses "{item.name}", Avatar.src uses "{item.logo}", and Analyze sends the item fields. Progress binds DataText to content (the host shows pending chrome). Overview declares onLoad and binds each Stat by statePath. emptyText is the zero-result copy when the companies array is empty.',
+  'Note also how data moves: home has no onLoad — SearchField runs the search CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.query and "{query}" — Results echoes the query on a Chip. Results is a Repeat of entity Cards inside a Grid; Card.title uses "{item.name}", Avatar.src uses "{item.logo}", and Analyze sends the item fields. Progress binds DataText to content (the host shows pending chrome). Overview declares onLoad and binds each Stat by statePath. emptyText is the zero-result copy when the companies array is empty.',
   `Replace the actions apiKey values ("${GOLD_EXAMPLE_LOAD_API_KEY}", "${GOLD_EXAMPLE_API_KEY}", "${GOLD_EXAMPLE_RUN_API_KEY}") with declared API binding keys, and drop manifest.actions and every onLoad entirely when no bindings were declared.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')

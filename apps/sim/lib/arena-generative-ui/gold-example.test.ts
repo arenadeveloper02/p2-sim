@@ -120,6 +120,7 @@ describe('gold example', () => {
     expect(results).toContain('"statePath":"companies"')
     expect(results).toContain('{item.name}')
     expect(results).toContain('{item.logo}')
+    expect(results).toContain('Query: {query}')
     expect(results).toContain('No matching companies.')
     expect(results.indexOf('"type":"Grid"')).toBeLessThan(results.indexOf('"type":"Repeat"'))
   })

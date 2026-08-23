@@ -117,7 +117,7 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
     'If the form is a single prominent query field, home is a centered PageHeader (kicker, display title, measure subtitle) plus SearchField with suggestion Chips and a Grid of three Icon Cards. Do not use a labelled Grid for that query.',
     'Multi-field forms stay a left-aligned PageHeader plus fields in a 2-column Grid, one SubmitButton, no onLoad.',
     'The submit action sets onSuccess.navigate to the results path. Results binds Repeat entity Cards, Stat, KeyValue, or DataText to the response keys and offers a Back NavLink.',
-    'Loading and emptyText live on the results page — bind Repeat, Stat, KeyValue, or DataText to the response. The host shows pending chrome. A long-running destination uses EntityHeader plus bound DataText, not ProgressSteps.',
+    'If the brief asks for a progress checklist or bar on the form, put that waiting chrome on the destination page instead. The form stays fields plus submit until click. Loading and emptyText live on the results page — bind Repeat, Stat, KeyValue, or DataText to the response. Echo submitted fields from inputs.* or {fieldName}. The host shows pending chrome. A long-running destination uses EntityHeader plus bound DataText, not ProgressSteps.',
   ].join('\n'),
   'list-detail': [
     'ARCHETYPE RECIPE: list-detail',

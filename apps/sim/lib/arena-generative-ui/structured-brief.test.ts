@@ -204,6 +204,8 @@ describe('structured brief helpers', () => {
     }
     expect(archetypeRecipe('form-result')).toContain('SearchField')
     expect(archetypeRecipe('form-result')).toContain('not ProgressSteps')
+    expect(archetypeRecipe('form-result')).toContain('destination page')
+    expect(archetypeRecipe('form-result')).toContain('inputs.*')
     expect(archetypeRecipe('form-result')).not.toContain('nested ProgressSteps')
     expect(archetypeRecipe('list-detail')).toContain('entity Cards')
     expect(archetypeRecipe('dashboard')).toContain('EntityHeader')

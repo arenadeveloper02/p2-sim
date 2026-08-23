@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
   actionStateFromData,
   displayTextFromActionData,
+  interpolateBindingTemplate,
   interpolateItemTemplate,
   interpolateRepeatProps,
   MAX_REPEAT_ITEMS,
@@ -18,6 +19,7 @@ import {
   readScopedStatePath,
   repeatItemActionValues,
   repeatItemKey,
+  submittedInputsState,
   unwrapResponseBlockEnvelope,
 } from '@/lib/arena-generative-ui/types'
 
@@ -170,6 +172,38 @@ describe('Repeat item scope', () => {
 
   it('leaves object placeholders empty so they cannot leak into hrefs', () => {
     expect(interpolateItemTemplate('{item}', { item: article, index: 0 })).toBe('')
+  })
+
+  it('resolves host and inputs tokens including spaced labels', () => {
+    const state = { inputs: { targetKeyword: 'Dental implants', clientBrand: '42 North' } }
+    const hostScope = { item: article, index: 2 }
+
+    expect(interpolateBindingTemplate('Keyword: {targetKeyword}', { state })).toBe(
+      'Keyword: Dental implants'
+    )
+    expect(interpolateBindingTemplate('Keyword: {Target Keyword}', { state })).toBe(
+      'Keyword: Dental implants'
+    )
+    expect(interpolateBindingTemplate('Client: {client_brand}', { state })).toBe('Client: 42 North')
+    expect(
+      interpolateBindingTemplate('{item.title} for {targetKeyword}', { state, scope: hostScope })
+    ).toBe('Alpha for Dental implants')
+    expect(interpolateBindingTemplate('Keyword: {missing}', { state, pending: true })).toBe(
+      'Keyword: '
+    )
+  })
+
+  it('snapshots form values under inputs and drops reserved host keys', () => {
+    expect(
+      submittedInputsState({
+        targetKeyword: 'Dental implants',
+        content: 'should drop',
+        error: 'no',
+        hasMore: true,
+      })
+    ).toEqual({
+      inputs: { targetKeyword: 'Dental implants' },
+    })
   })
 
   it('prefers id for the React key and always prefixes the index', () => {

@@ -1442,6 +1442,56 @@ describe('SpecRenderer', () => {
     expect(footer?.textContent).toContain('Analyze')
   })
 
+  it('resolves host binding tokens on Text and Chip', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['heading', 'chip'] },
+        heading: {
+          type: 'Heading',
+          props: { text: 'Keyword: {Target Keyword}', level: 'h2' },
+          children: [],
+        },
+        chip: {
+          type: 'Chip',
+          props: { text: 'Client: {clientBrand}', tone: 'muted' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: { inputs: { targetKeyword: 'Dental implants', clientBrand: '42 North Dental' } },
+    })
+    expect(container.textContent).toContain('Keyword: Dental implants')
+    expect(container.textContent).toContain('Client: 42 North Dental')
+    expect(container.textContent).not.toContain('{Target Keyword}')
+  })
+
+  it('hides an idle ProgressBar that has no real percent', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['bar'] },
+        bar: { type: 'ProgressBar', props: { value: null }, children: [] },
+      },
+    }
+    const { container } = render({ spec, pending: false })
+    expect(container.querySelector('[data-testid="progress-bar"]')).toBeNull()
+  })
+
+  it('shows a ProgressBar while pending even without a percent', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['bar'] },
+        bar: { type: 'ProgressBar', props: { value: null }, children: [] },
+      },
+    }
+    const { container } = render({ spec, pending: true })
+    expect(container.querySelector('[data-testid="progress-bar"]')).toBeTruthy()
+  })
+
   it('renders ProgressBar percent and EntityHeader identity', () => {
     const spec: Spec = {
       root: 'page',

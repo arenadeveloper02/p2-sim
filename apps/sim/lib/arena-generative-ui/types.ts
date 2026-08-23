@@ -189,6 +189,36 @@ export const ARENA_GENERATIVE_ERROR_KEY = 'error'
 /** Host state key for a warn-only outputSchema mismatch. */
 export const ARENA_GENERATIVE_SCHEMA_WARNING_KEY = 'schemaWarning'
 
+/** Host state key that holds the last submitted form values. */
+export const ARENA_GENERATIVE_INPUTS_KEY = 'inputs'
+
+/**
+ * Keys that must not be copied from a form submit into `inputs` — they collide
+ * with host-owned CTA / pagination state.
+ */
+const RESERVED_SUBMITTED_INPUT_KEYS = new Set([
+  ARENA_GENERATIVE_STREAM_CONTENT_KEY,
+  ARENA_GENERATIVE_ERROR_KEY,
+  ARENA_GENERATIVE_SCHEMA_WARNING_KEY,
+  ARENA_GENERATIVE_INPUTS_KEY,
+  'hasMore',
+  'nextCursor',
+  'offset',
+])
+
+/**
+ * Host state patch that snapshots CTA form values under `inputs` so the next
+ * page can bind them before the API responds. Reserved host keys are dropped.
+ */
+export function submittedInputsState(values: Record<string, unknown>): Record<string, unknown> {
+  const inputs: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(values)) {
+    if (RESERVED_SUBMITTED_INPUT_KEYS.has(key)) continue
+    inputs[key] = value
+  }
+  return { [ARENA_GENERATIVE_INPUTS_KEY]: inputs }
+}
+
 /**
  * Message for a failed CTA, if any. Generated specs are not required to bind
  * `error` anywhere, so hosts read it directly rather than hoping the model
@@ -393,6 +423,8 @@ export interface RepeatItemScope {
 
 const ITEM_TEMPLATE_PLACEHOLDER = /\{(item(?:\.[A-Za-z_][\w]*)*|index)\}/g
 
+const BINDING_TEMPLATE_PLACEHOLDER = /\{([^}]+)\}/g
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -454,6 +486,99 @@ export function interpolateItemTemplate(template: string, scope: RepeatItemScope
 }
 
 /**
+ * Collapses a binding token so `Target Keyword`, `targetKeyword`, and
+ * `target_keyword` match the same form field.
+ */
+export function normalizeBindingToken(token: string): string {
+  return token.replace(/[^A-Za-z0-9]/g, '').toLowerCase()
+}
+
+function isBindingScalar(value: unknown): value is string | number | boolean {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+}
+
+function scalarFromRecord(record: Record<string, unknown>, token: string): string | undefined {
+  const exact = readHostStatePath(record, token)
+  if (isBindingScalar(exact)) return String(exact)
+  const normalized = normalizeBindingToken(token)
+  if (!normalized) return undefined
+  for (const [key, value] of Object.entries(record)) {
+    if (!isBindingScalar(value)) continue
+    if (normalizeBindingToken(key) === normalized) return String(value)
+  }
+  return undefined
+}
+
+/**
+ * Resolves a `{field}` / `{Field Label}` token against host state, then
+ * `inputs`, including camelCase / spaced-label aliases.
+ */
+export function lookupHostBindingValue(
+  state: Record<string, unknown>,
+  token: string
+): string | undefined {
+  const trimmed = token.trim()
+  if (!trimmed) return undefined
+  const fromState = scalarFromRecord(state, trimmed)
+  if (fromState !== undefined) return fromState
+  const inputs = state[ARENA_GENERATIVE_INPUTS_KEY]
+  if (isPlainRecord(inputs)) {
+    return scalarFromRecord(inputs, trimmed)
+  }
+  return undefined
+}
+
+function isItemTemplateToken(token: string): boolean {
+  return token === 'index' || token === 'item' || token.startsWith('item.')
+}
+
+export interface InterpolateElementOptions {
+  state?: Record<string, unknown>
+  scope?: RepeatItemScope
+  pending?: boolean
+}
+
+/**
+ * Substitutes Repeat `{item.*}` / `{index}` first, then host `{field}` tokens
+ * from submitted `inputs` or response keys. Unresolved host tokens become
+ * empty (including while pending) so Results never flashes `{Target Keyword}`.
+ */
+export function interpolateBindingTemplate(
+  template: string,
+  options: InterpolateElementOptions = {}
+): string {
+  if (!template.includes('{')) return template
+  const { state, scope, pending = false } = options
+  return template.replace(BINDING_TEMPLATE_PLACEHOLDER, (match, rawToken: string) => {
+    const token = rawToken.trim()
+    if (isItemTemplateToken(token)) {
+      if (!scope) return match
+      return templatePlaceholderValue(token, scope)
+    }
+    if (!state) return pending ? '' : match
+    const resolved = lookupHostBindingValue(state, token)
+    if (resolved !== undefined) return resolved
+    return ''
+  })
+}
+
+/**
+ * Interpolates every string prop against Repeat scope and host state.
+ * Non-strings, and strings with no `{…}` placeholders, pass through unchanged.
+ */
+export function interpolateElementProps(
+  props: Record<string, unknown>,
+  options: InterpolateElementOptions = {}
+): Record<string, unknown> {
+  if (!options.scope && !options.state) return props
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(props)) {
+    next[key] = typeof value === 'string' ? interpolateBindingTemplate(value, options) : value
+  }
+  return next
+}
+
+/**
  * Interpolates every string prop on an element against the current Repeat item.
  * Non-strings, and strings with no `{…}` placeholders, pass through unchanged.
  */
@@ -461,12 +586,7 @@ export function interpolateRepeatProps(
   props: Record<string, unknown>,
   scope?: RepeatItemScope
 ): Record<string, unknown> {
-  if (!scope) return props
-  const next: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(props)) {
-    next[key] = typeof value === 'string' ? interpolateItemTemplate(value, scope) : value
-  }
-  return next
+  return interpolateElementProps(props, { scope })
 }
 
 /** Stable React key for one Repeat iteration. Prefers `id` / `key` / `slug`. */
