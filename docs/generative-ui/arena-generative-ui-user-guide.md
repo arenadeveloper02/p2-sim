@@ -23,6 +23,36 @@ Name pages, fields, and CTA keys. Vague briefs (“make a research tool”) prod
 
 ---
 
+## Echo form values on another page
+
+Submitted fields are available on the next page the moment the user clicks — you do not need the API to return them.
+
+Give every field a **camelCase name** in User Input, then a label. On Results (or any later page), say to show those names as chips, a header, or a subtitle. The host fills `{targetKeyword}` and `inputs.targetKeyword` from what the user typed.
+
+```
+Article recommendations. Two pages.
+
+Home is a form:
+- targetKeyword (text) — label "Target Keyword", placeholder "Dental implants"
+- clientBrand (text) — label "Client / Brand", placeholder "42 North Dental"
+
+Submit "Generate Recommendations" calls recommend_articles, then go to Results.
+
+Results shows two pills: "Keyword: {targetKeyword}" and "Client: {clientBrand}",
+then the returned markdown. Back to Home.
+Do not put a progress bar or checklist on the form — waiting chrome belongs on Results.
+```
+
+| Write this | What happens |
+|---|---|
+| `targetKeyword (text) — label "Target Keyword"` | Field `name` is `targetKeyword`. Results can show `{targetKeyword}` or `{Target Keyword}` (spaces and case are ignored). |
+| `Keyword: {Target Keyword}` with only a label, no camelCase name | Often stays literal `{Target Keyword}` after generate. Name the field first. |
+| Hope the API echoes `company` so Results can show it | Unnecessary. Submit already copies the form into `inputs`. |
+
+`{item.title}` is only for rows inside a Repeat (a list from the API). Do not use `{item…}` for values the visitor just typed.
+
+---
+
 ## Output format (this is the layout lever)
 
 **Add an API → Output format** is a sample of the response. Sim keeps **names and types only** — pasted values never reach the model or the database.
@@ -58,7 +88,7 @@ Home is a form titled "Qualify a lead" with:
 
 Submit label is "Qualify". It calls qualify_lead, then go to Results.
 
-Results shows the score as a large stat, the reasons as a list, and a Back link to home.
+Results shows a pill "Company: {company}", the score as a large stat, the reasons as a list, and a Back link to home.
 While qualify_lead is running, Results should look like it is loading — not empty.
 ```
 
@@ -142,6 +172,63 @@ Paste JSON only when the API truly returns that object. A markdown example plus 
 
 ---
 
+## Example 3 — Article recommendations (form values on Results + History)
+
+Use this when a long-running markdown API should show the typed keyword and brand on Results, with a History tab that loads its own list.
+
+Do **not** ask for a progress panel, elapsed timer, or Cancel **on the form**. Waiting lives on Results. The host disables submit and shows error + Retry. Tabs only navigate — History must `onLoad` its API.
+
+**Mode:** Generate New App
+
+**User Input:**
+
+```
+Article Recommendation Agent. Three pages: home (Generator), results, history.
+
+Tabs at the top-right of every top-level page: "Generator|home" and "History|history". Home is the default.
+
+Home is a left-aligned form titled "Article Recommendation Agent" with subtitle
+"Turn a target keyword and client into writer-ready article recommendations."
+Fields:
+- targetKeyword (text) — label "Target Keyword", placeholder "Dental implants"
+- clientBrand (text) — label "Client / Brand", placeholder "42 North Dental"
+
+Submit label is "Generate Recommendations". It calls recommend_articles, then go to results.
+Do not put a progress bar, checklist, spinner, Cancel, or elapsed timer on the form.
+
+Results:
+- Back to Generator at the top
+- Two pills: "Keyword: {targetKeyword}" and "Client: {clientBrand}"
+- Bind the text returned by recommend_articles on DataText statePath "content" as formatted markdown
+  (H1 title, repeating H2 sections with bold Writing Instructions and Target Keywords bullet lists,
+  optional VISUAL & TABLE OPPORTUNITIES callouts, FAQ with bold Q: and plain A:)
+- While recommend_articles is running, Results should look like it is loading — not empty.
+  Header copy can be Working on "{targetKeyword}" for {clientBrand}…
+
+History page onLoad calls run_history (do not call it from the tab click).
+Show past generations most recent first (keyword, client, date).
+Clicking an item opens that generation in the same Results layout, read-only.
+
+Do not show raw JSON anywhere.
+```
+
+**Add an API** (twice):
+
+1. Key `recommend_articles` — **Workflow** (deployed) or **HTTP**. Response: **Stream** on if the body is markdown. **Output format** — a short markdown sample of one recommendation doc (same heading shape as above).
+2. Key `run_history` — list payload. **Output format** JSON if you have it:
+
+```json
+{
+  "items": [
+    { "keyword": "Dental implants", "client": "42 North Dental", "date": "2026-08-23" }
+  ]
+}
+```
+
+Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add them later in **Requested Changes** only if you implement them yourself.
+
+---
+
 ## After the first run
 
 1. Open **Preview**. Click through every page and run the CTA once.
@@ -158,5 +245,6 @@ Paste JSON only when the API truly returns that object. A markdown example plus 
 - Bound workflows are **deployed** before Preview / Launch.
 - JSON APIs: paste Output format JSON so Results is not a text dump.
 - Streaming APIs: turn Stream **on**, then paste a markdown (or JSON) example of the real stream.
-- User Input names pages, fields, submit label, and “then go to {page}”.
+- User Input names pages, **camelCase field names**, submit label, and “then go to {page}”.
+- To show typed values on Results, write `{targetKeyword}` (or the field name) there — do not wait for the API to echo them.
 - Edits are deltas. Do not paste the original brief again.
