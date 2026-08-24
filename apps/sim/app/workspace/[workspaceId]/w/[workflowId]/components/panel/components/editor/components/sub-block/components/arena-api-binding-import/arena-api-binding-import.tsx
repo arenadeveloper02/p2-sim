@@ -18,6 +18,11 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { useParams } from 'next/navigation'
 import { appendApiBinding, removeApiBinding } from '@/lib/arena-generative-ui/append-api-binding'
 import {
+  applyUnchangedOutputLayout,
+  emptyBindingFormState,
+  formStateFromBinding,
+} from '@/lib/arena-generative-ui/binding-form'
+import {
   curlHasAuthHeader,
   curlLooksLikeStream,
   httpBindingFromCurl,
@@ -37,6 +42,7 @@ import {
   resolveInputFieldEditorRow,
 } from '@/lib/arena-generative-ui/input-schema'
 import { outputSchemaFromSample } from '@/lib/arena-generative-ui/output-schema'
+import { parseApiBindings } from '@/lib/arena-generative-ui/parse-inputs'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeInputSchemaField,
@@ -220,6 +226,7 @@ export function ArenaApiBindingImportHelper({
   const briefHasEmail = briefHasEmailFormField(briefFromSubBlocks(userInput, editInstructions))
   const envVarKeys = useAvailableEnvVarKeys(workspaceId)
   const [open, setOpen] = useState(false)
+  const [editingKey, setEditingKey] = useState<string | null>(null)
   const [source, setSource] = useState<'http' | 'workflow'>('http')
   const [key, setKey] = useState('')
   const [secretVar, setSecretVar] = useState('')
@@ -280,9 +287,23 @@ export function ArenaApiBindingImportHelper({
     () => schemaFromSamplePaste(outputSample, streamMode === 'on'),
     [outputSample, streamMode]
   )
+  const savedBindings = storedBindings(storeValue)
+  const editingBinding = editingKey
+    ? (savedBindings.find((binding) => binding.key === editingKey) ?? null)
+    : null
   const displayedOutputSchema =
-    sampleOutput.fields.length > 0 ? sampleOutput.fields : outputFields
-  const outputSchemaFromPaste = sampleOutput.fields.length > 0
+    sampleOutput.fields.length > 0
+      ? sampleOutput.fields
+      : editingBinding?.outputSchema && editingBinding.outputSchema.length > 0
+        ? editingBinding.outputSchema
+        : outputFields
+  const outputSchemaFromPaste =
+    sampleOutput.fields.length > 0 ||
+    Boolean(
+      editingBinding &&
+        !outputSample.trim() &&
+        editingBinding.outputSchemaSource === 'sample'
+    )
   const curlInputSchema = useMemo((): ArenaGenerativeInputSchemaField[] => {
     if (source !== 'http' || !curl.trim()) return []
     try {
@@ -311,16 +332,31 @@ export function ArenaApiBindingImportHelper({
     (source === 'http' ? curl.trim().length > 0 : workflowId.trim().length > 0)
 
   function resetForm() {
-    setSource('http')
-    setKey('')
-    setSecretVar('')
-    setCurl('')
-    setStreamMode('off')
-    setForwardEmail('off')
-    setOutputSample('')
-    setWorkflowId('')
+    const empty = emptyBindingFormState()
+    setEditingKey(null)
+    setSource(empty.source)
+    setKey(empty.key)
+    setSecretVar(empty.secretVar)
+    setCurl(empty.curl)
+    setStreamMode(empty.streamMode)
+    setForwardEmail(empty.forwardEmail)
+    setOutputSample(empty.outputSample)
+    setWorkflowId(empty.workflowId)
     setError(null)
     setInputSourceOverrides({})
+  }
+
+  function applyFormState(form: ReturnType<typeof formStateFromBinding>) {
+    setSource(form.source)
+    setKey(form.key)
+    setSecretVar(form.secretVar)
+    setCurl(form.curl)
+    setStreamMode(form.streamMode)
+    setForwardEmail(form.forwardEmail)
+    setOutputSample(form.outputSample)
+    setWorkflowId(form.workflowId)
+    setError(null)
+    setInputSourceOverrides(form.inputSourceOverrides)
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -328,6 +364,19 @@ export function ArenaApiBindingImportHelper({
     if (!nextOpen) {
       resetForm()
     }
+  }
+
+  function handleEdit(binding: ArenaGenerativeApiBinding) {
+    if (launcherDisabled) return
+    setEditingKey(binding.key)
+    applyFormState(formStateFromBinding(binding))
+    setOpen(true)
+  }
+
+  function handleAdd() {
+    if (launcherDisabled) return
+    resetForm()
+    setOpen(true)
   }
 
   function handleInputSourceChange(name: string, nextSource: ArenaGenerativeInputSource) {
@@ -349,12 +398,12 @@ export function ArenaApiBindingImportHelper({
 
   function handleSave() {
     try {
-      const binding =
+      const built =
         source === 'workflow'
           ? workflowBindingFromSelection({
               key,
               workflowId,
-              label: selectedWorkflow?.name,
+              label: selectedWorkflow?.name ?? editingBinding?.label,
               inputFields,
               outputFields,
               outputSample,
@@ -363,18 +412,28 @@ export function ArenaApiBindingImportHelper({
           : buildHttpBinding()
       const brief = briefFromSubBlocks(userInput, editInstructions)
       const overrides = inputSourceOverridesForSave(editorInputSchema, brief, inputSourceOverrides)
-      setStoreValue(
-        appendApiBinding(storeValue ?? '', bindingWithInputOverrides(binding, overrides))
+      const binding = applyUnchangedOutputLayout(
+        bindingWithInputOverrides(built, overrides),
+        editingBinding ?? undefined,
+        outputSample
       )
+      let nextValue = storeValue ?? ''
+      if (editingKey && editingKey !== binding.key) {
+        nextValue = removeApiBinding(nextValue, editingKey)
+      }
+      setStoreValue(appendApiBinding(nextValue, binding))
       handleOpenChange(false)
     } catch (caught) {
-      setError(getErrorMessage(caught, 'Could not add API binding'))
+      setError(getErrorMessage(caught, 'Could not save API binding'))
     }
   }
 
   function handleRemove(bindingKey: string) {
     try {
       setStoreValue(removeApiBinding(storeValue ?? '', bindingKey))
+      if (editingKey === bindingKey) {
+        handleOpenChange(false)
+      }
     } catch (caught) {
       setError(getErrorMessage(caught, 'Could not remove API binding'))
     }
@@ -396,22 +455,39 @@ export function ArenaApiBindingImportHelper({
 
   const showWorkflowInputs = source === 'workflow' && Boolean(workflowId)
   const showHttpInputs = source === 'http' && curlInputSchema.length > 0
-  const savedBindings = storedBindings(storeValue)
 
   return (
     <div className='flex flex-col gap-2'>
       <div className='flex flex-wrap items-center gap-1'>
-        <Chip onClick={() => setOpen(true)} disabled={launcherDisabled}>
+        <Chip onClick={handleAdd} disabled={launcherDisabled}>
           Add an API
         </Chip>
         {savedBindings.map((binding) => (
           <ChipTag
             key={binding.key}
             variant='invite'
+            className={launcherDisabled ? undefined : 'cursor-pointer'}
+            role={launcherDisabled ? undefined : 'button'}
+            tabIndex={launcherDisabled ? undefined : 0}
+            title={`Edit ${binding.key}`}
+            onClick={launcherDisabled ? undefined : () => handleEdit(binding)}
+            onKeyDown={
+              launcherDisabled
+                ? undefined
+                : (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      handleEdit(binding)
+                    }
+                  }
+            }
             rightIcon={X}
             rightIconLabel={`Remove ${binding.key}`}
             rightIconDisabled={launcherDisabled}
-            onRightIconClick={() => handleRemove(binding.key)}
+            onRightIconClick={(event) => {
+              event.stopPropagation()
+              handleRemove(binding.key)
+            }}
           >
             {binding.key}
           </ChipTag>
@@ -432,8 +508,15 @@ export function ArenaApiBindingImportHelper({
         </div>
       ) : null}
       {children}
-      <ChipModal open={open} onOpenChange={handleOpenChange} srTitle='Add an API' size='lg'>
-        <ChipModalHeader onClose={() => handleOpenChange(false)}>Add an API</ChipModalHeader>
+      <ChipModal
+        open={open}
+        onOpenChange={handleOpenChange}
+        srTitle={editingKey ? `Edit ${editingKey}` : 'Add an API'}
+        size='lg'
+      >
+        <ChipModalHeader onClose={() => handleOpenChange(false)}>
+          {editingKey ? `Edit ${editingKey}` : 'Add an API'}
+        </ChipModalHeader>
         <ChipModalBody>
           <ChipModalField
             type='custom'
@@ -649,7 +732,9 @@ export function ArenaApiBindingImportHelper({
               title='Output schema'
               hint={
                 outputSchemaFromPaste
-                  ? 'Derived from the JSON you pasted. Wrappers like ok and data are ignored. Generate and edit keep this instead of the deployed workflow schema.'
+                  ? sampleOutput.fields.length > 0
+                    ? 'Derived from the JSON you pasted. Wrappers like ok and data are ignored. Generate and edit keep this instead of the deployed workflow schema.'
+                    : 'Saved from the JSON you pasted earlier. Leave Sample blank to keep it, or paste a new body to replace it.'
                   : deployedLoading
                     ? 'Fetched from the deployed Response block or Agent structured output.'
                     : displayedOutputSchema.length > 0
