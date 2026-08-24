@@ -23,7 +23,7 @@ describe('bindingsSummaryForPrompt', () => {
       score: 72,
       reasons: [{ title: 'Example', id: 'ex-1' }],
     })
-    expect(summary[0]?.resultLayout).toBe('bind outputSchema field names as statePath')
+    expect(summary[0]?.resultLayout).toContain('bind outputSchema field names as statePath')
   })
 
   it('treats a missing outputSchema as a prose DataText constraint', () => {

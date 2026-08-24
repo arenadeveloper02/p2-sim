@@ -165,6 +165,7 @@ describe('httpBindingFromCurl output format', () => {
       { name: 'articles[].url', type: 'string' },
       { name: 'count', type: 'number' },
     ])
+    expect(binding.outputSchemaSource).toBe('sample')
   })
 
   it('stores field names and types but never the sample values', () => {
@@ -210,6 +211,7 @@ describe('httpBindingFromCurl output format', () => {
     })
     expect(binding.outputHint).toBeUndefined()
     expect(binding.outputSchema).toEqual([{ name: 'companies', type: 'array' }])
+    expect(binding.outputSchemaSource).toBe('sample')
   })
 
   it('ignores a blank sample', () => {

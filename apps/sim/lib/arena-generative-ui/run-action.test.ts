@@ -252,6 +252,57 @@ describe('runDeployedAppAction', () => {
     expect(result.setState?.items).toEqual(items)
   })
 
+  it('lifts Response run_data.history into setState.history for the History page', async () => {
+    mockExecuteWorkflow.mockResolvedValue({
+      success: true,
+      output: {
+        data: {
+          run_data: {
+            history: [
+              {
+                id: 'h1',
+                input: { keyword: 'Dental Implants', client: 'Gentle Dental' },
+                output: '',
+                createdAt: '2026-08-24T06:28:56.717Z',
+              },
+            ],
+          },
+        },
+      },
+    })
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Run history',
+            kind: 'workflow',
+            workflowId: 'wf-bound',
+            outputSchema: [
+              { name: 'run_data', type: 'object' },
+              { name: 'run_data.history', type: 'array' },
+            ],
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.schemaWarning).toBeUndefined()
+    expect(result.setState?.history).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          keyword: 'Dental Implants',
+          client: 'Gentle Dental',
+        }),
+      ])
+    )
+  })
+
   it('proxies allowlisted HTTP and injects secret headers', async () => {
     mockEnv({ api_token: 'secret-token' })
     const fetchMock = vi.fn().mockResolvedValue({

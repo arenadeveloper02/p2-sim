@@ -69,6 +69,47 @@ describe('outputSchemaFromSample', () => {
     expect(fields.map((field) => field.name)).toEqual(['a', 'a.b', 'a.b.c'])
   })
 
+  it('still records an array that sits past the object-depth cap', () => {
+    expect(
+      outputSchemaFromSample('{"a":{"b":{"c":{"d":{"history":[{"id":"1"}]}}}}}')
+        .map((field) => field.name)
+        .includes('a.b.c.d.history')
+    ).toBe(true)
+  })
+
+  it('strips ok/data wrappers so a network-tab paste reaches nested history', () => {
+    const sample = JSON.stringify({
+      ok: true,
+      data: {
+        data: {
+          run_data: {
+            history: [
+              {
+                id: 'h1',
+                email: 'ada@example.com',
+                input: { keyword: 'Dental Implants', client: 'Gentle Dental' },
+                output: '',
+                createdAt: '2026-08-24T06:28:56.717Z',
+              },
+            ],
+          },
+        },
+      },
+    })
+    const names = outputSchemaFromSample(sample).map((field) => field.name)
+    expect(names).not.toContain('ok')
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'run_data',
+        'run_data.history',
+        'run_data.history[].id',
+        'run_data.history[].input',
+        'run_data.history[].input.keyword',
+        'run_data.history[].createdAt',
+      ])
+    )
+  })
+
   it('roots an array response under result, matching host state', () => {
     expect(outputSchemaFromSample('[{"title":"First"}]')).toEqual([
       { name: 'result', type: 'array' },
@@ -140,6 +181,15 @@ describe('outputSchemaWarning', () => {
       })
     ).toBe('Response is missing outputSchema fields: articles, count')
   })
+
+  it('treats a lifted nested collection as satisfying a dotted outputSchema path', () => {
+    expect(
+      outputSchemaWarning(
+        [{ name: 'data' }, { name: 'data.run_data.history' }, { name: 'data.run_data.history[].id' }],
+        { history: [], run_data: { history: [] } }
+      )
+    ).toBeUndefined()
+  })
 })
 
 describe('syntheticExampleFromOutputSchema', () => {
@@ -155,6 +205,21 @@ describe('syntheticExampleFromOutputSchema', () => {
       score: 72,
       articles: [{ title: 'Example', id: 'ex-1' }],
       ok: true,
+    })
+  })
+
+  it('nests run_data.history so the generator can bind the collection', () => {
+    expect(
+      syntheticExampleFromOutputSchema([
+        { name: 'run_data', type: 'object' },
+        { name: 'run_data.history', type: 'array' },
+        { name: 'run_data.history[].keyword', type: 'string' },
+        { name: 'run_data.history[].client', type: 'string' },
+      ])
+    ).toEqual({
+      run_data: {
+        history: [{ title: 'Example', id: 'ex-1', keyword: 'example', client: 'example' }],
+      },
     })
   })
 

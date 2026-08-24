@@ -441,6 +441,9 @@ export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
     if (outputSchema) {
       binding.outputSchema = outputSchema
     }
+    if (record.outputSchemaSource === 'sample' && (binding.outputSchema?.length ?? 0) > 0) {
+      binding.outputSchemaSource = 'sample'
+    }
     if (typeof record.outputHint === 'string' && record.outputHint.trim()) {
       binding.outputHint = truncate(record.outputHint.trim(), OUTPUT_HINT_MAX_LENGTH)
     }

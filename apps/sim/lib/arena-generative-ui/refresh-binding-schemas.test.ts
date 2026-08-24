@@ -86,6 +86,57 @@ describe('refreshWorkflowBindingOutputSchemas', () => {
     expect(refreshed[0]?.outputSchema).toEqual(pasted)
   })
 
+  it('keeps a sample-sourced schema instead of the deployed snapshot', async () => {
+    mockLoadDeployedWorkflowState.mockResolvedValue({
+      blocks: {
+        respond: {
+          type: 'response',
+          subBlocks: {
+            builderData: {
+              value: [{ name: 'run_data', type: 'object' }],
+            },
+          },
+        },
+      },
+    })
+    const pasted = [
+      { name: 'run_data', type: 'object' },
+      { name: 'run_data.history', type: 'array' },
+      { name: 'run_data.history[].input.keyword', type: 'string' },
+    ]
+
+    const refreshed = await refreshWorkflowBindingOutputSchemas([
+      workflowBinding({ outputSchema: pasted, outputSchemaSource: 'sample' }),
+    ])
+
+    expect(refreshed[0]?.outputSchema).toEqual(pasted)
+    expect(refreshed[0]?.outputSchemaSource).toBe('sample')
+    expect(mockLoadDeployedWorkflowState).not.toHaveBeenCalled()
+  })
+
+  it('still refreshes a sibling binding that did not come from a sample', async () => {
+    mockLoadDeployedWorkflowState.mockResolvedValue({
+      blocks: {
+        respond: {
+          type: 'response',
+          subBlocks: {
+            builderData: { value: [{ name: 'items', type: 'array', value: [] }] },
+          },
+        },
+      },
+    })
+    const pasted = [{ name: 'run_data.history', type: 'array' }]
+
+    const refreshed = await refreshWorkflowBindingOutputSchemas([
+      workflowBinding({ outputSchema: pasted, outputSchemaSource: 'sample' }),
+      workflowBinding({ key: 'run_history_again', outputSchema: [{ name: 'history', type: 'array' }] }),
+    ])
+
+    expect(refreshed[0]?.outputSchema).toEqual(pasted)
+    expect(refreshed[1]?.outputSchema).toEqual([{ name: 'items', type: 'array' }])
+    expect(mockLoadDeployedWorkflowState).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps HTTP bindings and undeployed workflows unchanged', async () => {
     mockLoadDeployedWorkflowState.mockRejectedValue(new Error('no active deployment'))
     const http: ArenaGenerativeApiBinding = {

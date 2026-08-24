@@ -21,7 +21,7 @@ export function bindingsSummaryForPrompt(bindings: ArenaGenerativeApiBinding[]) 
       pagination: binding.pagination,
       resultLayout:
         outputSchema.length > 0
-          ? 'bind outputSchema field names as statePath'
+          ? 'bind outputSchema field names as statePath; nested arrays (run_data.history) also land as "history"'
           : binding.outputHint
             ? 'prose DataText matching outputHint'
             : 'no outputSchema — DataText statePath "content"; do not invent Table columns',

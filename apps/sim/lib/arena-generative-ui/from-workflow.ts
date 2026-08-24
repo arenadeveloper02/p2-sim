@@ -89,6 +89,7 @@ export function workflowBindingFromSelection(
   })
   const derivedOutputSchema = outputSchemaFromWorkflowFields(selection.outputFields)
   const outputSchema = layout.outputSchema ?? derivedOutputSchema
+  const fromSample = Boolean(layout.outputSchema && layout.outputSchema.length > 0)
 
   return {
     key,
@@ -97,6 +98,7 @@ export function workflowBindingFromSelection(
     workflowId,
     ...(inputSchema.length > 0 ? { inputSchema } : {}),
     ...(outputSchema && outputSchema.length > 0 ? { outputSchema } : {}),
+    ...(fromSample ? { outputSchemaSource: 'sample' as const } : {}),
     ...(layout.outputHint ? { outputHint: layout.outputHint } : {}),
     ...(selection.stream ? { stream: true } : {}),
   }

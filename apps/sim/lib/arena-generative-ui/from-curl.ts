@@ -102,6 +102,7 @@ export function httpBindingFromCurl(input: HttpBindingFromCurlInput): ArenaGener
   const layout = outputLayoutFromSample(input.outputSample, { stream: input.stream === true })
   if (layout.outputSchema) {
     binding.outputSchema = layout.outputSchema
+    binding.outputSchemaSource = 'sample'
   }
   if (layout.outputHint) {
     binding.outputHint = layout.outputHint

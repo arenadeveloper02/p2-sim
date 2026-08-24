@@ -110,6 +110,7 @@ describe('workflowBindingFromSelection', () => {
       { name: 'articles', type: 'array' },
       { name: 'count', type: 'number' },
     ])
+    expect(binding.outputSchemaSource).toBeUndefined()
   })
 
   it('lets a pasted sample override the declared output fields', () => {
@@ -121,6 +122,7 @@ describe('workflowBindingFromSelection', () => {
     })
 
     expect(binding.outputSchema?.map((field) => field.name)).toEqual(['score'])
+    expect(binding.outputSchemaSource).toBe('sample')
   })
 
   it('omits outputSchema when nothing is declared and no sample is pasted', () => {
@@ -141,6 +143,7 @@ describe('workflowBindingFromSelection', () => {
     expect(binding.outputSchema?.map((field) => field.name)).toEqual(
       expect.arrayContaining(['score', 'reasons'])
     )
+    expect(binding.outputSchemaSource).toBe('sample')
   })
 
   it('stores stream prose as outputHint instead of throwing', () => {

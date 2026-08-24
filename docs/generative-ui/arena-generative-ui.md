@@ -220,7 +220,7 @@ If a binding has neither `outputSchema` nor `outputHint`, results are treated as
 
 `outputSchema` is also a hint for layout, plus a **warn-only** runtime check: if a declared top-level name is missing from the live response, the host logs a warning and preview shows an amber banner. The CTA still succeeds — schema drift is diagnosable, not a hard failure.
 
-The easiest way to fill it is the **Output format** field in **Add an API**: paste a sample response and Sim derives the field names and types in the browser. **Only names and types are saved** — the pasted values are discarded and never reach the database or the model, so a sample containing real data is safe.
+The easiest way to fill it is the **Output format** field in **Add an API**: paste a sample response and Sim derives the field names and types in the browser. **Only names and types are saved** — the pasted values are discarded and never reach the database or the model, so a sample containing real data is safe. A paste also stores `outputSchemaSource: "sample"` so generate and edit keep those fields instead of replacing them with the deployed Response snapshot. Leave Sample empty to keep refreshing from the deploy.
 
 Field names are ready-to-use `statePath` values, because of how a successful CTA lands in app state:
 

@@ -89,6 +89,12 @@ export interface ArenaGenerativeApiBinding {
    */
   outputSchema?: Array<{ name: string; type: string }>
   /**
+   * `sample` means Output schema came from Sample response. Generate/edit keep
+   * those fields instead of replacing them with the deployed Response snapshot.
+   * Omit when the schema was inferred from the workflow.
+   */
+  outputSchemaSource?: 'sample'
+  /**
    * Truncated example of a streamed prose body. Prompt-only — the runner never
    * sends this upstream. Used when stream is true and Output format is not JSON.
    */
@@ -295,24 +301,129 @@ export function omitActionTelemetry(record: Record<string, unknown>): Record<str
 
 const RESPONSE_ENVELOPE_KEYS = new Set(['data', 'status', 'headers'])
 
+const PREFERRED_COLLECTION_KEYS = ['history', 'items', 'results', 'records', 'rows'] as const
+
+const MAX_UNWRAP_DEPTH = 4
+
+const MAX_COLLECTION_LIFT_DEPTH = 3
+
 /**
- * Response-block execution returns `{ data, status, headers }`. Host state
- * should merge the JSON body keys (`articles`) so Table/Stat paths match the
- * declared schema instead of `data.articles`.
+ * Response-block execution returns `{ data, status, headers }`. Some workflows
+ * omit `status`/`headers` and still wrap the body in `data`. Host state should
+ * merge the JSON body keys (`history`) instead of `data.run_data.history`.
  */
-export function unwrapResponseBlockEnvelope(data: unknown): unknown {
+export function unwrapResponseBlockEnvelope(data: unknown, depth = 0): unknown {
+  if (depth > MAX_UNWRAP_DEPTH) {
+    return data
+  }
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return data
   }
   const record = data as Record<string, unknown>
   const keys = Object.keys(record)
-  if (keys.length === 0 || !keys.every((key) => RESPONSE_ENVELOPE_KEYS.has(key))) {
+  if (keys.length === 0 || !Object.hasOwn(record, 'data')) {
     return data
   }
-  if (!Object.hasOwn(record, 'data') || typeof record.status !== 'number') {
+  if (!keys.every((key) => RESPONSE_ENVELOPE_KEYS.has(key))) {
     return data
   }
-  return record.data
+  return unwrapResponseBlockEnvelope(record.data, depth + 1)
+}
+
+/**
+ * Copies nested arrays (`run_data.history`) to top-level keys (`history`) so
+ * Repeat/Table can bind the last segment. Existing top-level keys win.
+ */
+export function liftNestedCollections(record: Record<string, unknown>): Record<string, unknown> {
+  const lifted: Record<string, unknown> = {}
+  walkForCollections(record, 0, record, lifted)
+  if (
+    !Object.hasOwn(record, 'items') &&
+    !Object.hasOwn(lifted, 'items') &&
+    Object.keys(lifted).length === 1
+  ) {
+    const only = Object.values(lifted)[0]
+    if (Array.isArray(only)) {
+      lifted.items = only
+    }
+  }
+  return lifted
+}
+
+function walkForCollections(
+  node: unknown,
+  depth: number,
+  root: Record<string, unknown>,
+  lifted: Record<string, unknown>
+): void {
+  if (depth > MAX_COLLECTION_LIFT_DEPTH || !isPlainRecord(node)) {
+    return
+  }
+  for (const [key, value] of Object.entries(omitActionTelemetry(node))) {
+    if (Array.isArray(value)) {
+      if (!Object.hasOwn(root, key) && !Object.hasOwn(lifted, key)) {
+        lifted[key] = flattenCollectionItems(value)
+      }
+      continue
+    }
+    if (isPlainRecord(value)) {
+      walkForCollections(value, depth + 1, root, lifted)
+    }
+  }
+}
+
+/**
+ * Resolves a Repeat/Table `statePath` value to an array. Walks a single nested
+ * object (`run_data.history` or `{ data: { run_data: { history } } }`) and
+ * prefers keys named history/items/results.
+ */
+export function collectionFromBoundValue(value: unknown, depth = 0): unknown[] | undefined {
+  if (depth > MAX_UNWRAP_DEPTH) {
+    return undefined
+  }
+  if (Array.isArray(value)) {
+    return flattenCollectionItems(value)
+  }
+  if (typeof value === 'string') {
+    const parsed = parseJsonLiteral(value)
+    return parsed === undefined ? undefined : collectionFromBoundValue(parsed, depth + 1)
+  }
+  if (!isPlainRecord(value)) {
+    return undefined
+  }
+  const record = omitActionTelemetry(value)
+  for (const key of PREFERRED_COLLECTION_KEYS) {
+    const nested = record[key]
+    if (Array.isArray(nested)) {
+      return flattenCollectionItems(nested)
+    }
+  }
+  const arrays = Object.values(record).filter(Array.isArray)
+  if (arrays.length === 1) {
+    return flattenCollectionItems(arrays[0] as unknown[])
+  }
+  const objects = Object.values(record).filter(isPlainRecord)
+  if (objects.length === 1) {
+    return collectionFromBoundValue(objects[0], depth + 1)
+  }
+  for (const key of PREFERRED_COLLECTION_KEYS) {
+    if (record[key] === undefined) continue
+    const found = collectionFromBoundValue(record[key], depth + 1)
+    if (found) return found
+  }
+  return undefined
+}
+
+function flattenCollectionItems(items: unknown[]): unknown[] {
+  return items.map((item) => {
+    if (!isPlainRecord(item)) return item
+    const input = item.input
+    const next = isPlainRecord(input) ? { ...input, ...item } : { ...item }
+    if (next.date === undefined && next.createdAt !== undefined) {
+      next.date = next.createdAt
+    }
+    return next
+  })
 }
 
 /**
@@ -360,7 +471,7 @@ export function actionStateFromData(data: unknown): Record<string, unknown> {
   const unwrapped = unwrapResponseBlockEnvelope(data)
   if (unwrapped && typeof unwrapped === 'object' && !Array.isArray(unwrapped)) {
     const record = omitActionTelemetry(unwrapped as Record<string, unknown>)
-    return { ...liftParsedDisplayFields(record), ...record }
+    return { ...liftNestedCollections(record), ...liftParsedDisplayFields(record), ...record }
   }
   return { result: unwrapped }
 }

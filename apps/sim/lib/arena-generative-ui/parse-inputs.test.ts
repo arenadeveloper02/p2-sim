@@ -161,6 +161,40 @@ describe('parseApiBindings', () => {
     ])
   })
 
+  it('round-trips a sample-sourced outputSchema', () => {
+    expect(
+      parseApiBindings(
+        '[{"key":"run_history","kind":"workflow","workflowId":"wf-1","outputSchema":[{"name":"run_data.history","type":"array"}],"outputSchemaSource":"sample"}]'
+      )
+    ).toEqual([
+      {
+        key: 'run_history',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        label: 'run_history',
+        outputSchema: [{ name: 'run_data.history', type: 'array' }],
+        outputSchemaSource: 'sample',
+      },
+    ])
+  })
+
+  it('drops outputSchemaSource when it is not sample or there is no outputSchema', () => {
+    const [withoutSchema] = parseApiBindings([
+      { key: 'run', kind: 'workflow', workflowId: 'wf-1', outputSchemaSource: 'sample' },
+    ])
+    const [notSample] = parseApiBindings([
+      {
+        key: 'run',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        outputSchema: [{ name: 'score', type: 'number' }],
+        outputSchemaSource: 'workflow',
+      },
+    ])
+    expect(withoutSchema.outputSchemaSource).toBeUndefined()
+    expect(notSample.outputSchemaSource).toBeUndefined()
+  })
+
   it('defaults a missing schema field type to string and drops nameless entries', () => {
     const [binding] = parseApiBindings([
       {

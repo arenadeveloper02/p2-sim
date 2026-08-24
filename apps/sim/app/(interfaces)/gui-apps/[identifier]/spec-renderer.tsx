@@ -47,6 +47,7 @@ import {
 } from '@/lib/arena-generative-ui/form-fields'
 import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
 import {
+  collectionFromBoundValue,
   displayTextFromActionData,
   interpolateElementProps,
   MAX_REPEAT_ITEMS,
@@ -1141,7 +1142,8 @@ export function SpecRenderer({
       case 'Repeat': {
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
-        if (statePath && pending && isEmptyStateValue(stateValue)) {
+        const items = collectionFromBoundValue(stateValue)
+        if (statePath && pending && isEmptyStateValue(stateValue) && (!items || items.length === 0)) {
           return (
             <>
               {Array.from({ length: 3 }, (_, index) => (
@@ -1154,14 +1156,14 @@ export function SpecRenderer({
             </>
           )
         }
-        if (!Array.isArray(stateValue) || stateValue.length === 0) {
+        if (!items || items.length === 0) {
           if (!statePath) return null
           return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
         }
-        const items = stateValue.slice(0, MAX_REPEAT_ITEMS)
+        const visibleItems = items.slice(0, MAX_REPEAT_ITEMS)
         return (
           <>
-            {items.map((item, index) => (
+            {visibleItems.map((item, index) => (
               <Fragment key={repeatItemKey(item, index)}>
                 {childIds.map((childId) => (
                   <Fragment key={childId}>{renderNode(childId, { item, index })}</Fragment>
@@ -1281,15 +1283,28 @@ export function SpecRenderer({
       case 'Table': {
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
-        if (statePath && pending && isEmptyStateValue(stateValue)) {
+        const collection = collectionFromBoundValue(stateValue)
+        const boundEmpty = Boolean(
+          statePath && (collection ? collection.length === 0 : isEmptyStateValue(stateValue))
+        )
+        if (statePath && pending && boundEmpty) {
           return <SkeletonBlock variant='table' lines={DEFAULT_SKELETON_LINES.table} />
         }
-        if (statePath && !pending && isEmptyStateValue(stateValue)) {
+        if (statePath && !pending && boundEmpty) {
           const hasStatic =
             asString(props.columns).trim().length > 0 || asString(props.rows).trim().length > 0
           if (stateValue !== undefined || !hasStatic) {
             return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
           }
+        }
+        if (collection && collection.length > 0) {
+          return (
+            <StateTable
+              value={collection}
+              columns={asString(props.columns)}
+              style={styleFromProps(props)}
+            />
+          )
         }
         if (stateValue === undefined) {
           const headers = asString(props.columns)

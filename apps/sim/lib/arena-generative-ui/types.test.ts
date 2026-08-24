@@ -87,6 +87,30 @@ describe('actionStateFromData', () => {
     expect(actionStateFromData(payload)).toEqual(payload)
   })
 
+  it('unwraps a data-only Response body and lifts run_data.history for Repeat', () => {
+    const history = [
+      {
+        id: 'a68abc9b-1a46-4abf-9243-e71ad69f98db',
+        email: 'vijaykumar.lonarmath@position2.com',
+        input: { keyword: 'Dental Implants', client: 'Gentle Dental' },
+        output: '',
+        createdAt: '2026-08-24T06:28:56.717Z',
+      },
+    ]
+    const payload = { data: { run_data: { history } } }
+    expect(unwrapResponseBlockEnvelope(payload)).toEqual({ run_data: { history } })
+    const state = actionStateFromData(payload)
+    expect(state.history).toEqual([
+      expect.objectContaining({
+        keyword: 'Dental Implants',
+        client: 'Gentle Dental',
+        date: '2026-08-24T06:28:56.717Z',
+      }),
+    ])
+    expect(state.items).toBe(state.history)
+    expect(state.run_data).toEqual({ history })
+  })
+
   it('lifts items out of Agent assistantContent JSON so History Repeat can bind', () => {
     const items = [{ keyword: 'Dental implants', client: '42 North', date: '2026-08-23' }]
     expect(

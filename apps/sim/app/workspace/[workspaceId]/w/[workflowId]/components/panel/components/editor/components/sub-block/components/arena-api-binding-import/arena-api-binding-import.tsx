@@ -36,7 +36,7 @@ import {
   isEmailLikeApiInputName,
   resolveInputFieldEditorRow,
 } from '@/lib/arena-generative-ui/input-schema'
-import { parseApiBindings } from '@/lib/arena-generative-ui/parse-inputs'
+import { outputSchemaFromSample } from '@/lib/arena-generative-ui/output-schema'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeInputSchemaField,
@@ -86,16 +86,34 @@ function sampleResponseHint(
   if (source === 'workflow' && workflowId) {
     if (hasDeclaredOutput) {
       return stream
-        ? 'Optional override. Paste JSON only if the live response differs from the declared schema, or markdown if you want streamed text to match a specific shape.'
-        : 'Optional override. Paste a sample only if the live response differs from the declared schema. Only field names and types are saved.'
+        ? 'Optional override. Paste the JSON you see in the network tab (ok/data wrappers are stripped), or markdown if you want streamed text to match a specific shape.'
+        : 'Optional override. Paste the JSON you see in the network tab — ok/data wrappers are stripped. Field names and types are saved; values are discarded.'
     }
     return stream
       ? 'This workflow has no declared output format. Leave blank to show streamed text, or paste an example of the tokens so the generator can match that shape.'
-      : 'This workflow has no declared output format. Paste a sample JSON so the generator can lay out tables and stats instead of a single text blob. Only field names and types are saved — values are discarded.'
+      : 'This workflow has no declared output format. Paste the JSON you see in the network tab. ok/data wrappers are stripped. Only field names and types are saved.'
   }
   return stream
     ? 'Leave blank, or paste an example of the tokens (markdown is fine) so the generator can match that shape. Paste JSON only if the API also returns a structured object at the end.'
-    : 'Paste a sample response so the generator can lay out the result. Only field names and types are saved — values are discarded.'
+    : 'Paste the JSON you see in the network tab. Wrappers like ok and data are stripped. Only field names and types are saved — values are discarded.'
+}
+
+function schemaFromSamplePaste(
+  sample: string,
+  stream: boolean
+): { fields: Array<{ name: string; type: string }>; error?: string } {
+  const trimmed = sample.trim()
+  if (!trimmed) {
+    return { fields: [] }
+  }
+  try {
+    return { fields: outputSchemaFromSample(trimmed) }
+  } catch (caught) {
+    if (stream) {
+      return { fields: [] }
+    }
+    return { fields: [], error: getErrorMessage(caught, 'Output format must be valid JSON') }
+  }
 }
 
 function bindingWithInputOverrides(
@@ -258,6 +276,13 @@ export function ArenaApiBindingImportHelper({
     () => extractOutputSchemaFromBlocks(deployedState?.blocks),
     [deployedState?.blocks]
   )
+  const sampleOutput = useMemo(
+    () => schemaFromSamplePaste(outputSample, streamMode === 'on'),
+    [outputSample, streamMode]
+  )
+  const displayedOutputSchema =
+    sampleOutput.fields.length > 0 ? sampleOutput.fields : outputFields
+  const outputSchemaFromPaste = sampleOutput.fields.length > 0
   const curlInputSchema = useMemo((): ArenaGenerativeInputSchemaField[] => {
     if (source !== 'http' || !curl.trim()) return []
     try {
@@ -282,6 +307,7 @@ export function ArenaApiBindingImportHelper({
   const canSave =
     key.trim().length > 0 &&
     !constantsMissingValue &&
+    !sampleOutput.error &&
     (source === 'http' ? curl.trim().length > 0 : workflowId.trim().length > 0)
 
   function resetForm() {
@@ -509,33 +535,6 @@ export function ArenaApiBindingImportHelper({
                   onConstantValueChange={handleConstantValueChange}
                 />
               ) : null}
-              {source === 'workflow' && workflowId ? (
-                <ChipModalField
-                  type='custom'
-                  title='Output schema'
-                  hint={
-                    deployedLoading
-                      ? 'Fetched from the deployed Response block or Agent structured output.'
-                      : outputFields.length > 0
-                        ? 'Fetched from the deployed Response block or Agent structured output. Generate and edit re-read this so a new deploy is picked up without saving again.'
-                        : 'This workflow does not declare an output format. Paste a sample JSON in Sample response below.'
-                  }
-                >
-                  {deployedLoading ? (
-                    <p className='text-[var(--text-secondary)] text-caption'>
-                      Reading the deployed workflow…
-                    </p>
-                  ) : outputFields.length > 0 ? (
-                    <SchemaFieldTags fields={outputFields} />
-                  ) : (
-                    <p className='text-[var(--text-secondary)] text-caption'>
-                      {streamMode === 'on'
-                        ? 'No output schema is available for this workflow. Leave blank to show streamed text, or paste an example below.'
-                        : 'No output schema is available for this workflow. Paste a sample JSON below so the generator can lay out tables and stats instead of a single text blob.'}
-                    </p>
-                  )}
-                </ChipModalField>
-              ) : null}
             </>
           ) : (
             <>
@@ -636,11 +635,42 @@ export function ArenaApiBindingImportHelper({
               outputFields.length > 0,
               streamMode === 'on'
             )}
+            error={sampleOutput.error}
             rows={6}
             minHeight={120}
             resizable
             mono
           />
+          {(source === 'workflow' && Boolean(workflowId)) ||
+          displayedOutputSchema.length > 0 ||
+          Boolean(sampleOutput.error) ? (
+            <ChipModalField
+              type='custom'
+              title='Output schema'
+              hint={
+                outputSchemaFromPaste
+                  ? 'Derived from the JSON you pasted. Wrappers like ok and data are ignored. Generate and edit keep this instead of the deployed workflow schema.'
+                  : deployedLoading
+                    ? 'Fetched from the deployed Response block or Agent structured output.'
+                    : displayedOutputSchema.length > 0
+                      ? 'Fetched from the deployed Response block or Agent structured output. Generate and edit re-read this so a new deploy is picked up without saving again.'
+                      : 'Paste a sample JSON above. The tags here should list collection paths such as run_data.history after a successful paste.'
+              }
+            >
+              {deployedLoading && !outputSchemaFromPaste ? (
+                <p className='text-[var(--text-secondary)] text-caption'>
+                  Reading the deployed workflow…
+                </p>
+              ) : displayedOutputSchema.length > 0 ? (
+                <SchemaFieldTags fields={displayedOutputSchema} />
+              ) : (
+                <p className='text-[var(--text-secondary)] text-caption'>
+                  No output schema yet. Paste the network JSON in Sample response — you should see
+                  history, keyword, and client as tags.
+                </p>
+              )}
+            </ChipModalField>
+          ) : null}
           <ChipModalError>{error}</ChipModalError>
         </ChipModalBody>
         <ChipModalFooter

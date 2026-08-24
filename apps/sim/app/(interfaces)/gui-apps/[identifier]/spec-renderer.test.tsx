@@ -613,6 +613,34 @@ describe('SpecRenderer', () => {
       )
     })
 
+    it('renders Repeat rows from nested run_data.history and item.input fields', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat'] },
+          repeat: { type: 'Repeat', props: { statePath: 'run_data' }, children: ['card'] },
+          card: { type: 'Card', props: { title: '{item.keyword}' }, children: [] },
+        },
+      }
+      const { container } = render({
+        spec,
+        pending: false,
+        state: {
+          run_data: {
+            history: [
+              {
+                id: 'h1',
+                input: { keyword: 'Dental Implants', client: 'Gentle Dental' },
+                createdAt: '2026-08-24T06:28:56.717Z',
+              },
+            ],
+          },
+        },
+      })
+      expect(container.querySelector('[data-testid="empty-state"]')).toBeNull()
+      expect(container.querySelector('h2')?.textContent).toBe('Dental Implants')
+    })
+
     it('caps a large array so the page cannot mount thousands of Cards', () => {
       const items = Array.from({ length: 60 }, (_, index) => ({
         id: `n${index}`,

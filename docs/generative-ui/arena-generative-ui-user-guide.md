@@ -14,7 +14,7 @@ The block does not publish a URL. Run it to save a **draft**, then open **Deploy
 | **User Input** | Plain language. Name the app, pages, fields, buttons, and which API key each button calls. **Not JSON.** |
 | **Pages** | Optional. Leave blank and name the pages in User Input. Pin JSON only when you need exact paths. |
 | **API Bindings** | Use **Add an API**, do not hand-write JSON. Invent a `key` (for example `qualify_lead`) and use **that same string** in User Input. |
-| **Output schema** (inside Add an API) | Fetched from the workflow’s deployed Response / Agent output. Paste a sample only when the workflow declares none. |
+| **Output schema** (inside Add an API) | Fetched from the workflow’s deployed Response / Agent output. A pasted Sample response is kept through generate and edit. |
 | **Design Notes** | Optional. Brand, density, dark mode. Skip unless you care. |
 
 The model **cannot invent API keys**. If User Input says “Submit calls `qualify_lead`”, that key must exist in API Bindings. Leave Bindings empty only for a navigation-only app (no forms that call a backend).
@@ -55,9 +55,9 @@ Do not put a progress bar or checklist on the form — waiting chrome belongs on
 
 ## Output format (this is the layout lever)
 
-**Add an API → Output schema** is fetched from the bound workflow’s **deployed** Response block or Agent structured output (field names and types). Generate and edit re-read that snapshot, so a new deploy is picked up without saving the binding again.
+**Add an API → Output schema** is fetched from the bound workflow’s **deployed** Response block or Agent structured output (field names and types). When Sample is empty, generate and edit re-read that snapshot so a new deploy is picked up without saving the binding again.
 
-**Sample response** is only needed when the workflow declares nothing. Sim keeps **names and types only** — pasted values never reach the model or the database.
+**Sample response** can be the JSON you see in the network tab, including `{ "ok": true, "data": { ... } }`. Wrappers like `ok` and `data` are stripped. As soon as the paste is valid, **Output schema** tags should list the real collection (`run_data.history`, `history[].keyword`, …). If those tags never appear, the paste did not become schema. A pasted schema is kept through generate and edit — it is not replaced by the deployed snapshot. Sim keeps **names and types only** — pasted values never reach the model or the database.
 
 | You paste | The generator can do |
 |---|---|

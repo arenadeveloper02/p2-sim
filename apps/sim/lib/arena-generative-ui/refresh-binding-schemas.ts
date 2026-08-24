@@ -12,8 +12,9 @@ const logger = createLogger('ArenaBindingSchemaRefresh')
 
 /**
  * Replaces each workflow binding's `outputSchema` with the deployed Response /
- * Agent fields when those exist. HTTP bindings and workflows with no declared
- * output keep the stored schema (including a pasted sample).
+ * Agent fields when those exist. HTTP bindings, workflows with no declared
+ * output, and bindings whose schema came from Sample response keep the stored
+ * schema so a pasted nested body is not overwritten by a truncated snapshot.
  */
 export async function refreshWorkflowBindingOutputSchemas(
   bindings: ArenaGenerativeApiBinding[]
@@ -21,7 +22,12 @@ export async function refreshWorkflowBindingOutputSchemas(
   const workflowIds = [
     ...new Set(
       bindings
-        .filter((binding) => binding.kind === 'workflow' && Boolean(binding.workflowId?.trim()))
+        .filter(
+          (binding) =>
+            binding.kind === 'workflow' &&
+            Boolean(binding.workflowId?.trim()) &&
+            !hasSampleOutputSchema(binding)
+        )
         .map((binding) => binding.workflowId as string)
     ),
   ]
@@ -40,7 +46,7 @@ export async function refreshWorkflowBindingOutputSchemas(
   )
 
   return bindings.map((binding) => {
-    if (binding.kind !== 'workflow' || !binding.workflowId) {
+    if (binding.kind !== 'workflow' || !binding.workflowId || hasSampleOutputSchema(binding)) {
       return binding
     }
     const outputSchema = deployedSchemas.get(binding.workflowId)
@@ -49,6 +55,10 @@ export async function refreshWorkflowBindingOutputSchemas(
     }
     return { ...binding, outputSchema }
   })
+}
+
+function hasSampleOutputSchema(binding: ArenaGenerativeApiBinding): boolean {
+  return binding.outputSchemaSource === 'sample' && (binding.outputSchema?.length ?? 0) > 0
 }
 
 async function loadOutputSchema(workflowId: string) {
