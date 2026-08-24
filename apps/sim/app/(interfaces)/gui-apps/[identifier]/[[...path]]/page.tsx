@@ -6,6 +6,7 @@ import {
   ARENA_ACCESS_DENIED_MESSAGE,
   getArenaEmailIdFromRequest,
   persistArenaEmailIdCookie,
+  shouldDenyMissingArenaEmailId,
 } from '@/lib/arena-generative-ui/email-gate'
 import {
   ARENA_GENERATIVE_APP_BASE_PATH,
@@ -29,6 +30,7 @@ export default async function GenerativeAppPage({
       requireArenaEmailId: deployedApp.requireArenaEmailId,
       isActive: deployedApp.isActive,
       manifest: deployedApp.manifest,
+      authType: deployedApp.authType,
     })
     .from(deployedApp)
     .where(and(eq(deployedApp.identifier, identifier), isNull(deployedApp.archivedAt)))
@@ -46,7 +48,13 @@ export default async function GenerativeAppPage({
     emailId: query.emailId,
   })
 
-  if (deployment.requireArenaEmailId && !emailId) {
+  if (
+    shouldDenyMissingArenaEmailId({
+      requireArenaEmailId: deployment.requireArenaEmailId,
+      emailId,
+      authType: deployment.authType,
+    })
+  ) {
     return (
       <div className='flex min-h-[50vh] items-center justify-center p-8 text-center'>
         {ARENA_ACCESS_DENIED_MESSAGE}

@@ -1,6 +1,6 @@
 'use client'
 
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, ChipEmailsInput, ChipInput, Label, Loader, Switch, Textarea } from '@sim/emcn'
 import { getErrorMessage } from '@sim/utils/errors'
 import { Check } from 'lucide-react'
@@ -46,7 +46,7 @@ export function GenerativeAppDeploy({
   const { data: session } = useSession()
   const { config: permissionConfig } = usePermissionConfig()
   const { data: draftsData, isLoading: draftsLoading } = useGenerativeAppDrafts(workflowId)
-  const { data: statusData } = useGenerativeAppStatus(workflowId)
+  const { data: statusData, isLoading: statusLoading } = useGenerativeAppStatus(workflowId)
   const createMutation = useCreateDeployedApp()
   const updateMutation = useUpdateDeployedApp()
   const deleteMutation = useDeleteDeployedApp()
@@ -64,6 +64,7 @@ export function GenerativeAppDeploy({
   const [emails, setEmails] = useState<string[]>([])
   const [requireArenaEmailId, setRequireArenaEmailId] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const hasHydratedRef = useRef(false)
 
   const selectedDraftQuery = useGenerativeAppDraft(draftId || undefined)
   const identifierCheck = useGenerativeAppIdentifierValidation(
@@ -83,13 +84,28 @@ export function GenerativeAppDeploy({
   }, [draftId, onSelectedDraftChange])
 
   useEffect(() => {
-    if (existing && !identifier) {
+    if (statusLoading || hasHydratedRef.current) return
+    if (existing) {
+      hasHydratedRef.current = true
       setIdentifier(existing.identifier)
       setTitle(existing.title)
+      setDescription(existing.description ?? '')
+      setDepartment(existing.department ?? '')
       setAuthType((existing.authType as AuthType) || 'public')
       setRequireArenaEmailId(existing.requireArenaEmailId)
+      setEmails(
+        Array.isArray(existing.allowedEmails)
+          ? existing.allowedEmails.map((entry) => entry.toLowerCase().trim()).filter(Boolean)
+          : []
+      )
+      return
     }
-  }, [existing, identifier])
+    if (!session?.user?.email || emails.length > 0) return
+    const sessionEmail = session.user.email.toLowerCase().trim()
+    if (!validateAllowlistEntry(sessionEmail)) {
+      setEmails([sessionEmail])
+    }
+  }, [statusLoading, existing, session?.user?.email, emails.length])
 
   useEffect(() => {
     const draftTitle = selectedDraftQuery.data?.title
@@ -97,14 +113,6 @@ export function GenerativeAppDeploy({
       setTitle(draftTitle)
     }
   }, [selectedDraftQuery.data?.title, title])
-
-  useEffect(() => {
-    if (!session?.user?.email || emails.length > 0) return
-    const sessionEmail = session.user.email.toLowerCase().trim()
-    if (!validateAllowlistEntry(sessionEmail)) {
-      setEmails([sessionEmail])
-    }
-  }, [session?.user?.email, emails.length])
 
   const allowedAuthTypes = permissionConfig.allowedChatDeployAuthTypes
   const authOptions = (
@@ -290,7 +298,8 @@ export function GenerativeAppDeploy({
             Require Arena emailId
           </Label>
           <p className='mt-1 text-[var(--text-secondary)] text-xs'>
-            Off: open as a Sim page like /chat. On: Arena embeds must pass ?emailId=.
+            Off: open as a Sim page like /chat. On: Arena embeds must pass ?emailId=. Direct
+            visits still use Access control (allowed emails / password).
           </p>
         </div>
         <Switch checked={requireArenaEmailId} onCheckedChange={setRequireArenaEmailId} />

@@ -1,11 +1,28 @@
 import { cookies } from 'next/headers'
-import { ARENA_EMAIL_COOKIE_NAME } from '@/lib/arena-generative-ui/types'
-import { isDev } from '@/lib/core/config/env-flags'
-
-export {
+import {
   ARENA_ACCESS_DENIED_MESSAGE,
   ARENA_EMAIL_COOKIE_NAME,
 } from '@/lib/arena-generative-ui/types'
+import { isDev } from '@/lib/core/config/env-flags'
+
+export { ARENA_ACCESS_DENIED_MESSAGE }
+
+/**
+ * True when a public Arena-gated app is opened without `emailId`. Password,
+ * email, and SSO apps still fall through to their login so a direct visit
+ * (no Arena iframe) can complete allowed-email OTP instead of a hard deny.
+ */
+export function shouldDenyMissingArenaEmailId(options: {
+  requireArenaEmailId: boolean
+  emailId: string
+  authType?: string | null
+}): boolean {
+  if (!options.requireArenaEmailId || options.emailId.trim()) {
+    return false
+  }
+  const authType = options.authType || 'public'
+  return authType === 'public'
+}
 
 /**
  * Reads emailId from the query string or the Arena iframe cookie.

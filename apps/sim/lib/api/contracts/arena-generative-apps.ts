@@ -624,7 +624,10 @@ export const getGenerativeAppStatusContract = defineRouteContract({
           id: z.string(),
           identifier: z.string(),
           title: z.string(),
+          description: z.string().nullable(),
+          department: z.string().nullable(),
           authType: z.string(),
+          allowedEmails: z.array(z.string()),
           requireArenaEmailId: z.boolean(),
         })
         .nullable(),

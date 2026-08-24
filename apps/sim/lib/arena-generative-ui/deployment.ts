@@ -5,6 +5,7 @@ import type { NextRequest, NextResponse } from 'next/server'
 import {
   ARENA_ACCESS_DENIED_MESSAGE,
   resolveArenaEmailIdFromRequest,
+  shouldDenyMissingArenaEmailId,
 } from '@/lib/arena-generative-ui/email-gate'
 import { parseArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import {
@@ -127,7 +128,9 @@ export function emailIdDeniedResponse() {
 }
 
 /**
- * Enforces Arena emailId then chat-style deployment auth for a public app request.
+ * Enforces Arena emailId for public embed-only apps, then chat-style
+ * deployment auth. Password/email/SSO apps still get their login when
+ * `emailId` is missing so a direct visit can complete the allowlist.
  *
  * Returns the resolved `arenaEmailId` so a CTA can be personalized. It is resolved
  * even when the gate is off, and it is **not verified** — see
@@ -149,7 +152,13 @@ export async function authorizeDeployedAppRequest(options: {
   }
 
   const arenaEmailId = resolveArenaEmailIdFromRequest(request, bodyEmailId)
-  if (deployment.requireArenaEmailId && !arenaEmailId) {
+  if (
+    shouldDenyMissingArenaEmailId({
+      requireArenaEmailId: deployment.requireArenaEmailId,
+      emailId: arenaEmailId,
+      authType: deployment.authType,
+    })
+  ) {
     return { ok: false, response: emailIdDeniedResponse() }
   }
 

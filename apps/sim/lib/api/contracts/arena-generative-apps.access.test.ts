@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createDeployedAppBodySchema,
+  getGenerativeAppStatusContract,
   updateDeployedAppBodySchema,
 } from '@/lib/api/contracts/arena-generative-apps'
 
@@ -57,5 +58,28 @@ describe('generative app access defaults', () => {
     expect(parsed.authType).toBe('email')
     expect(parsed.allowedEmails).toEqual(['@example.com'])
     expect(parsed.requireArenaEmailId).toBe(false)
+  })
+
+  it('returns description, department, and allowlist so Deploy can hydrate', () => {
+    const parsed = getGenerativeAppStatusContract.response.schema.parse({
+      isDeployed: true,
+      deployment: {
+        id: 'app-1',
+        identifier: 'orders-app',
+        title: 'Orders',
+        description: 'Track orders',
+        department: 'sales',
+        authType: 'email',
+        allowedEmails: ['ada@example.com'],
+        requireArenaEmailId: true,
+      },
+    })
+
+    expect(parsed.deployment).toMatchObject({
+      description: 'Track orders',
+      department: 'sales',
+      authType: 'email',
+      allowedEmails: ['ada@example.com'],
+    })
   })
 })

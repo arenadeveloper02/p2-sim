@@ -42,7 +42,10 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
         id: deployedApp.id,
         identifier: deployedApp.identifier,
         title: deployedApp.title,
+        description: deployedApp.description,
+        department: deployedApp.department,
         authType: deployedApp.authType,
+        allowedEmails: deployedApp.allowedEmails,
         requireArenaEmailId: deployedApp.requireArenaEmailId,
         isActive: deployedApp.isActive,
       })
@@ -58,7 +61,12 @@ export const GET = withRouteHandler(async (request: NextRequest) => {
             id: deployment.id,
             identifier: deployment.identifier,
             title: deployment.title,
-            authType: deployment.authType,
+            description: deployment.description ?? null,
+            department: deployment.department ?? null,
+            authType: deployment.authType ?? 'public',
+            allowedEmails: Array.isArray(deployment.allowedEmails)
+              ? (deployment.allowedEmails as string[])
+              : [],
             requireArenaEmailId: deployment.requireArenaEmailId,
           }
         : null,

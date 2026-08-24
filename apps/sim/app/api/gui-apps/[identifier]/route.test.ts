@@ -59,6 +59,13 @@ describe('Deployed app config route', () => {
     expect(body.error).toMatch(/access/i)
   })
 
+  it('does not hard-deny an email-gated app that is missing Arena emailId', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([{ ...deployedRow, authType: 'email' }])
+    const req = new NextRequest('http://localhost:3000/api/gui-apps/lead-score')
+    const response = await GET(req, { params: Promise.resolve({ identifier: 'lead-score' }) })
+    expect(response.status).toBe(200)
+  })
+
   it('returns config when emailId is present', async () => {
     dbChainMockFns.limit.mockResolvedValueOnce([deployedRow])
     const req = new NextRequest(
