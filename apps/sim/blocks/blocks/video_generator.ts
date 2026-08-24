@@ -1897,6 +1897,25 @@ const STORYBOARD_MODE_SUBBLOCKS: SubBlockConfig[] = [
     condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
     description: 'Native audio for each scene clip (increases cost)',
   },
+  {
+    id: 'audioUrl',
+    title: 'Narration Audio URL (Concat Mode)',
+    type: 'short-input',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    placeholder: 'https://… — e.g. the TTS publicAudioUrl',
+    description: 'Mixed over the joined video when using Clip URLs',
+  },
+  {
+    id: 'audioMode',
+    title: 'Narration Mix',
+    type: 'dropdown',
+    condition: { field: 'provider', value: STORYBOARD_PROVIDER_ID },
+    options: [
+      { label: 'Duck clip audio under narration', id: 'duck' },
+      { label: 'Narration only (replace clip audio)', id: 'replace' },
+    ],
+    value: () => 'duck',
+  },
 ]
 
 /**
@@ -1962,6 +1981,8 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
               sourceImageUrl: params.sourceImageUrl,
               chainFrames: parseOptionalBooleanInput(params.chainFrames),
               clipUrls: params.clipUrls,
+              audioUrl: params.audioUrl,
+              audioMode: params.audioMode,
               videoModel: params.storyVideoModel,
               // Total length wins over seconds-per-scene: the user asks for a
               // "30 second video", and the render step derives the per-clip
@@ -1999,6 +2020,15 @@ export const VideoGeneratorV3Block: BlockConfig<VideoBlockResponse> = {
       type: 'string',
       description:
         'Story Mode concat: URLs of already-generated clips to join in order (JSON array or comma-separated). Skips generation entirely.',
+    },
+    audioUrl: {
+      type: 'string',
+      description: 'Story Mode concat: narration/music track to mix over the joined video',
+    },
+    audioMode: {
+      type: 'string',
+      description:
+        'Story Mode concat: "duck" (default) mixes narration over clip audio, "replace" keeps narration only',
     },
     storyVideoModel: { type: 'string', description: 'Story Mode: image-to-video model' },
     targetDuration: {

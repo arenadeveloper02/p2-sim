@@ -116,6 +116,7 @@ export const azureTtsTool: ToolConfig<AzureTtsParams, TtsBlockResponse> = {
       success: true,
       output: {
         audioUrl: data.audioUrl,
+        publicAudioUrl: data.publicAudioUrl,
         audioFile: data.audioFile,
         duration: data.duration,
         characterCount: data.characterCount,
@@ -127,6 +128,10 @@ export const azureTtsTool: ToolConfig<AzureTtsParams, TtsBlockResponse> = {
 
   outputs: {
     audioUrl: { type: 'string', description: 'URL to the generated audio file' },
+    publicAudioUrl: {
+      type: 'string',
+      description: 'Publicly fetchable (presigned) audio URL for external apps',
+    },
     audioFile: { type: 'file', description: 'Generated audio file object' },
     duration: { type: 'number', description: 'Audio duration in seconds' },
     characterCount: { type: 'number', description: 'Number of characters processed' },

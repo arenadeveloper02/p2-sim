@@ -89,6 +89,7 @@ export const elevenLabsTtsTool: ToolConfig<ElevenLabsTtsParams, ElevenLabsTtsRes
       success: true,
       output: {
         audioUrl: data.audioUrl,
+        publicAudioUrl: data.publicAudioUrl,
         audioFile: data.audioFile,
       },
     }
@@ -96,6 +97,10 @@ export const elevenLabsTtsTool: ToolConfig<ElevenLabsTtsParams, ElevenLabsTtsRes
 
   outputs: {
     audioUrl: { type: 'string', description: 'The URL of the generated audio' },
+    publicAudioUrl: {
+      type: 'string',
+      description: 'Publicly fetchable (presigned) audio URL for external apps',
+    },
     audioFile: { type: 'file', description: 'The generated audio file' },
   },
 }

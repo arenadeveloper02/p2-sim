@@ -17,7 +17,12 @@ import { generateShortId } from '@sim/utils/id'
 import { sql } from 'drizzle-orm'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { generateFalVideo } from '@/lib/media/falai-video'
-import { extractLastFrame, type MediaFile, runFfmpegOperation } from '@/lib/media/ffmpeg'
+import {
+  extractLastFrame,
+  type MediaFile,
+  mixNarrationOverVideo,
+  runFfmpegOperation,
+} from '@/lib/media/ffmpeg'
 import type { StoryboardScene } from '@/lib/storyboard/run-storyboard-generate.server'
 import {
   downloadFile,
@@ -450,10 +455,33 @@ export async function runStoryboardRender(
       finalBuffer = stitched.buffer
     }
 
+    // Optional narration/music over the joined video. 'duck' (default) lowers
+    // the clips' own audio under the narration; 'replace' keeps narration only.
+    const audioUrl = asString(params.audioUrl)
+    if (audioUrl) {
+      logger.info(`[${requestId}] Mixing narration over concat output`, {
+        audioMode: asString(params.audioMode) || 'duck',
+      })
+      const narration = await downloadClipBuffer(audioUrl)
+      const mixed = await mixNarrationOverVideo(
+        { buffer: finalBuffer, mimeType: 'video/mp4' },
+        { buffer: narration, mimeType: 'audio/mpeg' },
+        { keepVideoAudio: asString(params.audioMode) !== 'replace' }
+      )
+      if (!mixed.buffer) {
+        throw new Error('Audio mix produced no output')
+      }
+      finalBuffer = mixed.buffer
+    }
+
     const stored = await storeFinalVideo(finalBuffer, context, requestId)
     const publicInputUrls = clipUrls.map((url) => (url.includes('/api/files/serve/') ? '' : url))
+    // With narration mixed in, the output differs from the input clip, so the
+    // single-clip shortcut of reusing the input URL no longer applies.
     const publicVideoUrl =
-      clips.length === 1 && publicInputUrls[0] ? publicInputUrls[0] : stored.presignedUrl
+      clips.length === 1 && !audioUrl && publicInputUrls[0]
+        ? publicInputUrls[0]
+        : stored.presignedUrl
 
     logger.info(`[${requestId}] Concat complete`, {
       clipCount: clips.length,

@@ -123,6 +123,8 @@ export interface PlayHtTtsParams {
 export interface TtsBlockResponse extends ToolResponse {
   output: {
     audioUrl: string
+    /** Publicly fetchable (presigned) URL — usable without a Sim session. */
+    publicAudioUrl?: string
     audioFile?: UserFile
     duration?: number
     characterCount?: number
@@ -134,6 +136,8 @@ export interface TtsBlockResponse extends ToolResponse {
 // API Response type (used internally in proxy route)
 export interface TtsResponse {
   audioUrl: string
+  /** Publicly fetchable (presigned) URL — usable without a Sim session. */
+  publicAudioUrl?: string
   audioFile?: UserFile
   duration?: number
   characterCount?: number

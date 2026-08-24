@@ -8,6 +8,8 @@ export interface StoryboardRenderParams {
   sourceImageUrl?: string
   chainFrames?: boolean
   clipUrls?: string[] | string
+  audioUrl?: string
+  audioMode?: string
   videoModel?: string
   clipDuration?: number
   targetDuration?: number
@@ -89,6 +91,20 @@ export const storyboardRenderTool: ToolConfig<StoryboardRenderParams, Storyboard
       visibility: 'user-or-llm',
       description:
         'Concat mode: URLs of already-generated clips to join in this exact order (JSON array or comma-separated). When set, no clips are generated — the videos are just stitched and returned. All other params are ignored.',
+    },
+    audioUrl: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Concat mode: narration/music track to mix over the joined video (e.g. a TTS publicAudioUrl). The video never runs past its last frame.',
+    },
+    audioMode: {
+      type: 'string',
+      required: false,
+      visibility: 'user-or-llm',
+      description:
+        'Concat mode: "duck" (default) lowers the clips\' own audio under the narration; "replace" keeps the narration as the only audio.',
     },
     targetDuration: {
       type: 'number',

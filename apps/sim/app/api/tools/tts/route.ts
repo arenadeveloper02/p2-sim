@@ -13,10 +13,37 @@ import {
 } from '@/lib/core/utils/stream-limits'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { StorageService } from '@/lib/uploads'
+import { type StorageContext, StorageService } from '@/lib/uploads'
 
 const logger = createLogger('ProxyTTSAPI')
 const MAX_TTS_AUDIO_BYTES = 25 * 1024 * 1024
+
+/** 7 days — the maximum S3 presign lifetime. */
+const PUBLIC_AUDIO_URL_TTL_SECONDS = 7 * 24 * 60 * 60
+
+/**
+ * Best-effort public (presigned) URL for the stored audio, so external apps
+ * can fetch it without a Sim session — same pattern as image falUrl and video
+ * publicVideoUrl. Returns undefined on local storage or presign failure.
+ */
+async function presignPublicAudioUrl(
+  key: string,
+  context: StorageContext
+): Promise<string | undefined> {
+  try {
+    const url = await StorageService.generatePresignedDownloadUrl(
+      key,
+      context,
+      PUBLIC_AUDIO_URL_TTL_SECONDS
+    )
+    return url.includes('/api/files/serve/') ? undefined : url
+  } catch (error) {
+    logger.warn('Could not presign public audio URL', {
+      error: getErrorMessage(error, 'Unknown error'),
+    })
+    return undefined
+  }
+}
 
 export const POST = withRouteHandler(async (request: NextRequest) => {
   try {
@@ -135,9 +162,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         size: userFile.size,
       })
 
+      const publicAudioUrl = await presignPublicAudioUrl(userFile.key, 'execution')
+
       return NextResponse.json({
         audioFile: userFile,
         audioUrl: userFile.url,
+        ...(publicAudioUrl ? { publicAudioUrl } : {}),
       })
     }
 
@@ -151,6 +181,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     })
 
     const audioUrl = `${getBaseUrl()}${fileInfo.path}`
+    const publicAudioUrl = await presignPublicAudioUrl(fileInfo.key, 'copilot')
 
     logger.info('TTS audio stored in copilot context (chat UI):', {
       fileName,
@@ -159,6 +190,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     return NextResponse.json({
       audioUrl,
+      ...(publicAudioUrl ? { publicAudioUrl } : {}),
       size: fileInfo.size,
     })
   } catch (error) {

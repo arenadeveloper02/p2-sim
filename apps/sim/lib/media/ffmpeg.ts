@@ -381,91 +381,130 @@ async function concat(dir: string, inputPaths: string[]): Promise<FfmpegResult> 
   const height = probes[0].height || 720
   const fps = 30
 
-  // Normalize every clip to identical codec/size/fps/pixfmt so the concat demuxer can
-  // stream-copy them. Clips must also agree on whether they carry audio: a missing
-  // [i:a] otherwise breaks concat ("Error binding filtergraph inputs/outputs").
+  // One-pass concat FILTER (not the demuxer + stream copy): every clip is
+  // normalized to the same size/fps/pixfmt and — critically — gets
+  // setpts/asetpts=PTS-STARTPTS, which resets timestamps per clip. Timestamp
+  // discontinuities are what caused freezes/pauses at clip boundaries.
   //
-  // Clips without native audio (generateAudio:false) get a synthesized silent track via
-  // the lavfi virtual device. Some FFmpeg builds ship without lavfi ("Input format lavfi
-  // is not available"), so when that fails we retry with audio dropped from every clip —
-  // a silent joined video beats no video at all.
-  const normalizeClips = async (dropAudio: boolean): Promise<string[]> => {
-    const normalized: string[] = []
+  // Clips must agree on whether they carry audio, so silent clips get an
+  // anullsrc track (lavfi). Some FFmpeg builds ship without lavfi, so on
+  // failure we retry video-only — a silent joined video beats no video.
+  const runFilterConcat = async (withAudio: boolean): Promise<FfmpegResult> => {
+    const outputPath = path.join(dir, `out-${withAudio ? 'audio' : 'noaudio'}.mp4`)
+    const cmd = ffmpeg()
+    for (const p of inputPaths) cmd.input(p)
+
+    const filters: string[] = []
+    const audioLabels: string[] = []
+    let extraInputIndex = inputPaths.length
+
     for (let i = 0; i < inputPaths.length; i++) {
-      const out = path.join(dir, `norm-${dropAudio ? 'noaudio' : 'audio'}-${i}.mp4`)
-      const cmd = ffmpeg().input(inputPaths[i])
-      const maps: string[] = ['-map', '0:v:0']
-      const audioOptions: string[] = []
-      const extra: string[] = []
+      filters.push(
+        `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
+          `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},` +
+          `format=yuv420p,setpts=PTS-STARTPTS[v${i}]`
+      )
+      if (!withAudio) continue
 
-      if (dropAudio) {
-        extra.push('-an')
+      if (probes[i].hasAudio) {
+        filters.push(`[${i}:a]aresample=48000,asetpts=PTS-STARTPTS[a${i}]`)
       } else {
-        if (probes[i].hasAudio) {
-          maps.push('-map', '0:a:0')
-        } else {
-          cmd
-            .input('anullsrc=channel_layout=stereo:sample_rate=48000')
-            .inputOptions(['-f', 'lavfi', '-t', String(probes[i].durationSeconds || 1)])
-          maps.push('-map', '1:a:0')
-          extra.push('-shortest')
-        }
-        audioOptions.push('-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2')
+        cmd
+          .input('anullsrc=channel_layout=stereo:sample_rate=48000')
+          .inputOptions(['-f', 'lavfi', '-t', String(probes[i].durationSeconds || 1)])
+        filters.push(`[${extraInputIndex}:a]asetpts=PTS-STARTPTS[a${i}]`)
+        extraInputIndex++
       }
-
-      cmd
-        .videoFilters(
-          `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=yuv420p`
-        )
-        .outputOptions([
-          ...maps,
-          '-c:v',
-          'libx264',
-          '-preset',
-          'medium',
-          '-crf',
-          '18',
-          '-pix_fmt',
-          'yuv420p',
-          '-r',
-          String(fps),
-          '-video_track_timescale',
-          '90000',
-          ...audioOptions,
-          ...extra,
-        ])
-      await runCommand(cmd, out)
-      normalized.push(out)
+      audioLabels.push(`[a${i}]`)
     }
-    return normalized
+
+    const pairs = inputPaths
+      .map((_, i) => (withAudio ? `[v${i}]${audioLabels[i]}` : `[v${i}]`))
+      .join('')
+    filters.push(
+      `${pairs}concat=n=${inputPaths.length}:v=1:a=${withAudio ? 1 : 0}[outv]${
+        withAudio ? '[outa]' : ''
+      }`
+    )
+
+    cmd
+      .complexFilter(filters)
+      .outputOptions([
+        '-map',
+        '[outv]',
+        ...(withAudio ? ['-map', '[outa]', '-c:a', 'aac', '-b:a', '128k'] : ['-an']),
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '20',
+        '-pix_fmt',
+        'yuv420p',
+        '-movflags',
+        '+faststart',
+      ])
+    await runCommand(cmd, outputPath)
+    return readOut(outputPath, 'mp4')
   }
 
   const needsSynthesizedAudio = probes.some((p) => !p.hasAudio)
-  let normalized: string[]
   try {
-    normalized = await normalizeClips(false)
+    return await runFilterConcat(true)
   } catch (error) {
     if (!needsSynthesizedAudio) throw error
     logger.warn(
       '[FFmpeg] Silent-audio synthesis failed (lavfi unavailable?); retrying concat without audio',
       { error: error instanceof Error ? error.message : String(error) }
     )
-    normalized = await normalizeClips(true)
+    return runFilterConcat(false)
   }
+}
 
-  // Concatenate the now-uniform clips with the concat demuxer (stream copy: fast + reliable).
-  const listPath = path.join(dir, 'concat-list.txt')
-  await fs.writeFile(
-    listPath,
-    normalized.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n')
-  )
-  const outputPath = path.join(dir, 'out.mp4')
-  const concatCmd = ffmpeg()
-    .input(listPath)
-    .inputOptions(['-f', 'concat', '-safe', '0'])
-    .outputOptions(['-c', 'copy', '-movflags', '+faststart'])
-  await runCommand(concatCmd, outputPath)
-  return readOut(outputPath, 'mp4')
+/**
+ * Mixes a narration/music track over a video. By default the video's own audio
+ * is ducked under the narration (amix weights 0.25 vs 1); with
+ * keepVideoAudio:false (or when the video has no audio track) the narration
+ * replaces/becomes the only audio. -shortest stops a long narration from
+ * running past the last frame. Video stream is copied, not re-encoded.
+ */
+export async function mixNarrationOverVideo(
+  video: MediaFile,
+  narration: MediaFile,
+  options: { keepVideoAudio?: boolean } = {}
+): Promise<FfmpegResult> {
+  return withTempDir(async (dir) => {
+    const videoPath = await writeInput(dir, video, 0)
+    const narrationPath = await writeInput(dir, narration, 1)
+    const probe = await probeFile(videoPath)
+    const outputPath = path.join(dir, 'out.mp4')
+
+    const duck = options.keepVideoAudio !== false && probe.hasAudio
+    const cmd = ffmpeg().input(videoPath).input(narrationPath)
+    if (duck) {
+      cmd.complexFilter([
+        '[1:a]aresample=48000,asetpts=PTS-STARTPTS[vo]',
+        '[0:a][vo]amix=inputs=2:duration=first:weights=0.25 1[outa]',
+      ])
+    } else {
+      cmd.complexFilter(['[1:a]aresample=48000,asetpts=PTS-STARTPTS[outa]'])
+    }
+    cmd.outputOptions([
+      '-map',
+      '0:v',
+      '-map',
+      '[outa]',
+      '-c:v',
+      'copy',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-shortest',
+    ])
+    await runCommand(cmd, outputPath)
+    return readOut(outputPath, 'mp4')
+  })
 }
 
 async function trim(

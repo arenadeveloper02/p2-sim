@@ -13,6 +13,8 @@ export interface ElevenLabsTtsParams {
 export interface ElevenLabsTtsResponse extends ToolResponse {
   output: {
     audioUrl: string
+    /** Publicly fetchable (presigned) URL — usable without a Sim session. */
+    publicAudioUrl?: string
     audioFile?: UserFile
   }
 }
