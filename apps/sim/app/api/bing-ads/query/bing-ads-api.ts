@@ -425,17 +425,20 @@ function buildReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery):
       endYear: Number.parseInt(endParts[0]),
     })
 
+    // Bing's ReportTime XSD is a strict sequence: CustomDateRangeEnd must come
+    // BEFORE CustomDateRangeStart, or the end date is silently dropped and the
+    // API fails with InvalidCustomDateRangeEnd.
     timeElement = `<Time i:nil="false">
-    <CustomDateRangeStart>
-      <Day>${Number.parseInt(startParts[2])}</Day>
-      <Month>${Number.parseInt(startParts[1])}</Month>
-      <Year>${Number.parseInt(startParts[0])}</Year>
-    </CustomDateRangeStart>
     <CustomDateRangeEnd>
       <Day>${Number.parseInt(endParts[2])}</Day>
       <Month>${Number.parseInt(endParts[1])}</Month>
       <Year>${Number.parseInt(endParts[0])}</Year>
     </CustomDateRangeEnd>
+    <CustomDateRangeStart>
+      <Day>${Number.parseInt(startParts[2])}</Day>
+      <Month>${Number.parseInt(startParts[1])}</Month>
+      <Year>${Number.parseInt(startParts[0])}</Year>
+    </CustomDateRangeStart>
     <ReportTimeZone i:nil="false">EasternTimeUSCanada</ReportTimeZone>
   </Time>`
   } else {
