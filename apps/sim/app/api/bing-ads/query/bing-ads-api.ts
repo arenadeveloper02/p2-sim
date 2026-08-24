@@ -9,6 +9,32 @@ import type { ParsedBingQuery } from './types'
 
 const logger = createLogger('BingAdsAPIClient')
 
+const DEFAULT_METRIC_COLUMNS = ['Impressions', 'Clicks', 'Spend', 'Conversions']
+const METRIC_CSV_COLUMNS = new Set([
+  'Impressions',
+  'Clicks',
+  'Spend',
+  'Conversions',
+  'Ctr',
+  'AverageCpc',
+  'CostPerConversion',
+])
+
+function requestedColumnSet(columns: string[] | undefined): Set<string> {
+  return new Set((columns || []).map((column) => column.replace(/"/g, '').trim().toLowerCase()))
+}
+
+function wantsColumn(requested: Set<string>, ...names: string[]): boolean {
+  if (requested.size === 0) return true
+  return names.some((name) => requested.has(name.toLowerCase()))
+}
+
+function mergeReportColumns(identityColumns: string[], requested: string[]): string[] {
+  const merged = Array.from(new Set([...identityColumns, ...requested]))
+  const hasMetric = merged.some((column) => METRIC_CSV_COLUMNS.has(column))
+  return hasMetric ? merged : [...merged, ...DEFAULT_METRIC_COLUMNS]
+}
+
 /**
  * Get access token using refresh token
  */
@@ -334,98 +360,48 @@ function buildReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery):
     CampaignPerformance: {
       xmlType: 'CampaignPerformanceReportRequest',
       columnElement: 'CampaignPerformanceReportColumn',
-      requiredColumns: [
-        'CampaignName',
-        'CampaignId',
-        'Impressions',
-        'Clicks',
-        'Spend',
-        'Conversions',
-      ],
+      requiredColumns: ['CampaignName', 'CampaignId'],
     },
     AccountPerformance: {
       xmlType: 'AccountPerformanceReportRequest',
       columnElement: 'AccountPerformanceReportColumn',
-      requiredColumns: [
-        'AccountName',
-        'AccountId',
-        'Impressions',
-        'Clicks',
-        'Spend',
-        'Conversions',
-      ],
+      requiredColumns: ['AccountName', 'AccountId'],
     },
     AdGroupPerformance: {
       xmlType: 'AdGroupPerformanceReportRequest',
       columnElement: 'AdGroupPerformanceReportColumn',
-      requiredColumns: [
-        'CampaignName',
-        'AdGroupName',
-        'AdGroupId',
-        'Impressions',
-        'Clicks',
-        'Spend',
-        'Conversions',
-      ],
+      requiredColumns: ['CampaignName', 'AdGroupName', 'AdGroupId'],
     },
     KeywordPerformance: {
       xmlType: 'KeywordPerformanceReportRequest',
       columnElement: 'KeywordPerformanceReportColumn',
-      requiredColumns: [
-        'CampaignName',
-        'AdGroupName',
-        'Keyword',
-        'KeywordId',
-        'Impressions',
-        'Clicks',
-        'Spend',
-      ],
+      requiredColumns: ['CampaignName', 'AdGroupName', 'Keyword', 'KeywordId'],
     },
     SearchQueryPerformance: {
       xmlType: 'SearchQueryPerformanceReportRequest',
       columnElement: 'SearchQueryPerformanceReportColumn',
-      requiredColumns: [
-        'CampaignName',
-        'AdGroupName',
-        'SearchQuery',
-        'Impressions',
-        'Clicks',
-        'Spend',
-      ],
+      requiredColumns: ['CampaignName', 'AdGroupName', 'SearchQuery'],
     },
     GeographicPerformance: {
       xmlType: 'GeographicPerformanceReportRequest',
       columnElement: 'GeographicPerformanceReportColumn',
-      requiredColumns: ['Country', 'Impressions', 'Clicks', 'Spend'],
+      requiredColumns: ['Country'],
     },
     AdExtensionByAdReport: {
       xmlType: 'AdExtensionByAdReportRequest',
       columnElement: 'AdExtensionByAdReportColumn',
-      requiredColumns: [
-        'CampaignName',
-        'AdGroupName',
-        'AdExtensionType',
-        'AdExtensionId',
-        'Impressions',
-        'Clicks',
-      ],
+      requiredColumns: ['CampaignName', 'AdGroupName', 'AdExtensionType', 'AdExtensionId'],
     },
     AdExtensionDetailReport: {
       xmlType: 'AdExtensionDetailReportRequest',
       columnElement: 'AdExtensionDetailReportColumn',
-      requiredColumns: [
-        'CampaignName',
-        'AdExtensionType',
-        'AdExtensionId',
-        'Impressions',
-        'Clicks',
-      ],
+      requiredColumns: ['CampaignName', 'AdExtensionType', 'AdExtensionId'],
     },
   }
 
   const config = reportTypeMap[reportType] || reportTypeMap.CampaignPerformance
   const requested = Array.isArray(parsedQuery.columns) ? parsedQuery.columns : []
-  const columns = Array.from(new Set([...config.requiredColumns, ...requested]))
+  const columns = mergeReportColumns(config.requiredColumns, requested)
 
   const aggregation = parsedQuery.aggregation || 'Summary'
   const reportName = `${reportType}_${new Date().toISOString()}`
@@ -612,87 +588,38 @@ function buildSearchQueryMetrics(
   rows: Array<Record<string, any>>,
   parsedQuery: ParsedBingQuery
 ): any {
+  const requested = requestedColumnSet(parsedQuery.columns)
   const searchQueriesByName = new Map<string, any>()
 
   for (const row of rows) {
     // Use SearchQuery for search query reports
     const name = String(row.SearchQuery || '').trim()
-
     if (!name) continue
 
-    const impressions = toNumber(row.Impressions)
-    const clicks = toNumber(row.Clicks)
-    const spend = toNumber(row.Spend)
-    const conversions = toNumber(row.Conversions)
-
-    const entityName = name
-    const existing = searchQueriesByName.get(entityName) || {
+    const existing = searchQueriesByName.get(name) || {
       id: undefined, // Search queries don't have IDs in the same way
-      name: entityName,
-      impressions: 0,
-      clicks: 0,
-      spend: 0,
-      conversions: 0,
+      name,
+      ...copyNonMetricFields(row, requested),
     }
-
-    existing.impressions += impressions
-    existing.clicks += clicks
-    existing.spend += spend
-    existing.conversions += conversions
-
-    searchQueriesByName.set(entityName, existing)
+    accumulateMetrics(existing, row, requested)
+    searchQueriesByName.set(name, existing)
   }
 
-  const searchQueries = Array.from(searchQueriesByName.values()).map((c) => {
-    const ctr = c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0
-    const avgCpc = c.clicks > 0 ? c.spend / c.clicks : 0
-    const costPerConversion = c.conversions > 0 ? c.spend / c.conversions : 0
-    return {
-      ...c,
-      ctr,
-      avg_cpc: avgCpc,
-      cost_per_conversion: costPerConversion,
-    }
-  })
+  const searchQueries = Array.from(searchQueriesByName.values()).map((c) =>
+    withDerivedMetrics(c, requested)
+  )
 
-  // If no search queries found but we have rows, calculate totals directly from rows
-  let totals = { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
-
-  if (searchQueries.length > 0) {
-    totals = searchQueries.reduce(
-      (acc, c) => {
-        acc.impressions += c.impressions
-        acc.clicks += c.clicks
-        acc.spend += c.spend
-        acc.conversions += c.conversions
-        return acc
-      },
-      { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
-    )
-  } else if (rows.length > 0) {
-    // Fallback: calculate totals directly from rows
-    for (const row of rows) {
-      totals.impressions += toNumber(row.Impressions)
-      totals.clicks += toNumber(row.Clicks)
-      totals.spend += toNumber(row.Spend)
-      totals.conversions += toNumber(row.Conversions)
-    }
+  const totals: Record<string, number> = {}
+  for (const row of rows) {
+    accumulateMetrics(totals, row, requested)
   }
-
-  const totalCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
-  const totalAvgCpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0
-  const totalCostPerConversion = totals.conversions > 0 ? totals.spend / totals.conversions : 0
 
   return {
     campaigns: searchQueries, // Keep same structure for compatibility
-    account_totals: {
-      ...totals,
-      ctr: totalCtr,
-      avg_cpc: totalAvgCpc,
-      cost_per_conversion: totalCostPerConversion,
-    },
+    account_totals: withDerivedMetrics({ ...totals }, requested),
     report_type: parsedQuery.reportType,
     date_preset: parsedQuery.datePreset,
+    time_range: parsedQuery.timeRange,
     aggregation: parsedQuery.aggregation,
     columns_requested: parsedQuery.columns,
   }
@@ -702,6 +629,7 @@ function buildCampaignPerformanceMetrics(
   rows: Array<Record<string, any>>,
   parsedQuery: ParsedBingQuery
 ): any {
+  const requested = requestedColumnSet(parsedQuery.columns)
   const campaignsByName = new Map<string, any>()
 
   // For AccountPerformance reports, there's no CampaignName - use AccountName instead
@@ -716,11 +644,6 @@ function buildCampaignPerformanceMetrics(
     // For account reports, if no AccountName, still process the row using a default name
     if (!name && !isAccountReport) continue
 
-    const impressions = toNumber(row.Impressions)
-    const clicks = toNumber(row.Clicks)
-    const spend = toNumber(row.Spend)
-    const conversions = toNumber(row.Conversions)
-
     const entityName = name || 'Account Total'
     const existing = campaignsByName.get(entityName) || {
       id: isAccountReport
@@ -731,70 +654,27 @@ function buildCampaignPerformanceMetrics(
           ? String(row.CampaignId)
           : undefined,
       name: entityName,
-      impressions: 0,
-      clicks: 0,
-      spend: 0,
-      conversions: 0,
+      ...copyNonMetricFields(row, requested),
     }
-
-    existing.impressions += impressions
-    existing.clicks += clicks
-    existing.spend += spend
-    existing.conversions += conversions
-
+    accumulateMetrics(existing, row, requested)
     campaignsByName.set(entityName, existing)
   }
 
-  const campaigns = Array.from(campaignsByName.values()).map((c) => {
-    const ctr = c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0
-    const avgCpc = c.clicks > 0 ? c.spend / c.clicks : 0
-    const costPerConversion = c.conversions > 0 ? c.spend / c.conversions : 0
-    return {
-      ...c,
-      ctr,
-      avg_cpc: avgCpc,
-      cost_per_conversion: costPerConversion,
-    }
-  })
+  const campaigns = Array.from(campaignsByName.values()).map((c) =>
+    withDerivedMetrics(c, requested)
+  )
 
-  // If no campaigns found but we have rows, calculate totals directly from rows
-  let totals = { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
-
-  if (campaigns.length > 0) {
-    totals = campaigns.reduce(
-      (acc, c) => {
-        acc.impressions += c.impressions
-        acc.clicks += c.clicks
-        acc.spend += c.spend
-        acc.conversions += c.conversions
-        return acc
-      },
-      { impressions: 0, clicks: 0, spend: 0, conversions: 0 }
-    )
-  } else if (rows.length > 0) {
-    // Fallback: calculate totals directly from rows
-    for (const row of rows) {
-      totals.impressions += toNumber(row.Impressions)
-      totals.clicks += toNumber(row.Clicks)
-      totals.spend += toNumber(row.Spend)
-      totals.conversions += toNumber(row.Conversions)
-    }
+  const totals: Record<string, number> = {}
+  for (const row of rows) {
+    accumulateMetrics(totals, row, requested)
   }
-
-  const totalCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
-  const totalAvgCpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0
-  const totalCostPerConversion = totals.conversions > 0 ? totals.spend / totals.conversions : 0
 
   return {
     campaigns,
-    account_totals: {
-      ...totals,
-      ctr: totalCtr,
-      avg_cpc: totalAvgCpc,
-      cost_per_conversion: totalCostPerConversion,
-    },
+    account_totals: withDerivedMetrics({ ...totals }, requested),
     report_type: parsedQuery.reportType,
     date_preset: parsedQuery.datePreset,
+    time_range: parsedQuery.timeRange,
     aggregation: parsedQuery.aggregation,
     columns_requested: parsedQuery.columns,
   }
@@ -821,6 +701,68 @@ function escapeXml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;')
+}
+
+function accumulateMetrics(
+  target: Record<string, number>,
+  row: Record<string, any>,
+  requested: Set<string>
+): void {
+  if (wantsColumn(requested, 'Impressions')) {
+    target.impressions = (target.impressions || 0) + toNumber(row.Impressions)
+  }
+  if (wantsColumn(requested, 'Clicks')) {
+    target.clicks = (target.clicks || 0) + toNumber(row.Clicks)
+  }
+  if (wantsColumn(requested, 'Spend', 'Cost')) {
+    target.spend = (target.spend || 0) + toNumber(row.Spend)
+  }
+  if (wantsColumn(requested, 'Conversions')) {
+    target.conversions = (target.conversions || 0) + toNumber(row.Conversions)
+  }
+}
+
+function withDerivedMetrics(
+  entity: Record<string, any>,
+  requested: Set<string>
+): Record<string, any> {
+  const impressions = entity.impressions || 0
+  const clicks = entity.clicks || 0
+  const spend = entity.spend || 0
+  const conversions = entity.conversions || 0
+
+  if (wantsColumn(requested, 'Ctr')) {
+    entity.ctr = impressions > 0 ? (clicks / impressions) * 100 : 0
+  }
+  if (wantsColumn(requested, 'AverageCpc')) {
+    entity.avg_cpc = clicks > 0 ? spend / clicks : 0
+  }
+  if (wantsColumn(requested, 'CostPerConversion')) {
+    entity.cost_per_conversion = conversions > 0 ? spend / conversions : 0
+  }
+  return entity
+}
+
+function copyNonMetricFields(
+  row: Record<string, any>,
+  requested: Set<string>
+): Record<string, any> {
+  const extra: Record<string, any> = {}
+  for (const [key, value] of Object.entries(row)) {
+    if (METRIC_CSV_COLUMNS.has(key)) continue
+    if (
+      key === 'CampaignName' ||
+      key === 'CampaignId' ||
+      key === 'AccountName' ||
+      key === 'AccountId'
+    ) {
+      continue
+    }
+    if (requested.size === 0 || requested.has(key.toLowerCase())) {
+      extra[key] = value
+    }
+  }
+  return extra
 }
 
 function toNumber(value: any): number {
@@ -978,4 +920,3 @@ function formatBingAdsResponse(data: any, parsedQuery: ParsedBingQuery): any {
     campaign_filter: parsedQuery.campaignFilter,
   }
 }
-

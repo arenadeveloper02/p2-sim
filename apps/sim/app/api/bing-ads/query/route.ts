@@ -6,8 +6,8 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import type { ChannelAccount } from '@/lib/channel-accounts'
 import { getBingAdsAccounts } from '@/lib/channel-accounts'
-import { generateBingAdsQuery } from './query-generation'
 import { makeBingAdsRequest } from './bing-ads-api'
+import { generateBingAdsQuery } from './query-generation'
 import { processResults } from './result-processing'
 import type { BingAdsV1Request } from './types'
 
@@ -64,31 +64,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<any>> {
     // Generate Bing Ads query using AI
     const queryResult = await generateBingAdsQuery(query)
 
-    // Map dynamic timeRange to closest available preset
-    function mapTimeRangeToPreset(timeRange: { start: string; end: string }): string {
-      if (!timeRange || !timeRange.start || !timeRange.end) return 'Last30Days'
-
-      const start = new Date(timeRange.start)
-      const end = new Date(timeRange.end)
-      const rangeDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
-
-      // Map to closest preset (only use Bing Ads supported presets)
-      if (rangeDays === 1) return 'Yesterday'
-      if (rangeDays === 0) return 'Today'
-      if (rangeDays <= 7) return 'LastSevenDays'
-      if (rangeDays <= 14) return 'Last14Days'
-      return 'Last30Days'
-    }
-
-    // Map dynamic dates to preset for Bing Ads API
-    const datePreset = mapTimeRangeToPreset(queryResult.timeRange || { start: '', end: '' })
-
-    // Execute the Bing Ads query against Bing Ads API
+    // Execute the Bing Ads query against Bing Ads API using the exact dates
+    // the model calculated. Do not snap to Last7/14/30 presets — that made
+    // "last 3 days" and "last 7 days" (and different metrics) look identical.
     const apiResult = await makeBingAdsRequest(accountInfo.id, {
       reportType: queryResult.reportType,
       columns: queryResult.columns,
-      timeRange: undefined, // Use preset instead of custom dates
-      datePreset: datePreset, // Use mapped preset
+      timeRange: queryResult.timeRange,
+      datePreset: undefined,
       aggregation: queryResult.aggregation,
       campaignFilter: undefined,
     })
@@ -113,8 +96,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<any>> {
       },
       reportType: queryResult.reportType,
       columns: queryResult.columns,
-      datePreset: null, // Always null when using dynamic dates
-      timeRange: queryResult.timeRange, // Direct from AI
+      datePreset: null,
+      timeRange: queryResult.timeRange,
       query_type: queryResult.query_type,
       tables_used: queryResult.tables_used,
       metrics_used: queryResult.metrics_used,

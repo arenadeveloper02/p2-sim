@@ -93,6 +93,10 @@ function parseAIResponse(content: string): BingAdsQueryResponse {
       throw new Error('Start date cannot be after end date')
     }
 
+    const metricColumns = (parsed.columns as string[]).filter((column) =>
+      METRIC_COLUMN_NAMES.has(column.replace(/"/g, '').trim())
+    )
+
     return {
       reportType: parsed.reportType,
       columns: parsed.columns,
@@ -101,9 +105,13 @@ function parseAIResponse(content: string): BingAdsQueryResponse {
         end: parsed.timeRange.end,
       },
       aggregation: parsed.aggregation || 'Summary',
-      query_type: 'campaigns', // Default query type
-      tables_used: ['campaign'], // Default table
-      metrics_used: ['impressions', 'clicks', 'spend'], // Default metrics
+      query_type: asOptionalString(parsed.query_type) || inferQueryType(parsed.reportType),
+      tables_used: Array.isArray(parsed.tables_used)
+        ? parsed.tables_used
+        : inferTables(parsed.reportType),
+      metrics_used: Array.isArray(parsed.metrics_used)
+        ? parsed.metrics_used
+        : metricColumns.map((column) => column.toLowerCase()),
     }
   } catch (error) {
     if (error instanceof SyntaxError) {
@@ -145,4 +153,36 @@ function validateParsedQuery(parsedQuery: BingAdsQueryResponse): void {
   if (!validAggregations.includes(parsedQuery.aggregation || 'Summary')) {
     throw new Error(`Invalid aggregation: ${parsedQuery.aggregation}`)
   }
+}
+
+const METRIC_COLUMN_NAMES = new Set([
+  'Impressions',
+  'Clicks',
+  'Spend',
+  'Conversions',
+  'Ctr',
+  'AverageCpc',
+  'CostPerConversion',
+  'AveragePosition',
+  'ImpressionSharePercent',
+])
+
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function inferQueryType(reportType: string): string {
+  if (reportType === 'KeywordPerformance') return 'keywords'
+  if (reportType === 'SearchQueryPerformance') return 'search_terms'
+  if (reportType === 'AdGroupPerformance') return 'ad_groups'
+  if (reportType === 'AccountPerformance') return 'account'
+  return 'campaigns'
+}
+
+function inferTables(reportType: string): string[] {
+  if (reportType === 'KeywordPerformance') return ['keyword']
+  if (reportType === 'SearchQueryPerformance') return ['search_query']
+  if (reportType === 'AdGroupPerformance') return ['ad_group']
+  if (reportType === 'AccountPerformance') return ['account']
+  return ['campaign']
 }
