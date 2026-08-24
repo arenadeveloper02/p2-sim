@@ -108,7 +108,7 @@ const CustomSelect = React.forwardRef<HTMLButtonElement, CustomSelectProps>(
           onKeyDown={handleKeyDown}
           disabled={disabled}
           className={cn(
-            'flex h-[34px] w-full items-center justify-between rounded-[8px] border border-input bg-input-background px-2 py-[6px] font-medium font-sans text-base text-foreground md:text-sm',
+            'flex h-[34px] w-full items-center justify-between rounded-[8px] border border-input bg-input-background px-2 py-[6px] font-normal font-sans text-base text-foreground md:text-sm',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
             'disabled:cursor-not-allowed disabled:opacity-50',
             'cursor-pointer',
@@ -119,7 +119,7 @@ const CustomSelect = React.forwardRef<HTMLButtonElement, CustomSelectProps>(
           aria-expanded={isOpen}
           {...props}
         >
-          <span className='truncate font-medium font-sans text-base md:text-sm'>
+          <span className='truncate font-normal font-sans text-base md:text-sm'>
             {selectedOption ? selectedOption.label : placeholder || 'Select...'}
           </span>
           <ChevronDown
@@ -158,7 +158,7 @@ const CustomSelect = React.forwardRef<HTMLButtonElement, CustomSelectProps>(
                   aria-selected={selectedValue === option.value}
                   tabIndex={-1}
                   className={cn(
-                    'relative flex w-full cursor-pointer select-none items-center rounded-[4px] px-2 py-1.5 font-medium font-sans text-base text-popover-foreground outline-none hover:bg-accent hover:text-accent-foreground md:text-sm',
+                    'relative flex w-full cursor-pointer select-none items-center rounded-[4px] px-2 py-1.5 font-normal font-sans text-base text-popover-foreground outline-none hover:bg-accent hover:text-accent-foreground md:text-sm',
                     index === highlightedIndex && 'bg-accent text-accent-foreground',
                     selectedValue === option.value && 'bg-accent/50'
                   )}

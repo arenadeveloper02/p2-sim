@@ -5,11 +5,13 @@ import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { slackChannelsSelectorContract } from '@/lib/api/contracts/selectors/slack'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { validateAlphanumericId } from '@/lib/core/security/input-validation'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { refreshAccessTokenIfNeeded } from '@/lib/oauth/credential-service'
+import {
+  resolveSlackSelectorToken,
+  type SlackSelectorTokenResult,
+} from '@/app/api/tools/slack/resolve-selector-token'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,62 +56,30 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       logger.error('Missing credential in request')
       return parsed.response
     }
-    const { credential, workflowId } = parsed.data.body
+    const { credential, workflowId, useUserToken } = parsed.data.body
 
-    let accessToken: string
-    let isBotToken = false
+    const token = await resolveSlackSelectorToken({
+      request,
+      credential,
+      workflowId,
+      useUserToken,
+      requestId,
+    })
+    if (!token.ok) {
+      return selectorTokenErrorResponse(token)
+    }
+    const { accessToken, kind } = token
+    const allowPublicFallback = kind === 'user' || token.credentialType !== 'oauth'
+
     let scopedUserId: string | null = null
-
-    if (credential.startsWith('xoxb-')) {
-      accessToken = credential
-      isBotToken = true
-      logger.info('Using direct bot token for Slack API')
-    } else {
-      const authz = await authorizeCredentialUse(request, {
-        credentialId: credential,
-        workflowId: workflowId ?? undefined,
-      })
-      if (!authz.ok || !authz.credentialOwnerUserId) {
-        return NextResponse.json({ error: authz.error || 'Unauthorized' }, { status: 403 })
-      }
-      const resolvedToken = await refreshAccessTokenIfNeeded(
-        credential,
-        authz.credentialOwnerUserId,
-        requestId
-      )
-      if (!resolvedToken) {
-        logger.error('Failed to get access token', {
-          credentialId: credential,
-          userId: authz.credentialOwnerUserId,
-        })
-        return NextResponse.json(
-          {
-            error: 'Could not retrieve access token',
-            authRequired: true,
-          },
-          { status: 401 }
-        )
-      }
-      accessToken = resolvedToken
-
-      // resolvedCredentialId is an account.id only for OAuth credentials
-      // (the service_account path returns a credential.id).
-      if (authz.credentialType === 'oauth' && authz.resolvedCredentialId) {
-        logger.info('Using OAuth token for Slack API')
-        const [accountRow] = await db
-          .select({ accountId: account.accountId })
-          .from(account)
-          .where(eq(account.id, authz.resolvedCredentialId))
-          .limit(1)
-        if (accountRow) {
-          scopedUserId = parseScopedSlackUserId(accountRow.accountId)
-        }
-      } else {
-        // A custom-bot service_account credential resolves to a bot token with
-        // no scoped user; treat it like a direct bot token so the private ->
-        // public channel fallback applies.
-        isBotToken = true
-        logger.info('Using custom bot token for Slack API')
+    if (kind === 'bot' && token.credentialType === 'oauth' && token.resolvedCredentialId) {
+      const [accountRow] = await db
+        .select({ accountId: account.accountId })
+        .from(account)
+        .where(eq(account.id, token.resolvedCredentialId))
+        .limit(1)
+      if (accountRow) {
+        scopedUserId = parseScopedSlackUserId(accountRow.accountId)
       }
     }
 
@@ -121,9 +91,9 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       }
       logger.info('Successfully fetched channels including private channels')
     } catch (error) {
-      if (isBotToken) {
+      if (allowPublicFallback) {
         logger.warn(
-          'Failed to fetch private channels with bot token, falling back to public channels only:',
+          'Failed to fetch private channels, falling back to public channels only:',
           (error as Error).message
         )
         try {
@@ -180,6 +150,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       .filter((channel: SlackChannel) => {
         if (channel.is_archived) return false
 
+        if (kind === 'user') {
+          return channel.is_member
+        }
+
         if (channel.is_private) {
           if (allowedPrivateChannelIds) {
             return allowedPrivateChannelIds.has(channel.id)
@@ -221,7 +195,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       total: data.channels?.length || 0,
       private: channels.filter((c: { isPrivate: boolean }) => c.isPrivate).length,
       public: channels.filter((c: { isPrivate: boolean }) => !c.isPrivate).length,
-      tokenType: isBotToken ? 'bot_token' : 'oauth',
+      tokenType: kind,
       userScoped: !!scopedUserId,
     })
     return NextResponse.json({ channels })
@@ -233,6 +207,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     )
   }
 })
+
+function selectorTokenErrorResponse(token: Extract<SlackSelectorTokenResult, { ok: false }>) {
+  return NextResponse.json(
+    token.authRequired ? { error: token.error, authRequired: true } : { error: token.error },
+    { status: token.status }
+  )
+}
 
 const SLACK_PAGE_LIMIT = 200
 const SLACK_MAX_PAGES = 10

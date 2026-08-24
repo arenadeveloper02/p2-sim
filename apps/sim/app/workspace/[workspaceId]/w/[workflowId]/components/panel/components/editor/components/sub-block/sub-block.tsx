@@ -80,7 +80,12 @@ const SLACK_OVERRIDES: SelectorOverrides = {
       authMethod === 'bot_token'
         ? String(deps.botToken || deps.credential || deps.customBotCredential || '')
         : String(deps.credential ?? deps.customBotCredential ?? '')
-    return { ...context, oauthCredential }
+    // Custom Bot on a connected Slack account lists with the user token
+    // (`xoxp-`). Pasted `xoxb-` and reusable custom-bot credentials have no
+    // user token — the selector route ignores the flag for those.
+    const useUserToken =
+      authMethod === 'bot_token' && Boolean(oauthCredential) && !oauthCredential.startsWith('xoxb-')
+    return { ...context, oauthCredential, useUserToken }
   },
 }
 

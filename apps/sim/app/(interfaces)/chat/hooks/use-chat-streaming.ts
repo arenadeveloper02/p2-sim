@@ -264,6 +264,7 @@ export function useChatStreaming() {
         type: 'assistant',
         timestamp: new Date(),
         isStreaming: true,
+        liked: null,
       },
     ])
 

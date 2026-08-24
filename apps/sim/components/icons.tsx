@@ -153,16 +153,24 @@ export function Spinner() {
   )
 }
 
+/** Arena Agent glyph — sparkle on the purple→teal gradient, used on every Agent tile. */
 export function AgentIcon({ className, ...props }: Omit<ImageProps, 'src' | 'alt' | 'fill'>) {
   return (
-    <Image
-      src='https://arenav2image.s3.us-west-1.amazonaws.com/vimi-sparkle.png'
-      alt='Agent'
-      width={14}
-      height={14}
-      {...props}
-      className={className ? `object-contain ${className}` : 'object-contain'}
-    />
+    <span
+      className={[
+        'relative inline-flex items-center justify-center overflow-hidden rounded-[3px] bg-[linear-gradient(179.65deg,#7B4796_-0.59%,#017496_102.42%)]',
+        className ?? 'size-full',
+      ].join(' ')}
+    >
+      <Image
+        src='https://arenav2image.s3.us-west-1.amazonaws.com/vimi-sparkle.png'
+        alt='Agent'
+        width={14}
+        height={14}
+        {...props}
+        className='size-full object-contain'
+      />
+    </span>
   )
 }
 

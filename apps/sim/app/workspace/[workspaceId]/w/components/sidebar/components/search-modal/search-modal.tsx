@@ -1362,15 +1362,15 @@ function SearchModalContent({
                 surface='palette'
                 cycleResultsOnTab={!isChatEnabled}
                 autoFocus={!atomicBrowserOcclusion}
-                aria-label={askMode ? 'Ask Sim' : 'Search anything'}
+                aria-label={askMode ? 'Ask Arena AI' : 'Search anything'}
                 value={search}
                 onValueChange={handleSearchChange}
                 onKeyDown={handleSearchKeyDown}
-                placeholder={askMode ? 'Ask Sim anything...' : 'Search anything...'}
+                placeholder={askMode ? 'Ask Arena AI anything...' : 'Search anything...'}
                 endAdornment={
                   isChatEnabled ? (
                     <span className='flex-shrink-0 whitespace-nowrap text-[var(--text-subtle)] text-xs'>
-                      {askMode ? '⇥ Search' : '⇥ Ask Sim'}
+                      {askMode ? '⇥ Search' : '⇥ Ask Arena AI'}
                     </span>
                   ) : undefined
                 }

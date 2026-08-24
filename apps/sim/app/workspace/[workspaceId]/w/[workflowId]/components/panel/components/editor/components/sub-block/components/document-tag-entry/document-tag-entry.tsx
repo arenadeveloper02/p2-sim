@@ -88,7 +88,8 @@ export function DocumentTagEntry({
     isPreview,
     previewContextValues,
   })
-  const knowledgeBaseIdValue = dependencyValues.knowledgeBaseSelector
+  const knowledgeBaseIdValue =
+    dependencyValues.knowledgeBaseSelector || dependencyValues.manualKnowledgeBaseId
   const knowledgeBaseId =
     typeof knowledgeBaseIdValue === 'string' && knowledgeBaseIdValue.trim().length > 0
       ? knowledgeBaseIdValue

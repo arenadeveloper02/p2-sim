@@ -54,7 +54,8 @@ const FINANCE_LOOP_CONTENT: EnterpriseLoopContent = {
       id: 'match',
       name: 'Match transactions',
       icon: AgentIcon,
-      bgColor: 'var(--text-primary)',
+      bgColor: '#FFFFFF',
+      tileBorder: true,
       rows: [
         { title: 'Messages', value: '-' },
         { title: 'Model', value: '-' },

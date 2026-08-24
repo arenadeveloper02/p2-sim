@@ -53,7 +53,8 @@ export const SHOWCASE_BLOCKS: BlockDef[] = [
     id: 'triage',
     name: 'Triage request',
     icon: AgentIcon,
-    bgColor: 'var(--text-primary)',
+    bgColor: '#FFFFFF',
+    tileBorder: true,
     rows: [
       { title: 'Model', value: 'Claude', valueIcon: AnthropicIcon },
       { title: 'Knowledge', value: 'Help center' },

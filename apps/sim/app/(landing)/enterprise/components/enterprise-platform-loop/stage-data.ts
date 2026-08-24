@@ -88,7 +88,8 @@ export const ENTERPRISE_STAGE_BLOCKS: BlockDef[] = [
     id: 'match',
     name: 'Match PO',
     icon: AgentIcon,
-    bgColor: 'var(--text-primary)',
+    bgColor: '#FFFFFF',
+    tileBorder: true,
     rows: [
       { title: 'Messages', value: '-' },
       { title: 'Model', value: '-' },

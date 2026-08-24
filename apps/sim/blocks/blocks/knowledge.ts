@@ -123,18 +123,6 @@ export const KnowledgeBlock: BlockConfig = {
       multiSelect: false,
       required: true,
       mode: 'basic',
-      condition: { field: 'operation', value: ['search', 'upload_chunk', 'create_document'] },
-    },
-    // Knowledge Base (advanced mode - text input)
-    {
-      id: 'knowledgeBaseIdAdvanced',
-      title: 'Knowledge Base',
-      type: 'short-input',
-      canonicalParamId: 'knowledgeBaseId',
-      placeholder: 'Enter knowledge base ID',
-      required: true,
-      mode: 'advanced',
-      condition: { field: 'operation', value: ['search', 'upload_chunk', 'create_document'] },
     },
     // Knowledge base ID - advanced mode
     {
@@ -174,7 +162,7 @@ export const KnowledgeBlock: BlockConfig = {
       title: 'Tag Filters',
       type: 'knowledge-tag-filters',
       placeholder: 'Add tag filters',
-      dependsOn: ['knowledgeBaseSelector'],
+      dependsOn: ['knowledgeBaseSelector', 'manualKnowledgeBaseId'],
       condition: { field: 'operation', value: 'search' },
     },
     {
@@ -274,7 +262,7 @@ export const KnowledgeBlock: BlockConfig = {
       serviceId: 'knowledge',
       selectorKey: 'knowledge.documents',
       placeholder: 'Select document',
-      dependsOn: ['knowledgeBaseSelector'],
+      dependsOn: ['knowledgeBaseSelector', 'manualKnowledgeBaseId'],
       required: true,
       mode: 'basic',
       condition: {
@@ -296,7 +284,7 @@ export const KnowledgeBlock: BlockConfig = {
       type: 'short-input',
       canonicalParamId: 'documentId',
       placeholder: 'Enter document ID',
-      dependsOn: ['knowledgeBaseId'],
+      dependsOn: ['knowledgeBaseSelector', 'manualKnowledgeBaseId'],
       required: true,
       mode: 'advanced',
       condition: {
@@ -352,7 +340,7 @@ export const KnowledgeBlock: BlockConfig = {
       id: 'documentTags',
       title: 'Document Tags',
       type: 'document-tag-entry',
-      dependsOn: ['knowledgeBaseSelector'],
+      dependsOn: ['knowledgeBaseSelector', 'manualKnowledgeBaseId'],
       condition: { field: 'operation', value: ['create_document', 'upsert_document'] },
     },
 

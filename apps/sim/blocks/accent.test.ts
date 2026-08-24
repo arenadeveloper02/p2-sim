@@ -23,13 +23,17 @@ describe('hasBlockAccent', () => {
 
   it('accents a core block, mapped or not', () => {
     withCategory('blocks')
-    expect(hasBlockAccent('agent')).toBe(true)
     /*
      * An unmapped core block still takes the accent and lands on `neutral`,
      * which is what the canvas does for a newly added one — the surfaces must
      * not disagree while the role map catches up.
      */
     expect(hasBlockAccent('brand_new_core_block')).toBe(true)
+  })
+
+  it('leaves Arena Agent on its white provider tile', () => {
+    withCategory('blocks')
+    expect(hasBlockAccent('agent')).toBe(false)
   })
 
   it('accents every first-party trigger, role or no role', () => {

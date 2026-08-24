@@ -86,6 +86,11 @@ export interface SelectorContext {
   workspaceId?: string
   workflowId?: string
   oauthCredential?: string
+  /**
+   * Slack Custom Bot (`authMethod: 'bot_token'`) on an OAuth account: list
+   * with the user token (`xoxp-`) instead of the Sim bot token.
+   */
+  useUserToken?: boolean
   serviceId?: string
   domain?: string
   teamId?: string

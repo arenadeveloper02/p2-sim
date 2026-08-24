@@ -30,7 +30,8 @@ export const STAGE_BLOCKS: BlockDef[] = [
     id: 'enrich',
     name: 'Enrich lead',
     icon: AgentIcon,
-    bgColor: 'var(--text-primary)',
+    bgColor: '#FFFFFF',
+    tileBorder: true,
     rows: [
       { title: 'Messages', value: '-' },
       { title: 'Model', value: '-' },

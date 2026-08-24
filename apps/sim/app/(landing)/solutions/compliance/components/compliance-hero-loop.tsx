@@ -55,7 +55,8 @@ const COMPLIANCE_LOOP_CONTENT: EnterpriseLoopContent = {
       id: 'collect',
       name: 'Collect evidence',
       icon: AgentIcon,
-      bgColor: 'var(--text-primary)',
+      bgColor: '#FFFFFF',
+      tileBorder: true,
       rows: [
         { title: 'Messages', value: '-' },
         { title: 'Model', value: '-' },

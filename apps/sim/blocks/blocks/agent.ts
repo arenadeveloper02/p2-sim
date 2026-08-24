@@ -90,7 +90,7 @@ export const AgentBlock: BlockConfig<AgentResponse> = {
   docsLink: 'https://docs.sim.ai/workflows/blocks/agent',
   category: 'blocks',
   integrationType: IntegrationType.AI,
-  bgColor: 'var(--brand)',
+  bgColor: '#FFFFFF',
   icon: AgentIcon,
   canvasPresentation: {
     defaultTitle: 'Agent',

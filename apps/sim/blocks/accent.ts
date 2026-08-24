@@ -36,6 +36,12 @@ const SUBFLOW_ICONS: Record<string, ComponentType<{ className?: string }>> = {
  * synthesized `error`/`validation`/`cancelled` rows on their status fill.
  */
 export function hasBlockAccent(blockType: string): boolean {
+  /*
+   * Arena Agent wears a white provider tile with its own gradient glyph (like
+   * Google Slides), not the first-party role accent — so toolbar, search, and
+   * canvas type tags stay brand-aligned.
+   */
+  if (blockType === 'agent') return false
   const config = getBlock(blockType)
   return config ? config.category !== 'tools' : hasWorkflowTypeRole(blockType)
 }

@@ -44,7 +44,8 @@ const WORKFLOWS_EDITOR_CONTENT: EditorLoopContent = {
       id: 'agent',
       name: 'Support agent',
       icon: AgentIcon,
-      bgColor: 'var(--text-primary)',
+      bgColor: '#FFFFFF',
+      tileBorder: true,
       rows: [
         { title: 'Messages', value: '-' },
         { title: 'Model', value: '-' },

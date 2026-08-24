@@ -1079,7 +1079,12 @@ export const ArenaClientChatMessage = memo(
             {message.type === 'assistant' &&
               !message.isStreaming &&
               !message.isInitialMessage &&
-              (hasRenderableText || isErrorResponse) && (
+              (hasRenderableText ||
+                isErrorResponse ||
+                isJsonObject ||
+                containsBase64Images ||
+                hasImageUrl ||
+                (message.generatedImages?.length ?? 0) > 0) && (
                 <div className='flex flex-col gap-1'>
                   <p className='text-[var(--text-muted)] text-xs'>{timestampLabel}</p>
                   {isErrorResponse && onRegenerateMessage && (
@@ -1136,17 +1141,17 @@ export const ArenaClientChatMessage = memo(
                         </Tooltip.Root>
                       </Tooltip.Provider>
                     )}
-                    {cleanTextContent && message?.executionId && (
+                    {Boolean(message?.executionId) && (
                       <>
                         {isFeedbackPending ? (
                           <StreamingIndicator />
                         ) : (
                           <>
-                            {(message?.liked === true || message?.liked === null) && (
+                            {message?.liked !== false && (
                               <Tooltip.Provider>
                                 <Tooltip.Root>
                                   <Popover
-                                    open={isLikeFeedbackOpen && message?.liked === null}
+                                    open={isLikeFeedbackOpen && message?.liked == null}
                                     onOpenChange={setIsLikeFeedbackOpen}
                                   >
                                     <PopoverTrigger asChild>
@@ -1193,7 +1198,7 @@ export const ArenaClientChatMessage = memo(
                               </Tooltip.Provider>
                             )}
 
-                            {(message?.liked === false || message?.liked === null) && (
+                            {message?.liked !== true && (
                               <Tooltip.Provider>
                                 <Tooltip.Root>
                                   <Popover

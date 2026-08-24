@@ -416,18 +416,45 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                       attachments: Array.isArray(log.attachments) ? log.attachments : undefined,
                     })
                   }
-                  if (log.modelOutput) {
+                  if (
+                    log.modelOutput ||
+                    (Array.isArray(log.generatedImages) && log.generatedImages.length > 0)
+                  ) {
+                    const historyImages = Array.isArray(log.generatedImages)
+                      ? log.generatedImages
+                      : undefined
+                    const imageUrls =
+                      historyImages
+                        ?.map((image: { url?: string }) => image?.url)
+                        .filter((url: string | undefined): url is string => Boolean(url)) ?? []
+                    const historyContent =
+                      imageUrls.length > 0
+                        ? {
+                            content:
+                              typeof log.modelOutput === 'string'
+                                ? log.modelOutput
+                                    .split('\n')
+                                    .filter(
+                                      (line: string) =>
+                                        !imageUrls.some((url: string) => line.trim() === url.trim())
+                                    )
+                                    .join('\n')
+                                    .trim()
+                                : '',
+                            image: imageUrls[0] ?? '',
+                            images: imageUrls,
+                          }
+                        : log.modelOutput || ''
+
                     historyMessages.push({
                       id: `${log.id}-assistant`,
-                      content: log.modelOutput || '',
+                      content: historyContent,
                       type: 'assistant',
                       timestamp: new Date(log.endedAt || log.startedAt),
                       isStreaming: false,
                       executionId: log?.executionId || '',
-                      liked: log.liked,
-                      generatedImages: Array.isArray(log.generatedImages)
-                        ? log.generatedImages
-                        : undefined,
+                      liked: log.liked ?? null,
+                      generatedImages: historyImages,
                       knowledgeRefs: Array.isArray(log.knowledgeRefs)
                         ? log.knowledgeRefs
                         : undefined,

@@ -54,7 +54,8 @@ const IT_LOOP_CONTENT: EnterpriseLoopContent = {
       id: 'verify',
       name: 'Verify request',
       icon: AgentIcon,
-      bgColor: 'var(--text-primary)',
+      bgColor: '#FFFFFF',
+      tileBorder: true,
       rows: [
         { title: 'Messages', value: '-' },
         { title: 'Model', value: '-' },
