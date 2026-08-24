@@ -38,6 +38,8 @@ export interface ParsedBingQuery {
   filters?: any[]
   aggregation?: string
   campaignFilter?: string // Filter to specific campaign name
+  adGroupFilter?: string // Filter to specific ad group name
+  keywordFilter?: string // Filter to specific keyword / search term / ad title
 }
 
 export interface BingAdsReportRequest {
@@ -83,6 +85,9 @@ export interface BingAdsQueryResponse {
   query_type?: string
   tables_used?: string[]
   metrics_used?: string[]
+  campaignFilter?: string
+  adGroupFilter?: string
+  keywordFilter?: string
 }
 
 export interface ProcessedResults {

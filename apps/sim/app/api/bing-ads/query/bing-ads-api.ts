@@ -205,8 +205,13 @@ async function getCampaignPerformanceReport(params: {
         csvLength: csvText.length,
         csvPreview: csvText.substring(0, 500),
       })
-      const rows = await parseCsvToRecords(csvText)
-      logger.info('Parsed CSV rows', { rowCount: rows.length, firstRow: rows[0] })
+      const allRows = await parseCsvToRecords(csvText)
+      const rows = applyEntityFilters(allRows, parsedQuery)
+      logger.info('Parsed CSV rows', {
+        rowCount: rows.length,
+        rowCountBeforeFilters: allRows.length,
+        firstRow: rows[0],
+      })
 
       // Route to correct function based on report type
       if (parsedQuery.reportType === 'SearchQueryPerformance') {
@@ -599,6 +604,55 @@ function buildCampaignPerformanceMetrics(
     aggregation: parsedQuery.aggregation,
     columns_requested: parsedQuery.columns,
   }
+}
+
+/**
+ * Loose name matching: lowercase and strip separators so
+ * "bing us general search" matches "Bing_US_General_Search".
+ */
+function normalizeForMatch(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function rowValueMatches(value: unknown, filter: string): boolean {
+  const normalizedFilter = normalizeForMatch(filter)
+  if (!normalizedFilter) return true
+  return normalizeForMatch(String(value ?? '')).includes(normalizedFilter)
+}
+
+/**
+ * Narrows report rows to the campaign / ad group / keyword the user asked
+ * about. Bing report filters can't filter by name, so this happens after
+ * download. No-op when the query names no specific entity.
+ */
+function applyEntityFilters(
+  rows: Array<Record<string, any>>,
+  parsedQuery: ParsedBingQuery
+): Array<Record<string, any>> {
+  const { campaignFilter, adGroupFilter, keywordFilter } = parsedQuery
+  if (!campaignFilter && !adGroupFilter && !keywordFilter) return rows
+
+  const filtered = rows.filter((row) => {
+    if (campaignFilter && !rowValueMatches(row.CampaignName, campaignFilter)) return false
+    if (adGroupFilter && !rowValueMatches(row.AdGroupName, adGroupFilter)) return false
+    if (
+      keywordFilter &&
+      !rowValueMatches(row.Keyword ?? row.SearchQuery ?? row.AdTitle, keywordFilter)
+    ) {
+      return false
+    }
+    return true
+  })
+
+  logger.info('Applied entity filters', {
+    campaignFilter,
+    adGroupFilter,
+    keywordFilter,
+    rowsBefore: rows.length,
+    rowsAfter: filtered.length,
+  })
+
+  return filtered
 }
 
 function accumulateMetrics(

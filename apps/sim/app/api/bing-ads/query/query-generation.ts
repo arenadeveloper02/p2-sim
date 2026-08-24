@@ -112,6 +112,9 @@ function parseAIResponse(content: string): BingAdsQueryResponse {
       metrics_used: Array.isArray(parsed.metrics_used)
         ? parsed.metrics_used
         : metricColumns.map((column) => column.toLowerCase()),
+      campaignFilter: asOptionalString(parsed.campaignFilter),
+      adGroupFilter: asOptionalString(parsed.adGroupFilter),
+      keywordFilter: asOptionalString(parsed.keywordFilter),
     }
   } catch (error) {
     if (error instanceof SyntaxError) {

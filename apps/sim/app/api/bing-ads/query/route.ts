@@ -73,7 +73,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<any>> {
       timeRange: queryResult.timeRange,
       datePreset: undefined,
       aggregation: queryResult.aggregation,
-      campaignFilter: undefined,
+      campaignFilter: queryResult.campaignFilter,
+      adGroupFilter: queryResult.adGroupFilter,
+      keywordFilter: queryResult.keywordFilter,
     })
 
     // Surface API errors instead of returning an empty "successful" result
@@ -101,6 +103,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<any>> {
       query_type: queryResult.query_type,
       tables_used: queryResult.tables_used,
       metrics_used: queryResult.metrics_used,
+      campaign_filter: queryResult.campaignFilter ?? null,
+      ad_group_filter: queryResult.adGroupFilter ?? null,
+      keyword_filter: queryResult.keywordFilter ?? null,
       data: processedResults.rows,
       row_count: processedResults.row_count,
       total_rows: processedResults.total_rows,
