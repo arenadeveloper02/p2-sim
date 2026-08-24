@@ -184,4 +184,139 @@ describe('extractOutputSchemaFromBlocks', () => {
       })
     ).toEqual([])
   })
+
+  it('walks a Builder object whose value is a nested JSON string', () => {
+    const names = extractOutputSchemaFromBlocks({
+      respond: {
+        type: 'response',
+        subBlocks: {
+          builderData: {
+            value: [
+              {
+                name: 'run_data',
+                type: 'object',
+                value: JSON.stringify({
+                  history: [
+                    {
+                      id: 'h1',
+                      email: 'ada@example.com',
+                      input: { keyword: 'Dental Implants', client: 'Gentle Dental' },
+                      output: '',
+                      createdAt: '2026-08-24T06:28:56.717Z',
+                    },
+                  ],
+                }),
+              },
+            ],
+          },
+        },
+      },
+    }).map((field) => field.name)
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'run_data',
+        'run_data.history',
+        'run_data.history[].id',
+        'run_data.history[].input.keyword',
+        'run_data.history[].createdAt',
+      ])
+    )
+  })
+
+  it('walks a Builder array whose value is a JSON string of objects', () => {
+    expect(
+      extractOutputSchemaFromBlocks({
+        respond: {
+          type: 'response',
+          subBlocks: {
+            builderData: {
+              value: [
+                {
+                  name: 'history',
+                  type: 'array',
+                  value: JSON.stringify([{ keyword: 'Dental Implants', client: 'Gentle Dental' }]),
+                },
+              ],
+            },
+          },
+        },
+      })
+    ).toEqual([
+      { name: 'history', type: 'array' },
+      { name: 'history[].keyword', type: 'string' },
+      { name: 'history[].client', type: 'string' },
+    ])
+  })
+
+  it('follows a Response JSON editor whole-object ref to Agent responseFormat', () => {
+    const names = extractOutputSchemaFromBlocks({
+      research: {
+        type: 'agent',
+        name: 'Agent',
+        subBlocks: {
+          responseFormat: {
+            value: {
+              schema: {
+                type: 'object',
+                properties: {
+                  history: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        keyword: { type: 'string' },
+                        client: { type: 'string' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      respond: {
+        type: 'response',
+        subBlocks: {
+          dataMode: { value: 'json' },
+          data: { value: '{ "run_data": "<block.agent.response.content>" }' },
+        },
+      },
+    }).map((field) => field.name)
+
+    expect(names).toEqual(
+      expect.arrayContaining(['run_data', 'run_data.history', 'run_data.history[].keyword'])
+    )
+  })
+
+  it('fills a stub Response object from Agent responseFormat', () => {
+    const names = extractOutputSchemaFromBlocks({
+      agent: {
+        type: 'agent',
+        subBlocks: {
+          responseFormat: {
+            value: {
+              schema: {
+                type: 'object',
+                properties: {
+                  history: { type: 'array', items: { type: 'string' } },
+                },
+              },
+            },
+          },
+        },
+      },
+      respond: {
+        type: 'response',
+        subBlocks: {
+          builderData: {
+            value: [{ name: 'run_data', type: 'object', value: '' }],
+          },
+        },
+      },
+    }).map((field) => field.name)
+
+    expect(names).toEqual(['run_data', 'run_data.history', 'run_data.history[]'])
+  })
 })

@@ -177,6 +177,34 @@ function schemaTypeFromValue(value: unknown): string {
 }
 
 /**
+ * Nests schema fields under a Response/Builder path. `result` from an array
+ * sample becomes the prefix itself (`history` + `result[].id` → `history[].id`).
+ */
+export function prefixOutputSchemaFields(
+  fields: ArenaGenerativeSchemaField[],
+  prefix: string
+): ArenaGenerativeSchemaField[] {
+  const trimmed = prefix.trim()
+  if (!trimmed) return fields
+  return fields.map((field) => ({
+    ...field,
+    name: joinSchemaPath(trimmed, field.name),
+  }))
+}
+
+function joinSchemaPath(prefix: string, child: string): string {
+  const name = child.trim()
+  if (!name || name === 'result') return prefix
+  if (name.startsWith('result[]')) {
+    return `${prefix}[]${name.slice('result[]'.length)}`
+  }
+  if (name.startsWith('result.')) {
+    return `${prefix}.${name.slice('result.'.length)}`
+  }
+  return `${prefix}.${name}`
+}
+
+/**
  * Compact fake response object from outputSchema names/types so the generator
  * can pick Stat vs Table vs DataText. Nested paths such as `run_data.history[].id`
  * become `{ run_data: { history: [{ id: 'ex-1', title: 'Example' }] } }`.

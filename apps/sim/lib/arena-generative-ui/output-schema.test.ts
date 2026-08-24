@@ -7,6 +7,7 @@ import {
   outputLayoutFromSample,
   outputSchemaFromSample,
   outputSchemaWarning,
+  prefixOutputSchemaFields,
   syntheticExampleFromOutputSchema,
 } from '@/lib/arena-generative-ui/output-schema'
 
@@ -136,6 +137,38 @@ describe('outputSchemaFromSample', () => {
   })
 })
 
+describe('prefixOutputSchemaFields', () => {
+  it('nests object fields under a Response wrapper key', () => {
+    expect(
+      prefixOutputSchemaFields(
+        [
+          { name: 'history', type: 'array' },
+          { name: 'history[].keyword', type: 'string' },
+        ],
+        'run_data'
+      )
+    ).toEqual([
+      { name: 'run_data.history', type: 'array' },
+      { name: 'run_data.history[].keyword', type: 'string' },
+    ])
+  })
+
+  it('rewrites a result-rooted array sample onto the field name', () => {
+    expect(
+      prefixOutputSchemaFields(
+        [
+          { name: 'result', type: 'array' },
+          { name: 'result[].keyword', type: 'string' },
+        ],
+        'history'
+      )
+    ).toEqual([
+      { name: 'history', type: 'array' },
+      { name: 'history[].keyword', type: 'string' },
+    ])
+  })
+})
+
 describe('outputLayoutFromSample', () => {
   it('returns nothing for a blank sample', () => {
     expect(outputLayoutFromSample('')).toEqual({})
@@ -185,7 +218,11 @@ describe('outputSchemaWarning', () => {
   it('treats a lifted nested collection as satisfying a dotted outputSchema path', () => {
     expect(
       outputSchemaWarning(
-        [{ name: 'data' }, { name: 'data.run_data.history' }, { name: 'data.run_data.history[].id' }],
+        [
+          { name: 'data' },
+          { name: 'data.run_data.history' },
+          { name: 'data.run_data.history[].id' },
+        ],
         { history: [], run_data: { history: [] } }
       )
     ).toBeUndefined()

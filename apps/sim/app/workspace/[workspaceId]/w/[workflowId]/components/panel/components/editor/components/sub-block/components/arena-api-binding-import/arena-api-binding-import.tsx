@@ -19,6 +19,7 @@ import { useParams } from 'next/navigation'
 import { appendApiBinding, removeApiBinding } from '@/lib/arena-generative-ui/append-api-binding'
 import {
   applyUnchangedOutputLayout,
+  displayedBindingOutputSchema,
   emptyBindingFormState,
   formStateFromBinding,
 } from '@/lib/arena-generative-ui/binding-form'
@@ -291,19 +292,17 @@ export function ArenaApiBindingImportHelper({
   const editingBinding = editingKey
     ? (savedBindings.find((binding) => binding.key === editingKey) ?? null)
     : null
-  const displayedOutputSchema =
-    sampleOutput.fields.length > 0
-      ? sampleOutput.fields
-      : editingBinding?.outputSchema && editingBinding.outputSchema.length > 0
-        ? editingBinding.outputSchema
-        : outputFields
   const outputSchemaFromPaste =
     sampleOutput.fields.length > 0 ||
     Boolean(
-      editingBinding &&
-        !outputSample.trim() &&
-        editingBinding.outputSchemaSource === 'sample'
+      editingBinding && !outputSample.trim() && editingBinding.outputSchemaSource === 'sample'
     )
+  const displayedOutputSchema = displayedBindingOutputSchema({
+    sampleFields: sampleOutput.fields,
+    liveFields: outputFields,
+    savedSchema: editingBinding?.outputSchema,
+    savedFromSample: outputSchemaFromPaste && sampleOutput.fields.length === 0,
+  })
   const curlInputSchema = useMemo((): ArenaGenerativeInputSchemaField[] => {
     if (source !== 'http' || !curl.trim()) return []
     try {

@@ -1,3 +1,4 @@
+import type { ArenaGenerativeSchemaField } from '@/lib/arena-generative-ui/output-schema'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeInputSchemaField,
@@ -84,8 +85,30 @@ export function curlFromHttpBinding(binding: ArenaGenerativeApiBinding): string 
 }
 
 /**
- * When editing, an empty Sample field means "keep the saved layout" rather than
- * dropping a pasted schema in favor of the deployed snapshot.
+ * Schema tags shown in Add an API. A live Sample paste wins; a saved Sample is
+ * kept while the textarea is empty; otherwise the deployed workflow extract.
+ */
+export function displayedBindingOutputSchema(options: {
+  sampleFields: ArenaGenerativeSchemaField[]
+  liveFields: ArenaGenerativeSchemaField[]
+  savedSchema?: ArenaGenerativeSchemaField[]
+  savedFromSample: boolean
+}): ArenaGenerativeSchemaField[] {
+  if (options.sampleFields.length > 0) {
+    return options.sampleFields
+  }
+  if (options.savedFromSample && (options.savedSchema?.length ?? 0) > 0) {
+    return options.savedSchema ?? []
+  }
+  if (options.liveFields.length > 0) {
+    return options.liveFields
+  }
+  return options.savedSchema ?? []
+}
+
+/**
+ * When editing, an empty Sample field keeps a pasted schema. Workflow-sourced
+ * schemas take the live extract so a richer deploy is not frozen on re-save.
  */
 export function applyUnchangedOutputLayout(
   next: ArenaGenerativeApiBinding,
@@ -93,6 +116,9 @@ export function applyUnchangedOutputLayout(
   sample: string
 ): ArenaGenerativeApiBinding {
   if (!previous || sample.trim()) {
+    return next
+  }
+  if (previous.outputSchemaSource !== 'sample') {
     return next
   }
   const outputSchema =
@@ -103,7 +129,7 @@ export function applyUnchangedOutputLayout(
   return {
     ...next,
     ...(outputSchema && outputSchema.length > 0 ? { outputSchema } : {}),
-    ...(previous.outputSchemaSource === 'sample' ? { outputSchemaSource: 'sample' as const } : {}),
+    outputSchemaSource: 'sample',
     ...(outputHint ? { outputHint } : {}),
   }
 }

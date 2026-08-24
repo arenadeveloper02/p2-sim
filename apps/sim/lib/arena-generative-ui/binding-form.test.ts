@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyUnchangedOutputLayout,
   curlFromHttpBinding,
+  displayedBindingOutputSchema,
   emptyBindingFormState,
   formStateFromBinding,
 } from '@/lib/arena-generative-ui/binding-form'
@@ -137,6 +138,65 @@ describe('applyUnchangedOutputLayout', () => {
       outputSchemaSource: 'sample',
     }
     expect(applyUnchangedOutputLayout(next, history, '{"items":[]}')).toEqual(next)
+  })
+
+  it('takes the live workflow extract when the saved schema was not a sample', () => {
+    const previous: ArenaGenerativeApiBinding = {
+      key: 'run_history',
+      label: 'Run history',
+      kind: 'workflow',
+      workflowId: 'wf-history',
+      outputSchema: [{ name: 'run_data', type: 'object' }],
+    }
+    const next: ArenaGenerativeApiBinding = {
+      ...previous,
+      outputSchema: [
+        { name: 'run_data', type: 'object' },
+        { name: 'run_data.history', type: 'array' },
+      ],
+    }
+    expect(applyUnchangedOutputLayout(next, previous, '')).toEqual(next)
+  })
+})
+
+describe('displayedBindingOutputSchema', () => {
+  it('prefers a live Sample paste', () => {
+    expect(
+      displayedBindingOutputSchema({
+        sampleFields: [{ name: 'items', type: 'array' }],
+        liveFields: [{ name: 'run_data', type: 'object' }],
+        savedSchema: [{ name: 'run_data', type: 'object' }],
+        savedFromSample: false,
+      })
+    ).toEqual([{ name: 'items', type: 'array' }])
+  })
+
+  it('keeps a saved Sample while the textarea is empty', () => {
+    expect(
+      displayedBindingOutputSchema({
+        sampleFields: [],
+        liveFields: [{ name: 'run_data', type: 'object' }],
+        savedSchema: [{ name: 'items', type: 'array' }],
+        savedFromSample: true,
+      })
+    ).toEqual([{ name: 'items', type: 'array' }])
+  })
+
+  it('shows the deployed extract over a truncated saved workflow schema', () => {
+    expect(
+      displayedBindingOutputSchema({
+        sampleFields: [],
+        liveFields: [
+          { name: 'run_data', type: 'object' },
+          { name: 'run_data.history', type: 'array' },
+        ],
+        savedSchema: [{ name: 'run_data', type: 'object' }],
+        savedFromSample: false,
+      })
+    ).toEqual([
+      { name: 'run_data', type: 'object' },
+      { name: 'run_data.history', type: 'array' },
+    ])
   })
 })
 
