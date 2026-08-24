@@ -36,7 +36,6 @@ import {
   isEmailLikeApiInputName,
   resolveInputFieldEditorRow,
 } from '@/lib/arena-generative-ui/input-schema'
-import { outputSchemaRootName } from '@/lib/arena-generative-ui/output-schema'
 import { parseApiBindings } from '@/lib/arena-generative-ui/parse-inputs'
 import type {
   ArenaGenerativeApiBinding,
@@ -76,21 +75,6 @@ function storedBindings(raw: unknown): ArenaGenerativeApiBinding[] {
   } catch {
     return []
   }
-}
-
-function outputPreviewTags(fields: Array<{ name: string; type: string }>): Array<{
-  name: string
-  type: string
-}> {
-  const seen = new Set<string>()
-  const tags: Array<{ name: string; type: string }> = []
-  for (const field of fields) {
-    const root = outputSchemaRootName(field.name)
-    if (!root || seen.has(root)) continue
-    seen.add(root)
-    tags.push({ name: root, type: field.type })
-  }
-  return tags
 }
 
 function sampleResponseHint(
@@ -384,7 +368,6 @@ export function ArenaApiBindingImportHelper({
     return forwardEmail === 'on' ? { ...binding, forwardEmailId: true } : binding
   }
 
-  const outputTags = outputPreviewTags(outputFields)
   const showWorkflowInputs = source === 'workflow' && Boolean(workflowId)
   const showHttpInputs = source === 'http' && curlInputSchema.length > 0
   const savedBindings = storedBindings(storeValue)
@@ -408,6 +391,20 @@ export function ArenaApiBindingImportHelper({
           </ChipTag>
         ))}
       </div>
+      {savedBindings.some((binding) => (binding.outputSchema?.length ?? 0) > 0) ? (
+        <div className='flex flex-col gap-2'>
+          {savedBindings.map((binding) =>
+            binding.outputSchema && binding.outputSchema.length > 0 ? (
+              <div key={`${binding.key}-output-schema`} className='flex flex-col gap-1'>
+                <p className='text-[var(--text-secondary)] text-caption'>
+                  {binding.key} output schema
+                </p>
+                <SchemaFieldTags fields={binding.outputSchema} />
+              </div>
+            ) : null
+          )}
+        </div>
+      ) : null}
       {children}
       <ChipModal open={open} onOpenChange={handleOpenChange} srTitle='Add an API' size='lg'>
         <ChipModalHeader onClose={() => handleOpenChange(false)}>Add an API</ChipModalHeader>
@@ -515,26 +512,26 @@ export function ArenaApiBindingImportHelper({
               {source === 'workflow' && workflowId ? (
                 <ChipModalField
                   type='custom'
-                  title='Outputs'
+                  title='Output schema'
                   hint={
                     deployedLoading
-                      ? 'Read from the deployed Response block or Agent structured output.'
-                      : outputTags.length > 0
-                        ? 'Read from the deployed Response block or Agent structured output. Saved as outputSchema so the generator can lay out the result.'
-                        : 'This workflow does not declare an output format. For better results, paste a sample JSON in Sample response below.'
+                      ? 'Fetched from the deployed Response block or Agent structured output.'
+                      : outputFields.length > 0
+                        ? 'Fetched from the deployed Response block or Agent structured output. Generate and edit re-read this so a new deploy is picked up without saving again.'
+                        : 'This workflow does not declare an output format. Paste a sample JSON in Sample response below.'
                   }
                 >
                   {deployedLoading ? (
                     <p className='text-[var(--text-secondary)] text-caption'>
                       Reading the deployed workflow…
                     </p>
-                  ) : outputTags.length > 0 ? (
-                    <SchemaFieldTags fields={outputTags} />
+                  ) : outputFields.length > 0 ? (
+                    <SchemaFieldTags fields={outputFields} />
                   ) : (
                     <p className='text-[var(--text-secondary)] text-caption'>
                       {streamMode === 'on'
-                        ? 'No output format is available for this workflow. Leave blank to show streamed text, or paste an example below.'
-                        : 'No output format is available for this workflow. Paste a sample JSON below so the generator can lay out tables and stats instead of a single text blob.'}
+                        ? 'No output schema is available for this workflow. Leave blank to show streamed text, or paste an example below.'
+                        : 'No output schema is available for this workflow. Paste a sample JSON below so the generator can lay out tables and stats instead of a single text blob.'}
                     </p>
                   )}
                 </ChipModalField>

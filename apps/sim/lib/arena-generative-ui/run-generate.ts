@@ -7,6 +7,7 @@ import type {
 import { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/generate-manifest'
 import { summarizeManifestDiff } from '@/lib/arena-generative-ui/manifest-diff'
 import { parseApiBindings, parsePageHints } from '@/lib/arena-generative-ui/parse-inputs'
+import { refreshWorkflowBindingOutputSchemas } from '@/lib/arena-generative-ui/refresh-binding-schemas'
 import { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
 import type { ArenaGenerativeAppManifest, ArenaGenerativeGenerateResult } from '@/lib/arena-generative-ui/types'
 
@@ -90,6 +91,8 @@ export async function runArenaGenerativeUi(options: {
       error: requireExistingDraft ? 'editInstructions is required' : 'userInput is required',
     }
   }
+
+  apiBindings = await refreshWorkflowBindingOutputSchemas(apiBindings)
 
   const generateStartedAt = Date.now()
   const generated = await generateArenaGenerativeManifest({

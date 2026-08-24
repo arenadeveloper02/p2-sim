@@ -316,12 +316,51 @@ export function unwrapResponseBlockEnvelope(data: unknown): unknown {
 }
 
 /**
+ * Promotes business keys out of Agent/LLM display fields so Repeat/Table can
+ * bind `items` when the workflow returned `{ assistantContent: '{"items":[...]}' }`
+ * or `{ output: { items: [...] } }`. Existing top-level keys win.
+ */
+export function liftParsedDisplayFields(record: Record<string, unknown>): Record<string, unknown> {
+  const lifted: Record<string, unknown> = {}
+  const preferred = new Set<string>(PREFERRED_DISPLAY_KEYS)
+  for (const key of PREFERRED_DISPLAY_KEYS) {
+    const parsed = unwrapResponseBlockEnvelope(parsePreferredDisplayValue(record[key]))
+    if (parsed === undefined) continue
+    if (Array.isArray(parsed)) {
+      if (!Object.hasOwn(record, 'result') && !Object.hasOwn(lifted, 'result')) {
+        lifted.result = parsed
+      }
+      continue
+    }
+    if (!parsed || typeof parsed !== 'object') continue
+    const nested = omitActionTelemetry(parsed as Record<string, unknown>)
+    for (const [nestedKey, nestedValue] of Object.entries(nested)) {
+      if (preferred.has(nestedKey)) continue
+      if (Object.hasOwn(record, nestedKey) || Object.hasOwn(lifted, nestedKey)) continue
+      lifted[nestedKey] = nestedValue
+    }
+  }
+  return lifted
+}
+
+function parsePreferredDisplayValue(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return parseJsonLiteral(value)
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value
+  }
+  return undefined
+}
+
+/**
  * Host state patch from a CTA payload: top-level business keys, no telemetry.
  */
 export function actionStateFromData(data: unknown): Record<string, unknown> {
   const unwrapped = unwrapResponseBlockEnvelope(data)
   if (unwrapped && typeof unwrapped === 'object' && !Array.isArray(unwrapped)) {
-    return omitActionTelemetry(unwrapped as Record<string, unknown>)
+    const record = omitActionTelemetry(unwrapped as Record<string, unknown>)
+    return { ...liftParsedDisplayFields(record), ...record }
   }
   return { result: unwrapped }
 }

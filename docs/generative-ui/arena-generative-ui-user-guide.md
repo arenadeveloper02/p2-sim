@@ -14,7 +14,7 @@ The block does not publish a URL. Run it to save a **draft**, then open **Deploy
 | **User Input** | Plain language. Name the app, pages, fields, buttons, and which API key each button calls. **Not JSON.** |
 | **Pages** | Optional. Leave blank and name the pages in User Input. Pin JSON only when you need exact paths. |
 | **API Bindings** | Use **Add an API**, do not hand-write JSON. Invent a `key` (for example `qualify_lead`) and use **that same string** in User Input. |
-| **Output format** (inside Add an API) | A sample of what the API returns. This is how the model decides Table vs Stat vs prose. |
+| **Output schema** (inside Add an API) | Fetched from the workflow’s deployed Response / Agent output. Paste a sample only when the workflow declares none. |
 | **Design Notes** | Optional. Brand, density, dark mode. Skip unless you care. |
 
 The model **cannot invent API keys**. If User Input says “Submit calls `qualify_lead`”, that key must exist in API Bindings. Leave Bindings empty only for a navigation-only app (no forms that call a backend).
@@ -55,7 +55,9 @@ Do not put a progress bar or checklist on the form — waiting chrome belongs on
 
 ## Output format (this is the layout lever)
 
-**Add an API → Output format** is a sample of the response. Sim keeps **names and types only** — pasted values never reach the model or the database.
+**Add an API → Output schema** is fetched from the bound workflow’s **deployed** Response block or Agent structured output (field names and types). Generate and edit re-read that snapshot, so a new deploy is picked up without saving the binding again.
+
+**Sample response** is only needed when the workflow declares nothing. Sim keeps **names and types only** — pasted values never reach the model or the database.
 
 | You paste | The generator can do |
 |---|---|
@@ -226,6 +228,8 @@ Do not show raw JSON anywhere.
 ```
 
 Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add them later in **Requested Changes** only if you implement them yourself.
+
+**History is empty but the API returned data:** Redeploy `run_history` after changing its Response block, then edit with a page-scoped prompt (`On the "history" page, bind Repeat or Table to items`). Generate/edit re-reads the deployed output schema. Saying “do not show raw JSON” without a list `statePath` that matches that schema replaces the working `DataText` dump with an empty Repeat.
 
 ---
 

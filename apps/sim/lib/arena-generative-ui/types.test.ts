@@ -86,6 +86,31 @@ describe('actionStateFromData', () => {
     expect(unwrapResponseBlockEnvelope(payload)).toEqual(payload)
     expect(actionStateFromData(payload)).toEqual(payload)
   })
+
+  it('lifts items out of Agent assistantContent JSON so History Repeat can bind', () => {
+    const items = [{ keyword: 'Dental implants', client: '42 North', date: '2026-08-23' }]
+    expect(
+      actionStateFromData({
+        assistantContent: JSON.stringify({ items }),
+        content: JSON.stringify({ items }),
+        model: 'gpt-5.4-mini',
+        tokens: { input: 10, output: 20, total: 30 },
+      })
+    ).toMatchObject({ items })
+  })
+
+  it('lifts items out of a nested output object without overwriting top-level keys', () => {
+    expect(
+      actionStateFromData({
+        output: { items: [{ keyword: 'Nested' }], score: 9 },
+        score: 3,
+      })
+    ).toMatchObject({
+      items: [{ keyword: 'Nested' }],
+      score: 3,
+      output: { items: [{ keyword: 'Nested' }], score: 9 },
+    })
+  })
 })
 
 describe('parseJsonLiteral', () => {

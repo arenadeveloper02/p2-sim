@@ -215,6 +215,43 @@ describe('runDeployedAppAction', () => {
     expect(result.setState?.data).toBeUndefined()
   })
 
+  it('lifts history items from Agent assistantContent so Repeat can bind items', async () => {
+    const items = [{ keyword: 'Dental implants', client: '42 North', date: '2026-08-23' }]
+    mockExecuteWorkflow.mockResolvedValue({
+      success: true,
+      output: {
+        assistantContent: JSON.stringify({ items }),
+        content: JSON.stringify({ items }),
+        model: 'gpt-5.4-mini',
+        tokens: { input: 10, output: 20, total: 30 },
+      },
+    })
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Run history',
+            kind: 'workflow',
+            workflowId: 'wf-bound',
+            outputSchema: [
+              { name: 'items', type: 'array' },
+              { name: 'items[].keyword', type: 'string' },
+            ],
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.schemaWarning).toBeUndefined()
+    expect(result.setState?.items).toEqual(items)
+  })
+
   it('proxies allowlisted HTTP and injects secret headers', async () => {
     mockEnv({ api_token: 'secret-token' })
     const fetchMock = vi.fn().mockResolvedValue({

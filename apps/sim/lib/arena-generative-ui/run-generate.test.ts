@@ -5,9 +5,10 @@ import { generativeAppDraft } from '@sim/db/schema'
 import { queueTableRows, resetDbChainMock } from '@sim/testing/mocks'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGenerateManifest, mockPersistDraft } = vi.hoisted(() => ({
+const { mockGenerateManifest, mockPersistDraft, mockRefreshSchemas } = vi.hoisted(() => ({
   mockGenerateManifest: vi.fn(),
   mockPersistDraft: vi.fn(),
+  mockRefreshSchemas: vi.fn(async (bindings: unknown) => bindings),
 }))
 
 vi.mock('@/lib/arena-generative-ui/generate-manifest', () => ({
@@ -16,6 +17,10 @@ vi.mock('@/lib/arena-generative-ui/generate-manifest', () => ({
 
 vi.mock('@/lib/arena-generative-ui/persist-draft', () => ({
   persistGenerativeAppDraft: mockPersistDraft,
+}))
+
+vi.mock('@/lib/arena-generative-ui/refresh-binding-schemas', () => ({
+  refreshWorkflowBindingOutputSchemas: mockRefreshSchemas,
 }))
 
 import { runArenaGenerativeUi } from '@/lib/arena-generative-ui/run-generate'
@@ -130,5 +135,30 @@ describe('runArenaGenerativeUi', () => {
 
     expect(result).toEqual({ success: false, error: 'editInstructions is required' })
     expect(mockGenerateManifest).not.toHaveBeenCalled()
+  })
+
+  it('refreshes workflow outputSchema before generate and persist', async () => {
+    const refreshed = [
+      {
+        ...twoPageApiBindings[0],
+        outputSchema: [
+          { name: 'items', type: 'array' },
+          { name: 'items[].keyword', type: 'string' },
+        ],
+      },
+    ]
+    mockRefreshSchemas.mockResolvedValueOnce(refreshed)
+
+    await runArenaGenerativeUi({
+      body: { ...BASE_BODY, userInput: 'Team directory.', apiBindings: twoPageApiBindings },
+      userId: 'user-1',
+      requireExistingDraft: false,
+    })
+
+    expect(mockRefreshSchemas).toHaveBeenCalledWith(twoPageApiBindings)
+    expect(mockGenerateManifest).toHaveBeenCalledWith(
+      expect.objectContaining({ apiBindings: refreshed })
+    )
+    expect(mockPersistDraft).toHaveBeenCalledWith(expect.objectContaining({ apiBindings: refreshed }))
   })
 })
