@@ -98,6 +98,10 @@ async function getAccessToken(): Promise<string> {
   return tokenData.access_token
 }
 
+// Bing Ads Reporting REST API (JSON). The legacy SOAP endpoint is deprecated
+// and shuts down on 2027-01-31.
+const BING_REPORTING_BASE_URL = 'https://reporting.api.bingads.microsoft.com/Reporting/v13'
+
 async function getCampaignPerformanceReport(params: {
   accessToken: string
   developerToken: string
@@ -107,13 +111,19 @@ async function getCampaignPerformanceReport(params: {
 }): Promise<any> {
   const { accessToken, developerToken, customerId, accountId, parsedQuery } = params
 
-  const submitUrl =
-    'https://reporting.api.bingads.microsoft.com/Api/Advertiser/Reporting/v13/ReportingService.svc'
-  const pollUrl =
-    'https://reporting.api.bingads.microsoft.com/Api/Advertiser/Reporting/v13/ReportingService.svc'
+  const submitUrl = `${BING_REPORTING_BASE_URL}/GenerateReport/Submit`
+  const pollUrl = `${BING_REPORTING_BASE_URL}/GenerateReport/Poll`
+
+  const restHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${accessToken}`,
+    DeveloperToken: developerToken,
+    CustomerId: customerId,
+    CustomerAccountId: accountId,
+  }
 
   // Log the request details for debugging
-  logger.info('Submitting Bing Ads report request', {
+  logger.info('Submitting Bing Ads report request (REST)', {
     submitUrl,
     customerId,
     accountId,
@@ -121,22 +131,12 @@ async function getCampaignPerformanceReport(params: {
     datePreset: parsedQuery.datePreset,
   })
 
-  const reportRequestXml = buildCampaignPerformanceReportRequestXml(accountId, parsedQuery)
-  const submitSoapEnvelope = buildSubmitSoapEnvelope({
-    accessToken,
-    developerToken,
-    customerId,
-    customerAccountId: accountId,
-    reportRequestXml,
-  })
+  const reportRequest = buildReportRequestJson(accountId, parsedQuery)
 
   const submitResponse = await fetch(submitUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'text/xml; charset=utf-8',
-      SOAPAction: 'SubmitGenerateReport',
-    },
-    body: submitSoapEnvelope,
+    headers: restHeaders,
+    body: JSON.stringify({ ReportRequest: reportRequest }),
   })
 
   const submitText = await submitResponse.text()
@@ -152,7 +152,7 @@ async function getCampaignPerformanceReport(params: {
     throw new Error(`SubmitGenerateReport failed (${submitResponse.status}): ${submitText}`)
   }
 
-  const reportRequestId = extractFirstXmlTagValue(submitText, 'ReportRequestId')
+  const reportRequestId = parseJsonField(submitText, (data) => data?.ReportRequestId)
   if (!reportRequestId) {
     throw new Error(
       `SubmitGenerateReport succeeded but no ReportRequestId found. Response: ${submitText}`
@@ -161,21 +161,10 @@ async function getCampaignPerformanceReport(params: {
 
   const maxPollAttempts = 12
   for (let attempt = 0; attempt < maxPollAttempts; attempt++) {
-    const pollSoapEnvelope = buildPollSoapEnvelope({
-      accessToken,
-      developerToken,
-      customerId,
-      customerAccountId: accountId,
-      reportRequestId,
-    })
-
     const pollResponse = await fetch(pollUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'text/xml; charset=utf-8',
-        SOAPAction: 'PollGenerateReport',
-      },
-      body: pollSoapEnvelope,
+      headers: restHeaders,
+      body: JSON.stringify({ ReportRequestId: reportRequestId }),
     })
 
     const pollText = await pollResponse.text()
@@ -190,8 +179,11 @@ async function getCampaignPerformanceReport(params: {
       throw new Error(`PollGenerateReport failed (${pollResponse.status}): ${pollText}`)
     }
 
-    const status = extractFirstXmlTagValue(pollText, 'Status')
-    const reportDownloadUrl = extractFirstXmlTagValue(pollText, 'ReportDownloadUrl')
+    const status = parseJsonField(pollText, (data) => data?.ReportRequestStatus?.Status)
+    const reportDownloadUrl = parseJsonField(
+      pollText,
+      (data) => data?.ReportRequestStatus?.ReportDownloadUrl
+    )
 
     logger.info('Poll response parsed', {
       attempt,
@@ -299,102 +291,53 @@ function calculateRawTotals(rows: Array<Record<string, any>>): any {
   }
 }
 
-function buildSubmitSoapEnvelope(params: {
-  accessToken: string
-  developerToken: string
-  customerId: string
-  customerAccountId: string
-  reportRequestXml: string
-}): string {
-  const { accessToken, developerToken, customerId, customerAccountId, reportRequestXml } = params
-  return `<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Header xmlns="https://bingads.microsoft.com/Reporting/v13">
-    <Action mustUnderstand="1">SubmitGenerateReport</Action>
-    <AuthenticationToken i:nil="false">${escapeXml(accessToken)}</AuthenticationToken>
-    <CustomerAccountId i:nil="false">${escapeXml(customerAccountId)}</CustomerAccountId>
-    <CustomerId i:nil="false">${escapeXml(customerId)}</CustomerId>
-    <DeveloperToken i:nil="false">${escapeXml(developerToken)}</DeveloperToken>
-  </s:Header>
-  <s:Body>
-    <SubmitGenerateReportRequest xmlns="https://bingads.microsoft.com/Reporting/v13">
-      ${reportRequestXml}
-    </SubmitGenerateReportRequest>
-  </s:Body>
-</s:Envelope>`
+function parseJsonField(text: string, pick: (data: any) => unknown): string | null {
+  try {
+    const value = pick(JSON.parse(text))
+    return typeof value === 'string' && value ? value : null
+  } catch {
+    return null
+  }
 }
 
-function buildPollSoapEnvelope(params: {
-  accessToken: string
-  developerToken: string
-  customerId: string
-  customerAccountId: string
-  reportRequestId: string
-}): string {
-  const { accessToken, developerToken, customerId, customerAccountId, reportRequestId } = params
-  return `<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Header xmlns="https://bingads.microsoft.com/Reporting/v13">
-    <Action mustUnderstand="1">PollGenerateReport</Action>
-    <AuthenticationToken i:nil="false">${escapeXml(accessToken)}</AuthenticationToken>
-    <CustomerAccountId i:nil="false">${escapeXml(customerAccountId)}</CustomerAccountId>
-    <CustomerId i:nil="false">${escapeXml(customerId)}</CustomerId>
-    <DeveloperToken i:nil="false">${escapeXml(developerToken)}</DeveloperToken>
-  </s:Header>
-  <s:Body>
-    <PollGenerateReportRequest xmlns="https://bingads.microsoft.com/Reporting/v13">
-      <ReportRequestId i:nil="false">${escapeXml(reportRequestId)}</ReportRequestId>
-    </PollGenerateReportRequest>
-  </s:Body>
-</s:Envelope>`
-}
-
-function buildReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery): string {
+function buildReportRequestJson(
+  accountId: string,
+  parsedQuery: ParsedBingQuery
+): Record<string, any> {
   const reportType = parsedQuery.reportType || 'CampaignPerformance'
 
-  // Map report type to XML type and column element name
-  const reportTypeMap: Record<
-    string,
-    { xmlType: string; columnElement: string; requiredColumns: string[] }
-  > = {
+  // Map report type to the REST request Type and its identity columns
+  const reportTypeMap: Record<string, { type: string; requiredColumns: string[] }> = {
     CampaignPerformance: {
-      xmlType: 'CampaignPerformanceReportRequest',
-      columnElement: 'CampaignPerformanceReportColumn',
+      type: 'CampaignPerformanceReportRequest',
       requiredColumns: ['CampaignName', 'CampaignId'],
     },
     AccountPerformance: {
-      xmlType: 'AccountPerformanceReportRequest',
-      columnElement: 'AccountPerformanceReportColumn',
+      type: 'AccountPerformanceReportRequest',
       requiredColumns: ['AccountName', 'AccountId'],
     },
     AdGroupPerformance: {
-      xmlType: 'AdGroupPerformanceReportRequest',
-      columnElement: 'AdGroupPerformanceReportColumn',
+      type: 'AdGroupPerformanceReportRequest',
       requiredColumns: ['CampaignName', 'AdGroupName', 'AdGroupId'],
     },
     KeywordPerformance: {
-      xmlType: 'KeywordPerformanceReportRequest',
-      columnElement: 'KeywordPerformanceReportColumn',
+      type: 'KeywordPerformanceReportRequest',
       requiredColumns: ['CampaignName', 'AdGroupName', 'Keyword', 'KeywordId'],
     },
     SearchQueryPerformance: {
-      xmlType: 'SearchQueryPerformanceReportRequest',
-      columnElement: 'SearchQueryPerformanceReportColumn',
+      type: 'SearchQueryPerformanceReportRequest',
       requiredColumns: ['CampaignName', 'AdGroupName', 'SearchQuery'],
     },
     GeographicPerformance: {
-      xmlType: 'GeographicPerformanceReportRequest',
-      columnElement: 'GeographicPerformanceReportColumn',
+      type: 'GeographicPerformanceReportRequest',
       requiredColumns: ['Country'],
     },
     AdExtensionByAdReport: {
-      xmlType: 'AdExtensionByAdReportRequest',
-      columnElement: 'AdExtensionByAdReportColumn',
+      type: 'AdExtensionByAdReportRequest',
       requiredColumns: ['CampaignName', 'AdGroupName', 'AdExtensionType', 'AdExtensionId'],
     },
     AdExtensionDetailReport: {
-      xmlType: 'AdExtensionDetailReportRequest',
-      columnElement: 'AdExtensionDetailReportColumn',
+      type: 'AdExtensionDetailReportRequest',
       requiredColumns: ['CampaignName', 'AdExtensionType', 'AdExtensionId'],
     },
   }
@@ -406,77 +349,52 @@ function buildReportRequestXml(accountId: string, parsedQuery: ParsedBingQuery):
   const aggregation = parsedQuery.aggregation || 'Summary'
   const reportName = `${reportType}_${new Date().toISOString()}`
 
-  // Build Time element - use CustomDateRange if timeRange provided, otherwise use PredefinedTime
-  let timeElement = ''
+  let time: Record<string, any>
   if (parsedQuery.timeRange?.start && parsedQuery.timeRange.end) {
     const startParts = parsedQuery.timeRange.start.split('-')
     const endParts = parsedQuery.timeRange.end.split('-')
 
-    logger.info('Building custom date range XML', {
+    logger.info('Building custom date range', {
       start: parsedQuery.timeRange.start,
       end: parsedQuery.timeRange.end,
-      startParts,
-      endParts,
-      startDay: Number.parseInt(startParts[2]),
-      startMonth: Number.parseInt(startParts[1]),
-      startYear: Number.parseInt(startParts[0]),
-      endDay: Number.parseInt(endParts[2]),
-      endMonth: Number.parseInt(endParts[1]),
-      endYear: Number.parseInt(endParts[0]),
     })
 
-    // Bing's ReportTime XSD is a strict sequence: CustomDateRangeEnd must come
-    // BEFORE CustomDateRangeStart, or the end date is silently dropped and the
-    // API fails with InvalidCustomDateRangeEnd.
-    timeElement = `<Time i:nil="false">
-    <CustomDateRangeEnd>
-      <Day>${Number.parseInt(endParts[2])}</Day>
-      <Month>${Number.parseInt(endParts[1])}</Month>
-      <Year>${Number.parseInt(endParts[0])}</Year>
-    </CustomDateRangeEnd>
-    <CustomDateRangeStart>
-      <Day>${Number.parseInt(startParts[2])}</Day>
-      <Month>${Number.parseInt(startParts[1])}</Month>
-      <Year>${Number.parseInt(startParts[0])}</Year>
-    </CustomDateRangeStart>
-    <ReportTimeZone i:nil="false">EasternTimeUSCanada</ReportTimeZone>
-  </Time>`
+    time = {
+      CustomDateRangeStart: {
+        Day: Number.parseInt(startParts[2]),
+        Month: Number.parseInt(startParts[1]),
+        Year: Number.parseInt(startParts[0]),
+      },
+      CustomDateRangeEnd: {
+        Day: Number.parseInt(endParts[2]),
+        Month: Number.parseInt(endParts[1]),
+        Year: Number.parseInt(endParts[0]),
+      },
+      ReportTimeZone: 'EasternTimeUSCanada',
+    }
   } else {
-    const predefinedTime = parsedQuery.datePreset || 'LastSevenDays'
-    timeElement = `<Time i:nil="false">
-    <PredefinedTime i:nil="false">${escapeXml(predefinedTime)}</PredefinedTime>
-    <ReportTimeZone i:nil="false">EasternTimeUSCanada</ReportTimeZone>
-  </Time>`
+    time = {
+      PredefinedTime: parsedQuery.datePreset || 'LastSevenDays',
+      ReportTimeZone: 'EasternTimeUSCanada',
+    }
   }
 
-  return `<ReportRequest i:nil="false" i:type="${config.xmlType}" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-  <ExcludeColumnHeaders i:nil="false">false</ExcludeColumnHeaders>
-  <ExcludeReportFooter i:nil="false">true</ExcludeReportFooter>
-  <ExcludeReportHeader i:nil="false">true</ExcludeReportHeader>
-  <Format i:nil="false">Csv</Format>
-  <FormatVersion i:nil="false">2.0</FormatVersion>
-  <ReportName i:nil="false">${escapeXml(reportName)}</ReportName>
-  <ReturnOnlyCompleteData i:nil="false">false</ReturnOnlyCompleteData>
-  <Aggregation>${escapeXml(aggregation)}</Aggregation>
-  <Columns i:nil="false">${columns
-    .map((c) => `<${config.columnElement}>${escapeXml(c)}</${config.columnElement}>`)
-    .join('')}</Columns>
-  <Filter i:nil="true" />
-  <Scope i:nil="false">
-    <AccountIds i:nil="false" xmlns:a1="http://schemas.microsoft.com/2003/10/Serialization/Arrays">
-      <a1:long>${escapeXml(accountId)}</a1:long>
-    </AccountIds>
-  </Scope>
-  ${timeElement}
-</ReportRequest>`
-}
-
-// Keep backward compatibility
-function buildCampaignPerformanceReportRequestXml(
-  accountId: string,
-  parsedQuery: ParsedBingQuery
-): string {
-  return buildReportRequestXml(accountId, parsedQuery)
+  return {
+    Type: config.type,
+    ExcludeColumnHeaders: false,
+    ExcludeReportFooter: true,
+    ExcludeReportHeader: true,
+    Format: 'Csv',
+    FormatVersion: '2.0',
+    ReportName: reportName,
+    ReturnOnlyCompleteData: false,
+    Aggregation: aggregation,
+    Columns: columns,
+    Scope: {
+      AccountIds: [Number(accountId)],
+    },
+    Time: time,
+  }
 }
 
 async function downloadReportAsCsvText(url: string, _accessToken?: string): Promise<string> {
@@ -683,29 +601,6 @@ function buildCampaignPerformanceMetrics(
   }
 }
 
-function extractFirstXmlTagValue(xml: string, tagName: string): string | null {
-  const re = new RegExp(`<${tagName}[^>]*>([^<]*)</${tagName}>`, 'i')
-  const match = xml.match(re)
-  if (!match || match[1] === undefined) return null
-  // Decode XML entities in the extracted value (important for URLs with & characters)
-  return match[1]
-    .trim()
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-}
-
 function accumulateMetrics(
   target: Record<string, number>,
   row: Record<string, any>,
@@ -812,7 +707,7 @@ export async function makeBingAdsRequest(
 
     const accessToken = await getAccessToken()
 
-    // Use Bing Ads Reporting API (SOAP)
+    // Use Bing Ads Reporting API (REST/JSON)
     try {
       const report = await getCampaignPerformanceReport({
         accessToken,
@@ -843,45 +738,6 @@ export async function makeBingAdsRequest(
 
     // Fail loudly — never return empty/mock success payloads
     throw error instanceof Error ? error : new Error(errorMessage)
-  }
-}
-
-/**
- * Build SOAP report request (for future SOAP API implementation)
- */
-function buildReportRequest(accountId: string, parsedQuery: ParsedBingQuery): any {
-  const { reportType, columns, datePreset, timeRange, aggregation } = parsedQuery
-
-  return {
-    ReportRequest: {
-      '@xsi:type': `${reportType}ReportRequest`,
-      ExcludeColumnHeaders: false,
-      ExcludeReportFooter: true,
-      ExcludeReportHeader: true,
-      Format: 'Csv',
-      ReturnOnlyCompleteData: false,
-      Aggregation: aggregation || 'Summary',
-      Columns: columns,
-      Scope: {
-        AccountIds: [accountId],
-      },
-      Time: timeRange
-        ? {
-            CustomDateRangeStart: {
-              Day: Number.parseInt(timeRange.start.split('-')[2]),
-              Month: Number.parseInt(timeRange.start.split('-')[1]),
-              Year: Number.parseInt(timeRange.start.split('-')[0]),
-            },
-            CustomDateRangeEnd: {
-              Day: Number.parseInt(timeRange.end.split('-')[2]),
-              Month: Number.parseInt(timeRange.end.split('-')[1]),
-              Year: Number.parseInt(timeRange.end.split('-')[0]),
-            },
-          }
-        : {
-            PredefinedTime: datePreset || 'LastThirtyDays',
-          },
-    },
   }
 }
 
