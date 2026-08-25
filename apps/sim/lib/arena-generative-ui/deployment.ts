@@ -2,7 +2,7 @@ import { db } from '@sim/db'
 import { deployedApp } from '@sim/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest, NextResponse } from 'next/server'
-import { actionHostKeysFrom } from '@/lib/arena-generative-ui/binding-layout-plan'
+import { actionHiddenInputsFrom, actionHostKeysFrom } from '@/lib/arena-generative-ui/binding-layout-plan'
 import {
   ARENA_ACCESS_DENIED_MESSAGE,
   resolveArenaEmailIdFromRequest,
@@ -65,6 +65,7 @@ export function toDeployedAppConfig(deployment: DeployedAppRecord) {
     actionNavigate: actionNavigateFrom(deployment.manifest),
     pageOnLoad: pageOnLoadFrom(deployment.manifest),
     actionHostKeys: actionHostKeysFrom(deployment.manifest, deployment.apiBindings),
+    actionHiddenInputs: actionHiddenInputsFrom(deployment.manifest, deployment.apiBindings),
     theme: parseArenaGenerativeTheme(deployment.manifest.theme),
   }
 }

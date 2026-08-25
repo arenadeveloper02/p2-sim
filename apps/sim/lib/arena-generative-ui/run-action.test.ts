@@ -1869,6 +1869,32 @@ describe('arenaEmailId forwarding', () => {
     })
   })
 
+  it('drops form keys the inputSchema did not declare', async () => {
+    const deployment = baseDeployment()
+    deployment.apiBindings = [
+      {
+        key: 'qualify_lead',
+        label: 'Qualify',
+        kind: 'workflow',
+        workflowId: 'wf-bound',
+        inputSchema: [{ name: 'name', type: 'string' }],
+      },
+    ]
+
+    await runDeployedAppAction({
+      deployment,
+      actionId: 'submit_lead',
+      values: { name: 'Ada', notes: 'secret', debug: true },
+      requestId: 'req-1',
+      arenaEmailId: 'ada@example.com',
+    })
+
+    expect(workflowInput()).toEqual({
+      name: 'Ada',
+      arenaEmailId: 'ada@example.com',
+    })
+  })
+
   it('overwrites a value the caller tried to supply', async () => {
     await runDeployedAppAction({
       deployment: baseDeployment(),

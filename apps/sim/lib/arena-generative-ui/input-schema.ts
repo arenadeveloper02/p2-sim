@@ -1,7 +1,9 @@
-import type {
-  ArenaGenerativeApiBinding,
-  ArenaGenerativeInputSchemaField,
-  ArenaGenerativeInputSource,
+import { PAGINATION_ACTION_VALUE_KEYS } from '@/lib/arena-generative-ui/pagination'
+import {
+  ARENA_GENERATIVE_ACTOR_EMAIL_KEY,
+  type ArenaGenerativeApiBinding,
+  type ArenaGenerativeInputSchemaField,
+  type ArenaGenerativeInputSource,
 } from '@/lib/arena-generative-ui/types'
 
 /**
@@ -172,6 +174,47 @@ export function applyBindingInputSources(
     if (field.source === 'constant' && field.value !== undefined) {
       next[field.name] = field.value
     }
+  }
+  return next
+}
+
+/**
+ * Drops keys the binding did not declare. Bindings with no `inputSchema` keep
+ * the submitted payload (Repeat row actions, schemaless forms). Pagination
+ * params, `inputMapping` sources, and `arenaEmailId` stay.
+ */
+export function constrainBindingInput(
+  values: Record<string, unknown>,
+  binding: Pick<ArenaGenerativeApiBinding, 'inputSchema' | 'pagination'>,
+  inputMapping?: Record<string, string>
+): Record<string, unknown> {
+  const fields = binding.inputSchema
+  if (!fields || fields.length === 0) {
+    return values
+  }
+  const allowed = new Set<string>([
+    ARENA_GENERATIVE_ACTOR_EMAIL_KEY,
+    ...PAGINATION_ACTION_VALUE_KEYS,
+  ])
+  for (const field of fields) {
+    const name = field.name.trim()
+    if (name) allowed.add(name)
+  }
+  if (inputMapping) {
+    for (const [target, source] of Object.entries(inputMapping)) {
+      if (target.trim()) allowed.add(target.trim())
+      if (source.trim()) allowed.add(source.trim())
+    }
+  }
+  const pagination = binding.pagination
+  if (pagination) {
+    for (const key of [pagination.cursorParam, pagination.offsetParam, pagination.limitParam]) {
+      if (key?.trim()) allowed.add(key.trim())
+    }
+  }
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(values)) {
+    if (allowed.has(key)) next[key] = value
   }
   return next
 }

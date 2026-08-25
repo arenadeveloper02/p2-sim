@@ -81,6 +81,8 @@ interface SpecRendererProps {
   pendingActionIds?: ReadonlySet<string>
   /** Host keys each action writes. Required for per-action bound-region pending. */
   actionHostKeys?: Record<string, readonly string[]>
+  /** visitorEmail / constant input names the host stamps; those fields never render. */
+  actionHiddenInputs?: Record<string, readonly string[]>
   /** Current page path; Tabs use this when it matches an item, otherwise `activePath`. */
   currentPath?: string
   onNavigate: (path: string) => void
@@ -981,6 +983,7 @@ export function SpecRenderer({
   pending,
   pendingActionIds,
   actionHostKeys,
+  actionHiddenInputs,
   currentPath,
   onNavigate,
   onRunAction,
@@ -1001,6 +1004,27 @@ export function SpecRenderer({
   const controlPending = (actionId: string) =>
     UX_DEFAULTS.Button.disabledWhileLoading &&
     isActionControlPending(actionId, pendingActionIds, pending)
+
+  const omitHiddenInputs = (actionId: string, values: Record<string, unknown>) => {
+    const hidden = actionHiddenInputs?.[actionId]
+    if (!hidden || hidden.length === 0) return values
+    const drop = new Set(hidden)
+    const next: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(values)) {
+      if (!drop.has(key)) next[key] = value
+    }
+    return next
+  }
+
+  const dispatchAction = (
+    actionId: string,
+    values: Record<string, unknown>,
+    meta?: RunGenerativeAppActionMeta
+  ) => {
+    const next = omitHiddenInputs(actionId, values)
+    if (meta) return onRunAction(actionId, next, meta)
+    return onRunAction(actionId, next)
+  }
 
   const requestNavigate = (target: string) => {
     const path = splitNavTarget(target).path
@@ -1031,6 +1055,14 @@ export function SpecRenderer({
       element.type === 'Form'
         ? asString(props.actionId) || submitButtonActionId(elements, childIds)
         : formActionId
+    const fieldActionId = asString(props.actionId) || nextFormActionId
+    if (
+      isFormFieldType(element.type) &&
+      asString(props.name) &&
+      (actionHiddenInputs?.[fieldActionId] ?? []).includes(asString(props.name))
+    ) {
+      return null
+    }
     const children = childIds.map((childId) => (
       <Fragment key={childId}>
         {renderNode(childId, scope, childWithinForm, nextFormActionId)}
@@ -1493,7 +1525,7 @@ export function SpecRenderer({
             setNamedValue(parsed.name || firstSearchFieldName(elements), parsed.value)
           }
           if (navigateTo) requestNavigate(navigateTo)
-          if (actionId) void onRunAction(actionId, actionValues)
+          if (actionId) void dispatchAction(actionId, actionValues)
         }
         if (!interactive) {
           return (
@@ -1795,7 +1827,7 @@ export function SpecRenderer({
             ...collectVisibleFieldValues(fields, mergedValues, state, scope),
           }
           if (actionId) {
-            void onRunAction(actionId, values)
+            void dispatchAction(actionId, values)
           }
         }
         return (
@@ -1913,7 +1945,7 @@ export function SpecRenderer({
             ...collectVisibleFieldValues(fields, mergedValues, state, scope),
           }
           if (actionId) {
-            void onRunAction(actionId, values)
+            void dispatchAction(actionId, values)
           }
         }
         return (
@@ -2151,7 +2183,7 @@ export function SpecRenderer({
               disabled={submitBusy}
               aria-busy={submitBusy || undefined}
               className={cn(className, submitBusy && 'gap-2')}
-              onClick={() => void onRunAction(actionId, actionValues)}
+              onClick={() => void dispatchAction(actionId, actionValues)}
             >
               <ActionBusyMark show={submitBusy} />
               {label}
@@ -2194,7 +2226,7 @@ export function SpecRenderer({
             aria-busy={actionBusy || undefined}
             onClick={() => {
               if (destructive) {
-                void onRunAction(actionId, actionValues, { destructive: true })
+                void dispatchAction(actionId, actionValues, { destructive: true })
                 return
               }
               if (asBoolean(props.clearItem)) {
@@ -2204,7 +2236,7 @@ export function SpecRenderer({
                 onSelectItem?.(scope.item, scope.index)
               }
               if (navigateTo) requestNavigate(navigateTo)
-              if (actionId) void onRunAction(actionId, actionValues)
+              if (actionId) void dispatchAction(actionId, actionValues)
             }}
           >
             <ActionBusyMark show={actionBusy} />

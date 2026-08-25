@@ -418,6 +418,25 @@ export function actionHostKeysFrom(
 }
 
 /**
+ * `visitorEmail` / `constant` input names each action owns. SpecRenderer hides
+ * those fields; the runner stamps them instead of taking the form value.
+ */
+export function actionHiddenInputsFrom(
+  manifest: Pick<ArenaGenerativeAppManifest, 'actions'>,
+  bindings: ArenaGenerativeApiBinding[]
+): Record<string, string[]> {
+  const byKey = new Map(bindings.map((binding) => [binding.key, binding]))
+  const result: Record<string, string[]> = {}
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    const binding = byKey.get(action.apiKey)
+    if (!binding) continue
+    const hidden = layoutPlanForBinding(binding).hiddenInputFields
+    if (hidden.length > 0) result[actionId] = hidden
+  }
+  return result
+}
+
+/**
  * First host-state segment of a `statePath` (`articles` from `articles[].title`).
  * Repeat `item.*` paths are scoped rows, not action outputs.
  */

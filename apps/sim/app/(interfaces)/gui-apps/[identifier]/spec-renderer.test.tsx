@@ -97,6 +97,7 @@ describe('SpecRenderer', () => {
     pending?: boolean
     pendingActionIds?: ReadonlySet<string>
     actionHostKeys?: Record<string, readonly string[]>
+    actionHiddenInputs?: Record<string, readonly string[]>
     currentPath?: string
     onNavigate?: ReturnType<typeof vi.fn>
     onRunAction?: ReturnType<typeof vi.fn>
@@ -119,6 +120,7 @@ describe('SpecRenderer', () => {
           pending={options?.pending ?? false}
           pendingActionIds={options?.pendingActionIds}
           actionHostKeys={options?.actionHostKeys}
+          actionHiddenInputs={options?.actionHiddenInputs}
           currentPath={options?.currentPath}
           onNavigate={onNavigate}
           onRunAction={onRunAction}
@@ -236,6 +238,34 @@ describe('SpecRenderer', () => {
       })
       expect(onRunAction).toHaveBeenCalledWith('save', expect.objectContaining({ notify: false }))
       expect(onRunAction.mock.calls[0]?.[1]).not.toHaveProperty('email')
+    })
+
+    it('hides visitorEmail fields and omits them from the action payload', () => {
+      const { container, onRunAction } = render({
+        spec: formSpec({
+          company: {
+            type: 'TextInput',
+            props: { name: 'company', label: 'Company', defaultValue: 'Acme' },
+          },
+          userEmail: {
+            type: 'TextInput',
+            props: { name: 'userEmail', label: 'Your email', defaultValue: 'typed@acme.com' },
+          },
+        }),
+        actionHiddenInputs: { save: ['userEmail'] },
+      })
+      expect(container.querySelector('input[name="userEmail"]')).toBeNull()
+      expect(container.querySelector('input[name="company"]')).toBeTruthy()
+      act(() => {
+        container
+          .querySelector('form')
+          ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      })
+      expect(onRunAction).toHaveBeenCalledWith(
+        'save',
+        expect.objectContaining({ company: 'Acme' })
+      )
+      expect(onRunAction.mock.calls[0]?.[1]).not.toHaveProperty('userEmail')
     })
 
     it('submits Checkbox, NumberInput, and MultiSelect with coerced types', () => {

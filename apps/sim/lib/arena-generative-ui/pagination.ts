@@ -7,7 +7,7 @@ const MIN_LIMIT = 1
 const MAX_LIMIT = 100
 
 /** Host-state keys a Load more Button may send without copying the whole list. */
-const PAGINATION_ACTION_VALUE_KEYS = ['cursor', 'nextCursor', 'offset', 'limit', 'page'] as const
+export const PAGINATION_ACTION_VALUE_KEYS = ['cursor', 'nextCursor', 'offset', 'limit', 'page'] as const
 
 export function clampPaginationLimit(raw: unknown): number {
   const parsed = typeof raw === 'number' ? raw : Number(raw)

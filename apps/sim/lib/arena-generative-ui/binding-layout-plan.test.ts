@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  actionHiddenInputsFrom,
   actionHostKeysFrom,
   actionStateFromPlan,
   isActionControlPending,
@@ -248,6 +249,29 @@ describe('actionHostKeysFrom', () => {
     expect(keys.load_list).toEqual(expect.arrayContaining(['articles']))
     expect(keys.load_list).not.toContain('count')
     expect(keys.load_stats).toEqual(['count'])
+  })
+})
+
+describe('actionHiddenInputsFrom', () => {
+  it('maps visitorEmail and constant names per action', () => {
+    const hidden = actionHiddenInputsFrom(
+      { actions: { load_history: { apiKey: 'run_history' }, generate: { apiKey: 'run' } } },
+      [
+        workflowBinding({
+          key: 'run_history',
+          inputSchema: [
+            { name: 'type', type: 'string', source: 'constant', value: 'history' },
+            { name: 'email', type: 'string', source: 'visitorEmail' },
+          ],
+        }),
+        workflowBinding({
+          key: 'run',
+          inputSchema: [{ name: 'company', type: 'string' }],
+        }),
+      ]
+    )
+    expect(hidden.load_history).toEqual(['type', 'email'])
+    expect(hidden.generate).toBeUndefined()
   })
 })
 

@@ -189,6 +189,7 @@ export function GenerativeAppHost({
           pending={pendingActionIds.size > 0}
           pendingActionIds={pendingActionIds}
           actionHostKeys={config?.actionHostKeys ?? {}}
+          actionHiddenInputs={config?.actionHiddenInputs ?? {}}
           currentPath={pagePath}
           onNavigate={navigate}
           onRunAction={runtime.onRunAction}

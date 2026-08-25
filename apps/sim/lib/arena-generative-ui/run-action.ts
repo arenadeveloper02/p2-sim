@@ -14,7 +14,7 @@ import {
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
 import { isHttpUrlAllowlisted } from '@/lib/arena-generative-ui/http-allowlist'
-import { applyBindingInputSources } from '@/lib/arena-generative-ui/input-schema'
+import { applyBindingInputSources, constrainBindingInput } from '@/lib/arena-generative-ui/input-schema'
 import { outputSchemaWarning } from '@/lib/arena-generative-ui/output-schema'
 import {
   applyPaginationToInput,
@@ -833,7 +833,16 @@ export async function runGenerativeAppAction(
     )
   const mappedInput = applyPaginationToInput(
     binding.pagination,
-    withHostInputs(mapActionInput(withHostInputs(options.values), action.inputMapping))
+    withHostInputs(
+      mapActionInput(
+        constrainBindingInput(
+          withHostInputs(options.values),
+          binding,
+          action.inputMapping
+        ),
+        action.inputMapping
+      )
+    )
   )
 
   let streamedContent = ''

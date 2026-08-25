@@ -1144,6 +1144,52 @@ describe('validateArenaGenerativeManifest', () => {
       expect(result.error).toContain('targetKeyword')
     })
 
+    it('rejects a form field that is not in inputSchema', () => {
+      const spec = pageSpec({
+        extra: {
+          company: {
+            type: 'TextInput',
+            props: { name: 'company', label: 'Company', required: true, placeholder: '' },
+            children: [],
+          },
+          notes: {
+            type: 'TextInput',
+            props: { name: 'notes', label: 'Notes', required: false, placeholder: '' },
+            children: [],
+          },
+          form: {
+            type: 'Form',
+            props: { actionId: 'submit_lead' },
+            children: ['company', 'notes', 'submit'],
+          },
+        },
+      })
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec },
+            results: { title: 'Results', path: 'results', spec: resultsSpec() },
+          },
+          actions: {
+            submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          },
+        },
+        {
+          apiBindings: [
+            {
+              ...bindings[0],
+              inputSchema: [{ name: 'company', type: 'string' }],
+            },
+          ],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('notes')
+    })
+
     it('rejects a form field the host fills as a constant', () => {
       const spec = pageSpec({
         extra: {

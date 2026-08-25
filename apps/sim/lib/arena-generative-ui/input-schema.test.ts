@@ -6,6 +6,7 @@ import {
   applyBindingInputSources,
   applyInputSourceOverrides,
   briefHasEmailFormField,
+  constrainBindingInput,
   inferInputFieldSource,
   inputFieldRowNeedsValue,
   inputSourceOverridesForSave,
@@ -113,6 +114,34 @@ describe('applyBindingInputSources', () => {
         'ada@example.com'
       )
     ).toEqual({ email: 'lead@acme.com' })
+  })
+})
+
+describe('constrainBindingInput', () => {
+  it('keeps the payload when the binding has no inputSchema', () => {
+    expect(constrainBindingInput({ name: 'Ada', notes: 'x' }, {})).toEqual({
+      name: 'Ada',
+      notes: 'x',
+    })
+  })
+
+  it('drops keys the binding did not declare', () => {
+    expect(
+      constrainBindingInput(
+        { company: 'Acme', notes: 'secret', debug: true },
+        { inputSchema: [{ name: 'company', type: 'string' }] }
+      )
+    ).toEqual({ company: 'Acme' })
+  })
+
+  it('keeps pagination params and mapping sources', () => {
+    expect(
+      constrainBindingInput(
+        { company: 'Acme', notes: 'x', nextCursor: 'abc', limit: 20 },
+        { inputSchema: [{ name: 'company', type: 'string' }] },
+        { companyName: 'company' }
+      )
+    ).toEqual({ company: 'Acme', nextCursor: 'abc', limit: 20 })
   })
 })
 

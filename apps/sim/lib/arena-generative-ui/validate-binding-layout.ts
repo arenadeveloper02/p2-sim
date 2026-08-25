@@ -117,6 +117,12 @@ function formFieldsError(
   if (missing) {
     return `Page "${pagePath}" form for action "${actionId}" is missing inputSchema field "${missing}".`
   }
+  const extra = names.find(
+    (name) => !plan.formFields.includes(name) && !plan.hiddenInputFields.includes(name)
+  )
+  if (extra) {
+    return `Page "${pagePath}" form for action "${actionId}" includes field "${extra}", which is not in inputSchema.`
+  }
   return undefined
 }
 

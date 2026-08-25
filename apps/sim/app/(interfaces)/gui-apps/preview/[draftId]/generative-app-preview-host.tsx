@@ -5,7 +5,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
 import { flushSync } from 'react-dom'
-import { actionHostKeysFrom } from '@/lib/arena-generative-ui/binding-layout-plan'
+import { actionHiddenInputsFrom, actionHostKeysFrom } from '@/lib/arena-generative-ui/binding-layout-plan'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import {
   collectRenderDiagnostics,
@@ -91,6 +91,7 @@ export function GenerativeAppPreviewHost({
 
   const actionNavigate = manifest ? actionNavigateFrom(manifest) : {}
   const actionHostKeys = manifest ? actionHostKeysFrom(manifest, apiBindings ?? []) : {}
+  const actionHiddenInputs = manifest ? actionHiddenInputsFrom(manifest, apiBindings ?? []) : {}
 
   const executeAction = async (actionId: string, values: Record<string, unknown>) =>
     streamingIds.has(actionId)
@@ -217,6 +218,7 @@ export function GenerativeAppPreviewHost({
             pending={pending}
             pendingActionIds={pendingActionIds}
             actionHostKeys={actionHostKeys}
+            actionHiddenInputs={actionHiddenInputs}
             currentPath={pagePath}
             onNavigate={navigate}
             onRunAction={runtime.onRunAction}
