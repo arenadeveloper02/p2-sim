@@ -8,19 +8,19 @@ export interface GeneratedAppFile {
   content: string
 }
 
-/** Latest stable releases aligned with the Sim monorepo (Next 16 + React 19). */
-export const PINNED_NEXT_VERSION = '^15.3.3'
-export const PINNED_REACT_VERSION = '^19.0.0'
+/** Latest stable releases aligned with the Sim monorepo (Next 16 + React 19). Exact pins — no ^/~. */
+export const PINNED_NEXT_VERSION = '15.3.3'
+export const PINNED_REACT_VERSION = '19.0.0'
 
 const PINNED_DEV_DEPENDENCIES: Record<string, string> = {
-  typescript: '^5.8.3',
-  '@types/node': '^22.13.10',
-  '@types/react': '^19.0.0',
-  '@types/react-dom': '^19.0.0',
-  tailwindcss: '^3.4.17',
-  postcss: '^8.5.3',
-  autoprefixer: '^10.4.21',
-  eslint: '^9.28.0',
+  typescript: '5.8.3',
+  '@types/node': '22.13.10',
+  '@types/react': '19.0.0',
+  '@types/react-dom': '19.0.0',
+  tailwindcss: '3.4.17',
+  postcss: '8.5.3',
+  autoprefixer: '10.4.21',
+  eslint: '9.28.0',
   'eslint-config-next': PINNED_NEXT_VERSION,
 }
 
@@ -32,7 +32,7 @@ const PINNED_DEPENDENCIES: Record<string, string> = {
 
 /** Overrides LLM-picked versions that break npm install with React 19. Applied when the dep is present. */
 const REACT19_COMPAT_DEPENDENCY_OVERRIDES: Record<string, string> = {
-  'lucide-react': '^0.479.0',
+  'lucide-react': '0.479.0',
 }
 
 /**
@@ -59,8 +59,8 @@ const GENERATED_APP_LOCKFILE_PATHS = new Set([
  * Import-driven only — nothing here is forced onto apps that do not use it.
  */
 const AUTO_ADD_DEPENDENCIES: Record<string, string> = {
-  'lucide-react': '^0.479.0',
-  recharts: '^2.15.3',
+  'lucide-react': '0.479.0',
+  recharts: '2.15.3',
 }
 
 /** Runtime packages auto-added only when a generated file imports them. Version-pinned dev types travel with them. */
@@ -68,18 +68,19 @@ const AUTO_ADD_DEPENDENCIES_WITH_TYPES: Record<
   string,
   { dep: string; devTypes: string; typesPackage: string }
 > = {
-  jsonwebtoken: { dep: '^9.0.2', devTypes: '^9.0.9', typesPackage: '@types/jsonwebtoken' },
-  bcryptjs: { dep: '^2.4.3', devTypes: '^2.4.6', typesPackage: '@types/bcryptjs' },
+  jsonwebtoken: { dep: '9.0.2', devTypes: '9.0.9', typesPackage: '@types/jsonwebtoken' },
+  bcryptjs: { dep: '2.4.3', devTypes: '2.4.6', typesPackage: '@types/bcryptjs' },
 }
 
-export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these exact versions:
+export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these exact versions (no caret ^ or tilde ~ ranges):
 - "next": "${PINNED_NEXT_VERSION}"
 - "react": "${PINNED_REACT_VERSION}"
 - "react-dom": "${PINNED_REACT_VERSION}"
-- devDependencies: typescript ^5.8, @types/node ^22, @types/react ^19, @types/react-dom ^19, tailwindcss ^3.4.17, postcss ^8, autoprefixer ^10, eslint ^9, eslint-config-next ${PINNED_NEXT_VERSION}
+- devDependencies: typescript 5.8.3, @types/node 22.13.10, @types/react 19.0.0, @types/react-dom 19.0.0, tailwindcss 3.4.17, postcss 8.5.3, autoprefixer 10.4.21, eslint 9.28.0, eslint-config-next ${PINNED_NEXT_VERSION}
+- NEVER write "^15.3.3", "~19.0.0", or any other range — every dependency version must be an exact semver (e.g. "15.3.3")
 - If ANY file imports a third-party package (e.g. lucide-react, recharts, date-fns, zod, bcryptjs, jsonwebtoken), package.json dependencies MUST include that exact package — a missing dependency causes TS2307 "Cannot find module" at typecheck
 - Add matching @types/* devDependencies for packages that ship no bundled types (e.g. @types/jsonwebtoken, @types/bcryptjs)
-- When using lucide-react, pin "lucide-react": "^0.479.0" or newer (React 19 compatible) — never ^0.395.x
+- When using lucide-react, pin "lucide-react": "0.479.0" (React 19 compatible) — never 0.395.x
 - NEVER add caniuse-lite, browserslist, or update-browserslist-db as direct dependencies/devDependencies/overrides — they are transitive via autoprefixer; pinning them causes npm ETARGET install failures
 - NEVER emit package-lock.json, yarn.lock, pnpm-lock.yaml, or bun.lock
 Use Tailwind CSS v3 only (tailwind.config.ts + postcss.config.mjs with tailwindcss and autoprefixer). Do NOT use a Tailwind v4-only setup.
@@ -478,7 +479,7 @@ export const GENERATED_APP_DATABASE_EDIT_GUIDANCE = `Database edits (existing Ne
 
 export const GENERATED_APP_DATABASE_FILE_PATHS = ['prisma/schema.prisma', 'lib/prisma.ts'] as const
 
-const PINNED_PRISMA_VERSION = '^6.9.0'
+const PINNED_PRISMA_VERSION = '6.9.0'
 
 export const GENERATED_APP_REPO_SUMMARY_PATH = 'REPO_SUMMARY.md' as const
 
@@ -594,6 +595,7 @@ function shouldSanitizeFontReferences(path: string): boolean {
 
 /**
  * Pins package.json to current Next.js/React and compatible tooling.
+ * Versions are exact semver — caret/tilde ranges are stripped so npm cannot float.
  */
 export function patchPackageJsonContent(
   content: string,
@@ -655,9 +657,39 @@ export function patchPackageJsonContent(
       }
     }
 
+    pinExactDependencyVersions(pkg)
+
     return `${JSON.stringify(pkg, null, 2)}\n`
   } catch {
     return content
+  }
+}
+
+/**
+ * Strips npm range prefixes so generated apps install the intended version.
+ * Leaves tags, URLs, and workspace protocol specs unchanged.
+ */
+function toExactDependencyVersion(version: string): string {
+  const trimmed = version.trim()
+  if (!trimmed || /^(workspace|file|link|git|github|http|https|npm):/i.test(trimmed)) {
+    return trimmed
+  }
+  return trimmed.replace(/^[~^]/, '')
+}
+
+function pinExactDependencyVersions(pkg: {
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+}): void {
+  if (pkg.dependencies) {
+    for (const [name, version] of Object.entries(pkg.dependencies)) {
+      pkg.dependencies[name] = toExactDependencyVersion(version)
+    }
+  }
+  if (pkg.devDependencies) {
+    for (const [name, version] of Object.entries(pkg.devDependencies)) {
+      pkg.devDependencies[name] = toExactDependencyVersion(version)
+    }
   }
 }
 
@@ -1839,9 +1871,55 @@ export function ensureNextEnvFile(files: GeneratedAppFile[]): GeneratedAppFile[]
   return [...files, { path: 'next-env.d.ts', content: DEFAULT_NEXT_ENV_DTS }]
 }
 
+const DEFAULT_TSCONFIG_JSON = `{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+`
+
+/**
+ * Ensures tsconfig.json exists. Without it, `tsc` prints its CLI help and
+ * validation fails with a 400-line dump instead of real type errors.
+ */
+export function ensureTsconfigFile(
+  files: GeneratedAppFile[],
+  useSrcDir = false
+): GeneratedAppFile[] {
+  const hasTsconfig = files.some((file) => {
+    const path = normalizePath(file.path)
+    return path === 'tsconfig.json' || path.endsWith('/tsconfig.json')
+  })
+  if (hasTsconfig) {
+    return files
+  }
+
+  logger.warn('Added fallback tsconfig.json for generated app')
+  return [
+    ...files,
+    { path: 'tsconfig.json', content: patchTsconfigContent(DEFAULT_TSCONFIG_JSON, useSrcDir) },
+  ]
+}
+
 /**
  * Normalizes generated files for reliable local and Vercel builds.
- * Only config pinning, scaffolding (README, REPO_SUMMARY, next-env.d.ts), and package.json deps run here.
+ * Only config pinning, scaffolding (README, REPO_SUMMARY, tsconfig, next-env.d.ts), and package.json deps run here.
  * Import/export correctness, types, auth, Client props, and JSX must come from the LLM system prompt.
  */
 export function normalizeGeneratedAppFiles(
@@ -1883,7 +1961,8 @@ export function normalizeGeneratedAppFiles(
 
   const withDatabase = ensureDatabaseScaffoldingFiles(patched, options)
   const withUpdatedAtNote = ensurePrismaUpdatedAtNote(withDatabase)
-  const withNextEnv = ensureNextEnvFile(withUpdatedAtNote)
+  const withTsconfig = ensureTsconfigFile(withUpdatedAtNote, useSrcDir)
+  const withNextEnv = ensureNextEnvFile(withTsconfig)
   const withReadme = ensureReadmeFile(withNextEnv, options)
   const withRepoSummary = ensureRepoSummaryFile(withReadme, options)
   const withArena = options.arenaMode ? ensureArenaScaffoldFiles(withRepoSummary) : withRepoSummary
