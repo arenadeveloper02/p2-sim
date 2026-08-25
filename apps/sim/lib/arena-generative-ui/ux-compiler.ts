@@ -1,10 +1,15 @@
 import type { Spec } from '@json-render/core'
+import { parseShowWhen } from '@/lib/arena-generative-ui/form-fields'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeAppManifest,
   ArenaGenerativePageManifest,
 } from '@/lib/arena-generative-ui/types'
-import { splitNavTarget } from '@/lib/arena-generative-ui/types'
+import {
+  ARENA_GENERATIVE_SELECTED_ID_KEY,
+  specHasSamePageSelectItem,
+  splitNavTarget,
+} from '@/lib/arena-generative-ui/types'
 
 export type ArenaGenerativeAsyncKind = 'query' | 'mutation' | 'longRunning'
 
@@ -36,12 +41,130 @@ const EXPLICIT_LOADING_TYPES = new Set(['Skeleton', 'Spinner', 'ProgressBar', 'P
 const RELOCATABLE_LOADING_TYPES = new Set(['ProgressBar', 'ProgressSteps', 'Spinner'])
 const BOUND_LOADING_TYPES = new Set(['Table', 'Repeat', 'Stat', 'KeyValue', 'DataText'])
 const ACTION_ID_PROP_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip'])
+const LIST_WRAPPER_TYPES = new Set(['Grid', 'Stack', 'Section'])
 
 /** Element key for compiler-injected pending status. Must not collide with model keys. */
 export const UX_COMPILER_STATUS_KEY = 'ux-compiler-status'
 
+/** Element key for compiler-injected same-page Open Back. Must not collide with model keys. */
+export const UX_COMPILER_SELECT_BACK_KEY = 'ux-compiler-select-back'
+
+const SHOW_WHEN_LIST_HIDDEN = `!${ARENA_GENERATIVE_SELECTED_ID_KEY}`
+const SHOW_WHEN_DETAIL_VISIBLE = ARENA_GENERATIVE_SELECTED_ID_KEY
+
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function showWhenHas(
+  props: Record<string, unknown> | undefined,
+  op: 'truthy' | 'falsy',
+  name: string
+): boolean {
+  return parseShowWhen(props?.showWhen).some((clause) => clause.name === name && clause.op === op)
+}
+
+function showWhenBlank(props: Record<string, unknown> | undefined): boolean {
+  return parseShowWhen(props?.showWhen).length === 0
+}
+
+function setShowWhen(element: SpecElement, showWhen: string): SpecElement {
+  return {
+    ...element,
+    props: { ...element.props, showWhen },
+  }
+}
+
+function parentByChild(elements: Record<string, SpecElement>): Map<string, string> {
+  const parents = new Map<string, string>()
+  for (const [id, element] of Object.entries(elements)) {
+    for (const childId of element.children ?? []) {
+      parents.set(childId, id)
+    }
+  }
+  return parents
+}
+
+function ancestorIds(id: string, parents: Map<string, string>): string[] {
+  const ids: string[] = []
+  let current = parents.get(id)
+  while (current) {
+    ids.push(current)
+    current = parents.get(current)
+  }
+  return ids
+}
+
+function isSamePageSelectButton(element: SpecElement, pagePath: string): boolean {
+  if (element.type !== 'Button' || element.props?.selectItem !== true) return false
+  const navigateTo = asString(element.props?.navigateTo)
+  if (!navigateTo) return true
+  return splitNavTarget(navigateTo).path === pagePath
+}
+
+function repeatIdsWithSamePageSelect(
+  elements: Record<string, SpecElement>,
+  parents: Map<string, string>,
+  pagePath: string
+): Set<string> {
+  const ids = new Set<string>()
+  for (const [id, element] of Object.entries(elements)) {
+    if (!isSamePageSelectButton(element, pagePath)) continue
+    for (const ancestorId of [id, ...ancestorIds(id, parents)]) {
+      if (elements[ancestorId]?.type === 'Repeat') ids.add(ancestorId)
+    }
+  }
+  return ids
+}
+
+function subtreeHasRepeat(
+  id: string,
+  elements: Record<string, SpecElement>,
+  repeatIds: Set<string>
+): boolean {
+  if (repeatIds.has(id)) return true
+  for (const childId of elements[id]?.children ?? []) {
+    if (subtreeHasRepeat(childId, elements, repeatIds)) return true
+  }
+  return false
+}
+
+function isListOnlyContainer(
+  id: string,
+  elements: Record<string, SpecElement>,
+  repeatIds: Set<string>
+): boolean {
+  if (repeatIds.has(id)) return true
+  const element = elements[id]
+  if (!element || !LIST_WRAPPER_TYPES.has(element.type ?? '')) return false
+  const children = element.children ?? []
+  if (children.length === 0) return false
+  return children.every((childId) => {
+    const child = elements[childId]
+    if (!child) return false
+    if (EXPLICIT_LOADING_TYPES.has(child.type ?? '') || child.type === 'EmptyState') return true
+    return isListOnlyContainer(childId, elements, repeatIds)
+  })
+}
+
+function isDetailDataText(element: SpecElement): boolean {
+  if (element.type !== 'DataText') return false
+  const statePath = asString(element.props?.statePath)
+  return statePath === 'content' || statePath.startsWith('selected.')
+}
+
+function specHasClearItemBack(elements: Record<string, SpecElement>, pagePath: string): boolean {
+  for (const element of Object.values(elements)) {
+    if (element.type === 'Button' && element.props?.clearItem === true) return true
+    if (element.type === 'Button' && element.props?.selectItem === true) continue
+    if (element.type === 'Button' && asString(element.props?.navigateTo)) {
+      if (splitNavTarget(asString(element.props?.navigateTo)).path === pagePath) return true
+    }
+    if (element.type === 'NavLink' && asString(element.props?.to)) {
+      if (splitNavTarget(asString(element.props?.to)).path === pagePath) return true
+    }
+  }
+  return false
 }
 
 function specElements(spec: Spec): Record<string, SpecElement> {
@@ -352,6 +475,97 @@ function planActions(
 }
 
 /**
+ * Fills missing same-page Open chrome: hide the list while a row is selected,
+ * show content DataText only then, and add a ghost clearItem Back if none exists.
+ * No-op when the spec has no same-page selectItem, or when those props are already set.
+ * Never invents a DataText.
+ */
+export function injectSamePageSelectChrome(spec: Spec, pagePath: string): Spec {
+  const cloned = structuredClone(spec)
+  if (!specHasSamePageSelectItem(cloned, pagePath)) return cloned
+  const elements = specElements(cloned)
+  const parents = parentByChild(elements)
+  const repeatIds = repeatIdsWithSamePageSelect(elements, parents, pagePath)
+  if (repeatIds.size === 0) return cloned
+
+  for (const repeatId of repeatIds) {
+    const chain = [repeatId, ...ancestorIds(repeatId, parents)]
+    if (
+      chain.some((id) =>
+        showWhenHas(elements[id]?.props, 'falsy', ARENA_GENERATIVE_SELECTED_ID_KEY)
+      )
+    ) {
+      continue
+    }
+    const wrapperId = chain.find(
+      (id) =>
+        id !== repeatId &&
+        LIST_WRAPPER_TYPES.has(elements[id]?.type ?? '') &&
+        showWhenBlank(elements[id]?.props) &&
+        isListOnlyContainer(id, elements, repeatIds)
+    )
+    const targetId = wrapperId ?? (showWhenBlank(elements[repeatId]?.props) ? repeatId : undefined)
+    if (!targetId || !elements[targetId]) continue
+    elements[targetId] = setShowWhen(elements[targetId], SHOW_WHEN_LIST_HIDDEN)
+  }
+
+  const detailIds: string[] = []
+  for (const [id, element] of Object.entries(elements)) {
+    if (!isDetailDataText(element)) continue
+    if (ancestorIds(id, parents).some((ancestorId) => elements[ancestorId]?.type === 'Repeat')) {
+      continue
+    }
+    const chain = [id, ...ancestorIds(id, parents)]
+    if (
+      chain.some((chainId) =>
+        showWhenHas(elements[chainId]?.props, 'truthy', ARENA_GENERATIVE_SELECTED_ID_KEY)
+      )
+    ) {
+      continue
+    }
+    const sectionId = chain.find(
+      (chainId) =>
+        elements[chainId]?.type === 'Section' &&
+        showWhenBlank(elements[chainId]?.props) &&
+        !subtreeHasRepeat(chainId, elements, repeatIds)
+    )
+    const targetId = sectionId ?? (showWhenBlank(element.props) ? id : undefined)
+    if (!targetId || !elements[targetId]) continue
+    elements[targetId] = setShowWhen(elements[targetId], SHOW_WHEN_DETAIL_VISIBLE)
+    detailIds.push(targetId)
+  }
+
+  if (!specHasClearItemBack(elements, pagePath) && !elements[UX_COMPILER_SELECT_BACK_KEY]) {
+    const insertParentId =
+      detailIds
+        .map((id) => (elements[id]?.type === 'Section' ? id : parents.get(id)))
+        .find((id): id is string => Boolean(id && elements[id])) ??
+      findInsertParentId(cloned)
+    if (!insertParentId) return { ...cloned, elements }
+    const parent = elements[insertParentId]
+    if (!parent) return { ...cloned, elements }
+    const backKey = uniqueElementKey(elements, UX_COMPILER_SELECT_BACK_KEY)
+    elements[backKey] = {
+      type: 'Button',
+      props: {
+        label: 'Back',
+        clearItem: true,
+        variant: 'ghost',
+        showWhen: SHOW_WHEN_DETAIL_VISIBLE,
+      },
+      children: [],
+    }
+    const beforeId = detailIds.find((id) => (parent.children ?? []).includes(id))
+    const children = [...(parent.children ?? [])]
+    const insertAt = beforeId ? Math.max(children.indexOf(beforeId), 0) : 0
+    children.splice(insertAt, 0, backKey)
+    elements[insertParentId] = { ...parent, children }
+  }
+
+  return { ...cloned, elements }
+}
+
+/**
  * Compiles a semantic manifest into in-memory page specs plus a UX plan.
  * Never mutates the input. Well-wired pages stay deep-equal to a clone.
  */
@@ -364,7 +578,8 @@ export function compileGenerativeUx(
   const fallbackLoading: Record<string, ArenaGenerativeFallbackLoading> = {}
   const pages: Record<string, ArenaGenerativePageManifest> = {}
   for (const [path, page] of Object.entries(relocated)) {
-    const compiled = compileGenerativePageSpec(page.spec, {
+    const withSelectChrome = injectSamePageSelectChrome(page.spec, path)
+    const compiled = compileGenerativePageSpec(withSelectChrome, {
       needsPendingChrome: needed.has(path),
     })
     pages[path] = {

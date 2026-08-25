@@ -8,12 +8,15 @@ import {
   twoPageHomeSpec,
   twoPageManifest,
 } from '@/lib/arena-generative-ui/two-page-app.fixture'
+import { goldListDetailManifest } from '@/lib/arena-generative-ui/gold-example-archetypes'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 import {
   compiledPageFromManifest,
   compileGenerativeUx,
   inferAsyncKind,
+  injectSamePageSelectChrome,
   specHasLoadingSurface,
+  UX_COMPILER_SELECT_BACK_KEY,
   UX_COMPILER_STATUS_KEY,
 } from '@/lib/arena-generative-ui/ux-compiler'
 
@@ -254,6 +257,189 @@ describe('compileGenerativeUx', () => {
   })
 })
 
+function brokenSamePageHistorySpec(): Spec {
+  return {
+    root: 'page',
+    elements: {
+      page: { type: 'Page', props: { title: 'History' }, children: ['section'] },
+      section: {
+        type: 'Section',
+        props: {},
+        children: ['grid', 'body'],
+      },
+      grid: { type: 'Grid', props: { columns: '2' }, children: ['repeat'] },
+      repeat: { type: 'Repeat', props: { statePath: 'history' }, children: ['open'] },
+      open: {
+        type: 'Button',
+        props: { label: 'Open', selectItem: true },
+        children: [],
+      },
+      body: {
+        type: 'DataText',
+        props: { statePath: 'content', fallback: '' },
+        children: [],
+      },
+    },
+  }
+}
+
+function wiredSamePageHistorySpec(): Spec {
+  return {
+    root: 'page',
+    elements: {
+      page: { type: 'Page', props: { title: 'History' }, children: ['section'] },
+      section: {
+        type: 'Section',
+        props: {},
+        children: ['grid', 'detail'],
+      },
+      grid: {
+        type: 'Grid',
+        props: { columns: '2', showWhen: '!selectedId' },
+        children: ['repeat'],
+      },
+      repeat: { type: 'Repeat', props: { statePath: 'history' }, children: ['open'] },
+      open: {
+        type: 'Button',
+        props: { label: 'Open', selectItem: true },
+        children: [],
+      },
+      detail: {
+        type: 'Section',
+        props: { showWhen: 'selectedId' },
+        children: ['back', 'body'],
+      },
+      back: {
+        type: 'Button',
+        props: { label: 'Back', clearItem: true, variant: 'ghost', showWhen: 'selectedId' },
+        children: [],
+      },
+      body: {
+        type: 'DataText',
+        props: { statePath: 'content', fallback: '', showWhen: 'selectedId' },
+        children: [],
+      },
+    },
+  }
+}
+
+describe('injectSamePageSelectChrome', () => {
+  it('does not mutate the input spec', () => {
+    const spec = brokenSamePageHistorySpec()
+    const before = JSON.stringify(spec)
+    injectSamePageSelectChrome(spec, 'history')
+    expect(JSON.stringify(spec)).toBe(before)
+  })
+
+  it('leaves a well-wired same-page History spec unchanged', () => {
+    const spec = wiredSamePageHistorySpec()
+    expect(injectSamePageSelectChrome(spec, 'history')).toEqual(structuredClone(spec))
+  })
+
+  it('hides the list Grid, reveals content DataText, and injects a clearItem Back', () => {
+    const compiled = injectSamePageSelectChrome(brokenSamePageHistorySpec(), 'history')
+    const elements = compiled.elements as Record<string, { props?: Record<string, unknown> }>
+    expect(elements.grid?.props?.showWhen).toBe('!selectedId')
+    expect(elements.repeat?.props?.showWhen).toBeUndefined()
+    expect(elements.body?.props?.showWhen).toBe('selectedId')
+    expect(elements[UX_COMPILER_SELECT_BACK_KEY]).toEqual({
+      type: 'Button',
+      props: {
+        label: 'Back',
+        clearItem: true,
+        variant: 'ghost',
+        showWhen: 'selectedId',
+      },
+      children: [],
+    })
+    const section = compiled.elements?.section as { children?: string[] }
+    expect(section.children).toEqual(['grid', UX_COMPILER_SELECT_BACK_KEY, 'body'])
+  })
+
+  it('hides a list-only Section and shows a sibling detail Section', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['list', 'detail'] },
+        list: { type: 'Section', props: {}, children: ['repeat'] },
+        repeat: { type: 'Repeat', props: { statePath: 'history' }, children: ['open'] },
+        open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+        detail: { type: 'Section', props: {}, children: ['body'] },
+        body: { type: 'DataText', props: { statePath: 'content' }, children: [] },
+      },
+    }
+    const compiled = injectSamePageSelectChrome(spec, 'history')
+    const elements = compiled.elements as Record<string, { props?: Record<string, unknown> }>
+    expect(elements.list?.props?.showWhen).toBe('!selectedId')
+    expect(elements.detail?.props?.showWhen).toBe('selectedId')
+    expect(elements.body?.props?.showWhen).toBeUndefined()
+    const detail = compiled.elements?.detail as { children?: string[] }
+    expect(detail.children?.[0]).toBe(UX_COMPILER_SELECT_BACK_KEY)
+  })
+
+  it('does not invent a DataText when the spec omitted one', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['repeat'] },
+        repeat: { type: 'Repeat', props: { statePath: 'history' }, children: ['open'] },
+        open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+      },
+    }
+    const compiled = injectSamePageSelectChrome(spec, 'history')
+    const types = Object.values(compiled.elements ?? {}).map(
+      (element) => (element as { type?: string }).type
+    )
+    expect(types).not.toContain('DataText')
+    expect(compiled.elements?.[UX_COMPILER_SELECT_BACK_KEY]).toBeTruthy()
+    expect(
+      (compiled.elements?.repeat as { props?: Record<string, unknown> }).props?.showWhen
+    ).toBe('!selectedId')
+  })
+
+  it('does not inject Back when a clearItem button already exists', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['repeat', 'body', 'back'] },
+        repeat: { type: 'Repeat', props: { statePath: 'history' }, children: ['open'] },
+        open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+        body: { type: 'DataText', props: { statePath: 'content' }, children: [] },
+        back: {
+          type: 'Button',
+          props: { label: 'Back', clearItem: true, showWhen: 'selectedId' },
+          children: [],
+        },
+      },
+    }
+    const compiled = injectSamePageSelectChrome(spec, 'history')
+    expect(compiled.elements?.[UX_COMPILER_SELECT_BACK_KEY]).toBeUndefined()
+  })
+
+  it('does not rewrite selectItem that navigates to another page', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['repeat', 'body'] },
+        repeat: { type: 'Repeat', props: { statePath: 'history' }, children: ['open'] },
+        open: {
+          type: 'Button',
+          props: { label: 'Open', selectItem: true, navigateTo: 'results' },
+          children: [],
+        },
+        body: { type: 'DataText', props: { statePath: 'content' }, children: [] },
+      },
+    }
+    expect(injectSamePageSelectChrome(spec, 'history')).toEqual(structuredClone(spec))
+  })
+
+  it('is idempotent', () => {
+    const once = injectSamePageSelectChrome(brokenSamePageHistorySpec(), 'history')
+    const twice = injectSamePageSelectChrome(once, 'history')
+    expect(twice).toEqual(once)
+  })
+})
+
 describe('compiledPageFromManifest', () => {
   it('returns undefined for an unknown path', () => {
     expect(compiledPageFromManifest(twoPageManifest, twoPageApiBindings, 'missing')).toBeUndefined()
@@ -315,5 +501,27 @@ describe('compiledPageFromManifest', () => {
     )
     expect(homeTypes).not.toContain('ProgressSteps')
     expect(resultsTypes).toContain('ProgressSteps')
+  })
+
+  it('leaves the list-detail gold pages unchanged', () => {
+    const home = compiledPageFromManifest(goldListDetailManifest, [], 'home')
+    const detail = compiledPageFromManifest(goldListDetailManifest, [], 'detail')
+    expect(home?.spec).toEqual(structuredClone(goldListDetailManifest.pages.home.spec))
+    expect(detail?.spec).toEqual(structuredClone(goldListDetailManifest.pages.detail.spec))
+  })
+
+  it('compiles same-page Open chrome onto a broken History page', () => {
+    const manifest: ArenaGenerativeAppManifest = {
+      entryPath: 'history',
+      pages: {
+        history: { title: 'History', path: 'history', spec: brokenSamePageHistorySpec() },
+      },
+      actions: {},
+    }
+    const page = compiledPageFromManifest(manifest, [], 'history')
+    const elements = page?.spec.elements as Record<string, { props?: Record<string, unknown> }>
+    expect(elements.grid?.props?.showWhen).toBe('!selectedId')
+    expect(elements.body?.props?.showWhen).toBe('selectedId')
+    expect(elements[UX_COMPILER_SELECT_BACK_KEY]).toBeTruthy()
   })
 })

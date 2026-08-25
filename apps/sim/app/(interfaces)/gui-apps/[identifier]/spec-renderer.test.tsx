@@ -15,6 +15,7 @@ vi.mock('streamdown/styles.css', () => ({}))
 vi.mock('@/app/(interfaces)/gui-apps/generative-app-theme.css', () => ({}))
 
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
+import { injectSamePageSelectChrome } from '@/lib/arena-generative-ui/ux-compiler'
 
 const homeSpec: Spec = {
   root: 'page',
@@ -726,6 +727,45 @@ describe('SpecRenderer', () => {
       })
       expect(detail.container.textContent).not.toContain('Open')
       expect(detail.container.textContent).toContain('Hidden report')
+    })
+
+    it('compiles a missed same-page Open so markdown is not under the list', () => {
+      const authored: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat', 'body'] },
+          repeat: { type: 'Repeat', props: { statePath: 'articles' }, children: ['open'] },
+          open: {
+            type: 'Button',
+            props: { label: 'Open', selectItem: true },
+            children: [],
+          },
+          body: {
+            type: 'DataText',
+            props: { statePath: 'content', fallback: '' },
+            children: [],
+          },
+        },
+      }
+      const spec = injectSamePageSelectChrome(authored, 'history')
+      const list = render({
+        spec,
+        state: { articles, content: '# Hidden report' },
+        currentPath: 'history',
+      })
+      expect(list.container.textContent).toContain('Open')
+      expect(list.container.textContent).not.toContain('Hidden report')
+      expect(list.container.textContent).not.toContain('Back')
+      unmount?.()
+
+      const detail = render({
+        spec,
+        state: { articles, selectedId: 'a1', content: '# Hidden report' },
+        currentPath: 'history',
+      })
+      expect(detail.container.textContent).not.toContain('Open')
+      expect(detail.container.textContent).toContain('Hidden report')
+      expect(detail.container.textContent).toContain('Back')
     })
 
     it('calls onClearItem instead of onNavigate when Back targets the current path', () => {

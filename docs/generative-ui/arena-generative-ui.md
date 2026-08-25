@@ -28,7 +28,7 @@ Published apps are gated for authenticated Arena users by default, like deployed
 
 Generate itself is two calls: a cheap structured brief (sitemap, archetype, per-page data) then the full manifest. You still type prose in User Input; the structured brief is not a field you fill in. Edit also makes two calls, but the first is a **scope** call rather than a plan — see **Requested Changes** below.
 
-Preview and the published URL both compile the same way: `compileGenerativeUx` relocates navigate-first loaders and injects pending chrome. Preview compiles the full draft on the client. Published apps compile on the page API so a single-page fetch still gets the relocated spec. User Input describes the app, not that chrome.
+Preview and the published URL both compile the same way: `compileGenerativeUx` relocates navigate-first loaders, injects pending chrome, and fills missing same-page Open chrome (`showWhen` on the list and detail, a `clearItem` Back). Preview compiles the full draft on the client. Published apps compile on the page API so a single-page fetch still gets the relocated spec. User Input describes the app, not that chrome.
 
 Edit later by switching the block to **Edit Existing Draft**, describing only what should change in **Requested Changes**, running again (new revision), then launching from Deploy again.
 
@@ -388,7 +388,7 @@ That sends both `email` and `arenaEmailId`. When no emailId resolves, the key is
 
 On success the host may navigate (`onSuccess.navigate`) and merge `setState` so `DataText` can show results (for example `score`). Arrays listed in `appendKeys` concatenate into existing state instead of replacing, which is how Load more grows a list.
 
-A Repeat `Button` with `selectItem: true` is not a CTA: it copies the loaded row into host state (`selected`, `selectedId`, `content`, scalar `inputs`) without POSTing a binding. On History, Open with no `navigateTo` hides the list while `selectedId` is set; a `clearItem` Back (or a NavLink/`navigateTo` to the current path) restores it. `navigateTo` a results page is the other pattern, when the brief wants a separate detail route.
+A Repeat `Button` with `selectItem: true` is not a CTA: it copies the loaded row into host state (`selected`, `selectedId`, `content`, scalar `inputs`) without POSTing a binding. On History, Open with no `navigateTo` hides the list while `selectedId` is set; a `clearItem` Back (or a NavLink/`navigateTo` to the current path) restores it. If the draft omitted those `showWhen` / `clearItem` props, the compiler adds them so markdown does not sit under the list. `navigateTo` a results page is the other pattern, when the brief wants a separate detail route. The compiler does not invent a missing `DataText`.
 
 When an action fails, the host writes the message to state under `error` and shows a dismissible banner above the page, so a failure is visible even when the generated spec never bound `error` anywhere. HTTP failures carry the upstream detail rather than a bare status: a 422 whose body is `{"error":"company is required"}` surfaces as `HTTP 422: company is required`. The banner clears on the next action and on navigation. An `outputSchema` mismatch uses a separate amber warning, not this error banner.
 

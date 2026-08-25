@@ -156,7 +156,7 @@ Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add
 
 **History is empty but the API returned data:** Redeploy `run_history` after changing its Response block, then edit with a page-scoped prompt (`On the "history" page, bind Repeat to items`). Generate/edit re-reads the deployed output schema. Saying “do not show raw JSON” without a list `statePath` that matches that schema replaces the working `DataText` dump with an empty Repeat.
 
-**History Open appends markdown below the list:** the draft revealed `DataText` with `showWhen` but left Repeat visible, and Back `navigateTo "history"` did nothing. **Edit Existing Draft**, paste **Copy page edit prompt** from History, then only this delta:
+**History Open appends markdown below the list:** Preview/Launch compile missing `showWhen` and a `clearItem` Back. If markdown still sits under the cards, the draft bound `item.output` on the list or never authored a `DataText` for `content`. **Edit Existing Draft**, paste **Copy page edit prompt** from History, then only this delta:
 
 ```
 On the "history" page, Repeat cards must show only keyword, client, and date.
