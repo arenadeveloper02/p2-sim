@@ -28,7 +28,7 @@ Published apps are gated for authenticated Arena users by default, like deployed
 
 Generate itself is two calls: a cheap structured brief (sitemap, archetype, per-page data) then the full manifest. You still type prose in User Input; the structured brief is not a field you fill in. Edit also makes two calls, but the first is a **scope** call rather than a plan — see **Requested Changes** below.
 
-The published app then compiles UX at load: semantic manifest → host defaults (loading, error, retry, confirm, toast) → json-render → runtime. User Input describes the app, not that chrome.
+Preview and the published URL both compile the same way: `compileGenerativeUx` relocates navigate-first loaders and injects pending chrome. Preview compiles the full draft on the client. Published apps compile on the page API so a single-page fetch still gets the relocated spec. User Input describes the app, not that chrome.
 
 Edit later by switching the block to **Edit Existing Draft**, describing only what should change in **Requested Changes**, running again (new revision), then launching from Deploy again.
 
@@ -227,10 +227,11 @@ Field names are ready-to-use `statePath` values, because of how a successful CTA
 | Response | State | `statePath` |
 | --- | --- | --- |
 | `{ "articles": [...], "count": 3 }` | top-level keys merged | `articles`, `count` |
+| `{ "run_data": { "history": [...] } }` | last-segment host key; wrapper omitted | `history` (also `items`) |
 | `[ { ... } ]` or `"text"` | wrapped | `result` |
-| anything | text rendering of the whole body | `content` |
+| anything | markdown/prose body (a string field, not a JSON dump of the object) | `content` |
 
-So `statePath` is the response key itself — `articles`, never `data.articles` or `output.articles`. An `articles[].title` entry means `articles` is an array of objects with a `title`, which the generator turns into `Table statePath="articles" columns="title, url"`.
+So `statePath` is the host key itself — `articles` or lifted `history`, never `data.articles`, `run_data.history`, or `output.articles`. An `articles[].title` entry means `articles` is an array of objects with a `title`, which the generator turns into `Table statePath="articles" columns="title, url"`. A markdown string field binds as that name or `content` — never `field.content` unless the value is an object with a `content` child.
 
 When a binding has `stream: true`, prose still binds to `DataText statePath="content"`. If **Output format** also describes structured fields (for example `companies`), new drafts bind those as `Table` / `Stat` / `KeyValue` instead of dumping the whole body. Existing drafts keep their current layout until you **Edit Existing Draft** or generate again. Host state strips execution telemetry (`tokens`, `finishReason`, `model`) so it never appears as the report. JSON-mode workflow answers may still flush as one chunk; the UI formats that chunk rather than printing the executor envelope.
 
@@ -479,7 +480,7 @@ Put `Repeat` *inside* a `Grid` (or `Stack`). Its children are the per-item templ
 
 - Bound fields: `statePath` `"item.title"` (no braces). Nested Repeats can bind `statePath` `"item.comments"` to an array on the outer row.
 - Labels, hrefs, and navigation: `"{item.id}"` — `NavLink.to` `"order?id={item.id}"` opens that row's detail page so its `onLoad` can fetch the record.
-- A `Button.selectItem` inside Repeat copies the row into host state (`selected`, `selectedId`, `content` from `output` / `content`, scalar fields under `inputs`) without calling an API. Stay on the list page: omit `navigateTo`, hide Repeat with `showWhen: "!selectedId"`, show markdown with `showWhen: "selectedId"`, Back is `clearItem` (no `actionId`). Or `navigateTo` a results page that has **no** `onLoad`. Do not append `DataText` below an always-visible Repeat. Do not set `actionId` on the Open button.
+- A `Button.selectItem` inside Repeat copies the row into host state (`selected`, `selectedId`, `content` from `output` / `content`) without calling an API. It does **not** restamp `inputs`. Stay on the list page: omit `navigateTo`, hide Repeat with `showWhen: "!selectedId"`, show markdown with `showWhen: "selectedId"`, Back is `clearItem` (no `actionId`). Or `navigateTo` a results page that has **no** `onLoad`. Results after Generate still echo the **form `name`s** (`{targetKeyword}`), not History JSON keys (`{keyword}`). Do not append `DataText` below an always-visible Repeat. Do not set `actionId` on the Open button.
 - A `Button.clearItem` drops `selected`, `selectedId`, and copied `content` so the list returns. It must not set `selectItem` or `actionId`. A `navigateTo` / `NavLink.to` equal to the current path also clears while a row is selected.
 - A `Button.actionId` inside Repeat sends the item's fields as the action input, so `inputMapping` can pass `id` the same way page query params do.
 - Never bind a long prose field (`output`, `content`, `body`) inside Repeat — not `item.output`, not `Card.description`, not a Table column. Select the row, then show the markdown once.
@@ -549,7 +550,7 @@ The same pass repairs shape as well as names: a nested `children` tree of object
 
 Every region that fills from a CTA response gets a placeholder while the action is in flight:
 
-- **Automatic.** `Table`, `Repeat`, `Stat`, `KeyValue` and `DataText` bound to a `statePath` render a shape-matched skeleton whenever an action is pending and the value is still empty. Nothing is needed in the manifest, so apps generated before this existed gain the behaviour too. A `DataText` `fallback` is empty-state copy, not loading copy — it no longer suppresses the skeleton. Once the action has finished, an empty array or object on `Table` / `Repeat` / `KeyValue` shows the empty message instead of disappearing.
+- **Automatic.** `Table`, `Repeat`, `Stat`, `KeyValue` and `DataText` bound to a `statePath` render a shape-matched skeleton while **the action that writes that path** is pending and the value is still empty. A list `onLoad` does not skeleton unrelated Stats on the same page. Nothing is needed in the manifest, so apps generated before this existed gain the behaviour too. A `DataText` `fallback` is empty-state copy, not loading copy — it no longer suppresses the skeleton. Once the action has finished, an empty array or object on `Table` / `Repeat` / `KeyValue` shows the empty message instead of disappearing.
 - **Explicit.** `Skeleton` covers regions built from static children. It renders only while an action is pending, so it disappears on its own. A `Stat` with a literal `value`, or a `Table` with literal `rows`, is not bound to anything and needs one.
 - The host also compiles busy chrome on pending CTAs, an error banner with Retry, a same-page save toast, and a confirm step for destructive buttons. Do not emit `ProgressSteps` or a filling `ProgressBar` as loading theater. `ProgressBar` is only for a real 0–100 value from the API.
 

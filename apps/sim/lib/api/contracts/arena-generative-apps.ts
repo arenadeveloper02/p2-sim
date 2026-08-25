@@ -452,6 +452,7 @@ export const deployedAppConfigSchema = z.object({
   streamingActionIds: z.array(z.string()).optional().default([]),
   actionNavigate: z.record(z.string(), z.string()).optional().default({}),
   pageOnLoad: z.record(z.string(), z.array(z.string())).optional().default({}),
+  actionHostKeys: z.record(z.string(), z.array(z.string())).optional().default({}),
   theme: arenaGenerativeThemeSchema.optional(),
 })
 export type DeployedAppConfig = z.output<typeof deployedAppConfigSchema>

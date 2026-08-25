@@ -32,7 +32,7 @@ interface UseGenerativeAppRuntimeOptions {
   actionNavigate: Record<string, string>
   navigate: (path: string) => void
   mergeState: (patch: Record<string, unknown>, appendKeys?: readonly string[]) => void
-  setActionPending: (pending: boolean) => void
+  setActionPending: (actionId: string, pending: boolean) => void
   logger: {
     error: (message: string, meta?: Record<string, unknown>) => void
     warn: (message: string, meta?: Record<string, unknown>) => void
@@ -91,7 +91,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       const navigateTo = current.actionNavigate[actionId]
       const streaming = current.isStreaming(actionId)
       flushSync(() => {
-        current.setActionPending(true)
+        current.setActionPending(actionId, true)
         current.mergeState({
           ...clearedActionErrorState(),
           ...submittedInputsState(values),
@@ -120,7 +120,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
         current.mergeState({ error: toError(error).message || 'Action failed' })
       } finally {
         if (clockRef.current.isCurrent(actionId, generation)) {
-          current.setActionPending(false)
+          current.setActionPending(actionId, false)
         }
       }
     },
@@ -132,7 +132,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       const current = optionsRef.current
       const generation = clockRef.current.begin(actionId)
       lastActionRef.current = { actionId, values, kind: 'load' }
-      current.setActionPending(true)
+      current.setActionPending(actionId, true)
       current.mergeState(clearedActionErrorState())
       try {
         const result = await execute(actionId, values, generation)
@@ -144,7 +144,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
         current.mergeState({ error: toError(error).message || 'Action failed' })
       } finally {
         if (clockRef.current.isCurrent(actionId, generation)) {
-          current.setActionPending(false)
+          current.setActionPending(actionId, false)
         }
       }
     },

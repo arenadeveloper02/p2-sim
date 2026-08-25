@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { act, useLayoutEffect, useState, type ReactNode } from 'react'
+import { act, type ReactNode, useLayoutEffect, useState } from 'react'
 import type { Spec } from '@json-render/core'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
@@ -490,7 +490,7 @@ describe('GenerativeAppPreviewHost page onLoad', () => {
       const [ready, setReady] = useState(false)
       useLayoutEffect(() => {
         flushSync(() => {
-          setActionPending(true)
+          setActionPending('submit_lead', true)
         })
         setReady(true)
       }, [setActionPending])

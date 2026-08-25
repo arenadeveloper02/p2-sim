@@ -5,6 +5,7 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
 import { flushSync } from 'react-dom'
+import { actionHostKeysFrom } from '@/lib/arena-generative-ui/binding-layout-plan'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import {
   collectRenderDiagnostics,
@@ -70,8 +71,8 @@ export function GenerativeAppPreviewHost({
     resetState,
     actionPending,
     setActionPending,
-    loadPending,
     setLoadPending,
+    pendingActionIds,
   } = useGenerativeAppHostState()
   const [throwByKey, setThrowByKey] = useState<Record<string, string>>({})
   const [themeOverride, setThemeOverride] = useState<ArenaGenerativeTheme | undefined>(undefined)
@@ -89,6 +90,7 @@ export function GenerativeAppPreviewHost({
   )
 
   const actionNavigate = manifest ? actionNavigateFrom(manifest) : {}
+  const actionHostKeys = manifest ? actionHostKeysFrom(manifest, apiBindings ?? []) : {}
 
   const executeAction = async (actionId: string, values: Record<string, unknown>) =>
     streamingIds.has(actionId)
@@ -158,7 +160,7 @@ export function GenerativeAppPreviewHost({
   const actionError = actionErrorFrom(state)
   const schemaWarning = actionSchemaWarningFrom(state)
   const bannerMessage = actionError || schemaWarning
-  const pending = runAction.isPending || actionPending || loadPending
+  const pending = pendingActionIds.size > 0
   const renderKey = `${pagePath}:${draftQuery.data.revision}`
   const throwMessage = throwByKey[renderKey]
   const diagnostics = [
@@ -213,6 +215,8 @@ export function GenerativeAppPreviewHost({
             spec={compiledPages?.[pagePath]?.spec ?? page.spec}
             state={state}
             pending={pending}
+            pendingActionIds={pendingActionIds}
+            actionHostKeys={actionHostKeys}
             currentPath={pagePath}
             onNavigate={navigate}
             onRunAction={runtime.onRunAction}

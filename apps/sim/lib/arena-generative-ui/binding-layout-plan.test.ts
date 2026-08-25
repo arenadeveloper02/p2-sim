@@ -3,7 +3,10 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  actionHostKeysFrom,
   actionStateFromPlan,
+  isActionControlPending,
+  isBoundPathPending,
   layoutPlanForBinding,
   resultLayoutFromPlan,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
@@ -216,5 +219,65 @@ describe('actionStateFromPlan', () => {
     expect(state).not.toHaveProperty('assistantContent')
     expect(state).not.toHaveProperty('content')
     expect(state).not.toHaveProperty('tokens')
+  })
+})
+
+describe('actionHostKeysFrom', () => {
+  it('maps each action to its binding host keys', () => {
+    const keys = actionHostKeysFrom(
+      {
+        actions: {
+          load_list: { apiKey: 'list_articles' },
+          load_stats: { apiKey: 'stats' },
+        },
+      },
+      [
+        workflowBinding({
+          key: 'list_articles',
+          outputSchema: [
+            { name: 'articles', type: 'array' },
+            { name: 'articles[].title', type: 'string' },
+          ],
+        }),
+        workflowBinding({
+          key: 'stats',
+          outputSchema: [{ name: 'count', type: 'number' }],
+        }),
+      ]
+    )
+    expect(keys.load_list).toEqual(expect.arrayContaining(['articles']))
+    expect(keys.load_list).not.toContain('count')
+    expect(keys.load_stats).toEqual(['count'])
+  })
+})
+
+describe('isBoundPathPending', () => {
+  const actionHostKeys = {
+    load_list: ['articles', 'items'],
+    load_stats: ['count'],
+  }
+
+  it('skeletons only the path the in-flight action writes', () => {
+    const pending = new Set(['load_list'])
+    expect(isBoundPathPending('articles', pending, actionHostKeys)).toBe(true)
+    expect(isBoundPathPending('count', pending, actionHostKeys)).toBe(false)
+  })
+
+  it('falls back to any in-flight action for an unknown path', () => {
+    expect(isBoundPathPending('mystery', new Set(['load_list']), actionHostKeys)).toBe(true)
+    expect(isBoundPathPending('mystery', new Set(), actionHostKeys)).toBe(false)
+  })
+})
+
+describe('isActionControlPending', () => {
+  it('uses pendingActionIds when the host supplies them', () => {
+    expect(isActionControlPending('run', new Set(['run']), false)).toBe(true)
+    expect(isActionControlPending('run', new Set(['other']), true)).toBe(false)
+  })
+
+  it('falls back to the page pending flag for tests', () => {
+    expect(isActionControlPending('run', undefined, true)).toBe(true)
+    expect(isActionControlPending('run', undefined, false)).toBe(false)
+    expect(isActionControlPending('', undefined, true)).toBe(false)
   })
 })

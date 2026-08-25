@@ -94,6 +94,8 @@ describe('SpecRenderer', () => {
     spec?: Spec
     state?: Record<string, unknown>
     pending?: boolean
+    pendingActionIds?: ReadonlySet<string>
+    actionHostKeys?: Record<string, readonly string[]>
     currentPath?: string
     onNavigate?: ReturnType<typeof vi.fn>
     onRunAction?: ReturnType<typeof vi.fn>
@@ -114,6 +116,8 @@ describe('SpecRenderer', () => {
           spec={options?.spec ?? homeSpec}
           state={options?.state ?? {}}
           pending={options?.pending ?? false}
+          pendingActionIds={options?.pendingActionIds}
+          actionHostKeys={options?.actionHostKeys}
           currentPath={options?.currentPath}
           onNavigate={onNavigate}
           onRunAction={onRunAction}
@@ -1215,6 +1219,63 @@ describe('SpecRenderer', () => {
         state: {},
       })
       expect(skeletonCount(container)).toBe(0)
+    })
+
+    it('skeletons only the region the in-flight action writes', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['table', 'stat'] },
+          table: {
+            type: 'Table',
+            props: { statePath: 'articles', columns: 'title' },
+            children: [],
+          },
+          stat: { type: 'Stat', props: { label: 'Count', statePath: 'count' }, children: [] },
+        },
+      }
+      const actionHostKeys = {
+        load_list: ['articles'],
+        load_stats: ['count'],
+      }
+      const { container } = render({
+        spec,
+        pending: true,
+        pendingActionIds: new Set(['load_list']),
+        actionHostKeys,
+        state: {},
+      })
+      expect(skeletonCount(container)).toBe(1)
+      expect(container.textContent).toContain('Count')
+    })
+
+    it('does not disable an unrelated action button while another CTA is pending', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['run', 'refresh'] },
+          run: { type: 'Button', props: { label: 'Run', actionId: 'run' }, children: [] },
+          refresh: {
+            type: 'Button',
+            props: { label: 'Refresh', actionId: 'refresh' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        pending: true,
+        pendingActionIds: new Set(['run']),
+        actionHostKeys: { run: ['content'], refresh: ['articles'] },
+      })
+      const run = Array.from(container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Run')
+      )
+      const refresh = Array.from(container.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Refresh')
+      )
+      expect(run?.disabled).toBe(true)
+      expect(refresh?.disabled).toBe(false)
     })
 
     it('skeletons a pending DataText even when it declares a fallback', () => {

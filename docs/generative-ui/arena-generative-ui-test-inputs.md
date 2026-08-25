@@ -30,7 +30,8 @@ Results:
 - No onLoad — data comes from generate or from History Open, not a fetch on arrival
 - Back to Generator at the top
 - Two pills: "Keyword: {targetKeyword}" and "Client: {clientBrand}"
-- Bind the markdown on DataText statePath "content"
+- Bind the markdown on DataText statePath "content" (or the string field name).
+  Do not bind `field.content` when the API returns a string (for example `artical_data.content`).
   (H1 title, repeating H2 sections with bold Writing Instructions and Target Keywords bullet lists,
   optional VISUAL & TABLE OPPORTUNITIES callouts, FAQ with bold Q: and plain A:)
 - While recommend_articles is running, Results should look like it is loading — not empty.

@@ -20,7 +20,7 @@ interface UsePageLoadActionsOptions {
   ) => Promise<RunDeployedAppActionResult>
   mergeState: (patch: Record<string, unknown>, appendKeys?: readonly string[]) => void
   resetState: () => void
-  setLoadPending: (pending: boolean) => void
+  setLoadPending: (actionId: string, pending: boolean) => void
 }
 
 /**
@@ -30,6 +30,10 @@ interface UsePageLoadActionsOptions {
  * A CTA that already navigated here owns the page: skip onLoad (and do not
  * `resetState`) so an empty refetch cannot wipe `setState`. `onSuccess.navigate`
  * is ignored for a load action — honouring it would bounce the user off the page.
+ *
+ * Each load action is pending independently so a stats Stat does not stay
+ * skeletoned after its response arrived just because a sibling list is still
+ * in flight.
  */
 export function usePageLoadActions(options: UsePageLoadActionsOptions): void {
   const optionsRef = useRef(options)
@@ -65,11 +69,23 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): void {
     }
 
     resetState()
-    setLoadPending(true)
+    for (const actionId of actionIds) {
+      setLoadPending(actionId, true)
+    }
 
     void (async () => {
       const results = await Promise.allSettled(
-        actionIds.map((actionId) => runAction(actionId, values))
+        actionIds.map(async (actionId) => {
+          try {
+            const result = await runAction(actionId, values)
+            if (!cancelled && result.setState) {
+              mergeState(result.setState, result.appendKeys)
+            }
+            return result
+          } finally {
+            if (!cancelled) setLoadPending(actionId, false)
+          }
+        })
       )
       if (cancelled) return
 
@@ -79,9 +95,6 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): void {
           failure = failure || toError(result.reason).message || 'Failed to load this page'
           continue
         }
-        if (result.value.setState) {
-          mergeState(result.value.setState, result.value.appendKeys)
-        }
         if (!result.value.ok) {
           failure = failure || result.value.error || `Action "${actionIds[index]}" failed`
         }
@@ -89,14 +102,13 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): void {
       if (failure) {
         mergeState({ error: failure })
       }
-      setLoadPending(false)
     })()
 
     return () => {
       cancelled = true
-      // The flag lives in a provider that outlives this page, so a load abandoned
-      // by navigation must clear it or every later placeholder stays stuck.
-      setLoadPending(false)
+      for (const actionId of actionIds) {
+        setLoadPending(actionId, false)
+      }
     }
   }, [loadKey])
 }

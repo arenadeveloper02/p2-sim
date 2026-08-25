@@ -65,8 +65,8 @@ export function GenerativeAppHost({
     resetState,
     actionPending,
     setActionPending,
-    loadPending,
     setLoadPending,
+    pendingActionIds,
   } = useGenerativeAppHostState()
   const pageQuery = useDeployedAppPage(identifier, pagePath, configQuery.data?.kind === 'config')
   const runAction = useRunDeployedAppAction(identifier)
@@ -186,7 +186,9 @@ export function GenerativeAppHost({
         <SpecRenderer
           spec={pageSpec}
           state={state}
-          pending={runAction.isPending || actionPending || loadPending}
+          pending={pendingActionIds.size > 0}
+          pendingActionIds={pendingActionIds}
+          actionHostKeys={config?.actionHostKeys ?? {}}
           currentPath={pagePath}
           onNavigate={navigate}
           onRunAction={runtime.onRunAction}

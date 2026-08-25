@@ -1,6 +1,7 @@
 import { outputSchemaRootName } from '@/lib/arena-generative-ui/output-schema'
 import {
   type ArenaGenerativeApiBinding,
+  type ArenaGenerativeAppManifest,
   actionStateFromData,
   parseJsonLiteral,
 } from '@/lib/arena-generative-ui/types'
@@ -391,6 +392,76 @@ function partitionInputFields(binding: ArenaGenerativeApiBinding): {
     formFields: uniqueStrings(formFields),
     hiddenInputFields: uniqueStrings(hiddenInputFields),
   }
+}
+
+/**
+ * Host keys each action writes, from that action's binding layout plan.
+ * Published config and SpecRenderer use this so a pending CTA only skeletons
+ * the regions it actually fills.
+ */
+export function actionHostKeysFrom(
+  manifest: Pick<ArenaGenerativeAppManifest, 'actions'>,
+  bindings: ArenaGenerativeApiBinding[]
+): Record<string, string[]> {
+  const byKey = new Map(bindings.map((binding) => [binding.key, binding]))
+  const result: Record<string, string[]> = {}
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    const binding = byKey.get(action.apiKey) ?? {
+      key: action.apiKey,
+      label: action.apiKey,
+      kind: 'http' as const,
+    }
+    const plan = layoutPlanForBinding(binding)
+    result[actionId] = uniqueStrings([...plan.hostKeys, ...plan.aliasKeys])
+  }
+  return result
+}
+
+/**
+ * First host-state segment of a `statePath` (`articles` from `articles[].title`).
+ * Repeat `item.*` paths are scoped rows, not action outputs.
+ */
+export function hostStateRoot(statePath: string): string {
+  const trimmed = statePath.trim()
+  if (!trimmed || trimmed === 'item' || trimmed.startsWith('item.')) return ''
+  const dot = trimmed.indexOf('.')
+  const bracket = trimmed.indexOf('[')
+  const separator = [dot, bracket].filter((index) => index >= 0).sort((a, b) => a - b)[0]
+  return separator == null ? trimmed : trimmed.slice(0, separator)
+}
+
+/**
+ * Whether a bound region should show loading chrome. Unknown paths fall back
+ * to any in-flight action so unspecialized drafts keep today's skeletons.
+ */
+export function isBoundPathPending(
+  statePath: string,
+  pendingActionIds: ReadonlySet<string>,
+  actionHostKeys: Record<string, readonly string[]>
+): boolean {
+  if (pendingActionIds.size === 0) return false
+  const root = hostStateRoot(statePath)
+  if (!root) return pendingActionIds.size > 0
+  const writers: string[] = []
+  for (const [actionId, keys] of Object.entries(actionHostKeys)) {
+    if (keys.includes(root)) writers.push(actionId)
+  }
+  if (writers.length === 0) return true
+  return writers.some((actionId) => pendingActionIds.has(actionId))
+}
+
+/**
+ * Disable / busy chrome for a control that runs `actionId`. When the host does
+ * not pass `pendingActionIds`, `fallbackPending` keeps existing tests working.
+ */
+export function isActionControlPending(
+  actionId: string,
+  pendingActionIds: ReadonlySet<string> | undefined,
+  fallbackPending: boolean
+): boolean {
+  if (!actionId) return false
+  if (pendingActionIds) return pendingActionIds.has(actionId)
+  return fallbackPending
 }
 
 function uniqueStrings(values: string[]): string[] {

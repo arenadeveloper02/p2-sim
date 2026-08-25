@@ -36,7 +36,7 @@ Name pages, fields, and CTA keys. Vague briefs (“make a research tool”) prod
 | Streaming **markdown / prose** | Match that heading shape in a live `DataText` |
 | Streaming **plus JSON** at the end | Live prose while tokens arrive, then Table / Stat for the structured fields |
 
-Field names become `statePath` values as-is: `score`, `articles`, `articles[].title`. Never `data.score` or `output.articles`.
+Field names become `statePath` values as-is: `score`, `articles`, `articles[].title`. Nested arrays (`run_data.history`) bind as `history`, not `run_data.history`. Never `data.score` or `output.articles`.
 
 Turn **Response → Stream** on when the workflow or HTTP call streams tokens. Stream off waits for the full JSON body. A JSON-only API (score + reasons) is the same block setup with Stream off and a JSON sample.
 
@@ -70,7 +70,8 @@ Results:
 - No onLoad — data comes from generate or from History Open, not a fetch on arrival
 - Back to Generator at the top
 - Two pills: "Keyword: {targetKeyword}" and "Client: {clientBrand}"
-- Bind the markdown on DataText statePath "content"
+- Bind the markdown on DataText statePath "content" (or the string field name).
+  Do not bind `field.content` when the API returns a string (for example `artical_data.content`).
   (H1 title, repeating H2 sections with bold Writing Instructions and Target Keywords bullet lists,
   optional VISUAL & TABLE OPPORTUNITIES callouts, FAQ with bold Q: and plain A:)
 - While recommend_articles is running, Results should look like it is loading — not empty.
@@ -134,7 +135,7 @@ Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add
 | In the brief | What happens |
 |---|---|
 | `targetKeyword (text) — label "Target Keyword"` | Field `name` is `targetKeyword`. Results can show `{targetKeyword}` or `{Target Keyword}` (spaces and case are ignored). |
-| Pills `"Keyword: {targetKeyword}"` | Submit copies the form into `inputs` immediately. The API does not need to echo those fields. |
+| Pills `"Keyword: {targetKeyword}"` | Submit copies the form into `inputs` immediately. The API does not need to echo those fields. Use the **form `name`**, not History JSON keys (`keyword` / `client`). |
 | `Keyword: {Target Keyword}` with only a label, no camelCase name | Often stays literal `{Target Keyword}` after generate. Name the field first. |
 | Stream on + markdown sample | Results fills as tokens arrive. Heading shape follows the sample, not an invented Table. |
 | History cards: keyword, client, date only | Repeat is a stamp. Binding `item.output` would paint the full markdown on **every** card. |
@@ -184,6 +185,6 @@ Do not append DataText below an always-visible Repeat.
 - JSON APIs: paste Output format JSON so Results is not a text dump.
 - Streaming APIs: turn Stream **on**, then paste a markdown (or JSON) example of the real stream.
 - User Input names pages, **camelCase field names**, submit label, and “then go to {page}”.
-- To show typed values on Results, write `{targetKeyword}` (or the field name) there — do not wait for the API to echo them.
+- To show typed values on Results, write `{targetKeyword}` (or the form `name`) there — not History keys like `{keyword}` / `{client}`, and do not wait for the API to echo them.
 - History lists that include a huge `output`: bind only short fields; Open is `selectItem` (no `actionId`, no `navigateTo`); hide the list with `!selectedId`; Back is `clearItem`. Do not bind `item.output` on the list.
 - Edits are deltas. Do not paste the original brief again.

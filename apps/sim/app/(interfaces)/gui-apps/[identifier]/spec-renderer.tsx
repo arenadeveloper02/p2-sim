@@ -32,6 +32,10 @@ import {
 } from 'lucide-react'
 import type { RunGenerativeAppActionMeta } from '@/lib/arena-generative-ui/action-runtime'
 import {
+  isActionControlPending,
+  isBoundPathPending,
+} from '@/lib/arena-generative-ui/binding-layout-plan'
+import {
   type ArenaGenerativeFormField,
   asFieldString,
   asFieldStringList,
@@ -63,6 +67,7 @@ import {
   specHasSamePageSelectItem,
   splitNavTarget,
 } from '@/lib/arena-generative-ui/types'
+import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
 
 interface SpecElement {
@@ -75,6 +80,10 @@ interface SpecRendererProps {
   spec: Spec
   state: Record<string, unknown>
   pending: boolean
+  /** In-flight action ids. When set, bound regions and controls pending is per action. */
+  pendingActionIds?: ReadonlySet<string>
+  /** Host keys each action writes. Required for per-action bound-region pending. */
+  actionHostKeys?: Record<string, readonly string[]>
   /** Current page path; Tabs use this when it matches an item, otherwise `activePath`. */
   currentPath?: string
   onNavigate: (path: string) => void
@@ -1041,6 +1050,8 @@ export function SpecRenderer({
   spec,
   state,
   pending,
+  pendingActionIds,
+  actionHostKeys,
   currentPath,
   onNavigate,
   onRunAction,
@@ -1053,6 +1064,15 @@ export function SpecRenderer({
   const selectedIdSet = isTruthyFieldValue(state[ARENA_GENERATIVE_SELECTED_ID_KEY])
   const hideListForSelection = selectedIdSet && specHasSamePageSelectItem(spec, currentPath)
 
+  const boundPending = (statePath: string) =>
+    pendingActionIds
+      ? isBoundPathPending(statePath, pendingActionIds, actionHostKeys ?? {})
+      : pending
+
+  const controlPending = (actionId: string) =>
+    UX_DEFAULTS.Button.disabledWhileLoading &&
+    isActionControlPending(actionId, pendingActionIds, pending)
+
   const requestNavigate = (target: string) => {
     const path = splitNavTarget(target).path
     if (currentPath && path === currentPath && selectedIdSet) {
@@ -1064,20 +1084,31 @@ export function SpecRenderer({
 
   /**
    * `withinForm` tracks whether an ancestor is a `Form`. A `SubmitButton` outside one
-   * submits nothing, so it needs its `actionId` wired to a click instead. Computed
-   * here rather than threaded from the `Form` case because children are rendered
-   * before the switch runs.
+   * submits nothing, so it needs its `actionId` wired to a click instead. `formActionId`
+   * is the enclosing Form's action so submit and fields pending is per that CTA.
    */
-  const renderNode = (id: string, scope?: RepeatItemScope, withinForm = false): ReactNode => {
+  const renderNode = (
+    id: string,
+    scope?: RepeatItemScope,
+    withinForm = false,
+    formActionId = ''
+  ): ReactNode => {
     const element = elements[id]
     if (!element) return null
     const props = interpolateElementProps(element.props ?? {}, { state, scope, pending })
     const childIds = element.children ?? []
     const childWithinForm = withinForm || element.type === 'Form'
+    const nextFormActionId =
+      element.type === 'Form'
+        ? asString(props.actionId) || submitButtonActionId(elements, childIds)
+        : formActionId
     const children = childIds.map((childId) => (
-      <Fragment key={childId}>{renderNode(childId, scope, childWithinForm)}</Fragment>
+      <Fragment key={childId}>
+        {renderNode(childId, scope, childWithinForm, nextFormActionId)}
+      </Fragment>
     ))
     const hasChildren = childIds.length > 0
+    const fieldBusy = controlPending(formActionId)
     const fieldSnapshot = snapshotFormValues(specFormFields(elements), formValues, state, scope)
     const actionValues = {
       ...paginationActionValues(state),
@@ -1169,7 +1200,7 @@ export function SpecRenderer({
         const items = collectionFromBoundValue(stateValue)
         if (
           statePath &&
-          pending &&
+          boundPending(statePath) &&
           isEmptyStateValue(stateValue) &&
           (!items || items.length === 0)
         ) {
@@ -1316,10 +1347,10 @@ export function SpecRenderer({
         const boundEmpty = Boolean(
           statePath && (collection ? collection.length === 0 : isEmptyStateValue(stateValue))
         )
-        if (statePath && pending && boundEmpty) {
+        if (statePath && boundPending(statePath) && boundEmpty) {
           return <SkeletonBlock variant='table' lines={DEFAULT_SKELETON_LINES.table} />
         }
-        if (statePath && !pending && boundEmpty) {
+        if (statePath && !boundPending(statePath) && boundEmpty) {
           const hasStatic =
             asString(props.columns).trim().length > 0 || asString(props.rows).trim().length > 0
           if (stateValue !== undefined || !hasStatic) {
@@ -1398,7 +1429,12 @@ export function SpecRenderer({
       case 'Stat': {
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
-        if (statePath && pending && isEmptyStateValue(stateValue) && !asString(props.value)) {
+        if (
+          statePath &&
+          boundPending(statePath) &&
+          isEmptyStateValue(stateValue) &&
+          !asString(props.value)
+        ) {
           return <SkeletonBlock variant='stat' lines={DEFAULT_SKELETON_LINES.stat} />
         }
         const value =
@@ -1440,7 +1476,7 @@ export function SpecRenderer({
       case 'Sparkline': {
         const series = numbersFromSparklineProps(props, state, scope)
         const statePath = asString(props.statePath)
-        if (statePath && pending && series.length === 0) {
+        if (statePath && boundPending(statePath) && series.length === 0) {
           return <SkeletonBlock variant='stat' lines={1} />
         }
         const points = sparklinePoints(series)
@@ -1613,10 +1649,10 @@ export function SpecRenderer({
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const pairs = keyValuePairs(props.items, stateValue)
-        if (pairs.length === 0 && statePath && pending) {
+        if (pairs.length === 0 && statePath && boundPending(statePath)) {
           return <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
         }
-        if (pairs.length === 0 && statePath && !pending) {
+        if (pairs.length === 0 && statePath && !boundPending(statePath)) {
           return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.details)} />
         }
         return <StateKeyValue pairs={pairs} />
@@ -1737,7 +1773,7 @@ export function SpecRenderer({
           <DataTextView
             value={readStatePath(state, asString(props.statePath), scope)}
             fallback={asString(props.fallback, '')}
-            pending={pending}
+            pending={boundPending(asString(props.statePath))}
             style={styleFromProps(props)}
           />
         )
@@ -1857,6 +1893,7 @@ export function SpecRenderer({
         const submitLabel = asString(props.submitLabel, 'Search')
         const actionId = asString(props.actionId)
         const required = asBoolean(props.required)
+        const searchBusy = controlPending(actionId)
         const searchInput = (
           <div className='flex flex-col gap-3'>
             {label ? (
@@ -1890,14 +1927,14 @@ export function SpecRenderer({
               />
               <button
                 type='submit'
-                disabled={pending}
-                aria-busy={pending || undefined}
+                disabled={searchBusy}
+                aria-busy={searchBusy || undefined}
                 className={cn(
                   buttonClass({ variant: 'primary', shape: 'pill' }, 'primary'),
-                  pending && 'gap-2'
+                  searchBusy && 'gap-2'
                 )}
               >
-                <ActionBusyMark show={pending} />
+                <ActionBusyMark show={searchBusy} />
                 {submitLabel}
               </button>
             </div>
@@ -2091,7 +2128,7 @@ export function SpecRenderer({
                 <div
                   className={cn(
                     'flex items-center gap-2 text-sm',
-                    pending && 'cursor-not-allowed opacity-60'
+                    fieldBusy && 'cursor-not-allowed opacity-60'
                   )}
                 >
                   <button
@@ -2102,7 +2139,7 @@ export function SpecRenderer({
                     aria-labelledby={label ? switchLabelId : undefined}
                     aria-label={label ? undefined : name}
                     name={name}
-                    disabled={pending}
+                    disabled={fieldBusy}
                     onClick={() => setNamedValue(name, !checked)}
                   >
                     <span
@@ -2172,6 +2209,7 @@ export function SpecRenderer({
         const label = asString(props.label, 'Submit')
         const className = buttonClass(props, 'primary')
         const actionId = asString(props.actionId)
+        const submitBusy = controlPending(actionId || formActionId)
         /**
          * Outside a Form there is nothing to submit, so a bare `type="submit"` would
          * be inert. Run the button's own `actionId` instead — this also revives
@@ -2181,12 +2219,12 @@ export function SpecRenderer({
           return (
             <button
               type='button'
-              disabled={pending}
-              aria-busy={pending || undefined}
-              className={cn(className, pending && 'gap-2')}
+              disabled={submitBusy}
+              aria-busy={submitBusy || undefined}
+              className={cn(className, submitBusy && 'gap-2')}
               onClick={() => void onRunAction(actionId, actionValues)}
             >
-              <ActionBusyMark show={pending} />
+              <ActionBusyMark show={submitBusy} />
               {label}
             </button>
           )
@@ -2194,11 +2232,11 @@ export function SpecRenderer({
         return (
           <button
             type='submit'
-            disabled={pending}
-            aria-busy={pending || undefined}
-            className={cn(className, pending && 'gap-2')}
+            disabled={submitBusy}
+            aria-busy={submitBusy || undefined}
+            className={cn(className, submitBusy && 'gap-2')}
           >
-            <ActionBusyMark show={pending} />
+            <ActionBusyMark show={submitBusy} />
             {label}
           </button>
         )
@@ -2216,7 +2254,7 @@ export function SpecRenderer({
             </a>
           )
         }
-        const actionBusy = pending && Boolean(actionId)
+        const actionBusy = controlPending(actionId)
         const destructive = asString(props.variant) === 'destructive' && Boolean(actionId)
         return (
           <button

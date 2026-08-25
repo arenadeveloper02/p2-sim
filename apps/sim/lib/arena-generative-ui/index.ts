@@ -3,6 +3,7 @@ export type {
   BindingLayoutPlan,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 export {
+  actionHostKeysFrom,
   actionStateFromPlan,
   layoutPlanForBinding,
   layoutPlansFromBindings,
