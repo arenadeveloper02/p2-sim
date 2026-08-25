@@ -256,18 +256,19 @@ describe('validateArenaGenerativeManifest', () => {
             title: 'Results',
             path: 'results',
             spec: resultsSpec(),
-            onLoad: ['submit_lead', 'submit_lead'],
+            onLoad: ['load_results', 'load_results'],
           },
         },
         actions: {
           submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          load_results: { apiKey: 'qualify_lead' },
         },
       },
       { apiBindings: bindings, entryPath: 'home' }
     )
     expect(result.success).toBe(true)
     expect(result.manifest?.pages.home.onLoad).toEqual(['submit_lead'])
-    expect(result.manifest?.pages.results.onLoad).toEqual(['submit_lead'])
+    expect(result.manifest?.pages.results.onLoad).toEqual(['load_results'])
   })
 
   it('rejects an onLoad that names an action the manifest never declares', () => {
@@ -920,6 +921,314 @@ describe('validateArenaGenerativeManifest', () => {
 
       expect(result.error).toBeUndefined()
       expect(result.success).toBe(true)
+    })
+  })
+
+  describe('binding layout', () => {
+    const historyBinding = {
+      key: 'run_history',
+      label: 'History',
+      kind: 'workflow' as const,
+      workflowId: 'wf-history',
+      outputSchema: [
+        { name: 'run_data.history', type: 'array' },
+        { name: 'run_data.history[].keyword', type: 'string' },
+        { name: 'run_data.history[].output', type: 'string' },
+      ],
+    }
+
+    function pagesWithHistory(historySpec: Spec) {
+      return {
+        entryPath: 'home',
+        pages: {
+          home: {
+            title: 'Home',
+            path: 'home',
+            spec: pageSpec({
+              extra: {
+                history_link: {
+                  type: 'NavLink',
+                  props: { label: 'History', to: 'history' },
+                  children: [],
+                },
+              },
+            }),
+          },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+          history: { title: 'History', path: 'history', spec: historySpec },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          load_history: { apiKey: 'run_history' },
+        },
+      }
+    }
+
+    function historyRepeat(
+      statePath: string,
+      extra?: Record<string, { type: string; props?: Record<string, unknown>; children?: string[] }>
+    ): Spec {
+      return {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'History', backgroundColor: null },
+            children: ['nav', 'repeat'],
+          },
+          nav: { type: 'NavLink', props: { label: 'Home', to: 'home' }, children: [] },
+          repeat: {
+            type: 'Repeat',
+            props: { statePath, emptyText: null },
+            children: ['keyword'],
+          },
+          keyword: {
+            type: 'DataText',
+            props: { statePath: 'item.keyword', fallback: '', color: null, size: null },
+            children: [],
+          },
+          ...extra,
+        },
+      }
+    }
+
+    it('rejects Repeat bound to the nested schema path instead of the lifted hostKey', () => {
+      const result = validateArenaGenerativeManifest(
+        pagesWithHistory(historyRepeat('run_data.history')),
+        {
+          apiBindings: [...bindings, historyBinding],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('run_data.history')
+      expect(result.error).toContain('"history"')
+    })
+
+    it('accepts Repeat bound to the lifted hostKey', () => {
+      const result = validateArenaGenerativeManifest(pagesWithHistory(historyRepeat('history')), {
+        apiBindings: [...bindings, historyBinding],
+        entryPath: 'home',
+      })
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects item.output inside Repeat when the plan marks it as prose', () => {
+      const spec = historyRepeat('history', {
+        keyword: {
+          type: 'DataText',
+          props: { statePath: 'item.output', fallback: '', color: null, size: null },
+          children: [],
+        },
+      })
+      const result = validateArenaGenerativeManifest(pagesWithHistory(spec), {
+        apiBindings: [...bindings, historyBinding],
+        entryPath: 'home',
+      })
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('item.output')
+    })
+
+    it('rejects DataText bound to field.content when the field is a string', () => {
+      const streamBinding = {
+        key: 'recommend_articles',
+        label: 'Recommend',
+        kind: 'workflow' as const,
+        workflowId: 'wf-rec',
+        stream: true,
+        outputSchema: [{ name: 'artical_data', type: 'string' }],
+      }
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Results', backgroundColor: null },
+            children: ['back', 'body'],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              href: null,
+              navigateTo: 'home',
+              actionId: null,
+              backgroundColor: null,
+              color: null,
+            },
+            children: [],
+          },
+          body: {
+            type: 'DataText',
+            props: {
+              statePath: 'artical_data.content',
+              fallback: '',
+              color: null,
+              size: null,
+            },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: { title: 'Results', path: 'results', spec },
+          },
+          actions: {
+            submit_lead: { apiKey: 'recommend_articles', onSuccess: { navigate: 'results' } },
+          },
+        },
+        { apiBindings: [streamBinding], entryPath: 'home' }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('artical_data.content')
+    })
+
+    it('rejects onLoad of a navigate-first action on the destination page', () => {
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: {
+              title: 'Results',
+              path: 'results',
+              spec: resultsSpec(),
+              onLoad: ['submit_lead'],
+            },
+          },
+          actions: {
+            submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          },
+        },
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('onLoad')
+      expect(result.error).toContain('submit_lead')
+    })
+
+    it('rejects a form that omits a declared form input', () => {
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: { title: 'Results', path: 'results', spec: resultsSpec() },
+          },
+          actions: {
+            submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          },
+        },
+        {
+          apiBindings: [
+            {
+              ...bindings[0],
+              inputSchema: [{ name: 'targetKeyword', type: 'string' }],
+            },
+          ],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('targetKeyword')
+    })
+
+    it('rejects a form field the host fills as a constant', () => {
+      const spec = pageSpec({
+        extra: {
+          type_field: {
+            type: 'TextInput',
+            props: { name: 'type', label: 'Type', required: false, placeholder: '' },
+            children: [],
+          },
+          form: {
+            type: 'Form',
+            props: { actionId: 'submit_lead' },
+            children: ['type_field', 'submit'],
+          },
+        },
+      })
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec },
+            results: { title: 'Results', path: 'results', spec: resultsSpec() },
+          },
+          actions: {
+            submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          },
+        },
+        {
+          apiBindings: [
+            {
+              ...bindings[0],
+              inputSchema: [{ name: 'type', type: 'string', source: 'constant', value: 'history' }],
+            },
+          ],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('constant')
+    })
+
+    it('rejects envelope statePaths even without outputSchema', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Results', backgroundColor: null },
+            children: ['back', 'table'],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              href: null,
+              navigateTo: 'home',
+              actionId: null,
+              backgroundColor: null,
+              color: null,
+            },
+            children: [],
+          },
+          table: {
+            type: 'Table',
+            props: { columns: 'title', rows: null, statePath: 'data.articles', emptyText: null },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: { title: 'Results', path: 'results', spec },
+          },
+          actions: {
+            submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          },
+        },
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('data.articles')
     })
   })
 })

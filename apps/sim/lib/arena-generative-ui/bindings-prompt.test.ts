@@ -23,7 +23,9 @@ describe('bindingsSummaryForPrompt', () => {
       score: 72,
       reasons: [{ title: 'Example', id: 'ex-1' }],
     })
-    expect(summary[0]?.resultLayout).toContain('bind outputSchema field names as statePath')
+    expect(summary[0]?.layoutPlan?.kind).toBe('collection')
+    expect(summary[0]?.layoutPlan?.hostKeys).toEqual(['reasons', 'score'])
+    expect(summary[0]?.resultLayout).toContain('bind layoutPlan.hostKeys as statePath')
     expect(summary[0]?.resultLayout).toContain('never "field.content"')
   })
 
@@ -32,6 +34,7 @@ describe('bindingsSummaryForPrompt', () => {
       { key: 'run', label: 'Run', kind: 'workflow', workflowId: 'wf-1' },
     ])
     expect(summary[0]?.outputExample).toBeUndefined()
+    expect(summary[0]?.layoutPlan?.kind).toBe('prose')
     expect(summary[0]?.resultLayout).toContain('do not invent Table columns')
   })
 
@@ -101,6 +104,8 @@ describe('bindingsSummaryForPrompt', () => {
         ],
       },
     ])
+    expect(summary[0]?.layoutPlan?.collections[0]?.samePageSelect).toBe(true)
+    expect(summary[0]?.layoutPlan?.collections[0]?.hostKey).toBe('history')
     expect(summary[0]?.resultLayout).toContain('selectItem')
     expect(summary[0]?.resultLayout).toContain('clearItem')
     expect(summary[0]?.resultLayout).toContain('!selectedId')

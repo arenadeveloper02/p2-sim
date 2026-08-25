@@ -1,33 +1,20 @@
+import {
+  layoutPlanForBinding,
+  resultLayoutFromPlan,
+} from '@/lib/arena-generative-ui/binding-layout-plan'
 import { syntheticExampleFromOutputSchema } from '@/lib/arena-generative-ui/output-schema'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
 
-const EMBEDDED_LIST_PROSE =
-  /(?:history|items|results|records|rows)\[\]\.(output|content|body|text|message|assistantContent)$/i
-
-function resultLayoutForBinding(
-  outputSchema: Array<{ name: string; type: string }>,
-  outputHint: string | undefined
-): string {
-  if (outputSchema.some((field) => EMBEDDED_LIST_PROSE.test(field.name))) {
-    return 'list items include a prose field — Repeat cards bind only short scalars with item.keyword; Open is Button selectItem true (no actionId) and copies prose to content, not inputs; same-page detail uses showWhen "!selectedId" on the list and showWhen "selectedId" plus clearItem Back; do not bind item.output inside Repeat; Results after Generate echo form names ({targetKeyword}), not history keys ({keyword})'
-  }
-  if (outputSchema.length > 0) {
-    return 'bind outputSchema field names as statePath; nested arrays (run_data.history) also land as "history"; a string markdown field binds as that name or "content", never "field.content"'
-  }
-  if (outputHint) {
-    return 'prose DataText matching outputHint'
-  }
-  return 'no outputSchema — DataText statePath "content"; do not invent Table columns'
-}
-
 /**
  * Binding payload for planner and generator prompts. Secrets and URLs stay off
- * the wire; descriptions and a compact synthetic example improve layout quality.
+ * the wire; descriptions, a compact synthetic example, and layoutPlan are the
+ * typed contract for statePath and component choice.
  */
 export function bindingsSummaryForPrompt(bindings: ArenaGenerativeApiBinding[]) {
   return bindings.map((binding) => {
     const outputSchema = binding.outputSchema ?? []
     const outputExample = syntheticExampleFromOutputSchema(outputSchema)
+    const layoutPlan = layoutPlanForBinding(binding)
     return {
       key: binding.key,
       label: binding.label,
@@ -41,7 +28,8 @@ export function bindingsSummaryForPrompt(bindings: ArenaGenerativeApiBinding[]) 
       outputHint: binding.outputHint,
       stream: binding.stream === true,
       pagination: binding.pagination,
-      resultLayout: resultLayoutForBinding(outputSchema, binding.outputHint),
+      layoutPlan,
+      resultLayout: resultLayoutFromPlan(layoutPlan),
     }
   })
 }

@@ -1,3 +1,11 @@
+export type {
+  BindingLayoutKind,
+  BindingLayoutPlan,
+} from '@/lib/arena-generative-ui/binding-layout-plan'
+export {
+  layoutPlanForBinding,
+  layoutPlansFromBindings,
+} from '@/lib/arena-generative-ui/binding-layout-plan'
 export {
   ARENA_GENERATIVE_UI_OUTPUT_RULES,
   ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,

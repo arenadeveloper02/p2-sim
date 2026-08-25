@@ -1,4 +1,5 @@
 import type { Spec } from '@json-render/core'
+import { layoutPlansFromBindings } from '@/lib/arena-generative-ui/binding-layout-plan'
 import { arenaGenerativeUiCatalog } from '@/lib/arena-generative-ui/catalog'
 import { normalizeGeneratedSpec } from '@/lib/arena-generative-ui/normalize-spec'
 import { parseArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
@@ -12,6 +13,7 @@ import {
   parseTabItems,
   splitNavTarget,
 } from '@/lib/arena-generative-ui/types'
+import { validateManifestBindingLayout } from '@/lib/arena-generative-ui/validate-binding-layout'
 
 interface FlatElement {
   type?: string
@@ -492,13 +494,23 @@ export function validateArenaGenerativeManifest(
 
   const theme = parseArenaGenerativeTheme(candidate.theme)
 
+  const manifest: ArenaGenerativeAppManifest = {
+    entryPath,
+    pages,
+    actions,
+    ...(theme ? { theme } : {}),
+  }
+  const layoutError = validateManifestBindingLayout(
+    manifest,
+    layoutPlansFromBindings(options.apiBindings),
+    { authoredPagePaths: options.authoredPagePaths }
+  )
+  if (layoutError) {
+    return { success: false, error: layoutError }
+  }
+
   return {
     success: true,
-    manifest: {
-      entryPath,
-      pages,
-      actions,
-      ...(theme ? { theme } : {}),
-    },
+    manifest,
   }
 }

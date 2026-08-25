@@ -270,7 +270,7 @@ describe('generateArenaGenerativeManifest', () => {
     })
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
-    expect(system).toContain('top-level keys into app state')
+    expect(system).toContain('each binding includes layoutPlan')
     expect(system).toContain('never "data.articles"')
     expect(system).toContain('never "field.content"')
     expect(system).toContain('must not onLoad that same action')
@@ -287,7 +287,8 @@ describe('generateArenaGenerativeManifest', () => {
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('articles[].title')
     expect(userMessage).toContain('"outputExample"')
-    expect(userMessage).toContain('bind outputSchema field names as statePath')
+    expect(userMessage).toContain('"layoutPlan"')
+    expect(userMessage).toContain('bind layoutPlan.hostKeys as statePath')
   })
 
   it('omits the CTA result rule when there are no bindings', async () => {
@@ -299,7 +300,7 @@ describe('generateArenaGenerativeManifest', () => {
     })
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
-    expect(system).not.toContain('top-level keys into app state')
+    expect(system).not.toContain('each binding includes layoutPlan')
   })
 
   it('passes stream: true into the bindings summary and localized streaming rules', async () => {
