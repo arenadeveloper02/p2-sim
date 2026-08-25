@@ -13,10 +13,7 @@ export const ARENA_AGENT_TRIGGER_LABEL = 'Arena Agent'
 let cachedTriggerOptions: TriggerOption[] | null = null
 let cachedTriggerMetadataMap: Map<string, { label: string; color: string }> | null = null
 
-/**
- * Reset cache - useful for HMR in development or testing
- */
-export function resetTriggerOptionsCache() {
+function resetTriggerOptionsCache() {
   cachedTriggerOptions = null
   cachedTriggerMetadataMap = null
 }

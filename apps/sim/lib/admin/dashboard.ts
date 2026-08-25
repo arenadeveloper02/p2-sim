@@ -12,6 +12,7 @@ import {
 } from '@sim/db/schema'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { isRecordLike } from '@sim/utils/object'
 import { and, count, countDistinct, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm'
 import {
   getOrganizationUsageLimitFallbackDollars,
@@ -30,6 +31,10 @@ import {
   type EnterpriseProvisioningView,
   getLatestEnterpriseProvisionings,
 } from '@/lib/billing/enterprise-provisioning'
+import {
+  parseWorkflowExecutionTimeoutSeconds,
+  resolveEnterpriseWorkflowExecutionTimeoutFallbackSeconds,
+} from '@/lib/billing/execution-timeout-defaults'
 import { acquireUserBillingIdentityLock } from '@/lib/billing/organizations/billing-identity-lock'
 import { setOrgMemberUsageLimit } from '@/lib/billing/organizations/member-limits'
 import {
@@ -48,6 +53,7 @@ import {
   isOrgScopedSubscription,
 } from '@/lib/billing/subscriptions/utils'
 import { toDecimal } from '@/lib/billing/utils/decimal'
+import { env } from '@/lib/core/config/env'
 import { executeTransactionallyIdempotent } from '@/lib/core/idempotency/transaction'
 import { enqueueOutboxEvent } from '@/lib/core/outbox/service'
 import type { DbOrTx } from '@/lib/db/types'
@@ -67,9 +73,7 @@ export interface AdminMutationActor {
 }
 
 function metadataRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
+  return isRecordLike(value) ? (value as Record<string, unknown>) : {}
 }
 
 function metadataNumber(metadata: Record<string, unknown>, key: string): number | null {
@@ -183,6 +187,13 @@ function buildDashboardOrganizationSummary({
           parseBillingConcurrencyLimit(metadata.concurrencyLimit)
         )
       : null
+  const workflowExecutionTimeoutSeconds =
+    latestSubscription?.plan === 'enterprise'
+      ? (parseWorkflowExecutionTimeoutSeconds(metadata.workflowExecutionTimeoutSeconds) ??
+        resolveEnterpriseWorkflowExecutionTimeoutFallbackSeconds(
+          env.EXECUTION_TIMEOUT_ASYNC_ENTERPRISE
+        ))
+      : null
 
   return {
     id: org.id,
@@ -196,6 +207,7 @@ function buildDashboardOrganizationSummary({
     externalCollaboratorCount,
     seats,
     concurrencyLimit,
+    workflowExecutionTimeoutSeconds,
     planAllowanceDollars,
     usageLimitDollars,
     effectiveUsageLimitDollars,
@@ -220,6 +232,10 @@ export function toDashboardConfigurationUpdate(
   const usageLimitCredits = metadataNumber(metadata, 'usageLimitCredits')
   const seats = metadataNumber(metadata, 'seats')
   const concurrencyLimit = metadataNumber(metadata, 'concurrencyLimit')
+  const workflowExecutionTimeoutSeconds = metadataNumber(
+    metadata,
+    'workflowExecutionTimeoutSeconds'
+  )
 
   return {
     id: update.id,
@@ -228,6 +244,8 @@ export function toDashboardConfigurationUpdate(
       usageLimitCredits === null ? null : creditsToDollars(usageLimitCredits),
     requestedSeats: seats === null ? null : Math.round(seats),
     requestedConcurrencyLimit: concurrencyLimit === null ? null : Math.round(concurrencyLimit),
+    requestedWorkflowExecutionTimeoutSeconds:
+      workflowExecutionTimeoutSeconds === null ? null : Math.round(workflowExecutionTimeoutSeconds),
     error: update.error,
   }
 }
@@ -576,6 +594,7 @@ export async function updateDashboardOrganizationLimits(
   values: {
     usageLimitDollars?: number
     concurrencyLimit?: number | null
+    workflowExecutionTimeoutSeconds?: number | null
   },
   actor: AdminMutationActor
 ) {
@@ -603,6 +622,12 @@ export async function updateDashboardOrganizationLimits(
     if (values.concurrencyLimit !== undefined && subscriptionRow?.plan !== 'enterprise') {
       throw new Error('Concurrency is editable only for Enterprise organizations')
     }
+    if (
+      values.workflowExecutionTimeoutSeconds !== undefined &&
+      subscriptionRow?.plan !== 'enterprise'
+    ) {
+      throw new Error('Workflow execution timeout is editable only for Enterprise organizations')
+    }
 
     if (subscriptionRow?.plan === 'enterprise') {
       if (!hasPaidSubscriptionStatus(subscriptionRow.status)) {
@@ -624,6 +649,9 @@ export async function updateDashboardOrganizationLimits(
             usageLimitCredits: configuredUsageLimit,
             ...(values.concurrencyLimit !== undefined
               ? { concurrencyLimit: values.concurrencyLimit }
+              : {}),
+            ...(values.workflowExecutionTimeoutSeconds !== undefined
+              ? { workflowExecutionTimeoutSeconds: values.workflowExecutionTimeoutSeconds }
               : {}),
           }
         },

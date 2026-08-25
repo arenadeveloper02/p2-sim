@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { isRecordLike } from '@sim/utils/object'
 import type OpenAI from 'openai'
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions'
 import type { CompletionUsage } from 'openai/resources/completions'
@@ -321,12 +322,8 @@ export function toResponsesToolChoice(
   return 'auto'
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
 function extractTextFromMessageItem(item: unknown): string {
-  if (!isRecord(item)) {
+  if (!isRecordLike(item)) {
     return ''
   }
 
@@ -340,7 +337,7 @@ function extractTextFromMessageItem(item: unknown): string {
 
   const textParts: string[] = []
   for (const part of item.content) {
-    if (!isRecord(part)) {
+    if (!isRecordLike(part)) {
       continue
     }
 
@@ -427,7 +424,7 @@ export function extractResponseToolCalls(
   const toolCalls: ResponsesToolCall[] = []
 
   for (const item of output) {
-    if (!isRecord(item)) {
+    if (!isRecordLike(item)) {
       continue
     }
 

@@ -41,6 +41,7 @@ import {
   MicrosoftSharepointIcon,
   MicrosoftTeamsIcon,
   MondayIcon,
+  NetSuiteIcon,
   NotionIcon,
   OutlookIcon,
   PipedriveIcon,
@@ -48,6 +49,7 @@ import {
   SalesforceIcon,
   ShopifyIcon,
   SlackIcon,
+  SnowflakeIcon,
   SpotifyIcon,
   TikTokIcon,
   TrelloIcon,
@@ -61,14 +63,26 @@ import {
   ZoomIcon,
 } from '@/components/icons'
 import { env } from '@/lib/core/config/env'
+import {
+  type OAuthClientCapabilityField,
+  type OAuthClientCapabilityId,
+  requireOAuthClientCapability,
+} from '@/lib/core/config/env-capabilities'
 import { isSlackExtendedScopesEnabled } from '@/lib/core/config/env-flags'
 import {
   DEFAULT_MAX_ERROR_BODY_BYTES,
   readResponseTextWithLimit,
 } from '@/lib/core/utils/stream-limits'
 import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
+import { getDocusignOAuthUrl } from '@/lib/oauth/docusign'
 import { parseInstagramLongLivedToken } from '@/lib/oauth/instagram'
 import { getMicrosoftOAuthEndpoints } from '@/lib/oauth/microsoft'
+import {
+  SALESFORCE_ADDITIONAL_PROVIDER_IDS,
+  SALESFORCE_LOGIN_HOSTS,
+  SALESFORCE_PROVIDER_ID_LABELS,
+} from '@/lib/oauth/salesforce'
+import { REDDIT_USER_AGENT } from '@/tools/reddit/constants'
 import type { OAuthProviderConfig } from './types'
 
 const logger = createLogger('OAuth')
@@ -251,6 +265,11 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'https://www.googleapis.com/auth/userinfo.email',
           'https://www.googleapis.com/auth/userinfo.profile',
           'https://www.googleapis.com/auth/ediscovery',
+          // Least-privilege scope for read-only consumers. The knowledge base
+          // connector only lists matters, holds, and saved queries, all of which
+          // accept ediscovery.readonly; the block's export tools still need the
+          // read-write scope above.
+          'https://www.googleapis.com/auth/ediscovery.readonly',
           'https://www.googleapis.com/auth/devstorage.read_only',
         ],
         serviceAccountProviderId: 'google-service-account',
@@ -321,11 +340,18 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'openid',
           'profile',
           'email',
-          'User.Read.All',
           'User.ReadWrite.All',
           'Group.ReadWrite.All',
           'GroupMember.ReadWrite.All',
-          'Directory.Read.All',
+          'LicenseAssignment.Read.All',
+          'LicenseAssignment.ReadWrite.All',
+          'UserAuthenticationMethod.ReadWrite.All',
+          'AuditLog.Read.All',
+          'Application.Read.All',
+          'AppRoleAssignment.ReadWrite.All',
+          'RoleManagement.ReadWrite.Directory',
+          'Device.Read.All',
+          'Policy.Read.All',
           'offline_access',
         ],
       },
@@ -840,6 +866,41 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
     },
     defaultService: 'slack',
   },
+  snowflake: {
+    name: 'Snowflake',
+    icon: SnowflakeIcon,
+    services: {
+      snowflake: {
+        name: 'Snowflake',
+        description: 'Query data and manage warehouses and tasks in Snowflake.',
+        providerId: 'snowflake',
+        serviceAccountProviderId: 'snowflake-service-account',
+        icon: SnowflakeIcon,
+        baseProviderIcon: SnowflakeIcon,
+        scopes: [],
+        authType: 'service_account',
+      },
+    },
+    defaultService: 'snowflake',
+  },
+  netsuite: {
+    name: 'Oracle NetSuite',
+    icon: NetSuiteIcon,
+    services: {
+      netsuite: {
+        name: 'Oracle NetSuite',
+        description:
+          'Manage NetSuite records, queries, datasets, batches, metadata, and asynchronous jobs.',
+        providerId: 'netsuite',
+        serviceAccountProviderId: 'netsuite-service-account',
+        icon: NetSuiteIcon,
+        baseProviderIcon: NetSuiteIcon,
+        scopes: [],
+        authType: 'service_account',
+      },
+    },
+    defaultService: 'netsuite',
+  },
   reddit: {
     name: 'Reddit',
     icon: RedditIcon,
@@ -1245,6 +1306,9 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         name: 'Salesforce',
         description: 'Access and manage your Salesforce CRM data.',
         providerId: 'salesforce',
+        additionalProviderIds: SALESFORCE_ADDITIONAL_PROVIDER_IDS,
+        providerIdLabels: SALESFORCE_PROVIDER_ID_LABELS,
+        providerIdPickerHint: 'Sandbox orgs sign in at test.salesforce.com, not production.',
         serviceAccountProviderId: 'salesforce-service-account',
         icon: SalesforceIcon,
         baseProviderIcon: SalesforceIcon,
@@ -1265,7 +1329,12 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         serviceAccountProviderId: 'zoho-desk-service-account',
         icon: ZohoDeskIcon,
         baseProviderIcon: ZohoDeskIcon,
-        // Kept to exactly what the tools and the webhook trigger exercise:
+        // Kept to what the tools and the webhook trigger exercise. NOTE: Zoho
+        // lists `Desk.organization.READ , Desk.basic.READ` for GET /organizations
+        // and `Desk.departments.READ , Desk.basic.READ` for GET /departments, and
+        // does not document whether that comma means AND or OR. Both bootstrap
+        // endpoints are assumed covered by Desk.basic.READ alone - verify against
+        // a live Desk org and widen here if either returns SCOPE_MISMATCH.
         // tickets (incl. threads/comments), contacts (get_contact), basic
         // (list_organizations), agents (the `assigneeId` picker lists agents),
         // webhook create/delete (the trigger provisions and tears down its own
@@ -1283,6 +1352,13 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'Desk.tickets.READ',
           'Desk.tickets.UPDATE',
           'Desk.contacts.READ',
+          // READ only: the knowledge base connector syncs Help Center articles
+          // via GET /articles and GET /articles/{id}; nothing authors one.
+          'Desk.articles.READ',
+          // GET /organizations documents `Desk.organization.READ , Desk.basic.READ`.
+          // Sibling endpoints spell the same construction "requires X and Y"
+          // (dependencyMappings, roles), so the comma is AND, not OR.
+          'Desk.organization.READ',
           // READ only: the agent picker for `assigneeId` lists agents, and no
           // tool creates, edits or deletes one.
           'Desk.agents.READ',
@@ -1442,6 +1518,18 @@ export type CustomOAuthAppCredentialsResolver = (
   appKey: string
 ) => Promise<{ clientId: string; clientSecret: string } | null>
 
+function getConfiguredClientCredentials<const TCapabilityId extends OAuthClientCapabilityId>(
+  providerId: TCapabilityId,
+  clientIdField: NoInfer<OAuthClientCapabilityField<TCapabilityId>>,
+  clientSecretField?: NoInfer<OAuthClientCapabilityField<TCapabilityId>>
+): Pick<ProviderAuthConfig, 'clientId' | 'clientSecret'> {
+  const { values } = requireOAuthClientCapability(providerId, env)
+  return {
+    clientId: values[clientIdField],
+    clientSecret: clientSecretField ? values[clientSecretField] : '',
+  }
+}
+
 /**
  * Thrown when a provider requires an organization-scoped custom OAuth app
  * (see `requiresCustomOAuthApp`) and the org hasn't configured one, or the
@@ -1469,9 +1557,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
 
   switch (provider) {
     case 'google': {
-      const { clientId, clientSecret } = getCredentials(
-        env.GOOGLE_CLIENT_ID,
-        env.GOOGLE_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'google',
+        'GOOGLE_CLIENT_ID',
+        'GOOGLE_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://oauth2.googleapis.com/token',
@@ -1493,7 +1582,11 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'x': {
-      const { clientId, clientSecret } = getCredentials(env.X_CLIENT_ID, env.X_CLIENT_SECRET)
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'x',
+        'X_CLIENT_ID',
+        'X_CLIENT_SECRET'
+      )
       return {
         tokenEndpoint: 'https://api.x.com/2/oauth2/token',
         clientId,
@@ -1503,9 +1596,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'tiktok': {
-      const { clientId, clientSecret } = getCredentials(
-        env.TIKTOK_CLIENT_ID,
-        env.TIKTOK_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'tiktok',
+        'TIKTOK_CLIENT_ID',
+        'TIKTOK_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://open.tiktokapis.com/v2/oauth/token/',
@@ -1518,9 +1612,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'confluence': {
-      const { clientId, clientSecret } = getCredentials(
-        env.CONFLUENCE_CLIENT_ID,
-        env.CONFLUENCE_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'confluence',
+        'CONFLUENCE_CLIENT_ID',
+        'CONFLUENCE_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://auth.atlassian.com/oauth/token',
@@ -1531,7 +1626,11 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'jira': {
-      const { clientId, clientSecret } = getCredentials(env.JIRA_CLIENT_ID, env.JIRA_CLIENT_SECRET)
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'jira',
+        'JIRA_CLIENT_ID',
+        'JIRA_CLIENT_SECRET'
+      )
       return {
         tokenEndpoint: 'https://auth.atlassian.com/oauth/token',
         clientId,
@@ -1541,14 +1640,14 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'calcom': {
-      const clientId = env.CALCOM_CLIENT_ID
-      if (!clientId) {
-        throw new Error('Missing CALCOM_CLIENT_ID')
-      }
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'calcom',
+        'CALCOM_CLIENT_ID'
+      )
       return {
         tokenEndpoint: 'https://app.cal.com/api/auth/oauth/refreshToken',
         clientId,
-        clientSecret: '',
+        clientSecret,
         useBasicAuth: false,
         supportsRefreshTokenRotation: true,
         // Cal.com requires refresh token in Authorization header, not body
@@ -1556,9 +1655,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'airtable': {
-      const { clientId, clientSecret } = getCredentials(
-        env.AIRTABLE_CLIENT_ID,
-        env.AIRTABLE_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'airtable',
+        'AIRTABLE_CLIENT_ID',
+        'AIRTABLE_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://airtable.com/oauth2/v1/token',
@@ -1569,9 +1669,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'notion': {
-      const { clientId, clientSecret } = getCredentials(
-        env.NOTION_CLIENT_ID,
-        env.NOTION_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'notion',
+        'NOTION_CLIENT_ID',
+        'NOTION_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://api.notion.com/v1/oauth/token',
@@ -1586,9 +1687,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
     case 'outlook':
     case 'onedrive':
     case 'sharepoint': {
-      const { clientId, clientSecret } = getCredentials(
-        env.MICROSOFT_CLIENT_ID,
-        env.MICROSOFT_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'microsoft',
+        'MICROSOFT_CLIENT_ID',
+        'MICROSOFT_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: getMicrosoftOAuthEndpoints().tokenUrl,
@@ -1599,9 +1701,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'clickup': {
-      const { clientId, clientSecret } = getCredentials(
-        env.CLICKUP_CLIENT_ID,
-        env.CLICKUP_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'clickup',
+        'CLICKUP_CLIENT_ID',
+        'CLICKUP_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://api.clickup.com/api/v2/oauth/token',
@@ -1612,9 +1715,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'linear': {
-      const { clientId, clientSecret } = getCredentials(
-        env.LINEAR_CLIENT_ID,
-        env.LINEAR_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'linear',
+        'LINEAR_CLIENT_ID',
+        'LINEAR_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://api.linear.app/oauth/token',
@@ -1625,9 +1729,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'attio': {
-      const { clientId, clientSecret } = getCredentials(
-        env.ATTIO_CLIENT_ID,
-        env.ATTIO_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'attio',
+        'ATTIO_CLIENT_ID',
+        'ATTIO_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://app.attio.com/oauth/token',
@@ -1637,21 +1742,32 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'box': {
-      const { clientId, clientSecret } = getCredentials(env.BOX_CLIENT_ID, env.BOX_CLIENT_SECRET)
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'box',
+        'BOX_CLIENT_ID',
+        'BOX_CLIENT_SECRET'
+      )
       return {
         tokenEndpoint: 'https://api.box.com/oauth2/token',
         clientId,
         clientSecret,
         useBasicAuth: false,
+        // Box refresh tokens are single-use: "the Refresh Token is invalidated and a
+        // new Refresh Token is returned" and "A Refresh Token is valid for 60 days and
+        // can be used to obtain a new Access Token and Refresh Token only once."
+        // (developer.box.com/guides/authentication/tokens/refresh). Without rotation the
+        // new token is discarded and the credential dies on the second refresh.
+        supportsRefreshTokenRotation: true,
       }
     }
     case 'docusign': {
-      const { clientId, clientSecret } = getCredentials(
-        env.DOCUSIGN_CLIENT_ID,
-        env.DOCUSIGN_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'docusign',
+        'DOCUSIGN_CLIENT_ID',
+        'DOCUSIGN_CLIENT_SECRET'
       )
       return {
-        tokenEndpoint: 'https://account-d.docusign.com/oauth/token',
+        tokenEndpoint: getDocusignOAuthUrl('/oauth/token'),
         clientId,
         clientSecret,
         useBasicAuth: true,
@@ -1659,9 +1775,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'dropbox': {
-      const { clientId, clientSecret } = getCredentials(
-        env.DROPBOX_CLIENT_ID,
-        env.DROPBOX_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'dropbox',
+        'DROPBOX_CLIENT_ID',
+        'DROPBOX_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://api.dropboxapi.com/oauth2/token',
@@ -1672,9 +1789,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'slack': {
-      const { clientId, clientSecret } = getCredentials(
-        env.SLACK_CLIENT_ID,
-        env.SLACK_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'slack',
+        'SLACK_CLIENT_ID',
+        'SLACK_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://slack.com/api/oauth.v2.access',
@@ -1685,9 +1803,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'reddit': {
-      const { clientId, clientSecret } = getCredentials(
-        env.REDDIT_CLIENT_ID,
-        env.REDDIT_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'reddit',
+        'REDDIT_CLIENT_ID',
+        'REDDIT_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://www.reddit.com/api/v1/access_token',
@@ -1695,14 +1814,15 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         clientSecret,
         useBasicAuth: true,
         additionalHeaders: {
-          'User-Agent': 'sim-studio/1.0 (https://github.com/simstudioai/sim)',
+          'User-Agent': REDDIT_USER_AGENT,
         },
       }
     }
     case 'wealthbox': {
-      const { clientId, clientSecret } = getCredentials(
-        env.WEALTHBOX_CLIENT_ID,
-        env.WEALTHBOX_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'wealthbox',
+        'WEALTHBOX_CLIENT_ID',
+        'WEALTHBOX_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://app.crmworkspace.com/oauth/token',
@@ -1713,9 +1833,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'webflow': {
-      const { clientId, clientSecret } = getCredentials(
-        env.WEBFLOW_CLIENT_ID,
-        env.WEBFLOW_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'webflow',
+        'WEBFLOW_CLIENT_ID',
+        'WEBFLOW_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://api.webflow.com/oauth/access_token',
@@ -1726,9 +1847,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'asana': {
-      const { clientId, clientSecret } = getCredentials(
-        env.ASANA_CLIENT_ID,
-        env.ASANA_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'asana',
+        'ASANA_CLIENT_ID',
+        'ASANA_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://app.asana.com/-/oauth_token',
@@ -1739,9 +1861,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'pipedrive': {
-      const { clientId, clientSecret } = getCredentials(
-        env.PIPEDRIVE_CLIENT_ID,
-        env.PIPEDRIVE_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'pipedrive',
+        'PIPEDRIVE_CLIENT_ID',
+        'PIPEDRIVE_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://oauth.pipedrive.com/oauth/token',
@@ -1774,9 +1897,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'linkedin': {
-      const { clientId, clientSecret } = getCredentials(
-        env.LINKEDIN_CLIENT_ID,
-        env.LINKEDIN_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'linkedin',
+        'LINKEDIN_CLIENT_ID',
+        'LINKEDIN_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://www.linkedin.com/oauth/v2/accessToken',
@@ -1797,9 +1921,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'instagram': {
-      const { clientId, clientSecret } = getCredentials(
-        env.INSTAGRAM_CLIENT_ID,
-        env.INSTAGRAM_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'instagram',
+        'INSTAGRAM_CLIENT_ID',
+        'INSTAGRAM_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://graph.instagram.com/refresh_access_token',
@@ -1810,13 +1935,19 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
         refreshStrategy: 'instagram_long_lived',
       }
     }
-    case 'salesforce': {
-      const { clientId, clientSecret } = getCredentials(
-        env.SALESFORCE_CLIENT_ID,
-        env.SALESFORCE_CLIENT_SECRET
+    case 'salesforce':
+    case 'salesforce-sandbox': {
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'salesforce',
+        'SALESFORCE_CLIENT_ID',
+        'SALESFORCE_CLIENT_SECRET'
       )
+      // A refresh token is only redeemable at the authorization server that
+      // issued it: a sandbox token posted to login.salesforce.com fails with
+      // `invalid_grant`. One Connected App's consumer key is valid at both
+      // hosts, so only the endpoint differs.
       return {
-        tokenEndpoint: 'https://login.salesforce.com/services/oauth2/token',
+        tokenEndpoint: `https://${SALESFORCE_LOGIN_HOSTS[provider]}/services/oauth2/token`,
         clientId,
         clientSecret,
         useBasicAuth: false,
@@ -1826,9 +1957,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
     case 'shopify': {
       // Shopify access tokens don't expire and don't support refresh tokens
       // This configuration is provided for completeness but won't be used for token refresh
-      const { clientId, clientSecret } = getCredentials(
-        env.SHOPIFY_CLIENT_ID,
-        env.SHOPIFY_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'shopify',
+        'SHOPIFY_CLIENT_ID',
+        'SHOPIFY_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://accounts.shopify.com/oauth/token',
@@ -1841,9 +1973,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
     case 'wordpress': {
       // WordPress.com does NOT support refresh tokens
       // Users will need to re-authorize when tokens expire (~2 weeks)
-      const { clientId, clientSecret } = getCredentials(
-        env.WORDPRESS_CLIENT_ID,
-        env.WORDPRESS_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'wordpress',
+        'WORDPRESS_CLIENT_ID',
+        'WORDPRESS_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://public-api.wordpress.com/oauth2/token',
@@ -1854,9 +1987,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'spotify': {
-      const { clientId, clientSecret } = getCredentials(
-        env.SPOTIFY_CLIENT_ID,
-        env.SPOTIFY_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'spotify',
+        'SPOTIFY_CLIENT_ID',
+        'SPOTIFY_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://accounts.spotify.com/api/token',
@@ -1867,9 +2001,10 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
       }
     }
     case 'monday': {
-      const { clientId, clientSecret } = getCredentials(
-        env.MONDAY_CLIENT_ID,
-        env.MONDAY_CLIENT_SECRET
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'monday',
+        'MONDAY_CLIENT_ID',
+        'MONDAY_CLIENT_SECRET'
       )
       return {
         tokenEndpoint: 'https://auth.monday.com/oauth2/token',
@@ -1882,10 +2017,21 @@ function getProviderAuthConfig(provider: string, alias?: string): ProviderAuthCo
     case 'zoho-desk': {
       // Zoho's refresh_token grant returns a new access token but no new refresh
       // token, so rotation stays off (the existing refresh token is preserved).
-      // The refresh must target the accounts server; a US/multi-DC-enabled client
-      // uses accounts.zoho.com. Data residency for API calls is honored separately
-      // via the persisted Desk base URL derived from the token response api_domain.
-      const { clientId, clientSecret } = getCredentials(env.ZOHO_CLIENT_ID, env.ZOHO_CLIENT_SECRET)
+      // The refresh must target the accounts server of the data center that issued
+      // the token - "if location=eu, you will need to make access token request to
+      // https://accounts.zoho.eu" (zoho.com/accounts/protocol/oauth/multi-dc.html).
+      // accounts.zoho.com is correct here because the authorize and code-exchange
+      // legs in lib/auth/connectors/providers.ts are also pinned to the US accounts
+      // server, so every refresh token in the system is US-issued. Making refresh
+      // DC-aware requires making the grant DC-aware first (read the `accounts-server`
+      // callback param) and threading the credential's persisted `__zoho_domain__`
+      // marker into refreshOAuthToken, which today only receives the token string.
+      // Data residency for API calls is already honored via that persisted Desk base.
+      const { clientId, clientSecret } = getConfiguredClientCredentials(
+        'zoho-desk',
+        'ZOHO_CLIENT_ID',
+        'ZOHO_CLIENT_SECRET'
+      )
       return {
         tokenEndpoint: 'https://accounts.zoho.com/oauth/v2/token',
         clientId,
@@ -1980,6 +2126,17 @@ function buildAuthRequest(
   return { headers, bodyParams, useJsonBody: config.useJsonBody }
 }
 
+/**
+ * Resolves the key {@link getProviderAuthConfig} is switched on for a stored
+ * credential's provider id.
+ *
+ * Normally that is the base provider, because every service in a family
+ * refreshes against the same endpoint with the same client. A provider id
+ * listed in a service's `additionalProviderIds` is the exception: it names a
+ * *different* authorization server for the same service, so it must reach
+ * `getProviderAuthConfig` intact — collapsing it to the base would silently
+ * refresh a sandbox token against the production endpoint.
+ */
 function getBaseProviderForService(providerId: string): string {
   if (providerId in OAUTH_PROVIDERS) {
     return providerId
@@ -1989,6 +2146,9 @@ function getBaseProviderForService(providerId: string): string {
     for (const service of Object.values(config.services)) {
       if (service.providerId === providerId) {
         return baseProvider
+      }
+      if (service.additionalProviderIds?.includes(providerId)) {
+        return providerId
       }
     }
   }
@@ -2152,7 +2312,6 @@ export async function refreshOAuthToken(
         hasClientId: !!config.clientId,
         hasClientSecret: !!config.clientSecret,
         hasRefreshToken: !!refreshToken,
-        refreshTokenPrefix: refreshToken ? `${refreshToken.substring(0, 10)}...` : 'none',
       })
       return {
         ok: false,

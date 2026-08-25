@@ -1,11 +1,5 @@
-import {
-  AgentIcon,
-  AnthropicIcon,
-  GmailIcon,
-  LinearIcon,
-  SlackIcon,
-  TableIcon,
-} from '@/components/icons'
+import { Table as TableIcon } from '@sim/emcn/icons'
+import { AgentIcon, AnthropicIcon, GmailIcon, LinearIcon, SlackIcon } from '@/components/icons'
 import type { BlockDef } from '@/app/(landing)/components/hero/components/hero-visual/workflow-data'
 
 /**
@@ -59,7 +53,8 @@ export const SHOWCASE_BLOCKS: BlockDef[] = [
     id: 'triage',
     name: 'Triage request',
     icon: AgentIcon,
-    bgColor: 'var(--text-primary)',
+    bgColor: '#FFFFFF',
+    tileBorder: true,
     rows: [
       { title: 'Model', value: 'Claude', valueIcon: AnthropicIcon },
       { title: 'Knowledge', value: 'Help center' },

@@ -56,7 +56,7 @@ function toolPropertyEnum(entry: ToolCatalogEntry, property: string): unknown[] 
 
 describe('humanizeToolName', () => {
   it('title-cases snake_case names', () => {
-    expect(humanizeToolName('manage_scheduled_task')).toBe('Manage Scheduled Task')
+    expect(humanizeToolName('manage_custom_tool')).toBe('Manage Custom Tool')
   })
 
   it('title-cases kebab-case names', () => {
@@ -116,7 +116,6 @@ describe('getToolDisplayTitle natural-language coverage', () => {
       'Managing table',
       'Preparing file',
       'Processing media',
-      'Scheduled task action',
       'Skill action',
     ])
     const unresolvedVariants: string[] = []
@@ -309,11 +308,6 @@ describe('getToolDisplayTitle for managed resources', () => {
     ['manage_mcp_tool', { operation: 'edit', config: { name: 'Linear' } }, 'Updating Linear'],
     ['manage_skill', { operation: 'delete', name: 'sales-research' }, 'Deleting sales-research'],
     [
-      'manage_scheduled_task',
-      { operation: 'create', args: { title: 'Morning Digest' } },
-      'Creating Morning Digest',
-    ],
-    [
       'manage_credential',
       {
         operation: 'rename',
@@ -326,8 +320,6 @@ describe('getToolDisplayTitle for managed resources', () => {
     ['manage_custom_tool', { operation: 'list' }, 'Viewing custom tools'],
     ['manage_mcp_tool', { operation: 'list' }, 'Viewing MCP servers'],
     ['manage_skill', { operation: 'list' }, 'Viewing skills'],
-    ['manage_scheduled_task', { operation: 'get' }, 'Reading scheduled task'],
-    ['manage_scheduled_task', { operation: 'list' }, 'Viewing scheduled tasks'],
   ])('uses verb + resource name for %s', (toolName, args, expected) => {
     expect(getToolDisplayTitle(toolName, args)).toBe(expected)
   })
@@ -414,9 +406,6 @@ describe('getToolDisplayTitle for operation-driven tools', () => {
     expect(getToolDisplayTitle('restore_resource', { type: 'knowledgebase' })).toBe(
       'Restoring knowledge base'
     )
-    expect(getToolDisplayTitle('open_resource', { resources: [{ type: 'scheduledtask' }] })).toBe(
-      'Opening scheduled task'
-    )
   })
 
   it('includes deployment versions when available', () => {
@@ -470,6 +459,18 @@ describe('getToolDisplayTitle for context management', () => {
   it('describes compaction in user-facing language', () => {
     expect(getToolDisplayTitle('context_compaction')).toBe('Summarizing context')
     expect(getToolStatusDisplayTitle('Summarizing context', 'success')).toBe('Summarized context')
+  })
+})
+
+describe('getToolStatusDisplayTitle for browser takeover', () => {
+  it('uses a neutral completed title after browser control resumes', () => {
+    expect(
+      getToolStatusDisplayTitle(
+        'Waiting for you: Pick a match in the draw',
+        'success',
+        'browser_request_takeover'
+      )
+    ).toBe('Resumed browser control')
   })
 })
 

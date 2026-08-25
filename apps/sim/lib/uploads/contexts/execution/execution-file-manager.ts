@@ -1,10 +1,13 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { getBaseUrl } from '@/lib/core/utils/urls'
 import { isPayloadSizeLimitError } from '@/lib/core/utils/stream-limits'
+import { getBaseUrl } from '@/lib/core/utils/urls'
 import { isUserFileWithMetadata } from '@/lib/core/utils/user-file'
 import type { ExecutionContext } from '@/lib/uploads/contexts/execution/utils'
-import { generateExecutionFileKey, generateFileId } from '@/lib/uploads/contexts/execution/utils'
+import {
+  generateFileId,
+  generateUniqueExecutionFileKey,
+} from '@/lib/uploads/contexts/execution/utils'
 import type { UserFile } from '@/executor/types'
 
 const logger = createLogger('ExecutionFileStorage')
@@ -79,7 +82,7 @@ export async function uploadExecutionFile(
     bufferSize: fileBuffer.length,
   })
 
-  const storageKey = generateExecutionFileKey(context, fileName)
+  const storageKey = generateUniqueExecutionFileKey(context, fileName)
   const fileId = generateFileId()
 
   logger.info(`Generated storage key: "${storageKey}" for file: ${fileName}`)

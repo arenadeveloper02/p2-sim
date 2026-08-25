@@ -1,4 +1,4 @@
-import { Blimp } from '@sim/emcn'
+import { ArenaIcon } from '@/components/icons'
 import { fetchWorkspaceRawSecretNameOptions } from '@/lib/workflows/subblocks/options'
 import type { BlockConfig } from '@/blocks/types'
 import type { ToolResponse } from '@/tools/types'
@@ -18,23 +18,33 @@ interface MothershipResponse extends ToolResponse {
 
 export const MothershipBlock: BlockConfig<MothershipResponse> = {
   type: 'mothership',
-  name: 'Sim Chat',
-  description: 'Talk to Sim',
+  name: 'Arena Chat',
+  description: 'Talk to Arena AI',
   longDescription:
-    'The Sim block sends messages to Sim, which has access to subagents, integration tools, and workspace context. Use it to perform complex multi-step reasoning, cross-service queries, or any task that benefits from the full Sim intelligence within a workflow.',
+    'The Arena Chat block sends messages to Arena AI, which has access to subagents, integration tools, and workspace context. Use it to perform complex multi-step reasoning, cross-service queries, or any task that benefits from the full Arena AI intelligence within a workflow.',
   bestPractices: `
   - Use for tasks that require multi-step reasoning, tool use, or cross-service coordination.
-  - Sim picks its own model and tools internally — you only provide a prompt.
+  - Arena AI picks its own model and tools internally — you only provide a prompt.
   `,
   category: 'blocks',
   bgColor: '#802FDE',
-  icon: Blimp,
+  icon: ArenaIcon,
+  canvasPresentation: {
+    defaultTitle: 'Arena Chat',
+    sentences: {
+      default: [
+        { text: 'Ask', field: 'prompt', core: true },
+        { text: ', with', field: ['attachmentFiles', 'fileReferences'], after: 'attached' },
+        { text: ', using', field: 'tools' },
+      ],
+    },
+  },
   subBlocks: [
     {
       id: 'prompt',
       title: 'Prompt',
       type: 'long-input',
-      placeholder: 'Enter your prompt for Sim...',
+      placeholder: 'Enter your prompt for Arena AI...',
     },
     {
       id: 'conversationId',
@@ -105,7 +115,7 @@ export const MothershipBlock: BlockConfig<MothershipResponse> = {
   inputs: {
     prompt: {
       type: 'string',
-      description: 'The prompt to send to Sim',
+      description: 'The prompt to send to Arena AI',
     },
     conversationId: {
       type: 'string',
@@ -113,12 +123,15 @@ export const MothershipBlock: BlockConfig<MothershipResponse> = {
     },
     files: {
       type: 'file',
-      description: 'Files to send to Sim as attachments',
+      description: 'Files to send to Arena AI as attachments',
     },
-    tools: { type: 'json', description: 'MCP tools available to Sim for this request' },
+    tools: { type: 'json', description: 'MCP tools available to Arena AI for this request' },
     skills: { type: 'json', description: 'Skills activated for this request' },
     secretScope: { type: 'string', description: 'Secret access mode: all or selected' },
-    mountedSecrets: { type: 'json', description: 'Secret names available to Sim code execution' },
+    mountedSecrets: {
+      type: 'json',
+      description: 'Secret names available to Arena AI code execution',
+    },
   },
   outputs: {
     content: { type: 'string', description: 'Generated response content' },

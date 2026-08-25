@@ -160,7 +160,11 @@ export function formatWorkflowRunChatResult(record: ToolTurnRecord): string {
 
   const status =
     (typeof payload.status === 'string' && payload.status.trim()) ||
-    (typeof payload.success === 'boolean' ? (payload.success ? 'completed' : 'failed') : 'completed')
+    (typeof payload.success === 'boolean'
+      ? payload.success
+        ? 'completed'
+        : 'failed'
+      : 'completed')
   const header = `${label} ${status}.`
   const body = extractWorkflowRunOutputText(record.result)
   return body ? `${header}\n\n${body}` : header

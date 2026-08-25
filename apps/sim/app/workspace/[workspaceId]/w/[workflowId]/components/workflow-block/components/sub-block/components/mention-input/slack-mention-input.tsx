@@ -28,6 +28,8 @@ interface SlackMentionInputProps {
   isForeignCredential?: boolean
   placeholder?: string
   blockId?: string
+  /** When true, list with the OAuth user token (`xoxp-`) instead of the bot token. */
+  useUserToken?: boolean
 }
 
 export function SlackMentionInput({
@@ -39,6 +41,7 @@ export function SlackMentionInput({
   isForeignCredential = false,
   placeholder = 'Type your message... Use @ to mention users',
   blockId,
+  useUserToken = false,
 }: SlackMentionInputProps) {
   const [users, setUsers] = useState<SlackUserInfo[]>([])
   const [loading, setLoading] = useState(false)
@@ -76,6 +79,7 @@ export function SlackMentionInput({
         body: JSON.stringify({
           credential,
           workflowId,
+          useUserToken: useUserToken || undefined,
         }),
       })
 
@@ -92,9 +96,13 @@ export function SlackMentionInput({
     } finally {
       setLoading(false)
     }
-  }, [credential, workflowId])
+  }, [credential, workflowId, useUserToken])
 
   // Load users when credential changes
+  useEffect(() => {
+    setUsers([])
+  }, [credential, useUserToken])
+
   useEffect(() => {
     if (credential && users.length === 0) {
       fetchUsers()
@@ -479,7 +487,7 @@ export function SlackMentionInput({
                     />
                     <User className='h-3.5 w-3.5 shrink-0 text-[var(--text-icon)]' aria-hidden />
                     <div className='flex min-w-0 flex-1 flex-col gap-0.5'>
-                      <span className='truncate font-medium'>
+                      <span className='truncate'>
                         {user.displayName || user.realName || user.name}
                       </span>
                       <span className='truncate text-[length:11px] text-[var(--text-muted)]'>

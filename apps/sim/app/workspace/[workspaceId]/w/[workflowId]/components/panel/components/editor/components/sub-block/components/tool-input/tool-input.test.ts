@@ -71,6 +71,26 @@ describe('buildInitialAgentToolParams', () => {
   })
 })
 
+describe('isAgentToolBlock', () => {
+  it('includes the current File block', () => {
+    expect(isAgentToolBlock({ type: 'file_v5', category: 'blocks', hideFromToolbar: false })).toBe(
+      true
+    )
+  })
+
+  it('excludes hidden blocks such as the legacy File block', () => {
+    expect(isAgentToolBlock({ type: 'file', category: 'blocks', hideFromToolbar: true })).toBe(
+      false
+    )
+  })
+
+  it('does not make every visible core block agent-callable', () => {
+    expect(isAgentToolBlock({ type: 'memory', category: 'blocks', hideFromToolbar: false })).toBe(
+      false
+    )
+  })
+})
+
 describe('isMcpToolAlreadySelected', () => {
   describe('basic functionality', () => {
     it.concurrent('returns false when selectedTools is empty', () => {

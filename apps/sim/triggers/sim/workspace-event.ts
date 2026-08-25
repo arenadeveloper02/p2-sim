@@ -5,11 +5,12 @@ import {
   SIM_TRIGGER_PROVIDER,
   SIM_WORKSPACE_EVENT_TRIGGER_ID,
 } from '@/lib/workspace-events/constants'
+import { readWorkspaceWorkflowOptions } from '@/triggers/editor-state'
 import type { TriggerConfig } from '@/triggers/types'
 
 export const simWorkspaceEventTrigger: TriggerConfig = {
   id: SIM_WORKSPACE_EVENT_TRIGGER_ID,
-  name: 'Sim Workspace Events',
+  name: 'Arena Workspace Events',
   provider: SIM_TRIGGER_PROVIDER,
   description:
     'Triggers when workspace events occur: run errors or successes, deployments, and alert conditions like latency or cost spikes',
@@ -50,10 +51,7 @@ export const simWorkspaceEventTrigger: TriggerConfig = {
       required: false,
       mode: 'trigger',
       // A subscriber never receives events about itself, so exclude it.
-      fetchOptions: async () => {
-        const { fetchWorkspaceWorkflowOptions } = await import('@/lib/workflows/subblocks/options')
-        return fetchWorkspaceWorkflowOptions({ excludeActiveWorkflow: true })
-      },
+      fetchOptions: () => readWorkspaceWorkflowOptions({ excludeActiveWorkflow: true }),
     },
     {
       id: 'consecutiveFailures',

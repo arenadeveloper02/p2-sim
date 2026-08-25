@@ -13,7 +13,12 @@ import { eq } from 'drizzle-orm'
 import type { Edge } from 'reactflow'
 import { z } from 'zod'
 import { type EffectivePiiRedaction, resolveEffectivePiiRedaction } from '@/lib/billing/retention'
-import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
+import {
+  getExecutionDeadlineAt,
+  getTimeoutErrorMessage,
+  isTimeoutAbortReason,
+} from '@/lib/core/execution-limits'
+import { getExecutionEnvironment } from '@/lib/environment/utils'
 import { clearExecutionCancellation } from '@/lib/execution/cancellation'
 import { warmLargeValueRefs } from '@/lib/execution/payloads/hydration'
 import { parseLargeExecutionValue } from '@/lib/execution/payloads/large-execution-value'
@@ -43,9 +48,12 @@ import type {
 } from '@/executor/execution/types'
 import type { ExecutionResult, StartBlockRunMetadata } from '@/executor/types'
 import { hasExecutionResult } from '@/executor/utils/errors'
+import { projectResolvedSecretDiagnosticError } from '@/executor/utils/resolved-secret-content-projection'
 import {
   createResolvedSecretTraceRegistry,
+  isResolvedSecretTraceProvenanceV1,
   type ResolvedSecretTraceProvenanceV1,
+  type ResolvedSecretTraceRegistry,
 } from '@/executor/utils/resolved-secret-trace-registry'
 import { isRunMetadataEnabled } from '@/executor/utils/start-block'
 import { buildParallelSentinelEndId, buildSentinelEndId } from '@/executor/utils/subflow-utils'
@@ -183,6 +191,22 @@ function parseVariableValueByType(value: unknown, type: string): unknown {
   return typeof value === 'string' ? value : String(value)
 }
 
+function restoreBlockStateSecretProvenance(
+  redacted: SerializableExecutionState['blockStates'],
+  original: SerializableExecutionState['blockStates']
+): SerializableExecutionState['blockStates'] {
+  for (const [blockId, originalState] of Object.entries(original)) {
+    const redactedState = redacted[blockId]
+    if (redactedState && originalState.resolvedSecretTraceProvenance) {
+      redacted[blockId] = {
+        ...redactedState,
+        resolvedSecretTraceProvenance: originalState.resolvedSecretTraceProvenance,
+      }
+    }
+  }
+  return redacted
+}
+
 type ExecutionErrorWithFinalizationFlag = Error & {
   executionFinalizedByCore?: boolean
 }
@@ -244,60 +268,53 @@ async function finalizeExecutionOutcome(params: {
   executionId: string
   requestId: string
   workflowInput: unknown
+  abortSignal?: AbortSignal
   triggerType?: string
 }): Promise<void> {
-  const { result, loggingSession, executionId, requestId, workflowInput, triggerType } = params
+  const {
+    result,
+    loggingSession,
+    executionId,
+    requestId,
+    workflowInput,
+    abortSignal,
+    triggerType,
+  } = params
   const { traceSpans, totalDuration } = buildTraceSpans(result)
   const endedAt = new Date().toISOString()
 
   try {
-    try {
-      if (result.status === 'cancelled') {
-        await loggingSession.safeCompleteWithCancellation({
-          endedAt,
-          totalDurationMs: totalDuration || 0,
-          traceSpans: traceSpans || [],
-          executionState: result.executionState,
-        })
-        return
+    if (result.status === 'cancelled' && isTimeoutAbortReason(abortSignal?.reason)) {
+      await loggingSession.safeCompleteWithError({
+        endedAt,
+        totalDurationMs: totalDuration || 0,
+        error: { message: getTimeoutErrorMessage(null) },
+        traceSpans: traceSpans || [],
+        executionState: result.executionState,
+      })
+    } else if (result.status === 'cancelled') {
+      await loggingSession.safeCompleteWithCancellation({
+        endedAt,
+        totalDurationMs: totalDuration || 0,
+        traceSpans: traceSpans || [],
+        executionState: result.executionState,
+      })
+    } else if (result.status === 'paused') {
+      await loggingSession.safeCompleteWithPause({
+        endedAt,
+        totalDurationMs: totalDuration || 0,
+        traceSpans: traceSpans || [],
+        workflowInput,
+        executionState: result.executionState,
+      })
+      if (
+        loggingSession.hasCompleted() &&
+        loggingSession.getPersistedCompletionStatus() === 'cancelled'
+      ) {
+        await clearExecutionCancellationSafely(executionId, requestId)
       }
-
-      if (result.status === 'paused') {
-        await loggingSession.safeCompleteWithPause({
-          endedAt,
-          totalDurationMs: totalDuration || 0,
-          traceSpans: traceSpans || [],
-          workflowInput,
-          executionState: result.executionState,
-        })
-        return
-      }
-
-      if (result.status === 'skipped') {
-        const skipOutput = result.output && typeof result.output === 'object' ? result.output : {}
-        const skipContent =
-          'content' in skipOutput && typeof skipOutput.content === 'string'
-            ? skipOutput.content
-            : undefined
-
-        if (!skipContent) {
-          logger.warn(`[${requestId}] Skip response content missing for skipped execution`, {
-            executionId,
-            hasOutput: !!result.output,
-          })
-        }
-
-        await loggingSession.safeCompleteAsSkipped({
-          endedAt,
-          totalDurationMs: totalDuration || 0,
-          finalOutput: skipOutput,
-          traceSpans: traceSpans || [],
-          workflowInput,
-          finalChatOutput: skipContent,
-        })
-        return
-      }
-
+      return
+    } else {
       let finalChatOutput: string | undefined
       if (triggerType === 'chat' && result.success) {
         const output = result.output
@@ -325,15 +342,19 @@ async function finalizeExecutionOutcome(params: {
         finalChatOutput,
         executionState: result.executionState,
       })
-    } catch (error) {
-      logger.warn(`[${requestId}] Post-execution finalization failed`, {
+    }
+
+    if (loggingSession.hasCompleted()) {
+      await clearExecutionCancellationSafely(executionId, requestId)
+    }
+  } catch (error) {
+    logger.warn(
+      `[${requestId}] Post-execution finalization failed`,
+      loggingSession.projectDiagnosticError(error, {
         executionId,
         status: result.status,
-        error,
       })
-    }
-  } finally {
-    await clearExecutionCancellationSafely(executionId, requestId)
+    )
   }
 }
 
@@ -359,14 +380,17 @@ async function finalizeExecutionError(params: {
       executionState: executionResult?.executionState,
     })
 
-    return loggingSession.hasCompleted()
+    const finalized = loggingSession.hasCompleted()
+    if (finalized) {
+      await clearExecutionCancellationSafely(executionId, requestId)
+    }
+    return finalized
   } catch (postExecError) {
-    logger.error(`[${requestId}] Post-execution error logging failed`, {
-      error: postExecError,
-    })
+    logger.error(
+      `[${requestId}] Post-execution error logging failed`,
+      loggingSession.projectDiagnosticError(postExecError, { executionId })
+    )
     return false
-  } finally {
-    await clearExecutionCancellationSafely(executionId, requestId)
   }
 }
 
@@ -399,6 +423,7 @@ async function executeWorkflowCoreImpl(
     stopAfterBlockId,
     runFromBlock,
   } = options
+  loggingSession.setExecutionDeadlineAt(getExecutionDeadlineAt(abortSignal))
   const { metadata, workflow, input, workflowVariables, selectedOutputs } = snapshot
   const { requestId, workflowId, userId, triggerType, executionId, triggerBlockId, useDraftState } =
     metadata
@@ -412,6 +437,7 @@ async function executeWorkflowCoreImpl(
   let processedInput = input || {}
   let deploymentVersionId: string | undefined
   let loggingStarted = false
+  let resolvedSecretTraceRegistry: ResolvedSecretTraceRegistry | undefined
   const pendingLifecycleCallbacks = new Set<Promise<void>>()
 
   const trackLifecycleCallback = (promise: Promise<void>) => {
@@ -435,13 +461,51 @@ async function executeWorkflowCoreImpl(
   }
 
   try {
-    const personalEnvUserId =
-      metadata.isClientSession && metadata.sessionUserId && metadata.triggerType !== 'chat'
+    /**
+     * Personal variables belong to whoever is running, whenever that is knowable.
+     * `enforceCredentialAccess` is the principal layer's own answer to "is there
+     * an identifiable caller": it is set from `principal.kind !== 'workspace_api_key'`,
+     * so a session, personal API key, or delegated run reads its own personal
+     * variables rather than borrowing the workflow owner's.
+     *
+     * The workflow owner remains the fallback for a workspace API key, schedule,
+     * or webhook. Someone in the workspace configured each of those, and a
+     * deployed workflow is routinely authored against its owner's personal keys.
+     *
+     * An anonymous public-API run resolves no personal variables at all. Anyone
+     * can call that endpoint, so there is no caller to read as and no person whose
+     * private namespace it would be reasonable to lend — such a workflow runs on
+     * workspace secrets alone.
+     *
+     * Deployed chat still uses the workflow owner's personal namespace even when
+     * `sessionUserId` is set. That id is for Arena token lookup, not personal env.
+     */
+    const identifiedCallerUserId =
+      metadata.triggerType !== 'chat' && metadata.isClientSession && metadata.sessionUserId
         ? metadata.sessionUserId
-        : metadata.workflowUserId
+        : metadata.enforceCredentialAccess
+          ? metadata.userId
+          : undefined
 
-    if (!personalEnvUserId) {
+    const personalEnvUserId = metadata.isPublicApiAccess
+      ? undefined
+      : identifiedCallerUserId || metadata.workflowUserId
+
+    if (!metadata.isPublicApiAccess && !personalEnvUserId) {
       throw new Error('Missing workflowUserId in execution metadata')
+    }
+
+    /**
+     * The actor already carries the identity each trigger kind should authorize
+     * workspace secrets against: the caller for a session, personal API key, or
+     * delegated principal, and the workspace billing account for a workspace API
+     * key, schedule, webhook, or anonymous public-API call, where no caller is
+     * identifiable. Deriving it again here would only risk disagreeing with the
+     * principal layer.
+     */
+    const workspaceEnvUserId = metadata.userId || personalEnvUserId
+    if (!workspaceEnvUserId) {
+      throw new Error('Missing execution actor in execution metadata')
     }
 
     /**
@@ -497,7 +561,7 @@ async function executeWorkflowCoreImpl(
 
     const [workflowState, env] = await Promise.all([
       loadWorkflowState(),
-      getPersonalAndWorkspaceEnv(personalEnvUserId, providedWorkspaceId),
+      getExecutionEnvironment(personalEnvUserId, workspaceEnvUserId, providedWorkspaceId),
     ])
 
     const { blocks, loops, parallels } = workflowState
@@ -649,24 +713,25 @@ async function executeWorkflowCoreImpl(
       ? restoredState?.trustedLargeValueAccess
       : undefined
     const requireRestoredProvenance = restoredState !== undefined
-    const resolvedSecretTraceRegistry = await createResolvedSecretTraceRegistry({
+    resolvedSecretTraceRegistry = await createResolvedSecretTraceRegistry({
       personalEncrypted,
       workspaceEncrypted,
       personalDecrypted,
       workspaceDecrypted,
       decryptionFailures,
-      restoredProvenance:
-        restoreTrusted || requireRestoredProvenance
-          ? restoredState?.resolvedSecretTraceProvenance
-          : undefined,
+      restoredProvenance: restoreTrusted ? restoredState?.resolvedSecretTraceProvenance : undefined,
+      restoredCheckpointVersion: restoredState?.resolvedSecretTraceCheckpointVersion,
       restoreTrusted,
       requireRestoredProvenance,
-      scope: { userId: personalEnvUserId, workspaceId: providedWorkspaceId },
+      scope: { userId: personalEnvUserId ?? workspaceEnvUserId, workspaceId: providedWorkspaceId },
     })
+    if (restoredState && !restoreTrusted) {
+      resolvedSecretTraceRegistry.markIncomplete('restored-provenance-untrusted')
+    }
     if (options.trustedInitialResolvedSecretTraceProvenance !== undefined) {
       await resolvedSecretTraceRegistry.importProvenance(
         options.trustedInitialResolvedSecretTraceProvenance,
-        { trusted: true }
+        { trusted: true, origin: 'executionCore.initialProvenance' }
       )
     }
     loggingSession.setResolvedSecretTraceRegistry(resolvedSecretTraceRegistry)
@@ -784,12 +849,14 @@ async function executeWorkflowCoreImpl(
         await loggingSession.onBlockComplete(blockId, blockName, blockType, output)
         persistenceSucceeded = true
       })().catch((error) => {
-        logger.warn(`[${requestId}] Block completion persistence failed`, {
-          executionId,
-          blockId,
-          blockType,
-          error,
-        })
+        logger.warn(
+          `[${requestId}] Block completion persistence failed`,
+          loggingSession.projectDiagnosticError(error, {
+            executionId,
+            blockId,
+            blockType,
+          })
+        )
       })
 
       const lifecyclePromise = (async () => {
@@ -806,12 +873,14 @@ async function executeWorkflowCoreImpl(
             childWorkflowContext
           )
         } catch (error) {
-          logger.warn(`[${requestId}] Block completion callback failed`, {
-            executionId,
-            blockId,
-            blockType,
-            error,
-          })
+          logger.warn(
+            `[${requestId}] Block completion callback failed`,
+            loggingSession.projectDiagnosticError(error, {
+              executionId,
+              blockId,
+              blockType,
+            })
+          )
         }
       })()
 
@@ -832,12 +901,14 @@ async function executeWorkflowCoreImpl(
         await loggingSession.onBlockStart(blockId, blockName, blockType, new Date().toISOString())
         persistenceSucceeded = true
       })().catch((error) => {
-        logger.warn(`[${requestId}] Block start persistence failed`, {
-          executionId,
-          blockId,
-          blockType,
-          error,
-        })
+        logger.warn(
+          `[${requestId}] Block start persistence failed`,
+          loggingSession.projectDiagnosticError(error, {
+            executionId,
+            blockId,
+            blockType,
+          })
+        )
       })
 
       const lifecyclePromise = (async () => {
@@ -854,12 +925,14 @@ async function executeWorkflowCoreImpl(
             childWorkflowContext
           )
         } catch (error) {
-          logger.warn(`[${requestId}] Block start callback failed`, {
-            executionId,
-            blockId,
-            blockType,
-            error,
-          })
+          logger.warn(
+            `[${requestId}] Block start callback failed`,
+            loggingSession.projectDiagnosticError(error, {
+              executionId,
+              blockId,
+              blockType,
+            })
+          )
         }
       })()
 
@@ -969,17 +1042,19 @@ async function executeWorkflowCoreImpl(
         },
       }
       if (snapshot.state?.blockStates) {
-        const hydrated = await redactLargeValueRefsInValue(snapshot.state.blockStates, largeRefOpts)
-        snapshot.state.blockStates = await redactObjectStrings(hydrated, blockOutputOpts)
+        const originalBlockStates = snapshot.state.blockStates
+        const hydrated = await redactLargeValueRefsInValue(originalBlockStates, largeRefOpts)
+        snapshot.state.blockStates = restoreBlockStateSecretProvenance(
+          await redactObjectStrings(hydrated, blockOutputOpts),
+          originalBlockStates
+        )
       }
       if (runFromBlock?.sourceSnapshot?.blockStates) {
-        const hydrated = await redactLargeValueRefsInValue(
-          runFromBlock.sourceSnapshot.blockStates,
-          largeRefOpts
-        )
-        runFromBlock.sourceSnapshot.blockStates = await redactObjectStrings(
-          hydrated,
-          blockOutputOpts
+        const originalBlockStates = runFromBlock.sourceSnapshot.blockStates
+        const hydrated = await redactLargeValueRefsInValue(originalBlockStates, largeRefOpts)
+        runFromBlock.sourceSnapshot.blockStates = restoreBlockStateSecretProvenance(
+          await redactObjectStrings(hydrated, blockOutputOpts),
+          originalBlockStates
         )
       }
     }
@@ -1001,6 +1076,19 @@ async function executeWorkflowCoreImpl(
         }
       }
     }
+
+    const hasRestoredWorkflowInputProvenance =
+      restoreTrusted &&
+      restoredState !== undefined &&
+      Object.hasOwn(restoredState, 'workflowInputResolvedSecretTraceProvenance')
+    const restoredWorkflowInputProvenance = hasRestoredWorkflowInputProvenance
+      ? isResolvedSecretTraceProvenanceV1(restoredState.workflowInputResolvedSecretTraceProvenance)
+        ? restoredState.workflowInputResolvedSecretTraceProvenance
+        : { version: 1 as const, complete: false, entries: [] }
+      : undefined
+    const workflowInputResolvedSecretTraceProvenance = restoredState
+      ? restoredWorkflowInputProvenance
+      : resolvedSecretTraceRegistry.exportCommittedProvenanceForValue(processedInput)
 
     const contextExtensions: ContextExtensions = {
       stream: !!onStream,
@@ -1029,6 +1117,9 @@ async function executeWorkflowCoreImpl(
       dagIncomingEdges: snapshot.state?.dagIncomingEdges,
       snapshotState: snapshot.state,
       resolvedSecretTraceRegistry,
+      ...(workflowInputResolvedSecretTraceProvenance
+        ? { workflowInputResolvedSecretTraceProvenance }
+        : {}),
       metadata,
       startRunMetadata,
       abortSignal,
@@ -1088,6 +1179,7 @@ async function executeWorkflowCoreImpl(
             executionId,
             requestId,
             workflowInput: processedInput,
+            abortSignal,
             triggerType,
           })
 
@@ -1099,7 +1191,10 @@ async function executeWorkflowCoreImpl(
             }
           }
         } catch (postExecError) {
-          logger.error(`[${requestId}] Post-execution logging failed`, { error: postExecError })
+          logger.error(
+            `[${requestId}] Post-execution logging failed`,
+            loggingSession.projectDiagnosticError(postExecError, { executionId })
+          )
         }
       })()
     )
@@ -1115,8 +1210,11 @@ async function executeWorkflowCoreImpl(
     const errorCause = describeErrorCause(error)
     logger.error(
       `[${requestId}] Execution failed:`,
-      error,
-      ...(errorCause ? [{ cause: errorCause }] : [])
+      projectResolvedSecretDiagnosticError(
+        error,
+        resolvedSecretTraceRegistry,
+        errorCause ? { cause: errorCause } : undefined
+      )
     )
 
     await waitForLifecycleCallbacks()
@@ -1156,9 +1254,10 @@ async function executeWorkflowCoreImpl(
             markExecutionFinalizedByCore(error, executionId)
           }
         } catch (postExecError) {
-          logger.error(`[${requestId}] Post-execution error logging failed`, {
-            error: postExecError,
-          })
+          logger.error(
+            `[${requestId}] Post-execution error logging failed`,
+            loggingSession.projectDiagnosticError(postExecError, { executionId })
+          )
         }
       })()
     )

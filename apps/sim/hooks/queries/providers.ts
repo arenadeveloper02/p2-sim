@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { useQuery } from '@tanstack/react-query'
+import { queryOptions, useQuery } from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import {
   getBaseProviderModelsContract,
@@ -9,6 +9,7 @@ import {
   getLitellmProviderModelsContract,
   getOllamaCloudProviderModelsContract,
   getOllamaProviderModelsContract,
+  getOpenRouterEmbeddingModelsContract,
   getOpenRouterProviderModelsContract,
   getSambanovaProviderModelsContract,
   getTogetherProviderModelsContract,
@@ -16,6 +17,8 @@ import {
   type ProviderModelsResponse,
 } from '@/lib/api/contracts/providers'
 import type { ProviderName } from '@/stores/providers'
+
+type ProviderModelSource = ProviderName | 'openrouter-embeddings'
 
 const logger = createLogger('ProviderModelsQuery')
 
@@ -29,14 +32,14 @@ export const providerKeys = {
 }
 
 async function fetchProviderModels(
-  provider: ProviderName,
+  provider: ProviderModelSource,
   signal?: AbortSignal,
   workspaceId?: string
 ): Promise<ProviderModelsResponse> {
   try {
     const data = await requestProviderModels(provider, signal, workspaceId)
     const models: string[] = Array.isArray(data.models) ? data.models : []
-    const uniqueModels = provider === 'openrouter' ? Array.from(new Set(models)) : models
+    const uniqueModels = provider.startsWith('openrouter') ? Array.from(new Set(models)) : models
 
     return {
       models: uniqueModels,
@@ -51,7 +54,7 @@ async function fetchProviderModels(
 }
 
 async function requestProviderModels(
-  provider: ProviderName,
+  provider: ProviderModelSource,
   signal?: AbortSignal,
   workspaceId?: string
 ): Promise<ProviderModelsResponse> {
@@ -73,6 +76,8 @@ async function requestProviderModels(
       return requestJson(getOpenRouterProviderModelsContract, { signal })
     case 'sambanova':
       return requestJson(getSambanovaProviderModelsContract, { signal })
+    case 'openrouter-embeddings':
+      return requestJson(getOpenRouterEmbeddingModelsContract, { signal })
     case 'fireworks':
       return requestJson(getFireworksProviderModelsContract, {
         query: { workspaceId },
@@ -91,10 +96,14 @@ async function requestProviderModels(
   }
 }
 
-export function useProviderModels(provider: ProviderName, workspaceId?: string) {
-  return useQuery({
+export function providerModelsQueryOptions(provider: ProviderModelSource, workspaceId?: string) {
+  return queryOptions({
     queryKey: providerKeys.list(provider, workspaceId),
     queryFn: ({ signal }) => fetchProviderModels(provider, signal, workspaceId),
     staleTime: PROVIDER_MODELS_STALE_TIME,
   })
+}
+
+export function useProviderModels(provider: ProviderModelSource, workspaceId?: string) {
+  return useQuery(providerModelsQueryOptions(provider, workspaceId))
 }

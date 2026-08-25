@@ -14,9 +14,10 @@ import {
   Textarea,
   Tooltip,
 } from '@sim/emcn'
+import { TriangleAlert } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { AlertTriangle, Check } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { GeneratedPasswordInput } from '@/components/ui'
 import { CustomSelect } from '@/components/ui/native-select'
 import { useSession } from '@/lib/auth/auth-client'
@@ -115,10 +116,7 @@ function normalizeSessionEmail(email: string | null | undefined): string | null 
   return normalized
 }
 
-function createInitialFormData(
-  mode: 'chat' | 'app',
-  sessionEmail?: string | null
-): ChatFormData {
+function createInitialFormData(mode: 'chat' | 'app', sessionEmail?: string | null): ChatFormData {
   const email = normalizeSessionEmail(sessionEmail)
   return {
     identifier: '',
@@ -530,10 +528,15 @@ export function ChatDeploy({
 
   return (
     <>
-      <form id={formId} ref={formRef} onSubmit={handleSubmit} className='-mx-1 space-y-4 px-1'>
+      <form
+        id='chat-deploy-form'
+        ref={formRef}
+        onSubmit={handleSubmit}
+        className='-mx-1 space-y-4 px-1'
+      >
         {errors.general && (
           <div className='flex items-center gap-2 rounded-md border border-[color-mix(in_srgb,var(--text-error)_20%,transparent)] bg-[color-mix(in_srgb,var(--text-error)_10%,transparent)] px-3 py-2 text-[var(--text-error)] text-small'>
-            <AlertTriangle className='size-4 flex-shrink-0' />
+            <TriangleAlert className='size-4 flex-shrink-0' />
             <span>{errors.general}</span>
           </div>
         )}
@@ -541,7 +544,7 @@ export function ChatDeploy({
         <div>
           <Label
             htmlFor={`${formId}-title`}
-            className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
+            className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'
           >
             Title
           </Label>
@@ -558,7 +561,7 @@ export function ChatDeploy({
 
         <div className='space-y-[12px]'>
           <div>
-            <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+            <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
               Category
             </Label>
             <CustomSelect
@@ -573,7 +576,7 @@ export function ChatDeploy({
             <p className='mt-1 text-destructive text-sm'>{errors.department}</p>
           )}
           <div>
-            <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+            <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
               Description
             </Label>
             <Textarea
@@ -598,7 +601,7 @@ export function ChatDeploy({
             <div>
               <Label
                 htmlFor={`${formId}-redirectUrl`}
-                className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'
+                className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'
               >
                 Redirection URL
               </Label>
@@ -616,7 +619,7 @@ export function ChatDeploy({
             </div>
           ) : (
             <div>
-              <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
+              <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
                 Output
               </Label>
               <OutputSelect
@@ -638,7 +641,7 @@ export function ChatDeploy({
 
           <div className='flex items-center justify-between gap-3'>
             <div className='min-w-0'>
-              <Label className='block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
+              <Label className='block pl-0.5 text-[var(--text-primary)] text-small'>
                 Include thinking
               </Label>
             </div>
@@ -652,7 +655,7 @@ export function ChatDeploy({
 
           <div className='flex items-center justify-between gap-3'>
             <div className='min-w-0'>
-              <Label className='block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
+              <Label className='block pl-0.5 text-[var(--text-primary)] text-small'>
                 Include tool calls
               </Label>
             </div>
@@ -683,7 +686,7 @@ export function ChatDeploy({
           <div>
             <Label
               htmlFor={`${formId}-welcomeMessage`}
-              className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'
+              className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'
             >
               Welcome message
             </Label>
@@ -841,7 +844,7 @@ function IdentifierInput({
     <div>
       <Label
         htmlFor='chat-url'
-        className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'
+        className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'
       >
         URL
       </Label>
@@ -851,7 +854,7 @@ function IdentifierInput({
           error && 'border-[var(--text-error)]'
         )}
       >
-        <div className='flex items-center whitespace-nowrap bg-[var(--surface-5)] pr-1.5 pl-2 font-medium text-[var(--text-secondary)] text-sm'>
+        <div className='flex items-center whitespace-nowrap bg-[var(--surface-5)] pr-1.5 pl-2 text-[var(--text-secondary)] text-sm'>
           {getDomainPrefix()}
         </div>
         <div className='relative flex-1'>
@@ -1008,7 +1011,7 @@ function AuthSelector({
     <div className='space-y-[16px]'>
       {/* Access control selector intentionally commented — Arena deploy UX hides it.
       <div>
-        <Label className='mb-[6.5px] block pl-[2px] font-medium text-[13px] text-[var(--text-primary)]'>
+        <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
           Access control
         </Label>
         <ButtonGroup
@@ -1027,7 +1030,7 @@ function AuthSelector({
 
       {authType === 'password' && (
         <div>
-          <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
+          <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
             Password
           </Label>
           <GeneratedPasswordInput
@@ -1055,7 +1058,7 @@ function AuthSelector({
 
       {(authType === 'email' || authType === 'sso') && (
         <div>
-          <Label className='mb-[6.5px] block pl-0.5 font-medium text-[var(--text-primary)] text-small'>
+          <Label className='mb-[6.5px] block pl-0.5 text-[var(--text-primary)] text-small'>
             {authType === 'email' ? 'Allowed emails' : 'Allowed SSO emails'}
           </Label>
           <ChipEmailsInput
@@ -1063,17 +1066,10 @@ function AuthSelector({
             onChange={onEmailsChange}
             validate={validateAllowlistEntry}
             allowDomains
-            placeholder={
-              emails.length > 0 ? 'Add another email' : 'Enter emails or domains (@example.com)'
-            }
+            placeholder='Enter emails or domains'
             placeholderWithTags='Add email or domain'
             disabled={disabled}
           />
-          <p className='mt-[6.5px] text-[var(--text-secondary)] text-xs'>
-            {authType === 'email'
-              ? 'Add specific emails or entire domains (@example.com)'
-              : 'Add emails or domains that can access via SSO'}
-          </p>
         </div>
       )}
 

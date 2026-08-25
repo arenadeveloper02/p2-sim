@@ -107,9 +107,7 @@ export async function* runParentSpecialistToolCalls(
             domain: 'workflow' as const,
             findings: '',
             toolRoundCount: 0,
-            events: [
-              { type: 'status' as const, message: `Unknown specialist tool: ${call.name}` },
-            ],
+            events: [{ type: 'status' as const, message: `Unknown specialist tool: ${call.name}` }],
             success: false,
             error: `Unknown specialist tool: ${call.name}`,
           } satisfies SpecialistPassResult,

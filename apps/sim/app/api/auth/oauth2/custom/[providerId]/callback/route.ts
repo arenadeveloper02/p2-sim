@@ -11,9 +11,9 @@ import { getBaseUrl } from '@/lib/core/utils/urls'
 import { isSameOrigin } from '@/lib/core/utils/validation'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { processCredentialDraft } from '@/lib/credentials/draft-processor'
+import { safeAccountInsert } from '@/lib/oauth/credential-service'
 import { getCustomOAuthAppConfig, requiresCustomOAuthApp } from '@/lib/oauth/custom-app-config'
 import { consumeCustomOAuthAppState, getOrganizationOAuthApp } from '@/lib/oauth/custom-apps'
-import { safeAccountInsert } from '@/app/api/auth/oauth/utils'
 
 const logger = createLogger('CustomOAuthAppCallback')
 

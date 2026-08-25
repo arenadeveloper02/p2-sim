@@ -89,6 +89,15 @@ export const ImageGeneratorBlockV2: BlockConfig = {
   integrationType: IntegrationType.AI,
   bgColor: '#4D5FFF',
   icon: ImageIcon,
+  canvasPresentation: {
+    defaultTitle: 'Image Generator',
+    sentences: {
+      default: [
+        { text: 'Generate an image from', field: 'prompt', core: true },
+        { text: 'with', field: 'model' },
+      ],
+    },
+  },
   subBlocks: [
     {
       id: 'model',
@@ -562,6 +571,15 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
   integrationType: IntegrationType.AI,
   bgColor: '#4D5FFF',
   icon: ImageIcon,
+  canvasPresentation: {
+    defaultTitle: 'Image Generator',
+    sentences: {
+      default: [
+        { text: 'Generate an image from', field: 'prompt', core: true },
+        { text: 'with', field: 'model' },
+      ],
+    },
+  },
   subBlocks: [
     {
       id: 'provider',

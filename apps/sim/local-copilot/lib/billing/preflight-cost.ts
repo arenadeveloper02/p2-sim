@@ -28,7 +28,9 @@ export function estimateLocalToolCost(
 /**
  * Estimates cost for a multi-specialist batch (parent specialist tools).
  */
-export function estimateMultiSpecialistCost(specialistCallCount: number): LocalPreflightCostEstimate | null {
+export function estimateMultiSpecialistCost(
+  specialistCallCount: number
+): LocalPreflightCostEstimate | null {
   if (specialistCallCount < 2) return null
   const estimatedCostUsd = Number((specialistCallCount * SPECIALIST_ROUND_ESTIMATE_USD).toFixed(2))
   return {

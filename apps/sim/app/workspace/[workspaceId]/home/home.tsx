@@ -3,6 +3,7 @@
 import {
   type Dispatch,
   lazy,
+  type PointerEvent,
   type SetStateAction,
   Suspense,
   useCallback,
@@ -10,24 +11,22 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from 'react'
-import { Button, cn } from '@sim/emcn'
+import { Button, cn, toast } from '@sim/emcn'
 import { PanelLeft } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
+import { useQueryClient } from '@tanstack/react-query'
 import { useParams, useRouter } from 'next/navigation'
 import { useQueryState } from 'nuqs'
 import { usePostHog } from 'posthog-js/react'
 import { requestJson } from '@/lib/api/client/request'
 import { createWorkflowContract } from '@/lib/api/contracts'
-import { canonicalWorkspaceFilePath } from '@/lib/copilot/vfs/path-utils'
 import {
   LandingPromptStorage,
   type LandingWorkflowSeed,
   LandingWorkflowSeedStorage,
   MothershipHandoffStorage,
 } from '@/lib/core/utils/browser-storage'
-import { isDesktopApp } from '@/lib/desktop'
 import {
   addMothershipContexts,
   MOTHERSHIP_SEND_MESSAGE_EVENT,
@@ -36,6 +35,7 @@ import {
 import { captureEvent } from '@/lib/posthog/client'
 import { persistImportedWorkflow } from '@/lib/workflows/operations/import-export'
 import { RESOURCE_HEADER_CLASSES } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-tabs/resource-tab-controls'
+import { resolveWorkspaceResourceRef } from '@/app/workspace/[workspaceId]/home/resolve-resource-ref'
 import { resourceParam, resourceUrlKeys } from '@/app/workspace/[workspaceId]/home/search-params'
 import { useFolders } from '@/hooks/queries/folders'
 import {
@@ -44,7 +44,7 @@ import {
   useUpdateMothershipChatModel,
 } from '@/hooks/queries/mothership-chats'
 import { useWorkflows } from '@/hooks/queries/workflows'
-import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
+import { getWorkspaceFilesQueryOptions, useWorkspaceFiles } from '@/hooks/queries/workspace-files'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
 import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import {
@@ -55,7 +55,6 @@ import {
 import type { ChatContext } from '@/stores/panel'
 import {
   ChatSurfaceProvider,
-  CreditsChip,
   MothershipChat,
   MothershipResourcesProvider,
   SuggestedActions,
@@ -63,11 +62,14 @@ import {
   type UserInputHandle,
 } from './components'
 import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
-import type { FileAttachmentForApi, MothershipResource, MothershipResourceType } from './types'
+import type {
+  FileAttachmentForApi,
+  MothershipResource,
+  MothershipResourceType,
+  WorkspaceResourceRef,
+} from './types'
 
 const logger = createLogger('Home')
-const subscribeToDesktopApp = () => () => {}
-const getServerDesktopAppSnapshot = () => false
 
 /**
  * The resource preview panel pulls in the file-viewer stack (rich-markdown
@@ -90,13 +92,9 @@ interface HomeProps {
 
 export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps) {
   useOAuthReturnRouter()
-  const isDesktop = useSyncExternalStore(
-    subscribeToDesktopApp,
-    isDesktopApp,
-    getServerDesktopAppSnapshot
-  )
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const router = useRouter()
+  const queryClient = useQueryClient()
   /**
    * URL is the single source of truth for the selected resource. `Home` renders
    * client-side, so nuqs reads `?resource=` from the URL on mount — the same
@@ -213,13 +211,31 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
 
   const [isResourceCollapsed, setIsResourceCollapsed] = useState(true)
   const [skipResourceTransition, setSkipResourceTransition] = useState(false)
+  const [resourceActivityIds, setResourceActivityIds] = useState<Set<string>>(new Set())
   const isResourceCollapsedRef = useRef(isResourceCollapsed)
   isResourceCollapsedRef.current = isResourceCollapsed
+  const userOwnsResourceViewRef = useRef(false)
+  const activeResourceParamRef = useRef(activeResourceParam)
+  activeResourceParamRef.current = activeResourceParam
 
-  function handleResourceEvent() {
-    if (isResourceCollapsedRef.current) {
-      setIsResourceCollapsed(false)
+  function handleResourceEvent(resourceId: string) {
+    // Agent work should always make the resource surface available, but it
+    // must never replace an existing selection. Activity in another resource
+    // stays in the background and gets an attention marker instead.
+    if (isResourceCollapsedRef.current) setIsResourceCollapsed(false)
+
+    const activeResourceId = activeResourceParamRef.current
+    if (activeResourceId && activeResourceId !== resourceId) {
+      setResourceActivityIds((current) => new Set(current).add(resourceId))
+      return
     }
+    setResourceActivityIds((current) => {
+      if (!current.has(resourceId)) return current
+      const next = new Set(current)
+      next.delete(resourceId)
+      return next
+    })
+    if (activeResourceId !== resourceId) setActiveResourceUrl(resourceId)
   }
 
   const { canSwitchBackend, copilotBackend, setCopilotBackend } = useCopilotBackendPreference()
@@ -298,19 +314,79 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
     [resolvedChatId, chatId, updateChatModel]
   )
   const { mothershipRef, handleResizePointerDown, clearWidth } = useMothershipResize(desktopScopeId)
+  const effectiveActiveResourceIdRef = useRef(activeResourceId)
+  effectiveActiveResourceIdRef.current = activeResourceId
+  const resourceAttentionChatIdRef = useRef(resolvedChatId)
 
   const collapseResource = useCallback(() => {
+    userOwnsResourceViewRef.current = true
     clearWidth()
     setIsResourceCollapsed(true)
   }, [clearWidth])
 
+  const clearResourceActivity = useCallback((resourceId: string) => {
+    setResourceActivityIds((current) => {
+      if (!current.has(resourceId)) return current
+      const next = new Set(current)
+      next.delete(resourceId)
+      return next
+    })
+  }, [])
+
+  const expandResource = () => {
+    userOwnsResourceViewRef.current = true
+    const activeResourceId = activeResourceParamRef.current
+    if (activeResourceId) clearResourceActivity(activeResourceId)
+    setIsResourceCollapsed(false)
+  }
+
+  const selectResourceFromUser = useCallback(
+    (resourceId: string) => {
+      userOwnsResourceViewRef.current = true
+      clearResourceActivity(resourceId)
+      if (effectiveActiveResourceIdRef.current === resourceId) return
+      effectiveActiveResourceIdRef.current = resourceId
+      activeResourceParamRef.current = resourceId
+      setActiveResourceId(resourceId)
+    },
+    [setActiveResourceId, clearResourceActivity]
+  )
+
+  const addResourceFromUser = useCallback(
+    (resource: MothershipResource) => {
+      userOwnsResourceViewRef.current = true
+      addResource(resource)
+      selectResourceFromUser(resource.id)
+      setIsResourceCollapsed(false)
+    },
+    [addResource, selectResourceFromUser]
+  )
+
+  const handleResourceResizePointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      userOwnsResourceViewRef.current = true
+      handleResizePointerDown(event)
+    },
+    [handleResizePointerDown]
+  )
+
+  const handleResourceInteraction = useCallback(() => {
+    userOwnsResourceViewRef.current = true
+  }, [])
+
   useEffect(() => {
+    const previousChatId = resourceAttentionChatIdRef.current
+    resourceAttentionChatIdRef.current = resolvedChatId
     wasSendingRef.current = false
     if (resolvedChatId) {
       markRead(resolvedChatId)
     } else {
       clearWidth()
       setIsResourceCollapsed(true)
+    }
+    if (!resolvedChatId || (previousChatId && previousChatId !== resolvedChatId)) {
+      userOwnsResourceViewRef.current = false
+      setResourceActivityIds(new Set())
     }
   }, [resolvedChatId, markRead, clearWidth])
 
@@ -322,7 +398,12 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
   }, [isSending, resolvedChatId, markRead])
 
   useEffect(() => {
-    if (!(resources.length > 0 && isResourceCollapsedRef.current)) return
+    if (
+      !(resources.length > 0 && isResourceCollapsedRef.current) ||
+      userOwnsResourceViewRef.current
+    ) {
+      return
+    }
     setIsResourceCollapsed(false)
     setSkipResourceTransition(true)
     const id = requestAnimationFrame(() => setSkipResourceTransition(false))
@@ -331,9 +412,18 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
 
   useEffect(() => {
     if (resources.length === 0 && !isResourceCollapsedRef.current) {
-      collapseResource()
+      clearWidth()
+      setIsResourceCollapsed(true)
     }
-  }, [resources, collapseResource])
+  }, [resources, clearWidth])
+
+  useEffect(() => {
+    const resourceIds = new Set(resources.map((resource) => resource.id))
+    setResourceActivityIds((current) => {
+      const next = new Set([...current].filter((id) => resourceIds.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [resources])
 
   const handleStopGeneration = useCallback(() => {
     captureEvent(posthogRef.current, 'task_generation_aborted', {
@@ -360,6 +450,8 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
         setIsInputEntering(true)
       }
 
+      userOwnsResourceViewRef.current = false
+      setResourceActivityIds(new Set())
       sendMessage(trimmed || 'Analyze the attached file(s).', fileAttachments, contexts)
     },
     [workspaceId, chatId, sendMessage]
@@ -376,7 +468,9 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
       const detail = (e as CustomEvent<MothershipSendMessageDetail>).detail
       if (!detail?.message) return
       e.preventDefault()
-      sendMessage(detail.message, undefined, detail.contexts)
+      sendMessage(detail.message, detail.fileAttachments, detail.contexts, {
+        ...(detail.resumeUserMessageId ? { resumeUserMessageId: detail.resumeUserMessageId } : {}),
+      })
     }
     window.addEventListener(MOTHERSHIP_SEND_MESSAGE_EVENT, handler)
     return () => window.removeEventListener(MOTHERSHIP_SEND_MESSAGE_EVENT, handler)
@@ -405,7 +499,11 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
     const handoff = MothershipHandoffStorage.consume(workspaceId)
     if (!handoff) return
     if (handoff.message) {
-      sendMessage(handoff.message, undefined, handoff.contexts)
+      sendMessage(handoff.message, handoff.fileAttachments, handoff.contexts, {
+        ...(handoff.resumeUserMessageId
+          ? { resumeUserMessageId: handoff.resumeUserMessageId }
+          : {}),
+      })
       return
     }
     const contexts = handoff.contexts ?? []
@@ -454,8 +552,7 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
   function handleContextAdd(context: ChatContext) {
     const resolved = resolveResourceFromContext(context)
     if (resolved) {
-      addResource({ ...resolved, title: resourceTitleForContext(context) })
-      handleResourceEvent()
+      addResourceFromUser({ ...resolved, title: resourceTitleForContext(context) })
     }
   }
 
@@ -474,37 +571,50 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
     removeResource(resolved.type, resolved.id)
   }
 
-  const resolveFileResource = useCallback(
-    (resource: MothershipResource): MothershipResource => {
-      if (resource.type !== 'file') return resource
+  function openWorkspaceResource(resource: MothershipResource) {
+    addResourceFromUser(resource)
+  }
 
-      const reference = (resource.path || resource.id).trim()
-
-      const file = workspaceFiles.find((candidate) => {
-        const candidatePath = canonicalWorkspaceFilePath({
-          folderPath: candidate.folderPath,
-          name: candidate.name,
-        })
-        return candidate.id === reference || candidatePath === reference
-      })
-
-      if (!file) return resource
-      return {
-        ...resource,
-        id: file.id,
-        title: resource.title || file.name,
-      }
-    },
-    [workspaceFiles]
-  )
-
-  function handleWorkspaceResourceSelect(resource: MothershipResource) {
-    const resolvedResource = resolveFileResource(resource)
-    const wasAdded = addResource(resolvedResource)
-    if (!wasAdded) {
-      setActiveResourceId(resolvedResource.id)
+  /**
+   * Opens the resource a message chip points at, resolving it first. A chip may
+   * carry only a filename — the agent names a file before the client's file
+   * list knows it exists — so one forced refetch closes that window. What still
+   * resolves to nothing opens nothing, rather than a tab that cannot be
+   * viewed or removed.
+   */
+  async function handleWorkspaceResourceSelect(ref: WorkspaceResourceRef) {
+    const immediate = resolveWorkspaceResourceRef(ref, workspaceFiles)
+    if (immediate) {
+      openWorkspaceResource(immediate)
+      return
     }
-    handleResourceEvent()
+    if (ref.type !== 'file') return
+
+    // `staleTime: 0` forces the fetch this branch exists for — the cached list
+    // is what already failed to resolve. `fetchQuery` rejects on error and this
+    // handler is invoked as a void callback, so failure becomes null rather
+    // than an unhandled rejection — and stays distinct from an empty list, so
+    // "we could not look" is never reported as "it is not there".
+    const files = await queryClient
+      .fetchQuery({ ...getWorkspaceFilesQueryOptions(workspaceId), staleTime: 0 })
+      .catch(() => null)
+    const resolved = files && resolveWorkspaceResourceRef(ref, files)
+    if (resolved) {
+      openWorkspaceResource(resolved)
+      return
+    }
+    // The chip looks clickable, so refusing silently reads as a broken button.
+    toast.error(
+      files
+        ? `Couldn't find "${ref.title}" in this workspace`
+        : `Couldn't open "${ref.title}" — check your connection and try again`
+    )
+    logger.warn('Ignored a resource chip that did not resolve', {
+      type: ref.type,
+      title: ref.title,
+      hasPath: Boolean(ref.path),
+      reachedWorkspace: files !== null,
+    })
   }
 
   const hasMessages = messages.length > 0
@@ -525,29 +635,35 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
   return (
     <div className={cn('relative flex h-full bg-[var(--bg)]', RESOURCE_HEADER_CLASSES.layout)}>
       <div className='relative flex h-full min-w-[240px] flex-1 flex-col'>
-        {/* Credits chip intentionally hidden on this surface. Upstream shows it
-            in the empty state and offsets it when the resource panel is collapsed. */}
-        {false && showEmptyState && (
+        {/* Credits chip (links to billing) — hidden for Arena
+        {showEmptyState && (
           <div
             className={cn(
-              'absolute z-10',
-              RESOURCE_HEADER_CLASSES.contentTop,
-              isDesktop || isResourceCollapsed
+              'z-10',
+              RESOURCE_HEADER_CLASSES.overlay,
+              // Collapsed, the expand toggle overlays this corner, so the chip
+              // yields the fixed reserve; open, the toggle lives in the panel's
+              // corner and the chip takes the standard end inset itself.
+              isResourceCollapsed
                 ? RESOURCE_HEADER_CLASSES.adjacentEndPosition
-                : RESOURCE_HEADER_CLASSES.endPosition
+                : RESOURCE_HEADER_CLASSES.endPosition,
+              skipResourceTransition
+                ? 'transition-none'
+                : 'transition-[right] duration-200 [transition-timing-function:cubic-bezier(0.25,0.1,0.25,1)]'
             )}
           >
             <CreditsChip />
           </div>
         )}
+        */}
         {showEmptyState ? (
           <div className='h-full overflow-y-auto [scrollbar-gutter:stable_both-edges]'>
             {/* Asymmetric padding biases the group up so the full cluster (heading + input + suggestions) sits at the optical center */}
             <div className='flex min-h-full flex-col items-center justify-center px-6 pt-[2vh] pb-[22vh]'>
-              <h1 className='mb-7 max-w-[48rem] text-balance font-season text-[32px] text-[var(--text-primary)]'>
+              <h1 className='mb-7 max-w-chat text-balance font-season text-[26px] text-[var(--text-primary)] leading-[1.15] tracking-[-0.01em] sm:text-[28px]'>
                 What should we get done{firstName ? `, ${firstName}` : ''}?
               </h1>
-              <div ref={initialViewInputRef} className='relative w-full max-w-[48rem]'>
+              <div ref={initialViewInputRef} className='relative w-full max-w-chat'>
                 <ChatSurfaceProvider
                   userId={userId}
                   onContextAdd={handleContextAdd}
@@ -618,14 +734,14 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
             role='separator'
             aria-orientation='vertical'
             aria-label='Resize resource panel'
-            onPointerDown={handleResizePointerDown}
+            onPointerDown={handleResourceResizePointerDown}
           />
         </div>
       )}
 
       <MothershipResourcesProvider
-        selectResource={setActiveResourceId}
-        addResource={addResource}
+        selectResource={selectResourceFromUser}
+        addResource={addResourceFromUser}
         removeResource={removeResource}
         reorderResources={reorderResources}
         collapseResource={collapseResource}
@@ -638,58 +754,37 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
             desktopScopeId={desktopScopeId}
             resources={resources}
             activeResourceId={activeResourceId}
+            activityResourceIds={resourceActivityIds}
             isCollapsed={isResourceCollapsed}
-            useFixedResourceToggle={isDesktop}
             previewSession={previewSession}
             isAgentResponding={isSending}
             genericResourceData={genericResourceData ?? undefined}
             tableViewsEnabled={tableViewsEnabled}
+            onUserInteraction={handleResourceInteraction}
             className={skipResourceTransition ? '!transition-none' : undefined}
           />
         </Suspense>
       </MothershipResourcesProvider>
 
-      {isDesktop ? (
-        <div
-          className={cn(
-            'absolute top-0 z-30 flex items-center',
-            RESOURCE_HEADER_CLASSES.controls,
-            RESOURCE_HEADER_CLASSES.endPosition
-          )}
+      <div
+        className={cn('z-30', RESOURCE_HEADER_CLASSES.overlay, RESOURCE_HEADER_CLASSES.endPosition)}
+      >
+        <Button
+          variant='ghost'
+          size={null}
+          type='button'
+          onClick={isResourceCollapsed ? expandResource : collapseResource}
+          className='size-[var(--resource-header-toggle-size)] rounded-[8px] hover-hover:bg-[var(--surface-active)]'
+          aria-label={isResourceCollapsed ? 'Expand resource view' : 'Collapse resource view'}
         >
-          <Button
-            variant='ghost'
-            size={null}
-            type='button'
-            onClick={isResourceCollapsed ? () => setIsResourceCollapsed(false) : collapseResource}
-            className='size-[30px] rounded-[8px] hover-hover:bg-[var(--surface-active)]'
-            aria-label={isResourceCollapsed ? 'Expand resource view' : 'Collapse resource view'}
-          >
+          <span className='relative'>
             <PanelLeft className='-scale-x-100 size-[16px] text-[var(--text-icon)]' />
-          </Button>
-        </div>
-      ) : (
-        isResourceCollapsed && (
-          <div
-            className={cn(
-              'absolute',
-              RESOURCE_HEADER_CLASSES.contentTop,
-              RESOURCE_HEADER_CLASSES.endPosition
+            {isResourceCollapsed && resourceActivityIds.size > 0 && (
+              <span className='-top-0.5 -right-0.5 absolute size-1.5 rounded-full bg-[var(--brand-primary)]' />
             )}
-          >
-            <Button
-              variant='ghost'
-              size={null}
-              type='button'
-              onClick={() => setIsResourceCollapsed(false)}
-              className='size-[30px] rounded-[8px] hover-hover:bg-[var(--surface-active)]'
-              aria-label='Expand resource view'
-            >
-              <PanelLeft className='size-[16px] text-[var(--text-icon)]' />
-            </Button>
-          </div>
-        )
-      )}
+          </span>
+        </Button>
+      </div>
     </div>
   )
 }
