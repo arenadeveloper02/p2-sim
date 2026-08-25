@@ -115,7 +115,7 @@ describe('generateArenaGenerativeManifest', () => {
     })
 
     const maxTokens = mockCreateAnthropicMessage.mock.calls[0]?.[1].max_tokens as number
-    expect(maxTokens).toBeLessThanOrEqual(128_000)
+    expect(maxTokens).toBe(128_000)
   })
 
   it('maps truncated model JSON to a retry message instead of blaming User Input', async () => {

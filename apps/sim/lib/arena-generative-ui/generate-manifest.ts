@@ -66,7 +66,8 @@ const BASE_OUTPUT_TOKENS = 8_192
  * tracks how many pages this run has to emit.
  */
 const OUTPUT_TOKENS_PER_PAGE = 8_000
-const MAX_OUTPUT_TOKENS = 64_000
+/** Matches Sonnet 4.6 catalog max so large sitemaps are not truncated by a leftover 64k cap. */
+const MAX_OUTPUT_TOKENS = 128_000
 /** Pages a brief with no pinned sitemap is assumed to produce. */
 const ASSUMED_PAGE_COUNT = 4
 
