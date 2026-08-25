@@ -38,7 +38,7 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
@@ -77,10 +77,6 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
       Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
-      if (!params.apiKey || typeof params.apiKey !== 'string' || params.apiKey.trim() === '') {
-        throw new Error('Missing or invalid API key: A valid Firecrawl API key is required')
-      }
-
       const body: Record<string, any> = {
         url: params.url,
         formats: params.formats || params.scrapeOptions?.formats || ['markdown'],
@@ -117,17 +113,14 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
 
   transformResponse: async (response: Response) => {
     const data = await response.json()
-    const creditsUsed = data.creditsUsed ?? data.data?.metadata?.creditsUsed
 
     return {
       success: true,
       output: {
         markdown: data.data.markdown,
         html: data.data.html,
-        metadata: {
-          ...data.data.metadata,
-          ...(creditsUsed != null ? { creditsUsed } : {}),
-        },
+        metadata: data.data.metadata,
+        creditsUsed: data.creditsUsed,
       },
     }
   },

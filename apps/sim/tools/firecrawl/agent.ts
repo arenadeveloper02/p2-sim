@@ -5,7 +5,6 @@ import type { AgentParams, AgentResponse } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
 const logger = createLogger('FirecrawlAgentTool')
-const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY
 
 const POLL_INTERVAL_MS = 5000
 const MAX_POLL_TIME_MS = DEFAULT_EXECUTION_TIMEOUT_MS
@@ -51,7 +50,7 @@ export const agentTool: ToolConfig<AgentParams, AgentResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
@@ -64,9 +63,9 @@ export const agentTool: ToolConfig<AgentParams, AgentResponse> = {
     },
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/agent',
-    headers: () => ({
+    headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${firecrawlApiKey}`,
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -123,7 +122,7 @@ export const agentTool: ToolConfig<AgentParams, AgentResponse> = {
         const statusResponse = await fetch(`https://api.firecrawl.dev/v2/agent/${jobId}`, {
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${firecrawlApiKey}`,
+            Authorization: `Bearer ${params.apiKey}`,
             'Content-Type': 'application/json',
           },
         })
@@ -194,10 +193,6 @@ export const agentTool: ToolConfig<AgentParams, AgentResponse> = {
     data: {
       type: 'object',
       description: 'Extracted data from the agent',
-    },
-    creditsUsed: {
-      type: 'number',
-      description: 'Number of credits consumed by this agent task',
     },
     expiresAt: {
       type: 'string',

@@ -1,5 +1,4 @@
 import { createLogger } from '@sim/logger'
-import { getErrorMessage } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/core/execution-limits'
 import { firecrawlHosting } from '@/tools/firecrawl/hosting'
@@ -84,7 +83,7 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
     },
     apiKey: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-only',
       description: 'Firecrawl API Key',
     },
@@ -131,7 +130,7 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
       Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
-      const body: Record<string, unknown> = {
+      const body: Record<string, any> = {
         url: params.url,
         limit: Number(params.limit) || 100,
         scrapeOptions: params.scrapeOptions || {
@@ -210,7 +209,6 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
             // a free crawl to the hosted-key pricing helper instead of the
             // metering failure it is.
             creditsUsed: crawlData.creditsUsed,
-            metadata: { creditsUsed: crawlData.creditsUsed },
           }
           return result
         }
@@ -225,16 +223,16 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
 
         await sleep(POLL_INTERVAL_MS)
         elapsedTime += POLL_INTERVAL_MS
-      } catch (error: unknown) {
+      } catch (error: any) {
         logger.error('Error polling for crawl job status:', {
-          message: getErrorMessage(error, 'Unknown error'),
+          message: error.message || 'Unknown error',
           jobId,
         })
 
         return {
           ...result,
           success: false,
-          error: `Error polling for crawl job status: ${getErrorMessage(error, 'Unknown error')}`,
+          error: `Error polling for crawl job status: ${error.message || 'Unknown error'}`,
         }
       }
     }
@@ -259,9 +257,5 @@ export const crawlTool: ToolConfig<FirecrawlCrawlParams, FirecrawlCrawlResponse>
       },
     },
     total: { type: 'number', description: 'Total number of pages found during crawl' },
-    creditsUsed: {
-      type: 'number',
-      description: 'Number of credits consumed by the crawl operation',
-    },
   },
 }

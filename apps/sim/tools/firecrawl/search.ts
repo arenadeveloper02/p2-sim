@@ -7,8 +7,6 @@ import type { SearchParams, SearchResponse } from '@/tools/firecrawl/types'
 import { SEARCH_RESULT_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
 
-const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY
-
 export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
   id: 'firecrawl_search',
   name: 'Firecrawl Search',
@@ -30,7 +28,7 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
@@ -53,9 +51,9 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
     },
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/search',
-    headers: () => ({
+    headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${firecrawlApiKey}`,
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -85,6 +83,7 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
       success: true,
       output: {
         data: data.data,
+        creditsUsed: data.creditsUsed,
       },
     }
   },

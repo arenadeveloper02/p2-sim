@@ -435,8 +435,25 @@ Example 2 - Product Data:
       type: 'short-input',
       placeholder: 'Enter your Firecrawl API key',
       password: true,
-      required: false,
-      hidden: true,
+      required: true,
+      hideWhenHosted: true,
+      condition: {
+        field: 'operation',
+        value: 'agent',
+        not: true,
+      },
+    },
+    {
+      id: 'apiKey',
+      title: 'API Key',
+      type: 'short-input',
+      placeholder: 'Enter your Firecrawl API key',
+      password: true,
+      required: true,
+      condition: {
+        field: 'operation',
+        value: 'agent',
+      },
     },
   ],
   tools: {
@@ -501,6 +518,7 @@ Example 2 - Product Data:
           onlyMainContent,
           mobile,
           prompt,
+          apiKey,
           agentPrompt,
           agentUrls,
           schema,
@@ -509,7 +527,7 @@ Example 2 - Product Data:
           jobId,
         } = params
 
-        const result: Record<string, any> = {}
+        const result: Record<string, any> = { apiKey }
 
         switch (operation) {
           case 'scrape':
