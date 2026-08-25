@@ -238,7 +238,14 @@ export function submittedInputsState(values: Record<string, unknown>): Record<st
   return { [ARENA_GENERATIVE_INPUTS_KEY]: inputs }
 }
 
-const SELECTED_ITEM_PROSE_KEYS = new Set(['content', 'assistantContent', 'output', 'text', 'message', 'body'])
+const SELECTED_ITEM_PROSE_KEYS = new Set([
+  'content',
+  'assistantContent',
+  'output',
+  'text',
+  'message',
+  'body',
+])
 
 function selectedItemId(item: unknown, index: number): string {
   if (item && typeof item === 'object' && !Array.isArray(item)) {
@@ -274,8 +281,7 @@ function scalarInputsFromSelectedItem(item: unknown): Record<string, unknown> {
 export function selectedItemHostState(item: unknown, index: number): Record<string, unknown> {
   const content = displayTextFromActionData(item)
   const inputs = scalarInputsFromSelectedItem(item)
-  const selected =
-    item && typeof item === 'object' && !Array.isArray(item) ? item : { item }
+  const selected = item && typeof item === 'object' && !Array.isArray(item) ? item : { item }
   return {
     ...clearedActionErrorState(),
     [ARENA_GENERATIVE_SELECTED_KEY]: selected,
@@ -283,6 +289,47 @@ export function selectedItemHostState(item: unknown, index: number): Record<stri
     ...(content ? { [ARENA_GENERATIVE_STREAM_CONTENT_KEY]: content } : {}),
     ...(Object.keys(inputs).length > 0 ? { [ARENA_GENERATIVE_INPUTS_KEY]: inputs } : {}),
   }
+}
+
+/**
+ * Host state patch that leaves the list collection in place and drops the
+ * copied row so an in-page History detail can return to the list.
+ */
+export function clearedSelectedItemHostState(): Record<string, unknown> {
+  return {
+    ...clearedActionErrorState(),
+    [ARENA_GENERATIVE_SELECTED_KEY]: undefined,
+    [ARENA_GENERATIVE_SELECTED_ID_KEY]: undefined,
+    [ARENA_GENERATIVE_STREAM_CONTENT_KEY]: undefined,
+  }
+}
+
+function buttonSelectNavigateTo(props: Record<string, unknown> | undefined): string {
+  return typeof props?.navigateTo === 'string' ? props.navigateTo.trim() : ''
+}
+
+/**
+ * True when a Repeat Open copies a row without leaving this page (`selectItem`
+ * with no `navigateTo`, or `navigateTo` equal to `currentPath`).
+ */
+export function specHasSamePageSelectItem(spec: Spec, currentPath?: string): boolean {
+  const elements = spec.elements
+  if (!elements || typeof elements !== 'object' || Array.isArray(elements)) return false
+  for (const element of Object.values(
+    elements as Record<string, { type?: string; props?: Record<string, unknown> }>
+  )) {
+    if (element.type !== 'Button' || element.props?.selectItem !== true) continue
+    const navigateTo = buttonSelectNavigateTo(element.props)
+    if (!navigateTo) return true
+    if (currentPath && splitNavTarget(navigateTo).path === currentPath) return true
+  }
+  return false
+}
+
+/** Scrolls the generative-app document to the top after Open / Back on History. */
+export function scrollGenerativeAppToTop(): void {
+  if (typeof window === 'undefined') return
+  window.scrollTo(0, 0)
 }
 
 /**

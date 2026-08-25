@@ -39,8 +39,10 @@ Results:
 History page onLoad calls run_history (do not call it from the tab click).
 Repeat cards, most recent first: keyword, client, and date only.
 Do not bind item.output, content, body, or a Table column for the markdown — not on the card, not as Card.description.
-Each card has a Button labeled "Open" with selectItem true, no actionId, navigateTo "results".
-Open is not an API call. The host copies that row's output into content so Results shows the same markdown layout, read-only.
+Each card has a Button labeled "Open" with selectItem true, no actionId, and no navigateTo.
+Open stays on History. Hide the list (Repeat or its wrapper showWhen "!selectedId") and show that row's markdown
+(DataText statePath "content", showWhen "selectedId") with a ghost Back Button clearItem true, showWhen "selectedId".
+Back is not an API call and must not navigateTo — it hides the detail and shows the list again.
 
 Do not show raw JSON anywhere.
 ```
@@ -53,7 +55,7 @@ Leave blank so the model chooses pages from User Input. Or pin:
 [
   { "path": "home", "title": "Generator", "purpose": "Collect keyword and client, submit recommend_articles" },
   { "path": "results", "title": "Recommendations", "purpose": "Show streamed markdown; no onLoad" },
-  { "path": "history", "title": "History", "purpose": "onLoad run_history; Open copies the row into Results" }
+  { "path": "history", "title": "History", "purpose": "onLoad run_history; Open swaps to that row on this page" }
 ]
 ```
 
@@ -122,9 +124,9 @@ Calm Arena-like layout. Generator form left-aligned. History cards are compact: 
 1. Generator shows the two fields, **Generate Recommendations**, and tabs **Generator** / **History**.
 2. Submit lands on Results. Pills show the typed keyword and client. Markdown fills as the stream arrives.
 3. History loads on arrival. Cards show keyword, client, date — **not** the full markdown.
-4. **Open** on a row goes to Results with **that** run’s markdown. Network must not fire `run_history` or `recommend_articles` again.
-5. Results has no empty flash from an `onLoad` reset. **Back** returns to Generator.
+4. **Open** on a row hides the History cards and shows **that** run’s markdown on History. **Back** restores the list. Network must not fire `run_history` or `recommend_articles`.
+5. Results from Generate still has no empty flash from an `onLoad` reset. **Back** on Results returns to Generator.
 
-If History dumps every `output`, do not regenerate from this set. **Edit Existing Draft** with a page-scoped delta: History cards bind only keyword/client/date; Open is `selectItem` with no `actionId`; Results has no `onLoad`.
+If History dumps every `output` or appends markdown below the list, do not regenerate from this set. **Edit Existing Draft** with a page-scoped delta: History cards bind only keyword/client/date; Open is `selectItem` with no `actionId` and no `navigateTo`; hide Repeat with `!selectedId`; Back is `clearItem`.
 
 Do not use identifier `preview` when you later Launch — that name is reserved.

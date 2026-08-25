@@ -232,6 +232,7 @@ const listHomeSpec: Spec = {
         label: 'Open',
         actionId: null,
         selectItem: null,
+        clearItem: null,
         navigateTo: 'detail?id={item.id}',
         href: null,
         variant: 'secondary',

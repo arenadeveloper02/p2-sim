@@ -122,7 +122,7 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
   'list-detail': [
     'ARCHETYPE RECIPE: list-detail',
     'List page onLoad fills Repeat inside a 2-column Grid of entity Cards (Avatar, title, subtitle, truncated description, footerText, footer Analyze Button) — not a Table — when items have a name, description, and action. Use Table only when every row is the same scalars with no per-row action. Each Card uses NavLink.to or Button.navigateTo "detail?id={item.id}" — never unroll the array into static Cards.',
-    'When list items already include the detail/prose field (output, content, body), Open is Button selectItem true plus navigateTo the results page — do not bind that field inside Repeat, do not invent a second fetch, and give the results page no onLoad.',
+    'When list items already include the detail/prose field (output, content, body), Open is Button selectItem true with no actionId. Stay on the list page: omit navigateTo, hide Repeat with showWhen "!selectedId", show markdown in a sibling Section showWhen "selectedId" with a ghost Back clearItem true. Or navigateTo a separate results page that has no onLoad — do not bind that field inside Repeat, do not invent a second fetch.',
     'Detail page onLoad fetches the record (inputMapping id from the query), shows EntityHeader plus KeyValue or display Stats, and a Back NavLink. emptyText names the collection. Skip that onLoad when selectItem already copied the row.',
     'Give those onLoad actions no onSuccess.navigate.',
   ].join('\n'),

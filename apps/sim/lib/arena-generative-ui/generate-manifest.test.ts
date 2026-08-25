@@ -275,6 +275,8 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('Submitted form fields land in host state under "inputs"')
     expect(system).toContain('outputSchema')
     expect(system).toContain('selectItem')
+    expect(system).toContain('clearItem')
+    expect(system).toContain('!selectedId')
     expect(system).toContain('Load more')
     expect(system).toContain('hasMore')
 

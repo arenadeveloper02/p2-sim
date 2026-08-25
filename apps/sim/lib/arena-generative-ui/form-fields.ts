@@ -30,7 +30,7 @@ export interface ArenaGenerativeFormField {
 
 export interface ShowWhenClause {
   name: string
-  op: 'truthy' | 'eq' | 'neq'
+  op: 'truthy' | 'falsy' | 'eq' | 'neq'
   value?: string
 }
 
@@ -85,7 +85,8 @@ export function parseOptionList(raw: unknown): string[] {
 }
 
 /**
- * `showWhen` is comma-separated AND clauses: `notify`, `channel=email`, `channel!=sms`.
+ * `showWhen` is comma-separated AND clauses: `notify`, `!selectedId`,
+ * `channel=email`, `channel!=sms`.
  */
 export function parseShowWhen(raw: unknown): ShowWhenClause[] {
   return asString(raw)
@@ -93,6 +94,12 @@ export function parseShowWhen(raw: unknown): ShowWhenClause[] {
     .map((part) => part.trim())
     .filter(Boolean)
     .map((part) => {
+      if (part.startsWith('!')) {
+        const name = part.slice(1).trim()
+        if (name && !name.includes('=') && !name.includes('!')) {
+          return { name, op: 'falsy' as const }
+        }
+      }
       const neqIndex = part.indexOf('!=')
       if (neqIndex > 0) {
         return {
@@ -128,6 +135,7 @@ export function isTruthyFieldValue(value: unknown): boolean {
 function clauseMatches(clause: ShowWhenClause, values: Record<string, unknown>): boolean {
   const actual = values[clause.name]
   if (clause.op === 'truthy') return isTruthyFieldValue(actual)
+  if (clause.op === 'falsy') return !isTruthyFieldValue(actual)
   const actualText = Array.isArray(actual)
     ? actual.map((item) => String(item)).join(',')
     : String(actual ?? '')

@@ -63,4 +63,9 @@ describe('buildArenaGenerativeUiPrompt', () => {
   it('drops the instruction to seed sample data, which defeats loading states', () => {
     expect(prompt).not.toMatch(/sample data/i)
   })
+
+  it('teaches the same-page History Open swap', () => {
+    expect(prompt).toContain('!selectedId')
+    expect(prompt).toContain('clearItem')
+  })
 })

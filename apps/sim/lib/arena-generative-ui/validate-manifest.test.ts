@@ -718,9 +718,17 @@ describe('validateArenaGenerativeManifest', () => {
             children: ['nav', 'history_link', 'form'],
           },
           nav: { type: 'NavLink', props: { label: 'Results', to: 'results' }, children: [] },
-          history_link: { type: 'NavLink', props: { label: 'History', to: 'history' }, children: [] },
+          history_link: {
+            type: 'NavLink',
+            props: { label: 'History', to: 'history' },
+            children: [],
+          },
           form: { type: 'Form', props: { actionId: 'submit_lead' }, children: ['submit'] },
-          submit: { type: 'SubmitButton', props: { label: 'Submit', actionId: null }, children: [] },
+          submit: {
+            type: 'SubmitButton',
+            props: { label: 'Submit', actionId: null },
+            children: [],
+          },
         },
       }
     }
@@ -822,6 +830,93 @@ describe('validateArenaGenerativeManifest', () => {
         ),
         { apiBindings: bindings, entryPath: 'home' }
       )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects clearItem combined with actionId', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWithHistory(
+          historyPage({
+            label: 'Back',
+            clearItem: true,
+            actionId: 'submit_lead',
+            selectItem: null,
+            navigateTo: null,
+            href: null,
+          })
+        ),
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('clearItem and actionId')
+    })
+
+    it('rejects clearItem combined with selectItem', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWithHistory(
+          historyPage({
+            label: 'Open',
+            clearItem: true,
+            selectItem: true,
+            actionId: null,
+            navigateTo: null,
+            href: null,
+          })
+        ),
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('clearItem and selectItem')
+    })
+
+    it('accepts a clearItem Back outside Repeat', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'History', backgroundColor: null },
+            children: ['nav', 'repeat', 'back'],
+          },
+          nav: { type: 'NavLink', props: { label: 'Home', to: 'home' }, children: [] },
+          repeat: {
+            type: 'Repeat',
+            props: { statePath: 'history', emptyText: null },
+            children: ['open'],
+          },
+          open: {
+            type: 'Button',
+            props: {
+              label: 'Open',
+              selectItem: true,
+              actionId: null,
+              navigateTo: null,
+              href: null,
+            },
+            children: [],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              clearItem: true,
+              actionId: null,
+              navigateTo: null,
+              href: null,
+              showWhen: 'selectedId',
+            },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(manifestWithHistory(spec), {
+        apiBindings: bindings,
+        entryPath: 'home',
+      })
 
       expect(result.error).toBeUndefined()
       expect(result.success).toBe(true)

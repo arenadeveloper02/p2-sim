@@ -3,8 +3,8 @@
 import { useMemo, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
+import { flushSync } from 'react-dom'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import {
   collectRenderDiagnostics,
@@ -18,8 +18,10 @@ import {
   actionNavigateFrom,
   actionSchemaWarningFrom,
   clearedActionErrorState,
+  clearedSelectedItemHostState,
   isJsonRenderSpec,
   navigationHref,
+  scrollGenerativeAppToTop,
   selectedItemHostState,
   streamingActionIdsFrom,
 } from '@/lib/arena-generative-ui/types'
@@ -218,6 +220,13 @@ export function GenerativeAppPreviewHost({
               flushSync(() => {
                 mergeState(selectedItemHostState(item, index))
               })
+              scrollGenerativeAppToTop()
+            }}
+            onClearItem={() => {
+              flushSync(() => {
+                mergeState(clearedSelectedItemHostState())
+              })
+              scrollGenerativeAppToTop()
             }}
           />
         </SpecRenderErrorBoundary>

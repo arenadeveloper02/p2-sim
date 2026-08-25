@@ -98,10 +98,12 @@ describe('SpecRenderer', () => {
     onNavigate?: ReturnType<typeof vi.fn>
     onRunAction?: ReturnType<typeof vi.fn>
     onSelectItem?: ReturnType<typeof vi.fn>
+    onClearItem?: ReturnType<typeof vi.fn>
   }) {
     const onNavigate = options?.onNavigate ?? vi.fn()
     const onRunAction = options?.onRunAction ?? vi.fn().mockResolvedValue(undefined)
     const onSelectItem = options?.onSelectItem ?? vi.fn()
+    const onClearItem = options?.onClearItem ?? vi.fn()
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -116,6 +118,7 @@ describe('SpecRenderer', () => {
           onNavigate={onNavigate}
           onRunAction={onRunAction}
           onSelectItem={onSelectItem}
+          onClearItem={onClearItem}
         />
       )
     })
@@ -125,7 +128,7 @@ describe('SpecRenderer', () => {
       })
       container.remove()
     }
-    return { container, onNavigate, onRunAction, onSelectItem }
+    return { container, onNavigate, onRunAction, onSelectItem, onClearItem }
   }
 
   it('navigates when a NavLink is clicked', () => {
@@ -665,6 +668,199 @@ describe('SpecRenderer', () => {
         state: { content: '# Hidden report', selectedId: 'run_1' },
       })
       expect(shown.container.textContent).toContain('Hidden report')
+    })
+
+    it('hides Repeat on a same-page selectItem page while selectedId is set', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat', 'detail'] },
+          repeat: { type: 'Repeat', props: { statePath: 'articles' }, children: ['open'] },
+          open: {
+            type: 'Button',
+            props: { label: 'Open', selectItem: true },
+            children: [],
+          },
+          detail: {
+            type: 'DataText',
+            props: { statePath: 'content', fallback: '', showWhen: 'selectedId' },
+            children: [],
+          },
+        },
+      }
+      const list = render({ spec, state: { articles }, currentPath: 'history' })
+      expect(list.container.textContent).toContain('Open')
+      expect(list.container.textContent).not.toContain('Hidden report')
+      unmount?.()
+
+      const detail = render({
+        spec,
+        state: { articles, selectedId: 'a1', content: '# Hidden report' },
+        currentPath: 'history',
+      })
+      expect(detail.container.textContent).not.toContain('Open')
+      expect(detail.container.textContent).toContain('Hidden report')
+    })
+
+    it('calls onClearItem instead of onNavigate when Back targets the current path', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat', 'back'] },
+          repeat: { type: 'Repeat', props: { statePath: 'articles' }, children: ['open'] },
+          open: {
+            type: 'Button',
+            props: { label: 'Open', selectItem: true },
+            children: [],
+          },
+          back: {
+            type: 'Button',
+            props: { label: 'Back to history', navigateTo: 'history' },
+            children: [],
+          },
+        },
+      }
+      const { container, onNavigate, onClearItem } = render({
+        spec,
+        state: { articles, selectedId: 'a1' },
+        currentPath: 'history',
+      })
+      const back = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Back to history'
+      )
+      act(() => {
+        back?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onClearItem).toHaveBeenCalledTimes(1)
+      expect(onNavigate).not.toHaveBeenCalled()
+    })
+
+    it('calls onClearItem for a NavLink to the current path while a row is selected', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat', 'back'] },
+          repeat: { type: 'Repeat', props: { statePath: 'articles' }, children: ['open'] },
+          open: {
+            type: 'Button',
+            props: { label: 'Open', selectItem: true },
+            children: [],
+          },
+          back: {
+            type: 'NavLink',
+            props: { label: 'Back to history', to: 'history' },
+            children: [],
+          },
+        },
+      }
+      const { container, onNavigate, onClearItem } = render({
+        spec,
+        state: { articles, selectedId: 'a1' },
+        currentPath: 'history',
+      })
+      const back = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Back to history'
+      )
+      act(() => {
+        back?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onClearItem).toHaveBeenCalledTimes(1)
+      expect(onNavigate).not.toHaveBeenCalled()
+    })
+
+    it('clears the copied row when clearItem is set', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['back'] },
+          back: {
+            type: 'Button',
+            props: { label: 'Back', clearItem: true, showWhen: 'selectedId' },
+            children: [],
+          },
+        },
+      }
+      const hidden = render({ spec, state: {} })
+      expect(hidden.container.textContent).not.toContain('Back')
+      unmount?.()
+
+      const { container, onClearItem, onNavigate } = render({
+        spec,
+        state: { selectedId: 'run_1' },
+      })
+      const back = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Back'
+      )
+      act(() => {
+        back?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onClearItem).toHaveBeenCalledTimes(1)
+      expect(onNavigate).not.toHaveBeenCalled()
+    })
+
+    it('hides a list Section with showWhen !selectedId while a row is selected', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['list', 'detail'] },
+          list: {
+            type: 'Section',
+            props: { showWhen: '!selectedId' },
+            children: ['repeat'],
+          },
+          repeat: { type: 'Repeat', props: { statePath: 'articles' }, children: ['card'] },
+          card: { type: 'Card', props: { title: '{item.title}' }, children: [] },
+          detail: {
+            type: 'DataText',
+            props: { statePath: 'content', fallback: '', showWhen: 'selectedId' },
+            children: [],
+          },
+        },
+      }
+      const shown = render({ spec, state: { articles } })
+      expect(shown.container.textContent).toContain('First')
+      unmount?.()
+
+      const hidden = render({
+        spec,
+        state: { articles, selectedId: 'a1', content: '# Report' },
+      })
+      expect(hidden.container.textContent).not.toContain('First')
+      expect(hidden.container.textContent).toContain('Report')
+    })
+
+    it('hides Repeat, Stack, and Grid when showWhen !selectedId matches', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['stack'] },
+          stack: {
+            type: 'Stack',
+            props: { showWhen: '!selectedId' },
+            children: ['grid'],
+          },
+          grid: {
+            type: 'Grid',
+            props: { showWhen: '!selectedId' },
+            children: ['repeat'],
+          },
+          repeat: {
+            type: 'Repeat',
+            props: { statePath: 'articles', showWhen: '!selectedId' },
+            children: ['card'],
+          },
+          card: { type: 'Card', props: { title: '{item.title}' }, children: [] },
+        },
+      }
+      const shown = render({ spec, state: { articles } })
+      expect(shown.container.textContent).toContain('First')
+      unmount?.()
+
+      const hidden = render({
+        spec,
+        state: { articles, selectedId: 'a1' },
+      })
+      expect(hidden.container.textContent).not.toContain('First')
     })
 
     it('renders Repeat rows from nested run_data.history and item.input fields', () => {

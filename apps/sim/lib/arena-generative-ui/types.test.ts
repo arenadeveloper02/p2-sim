@@ -3,9 +3,10 @@
  */
 
 import type { Spec } from '@json-render/core'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   actionStateFromData,
+  clearedSelectedItemHostState,
   displayTextFromActionData,
   interpolateBindingTemplate,
   interpolateItemTemplate,
@@ -19,7 +20,9 @@ import {
   readScopedStatePath,
   repeatItemActionValues,
   repeatItemKey,
+  scrollGenerativeAppToTop,
   selectedItemHostState,
+  specHasSamePageSelectItem,
   submittedInputsState,
   unwrapResponseBlockEnvelope,
 } from '@/lib/arena-generative-ui/types'
@@ -300,7 +303,68 @@ describe('Repeat item scope', () => {
     })
   })
 
+  it('clears selected, selectedId, and copied content without touching collections', () => {
+    expect(clearedSelectedItemHostState()).toEqual({
+      error: undefined,
+      schemaWarning: undefined,
+      selected: undefined,
+      selectedId: undefined,
+      content: undefined,
+    })
+  })
+
+  it('detects same-page selectItem when navigateTo is omitted or is this page', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['open'] },
+        open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+      },
+    }
+    expect(specHasSamePageSelectItem(spec, 'history')).toBe(true)
+    expect(
+      specHasSamePageSelectItem(
+        {
+          root: 'page',
+          elements: {
+            page: { type: 'Page', props: {}, children: ['open'] },
+            open: {
+              type: 'Button',
+              props: { label: 'Open', selectItem: true, navigateTo: 'history' },
+              children: [],
+            },
+          },
+        },
+        'history'
+      )
+    ).toBe(true)
+    expect(
+      specHasSamePageSelectItem(
+        {
+          root: 'page',
+          elements: {
+            page: { type: 'Page', props: {}, children: ['open'] },
+            open: {
+              type: 'Button',
+              props: { label: 'Open', selectItem: true, navigateTo: 'results' },
+              children: [],
+            },
+          },
+        },
+        'history'
+      )
+    ).toBe(false)
+  })
+
   it('caps Repeat at a page-safe number of items', () => {
     expect(MAX_REPEAT_ITEMS).toBe(48)
+  })
+
+  it('scrolls the window to the top after Open or Back', () => {
+    const scrollTo = vi.fn()
+    vi.stubGlobal('window', { scrollTo })
+    scrollGenerativeAppToTop()
+    expect(scrollTo).toHaveBeenCalledWith(0, 0)
+    vi.unstubAllGlobals()
   })
 })

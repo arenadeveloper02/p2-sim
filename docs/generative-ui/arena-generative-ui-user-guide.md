@@ -44,7 +44,7 @@ Turn **Response → Stream** on when the workflow or HTTP call streams tokens. S
 
 ## Example — Article Recommendation Agent
 
-One brief covers the host features you actually use: camelCase field names echoed on Results, streaming markdown, waiting chrome on Results (not the form), History `onLoad`, and Open that copies a loaded row without dumping every `output` onto the list.
+One brief covers the host features you actually use: camelCase field names echoed on Results, streaming markdown, waiting chrome on Results (not the form), History `onLoad`, and Open that swaps the History list for that row’s markdown on the same page — without dumping every `output` onto the cards.
 
 Do **not** ask for a progress panel, elapsed timer, or Cancel **on the form**. Waiting lives on Results. The host disables submit and shows error + Retry. Tabs only navigate — History must `onLoad` its API.
 
@@ -79,8 +79,10 @@ Results:
 History page onLoad calls run_history (do not call it from the tab click).
 Repeat cards, most recent first: keyword, client, and date only.
 Do not bind item.output, content, body, or a Table column for the markdown — not on the card, not as Card.description.
-Each card has a Button labeled "Open" with selectItem true, no actionId, navigateTo "results".
-Open is not an API call. The host copies that row's output into content so Results shows the same markdown layout, read-only.
+Each card has a Button labeled "Open" with selectItem true, no actionId, and no navigateTo.
+Open stays on History. Hide the list (Repeat or its wrapper showWhen "!selectedId") and show that row's markdown
+(DataText statePath "content", showWhen "selectedId") with a ghost Back Button clearItem true, showWhen "selectedId".
+Back is not an API call and must not navigateTo — it hides the detail and shows the list again.
 
 Do not show raw JSON anywhere.
 ```
@@ -123,7 +125,7 @@ A: With care, often a decade or more.
 }
 ```
 
-The history sample may include `output` so generate knows the row shape. History cards must still bind only keyword, client, and date. Open uses `selectItem` (no `actionId`); Results `DataText` stays on `content`.
+The history sample may include `output` so generate knows the row shape. History cards must still bind only keyword, client, and date. Open uses `selectItem` (no `actionId`, no `navigateTo`); a `clearItem` Back restores the list. Generate still lands on Results.
 
 Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add them later in **Requested Changes** only if you implement them yourself.
 
@@ -136,8 +138,9 @@ Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add
 | `Keyword: {Target Keyword}` with only a label, no camelCase name | Often stays literal `{Target Keyword}` after generate. Name the field first. |
 | Stream on + markdown sample | Results fills as tokens arrive. Heading shape follows the sample, not an invented Table. |
 | History cards: keyword, client, date only | Repeat is a stamp. Binding `item.output` would paint the full markdown on **every** card. |
-| Open: `selectItem true`, no `actionId`, `navigateTo "results"` | Copies that row into `selected` / `selectedId` / `content` / scalar `inputs`. Not a CTA. |
-| Results: no `onLoad` | A load run would reset state and drop the copied row. Fresh Generate already wrote `content`. |
+| Open: `selectItem true`, no `actionId`, no `navigateTo` | Copies that row into `selected` / `selectedId` / `content`. Host hides Repeat while `selectedId` is set. |
+| Back: `clearItem true`, `showWhen "selectedId"` | Drops the copied row. The list returns. Do not `navigateTo "history"` — that is a no-op on History. |
+| Generate Results: no `onLoad` | A load run would reset state and drop streamed markdown. History Open does not use this page. |
 
 `{item.title}` is only for rows inside a Repeat (a list from the API). Do not use `{item…}` for values the visitor just typed.
 
@@ -145,18 +148,21 @@ Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add
 
 1. Generator → Generate Recommendations lands on Results; pills show the typed keyword and client; markdown fills `content`.
 2. History loads on arrival (not on tab click). Cards show keyword, client, date — **not** the full markdown.
-3. Open on a row goes to Results with **that** run’s markdown and matching pills. It must not call `run_history` or `recommend_articles` again.
+3. Open on a row hides the History cards and shows **that** run’s markdown on the same page. Back restores the list. It must not call `run_history` or `recommend_articles`, and it must not leave History.
 4. Back from Results returns to Generator. Opening History again still shows the short list.
 
 **History is empty but the API returned data:** Redeploy `run_history` after changing its Response block, then edit with a page-scoped prompt (`On the "history" page, bind Repeat to items`). Generate/edit re-reads the deployed output schema. Saying “do not show raw JSON” without a list `statePath` that matches that schema replaces the working `DataText` dump with an empty Repeat.
 
-**History shows every run’s markdown on the list:** the draft bound `item.output` (or dumped `content`). **Edit Existing Draft**, paste **Copy page edit prompt** from History, then only this delta:
+**History Open appends markdown below the list:** the draft revealed `DataText` with `showWhen` but left Repeat visible, and Back `navigateTo "history"` did nothing. **Edit Existing Draft**, paste **Copy page edit prompt** from History, then only this delta:
 
 ```
 On the "history" page, Repeat cards must show only keyword, client, and date.
-Do not bind item.output, content, or any DataText/Table column for the markdown.
-Each card has a Button "Open" with selectItem true, no actionId, navigateTo "results".
-On the "results" page, do not add onLoad. Keep DataText statePath "content".
+Do not bind item.output, content, or any DataText/Table column for the markdown on the list.
+Each card has a Button "Open" with selectItem true, no actionId, no navigateTo.
+Hide Repeat (or its Grid/Stack/Section) with showWhen "!selectedId".
+Put the markdown in a sibling Section showWhen "selectedId" with DataText statePath "content"
+and a ghost Back Button clearItem true, showWhen "selectedId", no navigateTo.
+Do not append DataText below an always-visible Repeat.
 ```
 
 ---
@@ -179,5 +185,5 @@ On the "results" page, do not add onLoad. Keep DataText statePath "content".
 - Streaming APIs: turn Stream **on**, then paste a markdown (or JSON) example of the real stream.
 - User Input names pages, **camelCase field names**, submit label, and “then go to {page}”.
 - To show typed values on Results, write `{targetKeyword}` (or the field name) there — do not wait for the API to echo them.
-- History lists that include a huge `output`: bind only short fields; Open is `selectItem` (no `actionId`) then Results `content`. Do not bind `item.output` on the list.
+- History lists that include a huge `output`: bind only short fields; Open is `selectItem` (no `actionId`, no `navigateTo`); hide the list with `!selectedId`; Back is `clearItem`. Do not bind `item.output` on the list.
 - Edits are deltas. Do not paste the original brief again.

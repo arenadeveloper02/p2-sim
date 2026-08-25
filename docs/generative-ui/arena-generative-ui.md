@@ -387,7 +387,7 @@ That sends both `email` and `arenaEmailId`. When no emailId resolves, the key is
 
 On success the host may navigate (`onSuccess.navigate`) and merge `setState` so `DataText` can show results (for example `score`). Arrays listed in `appendKeys` concatenate into existing state instead of replacing, which is how Load more grows a list.
 
-A Repeat `Button` with `selectItem: true` is not a CTA: it copies the loaded row into host state (`selected`, `selectedId`, `content`, scalar `inputs`) without POSTing a binding. That is how a History list opens a run's markdown on Results when the list payload already includes `output`.
+A Repeat `Button` with `selectItem: true` is not a CTA: it copies the loaded row into host state (`selected`, `selectedId`, `content`, scalar `inputs`) without POSTing a binding. On History, Open with no `navigateTo` hides the list while `selectedId` is set; a `clearItem` Back (or a NavLink/`navigateTo` to the current path) restores it. `navigateTo` a results page is the other pattern, when the brief wants a separate detail route.
 
 When an action fails, the host writes the message to state under `error` and shows a dismissible banner above the page, so a failure is visible even when the generated spec never bound `error` anywhere. HTTP failures carry the upstream detail rather than a bare status: a 422 whose body is `{"error":"company is required"}` surfaces as `HTTP 422: company is required`. The banner clears on the next action and on navigation. An `outputSchema` mismatch uses a separate amber warning, not this error banner.
 
@@ -461,11 +461,11 @@ Input: `Form`, `TextInput`, `TextArea`, `NumberInput`, `DateInput`, `Select`, `R
 
 Loading: `Skeleton` (`variant`: `text` / `stat` / `table` / `card` / `form`, plus `lines`) for static-children regions. `Spinner` and `ProgressSteps` remain in the catalog for legacy specs; the host compiles pending chrome, so new apps should bind `statePath` instead of emitting them.
 
-Nav / CTA: `NavLink` (`to` = page path), `Button` (`navigateTo` / `actionId` / `selectItem` / outbound `href`, plus `variant`, `size`, and `showWhen`), `Link`
+Nav / CTA: `NavLink` (`to` = page path), `Button` (`navigateTo` / `actionId` / `selectItem` / `clearItem` / outbound `href`, plus `variant`, `size`, and `showWhen`), `Link`
 
 Theme (optional, on the manifest, not a component): `brandColor` (`#RGB` / `#RRGGBB`), `radius` (`sm` / `md` / `lg`), `density` (`compact` / `comfortable` / `roomy`), `font` (`sans` / `serif`), `colorScheme` (`light` / `dark` / `system`). The host applies these as scoped `--gui-*` CSS variables. Omit `theme` unless Design Notes name branding.
 
-`Button.variant` is `primary` / `secondary` / `ghost` / `destructive` and defaults to `secondary`; `size` is `sm` / `md`. `showWhen` uses the same clause syntax as form fields (`hasMore`, `status=ready`) so Load more can hide when there is no next page. At most one `primary` per page, and none on a page whose main action is a `SubmitButton` — that already renders as the primary. Emphasis has no colour prop: `Button` takes no `backgroundColor` or `color`.
+`Button.variant` is `primary` / `secondary` / `ghost` / `destructive` and defaults to `secondary`; `size` is `sm` / `md`. `showWhen` uses the same clause syntax as form fields (`hasMore`, `!selectedId`, `status=ready`) so Load more can hide when there is no next page. At most one `primary` per page, and none on a page whose main action is a `SubmitButton` — that already renders as the primary. Emphasis has no colour prop: `Button` takes no `backgroundColor` or `color`.
 
 A `SubmitButton` normally lives inside the `Form` it submits. One that sits **outside** a Form runs its own `actionId` on click instead, so a stray submit button still works — including in apps generated before this behaviour existed. A `SubmitButton` with neither a `Form` around it nor an `actionId` of its own can do nothing at all, so generation rejects it and the model is asked to fix it.
 
@@ -479,7 +479,8 @@ Put `Repeat` *inside* a `Grid` (or `Stack`). Its children are the per-item templ
 
 - Bound fields: `statePath` `"item.title"` (no braces). Nested Repeats can bind `statePath` `"item.comments"` to an array on the outer row.
 - Labels, hrefs, and navigation: `"{item.id}"` — `NavLink.to` `"order?id={item.id}"` opens that row's detail page so its `onLoad` can fetch the record.
-- A `Button.selectItem` inside Repeat copies the row into host state (`selected`, `selectedId`, `content` from `output` / `content`, scalar fields under `inputs`) without calling an API. Combine with `navigateTo` a results page that has **no** `onLoad`, or reveal on the same page with `showWhen: "selectedId={item.id}"` on `DataText` / `Card` / `Section`. Do not set `actionId` on that button.
+- A `Button.selectItem` inside Repeat copies the row into host state (`selected`, `selectedId`, `content` from `output` / `content`, scalar fields under `inputs`) without calling an API. Stay on the list page: omit `navigateTo`, hide Repeat with `showWhen: "!selectedId"`, show markdown with `showWhen: "selectedId"`, Back is `clearItem` (no `actionId`). Or `navigateTo` a results page that has **no** `onLoad`. Do not append `DataText` below an always-visible Repeat. Do not set `actionId` on the Open button.
+- A `Button.clearItem` drops `selected`, `selectedId`, and copied `content` so the list returns. It must not set `selectItem` or `actionId`. A `navigateTo` / `NavLink.to` equal to the current path also clears while a row is selected.
 - A `Button.actionId` inside Repeat sends the item's fields as the action input, so `inputMapping` can pass `id` the same way page query params do.
 - Never bind a long prose field (`output`, `content`, `body`) inside Repeat — not `item.output`, not `Card.description`, not a Table column. Select the row, then show the markdown once.
 - The host renders at most 48 items.
@@ -590,9 +591,9 @@ Same as above with `kind: "http"`. Put tokens in a workspace env var and referen
 Use this when Generate streams markdown onto Results, and History `onLoad`s a list whose rows already include that markdown (`output`).
 
 1. Two bindings: the generate workflow (`stream: true` + a markdown Output format sample) and `run_history` (JSON sample with `items[].keyword`, `items[].client`, `items[].date`, and `items[].output`).
-2. In User Input: History cards bind **only** the short fields. Open is `selectItem true`, **no** `actionId`, `navigateTo "results"`. Results has **no** `onLoad` and keeps `DataText` on `content`.
+2. In User Input: History cards bind **only** the short fields. Open is `selectItem true`, **no** `actionId`, **no** `navigateTo`. Hide the list with `showWhen "!selectedId"`. Detail is `showWhen "selectedId"` plus a ghost Back `clearItem true`. Generate still goes to Results (`DataText` on `content`, no `onLoad`).
 3. Do not bind `item.output` on the list — Repeat would render the full markdown on every card.
-4. Generate, Preview History, click Open. You should land on Results with that row’s markdown, not a second API call.
+4. Generate, Preview History, click Open. The cards hide and that row’s markdown shows on History. Back restores the list — not a second API call and not a trip to Results.
 
 The copy-paste brief is the [user-guide example](./arena-generative-ui-user-guide.md#example--article-recommendation-agent).
 
@@ -619,9 +620,10 @@ The copy-paste brief is the [user-guide example](./arena-generative-ui-user-guid
 | A workflow CTA gets no `arenaEmailId` | It is only absent when no emailId resolved for that visitor. `inputMapping` does not drop it. For an **HTTP** binding it is withheld unless the binding sets `forwardEmailId` |
 | Generation error about a SubmitButton doing nothing | A `SubmitButton` ended up outside its `Form` with no `actionId`. Rerun; if it repeats, say in the brief which form the button submits |
 | Preview shows unresolved statePath / unknown type | Copy **Copy as edit instructions** into the block's **Requested Changes** and rerun Edit. Bind a real top-level response field or add `onLoad`. |
-| History list shows every row’s full markdown | The draft bound `item.output` (or dumped `content`). Edit History only: cards bind keyword/client/date; Open is `selectItem` with no `actionId` and `navigateTo "results"`; do not add `onLoad` on Results |
-| History Open calls an API or wipes Results | Open must not set `actionId`. Results must not declare `onLoad` — a load run resets state and drops the copied row |
-| Generation error about selectItem | `selectItem` is Repeat-only and cannot combine with `actionId`. Put Open inside the Repeat card template |
+| History list shows every row’s full markdown | The draft bound `item.output` (or dumped `content`). Edit History only: cards bind keyword/client/date; Open is `selectItem` with no `actionId` |
+| History Open appends markdown below the list | Repeat stayed visible. Hide it while `selectedId` is set (`showWhen "!selectedId"`). Back is `clearItem`, not `navigateTo "history"` on History |
+| History Open calls an API or leaves History | Open must not set `actionId` or `navigateTo` when the brief stays on History |
+| Generation error about selectItem | `selectItem` is Repeat-only and cannot combine with `actionId` or `clearItem`. Put Open inside the Repeat card template |
 | Block error `fetch failed` during generate/edit | Claude can take several minutes. Check **Deploy → GUI App** — a revision may already have been saved even if the block showed an error. Retry the run. |
 
 Tool APIs used by the block (you do not call these yourself):

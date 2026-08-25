@@ -554,9 +554,9 @@ describe('GenerativeAppHost destructive confirm', () => {
     expect(container.querySelector('[data-testid="destructive-confirm"]')).toBeTruthy()
 
     await act(async () => {
-      container.querySelector('[data-testid="destructive-confirm-cancel"]')?.dispatchEvent(
-        new MouseEvent('click', { bubbles: true })
-      )
+      container
+        .querySelector('[data-testid="destructive-confirm-cancel"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(mockMutateAsync).not.toHaveBeenCalled()
     expect(container.querySelector('[data-testid="destructive-confirm"]')).toBeNull()
@@ -565,14 +565,119 @@ describe('GenerativeAppHost destructive confirm', () => {
       del?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await act(async () => {
-      container.querySelector('[data-testid="destructive-confirm-accept"]')?.dispatchEvent(
-        new MouseEvent('click', { bubbles: true })
-      )
+      container
+        .querySelector('[data-testid="destructive-confirm-accept"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(mockMutateAsync).toHaveBeenCalledWith({
       actionId: 'delete_item',
       values: expect.any(Object),
       emailId: undefined,
     })
+  })
+})
+
+const historySpec: Spec = {
+  root: 'page',
+  elements: {
+    page: { type: 'Page', props: { title: 'History' }, children: ['repeat', 'detail', 'back'] },
+    repeat: { type: 'Repeat', props: { statePath: 'history' }, children: ['card'] },
+    card: { type: 'Card', props: { title: '{item.keyword}' }, children: ['open'] },
+    open: { type: 'Button', props: { label: 'Open', selectItem: true }, children: [] },
+    detail: {
+      type: 'DataText',
+      props: { statePath: 'content', fallback: '', showWhen: 'selectedId' },
+      children: [],
+    },
+    back: {
+      type: 'Button',
+      props: { label: 'Back', clearItem: true, showWhen: 'selectedId' },
+      children: [],
+    },
+  },
+}
+
+describe('GenerativeAppHost same-page History Open', () => {
+  let container: HTMLDivElement
+  let root: Root
+  let scrollTo: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    scrollTo = vi.fn()
+    window.scrollTo = scrollTo
+    mockUseDeployedAppConfig.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        kind: 'config',
+        config: {
+          streamingActionIds: [],
+          actionNavigate: {},
+          pageOnLoad: { history: ['load_history'] },
+        },
+      },
+      error: null,
+    })
+    mockUseDeployedAppPage.mockReturnValue({
+      isLoading: false,
+      data: { path: 'history', title: 'History', spec: historySpec },
+    })
+    mockMutateAsync.mockResolvedValue({
+      ok: true,
+      setState: {
+        history: [{ id: 'run_1', keyword: 'Dental implants', output: '# Full report' }],
+      },
+    })
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('swaps the list for the row markdown and Back restores the list', async () => {
+    await act(async () => {
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <GenerativeAppHost identifier='gui-history' pagePath='history' emailId='' />
+        </GenerativeAppHostStateProvider>
+      )
+    })
+
+    expect(container.textContent).toContain('Dental implants')
+    expect(container.textContent).toContain('Open')
+    expect(container.textContent).not.toContain('Full report')
+
+    const open = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Open'
+    )
+    await act(async () => {
+      open?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).not.toContain('Open')
+    expect(container.textContent).toContain('Full report')
+    expect(container.textContent).toContain('Back')
+    expect(scrollTo).toHaveBeenCalledWith(0, 0)
+
+    const back = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Back'
+    )
+    await act(async () => {
+      back?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Dental implants')
+    expect(container.textContent).toContain('Open')
+    expect(container.textContent).not.toContain('Full report')
+    expect(scrollTo).toHaveBeenCalledTimes(2)
+    expect(mockPush).not.toHaveBeenCalled()
   })
 })

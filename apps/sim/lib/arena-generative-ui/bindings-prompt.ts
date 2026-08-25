@@ -9,7 +9,7 @@ function resultLayoutForBinding(
   outputHint: string | undefined
 ): string {
   if (outputSchema.some((field) => EMBEDDED_LIST_PROSE.test(field.name))) {
-    return 'list items include a prose field — Repeat cards bind only short scalars; Open is Button selectItem true (no actionId), then DataText on content or selected.output; do not bind item.output inside Repeat'
+    return 'list items include a prose field — Repeat cards bind only short scalars; Open is Button selectItem true (no actionId); same-page detail uses showWhen "!selectedId" on the list and showWhen "selectedId" plus clearItem Back; do not bind item.output inside Repeat'
   }
   if (outputSchema.length > 0) {
     return 'bind outputSchema field names as statePath; nested arrays (run_data.history) also land as "history"'

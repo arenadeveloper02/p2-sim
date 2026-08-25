@@ -185,7 +185,16 @@ function selectItemError(spec: Spec, pageKey: string): string | undefined {
   const elements = (spec.elements ?? {}) as Record<string, FlatElement>
   const insideRepeat = elementIdsInsideRepeat(spec)
   for (const [id, element] of Object.entries(elements)) {
-    if (element.type !== 'Button' || element.props?.selectItem !== true) continue
+    if (element.type !== 'Button') continue
+    const selectItem = element.props?.selectItem === true
+    const clearItem = element.props?.clearItem === true
+    if (clearItem && selectItem) {
+      return `Page "${pageKey}" Button "${id}" sets clearItem and selectItem; Back clears the copied row with clearItem only.`
+    }
+    if (clearItem && asString(element.props?.actionId)) {
+      return `Page "${pageKey}" Button "${id}" sets clearItem and actionId; Back is not an API call.`
+    }
+    if (!selectItem) continue
     if (asString(element.props?.actionId)) {
       return `Page "${pageKey}" Button "${id}" sets selectItem and actionId; Open a loaded row with selectItem only (no API call).`
     }
@@ -315,7 +324,8 @@ export function validateArenaGenerativeManifest(
         error: `Page "${key}" has a SubmitButton (${deadSubmits.join(', ')}) that is not inside a Form and has no actionId, so it would do nothing. Put it inside the Form it submits, or give it an actionId.`,
       }
     }
-    const selectItemIssue = authored && !authored.has(key) ? undefined : selectItemError(validation.data, key)
+    const selectItemIssue =
+      authored && !authored.has(key) ? undefined : selectItemError(validation.data, key)
     if (selectItemIssue) {
       return { success: false, error: selectItemIssue }
     }

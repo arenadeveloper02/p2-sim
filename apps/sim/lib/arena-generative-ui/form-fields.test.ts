@@ -16,11 +16,8 @@ describe('parseShowWhen', () => {
     expect(parseShowWhen('notify')).toEqual([{ name: 'notify', op: 'truthy' }])
   })
 
-  it('parses equality, inequality, and AND', () => {
-    expect(parseShowWhen('channel=email, channel!=sms')).toEqual([
-      { name: 'channel', op: 'eq', value: 'email' },
-      { name: 'channel', op: 'neq', value: 'sms' },
-    ])
+  it('parses a leading bang as a falsy check', () => {
+    expect(parseShowWhen('!selectedId')).toEqual([{ name: 'selectedId', op: 'falsy' }])
   })
 })
 
@@ -36,6 +33,8 @@ describe('fieldIsVisible', () => {
     expect(
       fieldIsVisible({ showWhen: 'notify,channel=email' }, { notify: true, channel: 'sms' })
     ).toBe(false)
+    expect(fieldIsVisible({ showWhen: '!selectedId' }, {})).toBe(true)
+    expect(fieldIsVisible({ showWhen: '!selectedId' }, { selectedId: 'run_1' })).toBe(false)
   })
 })
 

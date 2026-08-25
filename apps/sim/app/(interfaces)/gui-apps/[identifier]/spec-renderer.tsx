@@ -38,6 +38,7 @@ import {
   collectVisibleFieldValues,
   fieldIsVisible,
   isFormFieldType,
+  isTruthyFieldValue,
   listFormFields,
   parseOptionList,
   resolveFieldValue,
@@ -47,6 +48,7 @@ import {
 } from '@/lib/arena-generative-ui/form-fields'
 import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
 import {
+  ARENA_GENERATIVE_SELECTED_ID_KEY,
   collectionFromBoundValue,
   displayTextFromActionData,
   interpolateElementProps,
@@ -58,6 +60,7 @@ import {
   readScopedStatePath,
   repeatItemActionValues,
   repeatItemKey,
+  specHasSamePageSelectItem,
   splitNavTarget,
 } from '@/lib/arena-generative-ui/types'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
@@ -82,6 +85,8 @@ interface SpecRendererProps {
   ) => Promise<void>
   /** Copies a Repeat row into host state without calling an API. */
   onSelectItem?: (item: unknown, index: number) => void
+  /** Drops the copied Repeat row so an in-page detail can return to the list. */
+  onClearItem?: () => void
 }
 
 function asString(value: unknown, fallback = ''): string {
@@ -963,7 +968,6 @@ function CatalogTabs({
 
   return (
     <nav
-      role='tablist'
       className='flex w-full flex-wrap items-center gap-1 border-[var(--gui-border,#e2e3e5)] border-b'
       style={style}
     >
@@ -1041,10 +1045,22 @@ export function SpecRenderer({
   onNavigate,
   onRunAction,
   onSelectItem,
+  onClearItem,
 }: SpecRendererProps) {
   const elements = (spec.elements ?? {}) as Record<string, SpecElement>
   const [formValues, setFormValues] = useState<Record<string, unknown>>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const selectedIdSet = isTruthyFieldValue(state[ARENA_GENERATIVE_SELECTED_ID_KEY])
+  const hideListForSelection = selectedIdSet && specHasSamePageSelectItem(spec, currentPath)
+
+  const requestNavigate = (target: string) => {
+    const path = splitNavTarget(target).path
+    if (currentPath && path === currentPath && selectedIdSet) {
+      onClearItem?.()
+      return
+    }
+    onNavigate(target)
+  }
 
   /**
    * `withinForm` tracks whether an ancestor is a `Form`. A `SubmitButton` outside one
@@ -1112,6 +1128,7 @@ export function SpecRenderer({
           </section>
         )
       case 'Stack': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
         const justify = asString(props.justify, 'start')
         return (
           <div
@@ -1131,6 +1148,7 @@ export function SpecRenderer({
         )
       }
       case 'Grid':
+        if (!fieldIsVisible(props, visibilityValues)) return null
         return (
           <div
             className='grid w-full'
@@ -1144,10 +1162,17 @@ export function SpecRenderer({
           </div>
         )
       case 'Repeat': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        if (hideListForSelection) return null
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
         const items = collectionFromBoundValue(stateValue)
-        if (statePath && pending && isEmptyStateValue(stateValue) && (!items || items.length === 0)) {
+        if (
+          statePath &&
+          pending &&
+          isEmptyStateValue(stateValue) &&
+          (!items || items.length === 0)
+        ) {
           return (
             <>
               {Array.from({ length: 3 }, (_, index) => (
@@ -1279,7 +1304,7 @@ export function SpecRenderer({
             items={items}
             activePath={asString(props.activePath)}
             currentPath={currentPath}
-            onNavigate={onNavigate}
+            onNavigate={requestNavigate}
             style={styleFromProps(props)}
           />
         )
@@ -1502,7 +1527,7 @@ export function SpecRenderer({
             const parsed = parseChipSetValue(setValue)
             setNamedValue(parsed.name || firstSearchFieldName(elements), parsed.value)
           }
-          if (navigateTo) onNavigate(navigateTo)
+          if (navigateTo) requestNavigate(navigateTo)
           if (actionId) void onRunAction(actionId, actionValues)
         }
         if (!interactive) {
@@ -1952,7 +1977,13 @@ export function SpecRenderer({
 
         if (element.type === 'TextArea') {
           return (
-            <FieldShell name={name} label={label} htmlFor={fieldId} error={error} required={required}>
+            <FieldShell
+              name={name}
+              label={label}
+              htmlFor={fieldId}
+              error={error}
+              required={required}
+            >
               <textarea
                 id={fieldId}
                 name={name}
@@ -1969,7 +2000,13 @@ export function SpecRenderer({
         if (element.type === 'Select') {
           const options = parseOptionList(props.options)
           return (
-            <FieldShell name={name} label={label} htmlFor={fieldId} error={error} required={required}>
+            <FieldShell
+              name={name}
+              label={label}
+              htmlFor={fieldId}
+              error={error}
+              required={required}
+            >
               <select
                 id={fieldId}
                 name={name}
@@ -2193,10 +2230,13 @@ export function SpecRenderer({
                 void onRunAction(actionId, actionValues, { destructive: true })
                 return
               }
+              if (asBoolean(props.clearItem)) {
+                onClearItem?.()
+              }
               if (asBoolean(props.selectItem) && scope) {
                 onSelectItem?.(scope.item, scope.index)
               }
-              if (navigateTo) onNavigate(navigateTo)
+              if (navigateTo) requestNavigate(navigateTo)
               if (actionId) void onRunAction(actionId, actionValues)
             }}
           >
@@ -2210,7 +2250,7 @@ export function SpecRenderer({
           <button
             type='button'
             className='font-medium text-[length:var(--gui-body-size,16px)] text-[var(--gui-brand,#1a73e8)] underline-offset-2 hover:text-[var(--gui-brand-hover,#155cba)] hover:underline'
-            onClick={() => onNavigate(asString(props.to))}
+            onClick={() => requestNavigate(asString(props.to))}
           >
             {asString(props.label)}
           </button>

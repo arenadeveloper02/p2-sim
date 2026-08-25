@@ -101,6 +101,8 @@ describe('bindingsSummaryForPrompt', () => {
       },
     ])
     expect(summary[0]?.resultLayout).toContain('selectItem')
+    expect(summary[0]?.resultLayout).toContain('clearItem')
+    expect(summary[0]?.resultLayout).toContain('!selectedId')
     expect(summary[0]?.resultLayout).toContain('do not bind item.output')
   })
 })

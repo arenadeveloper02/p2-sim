@@ -4,16 +4,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button, Input, InputOTP, InputOTPGroup, InputOTPSlot, Label } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
+import { flushSync } from 'react-dom'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import {
   ARENA_GENERATIVE_APP_BASE_PATH,
   actionErrorFrom,
   actionSchemaWarningFrom,
   clearedActionErrorState,
+  clearedSelectedItemHostState,
   isJsonRenderSpec,
   navigationHref,
+  scrollGenerativeAppToTop,
   selectedItemHostState,
 } from '@/lib/arena-generative-ui/types'
 import {
@@ -207,6 +209,13 @@ export function GenerativeAppHost({
             flushSync(() => {
               mergeState(selectedItemHostState(item, index))
             })
+            scrollGenerativeAppToTop()
+          }}
+          onClearItem={() => {
+            flushSync(() => {
+              mergeState(clearedSelectedItemHostState())
+            })
+            scrollGenerativeAppToTop()
           }}
         />
       </SpecRenderErrorBoundary>
