@@ -499,7 +499,8 @@ export interface NormalizeGeneratedAppFilesOptions {
 export const GENERATED_APP_REPO_SUMMARY_GUIDANCE = `REPO_SUMMARY.md (required, auto-maintained):
 - Living repository summary: purpose, features, tech stack, routes, API routes, Prisma models, components, and a complete file index
 - Sim Development regenerates this file after generate and edit — do not omit it from new apps
-- During edits, read REPO_SUMMARY.md first to understand architecture before changing code`
+- During edits, read REPO_SUMMARY.md first to understand architecture before changing code
+- The "Prisma Schema — STRICT" section is binding: NEVER drop, delete, omit, rename, or retype any existing column in prisma/schema.prisma`
 
 export const GENERATED_APP_README_GUIDANCE = `README.md (required):
 - Include a clear project title, 1–2 sentence description, feature list, tech stack, local setup steps, and deploy notes
@@ -1370,6 +1371,105 @@ function extractPrismaModels(files: GeneratedAppFile[]): string[] {
   return [...schemaFile.content.matchAll(/^model\s+(\w+)\s*\{/gm)].map((match) => match[1])
 }
 
+interface PrismaModelColumn {
+  name: string
+  type: string
+}
+
+interface PrismaModelColumnInventory {
+  model: string
+  columns: PrismaModelColumn[]
+}
+
+/**
+ * Lists scalar columns per Prisma model so REPO_SUMMARY.md can forbid drops.
+ */
+function extractPrismaModelColumns(files: GeneratedAppFile[]): PrismaModelColumnInventory[] {
+  const schemaFile = files.find((file) => normalizePath(file.path) === 'prisma/schema.prisma')
+  if (!schemaFile) {
+    return []
+  }
+
+  const schema = schemaFile.content
+  const modelNames = new Set(extractPrismaModels(files))
+  const inventory: PrismaModelColumnInventory[] = []
+  const modelBlockPattern = /model\s+(\w+)\s*\{([\s\S]*?)\n\}/g
+  const fieldPattern = /^(\w+)\s+(\w+)(\[\])?(\?)?\s*/
+
+  for (const match of schema.matchAll(modelBlockPattern)) {
+    const model = match[1]
+    const columns: PrismaModelColumn[] = []
+
+    for (const rawLine of match[2].split('\n')) {
+      const line = rawLine.trim()
+      if (!line || line.startsWith('//') || line.startsWith('@@')) {
+        continue
+      }
+
+      const fieldMatch = fieldPattern.exec(line)
+      if (!fieldMatch) {
+        continue
+      }
+
+      const name = fieldMatch[1]
+      const type = fieldMatch[2]
+      const isList = Boolean(fieldMatch[3])
+      if (isList || modelNames.has(type)) {
+        continue
+      }
+
+      columns.push({ name, type })
+    }
+
+    if (columns.length > 0) {
+      inventory.push({ model, columns })
+    }
+  }
+
+  return inventory
+}
+
+function buildPrismaSchemaStrictSection(
+  files: GeneratedAppFile[],
+  requiresDatabase: boolean
+): string {
+  if (!requiresDatabase) {
+    return ''
+  }
+
+  const inventory = extractPrismaModelColumns(files)
+  const columnLines =
+    inventory.length > 0
+      ? inventory
+          .map(
+            (entry) =>
+              `- \`${entry.model}\`: ${entry.columns.map((column) => `\`${column.name} ${column.type}\``).join(', ')}`
+          )
+          .join('\n')
+      : '- (no models parsed — still NEVER drop columns from prisma/schema.prisma)'
+
+  return `
+## Prisma Schema — STRICT: NEVER DROP OR DELETE COLUMNS
+
+This section is binding on every edit. Vercel deploy runs \`prisma db push\` with **NO** \`--accept-data-loss\`. Dropping or altering a live column **fails the deploy**.
+
+**FORBIDDEN (non-negotiable):**
+- Do **not** delete, drop, omit, rename, or retype ANY existing column in \`prisma/schema.prisma\`
+- Do **not** drop models or tables
+- Do **not** "clean up", "simplify", or regenerate the schema from memory or from this summary
+- Do **not** remove \`createdAt\` / \`updatedAt\` (or any other listed field) even if the UI no longer uses it
+
+**ALLOWED:**
+- ADD new models, columns, relations, or enums only
+- New columns on existing models MUST be optional (\`?\`) or have \`@default(...)\`
+- If the UI no longer needs a field, stop reading it in code — leave the column in the schema unchanged
+
+**Immutable columns (must remain identical — same name, same type):**
+
+${columnLines}
+`
+}
+
 function groupFilePaths(paths: string[]): Record<string, string[]> {
   const groups: Record<string, string[]> = {
     'App pages': [],
@@ -1571,6 +1671,11 @@ export function buildRepoSummaryContent(
         ? '\n## Database\n\n- Prisma + PostgreSQL (`DATABASE_URL`)\n'
         : ''
 
+  const prismaStrictSection = buildPrismaSchemaStrictSection(
+    files,
+    Boolean(options.requiresDatabase)
+  )
+
   const inventorySections = Object.entries(groupedPaths)
     .filter(([, groupPaths]) => groupPaths.length > 0)
     .map(
@@ -1601,7 +1706,7 @@ ${features.map((feature) => `- ${feature}`).join('\n')}
 ## Tech Stack
 
 ${techStack.map((item) => `- ${item}`).join('\n')}
-${infrastructureSection}${routesSection}${databaseSection}
+${infrastructureSection}${routesSection}${databaseSection}${prismaStrictSection}
 ## File Inventory
 
 ${inventorySections}
