@@ -10,6 +10,7 @@ import {
   specHasSamePageSelectItem,
   splitNavTarget,
 } from '@/lib/arena-generative-ui/types'
+import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
 
 export type ArenaGenerativeAsyncKind = 'query' | 'mutation' | 'longRunning'
 
@@ -222,6 +223,20 @@ function onLoadActionIds(manifest: ArenaGenerativeAppManifest): Set<string> {
   for (const page of Object.values(manifest.pages)) {
     for (const actionId of page.onLoad ?? []) {
       ids.add(actionId)
+    }
+  }
+  return ids
+}
+
+function destructiveActionIds(manifest: ArenaGenerativeAppManifest): Set<string> {
+  const ids = new Set<string>()
+  if (!UX_DEFAULTS.Button.confirmIfDestructive) return ids
+  for (const page of Object.values(manifest.pages)) {
+    for (const element of Object.values(specElements(page.spec))) {
+      if (element.type !== 'Button') continue
+      if (asString(element.props?.variant) !== 'destructive') continue
+      const actionId = asString(element.props?.actionId)
+      if (actionId) ids.add(actionId)
     }
   }
   return ids
@@ -460,6 +475,7 @@ function planActions(
 ): Record<string, ArenaGenerativeUxActionPlan> {
   const byKey = bindingByKey(bindings)
   const onLoadIds = onLoadActionIds(manifest)
+  const confirmIds = destructiveActionIds(manifest)
   const plan: Record<string, ArenaGenerativeUxActionPlan> = {}
   for (const [actionId, action] of Object.entries(manifest.actions)) {
     plan[actionId] = {
@@ -467,7 +483,7 @@ function planActions(
         usedOnLoad: onLoadIds.has(actionId),
         binding: byKey.get(action.apiKey),
       }),
-      confirm: false,
+      confirm: confirmIds.has(actionId),
       retry: true,
     }
   }

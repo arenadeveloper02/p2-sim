@@ -7,8 +7,9 @@ import type {
 import { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/generate-manifest'
 import { summarizeManifestDiff } from '@/lib/arena-generative-ui/manifest-diff'
 import { parseApiBindings, parsePageHints } from '@/lib/arena-generative-ui/parse-inputs'
-import { refreshWorkflowBindingOutputSchemas } from '@/lib/arena-generative-ui/refresh-binding-schemas'
 import { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
+import { refreshWorkflowBindingOutputSchemas } from '@/lib/arena-generative-ui/refresh-binding-schemas'
+import { parseStoredStructuredBrief } from '@/lib/arena-generative-ui/structured-brief'
 import type { ArenaGenerativeAppManifest, ArenaGenerativeGenerateResult } from '@/lib/arena-generative-ui/types'
 
 const logger = createLogger('ArenaGenerativeUiRun')
@@ -55,6 +56,7 @@ export async function runArenaGenerativeUi(options: {
 
   let existingManifest: ArenaGenerativeAppManifest | undefined
   let existingBrief: string | undefined
+  let existingStructuredBrief: ReturnType<typeof parseStoredStructuredBrief> = null
   let existingRevision = 0
   if (requireExistingDraft || body.existingDraftId) {
     if (!body.existingDraftId) {
@@ -78,6 +80,7 @@ export async function runArenaGenerativeUi(options: {
     }
     existingManifest = draft.manifest as ArenaGenerativeAppManifest
     existingBrief = draft.brief ?? undefined
+    existingStructuredBrief = parseStoredStructuredBrief(draft.structuredBrief)
     existingRevision = draft.revision
     if (apiBindings.length === 0 && Array.isArray(draft.apiBindings)) {
       apiBindings = draft.apiBindings as typeof apiBindings
@@ -103,6 +106,7 @@ export async function runArenaGenerativeUi(options: {
     designNotes: body.designNotes,
     existingManifest,
     existingBrief,
+    ...(existingStructuredBrief ? { existingStructuredBrief } : {}),
   })
   logger.info('Generated Arena Generative UI manifest', {
     workspaceId,
@@ -129,6 +133,7 @@ export async function runArenaGenerativeUi(options: {
       manifest: generated.manifest,
       apiBindings,
       brief: body.existingDraftId ? undefined : userInput,
+      structuredBrief: body.existingDraftId ? undefined : (generated.plannedBrief ?? null),
     })
     logger.info('Persisted Arena Generative UI draft', {
       workspaceId,

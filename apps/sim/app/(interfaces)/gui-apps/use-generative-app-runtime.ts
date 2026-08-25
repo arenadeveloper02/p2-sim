@@ -13,6 +13,8 @@ import {
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import { clearedActionErrorState, submittedInputsState } from '@/lib/arena-generative-ui/types'
+import type { ArenaGenerativeUxPlan } from '@/lib/arena-generative-ui/ux-compiler'
+import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
 
 interface LastAction extends GenerativeAppLastAction {
   kind: 'cta' | 'load'
@@ -37,6 +39,8 @@ interface UseGenerativeAppRuntimeOptions {
     error: (message: string, meta?: Record<string, unknown>) => void
     warn: (message: string, meta?: Record<string, unknown>) => void
   }
+  /** Compiler plan: confirm / retry / kind per action. Missing entry keeps prior defaults. */
+  uxPlan?: ArenaGenerativeUxPlan
 }
 
 /**
@@ -52,6 +56,35 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
 
   const [toast, setToast] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<GenerativeAppLastAction | null>(null)
+  const [canRetry, setCanRetry] = useState(true)
+  const inFlightRef = useRef(new Set<string>())
+
+  const recordLastAction = (
+    actionId: string,
+    values: Record<string, unknown>,
+    kind: LastAction['kind']
+  ) => {
+    lastActionRef.current = { actionId, values, kind }
+    const plan = optionsRef.current.uxPlan?.actions[actionId]
+    setCanRetry(plan ? plan.retry : true)
+  }
+
+  const beginFlight = (actionId: string): boolean => {
+    if (UX_DEFAULTS.Button.preventDoubleSubmit && inFlightRef.current.has(actionId)) {
+      return false
+    }
+    inFlightRef.current.add(actionId)
+    return true
+  }
+
+  const endFlight = (actionId: string) => {
+    inFlightRef.current.delete(actionId)
+  }
+
+  const shouldConfirm = (actionId: string, meta?: RunGenerativeAppActionMeta): boolean => {
+    const plan = optionsRef.current.uxPlan?.actions[actionId]
+    return plan ? plan.confirm : Boolean(meta?.destructive)
+  }
 
   const execute = useCallback(
     async (actionId: string, values: Record<string, unknown>, generation: number) => {
@@ -85,9 +118,10 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
 
   const runCta = useCallback(
     async (actionId: string, values: Record<string, unknown>) => {
+      if (!beginFlight(actionId)) return
       const current = optionsRef.current
       const generation = clockRef.current.begin(actionId)
-      lastActionRef.current = { actionId, values, kind: 'cta' }
+      recordLastAction(actionId, values, 'cta')
       const navigateTo = current.actionNavigate[actionId]
       const streaming = current.isStreaming(actionId)
       flushSync(() => {
@@ -119,6 +153,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
         current.logger.error('App action failed', { error: toError(error).message })
         current.mergeState({ error: toError(error).message || 'Action failed' })
       } finally {
+        endFlight(actionId)
         if (clockRef.current.isCurrent(actionId, generation)) {
           current.setActionPending(actionId, false)
         }
@@ -129,9 +164,10 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
 
   const runLoad = useCallback(
     async (actionId: string, values: Record<string, unknown>) => {
+      if (!beginFlight(actionId)) return
       const current = optionsRef.current
       const generation = clockRef.current.begin(actionId)
-      lastActionRef.current = { actionId, values, kind: 'load' }
+      recordLastAction(actionId, values, 'load')
       current.setActionPending(actionId, true)
       current.mergeState(clearedActionErrorState())
       try {
@@ -143,6 +179,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
         current.logger.error('App action failed', { error: toError(error).message })
         current.mergeState({ error: toError(error).message || 'Action failed' })
       } finally {
+        endFlight(actionId)
         if (clockRef.current.isCurrent(actionId, generation)) {
           current.setActionPending(actionId, false)
         }
@@ -162,7 +199,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       values: Record<string, unknown>,
       meta?: RunGenerativeAppActionMeta
     ) => {
-      if (meta?.destructive) {
+      if (shouldConfirm(actionId, meta)) {
         triggerRef.current =
           document.activeElement instanceof HTMLElement ? document.activeElement : null
         setConfirm({ actionId, values })
@@ -174,7 +211,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
   )
 
   const rememberLoad = useCallback((actionId: string, values: Record<string, unknown>) => {
-    lastActionRef.current = { actionId, values, kind: 'load' }
+    recordLastAction(actionId, values, 'load')
   }, [])
 
   const retry = useCallback(() => {
@@ -210,6 +247,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
   return {
     onRunAction,
     retry,
+    canRetry,
     rememberLoad,
     dismissError,
     toast,

@@ -79,6 +79,43 @@ describe('compileGenerativeUx', () => {
     expect(compiled.pages.results.spec).toEqual(structuredClone(twoPageManifest.pages.results.spec))
     expect(compiled.uxPlan.fallbackLoading).toEqual({})
     expect(specHasLoadingSurface(twoPageManifest.pages.results.spec)).toBe(true)
+    expect(compiled.uxPlan.actions.submit_lead).toEqual({
+      kind: 'longRunning',
+      confirm: false,
+      retry: true,
+    })
+  })
+
+  it('sets confirm when a Button variant is destructive', () => {
+    const manifest: ArenaGenerativeAppManifest = {
+      entryPath: 'home',
+      pages: {
+        home: {
+          title: 'Settings',
+          path: 'home',
+          spec: {
+            root: 'page',
+            elements: {
+              page: { type: 'Page', props: { title: 'Settings' }, children: ['remove'] },
+              remove: {
+                type: 'Button',
+                props: { label: 'Delete', actionId: 'delete_item', variant: 'destructive' },
+                children: [],
+              },
+            },
+          },
+        },
+      },
+      actions: {
+        delete_item: { apiKey: 'save' },
+      },
+    }
+    const compiled = compileGenerativeUx(manifest, [{ key: 'save', label: 'Save', kind: 'http' }])
+    expect(compiled.uxPlan.actions.delete_item).toEqual({
+      kind: 'mutation',
+      confirm: true,
+      retry: true,
+    })
   })
 
   it('skips inject when a bound Table already covers query loading', () => {

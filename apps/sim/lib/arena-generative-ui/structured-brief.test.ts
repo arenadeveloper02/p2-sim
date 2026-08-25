@@ -28,9 +28,11 @@ import {
   ARENA_GENERATIVE_ARCHETYPES,
   type ArenaGenerativeStructuredBrief,
   archetypeRecipe,
+  formatStructuredBriefForEdit,
   formatStructuredBriefForGenerator,
   pageHintsFromStructuredBrief,
   parseArenaGenerativeStructuredBrief,
+  parseStoredStructuredBrief,
   planArenaGenerativeStructuredBrief,
 } from '@/lib/arena-generative-ui/structured-brief'
 
@@ -231,6 +233,19 @@ describe('structured brief helpers', () => {
     expect(formatted).toContain('Structured brief')
     expect(formatted).toContain('"archetype": "list-detail"')
     expect(formatted).toContain('emptyCopy as emptyText')
+  })
+
+  it('serialises the stored brief as edit context without pinning the sitemap', () => {
+    const formatted = formatStructuredBriefForEdit(listDetailBrief)
+    expect(formatted).toContain('Original structured brief (context only')
+    expect(formatted).toContain('"archetype": "list-detail"')
+    expect(formatted).not.toContain('emit exactly these page paths')
+  })
+
+  it('accepts a stored structured brief and ignores junk', () => {
+    expect(parseStoredStructuredBrief(listDetailBrief)?.archetype).toBe('list-detail')
+    expect(parseStoredStructuredBrief({ title: 'nope' })).toBeNull()
+    expect(parseStoredStructuredBrief(null)).toBeNull()
   })
 })
 

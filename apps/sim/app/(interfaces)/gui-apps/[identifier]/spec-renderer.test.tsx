@@ -15,7 +15,10 @@ vi.mock('streamdown/styles.css', () => ({}))
 vi.mock('@/app/(interfaces)/gui-apps/generative-app-theme.css', () => ({}))
 
 import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
-import { injectSamePageSelectChrome } from '@/lib/arena-generative-ui/ux-compiler'
+import {
+  type ArenaGenerativeUxPlan,
+  injectSamePageSelectChrome,
+} from '@/lib/arena-generative-ui/ux-compiler'
 
 const homeSpec: Spec = {
   root: 'page',
@@ -98,6 +101,7 @@ describe('SpecRenderer', () => {
     pendingActionIds?: ReadonlySet<string>
     actionHostKeys?: Record<string, readonly string[]>
     actionHiddenInputs?: Record<string, readonly string[]>
+    uxPlan?: ArenaGenerativeUxPlan
     currentPath?: string
     onNavigate?: ReturnType<typeof vi.fn>
     onRunAction?: ReturnType<typeof vi.fn>
@@ -121,6 +125,7 @@ describe('SpecRenderer', () => {
           pendingActionIds={options?.pendingActionIds}
           actionHostKeys={options?.actionHostKeys}
           actionHiddenInputs={options?.actionHiddenInputs}
+          uxPlan={options?.uxPlan}
           currentPath={options?.currentPath}
           onNavigate={onNavigate}
           onRunAction={onRunAction}
@@ -1519,6 +1524,53 @@ describe('SpecRenderer', () => {
       })
       expect(onNavigate).not.toHaveBeenCalled()
       expect(onRunAction).toHaveBeenCalledWith('del', expect.any(Object), { destructive: true })
+    })
+
+    it('asks the host to confirm when uxPlan.confirm is true even without a destructive variant', () => {
+      const { container, onNavigate, onRunAction } = render({
+        spec: buttonSpec({ label: 'Save', actionId: 'save', variant: 'secondary' }),
+        uxPlan: {
+          actions: { save: { kind: 'mutation', confirm: true, retry: true } },
+          fallbackLoading: {},
+        },
+      })
+      const button = container.querySelector('button') as HTMLButtonElement
+      act(() => {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onNavigate).not.toHaveBeenCalled()
+      expect(onRunAction).toHaveBeenCalledWith('save', expect.any(Object), { destructive: true })
+    })
+
+    it('does not confirm a destructive-looking button when uxPlan.confirm is false', () => {
+      const { container, onNavigate, onRunAction } = render({
+        spec: buttonSpec({
+          label: 'Delete',
+          actionId: 'del',
+          navigateTo: 'home',
+          variant: 'destructive',
+        }),
+        uxPlan: {
+          actions: { del: { kind: 'mutation', confirm: false, retry: true } },
+          fallbackLoading: {},
+        },
+      })
+      const button = container.querySelector('button') as HTMLButtonElement
+      act(() => {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onNavigate).toHaveBeenCalledWith('home')
+      expect(onRunAction).toHaveBeenCalledWith('del', expect.any(Object))
+      expect(onRunAction.mock.calls[0]?.[2]).toBeUndefined()
+    })
+
+    it('does not disable an action omitted from uxPlan while pending', () => {
+      const { container } = render({
+        spec: buttonSpec({ label: 'Run', actionId: 'run' }),
+        pending: true,
+        uxPlan: { actions: {}, fallbackLoading: {} },
+      })
+      expect((container.querySelector('button') as HTMLButtonElement).disabled).toBe(false)
     })
 
     it('renders the ghost variant without a border or fill', () => {

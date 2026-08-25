@@ -113,6 +113,7 @@ export function GenerativeAppHost({
     mergeState,
     setActionPending,
     logger,
+    uxPlan: config?.uxPlan,
   })
 
   usePageLoadActions({
@@ -179,7 +180,7 @@ export function GenerativeAppHost({
           message={bannerMessage}
           tone={actionError ? 'error' : 'warning'}
           onDismiss={runtime.dismissError}
-          onRetry={actionError ? runtime.retry : undefined}
+          onRetry={actionError && runtime.canRetry ? runtime.retry : undefined}
         />
       ) : null}
       <SpecRenderErrorBoundary key={pagePath} fallbackTitle='This page failed to render'>
@@ -190,6 +191,7 @@ export function GenerativeAppHost({
           pendingActionIds={pendingActionIds}
           actionHostKeys={config?.actionHostKeys ?? {}}
           actionHiddenInputs={config?.actionHiddenInputs ?? {}}
+          uxPlan={config?.uxPlan}
           currentPath={pagePath}
           onNavigate={navigate}
           onRunAction={runtime.onRunAction}

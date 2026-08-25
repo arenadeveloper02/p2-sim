@@ -74,4 +74,9 @@ export {
   compiledPageFromManifest,
   compileGenerativeUx,
 } from '@/lib/arena-generative-ui/ux-compiler'
+export type {
+  ArenaGenerativeAsyncKind,
+  ArenaGenerativeUxActionPlan,
+  ArenaGenerativeUxPlan,
+} from '@/lib/arena-generative-ui/ux-compiler'
 export { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/validate-manifest'

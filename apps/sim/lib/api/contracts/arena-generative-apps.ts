@@ -455,6 +455,26 @@ export const deployedAppConfigSchema = z.object({
   actionHostKeys: z.record(z.string(), z.array(z.string())).optional().default({}),
   actionHiddenInputs: z.record(z.string(), z.array(z.string())).optional().default({}),
   theme: arenaGenerativeThemeSchema.optional(),
+  uxPlan: z
+    .object({
+      actions: z
+        .record(
+          z.string(),
+          z.object({
+            kind: z.enum(['query', 'mutation', 'longRunning']),
+            confirm: z.boolean(),
+            retry: z.boolean(),
+          })
+        )
+        .optional()
+        .default({}),
+      fallbackLoading: z
+        .record(z.string(), z.enum(['skeleton', 'status']))
+        .optional()
+        .default({}),
+    })
+    .optional()
+    .default({ actions: {}, fallbackLoading: {} }),
 })
 export type DeployedAppConfig = z.output<typeof deployedAppConfigSchema>
 

@@ -84,10 +84,12 @@ export function GenerativeAppPreviewHost({
     () => new Set(manifest && apiBindings ? streamingActionIdsFrom(manifest, apiBindings) : []),
     [manifest, apiBindings]
   )
-  const compiledPages = useMemo(
-    () => (manifest ? compileGenerativeUx(manifest, apiBindings ?? []).pages : undefined),
+  const compiled = useMemo(
+    () => (manifest ? compileGenerativeUx(manifest, apiBindings ?? []) : undefined),
     [manifest, apiBindings]
   )
+  const compiledPages = compiled?.pages
+  const uxPlan = compiled?.uxPlan
 
   const actionNavigate = manifest ? actionNavigateFrom(manifest) : {}
   const actionHostKeys = manifest ? actionHostKeysFrom(manifest, apiBindings ?? []) : {}
@@ -125,6 +127,7 @@ export function GenerativeAppPreviewHost({
     mergeState,
     setActionPending,
     logger,
+    uxPlan,
   })
 
   usePageLoadActions({
@@ -201,7 +204,7 @@ export function GenerativeAppPreviewHost({
             message={bannerMessage}
             tone={actionError ? 'error' : 'warning'}
             onDismiss={runtime.dismissError}
-            onRetry={actionError ? runtime.retry : undefined}
+            onRetry={actionError && runtime.canRetry ? runtime.retry : undefined}
           />
         ) : null}
         <PreviewDiagnosticsBanner instructions={editInstructions} />
@@ -219,6 +222,7 @@ export function GenerativeAppPreviewHost({
             pendingActionIds={pendingActionIds}
             actionHostKeys={actionHostKeys}
             actionHiddenInputs={actionHiddenInputs}
+            uxPlan={uxPlan}
             currentPath={pagePath}
             onNavigate={navigate}
             onRunAction={runtime.onRunAction}

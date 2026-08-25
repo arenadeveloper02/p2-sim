@@ -85,7 +85,7 @@ Results shows score and a Back link.
 
 Use the wand on this field if you want the brief expanded before you run.
 
-The brief is stored on the draft, so Edit can send it as background context without you retyping it.
+The brief is stored on the draft, so Edit can send it as background context without you retyping it. The planner's structured brief (archetype and sitemap) is stored with it, so Edit keeps the same layout recipe without re-planning.
 
 ### Requested Changes (Edit only, required)
 

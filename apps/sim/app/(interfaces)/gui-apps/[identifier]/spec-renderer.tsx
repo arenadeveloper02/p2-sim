@@ -64,6 +64,7 @@ import {
   specHasSamePageSelectItem,
   splitNavTarget,
 } from '@/lib/arena-generative-ui/types'
+import type { ArenaGenerativeUxPlan } from '@/lib/arena-generative-ui/ux-compiler'
 import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
 
@@ -83,6 +84,8 @@ interface SpecRendererProps {
   actionHostKeys?: Record<string, readonly string[]>
   /** visitorEmail / constant input names the host stamps; those fields never render. */
   actionHiddenInputs?: Record<string, readonly string[]>
+  /** Compiler action plan. When omitted, confirm falls back to destructive variant. */
+  uxPlan?: ArenaGenerativeUxPlan
   /** Current page path; Tabs use this when it matches an item, otherwise `activePath`. */
   currentPath?: string
   onNavigate: (path: string) => void
@@ -984,6 +987,7 @@ export function SpecRenderer({
   pendingActionIds,
   actionHostKeys,
   actionHiddenInputs,
+  uxPlan,
   currentPath,
   onNavigate,
   onRunAction,
@@ -1001,9 +1005,23 @@ export function SpecRenderer({
       ? isBoundPathPending(statePath, pendingActionIds, actionHostKeys ?? {})
       : pending
 
-  const controlPending = (actionId: string) =>
-    UX_DEFAULTS.Button.disabledWhileLoading &&
-    isActionControlPending(actionId, pendingActionIds, pending)
+  const controlPending = (actionId: string) => {
+    if (!UX_DEFAULTS.Button.disabledWhileLoading) return false
+    if (uxPlan && actionId && !(actionId in uxPlan.actions)) return false
+    return isActionControlPending(actionId, pendingActionIds, pending)
+  }
+
+  const confirmAction = (actionId: string, fallbackDestructive = false) => {
+    if (!actionId) return false
+    const plan = uxPlan?.actions[actionId]
+    return plan ? plan.confirm : fallbackDestructive
+  }
+
+  const confirmMeta = (
+    actionId: string,
+    fallbackDestructive = false
+  ): RunGenerativeAppActionMeta | undefined =>
+    confirmAction(actionId, fallbackDestructive) ? { destructive: true } : undefined
 
   const omitHiddenInputs = (actionId: string, values: Record<string, unknown>) => {
     const hidden = actionHiddenInputs?.[actionId]
@@ -1520,6 +1538,10 @@ export function SpecRenderer({
           CHIP_TONE_CLASSES[tone as keyof typeof CHIP_TONE_CLASSES] ?? CHIP_TONE_CLASSES.muted
         )
         const runChip = () => {
+          if (actionId && confirmAction(actionId)) {
+            void dispatchAction(actionId, actionValues, confirmMeta(actionId))
+            return
+          }
           if (setValue) {
             const parsed = parseChipSetValue(setValue)
             setNamedValue(parsed.name || firstSearchFieldName(elements), parsed.value)
@@ -1827,7 +1849,7 @@ export function SpecRenderer({
             ...collectVisibleFieldValues(fields, mergedValues, state, scope),
           }
           if (actionId) {
-            void dispatchAction(actionId, values)
+            void dispatchAction(actionId, values, confirmMeta(actionId))
           }
         }
         return (
@@ -1945,7 +1967,7 @@ export function SpecRenderer({
             ...collectVisibleFieldValues(fields, mergedValues, state, scope),
           }
           if (actionId) {
-            void dispatchAction(actionId, values)
+            void dispatchAction(actionId, values, confirmMeta(actionId))
           }
         }
         return (
@@ -2183,7 +2205,7 @@ export function SpecRenderer({
               disabled={submitBusy}
               aria-busy={submitBusy || undefined}
               className={cn(className, submitBusy && 'gap-2')}
-              onClick={() => void dispatchAction(actionId, actionValues)}
+              onClick={() => void dispatchAction(actionId, actionValues, confirmMeta(actionId))}
             >
               <ActionBusyMark show={submitBusy} />
               {label}
@@ -2216,7 +2238,8 @@ export function SpecRenderer({
           )
         }
         const actionBusy = controlPending(actionId)
-        const destructive = asString(props.variant) === 'destructive' && Boolean(actionId)
+        const destructiveLooks = asString(props.variant) === 'destructive' && Boolean(actionId)
+        const confirm = confirmAction(actionId, destructiveLooks)
         return (
           <button
             type='button'
@@ -2225,7 +2248,7 @@ export function SpecRenderer({
             disabled={actionBusy}
             aria-busy={actionBusy || undefined}
             onClick={() => {
-              if (destructive) {
+              if (confirm) {
                 void dispatchAction(actionId, actionValues, { destructive: true })
                 return
               }

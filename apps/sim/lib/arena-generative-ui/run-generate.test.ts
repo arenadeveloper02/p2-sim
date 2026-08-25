@@ -70,6 +70,35 @@ describe('runArenaGenerativeUi', () => {
     )
   })
 
+  it('stores the planned structured brief on generate', async () => {
+    const plannedBrief = {
+      title: 'Orders',
+      purpose: 'Browse orders',
+      audience: 'Ops',
+      archetype: 'list-detail' as const,
+      entryPath: 'home',
+      pages: [{ path: 'home', title: 'Orders', purpose: 'List' }],
+      actions: [],
+    }
+    mockGenerateManifest.mockResolvedValueOnce({
+      success: true,
+      title: 'Lead qualifier',
+      content: 'ok',
+      manifest: twoPageManifest,
+      plannedBrief,
+    })
+
+    await runArenaGenerativeUi({
+      body: { ...BASE_BODY, userInput: 'Team directory.' },
+      userId: 'user-1',
+      requireExistingDraft: false,
+    })
+
+    expect(mockPersistDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ structuredBrief: plannedBrief })
+    )
+  })
+
   it('sends only the edit delta as the request and the stored brief as context', async () => {
     queueDraft()
 
@@ -92,6 +121,38 @@ describe('runArenaGenerativeUi', () => {
     )
   })
 
+  it('sends the stored structured brief on edit', async () => {
+    const structuredBrief = {
+      title: 'Orders',
+      purpose: 'Browse orders',
+      audience: 'Ops',
+      archetype: 'list-detail',
+      entryPath: 'home',
+      pages: [
+        { path: 'home', title: 'Orders', purpose: 'List', data: 'onLoad load_orders into orders' },
+        { path: 'detail', title: 'Order', purpose: 'Record', data: 'onLoad load_order from ?id' },
+      ],
+      actions: [],
+    }
+    queueDraft({ structuredBrief })
+
+    await runArenaGenerativeUi({
+      body: {
+        ...BASE_BODY,
+        existingDraftId: 'draft-1',
+        editInstructions: 'Centre the search row.',
+      },
+      userId: 'user-1',
+      requireExistingDraft: true,
+    })
+
+    expect(mockGenerateManifest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        existingStructuredBrief: expect.objectContaining({ archetype: 'list-detail' }),
+      })
+    )
+  })
+
   it('never sends the edit delta as a replacement brief', async () => {
     queueDraft()
 
@@ -106,7 +167,7 @@ describe('runArenaGenerativeUi', () => {
     })
 
     expect(mockPersistDraft).toHaveBeenCalledWith(
-      expect.objectContaining({ draftId: 'draft-1', brief: undefined })
+      expect.objectContaining({ draftId: 'draft-1', brief: undefined, structuredBrief: undefined })
     )
   })
 
@@ -122,6 +183,7 @@ describe('runArenaGenerativeUi', () => {
     expect(mockGenerateManifest).toHaveBeenCalledWith(
       expect.objectContaining({ existingBrief: undefined, userInput: 'Add a Back link.' })
     )
+    expect(mockGenerateManifest.mock.calls[0]?.[0]).not.toHaveProperty('existingStructuredBrief')
   })
 
   it('rejects an edit with no requested changes', async () => {

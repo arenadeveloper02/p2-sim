@@ -16,6 +16,7 @@ import {
   pageOnLoadFrom,
   streamingActionIdsFrom,
 } from '@/lib/arena-generative-ui/types'
+import { compileGenerativeUx } from '@/lib/arena-generative-ui/ux-compiler'
 import { setDeploymentAuthCookie } from '@/lib/core/security/deployment'
 import {
   type DeploymentAuthResult,
@@ -53,6 +54,7 @@ export function pageSummariesFromManifest(manifest: ArenaGenerativeAppManifest) 
 }
 
 export function toDeployedAppConfig(deployment: DeployedAppRecord) {
+  const { uxPlan } = compileGenerativeUx(deployment.manifest, deployment.apiBindings)
   return {
     id: deployment.id,
     title: deployment.title,
@@ -67,6 +69,7 @@ export function toDeployedAppConfig(deployment: DeployedAppRecord) {
     actionHostKeys: actionHostKeysFrom(deployment.manifest, deployment.apiBindings),
     actionHiddenInputs: actionHiddenInputsFrom(deployment.manifest, deployment.apiBindings),
     theme: parseArenaGenerativeTheme(deployment.manifest.theme),
+    uxPlan,
   }
 }
 

@@ -34,7 +34,9 @@ describe('persistGenerativeAppDraft', () => {
   it('writes an explicit null when a draft is created without a brief', async () => {
     await persistGenerativeAppDraft(BASE_INPUT)
 
-    expect(dbChainMockFns.values).toHaveBeenCalledWith(expect.objectContaining({ brief: null }))
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({ brief: null, structuredBrief: null })
+    )
   })
 
   it('leaves the stored brief untouched when appending an edit revision', async () => {
@@ -46,5 +48,23 @@ describe('persistGenerativeAppDraft', () => {
     const updated = dbChainMockFns.set.mock.calls[0]?.[0] as Record<string, unknown>
     expect(updated).toMatchObject({ revision: 2, title: 'Lead qualifier' })
     expect(updated).not.toHaveProperty('brief')
+    expect(updated).not.toHaveProperty('structuredBrief')
+  })
+
+  it('stores the structured brief when creating a draft', async () => {
+    const structuredBrief = {
+      title: 'Orders',
+      purpose: 'Browse orders',
+      audience: 'Ops',
+      archetype: 'list-detail' as const,
+      entryPath: 'home',
+      pages: [{ path: 'home', title: 'Orders', purpose: 'List', data: 'onLoad load_orders' }],
+      actions: [],
+    }
+    await persistGenerativeAppDraft({ ...BASE_INPUT, structuredBrief })
+
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({ structuredBrief, revision: 1 })
+    )
   })
 })

@@ -175,6 +175,26 @@ export function formatStructuredBriefForGenerator(brief: ArenaGenerativeStructur
   ].join('\n')
 }
 
+/**
+ * Same IA for an edit: context only. Pinning the sitemap here would reject a
+ * change request that adds or removes a page.
+ */
+export function formatStructuredBriefForEdit(brief: ArenaGenerativeStructuredBrief): string {
+  return [
+    'Original structured brief (context only — already implemented. Do not re-apply the sitemap, archetype, or copy unless the change request asks.):',
+    JSON.stringify(brief, null, 2),
+  ].join('\n')
+}
+
+/**
+ * Reads a draft-stored structured brief. Invalid JSON is ignored so old or
+ * partial rows still edit.
+ */
+export function parseStoredStructuredBrief(value: unknown): ArenaGenerativeStructuredBrief | null {
+  const parsed = structuredBriefSchema.safeParse(value)
+  return parsed.success ? parsed.data : null
+}
+
 /** Page key used when a planner names the entry page "/" or leaves it empty. */
 const ROOT_PAGE_PATH = 'home'
 

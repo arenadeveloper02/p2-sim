@@ -2,6 +2,7 @@ import { db } from '@sim/db'
 import { generativeAppDraft, generativeAppDraftRevision } from '@sim/db/schema'
 import { generateId } from '@sim/utils/id'
 import { eq } from 'drizzle-orm'
+import type { ArenaGenerativeStructuredBrief } from '@/lib/arena-generative-ui/structured-brief'
 import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeAppManifest,
@@ -18,6 +19,8 @@ export interface PersistDraftInput {
   apiBindings: ArenaGenerativeApiBinding[]
   /** Original generate brief. Only stored on create; an edit must not overwrite it with its delta. */
   brief?: string
+  /** Generate-time structured brief. Only stored on create; an edit reuses it. */
+  structuredBrief?: ArenaGenerativeStructuredBrief | null
 }
 
 export interface PersistedDraft {
@@ -44,6 +47,7 @@ export async function persistGenerativeAppDraft(input: PersistDraftInput): Promi
       entryPath: input.entryPath,
       revision: 1,
       brief: input.brief ?? null,
+      structuredBrief: input.structuredBrief ?? null,
       manifest: input.manifest,
       apiBindings: input.apiBindings,
       createdAt: now,

@@ -31,6 +31,7 @@ import {
 import {
   type ArenaGenerativeStructuredBrief,
   archetypeRecipe,
+  formatStructuredBriefForEdit,
   formatStructuredBriefForGenerator,
   pageHintsFromStructuredBrief,
   planArenaGenerativeStructuredBrief,
@@ -180,6 +181,8 @@ export interface GenerateArenaGenerativeManifestParams {
   existingManifest?: ArenaGenerativeAppManifest
   /** Brief the existing draft was generated from. Context only — it is already implemented. */
   existingBrief?: string
+  /** Generate-time structured brief. Context only — do not re-plan or pin the sitemap from it. */
+  existingStructuredBrief?: ArenaGenerativeStructuredBrief
 }
 
 /**
@@ -238,12 +241,17 @@ function pageHintsFromManifest(manifest: ArenaGenerativeAppManifest): ArenaGener
   return Object.values(manifest.pages).map((page) => ({ path: page.path, title: page.title }))
 }
 
+export type GenerateArenaGenerativeManifestResult = ArenaGenerativeGenerateResult & {
+  /** Full planner object for draft persistence. Not the block-output summary. */
+  plannedBrief?: ArenaGenerativeStructuredBrief
+}
+
 /**
  * Generates or patches a multi-page Arena Generative UI manifest with Claude.
  */
 export async function generateArenaGenerativeManifest(
   params: GenerateArenaGenerativeManifestParams
-): Promise<ArenaGenerativeGenerateResult> {
+): Promise<GenerateArenaGenerativeManifestResult> {
   const userInput = params.userInput.trim()
   if (!userInput) {
     return { success: false, error: 'userInput is required' }
@@ -278,12 +286,18 @@ export async function generateArenaGenerativeManifest(
         designNotes: params.designNotes,
       })
   const structuredBrief = planned.brief
+  const intentBrief = isEdit ? (params.existingStructuredBrief ?? null) : structuredBrief
   const plannerError = 'error' in planned ? planned.error : undefined
   if (structuredBrief) {
     logger.info('Planned Arena Generative UI structured brief', {
       archetype: structuredBrief.archetype,
       pageCount: structuredBrief.pages.length,
       entryPath: structuredBrief.entryPath,
+    })
+  } else if (isEdit && intentBrief) {
+    logger.info('Reusing stored Arena Generative UI structured brief', {
+      archetype: intentBrief.archetype,
+      pageCount: intentBrief.pages.length,
     })
   }
 
@@ -332,8 +346,8 @@ export async function generateArenaGenerativeManifest(
     ARENA_GENERATIVE_UI_PERSONA,
     ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
     catalogPrompt,
-    goldExamplePromptForArchetype(structuredBrief?.archetype),
-    structuredBrief ? archetypeRecipe(structuredBrief.archetype) : '',
+    goldExamplePromptForArchetype(intentBrief?.archetype),
+    intentBrief ? archetypeRecipe(intentBrief.archetype) : '',
   ]
     .filter((section) => section.length > 0)
     .join('\n\n')
@@ -351,7 +365,7 @@ export async function generateArenaGenerativeManifest(
   const pageHints =
     pinnedPageHints.length > 0
       ? pinnedPageHints
-      : structuredBrief
+      : !isEdit && structuredBrief
         ? pageHintsFromStructuredBrief(structuredBrief)
         : editPageHints
   const bindingsSummary = bindingsSummaryForPrompt(params.apiBindings)
@@ -361,7 +375,7 @@ export async function generateArenaGenerativeManifest(
     bindingKeys.length > 0
       ? `CTA apiKey values must be one of these declared binding keys: ${bindingKeys.join(', ')}. Do not invent keys from User Input.`
       : ''
-  const requestedEntryPath = params.entryPath || structuredBrief?.entryPath
+  const requestedEntryPath = params.entryPath || (isEdit ? undefined : structuredBrief?.entryPath)
   const sharedSections = [
     bindingsSummary.length > 0
       ? `Declared API bindings (CTAs may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
@@ -370,6 +384,7 @@ export async function generateArenaGenerativeManifest(
     isEdit && params.existingBrief?.trim()
       ? `Original brief (context only — already implemented, do not re-apply it):\n${params.existingBrief.trim()}`
       : '',
+    isEdit && intentBrief ? formatStructuredBriefForEdit(intentBrief) : '',
   ]
   const userPayload = (
     isScopedEdit && params.existingManifest
@@ -525,7 +540,12 @@ export async function generateArenaGenerativeManifest(
       title,
       content: withStatusPrefix(content, ...statusLines),
       manifest: validation.manifest,
-      ...(structuredBrief ? { structuredBrief: structuredBriefSummary(structuredBrief) } : {}),
+      ...(structuredBrief
+        ? {
+            structuredBrief: structuredBriefSummary(structuredBrief),
+            plannedBrief: structuredBrief,
+          }
+        : {}),
       ...(plannerError ? { plannerError } : {}),
       ...(isEdit
         ? {

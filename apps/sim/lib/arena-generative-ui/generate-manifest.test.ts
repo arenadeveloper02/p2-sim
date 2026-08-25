@@ -25,6 +25,8 @@ vi.mock('@/lib/arena-generative-ui/structured-brief', () => ({
   archetypeRecipe: (archetype: string) => `ARCHETYPE RECIPE: ${archetype}`,
   formatStructuredBriefForGenerator: (brief: { title: string }) =>
     `Structured brief (implement this information architecture; emit exactly these page paths as object keys):\n${JSON.stringify(brief, null, 2)}`,
+  formatStructuredBriefForEdit: (brief: { title: string; archetype: string }) =>
+    `Original structured brief (context only — already implemented. Do not re-apply the sitemap, archetype, or copy unless the change request asks.):\n${JSON.stringify(brief, null, 2)}`,
   pageHintsFromStructuredBrief: (brief: {
     pages: Array<{ path: string; title: string; purpose: string }>
   }) => brief.pages.map((page) => ({ path: page.path, title: page.title, purpose: page.purpose })),
@@ -663,6 +665,28 @@ describe('generateArenaGenerativeManifest', () => {
       expect(mockPlanBrief).not.toHaveBeenCalled()
     })
 
+    it('reuses a stored structured brief on edit without pinning its sitemap', async () => {
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'Centre the search row.',
+        apiBindings: [],
+        existingManifest: twoPageManifest,
+        existingStructuredBrief: plannedBrief,
+      })
+
+      expect(mockPlanBrief).not.toHaveBeenCalled()
+      const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+      const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+      expect(system).toContain('ARCHETYPE RECIPE: list-detail')
+      expect(system).toContain(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL)
+      expect(payload).toContain('Original structured brief (context only')
+      expect(payload).toContain('"archetype": "list-detail"')
+      expect(payload).not.toContain('emit exactly these page paths')
+      expect(payload).not.toContain('Requested pages')
+      expect(payload).not.toContain('Requested entryPath:')
+    })
+
     it('selects the archetype recipe and contracts the sitemap to the brief', async () => {
       mockPlanBrief.mockResolvedValue({ brief: plannedBrief })
       mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
@@ -1049,9 +1073,27 @@ describe('generateArenaGenerativeManifest', () => {
         userInput: 'Set the theme to dark mode, density compact.',
         apiBindings: [],
         existingManifest: twoPageManifest,
+        existingStructuredBrief: {
+          title: 'Orders',
+          purpose: 'Browse orders',
+          audience: 'Ops',
+          archetype: 'list-detail' as const,
+          entryPath: 'home',
+          pages: [
+            {
+              path: 'home',
+              title: 'Orders',
+              purpose: 'List',
+              data: 'onLoad load_orders',
+              actions: [],
+            },
+          ],
+          actions: [],
+        },
       })
 
       expect(mockCreateAnthropicMessage).not.toHaveBeenCalled()
+      expect(mockPlanBrief).not.toHaveBeenCalled()
       expect(result.success).toBe(true)
       expect(result.editScope).toEqual({ mode: 'theme', pages: [] })
       expect(result.content).toContain('Edit scope: theme only (pages unchanged).')

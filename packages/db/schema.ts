@@ -5342,6 +5342,8 @@ export const generativeAppDraft = pgTable(
     revision: integer('revision').notNull().default(1),
     /** Original generate brief, kept so Edit can send it as context without resending it as a request. */
     brief: text('brief'),
+    /** Generate-time structured brief (archetype, sitemap). Edit reuses it; it is not rewritten. */
+    structuredBrief: jsonb('structured_brief'),
     manifest: jsonb('manifest').notNull(),
     apiBindings: jsonb('api_bindings').notNull().default([]),
     createdAt: timestamp('created_at').notNull().defaultNow(),

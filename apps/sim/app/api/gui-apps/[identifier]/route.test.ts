@@ -76,6 +76,7 @@ describe('Deployed app config route', () => {
     const body = await response.json()
     expect(body.entryPath).toBe('home')
     expect(body.title).toBe('Lead score')
+    expect(body.uxPlan).toEqual({ actions: {}, fallbackLoading: {} })
   })
 
   it('returns config without emailId when the Arena gate is off', async () => {

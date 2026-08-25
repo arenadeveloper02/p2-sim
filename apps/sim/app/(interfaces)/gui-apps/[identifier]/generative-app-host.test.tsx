@@ -238,6 +238,57 @@ describe('GenerativeAppHost non-streaming JSON', () => {
     expect(container.textContent).toContain('Hi')
   })
 
+  it('hides Retry when the action plan says retry is false', async () => {
+    mockUseDeployedAppConfig.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        kind: 'config',
+        config: {
+          streamingActionIds: [],
+          actionNavigate: {},
+          uxPlan: {
+            actions: { ask_chat: { kind: 'mutation', confirm: false, retry: false } },
+            fallbackLoading: {},
+          },
+        },
+      },
+      error: null,
+    })
+    act(() => {
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <GenerativeAppHost identifier='gui-chatapp' pagePath='chat' emailId='' />
+        </GenerativeAppHostStateProvider>
+      )
+    })
+    mockMutateAsync.mockResolvedValue({ ok: false, error: 'Boom' })
+    await submit()
+    expect(container.querySelector('[data-testid="action-error-banner"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="action-error-retry"]')).toBeNull()
+  })
+
+  it('ignores a second submit while the first CTA is in flight', async () => {
+    let release: (value: { ok: boolean }) => void = () => {}
+    mockMutateAsync.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        })
+    )
+    const form = container.querySelector('form')
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      release({ ok: true })
+    })
+  })
+
   it('toasts a same-page save that has no visible result patch', async () => {
     mockMutateAsync.mockResolvedValue({ ok: true })
     await submit()
@@ -515,7 +566,19 @@ describe('GenerativeAppHost destructive confirm', () => {
     mockUseDeployedAppConfig.mockReturnValue({
       isLoading: false,
       isError: false,
-      data: { kind: 'config', config: { streamingActionIds: [], actionNavigate: {} } },
+      data: {
+        kind: 'config',
+        config: {
+          streamingActionIds: [],
+          actionNavigate: {},
+          uxPlan: {
+            actions: {
+              delete_item: { kind: 'mutation', confirm: true, retry: true },
+            },
+            fallbackLoading: {},
+          },
+        },
+      },
       error: null,
     })
     mockUseDeployedAppPage.mockReturnValue({
