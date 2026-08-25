@@ -18,6 +18,14 @@ const METRIC_CSV_COLUMNS = new Set([
   'Ctr',
   'AverageCpc',
   'CostPerConversion',
+  'Revenue',
+  'ReturnOnAdSpend',
+  'TopImpressionRatePercent',
+  'AbsoluteTopImpressionRatePercent',
+  'Downloads',
+  'CostPerDownload',
+  'Installs',
+  'CostPerInstall',
 ])
 
 function requestedColumnSet(columns: string[] | undefined): Set<string> {
@@ -30,9 +38,29 @@ function wantsColumn(requested: Set<string>, ...names: string[]): boolean {
 }
 
 function mergeReportColumns(identityColumns: string[], requested: string[]): string[] {
-  const merged = Array.from(new Set([...identityColumns, ...requested]))
-  const hasMetric = merged.some((column) => METRIC_CSV_COLUMNS.has(column))
-  return hasMetric ? merged : [...merged, ...DEFAULT_METRIC_COLUMNS]
+  const merged = new Set([...identityColumns, ...requested])
+
+  // Derived metrics need their base columns so totals can be recomputed
+  // across rows instead of averaging Bing's per-row ratios.
+  if (merged.has('ReturnOnAdSpend')) {
+    merged.add('Revenue')
+    merged.add('Spend')
+  }
+  if (merged.has('CostPerInstall')) {
+    merged.add('Installs')
+    merged.add('Spend')
+  }
+  if (merged.has('CostPerDownload')) {
+    merged.add('Downloads')
+    merged.add('Spend')
+  }
+  if (merged.has('TopImpressionRatePercent') || merged.has('AbsoluteTopImpressionRatePercent')) {
+    merged.add('Impressions')
+  }
+
+  const columns = Array.from(merged)
+  const hasMetric = columns.some((column) => METRIC_CSV_COLUMNS.has(column))
+  return hasMetric ? columns : [...columns, ...DEFAULT_METRIC_COLUMNS]
 }
 
 /**
@@ -666,11 +694,37 @@ function accumulateMetrics(
   if (wantsColumn(requested, 'Clicks')) {
     target.clicks = (target.clicks || 0) + toNumber(row.Clicks)
   }
-  if (wantsColumn(requested, 'Spend', 'Cost')) {
+  if (
+    wantsColumn(requested, 'Spend', 'Cost', 'ReturnOnAdSpend', 'CostPerInstall', 'CostPerDownload')
+  ) {
     target.spend = (target.spend || 0) + toNumber(row.Spend)
   }
   if (wantsColumn(requested, 'Conversions')) {
     target.conversions = (target.conversions || 0) + toNumber(row.Conversions)
+  }
+  if (row.Revenue !== undefined && wantsColumn(requested, 'Revenue', 'ReturnOnAdSpend')) {
+    target.revenue = (target.revenue || 0) + toNumber(row.Revenue)
+  }
+  if (row.Downloads !== undefined && wantsColumn(requested, 'Downloads', 'CostPerDownload')) {
+    target.downloads = (target.downloads || 0) + toNumber(row.Downloads)
+  }
+  if (row.Installs !== undefined && wantsColumn(requested, 'Installs', 'CostPerInstall')) {
+    target.installs = (target.installs || 0) + toNumber(row.Installs)
+  }
+  // Rates can't be summed; keep impression-weighted sums and derive the
+  // final percentages in withDerivedMetrics.
+  if (
+    (row.TopImpressionRatePercent !== undefined ||
+      row.AbsoluteTopImpressionRatePercent !== undefined) &&
+    wantsColumn(requested, 'TopImpressionRatePercent', 'AbsoluteTopImpressionRatePercent')
+  ) {
+    const impressions = toNumber(row.Impressions)
+    target._rate_weight = (target._rate_weight || 0) + impressions
+    target._top_rate_weighted =
+      (target._top_rate_weighted || 0) + toNumber(row.TopImpressionRatePercent) * impressions
+    target._abs_top_rate_weighted =
+      (target._abs_top_rate_weighted || 0) +
+      toNumber(row.AbsoluteTopImpressionRatePercent) * impressions
   }
 }
 
@@ -691,6 +745,28 @@ function withDerivedMetrics(
   }
   if (wantsColumn(requested, 'CostPerConversion')) {
     entity.cost_per_conversion = conversions > 0 ? spend / conversions : 0
+  }
+  if (entity.revenue !== undefined && wantsColumn(requested, 'ReturnOnAdSpend')) {
+    entity.return_on_ad_spend = spend > 0 ? entity.revenue / spend : 0
+  }
+  if (entity.installs !== undefined && wantsColumn(requested, 'CostPerInstall')) {
+    entity.cost_per_install = entity.installs > 0 ? spend / entity.installs : 0
+  }
+  if (entity.downloads !== undefined && wantsColumn(requested, 'CostPerDownload')) {
+    entity.cost_per_download = entity.downloads > 0 ? spend / entity.downloads : 0
+  }
+  if (entity._rate_weight !== undefined) {
+    const weight = entity._rate_weight
+    if (wantsColumn(requested, 'TopImpressionRatePercent')) {
+      entity.top_impression_rate_percent = weight > 0 ? entity._top_rate_weighted / weight : 0
+    }
+    if (wantsColumn(requested, 'AbsoluteTopImpressionRatePercent')) {
+      entity.absolute_top_impression_rate_percent =
+        weight > 0 ? entity._abs_top_rate_weighted / weight : 0
+    }
+    delete entity._rate_weight
+    delete entity._top_rate_weighted
+    delete entity._abs_top_rate_weighted
   }
   return entity
 }

@@ -168,6 +168,14 @@ const METRIC_COLUMN_NAMES = new Set([
   'CostPerConversion',
   'AveragePosition',
   'ImpressionSharePercent',
+  'Revenue',
+  'ReturnOnAdSpend',
+  'TopImpressionRatePercent',
+  'AbsoluteTopImpressionRatePercent',
+  'Downloads',
+  'CostPerDownload',
+  'Installs',
+  'CostPerInstall',
 ])
 
 function asOptionalString(value: unknown): string | undefined {
