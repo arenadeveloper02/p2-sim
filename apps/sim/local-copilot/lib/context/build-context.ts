@@ -211,35 +211,7 @@ export async function buildLocalCopilotContext(
         lastRunAt: row.lastRunAt?.toISOString() ?? null,
       }))
 
-  const guidanceParts: string[] = []
-  if (workspaceWorkflows.length > 0) {
-    guidanceParts.push(
-      'REUSE FIRST: existing workflows are listed in workspaceWorkflows. Inspect/run/edit them — never create_workflow when an entry fits. Only create_workflow when the user explicitly asks for a brand-new workflow with a distinct purpose and name (confirmNewWorkflow: true).'
-    )
-  }
-  if (resources.tables.length > 0) {
-    guidanceParts.push(
-      'REUSE FIRST: existing tables are listed in tables. Call user_table get / get_schema / query_rows and reuse — do not create unless the user explicitly wants a new table (confirmCreateNew: true).'
-    )
-  }
-  if (resources.knowledgeBases.length > 0) {
-    guidanceParts.push(
-      'REUSE FIRST: existing knowledge bases are listed in knowledgeBases. Call knowledge_base get / list / query and reuse — do not create unless the user explicitly wants a new knowledge base (confirmCreateNew: true).'
-    )
-  }
-  if (resources.workspaceFiles.length > 0) {
-    guidanceParts.push(
-      'REUSE FIRST: existing files are listed in workspaceFiles. Call glob then read, then update with workspace_file + edit_content — do not create_file duplicates (confirmCreateNew: true only for a distinctly new path).'
-    )
-  }
-
-  const workspaceWorkflowsContext =
-    workspaceWorkflows.length > 0 || guidanceParts.length > 0
-      ? {
-          workspaceWorkflows,
-          ...(guidanceParts.length > 0 ? { guidance: guidanceParts.join(' ') } : {}),
-        }
-      : { workspaceWorkflows }
+  const workspaceWorkflowsContext = { workspaceWorkflows }
 
   if (!workflowId) {
     const context: LocalCopilotStructuredContext = {

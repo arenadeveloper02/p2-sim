@@ -21,6 +21,7 @@ import { AshbyBlock, AshbyBlockMeta } from '@/blocks/blocks/ashby'
 import { AthenaBlock, AthenaBlockMeta } from '@/blocks/blocks/athena'
 import { AttioBlock, AttioBlockMeta } from '@/blocks/blocks/attio'
 import { AzureDevOpsBlock, AzureDevOpsBlockMeta } from '@/blocks/blocks/azure_devops'
+import { BingAdsBlock } from '@/blocks/blocks/bing_ads'
 import { BoxBlock, BoxBlockMeta } from '@/blocks/blocks/box'
 import { BrandfetchBlock, BrandfetchBlockMeta } from '@/blocks/blocks/brandfetch'
 import { BrexBlock, BrexBlockMeta } from '@/blocks/blocks/brex'
@@ -360,6 +361,7 @@ import type { BlockConfig, BlockMeta } from '@/blocks/types'
 
 const ARENA_CUSTOM_BLOCK_REGISTRY: Record<string, BlockConfig> = {
   arena: ArenaBlock,
+  bing_ads: BingAdsBlock,
   facebook_ads: FacebookAdsBlock,
   figma: FigmaBlock,
   google_ads_v1: GoogleAdsV1Block,

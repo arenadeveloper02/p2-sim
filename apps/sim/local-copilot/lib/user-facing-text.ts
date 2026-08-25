@@ -23,7 +23,7 @@ const MESSAGE_ID_BRACKET_PATTERN = /\[messageId:[^\]]*\]/gi
 
 /** Privileged tags that must keep embedded ids for Apply/Approve UI. */
 const PRIVILEGED_CONTROL_TAG_PATTERN =
-  /<(credential|workspace_resource|tool_confirmation|workflow_patch)>[\s\S]*?<\/\1>/gi
+  /<(credential|workspace_resource|tool_confirmation|workflow_patch|options)>[\s\S]*?<\/\1>/gi
 
 /** After a successful populate, restrict which tools the model may still call. */
 export type PostBuildToolMode = 'all' | 'oauth_only' | 'final_only' | 'done'
@@ -446,7 +446,7 @@ export function shouldSynthesizeAssistantSummary(options: {
   toolRecordCount: number
 }): boolean {
   if (options.toolRecordCount <= 0) return false
-  const streamed = options.streamedUserFacingText.trim()
+  const streamed = stripOptionsTagsForDisplay(options.streamedUserFacingText, false).trim()
   if (!streamed) return true
   return isBridgingAssistantNarration(streamed)
 }

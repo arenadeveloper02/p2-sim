@@ -32,6 +32,16 @@ vi.mock('@/lib/billing/calculations/usage-monitor', () => ({
   checkActorUsageLimits: vi.fn().mockResolvedValue({ isExceeded: false }),
 }))
 
+const { mockResolveBillingAttribution, mockCheckAttributedUsageLimits } = vi.hoisted(() => ({
+  mockResolveBillingAttribution: vi.fn(),
+  mockCheckAttributedUsageLimits: vi.fn(),
+}))
+
+vi.mock('@/lib/billing/core/billing-attribution', () => ({
+  resolveBillingAttribution: mockResolveBillingAttribution,
+  checkAttributedUsageLimits: mockCheckAttributedUsageLimits,
+}))
+
 vi.mock('@sim/audit', () => auditMock)
 
 import {
@@ -84,6 +94,19 @@ describe('Knowledge Base Documents API Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     resetDbChainMock()
+    mockResolveBillingAttribution.mockResolvedValue({
+      actorUserId: 'user-123',
+      workspaceId: 'workspace-1',
+      organizationId: null,
+      billedAccountUserId: 'user-123',
+      billingEntity: { type: 'user', id: 'user-123' },
+      billingPeriod: {
+        start: '2026-08-01T00:00:00.000Z',
+        end: '2026-09-01T00:00:00.000Z',
+      },
+      payerSubscription: null,
+    })
+    mockCheckAttributedUsageLimits.mockResolvedValue({ isExceeded: false })
 
     vi.stubGlobal('crypto', {
       randomUUID: vi.fn().mockReturnValue('mock-uuid-1234-5678'),
@@ -431,6 +454,65 @@ describe('Knowledge Base Documents API Route', () => {
         'user-123'
       )
       expect(vi.mocked(processDocumentsWithQueue)).toHaveBeenCalled()
+    })
+
+    it('passes workspace billing attribution so processing can enqueue', async () => {
+      const billingAttribution = {
+        actorUserId: 'user-123',
+        workspaceId: 'workspace-1',
+        organizationId: null,
+        billedAccountUserId: 'user-123',
+        billingEntity: { type: 'user' as const, id: 'user-123' },
+        billingPeriod: {
+          start: '2026-08-01T00:00:00.000Z',
+          end: '2026-09-01T00:00:00.000Z',
+        },
+        payerSubscription: null,
+      }
+      mockResolveBillingAttribution.mockResolvedValue(billingAttribution)
+
+      authMockFns.mockGetSession.mockResolvedValue({
+        user: { id: 'user-123', email: 'test@example.com' },
+      })
+      vi.mocked(checkKnowledgeBaseWriteAccess).mockResolvedValue({
+        hasAccess: true,
+        knowledgeBase: { id: 'kb-123', userId: 'user-123', workspaceId: 'workspace-1' },
+      })
+
+      const createdDocuments = [
+        {
+          documentId: 'doc-1',
+          filename: 'doc1.pdf',
+          fileUrl: 'https://example.com/doc1.pdf',
+          fileSize: 1024,
+          mimeType: 'application/pdf',
+        },
+      ]
+
+      vi.mocked(createDocumentRecords).mockResolvedValue(createdDocuments)
+      vi.mocked(processDocumentsWithQueue).mockResolvedValue(undefined)
+      vi.mocked(getProcessingConfig).mockReturnValue({
+        maxConcurrentDocuments: 8,
+        batchSize: 20,
+        delayBetweenBatches: 100,
+        delayBetweenDocuments: 0,
+      })
+
+      const req = createMockRequest('POST', validBulkData)
+      const response = await POST(req, { params: mockParams })
+
+      expect(response.status).toBe(200)
+      expect(mockResolveBillingAttribution).toHaveBeenCalledWith({
+        actorUserId: 'user-123',
+        workspaceId: 'workspace-1',
+      })
+      expect(vi.mocked(processDocumentsWithQueue)).toHaveBeenCalledWith(
+        createdDocuments,
+        'kb-123',
+        validBulkData.processingOptions,
+        expect.any(String),
+        billingAttribution
+      )
     })
 
     it('should validate bulk document data', async () => {

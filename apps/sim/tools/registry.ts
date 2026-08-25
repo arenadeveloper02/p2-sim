@@ -1456,6 +1456,7 @@ import {
   googleAdsSearchTool,
 } from '@/tools/google_ads'
 import { googleAdsV1QueryTool } from '@/tools/google_ads_v1'
+import { bingAdsQueryTool } from '@/tools/bing_ads'
 import {
   googleAppsheetAddRowsTool,
   googleAppsheetDeleteRowsTool,
@@ -7137,6 +7138,7 @@ export const tools: Record<string, ToolConfig> = {
   google_ads_query: googleAdsQueryTool,
   google_ads_v1_query: googleAdsV1QueryTool,
   facebook_ads_query: facebookAdsQueryTool,
+  bing_ads_query: bingAdsQueryTool,
   google_sheets_read_v2: googleSheetsReadV2Tool,
   google_sheets_write_v2: googleSheetsWriteV2Tool,
   google_sheets_update_v2: googleSheetsUpdateV2Tool,

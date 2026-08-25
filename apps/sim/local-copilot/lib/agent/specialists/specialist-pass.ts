@@ -30,6 +30,16 @@ import {
   waitForLocalToolConfirmation,
 } from '@/local-copilot/lib/security/request-tool-confirmation'
 import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
+import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
+import {
+  buildFollowUpContinuationMessage,
+  detectMandatoryFollowUp,
+  formatToolResultForLlm,
+  type MandatoryFollowUp,
+  resolveMandatoryFollowUps,
+  sortToolCallsForExecution,
+} from '@/local-copilot/lib/tools/format-tool-result'
+import type { LocalCopilotStreamEvent, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 import { mutationRequiresVerification } from '@/local-copilot/lib/verification/policy'
 import { runPostMutationVerification } from '@/local-copilot/lib/verification/run-verification'
 import { buildSpecialistStructuredResult } from '@/local-copilot/lib/verification/specialist-result'
@@ -38,16 +48,15 @@ import type {
   SpecialistStructuredResult,
   VerificationRecord,
 } from '@/local-copilot/lib/verification/types'
-import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
-import {
-  formatToolResultForLlm,
-  sortToolCallsForExecution,
-} from '@/local-copilot/lib/tools/format-tool-result'
-import type { LocalCopilotStreamEvent, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotSpecialistPass')
 
-export const SPECIALIST_PASS_MAX_ROUNDS = 3
+/**
+ * File writes are sequential (`create_file` → `workspace_file` → `edit_content`)
+ * plus a discovery round. Three rounds stopped the specialist on an empty shell.
+ */
+export const SPECIALIST_PASS_MAX_ROUNDS = 6
+const MAX_SPECIALIST_FORCED_FOLLOW_UP_ROUNDS = 4
 export const SPECIALIST_FINDINGS_MAX_CHARS = 12_000
 
 export interface RunSpecialistPassParams {
@@ -236,6 +245,8 @@ export async function executeSpecialistLoop(
     const verifications: VerificationRecord[] = []
     const errors: string[] = []
     let toolRoundCount = 0
+    let pendingFollowUps: MandatoryFollowUp[] = []
+    let forcedFollowUpRounds = 0
 
     for (let round = 0; round < SPECIALIST_PASS_MAX_ROUNDS; round++) {
       if (signal.aborted) break
@@ -288,6 +299,24 @@ export async function executeSpecialistLoop(
       })
 
       if (pendingToolCalls.length === 0) {
+        const canForceFollowUp =
+          pendingFollowUps.length > 0 &&
+          forcedFollowUpRounds < MAX_SPECIALIST_FORCED_FOLLOW_UP_ROUNDS &&
+          round < SPECIALIST_PASS_MAX_ROUNDS - 1
+        if (canForceFollowUp) {
+          forcedFollowUpRounds += 1
+          messages.push({
+            role: 'user',
+            content: buildFollowUpContinuationMessage(pendingFollowUps),
+          })
+          logger.info('Arena Copilot specialist forcing mandatory follow-up', {
+            domain: params.domain,
+            round,
+            forcedFollowUpRounds,
+            pendingFollowUpIds: pendingFollowUps.map((item) => item.id),
+          })
+          continue
+        }
         if (assistantText.trim()) findings.push(assistantText.trim())
         break
       }
@@ -441,14 +470,42 @@ export async function executeSpecialistLoop(
           params.toolCtx.structuredContext = refreshed.structuredContext
           params.toolCtx.workflowRevision = refreshed.workflowRevision
         } else if (call.name === 'edit_workflow' && toolResult.success) {
+          const output =
+            toolResult.result && typeof toolResult.result === 'object'
+              ? (toolResult.result as Record<string, unknown>)
+              : {}
+          const resolvedWorkflowId =
+            (typeof output.workflowId === 'string' && output.workflowId.trim()) ||
+            (typeof parsedArgs.workflowId === 'string' && parsedArgs.workflowId.trim()) ||
+            params.toolCtx.workflowId
+          if (resolvedWorkflowId) {
+            params.toolCtx.workflowId = resolvedWorkflowId
+          }
           const refreshed = await refreshToolContext(params.toolCtx)
           params.toolCtx.structuredContext = refreshed.structuredContext
           params.toolCtx.workflowRevision = refreshed.workflowRevision
         }
 
-        const llmPayload = formatToolResultForLlm(call.name, toolResult.result ?? toolResult.error, {
-          artifactStore: params.toolCtx.artifactStore,
-        })
+        const llmPayload = formatToolResultForLlm(
+          call.name,
+          toolResult.result ?? toolResult.error,
+          {
+            artifactStore: params.toolCtx.artifactStore,
+          }
+        )
+        const mandatoryFollowUp = detectMandatoryFollowUp(call.name, llmPayload)
+        if (mandatoryFollowUp) {
+          pendingFollowUps = [
+            ...pendingFollowUps.filter((item) => item.id !== mandatoryFollowUp.id),
+            mandatoryFollowUp,
+          ]
+        }
+        pendingFollowUps = resolveMandatoryFollowUps(
+          pendingFollowUps,
+          call.name,
+          toolResult.success,
+          toolResult.result
+        )
         findings.push(truncate(`[${call.name}] ${llmPayload}`, 4_000))
         if (!toolResult.success && toolResult.error) {
           errors.push(toolResult.error)
@@ -498,9 +555,7 @@ export async function executeSpecialistLoop(
               params.onEvent
             )
             if (verification.status === 'failed') {
-              errors.push(
-                `${verification.verifierToolName} failed for ${verification.toolName}`
-              )
+              errors.push(`${verification.verifierToolName} failed for ${verification.toolName}`)
             }
           }
         }
@@ -512,7 +567,10 @@ export async function executeSpecialistLoop(
       }
     }
 
-    const findingsText = truncate(findings.filter(Boolean).join('\n\n'), SPECIALIST_FINDINGS_MAX_CHARS)
+    const findingsText = truncate(
+      findings.filter(Boolean).join('\n\n'),
+      SPECIALIST_FINDINGS_MAX_CHARS
+    )
 
     if (signal.aborted && chatId) {
       await persistSpecialistCheckpoint(chatId, params.userId, {

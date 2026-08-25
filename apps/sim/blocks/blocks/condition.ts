@@ -23,6 +23,7 @@ export const ConditionBlock: BlockConfig<ConditionBlockOutput> = {
   bestPractices: `
   - Write the conditions using standard javascript syntax except referencing the outputs of previous blocks using <> syntax, and keep them as simple as possible. No hacky fallbacks.
   - Can reference workflow variables using <blockName.output> syntax as usual within conditions.
+  - Wire outgoing edges with connections.if / connections.else (or else-if-0). Do not use "source" as the handle key — that is for regular blocks. If you do send "source", it is treated as the if branch.
   `,
   docsLink: 'https://docs.sim.ai/workflows/blocks/condition',
   bgColor: '#FF752F',

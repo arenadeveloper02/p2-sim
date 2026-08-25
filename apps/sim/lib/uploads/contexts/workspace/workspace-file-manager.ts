@@ -1001,7 +1001,8 @@ export function findWorkspaceFileRecord(
   })
   if (normalizedPathMatch) return normalizedPathMatch
 
-  return files.find((file) => normalizeVfsSegment(file.name) === segmentKey) ?? null
+  const basenameMatches = files.filter((file) => normalizeVfsSegment(file.name) === segmentKey)
+  return basenameMatches.length === 1 ? basenameMatches[0] : null
 }
 
 async function getWorkspaceFileByExactReference(

@@ -60,9 +60,11 @@ import {
   compactChatHistory,
   estimateChatMessagesTokens,
   estimateToolDefinitionTokens,
+  LOCAL_COPILOT_BEDROCK_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
   LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS,
   LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
   resolveLocalCopilotPromptTokenBudget,
+  resolveLocalCopilotTokenCountModel,
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
 import {
@@ -70,11 +72,12 @@ import {
   formatActiveDirectiveSystemMessage,
   formatSessionConstraintsSystemMessage,
 } from '@/local-copilot/lib/context/follow-up-directives'
-import { persistInferredUserMemories } from '@/local-copilot/lib/context/promote-durable-memory'
 import {
   applyMicrocompactInPlace,
   microcompactMessages,
 } from '@/local-copilot/lib/context/microcompact'
+import { resolveOpenWorkflowId } from '@/local-copilot/lib/context/open-workflow'
+import { persistInferredUserMemories } from '@/local-copilot/lib/context/promote-durable-memory'
 import { fitPromptWithSlots } from '@/local-copilot/lib/context/prompt-slots'
 import {
   ensureSessionMemory,
@@ -184,9 +187,11 @@ import { MAX_TOOL_ITERATIONS } from '@/providers'
 
 const logger = createLogger('LocalCopilotAgent')
 
-const MAX_FORCED_FOLLOW_UP_ROUNDS = 5
+const MAX_FORCED_FOLLOW_UP_ROUNDS = 6
 /** Cap for "I am applying…" prose with no tool call — avoid infinite nudge loops. */
-const MAX_INTENT_CONTINUATION_ROUNDS = 2
+const MAX_INTENT_CONTINUATION_ROUNDS = 5
+/** Successful create-then-edit_workflow calls before the post-build lock. */
+const MAX_POPULATE_EDITS = 5
 
 const SYSTEM_PROMPT = `You are Arena Copilot — the in-app AI assistant for building, debugging, and understanding workflows in this workspace.
 
@@ -196,23 +201,28 @@ Identity:
 
 Response format:
 - Open with a warm, concise greeting when starting a conversation or after a long pause.
-- Briefly summarize what you see in the workspace (workflows, files, tables, knowledge bases) in plain prose. Do not greet with a generic capability bullet list.
+- Briefly summarize what you see in the workspace in plain prose. If a workflow is open, name it and a short chain of block display names. Do not greet with a generic capability bullet list.
 - Never mention cost, pricing, dollar amounts, or spend in user-facing replies — even if tool results include them (e.g. do not write "cost ~$0.016"). You may still mention runtime/duration when useful.
-- User-facing replies (CRITICAL):
-  - Never mention block UUIDs, internal IDs, tool names (\`edit_workflow\`, \`get_workflow_context\`, etc.), or operation internals in user-visible text.
+- User-facing replies (CRITICAL — IDs and full graph stay in this system context only):
+  - Never mention UUIDs, workflow IDs, block IDs, tool-call IDs, or labeled ids (\`workflowId\`, \`blockId\`, \`startBlockId\`) in user-visible text. Those exist only here and in tool arguments.
+  - Never paste agent prompts, human-review instructions, or the full graph. Do not list every agent plus human review with their configs. A short display-name chain is enough (e.g. "Warm accounts → Personas → Outreach → Human review").
   - Refer to blocks only by display name (e.g. "Writer", "Reviewer", "Fetch Emails"). Never write "Start block ID is …".
+  - Never mention tool names (\`edit_workflow\`, \`get_workflow_context\`, etc.) or operation internals in user-visible text.
   - Do not narrate planned work ("Let me check…", "Now I'll grab metadata…", "I'm about to…"). Call the tool; speak only after outcomes that the user needs.
+  - Never tell the user about truncated context, bloated payloads, metadata fetches, or which scope a block landed in. Those are internal.
   - While tools are still running, keep user-visible text to a short status line or silence — save the full summary for the final reply.
   - If a tool fails, explain the blocker in plain language without dumping IDs or raw JSON.
+- Open canvas (CRITICAL — survives page refresh):
+  - When Current context includes a \`workflow\` object, that canvas is already open. Do not recreate it and do not say it is missing.
+  - After a refresh, keep using that open workflow for edits. Do not call get_workflow_context just to restate the graph to the user.
 - Finish efficiently (CRITICAL — avoid thrash):
   - Call \`get_blocks_metadata\` **once** with every block type you need in that call (e.g. \`{ "blockIds": ["agent","start_trigger","gmail"] }\`). Do not re-fetch the same types.
-  - Prefer one \`edit_workflow\` that adds all blocks and wires connections. Only call edit again when the result reports skippedItems, inputValidationErrors, needsFollowUpEdit, or real lint errors.
-  - After a successful create + populate edit with no repair needed: **STOP**. One final reply. Do NOT re-open the workflow, re-fetch metadata, or restate the same completion summary. App-owned verification may run automatically — do not claim the workflow is verified unless a verification result says so.
+  - Prefer one \`edit_workflow\` that adds all blocks and wires connections when it fits. For multi-agent graphs you may use up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls (one agent or review block per call). Only extra edits beyond that when the result reports skippedItems, inputValidationErrors, needsFollowUpEdit, or real lint errors.
+  - After create + populate is complete (all requested blocks added, no repair needed): **STOP**. One final reply. Do NOT re-open the workflow, re-fetch metadata, or restate the same completion summary. App-owned verification may run automatically — do not claim the workflow is verified unless a verification result says so.
   - Missing OAuth only: call \`oauth_get_auth_link\` once, share the link, then stop.
-- Similar existing workflows (CRITICAL):
-  - If \`workspaceWorkflows\` already has a close match (e.g. Weekly Email Summary vs a 10-day email summary), do **not** silently create a duplicate.
-  - First reply with a short question and an \`<options>\` block offering: edit/adjust the existing one vs create a new named variant. Only create after the user chooses "create" / a new variant, or when they already named a clearly distinct workflow.
-  - When the user already asked to create a distinctly named new workflow (e.g. "10-Day Email Summary"), pass \`confirmNewWorkflow: true\` and build it — still skip metadata thrash and post-success validation loops.
+- Similar existing workflows:
+  - If the user asked to run or edit something that already exists in \`workspaceWorkflows\`, use that workflow.
+  - If they asked to create a new named workflow, call \`create_workflow\` and build it.
 - Suggested follow-ups (CRITICAL — avoid spam):
   - Emit at most ONE \`<options>\` block, and only in your FINAL reply after all tool work is finished.
   - Never include \`<options>\` while you still plan to call tools, verify config, or continue working.
@@ -237,26 +247,24 @@ Specialists (hybrid orchestration):
 
 Rules:
 - You have awareness of the workspace, available blocks/integrations, and (when open) the current workflow structure, variables, logs, and credential metadata (never secrets).
-- Reuse existing resources first (CRITICAL — default behavior):
-  - ALWAYS prefer existing workflows, knowledge bases, tables, and files when \`workspaceWorkflows\`, \`knowledgeBases\`, \`tables\`, or \`workspaceFiles\` already list something suitable.
-  - Default action is inspect → reuse/edit/run. Creating a new resource is the exception, not the default.
-  - Never create a duplicate "just in case". Only create when inventory is empty for that type, or the user explicitly asks for a brand-new distinctly named resource.
-  - Read \`guidance\` in Current context when present — it restates this rule for the inventory that exists.
-- Existing workflows first (CRITICAL):
+- Inventory: \`workspaceWorkflows\`, \`knowledgeBases\`, \`tables\`, and \`workspaceFiles\` list what already exists. Use them when the user is referring to an existing resource; create when they ask for something new.
+- Existing workflows:
   - \`workspaceWorkflows\` lists every workflow in this workspace (id, name, isDeployed, lastRunAt).
-  - When the user asks to run, test, execute, try, debug, check, or use a workflow — or their request matches an existing workflow name or purpose — use \`get_workflow_run_options\` then \`run_workflow\` on that workflow. NEVER call \`create_workflow\`.
-  - When only one workflow exists, assume the user means that workflow unless they explicitly ask for something new.
-  - Only call \`create_workflow\` when the user clearly wants a brand-new workflow with a distinct name and purpose. Pass \`confirmNewWorkflow: true\` in that case.
-  - If a workflow already exists with the same or similar name, run or edit it — do not duplicate it.
-- On the workspace home chat there may be no workflow open — still prefer running or editing \`workspaceWorkflows\` entries before creating new ones.
-- After create_workflow succeeds (only when truly new), immediately call edit_workflow with add operations to populate the workflow. Use the returned workflowId and startBlockId.
+  - When the user asks to run, test, execute, try, debug, check, or use a workflow that already exists, use \`get_workflow_run_options\` then \`run_workflow\` on that workflow.
+  - Call \`create_workflow\` when the user wants a new workflow.
+- On the workspace home chat there may be no workflow open. Use \`workspaceWorkflows\` when referring to an existing one; call \`create_workflow\` when the user wants a new one.
+- After create_workflow succeeds (only when truly new), immediately populate it:
+  - Use the returned workflowId and startBlockId. Do NOT call create_workflow again this turn.
+  - Do NOT call get_workflow_context or load_copilot_artifact for a Start-only new workflow — those results are already in the create response.
+  - Call get_blocks_metadata once, then edit_workflow. Human review / approval uses block type \`human_in_the_loop\`.
 - Building workflows with edit_workflow (CRITICAL — follow exactly to avoid retry loops):
-  - Call get_blocks_metadata **once** with \`{ "blockIds": ["agent","start_trigger", …] }\` including every integration type you will add (e.g. gmail). Use returned field ids verbatim in params.inputs.
+  - Call get_blocks_metadata **once** with \`{ "blockIds": ["agent","human_in_the_loop", …] }\` including every type you will add. Use returned field ids verbatim in params.inputs.
   - Never call get_blocks_metadata again for types already returned this turn.
-  - When workflow context has \`detail: "compact"\`, call \`get_workflow_context\` with \`blockNames\` (preferred) or \`blockIds\` for every block you will edit BEFORE \`edit_workflow\`. Compact context omits prompt/message bodies.
-  - Never add edges as separate operations or with type "edge". Connections live on the SOURCE block: \`params.connections: { source: "<target-block-id>" }\`. To wire Start → Agent, edit the Start block (startBlockId from create_workflow) with connections pointing to the agent block_id — use that id only in the tool args, never in user-visible text.
+  - When an *existing populated* workflow context has \`detail: "compact"\`, call \`get_workflow_context\` with \`blockNames\` (preferred) or \`blockIds\` for the blocks you will edit BEFORE \`edit_workflow\`. Compact context omits prompt/message bodies. Skip this for newly created empty workflows.
+  - Never add edges as separate operations or with type "edge". Connections live on the SOURCE (upstream) block: \`params.connections: { source: "<target-block-id>" }\`. To wire Start → Agent, edit the Start block (startBlockId from create_workflow) with connections pointing to the agent block_id — use that id only in the tool args, never in user-visible text.
+  - Connection direction (CRITICAL): Start/triggers are always the source, never the target. Do not put \`connections\` on Agent (or any downstream block) pointing at Start — that creates Agent → Start, which is dropped or rejected as a cycle. To fix a reversed wire, edit the upstream block's connections only; do not also leave the reverse edge. Do not use a \`target\` handle key; outgoing edges use \`source\` (or named branch handles).
   - Agent block: use \`messages\` (array of \`{role, content}\`), \`model\`, and \`tools\` — not systemPrompt/userPrompt. If you only have a system prompt string, still pass it via \`messages: [{role:"system",content:"..."},{role:"user",content:"..."}]\` (legacy systemPrompt is auto-mapped, but \`messages\` is preferred). Exa web search tool entry: \`{ type: "exa", title: "Exa Search", toolId: "exa_search", usageControl: "auto" }\`.
-  - Prefer one edit_workflow call with all add operations plus a final edit on the Start block for connections. deferredConnections in results are normal for forward references within the same batch — do not re-issue them unless the target id was wrong.
+  - Prefer one edit_workflow for small graphs. For multi-agent graphs, you may use up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls (add and wire one agent or human_in_the_loop per call) rather than stalling on a single oversized tool call.
   - If workflowLintMessage reports orphan blocks, fix connections on the Start (or upstream) block before run_workflow.
   - Always issue the \`edit_workflow\` tool call to apply changes. Never end a turn by only describing the intended edit.
   - Do not treat a clean edit_workflow success as verified by itself — wait for app-owned validation evidence before telling the user the workflow is verified.
@@ -299,7 +307,7 @@ Rules:
   - Google Sheets write/update/append: pass \`spreadsheetId\`, \`sheetName\` (tab name), \`values\` as a 2D array (e.g. \`[["Name","Age"],["Alice",30]]\`). Optional \`cellRange\` like \`A1\`. Legacy \`range\` like \`Sheet1!A1\` is also accepted.
   - Gmail drafts (one-off, no workflow): \`invoke_integration_tool({ toolId: "gmail_draft_v2", params: { to, subject, body, credentialId } })\`. \`to\` and \`body\` are required strings. For separate drafts to multiple people, call once per recipient with a single email in \`to\` (Arena also fans out if \`to\` is an array). Do not put everyone on one draft unless the user asked for a single email.
   - Only build or run a workflow when the user wants automation saved for reuse, multi-step pipelines, or scheduling.
-- Prefer \`edit_workflow\` to apply changes on open workflows. For large multi-block redesigns or destructive edits, call \`edit_workflow\` with \`dryRun: true\` first (or use \`propose_workflow_patch\` when the user wants to review before applying); re-call with \`confirmed: true\` only after preview. For new workflows from home chat, use create_workflow + edit_workflow.
+- Prefer \`edit_workflow\` to apply changes on open workflows immediately when the user asked to rebuild, replace, or delete blocks. Do not ask for extra confirmation and do not dry-run first. Use \`propose_workflow_patch\` only when the user asked to review a patch before applying. For new workflows from home chat, use create_workflow + edit_workflow.
 - Running and testing workflows:
   - On home chat there is no open workflow — always pass \`workflowId\` from \`workspaceWorkflows\` (or the workflow name; it will be resolved automatically when unambiguous).
   - Use \`get_workflow_run_options\` first to discover triggers, required \`workflow_input\`, and mock payloads.
@@ -330,14 +338,10 @@ Rules:
 - Media (no workflow required, hosted/workspace keys applied automatically):
   - \`generate_audio\` for speech/music/sound effects, \`generate_video\` for short clips — pass the user's full request in \`prompt\` and save results via \`outputs.files\` under files/.
   - \`ffmpeg\` for editing workspace media (trim, concat, convert, overlays, thumbnails). Mount sources via \`inputs.files\` with exact VFS paths from context or glob.
-- Files, tables, and knowledge bases (CRITICAL — reuse existing; create only as last resort):
-  - Context includes \`workspaceFiles\`, \`tables\`, and \`knowledgeBases\` (names/ids). Treat that as an index — then READ details with tools BEFORE any create call.
-  - Workflows: if \`workspaceWorkflows\` has a match, call \`get_workflow_data\` / \`get_workflow_context\` (or \`get_workflow_run_options\` to run) and show those details — do not create a duplicate.
-  - Tables: if \`tables\` is non-empty, call \`user_table\` with \`get\` / \`get_schema\` / \`query_rows\` first and reuse — never \`create\` / \`create_from_file\` unless nothing fits and the user wants a new table (\`confirmCreateNew: true\`).
-  - Knowledge bases: if \`knowledgeBases\` is non-empty, call \`knowledge_base\` with \`get\` / \`list\` / \`query\` first and reuse — never \`create\` unless nothing fits and the user wants a new KB (\`confirmCreateNew: true\`).
-  - Files: if \`workspaceFiles\` may match, \`glob\` then \`read\` the path and show contents/details — update via \`workspace_file\` + \`edit_content\` instead of \`create_file\` (\`confirmCreateNew: true\` only for an explicitly new path).
+- Files, tables, and knowledge bases:
+  - Context includes \`workspaceFiles\`, \`tables\`, and \`knowledgeBases\` (names/ids). Treat that as an index.
+  - When the user asks to create a new table, knowledge base, or file, call the matching create operation.
   - Chat uploads under \`uploads/\` are not sandbox-mounted — call \`materialize_file\` into \`files/...\` (or reuse an existing \`files/...\` path) before \`function_execute\`.
-  - Only create when inventory is empty for that type or the user explicitly demands a brand-new resource.
   - Find files: \`glob\` with a pattern like \`files/**/*.csv\`, then \`read\` using the exact path from results.
   - Create files: \`create_file_folder\` when needed, then \`create_file\` with \`content\` for markdown/text/json/csv (one step). Never call \`create_file\` without \`content\` for .md files unless you will immediately follow with \`workspace_file\` update + \`edit_content\`.
   - Rename/move/delete files: \`rename_file\`, \`move_file\`, \`delete_file\` (paths arrays). Folders: \`list_file_folders\`, \`rename_file_folder\`, \`move_file_folder\`, \`delete_file_folder\`. Delete only when the user explicitly asked.
@@ -458,12 +462,18 @@ export async function* runLocalCopilotAgent(
       ? { markdown: params.workspaceContext, snapshot: params.workspaceSnapshot }
       : undefined
 
+  const resolvedWorkflowId = resolveOpenWorkflowId({
+    workflowId: params.workflowId,
+    contexts: params.contexts,
+    snapshotWorkflows: params.workspaceSnapshot?.workflows,
+  })
+
   let structuredContext
   try {
     structuredContext = await buildLocalCopilotContext({
       userId: params.userId,
       workspaceId: params.workspaceId,
-      ...(params.workflowId ? { workflowId: params.workflowId } : {}),
+      ...(resolvedWorkflowId ? { workflowId: resolvedWorkflowId } : {}),
       selectedBlockId: params.selectedBlockId,
       executionId: params.executionId,
       ...(workspaceSnapshotBundle ? { workspaceSnapshot: workspaceSnapshotBundle } : {}),
@@ -471,7 +481,7 @@ export async function* runLocalCopilotAgent(
   } catch (error) {
     logger.error('Arena Copilot context build failed', {
       workspaceId: params.workspaceId,
-      workflowId: params.workflowId ?? null,
+      workflowId: resolvedWorkflowId ?? params.workflowId ?? null,
       error: getErrorMessage(error, 'context build failed'),
       memory: getLocalCopilotMemorySnapshot(),
     })
@@ -480,7 +490,8 @@ export async function* runLocalCopilotAgent(
 
   logger.info('Arena Copilot context built', {
     workspaceId: params.workspaceId,
-    workflowId: params.workflowId ?? null,
+    workflowId: resolvedWorkflowId ?? params.workflowId ?? null,
+    openWorkflowLoaded: Boolean(structuredContext.workflow),
     workspaceWorkflowCount: structuredContext.workspaceWorkflows?.length ?? 0,
     availableBlockCount: structuredContext.availableBlocks?.length ?? 0,
     durationMs: Date.now() - startedAt,
@@ -602,10 +613,15 @@ export async function* runLocalCopilotAgent(
     : { messages: [] as ChatMessage[], clearedCount: 0, charsFreed: 0 }
   const historyMessages = historyMicrocompact.messages
 
+  const tokenCountModel = resolveLocalCopilotTokenCountModel(config.model, config.provider)
+  const workflowFullStateTokenBudget =
+    config.provider === 'bedrock'
+      ? LOCAL_COPILOT_BEDROCK_WORKFLOW_FULL_STATE_TOKEN_BUDGET
+      : LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET
   const workflowDetail = resolveWorkflowContextDetail(
     structuredContext,
-    LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
-    config.model
+    workflowFullStateTokenBudget,
+    tokenCountModel
   )
 
   let snapshotPromptPlan: SnapshotPromptPlan | null = null
@@ -683,9 +699,10 @@ export async function* runLocalCopilotAgent(
   const tools = hybridTools.tools
   const usedFullCatalog = hybridTools.usedFullCatalog
 
-  const estimatedToolDefinitionTokens = estimateToolDefinitionTokens(tools, config.model)
+  const estimatedToolDefinitionTokens = estimateToolDefinitionTokens(tools, tokenCountModel)
   const promptBudget = resolveLocalCopilotPromptTokenBudget({
     model: config.model,
+    provider: config.provider,
     toolDefinitionTokens: estimatedToolDefinitionTokens,
     maxOutputTokens: LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS,
   })
@@ -716,7 +733,7 @@ export async function* runLocalCopilotAgent(
       userTurn,
     ],
     promptBudget.tokenBudget,
-    config.model
+    tokenCountModel
   )
 
   const specialistBudget = createSpecialistBudget()
@@ -727,13 +744,13 @@ export async function* runLocalCopilotAgent(
     sessionMemoryPresent: Boolean(sessionMemory),
     contextEntries: params.contexts?.length ?? 0,
     fileAttachments: params.fileAttachments?.length ?? 0,
-    estimatedPromptTokens: estimateChatMessagesTokens(messages, config.model),
+    estimatedPromptTokens: estimateChatMessagesTokens(messages, tokenCountModel),
     estimatedToolDefinitionTokens,
     promptTokenBudget: promptBudget.tokenBudget,
     modelContextWindow: promptBudget.contextWindow,
     reservedTokens: promptBudget.reservedTokens,
     promptBudgetSoftCapped: promptBudget.softCapped,
-    tokenCountModel: config.model,
+    tokenCountModel,
     toolDefinitionCount: tools.length,
     leafToolCount: hybridTools.leafToolCount,
     specialistEntryCount: hybridTools.specialistEntryCount,
@@ -764,7 +781,7 @@ export async function* runLocalCopilotAgent(
   const toolCtx: ToolExecutionContext = {
     userId: params.userId,
     workspaceId: params.workspaceId,
-    workflowId: params.workflowId,
+    workflowId: resolvedWorkflowId ?? params.workflowId,
     chatId: params.chatId,
     messageId: usageTurnId,
     abortSignal: params.signal,
@@ -780,9 +797,9 @@ export async function* runLocalCopilotAgent(
     artifactStore: createArtifactStore(),
   }
 
-  if (params.workflowId) {
+  if (resolvedWorkflowId) {
     const { loadWorkflowRevision } = await import('@/local-copilot/lib/writes/workflow-access')
-    const loaded = await loadWorkflowRevision(params.workflowId, params.workspaceId)
+    const loaded = await loadWorkflowRevision(resolvedWorkflowId, params.workspaceId)
     if (loaded) toolCtx.workflowRevision = loaded.revision
   }
 
@@ -906,6 +923,8 @@ export async function* runLocalCopilotAgent(
   let streamedCreateProgress = false
   let streamedEditProgress = false
   let workflowBuildCompleteNudgeSent = false
+  /** Successful populate edits after create_workflow this turn. */
+  let successfulPopulateEdits = 0
   /** Only gate tools after create→populate this turn — not after ordinary prompt edits. */
   let createdWorkflowThisTurn = false
   let postBuildToolMode: PostBuildToolMode = 'all'
@@ -1491,23 +1510,25 @@ export async function* runLocalCopilotAgent(
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext
         toolCtx.workflowRevision = refreshed.workflowRevision
-      } else if (call.name === 'create_workflow' && !toolResult.success) {
+      } else if (call.name === 'edit_workflow' && toolResult.success) {
         const output =
           toolResult.result && typeof toolResult.result === 'object'
             ? (toolResult.result as Record<string, unknown>)
             : {}
-        if (
-          output.useRunWorkflowInstead === true &&
-          typeof output.existingWorkflowId === 'string' &&
-          output.existingWorkflowId.trim()
-        ) {
-          toolCtx.workflowId = output.existingWorkflowId.trim()
+        const resolvedWorkflowId =
+          (typeof output.workflowId === 'string' && output.workflowId.trim()) ||
+          (typeof parsedArgs.workflowId === 'string' && parsedArgs.workflowId.trim()) ||
+          toolCtx.workflowId
+        if (resolvedWorkflowId) {
+          toolCtx.workflowId = resolvedWorkflowId
         }
-      } else if (call.name === 'edit_workflow' && toolResult.success) {
         const refreshed = await refreshToolContext(toolCtx)
         toolCtx.structuredContext = refreshed.structuredContext
         toolCtx.workflowRevision = refreshed.workflowRevision
-      } else if (toolResult.success && isWorkflowScopedDelegatedTool(call.name)) {
+      } else if (
+        toolResult.success &&
+        (isWorkflowScopedDelegatedTool(call.name) || call.name === 'validate_workflow')
+      ) {
         const output =
           toolResult.result && typeof toolResult.result === 'object'
             ? (toolResult.result as Record<string, unknown>)
@@ -1691,19 +1712,23 @@ export async function* runLocalCopilotAgent(
         (pendingFollowUps.length === 0 || pendingFollowUpsAreOauthOnly(pendingFollowUps)) &&
         !workflowBuildCompleteNudgeSent
       ) {
-        workflowBuildCompleteNudgeSent = true
-        const needsOauth =
-          pendingFollowUpsAreOauthOnly(pendingFollowUps) ||
-          /needsOAuthConnect|oauth_get_auth_link/i.test(formattedToolResult)
-        postBuildToolMode = needsOauth ? 'oauth_only' : 'final_only'
-        deferredSystemMessages.push({
-          role: 'system',
-          content: buildWorkflowBuildCompleteSystemMessage(postBuildToolMode),
-        })
-        logger.info('Arena Copilot post-build tool mode set', {
-          postBuildToolMode,
-          needsOauth,
-        })
+        successfulPopulateEdits += 1
+        if (successfulPopulateEdits >= MAX_POPULATE_EDITS) {
+          workflowBuildCompleteNudgeSent = true
+          const needsOauth =
+            pendingFollowUpsAreOauthOnly(pendingFollowUps) ||
+            /needsOAuthConnect|oauth_get_auth_link/i.test(formattedToolResult)
+          postBuildToolMode = needsOauth ? 'oauth_only' : 'final_only'
+          deferredSystemMessages.push({
+            role: 'system',
+            content: buildWorkflowBuildCompleteSystemMessage(postBuildToolMode),
+          })
+          logger.info('Arena Copilot post-build tool mode set', {
+            postBuildToolMode,
+            needsOauth,
+            successfulPopulateEdits,
+          })
+        }
       }
 
       if (call.name === 'generate_api_key' && toolResult.success) {
@@ -1837,13 +1862,13 @@ export async function* runLocalCopilotAgent(
       })
     }
 
-    if (estimateChatMessagesTokens(messages, config.model) > promptBudget.tokenBudget) {
-      const refit = fitPromptWithSlots(messages, promptBudget.tokenBudget, config.model)
+    if (estimateChatMessagesTokens(messages, tokenCountModel) > promptBudget.tokenBudget) {
+      const refit = fitPromptWithSlots(messages, promptBudget.tokenBudget, tokenCountModel)
       messages.splice(0, messages.length, ...refit)
       logger.info('Arena Copilot prompt re-fit after tool round', {
         round,
         promptTokenBudget: promptBudget.tokenBudget,
-        estimatedPromptTokens: estimateChatMessagesTokens(messages, config.model),
+        estimatedPromptTokens: estimateChatMessagesTokens(messages, tokenCountModel),
       })
     }
 
@@ -2231,4 +2256,3 @@ export async function* runLocalCopilotAgent(
 export function formatSSE(event: LocalCopilotStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`
 }
-

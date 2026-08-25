@@ -2,8 +2,8 @@ import type { ConverseStreamOutput } from '@aws-sdk/client-bedrock-runtime'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { randomFloat } from '@sim/utils/random'
-import type { AgentStreamEvent } from '@/providers/stream-events'
 import { getModelCapabilities, supportsTemperature } from '@/providers/models'
+import type { AgentStreamEvent } from '@/providers/stream-events'
 import { trackForcedToolUsage } from '@/providers/utils'
 
 const logger = createLogger('BedrockUtils')
@@ -143,6 +143,8 @@ const GEO_PROFILE_UNSUPPORTED_MODEL_IDS = new Set([
   'moonshotai.kimi-k2.5',
   // NVIDIA Nemotron 3 Super: docs invoke the bare on-demand model ID.
   'nvidia.nemotron-super-3-120b',
+  // Z.AI GLM 5 model cards list Geo inference ID as "Not supported".
+  'zai.glm-5',
 ])
 
 /** Cross-region inference profile prefixes Bedrock prepends to a base model ID. */
@@ -267,8 +269,7 @@ export function buildBedrockInferenceConfig(options: {
   }
   if (bedrockAllowsTemperature(options.model)) {
     const isNova = /amazon\.nova/i.test(options.model)
-    config.temperature =
-      options.temperature ?? options.defaultTemperature ?? (isNova ? 0 : 0.2)
+    config.temperature = options.temperature ?? options.defaultTemperature ?? (isNova ? 0 : 0.2)
   }
   return config
 }
