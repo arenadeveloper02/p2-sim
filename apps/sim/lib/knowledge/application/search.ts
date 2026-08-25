@@ -308,22 +308,33 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
       ReturnType<typeof importKnowledgeSearchResultSecretProvenance>
     > | null = null
     if (registry) {
+      /**
+       * Import into a staging registry first. `importDurableSecretProvenance` can latch
+       * incompleteness for malformed/undecryptable sidecars even when Knowledge enforcement is
+       * off; doing that on the live response registry would strip block input/output from
+       * display while the search itself still succeeds.
+       */
+      const stagingRegistry = new ResolvedSecretTraceRegistry([], {
+        userId,
+        workspaceId: context.workspaceId,
+      })
       provenanceSnapshot = await importKnowledgeSearchResultSecretProvenance({
-        registry,
+        registry: stagingRegistry,
         results: rows,
       })
-      if (!provenanceSnapshot.imported) {
-        if (isDurableSecretProvenanceEnforced('knowledge')) {
-          registry.markIncomplete('knowledge-result-provenance-unavailable')
-          if (useReranker) throw new KnowledgeSearchProvenanceUnavailableError()
-        } else {
-          reportUnrecordedDurableProvenance({
-            surface: 'knowledge',
-            cause: 'row-sidecar-not-exact',
-            affectedCount: rows.length,
-            workspaceId: context.workspaceId,
-          })
-        }
+      if (provenanceSnapshot.imported && !stagingRegistry.isPermanentlyIncomplete()) {
+        registry.mergeToolCallRegistry(stagingRegistry)
+      } else if (isDurableSecretProvenanceEnforced('knowledge')) {
+        registry.markIncomplete('knowledge-result-provenance-unavailable')
+        if (useReranker) throw new KnowledgeSearchProvenanceUnavailableError()
+      } else {
+        reportUnrecordedDurableProvenance({
+          surface: 'knowledge',
+          cause: 'row-sidecar-not-exact',
+          affectedCount: rows.length,
+          workspaceId: context.workspaceId,
+        })
+        provenanceSnapshot = { imported: false, documentMetadata: {} }
       }
     }
 
@@ -500,7 +511,7 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
         ...(rerankerScore !== undefined ? { rerankerScore } : {}),
       }
     })
-    if (registry && provenanceSnapshot) {
+    if (registry && provenanceSnapshot?.imported) {
       for (const [documentId, document] of Object.entries(provenanceSnapshot.documentMetadata)) {
         const renderedMetadata = results
           .filter((result) => result.documentId === documentId)
@@ -509,17 +520,27 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
             sourceUrl: result.sourceUrl,
             metadata: result.metadata,
           }))
-        if (
-          renderedMetadata.length > 0 &&
-          !(await importDurableSecretProvenance(
-            registry,
-            document.provenance,
-            renderedMetadata,
-            'knowledge'
-          )) &&
-          isDurableSecretProvenanceEnforced('knowledge')
-        ) {
+        if (renderedMetadata.length === 0) continue
+        const stagingRegistry = new ResolvedSecretTraceRegistry([], {
+          userId,
+          workspaceId: context.workspaceId,
+        })
+        const imported = await importDurableSecretProvenance(
+          stagingRegistry,
+          document.provenance,
+          renderedMetadata,
+          'knowledge'
+        )
+        if (imported && !stagingRegistry.isPermanentlyIncomplete()) {
+          registry.mergeToolCallRegistry(stagingRegistry)
+        } else if (isDurableSecretProvenanceEnforced('knowledge')) {
           registry.markIncomplete('knowledge-result-provenance-unavailable')
+        } else {
+          reportUnrecordedDurableProvenance({
+            surface: 'knowledge',
+            cause: 'row-sidecar-not-exact',
+            workspaceId: context.workspaceId,
+          })
         }
       }
     }

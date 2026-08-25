@@ -1131,6 +1131,27 @@ describe('LoggingSession completion retries', () => {
     expect(displayLogs[1]).not.toHaveProperty('displayResolvedSecretTraceProvenance')
   })
 
+  it('keeps block log input/output when display provenance is absent', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-no-provenance', 'manual', 'req-1')
+    const rawLog = {
+      blockId: 'knowledge-1',
+      blockName: 'Knowledge Search',
+      blockType: 'knowledge',
+      startedAt: '2026-07-01T00:00:00.000Z',
+      endedAt: '2026-07-01T00:00:00.001Z',
+      durationMs: 1,
+      success: true,
+      executionOrder: 1,
+      input: { query: 'answer', knowledgeBaseIds: ['kb-1'] },
+      output: { results: [{ content: 'answer' }], totalResults: 1 },
+    }
+
+    const [displayLog] = await session.projectBlockLogsForDisplay([rawLog])
+
+    expect(displayLog.input).toEqual(rawLog.input)
+    expect(displayLog.output).toEqual(rawLog.output)
+  })
+
   it('suppresses live deltas once a resolved secret is active', async () => {
     const active = new LoggingSession('workflow-1', 'execution-live-active', 'manual', 'req-1')
     active.setResolvedSecretTraceRegistry(

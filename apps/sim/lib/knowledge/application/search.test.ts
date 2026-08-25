@@ -292,7 +292,7 @@ describe('knowledge search application use case', () => {
   })
 
   it('verifies trusted result provenance inside the authorized use case', async () => {
-    const registry = { markIncomplete: vi.fn() }
+    const registry = { markIncomplete: vi.fn(), mergeToolCallRegistry: vi.fn() }
     await searchKnowledge.execute({
       principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
       input: {
@@ -305,16 +305,20 @@ describe('knowledge search application use case', () => {
     })
 
     expect(mocks.importProvenance).toHaveBeenCalledWith({
-      registry,
+      registry: expect.objectContaining({
+        mergeToolCallRegistry: expect.any(Function),
+        isPermanentlyIncomplete: expect.any(Function),
+      }),
       results: expect.arrayContaining([
         expect.objectContaining({ id: 'embedding-1', documentId: 'document-1' }),
       ]),
     })
+    expect(registry.mergeToolCallRegistry).toHaveBeenCalled()
   })
 
   it('does not fail-closed when knowledge result provenance is unrecorded and unenforced', async () => {
     mocks.importProvenance.mockResolvedValueOnce({ imported: false, documentMetadata: {} })
-    const registry = { markIncomplete: vi.fn() }
+    const registry = { markIncomplete: vi.fn(), mergeToolCallRegistry: vi.fn() }
 
     const result = await searchKnowledge.execute({
       principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
@@ -329,6 +333,30 @@ describe('knowledge search application use case', () => {
 
     expect(result.totalResults).toBeGreaterThan(0)
     expect(registry.markIncomplete).not.toHaveBeenCalled()
+    expect(registry.mergeToolCallRegistry).not.toHaveBeenCalled()
+  })
+
+  it('does not merge an incomplete staging registry into the live response registry', async () => {
+    mocks.importProvenance.mockImplementationOnce(async ({ registry }) => {
+      registry.markIncomplete('knowledge-result-provenance-unavailable')
+      return { imported: false, documentMetadata: {} }
+    })
+    const registry = { markIncomplete: vi.fn(), mergeToolCallRegistry: vi.fn() }
+
+    const result = await searchKnowledge.execute({
+      principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+      input: {
+        workspaceId: 'workspace-1',
+        knowledgeBaseIds: ['knowledge-1'],
+        query: 'answer',
+        topK: 5,
+        resultSecretRegistry: registry as never,
+      },
+    })
+
+    expect(result.totalResults).toBeGreaterThan(0)
+    expect(registry.markIncomplete).not.toHaveBeenCalled()
+    expect(registry.mergeToolCallRegistry).not.toHaveBeenCalled()
   })
 
   describe('reranker outcome reporting', () => {

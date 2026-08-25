@@ -415,12 +415,14 @@ export class LoggingSession {
     for (let index = 0; index < blockLogs.length; index += 1) {
       const log = blockLogs[index]
       const provenance = log.displayResolvedSecretTraceProvenance
-      if (!provenance) {
-        displayLogs.push(structuralBlockLog(log))
-        continue
-      }
 
       try {
+        /**
+         * Missing provenance uses an empty complete registry
+         * (`createDisplayProjectionRegistry(undefined)`), preserving input/output
+         * instead of a structural-only wipe that hid Knowledge and other blocks
+         * from the terminal and logs page when display provenance was absent.
+         */
         const registry = await this.createDisplayProjectionRegistry(provenance)
         const [projectedLog] = await this.projectRawTraceSpans(
           [

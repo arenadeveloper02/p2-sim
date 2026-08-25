@@ -9,6 +9,10 @@ import {
   EXACT_EMPTY_DURABLE_SECRET_PROVENANCE,
 } from '@/lib/execution/durable-secret-provenance'
 import {
+  isDurableSecretProvenanceEnforced,
+  reportUnrecordedDurableProvenance,
+} from '@/lib/execution/durable-secret-provenance-enforcement'
+import {
   inspectPrivateSecretProvenanceRequest,
   isPrivateSecretProvenanceBundleV1,
 } from '@/lib/execution/model-input-provenance'
@@ -29,7 +33,10 @@ import {
   knowledgeDocumentTagValueSelectionKey,
   parseKnowledgeDocumentTagProvenanceTargets,
 } from '@/lib/knowledge/secret-provenance-selection'
-import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
+import {
+  type ResolvedSecretTraceProvenanceV1,
+  ResolvedSecretTraceRegistry,
+} from '@/executor/utils/resolved-secret-trace-registry'
 
 function invalidKnowledgeProvenanceResponse(): NextResponse {
   return NextResponse.json({ error: 'Invalid knowledge secret provenance' }, { status: 400 })
@@ -37,6 +44,32 @@ function invalidKnowledgeProvenanceResponse(): NextResponse {
 
 function rejectInvalidKnowledgeProvenance(): never {
   throw new OrchestrationError('validation', 'Invalid knowledge secret provenance')
+}
+
+/**
+ * Exports response provenance for the tool client. When Knowledge enforcement is off, an
+ * incomplete registry must not travel on the wire as `complete: false` — that latches the
+ * executor display registry and strips block input/output from the terminal, logs, and trace
+ * even though the functional search/list still succeeded (unenforced under-redact posture).
+ */
+function exportKnowledgeResponseProvenance(
+  registry: ResolvedSecretTraceRegistry,
+  body: Record<string, unknown>
+): ResolvedSecretTraceProvenanceV1 {
+  const provenance = registry.exportCommittedProvenanceForValue(body)
+  if (provenance.complete || isDurableSecretProvenanceEnforced('knowledge')) {
+    return provenance
+  }
+  reportUnrecordedDurableProvenance({
+    surface: 'knowledge',
+    cause: 'row-sidecar-not-exact',
+  })
+  return {
+    version: 1,
+    complete: true,
+    entries: [],
+    ...(provenance.scope ? { scope: provenance.scope } : {}),
+  }
 }
 
 function finalizeKnowledgeMetadataEnvelope(
@@ -172,8 +205,15 @@ export async function finalizeKnowledgeProvenanceResponse(options: {
   })
   for (const provenance of options.provenances) {
     if (provenance.status === 'unknown') {
-      registry.markIncomplete('durable-provenance-unknown')
-      break
+      if (isDurableSecretProvenanceEnforced('knowledge')) {
+        registry.markIncomplete('durable-provenance-unknown')
+        break
+      }
+      reportUnrecordedDurableProvenance({
+        surface: 'knowledge',
+        cause: 'durable-provenance-unknown',
+      })
+      continue
     }
     const sourceRegistry = await createDurableSecretProvenanceRegistry(provenance, {
       userId: options.userId,
@@ -184,7 +224,7 @@ export async function finalizeKnowledgeProvenanceResponse(options: {
   const envelope = serializePrivateToolMetadataResponseEnvelope(
     options.body,
     RESOLVED_SECRET_PROVENANCE_METADATA_V1,
-    registry.exportCommittedProvenanceForValue(options.body)
+    exportKnowledgeResponseProvenance(registry, options.body)
   )
   return finalizeKnowledgeMetadataEnvelope(envelope)
 }
@@ -207,7 +247,7 @@ export function finalizeKnowledgeRegistryResponse(options: {
   const envelope = serializePrivateToolMetadataResponseEnvelope(
     options.body,
     RESOLVED_SECRET_PROVENANCE_METADATA_V1,
-    options.registry.exportCommittedProvenanceForValue(options.body)
+    exportKnowledgeResponseProvenance(options.registry, options.body)
   )
   return finalizeKnowledgeMetadataEnvelope(envelope)
 }

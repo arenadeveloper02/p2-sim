@@ -9,11 +9,17 @@ import {
   PRIVATE_SECRET_PROVENANCE_BUNDLE_V1,
   PRIVATE_SECRET_PROVENANCE_FIELD,
   PRIVATE_SECRET_PROVENANCE_HEADER,
+  PRIVATE_TOOL_METADATA_REQUEST_HEADER,
+  RESOLVED_SECRET_PROVENANCE_FIELD,
+  RESOLVED_SECRET_PROVENANCE_METADATA_V1,
 } from '@/lib/execution/private-tool-metadata'
 import {
+  finalizeKnowledgeProvenanceResponse,
+  finalizeKnowledgeRegistryResponse,
   resolveKnowledgeDocumentWriteSecretProvenance,
   resolveKnowledgeWriteSecretProvenance,
 } from '@/app/api/knowledge/secret-provenance'
+import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 
 const PRIVATE_PROVENANCE_SCOPE = {
   userId: 'user-1',
@@ -362,6 +368,61 @@ describe('knowledge write secret provenance', () => {
           ],
         },
       ],
+    })
+  })
+})
+
+describe('knowledge response provenance finalization', () => {
+  function createMetadataRequest(): NextRequest {
+    return new NextRequest('http://localhost/api/knowledge/search', {
+      method: 'POST',
+      headers: {
+        [PRIVATE_TOOL_METADATA_REQUEST_HEADER]: RESOLVED_SECRET_PROVENANCE_METADATA_V1,
+      },
+      body: JSON.stringify({ query: 'answer' }),
+    })
+  }
+
+  it('exports complete empty provenance when the registry is incomplete and Knowledge is unenforced', () => {
+    const registry = new ResolvedSecretTraceRegistry([], PRIVATE_PROVENANCE_SCOPE)
+    registry.markIncomplete('knowledge-result-provenance-unavailable')
+    const body = { success: true, results: [{ content: 'answer' }] }
+
+    const finalization = finalizeKnowledgeRegistryResponse({
+      request: createMetadataRequest(),
+      authType: AuthType.INTERNAL_JWT,
+      body,
+      registry,
+    })
+
+    expect(finalization.bodyFields?.[RESOLVED_SECRET_PROVENANCE_FIELD]).toEqual({
+      version: 1,
+      complete: true,
+      entries: [],
+      scope: PRIVATE_PROVENANCE_SCOPE,
+    })
+  })
+
+  it('does not latch unknown write provenance onto the response when Knowledge is unenforced', async () => {
+    const body = { success: true, document: { id: 'doc-1' } }
+
+    const finalization = await finalizeKnowledgeProvenanceResponse({
+      request: createMetadataRequest(),
+      authType: AuthType.INTERNAL_JWT,
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      body,
+      provenances: [{ status: 'unknown' }],
+    })
+
+    expect(finalization.bodyFields?.[RESOLVED_SECRET_PROVENANCE_FIELD]).toEqual({
+      version: 1,
+      complete: true,
+      entries: [],
+      scope: {
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+      },
     })
   })
 })
