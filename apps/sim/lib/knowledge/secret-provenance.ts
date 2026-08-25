@@ -520,10 +520,7 @@ export async function importKnowledgePersistedResponseSecretProvenance(options: 
       createKnowledgeDocumentSourceValue(item.source)
     )
     if (!actualSourceHash || !expectedSourceHash || actualSourceHash !== expectedSourceHash) {
-      markKnowledgeResponseProvenanceUnavailable(
-        options.registry,
-        'knowledge-row-content-mismatch'
-      )
+      markKnowledgeResponseProvenanceUnavailable(options.registry, 'knowledge-row-content-mismatch')
       return false
     }
     const provenance = filterKnowledgeDocumentMetadataSecretProvenance(
@@ -540,10 +537,7 @@ export async function importKnowledgePersistedResponseSecretProvenance(options: 
   for (const item of chunks) {
     const row = chunkById.get(item.id)
     if (!row || row.documentId !== item.documentId || row.content !== item.content) {
-      markKnowledgeResponseProvenanceUnavailable(
-        options.registry,
-        'knowledge-row-content-mismatch'
-      )
+      markKnowledgeResponseProvenanceUnavailable(options.registry, 'knowledge-row-content-mismatch')
       return false
     }
     const provenance = readBoundKnowledgeEmbeddingSecretProvenance(row)

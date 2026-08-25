@@ -229,9 +229,7 @@ export function SlackUserSelector({
                         <div className='flex items-center gap-2'>
                           <User className='h-4 w-4' />
                           <div className='flex flex-col'>
-                            <span>
-                              {user.displayName || user.realName || user.name}
-                            </span>
+                            <span>{user.displayName || user.realName || user.name}</span>
                             <span className='text-muted-foreground text-xs'>
                               @{user.name} • {user.id}
                             </span>

@@ -1,7 +1,7 @@
 import type { SVGProps } from 'react'
 import { useId } from 'react'
-import Image, { type ImageProps } from 'next/image'
 import { cn } from '@sim/emcn'
+import Image, { type ImageProps } from 'next/image'
 
 export function EnrichmentIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -178,10 +178,7 @@ export function AgentIcon({
         backgroundImage: 'linear-gradient(179.65deg, #7B4796 -0.59%, #017496 102.42%)',
         ...style,
       }}
-      className={cn(
-        'box-border size-full rounded-[4px] object-contain p-[20%]',
-        className
-      )}
+      className={cn('box-border size-full rounded-[4px] object-contain p-[20%]', className)}
     />
   )
 }

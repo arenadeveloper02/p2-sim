@@ -205,7 +205,7 @@ export function BlockInspector({
                   const TIcon = resolveIcon(tool.type)
                   return (
                     <ChipTag key={tool.type} variant='gray'>
-                        <span
+                      <span
                         className='flex size-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px] [&_img]:size-full'
                         style={{ background: tool.bgColor }}
                       >

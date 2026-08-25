@@ -475,8 +475,8 @@ export function ConnectOAuthModal(props: ConnectOAuthModalProps) {
               ) : (
                 <InfoCardItem>
                   Your organization admin must register a Zoom Marketplace app before you can
-                  connect. If you recently migrated from a shared Arena AI Zoom app, reconnect after your
-                  admin saves the new credentials.
+                  connect. If you recently migrated from a shared Arena AI Zoom app, reconnect after
+                  your admin saves the new credentials.
                 </InfoCardItem>
               )}
             </InfoCardList>

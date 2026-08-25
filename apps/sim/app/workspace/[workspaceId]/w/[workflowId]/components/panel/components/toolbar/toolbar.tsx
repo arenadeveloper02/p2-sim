@@ -848,7 +848,7 @@ export const Toolbar = memo(
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onBlur={handleSearchBlur}
-                className='w-full border-none bg-transparent pr-0.5 text-right text-small text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none'
+                className='w-full border-none bg-transparent pr-0.5 text-right text-[var(--text-primary)] text-small placeholder:text-[var(--text-muted)] focus:outline-none'
               />
             )}
           </div>

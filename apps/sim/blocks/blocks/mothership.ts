@@ -1,4 +1,3 @@
-import { Blimp } from '@sim/emcn'
 import { fetchWorkspaceRawSecretNameOptions } from '@/lib/workflows/subblocks/options'
 import type { BlockConfig } from '@/blocks/types'
 import type { ToolResponse } from '@/tools/types'
@@ -128,7 +127,10 @@ export const MothershipBlock: BlockConfig<MothershipResponse> = {
     tools: { type: 'json', description: 'MCP tools available to Arena AI for this request' },
     skills: { type: 'json', description: 'Skills activated for this request' },
     secretScope: { type: 'string', description: 'Secret access mode: all or selected' },
-    mountedSecrets: { type: 'json', description: 'Secret names available to Arena AI code execution' },
+    mountedSecrets: {
+      type: 'json',
+      description: 'Secret names available to Arena AI code execution',
+    },
   },
   outputs: {
     content: { type: 'string', description: 'Generated response content' },
