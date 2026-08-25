@@ -310,13 +310,10 @@ async function dispatchLocalCopilotEvent(
   }
 
   if (event.type === 'turn_completion') {
-    await options.onEvent?.({
-      type: 'run',
-      payload: {
-        statusPhase: LOCAL_STATUS_PHASE,
-        message: `Turn completion: ${event.status}`,
-      },
-    })
+    // Internal completion verdict — not a user-facing status line. Publishing it
+    // as agent_live_status replaced the last useful status ("Reviewing…") with
+    // "Turn completion: completed_verified" and then the complete event cleared
+    // the line, which made option-only settles look like the reply vanished.
     return
   }
 

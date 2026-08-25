@@ -16,12 +16,12 @@ import { decodeVfsSegmentSafe } from '@/lib/copilot/vfs/path-utils'
 import { extractTextContent } from '@/lib/core/utils/react-node-text'
 import { ContextMentionIcon } from '@/app/workspace/[workspaceId]/home/components/context-mention-icon'
 import {
-  type ContentSegment,
   parseSpecialTags,
   SpecialTags,
 } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags'
 import type { ChatContextKind, MothershipResource } from '@/app/workspace/[workspaceId]/home/types'
 import { useSmoothText } from '@/hooks/use-smooth-text'
+import { groupChatContentSegments, lastInlineGroupIndex } from './chat-content-groups'
 import { sanitizeChatDisplayContent } from './chat-sanitize'
 import { ExternalLink, externalLinkHostname } from './external-link'
 
@@ -90,47 +90,6 @@ const ANIMATION_DRAIN_MS = 300
  * into a reply.
  */
 const FADE_MAX_REVEALED_CHARS = 6000
-
-function startsInlineWord(value: string): boolean {
-  return /^[A-Za-z0-9_(]/.test(value)
-}
-
-function endsInlineWord(value: string): boolean {
-  return /[A-Za-z0-9_)]$/.test(value)
-}
-
-function nextInlineSegmentLabel(segment?: ContentSegment): string {
-  if (!segment) return ''
-  // Thinking segments are never rendered, so they contribute no following text.
-  if (segment.type === 'text') return segment.content
-  if (segment.type === 'workspace_resource') return segment.data.title || segment.data.id || ''
-  return ''
-}
-
-function appendInlineReferenceMarkdown(
-  currentMarkdown: string,
-  referenceMarkdown: string,
-  nextSegment?: ContentSegment
-): string {
-  let nextMarkdown = currentMarkdown
-  if (currentMarkdown && endsInlineWord(currentMarkdown) && !/\s$/.test(currentMarkdown)) {
-    nextMarkdown += ' '
-  }
-
-  nextMarkdown += referenceMarkdown
-
-  const followingText = nextInlineSegmentLabel(nextSegment)
-  if (
-    followingText &&
-    startsInlineWord(followingText) &&
-    !/^\s/.test(followingText) &&
-    !/\s$/.test(nextMarkdown)
-  ) {
-    nextMarkdown += ' '
-  }
-
-  return nextMarkdown
-}
 
 type TdProps = ComponentPropsWithoutRef<'td'>
 type ThProps = ComponentPropsWithoutRef<'th'>
@@ -452,8 +411,29 @@ function ChatContentInner({
   onRevealStateChangeRef.current = onRevealStateChange
 
   const displayContent = useMemo(() => sanitizeChatDisplayContent(content), [content])
-  const streamedContent = useSmoothText(displayContent, isStreaming)
-  const hasRevealBacklog = streamedContent.length < displayContent.length
+  /**
+   * Parse the full unsmoothed string. Pacing the reveal *before* tag extraction
+   * made a trailing `<options>…</options>` look incomplete for hundreds of ms
+   * (the JSON is revealed character-by-character). During that window the
+   * tag is pending, whitespace-only markdown is dropped, and the bubble is
+   * empty — then turn completion clears the live-status line and the reply
+   * appears to vanish.
+   */
+  const parsed = useMemo(
+    () => parseSpecialTags(displayContent, isStreaming),
+    [displayContent, isStreaming]
+  )
+  const groups = useMemo(
+    () => groupChatContentSegments(parsed.segments),
+    [parsed.segments]
+  )
+  const lastInlineIndex = lastInlineGroupIndex(groups)
+  const markdownToReveal =
+    lastInlineIndex >= 0 && groups[lastInlineIndex]?.kind === 'inline'
+      ? groups[lastInlineIndex].markdown
+      : ''
+  const streamedMarkdown = useSmoothText(markdownToReveal, isStreaming)
+  const hasRevealBacklog = streamedMarkdown.length < markdownToReveal.length
   const isRevealing = isStreaming || hasRevealBacklog
 
   useEffect(() => {
@@ -544,7 +524,7 @@ function ChatContentInner({
    * `animated` — a fresh animate plugin has no prev-content tracking and would
    * re-fade the entire visible segment.
    */
-  if (!fadeCutoff && streamedContent.length > FADE_MAX_REVEALED_CHARS) setFadeCutoff(true)
+  if (!fadeCutoff && streamedMarkdown.length > FADE_MAX_REVEALED_CHARS) setFadeCutoff(true)
   const fadeActive = streamingTree && !fadeCutoff
 
   useEffect(() => {
@@ -561,66 +541,16 @@ function ChatContentInner({
     return () => window.removeEventListener('wsres-click', handler)
   }, [])
 
-  const parsed = useMemo(
-    () => parseSpecialTags(streamedContent, isRevealing),
-    [streamedContent, isRevealing]
-  )
-
   useEffect(() => {
     onStreamActivityChange?.(hasRevealBacklog)
     return () => onStreamActivityChange?.(false)
   }, [hasRevealBacklog, onStreamActivityChange])
 
-  const hasPendingTag = parsed.hasPendingTag && isRevealing
+  const hasPendingTag = parsed.hasPendingTag && isStreaming
   useEffect(() => {
     onPendingTagChange?.(hasPendingTag)
     return () => onPendingTagChange?.(false)
   }, [hasPendingTag, onPendingTagChange])
-
-  type BlockSegment = Exclude<
-    ContentSegment,
-    { type: 'text' } | { type: 'thinking' } | { type: 'workspace_resource' }
-  >
-  type RenderGroup =
-    | { kind: 'inline'; markdown: string }
-    | { kind: 'block'; segment: BlockSegment; index: number }
-
-  const groups: RenderGroup[] = []
-  let pendingMarkdown = ''
-
-  const flushMarkdown = () => {
-    if (pendingMarkdown.trim()) {
-      groups.push({ kind: 'inline', markdown: pendingMarkdown })
-    }
-    pendingMarkdown = ''
-  }
-
-  for (let i = 0; i < parsed.segments.length; i++) {
-    const s = parsed.segments[i]
-    const nextSegment = parsed.segments[i + 1]
-    if (s.type === 'workspace_resource') {
-      // Files are addressed by their encoded VFS path (copied verbatim from the tag);
-      // workflows/tables/KBs by id. The angle-bracket link destination keeps the path
-      // intact through markdown parsing (tolerates parens) without re-encoding it.
-      const ref = s.data.type === 'file' ? (s.data.path ?? s.data.id ?? '') : (s.data.id ?? '')
-      const label = s.data.title || ref
-      pendingMarkdown = appendInlineReferenceMarkdown(
-        pendingMarkdown,
-        `[${label}](<#wsres-${s.data.type}-${ref}>)`,
-        nextSegment
-      )
-    } else if (s.type === 'thinking') {
-      // Model-emitted <thinking> tag bodies are reasoning, not answer text —
-      // never rendered (matches the block-level thinking omission in
-      // message-content and the tag stripping in the inbox executor).
-    } else if (s.type === 'text') {
-      pendingMarkdown += s.content
-    } else {
-      flushMarkdown()
-      groups.push({ kind: 'block', segment: s, index: i })
-    }
-  }
-  flushMarkdown()
 
   /**
    * Plain text and special-tag content share ONE render structure. A message
@@ -649,7 +579,7 @@ function ChatContentInner({
                 isAnimating={streamingTree}
                 components={MARKDOWN_COMPONENTS}
               >
-                {group.markdown}
+                {i === lastInlineIndex ? streamedMarkdown : group.markdown}
               </Streamdown>
             </div>
           )
