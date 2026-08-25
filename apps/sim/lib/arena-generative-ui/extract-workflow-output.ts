@@ -412,6 +412,20 @@ function isShallowObjectStub(fields: ArenaGenerativeSchemaField[]): boolean {
   return fields.some((field) => field.type === 'object')
 }
 
+/**
+ * True when the deployed extract cannot name nested GUI-app paths: nothing
+ * declared, a wrapper object (`run_data`), or an array with no item columns.
+ * Last-successful-run schema is only used in those cases.
+ */
+export function declaredOutputSchemaNeedsLastRunFallback(
+  fields: ArenaGenerativeSchemaField[]
+): boolean {
+  if (fields.length === 0) return true
+  const hasNested = fields.some((field) => field.name.includes('.') || field.name.includes('['))
+  if (hasNested) return false
+  return fields.some((field) => field.type === 'object' || field.type === 'array')
+}
+
 function mergeStubResponseWithAgent(
   responseFields: ArenaGenerativeSchemaField[],
   agentFields: ArenaGenerativeSchemaField[]

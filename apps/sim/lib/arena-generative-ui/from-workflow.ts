@@ -12,7 +12,10 @@ import type {
 } from '@/lib/arena-generative-ui/types'
 import type { WorkflowInputField } from '@/lib/workflows/input-format'
 
-export { extractOutputSchemaFromBlocks } from '@/lib/arena-generative-ui/extract-workflow-output'
+export {
+  declaredOutputSchemaNeedsLastRunFallback,
+  extractOutputSchemaFromBlocks,
+} from '@/lib/arena-generative-ui/extract-workflow-output'
 
 /** Type a start-block field falls back to when it declares none. */
 const DEFAULT_INPUT_TYPE = 'string'
@@ -24,10 +27,13 @@ export interface WorkflowBindingSelection {
   /** Start-block fields of the **deployed** workflow, which is the version a CTA runs. */
   inputFields?: WorkflowInputField[]
   /**
-   * Declared output fields from a Response block or Agent `responseFormat`.
-   * Used when the user does not paste a sample. A pasted sample always wins.
+   * Declared output fields from a Response block, Agent `responseFormat`, or
+   * last successful run. Used when the user does not paste a sample. A pasted
+   * sample always wins.
    */
   outputFields?: ArenaGenerativeSchemaField[]
+  /** Last-run warnings when `outputFields` came from a completed execution. */
+  outputSchemaWarnings?: string[]
   /** JSON sample becomes outputSchema; streamed prose becomes outputHint. */
   outputSample?: string
   stream?: boolean
@@ -99,6 +105,9 @@ export function workflowBindingFromSelection(
     ...(inputSchema.length > 0 ? { inputSchema } : {}),
     ...(outputSchema && outputSchema.length > 0 ? { outputSchema } : {}),
     ...(fromSample ? { outputSchemaSource: 'sample' as const } : {}),
+    ...(!fromSample && (selection.outputSchemaWarnings?.length ?? 0) > 0
+      ? { outputSchemaWarnings: selection.outputSchemaWarnings }
+      : {}),
     ...(layout.outputHint ? { outputHint: layout.outputHint } : {}),
     ...(selection.stream ? { stream: true } : {}),
   }

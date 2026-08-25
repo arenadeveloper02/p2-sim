@@ -16,6 +16,9 @@ export function bindingsSummaryForPrompt(bindings: ArenaGenerativeApiBinding[]) 
       inputSchema: binding.inputSchema ?? [],
       outputSchema,
       ...(outputExample ? { outputExample } : {}),
+      ...(binding.outputSchemaWarnings && binding.outputSchemaWarnings.length > 0
+        ? { outputSchemaWarnings: binding.outputSchemaWarnings }
+        : {}),
       outputHint: binding.outputHint,
       stream: binding.stream === true,
       pagination: binding.pagination,

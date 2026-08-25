@@ -522,6 +522,21 @@ const workflowStatusResponseSchema = z.object({
   needsRedeployment: z.boolean(),
 })
 
+const lastSuccessfulOutputSchemaFieldSchema = z.object({
+  name: z.string().min(1, 'outputSchema field name cannot be empty').max(200),
+  type: z.string().min(1).max(32),
+})
+
+const lastSuccessfulWorkflowOutputSchemaResponseSchema = z.object({
+  outputSchema: z.array(lastSuccessfulOutputSchemaFieldSchema).max(40),
+  warnings: z.array(z.string().min(1).max(400)).max(4),
+  found: z.boolean(),
+})
+
+export type LastSuccessfulWorkflowOutputSchema = z.output<
+  typeof lastSuccessfulWorkflowOutputSchemaResponseSchema
+>
+
 const workflowAutoLayoutResponseSchema = z.object({
   success: z.literal(true),
   message: z.string(),
@@ -826,6 +841,16 @@ export const getWorkflowStatusContract = defineRouteContract({
   response: {
     mode: 'json',
     schema: workflowStatusResponseSchema,
+  },
+})
+
+export const getLastSuccessfulWorkflowOutputSchemaContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/workflows/[id]/last-successful-output-schema',
+  params: workflowIdParamsSchema,
+  response: {
+    mode: 'json',
+    schema: lastSuccessfulWorkflowOutputSchemaResponseSchema,
   },
 })
 

@@ -2,7 +2,10 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { extractOutputSchemaFromBlocks } from '@/lib/arena-generative-ui/extract-workflow-output'
+import {
+  declaredOutputSchemaNeedsLastRunFallback,
+  extractOutputSchemaFromBlocks,
+} from '@/lib/arena-generative-ui/extract-workflow-output'
 
 describe('extractOutputSchemaFromBlocks', () => {
   it('returns nothing when there are no blocks', () => {
@@ -318,5 +321,29 @@ describe('extractOutputSchemaFromBlocks', () => {
     }).map((field) => field.name)
 
     expect(names).toEqual(['run_data', 'run_data.history', 'run_data.history[]'])
+  })
+})
+
+describe('declaredOutputSchemaNeedsLastRunFallback', () => {
+  it('falls back when nothing is declared, or only a wrapper object/array', () => {
+    expect(declaredOutputSchemaNeedsLastRunFallback([])).toBe(true)
+    expect(declaredOutputSchemaNeedsLastRunFallback([{ name: 'run_data', type: 'object' }])).toBe(
+      true
+    )
+    expect(declaredOutputSchemaNeedsLastRunFallback([{ name: 'history', type: 'array' }])).toBe(
+      true
+    )
+  })
+
+  it('does not fall back when nested paths or scalar fields are declared', () => {
+    expect(
+      declaredOutputSchemaNeedsLastRunFallback([
+        { name: 'run_data', type: 'object' },
+        { name: 'run_data.history', type: 'array' },
+      ])
+    ).toBe(false)
+    expect(declaredOutputSchemaNeedsLastRunFallback([{ name: 'score', type: 'number' }])).toBe(
+      false
+    )
   })
 })

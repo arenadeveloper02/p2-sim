@@ -316,6 +316,21 @@ function schemaFields(
 }
 
 const TOP_LEVEL_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/
+const OUTPUT_SCHEMA_WARNING_MAX_LENGTH = 400
+const OUTPUT_SCHEMA_WARNING_MAX_COUNT = 4
+
+function warningStrings(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const warnings: string[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'string') continue
+    const trimmed = entry.trim()
+    if (!trimmed) continue
+    warnings.push(truncate(trimmed, OUTPUT_SCHEMA_WARNING_MAX_LENGTH))
+    if (warnings.length >= OUTPUT_SCHEMA_WARNING_MAX_COUNT) break
+  }
+  return warnings.length > 0 ? warnings : undefined
+}
 
 function optionalParamName(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined
@@ -443,6 +458,10 @@ export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
     }
     if (record.outputSchemaSource === 'sample' && (binding.outputSchema?.length ?? 0) > 0) {
       binding.outputSchemaSource = 'sample'
+    }
+    const outputSchemaWarnings = warningStrings(record.outputSchemaWarnings)
+    if (outputSchemaWarnings && (binding.outputSchema?.length ?? 0) > 0) {
+      binding.outputSchemaWarnings = outputSchemaWarnings
     }
     if (typeof record.outputHint === 'string' && record.outputHint.trim()) {
       binding.outputHint = truncate(record.outputHint.trim(), OUTPUT_HINT_MAX_LENGTH)

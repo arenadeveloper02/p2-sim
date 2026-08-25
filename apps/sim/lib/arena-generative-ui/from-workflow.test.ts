@@ -113,6 +113,27 @@ describe('workflowBindingFromSelection', () => {
     expect(binding.outputSchemaSource).toBeUndefined()
   })
 
+  it('keeps last-run warnings unless a sample overrides the schema', () => {
+    const warnings = ['Schema is from a run of an older deployment.']
+    const fromRun = workflowBindingFromSelection({
+      key: 'run',
+      workflowId: 'wf-1',
+      outputFields: [{ name: 'run_data.history', type: 'array' }],
+      outputSchemaWarnings: warnings,
+    })
+    const fromSample = workflowBindingFromSelection({
+      key: 'run',
+      workflowId: 'wf-1',
+      outputFields: [{ name: 'run_data.history', type: 'array' }],
+      outputSchemaWarnings: warnings,
+      outputSample: '{"score": 91}',
+    })
+
+    expect(fromRun.outputSchemaWarnings).toEqual(warnings)
+    expect(fromSample.outputSchemaWarnings).toBeUndefined()
+    expect(fromSample.outputSchemaSource).toBe('sample')
+  })
+
   it('lets a pasted sample override the declared output fields', () => {
     const binding = workflowBindingFromSelection({
       key: 'run',

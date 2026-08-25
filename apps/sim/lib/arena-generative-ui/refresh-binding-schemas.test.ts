@@ -3,12 +3,17 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockLoadDeployedWorkflowState } = vi.hoisted(() => ({
+const { mockLoadDeployedWorkflowState, mockLoadLastSuccessfulRunOutputSchema } = vi.hoisted(() => ({
   mockLoadDeployedWorkflowState: vi.fn(),
+  mockLoadLastSuccessfulRunOutputSchema: vi.fn(),
 }))
 
 vi.mock('@/lib/workflows/persistence/utils', () => ({
   loadDeployedWorkflowState: mockLoadDeployedWorkflowState,
+}))
+
+vi.mock('@/lib/arena-generative-ui/last-run-output-schema', () => ({
+  loadLastSuccessfulRunOutputSchema: mockLoadLastSuccessfulRunOutputSchema,
 }))
 
 import { refreshWorkflowBindingOutputSchemas } from '@/lib/arena-generative-ui/refresh-binding-schemas'
@@ -35,6 +40,11 @@ function workflowBinding(
 describe('refreshWorkflowBindingOutputSchemas', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockLoadLastSuccessfulRunOutputSchema.mockResolvedValue({
+      fields: [],
+      warnings: [],
+      found: false,
+    })
   })
 
   it('replaces a stale outputSchema with the deployed Response fields', async () => {
@@ -71,6 +81,7 @@ describe('refreshWorkflowBindingOutputSchemas', () => {
 
     expect(refreshed[0]?.outputSchema).toEqual(HISTORY_FIELDS)
     expect(mockLoadDeployedWorkflowState).toHaveBeenCalledWith('wf-history')
+    expect(mockLoadLastSuccessfulRunOutputSchema).not.toHaveBeenCalled()
   })
 
   it('keeps a pasted schema when the deployed workflow declares nothing', async () => {
@@ -129,7 +140,10 @@ describe('refreshWorkflowBindingOutputSchemas', () => {
 
     const refreshed = await refreshWorkflowBindingOutputSchemas([
       workflowBinding({ outputSchema: pasted, outputSchemaSource: 'sample' }),
-      workflowBinding({ key: 'run_history_again', outputSchema: [{ name: 'history', type: 'array' }] }),
+      workflowBinding({
+        key: 'run_history_again',
+        outputSchema: [{ name: 'history', type: 'array' }],
+      }),
     ])
 
     expect(refreshed[0]?.outputSchema).toEqual(pasted)
@@ -177,5 +191,105 @@ describe('refreshWorkflowBindingOutputSchemas', () => {
       [{ name: 'items', type: 'array' }],
       [{ name: 'items', type: 'array' }],
     ])
+  })
+
+  it('fills a stub Response from the last successful run and keeps warnings', async () => {
+    mockLoadDeployedWorkflowState.mockResolvedValue({
+      deploymentVersionId: 'deploy-current',
+      blocks: {
+        respond: {
+          type: 'response',
+          subBlocks: {
+            builderData: { value: [{ name: 'run_data', type: 'object' }] },
+          },
+        },
+      },
+    })
+    const lastRunFields = [
+      { name: 'run_data', type: 'object' },
+      { name: 'run_data.history', type: 'array' },
+      { name: 'run_data.history[].input.keyword', type: 'string' },
+    ]
+    mockLoadLastSuccessfulRunOutputSchema.mockResolvedValue({
+      fields: lastRunFields,
+      warnings: ['Schema is from a run of an older deployment.'],
+      found: true,
+    })
+
+    const refreshed = await refreshWorkflowBindingOutputSchemas([
+      workflowBinding({
+        outputSchema: [{ name: 'run_data', type: 'object' }],
+        outputSchemaWarnings: ['stale leftover'],
+      }),
+    ])
+
+    expect(refreshed[0]?.outputSchema).toEqual(lastRunFields)
+    expect(refreshed[0]?.outputSchemaWarnings).toEqual([
+      'Schema is from a run of an older deployment.',
+    ])
+    expect(mockLoadLastSuccessfulRunOutputSchema).toHaveBeenCalledWith('wf-history', {
+      activeDeploymentVersionId: 'deploy-current',
+    })
+  })
+
+  it('clears last-run warnings when the deployed schema is nested', async () => {
+    mockLoadDeployedWorkflowState.mockResolvedValue({
+      deploymentVersionId: 'deploy-current',
+      blocks: {
+        respond: {
+          type: 'response',
+          subBlocks: {
+            builderData: {
+              value: [
+                {
+                  name: 'items',
+                  type: 'array',
+                  value: [
+                    {
+                      type: 'object',
+                      value: [
+                        { name: 'keyword', type: 'string', value: '' },
+                        { name: 'client', type: 'string', value: '' },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    const refreshed = await refreshWorkflowBindingOutputSchemas([
+      workflowBinding({
+        outputSchema: [{ name: 'run_data', type: 'object' }],
+        outputSchemaWarnings: ['Schema is from a run of an older deployment.'],
+      }),
+    ])
+
+    expect(refreshed[0]?.outputSchema).toEqual(HISTORY_FIELDS)
+    expect(refreshed[0]?.outputSchemaWarnings).toBeUndefined()
+    expect(mockLoadLastSuccessfulRunOutputSchema).not.toHaveBeenCalled()
+  })
+
+  it('uses the last successful run when the workflow is not deployed', async () => {
+    mockLoadDeployedWorkflowState.mockRejectedValue(new Error('no active deployment'))
+    const lastRunFields = [
+      { name: 'run_data', type: 'object' },
+      { name: 'run_data.history', type: 'array' },
+    ]
+    mockLoadLastSuccessfulRunOutputSchema.mockResolvedValue({
+      fields: lastRunFields,
+      warnings: [],
+      found: true,
+    })
+
+    const refreshed = await refreshWorkflowBindingOutputSchemas([workflowBinding()])
+
+    expect(refreshed[0]?.outputSchema).toEqual(lastRunFields)
+    expect(mockLoadLastSuccessfulRunOutputSchema).toHaveBeenCalledWith('wf-history', {
+      activeDeploymentVersionId: null,
+    })
   })
 })

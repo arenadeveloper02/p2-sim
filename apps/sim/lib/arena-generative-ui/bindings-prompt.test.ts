@@ -69,4 +69,20 @@ describe('bindingsSummaryForPrompt', () => {
       { name: 'email', type: 'string', source: 'visitorEmail' },
     ])
   })
+
+  it('forwards last-run outputSchemaWarnings to the generator', () => {
+    const summary = bindingsSummaryForPrompt([
+      {
+        key: 'run_history',
+        label: 'Run history',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        outputSchema: [{ name: 'run_data.history', type: 'array' }],
+        outputSchemaWarnings: ['Schema is from a run of an older deployment.'],
+      },
+    ])
+    expect(summary[0]?.outputSchemaWarnings).toEqual([
+      'Schema is from a run of an older deployment.',
+    ])
+  })
 })

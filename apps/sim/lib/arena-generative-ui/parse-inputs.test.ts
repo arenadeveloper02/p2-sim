@@ -195,6 +195,19 @@ describe('parseApiBindings', () => {
     expect(notSample.outputSchemaSource).toBeUndefined()
   })
 
+  it('round-trips last-run outputSchemaWarnings', () => {
+    const [binding] = parseApiBindings([
+      {
+        key: 'run_history',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        outputSchema: [{ name: 'run_data.history', type: 'array' }],
+        outputSchemaWarnings: ['Schema is from a run of an older deployment.'],
+      },
+    ])
+    expect(binding.outputSchemaWarnings).toEqual(['Schema is from a run of an older deployment.'])
+  })
+
   it('defaults a missing schema field type to string and drops nameless entries', () => {
     const [binding] = parseApiBindings([
       {

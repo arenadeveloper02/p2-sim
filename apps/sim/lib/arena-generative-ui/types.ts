@@ -91,9 +91,14 @@ export interface ArenaGenerativeApiBinding {
   /**
    * `sample` means Output schema came from Sample response. Generate/edit keep
    * those fields instead of replacing them with the deployed Response snapshot.
-   * Omit when the schema was inferred from the workflow.
+   * Omit when the schema was inferred from the workflow or last successful run.
    */
   outputSchemaSource?: 'sample'
+  /**
+   * Warn-only notes when outputSchema came from a last successful run that may
+   * not match the current deploy (stale version, truncated log, empty list).
+   */
+  outputSchemaWarnings?: string[]
   /**
    * Truncated example of a streamed prose body. Prompt-only — the runner never
    * sends this upstream. Used when stream is true and Output format is not JSON.

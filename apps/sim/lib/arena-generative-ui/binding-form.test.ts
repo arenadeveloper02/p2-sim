@@ -128,6 +128,25 @@ describe('applyUnchangedOutputLayout', () => {
     })
   })
 
+  it('drops last-run warnings when keeping a pasted Sample on edit', () => {
+    const next: ArenaGenerativeApiBinding = {
+      key: 'run_history',
+      label: 'vij- Run history',
+      kind: 'workflow',
+      workflowId: 'wf-history',
+      outputSchema: [{ name: 'run_data', type: 'object' }],
+      outputSchemaWarnings: ['Schema is from a run of an older deployment.'],
+    }
+    expect(applyUnchangedOutputLayout(next, history, '')).toEqual({
+      key: 'run_history',
+      label: 'vij- Run history',
+      kind: 'workflow',
+      workflowId: 'wf-history',
+      outputSchema: history.outputSchema,
+      outputSchemaSource: 'sample',
+    })
+  })
+
   it('uses the newly pasted sample instead of the saved layout', () => {
     const next: ArenaGenerativeApiBinding = {
       key: 'run_history',

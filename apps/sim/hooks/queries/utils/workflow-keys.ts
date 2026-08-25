@@ -10,4 +10,7 @@ export const workflowKeys = {
     [...workflowKeys.deploymentVersions(), workflowId ?? '', version ?? 0] as const,
   states: () => [...workflowKeys.all, 'state'] as const,
   state: (workflowId: string | undefined) => [...workflowKeys.states(), workflowId ?? ''] as const,
+  lastSuccessfulOutputSchemas: () => [...workflowKeys.all, 'lastSuccessfulOutputSchema'] as const,
+  lastSuccessfulOutputSchema: (workflowId: string | undefined) =>
+    [...workflowKeys.lastSuccessfulOutputSchemas(), workflowId ?? ''] as const,
 }

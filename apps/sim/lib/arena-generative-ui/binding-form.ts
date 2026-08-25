@@ -126,8 +126,9 @@ export function applyUnchangedOutputLayout(
       ? previous.outputSchema
       : next.outputSchema
   const outputHint = previous.outputHint ?? next.outputHint
+  const { outputSchemaWarnings: _dropped, ...rest } = next
   return {
-    ...next,
+    ...rest,
     ...(outputSchema && outputSchema.length > 0 ? { outputSchema } : {}),
     outputSchemaSource: 'sample',
     ...(outputHint ? { outputHint } : {}),

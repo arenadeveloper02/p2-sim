@@ -29,6 +29,7 @@ import {
   httpBindingFromCurl,
 } from '@/lib/arena-generative-ui/from-curl'
 import {
+  declaredOutputSchemaNeedsLastRunFallback,
   extractOutputSchemaFromBlocks,
   inputSchemaFromWorkflowFields,
   workflowBindingFromSelection,
@@ -52,6 +53,7 @@ import type {
 import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
 import { useSubBlockValue } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/hooks/use-sub-block-value'
 import { useDeployedWorkflowState } from '@/hooks/queries/deployments'
+import { useLastSuccessfulWorkflowOutputSchema } from '@/hooks/queries/workflow-last-run-output-schema'
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { useAvailableEnvVarKeys } from '@/hooks/use-available-env-vars'
 
@@ -297,9 +299,25 @@ export function ArenaApiBindingImportHelper({
     Boolean(
       editingBinding && !outputSample.trim() && editingBinding.outputSchemaSource === 'sample'
     )
+  const lastRunEnabled =
+    open &&
+    source === 'workflow' &&
+    Boolean(workflowId) &&
+    !outputSchemaFromPaste &&
+    declaredOutputSchemaNeedsLastRunFallback(outputFields)
+  const lastRunQuery = useLastSuccessfulWorkflowOutputSchema(workflowId || undefined, {
+    enabled: lastRunEnabled,
+  })
+  const lastRunFields = lastRunQuery.data?.outputSchema ?? []
+  const liveFields = lastRunEnabled && lastRunFields.length > 0 ? lastRunFields : outputFields
+  const schemaWarnings =
+    lastRunEnabled && (lastRunFields.length > 0 || lastRunQuery.data?.found === true)
+      ? (lastRunQuery.data?.warnings ?? [])
+      : []
+  const lastRunLoading = lastRunEnabled && lastRunQuery.isFetching
   const displayedOutputSchema = displayedBindingOutputSchema({
     sampleFields: sampleOutput.fields,
-    liveFields: outputFields,
+    liveFields,
     savedSchema: editingBinding?.outputSchema,
     savedFromSample: outputSchemaFromPaste && sampleOutput.fields.length === 0,
   })
@@ -404,7 +422,8 @@ export function ArenaApiBindingImportHelper({
               workflowId,
               label: selectedWorkflow?.name ?? editingBinding?.label,
               inputFields,
-              outputFields,
+              outputFields: liveFields,
+              outputSchemaWarnings: schemaWarnings,
               outputSample,
               stream: streamMode === 'on',
             })
@@ -501,6 +520,11 @@ export function ArenaApiBindingImportHelper({
                   {binding.key} output schema
                 </p>
                 <SchemaFieldTags fields={binding.outputSchema} />
+                {binding.outputSchemaWarnings?.map((warning) => (
+                  <p key={warning} className='text-[var(--text-secondary)] text-caption'>
+                    {warning}
+                  </p>
+                ))}
               </div>
             ) : null
           )}
@@ -714,7 +738,7 @@ export function ArenaApiBindingImportHelper({
             hint={sampleResponseHint(
               source,
               workflowId,
-              outputFields.length > 0,
+              liveFields.length > 0,
               streamMode === 'on'
             )}
             error={sampleOutput.error}
@@ -734,24 +758,46 @@ export function ArenaApiBindingImportHelper({
                   ? sampleOutput.fields.length > 0
                     ? 'Derived from the JSON you pasted. Wrappers like ok and data are ignored. Generate and edit keep this instead of the deployed workflow schema.'
                     : 'Saved from the JSON you pasted earlier. Leave Sample blank to keep it, or paste a new body to replace it.'
-                  : deployedLoading
-                    ? 'Fetched from the deployed Response block or Agent structured output.'
-                    : displayedOutputSchema.length > 0
-                      ? 'Fetched from the deployed Response block or Agent structured output. Generate and edit re-read this so a new deploy is picked up without saving again.'
-                      : 'Paste a sample JSON above. The tags here should list collection paths such as run_data.history after a successful paste.'
+                  : deployedLoading || lastRunLoading
+                    ? lastRunLoading
+                      ? 'The deployed Response only names a wrapper. Reading the last successful run…'
+                      : 'Fetched from the deployed Response block or Agent structured output.'
+                    : lastRunEnabled && lastRunFields.length > 0
+                      ? 'From the last successful run because the deployed Response does not declare nested fields. Generate and edit re-read this. Field names and types only — run values are discarded.'
+                      : displayedOutputSchema.length > 0
+                        ? 'Fetched from the deployed Response block or Agent structured output. Generate and edit re-read this so a new deploy is picked up without saving again.'
+                        : 'Paste a sample JSON above. The tags here should list collection paths such as run_data.history after a successful paste.'
               }
             >
-              {deployedLoading && !outputSchemaFromPaste ? (
+              {deployedLoading && !outputSchemaFromPaste && !lastRunLoading ? (
                 <p className='text-[var(--text-secondary)] text-caption'>
                   Reading the deployed workflow…
                 </p>
-              ) : displayedOutputSchema.length > 0 ? (
-                <SchemaFieldTags fields={displayedOutputSchema} />
-              ) : (
+              ) : lastRunLoading && !outputSchemaFromPaste ? (
                 <p className='text-[var(--text-secondary)] text-caption'>
-                  No output schema yet. Paste the network JSON in Sample response — you should see
-                  history, keyword, and client as tags.
+                  Reading the last successful run…
                 </p>
+              ) : displayedOutputSchema.length > 0 ? (
+                <div className='flex flex-col gap-1'>
+                  <SchemaFieldTags fields={displayedOutputSchema} />
+                  {schemaWarnings.map((warning) => (
+                    <p key={warning} className='text-[var(--text-secondary)] text-caption'>
+                      {warning}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <div className='flex flex-col gap-1'>
+                  <p className='text-[var(--text-secondary)] text-caption'>
+                    No output schema yet. Paste the network JSON in Sample response — you should see
+                    history, keyword, and client as tags.
+                  </p>
+                  {schemaWarnings.map((warning) => (
+                    <p key={warning} className='text-[var(--text-secondary)] text-caption'>
+                      {warning}
+                    </p>
+                  ))}
+                </div>
               )}
             </ChipModalField>
           ) : null}
