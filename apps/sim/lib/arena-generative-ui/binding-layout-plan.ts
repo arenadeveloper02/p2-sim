@@ -1,5 +1,11 @@
 import { outputSchemaRootName } from '@/lib/arena-generative-ui/output-schema'
-import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
+import {
+  type ArenaGenerativeApiBinding,
+  actionStateFromData,
+  parseJsonLiteral,
+} from '@/lib/arena-generative-ui/types'
+
+const DISPLAY_ENVELOPE_KEYS = new Set(['assistantContent', 'output', 'text', 'message', 'body'])
 
 const PROSE_ITEM_FIELDS = new Set([
   'output',
@@ -127,6 +133,75 @@ export function layoutPlansFromBindings(
   bindings: ArenaGenerativeApiBinding[]
 ): BindingLayoutPlan[] {
   return bindings.map((binding) => layoutPlanForBinding(binding))
+}
+
+/**
+ * True when the binding declared structured output (collections, metrics,
+ * records, or top-level string fields). Missing schema stays on the heuristic
+ * merge so gold examples and unspecialized drafts keep working.
+ */
+export function planHasStructuredSchema(plan: BindingLayoutPlan): boolean {
+  return (
+    plan.collections.length > 0 ||
+    plan.metricPaths.length > 0 ||
+    plan.recordKeys.length > 0 ||
+    plan.stringFieldNames.length > 0
+  )
+}
+
+/**
+ * Host state from a CTA payload. Structured bindings emit lifted plan keys
+ * (`history`) and drop wrappers (`run_data`); bindings without schema keep
+ * {@link actionStateFromData}.
+ */
+export function actionStateFromPlan(
+  data: unknown,
+  plan?: BindingLayoutPlan
+): Record<string, unknown> {
+  const heuristic = actionStateFromData(data)
+  if (!plan || !planHasStructuredSchema(plan)) {
+    return heuristic
+  }
+
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(heuristic)) {
+    if (omitFromPlanState(plan, key)) continue
+    next[key] = value
+  }
+  for (const key of [...plan.hostKeys, ...plan.aliasKeys]) {
+    if (key === 'content') continue
+    if (heuristic[key] !== undefined) {
+      next[key] = heuristic[key]
+    }
+  }
+  return next
+}
+
+/**
+ * Overlay `content` for DataText only when the display string is real prose
+ * (or a stream). Structured JSON dumps stay off `content` so Repeat/Table
+ * pages do not flash a stringified envelope.
+ */
+export function shouldBindActionContent(
+  plan: BindingLayoutPlan,
+  display: string,
+  streamed: string
+): boolean {
+  if (!display) return false
+  if (streamed.trim()) return true
+  if (!planHasStructuredSchema(plan)) return true
+  return parseJsonLiteral(display) === undefined
+}
+
+function omitFromPlanState(plan: BindingLayoutPlan, key: string): boolean {
+  if (plan.collections.some((collection) => collection.wrapperKeys.includes(key))) {
+    return true
+  }
+  if (plan.recordKeys.includes(key) || plan.stringFieldNames.includes(key)) {
+    return false
+  }
+  if (key === 'content') return true
+  return DISPLAY_ENVELOPE_KEYS.has(key) && plan.collections.length > 0
 }
 
 /**

@@ -250,6 +250,8 @@ describe('runDeployedAppAction', () => {
     expect(result.ok).toBe(true)
     expect(result.schemaWarning).toBeUndefined()
     expect(result.setState?.items).toEqual(items)
+    expect(result.setState).not.toHaveProperty('assistantContent')
+    expect(String(result.setState?.content ?? '')).not.toContain('Dental implants')
   })
 
   it('lifts Response run_data.history into setState.history for the History page', async () => {
@@ -301,6 +303,8 @@ describe('runDeployedAppAction', () => {
         }),
       ])
     )
+    expect(result.setState).not.toHaveProperty('run_data')
+    expect(String(result.setState?.content ?? '')).not.toContain('run_data')
   })
 
   it('proxies allowlisted HTTP and injects secret headers', async () => {

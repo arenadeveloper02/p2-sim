@@ -3,8 +3,10 @@ export type {
   BindingLayoutPlan,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 export {
+  actionStateFromPlan,
   layoutPlanForBinding,
   layoutPlansFromBindings,
+  planHasStructuredSchema,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 export {
   ARENA_GENERATIVE_UI_OUTPUT_RULES,
@@ -66,5 +68,8 @@ export {
   isJsonRenderSpec,
   isReservedGenerativeAppIdentifier,
 } from '@/lib/arena-generative-ui/types'
-export { compileGenerativeUx } from '@/lib/arena-generative-ui/ux-compiler'
+export {
+  compiledPageFromManifest,
+  compileGenerativeUx,
+} from '@/lib/arena-generative-ui/ux-compiler'
 export { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/validate-manifest'

@@ -5,6 +5,7 @@ import {
   authorizeDeployedAppRequest,
   findDeployedAppByIdentifier,
 } from '@/lib/arena-generative-ui/deployment'
+import { compiledPageFromManifest } from '@/lib/arena-generative-ui/ux-compiler'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
@@ -24,7 +25,11 @@ export const GET = withRouteHandler(
     const authorized = await authorizeDeployedAppRequest({ request, deployment })
     if (!authorized.ok) return authorized.response
 
-    const page = deployment.manifest.pages[parsed.data.params.path]
+    const page = compiledPageFromManifest(
+      deployment.manifest,
+      deployment.apiBindings,
+      parsed.data.params.path
+    )
     if (!page) {
       return createErrorResponse('Page not found', 404)
     }

@@ -7,6 +7,11 @@ import { generateId } from '@sim/utils/id'
 import { backoffWithJitter, parseRetryAfter } from '@sim/utils/retry'
 import { truncate } from '@sim/utils/string'
 import { eq } from 'drizzle-orm'
+import {
+  actionStateFromPlan,
+  layoutPlanForBinding,
+  shouldBindActionContent,
+} from '@/lib/arena-generative-ui/binding-layout-plan'
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
 import { isHttpUrlAllowlisted } from '@/lib/arena-generative-ui/http-allowlist'
 import { applyBindingInputSources } from '@/lib/arena-generative-ui/input-schema'
@@ -22,7 +27,6 @@ import {
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
   type ArenaGenerativeHttpBinding,
-  actionStateFromData,
   displayTextFromActionData,
   streamingActionIdsFrom,
   unwrapResponseBlockEnvelope,
@@ -868,7 +872,8 @@ export async function runGenerativeAppAction(
   }
 
   const payload = unwrapResponseBlockEnvelope(result.data)
-  const fromData = actionStateFromData(payload)
+  const plan = layoutPlanForBinding(binding)
+  const fromData = actionStateFromPlan(payload, plan)
   const paginationPatch = binding.pagination
     ? paginationStateFromData(binding.pagination, payload, mappedInput)
     : {}
@@ -877,7 +882,9 @@ export async function runGenerativeAppAction(
     ...(action.onSuccess?.setState ?? {}),
     ...fromData,
     ...paginationPatch,
-    ...(display ? { content: display } : {}),
+    ...(display && shouldBindActionContent(plan, display, streamedContent)
+      ? { content: display }
+      : {}),
   }
   const schemaWarning = outputSchemaWarning(binding.outputSchema, setState)
   if (schemaWarning) {

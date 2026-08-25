@@ -10,6 +10,7 @@ import {
 } from '@/lib/arena-generative-ui/two-page-app.fixture'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 import {
+  compiledPageFromManifest,
   compileGenerativeUx,
   inferAsyncKind,
   specHasLoadingSurface,
@@ -250,5 +251,69 @@ describe('compileGenerativeUx', () => {
     )
     expect(types).not.toContain('ProgressSteps')
     expect(types).toContain('Spinner')
+  })
+})
+
+describe('compiledPageFromManifest', () => {
+  it('returns undefined for an unknown path', () => {
+    expect(compiledPageFromManifest(twoPageManifest, twoPageApiBindings, 'missing')).toBeUndefined()
+  })
+
+  it('relocates navigate-first ProgressSteps onto the destination page', () => {
+    const homeWithSteps: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Form' }, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { padding: null, backgroundColor: null, maxWidth: null },
+          children: ['form', 'steps'],
+        },
+        form: { type: 'Form', props: { actionId: 'submit_lead' }, children: ['submit'] },
+        submit: {
+          type: 'SubmitButton',
+          props: { label: 'Submit', actionId: null, size: null, variant: null, shape: null },
+          children: [],
+        },
+        steps: {
+          type: 'ProgressSteps',
+          props: { steps: 'Connecting\nScoring' },
+          children: [],
+        },
+      },
+    }
+    const resultsBare: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Results' }, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { padding: null, backgroundColor: null, maxWidth: null },
+          children: ['heading'],
+        },
+        heading: { type: 'Heading', props: { text: 'Score', level: 'h2' }, children: [] },
+      },
+    }
+    const manifest: ArenaGenerativeAppManifest = {
+      entryPath: 'home',
+      pages: {
+        home: { title: 'Form', path: 'home', spec: homeWithSteps },
+        results: { title: 'Score', path: 'results', spec: resultsBare },
+      },
+      actions: {
+        submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+      },
+    }
+
+    const home = compiledPageFromManifest(manifest, twoPageApiBindings, 'home')
+    const results = compiledPageFromManifest(manifest, twoPageApiBindings, 'results')
+    const homeTypes = Object.values(home?.spec.elements ?? {}).map(
+      (element) => (element as { type?: string }).type
+    )
+    const resultsTypes = Object.values(results?.spec.elements ?? {}).map(
+      (element) => (element as { type?: string }).type
+    )
+    expect(homeTypes).not.toContain('ProgressSteps')
+    expect(resultsTypes).toContain('ProgressSteps')
   })
 })

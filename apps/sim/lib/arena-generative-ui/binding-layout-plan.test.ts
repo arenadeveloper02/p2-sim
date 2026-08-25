@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  actionStateFromPlan,
   layoutPlanForBinding,
   resultLayoutFromPlan,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
@@ -137,5 +138,83 @@ describe('layoutPlanForBinding', () => {
     )
 
     expect(plan.aliasKeys).toEqual(expect.arrayContaining(['items', 'hasMore', 'nextCursor']))
+  })
+})
+
+describe('actionStateFromPlan', () => {
+  it('falls back to the heuristic merge when the binding has no outputSchema', () => {
+    const payload = { data: { run_data: { history: [{ id: 'h1' }] } } }
+    const state = actionStateFromPlan(payload, layoutPlanForBinding(workflowBinding()))
+    expect(state.history).toEqual([{ id: 'h1' }])
+    expect(state.run_data).toEqual({ history: [{ id: 'h1' }] })
+  })
+
+  it('emits lifted history and items without the run_data wrapper', () => {
+    const history = [
+      {
+        id: 'h1',
+        input: { keyword: 'Dental Implants', client: 'Gentle Dental' },
+        output: '',
+        createdAt: '2026-08-24T06:28:56.717Z',
+      },
+    ]
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        outputSchema: [
+          { name: 'run_data', type: 'object' },
+          { name: 'run_data.history', type: 'array' },
+        ],
+      })
+    )
+    const state = actionStateFromPlan({ data: { run_data: { history } } }, plan)
+    expect(state.history).toEqual([
+      expect.objectContaining({
+        keyword: 'Dental Implants',
+        client: 'Gentle Dental',
+        date: '2026-08-24T06:28:56.717Z',
+      }),
+    ])
+    expect(state.items).toBe(state.history)
+    expect(state).not.toHaveProperty('run_data')
+    expect(state).not.toHaveProperty('content')
+  })
+
+  it('keeps extra business keys that the schema did not list', () => {
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        outputSchema: [
+          { name: 'articles', type: 'array' },
+          { name: 'articles[].title', type: 'string' },
+        ],
+      })
+    )
+    const state = actionStateFromPlan({ articles: [{ title: 'One' }], count: 3 }, plan)
+    expect(state.articles).toEqual([{ title: 'One' }])
+    expect(state.count).toBe(3)
+  })
+
+  it('lifts items out of assistantContent JSON without keeping the dump', () => {
+    const items = [{ keyword: 'Dental implants' }]
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        outputSchema: [
+          { name: 'items', type: 'array' },
+          { name: 'items[].keyword', type: 'string' },
+        ],
+      })
+    )
+    const state = actionStateFromPlan(
+      {
+        assistantContent: JSON.stringify({ items }),
+        content: JSON.stringify({ items }),
+        model: 'gpt-5.4-mini',
+        tokens: { input: 10, output: 20, total: 30 },
+      },
+      plan
+    )
+    expect(state.items).toEqual(items)
+    expect(state).not.toHaveProperty('assistantContent')
+    expect(state).not.toHaveProperty('content')
+    expect(state).not.toHaveProperty('tokens')
   })
 })

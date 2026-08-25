@@ -383,3 +383,17 @@ export function compileGenerativeUx(
     },
   }
 }
+
+/**
+ * One compiled page from a stored (uncompiled) manifest. Preview compiles the
+ * full draft on the client; published apps compile here so loader relocation
+ * is not lost when the host only fetches one page.
+ */
+export function compiledPageFromManifest(
+  manifest: ArenaGenerativeAppManifest,
+  bindings: ArenaGenerativeApiBinding[],
+  path: string
+): ArenaGenerativePageManifest | undefined {
+  if (!manifest.pages[path]) return undefined
+  return compileGenerativeUx(manifest, bindings).pages[path]
+}
