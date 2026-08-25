@@ -38,7 +38,7 @@ Name pages, fields, and CTA keys. Vague briefs (“make a research tool”) prod
 
 `DataText` always stays markdown. A JSON blob in `content` is formatted text, not an invented table. Bind `Table` / `KeyValue` when Output schema chose those fields.
 
-Field names become `statePath` values as-is: `score`, `articles`, `articles[].title`. Nested arrays (`run_data.history`) bind as `history`, not `run_data.history`. Never `data.score` or `output.articles`.
+Field names become `statePath` values as-is: `score`, `articles`, `articles[].title`. Nested arrays (`run_data.history`) bind as `history`, not `run_data.history`. Never `data.score` or `output.articles`. Generate fails if the draft never binds those host keys (no Table for `articles`). A live response that is missing a field still succeeds and shows a warning.
 
 Turn **Response → Stream** on when the workflow or HTTP call streams tokens. Stream off waits for the full JSON body. A JSON-only API (score + reasons) is the same block setup with Stream off and a JSON sample.
 

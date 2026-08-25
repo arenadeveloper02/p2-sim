@@ -964,6 +964,74 @@ describe('validateArenaGenerativeManifest', () => {
       }
     }
 
+    const scoredBinding = {
+      key: 'qualify_lead',
+      label: 'Qualify',
+      kind: 'workflow' as const,
+      workflowId: 'wf-1',
+      outputSchema: [
+        { name: 'articles', type: 'array' },
+        { name: 'articles[].title', type: 'string' },
+        { name: 'score', type: 'number' },
+      ],
+    }
+
+    function resultsPlanSpec(): Spec {
+      return {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Results', backgroundColor: null },
+            children: ['back', 'score', 'table'],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              href: null,
+              navigateTo: 'home',
+              actionId: null,
+              backgroundColor: null,
+              color: null,
+            },
+            children: [],
+          },
+          score: {
+            type: 'Stat',
+            props: {
+              label: 'Score',
+              value: null,
+              statePath: 'score',
+              hint: null,
+              delta: null,
+              deltaTone: null,
+              size: null,
+            },
+            children: [],
+          },
+          table: {
+            type: 'Table',
+            props: { columns: 'title', rows: null, statePath: 'articles', emptyText: null },
+            children: [],
+          },
+        },
+      }
+    }
+
+    function scoredPages(results: Spec) {
+      return {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec: pageSpec() },
+          results: { title: 'Results', path: 'results', spec: results },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+        },
+      }
+    }
+
     function historyRepeat(
       statePath: string,
       extra?: Record<string, { type: string; props?: Record<string, unknown>; children?: string[] }>
@@ -1007,9 +1075,53 @@ describe('validateArenaGenerativeManifest', () => {
     })
 
     it('accepts Repeat bound to the lifted hostKey', () => {
-      const result = validateArenaGenerativeManifest(pagesWithHistory(historyRepeat('history')), {
-        apiBindings: [...bindings, historyBinding],
+      const result = validateArenaGenerativeManifest(
+        pagesWithHistory(
+          historyRepeat('history', {
+            body: {
+              type: 'DataText',
+              props: { statePath: 'content', fallback: '', color: null, size: null },
+              children: [],
+            },
+          })
+        ),
+        {
+          apiBindings: [...bindings, historyBinding],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
+    it('rejects a used binding whose layoutPlan hostKeys are never bound', () => {
+      const result = validateArenaGenerativeManifest(scoredPages(resultsSpec()), {
+        apiBindings: [scoredBinding],
         entryPath: 'home',
+      })
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('qualify_lead')
+      expect(result.error).toContain('articles')
+      expect(result.error).toContain('score')
+    })
+
+    it('accepts Table and Stat bound to the plan hostKeys', () => {
+      const result = validateArenaGenerativeManifest(scoredPages(resultsPlanSpec()), {
+        apiBindings: [scoredBinding],
+        entryPath: 'home',
+      })
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
+    it('still sees hostKeys bound on a page a scoped edit did not author', () => {
+      const result = validateArenaGenerativeManifest(scoredPages(resultsPlanSpec()), {
+        apiBindings: [scoredBinding],
+        entryPath: 'home',
+        authoredPagePaths: ['home'],
       })
 
       expect(result.error).toBeUndefined()

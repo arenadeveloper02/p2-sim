@@ -1,6 +1,7 @@
 /**
  * Per-catalog-type behavior defaults. The compiler and renderer read these;
- * the LLM does not emit them.
+ * the LLM does not emit them. API errors and retry are page-level host chrome
+ * (one banner), not per Table or Repeat.
  */
 export const UX_DEFAULTS = {
   Button: {
@@ -25,14 +26,10 @@ export const UX_DEFAULTS = {
   Table: {
     loadingState: 'skeleton' as const,
     emptyState: true,
-    errorState: true,
-    retry: true,
   },
   Repeat: {
     loadingState: 'skeleton' as const,
     emptyState: true,
-    errorState: true,
-    retry: true,
   },
   Stat: { loadingState: 'skeleton' as const },
   KeyValue: { loadingState: 'skeleton' as const, emptyState: true },

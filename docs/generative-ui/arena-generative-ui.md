@@ -194,7 +194,7 @@ The workflow list marks anything without an active deployment as *not deployed*.
 ]
 ```
 
-`inputSchema` is a hint for the generator (field names to collect and map). It is not a runtime validator.
+`inputSchema` is the generator's form contract **and** a runtime allowlist. Declared `form` fields must appear on the CTA; `visitorEmail` / `constant` never render. Extra submitted keys are dropped. Bindings with no `inputSchema` still pass the form payload through.
 
 ### HTTP secrets (`headersSecretName`)
 
@@ -214,11 +214,11 @@ Decrypt uses the **same** `ENCRYPTION_KEY` as encrypt. If `.env` has the example
 
 ### Output format (`outputSchema`)
 
-`outputSchema` tells the generator what the API returns so it can lay the result out as a `Table`, `Stat`, or `KeyValue` instead of dumping one blob of text. `inputSchema` is a generator hint only — **field descriptions from the workflow start block are kept** so form labels are not generic. The generator also sees a compact **synthetic** example object (`"score": 72`), never the pasted sample values.
+`outputSchema` tells the generator what the API returns so it can lay the result out as a `Table`, `Stat`, or `KeyValue` instead of dumping one blob of text. `inputSchema` names form fields (descriptions from the workflow start block are kept so labels are not generic) and is also the runtime allowlist for that CTA. The generator also sees a compact **synthetic** example object (`"score": 72`), never the pasted sample values.
 
 If a binding has neither `outputSchema` nor `outputHint`, results are treated as prose: bind `DataText` to `content` and do not invent Table columns. Paste an Output format sample when the results page should be a table or KPI grid.
 
-`outputSchema` is also a hint for layout, plus a **warn-only** runtime check: if a declared top-level name is missing from the live response, the host logs a warning and preview shows an amber banner. The CTA still succeeds — schema drift is diagnosable, not a hard failure.
+Generate and edit **fail** when a used binding's `layoutPlan.hostKeys` never appear as `statePath` (no Table for `articles`, no Stat for `score`). Live `outputSchema` drift stays **warn-only**: if a declared top-level name is missing from the response, the host logs a warning and preview shows an amber banner. The CTA still succeeds — schema drift is diagnosable, not a hard failure.
 
 The easiest way to fill it is the **Output format** field in **Add an API**: paste a sample response and Sim derives the field names and types in the browser. **Only names and types are saved** — the pasted values are discarded and never reach the database or the model, so a sample containing real data is safe. A paste also stores `outputSchemaSource: "sample"` so generate and edit keep those fields instead of replacing them with the deployed Response snapshot. Leave Sample empty to keep refreshing from the deploy.
 

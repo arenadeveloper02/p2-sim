@@ -3,6 +3,7 @@ import {
   type BindingLayoutCollection,
   type BindingLayoutPlan,
   HOST_RESERVED_STATE_ROOTS,
+  planHasStructuredSchema,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import { isFormFieldType } from '@/lib/arena-generative-ui/form-fields'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
@@ -17,6 +18,8 @@ const BOUND_RESULT_TYPES = new Set([
   'Sparkline',
   'ProgressBar',
 ])
+
+const ACTION_WIRE_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip'])
 
 const COLLECTION_TYPES = new Set(['Table', 'Repeat'])
 
@@ -38,7 +41,8 @@ interface LayoutCheckOptions {
 
 /**
  * Generate-time checks against BindingLayoutPlan. Unknown statePaths stay
- * allowed when no schema named them — that is still prompt-only.
+ * allowed when no schema named them. Structured plans must bind their
+ * required host keys; live response drift stays warn-only at runtime.
  */
 export function validateManifestBindingLayout(
   manifest: ArenaGenerativeAppManifest,
@@ -83,7 +87,7 @@ export function validateManifestBindingLayout(
     }
   }
 
-  return undefined
+  return unboundHostKeysError(manifest, plans)
 }
 
 function navigateFirstOnLoadError(
@@ -243,13 +247,107 @@ function collectionForStatePath(
   return undefined
 }
 
-function planHasStructuredSchema(plan: BindingLayoutPlan): boolean {
-  return (
-    plan.collections.length > 0 ||
-    plan.metricPaths.length > 0 ||
-    plan.recordKeys.length > 0 ||
-    plan.stringFieldNames.length > 0
-  )
+/**
+ * Generate/edit fail when a structured plan is in use but a required host key
+ * never appears as statePath. Runtime outputSchema drift stays warn-only.
+ */
+function unboundHostKeysError(
+  manifest: ArenaGenerativeAppManifest,
+  plans: BindingLayoutPlan[]
+): string | undefined {
+  const bound = collectBoundDisplayKeys(manifest)
+  const usedKeys = usedApiKeys(manifest)
+  for (const plan of plans) {
+    if (!planHasStructuredSchema(plan)) continue
+    if (!usedKeys.has(plan.key) && !planIdentityKeys(plan).some((key) => bound.has(key))) {
+      continue
+    }
+    const missing = missingRequiredHostKeys(plan, bound)
+    if (missing.length === 0) continue
+    const noun = missing.length === 1 ? 'host key' : 'host keys'
+    return `Binding "${plan.key}" never binds required ${noun}: ${missing.join(', ')}.`
+  }
+  return undefined
+}
+
+function collectBoundDisplayKeys(manifest: ArenaGenerativeAppManifest): Set<string> {
+  const bound = new Set<string>()
+  for (const page of Object.values(manifest.pages)) {
+    for (const element of Object.values(specElements(page.spec))) {
+      if (!BOUND_RESULT_TYPES.has(element.type ?? '')) continue
+      const statePath = asString(element.props?.statePath)
+      if (!statePath || statePath === 'item' || statePath.startsWith('item.')) continue
+      const root = statePath.split('.')[0] ?? ''
+      if (root === 'selected' || root === 'selectedId') {
+        bound.add('content')
+        continue
+      }
+      bound.add(statePath)
+      if (root) bound.add(root)
+    }
+  }
+  return bound
+}
+
+function usedApiKeys(manifest: ArenaGenerativeAppManifest): Set<string> {
+  const actionIds = new Set<string>()
+  for (const page of Object.values(manifest.pages)) {
+    for (const actionId of page.onLoad ?? []) {
+      if (actionId) actionIds.add(actionId)
+    }
+    for (const element of Object.values(specElements(page.spec))) {
+      if (!ACTION_WIRE_TYPES.has(element.type ?? '')) continue
+      const actionId = asString(element.props?.actionId)
+      if (actionId) actionIds.add(actionId)
+    }
+  }
+  const keys = new Set<string>()
+  for (const actionId of actionIds) {
+    const apiKey = manifest.actions[actionId]?.apiKey
+    if (apiKey) keys.add(apiKey)
+  }
+  return keys
+}
+
+function planIdentityKeys(plan: BindingLayoutPlan): string[] {
+  const keys = [
+    ...plan.collections.map((collection) => collection.hostKey),
+    ...plan.metricPaths,
+    ...plan.recordKeys,
+    ...plan.stringFieldNames,
+  ]
+  if (plan.aliasKeys.includes('items')) keys.push('items')
+  for (const path of plan.metricPaths) {
+    const root = path.split('.')[0]
+    if (root) keys.push(root)
+  }
+  return keys
+}
+
+function missingRequiredHostKeys(plan: BindingLayoutPlan, bound: Set<string>): string[] {
+  const missing: string[] = []
+  for (const collection of plan.collections) {
+    if (bound.has(collection.hostKey)) continue
+    if (plan.aliasKeys.includes('items') && bound.has('items')) continue
+    missing.push(collection.hostKey)
+  }
+  for (const path of plan.metricPaths) {
+    const root = path.split('.')[0] ?? path
+    if (bound.has(path) || bound.has(root)) continue
+    missing.push(path)
+  }
+  for (const key of plan.recordKeys) {
+    if (!bound.has(key)) missing.push(key)
+  }
+  if (plan.stringFieldNames.length > 0) {
+    const hasString = plan.stringFieldNames.some((name) => bound.has(name))
+    if (!hasString && !bound.has('content')) {
+      missing.push(plan.stringFieldNames[0] ?? 'content')
+    }
+  } else if (plan.hostKeys.includes('content') && !bound.has('content')) {
+    missing.push('content')
+  }
+  return missing
 }
 
 function pageSubmitsAction(elements: Record<string, SpecElement>, actionId: string): boolean {
