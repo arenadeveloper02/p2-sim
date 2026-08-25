@@ -487,7 +487,7 @@ export function SlackMentionInput({
                     />
                     <User className='h-3.5 w-3.5 shrink-0 text-[var(--text-icon)]' aria-hidden />
                     <div className='flex min-w-0 flex-1 flex-col gap-0.5'>
-                      <span className='truncate font-medium'>
+                      <span className='truncate'>
                         {user.displayName || user.realName || user.name}
                       </span>
                       <span className='truncate text-[length:11px] text-[var(--text-muted)]'>

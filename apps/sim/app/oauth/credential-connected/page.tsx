@@ -31,7 +31,7 @@ export default async function CredentialConnectedPage({
             : 'The credential could not be connected. Return to the app that started the connection and try again.'}
         </p>
         <ChipLink variant='primary' href='/workspace' className='mt-3'>
-          Open Sim
+          Open Arena AI
         </ChipLink>
       </div>
     </LogoShell>

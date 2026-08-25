@@ -30,6 +30,7 @@ describe('knowledge delegation policy', () => {
 
     expect(principal.audience).toBe(KNOWLEDGE_DELEGATION_AUDIENCE)
     expect(principal.resourceScope).toEqual({ chatId: 'chat-1' })
+    expect(knowledgeDelegationPolicy.allowCrossWorkspace).toBe(true)
     expect(
       knowledgeDelegationPolicy.isWithinScope(principal, {
         workspaceId: 'workspace-1',
@@ -43,7 +44,7 @@ describe('knowledge delegation policy', () => {
         workspaceOrganizationId: null,
         allowPersonalApiKeys: true,
       })
-    ).toBe(false)
+    ).toBe(true)
   })
 
   it('does not accept a model-authored audience', () => {
@@ -67,6 +68,13 @@ describe('knowledge delegation policy', () => {
     expect(
       knowledgeDelegationPolicy.isWithinScope(principal, {
         workspaceId: 'workspace-1',
+        workspaceOrganizationId: null,
+        allowPersonalApiKeys: true,
+      })
+    ).toBe(true)
+    expect(
+      knowledgeDelegationPolicy.isWithinScope(principal, {
+        workspaceId: 'workspace-2',
         workspaceOrganizationId: null,
         allowPersonalApiKeys: true,
       })

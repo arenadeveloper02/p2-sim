@@ -193,7 +193,7 @@ export const PreviewBlockNode = memo(function PreviewBlockNode({
           >
             <div className='relative z-10 flex min-w-0 flex-1 items-center gap-2.5'>
               <div
-                className='flex size-[24px] flex-shrink-0 items-center justify-center rounded-[6px]'
+                className='flex size-[24px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[6px] [&_img]:size-full'
                 style={{ background: bgColor }}
               >
                 {Icon && <Icon className={`size-[16px] ${getTileIconColorClass(bgColor)}`} />}
@@ -244,7 +244,7 @@ export const PreviewBlockNode = memo(function PreviewBlockNode({
                           className='flex items-center gap-[5px] rounded-[5px] border border-[var(--border-1)] bg-[var(--surface-1)] px-[6px] py-[3px]'
                         >
                           <div
-                            className='flex size-[16px] flex-shrink-0 items-center justify-center rounded-[4px]'
+                            className='flex size-[16px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px] [&_img]:size-full'
                             style={{ background: tool.bgColor }}
                           >
                             {ToolIcon && (

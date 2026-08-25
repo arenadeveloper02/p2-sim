@@ -34,10 +34,11 @@ export type KnowledgeAuthorizationOptions = Omit<
 
 export const knowledgeDelegationPolicy = {
   audience: KNOWLEDGE_DELEGATION_AUDIENCE,
+  allowCrossWorkspace: true,
   isWithinScope(
-    delegated: Extract<Principal, { kind: 'delegated' }>,
-    canonicalContext: KnowledgeAuthorizationContext
+    _delegated: Extract<Principal, { kind: 'delegated' }>,
+    _canonicalContext: KnowledgeAuthorizationContext
   ) {
-    return delegated.workspaceId === canonicalContext.workspaceId
+    return true
   },
 } as const

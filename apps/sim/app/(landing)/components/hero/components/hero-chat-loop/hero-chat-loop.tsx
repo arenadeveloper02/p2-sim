@@ -176,7 +176,7 @@ export function HeroChatLoop({ phase, fading }: HeroChatLoopProps) {
       </div>
 
       <div className='pointer-events-auto mx-auto mb-5 w-[calc(100%-40px)] max-w-[600px] shrink-0 rounded-2xl border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-2'>
-        <p className='px-1.5 pt-1 text-[15px] text-[var(--text-muted)]'>Send message to Sim</p>
+        <p className='px-1.5 pt-1 text-[15px] text-[var(--text-muted)]'>Send message to Arena AI</p>
         <div className='mt-2 flex items-center gap-1.5'>
           <Tooltip.Root>
             <Tooltip.Trigger asChild>

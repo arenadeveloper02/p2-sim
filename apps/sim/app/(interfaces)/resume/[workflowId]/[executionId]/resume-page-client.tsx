@@ -816,7 +816,7 @@ export default function ResumeExecutionPage({
                       {selectedDetail.pausePoint.automaticResumeWaitingReason}
                     </p>
                     <p className='mt-1 text-[12px] text-[var(--text-muted)]'>
-                      Sim will retry automatically.
+                      Arena AI will retry automatically.
                     </p>
                   </div>
                 )}

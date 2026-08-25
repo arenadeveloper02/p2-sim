@@ -122,7 +122,7 @@ export function OutputBundle({
                 style={row.selected ? { background: 'var(--surface-active)' } : undefined}
               >
                 <div
-                  className='flex size-[18px] flex-shrink-0 items-center justify-center rounded-[5px]'
+                  className='flex size-[18px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[5px] [&_img]:size-full'
                   style={{ background: row.color ?? 'var(--border-1)' }}
                 >
                   {Icon && <Icon className='size-[10px] text-white' />}

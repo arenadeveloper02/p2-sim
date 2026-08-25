@@ -141,10 +141,6 @@ export async function getUserKnowledgeBaseAccess(
   workspaceId: string | null,
   requestId: string
 ): Promise<UserKnowledgeBaseAccess[]> {
-  // Get all knowledge bases from workspaces the user has access to
-  // User has access if:
-  // 1. User is the workspace owner, OR
-  // 2. User has permissions entry for the workspace
   const results = await db
     .select({
       id: knowledgeBase.id,
@@ -170,7 +166,6 @@ export async function getUserKnowledgeBaseAccess(
       and(
         isNull(knowledgeBase.deletedAt),
         isNotNull(knowledgeBase.workspaceId),
-        // User has access if they're the owner OR have permissions
         or(eq(workspace.ownerId, userId), isNotNull(permissions.userId)),
         workspaceId ? eq(knowledgeBase.workspaceId, workspaceId) : undefined
       )

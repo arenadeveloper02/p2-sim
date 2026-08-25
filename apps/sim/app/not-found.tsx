@@ -1,5 +1,7 @@
 import { ChipLink } from '@sim/emcn'
 import type { Metadata } from 'next'
+import Image from 'next/image'
+import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { LogoShell } from '@/app/(landing)/components'
 
 export const metadata: Metadata = {
@@ -9,7 +11,11 @@ export const metadata: Metadata = {
 
 export default function NotFound() {
   return (
-    <LogoShell center>
+    <LogoShell
+      center
+      logo={<Image src={arenaLogo} alt='Arena' width={30} height={30} priority />}
+      logoLabel='Arena home'
+    >
       <div className='flex w-full max-w-[410px] flex-col items-center gap-3 text-center'>
         <h1 className='text-balance text-[40px] text-[var(--text-primary)] leading-[110%] tracking-[-0.02em]'>
           Page not found

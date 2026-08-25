@@ -174,7 +174,7 @@ describe('SearchModal', () => {
 
     act(() => {
       document
-        .querySelector<HTMLInputElement>('input[aria-label="Ask Sim"]')
+        .querySelector<HTMLInputElement>('input[aria-label="Ask Arena AI"]')
         ?.dispatchEvent(
           new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
         )
@@ -216,7 +216,7 @@ describe('SearchModal', () => {
 
     act(() => {
       document
-        .querySelector<HTMLInputElement>('input[aria-label="Ask Sim"]')
+        .querySelector<HTMLInputElement>('input[aria-label="Ask Arena AI"]')
         ?.dispatchEvent(
           new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
         )
@@ -589,7 +589,7 @@ describe('SearchModal', () => {
       ).map((el) => el.textContent)
       expect(headings.slice(0, 7)).toEqual([
         'Actions',
-        'Sim',
+        'Arena AI',
         'Blocks',
         'Triggers',
         'Tools',
@@ -613,7 +613,7 @@ describe('SearchModal', () => {
     const headings = Array.from(document.querySelectorAll<HTMLElement>('[cmdk-group-heading]')).map(
       (el) => el.textContent
     )
-    expect(headings.slice(0, 4)).toEqual(['Actions', 'Sim', 'Tables', 'Pages'])
+    expect(headings.slice(0, 4)).toEqual(['Actions', 'Arena AI', 'Tables', 'Pages'])
   })
 
   it('browses the integrations catalog from every page', async () => {
@@ -701,7 +701,7 @@ describe('SearchModal', () => {
           new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
         )
     })
-    expect(document.querySelector('input[aria-label="Ask Sim"]')).not.toBeNull()
+    expect(document.querySelector('input[aria-label="Ask Arena AI"]')).not.toBeNull()
 
     await act(async () => {
       root.render(<SearchModal open={false} onOpenChange={vi.fn()} />)
@@ -714,7 +714,7 @@ describe('SearchModal', () => {
     })
     const input = document.querySelector<HTMLInputElement>('input[aria-label="Search anything"]')
     expect(input?.value).toBe('')
-    expect(document.querySelector('input[aria-label="Ask Sim"]')).toBeNull()
+    expect(document.querySelector('input[aria-label="Ask Arena AI"]')).toBeNull()
   })
 
   it('hides tool operations in browse but keeps them searchable', async () => {

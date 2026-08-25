@@ -11,9 +11,8 @@ import { Combobox, type ComboboxProps } from '../combobox/combobox'
  * Reuses 100% of `Combobox` — search, editable entry, multi-select, groups,
  * async loading, per-option icons, and `overlayContent` all work unchanged.
  * Only the trigger chrome is overridden (the `className` merges last in
- * `Combobox`, so `rounded-lg` / height / dark surface, chip `--text-body`
- * color, and `font-normal` win over the combobox defaults — including the
- * base `font-medium` on `comboboxVariants`). The muted placeholder still
+ * `Combobox`, so `rounded-lg` / height / dark surface and chip `--text-body`
+ * color win over the combobox defaults). The muted placeholder still
  * applies because the combobox tints the inner label span with `--text-muted`
  * independently of the trigger className.
  *

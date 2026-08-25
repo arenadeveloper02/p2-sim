@@ -61,7 +61,7 @@ export default async function OAuthErrorPage({ searchParams }: OAuthErrorPagePro
         <h1 className='text-foreground text-lg'>Couldn’t complete that</h1>
         <p className='mt-2 text-muted-foreground text-sm'>{messageForError(code)}</p>
         <p className='mt-4 text-muted-foreground text-sm'>
-          You can close this tab and try again from Sim.
+          You can close this tab and try again from Arena AI.
         </p>
       </div>
     </main>

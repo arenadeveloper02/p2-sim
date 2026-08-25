@@ -198,7 +198,7 @@ export const LandingPreviewHome = memo(function LandingPreviewHome({
                         <div className='flex size-[16px] flex-shrink-0 items-center justify-center'>
                           <Blimp className='size-[16px] text-[var(--text-icon)]' />
                         </div>
-                        <span className='text-[var(--text-body)] text-sm'>Sim</span>
+                        <span className='text-[var(--text-body)] text-sm'>Arena AI</span>
                         <ChevronDown
                           className='size-[14px] text-[var(--text-icon)] transition-transform duration-150'
                           style={{

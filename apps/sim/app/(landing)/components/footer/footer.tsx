@@ -164,7 +164,7 @@ export function Footer() {
           <FooterColumn title='Legal' items={LEGAL_LINKS} />
         </nav>
 
-        <p className='mt-16 text-[var(--text-muted)] text-sm'>© 2026 Sim. All rights reserved.</p>
+        <p className='mt-16 text-[var(--text-muted)] text-sm'>© 2026 Arena. All rights reserved.</p>
       </div>
     </footer>
   )

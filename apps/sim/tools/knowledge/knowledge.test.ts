@@ -101,6 +101,27 @@ describe('Knowledge Tools', () => {
     })
   })
 
+  it('maps nested rerank config onto the search contract fields', () => {
+    const body = knowledgeSearchTool.request.body?.({
+      knowledgeBaseId: 'kb-1',
+      query: 'find chunks',
+      topK: 8,
+      rerank: { enabled: true, model: 'rerank-v4.0-fast', topN: 32 },
+    }) as {
+      knowledgeBaseIds: string[]
+      rerankerEnabled?: boolean
+      rerankerModel?: string
+      rerankerInputCount?: number
+      rerank?: unknown
+    }
+
+    expect(body.knowledgeBaseIds).toEqual(['kb-1'])
+    expect(body.rerankerEnabled).toBe(true)
+    expect(body.rerankerModel).toBe('rerank-v4.0-fast')
+    expect(body.rerankerInputCount).toBe(32)
+    expect(body.rerank).toBeUndefined()
+  })
+
   it('keeps persisted request values raw while provenance travels out of band', () => {
     const createBody = knowledgeCreateDocumentTool.request.body?.({
       knowledgeBaseId: 'kb-1',

@@ -28,7 +28,7 @@ describe('getActionGroupLabel', () => {
     expect(getActionGroupLabel({ ...action, context: 'workflow' })).toBe('Actions')
     expect(getActionGroupLabel({ ...action, context: 'tables' })).toBe('Actions')
     expect(getActionGroupLabel({ ...action, context: 'logsDashboard' })).toBe('Actions')
-    expect(getActionGroupLabel({ ...action, context: 'global' })).toBe('Sim')
+    expect(getActionGroupLabel({ ...action, context: 'global' })).toBe('Arena AI')
   })
 
   it('lets an action group label surface actions whose names do not match', () => {

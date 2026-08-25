@@ -15,6 +15,10 @@ import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { PlatformEvents } from '@/lib/core/telemetry'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { importDurableSecretProvenance } from '@/lib/execution/durable-secret-provenance'
+import {
+  isDurableSecretProvenanceEnforced,
+  reportUnrecordedDurableProvenance,
+} from '@/lib/execution/durable-secret-provenance-enforcement'
 import { defineAuthorizedKnowledgeUseCase } from '@/lib/knowledge/application/authorized-knowledge-use-case'
 import {
   KnowledgeUsageLimitExceededError,
@@ -309,8 +313,17 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
         results: rows,
       })
       if (!provenanceSnapshot.imported) {
-        registry.markIncomplete('knowledge-result-provenance-unavailable')
-        if (useReranker) throw new KnowledgeSearchProvenanceUnavailableError()
+        if (isDurableSecretProvenanceEnforced('knowledge')) {
+          registry.markIncomplete('knowledge-result-provenance-unavailable')
+          if (useReranker) throw new KnowledgeSearchProvenanceUnavailableError()
+        } else {
+          reportUnrecordedDurableProvenance({
+            surface: 'knowledge',
+            cause: 'row-sidecar-not-exact',
+            affectedCount: rows.length,
+            workspaceId: context.workspaceId,
+          })
+        }
       }
     }
 
@@ -503,7 +516,8 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
             document.provenance,
             renderedMetadata,
             'knowledge'
-          ))
+          )) &&
+          isDurableSecretProvenanceEnforced('knowledge')
         ) {
           registry.markIncomplete('knowledge-result-provenance-unavailable')
         }

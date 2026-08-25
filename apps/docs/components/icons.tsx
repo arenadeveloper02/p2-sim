@@ -1,6 +1,7 @@
 import type { SVGProps } from 'react'
 import { useId } from 'react'
 import Image, { type ImageProps } from 'next/image'
+import { cn } from '@sim/emcn'
 
 export function EnrichmentIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -153,24 +154,34 @@ export function Spinner() {
   )
 }
 
-/** Arena Agent glyph — sparkle on the purple→teal gradient, used on every Agent tile. */
-export function AgentIcon({ className, ...props }: Omit<ImageProps, 'src' | 'alt' | 'fill'>) {
+/**
+ * Arena Agent glyph — sparkle on the purple→teal gradient.
+ *
+ * Rendered as a single `<img>` (via next/image) so tiled surfaces that opt in
+ * with `[&_img]:size-full` fill the whole chip — same full-bleed presence as
+ * Image Generator's colored tile. Callers that pass an explicit size keep it.
+ */
+export function AgentIcon({
+  className,
+  style,
+  ...props
+}: Omit<ImageProps, 'src' | 'alt' | 'fill'>) {
   return (
-    <span
-      className={[
-        'relative inline-flex items-center justify-center overflow-hidden rounded-[3px] bg-[linear-gradient(179.65deg,#7B4796_-0.59%,#017496_102.42%)]',
-        className ?? 'size-full',
-      ].join(' ')}
-    >
-      <Image
-        src='https://arenav2image.s3.us-west-1.amazonaws.com/vimi-sparkle.png'
-        alt='Agent'
-        width={14}
-        height={14}
-        {...props}
-        className='size-full object-contain'
-      />
-    </span>
+    <Image
+      src='https://arenav2image.s3.us-west-1.amazonaws.com/vimi-sparkle.png'
+      alt='Agent'
+      width={14}
+      height={14}
+      {...props}
+      style={{
+        backgroundImage: 'linear-gradient(179.65deg, #7B4796 -0.59%, #017496 102.42%)',
+        ...style,
+      }}
+      className={cn(
+        'box-border size-full rounded-[4px] object-contain p-[20%]',
+        className
+      )}
+    />
   )
 }
 

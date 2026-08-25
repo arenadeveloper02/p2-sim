@@ -174,7 +174,7 @@ export function BlockInspector({
       <div className='flex items-center justify-between border-[var(--border)] border-b bg-[var(--surface-4)] px-3 py-1.5'>
         <div className='flex min-w-0 flex-1 items-center gap-2'>
           <div
-            className='flex size-[18px] flex-shrink-0 items-center justify-center rounded-sm'
+            className='flex size-[18px] flex-shrink-0 items-center justify-center overflow-hidden rounded-sm [&_img]:size-full'
             style={{ background: color }}
           >
             {Icon && <Icon className='size-[12px] text-white' />}
@@ -205,8 +205,8 @@ export function BlockInspector({
                   const TIcon = resolveIcon(tool.type)
                   return (
                     <ChipTag key={tool.type} variant='gray'>
-                      <span
-                        className='flex size-[14px] flex-shrink-0 items-center justify-center rounded-[4px]'
+                        <span
+                        className='flex size-[14px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[4px] [&_img]:size-full'
                         style={{ background: tool.bgColor }}
                       >
                         {TIcon && <TIcon className='size-[9px] text-white' />}

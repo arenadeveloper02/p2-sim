@@ -21,6 +21,12 @@ export interface WorkspaceAuthorizationContext {
 export interface WorkspaceDelegationPolicy<C extends WorkspaceAuthorizationContext> {
   audience: string
   isWithinScope(principal: DelegatedPrincipal, context: C): boolean
+  /**
+   * When true, a delegated caller may operate on a resource whose canonical
+   * workspace differs from the workspace that issued the delegation. The subject
+   * still needs current permission on the resource workspace.
+   */
+  allowCrossWorkspace?: boolean
 }
 
 export interface WorkspaceAuthorizationOptions<C extends WorkspaceAuthorizationContext> {
@@ -198,7 +204,7 @@ export async function authorizeWorkspaceOperation<C extends WorkspaceAuthorizati
       if (
         principal.audience !== delegation.audience ||
         principal.expiresAt.getTime() <= Date.now() ||
-        principal.workspaceId !== context.workspaceId ||
+        (!delegation.allowCrossWorkspace && principal.workspaceId !== context.workspaceId) ||
         !delegation.isWithinScope(principal, context)
       ) {
         throw new DelegatedWorkspaceAuthorizationError()

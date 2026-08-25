@@ -377,7 +377,7 @@ function SearchModalContent({
       list.push({
         id: 'new-chat',
         name: 'New chat',
-        keywords: 'chat message ask sim assistant home',
+        keywords: 'chat message ask arena ai assistant home',
         icon: Home,
         context: 'global',
         run: () => routerRef.current.push(`/workspace/${workspaceId}/home`),
@@ -1001,7 +1001,7 @@ function SearchModalContent({
       page: pageContext
         ? available.filter((action) => getActionGroupLabel(action) === 'Actions')
         : [],
-      sim: available.filter((action) => getActionGroupLabel(action) === 'Sim'),
+      sim: available.filter((action) => getActionGroupLabel(action) === 'Arena AI'),
     }
   }, [actions, pageContext])
   const availableBlocks = useMemo(
@@ -1052,7 +1052,7 @@ function SearchModalContent({
         : items.map((item) => ({ item, score: 0 }))
     const rankedActions = [
       ...(pageContext ? rankActionGroup(actionsByGroup.page, 'Actions') : []),
-      ...rankActionGroup(actionsByGroup.sim, 'Sim'),
+      ...rankActionGroup(actionsByGroup.sim, 'Arena AI'),
     ]
     const blockNames = new Set(
       [...availableBlocks, ...availableTools].map((item) => item.name.toLowerCase())
@@ -1223,8 +1223,8 @@ function SearchModalContent({
         : []),
       {
         key: 'platform-actions',
-        heading: 'Sim',
-        entries: actionEntriesByLabel('Sim'),
+        heading: 'Arena AI',
+        entries: actionEntriesByLabel('Arena AI'),
       },
       ...(hoistedSection ? [entityGroup(hoistedSection)] : []),
       ...CANVAS_SECTIONS.map(entityGroup),

@@ -43,7 +43,7 @@ export function KnowledgeBaseSelector({
     knowledgeBases,
     isLoading: isKnowledgeBasesLoading,
     error,
-  } = useUserAccessKnowledgeBases() //need access to all kbs user has access to.
+  } = useUserAccessKnowledgeBases()
 
   const { data: knowledgeBaseFolders = {} } = useFolderMap(workspaceId, 'knowledge_base')
 

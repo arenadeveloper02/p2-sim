@@ -134,7 +134,7 @@ export function SlackUserSelector({
 
   return (
     <div className='space-y-2'>
-      <Label className='font-medium text-foreground text-sm'>{label}</Label>
+      <Label className='text-sm'>{label}</Label>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -229,7 +229,7 @@ export function SlackUserSelector({
                         <div className='flex items-center gap-2'>
                           <User className='h-4 w-4' />
                           <div className='flex flex-col'>
-                            <span className='font-medium'>
+                            <span>
                               {user.displayName || user.realName || user.name}
                             </span>
                             <span className='text-muted-foreground text-xs'>

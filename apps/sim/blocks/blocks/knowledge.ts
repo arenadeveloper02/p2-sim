@@ -537,18 +537,11 @@ export const KnowledgeBlock: BlockConfig = {
           const rerankEnabled =
             typeof params.rerankEnabled === 'boolean' ? params.rerankEnabled : true
 
-          const rerank =
-            rerankEnabled !== undefined || rerankModel || Number.isFinite(rerankTopN)
-              ? {
-                  ...(rerankEnabled !== undefined ? { enabled: rerankEnabled } : {}),
-                  ...(rerankModel ? { model: rerankModel } : {}),
-                  ...(Number.isFinite(rerankTopN) ? { topN: rerankTopN } : {}),
-                }
-              : undefined
-
           return {
             ...params,
-            ...(rerank ? { rerank } : {}),
+            rerankerEnabled: rerankEnabled,
+            ...(rerankModel ? { rerankerModel: rerankModel } : {}),
+            ...(Number.isFinite(rerankTopN) ? { rerankerInputCount: rerankTopN } : {}),
           }
         }
 

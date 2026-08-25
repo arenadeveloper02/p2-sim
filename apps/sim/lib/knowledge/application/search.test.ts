@@ -312,6 +312,25 @@ describe('knowledge search application use case', () => {
     })
   })
 
+  it('does not fail-closed when knowledge result provenance is unrecorded and unenforced', async () => {
+    mocks.importProvenance.mockResolvedValueOnce({ imported: false, documentMetadata: {} })
+    const registry = { markIncomplete: vi.fn() }
+
+    const result = await searchKnowledge.execute({
+      principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+      input: {
+        workspaceId: 'workspace-1',
+        knowledgeBaseIds: ['knowledge-1'],
+        query: 'answer',
+        topK: 5,
+        resultSecretRegistry: registry as never,
+      },
+    })
+
+    expect(result.totalResults).toBeGreaterThan(0)
+    expect(registry.markIncomplete).not.toHaveBeenCalled()
+  })
+
   describe('reranker outcome reporting', () => {
     const rerankedSearch = (rerankerEnabled?: boolean, query: string | undefined = 'answer') =>
       searchKnowledge.execute({
