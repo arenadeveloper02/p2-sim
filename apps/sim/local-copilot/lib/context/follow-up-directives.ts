@@ -15,7 +15,7 @@ export const SESSION_CONSTRAINTS_SYSTEM_PREFIX =
 export interface PreferenceMemoryCandidate {
   key: string
   value: string
-  memoryType: 'preference' | 'correction'
+  memoryType: 'preference' | 'correction' | 'entity'
 }
 
 export interface ExtractedDirectives {

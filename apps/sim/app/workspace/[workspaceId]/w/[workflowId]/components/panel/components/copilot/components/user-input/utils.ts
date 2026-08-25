@@ -70,7 +70,11 @@ export function filterContextsPresentInMessage(
   const presentTokens = new Set(
     computeMentionHighlightRanges(message, tokens.filter(Boolean)).map((range) => range.token)
   )
-  const filtered = contexts.filter((_context, index) => presentTokens.has(tokens[index]))
+  const filtered = contexts.filter((context, index) => {
+    if (context.kind === 'current_workflow') return true
+    const token = tokens[index]
+    return Boolean(token) && presentTokens.has(token)
+  })
 
   return filtered.length === contexts.length ? contexts : filtered
 }

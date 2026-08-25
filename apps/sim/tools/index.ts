@@ -1263,6 +1263,24 @@ function cloneResponseHeaders(headers: Headers | HeadersInit | undefined): Heade
   return new Headers(headers)
 }
 
+/**
+ * Rebuilds an unlocked body after `response.json()` has already consumed the
+ * original stream. API-block `transformResponse` (and TikTok/Instagram) read
+ * via `readResponseTextWithLimit`, which calls `body.getReader()` and throws
+ * `ReadableStream is locked` if we forward the spent stream.
+ */
+function createReplayBodyStream(data: unknown): ReadableStream<Uint8Array> {
+  const encoded = new TextEncoder().encode(
+    typeof data === 'string' ? data : JSON.stringify(data)
+  )
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoded)
+      controller.close()
+    },
+  })
+}
+
 async function readToolResponseBody(
   response: {
     ok?: boolean
@@ -2827,16 +2845,19 @@ async function executeToolRequest(
       }
 
       try {
-        // Forward the real body stream. Some transformResponse helpers (e.g. TikTok)
-        // read via readResponseTextWithLimit, which requires `.body` (or Content-Length)
-        // and otherwise mis-reports a false "response exceeded maximum size" error.
+        const originalBody = response.body
+        const bodyAlreadyConsumed = response.bodyUsed || Boolean(originalBody?.locked)
+        const replayBody =
+          bodyAlreadyConsumed && responseData !== null && responseData !== undefined
+            ? createReplayBodyStream(responseData)
+            : originalBody
         const mockResponse = {
           ok: response.ok,
           status: response.status,
           statusText: response.statusText,
           headers: response.headers,
           url: fullUrl,
-          body: response.body,
+          body: replayBody,
           json: async () => responseData ?? (await response.clone().json()),
           text: async () =>
             responseData !== null && responseData !== undefined

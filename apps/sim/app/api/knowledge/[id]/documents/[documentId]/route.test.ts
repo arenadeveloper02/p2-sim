@@ -388,7 +388,38 @@ describe('Document By ID API Route', () => {
       const data = await response.json()
 
       expect(response.status).toBe(400)
-      expect(data.error).toBe('Document is not in failed state')
+      expect(data.error).toBe('Document is not in a retryable state')
+    })
+
+    it('should retry processing for a stuck pending document', async () => {
+      const pendingDocument = {
+        ...mockDocument,
+        processingStatus: 'pending',
+        processingError: null,
+      }
+
+      authMockFns.mockGetSession.mockResolvedValue({
+        user: { id: 'user-123', email: 'test@example.com' },
+      })
+      vi.mocked(checkDocumentWriteAccess).mockResolvedValue({
+        hasAccess: true,
+        document: pendingDocument,
+        knowledgeBase: { id: 'kb-123', userId: 'user-123' },
+      })
+
+      vi.mocked(retryDocumentProcessing).mockResolvedValue({
+        success: true,
+        status: 'pending',
+        message: 'Document retry processing started',
+      })
+
+      const req = createMockRequest('PUT', { retryProcessing: true })
+      const response = await PUT(req, { params: mockParams })
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data.success).toBe(true)
+      expect(vi.mocked(retryDocumentProcessing)).toHaveBeenCalled()
     })
   })
 

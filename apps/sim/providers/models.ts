@@ -3651,6 +3651,56 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         recommended: true,
       },
       {
+        id: 'bedrock/anthropic.claude-opus-4-8',
+        pricing: {
+          input: 5.0,
+          cachedInput: 0.5,
+          output: 25.0,
+          updatedAt: '2026-08-20',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 4096 },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-05-28',
+      },
+      {
+        id: 'bedrock/anthropic.claude-opus-4-6-v1',
+        pricing: {
+          input: 5.0,
+          cachedInput: 0.5,
+          output: 25.0,
+          updatedAt: '2026-08-20',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 4096 },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-02-05',
+      },
+      {
+        id: 'bedrock/anthropic.claude-sonnet-4-6',
+        pricing: {
+          input: 3.0,
+          cachedInput: 0.3,
+          output: 15.0,
+          updatedAt: '2026-08-20',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 64000,
+          promptCaching: { minimumCacheableTokens: 1024 },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-02-17',
+      },
+      {
         id: 'bedrock/anthropic.claude-opus-4-5-20251101-v1:0',
         pricing: {
           input: 5.0,
@@ -4092,6 +4142,21 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 262144,
         releaseDate: '2026-03-18',
+      },
+      {
+        id: 'bedrock/zai.glm-5',
+        pricing: {
+          input: 1.0,
+          output: 3.2,
+          updatedAt: '2026-08-14',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+        },
+        contextWindow: 200000,
+        releaseDate: '2026-02-11',
       },
     ],
   },
