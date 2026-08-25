@@ -32,6 +32,7 @@ import {
   normalizeBlockIdsArgs,
   resolveBlockIdsArg,
 } from '@/local-copilot/lib/tools/resolve-block-ids-arg'
+import { resolveLocalCopilotToolName } from '@/local-copilot/lib/tools/resolve-tool-name-alias'
 import { resolveWorkflowStateForLocalTool } from '@/local-copilot/lib/tools/resolve-workflow-state'
 import {
   executeLoadUserSkill,
@@ -214,10 +215,21 @@ export async function executeLocalCopilotTool(
 }
 
 async function executeLocalCopilotToolInner(
-  toolName: string,
+  requestedToolName: string,
   args: Record<string, unknown>,
   ctx: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
+  const resolvedName = resolveLocalCopilotToolName(requestedToolName)
+  if (resolvedName.kind === 'unsupported') {
+    return {
+      toolName: requestedToolName,
+      success: false,
+      error: resolvedName.message,
+      result: { error: resolvedName.message },
+    }
+  }
+  const toolName = resolvedName.name
+
   args = pinToolArgsToWorkspace(args, ctx.workspaceId)
   ctx.mutationIdempotency ??= new Map()
   ctx.listedIntegrationToolIds ??= new Set()
@@ -665,12 +677,23 @@ async function executeLocalCopilotToolInner(
         }
       }
 
+      const resolvedInvoke = resolveLocalCopilotToolName(toolId)
+      if (resolvedInvoke.kind === 'unsupported') {
+        return {
+          toolName,
+          success: false,
+          error: resolvedInvoke.message,
+          result: { toolId, output: { error: resolvedInvoke.message } },
+        }
+      }
+      const resolvedToolId = resolvedInvoke.name
+
       const knownToolIds = new Set<string>()
-      if (isMothershipDelegatedTool(toolId) || getToolDefinition(toolId)) {
-        knownToolIds.add(toolId)
+      if (isMothershipDelegatedTool(resolvedToolId) || getToolDefinition(resolvedToolId)) {
+        knownToolIds.add(resolvedToolId)
       }
       const invokeGate = assertInvokeLookBeforeWrite({
-        toolId,
+        toolId: resolvedToolId,
         listedIntegrationToolIds: ctx.listedIntegrationToolIds,
         knownToolIds,
       })
@@ -691,7 +714,7 @@ async function executeLocalCopilotToolInner(
       // Model sometimes passes Arena/mothership tool ids here (e.g. search_online,
       // get_blocks_metadata, edit_workflow). Route those through the local executor
       // instead of shared executeTool → @/tools ("Built-in tool not found").
-      if (toolId === 'invoke_integration_tool') {
+      if (resolvedToolId === 'invoke_integration_tool') {
         return {
           toolName,
           success: false,
@@ -700,8 +723,8 @@ async function executeLocalCopilotToolInner(
         }
       }
 
-      if (isMothershipDelegatedTool(toolId) || getToolDefinition(toolId)) {
-        const redirected = await executeLocalCopilotTool(toolId, rawParams, ctx)
+      if (isMothershipDelegatedTool(resolvedToolId) || getToolDefinition(resolvedToolId)) {
+        const redirected = await executeLocalCopilotTool(resolvedToolId, rawParams, ctx)
         return finishInvoke(
           attachToolBilling({
             toolName,

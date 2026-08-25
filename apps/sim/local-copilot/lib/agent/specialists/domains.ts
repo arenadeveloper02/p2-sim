@@ -167,6 +167,9 @@ const RESEARCH_TOOLS = [
   'search_documentation',
   'function_execute',
   'user_memory',
+  'read',
+  'glob',
+  'grep',
 ] as const
 
 const MEDIA_TOOLS = ['generate_image', 'generate_audio', 'generate_video', 'ffmpeg'] as const
@@ -181,6 +184,7 @@ const FILE_TOOLS = [
   'download_to_workspace_file',
   'materialize_file',
   'edit_content',
+  'function_execute',
   'delete_file',
   'rename_file',
   'move_file',
@@ -323,11 +327,11 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'agent':
       return 'Focus on integration tools, MCP tools, skills, and function_execute.'
     case 'research':
-      return 'Focus on research. For ANY real-world factual or current question, call a live search tool FIRST (exa_answer via invoke_integration_tool, or search_online) before answering — never answer from training memory alone. Also search_docs, search_documentation, user_memory.'
+      return 'Focus on research. For ANY real-world factual or current question, call a live search tool FIRST (exa_answer via invoke_integration_tool, or search_online) before answering — never answer from training memory alone. When the question is about a workspace file, glob/read/grep that exact VFS path — do not open a similarly named file. Use search_documentation only for Sim product questions.'
     case 'media':
       return 'Focus on image/audio/video generation and ffmpeg.'
     case 'file':
-      return 'Read, create, and update workspace files (glob, read, create_file, workspace_file, edit_content). Chat uploads/ need materialize_file into files/ before function_execute.'
+      return 'Read, create, and update workspace files. Write path is create_file → workspace_file (operation + target.path + title) → edit_content in the next round — there is no prepare_file_edit, edit_file, or run_function tool. Use function_execute only for sandbox data processing (mount via inputs, save with outputs.files), not office docs. Chat uploads/ need materialize_file into files/ before the sandbox can open them.'
     case 'superagent':
       return 'Focus on third-party integration actions. Authenticate if needed, then invoke the right integration tool.'
     default:

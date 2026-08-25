@@ -191,7 +191,7 @@ const MAX_FORCED_FOLLOW_UP_ROUNDS = 6
 /** Cap for "I am applying…" prose with no tool call — avoid infinite nudge loops. */
 const MAX_INTENT_CONTINUATION_ROUNDS = 5
 /** Successful create-then-edit_workflow calls before the post-build lock. */
-const MAX_POPULATE_EDITS = 4
+const MAX_POPULATE_EDITS = 5
 
 const SYSTEM_PROMPT = `You are Arena Copilot — the in-app AI assistant for building, debugging, and understanding workflows in this workspace.
 

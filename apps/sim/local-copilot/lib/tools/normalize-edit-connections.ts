@@ -41,7 +41,18 @@ export function normalizeLocalEditConnections(
   if (ops.length === 0) return operations
 
   const triggerIds = collectTriggerIds(ops, snapshot)
+  const blockTypeById = collectBlockTypes(ops, snapshot)
   let changed = false
+
+  for (const op of ops) {
+    if (blockTypeById.get(op.block_id) !== 'condition') continue
+    const connections = getConnections(op)
+    if (!connections) continue
+    if (aliasDefaultConditionHandle(connections)) {
+      op.params = { ...op.params, connections }
+      changed = true
+    }
+  }
 
   for (const op of ops) {
     const connections = getConnections(op)
@@ -156,6 +167,51 @@ function cloneOperations(operations: unknown[]): MutableOp[] {
     })
   }
   return cloned
+}
+
+function collectBlockTypes(
+  ops: MutableOp[],
+  snapshot?: LocalEditConnectionSnapshot
+): Map<string, string> {
+  const types = new Map<string, string>()
+  for (const [blockId, block] of Object.entries(snapshot?.blocks ?? {})) {
+    if (typeof block?.type === 'string' && block.type) {
+      types.set(blockId, block.type)
+    }
+  }
+  for (const op of ops) {
+    if (op.operation_type === 'delete') {
+      types.delete(op.block_id)
+      continue
+    }
+    const type = typeof op.params?.type === 'string' ? op.params.type : undefined
+    if (type) types.set(op.block_id, type)
+  }
+  return types
+}
+
+function aliasDefaultConditionHandle(connections: Record<string, unknown>): boolean {
+  let changed = false
+  const existingIf = parseTargets(connections.if)
+
+  for (const handle of ['source', 'success', 'default', 'target', '']) {
+    if (!(handle in connections) || connections[handle] == null) continue
+    const fromDefault = parseTargets(connections[handle])
+    delete connections[handle]
+    changed = true
+    for (const target of fromDefault) {
+      if (
+        !existingIf.some((item) => item.blockId === target.blockId && item.handle === target.handle)
+      ) {
+        existingIf.push(target)
+      }
+    }
+  }
+
+  if (existingIf.length > 0) {
+    connections.if = serializeTargets(existingIf)
+  }
+  return changed
 }
 
 function collectTriggerIds(

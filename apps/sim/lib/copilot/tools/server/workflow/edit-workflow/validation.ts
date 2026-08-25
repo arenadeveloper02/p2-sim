@@ -872,12 +872,15 @@ export function validateSourceHandleForBlock(
   }
 }
 
+const DEFAULT_FIRST_CONDITION_HANDLES = new Set(['source', 'default', 'success', ''])
+
 /**
  * Validates condition handle references a valid condition in the block.
  * Accepts multiple formats:
- * - Simple format: "if", "else-if-0", "else-if-1", "else"
+ * - Simple format: "if", "else-if-0", "else" (by branch index, even when titles are custom)
+ * - Default source aliases: "source", "default", "success", "" map to the first branch
  * - Legacy semantic format: "condition-{blockId}-if", "condition-{blockId}-else-if"
- * - Internal ID format: "condition-{conditionId}"
+ * - Internal ID format: "condition-{conditionId}" or the raw condition id
  *
  * Returns the normalized handle (condition-{conditionId}) for storage.
  */
@@ -912,29 +915,35 @@ export function validateConditionHandle(
     }
   }
 
-  // Build a map of all valid handle formats -> normalized handle (condition-{conditionId})
   const handleToNormalized = new Map<string, string>()
   const legacySemanticPrefix = `condition-${blockId}-`
+  const simpleOptions: string[] = []
   let elseIfIndex = 0
 
-  for (const condition of conditions) {
-    if (!condition.id) continue
+  for (let index = 0; index < conditions.length; index++) {
+    const condition = conditions[index]
+    if (!condition?.id) continue
 
     const normalizedHandle = `condition-${condition.id}`
-    const title = condition.title?.toLowerCase()
-
-    // Always accept internal ID format
     handleToNormalized.set(normalizedHandle, normalizedHandle)
+    handleToNormalized.set(String(condition.id), normalizedHandle)
 
-    if (title === 'if') {
-      // Simple format: "if"
+    const isFirst = index === 0
+    const isLast = index === conditions.length - 1 && conditions.length > 1
+
+    if (isFirst) {
       handleToNormalized.set('if', normalizedHandle)
-      // Legacy format: "condition-{blockId}-if"
       handleToNormalized.set(`${legacySemanticPrefix}if`, normalizedHandle)
-    } else if (title === 'else if') {
-      // Simple format: "else-if-0", "else-if-1", etc. (0-indexed)
+      for (const alias of DEFAULT_FIRST_CONDITION_HANDLES) {
+        handleToNormalized.set(alias, normalizedHandle)
+      }
+      simpleOptions.push('if')
+    } else if (isLast) {
+      handleToNormalized.set('else', normalizedHandle)
+      handleToNormalized.set(`${legacySemanticPrefix}else`, normalizedHandle)
+      simpleOptions.push('else')
+    } else {
       handleToNormalized.set(`else-if-${elseIfIndex}`, normalizedHandle)
-      // Legacy format: "condition-{blockId}-else-if" for first, "condition-{blockId}-else-if-2" for second
       if (elseIfIndex === 0) {
         handleToNormalized.set(`${legacySemanticPrefix}else-if`, normalizedHandle)
       } else {
@@ -943,11 +952,16 @@ export function validateConditionHandle(
           normalizedHandle
         )
       }
+      simpleOptions.push(`else-if-${elseIfIndex}`)
       elseIfIndex++
+    }
+
+    const title = typeof condition.title === 'string' ? condition.title.toLowerCase() : ''
+    if (title === 'if') {
+      handleToNormalized.set('if', normalizedHandle)
+      handleToNormalized.set(`${legacySemanticPrefix}if`, normalizedHandle)
     } else if (title === 'else') {
-      // Simple format: "else"
       handleToNormalized.set('else', normalizedHandle)
-      // Legacy format: "condition-{blockId}-else"
       handleToNormalized.set(`${legacySemanticPrefix}else`, normalizedHandle)
     }
   }
@@ -957,24 +971,9 @@ export function validateConditionHandle(
     return { valid: true, normalizedHandle }
   }
 
-  // Build list of valid simple format options for error message
-  const simpleOptions: string[] = []
-  elseIfIndex = 0
-  for (const condition of conditions) {
-    const title = condition.title?.toLowerCase()
-    if (title === 'if') {
-      simpleOptions.push('if')
-    } else if (title === 'else if') {
-      simpleOptions.push(`else-if-${elseIfIndex}`)
-      elseIfIndex++
-    } else if (title === 'else') {
-      simpleOptions.push('else')
-    }
-  }
-
   return {
     valid: false,
-    error: `Invalid condition handle "${sourceHandle}". Valid handles: ${simpleOptions.join(', ')}`,
+    error: `Invalid condition handle "${sourceHandle}". Valid handles: ${simpleOptions.join(', ') || 'if, else'}`,
   }
 }
 
