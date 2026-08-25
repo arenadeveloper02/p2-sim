@@ -27,8 +27,9 @@ interface UsePageLoadActionsOptions {
  * Runs a page's `onLoad` actions once on arrival so the page can show data before
  * the user interacts with anything.
  *
- * `onSuccess.navigate` is deliberately ignored for a load action — honouring it
- * would bounce the user off the page the moment they arrived.
+ * A CTA that already navigated here owns the page: skip onLoad (and do not
+ * `resetState`) so an empty refetch cannot wipe `setState`. `onSuccess.navigate`
+ * is ignored for a load action — honouring it would bounce the user off the page.
  */
 export function usePageLoadActions(options: UsePageLoadActionsOptions): void {
   const optionsRef = useRef(options)
@@ -58,13 +59,12 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): void {
     const { actionIds, values, actionPending, runAction, mergeState, resetState, setLoadPending } =
       optionsRef.current
 
-    // A CTA that navigated here is still writing to this state; only a plain
-    // arrival owns the page outright and can clear whatever the last page left.
     if (actionPending) {
       mergeState(clearedActionErrorState())
-    } else {
-      resetState()
+      return
     }
+
+    resetState()
     setLoadPending(true)
 
     void (async () => {

@@ -373,6 +373,44 @@ describe('runDeployedAppAction', () => {
     vi.unstubAllGlobals()
   })
 
+  it('copies a markdown string field onto setState.content instead of stringifying', async () => {
+    mockEnv({})
+    const markdown = '# H1: Root Canal Treatment'
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () =>
+        new TextEncoder().encode(
+          JSON.stringify({
+            data: { artical_data: markdown },
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        ),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await runDeployedAppAction({
+      deployment: baseDeployment({
+        apiBindings: [
+          {
+            key: 'qualify_lead',
+            label: 'Qualify',
+            kind: 'http',
+            http: { method: 'POST', url: 'https://api.example.com/qualify' },
+          },
+        ],
+      }),
+      actionId: 'submit_lead',
+      values: { name: 'Ada' },
+      requestId: 'req-1',
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.setState?.artical_data).toBe(markdown)
+    expect(result.setState?.content).toBe(markdown)
+    vi.unstubAllGlobals()
+  })
+
   it('sends the secret on X-API-Key when authHeaderName is set', async () => {
     mockEnv({ SIM_API_KEY: 'secret-token' })
     const fetchMock = vi.fn().mockResolvedValue({

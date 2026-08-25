@@ -24,6 +24,7 @@ describe('bindingsSummaryForPrompt', () => {
       reasons: [{ title: 'Example', id: 'ex-1' }],
     })
     expect(summary[0]?.resultLayout).toContain('bind outputSchema field names as statePath')
+    expect(summary[0]?.resultLayout).toContain('never "field.content"')
   })
 
   it('treats a missing outputSchema as a prose DataText constraint', () => {
@@ -104,5 +105,7 @@ describe('bindingsSummaryForPrompt', () => {
     expect(summary[0]?.resultLayout).toContain('clearItem')
     expect(summary[0]?.resultLayout).toContain('!selectedId')
     expect(summary[0]?.resultLayout).toContain('do not bind item.output')
+    expect(summary[0]?.resultLayout).toContain('{targetKeyword}')
+    expect(summary[0]?.resultLayout).not.toContain('restamp inputs')
   })
 })

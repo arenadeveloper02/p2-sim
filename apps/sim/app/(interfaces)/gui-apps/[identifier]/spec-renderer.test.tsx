@@ -352,6 +352,29 @@ describe('SpecRenderer', () => {
     expect(container.querySelector('strong')).toBeNull()
   })
 
+  it('renders a markdown string when DataText is bound to field.content', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Results' }, children: ['body'] },
+        body: {
+          type: 'DataText',
+          props: {
+            statePath: 'artical_data.content',
+            fallback: 'No recommendations yet',
+          },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      state: { artical_data: '# Root Canal Treatment' },
+    })
+    expect(container.textContent).toContain('Root Canal Treatment')
+    expect(container.textContent).not.toContain('No recommendations yet')
+  })
+
   it('renders nested output.content when DataText is bound to content', () => {
     const spec: Spec = {
       root: 'page',

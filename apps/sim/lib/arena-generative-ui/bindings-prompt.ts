@@ -9,10 +9,10 @@ function resultLayoutForBinding(
   outputHint: string | undefined
 ): string {
   if (outputSchema.some((field) => EMBEDDED_LIST_PROSE.test(field.name))) {
-    return 'list items include a prose field — Repeat cards bind only short scalars; Open is Button selectItem true (no actionId); same-page detail uses showWhen "!selectedId" on the list and showWhen "selectedId" plus clearItem Back; do not bind item.output inside Repeat'
+    return 'list items include a prose field — Repeat cards bind only short scalars with item.keyword; Open is Button selectItem true (no actionId) and copies prose to content, not inputs; same-page detail uses showWhen "!selectedId" on the list and showWhen "selectedId" plus clearItem Back; do not bind item.output inside Repeat; Results after Generate echo form names ({targetKeyword}), not history keys ({keyword})'
   }
   if (outputSchema.length > 0) {
-    return 'bind outputSchema field names as statePath; nested arrays (run_data.history) also land as "history"'
+    return 'bind outputSchema field names as statePath; nested arrays (run_data.history) also land as "history"; a string markdown field binds as that name or "content", never "field.content"'
   }
   if (outputHint) {
     return 'prose DataText matching outputHint'

@@ -90,8 +90,8 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       lastActionRef.current = { actionId, values, kind: 'cta' }
       const navigateTo = current.actionNavigate[actionId]
       const streaming = current.isStreaming(actionId)
-      current.setActionPending(true)
       flushSync(() => {
+        current.setActionPending(true)
         current.mergeState({
           ...clearedActionErrorState(),
           ...submittedInputsState(values),

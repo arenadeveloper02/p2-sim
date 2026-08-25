@@ -238,15 +238,6 @@ export function submittedInputsState(values: Record<string, unknown>): Record<st
   return { [ARENA_GENERATIVE_INPUTS_KEY]: inputs }
 }
 
-const SELECTED_ITEM_PROSE_KEYS = new Set([
-  'content',
-  'assistantContent',
-  'output',
-  'text',
-  'message',
-  'body',
-])
-
 function selectedItemId(item: unknown, index: number): string {
   if (item && typeof item === 'object' && !Array.isArray(item)) {
     const record = item as Record<string, unknown>
@@ -259,35 +250,19 @@ function selectedItemId(item: unknown, index: number): string {
   return String(index)
 }
 
-function scalarInputsFromSelectedItem(item: unknown): Record<string, unknown> {
-  if (!item || typeof item !== 'object' || Array.isArray(item)) return {}
-  const inputs: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(item as Record<string, unknown>)) {
-    if (RESERVED_SUBMITTED_INPUT_KEYS.has(key)) continue
-    if (SELECTED_ITEM_PROSE_KEYS.has(key)) continue
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      inputs[key] = value
-    }
-  }
-  return inputs
-}
-
 /**
  * Host state patch when a Repeat Button with `selectItem` is clicked. Copies the
- * row into `selected`, its prose into `content`, and short scalars under `inputs`
- * so Results can reuse the same DataText / Chip bindings as a fresh generate.
- * Does not touch collection keys such as `history` or `items`.
+ * row into `selected` and its prose into `content` without calling an API.
+ * Does not touch `inputs` or collection keys such as `history` or `items`.
  */
 export function selectedItemHostState(item: unknown, index: number): Record<string, unknown> {
   const content = displayTextFromActionData(item)
-  const inputs = scalarInputsFromSelectedItem(item)
   const selected = item && typeof item === 'object' && !Array.isArray(item) ? item : { item }
   return {
     ...clearedActionErrorState(),
     [ARENA_GENERATIVE_SELECTED_KEY]: selected,
     [ARENA_GENERATIVE_SELECTED_ID_KEY]: selectedItemId(item, index),
     ...(content ? { [ARENA_GENERATIVE_STREAM_CONTENT_KEY]: content } : {}),
-    ...(Object.keys(inputs).length > 0 ? { [ARENA_GENERATIVE_INPUTS_KEY]: inputs } : {}),
   }
 }
 
@@ -392,6 +367,8 @@ export const ACTION_TELEMETRY_KEYS = [
 ] as const
 
 const PREFERRED_DISPLAY_KEYS = ['content', 'assistantContent', 'output', 'text', 'message'] as const
+
+const DISPLAY_PATH_ALIASES = new Set<string>([...PREFERRED_DISPLAY_KEYS, 'body'])
 
 const MAX_DISPLAY_PARSE_DEPTH = 4
 
@@ -599,9 +576,39 @@ export function parseJsonLiteral(value: string): unknown | undefined {
 }
 
 /**
+ * True when a string is markdown/prose rather than a status token or JSON blob.
+ */
+function looksLikeDisplayProse(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed || parseJsonLiteral(trimmed) !== undefined) return false
+  return trimmed.length >= 40 || trimmed.includes('\n') || trimmed.startsWith('#')
+}
+
+/**
+ * Longest own-property prose string on a payload (`artical_data`, `article_data`).
+ */
+function proseStringFromRecord(record: Record<string, unknown>): string | undefined {
+  let best: string | undefined
+  for (const value of Object.values(record)) {
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (!looksLikeDisplayProse(trimmed)) continue
+    if (!best || trimmed.length > best.length) best = trimmed
+  }
+  return best
+}
+
+function prefersProseOverDump(dumped: string | undefined): boolean {
+  if (!dumped) return true
+  const trimmed = dumped.trim()
+  return trimmed.startsWith('{') || trimmed.startsWith('[')
+}
+
+/**
  * Best-effort text for DataText `content` from a JSON action payload.
- * Prefers string | .content | .assistantContent | .output | .text | .message.
- * Nested JSON strings are parsed so the execution envelope is not dumped twice.
+ * Prefers string | .content | .assistantContent | .output | .text | .message,
+ * then a markdown string field, then a JSON dump. Nested JSON strings are parsed
+ * so the execution envelope is not dumped twice.
  */
 export function displayTextFromActionData(data: unknown, depth = 0): string | undefined {
   if (depth > MAX_DISPLAY_PARSE_DEPTH) {
@@ -627,12 +634,22 @@ export function displayTextFromActionData(data: unknown, depth = 0): string | un
     return stringifyActionData(data)
   }
   const record = omitActionTelemetry(data as Record<string, unknown>)
+  let fromPreferred: string | undefined
   for (const key of PREFERRED_DISPLAY_KEYS) {
     const value = record[key]
     if (value === undefined) continue
     const nested = displayTextFromActionData(value, depth + 1)
-    if (nested) return nested
+    if (nested) {
+      fromPreferred = nested
+      break
+    }
   }
+  const fromProse = proseStringFromRecord(record)
+  if (fromProse && prefersProseOverDump(fromPreferred)) {
+    return fromProse
+  }
+  if (fromPreferred) return fromPreferred
+  if (fromProse) return fromProse
   if (Object.keys(record).length === 0) {
     return undefined
   }
@@ -689,10 +706,15 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Walks a dotted path on a plain object. Missing segments resolve to undefined
  * rather than throwing, so a bound region can fall through to its placeholder.
+ * A string field plus `.content` / `.text` / `.output` (generated Agent wrapping)
+ * resolves to that string so DataText still shows markdown.
  */
 export function readHostStatePath(root: unknown, path: string): unknown {
   if (!path) return undefined
   return path.split('.').reduce<unknown>((current, segment) => {
+    if (typeof current === 'string') {
+      return DISPLAY_PATH_ALIASES.has(segment) ? current : undefined
+    }
     if (!current || typeof current !== 'object') return undefined
     return (current as Record<string, unknown>)[segment]
   }, root)

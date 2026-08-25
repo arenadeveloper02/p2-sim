@@ -17,6 +17,7 @@ import {
   pageOnLoadFrom,
   pageParamsFromQuery,
   parseJsonLiteral,
+  readHostStatePath,
   readScopedStatePath,
   repeatItemActionValues,
   repeatItemKey,
@@ -54,6 +55,33 @@ describe('displayTextFromActionData', () => {
 
   it('returns plain prose unchanged', () => {
     expect(displayTextFromActionData('## Summary')).toBe('## Summary')
+  })
+
+  it('uses a markdown string field instead of stringifying the object', () => {
+    expect(displayTextFromActionData({ artical_data: '# H1: Root Canal Treatment' })).toBe(
+      '# H1: Root Canal Treatment'
+    )
+  })
+
+  it('prefers a markdown sibling over a JSON dump in content', () => {
+    expect(
+      displayTextFromActionData({
+        artical_data: '# H1: Root Canal Treatment',
+        content: JSON.stringify({ artical_data: '# H1: Root Canal Treatment' }),
+      })
+    ).toBe('# H1: Root Canal Treatment')
+  })
+})
+
+describe('readHostStatePath', () => {
+  it('treats stringField.content as the string so Agent-style bindings still render', () => {
+    const markdown = '# H1: Root Canal Treatment'
+    expect(readHostStatePath({ artical_data: markdown }, 'artical_data.content')).toBe(markdown)
+    expect(readHostStatePath({ artical_data: markdown }, 'artical_data')).toBe(markdown)
+  })
+
+  it('still walks a real nested content object', () => {
+    expect(readHostStatePath({ output: { content: 'Hi' } }, 'output.content')).toBe('Hi')
   })
 })
 
@@ -269,7 +297,7 @@ describe('Repeat item scope', () => {
     expect(repeatItemActionValues('plain', 1)).toEqual({ item: 'plain', index: 1 })
   })
 
-  it('copies a loaded row into selected, content, and scalar inputs', () => {
+  it('copies a loaded row into selected and content without restamping inputs', () => {
     const row = {
       id: 'run_1',
       keyword: 'Dental implants',
@@ -284,16 +312,10 @@ describe('Repeat item scope', () => {
       selected: row,
       selectedId: 'run_1',
       content: '# Full report\n\nBody.',
-      inputs: {
-        id: 'run_1',
-        keyword: 'Dental implants',
-        client: '42 North Dental',
-        date: '2026-08-23',
-      },
     })
   })
 
-  it('falls back to the row index when the item has no id and omits prose from inputs', () => {
+  it('falls back to the row index when the item has no id', () => {
     expect(selectedItemHostState({ output: 'Hello', body: 'no' }, 4)).toEqual({
       error: undefined,
       schemaWarning: undefined,

@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { act } from 'react'
+import { act, useLayoutEffect, useState, type ReactNode } from 'react'
 import type { Spec } from '@json-render/core'
+import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -33,7 +34,10 @@ vi.mock('@/hooks/queries/arena-generative-apps', () => ({
   runGenerativeAppDraftActionStream: (...args: unknown[]) => mockRunDraftActionStream(...args),
 }))
 
-import { GenerativeAppHostStateProvider } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
+import {
+  GenerativeAppHostStateProvider,
+  useGenerativeAppHostState,
+} from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import { GenerativeAppPreviewHost } from '@/app/(interfaces)/gui-apps/preview/[draftId]/generative-app-preview-host'
 
 const homeSpec: Spec = {
@@ -476,6 +480,37 @@ describe('GenerativeAppPreviewHost page onLoad', () => {
 
   it('leaves the form page alone, since only results declares onLoad', async () => {
     await renderAt('home')
+
+    expect(mockMutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('does not run onLoad while a CTA is still writing this page', async () => {
+    function ArmPending({ children }: { children: ReactNode }) {
+      const { setActionPending } = useGenerativeAppHostState()
+      const [ready, setReady] = useState(false)
+      useLayoutEffect(() => {
+        flushSync(() => {
+          setActionPending(true)
+        })
+        setReady(true)
+      }, [setActionPending])
+      if (!ready) return null
+      return children
+    }
+
+    await act(async () => {
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <ArmPending>
+            <GenerativeAppPreviewHost
+              draftId='draft-1'
+              pagePath='results'
+              pageParams={{ id: 'lead_7' }}
+            />
+          </ArmPending>
+        </GenerativeAppHostStateProvider>
+      )
+    })
 
     expect(mockMutateAsync).not.toHaveBeenCalled()
   })

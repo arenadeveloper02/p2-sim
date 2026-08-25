@@ -67,5 +67,7 @@ describe('buildArenaGenerativeUiPrompt', () => {
   it('teaches the same-page History Open swap', () => {
     expect(prompt).toContain('!selectedId')
     expect(prompt).toContain('clearItem')
+    expect(prompt).toContain('form field names')
+    expect(prompt).not.toContain('scalar fields under inputs')
   })
 })

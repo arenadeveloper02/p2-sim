@@ -681,3 +681,131 @@ describe('GenerativeAppHost same-page History Open', () => {
     expect(mockPush).not.toHaveBeenCalled()
   })
 })
+
+const echoHomeSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: { type: 'Page', props: { title: 'Generator' }, children: ['form'] },
+    form: {
+      type: 'Form',
+      props: { actionId: 'recommend_articles' },
+      children: ['keyword', 'client', 'submit'],
+    },
+    keyword: {
+      type: 'TextInput',
+      props: { name: 'targetKeyword', label: 'Target Keyword' },
+      children: [],
+    },
+    client: {
+      type: 'TextInput',
+      props: { name: 'clientBrand', label: 'Client / Brand' },
+      children: [],
+    },
+    submit: { type: 'SubmitButton', props: { label: 'Generate Recommendations' }, children: [] },
+  },
+}
+
+const echoResultsSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: { type: 'Page', props: { title: 'Results' }, children: ['header', 'keyword', 'client'] },
+    header: {
+      type: 'PageHeader',
+      props: {
+        kicker: 'Recommendations',
+        title: 'Working on "{targetKeyword}" for {clientBrand}',
+      },
+      children: [],
+    },
+    keyword: {
+      type: 'Chip',
+      props: { text: 'Keyword: {targetKeyword}', tone: 'info' },
+      children: [],
+    },
+    client: {
+      type: 'Chip',
+      props: { text: 'Client: {clientBrand}', tone: 'muted' },
+      children: [],
+    },
+  },
+}
+
+describe('GenerativeAppHost form echo on Results', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUseDeployedAppConfig.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        kind: 'config',
+        config: {
+          streamingActionIds: [],
+          actionNavigate: { recommend_articles: 'results' },
+          pageOnLoad: {},
+        },
+      },
+      error: null,
+    })
+    mockUseDeployedAppPage.mockReturnValue({
+      isLoading: false,
+      data: { path: 'home', title: 'Generator', spec: echoHomeSpec },
+    })
+    mockMutateAsync.mockReturnValue(new Promise(() => {}))
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  function renderHost(pagePath: string, spec: Spec) {
+    mockUseDeployedAppPage.mockReturnValue({
+      isLoading: false,
+      data: { path: pagePath, title: pagePath, spec },
+    })
+    act(() => {
+      root.render(
+        <GenerativeAppHostStateProvider>
+          <GenerativeAppHost identifier='gui-articles' pagePath={pagePath} emailId='' />
+        </GenerativeAppHostStateProvider>
+      )
+    })
+  }
+
+  it('shows typed targetKeyword and clientBrand on Results while the CTA is pending', async () => {
+    renderHost('home', echoHomeSpec)
+
+    const keyword = container.querySelector('input[name="targetKeyword"]') as HTMLInputElement
+    const client = container.querySelector('input[name="clientBrand"]') as HTMLInputElement
+    act(() => {
+      keyword.value = 'Dental implants'
+      keyword.dispatchEvent(new Event('input', { bubbles: true }))
+      keyword.dispatchEvent(new Event('change', { bubbles: true }))
+      client.value = '42 North Dental'
+      client.dispatchEvent(new Event('input', { bubbles: true }))
+      client.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const form = container.querySelector('form')
+    act(() => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(mockPush).toHaveBeenCalledWith('/gui-apps/gui-articles/results')
+
+    renderHost('results', echoResultsSpec)
+
+    expect(container.textContent).toContain('Working on "Dental implants" for 42 North Dental')
+    expect(container.textContent).toContain('Keyword: Dental implants')
+    expect(container.textContent).toContain('Client: 42 North Dental')
+    expect(container.textContent).not.toContain('Working on ""')
+  })
+})
