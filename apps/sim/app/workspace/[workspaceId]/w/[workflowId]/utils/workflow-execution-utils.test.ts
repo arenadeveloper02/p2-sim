@@ -302,6 +302,101 @@ describe('workflow-execution-utils', () => {
       expect(JSON.stringify(updateConsole.mock.calls)).not.toContain('sk-resolved-secret')
     })
 
+    it('falls back to functional completion payload when display is empty without clearLiveDisplay', () => {
+      const updateConsole = vi.fn()
+      const handlers = createBlockEventHandlers(
+        {
+          workflowId: 'wf-1',
+          executionIdRef: { current: 'exec-1' },
+          workflowEdges: [],
+          activeBlocksSet: new Set<string>(),
+          activeBlockRefCounts: new Map<string, number>(),
+          accumulatedBlockLogs: [],
+          accumulatedBlockStates: new Map(),
+          executedBlockIds: new Set<string>(),
+          includeStartConsoleEntry: true,
+        },
+        {
+          addConsole: vi.fn(),
+          updateConsole,
+          setActiveBlocks: vi.fn(),
+          setBlockRunStatus: vi.fn(),
+          setEdgeRunStatus: vi.fn(),
+        }
+      )
+
+      handlers.onBlockCompleted({
+        blockId: 'knowledge-1',
+        blockName: 'Knowledge Search',
+        blockType: 'knowledge',
+        executionOrder: 1,
+        input: { query: 'answer', knowledgeBaseIds: ['kb-1'] },
+        output: { results: [{ content: 'answer' }], totalResults: 1 },
+        display: {},
+        durationMs: 10,
+        startedAt: '2026-07-31T00:00:00.000Z',
+        endedAt: '2026-07-31T00:00:00.010Z',
+      } as any)
+
+      expect(updateConsole).toHaveBeenCalledWith(
+        'knowledge-1',
+        expect.objectContaining({
+          input: { query: 'answer', knowledgeBaseIds: ['kb-1'] },
+          replaceOutput: { results: [{ content: 'answer' }], totalResults: 1 },
+        }),
+        'exec-1'
+      )
+      expect(updateConsole.mock.calls[0][1]).not.toHaveProperty('clearAgentStreamThinking')
+    })
+
+    it('keeps an intentional secret-safe wipe when clearLiveDisplay is set', () => {
+      const updateConsole = vi.fn()
+      const handlers = createBlockEventHandlers(
+        {
+          workflowId: 'wf-1',
+          executionIdRef: { current: 'exec-1' },
+          workflowEdges: [],
+          activeBlocksSet: new Set<string>(),
+          activeBlockRefCounts: new Map<string, number>(),
+          accumulatedBlockLogs: [],
+          accumulatedBlockStates: new Map(),
+          executedBlockIds: new Set<string>(),
+          includeStartConsoleEntry: true,
+        },
+        {
+          addConsole: vi.fn(),
+          updateConsole,
+          setActiveBlocks: vi.fn(),
+          setBlockRunStatus: vi.fn(),
+          setEdgeRunStatus: vi.fn(),
+        }
+      )
+
+      handlers.onBlockCompleted({
+        blockId: 'fn-1',
+        blockName: 'Function 1',
+        blockType: 'function',
+        executionOrder: 1,
+        input: { code: 'return sk-resolved-secret' },
+        output: { result: 'sk-resolved-secret' },
+        display: { clearLiveDisplay: true },
+        durationMs: 10,
+        startedAt: '2026-07-31T00:00:00.000Z',
+        endedAt: '2026-07-31T00:00:00.010Z',
+      } as any)
+
+      expect(updateConsole).toHaveBeenCalledWith(
+        'fn-1',
+        expect.objectContaining({
+          input: {},
+          replaceOutput: {},
+          clearAgentStreamThinking: true,
+        }),
+        'exec-1'
+      )
+      expect(JSON.stringify(updateConsole.mock.calls)).not.toContain('sk-resolved-secret')
+    })
+
     it('does not fall back to a raw block error when the display projection is empty', () => {
       const accumulatedBlockLogs: BlockLog[] = []
       const accumulatedBlockStates = new Map()

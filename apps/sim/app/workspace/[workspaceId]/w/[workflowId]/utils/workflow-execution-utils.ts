@@ -162,7 +162,20 @@ function getBlockCompletedDisplay(data: BlockCompletedData): BlockCompletedDispl
   if (!Object.hasOwn(event, 'display')) {
     return { input: data.input, output: data.output }
   }
-  return event.display ?? {}
+  const display = event.display ?? {}
+  /**
+   * Intentional secret wipes set `clearLiveDisplay`. An empty `display` without that flag
+   * is an under-redaction / projection gap (e.g. Knowledge) — fall through to the functional
+   * payload so the terminal drawer still shows block input/output.
+   */
+  if (
+    display.clearLiveDisplay !== true &&
+    !Object.hasOwn(display, 'input') &&
+    !Object.hasOwn(display, 'output')
+  ) {
+    return { input: data.input, output: data.output }
+  }
+  return display
 }
 
 function getBlockErrorDisplay(data: BlockErrorData): BlockErrorDisplayProjection {
