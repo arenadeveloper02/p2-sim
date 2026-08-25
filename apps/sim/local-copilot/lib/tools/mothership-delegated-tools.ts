@@ -364,6 +364,7 @@ export async function executeMothershipDelegatedTool(
     abortSignal: ctx.abortSignal,
     copilotToolExecution: true,
     userPermission: ctx.userPermission,
+    ...(ctx.activeToolCallId?.trim() ? { toolCallId: ctx.activeToolCallId.trim() } : {}),
     ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
   })
 

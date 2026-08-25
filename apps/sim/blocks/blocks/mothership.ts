@@ -1,3 +1,4 @@
+import { ArenaIcon } from '@/components/icons'
 import { fetchWorkspaceRawSecretNameOptions } from '@/lib/workflows/subblocks/options'
 import type { BlockConfig } from '@/blocks/types'
 import type { ToolResponse } from '@/tools/types'
@@ -27,7 +28,7 @@ export const MothershipBlock: BlockConfig<MothershipResponse> = {
   `,
   category: 'blocks',
   bgColor: '#802FDE',
-  icon: ArenaLogo,
+  icon: ArenaIcon,
   canvasPresentation: {
     defaultTitle: 'Arena Chat',
     sentences: {
