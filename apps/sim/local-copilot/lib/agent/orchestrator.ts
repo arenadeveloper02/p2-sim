@@ -60,9 +60,11 @@ import {
   compactChatHistory,
   estimateChatMessagesTokens,
   estimateToolDefinitionTokens,
+  LOCAL_COPILOT_BEDROCK_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
   LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS,
   LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
   resolveLocalCopilotPromptTokenBudget,
+  resolveLocalCopilotTokenCountModel,
   resolveWorkflowContextDetail,
 } from '@/local-copilot/lib/context/context-budget'
 import {
@@ -611,10 +613,15 @@ export async function* runLocalCopilotAgent(
     : { messages: [] as ChatMessage[], clearedCount: 0, charsFreed: 0 }
   const historyMessages = historyMicrocompact.messages
 
+  const tokenCountModel = resolveLocalCopilotTokenCountModel(config.model, config.provider)
+  const workflowFullStateTokenBudget =
+    config.provider === 'bedrock'
+      ? LOCAL_COPILOT_BEDROCK_WORKFLOW_FULL_STATE_TOKEN_BUDGET
+      : LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET
   const workflowDetail = resolveWorkflowContextDetail(
     structuredContext,
-    LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET,
-    config.model
+    workflowFullStateTokenBudget,
+    tokenCountModel
   )
 
   let snapshotPromptPlan: SnapshotPromptPlan | null = null
@@ -692,9 +699,10 @@ export async function* runLocalCopilotAgent(
   const tools = hybridTools.tools
   const usedFullCatalog = hybridTools.usedFullCatalog
 
-  const estimatedToolDefinitionTokens = estimateToolDefinitionTokens(tools, config.model)
+  const estimatedToolDefinitionTokens = estimateToolDefinitionTokens(tools, tokenCountModel)
   const promptBudget = resolveLocalCopilotPromptTokenBudget({
     model: config.model,
+    provider: config.provider,
     toolDefinitionTokens: estimatedToolDefinitionTokens,
     maxOutputTokens: LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS,
   })
@@ -725,7 +733,7 @@ export async function* runLocalCopilotAgent(
       userTurn,
     ],
     promptBudget.tokenBudget,
-    config.model
+    tokenCountModel
   )
 
   const specialistBudget = createSpecialistBudget()
@@ -736,13 +744,13 @@ export async function* runLocalCopilotAgent(
     sessionMemoryPresent: Boolean(sessionMemory),
     contextEntries: params.contexts?.length ?? 0,
     fileAttachments: params.fileAttachments?.length ?? 0,
-    estimatedPromptTokens: estimateChatMessagesTokens(messages, config.model),
+    estimatedPromptTokens: estimateChatMessagesTokens(messages, tokenCountModel),
     estimatedToolDefinitionTokens,
     promptTokenBudget: promptBudget.tokenBudget,
     modelContextWindow: promptBudget.contextWindow,
     reservedTokens: promptBudget.reservedTokens,
     promptBudgetSoftCapped: promptBudget.softCapped,
-    tokenCountModel: config.model,
+    tokenCountModel,
     toolDefinitionCount: tools.length,
     leafToolCount: hybridTools.leafToolCount,
     specialistEntryCount: hybridTools.specialistEntryCount,
@@ -1854,13 +1862,13 @@ export async function* runLocalCopilotAgent(
       })
     }
 
-    if (estimateChatMessagesTokens(messages, config.model) > promptBudget.tokenBudget) {
-      const refit = fitPromptWithSlots(messages, promptBudget.tokenBudget, config.model)
+    if (estimateChatMessagesTokens(messages, tokenCountModel) > promptBudget.tokenBudget) {
+      const refit = fitPromptWithSlots(messages, promptBudget.tokenBudget, tokenCountModel)
       messages.splice(0, messages.length, ...refit)
       logger.info('Arena Copilot prompt re-fit after tool round', {
         round,
         promptTokenBudget: promptBudget.tokenBudget,
-        estimatedPromptTokens: estimateChatMessagesTokens(messages, config.model),
+        estimatedPromptTokens: estimateChatMessagesTokens(messages, tokenCountModel),
       })
     }
 
