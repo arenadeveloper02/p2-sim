@@ -1,4 +1,8 @@
+import type { Principal } from '@sim/auth/principal'
 import { createLogger } from '@sim/logger'
+import { omit } from '@sim/utils/object'
+import { hasWorkspaceSandboxAccess } from '@/lib/billing/core/subscription'
+import { resolveCopilotFilePrincipal } from '@/lib/copilot/auth/file-delegation'
 import { applySecretMountPolicy } from '@/lib/copilot/secret-mount-policy'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/lib/copilot/tool-executor/types'
 import {
@@ -9,27 +13,43 @@ import {
 import { decodeVfsPathSegments, encodeVfsPathSegments } from '@/lib/copilot/vfs/path-utils'
 import { isFeatureEnabled } from '@/lib/core/config/feature-flags'
 import { isPayloadSizeLimitError } from '@/lib/core/utils/stream-limits'
+import type { PrivateSecretProvenanceBundleV1 } from '@/lib/execution/model-input-provenance'
+import {
+  MOUNTED_WORKSPACE_FILES_PROVENANCE_KEY,
+  PRIVATE_SECRET_PROVENANCE_FIELD,
+} from '@/lib/execution/private-tool-metadata'
+import { MAX_PLAN_REQUIRED } from '@/lib/execution/remote-sandbox/workspace-sandboxes'
 import { getColumnId } from '@/lib/table/column-keys'
 import { TABLE_LIMITS } from '@/lib/table/constants'
 import { formatCsvCell, neutralizeCsvFormula, toCsvRow } from '@/lib/table/export-format'
+import {
+  isTableSnapshotSafeForModelMount,
+  loadTableRowSecretProvenance,
+} from '@/lib/table/rows/secret-provenance'
 import { queryRows } from '@/lib/table/rows/service'
 import { getTableById, listTables } from '@/lib/table/service'
 import { getOrCreateTableSnapshot, SNAPSHOT_MAX_BYTES } from '@/lib/table/snapshot-cache'
-import { listWorkspaceFileFolders } from '@/lib/uploads/contexts/workspace/workspace-file-folder-manager'
 import {
-  fetchServableWorkspaceFileBuffer,
-  fetchWorkspaceFileBuffer,
   findWorkspaceFileRecord,
   getSandboxWorkspaceFilePath,
-  listWorkspaceFiles,
   type WorkspaceFileRecord,
 } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { importWorkspaceFileSecretProvenanceForRuntime } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import {
   downloadFile,
   generatePresignedDownloadUrl,
   hasCloudStorage,
 } from '@/lib/uploads/core/storage-service'
 import { isGeneratedDocumentSourceType } from '@/lib/uploads/utils/file-utils'
+import { fetchAuthorizedServableWorkspaceFileBuffer } from '@/lib/workspace-files/application/fetch-servable-workspace-file-buffer'
+import { listAllWorkspaceFiles } from '@/lib/workspace-files/application/list-workspace-files'
+import { readWorkspaceFileContent } from '@/lib/workspace-files/application/read-workspace-file-content'
+import { downloadWorkspaceFileRecord } from '@/lib/workspace-files/application/read-workspace-file-record'
+import { listWorkspaceFileFoldersOperation } from '@/lib/workspace-files/application/workspace-file-folders'
+import {
+  buildWorkspaceFileFolderDisplayPath,
+  parseWorkspaceFileFolderDisplayPath,
+} from '@/lib/workspace-files/folder-display-path'
 import { extractCodeSecretNames } from '@/executor/utils/code-secret-references'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import { executeTool as executeAppTool } from '@/tools'
@@ -84,6 +104,33 @@ interface MountedBytes {
   url: number
 }
 
+async function importMountedWorkspaceFileProvenance(args: {
+  workspaceId: string
+  record: WorkspaceFileRecord
+  mountPath: string
+  registry?: ResolvedSecretTraceRegistry
+}): Promise<void> {
+  if (!args.registry) {
+    throw new Error(
+      `Input file "${args.mountPath}" cannot be mounted because its secret provenance is unavailable.`
+    )
+  }
+  try {
+    const imported = await importWorkspaceFileSecretProvenanceForRuntime({
+      workspaceId: args.workspaceId,
+      identity: {
+        fileId: args.record.id,
+        key: args.record.key,
+        context: args.record.storageContext ?? 'workspace',
+      },
+      registry: args.registry,
+    })
+    if (!imported) args.registry.markIncomplete('mounted-file-provenance-unavailable')
+  } catch {
+    args.registry.markIncomplete('mounted-file-provenance-unavailable')
+  }
+}
+
 /**
  * Mounts a stored workspace file into the sandbox and records its bytes against the running totals.
  * With cloud storage the sandbox fetches the bytes itself from a presigned URL (no web-heap transit,
@@ -95,8 +142,19 @@ async function pushWorkspaceFileMount(
   sandboxFiles: SandboxFile[],
   record: WorkspaceFileRecord,
   mountPath: string,
-  mounted: MountedBytes
+  mounted: MountedBytes,
+  workspaceId: string,
+  principal: Principal,
+  registry?: ResolvedSecretTraceRegistry
 ): Promise<void> {
+  record = (
+    await downloadWorkspaceFileRecord.execute({
+      principal,
+      input: { fileId: record.id, assertedWorkspaceId: workspaceId },
+    })
+  ).file
+  await importMountedWorkspaceFileProvenance({ workspaceId, record, mountPath, registry })
+
   // A generated document stores its generator source, so a presigned URL for
   // `record.key` would hand the sandbox source text under a `.docx` name and the
   // user's script would fail on a file that looks fine. Those resolve through the
@@ -144,7 +202,7 @@ async function pushWorkspaceFileMount(
   }
 
   const { buffer, contentType } = rendersFromSource
-    ? await fetchServableWorkspaceFileBuffer(record, {
+    ? await fetchAuthorizedServableWorkspaceFileBuffer(record, principal, {
         maxBytes: Math.min(MAX_FILE_SIZE, remainingBudget),
       }).catch((error) => {
         if (!isPayloadSizeLimitError(error)) throw error
@@ -152,7 +210,19 @@ async function pushWorkspaceFileMount(
           `Input file "${mountPath}" renders to more than the ${MAX_FILE_SIZE / 1024 / 1024}MB per-file mount limit, or than the mount budget left. Mount fewer or smaller files.`
         )
       })
-    : { buffer: await fetchWorkspaceFileBuffer(record), contentType: record.type }
+    : {
+        buffer: (
+          await readWorkspaceFileContent.execute({
+            principal,
+            input: {
+              fileId: record.id,
+              assertedWorkspaceId: workspaceId,
+              maxBytes: Math.min(MAX_FILE_SIZE, remainingBudget),
+            },
+          })
+        ).content,
+        contentType: record.type,
+      }
   // Keyed off the resolved type: a rendered document's source MIME is `text/x-…`, and
   // decoding the binary as UTF-8 would corrupt it just as surely as shipping the source.
   const isText = /^text\/|application\/json|application\/xml|application\/csv/.test(
@@ -198,9 +268,7 @@ function unmountableNamespaceReason(filePath: string): string | null {
   if (path.startsWith('tables/')) {
     return 'tables are not mounted as files. Pass the table in inputs.tables instead and it is mounted as CSV.'
   }
-  const namespace = /^(workflows|knowledgebases|components|environment|agent|jobs|tasks)\//.exec(
-    path
-  )?.[1]
+  const namespace = /^(workflows|knowledgebases|components|environment|agent)\//.exec(path)?.[1]
   if (namespace) {
     return `${namespace}/ paths are VFS metadata views, not stored file bytes, so the sandbox cannot mount them. This path is correct — read or grep it and inline the values you need in code.`
   }
@@ -247,18 +315,27 @@ export async function resolveInputFiles(
   workspaceId: string,
   inputFiles?: unknown[],
   inputTables?: unknown[],
-  inputDirectories?: unknown[]
+  inputDirectories?: unknown[],
+  provenanceUserId?: string,
+  resolvedSecretTraceRegistry?: ResolvedSecretTraceRegistry,
+  filePrincipal?: Principal
 ): Promise<SandboxFile[]> {
   const sandboxFiles: SandboxFile[] = []
   const mounted: MountedBytes = { buffered: 0, url: 0 }
 
   if (inputFiles?.length && workspaceId) {
+    if (!filePrincipal) {
+      throw new Error('Workspace file mounts require a trusted Copilot principal')
+    }
     if (inputFiles.length > MAX_MOUNTED_FILES) {
       throw new Error(
         `Too many input files (${inputFiles.length}). Maximum is ${MAX_MOUNTED_FILES}. Mount fewer files.`
       )
     }
-    const allFiles = await listWorkspaceFiles(workspaceId)
+    const { files: allFiles } = await listAllWorkspaceFiles.execute({
+      principal: filePrincipal,
+      input: { workspaceId, scope: 'active' },
+    })
     for (const fileRef of inputFiles) {
       const filePath =
         typeof fileRef === 'string'
@@ -282,13 +359,30 @@ export async function resolveInputFiles(
           ? (fileRef as CanonicalFileInput).sandboxPath
           : undefined
       const mountPath = explicitSandboxPath || getSandboxWorkspaceFilePath(record)
-      await pushWorkspaceFileMount(sandboxFiles, record, mountPath, mounted)
+      await pushWorkspaceFileMount(
+        sandboxFiles,
+        record,
+        mountPath,
+        mounted,
+        workspaceId,
+        filePrincipal,
+        resolvedSecretTraceRegistry
+      )
     }
   }
 
   if (inputDirectories?.length && workspaceId) {
-    const folders = await listWorkspaceFileFolders(workspaceId)
-    const allFiles = await listWorkspaceFiles(workspaceId, { folders })
+    if (!filePrincipal) {
+      throw new Error('Workspace directory mounts require a trusted Copilot principal')
+    }
+    const { folders } = await listWorkspaceFileFoldersOperation.execute({
+      principal: filePrincipal,
+      input: { workspaceId },
+    })
+    const { files: allFiles } = await listAllWorkspaceFiles.execute({
+      principal: filePrincipal,
+      input: { workspaceId, scope: 'active' },
+    })
     for (const dirRef of inputDirectories) {
       const dirPath =
         typeof dirRef === 'string'
@@ -298,7 +392,7 @@ export async function resolveInputFiles(
             : undefined
       if (!dirPath) continue
       const folderSegments = decodeVfsPathSegments(dirPath.replace(/^\/?files\/?/, ''))
-      const folderDisplayPath = folderSegments.join('/')
+      const folderDisplayPath = buildWorkspaceFileFolderDisplayPath(folderSegments)
       const folder = folders.find((candidate) => candidate.path === folderDisplayPath)
       if (!folder) {
         const unmountable = unmountableNamespaceReason(dirPath)
@@ -313,7 +407,7 @@ export async function resolveInputFiles(
         dirRef !== null &&
         (dirRef as CanonicalDirectoryInput).sandboxPath
           ? (dirRef as CanonicalDirectoryInput).sandboxPath!
-          : `/home/user/files/${encodeVfsPathSegments(folder.path.split('/'))}`
+          : `/home/user/files/${encodeVfsPathSegments(parseWorkspaceFileFolderDisplayPath(folder.path))}`
       const descendants = allFiles.filter((file) => {
         if (!file.folderPath) return false
         return file.folderPath === folder.path || file.folderPath.startsWith(`${folder.path}/`)
@@ -353,7 +447,15 @@ export async function resolveInputFiles(
         const relativeFolder =
           record.folderPath?.slice(folder.path.length).replace(/^\/+/, '') ?? ''
         const relativePath = [relativeFolder, record.name].filter(Boolean).join('/')
-        await pushWorkspaceFileMount(sandboxFiles, record, `${mountRoot}/${relativePath}`, mounted)
+        await pushWorkspaceFileMount(
+          sandboxFiles,
+          record,
+          `${mountRoot}/${relativePath}`,
+          mounted,
+          workspaceId,
+          filePrincipal,
+          resolvedSecretTraceRegistry
+        )
       }
     }
   }
@@ -395,6 +497,22 @@ export async function resolveInputFiles(
       // Large/hot tables mount by reference from a version-keyed CSV snapshot in object storage.
       if (snapshotCacheEnabled && table.rowCount >= SNAPSHOT_MIN_ROWS) {
         const snapshot = await getOrCreateTableSnapshot(table, 'copilot-fn-exec')
+        if (!resolvedSecretTraceRegistry) {
+          throw new Error(
+            `Input table "${tableId}" cannot be mounted because its secret provenance is unavailable.`
+          )
+        }
+        try {
+          const safeForModelMount = await isTableSnapshotSafeForModelMount({
+            tableId: table.id,
+            workspaceId,
+            rowsVersion: snapshot.version,
+          })
+          if (!safeForModelMount)
+            resolvedSecretTraceRegistry.markIncomplete('table-snapshot-unsafe-for-mount')
+        } catch {
+          resolvedSecretTraceRegistry.markIncomplete('table-snapshot-unsafe-for-mount')
+        }
 
         if (hasCloudStorage()) {
           // Mount by reference: the sandbox fetches the snapshot straight from storage via a
@@ -443,6 +561,32 @@ export async function resolveInputFiles(
         { limit: TABLE_LIMITS.DEFAULT_QUERY_LIMIT },
         'copilot-fn-exec'
       )
+      if (!resolvedSecretTraceRegistry) {
+        throw new Error(
+          `Input table "${tableId}" cannot be mounted because its secret provenance is unavailable.`
+        )
+      }
+      try {
+        const provenance = await loadTableRowSecretProvenance(rows.rows, {
+          userId: provenanceUserId ?? 'opaque-model-mount',
+          workspaceId,
+        })
+        if (
+          !provenance.complete ||
+          !(await resolvedSecretTraceRegistry.importProvenance(provenance, {
+            trusted: true,
+            origin: 'copilotFunctionExecute.result',
+          }))
+        ) {
+          resolvedSecretTraceRegistry.markIncomplete('source-provenance-incomplete', {
+            origin: 'copilotFunctionExecute.result',
+          })
+        }
+      } catch {
+        resolvedSecretTraceRegistry.markIncomplete('source-provenance-incomplete', {
+          origin: 'copilotFunctionExecute.result',
+        })
+      }
 
       const columns = table.schema.columns
       const csvLines = [toCsvRow(columns.map((column) => neutralizeCsvFormula(column.name)))]
@@ -461,15 +605,25 @@ export async function resolveInputFiles(
 
 async function importMountedProvenance(
   source: ResolvedSecretTraceRegistry,
-  target: ResolvedSecretTraceRegistry | undefined
+  target: ResolvedSecretTraceRegistry | undefined,
+  crossingValue: unknown
 ): Promise<void> {
   if (!target) return
 
   try {
-    const imported = await target.importProvenance(source.exportProvenance(), { trusted: true })
-    if (!imported) target.markIncomplete()
+    const provenance = source.exportProvenanceForValue(crossingValue)
+    const imported = await target.importCrossingProvenance(provenance, crossingValue, {
+      origin: 'copilotFunctionExecute.crossing',
+      trusted: true,
+    })
+    if (!imported)
+      target.markIncomplete('value-provenance-import-failed', {
+        origin: 'copilotFunctionExecute.crossing',
+      })
   } catch {
-    target.markIncomplete()
+    target.markIncomplete('value-provenance-import-failed', {
+      origin: 'copilotFunctionExecute.crossing',
+    })
   }
 }
 
@@ -477,9 +631,25 @@ export async function executeFunctionExecute(
   params: Record<string, unknown>,
   context: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
-  const enrichedParams = { ...params }
+  const enrichedParams = omit(params, [
+    'sandboxProfile',
+    'internalSandboxProfile',
+    PRIVATE_SECRET_PROVENANCE_FIELD,
+  ])
+  if (params.sandboxId !== undefined) {
+    if (typeof params.sandboxId !== 'string' || !params.sandboxId.trim()) {
+      throw new Error('sandboxId must be a non-empty Sim sandbox id')
+    }
+    if (!context.workspaceId) {
+      throw new Error('A workspace is required to select a Sim sandbox')
+    }
+    if (!(await hasWorkspaceSandboxAccess(context.workspaceId))) {
+      throw new Error(MAX_PLAN_REQUIRED)
+    }
+    enrichedParams.sandboxId = params.sandboxId.trim()
+  }
   const requestedNames = applySecretMountPolicy(
-    extractCodeSecretNames(params.code, params.language),
+    await extractCodeSecretNames(params.code, params.language),
     context.secretMountPolicy
   )
   const completePendingActivation =
@@ -487,6 +657,7 @@ export async function executeFunctionExecute(
       ? context.resolvedSecretTraceRegistry?.beginPendingActivation()
       : undefined
   let mountedRegistry: ResolvedSecretTraceRegistry | undefined
+  let crossingValue: unknown
 
   try {
     const secretActorUserId =
@@ -539,11 +710,26 @@ export async function executeFunctionExecute(
           context.workspaceId,
           inputFiles,
           inputTables,
-          inputDirectories
+          inputDirectories,
+          secretActorUserId ?? context.userId,
+          mountedRegistry,
+          inputFiles.length > 0 || inputDirectories.length > 0
+            ? resolveCopilotFilePrincipal(context)
+            : undefined
         )
         if (resolved.length > 0) {
           const existing = (enrichedParams._sandboxFiles as SandboxFile[]) || []
           enrichedParams._sandboxFiles = [...existing, ...resolved]
+
+          const provenance = mountedRegistry.exportProvenance()
+          const bundle: PrivateSecretProvenanceBundleV1 = {
+            version: 1,
+            complete: provenance.complete,
+            selections: provenance.complete
+              ? [{ key: MOUNTED_WORKSPACE_FILES_PROVENANCE_KEY, provenance }]
+              : [],
+          }
+          enrichedParams[PRIVATE_SECRET_PROVENANCE_FIELD] = bundle
         }
       }
     }
@@ -558,12 +744,25 @@ export async function executeFunctionExecute(
       enforceCredentialAccess: true,
     }
 
-    return await executeAppTool('function_execute', enrichedParams, {
-      resolvedSecretTraceRegistry: mountedRegistry,
-    })
+    try {
+      const result = await executeAppTool('function_execute', enrichedParams, {
+        resolvedSecretTraceRegistry: mountedRegistry,
+        ...(context.abortSignal ? { signal: context.abortSignal } : {}),
+        ...(context.sandboxProfile ? { internalSandboxProfile: context.sandboxProfile } : {}),
+      })
+      crossingValue = result
+      return result
+    } catch (error) {
+      crossingValue = error
+      throw error
+    }
   } finally {
-    if (mountedRegistry) {
-      await importMountedProvenance(mountedRegistry, context.resolvedSecretTraceRegistry)
+    if (mountedRegistry && crossingValue !== undefined) {
+      await importMountedProvenance(
+        mountedRegistry,
+        context.resolvedSecretTraceRegistry,
+        crossingValue
+      )
     }
     completePendingActivation?.()
   }

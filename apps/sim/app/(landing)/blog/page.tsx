@@ -31,7 +31,7 @@ export default async function BlogIndex({
   return (
     <ContentIndexPage
       basePath={BLOG_SECTION.basePath}
-      heading='Latest from Sim'
+      heading='Latest from Arena'
       subheading={BLOG_SECTION.description}
       posts={posts}
       page={pageNum}

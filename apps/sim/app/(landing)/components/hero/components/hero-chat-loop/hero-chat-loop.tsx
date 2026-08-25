@@ -5,14 +5,14 @@ import { cn, Tooltip } from '@sim/emcn'
 import {
   ArrowRight,
   ArrowUp,
-  Copy,
+  Duplicate,
   Mic,
   Paperclip,
   Plus,
   Slash,
   ThumbsDown,
   ThumbsUp,
-} from 'lucide-react'
+} from '@sim/emcn/icons'
 import { ThinkingLoader } from '@/components/ui'
 import { HERO_TOOLTIP_OFFSET } from '@/app/(landing)/components/hero/components/hero-platform-loop/sidebar-hotspots'
 
@@ -53,7 +53,7 @@ interface HeroChatLoopProps {
  * screenshot is invisible. The reply STREAMS in word by word (the way the
  * real Mothership streams its responses); once the text completes, the
  * "Suggested follow-ups" block (the real special-tags markup: numbered
- * `--divider`-ruled rows with a trailing arrow) and the action row land
+ * `--border`-ruled rows with a trailing arrow) and the action row land
  * together; under `prefers-reduced-motion` it appears whole.
  * The content column is centered and capped (like the real full-width
  * MothershipChat) so it reads right both full-width (stage collapsed) and at
@@ -153,7 +153,7 @@ export function HeroChatLoop({ phase, fading }: HeroChatLoopProps) {
                   <span
                     key={title}
                     className={cn(
-                      'flex items-center gap-2 border-[var(--divider)] px-2 py-2 text-left',
+                      'flex items-center gap-2 border-[var(--border)] px-2 py-2 text-left',
                       i > 0 && 'border-t'
                     )}
                   >
@@ -167,7 +167,7 @@ export function HeroChatLoop({ phase, fading }: HeroChatLoopProps) {
               </div>
             </div>
             <div className='flex items-center gap-3 text-[var(--text-icon)]'>
-              <Copy className='size-[14px]' />
+              <Duplicate className='size-[14px]' />
               <ThumbsUp className='size-[14px]' />
               <ThumbsDown className='size-[14px]' />
             </div>
@@ -176,7 +176,7 @@ export function HeroChatLoop({ phase, fading }: HeroChatLoopProps) {
       </div>
 
       <div className='pointer-events-auto mx-auto mb-5 w-[calc(100%-40px)] max-w-[600px] shrink-0 rounded-2xl border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-2'>
-        <p className='px-1.5 pt-1 text-[15px] text-[var(--text-muted)]'>Send message to Sim</p>
+        <p className='px-1.5 pt-1 text-[15px] text-[var(--text-muted)]'>Send message to Arena AI</p>
         <div className='mt-2 flex items-center gap-1.5'>
           <Tooltip.Root>
             <Tooltip.Trigger asChild>

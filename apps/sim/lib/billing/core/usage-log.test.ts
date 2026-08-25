@@ -37,10 +37,16 @@ import {
   buildNullOnlyAttributionFill,
   CUMULATIVE_COST_EPSILON,
   CumulativeUsageContextMismatchError,
+  getUserUsageLogs,
+  getWorkspaceUsageLogs,
   recordCumulativeUsage,
   recordUsage,
   resolveCumulativeTopUp,
+  UNKNOWN_CURSOR_MESSAGE,
+  UnknownUsageCursorError,
 } from '@/lib/billing/core/usage-log'
+import { asOrchestrationError } from '@/lib/core/orchestration/types'
+import { HttpError } from '@/lib/core/utils/http-error'
 
 /**
  * Re-wires the shared db mocks (`dbChainMockFns`, backing the single shared
@@ -629,166 +635,109 @@ describe('recordCumulativeUsage', () => {
   })
 })
 
-describe('recordCumulativeUsage streaming idempotency with chatId/runId', () => {
-  const streamBillingEntity = { type: 'organization' as const, id: 'workspace-org' }
-  const streamBillingPeriod = {
-    start: new Date('2026-05-01T00:00:00.000Z'),
-    end: new Date('2026-06-01T00:00:00.000Z'),
-  }
+interface MockCondition {
+  type?: string
+  conditions?: MockCondition[]
+  left?: string
+  right?: string
+}
 
+function latestWhereCondition(): MockCondition {
+  const condition = dbChainMockFns.where.mock.calls.at(-1)?.[0]
+  if (!condition) throw new Error('Expected a usage-log where condition')
+  return condition as MockCondition
+}
+
+describe('usage-log query scopes', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    installSharedDbMocks()
-    mockReturning.mockResolvedValue([{ cost: '0.3474447', billable: true }])
-    mockOnConflictDoNothing.mockReturnValue({ returning: mockReturning })
-    mockValues.mockReturnValue({ onConflictDoNothing: mockOnConflictDoNothing })
-    mockInsert.mockReturnValue({ values: mockValues })
-    mockGetHighestPrioritySubscription.mockResolvedValue({
-      periodEnd: new Date('2026-06-01T00:00:00.000Z'),
-      periodStart: new Date('2026-05-01T00:00:00.000Z'),
-      referenceId: 'org-1',
-    })
-    mockIsOrgScopedSubscription.mockReturnValue(true)
+    resetDbChainMock()
   })
 
-  const setupTx = (
-    existingRow: {
-      id: string
-      cost: string
-      rawCost?: string
-      workspaceId?: string | null
-      chatId?: string | null
-      runId?: string | null
-      userId?: string
-      billingEntityType?: 'user' | 'organization' | null
-      billingEntityId?: string | null
-      billingPeriodStart?: Date | null
-      billingPeriodEnd?: Date | null
-    } | null
-  ) => {
-    const limit = vi.fn().mockResolvedValue(existingRow ? [existingRow] : [])
-    const where = vi.fn().mockReturnValue({ limit })
-    const from = vi.fn().mockReturnValue({ where })
-    const select = vi.fn().mockReturnValue({ from })
-    const updateWhere = vi.fn().mockResolvedValue(undefined)
-    const updateSet = vi.fn().mockReturnValue({ where: updateWhere })
-    mockUpdate.mockReturnValue({ set: updateSet })
-    const tx = {
-      execute: vi.fn().mockResolvedValue(undefined),
-      select,
-      update: mockUpdate,
-      insert: mockInsert,
-    }
-    mockTransaction.mockImplementation(async (fn: (t: typeof tx) => unknown) => fn(tx))
-    return { updateSet }
-  }
+  it('queries a complete workspace ledger without an actor predicate', async () => {
+    await getWorkspaceUsageLogs('workspace-1', { limit: 25, includeSummary: false })
 
-  const streamFlush = (
-    cost: number,
-    existing: {
-      id: string
-      cost: string
-      rawCost?: string
-      workspaceId?: string | null
-      chatId?: string | null
-      runId?: string | null
-      userId?: string
-      billingEntityType?: 'user' | 'organization' | null
-      billingEntityId?: string | null
-      billingPeriodStart?: Date | null
-      billingPeriodEnd?: Date | null
-    } | null
-  ) => {
-    setupTx(existing)
-    return recordCumulativeUsage({
-      userId: 'user-1',
-      workspaceId: 'ws-1',
-      billingEntity: streamBillingEntity,
-      billingPeriod: streamBillingPeriod,
-      source: 'workspace-chat',
-      model: 'claude-opus-4.8',
-      cost,
-      eventKey: 'update-cost:msg-1-billing',
-      chatId: 'chat-1',
-      runId: 'run-1',
+    expect(latestWhereCondition()).toMatchObject({
+      type: 'and',
+      conditions: [{ type: 'eq', left: 'workspaceId', right: 'workspace-1' }],
     })
-  }
-
-  it('converges repeated stream flushes to a single ledger row for the eventKey', async () => {
-    const first = await streamFlush(0.3, null)
-    expect(first).toEqual({ billed: true, delta: 0.3, total: 0.3 })
-    expect(mockInsert).toHaveBeenCalledTimes(1)
-    expect(mockUpdate).not.toHaveBeenCalled()
-
-    const duplicate = await streamFlush(0.3, {
-      id: 'row-1',
-      cost: '0.3',
-      rawCost: '0.3',
-      userId: 'user-1',
-      workspaceId: 'ws-1',
-      chatId: 'chat-1',
-      runId: 'run-1',
-      billingEntityType: 'organization',
-      billingEntityId: 'workspace-org',
-      billingPeriodStart: streamBillingPeriod.start,
-      billingPeriodEnd: streamBillingPeriod.end,
-    })
-    expect(duplicate).toEqual({ billed: false, delta: 0, total: 0.3 })
-    expect(mockInsert).toHaveBeenCalledTimes(1)
-    expect(mockUpdate).not.toHaveBeenCalled()
-
-    const recovered = await streamFlush(0.5, {
-      id: 'row-1',
-      cost: '0.3',
-      rawCost: '0.3',
-      userId: 'user-1',
-      workspaceId: 'ws-1',
-      chatId: 'chat-1',
-      runId: 'run-1',
-      billingEntityType: 'organization',
-      billingEntityId: 'workspace-org',
-      billingPeriodStart: streamBillingPeriod.start,
-      billingPeriodEnd: streamBillingPeriod.end,
-    })
-    expect(recovered.billed).toBe(true)
-    expect(recovered.total).toBe(0.5)
-    expect(recovered.delta).toBeCloseTo(0.2, 9)
-    expect(mockInsert).toHaveBeenCalledTimes(1)
-    expect(mockUpdate).toHaveBeenCalledTimes(1)
+    expect(dbChainMockFns.limit).toHaveBeenCalledWith(26)
   })
 
-  it('preserves chatId and runId when topping up an existing cumulative row', async () => {
-    const { updateSet } = setupTx({
-      id: 'row-1',
-      cost: '0.3',
-      rawCost: '0.3',
-      userId: 'user-1',
-      workspaceId: 'ws-1',
-      billingEntityType: 'organization',
-      billingEntityId: 'workspace-org',
-      billingPeriodStart: streamBillingPeriod.start,
-      billingPeriodEnd: streamBillingPeriod.end,
+  it('rejects a cursor that resolves to no usage event instead of restarting at page 1', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([])
+
+    const rejection = await getUserUsageLogs('user-1', {
+      cursor: 'log-from-another-ledger',
+      includeSummary: false,
+    }).catch((error: unknown) => error)
+
+    expect(rejection).toBeInstanceOf(UnknownUsageCursorError)
+    expect((rejection as Error).message).toBe(UNKNOWN_CURSOR_MESSAGE)
+  })
+
+  /**
+   * Both projections of the same throw: the v2 route reads the classification off
+   * the `cause` chain, the session-only internal route reads `statusCode` off the
+   * `HttpError`. Asserting them here is what lets the route suites stay on the
+   * surface behaviour.
+   */
+  it('classifies the unresolvable-cursor rejection for both surfaces', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([])
+
+    const rejection = await getUserUsageLogs('user-1', {
+      cursor: 'log-from-another-ledger',
+      includeSummary: false,
+    }).catch((error: unknown) => error)
+
+    expect(rejection).toBeInstanceOf(HttpError)
+    expect((rejection as HttpError).statusCode).toBe(400)
+    expect(asOrchestrationError(rejection)).toMatchObject({
+      code: 'validation',
+      message: UNKNOWN_CURSOR_MESSAGE,
     })
-    await recordCumulativeUsage({
-      userId: 'user-1',
-      workspaceId: 'ws-1',
-      billingEntity: streamBillingEntity,
-      billingPeriod: streamBillingPeriod,
-      source: 'workspace-chat',
-      model: 'claude-opus-4.8',
-      cost: 0.5,
-      eventKey: 'update-cost:msg-1-billing',
-      chatId: 'chat-1',
-      runId: 'run-1',
+  })
+
+  it('narrows the page to rows after a resolvable cursor', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([{ createdAt: new Date('2026-07-01T00:00:00Z') }])
+
+    await getUserUsageLogs('user-1', { cursor: 'log-1', limit: 25, includeSummary: false })
+
+    expect(latestWhereCondition()).toMatchObject({
+      type: 'and',
+      conditions: [{ type: 'eq', left: 'userId', right: 'user-1' }, { type: 'or' }],
     })
-    expect(updateSet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        chatId: 'chat-1',
-        runId: 'run-1',
-        cost: '0.5',
-        rawCost: '0.5',
-        billableCost: '0.5',
-      })
-    )
+  })
+
+  it('trusts a caller-supplied cursor timestamp without a lookup', async () => {
+    await getUserUsageLogs('user-1', {
+      cursor: 'log-1',
+      cursorCreatedAt: new Date('2026-07-01T00:00:00Z'),
+      limit: 25,
+      includeSummary: false,
+    })
+
+    expect(latestWhereCondition()).toMatchObject({
+      type: 'and',
+      conditions: [{ type: 'eq', left: 'userId', right: 'user-1' }, { type: 'or' }],
+    })
+    expect(dbChainMockFns.limit).toHaveBeenCalledTimes(1)
+    expect(dbChainMockFns.limit).toHaveBeenCalledWith(26)
+  })
+
+  it('keeps personal queries actor-scoped with an optional workspace filter', async () => {
+    await getUserUsageLogs('user-1', {
+      workspaceId: 'workspace-1',
+      limit: 25,
+      includeSummary: false,
+    })
+
+    expect(latestWhereCondition()).toMatchObject({
+      type: 'and',
+      conditions: [
+        { type: 'eq', left: 'userId', right: 'user-1' },
+        { type: 'eq', left: 'workspaceId', right: 'workspace-1' },
+      ],
+    })
   })
 })

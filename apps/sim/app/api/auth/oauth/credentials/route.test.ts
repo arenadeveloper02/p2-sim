@@ -118,7 +118,7 @@ describe('OAuth Credentials API Route', () => {
     expect(data.credentials).toHaveLength(0)
   })
 
-  it('should return both zoom and zoom-admin credentials when querying zoom', async () => {
+  it('does not expose a managed credential requested by exact ID', async () => {
     hybridAuthMockFns.mockCheckSessionOrInternalAuth.mockResolvedValueOnce({
       success: true,
       userId: 'user-123',

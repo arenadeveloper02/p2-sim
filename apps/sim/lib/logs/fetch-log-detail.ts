@@ -23,6 +23,7 @@ import {
   pickLatestStartedMarker,
 } from '@/lib/logs/execution/progress-markers'
 import { materializeExecutionDataForDisplay } from '@/lib/logs/execution/trace-store'
+import { workflowExecutionOriginSql } from '@/lib/logs/execution-origin'
 import type { TraceSpan } from '@/lib/logs/types'
 import { checkWorkspaceAccess } from '@/lib/workspaces/permissions/utils'
 
@@ -272,6 +273,7 @@ export async function fetchLogDetail({
       pausedStatus: pausedExecutions.status,
       pausedTotalPauseCount: pausedExecutions.totalPauseCount,
       pausedResumedCount: pausedExecutions.resumedCount,
+      executionOrigin: workflowExecutionOriginSql().as('execution_origin'),
     })
     .from(workflowExecutionLogs)
     .leftJoin(workflow, eq(workflowExecutionLogs.workflowId, workflow.id))
@@ -344,6 +346,7 @@ export async function fetchLogDetail({
       status: log.status,
       duration: log.totalDurationMs ? `${log.totalDurationMs}ms` : null,
       trigger: log.trigger,
+      executionOrigin: log.executionOrigin ?? null,
       createdAt: log.startedAt.toISOString(),
       workflow: workflowSummary,
       jobTitle: null,
@@ -412,6 +415,7 @@ export async function fetchLogDetail({
     status: jobLog.status,
     duration: jobLog.totalDurationMs ? `${jobLog.totalDurationMs}ms` : null,
     trigger: jobLog.trigger,
+    executionOrigin: null,
     createdAt: jobLog.startedAt.toISOString(),
     workflow: null,
     jobTitle: ((execData.trigger as Record<string, unknown> | undefined)?.source as string) ?? null,

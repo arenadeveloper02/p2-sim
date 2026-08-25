@@ -23,14 +23,14 @@ Sim stores every uploaded file — knowledge base documents, chat attachments, e
 
 ## How the backend is selected
 
-Sim picks the backend automatically from environment variables — there is no explicit "provider" flag. The logic, in order of precedence:
+Set `STORAGE_PROVIDER` to `local`, `s3`, `azure`, or `gcs` to select a backend explicitly. When it is unset, Sim infers the backend from the configured environment variables in this order:
 
 1. **Azure Blob** — used if `AZURE_STORAGE_CONTAINER_NAME` is set **and** either (`AZURE_ACCOUNT_NAME` + `AZURE_ACCOUNT_KEY`) or `AZURE_CONNECTION_STRING` is set.
 2. **AWS S3** — used if `S3_BUCKET_NAME` **and** `AWS_REGION` are set (and Azure is not configured).
 3. **Google Cloud Storage** — used if `GCS_BUCKET_NAME` is set (and neither Azure nor S3 is configured).
 4. **Local disk** — the fallback when none is configured.
 
-If more than one backend is configured, the first match in that order wins. Set only the variables for the backend you intend to use.
+If `STORAGE_PROVIDER` is unset, Sim skips incomplete backends and uses the first ready match in that order. A higher-priority backend with its required fields present but invalid supplied values fails fast instead of silently falling through. An explicit `STORAGE_PROVIDER` takes precedence and must be valid and complete.
 
 ## Set up AWS S3
 
@@ -78,7 +78,6 @@ cat > /tmp/cors.json <<'EOF'
       "AllowedOrigins": ["https://sim.yourdomain.com"],
       "AllowedMethods": ["GET", "PUT"],
       "AllowedHeaders": ["*"],
-      "ExposeHeaders": ["ETag"],
       "MaxAgeSeconds": 3600
     }
   ]
@@ -90,10 +89,6 @@ for name in workspace-files knowledge-base execution-files chat-files \
   aws s3api put-bucket-cors --bucket "myorg-sim-$name" --cors-configuration file:///tmp/cors.json
 done
 ```
-
-<Callout type="warn">
-  `ExposeHeaders` **must** include `ETag`. Files larger than 50 MB use multipart uploads, and the browser reads each part's `ETag` to complete the upload — CORS hides the header otherwise and large uploads fail at the final step.
-</Callout>
 
 Set `AllowedOrigins` to your exact Sim origin (scheme + host, no trailing slash). Add every origin users reach Sim from, including an apex/`www` pair if both are live.
 
@@ -237,6 +232,28 @@ AZURE_STORAGE_OG_IMAGES_CONTAINER_NAME=og-images
 AZURE_STORAGE_WORKSPACE_LOGOS_CONTAINER_NAME=workspace-logos
 ```
 
+Direct browser uploads require a Blob service CORS rule on the storage account. Allow your exact
+Sim origin, `GET` and `PUT`, the `Content-Type` header, and the `x-ms-*` prefix used by signed blob
+and metadata headers. Small-file uploads also send `If-None-Match`; the signature itself is
+create-only, so a signed URL cannot overwrite an existing final object. Multipart uploads also read
+`ETag` from the browser response:
+
+```bash
+az storage cors add \
+  --services b \
+  --methods GET PUT OPTIONS \
+  --origins https://sim.yourdomain.com \
+  --allowed-headers content-type if-none-match 'x-ms-*' \
+  --exposed-headers ETag \
+  --max-age 3600 \
+  --account-name mystorageaccount \
+  --account-key '<account-key>'
+```
+
+If you authenticate with a connection string, replace the last two options with
+`--connection-string "$AZURE_CONNECTION_STRING"`. CORS is configured once for the account's Blob
+service and applies to all of its containers.
+
 A full Helm example lives at `helm/sim/examples/values-azure.yaml`.
 
 ## Set up Google Cloud Storage
@@ -273,17 +290,21 @@ cat > /tmp/cors.json <<'EOF'
   {
     "origin": ["https://your-sim-domain.com"],
     "method": ["GET", "PUT"],
-    "responseHeader": [
-      "Content-Type",
-      "ETag",
+      "responseHeader": [
+        "Content-Type",
+        "ETag",
+        "x-goog-if-generation-match",
+        "x-goog-meta-uploadid",
       "x-goog-meta-originalname",
       "x-goog-meta-uploadedat",
       "x-goog-meta-purpose",
       "x-goog-meta-userid",
       "x-goog-meta-workspaceid",
+      "x-goog-meta-knowledgebaseid",
       "x-goog-meta-folderid",
       "x-goog-meta-workflowid",
-      "x-goog-meta-executionid"
+      "x-goog-meta-executionid",
+      "x-goog-meta-simuploadid"
     ],
     "maxAgeSeconds": 3600
   }
@@ -297,7 +318,7 @@ done
 ```
 
 <Callout type="info">
-  Header names must be listed individually — GCS CORS matches `responseHeader` entries exactly and does not support wildcards like `x-goog-meta-*`. `ETag` is required because large-file multipart uploads read each part's `ETag` from the browser, and CORS hides the header otherwise.
+  Header names must be listed individually — GCS CORS matches `responseHeader` entries exactly and does not support wildcards like `x-goog-meta-*`. `ETag` is required because large-file multipart uploads read each part's `ETag` from the browser, and CORS hides the header otherwise. `x-goog-if-generation-match` is required by Sim's create-only signed uploads, which prevent a reused upload URL from replacing existing bytes. `x-goog-meta-simuploadid` carries the opaque receipt used to verify an upload after an ambiguous network response.
 </Callout>
 
 </Step>
@@ -444,6 +465,27 @@ The same browser-reachability and CORS requirements apply.
 
   </Tab>
 </Tabs>
+
+## Configure incomplete multipart cleanup
+
+Sim uploads directly to a create-only final object key and keeps upload-session state in PostgreSQL.
+The cleanup cron claims expired sessions before deleting an uploaded object or aborting its provider
+multipart state. Configure provider lifecycle cleanup as a second line of defense for multipart
+state that outlives its database row:
+
+- On AWS S3 and Google Cloud Storage, abort incomplete multipart uploads after two days on every
+  purpose-specific bucket.
+- Azure automatically removes uncommitted blocks after seven days.
+- For an S3-compatible provider, configure incomplete-multipart cleanup when its lifecycle
+  implementation supports it. Check the provider's documentation because support varies.
+
+The provider window should exceed the 24-hour upload-session lifetime so an in-progress completion
+can still recover. Do not add an object-expiration rule for final upload keys.
+
+<Callout type="warning">
+  Object expiration and incomplete-multipart cleanup are different lifecycle operations. Configure
+  the incomplete-multipart operation; expiring objects does not remove abandoned multipart parts.
+</Callout>
 
 ## Verify it works
 

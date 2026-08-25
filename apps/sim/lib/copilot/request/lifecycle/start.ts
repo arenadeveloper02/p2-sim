@@ -427,9 +427,7 @@ export function createSSEStream(params: StreamingOrchestrationParams): ReadableS
   })
 }
 
-// ---------------------------------------------------------------------------
 // Title generation (fire-and-forget side effect)
-// ---------------------------------------------------------------------------
 
 function fireTitleGeneration(params: {
   chatId?: string
@@ -496,9 +494,7 @@ function fireTitleGeneration(params: {
     })
 }
 
-// ---------------------------------------------------------------------------
 // Chat title helper
-// ---------------------------------------------------------------------------
 
 export async function requestChatTitle(params: {
   message: string

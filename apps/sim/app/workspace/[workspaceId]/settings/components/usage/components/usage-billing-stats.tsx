@@ -23,8 +23,7 @@ import { useSubscriptionData } from '@/hooks/queries/subscription'
 const USAGE_BY_SOURCE_TOOLTIP =
   'Mothership includes copilot, workspace chat, and related AI usage. Workflow runs covers workflow execution costs.'
 
-const ORG_SUMMARY_DESCRIPTION =
-  'Credits include combined usage from Mothership and Workflow Runs.'
+const ORG_SUMMARY_DESCRIPTION = 'Credits include combined usage from Mothership and Workflow Runs.'
 
 /**
  * Billing pool / remaining-credits stats for the Usage settings page.

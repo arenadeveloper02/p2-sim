@@ -3,19 +3,28 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
-import { ApiClientError } from '@/lib/api/client/errors'
 import { requestJson } from '@/lib/api/client/request'
-import { getAllowedIntegrationsContract } from '@/lib/api/contracts/common'
+import {
+  type GetAllowedIntegrationsResponse,
+  getAllowedIntegrationsContract,
+  type IntegrationAvailabilityResponse,
+} from '@/lib/api/contracts/common'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
 import {
-  isBlockTypeAccessControlExempt,
-  isBlockVisibleForWorkspace,
-} from '@/lib/permission-groups/block-access'
+  isDeploymentGatedIntegrationType,
+  resolveIntegrationAvailabilityStateForVisibility,
+} from '@/lib/integrations/availability'
+import { isBlockTypeAccessControlExempt } from '@/lib/permission-groups/block-access'
+import { intersectIntegrationAllowlists } from '@/lib/permission-groups/integration-allowlist'
 import {
   DEFAULT_PERMISSION_GROUP_CONFIG,
   type PermissionGroupConfig,
 } from '@/lib/permission-groups/types'
+import { useOptionalWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
+import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
+import { overlayVisibility } from '@/blocks/visibility/context'
 import { useUserPermissionConfig } from '@/ee/access-control/hooks/permission-groups'
+import { findProviderFromModel } from '@/providers/utils'
 
 export interface PermissionConfigResult {
   config: PermissionGroupConfig
@@ -24,15 +33,16 @@ export interface PermissionConfigResult {
   filterBlocks: <T extends { type: string }>(blocks: T[]) => T[]
   filterProviders: (providerIds: string[]) => string[]
   isBlockAllowed: (blockType: string) => boolean
-  isProviderAllowed: (providerId: string) => boolean
-  isModelAllowed: (model: string) => boolean
+  /**
+   * Whether a model is usable at all: allowed by the model denylist *and* by
+   * the provider allowlist. Both gates apply to every model field, so this is
+   * the only model predicate the interface exposes.
+   */
+  isModelUsable: (model: string) => boolean
   isToolAllowed: (toolId: string) => boolean
   isInvitationsDisabled: boolean
   isPublicApiDisabled: boolean
-}
-
-interface AllowedIntegrationsResponse {
-  allowedIntegrations: string[] | null
+  integrationAvailability: ReadonlyMap<string, IntegrationAvailabilityResponse>
 }
 
 const allowedIntegrationsKeys = {
@@ -41,37 +51,18 @@ const allowedIntegrationsKeys = {
 }
 
 function useAllowedIntegrationsFromEnv() {
-  return useQuery<AllowedIntegrationsResponse>({
+  return useQuery<GetAllowedIntegrationsResponse>({
     queryKey: allowedIntegrationsKeys.env(),
-    queryFn: async ({ signal }) => {
-      try {
-        return await requestJson(getAllowedIntegrationsContract, { signal })
-      } catch (error) {
-        // Treat any auth/server failure as "no env allowlist configured"
-        // so the UI falls back to the permission-group-driven allowlist.
-        if (error instanceof ApiClientError) {
-          return { allowedIntegrations: null }
-        }
-        throw error
-      }
-    },
+    queryFn: ({ signal }) => requestJson(getAllowedIntegrationsContract, { signal }),
     staleTime: 5 * 60 * 1000,
   })
-}
-
-/**
- * Intersects two allowlists. If either is null (unrestricted), returns the other.
- * If both are set, returns only items present in both.
- */
-function intersectAllowlists(a: string[] | null, b: string[] | null): string[] | null {
-  if (a === null) return b
-  if (b === null) return a.map((i) => i.toLowerCase())
-  return a.map((i) => i.toLowerCase()).filter((i) => b.includes(i))
 }
 
 export function usePermissionConfig(): PermissionConfigResult {
   const params = useParams()
   const workspaceId = typeof params?.workspaceId === 'string' ? params.workspaceId : undefined
+  const blockOverlayVersion = useCustomBlockOverlayVersion()
+  const hostContext = useOptionalWorkspaceHostContext()
 
   const { data: permissionData, isLoading: isPermissionLoading } =
     useUserPermissionConfig(workspaceId)
@@ -92,16 +83,41 @@ export function usePermissionConfig(): PermissionConfigResult {
 
   const mergedAllowedIntegrations = useMemo(() => {
     const envAllowlist = envAllowlistData?.allowedIntegrations ?? null
-    return intersectAllowlists(config.allowedIntegrations, envAllowlist)
+    return intersectIntegrationAllowlists(config.allowedIntegrations, envAllowlist)
   }, [config.allowedIntegrations, envAllowlistData])
+
+  const integrationAvailability = useMemo(() => {
+    const visibility = overlayVisibility()
+    return new Map(
+      (envAllowlistData?.integrationAvailability ?? []).map((availability) => [
+        availability.type.toLowerCase(),
+        {
+          ...availability,
+          state: resolveIntegrationAvailabilityStateForVisibility(availability, visibility),
+        },
+      ])
+    )
+  }, [envAllowlistData?.integrationAvailability, blockOverlayVersion])
 
   const isBlockAllowed = useMemo(() => {
     return (blockType: string) => {
+      const normalizedBlockType = blockType.toLowerCase()
+      if (normalizedBlockType === 'credential_group' && !hostContext?.features?.credentialGroups) {
+        return false
+      }
+      const availability = integrationAvailability.get(normalizedBlockType)
+      if (
+        isDeploymentGatedIntegrationType(normalizedBlockType) &&
+        availability &&
+        (availability.state === 'unavailable' || availability.state === 'misconfigured')
+      ) {
+        return false
+      }
       if (isBlockTypeAccessControlExempt(blockType)) return true
-      if (isOrgAdmin || mergedAllowedIntegrations === null) return true
-      return mergedAllowedIntegrations.includes(blockType.toLowerCase())
+      if (mergedAllowedIntegrations === null) return true
+      return mergedAllowedIntegrations.includes(normalizedBlockType)
     }
-  }, [isOrgAdmin, mergedAllowedIntegrations])
+  }, [hostContext?.features?.credentialGroups, integrationAvailability, mergedAllowedIntegrations])
 
   const isProviderAllowed = useMemo(() => {
     return (providerId: string) => {
@@ -110,34 +126,41 @@ export function usePermissionConfig(): PermissionConfigResult {
     }
   }, [config.allowedModelProviders])
 
+  /** Indexed so the per-model check stays O(1) over a long denylist. */
+  const deniedModelSet = useMemo(
+    () => new Set(config.deniedModels.map((denied) => denied.toLowerCase())),
+    [config.deniedModels]
+  )
+
   const isModelAllowed = useMemo(() => {
+    return (model: string) => !deniedModelSet.has(model.toLowerCase())
+  }, [deniedModelSet])
+
+  const isModelUsable = useMemo(() => {
     return (model: string) => {
-      if (config.deniedModels.length === 0) return true
-      const normalized = model.toLowerCase()
-      return !config.deniedModels.some((denied) => denied.toLowerCase() === normalized)
+      if (!isModelAllowed(model)) return false
+      const providerId = findProviderFromModel(model)
+      /* Only chat models resolve to a provider. A `model` field holding an
+         embedding, speech, image or video id is not a provider choice, so the
+         provider allowlist has nothing to say about it — judging it anyway
+         would read every such id as Ollama and reject it. */
+      if (!providerId) return true
+      return isProviderAllowed(providerId)
     }
-  }, [config.deniedModels])
+  }, [isModelAllowed, isProviderAllowed])
+
+  /** Indexed so the per-tool check stays O(1) over a long denylist. */
+  const deniedToolSet = useMemo(() => new Set(config.deniedTools), [config.deniedTools])
 
   const isToolAllowed = useMemo(() => {
-    return (toolId: string) => {
-      if (config.deniedTools.length === 0) return true
-      return !config.deniedTools.includes(toolId)
-    }
-  }, [config.deniedTools])
+    return (toolId: string) => !deniedToolSet.has(toolId)
+  }, [deniedToolSet])
 
   const filterBlocks = useMemo(() => {
     return <T extends { type: string }>(blocks: T[]): T[] => {
-      const workspaceVisible = blocks.filter((block) =>
-        isBlockVisibleForWorkspace(block.type, workspaceId)
-      )
-      if (isOrgAdmin || mergedAllowedIntegrations === null) return workspaceVisible
-      return workspaceVisible.filter(
-        (block) =>
-          isBlockTypeAccessControlExempt(block.type) ||
-          mergedAllowedIntegrations.includes(block.type.toLowerCase())
-      )
+      return blocks.filter((block) => isBlockAllowed(block.type))
     }
-  }, [isOrgAdmin, mergedAllowedIntegrations, workspaceId])
+  }, [isBlockAllowed])
 
   const filterProviders = useMemo(() => {
     return (providerIds: string[]): string[] => {
@@ -169,11 +192,11 @@ export function usePermissionConfig(): PermissionConfigResult {
       filterBlocks,
       filterProviders,
       isBlockAllowed,
-      isProviderAllowed,
-      isModelAllowed,
+      isModelUsable,
       isToolAllowed,
       isInvitationsDisabled,
       isPublicApiDisabled,
+      integrationAvailability,
     }),
     [
       mergedConfig,
@@ -182,11 +205,11 @@ export function usePermissionConfig(): PermissionConfigResult {
       filterBlocks,
       filterProviders,
       isBlockAllowed,
-      isProviderAllowed,
-      isModelAllowed,
+      isModelUsable,
       isToolAllowed,
       isInvitationsDisabled,
       isPublicApiDisabled,
+      integrationAvailability,
     ]
   )
 }

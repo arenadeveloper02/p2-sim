@@ -43,28 +43,47 @@ export async function getFileMetadata(
     }
   }
 
-  if (USE_S3_STORAGE) {
-    const { getS3Client } = await import('@/lib/uploads/providers/s3/client')
-    const { HeadObjectCommand } = await import('@aws-sdk/client-s3')
-    const { S3_CONFIG } = await import('@/lib/uploads/config')
+  if (USE_BLOB_STORAGE) {
+    const { headBlobObject } = await import('@/lib/uploads/providers/blob/client')
+    const { BLOB_CONFIG } = await import('@/lib/uploads/config')
+    /** `headBlobObject` rejects a config that names no credentials, so only pass one that does. */
+    const credentialed = Boolean(
+      customConfig?.connectionString || (customConfig?.accountName && customConfig?.accountKey)
+    )
+    const object = await headBlobObject(
+      key,
+      credentialed
+        ? {
+            ...customConfig,
+            containerName: customConfig?.containerName || BLOB_CONFIG.containerName,
+          }
+        : undefined
+    )
+    return object?.metadata || {}
+  }
 
-    const s3Client = getS3Client()
+  if (USE_S3_STORAGE) {
+    const { headS3Object } = await import('@/lib/uploads/providers/s3/client')
+    const { S3_CONFIG } = await import('@/lib/uploads/config')
     const bucket = customConfig?.bucket || S3_CONFIG.bucket
 
     if (!bucket) {
       throw new Error('S3 bucket not configured')
     }
 
-    const command = new HeadObjectCommand({
-      Bucket: bucket,
-      Key: key,
+    const object = await headS3Object(key, {
+      bucket,
+      region: customConfig?.region || S3_CONFIG.region,
     })
-
-    const response = await s3Client.send(command)
-    return response.Metadata || {}
+    return object?.metadata || {}
   }
 
   if (USE_GCS_STORAGE) {
+    /**
+     * Unlike the other two, this raises on a missing object rather than reporting
+     * absence, because GCS answers a missing object and a missing bucket the same
+     * way and only the caller's own bucket configuration separates them.
+     */
     const { getGcsObjectMetadata } = await import('@/lib/uploads/providers/gcs/client')
     return getGcsObjectMetadata(
       key,

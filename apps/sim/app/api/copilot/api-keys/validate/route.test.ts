@@ -18,6 +18,7 @@ const {
   mockCheckSelfHostedMothershipUsageLimits,
   mockDeriveBillingContext,
   mockGetHighestPrioritySubscription,
+  mockIsEnterprisePlan,
   mockRequireBillingAttributionHeader,
   mockRequireBillingRequestIdHeader,
   mockResolveLegacyV0BillingAttribution,
@@ -33,6 +34,7 @@ const {
   mockCheckSelfHostedMothershipUsageLimits: vi.fn(),
   mockDeriveBillingContext: vi.fn(),
   mockGetHighestPrioritySubscription: vi.fn(),
+  mockIsEnterprisePlan: vi.fn(),
   mockRequireBillingAttributionHeader: vi.fn(),
   mockRequireBillingRequestIdHeader: vi.fn(),
   mockResolveLegacyV0BillingAttribution: vi.fn(),
@@ -108,6 +110,10 @@ vi.mock('@/lib/billing/core/plan', () => ({
   getHighestPrioritySubscription: mockGetHighestPrioritySubscription,
 }))
 
+vi.mock('@/lib/billing/core/subscription', () => ({
+  isEnterprisePlan: mockIsEnterprisePlan,
+}))
+
 vi.mock('@/lib/billing/core/usage-log', () => ({
   deriveBillingContext: mockDeriveBillingContext,
 }))
@@ -167,6 +173,7 @@ describe('POST /api/copilot/api-keys/validate billing protocols', () => {
       return ATTRIBUTION
     })
     mockGetHighestPrioritySubscription.mockResolvedValue(ACCOUNT_SUBSCRIPTION)
+    mockIsEnterprisePlan.mockResolvedValue(false)
     mockDeriveBillingContext.mockReturnValue({
       billingEntity: ACCOUNT_BILLING_DECISION.billingEntity,
       billingPeriod: {
@@ -246,6 +253,23 @@ describe('POST /api/copilot/api-keys/validate billing protocols', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('x-sim-billing-attribution')).toBeNull()
     expect(mockCheckAttributedUsageLimits).toHaveBeenCalledWith(ATTRIBUTION)
+  })
+
+  it('returns whether the validated key owner has an enterprise account', async () => {
+    mockIsEnterprisePlan.mockResolvedValueOnce(true)
+
+    const res = await POST(request(OLD_GO_HOSTED_VALIDATE_BODY))
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ isEnterprise: true })
+    expect(mockIsEnterprisePlan).toHaveBeenCalledWith('user-1')
+  })
+
+  it('returns false when the validated key owner is not enterprise', async () => {
+    const res = await POST(request(OLD_GO_HOSTED_VALIDATE_BODY))
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ isEnterprise: false })
   })
 
   it('preserves account admission for the exact workspace-less old-Go body', async () => {

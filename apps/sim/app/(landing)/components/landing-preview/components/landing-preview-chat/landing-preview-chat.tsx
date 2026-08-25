@@ -119,7 +119,7 @@ export function LandingPreviewChat({ chat, chatName, animationKey }: LandingPrev
           value={value}
           onChange={setValue}
           onSubmit={handleSubmit}
-          placeholder='Ask Sim anything…'
+          placeholder='Ask Arena AI anything…'
         />
       </div>
     </div>

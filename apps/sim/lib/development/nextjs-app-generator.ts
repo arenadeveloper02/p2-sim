@@ -924,7 +924,9 @@ ${
     userPrompt,
     FILE_BATCH_JSON_SCHEMA,
     (text) => {
-      const parsed = JSON.parse(extractJsonFromLlmText(text)) as { files?: GeneratedAppFile[] } | null
+      const parsed = JSON.parse(extractJsonFromLlmText(text)) as {
+        files?: GeneratedAppFile[]
+      } | null
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         throw new Error('LLM file batch response was null or not an object')
       }

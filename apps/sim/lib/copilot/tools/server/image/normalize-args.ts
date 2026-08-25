@@ -2,9 +2,7 @@
  * Coerces common model aliases into the canonical generate_image `prompt` field
  * before AJV / local validation.
  */
-export function normalizeGenerateImageArgs(
-  args: Record<string, unknown>
-): Record<string, unknown> {
+export function normalizeGenerateImageArgs(args: Record<string, unknown>): Record<string, unknown> {
   const prompt = resolveGenerateImagePrompt(args)
   if (!prompt) return { ...args }
   return { ...args, prompt }

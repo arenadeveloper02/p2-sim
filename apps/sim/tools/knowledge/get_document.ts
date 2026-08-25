@@ -24,8 +24,10 @@ export const knowledgeGetDocumentTool: ToolConfig<any, KnowledgeGetDocumentRespo
   },
 
   request: {
+    internalAuth: 'executor_delegation',
     url: (params) => `/api/knowledge/${params.knowledgeBaseId}/documents/${params.documentId}`,
     method: 'GET',
+    secretProvenance: { response: { incomplete: 'reject' } },
     headers: () => ({
       'Content-Type': 'application/json',
     }),

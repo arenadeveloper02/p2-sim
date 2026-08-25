@@ -1,8 +1,14 @@
 import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
+import type { Principal } from '@sim/auth/principal'
 import { db } from '@sim/db'
 import { folder as folderTable, workflow, workspaceFiles } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { getErrorMessage, toError } from '@sim/utils/errors'
+import {
+  getErrorMessage,
+  getPostgresConstraintName,
+  getPostgresErrorCode,
+  toError,
+} from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import {
@@ -11,6 +17,7 @@ import {
   maybeNotifyStorageLimitForBillingContext,
   resolveStorageBillingContext,
 } from '@/lib/billing/storage'
+import { resolveCopilotFilePrincipal } from '@/lib/copilot/auth/file-delegation'
 import type { ExecutionContext, ToolCallResult } from '@/lib/copilot/request/types'
 import { ensureWorkspaceAccess } from '@/lib/copilot/tools/handlers/access'
 import { findMothershipUploadRowByChatAndName } from '@/lib/copilot/tools/handlers/upload-file-reader'
@@ -23,15 +30,24 @@ import {
   MAX_ARCHIVE_BYTES,
 } from '@/lib/uploads/archive'
 import { findWorkspaceFileFolderIdByPath } from '@/lib/uploads/contexts/workspace/workspace-file-folder-manager'
-import { fetchWorkspaceFileBuffer } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import {
+  allocateUniqueWorkspaceFileName,
+  fetchWorkspaceFileBuffer,
+} from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { getBoundWorkspaceFileSecretProvenance } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import { hasCloudStorage, headObject } from '@/lib/uploads/core/storage-service'
+import { toLegacyWorkspaceFileSize } from '@/lib/uploads/shared/types'
 import { isArchiveFileName } from '@/lib/uploads/utils/file-utils'
 import { parseWorkflowJson } from '@/lib/workflows/operations/import-export'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
+import { admitCreateWorkspaceFile } from '@/lib/workspace-files/application/create-workspace-file'
+import { readWorkspaceFileMetadata } from '@/lib/workspace-files/application/read-workspace-file-metadata'
 import { extractWorkflowMetadata } from '@/app/api/v1/admin/types'
 
 const logger = createLogger('MaterializeFile')
+const MAX_MATERIALIZE_NAME_RETRIES = 8
+const WORKSPACE_FILE_NAME_UNIQUE_INDEX = 'workspace_files_workspace_folder_name_active_unique'
 
 function toFileRecord(row: typeof workspaceFiles.$inferSelect) {
   const pathPrefix = getServePathPrefix()
@@ -68,7 +84,8 @@ function uploadBelongsToWorkspace(
 async function executeSave(
   fileName: string,
   chatId: string,
-  workspaceId: string
+  workspaceId: string,
+  principal: Principal
 ): Promise<ToolCallResult> {
   const row = await findMothershipUploadRowByChatAndName(chatId, fileName)
   if (!row) {
@@ -93,7 +110,12 @@ async function executeSave(
   if (!head && hasCloudStorage()) {
     return { success: false, error: `Upload object not found: "${fileName}".` }
   }
-  const verifiedSize = head?.size ?? row.size
+  /**
+   * The true byte count can exceed the legacy int4 `size` column, so read the exact
+   * `sizeBytes` first and clamp back down for the legacy projection.
+   */
+  const verifiedSize = head?.size ?? row.sizeBytes ?? row.size
+  const legacySize = toLegacyWorkspaceFileSize(verifiedSize)
   const billingContext = await resolveStorageBillingContext(workspaceId)
   const quotaCheck = await checkStorageQuotaForBillingContext(billingContext, verifiedSize)
   if (!quotaCheck.allowed) {
@@ -107,46 +129,82 @@ async function executeSave(
    * workspace lock before locking its payer. Any quota/stale-payer failure
    * rolls back the row transition.
    */
-  const transition = await db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT 1 FROM workspace WHERE id = ${workspaceId} FOR UPDATE`)
+  let transition: {
+    updated: { id: string; originalName: string }
+    updatedUsage: number | undefined
+  } | null = null
 
-    const [updated] = await tx
-      .update(workspaceFiles)
-      .set({
-        context: 'workspace',
-        // A workspace file has no birth chat or message — clear both provenance
-        // fields so the row reads as workspace-owned, not stale chat-owned.
-        chatId: null,
-        messageId: null,
-        originalName: row.displayName ?? row.originalName,
-        size: verifiedSize,
-      })
-      .where(
-        and(
-          eq(workspaceFiles.id, row.id),
-          eq(workspaceFiles.workspaceId, workspaceId),
-          eq(workspaceFiles.chatId, chatId),
-          eq(workspaceFiles.context, 'mothership'),
-          isNull(workspaceFiles.deletedAt)
+  for (let attempt = 0; attempt < MAX_MATERIALIZE_NAME_RETRIES; attempt++) {
+    const materializedName = await allocateUniqueWorkspaceFileName(workspaceId, displayName, null)
+
+    try {
+      transition = await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT 1 FROM workspace WHERE id = ${workspaceId} FOR UPDATE`)
+
+        const [updated] = await tx
+          .update(workspaceFiles)
+          .set({
+            context: 'workspace',
+            // A workspace file has no birth chat or message — clear both provenance
+            // fields so the row reads as workspace-owned, not stale chat-owned.
+            chatId: null,
+            messageId: null,
+            originalName: materializedName,
+            displayName: materializedName,
+            size: legacySize,
+            sizeBytes: verifiedSize,
+          })
+          .where(
+            and(
+              eq(workspaceFiles.id, row.id),
+              eq(workspaceFiles.workspaceId, workspaceId),
+              eq(workspaceFiles.chatId, chatId),
+              eq(workspaceFiles.context, 'mothership'),
+              isNull(workspaceFiles.deletedAt)
+            )
+          )
+          .returning({ id: workspaceFiles.id, originalName: workspaceFiles.originalName })
+
+        if (!updated) {
+          return null
+        }
+
+        const updatedUsage = await incrementStorageUsageForBillingContextInTx(
+          tx,
+          billingContext,
+          verifiedSize
         )
-      )
-      .returning({ id: workspaceFiles.id, originalName: workspaceFiles.originalName })
-
-    if (!updated) {
-      return null
+        return { updated, updatedUsage }
+      })
+      break
+    } catch (error) {
+      const isNameCollision =
+        getPostgresErrorCode(error) === '23505' &&
+        getPostgresConstraintName(error) === WORKSPACE_FILE_NAME_UNIQUE_INDEX
+      if (!isNameCollision || attempt === MAX_MATERIALIZE_NAME_RETRIES - 1) {
+        throw error
+      }
+      logger.warn('Workspace file name was claimed during materialization; retrying', {
+        fileName,
+        materializedName,
+        attempt: attempt + 1,
+      })
     }
+  }
 
-    const updatedUsage = await incrementStorageUsageForBillingContextInTx(
-      tx,
-      billingContext,
-      verifiedSize
-    )
-    return { updated, updatedUsage }
-  })
-
-  const updated = transition?.updated ?? {
-    id: row.id,
-    originalName: row.displayName ?? row.originalName,
+  const replayedFile = transition
+    ? null
+    : (
+        await readWorkspaceFileMetadata.execute({
+          principal,
+          input: { fileId: row.id, assertedWorkspaceId: workspaceId },
+        })
+      ).file
+  const updated =
+    transition?.updated ??
+    (replayedFile ? { id: replayedFile.id, originalName: replayedFile.name } : null)
+  if (!updated) {
+    return { success: false, error: `Upload no longer available: "${fileName}".` }
   }
   if (transition?.updatedUsage !== undefined) {
     void maybeNotifyStorageLimitForBillingContext(billingContext, transition.updatedUsage)
@@ -329,7 +387,8 @@ async function executeExtract(
   fileName: string,
   chatId: string,
   workspaceId: string,
-  userId: string
+  userId: string,
+  principal: Principal
 ): Promise<ToolCallResult> {
   const row = await findMothershipUploadRowByChatAndName(chatId, fileName)
   if (!row) {
@@ -412,13 +471,19 @@ async function executeExtract(
   let result: DecompressResult
   try {
     const buffer = await fetchWorkspaceFileBuffer(record, { maxBytes: MAX_ARCHIVE_BYTES })
+    const secretProvenance = await getBoundWorkspaceFileSecretProvenance(workspaceId, {
+      fileId: row.id,
+      key: row.key,
+      context: 'mothership',
+    })
     result = await decompressArchiveBufferToWorkspaceFiles(buffer, {
       workspaceId,
-      userId,
+      principal,
       rootFolderSegments: [baseName],
       // The agent-facing extract drops macOS/Windows filesystem cruft so the
       // unpacked files/ tree only contains meaningful entries.
       skipNoiseEntries: true,
+      secretProvenance,
     })
   } catch (err) {
     if (err instanceof ArchiveError) {
@@ -495,6 +560,8 @@ export async function executeMaterializeFile(
     return { success: false, error: 'No workspace context available for materialize_file' }
   }
 
+  const principal = resolveCopilotFilePrincipal(context)
+
   const operation = (params.operation as string | undefined) || 'save'
   // save (promote upload → workspace file), import (JSON → workflow), and extract
   // (decompress a .zip upload → workspace files/) are implemented. Reject anything
@@ -506,10 +573,12 @@ export async function executeMaterializeFile(
     }
   }
 
-  // Every operation writes: save/extract create files, import creates a workflow.
-  // The handler-map path has no central permission gate.
   try {
-    await ensureWorkspaceAccess(context.workspaceId, context.userId, 'write')
+    if (operation === 'import') {
+      await ensureWorkspaceAccess(context.workspaceId, context.userId, 'write')
+    } else {
+      await admitCreateWorkspaceFile(principal, context.workspaceId)
+    }
   } catch (error) {
     return { success: false, error: getErrorMessage(error, 'Workspace write access required') }
   }
@@ -524,13 +593,23 @@ export async function executeMaterializeFile(
       if (operation === 'import') {
         result = await executeImport(fileName, context.chatId, context.workspaceId, context.userId)
       } else if (operation === 'extract') {
-        result = await executeExtract(fileName, context.chatId, context.workspaceId, context.userId)
+        result = await executeExtract(
+          fileName,
+          context.chatId,
+          context.workspaceId,
+          context.userId,
+          principal
+        )
       } else {
-        result = await executeSave(fileName, context.chatId, context.workspaceId)
+        result = await executeSave(fileName, context.chatId, context.workspaceId, principal)
       }
 
       if (result.success) {
-        succeeded.push(fileName)
+        const materializedName =
+          operation === 'save'
+            ? result.resources?.find((resource) => resource.type === 'file')?.title
+            : undefined
+        succeeded.push(materializedName ?? fileName)
         if (result.resources) resources.push(...result.resources)
       } else {
         failed.push({ fileName, error: result.error ?? 'Failed to materialize file' })
@@ -541,6 +620,8 @@ export async function executeMaterializeFile(
         operation,
         chatId: context.chatId,
         error: toError(err).message,
+        postgresCode: getPostgresErrorCode(err),
+        postgresConstraint: getPostgresConstraintName(err),
       })
       failed.push({
         fileName,

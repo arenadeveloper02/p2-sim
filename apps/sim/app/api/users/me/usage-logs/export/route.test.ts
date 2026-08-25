@@ -92,6 +92,28 @@ describe('GET /api/users/me/usage-logs/export', () => {
     )
   })
 
+  it('filters sim-chat across both internal ledgers', async () => {
+    mockGetUserUsageLogs.mockResolvedValueOnce({
+      logs: [],
+      summary: { totalCost: 0, bySource: {} },
+      pagination: { hasMore: false },
+    })
+
+    const response = await GET(
+      createMockRequest('GET', undefined, {}, 'http://localhost:3000/api/test?source=sim-chat')
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockGetUserUsageLogs).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({ source: ['copilot', 'workspace-chat'] })
+    )
+    expect(mockGetUsageCreditsByLogId).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({ source: ['copilot', 'workspace-chat'] })
+    )
+  })
+
   it('names the specific workflow for workflow-sourced rows', async () => {
     mockGetUserUsageLogs.mockResolvedValueOnce({
       logs: [

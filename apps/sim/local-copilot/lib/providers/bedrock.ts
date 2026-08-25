@@ -146,9 +146,7 @@ export function withBedrockPromptCachePoints(params: {
   }
 
   const system =
-    params.system.length > 0
-      ? [...params.system, cachePoint as SystemContentBlock]
-      : params.system
+    params.system.length > 0 ? [...params.system, cachePoint as SystemContentBlock] : params.system
 
   const messages = params.messages.map((message, index) => {
     if (index !== params.messages.length - 1) return message

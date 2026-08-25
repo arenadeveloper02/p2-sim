@@ -10,7 +10,7 @@ import {
   useRef,
 } from 'react'
 import { noop } from '@sim/utils/helpers'
-import type { MothershipResource } from '@/app/workspace/[workspaceId]/home/types'
+import type { WorkspaceResourceRef } from '@/app/workspace/[workspaceId]/home/types'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import type { LocalCopilotCatalogId } from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
@@ -36,7 +36,7 @@ interface ChatSurfaceContextValue {
    */
   onContextRemove: (context: ChatContext, remaining: ChatContext[]) => void
   /** Opens a workspace resource referenced from rendered message content. */
-  onWorkspaceResourceSelect: (resource: MothershipResource) => void
+  onWorkspaceResourceSelect: (resource: WorkspaceResourceRef) => void
   /** When true, show the Local / Cloud copilot switch in the chat input. */
   canSwitchCopilotBackend?: boolean
   copilotBackend?: CopilotBackendPreference
@@ -57,7 +57,7 @@ interface ChatSurfaceProviderProps {
   userId?: string
   onContextAdd?: (context: ChatContext) => void
   onContextRemove?: (context: ChatContext, remaining: ChatContext[]) => void
-  onWorkspaceResourceSelect?: (resource: MothershipResource) => void
+  onWorkspaceResourceSelect?: (resource: WorkspaceResourceRef) => void
   canSwitchCopilotBackend?: boolean
   copilotBackend?: CopilotBackendPreference
   setCopilotBackend?: (value: CopilotBackendPreference) => void
@@ -101,7 +101,7 @@ export function ChatSurfaceProvider({
   const stableOnContextRemove = useCallback((context: ChatContext, remaining: ChatContext[]) => {
     onContextRemoveRef.current?.(context, remaining)
   }, [])
-  const stableOnWorkspaceResourceSelect = useCallback((resource: MothershipResource) => {
+  const stableOnWorkspaceResourceSelect = useCallback((resource: WorkspaceResourceRef) => {
     onWorkspaceResourceSelectRef.current?.(resource)
   }, [])
 
