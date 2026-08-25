@@ -13,43 +13,13 @@ The block does not publish a URL. Run it to save a **draft**, then open **Deploy
 | **Mode** | **Generate New App** for a first draft. **Edit Existing Draft** later — type only the delta in **Requested Changes**. |
 | **User Input** | Plain language. Name the app, pages, fields, buttons, and which API key each button calls. **Not JSON.** |
 | **Pages** | Optional. Leave blank and name the pages in User Input. Pin JSON only when you need exact paths. |
-| **API Bindings** | Use **Add an API**, do not hand-write JSON. Invent a `key` (for example `qualify_lead`) and use **that same string** in User Input. |
+| **API Bindings** | Use **Add an API**, do not hand-write JSON. Invent a `key` (for example `recommend_articles`) and use **that same string** in User Input. |
 | **Output schema** (inside Add an API) | Fetched from the workflow’s deployed Response / Agent output. A pasted Sample response is kept through generate and edit. |
 | **Design Notes** | Optional. Brand, density, dark mode. Skip unless you care. |
 
-The model **cannot invent API keys**. If User Input says “Submit calls `qualify_lead`”, that key must exist in API Bindings. Leave Bindings empty only for a navigation-only app (no forms that call a backend).
+The model **cannot invent API keys**. If User Input says “Submit calls `recommend_articles`”, that key must exist in API Bindings. Leave Bindings empty only for a navigation-only app (no forms that call a backend).
 
 Name pages, fields, and CTA keys. Vague briefs (“make a research tool”) produce generic shells.
-
----
-
-## Echo form values on another page
-
-Submitted fields are available on the next page the moment the user clicks — you do not need the API to return them.
-
-Give every field a **camelCase name** in User Input, then a label. On Results (or any later page), say to show those names as chips, a header, or a subtitle. The host fills `{targetKeyword}` and `inputs.targetKeyword` from what the user typed.
-
-```
-Article recommendations. Two pages.
-
-Home is a form:
-- targetKeyword (text) — label "Target Keyword", placeholder "Dental implants"
-- clientBrand (text) — label "Client / Brand", placeholder "42 North Dental"
-
-Submit "Generate Recommendations" calls recommend_articles, then go to Results.
-
-Results shows two pills: "Keyword: {targetKeyword}" and "Client: {clientBrand}",
-then the returned markdown. Back to Home.
-Do not put a progress bar or checklist on the form — waiting chrome belongs on Results.
-```
-
-| Write this | What happens |
-|---|---|
-| `targetKeyword (text) — label "Target Keyword"` | Field `name` is `targetKeyword`. Results can show `{targetKeyword}` or `{Target Keyword}` (spaces and case are ignored). |
-| `Keyword: {Target Keyword}` with only a label, no camelCase name | Often stays literal `{Target Keyword}` after generate. Name the field first. |
-| Hope the API echoes `company` so Results can show it | Unnecessary. Submit already copies the form into `inputs`. |
-
-`{item.title}` is only for rows inside a Repeat (a list from the API). Do not use `{item…}` for values the visitor just typed.
 
 ---
 
@@ -68,115 +38,13 @@ Do not put a progress bar or checklist on the form — waiting chrome belongs on
 
 Field names become `statePath` values as-is: `score`, `articles`, `articles[].title`. Never `data.score` or `output.articles`.
 
-Turn **Response → Stream** on when the workflow or HTTP call streams tokens. Stream off waits for the full JSON body.
+Turn **Response → Stream** on when the workflow or HTTP call streams tokens. Stream off waits for the full JSON body. A JSON-only API (score + reasons) is the same block setup with Stream off and a JSON sample.
 
 ---
 
-## Example 1 — Form, then a scored result (JSON, not streaming)
+## Example — Article Recommendation Agent
 
-Use this when the backend returns a JSON object you want laid out as numbers and lists.
-
-**Mode:** Generate New App
-
-**User Input:**
-
-```
-Lead qualifier. Two pages.
-
-Home is a form titled "Qualify a lead" with:
-- company (text) — legal name of the account
-- role (text)
-- notes (textarea)
-
-Submit label is "Qualify". It calls qualify_lead, then go to Results.
-
-Results shows a pill "Company: {company}", the score as a large stat, the reasons as a list, and a Back link to home.
-While qualify_lead is running, Results should look like it is loading — not empty.
-```
-
-**Add an API:**
-
-1. Kind: **Workflow** (must already be **deployed**).
-2. Key: `qualify_lead` (must match User Input).
-3. Response: **JSON** (stream off).
-4. **Output format** — paste a representative body, not a full CRM dump:
-
-```json
-{
-  "score": 72,
-  "reasons": ["Industry fit", "Headcount in range"],
-  "company": "Northwind"
-}
-```
-
-Leave **Pages** blank. Run the workflow, then **Deploy → GUI App → Preview**. Fill the form and click Qualify. You should land on Results with a score, not a wall of raw JSON.
-
-If you skip Output format, Results will usually be a single text block on `content`.
-
----
-
-## Example 2 — Streaming write-up (markdown Output format)
-
-Use this when the backend streams a report (markdown or long prose) and you want the page to fill as tokens arrive.
-
-**Mode:** Generate New App
-
-**User Input:**
-
-```
-Company briefing. Two pages.
-
-Home is a single search field: company name or domain.
-Placeholder: "Search a company or domain".
-Submit label is "Brief". It calls research_company, then go to Brief.
-
-Brief shows the streamed report as formatted markdown (headings and bullets).
-Show stepped progress only while the run is pending.
-Brief has a Back link to home.
-Empty copy: "Search a company to generate a briefing."
-```
-
-**Add an API:**
-
-1. Kind: **Workflow** (deployed) or **HTTP**.
-2. Key: `research_company`.
-3. Response: **Stream** on.
-4. **Output format** — paste an **example of the token stream**, the same shape you want on screen. Markdown is the right paste here, not JSON:
-
-```markdown
-# Acme Corp
-
-## Summary
-One-paragraph overview of what the company does and who it sells to.
-
-## Business
-- Products
-- Customers
-- Geography
-
-## Risks
-- Short bullets
-```
-
-That sample is stored as a hint (`outputHint`). The generator matches headings and density; it does not invent a Table from the markdown.
-
-**If the stream later also returns a JSON object** (for example a `companies` array flushed at the end), paste **that JSON** in Output format instead — or in addition as a JSON sample. New drafts then bind those fields as Table / Stat, and still stream the prose into `content`.
-
-```json
-{
-  "companies": [
-    { "name": "Acme Corp", "domain": "acme.com", "fit": "high" }
-  ]
-}
-```
-
-Paste JSON only when the API truly returns that object. A markdown example plus invented column names produces a bad results page.
-
----
-
-## Example 3 — Article recommendations (form values on Results + History)
-
-Use this when a long-running markdown API should show the typed keyword and brand on Results, with a History tab that loads its own list.
+One brief covers the host features you actually use: camelCase field names echoed on Results, streaming markdown, waiting chrome on Results (not the form), History `onLoad`, and Open that copies a loaded row without dumping every `output` onto the list.
 
 Do **not** ask for a progress panel, elapsed timer, or Cancel **on the form**. Waiting lives on Results. The host disables submit and shows error + Retry. Tabs only navigate — History must `onLoad` its API.
 
@@ -199,37 +67,97 @@ Submit label is "Generate Recommendations". It calls recommend_articles, then go
 Do not put a progress bar, checklist, spinner, Cancel, or elapsed timer on the form.
 
 Results:
+- No onLoad — data comes from generate or from History Open, not a fetch on arrival
 - Back to Generator at the top
 - Two pills: "Keyword: {targetKeyword}" and "Client: {clientBrand}"
-- Bind the text returned by recommend_articles on DataText statePath "content" as formatted markdown
+- Bind the markdown on DataText statePath "content"
   (H1 title, repeating H2 sections with bold Writing Instructions and Target Keywords bullet lists,
   optional VISUAL & TABLE OPPORTUNITIES callouts, FAQ with bold Q: and plain A:)
 - While recommend_articles is running, Results should look like it is loading — not empty.
   Header copy can be Working on "{targetKeyword}" for {clientBrand}…
 
 History page onLoad calls run_history (do not call it from the tab click).
-Show past generations most recent first (keyword, client, date).
-Clicking an item opens that generation in the same Results layout, read-only.
+Repeat cards, most recent first: keyword, client, and date only.
+Do not bind item.output, content, body, or a Table column for the markdown — not on the card, not as Card.description.
+Each card has a Button labeled "Open" with selectItem true, no actionId, navigateTo "results".
+Open is not an API call. The host copies that row's output into content so Results shows the same markdown layout, read-only.
 
 Do not show raw JSON anywhere.
 ```
 
 **Add an API** (twice):
 
-1. Key `recommend_articles` — **Workflow** (deployed) or **HTTP**. Response: **Stream** on if the body is markdown. **Output format** — a short markdown sample of one recommendation doc (same heading shape as above).
+1. Key `recommend_articles` — **Workflow** (must already be **deployed**) or **HTTP**. Response: **Stream** on. **Output format** — a short markdown sample of one recommendation doc (same heading shape as above):
+
+```markdown
+# Dental Implants: A Complete Guide
+
+## Overview
+Writer-ready angle for 42 North Dental.
+
+## Writing Instructions
+- Open with the patient outcome, not the procedure name.
+
+## Target Keywords
+- dental implants
+- implant dentist near me
+
+## FAQ
+**Q:** How long do implants last?
+A: With care, often a decade or more.
+```
+
 2. Key `run_history` — list payload. **Output format** JSON if you have it:
 
 ```json
 {
   "items": [
-    { "keyword": "Dental implants", "client": "42 North Dental", "date": "2026-08-23" }
+    {
+      "id": "run_1",
+      "keyword": "Dental implants",
+      "client": "42 North Dental",
+      "date": "2026-08-23",
+      "output": "# Title\n\nFull markdown for this run."
+    }
   ]
 }
 ```
 
+The history sample may include `output` so generate knows the row shape. History cards must still bind only keyword, client, and date. Open uses `selectItem` (no `actionId`); Results `DataText` stays on `content`.
+
 Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add them later in **Requested Changes** only if you implement them yourself.
 
-**History is empty but the API returned data:** Redeploy `run_history` after changing its Response block, then edit with a page-scoped prompt (`On the "history" page, bind Repeat or Table to items`). Generate/edit re-reads the deployed output schema. Saying “do not show raw JSON” without a list `statePath` that matches that schema replaces the working `DataText` dump with an empty Repeat.
+### What this brief is asking the host to do
+
+| In the brief | What happens |
+|---|---|
+| `targetKeyword (text) — label "Target Keyword"` | Field `name` is `targetKeyword`. Results can show `{targetKeyword}` or `{Target Keyword}` (spaces and case are ignored). |
+| Pills `"Keyword: {targetKeyword}"` | Submit copies the form into `inputs` immediately. The API does not need to echo those fields. |
+| `Keyword: {Target Keyword}` with only a label, no camelCase name | Often stays literal `{Target Keyword}` after generate. Name the field first. |
+| Stream on + markdown sample | Results fills as tokens arrive. Heading shape follows the sample, not an invented Table. |
+| History cards: keyword, client, date only | Repeat is a stamp. Binding `item.output` would paint the full markdown on **every** card. |
+| Open: `selectItem true`, no `actionId`, `navigateTo "results"` | Copies that row into `selected` / `selectedId` / `content` / scalar `inputs`. Not a CTA. |
+| Results: no `onLoad` | A load run would reset state and drop the copied row. Fresh Generate already wrote `content`. |
+
+`{item.title}` is only for rows inside a Repeat (a list from the API). Do not use `{item…}` for values the visitor just typed.
+
+**What to check in Preview**
+
+1. Generator → Generate Recommendations lands on Results; pills show the typed keyword and client; markdown fills `content`.
+2. History loads on arrival (not on tab click). Cards show keyword, client, date — **not** the full markdown.
+3. Open on a row goes to Results with **that** run’s markdown and matching pills. It must not call `run_history` or `recommend_articles` again.
+4. Back from Results returns to Generator. Opening History again still shows the short list.
+
+**History is empty but the API returned data:** Redeploy `run_history` after changing its Response block, then edit with a page-scoped prompt (`On the "history" page, bind Repeat to items`). Generate/edit re-reads the deployed output schema. Saying “do not show raw JSON” without a list `statePath` that matches that schema replaces the working `DataText` dump with an empty Repeat.
+
+**History shows every run’s markdown on the list:** the draft bound `item.output` (or dumped `content`). **Edit Existing Draft**, paste **Copy page edit prompt** from History, then only this delta:
+
+```
+On the "history" page, Repeat cards must show only keyword, client, and date.
+Do not bind item.output, content, or any DataText/Table column for the markdown.
+Each card has a Button "Open" with selectItem true, no actionId, navigateTo "results".
+On the "results" page, do not add onLoad. Keep DataText statePath "content".
+```
 
 ---
 
@@ -237,9 +165,9 @@ Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add
 
 1. Open **Preview**. Click through every page and run the CTA once.
 2. If a `statePath` is unresolved, use **Copy as edit instructions** and paste into **Requested Changes**.
-3. To change one screen, **Copy page edit prompt** first (`On the "brief" page, …`) so Edit does not rewrite the rest.
+3. To change one screen, **Copy page edit prompt** first (`On the "results" page, …`) so Edit does not rewrite the rest.
 4. Theme (brand, density, dark mode): use the preview picker, copy the theme instructions, paste into Requested Changes. Theme-only edits do not call the generator.
-5. Launch from **Deploy → GUI App** when Preview is good. Do not use identifier `preview`.
+5. Launch from **Deploy → GUI App** when Preview is good. Do not use identifier `preview`. Reopening the tab should show the saved description, category, access control, and allowed emails. A direct `/gui-apps/{identifier}` URL (no `?emailId=`) uses Access control — email OTP, password, or SSO — not the Arena hard deny. Allowed emails do not bypass **Require Arena emailId** on a `public` app.
 
 ---
 
@@ -251,4 +179,5 @@ Leave **Pages** blank. Copy Markdown / Download PDF are not host actions — add
 - Streaming APIs: turn Stream **on**, then paste a markdown (or JSON) example of the real stream.
 - User Input names pages, **camelCase field names**, submit label, and “then go to {page}”.
 - To show typed values on Results, write `{targetKeyword}` (or the field name) there — do not wait for the API to echo them.
+- History lists that include a huge `output`: bind only short fields; Open is `selectItem` (no `actionId`) then Results `content`. Do not bind `item.output` on the list.
 - Edits are deltas. Do not paste the original brief again.

@@ -314,7 +314,7 @@ Fields:
 | Title | Shown on the hosted app |
 | Category | Required department/category |
 | Description | Optional |
-| Require Arena emailId | **On by default.** Host returns “Do not have access” unless `?emailId=` or the `arena_email_id` cookie is present. Turn it off only for an app that should be reachable by link alone |
+| Require Arena emailId | **On by default for `public` apps.** The host returns “Do not have access” unless `?emailId=` or the `arena_email_id` cookie is present. Password, email, and SSO apps skip this hard deny so a direct `/gui-apps/{identifier}` visit can complete their login. Turn the gate off for a public app that should be reachable by link alone |
 | Access control | `public`, `password`, `email`, or `sso` (SSO only when enabled). **Defaults to `email`**, seeded with the deployer's address. Same style as deployed chat. This is a separate layer from the Arena emailId gate |
 | Allowed emails | Required for `email` / `sso`. Supports addresses and `@domain.com` |
 | API bindings | Read-only list from the selected draft |
@@ -344,11 +344,11 @@ https://{host}/gui-apps/{identifier}?emailId=user@example.com
 
 When `emailId` is present, the host stores `arena_email_id` (HttpOnly, `Path=/`) so in-app navigation keeps it.
 
-If the emailId gate is on and there is no `emailId`, visitors see **Do not have access**.
+If the emailId gate is on, access control is `public`, and there is no `emailId`, visitors see **Do not have access**. Allowed emails are not consulted for that hard deny — they only apply when Access control is `email` or `sso`.
 
-Chat-style access control then applies on top. Under the default `email` setting, an Arena user carrying the shared `email` cookie is signed in automatically by `AutoLoginProvider` and passes straight through when their address matches the allowlist; anyone else gets the OTP challenge. `password` and `sso` behave as they do for deployed chat.
+Chat-style access control then applies on top. Under the default `email` setting, a signed-in Sim user whose address is on the allowlist passes through; anyone else gets the OTP challenge. `password` and `sso` behave as they do for deployed chat. Direct visits (no `?emailId=`) reach that login instead of the Arena hard deny.
 
-Control-bar **Open** uses Chat/App first when those exist. If only a GUI App is published, Open goes to `/gui-apps/{identifier}` without `emailId` — that reaches the app only when the `arena_email_id` cookie is already set from a prior Arena visit, or when the gate has been turned off. Launch GUI App from the Deploy tab always opens the Sim URL.
+Control-bar **Open** uses Chat/App first when those exist. If only a GUI App is published, Open goes to `/gui-apps/{identifier}` without `emailId`. For `email` / `password` / `sso` that shows the login. For a public Arena-gated app it reaches the app only when the `arena_email_id` cookie is already set from a prior Arena visit, or when the gate has been turned off. Launch GUI App from the Deploy tab always opens the Sim URL.
 
 ---
 
@@ -386,6 +386,8 @@ Sim always sets the value itself and discards anything a caller tried to send un
 That sends both `email` and `arenaEmailId`. When no emailId resolves, the key is absent rather than empty.
 
 On success the host may navigate (`onSuccess.navigate`) and merge `setState` so `DataText` can show results (for example `score`). Arrays listed in `appendKeys` concatenate into existing state instead of replacing, which is how Load more grows a list.
+
+A Repeat `Button` with `selectItem: true` is not a CTA: it copies the loaded row into host state (`selected`, `selectedId`, `content`, scalar `inputs`) without POSTing a binding. That is how a History list opens a run's markdown on Results when the list payload already includes `output`.
 
 When an action fails, the host writes the message to state under `error` and shows a dismissible banner above the page, so a failure is visible even when the generated spec never bound `error` anywhere. HTTP failures carry the upstream detail rather than a bare status: a 422 whose body is `{"error":"company is required"}` surfaces as `HTTP 422: company is required`. The banner clears on the next action and on navigation. An `outputSchema` mismatch uses a separate amber warning, not this error banner.
 
@@ -447,7 +449,7 @@ Load more is the **same action**, not a second binding. Put a Button with that `
 
 ## UI catalog (what the model may emit)
 
-Layout: `Page`, `Section` (`width`: `narrow` / `wide` default / `full`), `Stack` (`direction`, `justify`, `wrap`), `Card`, `Grid` (`columns` 2–4, collapses to one column when narrow), `Columns` (`equal` / `sidebar-left` / `sidebar-right`), `Repeat` (children render once per element of a `statePath` array)
+Layout: `Page`, `Section` (`width`: `narrow` / `wide` default / `full`, plus `showWhen`), `Stack` (`direction`, `justify`, `wrap`), `Card` (`showWhen`), `Grid` (`columns` 2–4, collapses to one column when narrow), `Columns` (`equal` / `sidebar-left` / `sidebar-right`), `Repeat` (children render once per element of a `statePath` array)
 
 Chrome: `PageHeader` (title, subtitle, trailing action), `Toolbar`, `Tabs` (`items` as newline-separated `Label|path`, `activePath`)
 
@@ -459,7 +461,7 @@ Input: `Form`, `TextInput`, `TextArea`, `NumberInput`, `DateInput`, `Select`, `R
 
 Loading: `Skeleton` (`variant`: `text` / `stat` / `table` / `card` / `form`, plus `lines`) for static-children regions. `Spinner` and `ProgressSteps` remain in the catalog for legacy specs; the host compiles pending chrome, so new apps should bind `statePath` instead of emitting them.
 
-Nav / CTA: `NavLink` (`to` = page path), `Button` (`navigateTo` / `actionId` / outbound `href`, plus `variant`, `size`, and `showWhen`), `Link`
+Nav / CTA: `NavLink` (`to` = page path), `Button` (`navigateTo` / `actionId` / `selectItem` / outbound `href`, plus `variant`, `size`, and `showWhen`), `Link`
 
 Theme (optional, on the manifest, not a component): `brandColor` (`#RGB` / `#RRGGBB`), `radius` (`sm` / `md` / `lg`), `density` (`compact` / `comfortable` / `roomy`), `font` (`sans` / `serif`), `colorScheme` (`light` / `dark` / `system`). The host applies these as scoped `--gui-*` CSS variables. Omit `theme` unless Design Notes name branding.
 
@@ -476,8 +478,10 @@ Paths listed in `Tabs.items` count as navigation, so a page reachable only throu
 Put `Repeat` *inside* a `Grid` (or `Stack`). Its children are the per-item template and render once per element of the `statePath` array. Wrapping a Grid in Repeat produces N grids.
 
 - Bound fields: `statePath` `"item.title"` (no braces). Nested Repeats can bind `statePath` `"item.comments"` to an array on the outer row.
-- Labels, hrefs, and navigation: `"{item.id}"` — `NavLink.to` `"order?id={item.id}"` opens that row's detail page.
+- Labels, hrefs, and navigation: `"{item.id}"` — `NavLink.to` `"order?id={item.id}"` opens that row's detail page so its `onLoad` can fetch the record.
+- A `Button.selectItem` inside Repeat copies the row into host state (`selected`, `selectedId`, `content` from `output` / `content`, scalar fields under `inputs`) without calling an API. Combine with `navigateTo` a results page that has **no** `onLoad`, or reveal on the same page with `showWhen: "selectedId={item.id}"` on `DataText` / `Card` / `Section`. Do not set `actionId` on that button.
 - A `Button.actionId` inside Repeat sends the item's fields as the action input, so `inputMapping` can pass `id` the same way page query params do.
+- Never bind a long prose field (`output`, `content`, `body`) inside Repeat — not `item.output`, not `Card.description`, not a Table column. Select the row, then show the markdown once.
 - The host renders at most 48 items.
 - An empty array is not a blank hole: the host shows `emptyText` (default **No results**). Customise it when the brief names the collection.
 
@@ -581,6 +585,17 @@ Leave API Bindings empty. Describe pages and NavLinks. Keep the default Arena ga
 
 Same as above with `kind: "http"`. Put tokens in a workspace env var and reference the name via `headersSecretName`. Do not paste secrets into the block.
 
+### Form → results + History list (select a loaded row)
+
+Use this when Generate streams markdown onto Results, and History `onLoad`s a list whose rows already include that markdown (`output`).
+
+1. Two bindings: the generate workflow (`stream: true` + a markdown Output format sample) and `run_history` (JSON sample with `items[].keyword`, `items[].client`, `items[].date`, and `items[].output`).
+2. In User Input: History cards bind **only** the short fields. Open is `selectItem true`, **no** `actionId`, `navigateTo "results"`. Results has **no** `onLoad` and keeps `DataText` on `content`.
+3. Do not bind `item.output` on the list — Repeat would render the full markdown on every card.
+4. Generate, Preview History, click Open. You should land on Results with that row’s markdown, not a second API call.
+
+The copy-paste brief is the [user-guide example](./arena-generative-ui-user-guide.md#example--article-recommendation-agent).
+
 ---
 
 ## Troubleshooting
@@ -596,7 +611,7 @@ Same as above with `kind: "http"`. Put tokens in a workspace env var and referen
 | CTA fails with host not allowlisted | HTTP URL host is locked at publish. Change the binding, regenerate, Launch again |
 | CTA: Secret `"NAME"` was not found | Name in Secret var must match Settings → Secrets. Accessible names are listed in the error. Try `W_NAME` vs `NAME`. |
 | CTA: Secret exists but could not be decrypted | `ENCRYPTION_KEY` must be a 64-char hex string and match the key used when the secret was saved. Restart the app after changing `.env`, then re-save the secret if the key changed. |
-| “Do not have access” | The gate is on (the default) and `emailId` is missing. Add `?emailId=`, open the app from Arena so the cookie is set, or turn off Require Arena emailId |
+| “Do not have access” | Access control is `public` (or unset), Require Arena emailId is on, and `emailId` is missing. Allowed emails do not bypass this. Add `?emailId=`, open from Arena so the cookie is set, switch Access control to `email`, or turn the gate off |
 | Open goes to chat or an external App URL | Control-bar Open prefers Chat/App. Use Launch GUI App from Deploy → GUI App |
 | Edit cannot find the draft | Draft must belong to this workflow; Generate created it on another workflow |
 | Edit ran but nothing changed | The scope call may have missed the page you meant. Name the page in **Requested Changes** ("on the results page, …") or paste **Copy page edit prompt** from preview, then rerun. The block's `content` output lists which pages actually changed |
@@ -604,6 +619,9 @@ Same as above with `kind: "http"`. Put tokens in a workspace env var and referen
 | A workflow CTA gets no `arenaEmailId` | It is only absent when no emailId resolved for that visitor. `inputMapping` does not drop it. For an **HTTP** binding it is withheld unless the binding sets `forwardEmailId` |
 | Generation error about a SubmitButton doing nothing | A `SubmitButton` ended up outside its `Form` with no `actionId`. Rerun; if it repeats, say in the brief which form the button submits |
 | Preview shows unresolved statePath / unknown type | Copy **Copy as edit instructions** into the block's **Requested Changes** and rerun Edit. Bind a real top-level response field or add `onLoad`. |
+| History list shows every row’s full markdown | The draft bound `item.output` (or dumped `content`). Edit History only: cards bind keyword/client/date; Open is `selectItem` with no `actionId` and `navigateTo "results"`; do not add `onLoad` on Results |
+| History Open calls an API or wipes Results | Open must not set `actionId`. Results must not declare `onLoad` — a load run resets state and drops the copied row |
+| Generation error about selectItem | `selectItem` is Repeat-only and cannot combine with `actionId`. Put Open inside the Repeat card template |
 | Block error `fetch failed` during generate/edit | Claude can take several minutes. Check **Deploy → GUI App** — a revision may already have been saved even if the block showed an error. Retry the run. |
 
 Tool APIs used by the block (you do not call these yourself):
