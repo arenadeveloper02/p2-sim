@@ -148,7 +148,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         showWhen: z.string().nullable(),
       }),
       description:
-        'Displays a host-state value at a dotted path (e.g. content, selected.output, or item.output). Markdown is rendered. For stream: true CTAs, bind statePath to content on the page or section that shows the result. showWhen uses the same clause syntax as form fields — hide until a Repeat selectItem sets selectedId.',
+        'Displays a host-state value at a dotted path (e.g. content, selected.output, or item.output) as markdown/prose — never as a Table. Bind Table or KeyValue when the layout plan chose a collection or object. For stream: true CTAs, bind statePath to content on the page or section that shows the result. showWhen uses the same clause syntax as form fields — hide until a Repeat selectItem sets selectedId.',
     },
     Table: {
       props: z.object({

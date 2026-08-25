@@ -36,6 +36,8 @@ Name pages, fields, and CTA keys. Vague briefs (“make a research tool”) prod
 | Streaming **markdown / prose** | Match that heading shape in a live `DataText` |
 | Streaming **plus JSON** at the end | Live prose while tokens arrive, then Table / Stat for the structured fields |
 
+`DataText` always stays markdown. A JSON blob in `content` is formatted text, not an invented table. Bind `Table` / `KeyValue` when Output schema chose those fields.
+
 Field names become `statePath` values as-is: `score`, `articles`, `articles[].title`. Nested arrays (`run_data.history`) bind as `history`, not `run_data.history`. Never `data.score` or `output.articles`.
 
 Turn **Response → Stream** on when the workflow or HTTP call streams tokens. Stream off waits for the full JSON body. A JSON-only API (score + reasons) is the same block setup with Stream off and a JSON sample.

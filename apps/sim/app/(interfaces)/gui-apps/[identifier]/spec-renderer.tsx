@@ -11,7 +11,6 @@ import {
 } from 'react'
 import type { Spec } from '@json-render/core'
 import { cn } from '@sim/emcn'
-import { isPlainRecord } from '@sim/utils/object'
 import {
   BarChart3,
   Building2,
@@ -57,8 +56,6 @@ import {
   displayTextFromActionData,
   interpolateElementProps,
   MAX_REPEAT_ITEMS,
-  omitActionTelemetry,
-  parseJsonLiteral,
   parseTabItems,
   type RepeatItemScope,
   readScopedStatePath,
@@ -562,43 +559,6 @@ function displayFromStateValue(value: unknown, fallback: string): string {
   return String(value)
 }
 
-function isRecordArray(value: unknown): value is Record<string, unknown>[] {
-  return Array.isArray(value) && value.length > 0 && value.every(isPlainRecord)
-}
-
-function hasProseDisplayField(record: Record<string, unknown>): boolean {
-  for (const key of ['content', 'assistantContent', 'output', 'text', 'message'] as const) {
-    const value = record[key]
-    if (typeof value === 'string' && value.trim() && parseJsonLiteral(value) === undefined) {
-      return true
-    }
-  }
-  return false
-}
-
-type StructuredDataText =
-  | { kind: 'table'; rows: Record<string, unknown>[] }
-  | { kind: 'object'; record: Record<string, unknown> }
-
-function structuredFromDataText(value: unknown): StructuredDataText | null {
-  let current: unknown = value
-  if (typeof current === 'string') {
-    const parsed = parseJsonLiteral(current)
-    if (parsed === undefined) return null
-    current = parsed
-  }
-  if (isRecordArray(current)) {
-    return { kind: 'table', rows: current }
-  }
-  if (isPlainRecord(current)) {
-    const record = omitActionTelemetry(current)
-    if (hasProseDisplayField(record)) return null
-    if (Object.keys(record).length === 0) return null
-    return { kind: 'object', record }
-  }
-  return null
-}
-
 function StateTable({
   value,
   columns,
@@ -708,42 +668,11 @@ function DataTextView({
   pending: boolean
   style?: CSSProperties
 }) {
-  const structured = structuredFromDataText(value)
   const display = displayFromStateValue(value, fallback)
-  if (pending && !structured && isEmptyStateValue(value)) {
+  if (pending && isEmptyStateValue(value)) {
     return (
       <div aria-live='polite' aria-busy='true'>
         <SkeletonBlock variant='text' lines={DEFAULT_SKELETON_LINES.text} />
-      </div>
-    )
-  }
-  if (structured?.kind === 'table') {
-    return (
-      <div aria-live='polite' aria-busy={pending || undefined}>
-        <StateTable value={structured.rows} style={style} />
-      </div>
-    )
-  }
-  if (structured?.kind === 'object') {
-    const arrayEntries = Object.entries(structured.record).filter(([, nested]) =>
-      isRecordArray(nested)
-    )
-    const scalars: Record<string, unknown> = {}
-    for (const [key, nested] of Object.entries(structured.record)) {
-      if (isRecordArray(nested)) continue
-      scalars[key] = nested
-    }
-    return (
-      <div
-        className='flex flex-col gap-4'
-        style={style}
-        aria-live='polite'
-        aria-busy={pending || undefined}
-      >
-        {arrayEntries.map(([key, rows]) => (
-          <StateTable key={key} value={rows} />
-        ))}
-        <StateKeyValue pairs={keyValuePairs(null, scalars)} />
       </div>
     )
   }

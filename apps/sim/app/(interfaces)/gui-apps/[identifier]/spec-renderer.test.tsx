@@ -419,7 +419,7 @@ describe('SpecRenderer', () => {
     expect(container.textContent).not.toContain('[object Object]')
   })
 
-  it('renders a DataText JSON companies array as a table, not a wrapping paragraph', () => {
+  it('keeps a DataText JSON payload as prose, not a Table', () => {
     const spec: Spec = {
       root: 'page',
       elements: {
@@ -445,11 +445,10 @@ describe('SpecRenderer', () => {
         ),
       },
     })
-    expect(container.querySelector('table')).toBeTruthy()
+    expect(container.querySelector('table')).toBeNull()
     expect(container.textContent).toContain('Software Development')
     expect(container.textContent).toContain('1441')
     expect(container.textContent).not.toContain('finishReason')
-    expect(container.querySelector('p')?.textContent ?? '').not.toContain('tokens')
   })
 
   it('hides ProgressSteps when not pending', () => {
