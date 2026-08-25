@@ -701,4 +701,130 @@ describe('validateArenaGenerativeManifest', () => {
       expect(result.success).toBe(true)
     })
   })
+
+  describe('selectItem', () => {
+    function homeSpec(): Spec {
+      return {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Home', backgroundColor: null },
+            children: ['stack'],
+          },
+          stack: {
+            type: 'Stack',
+            props: { direction: 'vertical', gap: '12px', align: null },
+            children: ['nav', 'history_link', 'form'],
+          },
+          nav: { type: 'NavLink', props: { label: 'Results', to: 'results' }, children: [] },
+          history_link: { type: 'NavLink', props: { label: 'History', to: 'history' }, children: [] },
+          form: { type: 'Form', props: { actionId: 'submit_lead' }, children: ['submit'] },
+          submit: { type: 'SubmitButton', props: { label: 'Submit', actionId: null }, children: [] },
+        },
+      }
+    }
+
+    function historyPage(openProps: Record<string, unknown>): Spec {
+      return {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'History', backgroundColor: null },
+            children: ['nav', 'repeat'],
+          },
+          nav: { type: 'NavLink', props: { label: 'Home', to: 'home' }, children: [] },
+          repeat: {
+            type: 'Repeat',
+            props: { statePath: 'history', emptyText: null },
+            children: ['open'],
+          },
+          open: { type: 'Button', props: openProps, children: [] },
+        },
+      }
+    }
+
+    function manifestWithHistory(historySpec: Spec) {
+      return {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec: homeSpec() },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+          history: { title: 'History', path: 'history', spec: historySpec },
+        },
+        actions: {
+          submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+        },
+      }
+    }
+
+    it('rejects selectItem combined with actionId', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWithHistory(
+          historyPage({
+            label: 'Open',
+            selectItem: true,
+            actionId: 'submit_lead',
+            navigateTo: 'results',
+            href: null,
+          })
+        ),
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('selectItem and actionId')
+    })
+
+    it('rejects selectItem outside Repeat', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'History', backgroundColor: null },
+            children: ['nav', 'open'],
+          },
+          nav: { type: 'NavLink', props: { label: 'Home', to: 'home' }, children: [] },
+          open: {
+            type: 'Button',
+            props: {
+              label: 'Open',
+              selectItem: true,
+              actionId: null,
+              navigateTo: 'results',
+              href: null,
+            },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(manifestWithHistory(spec), {
+        apiBindings: bindings,
+        entryPath: 'home',
+      })
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('selectItem outside Repeat')
+    })
+
+    it('accepts selectItem on a Repeat Button with navigateTo and no actionId', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWithHistory(
+          historyPage({
+            label: 'Open',
+            selectItem: true,
+            actionId: null,
+            navigateTo: 'results',
+            href: null,
+          })
+        ),
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+  })
 })

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import {
@@ -19,6 +20,7 @@ import {
   clearedActionErrorState,
   isJsonRenderSpec,
   navigationHref,
+  selectedItemHostState,
   streamingActionIdsFrom,
 } from '@/lib/arena-generative-ui/types'
 import { compileGenerativeUx } from '@/lib/arena-generative-ui/ux-compiler'
@@ -212,6 +214,11 @@ export function GenerativeAppPreviewHost({
             currentPath={pagePath}
             onNavigate={navigate}
             onRunAction={runtime.onRunAction}
+            onSelectItem={(item, index) => {
+              flushSync(() => {
+                mergeState(selectedItemHostState(item, index))
+              })
+            }}
           />
         </SpecRenderErrorBoundary>
         {runtime.toast ? (

@@ -34,10 +34,11 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         backgroundColor: z.string().nullable(),
         maxWidth: z.string().nullable(),
         width: z.enum(['narrow', 'wide', 'full']).nullable(),
+        showWhen: z.string().nullable(),
       }),
       slots: ['default'],
       description:
-        'Content section. width defaults to wide (fills up to 1280px); use narrow only for a focused single-column form, full to span the viewport. Leave maxWidth unset unless you need an exact cap.',
+        'Content section. width defaults to wide (fills up to 1280px); use narrow only for a focused single-column form, full to span the viewport. Leave maxWidth unset unless you need an exact cap. showWhen uses the same clause syntax as form fields — hide a markdown region until selectedId is set.',
     },
     Stack: {
       props: z.object({
@@ -68,7 +69,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.actionId inside Repeat sends the item\'s fields as the action input. Use Table instead when every item is the same scalar fields with no per-row action. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that.',
+        'Renders its children once per element of a host-state array at statePath. Put Repeat inside a Grid or Stack; the children are the per-item template (typically a Card). Bind per-item fields with statePath "item.field" (no braces). Put per-item values into labels, hrefs, and navigation with "{item.field}" — NavLink.to "order?id={item.id}" opens that row\'s detail page. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item\'s fields as the action input. Never bind a long prose field (output, content, body) inside Repeat. Use Table instead when every item is the same scalar fields with no per-row action. When the array is empty the host shows emptyText (default "No results") — do not add a second Text for that.',
     },
     Columns: {
       props: z.object({
@@ -113,10 +114,11 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         footerText: z.string().nullable(),
         padding: z.string().nullable(),
         backgroundColor: z.string().nullable(),
+        showWhen: z.string().nullable(),
       }),
       slots: ['default'],
       description:
-        'Card with optional title, subtitle, and description. The first Icon or Avatar child is media (feature well or entity logo). Button, Chip, NavLink, Link, and Toolbar children render in a footer under a divider with optional footerText. Use this for entity result cards (logo, title, subtitle, truncated body, footer meta + Analyze) and for feature cards with an Icon well.',
+        'Card with optional title, subtitle, and description. The first Icon or Avatar child is media (feature well or entity logo). Button, Chip, NavLink, Link, and Toolbar children render in a footer under a divider with optional footerText. Use this for entity result cards (logo, title, subtitle, truncated body, footer meta + Analyze) and for feature cards with an Icon well. showWhen uses the same clause syntax as form fields (for example selectedId={item.id} to reveal a selected row\'s markdown).',
     },
     Heading: {
       props: z.object({
@@ -140,9 +142,10 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         fallback: z.string().nullable(),
         color: z.string().nullable(),
         size: z.string().nullable(),
+        showWhen: z.string().nullable(),
       }),
       description:
-        'Displays a host-state value at a dotted path (e.g. content or output.content). Markdown is rendered. For stream: true CTAs, bind statePath to content on the page or section that shows the result.',
+        'Displays a host-state value at a dotted path (e.g. content, selected.output, or item.output). Markdown is rendered. For stream: true CTAs, bind statePath to content on the page or section that shows the result. showWhen uses the same clause syntax as form fields — hide until a Repeat selectItem sets selectedId.',
     },
     Table: {
       props: z.object({
@@ -418,13 +421,14 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         href: z.string().nullable(),
         navigateTo: z.string().nullable(),
         actionId: z.string().nullable(),
+        selectItem: z.boolean().nullable(),
         variant: z.enum(['primary', 'secondary', 'ghost', 'outline', 'destructive']).nullable(),
         size: z.enum(['sm', 'md']).nullable(),
         shape: z.enum(['default', 'pill']).nullable(),
         showWhen: z.string().nullable(),
       }),
       description:
-        'Button. Prefer navigateTo for in-app pages, actionId for APIs, href only for true outbound links. variant sets emphasis and defaults to secondary: use primary for the single main action of a page, secondary for ordinary actions, outline for a brand-bordered pill such as "View analysis history", ghost for low-emphasis ones such as Back or Cancel, destructive for delete. shape "pill" fully rounds the control. showWhen hides the button until host state or a form field matches (same syntax as form fields) — use "hasMore" for Load more.',
+        'Button. Prefer navigateTo for in-app pages, actionId for APIs, href only for true outbound links. Inside Repeat, selectItem true copies that row into host state (selected, selectedId, content from output/content, scalar fields under inputs) without calling an API — combine with navigateTo a results page that has no onLoad, or reveal on the same page with showWhen. selectItem must not set actionId. variant sets emphasis and defaults to secondary: use primary for the single main action of a page, secondary for ordinary actions, outline for a brand-bordered pill such as "View analysis history", ghost for low-emphasis ones such as Back or Cancel, destructive for delete. shape "pill" fully rounds the control. showWhen hides the button until host state or a form field matches (same syntax as form fields) — use "hasMore" for Load more.',
     },
     NavLink: {
       props: z.object({
@@ -572,7 +576,8 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Measure: dashboards, collections and tables stay wide, but a narrative block — a report body, an analysis, a long DataText — goes in its own Section with width "narrow" or in the main column of Columns. A PageHeader subtitle and a search-hero subtitle keep a readable measure (the host caps them) even on a wide Section. Never let prose run the full 1280px.',
   'Spacing: group related elements into a Card or Stack so data reads as chunks, and leave real space between groups. gap and padding take CSS lengths such as "16px" or "24px", never size words like "md" or "lg".',
   'Surfaces: there are exactly two — the page canvas and the Card/Stat surface, both supplied by the host from the Arena Design System (manifest.theme or host defaults). Do not set backgroundColor unless the brief names a specific colour. Build hierarchy from PageHeader, Card grouping, heading level, and 24px gaps between groups — never coloured fills or borders.',
-  'Collections: when each item is the same scalar fields with no per-row action, use Table. When items have a name, description, and action, use Repeat inside a Grid (columns 2) of entity Cards — Avatar, title, subtitle, truncated description, footerText plus a footer Button. When each item needs its own Card, Badge, button, or link more generally, put a Repeat inside a Grid (columns 2 or 3) or Stack, bound to the array statePath; Repeat\'s children are the per-item template and render once per element. Never unroll a live array into one static Card per item, and never wrap Grid in Repeat (that produces N grids). Bind per-item fields with statePath "item.field". Put per-item values into navigation and hrefs with "{item.id}" — NavLink.to "order?id={item.id}" opens the detail page so its onLoad receives that id. A Button.actionId inside Repeat sends the item fields as the action input.',
+  'Collections: when each item is the same scalar fields with no per-row action, use Table. When items have a name, description, and action, use Repeat inside a Grid (columns 2) of entity Cards — Avatar, title, subtitle, truncated description, footerText plus a footer Button. When each item needs its own Card, Badge, button, or link more generally, put a Repeat inside a Grid (columns 2 or 3) or Stack, bound to the array statePath; Repeat\'s children are the per-item template and render once per element. Never unroll a live array into one static Card per item, and never wrap Grid in Repeat (that produces N grids). Bind per-item fields with statePath "item.field". Put per-item values into navigation and hrefs with "{item.id}" — NavLink.to "order?id={item.id}" opens the detail page so its onLoad receives that id. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item fields as the action input. Never bind a long prose field (output, content, body) inside Repeat — not item.output, not Card.description, not a Table column.',
+  'Loaded row selection: when list items already include a prose field (history[].output, items[].content), Open is Button selectItem true with no actionId. Combine with navigateTo the results/detail page so DataText statePath "content" shows that row (the host copied output into content). Same-page reveal uses showWhen "selectedId={item.id}" on DataText, Card, or Section. Do not invent a second fetch for a field already on the row. When the list API only returns an id, keep the fetch-one detail onLoad instead.',
   'Tabular data goes in Table, metrics go in Stat inside a Grid (size "display" for dashboard KPIs), record details go in KeyValue or EntityHeader, short statuses go in Badge or Chip.',
   'Forms: every interactive field carries an explicit label. Pair short related fields (TextInput, NumberInput, DateInput, Select) side by side in a Grid (columns 2) and keep long free-text, RadioGroup, MultiSelect, Checkbox, and Switch full width. Multi-field forms have one SubmitButton and an optional Back NavLink, and default to left-aligned. A one-field search is SearchField (placeholder is enough; optional label) — never a labelled Grid of one TextInput.',
   'Form controls: SearchField (pill query with nested submit and optional suggestion chips), TextInput (one line), TextArea (prose), NumberInput (counts and amounts; min/max/step as decimal strings), DateInput (YYYY-MM-DD), Select (one of a comma-separated options list), RadioGroup (a short visible exclusive list — use Select when there are more than five options), MultiSelect (several of that list, submitted as an array), Checkbox (must-tick boolean), Switch (on/off preference). Every field needs name; labelled fields also need label. defaultValue seeds the control (comma-separated for MultiSelect); Checkbox/Switch also accept defaultChecked. statePath reads a host-state key instead when set. showWhen hides a field until a sibling matches: "notify" means that field is truthy, "channel=email" means equality, "channel!=sms" inequality, and comma-separated clauses are AND. Hidden fields are not submitted and are not validated. required plus optional errorText run on submit — do not add a second Text for the error. There is no file-upload field.',
@@ -620,6 +625,7 @@ export const ARENA_GENERATIVE_UI_ACTION_RESULT_RULE = [
   'Submitted form fields land in host state under "inputs" immediately on click — before the API returns. Echo them on the destination with Chip or DataText statePath "inputs.targetKeyword", or "{targetKeyword}" in Chip/Text/Heading. Field name is camelCase; labels may have spaces. Do not hope the API echoes those fields, and do not write "{Target Keyword}" expecting the label to bind unless it matches the field name after ignoring spaces and case.',
   'When a binding declares outputSchema, bind its field names as statePath instead of dumping "content": an array field such as "articles" with children "articles[].title" becomes Table statePath="articles" with columns from those child names, or Repeat inside a Grid when each item needs its own Card, link, or action; a single number or string becomes Stat or KeyValue; only fall back to DataText statePath="content" for prose or when the binding declares no outputSchema.',
   'When a binding has no outputSchema and no outputHint, do not invent Table columns or Stat metrics. Bind DataText to "content" (or Repeat/Table only if the brief names the exact collection keys). Prefer a results page of prose until an output sample is provided.',
+  'When list items already include a prose field (history[].output, items[].content), Open is Button selectItem true with no actionId; the host copies that field to content. Do not invent a second fetch for a field already on the row. Results/detail binds DataText to content or selected.output.',
 ].join(' ')
 
 /** Added to the generator prompt only when at least one API binding is declared. */

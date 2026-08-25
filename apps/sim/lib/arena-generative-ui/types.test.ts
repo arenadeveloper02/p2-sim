@@ -19,6 +19,7 @@ import {
   readScopedStatePath,
   repeatItemActionValues,
   repeatItemKey,
+  selectedItemHostState,
   submittedInputsState,
   unwrapResponseBlockEnvelope,
 } from '@/lib/arena-generative-ui/types'
@@ -263,6 +264,40 @@ describe('Repeat item scope', () => {
   it('sends the row fields as action input so inputMapping can use id', () => {
     expect(repeatItemActionValues(article, 2)).toEqual({ ...article, index: 2 })
     expect(repeatItemActionValues('plain', 1)).toEqual({ item: 'plain', index: 1 })
+  })
+
+  it('copies a loaded row into selected, content, and scalar inputs', () => {
+    const row = {
+      id: 'run_1',
+      keyword: 'Dental implants',
+      client: '42 North Dental',
+      date: '2026-08-23',
+      output: '# Full report\n\nBody.',
+      nested: { skip: true },
+    }
+    expect(selectedItemHostState(row, 3)).toEqual({
+      error: undefined,
+      schemaWarning: undefined,
+      selected: row,
+      selectedId: 'run_1',
+      content: '# Full report\n\nBody.',
+      inputs: {
+        id: 'run_1',
+        keyword: 'Dental implants',
+        client: '42 North Dental',
+        date: '2026-08-23',
+      },
+    })
+  })
+
+  it('falls back to the row index when the item has no id and omits prose from inputs', () => {
+    expect(selectedItemHostState({ output: 'Hello', body: 'no' }, 4)).toEqual({
+      error: undefined,
+      schemaWarning: undefined,
+      selected: { output: 'Hello', body: 'no' },
+      selectedId: '4',
+      content: 'Hello',
+    })
   })
 
   it('caps Repeat at a page-safe number of items', () => {

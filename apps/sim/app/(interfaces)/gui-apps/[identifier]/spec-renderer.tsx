@@ -80,6 +80,8 @@ interface SpecRendererProps {
     values: Record<string, unknown>,
     meta?: RunGenerativeAppActionMeta
   ) => Promise<void>
+  /** Copies a Repeat row into host state without calling an API. */
+  onSelectItem?: (item: unknown, index: number) => void
 }
 
 function asString(value: unknown, fallback = ''): string {
@@ -1038,6 +1040,7 @@ export function SpecRenderer({
   currentPath,
   onNavigate,
   onRunAction,
+  onSelectItem,
 }: SpecRendererProps) {
   const elements = (spec.elements ?? {}) as Record<string, SpecElement>
   const [formValues, setFormValues] = useState<Record<string, unknown>>({})
@@ -1096,6 +1099,7 @@ export function SpecRenderer({
         )
       }
       case 'Section':
+        if (!fieldIsVisible(props, visibilityValues)) return null
         return (
           <section
             className={cn(
@@ -1593,6 +1597,7 @@ export function SpecRenderer({
         return <StateKeyValue pairs={pairs} />
       }
       case 'Card': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
         const mediaIds: string[] = []
         const footerIds: string[] = []
         const bodyIds: string[] = []
@@ -1702,6 +1707,7 @@ export function SpecRenderer({
           />
         )
       case 'DataText': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
         return (
           <DataTextView
             value={readStatePath(state, asString(props.statePath), scope)}
@@ -2186,6 +2192,9 @@ export function SpecRenderer({
               if (destructive) {
                 void onRunAction(actionId, actionValues, { destructive: true })
                 return
+              }
+              if (asBoolean(props.selectItem) && scope) {
+                onSelectItem?.(scope.item, scope.index)
               }
               if (navigateTo) onNavigate(navigateTo)
               if (actionId) void onRunAction(actionId, actionValues)

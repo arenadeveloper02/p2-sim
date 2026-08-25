@@ -97,9 +97,11 @@ describe('SpecRenderer', () => {
     currentPath?: string
     onNavigate?: ReturnType<typeof vi.fn>
     onRunAction?: ReturnType<typeof vi.fn>
+    onSelectItem?: ReturnType<typeof vi.fn>
   }) {
     const onNavigate = options?.onNavigate ?? vi.fn()
     const onRunAction = options?.onRunAction ?? vi.fn().mockResolvedValue(undefined)
+    const onSelectItem = options?.onSelectItem ?? vi.fn()
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -113,6 +115,7 @@ describe('SpecRenderer', () => {
           currentPath={options?.currentPath}
           onNavigate={onNavigate}
           onRunAction={onRunAction}
+          onSelectItem={onSelectItem}
         />
       )
     })
@@ -122,7 +125,7 @@ describe('SpecRenderer', () => {
       })
       container.remove()
     }
-    return { container, onNavigate, onRunAction }
+    return { container, onNavigate, onRunAction, onSelectItem }
   }
 
   it('navigates when a NavLink is clicked', () => {
@@ -611,6 +614,57 @@ describe('SpecRenderer', () => {
         'save_article',
         expect.objectContaining({ id: 'a1', title: 'First' })
       )
+    })
+
+    it('copies the Repeat row when selectItem is set and does not run an action', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['repeat'] },
+          repeat: { type: 'Repeat', props: { statePath: 'articles' }, children: ['open'] },
+          open: {
+            type: 'Button',
+            props: { label: 'Open', selectItem: true, navigateTo: 'results' },
+            children: [],
+          },
+        },
+      }
+      const { container, onNavigate, onRunAction, onSelectItem } = render({
+        spec,
+        state: { articles },
+      })
+      const buttons = Array.from(container.querySelectorAll('button')).filter(
+        (button) => button.textContent === 'Open'
+      )
+      act(() => {
+        buttons[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onSelectItem).toHaveBeenCalledWith(articles[1], 1)
+      expect(onNavigate).toHaveBeenCalledWith('results')
+      expect(onRunAction).not.toHaveBeenCalled()
+    })
+
+    it('hides DataText until showWhen selectedId matches', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: {}, children: ['body'] },
+          body: {
+            type: 'DataText',
+            props: { statePath: 'content', fallback: '', showWhen: 'selectedId' },
+            children: [],
+          },
+        },
+      }
+      const hidden = render({ spec, state: { content: '# Hidden report' } })
+      expect(hidden.container.textContent).not.toContain('Hidden report')
+      unmount?.()
+
+      const shown = render({
+        spec,
+        state: { content: '# Hidden report', selectedId: 'run_1' },
+      })
+      expect(shown.container.textContent).toContain('Hidden report')
     })
 
     it('renders Repeat rows from nested run_data.history and item.input fields', () => {

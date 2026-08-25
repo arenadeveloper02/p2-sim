@@ -203,6 +203,12 @@ export const ARENA_GENERATIVE_SCHEMA_WARNING_KEY = 'schemaWarning'
 /** Host state key that holds the last submitted form values. */
 export const ARENA_GENERATIVE_INPUTS_KEY = 'inputs'
 
+/** Host state key that holds the Repeat row copied by a `selectItem` Button. */
+export const ARENA_GENERATIVE_SELECTED_KEY = 'selected'
+
+/** Host state key for the selected Repeat row's `id` / `key` / `slug` (else index). */
+export const ARENA_GENERATIVE_SELECTED_ID_KEY = 'selectedId'
+
 /**
  * Keys that must not be copied from a form submit into `inputs` — they collide
  * with host-owned CTA / pagination state.
@@ -212,6 +218,8 @@ const RESERVED_SUBMITTED_INPUT_KEYS = new Set([
   ARENA_GENERATIVE_ERROR_KEY,
   ARENA_GENERATIVE_SCHEMA_WARNING_KEY,
   ARENA_GENERATIVE_INPUTS_KEY,
+  ARENA_GENERATIVE_SELECTED_KEY,
+  ARENA_GENERATIVE_SELECTED_ID_KEY,
   'hasMore',
   'nextCursor',
   'offset',
@@ -228,6 +236,53 @@ export function submittedInputsState(values: Record<string, unknown>): Record<st
     inputs[key] = value
   }
   return { [ARENA_GENERATIVE_INPUTS_KEY]: inputs }
+}
+
+const SELECTED_ITEM_PROSE_KEYS = new Set(['content', 'assistantContent', 'output', 'text', 'message', 'body'])
+
+function selectedItemId(item: unknown, index: number): string {
+  if (item && typeof item === 'object' && !Array.isArray(item)) {
+    const record = item as Record<string, unknown>
+    for (const field of ['id', 'key', 'slug'] as const) {
+      const value = record[field]
+      if (typeof value === 'string' && value) return value
+      if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+    }
+  }
+  return String(index)
+}
+
+function scalarInputsFromSelectedItem(item: unknown): Record<string, unknown> {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return {}
+  const inputs: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(item as Record<string, unknown>)) {
+    if (RESERVED_SUBMITTED_INPUT_KEYS.has(key)) continue
+    if (SELECTED_ITEM_PROSE_KEYS.has(key)) continue
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      inputs[key] = value
+    }
+  }
+  return inputs
+}
+
+/**
+ * Host state patch when a Repeat Button with `selectItem` is clicked. Copies the
+ * row into `selected`, its prose into `content`, and short scalars under `inputs`
+ * so Results can reuse the same DataText / Chip bindings as a fresh generate.
+ * Does not touch collection keys such as `history` or `items`.
+ */
+export function selectedItemHostState(item: unknown, index: number): Record<string, unknown> {
+  const content = displayTextFromActionData(item)
+  const inputs = scalarInputsFromSelectedItem(item)
+  const selected =
+    item && typeof item === 'object' && !Array.isArray(item) ? item : { item }
+  return {
+    ...clearedActionErrorState(),
+    [ARENA_GENERATIVE_SELECTED_KEY]: selected,
+    [ARENA_GENERATIVE_SELECTED_ID_KEY]: selectedItemId(item, index),
+    ...(content ? { [ARENA_GENERATIVE_STREAM_CONTENT_KEY]: content } : {}),
+    ...(Object.keys(inputs).length > 0 ? { [ARENA_GENERATIVE_INPUTS_KEY]: inputs } : {}),
+  }
 }
 
 /**

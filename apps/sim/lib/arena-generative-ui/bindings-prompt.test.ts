@@ -85,4 +85,22 @@ describe('bindingsSummaryForPrompt', () => {
       'Schema is from a run of an older deployment.',
     ])
   })
+
+  it('tells the generator to selectItem when list items include a prose field', () => {
+    const summary = bindingsSummaryForPrompt([
+      {
+        key: 'run_history',
+        label: 'Run history',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        outputSchema: [
+          { name: 'history', type: 'array' },
+          { name: 'history[].keyword', type: 'string' },
+          { name: 'history[].output', type: 'string' },
+        ],
+      },
+    ])
+    expect(summary[0]?.resultLayout).toContain('selectItem')
+    expect(summary[0]?.resultLayout).toContain('do not bind item.output')
+  })
 })

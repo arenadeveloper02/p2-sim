@@ -231,6 +231,7 @@ const listHomeSpec: Spec = {
       props: {
         label: 'Open',
         actionId: null,
+        selectItem: null,
         navigateTo: 'detail?id={item.id}',
         href: null,
         variant: 'secondary',

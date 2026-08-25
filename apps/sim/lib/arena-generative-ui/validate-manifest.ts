@@ -163,6 +163,39 @@ function deadSubmitButtonIds(spec: Spec): string[] {
     .map(([id]) => id)
 }
 
+function elementIdsInsideRepeat(spec: Spec): Set<string> {
+  const elements = (spec.elements ?? {}) as Record<string, FlatElement>
+  const inside = new Set<string>()
+  const queue: string[] = []
+  for (const element of Object.values(elements)) {
+    if (element.type === 'Repeat') {
+      queue.push(...(element.children ?? []))
+    }
+  }
+  while (queue.length > 0) {
+    const id = queue.pop()
+    if (!id || inside.has(id)) continue
+    inside.add(id)
+    queue.push(...(elements[id]?.children ?? []))
+  }
+  return inside
+}
+
+function selectItemError(spec: Spec, pageKey: string): string | undefined {
+  const elements = (spec.elements ?? {}) as Record<string, FlatElement>
+  const insideRepeat = elementIdsInsideRepeat(spec)
+  for (const [id, element] of Object.entries(elements)) {
+    if (element.type !== 'Button' || element.props?.selectItem !== true) continue
+    if (asString(element.props?.actionId)) {
+      return `Page "${pageKey}" Button "${id}" sets selectItem and actionId; Open a loaded row with selectItem only (no API call).`
+    }
+    if (!insideRepeat.has(id)) {
+      return `Page "${pageKey}" Button "${id}" sets selectItem outside Repeat; selectItem only copies a Repeat row.`
+    }
+  }
+  return undefined
+}
+
 function stripActionIds(spec: Spec): void {
   const elements = spec.elements as Record<string, FlatElement>
   for (const element of Object.values(elements ?? {})) {
@@ -281,6 +314,10 @@ export function validateArenaGenerativeManifest(
         success: false,
         error: `Page "${key}" has a SubmitButton (${deadSubmits.join(', ')}) that is not inside a Form and has no actionId, so it would do nothing. Put it inside the Form it submits, or give it an actionId.`,
       }
+    }
+    const selectItemIssue = authored && !authored.has(key) ? undefined : selectItemError(validation.data, key)
+    if (selectItemIssue) {
+      return { success: false, error: selectItemIssue }
     }
     pages[key] = {
       path: key,
