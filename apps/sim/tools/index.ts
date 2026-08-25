@@ -38,6 +38,10 @@ import {
 import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { isUserFile } from '@/lib/core/utils/user-file'
 import { isSameOrigin } from '@/lib/core/utils/validation'
+import {
+  isDurableSecretProvenanceEnforced,
+  reportUnrecordedDurableProvenance,
+} from '@/lib/execution/durable-secret-provenance-enforcement'
 import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
 import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
 import {
@@ -1867,6 +1871,26 @@ export async function executeTool(
   } catch (error) {
     parentRegistry.mergeToolCallRegistry(toolRegistry)
     throw error
+  }
+
+  /**
+   * Knowledge tools reject incomplete response provenance into an isolated tool registry.
+   * When Knowledge enforcement is off, merging that incompleteness into the parent latches
+   * every later display projection (`complete: false` → structural wipe), blanking Knowledge
+   * input/output in the terminal, `/logs`, and traces even though the functional call
+   * succeeded. Skip the merge and report — same under-redact posture as the Knowledge API.
+   */
+  const normalizedToolId = normalizeToolId(toolId)
+  if (
+    normalizedToolId.startsWith('knowledge_') &&
+    toolRegistry.isPermanentlyIncomplete() &&
+    !isDurableSecretProvenanceEnforced('knowledge')
+  ) {
+    reportUnrecordedDurableProvenance({
+      surface: 'knowledge',
+      cause: 'durable-provenance-unknown',
+    })
+    return result
   }
 
   parentRegistry.mergeToolCallRegistry(toolRegistry)

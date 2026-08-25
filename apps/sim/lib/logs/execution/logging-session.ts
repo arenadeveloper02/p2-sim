@@ -335,10 +335,20 @@ export class LoggingSession {
   ): Promise<ResolvedSecretTraceRegistry | undefined> {
     if (provenance === undefined) return new ResolvedSecretTraceRegistry()
 
+    /**
+     * Incomplete or untrusted display provenance used to latch an incomplete registry,
+     * which forced a structural wipe of block input/output (especially Knowledge). Successful
+     * runs should still be observable under the durable under-redact posture — project through
+     * an empty complete registry instead of blanking the terminal, logs page, and traces.
+     *
+     * Provenance that claims `complete: true` but fails to restore still fails closed so a
+     * corrupted secret catalog cannot silently under-redact named replacements.
+     */
     if (!isResolvedSecretTraceProvenanceV1(provenance)) {
-      const incomplete = new ResolvedSecretTraceRegistry()
-      incomplete.markIncomplete('restored-provenance-untrusted')
-      return incomplete
+      return new ResolvedSecretTraceRegistry()
+    }
+    if (!provenance.complete) {
+      return new ResolvedSecretTraceRegistry([], provenance.scope)
     }
 
     const registry = new ResolvedSecretTraceRegistry([], provenance.scope)
@@ -346,6 +356,11 @@ export class LoggingSession {
       trusted: true,
       origin: 'loggingSession.restoredProvenance',
     })
+    if (!registry.isComplete()) {
+      const incomplete = new ResolvedSecretTraceRegistry([], provenance.scope)
+      incomplete.markIncomplete('restored-provenance-untrusted')
+      return incomplete
+    }
     return registry
   }
 
@@ -466,8 +481,8 @@ export class LoggingSession {
   }
 
   /**
-   * Live deltas may split one literal across multiple events. Once provenance is
-   * active (or incomplete), suppress their display copy instead of attempting a
+   * Live deltas may split one literal across multiple events. Once provenance has
+   * active secret matches, suppress their display copy instead of attempting a
    * per-chunk replacement that could miss the split value.
    */
   async projectLiveDisplayText(

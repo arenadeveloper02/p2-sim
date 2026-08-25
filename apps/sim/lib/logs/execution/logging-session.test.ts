@@ -926,7 +926,7 @@ describe('LoggingSession completion retries', () => {
     )
   })
 
-  it('persists structural-only spans when installed provenance is incomplete', async () => {
+  it('keeps span output when display provenance is incomplete (under-redact observability)', async () => {
     const session = new LoggingSession('workflow-1', 'execution-incomplete', 'api', 'req-1')
     session.setResolvedSecretTraceRegistry(createSecretRegistry([], false))
     completeWorkflowExecutionMock.mockResolvedValue({})
@@ -952,8 +952,8 @@ describe('LoggingSession completion retries', () => {
       expect.objectContaining({
         finalOutput: { raw: 'functional-data' },
         traceSpans: [
-          expect.not.objectContaining({
-            output: expect.anything(),
+          expect.objectContaining({
+            output: { raw: 'unknown-provenance' },
           }),
         ],
       })
@@ -1150,6 +1150,29 @@ describe('LoggingSession completion retries', () => {
 
     expect(displayLog.input).toEqual(rawLog.input)
     expect(displayLog.output).toEqual(rawLog.output)
+  })
+
+  it('keeps Knowledge block log input/output when display provenance is incomplete', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-incomplete-kb', 'manual', 'req-1')
+    const rawLog = {
+      blockId: 'knowledge-1',
+      blockName: 'Knowledge Search',
+      blockType: 'knowledge',
+      startedAt: '2026-07-01T00:00:00.000Z',
+      endedAt: '2026-07-01T00:00:00.001Z',
+      durationMs: 1,
+      success: true,
+      executionOrder: 1,
+      input: { query: 'answer', knowledgeBaseIds: ['kb-1'] },
+      output: { results: [{ content: 'answer' }], totalResults: 1 },
+      displayResolvedSecretTraceProvenance: createDisplayProvenance([], false),
+    }
+
+    const [displayLog] = await session.projectBlockLogsForDisplay([rawLog])
+
+    expect(displayLog.input).toEqual(rawLog.input)
+    expect(displayLog.output).toEqual(rawLog.output)
+    expect(displayLog.clearLiveDisplay).toBeUndefined()
   })
 
   it('suppresses live deltas once a resolved secret is active', async () => {
