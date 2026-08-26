@@ -19,8 +19,6 @@ import type { BlockStateController, ContextExtensions } from '@/executor/executi
 import type { ExecutionContext, NormalizedBlockOutput } from '@/executor/types'
 import type { LoopConfigWithNodes } from '@/executor/types/loop'
 import { createReferencePattern } from '@/executor/utils/reference-validation'
-import { projectResolvedSecretDiagnosticError } from '@/executor/utils/resolved-secret-content-projection'
-import { mergeSubflowSecretProvenance } from '@/executor/utils/subflow-secret-provenance'
 import {
   addSubflowErrorLog,
   buildParallelSentinelEndId,
@@ -142,55 +140,28 @@ export class LoopOrchestratorV2 {
           throw new Error(errorMessage)
         }
         let items: any[]
-        const parentRegistry = ctx.resolvedSecretTraceRegistry
-        const resolutionRegistry = parentRegistry?.forkForInputPaths([])
-        const resolutionCtx = resolutionRegistry
-          ? { ...ctx, resolvedSecretTraceRegistry: resolutionRegistry }
-          : ctx
         try {
           items = await resolveArrayInputAsync(
-            resolutionCtx,
+            ctx,
             loopConfig.forEachItems,
             this.resolver,
-            buildSentinelStartId(loopId),
-            { inputPath: ['forEachItems'] }
+            buildSentinelStartId(loopId)
           )
         } catch (error) {
           const errorMessage = `ForEach loop resolution failed: ${toError(error).message}`
-          const errorDiagnostic = projectResolvedSecretDiagnosticError(
-            new Error(errorMessage),
-            resolutionCtx.resolvedSecretTraceRegistry,
-            { loopId }
-          )
-          const persistedErrorMessage = resolutionCtx.resolvedSecretTraceRegistry
-            ? typeof errorDiagnostic.error === 'string'
-              ? errorDiagnostic.error
-              : 'ForEach loop resolution failed'
-            : errorMessage
-          logger.error('ForEach loop resolution failed', errorDiagnostic)
-          await this.addLoopErrorLog(resolutionCtx, loopId, loopType, persistedErrorMessage, {
-            inputType: Array.isArray(loopConfig.forEachItems)
-              ? 'array'
-              : loopConfig.forEachItems === null
-                ? 'null'
-                : typeof loopConfig.forEachItems,
+          logger.error(errorMessage, { loopId, forEachItems: loopConfig.forEachItems })
+          await this.addLoopErrorLog(ctx, loopId, loopType, errorMessage, {
+            forEachItems: loopConfig.forEachItems,
           })
           scope.items = []
           scope.maxIterations = 0
-          scope.validationError = persistedErrorMessage
+          scope.validationError = errorMessage
           scope.condition = buildLoopIndexCondition(0)
           ctx.loopExecutions?.set(loopId, scope)
-          throw new Error(persistedErrorMessage)
+          throw new Error(errorMessage)
         }
 
         scope.items = items
-        // Incomplete envelopes carry no secret entries — storing them only poisons Agent
-        // model-input projection when `<loop.currentItem>` is referenced inside the body.
-        if (resolutionRegistry?.isComplete()) {
-          scope.inputResolvedSecretTraceProvenance =
-            resolutionRegistry.exportCommittedProvenanceForValue(items)
-          parentRegistry?.mergeToolCallRegistry(resolutionRegistry)
-        }
         scope.maxIterations = items.length
         scope.item = items[0]
         scope.condition = buildLoopIndexCondition(scope.maxIterations)
@@ -256,10 +227,6 @@ export class LoopOrchestratorV2 {
 
     const baseId = extractBaseBlockId(nodeId)
     scope.currentIterationOutputs.set(baseId, output)
-    scope.resolvedSecretTraceProvenance = mergeSubflowSecretProvenance(
-      scope.resolvedSecretTraceProvenance,
-      this.state.getBlockState(nodeId)?.resolvedSecretTraceProvenance
-    )
   }
 
   async evaluateLoopContinuation(
@@ -360,16 +327,7 @@ export class LoopOrchestratorV2 {
       requireDurable: true,
     })
     const output = { results: compactedResults }
-    if (scope.resolvedSecretTraceProvenance) {
-      this.state.setBlockOutput(
-        loopId,
-        output,
-        DEFAULTS.EXECUTION_TIME,
-        scope.resolvedSecretTraceProvenance
-      )
-    } else {
-      this.state.setBlockOutput(loopId, output, DEFAULTS.EXECUTION_TIME)
-    }
+    this.state.setBlockOutput(loopId, output, DEFAULTS.EXECUTION_TIME)
     scope.allIterationOutputs = []
 
     await emitSubflowSuccessEvents(ctx, loopId, 'loop', output, this.contextExtensions)
