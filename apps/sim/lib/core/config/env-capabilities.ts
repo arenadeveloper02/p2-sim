@@ -1406,6 +1406,11 @@ export function resolveOAuthClientCapabilityId(serviceId: string): OAuthClientCa
   // One consumer key serves both Salesforce login hosts, so the sandbox provider
   // is configured by the same env pair — without this alias it is silently dropped.
   if (normalized === 'salesforce-sandbox') return 'salesforce'
+  // Zoom's OAuth services were renamed off the provider key (`zoom` →
+  // `zoom-client` / `zoom-admin`). Capability env still lives under `zoom`
+  // (`ZOOM_CLIENT_ID` / `ZOOM_CLIENT_SECRET`); map both service ids so
+  // availability and setup tooling do not treat them as unknown.
+  if (normalized === 'zoom-client' || normalized === 'zoom-admin') return 'zoom'
   return normalized in OAUTH_CLIENT_CAPABILITIES ? (normalized as OAuthClientCapabilityId) : null
 }
 

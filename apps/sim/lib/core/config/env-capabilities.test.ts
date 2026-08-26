@@ -7,6 +7,7 @@ import {
   EMAIL_CAPABILITY,
   EnvCapabilityConfigurationError,
   envField,
+  getOAuthClientCapabilityFields,
   inspectCapability,
   inspectOAuthClientCapability,
   KNOWLEDGE_EMBEDDINGS_CAPABILITY,
@@ -756,6 +757,20 @@ describe('env capabilities', () => {
       expect(getServiceConfigByServiceId('trello')?.serviceAccountProviderId).toBe(
         'trello-service-account'
       )
+    })
+
+    it('aliases renamed Zoom OAuth service ids to the zoom capability', () => {
+      expect(resolveOAuthClientCapabilityId('zoom')).toBe('zoom')
+      expect(resolveOAuthClientCapabilityId('zoom-client')).toBe('zoom')
+      expect(resolveOAuthClientCapabilityId('zoom-admin')).toBe('zoom')
+      expect(getOAuthClientCapabilityFields('zoom-client')).toEqual([
+        'ZOOM_CLIENT_ID',
+        'ZOOM_CLIENT_SECRET',
+      ])
+      expect(getOAuthClientCapabilityFields('zoom-admin')).toEqual([
+        'ZOOM_CLIENT_ID',
+        'ZOOM_CLIENT_SECRET',
+      ])
     })
 
     it('tracks setup-owned options as deployment configuration', () => {

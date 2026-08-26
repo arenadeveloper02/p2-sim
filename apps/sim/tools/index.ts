@@ -38,12 +38,12 @@ import {
 import { getBaseUrl, getInternalApiBaseUrl } from '@/lib/core/utils/urls'
 import { isUserFile } from '@/lib/core/utils/user-file'
 import { isSameOrigin } from '@/lib/core/utils/validation'
+import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
+import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
 import {
   isDurableSecretProvenanceEnforced,
   reportUnrecordedDurableProvenance,
 } from '@/lib/execution/durable-secret-provenance-enforcement'
-import { getAccessibleOAuthCredentials } from '@/lib/credentials/environment'
-import { SIM_VIA_HEADER, serializeCallChain } from '@/lib/execution/call-chain'
 import {
   INTERNAL_EXECUTION_DEADLINE_HEADER,
   serializeExecutionDeadlineHeader,

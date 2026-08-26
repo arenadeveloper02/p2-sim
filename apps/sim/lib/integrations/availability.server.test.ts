@@ -222,5 +222,7 @@ describe('integration availability', () => {
       'oauth-client'
     )
     expect(resolveOAuthClientCapabilityId('trello')).toBe('trello')
+    expect(resolveOAuthClientCapabilityId('zoom-client')).toBe('zoom')
+    expect(resolveOAuthClientCapabilityId('zoom-admin')).toBe('zoom')
   })
 })

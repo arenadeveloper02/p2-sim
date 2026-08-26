@@ -48,7 +48,7 @@ export const SERVICE_ACCOUNT_METADATA_BY_OAUTH_SERVICE_ID: Readonly<
   wealthbox: { providerId: 'wealthbox-service-account' },
   webflow: { providerId: 'webflow-service-account' },
   'zoho-desk': { providerId: 'zoho-desk-service-account' },
-  zoom: { providerId: 'zoom-service-account' },
+  'zoom-client': { providerId: 'zoom-service-account' },
 } as const
 
 export function getServiceAccountMetadata(

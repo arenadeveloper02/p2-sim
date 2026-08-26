@@ -764,9 +764,9 @@ function withDerivedMetrics(
       entity.absolute_top_impression_rate_percent =
         weight > 0 ? entity._abs_top_rate_weighted / weight : 0
     }
-    delete entity._rate_weight
-    delete entity._top_rate_weighted
-    delete entity._abs_top_rate_weighted
+    entity._rate_weight = undefined
+    entity._top_rate_weighted = undefined
+    entity._abs_top_rate_weighted = undefined
   }
   return entity
 }
