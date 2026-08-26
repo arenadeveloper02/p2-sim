@@ -399,8 +399,13 @@ export async function runCopilotLifecycle(
           { status: 401, body: 'Missing COPILOT_API_KEY' }
         )
       }
-      await runCheckpointLoop(
+      await ensureModelEgressRegistry(execContext, lifecycleOptions)
+      const modelSafeRequestPayload = await filterInitialCopilotAttachmentsForModel(
         requestPayload,
+        lifecycleOptions.workspaceId
+      )
+      await runCheckpointLoop(
+        modelSafeRequestPayload,
         context,
         execContext,
         lifecycleOptions,
@@ -408,19 +413,6 @@ export async function runCopilotLifecycle(
         hostedBillingRequest
       )
     }
-    await ensureModelEgressRegistry(execContext, lifecycleOptions)
-    const modelSafeRequestPayload = await filterInitialCopilotAttachmentsForModel(
-      requestPayload,
-      lifecycleOptions.workspaceId
-    )
-    await runCheckpointLoop(
-      modelSafeRequestPayload,
-      context,
-      execContext,
-      lifecycleOptions,
-      goRoute,
-      hostedBillingRequest
-    )
 
     // The backend's terminal `complete` is the turn's verdict. A failure it
     // reported in-band on the way there — a tool or a subagent that failed and

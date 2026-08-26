@@ -1,8 +1,10 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
 import {
   MothershipStreamV1CompletionStatus,
   MothershipStreamV1EventType,
+  MothershipStreamV1SessionKind,
   MothershipStreamV1TextChannel,
   MothershipStreamV1ToolExecutor,
   MothershipStreamV1ToolMode,
@@ -502,6 +504,18 @@ export async function runLocalCopilotMothershipLifecycle(
     let eventCount = 0
     let toolCallCount = 0
     const catalogId = resolveCatalogIdFromPayload(requestPayload)
+    await dispatchStreamEvent(
+      {
+        type: MothershipStreamV1EventType.session,
+        payload: {
+          kind: MothershipStreamV1SessionKind.start,
+          data: { responseId: generateId() },
+        },
+      },
+      context,
+      execContext,
+      options
+    )
     const agent = runLocalCopilotAgent({
       userId,
       workspaceId,
@@ -568,6 +582,7 @@ export async function runLocalCopilotMothershipLifecycle(
 
     const billingModel = turnUsage?.model || getLocalCopilotConfig().model
     context.billingModel = billingModel
+    context.completionStatus = status
 
     logger.info('Arena Copilot mothership lifecycle finished', {
       workspaceId,
@@ -595,7 +610,7 @@ export async function runLocalCopilotMothershipLifecycle(
       }
     }
 
-    if (isMothershipBlockExecute && blockExecuteCost && blockExecuteCost.total > 0) {
+    if (blockExecuteCost && blockExecuteCost.total > 0) {
       context.cost = {
         input: blockExecuteCost.input,
         output: blockExecuteCost.output,

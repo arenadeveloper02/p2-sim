@@ -16,10 +16,15 @@ import {
 } from '@/lib/workflows/subblocks/visibility'
 import { getBlock } from '@/blocks/registry'
 import type { SubBlockConfig } from '@/blocks/types'
-import { getModelOptions } from '@/blocks/utils'
+import { getAgentModelOptions, getModelOptions, getPiModelOptions } from '@/blocks/utils'
 import { overlayVisibility } from '@/blocks/visibility/context'
 import { BlockType, EDGE, normalizeName } from '@/executor/constants'
-import { isAutoModel, isKnownModelId, suggestModelIdsForUnknownModel } from '@/providers/models'
+import {
+  getModelSunsetStatus,
+  isAutoModel,
+  isKnownModelId,
+  suggestModelIdsForUnknownModel,
+} from '@/providers/models'
 import { isPiByokOnlyMode } from '@/providers/pi-providers'
 import { getTool } from '@/tools/utils'
 import { TRIGGER_RUNTIME_SUBBLOCK_IDS, TRIGGER_WEBHOOK_URL_FIELD } from '@/triggers/constants'
@@ -186,9 +191,8 @@ export function validateInputsForBlock(
       : inputs
 
   if (!blockConfig) {
-    // Unknown block type - return inputs as-is (let it fail later if invalid)
     validationLogger.warn(`Unknown block type: ${blockType}, skipping validation`)
-    return { validInputs: normalizedInputs, errors: [] }
+    return { validInputs: normalizedInputs, errors }
   }
 
   const validatedInputs: Record<string, any> = {}
@@ -756,7 +760,10 @@ export function validateValueForSubBlockType(
     case 'long-input':
     case 'combobox': {
       const usesProviderCatalog =
-        fieldName === 'model' && subBlockConfig.options === getModelOptions
+        fieldName === 'model' &&
+        (subBlockConfig.options === getModelOptions ||
+          subBlockConfig.options === getAgentModelOptions ||
+          subBlockConfig.options === getPiModelOptions)
 
       if (usesProviderCatalog) {
         const stringValue = typeof value === 'string' ? value : String(value)
@@ -779,6 +786,24 @@ export function validateValueForSubBlockType(
               field: fieldName,
               value,
               error: `Unknown model id "${trimmed}" for block "${blockType}". Read components/blocks/${blockType}.json (the model.options array) for valid ids; prefer entries with recommended: true and avoid deprecated: true. For user-configured models (Ollama, Ollama Cloud, vLLM, LiteLLM, OpenRouter, Fireworks, Together AI, Baseten), prefix the id with the provider slash, e.g. "ollama/llama3.1:8b" or "ollama-cloud/gpt-oss:120b".${suggestionText}`,
+            },
+          }
+        }
+        const sunset = getModelSunsetStatus(trimmed)
+        if (sunset === 'legacy' || sunset === 'deprecated') {
+          const suggestions = suggestModelIdsForUnknownModel(trimmed)
+          const suggestionText =
+            suggestions.length > 0
+              ? ` Use a current recommended model instead: ${suggestions.join(', ')}.`
+              : ''
+          return {
+            valid: false,
+            error: {
+              blockId,
+              blockType,
+              field: fieldName,
+              value,
+              error: `"${trimmed}" is a ${sunset} model and must not be written on new or updated blocks.${suggestionText}`,
             },
           }
         }

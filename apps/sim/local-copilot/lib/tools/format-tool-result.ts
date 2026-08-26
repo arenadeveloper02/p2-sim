@@ -1,5 +1,6 @@
 import { truncate } from '@sim/utils/string'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
+import { documentLayoutFollowUpHint } from '@/lib/copilot/chat/document-format-guidance'
 import { REDACTED_MARKER } from '@/lib/core/security/redaction'
 import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
 import { getBlock } from '@/blocks/registry'
@@ -367,13 +368,14 @@ export function formatToolResultForLlm(
         (typeof data.name === 'string' && data.name) ||
         (typeof data.vfsPath === 'string' && data.vfsPath) ||
         'the file'
+      const baseHint =
+        typeof record.message === 'string' && record.message.trim()
+          ? record.message.trim()
+          : `Call edit_content in the next step with the content to write to "${fileName}". Do not call edit_content in parallel with workspace_file.`
       formatted = {
         ...record,
         needsFollowUpEditContent: true,
-        followUpHint:
-          typeof record.message === 'string' && record.message.trim()
-            ? record.message.trim()
-            : `Call edit_content in the next step with the content to write to "${fileName}". Do not call edit_content in parallel with workspace_file.`,
+        followUpHint: documentLayoutFollowUpHint(fileName, baseHint),
       }
     } else {
       formatted = record

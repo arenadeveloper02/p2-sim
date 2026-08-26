@@ -13,6 +13,7 @@ import { toError } from '@sim/utils/errors'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { hasWorkspaceSandboxAccess } from '@/lib/billing/core/subscription'
 import { createCopilotWorkspaceContextFilePrincipal } from '@/lib/copilot/auth/file-delegation'
+import { DOCUMENT_FORMAT_GUIDANCE } from '@/lib/copilot/chat/document-format-guidance'
 import {
   getHubSpotSharedAccountOptionIds,
   mergeOAuthIntegrationPresence,
@@ -333,31 +334,26 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
 }
 
 export function buildWorkspaceContextMd(data: WorkspaceMdData): string {
-  return ['# Workspace Context', '', buildWorkspaceMd(data)].join('\n\n')
+  return ['# Workspace Context', '', buildWorkspaceMd(data), WORKSPACE_DOCUMENT_FILE_GUIDANCE].join(
+    '\n\n'
+  )
 }
 
 /**
  * Injected into mothership workspace context so the agent uses built-in file tools
  * for DOCX/PPTX/PDF instead of function_execute (Python docx/matplotlib, etc.).
  */
-const WORKSPACE_DOCUMENT_FILE_GUIDANCE = `## Workspace documents (DOCX, PPTX, PDF)
+const WORKSPACE_DOCUMENT_FILE_GUIDANCE = `## Workspace documents (DOCX, PPTX, PDF, Markdown)
 
 Do **not** use \`function_execute\` to create or edit Word, PowerPoint, or PDF workspace files (no Python \`python-docx\` / \`matplotlib\`, no shell, no \`require\` hacks) unless the user explicitly asks to run code in a sandbox.
 
 Use the built-in file tools instead:
 
-1. **create_file** — create the file (e.g. \`Report.docx\`, \`Deck.pptx\`, \`Brief.pdf\`).
-2. **workspace_file** — \`append\`, \`update\`, or \`patch\` with \`target.kind=file_id\`, the file id, and a short \`title\`. Wait for success before the next step.
-3. **edit_content** — write the body in the **next** turn only (never in parallel with workspace_file).
+1. **create_file** — create the file (e.g. \`Report.docx\`, \`Deck.pptx\`, \`Brief.pdf\`, \`Notes.md\`). Pass \`content\` for markdown/text; empty shell for office formats.
+2. **workspace_file** — \`append\`, \`update\`, or \`patch\` with \`target.kind=file_id\` or \`target.kind=path\`, and a short \`title\`. Wait for success before the next step.
+3. **edit_content** — write the body in the **next** turn only (never in parallel with workspace_file). For office files this is **docxjs / pptxgenjs / pdflibjs JavaScript** (not Python). Never \`require\` / \`import\`. Never \`docx.addSection\` — use global \`addSection\`.
 
-For **.docx** / **.pptx** / **.pdf**, \`edit_content\` must be **docxjs / pptxgenjs / pdflibjs JavaScript** (not Python).
-
-DOCX patterns (globals already initialized — never \`require('docx')\`):
-- Preferred chunked: \`addSection({ children: [new docx.Paragraph({ children: [new docx.TextRun("Hello")] })] });\`
-- Single write: \`globalThis.doc = new docx.Document({ sections: [{ children: [...] }] });\`
-- Do **not** call \`docx.addSection\` — use the global \`addSection\` helper.
-
-For plain \`.md\`, \`.txt\`, \`.json\`, \`.csv\`, \`.html\`, use the same three tools; \`edit_content\` is the raw text.
+${DOCUMENT_FORMAT_GUIDANCE}
 
 Reserve **function_execute** for data processing, API calls, and tabular/JSON outputs — not for generating office documents in the workspace.`
 

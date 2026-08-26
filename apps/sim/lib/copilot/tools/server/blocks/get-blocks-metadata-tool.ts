@@ -681,6 +681,7 @@ function generateInputExample(schema: CopilotSubblockMetadata, inputDef?: any): 
       return schema.defaultValue ?? {}
     case 'dropdown':
     case 'combobox':
+      if (schema.defaultValue !== undefined) return schema.defaultValue
       if (schema.options && schema.options.length > 0) {
         return schema.options[0].id
       }
@@ -779,11 +780,10 @@ function resolveAuthType(
 }
 
 /**
- * Gets all available models from PROVIDER_DEFINITIONS as static options.
- * This provides fallback data when store state is not available server-side.
- * Excludes dynamic providers (ollama, ollama-cloud, vllm, openrouter, fireworks) which require runtime fetching.
+ * Static catalog models Copilot may assign when creating workflows.
+ * Omits dynamic providers and any sunset (legacy or retired) ids.
  */
-function getStaticModelOptions(): { id: string; label?: string }[] {
+export function getStaticModelOptions(): { id: string; label?: string }[] {
   const models: { id: string; label?: string }[] = []
 
   for (const provider of Object.values(PROVIDER_DEFINITIONS)) {
@@ -801,9 +801,8 @@ function getStaticModelOptions(): { id: string; label?: string }[] {
     }
     if (provider?.models) {
       for (const model of provider.models) {
-        // Exclude retired models — the agent must not receive a model whose API
-        // calls fail (mirrors the user picker + VFS menu).
-        if (model.sunset?.status === 'deprecated') continue
+        // Canvas badges sunset ids; do not offer them to Copilot for new writes.
+        if (model.sunset) continue
         models.push({ id: model.id, label: model.id })
       }
     }
