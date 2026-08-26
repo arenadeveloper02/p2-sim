@@ -929,6 +929,19 @@ export function deriveThinkingLabel(blocks: ContentBlock[]): string | null {
   }
 }
 
+/**
+ * Turn-level shimmer copy. Local Copilot streams `liveStatus` (Proposing…,
+ * tool heartbeats, engagement lines); cloud mothership leaves it empty so the
+ * block-derived fallback stays in place. `null` still means an open subagent
+ * lane owns the shimmer.
+ */
+export function resolveThinkingLabel(blocks: ContentBlock[], liveStatus?: string): string | null {
+  const fromBlocks = deriveThinkingLabel(blocks)
+  if (fromBlocks === null) return null
+  const liveLabel = liveStatus?.trim()
+  return liveLabel || fromBlocks
+}
+
 interface MessageContentProps {
   blocks: ContentBlock[]
   fallbackContent: string
@@ -965,9 +978,7 @@ function MessageContentInner({
   fallbackContent,
   messageId,
   isStreaming = false,
-  // liveStatus prop still accepted from callers, but unused after upstream's
-  // shimmer tail (thinkingLabel) replaced HEAD's trailing-live-status path.
-  // liveStatus,
+  liveStatus,
   isLast = false,
   questionAnswers,
   credentialSubmission,
@@ -1052,32 +1063,23 @@ function MessageContentInner({
 
   if (segments.length === 0 && !isLast) return null
 
-  // Prior HEAD trailing-thinking path, superseded by upstream's shimmer tail
-  // (showShimmer + thinkingLabel below). Kept for reference:
-  // const hasRunningWork = blocks.some(
-  //   (b) =>
-  //     b.toolCall?.status === 'executing' ||
-  //     (b.type === 'subagent' && b.endedAt === undefined)
-  // )
-  // const showTrailingThinking = shouldShowTrailingLiveStatus({
-  //   isStreaming,
-  //   liveStatus,
-  //   hasTrailingContent,
-  //   hasRunningWork,
-  // })
-
   // A visible executing tool row already spins — the turn-level shimmer would
   // double it. (A null label means a just-opened lane's shimmer owns the state.)
   // A mid-stream special tag renders nothing until complete, so its bytes are a
   // wait, not output — the shimmer bridges it without the quiet-period delay.
-  const thinkingLabel = deriveThinkingLabel(blocks)
+  // Local Copilot `liveStatus` is already a wait phrase, so skip the 1.5s idle
+  // gate; cloud has no liveStatus and still waits for STREAM_IDLE_DELAY_MS.
+  const liveLabel = liveStatus?.trim() ?? ''
+  const thinkingLabel = resolveThinkingLabel(blocks, liveStatus)
   const hasExecutingTool = assistantMessageHasVisibleExecutingTool(blocks)
   const showShimmer =
     thinkingExpanded &&
     thinkingLabel !== null &&
     (segments.length === 0 ||
       trailingPendingTag ||
-      (isStreamIdle && !trailingStreamActivity && !hasExecutingTool))
+      (!trailingStreamActivity &&
+        !hasExecutingTool &&
+        (Boolean(liveLabel) || isStreamIdle)))
 
   return (
     <div>
