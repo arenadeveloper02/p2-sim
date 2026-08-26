@@ -38,6 +38,27 @@ function credentialAccessError(access: CredentialActorContext): string | null {
 }
 
 /**
+ * Shared HubSpot portals are addressed by alias (`northstar_anesthesia`, …) and live in
+ * `account_tokens`, not the workspace `credential` table.
+ */
+async function lookupHubSpotSharedAccountAlias(credentialId: string): Promise<{
+  userId: string | null
+  providerId: string
+  alias: string | null
+} | null> {
+  const [tokenRow] = await db
+    .select({
+      userId: accountTokens.userId,
+      providerId: accountTokens.providerId,
+      alias: accountTokens.alias,
+    })
+    .from(accountTokens)
+    .where(and(eq(accountTokens.alias, credentialId), eq(accountTokens.providerId, 'hubspot')))
+    .limit(1)
+  return tokenRow ?? null
+}
+
+/**
  * Centralizes auth + credential membership checks for OAuth usage.
  *
  * Every workspace-scoped credential — whether addressed by its `credential.id` or
@@ -49,6 +70,9 @@ function credentialAccessError(access: CredentialActorContext): string | null {
  *
  * Raw account ids that belong to no workspace credential at all remain private to
  * their owner.
+ *
+ * HubSpot shared portal aliases are an exception: they are not workspace credential
+ * rows, so they resolve via `account_tokens` even when a workflow pins a workspace.
  */
 export async function authorizeCredentialUse(
   request: NextRequest,
@@ -83,14 +107,6 @@ export async function authorizeCredentialUseForAuth(
   if (!auth.success || !auth.userId) {
     return { ok: false, error: auth.error || 'Authentication required' }
   }
-
-  // Lookup credential owner and provider
-  // Support both UUID id and alias for HubSpot
-  let [credRow] = await db
-    .select({ userId: account.userId, providerId: account.providerId })
-    .from(account)
-    .where(eq(account.id, credentialId))
-    .limit(1)
 
   if (
     auth.authType === AuthType.INTERNAL_JWT &&
@@ -220,6 +236,23 @@ export async function authorizeCredentialUseForAuth(
   }
 
   /**
+   * Shared HubSpot portals are alias keys in `account_tokens`, not workspace
+   * `credential` rows. Resolve them before the scoped early-return so workflow
+   * runs (which always supply `workflowId`) can still use public portal aliases.
+   */
+  const sharedHubSpot = await lookupHubSpotSharedAccountAlias(credentialId)
+  if (sharedHubSpot?.alias) {
+    return {
+      ok: true,
+      authType,
+      requesterUserId: actingUserId,
+      credentialOwnerUserId: sharedHubSpot.userId ?? actingUserId,
+      resolvedCredentialId: credentialId,
+      credentialType: 'oauth',
+    }
+  }
+
+  /**
    * A workflow pins the credential to that workflow's workspace, so an account that
    * resolves to no reachable credential row there is out of scope — it must not fall
    * through to the owner-only path and cross the workspace boundary.
@@ -233,42 +266,6 @@ export async function authorizeCredentialUseForAuth(
     .from(account)
     .where(eq(account.id, credentialId))
     .limit(1)
-
-  if (!credRow) {
-    // If not found by ID, check if it's a HubSpot alias in the new accountTokens table first
-    const [tokenRow] = await db
-      .select({
-        userId: accountTokens.userId,
-        providerId: accountTokens.providerId,
-        alias: accountTokens.alias,
-      })
-      .from(accountTokens)
-      .where(eq(accountTokens.alias, credentialId))
-      .limit(1)
-
-    if (tokenRow && tokenRow.providerId === 'hubspot') {
-      credRow = tokenRow as any // Compatible enough for these fields
-    }
-  }
-
-  if (!credRow) {
-    return { ok: false, error: 'Credential not found' }
-  }
-
-  const credentialOwnerUserId = credRow.userId
-
-  // HubSpot specific check for shared admin accounts via alias
-  const isSharedHubSpotAccount =
-    credRow.providerId === 'hubspot' && 'alias' in credRow && !!(credRow as any).alias
-
-  if (isSharedHubSpotAccount) {
-    return {
-      ok: true,
-      authType: auth.authType as CredentialAccessResult['authType'],
-      requesterUserId: auth.userId,
-      credentialOwnerUserId,
-    }
-  }
 
   if (!legacyAccount) {
     return { ok: false, error: 'Credential not found' }
