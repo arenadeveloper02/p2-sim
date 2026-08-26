@@ -202,7 +202,9 @@ export function CommandList() {
             >
               {/* Left side: Icon and Label */}
               <div className='flex items-center gap-[8px]'>
-                <Icon className='size-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]' />
+                <span className='inline-flex size-[14px] shrink-0 items-center justify-center overflow-hidden rounded-[4px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]'>
+                  <Icon className='size-[14px]' />
+                </span>
                 <span className='font-medium text-[14px] text-[var(--text-tertiary)] group-hover:text-[var(--text-primary)]'>
                   {command.label}
                 </span>

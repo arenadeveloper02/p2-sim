@@ -45,6 +45,11 @@ import {
   SLACK_CUSTOM_BOT_SECRET_TYPE,
 } from '@/lib/oauth/types'
 import { captureServerEvent } from '@/lib/posthog/server'
+import {
+  listAccountsToDisconnect,
+  unlinkUnipileAccountsFromProvider,
+} from '@/lib/unipile/disconnect-accounts'
+import { UNIPILE_LINKEDIN_PROVIDER_ID } from '@/lib/unipile/hosted-auth'
 
 const logger = createLogger('CredentialOrchestration')
 type CredentialRow = typeof credential.$inferSelect
@@ -559,6 +564,14 @@ export async function deleteCredentialRecord(
   }
 
   if (credentialRow.type === 'oauth') {
+    if (credentialRow.providerId === UNIPILE_LINKEDIN_PROVIDER_ID && credentialRow.accountId) {
+      const unipileAccounts = await listAccountsToDisconnect({
+        userId: credentialRow.createdBy,
+        provider: UNIPILE_LINKEDIN_PROVIDER_ID,
+        accountRowId: credentialRow.accountId,
+      })
+      await unlinkUnipileAccountsFromProvider(unipileAccounts)
+    }
     const deleted = await deleteConnectionCredential({
       credentialId: credentialRow.id,
       workspaceId: credentialRow.workspaceId,

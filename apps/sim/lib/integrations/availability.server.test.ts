@@ -168,6 +168,22 @@ describe('integration availability', () => {
     })
   })
 
+  it('requires the deployment Unipile API key for LinkedIn hosted auth', () => {
+    expect(availabilityFor('unipile')).toMatchObject({
+      state: 'unavailable',
+      oauthAvailable: false,
+      serviceAccountAvailable: false,
+      missingFields: ['UNIPILE_API_KEY'],
+      setupCommand: 'bun run setup integration unipile-linkedin',
+    })
+    expect(availabilityFor('unipile', { UNIPILE_API_KEY: 'unipile-key' })).toMatchObject({
+      state: 'ready',
+      oauthAvailable: true,
+      serviceAccountAvailable: false,
+      missingFields: [],
+    })
+  })
+
   it('maps OAuth service ids to the integration allowlist without loading registries', () => {
     expect(getIntegrationTypesForOAuthServiceId('gmail')).toContain('gmail_v2')
     expect(isOAuthServiceAllowedByIntegrationTypes('gmail', new Set(['slack']))).toBe(false)
@@ -222,6 +238,8 @@ describe('integration availability', () => {
       'oauth-client'
     )
     expect(resolveOAuthClientCapabilityId('trello')).toBe('trello')
+    expect(resolveOAuthClientCapabilityId('unipile_linkedin')).toBe('unipile-linkedin')
+    expect(resolveOAuthClientCapabilityId('unipile-linkedin')).toBe('unipile-linkedin')
     expect(resolveOAuthClientCapabilityId('zoom-client')).toBe('zoom')
     expect(resolveOAuthClientCapabilityId('zoom-admin')).toBe('zoom')
   })

@@ -205,19 +205,25 @@ export function useOAuthReturnRouter() {
     if (redirectParams.hosted || redirectParams.accountId) {
       handledRef.current = true
       void (async () => {
-        const { ctx } = await handleUnipileHostedRedirect(redirectParams)
-        if (redirectParams.hosted === 'success' || redirectParams.accountId) {
-          if (ctx) {
-            const message = await resolveOAuthMessage(ctx)
-            toast.success(message, { duration: 5000 })
-            dispatchCredentialUpdate(ctx)
-            consumeOAuthReturnContext()
-          } else {
-            toast.error(
-              'Connection session expired. Open Integrations and connect LinkedIn again.',
-              { duration: 5000 }
-            )
+        try {
+          const { ctx } = await handleUnipileHostedRedirect(redirectParams)
+          if (redirectParams.hosted === 'success' || redirectParams.accountId) {
+            if (ctx) {
+              const message = await resolveOAuthMessage(ctx)
+              showOAuthResultMessage(message)
+              dispatchCredentialUpdate(ctx)
+              consumeOAuthReturnContext()
+            } else {
+              toast.error(
+                'Connection session expired. Open Integrations and connect LinkedIn again.',
+                { duration: 5000 }
+              )
+            }
           }
+        } catch {
+          toast.error('We couldn’t finish the LinkedIn connection. Try again.', {
+            duration: 5000,
+          })
         }
       })()
       return
@@ -294,17 +300,23 @@ export function useOAuthReturnForWorkflow(workflowId: string) {
     if (redirectParams.hosted || redirectParams.accountId) {
       handledRef.current = true
       void (async () => {
-        const { ctx } = await handleUnipileHostedRedirect(redirectParams)
-        if (ctx && ctx.origin === 'workflow' && ctx.workflowId === workflowId) {
-          const message = await resolveOAuthMessage(ctx)
-          toast.success(message, { duration: 5000 })
-          dispatchCredentialUpdate(ctx)
-          consumeOAuthReturnContext()
-        } else if (redirectParams.hosted === 'success' || redirectParams.accountId) {
-          toast.success('LinkedIn account linked. Select it in the block credential picker.', {
+        try {
+          const { ctx } = await handleUnipileHostedRedirect(redirectParams)
+          if (ctx && ctx.origin === 'workflow' && ctx.workflowId === workflowId) {
+            const message = await resolveOAuthMessage(ctx)
+            showOAuthResultMessage(message)
+            dispatchCredentialUpdate(ctx)
+            consumeOAuthReturnContext()
+          } else if (redirectParams.hosted === 'success' || redirectParams.accountId) {
+            toast.success('LinkedIn account linked. Select it in the block credential picker.', {
+              duration: 5000,
+            })
+            consumeOAuthReturnContext()
+          }
+        } catch {
+          toast.error('We couldn’t finish the LinkedIn connection. Try again.', {
             duration: 5000,
           })
-          consumeOAuthReturnContext()
         }
       })()
       return
@@ -348,15 +360,21 @@ export function useOAuthReturnForKBConnectors(knowledgeBaseId: string) {
     if (redirectParams.hosted || redirectParams.accountId) {
       handledRef.current = true
       void (async () => {
-        const { ctx } = await handleUnipileHostedRedirect(redirectParams)
-        if (ctx && ctx.origin === 'kb-connectors' && ctx.knowledgeBaseId === knowledgeBaseId) {
-          const message = await resolveOAuthMessage(ctx)
-          toast.success(message, { duration: 5000 })
-          dispatchCredentialUpdate(ctx)
-          consumeOAuthReturnContext()
-        } else if (redirectParams.hosted === 'success' || redirectParams.accountId) {
-          toast.success('LinkedIn account linked.', { duration: 5000 })
-          consumeOAuthReturnContext()
+        try {
+          const { ctx } = await handleUnipileHostedRedirect(redirectParams)
+          if (ctx && ctx.origin === 'kb-connectors' && ctx.knowledgeBaseId === knowledgeBaseId) {
+            const message = await resolveOAuthMessage(ctx)
+            showOAuthResultMessage(message)
+            dispatchCredentialUpdate(ctx)
+            consumeOAuthReturnContext()
+          } else if (redirectParams.hosted === 'success' || redirectParams.accountId) {
+            toast.success('LinkedIn account linked.', { duration: 5000 })
+            consumeOAuthReturnContext()
+          }
+        } catch {
+          toast.error('We couldn’t finish the LinkedIn connection. Try again.', {
+            duration: 5000,
+          })
         }
       })()
       return

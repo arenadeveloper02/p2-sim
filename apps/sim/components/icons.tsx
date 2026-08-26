@@ -1,7 +1,6 @@
 import type { SVGProps } from 'react'
 import { useId } from 'react'
 import { cn } from '@sim/emcn'
-import Image, { type ImageProps } from 'next/image'
 
 export function EnrichmentIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -156,30 +155,44 @@ export function Spinner() {
 
 /**
  * Arena Agent glyph — sparkle on the purple→teal gradient.
- *
- * Rendered as a single `<img>` (via next/image) so tiled surfaces that opt in
- * with `[&_img]:size-full` (BlockTile, landing tiles, …) fill the whole chip —
- * same full-bleed presence as Image Generator's colored tile. Callers that pass
- * an explicit size (ChipTag, command list) keep that size.
+ * Inline SVG so canvas, toolbar, and chat never depend on a remote asset
+ * (the prior S3 PNG 403s and left only the gradient fill).
  */
-export function AgentIcon({
-  className,
-  style,
-  ...props
-}: Omit<ImageProps, 'src' | 'alt' | 'fill'>) {
+export function AgentIcon({ className, style, ...props }: SVGProps<SVGSVGElement>) {
+  const gradientId = useId()
   return (
-    <Image
-      src='https://arenav2image.s3.us-west-1.amazonaws.com/vimi-sparkle.png'
-      alt='Agent'
-      width={14}
-      height={14}
+    <svg
+      viewBox='0 0 24 24'
+      fill='none'
+      role='img'
+      aria-label='Agent'
+      xmlns='http://www.w3.org/2000/svg'
+      className={cn('box-border size-full rounded-[4px]', className)}
+      style={style}
       {...props}
-      style={{
-        backgroundImage: 'linear-gradient(179.65deg, #7B4796 -0.59%, #017496 102.42%)',
-        ...style,
-      }}
-      className={cn('box-border size-full rounded-[4px] object-contain p-[20%]', className)}
-    />
+    >
+      <defs>
+        <linearGradient id={gradientId} x1='0' y1='0' x2='0' y2='1'>
+          <stop offset='0%' stopColor='#7B4796' />
+          <stop offset='100%' stopColor='#017496' />
+        </linearGradient>
+      </defs>
+      <rect width='24' height='24' rx='4' fill={`url(#${gradientId})`} />
+      <path
+        d='M12 5.5l1.15 2.75 2.75 1.15-2.75 1.15L12 13.3l-1.15-2.75L8.1 9.4l2.75-1.15L12 5.5z'
+        fill='white'
+      />
+      <path
+        d='M17.2 13.2l.7 1.65 1.65.7-1.65.7-.7 1.65-.7-1.65-1.65-.7 1.65-.7.7-1.65z'
+        fill='white'
+        opacity='0.9'
+      />
+      <path
+        d='M6.8 13.6l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5.5-1.2z'
+        fill='white'
+        opacity='0.85'
+      />
+    </svg>
   )
 }
 
@@ -6356,15 +6369,30 @@ export function PresentationIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-export function ArenaIcon(props: SVGProps<SVGSVGElement>) {
+/**
+ * Arena product mark. Sized like {@link AgentIcon}: `viewBox` + `size-full`,
+ * no hardcoded width/height, so toolbar tiles and canvas chips control the box.
+ */
+export function ArenaIcon({ className, style, ...props }: SVGProps<SVGSVGElement>) {
+  const uid = useId()
+  const mask0 = `${uid}-m0`
+  const mask1 = `${uid}-m1`
+  const mask2 = `${uid}-m2`
+  const mask3 = `${uid}-m3`
+  const mask4 = `${uid}-m4`
+  const mask5 = `${uid}-m5`
+  const mask6 = `${uid}-m6`
+
   return (
     <svg
-      {...props}
-      xmlns='http://www.w3.org/2000/svg'
-      width='34'
-      height='34'
       viewBox='0 0 34 34'
       fill='none'
+      xmlns='http://www.w3.org/2000/svg'
+      role='img'
+      aria-label='Arena'
+      className={cn('box-border size-full', className)}
+      style={style}
+      {...props}
     >
       <path
         d='M29 0.5C31.4853 0.5 33.5 2.51472 33.5 5V29C33.5 31.4853 31.4853 33.5 29 33.5H5C2.51472 33.5 0.5 31.4853 0.5 29V5C0.5 2.51472 2.51472 0.5 5 0.5H29Z'
@@ -6375,7 +6403,7 @@ export function ArenaIcon(props: SVGProps<SVGSVGElement>) {
         stroke='white'
       />
       <mask
-        id='mask0_16706_273'
+        id={mask0}
         style={{ maskType: 'luminance' }}
         maskUnits='userSpaceOnUse'
         x='19'
@@ -6388,11 +6416,11 @@ export function ArenaIcon(props: SVGProps<SVGSVGElement>) {
           fill='white'
         />
       </mask>
-      <g mask='url(#mask0_16706_273)'>
+      <g mask={`url(#${mask0})`}>
         <path d='M19.2812 19.1885H26.7038V26.6823H19.2812V19.1885Z' fill='#93CB99' />
       </g>
       <mask
-        id='mask1_16706_273'
+        id={mask1}
         style={{ maskType: 'luminance' }}
         maskUnits='userSpaceOnUse'
         x='14'
@@ -6405,11 +6433,11 @@ export function ArenaIcon(props: SVGProps<SVGSVGElement>) {
           fill='white'
         />
       </mask>
-      <g mask='url(#mask1_16706_273)'>
+      <g mask={`url(#${mask1})`}>
         <path d='M14.7163 5.09424H22.5442V10.4344H14.7163V5.09424Z' fill='#93CB99' />
       </g>
       <mask
-        id='mask2_16706_273'
+        id={mask2}
         style={{ maskType: 'luminance' }}
         maskUnits='userSpaceOnUse'
         x='5'
@@ -6422,11 +6450,11 @@ export function ArenaIcon(props: SVGProps<SVGSVGElement>) {
           fill='white'
         />
       </mask>
-      <g mask='url(#mask2_16706_273)'>
+      <g mask={`url(#${mask2})`}>
         <path d='M5 14.9883H11.457V23.7424H5V14.9883Z' fill='#93CB99' />
       </g>
       <mask
-        id='mask3_16706_273'
+        id={mask3}
         style={{ maskType: 'luminance' }}
         maskUnits='userSpaceOnUse'
         x='7'
@@ -6439,11 +6467,11 @@ export function ArenaIcon(props: SVGProps<SVGSVGElement>) {
           fill='white'
         />
       </mask>
-      <g mask='url(#mask3_16706_273)'>
+      <g mask={`url(#${mask3})`}>
         <path d='M7.49707 7.41846H14.7195V14.9887H7.49707V7.41846Z' fill='#93CDEC' />
       </g>
       <mask
-        id='mask4_16706_273'
+        id={mask4}
         style={{ maskType: 'luminance' }}
         maskUnits='userSpaceOnUse'
         x='22'
@@ -6456,11 +6484,11 @@ export function ArenaIcon(props: SVGProps<SVGSVGElement>) {
           fill='white'
         />
       </mask>
-      <g mask='url(#mask4_16706_273)'>
+      <g mask={`url(#${mask4})`}>
         <path d='M22.543 10.4321H29V19.1875H22.543V10.4321Z' fill='#93CDEC' />
       </g>
       <mask
-        id='mask5_16706_273'
+        id={mask5}
         style={{ maskType: 'luminance' }}
         maskUnits='userSpaceOnUse'
         x='8'
@@ -6473,11 +6501,11 @@ export function ArenaIcon(props: SVGProps<SVGSVGElement>) {
           fill='white'
         />
       </mask>
-      <g mask='url(#mask5_16706_273)'>
+      <g mask={`url(#${mask5})`}>
         <path d='M8.73535 8.55859H25.27V25.621H8.73535V8.55859Z' fill='#55BE8C' />
       </g>
       <mask
-        id='mask6_16706_273'
+        id={mask6}
         style={{ maskType: 'luminance' }}
         maskUnits='userSpaceOnUse'
         x={11}
@@ -6490,7 +6518,7 @@ export function ArenaIcon(props: SVGProps<SVGSVGElement>) {
           fill='white'
         />
       </mask>
-      <g mask='url(#mask6_16706_273)'>
+      <g mask={`url(#${mask6})`}>
         <path d='M11.4546 23.7451H19.2812V28.906H11.4546V23.7451Z' fill='#93CDEC' />
       </g>
     </svg>

@@ -117,9 +117,15 @@ function resolveOAuthIntegrationAvailability(
   const serviceAccount = getServiceAccountMetadata(oauthServiceId)
 
   if (!capabilityId) {
-    throw new Error(
-      `OAuth integration ${integration.slug} has no OAuth client capability definition`
-    )
+    return {
+      type: integration.type,
+      slug: integration.slug,
+      name: integration.name,
+      state: 'unavailable',
+      oauthAvailable: false,
+      serviceAccountAvailable: false,
+      missingFields: [],
+    }
   }
 
   const oauth = inspectOAuthClientCapability(capabilityId, values)
