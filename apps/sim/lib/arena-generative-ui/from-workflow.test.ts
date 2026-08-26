@@ -48,6 +48,18 @@ describe('inputSchemaFromWorkflowFields', () => {
     ])
   })
 
+  it('drops chat start-block protocol fields', () => {
+    expect(
+      inputSchemaFromWorkflowFields([
+        { name: 'input', type: 'string' },
+        { name: 'conversationId', type: 'string' },
+        { name: 'files', type: 'file[]' },
+        { name: 'keyword', type: 'string' },
+        { name: 'Files', type: 'array' },
+      ])
+    ).toEqual([{ name: 'keyword', type: 'string' }])
+  })
+
   it('drops unnamed fields and de-duplicates repeats', () => {
     expect(
       inputSchemaFromWorkflowFields([

@@ -208,6 +208,23 @@ describe('parseApiBindings', () => {
     expect(binding.outputSchemaWarnings).toEqual(['Schema is from a run of an older deployment.'])
   })
 
+  it('drops chat start-block protocol fields from inputSchema', () => {
+    const [binding] = parseApiBindings([
+      {
+        key: 'recommend_articles',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        inputSchema: [
+          { name: 'input', type: 'string' },
+          { name: 'conversationId', type: 'string' },
+          { name: 'files', type: 'array' },
+          { name: 'keyword', type: 'string' },
+        ],
+      },
+    ])
+    expect(binding.inputSchema).toEqual([{ name: 'keyword', type: 'string' }])
+  })
+
   it('defaults a missing schema field type to string and drops nameless entries', () => {
     const [binding] = parseApiBindings([
       {

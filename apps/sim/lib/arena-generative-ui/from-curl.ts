@@ -1,6 +1,7 @@
 import {
   compactInputSchemaField,
   inferInputFieldSource,
+  isReservedStartInputName,
 } from '@/lib/arena-generative-ui/input-schema'
 import { outputLayoutFromSample } from '@/lib/arena-generative-ui/output-schema'
 import type {
@@ -388,7 +389,7 @@ function inputSchemaFromBody(
     return undefined
   }
   const fields = Object.entries(parsed)
-    .filter(([name]) => !PROTOCOL_BODY_KEYS.has(name))
+    .filter(([name]) => !PROTOCOL_BODY_KEYS.has(name) && !isReservedStartInputName(name))
     .map(([name, value]) =>
       compactInputSchemaField({
         name,

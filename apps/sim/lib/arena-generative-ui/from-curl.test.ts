@@ -40,9 +40,6 @@ describe('httpBindingFromCurl', () => {
         authHeaderName: 'X-API-Key',
       },
       inputSchema: [
-        { name: 'input', type: 'string' },
-        { name: 'conversationId', type: 'string' },
-        { name: 'files', type: 'array' },
         { name: 'keyword', type: 'string' },
         { name: 'client', type: 'string' },
         { name: 'email', type: 'string' },
@@ -343,9 +340,6 @@ describe('httpBindingFromCurl stream flag', () => {
     expect(binding.http?.authHeaderName).toBe('X-API-Key')
     expect(JSON.stringify(binding)).not.toContain('$SIM_API_KEY')
     expect(binding.inputSchema).toEqual([
-      { name: 'input', type: 'string' },
-      { name: 'conversationId', type: 'string' },
-      { name: 'files', type: 'array' },
       { name: 'keyword', type: 'string' },
       { name: 'client', type: 'string' },
       { name: 'email', type: 'string' },

@@ -1,4 +1,5 @@
 import { truncate } from '@sim/utils/string'
+import { isReservedStartInputName } from '@/lib/arena-generative-ui/input-schema'
 import { OUTPUT_HINT_MAX_LENGTH } from '@/lib/arena-generative-ui/output-schema'
 import {
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
@@ -272,7 +273,8 @@ export function parsePageHints(raw: unknown): ArenaGenerativePageHint[] {
 /**
  * Normalizes a binding's `inputSchema` / `outputSchema` list, dropping entries
  * without a string `name` and defaulting a missing `type` to `string`.
- * Returns undefined when the value is not an array so the key stays absent.
+ * Input schemas also drop chat start-block protocol fields. Returns undefined
+ * when the value is not an array so the key stays absent.
  */
 function schemaFields(
   raw: unknown,
@@ -283,11 +285,17 @@ function schemaFields(
   }
   return raw
     .filter((field): field is { name: string; type?: unknown } => {
-      return (
-        Boolean(field) &&
-        typeof field === 'object' &&
-        typeof (field as { name?: unknown }).name === 'string'
-      )
+      if (
+        !field ||
+        typeof field !== 'object' ||
+        typeof (field as { name?: unknown }).name !== 'string'
+      ) {
+        return false
+      }
+      if (options?.input && isReservedStartInputName((field as { name: string }).name)) {
+        return false
+      }
+      return true
     })
     .map((field) => {
       const mapped: ArenaGenerativeInputSchemaField = {

@@ -5,6 +5,20 @@ import {
   type ArenaGenerativeInputSchemaField,
   type ArenaGenerativeInputSource,
 } from '@/lib/arena-generative-ui/types'
+import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
+
+const RESERVED_START_INPUT_NAMES = new Set(
+  START_BLOCK_RESERVED_FIELDS.map((name) => name.toLowerCase())
+)
+
+/**
+ * Chat start-block protocol fields (`input`, `conversationId`, `files`). They are
+ * not generative-app form controls — there is no FileInput, and the host does
+ * not collect a chat message or thread id.
+ */
+export function isReservedStartInputName(name: string): boolean {
+  return RESERVED_START_INPUT_NAMES.has(name.trim().toLowerCase())
+}
 
 /**
  * Names that mean the signed-in user's address, not a typed lead/contact email.

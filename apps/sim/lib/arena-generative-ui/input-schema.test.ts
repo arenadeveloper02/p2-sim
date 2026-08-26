@@ -11,8 +11,20 @@ import {
   inputFieldRowNeedsValue,
   inputSourceOverridesForSave,
   isEmailLikeApiInputName,
+  isReservedStartInputName,
   resolveInputFieldEditorRow,
 } from '@/lib/arena-generative-ui/input-schema'
+
+describe('isReservedStartInputName', () => {
+  it('matches chat start-block protocol fields case-insensitively', () => {
+    expect(isReservedStartInputName('input')).toBe(true)
+    expect(isReservedStartInputName('conversationId')).toBe(true)
+    expect(isReservedStartInputName('files')).toBe(true)
+    expect(isReservedStartInputName('Files')).toBe(true)
+    expect(isReservedStartInputName('keyword')).toBe(false)
+    expect(isReservedStartInputName('email')).toBe(false)
+  })
+})
 
 describe('inferInputFieldSource', () => {
   it('treats actor-specific names as the signed-in address', () => {

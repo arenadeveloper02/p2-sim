@@ -118,6 +118,22 @@ describe('layoutPlanForBinding', () => {
     expect(resultLayoutFromPlan(plan)).toContain('never "field.content"')
   })
 
+  it('omits chat start-block protocol fields from formFields', () => {
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        inputSchema: [
+          { name: 'input', type: 'string' },
+          { name: 'files', type: 'array' },
+          { name: 'keyword', type: 'string' },
+          { name: 'conversationId', type: 'string' },
+        ],
+      })
+    )
+
+    expect(plan.formFields).toEqual(['keyword'])
+    expect(plan.hiddenInputFields).toEqual([])
+  })
+
   it('splits form inputs from visitorEmail and constant fields', () => {
     const plan = layoutPlanForBinding(
       workflowBinding({
