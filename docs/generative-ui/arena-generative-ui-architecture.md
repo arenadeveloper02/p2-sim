@@ -48,7 +48,7 @@ User Input + API Bindings
 
 Followed. `planArenaGenerativeStructuredBrief` is a small JSON object (`purpose`, `audience`, archetype, pages, actions). It does not emit components. If it fails, generate still runs from prose.
 
-Edit does **not** re-plan the product. Theme-only Requested Changes still skip the LLM. Page and global edits reuse the generate-time structured brief stored on the draft (gold layout + context) without pinning that sitemap.
+Edit does **not** re-plan the product by default. Theme-only Requested Changes still skip the LLM. Page and global edits reuse the generate-time structured brief stored on the draft (gold layout + context) without pinning that sitemap. An explicit re-plan phrase (`re-plan`, `rebuild the app`, `start over`, `turn this into a dashboard`) runs the planner again, generates a new sitemap, and overwrites the stored structured brief.
 
 ### 2. UX / interaction
 
@@ -73,7 +73,7 @@ Followed. Preview and published both compile in memory, then `SpecRenderer` pain
 | Spec LLM still sees UX copy | Catalog + `HOST_UX_PROMPT` + gold examples still teach `showWhen`, `selectItem`, empty copy. Compiler covers misses; the model can still emit chrome. |
 | Confirm / retry / errors are host overlays | Plan-driven now (`uxPlan.actions` on preview compile and published config). Still one dialog and one banner, not per-component machines. |
 | Extra layer: data contract | `BindingLayoutPlan` was not in the original four. Generate, validate, merge, and render now share it. |
-| Theme-only edits skip the LLM | Intentional. Page and global edits reuse the generate-time structured brief (gold layout + context) without re-planning or pinning that sitemap. Drafts from before this column still edit from prose only. |
+| Theme-only edits skip the LLM | Intentional. Page and global edits reuse the generate-time structured brief without re-planning. An explicit re-plan phrase runs the planner again and overwrites that brief. Drafts from before this column still edit from prose only. |
 
 ## Summary
 

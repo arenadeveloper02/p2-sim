@@ -231,7 +231,7 @@ export const arenaGenerativeGenerateOutputSchema = z.object({
   plannerError: z.string().optional(),
   editScope: z
     .object({
-      mode: z.enum(['pages', 'global', 'theme']),
+      mode: z.enum(['pages', 'global', 'theme', 'replan']),
       pages: z.array(z.string()),
     })
     .optional(),

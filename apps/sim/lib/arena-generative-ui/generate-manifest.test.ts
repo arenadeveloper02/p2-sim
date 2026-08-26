@@ -36,6 +36,7 @@ import {
   EDIT_PRESERVATION_INSTRUCTION,
   generateArenaGenerativeManifest,
   MODEL_JSON_PARSE_ERROR,
+  REPLAN_GENERATE_INSTRUCTION,
   SCOPED_EDIT_INSTRUCTION,
 } from '@/lib/arena-generative-ui/generate-manifest'
 import { ARENA_GENERATIVE_UI_GOLD_EXAMPLE } from '@/lib/arena-generative-ui/gold-example'
@@ -668,6 +669,55 @@ describe('generateArenaGenerativeManifest', () => {
       expect(mockPlanBrief).not.toHaveBeenCalled()
     })
 
+    it('replans when Requested Changes explicitly asks to rebuild the app', async () => {
+      const dashboardBrief = {
+        ...plannedBrief,
+        title: 'Operations',
+        purpose: 'Weekly ops metrics on arrival.',
+        archetype: 'dashboard' as const,
+        pages: [
+          {
+            path: 'home',
+            title: 'Operations',
+            purpose: 'KPIs',
+            data: 'onLoad load_dashboard into metrics',
+            actions: ['load_dashboard'],
+          },
+        ],
+      }
+      mockPlanBrief.mockResolvedValue({ brief: dashboardBrief })
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'Turn this into a dashboard of weekly ops metrics.',
+        apiBindings: [],
+        existingManifest: twoPageManifest,
+        existingBrief: 'Lead qualifier. Home is a form.',
+        existingStructuredBrief: plannedBrief,
+      })
+
+      expect(mockPlanBrief).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userInput: expect.stringContaining('Turn this into a dashboard'),
+        })
+      )
+      const plannerInput = mockPlanBrief.mock.calls[0]?.[0].userInput as string
+      expect(plannerInput).toContain('Re-plan request')
+      expect(plannerInput).toContain('Lead qualifier')
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
+      const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+      const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+      expect(system).toContain('ARCHETYPE RECIPE: dashboard')
+      expect(system).toContain('GOLD STANDARD REFERENCE LAYOUT (dashboard)')
+      expect(system).not.toContain('GOLD STANDARD REFERENCE LAYOUT (list-detail)')
+      expect(payload).toContain(REPLAN_GENERATE_INSTRUCTION)
+      expect(payload).not.toContain(EDIT_PRESERVATION_INSTRUCTION)
+      expect(payload).not.toContain('Existing manifest:')
+      expect(payload).not.toContain('Original structured brief (context only')
+      expect(payload).toContain('User request:')
+      expect(payload).toContain('"archetype": "dashboard"')
+    })
+
     it('reuses a stored structured brief on edit without pinning its sitemap', async () => {
       mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
 
@@ -1069,6 +1119,25 @@ describe('generateArenaGenerativeManifest', () => {
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
       expect(payload).toContain(EDIT_PRESERVATION_INSTRUCTION)
       expect(payload).not.toContain(SCOPED_EDIT_INSTRUCTION)
+    })
+
+    it('skips scoping and preservation when Requested Changes asks to re-plan', async () => {
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'Rebuild the app as a dashboard of weekly ops.',
+        apiBindings: multiPageApiBindings,
+        existingManifest: multiPageManifest,
+        existingBrief: 'Lead qualifier with home and results.',
+      })
+
+      expect(mockPlanBrief).toHaveBeenCalled()
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
+      const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+      expect(payload).toContain(REPLAN_GENERATE_INSTRUCTION)
+      expect(payload).not.toContain(SCOPED_EDIT_INSTRUCTION)
+      expect(payload).not.toContain(EDIT_PRESERVATION_INSTRUCTION)
+      expect(payload).not.toContain('Existing manifest:')
     })
 
     it('patches theme without calling the model', async () => {

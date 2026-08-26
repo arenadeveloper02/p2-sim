@@ -100,7 +100,7 @@ Return ONLY the specification text.`,
       description:
         'Only the changes. The draft already holds the original brief — do not paste it again.',
       tooltip:
-        'Describe only the delta, and name the page it applies to. Pages your request does not name are never sent to the model and stay byte-identical, so a short instruction is both safer and cheaper than a rewritten brief.\n\nCentre the search input and its submit button in one row. Show a loader on the results page while the API runs.',
+        'Describe only the delta, and name the page it applies to. Pages your request does not name stay byte-identical.\n\nTo rebuild the whole app, say so explicitly: "re-plan", "rebuild the app", "start over", or "turn this into a dashboard". That runs generate again on this draft and replaces the sitemap.\n\nCentre the search input and its submit button in one row. Show a loader on the results page while the API runs.',
     },
     {
       id: 'existingDraftId',
@@ -213,6 +213,6 @@ Return ONLY the specification text.`,
       description: 'Planner sitemap when generate planning succeeded',
     },
     plannerError: { type: 'string', description: 'Why planning fell back to prose, if it did' },
-    editScope: { type: 'json', description: 'Pages rewritten on Edit, or theme-only' },
+    editScope: { type: 'json', description: 'Pages rewritten on Edit, theme-only, or replan' },
   },
 }

@@ -171,6 +171,47 @@ describe('runArenaGenerativeUi', () => {
     )
   })
 
+  it('persists a new brief and structured brief when the generator replanned', async () => {
+    queueDraft()
+    const plannedBrief = {
+      title: 'Operations',
+      purpose: 'Weekly ops',
+      audience: 'Ops',
+      archetype: 'dashboard' as const,
+      entryPath: 'home',
+      pages: [{ path: 'home', title: 'Operations', purpose: 'KPIs' }],
+      actions: [],
+    }
+    mockGenerateManifest.mockResolvedValueOnce({
+      success: true,
+      title: 'Operations',
+      content: 'ok',
+      manifest: twoPageManifest,
+      plannedBrief,
+      editScope: { mode: 'replan', pages: [] },
+    })
+
+    await runArenaGenerativeUi({
+      body: {
+        ...BASE_BODY,
+        existingDraftId: 'draft-1',
+        editInstructions: 'Turn this into a dashboard of weekly ops.',
+      },
+      userId: 'user-1',
+      requireExistingDraft: true,
+    })
+
+    expect(mockPersistDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draftId: 'draft-1',
+        structuredBrief: plannedBrief,
+        brief: expect.stringContaining('Turn this into a dashboard'),
+      })
+    )
+    const persistedBrief = mockPersistDraft.mock.calls[0]?.[0].brief as string
+    expect(persistedBrief).toContain('Lead qualifier with a results page.')
+  })
+
   it('tolerates a draft saved before the brief column existed', async () => {
     queueDraft({ brief: null })
 

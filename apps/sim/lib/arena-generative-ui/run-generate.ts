@@ -9,6 +9,7 @@ import { summarizeManifestDiff } from '@/lib/arena-generative-ui/manifest-diff'
 import { parseApiBindings, parsePageHints } from '@/lib/arena-generative-ui/parse-inputs'
 import { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
 import { refreshWorkflowBindingOutputSchemas } from '@/lib/arena-generative-ui/refresh-binding-schemas'
+import { plannerInputForReplan } from '@/lib/arena-generative-ui/replan-from-edit'
 import { parseStoredStructuredBrief } from '@/lib/arena-generative-ui/structured-brief'
 import type { ArenaGenerativeAppManifest, ArenaGenerativeGenerateResult } from '@/lib/arena-generative-ui/types'
 
@@ -122,6 +123,7 @@ export async function runArenaGenerativeUi(options: {
   }
 
   try {
+    const replanned = generated.editScope?.mode === 'replan'
     const persistStartedAt = Date.now()
     const persisted = await persistGenerativeAppDraft({
       draftId: body.existingDraftId,
@@ -132,8 +134,19 @@ export async function runArenaGenerativeUi(options: {
       entryPath: generated.manifest.entryPath,
       manifest: generated.manifest,
       apiBindings,
-      brief: body.existingDraftId ? undefined : userInput,
-      structuredBrief: body.existingDraftId ? undefined : (generated.plannedBrief ?? null),
+      brief: body.existingDraftId
+        ? replanned
+          ? plannerInputForReplan({
+              editInstructions: userInput,
+              existingBrief,
+            })
+          : undefined
+        : userInput,
+      structuredBrief: body.existingDraftId
+        ? replanned
+          ? (generated.plannedBrief ?? null)
+          : undefined
+        : (generated.plannedBrief ?? null),
     })
     logger.info('Persisted Arena Generative UI draft', {
       workspaceId,

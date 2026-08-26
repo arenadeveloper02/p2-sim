@@ -10,7 +10,7 @@ The block does not publish a URL. Run it to save a **draft**, then open **Deploy
 
 | Field | What goes here |
 |---|---|
-| **Mode** | **Generate New App** for a first draft. **Edit Existing Draft** later — type only the delta in **Requested Changes**. |
+| **Mode** | **Generate New App** for a first draft. **Edit Existing Draft** later — type only the delta in **Requested Changes**, or say `re-plan` / `rebuild the app` to regenerate the sitemap. |
 | **User Input** | Plain language. Name the app, pages, fields, buttons, and which API key each button calls. **Not JSON.** |
 | **Pages** | Optional. Leave blank and name the pages in User Input. Pin JSON only when you need exact paths. |
 | **API Bindings** | Use **Add an API**, do not hand-write JSON. Invent a `key` (for example `recommend_articles`) and use **that same string** in User Input. |

@@ -26,7 +26,7 @@ Published apps are gated for authenticated Arena users by default, like deployed
 6. Set identifier / title / category / access, then **Launch GUI App**.
 7. Share `{base}/gui-apps/{identifier}`. Arena embeds add `?emailId=`, which the default gate requires.
 
-Generate itself is two calls: a cheap structured brief (sitemap, archetype, per-page data) then the full manifest. You still type prose in User Input; the structured brief is not a field you fill in. Edit also makes two calls, but the first is a **scope** call rather than a plan — see **Requested Changes** below.
+Generate itself is two calls: a cheap structured brief (sitemap, archetype, per-page data) then the full manifest. You still type prose in User Input; the structured brief is not a field you fill in. Edit also makes two calls, but the first is a **scope** call rather than a plan — see **Requested Changes** below. An explicit re-plan phrase skips scope and runs the generate planner instead.
 
 Preview and the published URL both compile the same way: `compileGenerativeUx` relocates navigate-first loaders, injects pending chrome, and fills missing same-page Open chrome (`showWhen` on the list and detail, a `clearItem` Back). Preview compiles the full draft on the client. Published apps compile on the page API so a single-page fetch still gets the relocated spec. User Input describes the app, not that chrome.
 
@@ -65,7 +65,7 @@ Describe the app in **plain language**. This field is prose, not JSON. Only **Pa
 
 The model uses this brief to invent pages, copy, forms, and navigation. Do not describe loaders, toasts, or confirm dialogs — the host compiles those.
 
-Generation is two-stage: a short planning call first produces a structured brief (purpose, audience, archetype, pages, actions, empty copy). A second call renders that into the json-render manifest. The planner picks an archetype — dashboard, form→result, list→detail, or wizard — and the generator is shown **only that archetype's gold layout**, so a dashboard is not taught as a search hero. If planning fails, generate still runs from the prose you typed, and the block's `content` / `plannerError` outputs say so instead of failing silently. Edit runs its own two stages instead (scope, then rewrite the pages in scope), except **theme-only** Requested Changes (`dark mode`, `density compact`, a brand hex) which patch `manifest.theme` without an LLM call. The block `content` line starts with `Edit scope: pages [results].` or `Edit scope: theme only` so you can see what the run will rewrite.
+Generation is two-stage: a short planning call first produces a structured brief (purpose, audience, archetype, pages, actions, empty copy). A second call renders that into the json-render manifest. The planner picks an archetype — dashboard, form→result, list→detail, or wizard — and the generator is shown **only that archetype's gold layout**, so a dashboard is not taught as a search hero. If planning fails, generate still runs from the prose you typed, and the block's `content` / `plannerError` outputs say so instead of failing silently. Edit runs its own two stages instead (scope, then rewrite the pages in scope), except **theme-only** Requested Changes (`dark mode`, `density compact`, a brand hex) which patch `manifest.theme` without an LLM call, and **re-plan** phrases (`rebuild the app`, `turn this into a dashboard`) which run the generate planner again on this draft. The block `content` line starts with `Edit scope: pages [results].`, `Edit scope: theme only`, or `Edit scope: replan` so you can see what the run will rewrite.
 
 Include:
 
@@ -97,6 +97,12 @@ Show a loader on the results page while the API runs.
 ```
 
 The field starts empty on every run. **User Input** is hidden in Edit mode for the same reason.
+
+#### Re-plan (rebuild the app)
+
+If Requested Changes **explicitly** asks to start over — `re-plan`, `rebuild the app`, `start over`, `from scratch`, `replace the whole app`, or `turn this into a dashboard` / wizard / list-detail — Edit runs the **generate** path on this draft: a new structured brief, the matching gold layout, no preservation of the current pages. The same draft id gets a new revision, and the new brief is stored so later edits follow the rebuilt product.
+
+Local wording (`rebuild the search row`, `regenerate the score`, `make it cleaner`) stays a delta.
 
 #### How an edit is scoped
 

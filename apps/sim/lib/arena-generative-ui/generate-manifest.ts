@@ -28,6 +28,7 @@ import {
   extractManifestCandidate,
   parseLlmJsonObject,
 } from '@/lib/arena-generative-ui/parse-inputs'
+import { isReplanEdit, plannerInputForReplan } from '@/lib/arena-generative-ui/replan-from-edit'
 import {
   type ArenaGenerativeStructuredBrief,
   archetypeRecipe,
@@ -141,7 +142,12 @@ function formatPlannerStatus(
   return ''
 }
 
-function formatEditScopeStatus(scope: ArenaGenerativeEditScope | null, themeOnly: boolean): string {
+function formatEditScopeStatus(
+  scope: ArenaGenerativeEditScope | null,
+  themeOnly: boolean,
+  replan = false
+): string {
+  if (replan) return 'Edit scope: replan (new sitemap).'
   if (themeOnly) return 'Edit scope: theme only (pages unchanged).'
   if (!scope) return 'Edit scope: global rewrite.'
   if (scope.mode === 'pages' && scope.pages.length > 0) {
@@ -212,6 +218,12 @@ export const SCOPED_EDIT_INSTRUCTION = [
   'Inside the pages you do return, everything the change request does not name must stay byte-identical.',
 ].join(' ')
 
+/** Opening instruction when Requested Changes explicitly asks to rebuild the app. */
+export const REPLAN_GENERATE_INSTRUCTION = [
+  'Mode: generate a new multi-page app. The user asked to re-plan an existing draft.',
+  'Invent a new sitemap from the request. Do not preserve the previous pages, copy, or layout.',
+].join(' ')
+
 /**
  * Scoped-edit user payload: full specs for the pages in scope, and a summary of the
  * rest so cross-page links survive without the model being shown their specs.
@@ -258,10 +270,12 @@ export async function generateArenaGenerativeManifest(
   }
 
   const hasStreamingBinding = params.apiBindings.some((binding) => binding.stream === true)
-  const isEdit = Boolean(params.existingManifest)
+  const hasExisting = Boolean(params.existingManifest)
+  const isReplan = hasExisting && isReplanEdit(userInput)
+  const isPreserveEdit = hasExisting && !isReplan
   const pinnedPageHints = params.pages?.filter((page) => page.path.trim().length > 0) ?? []
 
-  if (isEdit && params.existingManifest && isThemeOnlyEdit(userInput, null)) {
+  if (isPreserveEdit && params.existingManifest && isThemeOnlyEdit(userInput, null)) {
     const manifest = applyThemeOnlyEdit(params.existingManifest, userInput, params.designNotes)
     return {
       success: true,
@@ -276,25 +290,32 @@ export async function generateArenaGenerativeManifest(
     }
   }
 
-  const planned = isEdit
+  const plannerUserInput = isReplan
+    ? plannerInputForReplan({
+        editInstructions: userInput,
+        existingBrief: params.existingBrief,
+      })
+    : userInput
+  const planned = isPreserveEdit
     ? { brief: null as ArenaGenerativeStructuredBrief | null }
     : await planArenaGenerativeStructuredBrief({
-        userInput,
+        userInput: plannerUserInput,
         pages: pinnedPageHints,
         entryPath: params.entryPath,
         apiBindings: params.apiBindings,
         designNotes: params.designNotes,
       })
   const structuredBrief = planned.brief
-  const intentBrief = isEdit ? (params.existingStructuredBrief ?? null) : structuredBrief
+  const intentBrief = isPreserveEdit ? (params.existingStructuredBrief ?? null) : structuredBrief
   const plannerError = 'error' in planned ? planned.error : undefined
   if (structuredBrief) {
     logger.info('Planned Arena Generative UI structured brief', {
       archetype: structuredBrief.archetype,
       pageCount: structuredBrief.pages.length,
       entryPath: structuredBrief.entryPath,
+      replan: isReplan,
     })
-  } else if (isEdit && intentBrief) {
+  } else if (isPreserveEdit && intentBrief) {
     logger.info('Reusing stored Arena Generative UI structured brief', {
       archetype: intentBrief.archetype,
       pageCount: intentBrief.pages.length,
@@ -303,19 +324,20 @@ export async function generateArenaGenerativeManifest(
 
   /**
    * A pinned sitemap already contracts the run and supplies the page hints a scope
-   * would have, so scoping it would only add a round trip.
+   * would have, so scoping it would only add a round trip. Re-plan is a generate,
+   * not a patch, so it skips the scoper too.
    */
   const editScope: ArenaGenerativeEditScope | null =
-    params.existingManifest && pinnedPageHints.length === 0
+    isPreserveEdit && params.existingManifest && pinnedPageHints.length === 0
       ? await planArenaGenerativeEditScope({
           editInstructions: userInput,
           manifest: params.existingManifest,
           apiBindings: params.apiBindings,
         })
       : null
-  const scopedPaths = params.existingManifest && editScope?.mode === 'pages' ? editScope.pages : []
+  const scopedPaths = isPreserveEdit && editScope?.mode === 'pages' ? editScope.pages : []
   const isScopedEdit = scopedPaths.length > 0
-  if (params.existingManifest) {
+  if (isPreserveEdit && params.existingManifest) {
     logger.info('Scoped Arena Generative UI edit', {
       mode: isScopedEdit ? 'pages' : 'global',
       scopedPaths,
@@ -359,13 +381,13 @@ export async function generateArenaGenerativeManifest(
    * edit that means to add or remove a page would reject the very change requested.
    */
   const editPageHints =
-    isEdit && !isScopedEdit && editScope?.pageSetStable === true && params.existingManifest
+    isPreserveEdit && !isScopedEdit && editScope?.pageSetStable === true && params.existingManifest
       ? pageHintsFromManifest(params.existingManifest)
       : []
   const pageHints =
     pinnedPageHints.length > 0
       ? pinnedPageHints
-      : !isEdit && structuredBrief
+      : !isPreserveEdit && structuredBrief
         ? pageHintsFromStructuredBrief(structuredBrief)
         : editPageHints
   const bindingsSummary = bindingsSummaryForPrompt(params.apiBindings)
@@ -375,16 +397,17 @@ export async function generateArenaGenerativeManifest(
     bindingKeys.length > 0
       ? `CTA apiKey values must be one of these declared binding keys: ${bindingKeys.join(', ')}. Do not invent keys from User Input.`
       : ''
-  const requestedEntryPath = params.entryPath || (isEdit ? undefined : structuredBrief?.entryPath)
+  const requestedEntryPath =
+    params.entryPath || (isPreserveEdit ? undefined : structuredBrief?.entryPath)
   const sharedSections = [
     bindingsSummary.length > 0
       ? `Declared API bindings (CTAs may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
       : 'No API bindings. Navigation and static content only.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
-    isEdit && params.existingBrief?.trim()
+    isPreserveEdit && params.existingBrief?.trim()
       ? `Original brief (context only — already implemented, do not re-apply it):\n${params.existingBrief.trim()}`
       : '',
-    isEdit && intentBrief ? formatStructuredBriefForEdit(intentBrief) : '',
+    isPreserveEdit && intentBrief ? formatStructuredBriefForEdit(intentBrief) : '',
   ]
   const userPayload = (
     isScopedEdit && params.existingManifest
@@ -395,16 +418,20 @@ export async function generateArenaGenerativeManifest(
           `Requested changes:\n${userInput}`,
         ]
       : [
-          isEdit ? EDIT_PRESERVATION_INSTRUCTION : 'Mode: generate a new multi-page app.',
+          isPreserveEdit
+            ? EDIT_PRESERVATION_INSTRUCTION
+            : isReplan
+              ? REPLAN_GENERATE_INSTRUCTION
+              : 'Mode: generate a new multi-page app.',
           requestedEntryPath
             ? `Requested entryPath: ${requestedEntryPath}`
-            : isEdit
+            : isPreserveEdit
               ? EDIT_KEEP_ENTRY_PATH_INSTRUCTION
               : '',
           pageHints.length > 0
             ? `Requested pages (must emit exactly these paths as object keys, not an array):\n${JSON.stringify(pageHints, null, 2)}`
             : [
-                isEdit
+                isPreserveEdit
                   ? EDIT_KEEP_PAGES_INSTRUCTION
                   : 'No explicit page list. Infer a small coherent sitemap from the brief, including destination and collection pages the job needs even if the user only named the starting screen. Emit manifest.pages as an object keyed by path (home, person, …), never as an array.',
                 bindingKeyLine,
@@ -413,10 +440,12 @@ export async function generateArenaGenerativeManifest(
                 .join('\n'),
           structuredBrief ? formatStructuredBriefForGenerator(structuredBrief) : '',
           ...sharedSections,
-          params.existingManifest
+          isPreserveEdit && params.existingManifest
             ? `Existing manifest:\n${JSON.stringify(params.existingManifest)}`
             : '',
-          isEdit ? `Requested changes:\n${userInput}` : `User request:\n${userInput}`,
+          isPreserveEdit
+            ? `Requested changes:\n${userInput}`
+            : `User request:\n${isReplan ? plannerUserInput : userInput}`,
         ]
   )
     .filter((section) => section.length > 0)
@@ -436,7 +465,7 @@ export async function generateArenaGenerativeManifest(
         estimatePageCount({
           pageHintCount: pageHints.length,
           scopedPageCount: isScopedEdit ? scopedPaths.length : undefined,
-          existingManifest: params.existingManifest,
+          existingManifest: isPreserveEdit ? params.existingManifest : undefined,
         })
       ),
       ...(supportsTemperature(modelId) ? { temperature: 0.2 } : {}),
@@ -531,9 +560,14 @@ export async function generateArenaGenerativeManifest(
       typeof parsed.content === 'string' && parsed.content.trim()
         ? parsed.content.trim()
         : `Generated ${Object.keys(validation.manifest.pages).length} page(s).`
-    const statusLines = isEdit
-      ? [formatEditScopeStatus(editScope, false)]
-      : [formatPlannerStatus(structuredBrief, plannerError)]
+    const statusLines = isReplan
+      ? [
+          formatEditScopeStatus(null, false, true),
+          formatPlannerStatus(structuredBrief, plannerError),
+        ]
+      : isPreserveEdit
+        ? [formatEditScopeStatus(editScope, false)]
+        : [formatPlannerStatus(structuredBrief, plannerError)]
 
     return {
       success: true,
@@ -547,14 +581,16 @@ export async function generateArenaGenerativeManifest(
           }
         : {}),
       ...(plannerError ? { plannerError } : {}),
-      ...(isEdit
-        ? {
-            editScope: {
-              mode: isScopedEdit ? 'pages' : 'global',
-              pages: scopedPaths,
-            } as const,
-          }
-        : {}),
+      ...(isReplan
+        ? { editScope: { mode: 'replan' as const, pages: [] } }
+        : isPreserveEdit
+          ? {
+              editScope: {
+                mode: isScopedEdit ? 'pages' : 'global',
+                pages: scopedPaths,
+              } as const,
+            }
+          : {}),
     }
   } catch (error) {
     const message = formatProviderNetworkError(error, 'Failed to generate app')

@@ -30,7 +30,7 @@ export interface ArenaGenerativeUiResponse extends ToolResponse {
     }
     plannerError?: string
     editScope?: {
-      mode: 'pages' | 'global' | 'theme'
+      mode: 'pages' | 'global' | 'theme' | 'replan'
       pages: string[]
     }
   }

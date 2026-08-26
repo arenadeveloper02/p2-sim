@@ -51,6 +51,33 @@ describe('persistGenerativeAppDraft', () => {
     expect(updated).not.toHaveProperty('structuredBrief')
   })
 
+  it('overwrites the structured brief when a re-plan supplies one', async () => {
+    queueTableRows(generativeAppDraft, [{ id: 'draft-1', revision: 1 }])
+    const structuredBrief = {
+      title: 'Operations',
+      purpose: 'Weekly ops',
+      audience: 'Ops',
+      archetype: 'dashboard' as const,
+      entryPath: 'home',
+      pages: [{ path: 'home', title: 'Operations', purpose: 'KPIs', data: 'onLoad load_dashboard' }],
+      actions: [],
+    }
+
+    await persistGenerativeAppDraft({
+      ...BASE_INPUT,
+      draftId: 'draft-1',
+      brief: 'Turn this into a dashboard.',
+      structuredBrief,
+    })
+
+    const updated = dbChainMockFns.set.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(updated).toMatchObject({
+      revision: 2,
+      brief: 'Turn this into a dashboard.',
+      structuredBrief,
+    })
+  })
+
   it('stores the structured brief when creating a draft', async () => {
     const structuredBrief = {
       title: 'Orders',

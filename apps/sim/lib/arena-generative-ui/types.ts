@@ -186,7 +186,7 @@ export interface ArenaGenerativeGenerateResult {
   }
   plannerError?: string
   editScope?: {
-    mode: 'pages' | 'global' | 'theme'
+    mode: 'pages' | 'global' | 'theme' | 'replan'
     pages: string[]
   }
 }

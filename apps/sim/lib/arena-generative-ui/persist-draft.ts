@@ -1,6 +1,7 @@
 import { db } from '@sim/db'
 import { generativeAppDraft, generativeAppDraftRevision } from '@sim/db/schema'
 import { generateId } from '@sim/utils/id'
+import { filterUndefined } from '@sim/utils/object'
 import { eq } from 'drizzle-orm'
 import type { ArenaGenerativeStructuredBrief } from '@/lib/arena-generative-ui/structured-brief'
 import type {
@@ -17,9 +18,9 @@ export interface PersistDraftInput {
   entryPath: string
   manifest: ArenaGenerativeAppManifest
   apiBindings: ArenaGenerativeApiBinding[]
-  /** Original generate brief. Only stored on create; an edit must not overwrite it with its delta. */
+  /** Original generate brief. Ordinary edits omit this so the stored brief is not replaced by a delta. Re-plan passes the new job. */
   brief?: string
-  /** Generate-time structured brief. Only stored on create; an edit reuses it. */
+  /** Generate-time structured brief. Ordinary edits omit this. Re-plan overwrites it (including `null` when planning failed). */
   structuredBrief?: ArenaGenerativeStructuredBrief | null
 }
 
@@ -84,14 +85,18 @@ export async function persistGenerativeAppDraft(input: PersistDraftInput): Promi
 
   await db
     .update(generativeAppDraft)
-    .set({
-      title: input.title,
-      entryPath: input.entryPath,
-      revision: nextRevision,
-      manifest: input.manifest,
-      apiBindings: input.apiBindings,
-      updatedAt: now,
-    })
+    .set(
+      filterUndefined({
+        title: input.title,
+        entryPath: input.entryPath,
+        revision: nextRevision,
+        manifest: input.manifest,
+        apiBindings: input.apiBindings,
+        brief: input.brief,
+        structuredBrief: input.structuredBrief,
+        updatedAt: now,
+      })
+    )
     .where(eq(generativeAppDraft.id, existing.id))
 
   await db.insert(generativeAppDraftRevision).values({
