@@ -170,39 +170,45 @@ interface ListWorkspaceFilesOptions {
   limit?: number
 }
 
-/**
- * Workspace file key pattern: workspace/{workspaceId}/{timestamp}-{random}-{filename}
- */
-const WORKSPACE_KEY_PATTERN = /^workspace\/([a-f0-9-]{36})\/(\d+)-([a-z0-9]+)-(.+)$/
-
-/**
- * Check if a key matches workspace file pattern
- * Format: workspace/{workspaceId}/{timestamp}-{random}-{filename}
- */
-export function matchesWorkspaceFilePattern(key: string): boolean {
-  if (!key || key.startsWith('/api/') || key.startsWith('http')) {
-    return false
-  }
-  return WORKSPACE_KEY_PATTERN.test(key)
-}
+/** Workspace objects are stored under `workspace/{workspaceId}/…`. */
+const WORKSPACE_KEY_PREFIX_PATTERN = /^workspace\/([^/]+)\/.+$/
 
 /**
  * Parse workspace file key to extract workspace ID
- * Format: workspace/{workspaceId}/{timestamp}-{random}-{filename}
- * @returns workspaceId if key matches pattern, null otherwise
+ * Format: workspace/{workspaceId}/…
+ * @returns lowercase workspaceId if the key is workspace-scoped, null otherwise
  */
 export function parseWorkspaceFileKey(key: string): string | null {
-  if (!matchesWorkspaceFilePattern(key)) {
+  if (!key || key.startsWith('/api/') || key.startsWith('http')) {
     return null
   }
 
-  const match = key.match(WORKSPACE_KEY_PATTERN)
+  const match = key.match(WORKSPACE_KEY_PREFIX_PATTERN)
   if (!match) {
     return null
   }
 
   const workspaceId = match[1]
-  return isUuid(workspaceId) ? workspaceId : null
+  if (workspaceId === '.' || workspaceId === '..' || !isUuid(workspaceId)) {
+    return null
+  }
+  return workspaceId.toLowerCase()
+}
+
+/**
+ * Check if a key matches workspace file pattern
+ * Format: workspace/{workspaceId}/…
+ */
+export function matchesWorkspaceFilePattern(key: string): boolean {
+  return parseWorkspaceFileKey(key) !== null
+}
+
+/**
+ * Whether a storage key is an object in `workspaceId`'s workspace prefix.
+ */
+export function workspaceFileKeyBelongsTo(key: string, workspaceId: string): boolean {
+  const parsed = parseWorkspaceFileKey(key)
+  return parsed !== null && parsed === workspaceId.toLowerCase()
 }
 
 /**
@@ -212,7 +218,8 @@ export function parseWorkspaceFileKey(key: string): string | null {
 export function generateWorkspaceFileKey(workspaceId: string, fileName: string): string {
   const timestamp = Date.now()
   const random = randomBytes(8).toString('hex')
-  return `workspace/${workspaceId}/${buildStorageKeySegment(`${timestamp}-${random}-`, fileName)}`
+  const scopedWorkspaceId = isUuid(workspaceId) ? workspaceId.toLowerCase() : workspaceId
+  return `workspace/${scopedWorkspaceId}/${buildStorageKeySegment(`${timestamp}-${random}-`, fileName)}`
 }
 
 const MAX_COPY_SUFFIX = 1000
@@ -584,7 +591,7 @@ export async function registerUploadedWorkspaceFile(params: {
   const { workspaceId, userId, key, originalName, contentType } = params
   const normalizedOriginalName = normalizeWorkspaceFileItemName(originalName, 'File')
 
-  if (parseWorkspaceFileKey(key) !== workspaceId) {
+  if (!workspaceFileKeyBelongsTo(key, workspaceId)) {
     throw new Error('Storage key does not belong to this workspace')
   }
 
@@ -878,7 +885,7 @@ export async function trackChatUpload(
   size: number,
   messageId?: string
 ): Promise<{ displayName: string }> {
-  if (parseWorkspaceFileKey(s3Key) !== workspaceId) {
+  if (!workspaceFileKeyBelongsTo(s3Key, workspaceId)) {
     throw new WorkspaceFileKeyOwnershipError(s3Key)
   }
 
