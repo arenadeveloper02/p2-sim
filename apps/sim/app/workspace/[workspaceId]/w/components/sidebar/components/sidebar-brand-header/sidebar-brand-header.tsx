@@ -2,7 +2,6 @@
 
 import { chipVariants, cn } from '@sim/emcn'
 import { ArrowLeft } from '@sim/emcn/icons'
-import Image from 'next/image'
 import Link from 'next/link'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
 
@@ -57,23 +56,17 @@ export function SidebarBrandHeader({
             >
               {isCollapsed
                 ? (brandLogoUrl || expandedBrandUrl) && (
-                    <Image
-                      src={brandLogoUrl || expandedBrandUrl!}
+                    <img
+                      src={brandLogoUrl || expandedBrandUrl}
                       alt={brandName || ''}
-                      width={34}
-                      height={34}
                       className='size-[34px] object-contain'
-                      unoptimized
                     />
                   )
                 : expandedBrandUrl && (
-                    <Image
+                    <img
                       src={expandedBrandUrl}
                       alt={brandName || ''}
-                      width={140}
-                      height={44}
                       className='h-[44px] w-auto max-w-[220px] object-contain object-left'
-                      unoptimized
                     />
                   )}
             </Link>

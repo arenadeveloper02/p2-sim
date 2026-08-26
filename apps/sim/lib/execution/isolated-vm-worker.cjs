@@ -1231,4 +1231,5 @@ process.on('message', async (msg) => {
 
 if (process.send) {
   process.send({ type: 'ready' })
+  warmBundleCodeCache()
 }

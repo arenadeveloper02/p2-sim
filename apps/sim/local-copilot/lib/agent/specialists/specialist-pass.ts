@@ -33,6 +33,8 @@ import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   buildFollowUpContinuationMessage,
+  bindLocalFileIntentChannel,
+  clearLocalFileIntentChannel,
   detectMandatoryFollowUp,
   formatToolResultForLlm,
   type MandatoryFollowUp,
@@ -53,9 +55,9 @@ const logger = createLogger('LocalCopilotSpecialistPass')
 
 /**
  * File writes are sequential (`create_file` → `workspace_file` → `edit_content`)
- * plus a discovery round. Three rounds stopped the specialist on an empty shell.
+ * plus discovery. Two office files in one pass need more than a handful of rounds.
  */
-export const SPECIALIST_PASS_MAX_ROUNDS = 6
+export const SPECIALIST_PASS_MAX_ROUNDS = 10
 const MAX_SPECIALIST_FORCED_FOLLOW_UP_ROUNDS = 4
 export const SPECIALIST_FINDINGS_MAX_CHARS = 12_000
 
@@ -248,7 +250,8 @@ export async function executeSpecialistLoop(
     let pendingFollowUps: MandatoryFollowUp[] = []
     let forcedFollowUpRounds = 0
 
-    for (let round = 0; round < SPECIALIST_PASS_MAX_ROUNDS; round++) {
+    const maxRounds = SPECIALIST_PASS_MAX_ROUNDS + MAX_SPECIALIST_FORCED_FOLLOW_UP_ROUNDS
+    for (let round = 0; round < maxRounds; round++) {
       if (signal.aborted) break
 
       const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
@@ -301,8 +304,7 @@ export async function executeSpecialistLoop(
       if (pendingToolCalls.length === 0) {
         const canForceFollowUp =
           pendingFollowUps.length > 0 &&
-          forcedFollowUpRounds < MAX_SPECIALIST_FORCED_FOLLOW_UP_ROUNDS &&
-          round < SPECIALIST_PASS_MAX_ROUNDS - 1
+          forcedFollowUpRounds < MAX_SPECIALIST_FORCED_FOLLOW_UP_ROUNDS
         if (canForceFollowUp) {
           forcedFollowUpRounds += 1
           messages.push({
@@ -442,6 +444,11 @@ export async function executeSpecialistLoop(
 
         const { executeLocalCopilotTool, refreshToolContext } = await params.getToolExecutor()
         if (!toolResult) {
+          params.toolCtx.fileIntentChannelId = bindLocalFileIntentChannel(
+            call.name,
+            call.id,
+            params.toolCtx.fileIntentChannelId
+          )
           const toolStatus = runToolWithStatus({
             toolCallId: call.id,
             toolName: call.name,
@@ -463,6 +470,11 @@ export async function executeSpecialistLoop(
           }
           toolResult = next.value
         }
+
+        params.toolCtx.fileIntentChannelId = clearLocalFileIntentChannel(
+          call.name,
+          params.toolCtx.fileIntentChannelId
+        )
 
         if (toolResult.createdWorkflowId) {
           params.toolCtx.workflowId = toolResult.createdWorkflowId

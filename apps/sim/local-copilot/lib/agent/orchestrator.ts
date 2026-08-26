@@ -152,6 +152,8 @@ import {
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   buildFollowUpContinuationMessage,
+  bindLocalFileIntentChannel,
+  clearLocalFileIntentChannel,
   detectMandatoryFollowUp,
   formatToolResultForLlm,
   type MandatoryFollowUp,
@@ -1478,6 +1480,11 @@ export async function* runLocalCopilotAgent(
       if (!toolResult) {
         yield { type: 'ux_phase', phase: 'executing' }
         yield { type: 'status', message: formatUxPhaseStatus('executing') }
+        toolCtx.fileIntentChannelId = bindLocalFileIntentChannel(
+          call.name,
+          call.id,
+          toolCtx.fileIntentChannelId
+        )
         const toolStatus = runToolWithStatus({
           toolCallId: call.id,
           toolName: call.name,
@@ -1497,6 +1504,10 @@ export async function* runLocalCopilotAgent(
         }
         toolResult = result.value
       }
+      toolCtx.fileIntentChannelId = clearLocalFileIntentChannel(
+        call.name,
+        toolCtx.fileIntentChannelId
+      )
       logger.info('Arena Copilot tool finished', {
         toolName: call.name,
         toolCallId: call.id,

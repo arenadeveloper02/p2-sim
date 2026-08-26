@@ -1,8 +1,11 @@
 import { db } from '@sim/db'
-import { copilotChats } from '@sim/db/schema'
-import { and, eq } from 'drizzle-orm'
-import { loadCopilotChatMessages } from '@/lib/copilot/chat/lifecycle'
-import type { PersistedContentBlock, PersistedMessage } from '@/lib/copilot/chat/persisted-message'
+import { copilotChats, copilotMessages } from '@sim/db/schema'
+import { and, desc, eq, isNull } from 'drizzle-orm'
+import {
+  type PersistedContentBlock,
+  type PersistedMessage,
+  stripToolResultOutput,
+} from '@/lib/copilot/chat/persisted-message'
 import {
   MothershipStreamV1EventType,
   MothershipStreamV1TextChannel,
@@ -242,10 +245,27 @@ export async function loadMothershipChatHistoryForLocalCopilot(params: {
     return { messages: [], sessionMemoryTurns: [] }
   }
 
-  const messages = await loadCopilotChatMessages(params.chatId)
+  const messages = await loadRecentCopilotChatMessages(params.chatId)
   const options = { excludeMessageId: params.excludeMessageId }
   return {
     messages: mothershipMessagesToChatHistory(messages, options),
     sessionMemoryTurns: mothershipMessagesToSessionMemoryTurns(messages, options),
   }
+}
+
+/**
+ * Last N transcript rows for Local. Unbounded `copilot_messages` reads
+ * detoast JSONB for every historical turn and sort it in Postgres.
+ */
+async function loadRecentCopilotChatMessages(chatId: string): Promise<PersistedMessage[]> {
+  const rows = await db
+    .select({ content: copilotMessages.content })
+    .from(copilotMessages)
+    .where(and(eq(copilotMessages.chatId, chatId), isNull(copilotMessages.deletedAt)))
+    .orderBy(desc(copilotMessages.seq), desc(copilotMessages.createdAt), desc(copilotMessages.id))
+    .limit(MAX_HISTORY_MESSAGES)
+
+  return [...rows]
+    .reverse()
+    .map((row) => stripToolResultOutput(row.content as PersistedMessage))
 }

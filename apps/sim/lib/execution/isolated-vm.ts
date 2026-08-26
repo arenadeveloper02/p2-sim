@@ -179,6 +179,7 @@ interface IsolatedVMError {
 }
 
 const POOL_SIZE = Number.parseInt(env.IVM_POOL_SIZE) || 4
+const MIN_WORKERS = 1
 const MAX_CONCURRENT = Number.parseInt(env.IVM_MAX_CONCURRENT) || 10000
 const MAX_PER_WORKER = Number.parseInt(env.IVM_MAX_PER_WORKER) || 2500
 const WORKER_IDLE_TIMEOUT_MS = Number.parseInt(env.IVM_WORKER_IDLE_TIMEOUT_MS) || 60000
@@ -1452,6 +1453,22 @@ function drainQueue() {
     // Clearing queueId: from here on, abort must reach the worker, not the queue.
     queued.state.queueId = undefined
     dispatchToWorker(worker, owner, queued.req, queued.resolve, queued.state, queued.brokers)
+  }
+}
+
+/**
+ * Spawn the minimum worker pool at server start so the first sandbox compile
+ * does not wait on process spawn and isolated-vm native load.
+ */
+export async function ensureWarmIsolatedVmWorkers(): Promise<void> {
+  const target = Math.min(MIN_WORKERS, POOL_SIZE)
+  while (workers.size < target) {
+    try {
+      await spawnWorker()
+    } catch (error) {
+      logger.warn('Isolated-vm worker prewarm failed', { error: getErrorMessage(error) })
+      break
+    }
   }
 }
 

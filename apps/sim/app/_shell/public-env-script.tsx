@@ -1,4 +1,4 @@
-import { EnvScript } from 'next-runtime-env'
+import { EnvScript, PublicEnvScript as NextRuntimePublicEnvScript } from 'next-runtime-env'
 
 /**
  * `NEXT_PUBLIC_*` values, captured once when this module is first loaded - i.e.
@@ -45,4 +45,12 @@ const HOSTED_PUBLIC_ENV = Object.fromEntries(
  */
 export function PublicEnvScript() {
   return <EnvScript env={HOSTED_PUBLIC_ENV} disableNextScript />
+}
+
+/**
+ * Per-request env injection for local/dev and Arena agent hosts. Uses the same
+ * `disableNextScript` contract as {@link PublicEnvScript}.
+ */
+export function RuntimePublicEnvScript() {
+  return <NextRuntimePublicEnvScript disableNextScript />
 }
