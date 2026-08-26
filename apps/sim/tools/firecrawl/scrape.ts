@@ -50,22 +50,22 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
     modelInput: {
       mode: 'project',
       select: (params) =>
-        params.scrapeOptions?.formats !== undefined
-          ? { scrapeOptions: selectFirecrawlScrapeOptionsModelInput(params.scrapeOptions) }
-          : { formats: selectFirecrawlFormatModelInput(params.formats) },
+        Array.isArray(params.formats)
+          ? { formats: selectFirecrawlFormatModelInput(params.formats) }
+          : { scrapeOptions: selectFirecrawlScrapeOptionsModelInput(params.scrapeOptions) },
       applyProjected: (selectedParams, projectedSelection) => {
-        if (Object.hasOwn(projectedSelection, 'scrapeOptions')) {
+        if (Object.hasOwn(projectedSelection, 'formats')) {
           return {
-            scrapeOptions: applyFirecrawlScrapeOptionsModelInput(
-              selectedParams.scrapeOptions,
-              projectedSelection.scrapeOptions
+            formats: applyFirecrawlFormatModelInput(
+              selectedParams.formats,
+              projectedSelection.formats
             ),
           }
         }
         return {
-          formats: applyFirecrawlFormatModelInput(
-            selectedParams.formats,
-            projectedSelection.formats
+          scrapeOptions: applyFirecrawlScrapeOptionsModelInput(
+            selectedParams.scrapeOptions,
+            projectedSelection.scrapeOptions
           ),
         }
       },

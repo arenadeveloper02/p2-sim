@@ -753,7 +753,8 @@ describe('env capabilities', () => {
         return [integration.slug]
       })
 
-      expect(uncovered).toEqual(['facebook-ads'])
+      expect(uncovered).toEqual([])
+      expect(resolveOAuthClientCapabilityId('facebook-ads')).toBe('facebook-ads')
       expect(resolveOAuthClientCapabilityId('unipile_linkedin')).toBe('unipile-linkedin')
       expect(getServiceConfigByServiceId('trello')?.serviceAccountProviderId).toBe(
         'trello-service-account'
@@ -778,6 +779,14 @@ describe('env capabilities', () => {
       expect(resolveOAuthClientCapabilityId('unipile_linkedin')).toBe('unipile-linkedin')
       expect(resolveOAuthClientCapabilityId('unipile-linkedin')).toBe('unipile-linkedin')
       expect(getOAuthClientCapabilityFields('unipile_linkedin')).toEqual(['UNIPILE_API_KEY'])
+    })
+
+    it('maps Facebook Ads OAuth to the FB_CLIENT_ID / FB_CLIENT_SECRET capability', () => {
+      expect(resolveOAuthClientCapabilityId('facebook-ads')).toBe('facebook-ads')
+      expect(getOAuthClientCapabilityFields('facebook-ads')).toEqual([
+        'FB_CLIENT_ID',
+        'FB_CLIENT_SECRET',
+      ])
     })
 
     it('tracks setup-owned options as deployment configuration', () => {

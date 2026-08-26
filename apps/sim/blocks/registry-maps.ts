@@ -82,7 +82,7 @@ import { EnrowBlock, EnrowBlockMeta } from '@/blocks/blocks/enrow'
 import { EvaluatorBlock } from '@/blocks/blocks/evaluator'
 import { ExaBlock, ExaBlockMeta } from '@/blocks/blocks/exa'
 import { ExtendBlock, ExtendBlockMeta, ExtendV2Block } from '@/blocks/blocks/extend'
-import { FacebookAdsBlock } from '@/blocks/blocks/facebook_ads'
+import { FacebookAdsBlock, FacebookAdsBlockMeta } from '@/blocks/blocks/facebook_ads'
 import { FathomBlock, FathomBlockMeta } from '@/blocks/blocks/fathom'
 import { FigmaBlock } from '@/blocks/blocks/figma'
 import { FileBlock, FileV2Block, FileV3Block, FileV4Block, FileV5Block } from '@/blocks/blocks/file'
@@ -742,6 +742,7 @@ export const BLOCK_REGISTRY: Record<string, BlockConfig> = {
  */
 
 const ARENA_CUSTOM_BLOCK_META_REGISTRY: Record<string, BlockMeta> = {
+  facebook_ads: FacebookAdsBlockMeta,
   unipile: UnipileBlockMeta,
 }
 

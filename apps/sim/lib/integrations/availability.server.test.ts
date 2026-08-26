@@ -184,6 +184,27 @@ describe('integration availability', () => {
     })
   })
 
+  it('requires the deployment Facebook Ads OAuth client for the facebook_ads block', () => {
+    expect(availabilityFor('facebook_ads')).toMatchObject({
+      state: 'unavailable',
+      oauthAvailable: false,
+      serviceAccountAvailable: false,
+      missingFields: ['FB_CLIENT_ID', 'FB_CLIENT_SECRET'],
+      setupCommand: 'bun run setup integration facebook-ads',
+    })
+    expect(
+      availabilityFor('facebook_ads', {
+        FB_CLIENT_ID: 'fb-client',
+        FB_CLIENT_SECRET: 'fb-secret',
+      })
+    ).toMatchObject({
+      state: 'ready',
+      oauthAvailable: true,
+      serviceAccountAvailable: false,
+      missingFields: [],
+    })
+  })
+
   it('maps OAuth service ids to the integration allowlist without loading registries', () => {
     expect(getIntegrationTypesForOAuthServiceId('gmail')).toContain('gmail_v2')
     expect(isOAuthServiceAllowedByIntegrationTypes('gmail', new Set(['slack']))).toBe(false)
@@ -240,6 +261,7 @@ describe('integration availability', () => {
     expect(resolveOAuthClientCapabilityId('trello')).toBe('trello')
     expect(resolveOAuthClientCapabilityId('unipile_linkedin')).toBe('unipile-linkedin')
     expect(resolveOAuthClientCapabilityId('unipile-linkedin')).toBe('unipile-linkedin')
+    expect(resolveOAuthClientCapabilityId('facebook-ads')).toBe('facebook-ads')
     expect(resolveOAuthClientCapabilityId('zoom-client')).toBe('zoom')
     expect(resolveOAuthClientCapabilityId('zoom-admin')).toBe('zoom')
   })
