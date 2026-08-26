@@ -214,7 +214,7 @@ export async function executeSpecialistLoop(
 
     await emitSpecialistEvent(
       events,
-      { type: 'status', message: `Consulting ${params.domain} specialist…` },
+      { type: 'status', message: 'Working on it…' },
       params.onEvent
     )
 

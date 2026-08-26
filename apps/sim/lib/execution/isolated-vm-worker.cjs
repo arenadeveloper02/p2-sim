@@ -60,6 +60,22 @@ function getBundleSource(bundleName) {
   return bundleSourceCache.get(bundleName)
 }
 
+/**
+ * Preload pptx/docx/pdf bundle sources after the worker signals ready.
+ * Missing bundles must not crash the process — Function-block workers do not
+ * need them, and a throw here used to kill the worker immediately after ready
+ * with a generic "Code execution failed unexpectedly" error.
+ */
+function warmBundleCodeCache() {
+  for (const bundleName of Object.keys(SANDBOX_BUNDLE_FILES)) {
+    try {
+      getBundleSource(bundleName)
+    } catch {
+      // Optional until a document task runs.
+    }
+  }
+}
+
 function stringifyLogValue(value) {
   if (typeof value !== 'object' || value === null) {
     return String(value)
@@ -1231,5 +1247,9 @@ process.on('message', async (msg) => {
 
 if (process.send) {
   process.send({ type: 'ready' })
-  warmBundleCodeCache()
+  try {
+    warmBundleCodeCache()
+  } catch {
+    // Best-effort: never take the worker down after it has signaled ready.
+  }
 }
