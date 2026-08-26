@@ -753,7 +753,8 @@ describe('env capabilities', () => {
         return [integration.slug]
       })
 
-      expect(uncovered).toEqual([])
+      expect(uncovered).toEqual(['facebook-ads'])
+      expect(resolveOAuthClientCapabilityId('unipile_linkedin')).toBe('unipile-linkedin')
       expect(getServiceConfigByServiceId('trello')?.serviceAccountProviderId).toBe(
         'trello-service-account'
       )
@@ -771,6 +772,12 @@ describe('env capabilities', () => {
         'ZOOM_CLIENT_ID',
         'ZOOM_CLIENT_SECRET',
       ])
+    })
+
+    it('maps Unipile LinkedIn hosted auth to the UNIPILE_API_KEY capability', () => {
+      expect(resolveOAuthClientCapabilityId('unipile_linkedin')).toBe('unipile-linkedin')
+      expect(resolveOAuthClientCapabilityId('unipile-linkedin')).toBe('unipile-linkedin')
+      expect(getOAuthClientCapabilityFields('unipile_linkedin')).toEqual(['UNIPILE_API_KEY'])
     })
 
     it('tracks setup-owned options as deployment configuration', () => {

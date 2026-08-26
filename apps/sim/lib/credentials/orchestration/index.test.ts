@@ -19,6 +19,8 @@ const {
   mockGetClientCredentialAccountDescriptor,
   mockDeleteConnectionCredential,
   mockDeleteOrphanedOAuthAccount,
+  mockListAccountsToDisconnect,
+  mockUnlinkUnipileAccountsFromProvider,
 } = vi.hoisted(() => ({
   mockRecordAudit: vi.fn(),
   mockGetCredentialActorContext: vi.fn(),
@@ -30,6 +32,8 @@ const {
   mockGetClientCredentialAccountDescriptor: vi.fn(() => undefined),
   mockDeleteConnectionCredential: vi.fn(),
   mockDeleteOrphanedOAuthAccount: vi.fn(),
+  mockListAccountsToDisconnect: vi.fn(),
+  mockUnlinkUnipileAccountsFromProvider: vi.fn(),
 }))
 
 vi.mock('@sim/audit', () => ({
@@ -54,6 +58,13 @@ vi.mock('@/lib/credentials/client-credential-accounts/descriptors', () => ({
 vi.mock('@/lib/credentials/deletion', () => ({
   deleteConnectionCredential: mockDeleteConnectionCredential,
   deleteOrphanedOAuthAccount: mockDeleteOrphanedOAuthAccount,
+}))
+vi.mock('@/lib/unipile/disconnect-accounts', () => ({
+  listAccountsToDisconnect: mockListAccountsToDisconnect,
+  unlinkUnipileAccountsFromProvider: mockUnlinkUnipileAccountsFromProvider,
+}))
+vi.mock('@/lib/unipile/hosted-auth', () => ({
+  UNIPILE_LINKEDIN_PROVIDER_ID: 'unipile_linkedin',
 }))
 vi.mock('@/lib/credentials/environment', () => ({
   deleteWorkspaceEnvCredentials: vi.fn(),
@@ -570,6 +581,7 @@ describe('deleteCredentialRecord', () => {
 
     expect(deleted).toBe(true)
     expect(mockDeleteOrphanedOAuthAccount).toHaveBeenCalledWith('acct-1')
+    expect(mockListAccountsToDisconnect).not.toHaveBeenCalled()
   })
 
   it('leaves the OAuth grant alone when the credential row was already gone', async () => {
@@ -588,6 +600,39 @@ describe('deleteCredentialRecord', () => {
 
     expect(deleted).toBe(false)
     expect(mockDeleteOrphanedOAuthAccount).not.toHaveBeenCalled()
+  })
+
+  it('unlinks the Unipile account before deleting a LinkedIn Unipile credential', async () => {
+    mockListAccountsToDisconnect.mockResolvedValueOnce([
+      {
+        id: 'acct-1',
+        providerId: 'unipile_linkedin',
+        externalUnipileAccountId: 'ext-1',
+      },
+    ])
+    mockUnlinkUnipileAccountsFromProvider.mockResolvedValueOnce(undefined)
+    mockDeleteConnectionCredential.mockResolvedValueOnce(true)
+
+    const deleted = await deleteCredentialRecord({
+      credential: {
+        id: 'cred-1',
+        workspaceId: 'ws-1',
+        type: 'oauth',
+        providerId: 'unipile_linkedin',
+        accountId: 'acct-1',
+        createdBy: 'user-1',
+      } as never,
+      reason: 'user_delete',
+    })
+
+    expect(deleted).toBe(true)
+    expect(mockListAccountsToDisconnect).toHaveBeenCalledWith({
+      userId: 'user-1',
+      provider: 'unipile_linkedin',
+      accountRowId: 'acct-1',
+    })
+    expect(mockUnlinkUnipileAccountsFromProvider).toHaveBeenCalled()
+    expect(mockDeleteConnectionCredential).toHaveBeenCalled()
   })
 
   it('does not touch OAuth grants for a service-account credential', async () => {

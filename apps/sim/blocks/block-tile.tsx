@@ -83,7 +83,11 @@ export function BlockTile({
 
   return (
     <div
-      className={cn(chipIconSlotClass, 'overflow-hidden rounded-md [&_img]:size-full', sizeClass)}
+      className={cn(
+        chipIconSlotClass,
+        'overflow-hidden rounded-md [&_img]:size-full [&_svg[aria-label=Agent]]:size-full',
+        sizeClass
+      )}
       style={{ background: fill }}
       {...props}
     >

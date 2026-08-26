@@ -5,12 +5,14 @@ import { describe, expect, it } from 'vitest'
 import type { StoredTool } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/types'
 import {
   buildInitialAgentToolParams,
+  isAgentToolBlock,
   isAgentToolPickerBlock,
   isCustomToolAlreadySelected,
   isMcpToolAlreadySelected,
   isWorkflowAlreadySelected,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/editor/components/sub-block/components/tool-input/utils'
 import { AgentBlock } from '@/blocks/blocks/agent'
+import { ImageFusionBlock } from '@/blocks/blocks/image_fusion'
 import { ImageGeneratorV2Block } from '@/blocks/blocks/image_generator'
 import { START_FILES_REF } from '@/executor/constants'
 
@@ -72,6 +74,14 @@ describe('buildInitialAgentToolParams', () => {
 })
 
 describe('isAgentToolBlock', () => {
+  it('includes image_generator_v2 even though it is a blocks-category block', () => {
+    expect(isAgentToolBlock(ImageGeneratorV2Block)).toBe(true)
+  })
+
+  it('includes image_fusion as a tools-category block', () => {
+    expect(isAgentToolBlock(ImageFusionBlock)).toBe(true)
+  })
+
   it('includes the current File block', () => {
     expect(isAgentToolBlock({ type: 'file_v5', category: 'blocks', hideFromToolbar: false })).toBe(
       true

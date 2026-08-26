@@ -73,7 +73,10 @@ export function isAgentToolBlock(
   block: Pick<BlockConfig, 'category' | 'hideFromToolbar' | 'type'>
 ): boolean {
   return (
-    !block.hideFromToolbar && (block.category === 'tools' || CORE_AGENT_TOOL_TYPES.has(block.type))
+    !block.hideFromToolbar &&
+    (block.category === 'tools' ||
+      CORE_AGENT_TOOL_TYPES.has(block.type) ||
+      AGENT_TOOL_BLOCK_TYPES.has(block.type))
   )
 }
 

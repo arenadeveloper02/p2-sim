@@ -47,6 +47,7 @@ const EXPECTED_PROVIDER_BY_SLUG: Record<string, string> = {
   'jira-service-management': 'jira',
   linear: 'linear',
   linkedin: 'linkedin',
+  'linkedin-unipile': 'unipile_linkedin',
   'microsoft-dataverse': 'microsoft-dataverse',
   'microsoft-excel': 'microsoft-excel',
   'microsoft-planner': 'microsoft-planner',

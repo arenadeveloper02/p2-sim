@@ -129,6 +129,7 @@ export function ConnectedCredentialDetail({
         preCount: oauthPreCount,
         workspaceId,
         reconnect: true,
+        credentialId: credential.id,
         requestedAt: Date.now(),
       })
 
