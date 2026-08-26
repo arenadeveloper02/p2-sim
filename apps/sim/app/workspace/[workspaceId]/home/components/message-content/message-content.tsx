@@ -1077,9 +1077,7 @@ function MessageContentInner({
     thinkingLabel !== null &&
     (segments.length === 0 ||
       trailingPendingTag ||
-      (!trailingStreamActivity &&
-        !hasExecutingTool &&
-        (Boolean(liveLabel) || isStreamIdle)))
+      (!trailingStreamActivity && !hasExecutingTool && (Boolean(liveLabel) || isStreamIdle)))
 
   return (
     <div>

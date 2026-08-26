@@ -153,7 +153,10 @@ describe('Firecrawl nested model input', () => {
   it('ignores non-array format values instead of treating them as model input', () => {
     expect(selectFirecrawlFormatModelInput('markdown' as never)).toBeUndefined()
     expect(
-      selectFirecrawlScrapeOptionsModelInput({ formats: 'markdown' as never, onlyMainContent: true })
+      selectFirecrawlScrapeOptionsModelInput({
+        formats: 'markdown' as never,
+        onlyMainContent: true,
+      })
     ).toStrictEqual({})
     expect(applyFirecrawlFormatModelInput('markdown', undefined)).toBe('markdown')
     expect(

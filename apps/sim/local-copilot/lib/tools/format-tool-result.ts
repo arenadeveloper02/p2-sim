@@ -58,7 +58,12 @@ const TOOL_EXECUTION_ORDER: Record<string, number> = {
   edit_content: 13,
 }
 
-const FILE_PIPELINE_TOOLS = ['create_file_folder', 'create_file', 'workspace_file', 'edit_content'] as const
+const FILE_PIPELINE_TOOLS = [
+  'create_file_folder',
+  'create_file',
+  'workspace_file',
+  'edit_content',
+] as const
 const FILE_PIPELINE_TOOL_SET = new Set<string>(FILE_PIPELINE_TOOLS)
 const WORKFLOW_TOOLS_BEFORE_FILES = 10
 
@@ -72,8 +77,7 @@ function interleaveFilePipelines<T extends { name: string }>(fileCalls: T[]): T[
   }
 
   const ordered: T[] = []
-  const hasRemaining = () =>
-    FILE_PIPELINE_TOOLS.some((name) => (queues.get(name)?.length ?? 0) > 0)
+  const hasRemaining = () => FILE_PIPELINE_TOOLS.some((name) => (queues.get(name)?.length ?? 0) > 0)
   while (hasRemaining()) {
     for (const name of FILE_PIPELINE_TOOLS) {
       const next = queues.get(name)?.shift()

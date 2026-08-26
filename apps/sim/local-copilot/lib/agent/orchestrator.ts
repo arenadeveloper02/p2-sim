@@ -151,8 +151,8 @@ import {
 } from '@/local-copilot/lib/tools/definitions'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
-  buildFollowUpContinuationMessage,
   bindLocalFileIntentChannel,
+  buildFollowUpContinuationMessage,
   clearLocalFileIntentChannel,
   detectMandatoryFollowUp,
   formatToolResultForLlm,

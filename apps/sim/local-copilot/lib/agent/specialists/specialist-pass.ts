@@ -32,8 +32,8 @@ import {
 import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
-  buildFollowUpContinuationMessage,
   bindLocalFileIntentChannel,
+  buildFollowUpContinuationMessage,
   clearLocalFileIntentChannel,
   detectMandatoryFollowUp,
   formatToolResultForLlm,

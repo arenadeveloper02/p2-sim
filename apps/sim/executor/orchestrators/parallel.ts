@@ -101,9 +101,6 @@ export class ParallelOrchestrator {
         branchOutputs: new Map(),
         items: [],
         isEmpty: true,
-        inputResolvedSecretTraceProvenance: resolutionRegistry?.exportCommittedProvenanceForValue(
-          []
-        ),
       }
 
       if (!ctx.parallelExecutions) {
@@ -111,6 +108,8 @@ export class ParallelOrchestrator {
       }
       ctx.parallelExecutions.set(parallelId, scope)
       if (parentRegistry && resolutionRegistry?.isComplete()) {
+        scope.inputResolvedSecretTraceProvenance =
+          resolutionRegistry.exportCommittedProvenanceForValue([])
         parentRegistry.mergeToolCallRegistry(resolutionRegistry)
       }
 
@@ -133,8 +132,6 @@ export class ParallelOrchestrator {
       accumulatedOutputs: new Map(),
       branchOutputs: new Map(),
       items,
-      inputResolvedSecretTraceProvenance:
-        resolutionRegistry?.exportCommittedProvenanceForValue(items),
     }
 
     if (!ctx.parallelExecutions) {
@@ -142,6 +139,8 @@ export class ParallelOrchestrator {
     }
     ctx.parallelExecutions.set(parallelId, scope)
     if (parentRegistry && resolutionRegistry?.isComplete()) {
+      scope.inputResolvedSecretTraceProvenance =
+        resolutionRegistry.exportCommittedProvenanceForValue(items)
       parentRegistry.mergeToolCallRegistry(resolutionRegistry)
     }
 
@@ -264,7 +263,8 @@ export class ParallelOrchestrator {
       ctx,
       config.distribution,
       this.resolver,
-      buildParallelSentinelStartId(config.id)
+      buildParallelSentinelStartId(config.id),
+      { inputPath: ['distribution'] }
     )
   }
 

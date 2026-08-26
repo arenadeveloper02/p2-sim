@@ -77,7 +77,8 @@ export async function resolveArrayInputAsync(
   ctx: ExecutionContext,
   items: any,
   resolver: VariableResolver | null,
-  currentNodeId = ''
+  currentNodeId = '',
+  options: { inputPath?: readonly string[] } = {}
 ): Promise<any[]> {
   if (typeof items !== 'string') {
     if (items === null) {
@@ -104,6 +105,7 @@ export async function resolveArrayInputAsync(
     try {
       const resolved = await resolver.resolveSingleReference(ctx, currentNodeId, items, undefined, {
         allowLargeValueRefs: true,
+        ...(options.inputPath ? { inputPath: options.inputPath } : {}),
       })
       return normalizeCollectionValue(ctx, resolved)
     } catch (error) {

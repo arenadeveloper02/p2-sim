@@ -36,7 +36,9 @@ export function stripLocalFileBodyToolParams(
   }
 }
 
-export function localFileBodyContent(args: Record<string, unknown> | undefined): string | undefined {
+export function localFileBodyContent(
+  args: Record<string, unknown> | undefined
+): string | undefined {
   if (!args) return undefined
   if (typeof args.content === 'string') return args.content
   const nested = isPlainRecord(args.args) ? args.args : undefined
