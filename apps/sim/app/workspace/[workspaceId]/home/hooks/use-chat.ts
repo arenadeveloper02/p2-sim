@@ -118,6 +118,7 @@ import { getTopInsertionSortOrder } from '@/hooks/queries/utils/top-insertion-so
 import { getWorkflowById, getWorkflows } from '@/hooks/queries/utils/workflow-cache'
 import { workflowKeys } from '@/hooks/queries/workflows'
 import { useExecutionStream } from '@/hooks/use-execution-stream'
+import { DEFAULT_LOCAL_COPILOT_CATALOG_ID } from '@/local-copilot/lib/model-catalog'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useMothershipQueueStore } from '@/stores/mothership-queue/store'
 import type {
@@ -3850,7 +3851,8 @@ export function useChat(
                 : {}),
               ...(getCopilotBackendRef.current?.() === 'local'
                 ? {
-                    model: getLocalCopilotCatalogIdRef.current?.() ?? 'claude',
+                    model:
+                      getLocalCopilotCatalogIdRef.current?.() ?? DEFAULT_LOCAL_COPILOT_CATALOG_ID,
                   }
                 : {}),
             }),

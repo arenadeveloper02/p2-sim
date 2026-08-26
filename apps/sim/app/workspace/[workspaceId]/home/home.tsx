@@ -41,17 +41,11 @@ import { useFolders } from '@/hooks/queries/folders'
 import {
   useMarkMothershipChatRead,
   useMothershipChatHistory,
-  useUpdateMothershipChatModel,
 } from '@/hooks/queries/mothership-chats'
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { useWorkspaceFiles } from '@/hooks/queries/workspace-files'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
-import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
-import {
-  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
-  isLocalCopilotCatalogId,
-  type LocalCopilotCatalogId,
-} from '@/local-copilot/lib/model-catalog'
+import { useLocalCopilotCatalogSelection } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import type { ChatContext } from '@/stores/panel'
 import {
   ChatSurfaceProvider,
@@ -209,7 +203,6 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
 
   const { data: chatHistory, isPending: isChatHistoryPending } = useMothershipChatHistory(chatId)
   const { mutate: markRead } = useMarkMothershipChatRead(workspaceId)
-  const { mutate: updateChatModel } = useUpdateMothershipChatModel(workspaceId)
 
   const [isResourceCollapsed, setIsResourceCollapsed] = useState(true)
   const [skipResourceTransition, setSkipResourceTransition] = useState(false)
@@ -222,26 +215,13 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
     }
   }
 
-  const { canSwitchBackend, copilotBackend, setCopilotBackend } = useCopilotBackendPreference()
-  const [localCopilotCatalogId, setLocalCopilotCatalogIdState] = useState<LocalCopilotCatalogId>(
-    DEFAULT_LOCAL_COPILOT_CATALOG_ID
-  )
-  const hydratedLocalCatalogChatIdRef = useRef<string | undefined>(undefined)
-
-  useEffect(() => {
-    if (!chatId) {
-      hydratedLocalCatalogChatIdRef.current = undefined
-      setLocalCopilotCatalogIdState(DEFAULT_LOCAL_COPILOT_CATALOG_ID)
-      return
-    }
-    if (!chatHistory || chatHistory.id !== chatId) return
-    if (hydratedLocalCatalogChatIdRef.current === chatId) return
-    hydratedLocalCatalogChatIdRef.current = chatId
-    const model = chatHistory.model
-    setLocalCopilotCatalogIdState(
-      model && isLocalCopilotCatalogId(model) ? model : DEFAULT_LOCAL_COPILOT_CATALOG_ID
-    )
-  }, [chatId, chatHistory])
+  const {
+    canSwitchBackend,
+    copilotBackend,
+    setCopilotBackend,
+    localCopilotCatalogId,
+    setLocalCopilotCatalogId,
+  } = useLocalCopilotCatalogSelection()
 
   const {
     messages,
@@ -287,16 +267,6 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
     })
   )
 
-  const setLocalCopilotCatalogId = useCallback(
-    (id: LocalCopilotCatalogId) => {
-      setLocalCopilotCatalogIdState(id)
-      const targetChatId = resolvedChatId ?? chatId
-      if (targetChatId) {
-        updateChatModel({ chatId: targetChatId, model: id })
-      }
-    },
-    [resolvedChatId, chatId, updateChatModel]
-  )
   const { mothershipRef, handleResizePointerDown, clearWidth } = useMothershipResize(desktopScopeId)
 
   const collapseResource = useCallback(() => {

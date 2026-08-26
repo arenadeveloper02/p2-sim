@@ -71,10 +71,7 @@ import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
 import { extractWorkflowIdFromResources } from '@/local-copilot/lib/context/open-workflow'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
-import {
-  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
-  isLocalCopilotCatalogId,
-} from '@/local-copilot/lib/model-catalog'
+import { resolveLocalCopilotRequestCatalogId } from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 
 export const maxDuration = 3600
@@ -929,7 +926,7 @@ async function resolveBranch(params: {
     workspacePermission,
     effectiveModel: localCatalogId || DEFAULT_MODEL,
     goRoute: '/api/mothership',
-    titleModel: localCatalogId || DEFAULT_MODEL,
+    titleModel: DEFAULT_MODEL,
     notifyWorkspaceStatus: true,
     buildPayload: async (payloadParams) =>
       buildCopilotRequestPayload(
@@ -1001,7 +998,8 @@ export async function handleUnifiedChatPost(req: NextRequest) {
 
     const body = ChatMessageSchema.parse(await req.json())
     const requestedCopilotBackend = parseCopilotBackendPreference(body.copilotBackend)
-    const { hasAccess, localOnly } = await getLocalCopilotUserAccess(authenticatedUserId)
+    const { hasAccess, localOnly, defaultModel } =
+      await getLocalCopilotUserAccess(authenticatedUserId)
     const userAllowedForLocal = hasAccess || localOnly
     // Local-only users are pinned to Local regardless of any stored or forged
     // `external` preference, mirroring the server-side routing guard so chat
@@ -1018,14 +1016,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
 
     let localCatalogId: string | undefined
     if (copilotBackend === 'local') {
-      const requestedModel = body.model?.trim()
-      if (!requestedModel || requestedModel === DEFAULT_MODEL) {
-        localCatalogId = DEFAULT_LOCAL_COPILOT_CATALOG_ID
-      } else if (isLocalCopilotCatalogId(requestedModel)) {
-        localCatalogId = requestedModel
-      } else {
-        return createBadRequestResponse(`Unknown local copilot model: ${requestedModel}`)
-      }
+      localCatalogId = resolveLocalCopilotRequestCatalogId(body.model?.trim(), defaultModel)
     }
 
     const userMetadata = {
@@ -1121,20 +1112,6 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         conversationHistory = Array.isArray(chatResult.conversationHistory)
           ? chatResult.conversationHistory
           : []
-
-        if (
-          localCatalogId &&
-          actualChatId &&
-          !chatIsNew &&
-          currentChat &&
-          'model' in currentChat &&
-          currentChat.model !== localCatalogId
-        ) {
-          await db
-            .update(copilotChats)
-            .set({ model: localCatalogId, updatedAt: new Date() })
-            .where(eq(copilotChats.id, actualChatId))
-        }
 
         if (body.chatId && !currentChat) {
           activeOtelRoot.span.setAttribute(TraceAttr.HttpStatusCode, 404)

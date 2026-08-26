@@ -86,23 +86,14 @@ import {
 } from '@/hooks/queries/copilot-chats'
 import { useDeploymentInfo } from '@/hooks/queries/deployments'
 import { useFolderMap } from '@/hooks/queries/folders'
-import {
-  useMothershipChatHistory,
-  useUpdateMothershipChatModel,
-} from '@/hooks/queries/mothership-chats'
 import { isWorkflowEffectivelyLocked } from '@/hooks/queries/utils/folder-tree'
 import { useDuplicateWorkflowMutation, useWorkflowMap } from '@/hooks/queries/workflows'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
-import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
+import { useLocalCopilotCatalogSelection } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import { WorkflowCopilotShell } from '@/local-copilot/integration/workflow-copilot-shell'
-import {
-  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
-  isLocalCopilotCatalogId,
-  type LocalCopilotCatalogId,
-} from '@/local-copilot/lib/model-catalog'
 import { useChatStore } from '@/stores/chat/store'
 import type { ChatContext, PanelTab } from '@/stores/panel'
 import { usePanelStore } from '@/stores/panel'
@@ -471,28 +462,13 @@ export const Panel = memo(function Panel() {
     [activeWorkflowId]
   )
 
-  const { canSwitchBackend, copilotBackend, setCopilotBackend } = useCopilotBackendPreference()
-  const { data: copilotChatHistory } = useMothershipChatHistory(copilotChatId)
-  const { mutate: updateChatModel } = useUpdateMothershipChatModel(workspaceId)
-  const [localCopilotCatalogId, setLocalCopilotCatalogIdState] = useState<LocalCopilotCatalogId>(
-    DEFAULT_LOCAL_COPILOT_CATALOG_ID
-  )
-  const hydratedLocalCatalogChatIdRef = useRef<string | undefined>(undefined)
-
-  useEffect(() => {
-    if (!copilotChatId) {
-      hydratedLocalCatalogChatIdRef.current = undefined
-      setLocalCopilotCatalogIdState(DEFAULT_LOCAL_COPILOT_CATALOG_ID)
-      return
-    }
-    if (!copilotChatHistory || copilotChatHistory.id !== copilotChatId) return
-    if (hydratedLocalCatalogChatIdRef.current === copilotChatId) return
-    hydratedLocalCatalogChatIdRef.current = copilotChatId
-    const model = copilotChatHistory.model
-    setLocalCopilotCatalogIdState(
-      model && isLocalCopilotCatalogId(model) ? model : DEFAULT_LOCAL_COPILOT_CATALOG_ID
-    )
-  }, [copilotChatId, copilotChatHistory])
+  const {
+    canSwitchBackend,
+    copilotBackend,
+    setCopilotBackend,
+    localCopilotCatalogId,
+    setLocalCopilotCatalogId,
+  } = useLocalCopilotCatalogSelection()
 
   const {
     messages: copilotMessages,
@@ -526,17 +502,6 @@ export const Panel = memo(function Panel() {
         })
       },
     })
-  )
-
-  const setLocalCopilotCatalogId = useCallback(
-    (id: LocalCopilotCatalogId) => {
-      setLocalCopilotCatalogIdState(id)
-      const targetChatId = copilotResolvedChatId ?? copilotChatId
-      if (targetChatId) {
-        updateChatModel({ chatId: targetChatId, model: id })
-      }
-    },
-    [copilotResolvedChatId, copilotChatId, updateChatModel]
   )
 
   const handleCopilotNewChat = useCallback(() => {

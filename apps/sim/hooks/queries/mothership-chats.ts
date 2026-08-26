@@ -383,8 +383,8 @@ async function updateChatModel({
 }
 
 /**
- * Updates the persisted chat model (Local Copilot catalog id) with an
- * optimistic detail-cache write.
+ * Updates the persisted mothership chat model (Cloud / user-selected).
+ * Local Copilot catalog ids live on `local_copilot_user_access.default_model`.
  */
 export function useUpdateMothershipChatModel(_workspaceId?: string) {
   const queryClient = useQueryClient()

@@ -3042,6 +3042,25 @@ export const localCopilotAuditStatusEnum = pgEnum('local_copilot_audit_status', 
   'rejected',
 ])
 
+/**
+ * Allowlisted Local Copilot picker ids. Keep in sync with
+ * `LOCAL_COPILOT_CATALOG` in `apps/sim/local-copilot/lib/model-catalog.ts`.
+ */
+export const localCopilotDefaultModelEnum = pgEnum('local_copilot_default_model', [
+  'claude',
+  'gemini-2.5-pro',
+  'gemini-3.1-pro',
+  'bedrock-claude-opus-5',
+  'bedrock-claude-sonnet-5',
+  'bedrock-claude-opus-4-8',
+  'bedrock-claude-opus-4-6',
+  'bedrock-claude-sonnet-4-6',
+  'bedrock-zai-glm-5',
+  'bedrock-nemotron-super-3-120b',
+  'bedrock-mistral-large-3',
+  'bedrock-llama-3.3-70b',
+])
+
 export const localCopilotConversations = pgTable(
   'local_copilot_conversations',
   {
@@ -3174,7 +3193,8 @@ export const localCopilotAuditLogs = pgTable(
 
 /**
  * Per-user Arena Copilot allowlist. Access is denied unless a row exists for the
- * user with `hasAccess = true`. Managed via SQL only (no admin UI).
+ * user with `hasAccess = true` or `localOnly = true`. Managed via SQL only
+ * (no admin UI). New accounts default to `localOnly = true` and Gemini.
  */
 export const localCopilotUserAccess = pgTable(
   'local_copilot_user_access',
@@ -3185,7 +3205,8 @@ export const localCopilotUserAccess = pgTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     email: text('email').notNull(),
     hasAccess: boolean('has_access').notNull().default(false),
-    localOnly: boolean('local_only').notNull().default(false),
+    localOnly: boolean('local_only').notNull().default(true),
+    defaultModel: localCopilotDefaultModelEnum('default_model').notNull().default('gemini-2.5-pro'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
