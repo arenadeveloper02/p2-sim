@@ -70,6 +70,18 @@ describe('httpBindingFromCurl', () => {
     })
   })
 
+  it('drops file-object arrays from curl bodies but keeps ordinary arrays', () => {
+    const binding = httpBindingFromCurl({
+      key: 'recommend',
+      curl:
+        'curl -X POST https://api.example.com/run -d \'{"attachments":[{"type":"file","name":"doc.pdf","mime":"application/pdf","data":"abc"}],"articles":[{"title":"Ada","url":"https://example.com"}],"keyword":"implants"}\'',
+    })
+    expect(binding.inputSchema).toEqual([
+      { name: 'articles', type: 'array' },
+      { name: 'keyword', type: 'string' },
+    ])
+  })
+
   it('defaults method to POST when -X is omitted', () => {
     const binding = httpBindingFromCurl({
       key: 'create',

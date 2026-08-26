@@ -5,11 +5,15 @@ import {
   type ArenaGenerativeInputSchemaField,
   type ArenaGenerativeInputSource,
 } from '@/lib/arena-generative-ui/types'
+import { isFileFieldType } from '@/lib/workflows/input-format'
 import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 
 const RESERVED_START_INPUT_NAMES = new Set(
   START_BLOCK_RESERVED_FIELDS.map((name) => name.toLowerCase())
 )
+
+/** Sim `/execute` body flags. Not form controls — the host sets `stream` itself. */
+const EXECUTE_PROTOCOL_INPUT_NAMES = new Set(['stream', 'includethinking', 'includetoolcalls'])
 
 /**
  * Chat start-block protocol fields (`input`, `conversationId`, `files`). They are
@@ -18,6 +22,36 @@ const RESERVED_START_INPUT_NAMES = new Set(
  */
 export function isReservedStartInputName(name: string): boolean {
   return RESERVED_START_INPUT_NAMES.has(name.trim().toLowerCase())
+}
+
+/**
+ * True when a start-block / curl field must not become a generative-app form
+ * control: reserved chat names, Sim execute flags, or a `file[]` upload.
+ */
+export function isOmittedGenerativeInputField(
+  field: { name: string; type?: string },
+  value?: unknown
+): boolean {
+  if (isReservedStartInputName(field.name)) return true
+  if (EXECUTE_PROTOCOL_INPUT_NAMES.has(field.name.trim().toLowerCase())) return true
+  if (isFileFieldType(field.type)) return true
+  return value !== undefined && isFileLikeInputValue(value)
+}
+
+/**
+ * Curl JSON arrays of Sim file objects (`type: "file"`, or name + mime/data).
+ * Ordinary object arrays (articles with `title`/`url`) stay form fields.
+ */
+function isFileLikeInputValue(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length === 0) return false
+  const first = value.find((item) => item !== null && typeof item === 'object')
+  if (!first || typeof first !== 'object' || Array.isArray(first)) return false
+  const record = first as Record<string, unknown>
+  if (record.type === 'file') return true
+  return (
+    typeof record.name === 'string' &&
+    (typeof record.mime === 'string' || typeof record.data === 'string')
+  )
 }
 
 /**

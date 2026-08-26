@@ -11,6 +11,7 @@ import {
   inputFieldRowNeedsValue,
   inputSourceOverridesForSave,
   isEmailLikeApiInputName,
+  isOmittedGenerativeInputField,
   isReservedStartInputName,
   resolveInputFieldEditorRow,
 } from '@/lib/arena-generative-ui/input-schema'
@@ -23,6 +24,31 @@ describe('isReservedStartInputName', () => {
     expect(isReservedStartInputName('Files')).toBe(true)
     expect(isReservedStartInputName('keyword')).toBe(false)
     expect(isReservedStartInputName('email')).toBe(false)
+  })
+})
+
+describe('isOmittedGenerativeInputField', () => {
+  it('omits reserved names, execute flags, and file[] uploads', () => {
+    expect(isOmittedGenerativeInputField({ name: 'files' })).toBe(true)
+    expect(isOmittedGenerativeInputField({ name: 'stream' })).toBe(true)
+    expect(isOmittedGenerativeInputField({ name: 'includeThinking' })).toBe(true)
+    expect(isOmittedGenerativeInputField({ name: 'includeToolCalls' })).toBe(true)
+    expect(isOmittedGenerativeInputField({ name: 'attachments', type: 'file[]' })).toBe(true)
+    expect(isOmittedGenerativeInputField({ name: 'keyword' })).toBe(false)
+    expect(isOmittedGenerativeInputField({ name: 'tags', type: 'array' })).toBe(false)
+  })
+
+  it('omits curl file-object arrays but keeps ordinary object arrays', () => {
+    expect(
+      isOmittedGenerativeInputField({ name: 'attachments' }, [
+        { type: 'file', name: 'doc.pdf', mime: 'application/pdf', data: 'abc' },
+      ])
+    ).toBe(true)
+    expect(
+      isOmittedGenerativeInputField({ name: 'articles' }, [
+        { title: 'Ada', url: 'https://example.com' },
+      ])
+    ).toBe(false)
   })
 })
 

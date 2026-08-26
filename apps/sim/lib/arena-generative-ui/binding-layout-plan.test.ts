@@ -118,12 +118,14 @@ describe('layoutPlanForBinding', () => {
     expect(resultLayoutFromPlan(plan)).toContain('never "field.content"')
   })
 
-  it('omits chat start-block protocol fields from formFields', () => {
+  it('omits protocol fields, execute flags, and file[] uploads from formFields', () => {
     const plan = layoutPlanForBinding(
       workflowBinding({
         inputSchema: [
           { name: 'input', type: 'string' },
           { name: 'files', type: 'array' },
+          { name: 'stream', type: 'boolean' },
+          { name: 'attachments', type: 'file[]' },
           { name: 'keyword', type: 'string' },
           { name: 'conversationId', type: 'string' },
         ],

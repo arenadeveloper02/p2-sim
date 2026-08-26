@@ -1,7 +1,7 @@
 import {
   compactInputSchemaField,
   inferInputFieldSource,
-  isReservedStartInputName,
+  isOmittedGenerativeInputField,
 } from '@/lib/arena-generative-ui/input-schema'
 import { outputLayoutFromSample } from '@/lib/arena-generative-ui/output-schema'
 import type {
@@ -38,7 +38,6 @@ const VALUE_FLAGS = new Set([
 
 const GET_FLAGS = new Set(['-G', '--get'])
 const STREAM_FLAGS = new Set(['-N', '--no-buffer'])
-const PROTOCOL_BODY_KEYS = new Set(['stream', 'includeThinking', 'includeToolCalls'])
 
 const SMART_QUOTES: Record<string, string> = {
   '\u2018': "'",
@@ -389,7 +388,7 @@ function inputSchemaFromBody(
     return undefined
   }
   const fields = Object.entries(parsed)
-    .filter(([name]) => !PROTOCOL_BODY_KEYS.has(name) && !isReservedStartInputName(name))
+    .filter(([name, value]) => !isOmittedGenerativeInputField({ name }, value))
     .map(([name, value]) =>
       compactInputSchemaField({
         name,

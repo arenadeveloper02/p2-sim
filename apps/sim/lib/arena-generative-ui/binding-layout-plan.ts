@@ -1,4 +1,4 @@
-import { isReservedStartInputName } from '@/lib/arena-generative-ui/input-schema'
+import { isOmittedGenerativeInputField } from '@/lib/arena-generative-ui/input-schema'
 import { outputSchemaRootName } from '@/lib/arena-generative-ui/output-schema'
 import {
   type ArenaGenerativeApiBinding,
@@ -382,7 +382,7 @@ function partitionInputFields(binding: ArenaGenerativeApiBinding): {
   const hiddenInputFields: string[] = []
   for (const field of binding.inputSchema ?? []) {
     const name = field.name.trim()
-    if (!name || isReservedStartInputName(name)) continue
+    if (!name || isOmittedGenerativeInputField(field)) continue
     if (field.source === 'visitorEmail' || field.source === 'constant') {
       hiddenInputFields.push(name)
       continue

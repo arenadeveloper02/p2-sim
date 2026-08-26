@@ -48,12 +48,15 @@ describe('inputSchemaFromWorkflowFields', () => {
     ])
   })
 
-  it('drops chat start-block protocol fields', () => {
+  it('drops chat protocol fields, execute flags, and file[] uploads', () => {
     expect(
       inputSchemaFromWorkflowFields([
         { name: 'input', type: 'string' },
         { name: 'conversationId', type: 'string' },
         { name: 'files', type: 'file[]' },
+        { name: 'stream', type: 'boolean' },
+        { name: 'includeThinking', type: 'boolean' },
+        { name: 'attachments', type: 'file[]' },
         { name: 'keyword', type: 'string' },
         { name: 'Files', type: 'array' },
       ])

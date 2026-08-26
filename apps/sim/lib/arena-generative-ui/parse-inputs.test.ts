@@ -208,7 +208,7 @@ describe('parseApiBindings', () => {
     expect(binding.outputSchemaWarnings).toEqual(['Schema is from a run of an older deployment.'])
   })
 
-  it('drops chat start-block protocol fields from inputSchema', () => {
+  it('drops protocol fields, execute flags, and file[] uploads from inputSchema', () => {
     const [binding] = parseApiBindings([
       {
         key: 'recommend_articles',
@@ -218,6 +218,10 @@ describe('parseApiBindings', () => {
           { name: 'input', type: 'string' },
           { name: 'conversationId', type: 'string' },
           { name: 'files', type: 'array' },
+          { name: 'stream', type: 'boolean' },
+          { name: 'includeThinking', type: 'boolean' },
+          { name: 'includeToolCalls', type: 'boolean' },
+          { name: 'attachments', type: 'file[]' },
           { name: 'keyword', type: 'string' },
         ],
       },

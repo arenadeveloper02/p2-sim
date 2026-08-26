@@ -1,7 +1,7 @@
 import {
   compactInputSchemaField,
   inferInputFieldSource,
-  isReservedStartInputName,
+  isOmittedGenerativeInputField,
 } from '@/lib/arena-generative-ui/input-schema'
 import {
   type ArenaGenerativeSchemaField,
@@ -46,7 +46,7 @@ export interface WorkflowBindingSelection {
  * Actor-specific names (`userEmail`, `loggedInEmail`, …) default to
  * `visitorEmail` so the host sends the signed-in address without a form field.
  * A field named `email` stays a form control — that is the lead/contact address.
- * Chat protocol fields (`input`, `conversationId`, `files`) are omitted.
+ * Chat protocol fields, Sim execute flags, and `file[]` uploads are omitted.
  */
 export function inputSchemaFromWorkflowFields(
   fields: WorkflowInputField[] | undefined
@@ -56,7 +56,9 @@ export function inputSchemaFromWorkflowFields(
   const schema: ArenaGenerativeInputSchemaField[] = []
   for (const field of fields) {
     const name = field.name?.trim()
-    if (!name || seen.has(name) || isReservedStartInputName(name)) continue
+    if (!name || seen.has(name) || isOmittedGenerativeInputField({ name, type: field.type })) {
+      continue
+    }
     seen.add(name)
     const description = field.description?.trim()
     schema.push(
