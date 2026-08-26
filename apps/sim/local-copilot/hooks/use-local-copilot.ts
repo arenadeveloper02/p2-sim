@@ -157,6 +157,7 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
 
       abortRef.current?.abort()
       abortRef.current = new AbortController()
+      let assistantText = ''
 
       const body: LocalCopilotChatBody = {
         workspaceId,
@@ -186,7 +187,6 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
 
         const decoder = new TextDecoder()
         let buffer = ''
-        let assistantText = ''
         let patchId: string | undefined
         let patch: WorkflowPatch | undefined
         let recommendations: string[] = []

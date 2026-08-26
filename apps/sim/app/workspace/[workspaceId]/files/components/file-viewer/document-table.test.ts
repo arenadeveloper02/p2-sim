@@ -6,7 +6,7 @@
  * (`.document-table`) sit in the same file viewer, in the same session, one click apart. They used
  * to drift — the previews carried their own chrome (rounded outer frame, `--surface-2` header,
  * 13px body / 12px header, `--text-secondary` cells) while markdown tables used full cell borders
- * on `--divider`, a `--surface-4` header, and 14px text.
+ * on `--border`, a `--surface-4` header, and 14px text.
  *
  * These load the real, shipped CSS (not a copy). Two complementary assertions, because jsdom's CSS
  * engine resolves only part of what matters here: it applies the cascade for longhand declarations
@@ -115,6 +115,28 @@ describe('document-table chrome is shared with markdown tables', () => {
     expect(getComputedStyle(preview.root).getPropertyValue('overflow-wrap')).toBe(wrap)
   })
 
+  it('the preview table sizes to its content while the prose table fits the frame', () => {
+    const prose = mountTable('rich-markdown-prose')
+    const preview = mountTable('document-table')
+
+    const proseTable = prose.root.querySelector('table')
+    const previewTable = preview.root.querySelector('table')
+    if (!proseTable || !previewTable) throw new Error('tables not found')
+
+    expect(getComputedStyle(proseTable).getPropertyValue('width')).toBe('100%')
+    expect(getComputedStyle(previewTable).getPropertyValue('width')).toBe('max-content')
+    expect(getComputedStyle(previewTable).getPropertyValue('min-width')).toBe('100%')
+  })
+
+  it('a preview column is bounded so no value collapses or monopolises the row', () => {
+    const { th, td } = mountTable('document-table')
+
+    for (const cell of [th, td]) {
+      expect(getComputedStyle(cell).getPropertyValue('min-width')).toBe('80px')
+      expect(getComputedStyle(cell).getPropertyValue('max-width')).toBe('320px')
+    }
+  })
+
   it('the resolved values are the markdown editor values, not jsdom defaults', () => {
     const { th, td } = mountTable('document-table')
 
@@ -124,7 +146,9 @@ describe('document-table chrome is shared with markdown tables', () => {
   })
 
   it('one rule draws the cell border for both roots', () => {
-    expect(selectorsDeclaring(SHARED_CSS_PATH, 'border', 'var(--divider)')).toEqual(
+    expect(
+      selectorsDeclaring(SHARED_CSS_PATH, 'border', 'var(--border-width) solid var(--border)')
+    ).toEqual(
       expect.arrayContaining([
         '.rich-markdown-prose th',
         '.rich-markdown-prose td',

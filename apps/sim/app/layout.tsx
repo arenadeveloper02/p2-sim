@@ -121,7 +121,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 // The macOS desktop shell overlays native traffic lights on the
                 // workspace. Mark it before first paint so the sidebar reserves
                 // its inset title-bar lane without a post-hydration layout shift.
-                var collapsedSidebarWidth = 51;
+                var collapsedSidebarWidth = 48;
                 try {
                   if (window.simDesktop && /Mac/i.test(navigator.userAgent)) {
                     document.documentElement.setAttribute('data-sim-desktop-title-bar', 'inset');
@@ -139,9 +139,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 }
 
                 // Sidebar width. Mirror clampSidebarWidth() in stores/sidebar/store.ts:
-                // the upper bound can never fall below the 248px minimum, so a narrow
+                // the upper bound can never fall below the 238px minimum, so a narrow
                 // window yields a width >= MIN instead of a sub-minimum sliver.
-                var defaultSidebarWidth = 248;
+                var defaultSidebarWidth = 238;
                 try {
                   // Collapse comes from the cookie (independent of localStorage
                   // parsing); the persisted width is read defensively below. Match the
@@ -167,10 +167,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   // collapsed, because the desktop hover-peek renders the sidebar at
                   // its restore width while --sidebar-width still reads collapsed.
                   var width = state && state.sidebarWidth;
-                  var maxSidebarWidth = Math.max(248, window.innerWidth * 0.3);
+                  var maxSidebarWidth = Math.max(238, window.innerWidth * 0.3);
                   var expandedWidth =
                     typeof width === 'number' && isFinite(width)
-                      ? Math.min(Math.max(width, 248), maxSidebarWidth)
+                      ? Math.min(Math.max(width, 238), maxSidebarWidth)
                       : defaultSidebarWidth;
                   document.documentElement.style.setProperty(
                     '--sidebar-expanded-width',

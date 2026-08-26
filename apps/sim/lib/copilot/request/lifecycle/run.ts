@@ -4,6 +4,7 @@ import type { PermissionType } from '@sim/platform-authz/workspace'
 import { toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
+import { omit } from '@sim/utils/object'
 import {
   checkMothershipUsageLimits,
   checkSelfHostedMothershipUsageLimits,
@@ -73,6 +74,8 @@ import {
   isCopilotToolPermissionsEnabled,
   isHosted,
 } from '@/lib/core/config/env-flags'
+import { filterModelSafeWorkspaceFileAttachments } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
+import { refuseResolvedSecretProjection } from '@/executor/utils/resolved-secret-projection-refusal'
 import type { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import { shouldRouteToLocalCopilot } from '@/local-copilot/lib/routing'
 
@@ -80,6 +83,86 @@ const logger = createLogger('CopilotLifecycle')
 
 const MAX_RESUME_ATTEMPTS = 3
 const RESUME_BACKOFF_MS = [250, 500, 1000] as const
+const MOTHERSHIP_CODE_TOOL_ROUTES = new Set([
+  '/api/copilot',
+  '/api/mothership',
+  '/api/mothership/execute',
+])
+
+const COPILOT_MODEL_CONTENT_PROJECTION_ERROR = 'Copilot model input could not be safely projected'
+
+class CopilotModelContentProjectionError extends Error {
+  constructor() {
+    super(COPILOT_MODEL_CONTENT_PROJECTION_ERROR)
+    this.name = 'CopilotModelContentProjectionError'
+  }
+}
+
+async function omitUnsafeInitialCopilotAttachments(
+  payload: Record<string, unknown>,
+  workspaceId?: string
+): Promise<Record<string, unknown>> {
+  let projected = payload
+  for (const key of ['attachments', 'fileAttachments'] as const) {
+    if (!Object.hasOwn(projected, key)) continue
+    const attachments = projected[key]
+    if (!Array.isArray(attachments)) {
+      refuseResolvedSecretProjection({
+        site: 'copilot.initialAttachmentsShape',
+        message: COPILOT_MODEL_CONTENT_PROJECTION_ERROR,
+        inputPath: key,
+        createError: () => new CopilotModelContentProjectionError(),
+      })
+    }
+
+    let safeAttachments: unknown[]
+    try {
+      safeAttachments = await filterModelSafeWorkspaceFileAttachments(attachments, { workspaceId })
+    } catch (error) {
+      logger.error('Workspace file secret provenance could not be verified', {
+        attachmentCount: attachments.length,
+        error: toError(error).message,
+      })
+      refuseResolvedSecretProjection({
+        site: 'copilot.initialAttachmentsProvenance',
+        message: COPILOT_MODEL_CONTENT_PROJECTION_ERROR,
+        inputPath: key,
+        createError: () => new CopilotModelContentProjectionError(),
+      })
+    }
+
+    if (safeAttachments.length === attachments.length) continue
+    logger.warn('Omitting Copilot attachments with unsafe secret provenance', {
+      attachmentCount: attachments.length,
+      omittedCount: attachments.length - safeAttachments.length,
+    })
+    projected =
+      safeAttachments.length > 0 ? { ...projected, [key]: safeAttachments } : omit(projected, [key])
+  }
+  return projected
+}
+
+async function filterInitialCopilotAttachmentsForModel(
+  payload: Record<string, unknown>,
+  workspaceId?: string
+): Promise<Record<string, unknown>> {
+  return omitUnsafeInitialCopilotAttachments(payload, workspaceId)
+}
+
+async function ensureModelEgressRegistry(
+  execContext: ExecutionContext,
+  options: Pick<CopilotLifecycleOptions, 'environmentContext' | 'userId' | 'workspaceId'>
+): Promise<ResolvedSecretTraceRegistry> {
+  let registry = execContext.resolvedSecretTraceRegistry
+  if (!registry) {
+    const environmentContext =
+      options.environmentContext ??
+      (await prepareCopilotEnvironmentContext(options.userId, options.workspaceId))
+    registry = environmentContext.resolvedSecretTraceRegistry
+    execContext.resolvedSecretTraceRegistry = registry
+  }
+  return registry
+}
 
 function nonBlankString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
@@ -211,6 +294,11 @@ export async function runCopilotLifecycle(
       secretMountPolicy: lifecycleOptions.secretMountPolicy,
       secretActorUserId: lifecycleOptions.secretActorUserId,
     }))
+  if (goRoute && MOTHERSHIP_CODE_TOOL_ROUTES.has(goRoute)) {
+    execContext.sandboxProfile = 'mothership'
+  } else {
+    execContext.sandboxProfile = undefined
+  }
   const shouldUseHostedBillingProtocol = isHosted && isCopilotBillingAttributionV1Enabled
   if (
     shouldUseHostedBillingProtocol &&
@@ -320,6 +408,19 @@ export async function runCopilotLifecycle(
         hostedBillingRequest
       )
     }
+    await ensureModelEgressRegistry(execContext, lifecycleOptions)
+    const modelSafeRequestPayload = await filterInitialCopilotAttachmentsForModel(
+      requestPayload,
+      lifecycleOptions.workspaceId
+    )
+    await runCheckpointLoop(
+      modelSafeRequestPayload,
+      context,
+      execContext,
+      lifecycleOptions,
+      goRoute,
+      hostedBillingRequest
+    )
 
     // The backend's terminal `complete` is the turn's verdict. A failure it
     // reported in-band on the way there — a tool or a subagent that failed and
@@ -440,9 +541,7 @@ export async function runCopilotLifecycle(
   }
 }
 
-// ---------------------------------------------------------------------------
 // Per-subagent checkpoint resume (concurrent fan-out)
-// ---------------------------------------------------------------------------
 //
 // Under the per-subagent checkpoint model each paused subagent is its OWN
 // checkpoint chain (frame.checkpointId) joined at the orchestrator. Instead of
@@ -555,9 +654,10 @@ function collectResultsForToolIds(
         `Cannot resume subagent chain ${checkpointId}: missing result for tool call ${toolCallId}`
       )
     }
+    const name = tool.name || ''
     return {
       callId: toolCallId,
-      name: tool.name || '',
+      name,
       data: getToolCallTerminalData(tool),
       success: requireToolCallStateResult(tool).success,
     }
@@ -759,9 +859,7 @@ async function driveSubagentChains(
   }
 }
 
-// ---------------------------------------------------------------------------
 // Checkpoint loop – the core state machine
-// ---------------------------------------------------------------------------
 
 async function runCheckpointLoop(
   initialPayload: Record<string, unknown>,
@@ -777,6 +875,11 @@ async function runCheckpointLoop(
   const callerOnEvent = options.onEvent
   const mothershipBaseURL = await getMothershipBaseURL({ userId: options.userId })
   const lifecycleWorkspaceId = nonBlankString(options.workspaceId)
+  const systemPromptOverride = env.MSHIP_SYSPROMPT_OVERRIDE
+
+  if (typeof systemPromptOverride === 'string' && systemPromptOverride.trim() !== '') {
+    payload = { ...payload, systemPromptOverride }
+  }
 
   // Go's auth middleware re-validates every Sim -> Go request by reading
   // workspaceId from the JSON body and forwarding it to Sim's validate route,
@@ -953,36 +1056,52 @@ async function runCheckpointLoop(
     }
 
     if (context.pendingToolPromises.size > 0) {
-      // Bounded by the slowest pending tool's watchdog plus grace. The
-      // per-tool watchdog already guarantees each promise settles; this gate
-      // is the structural backstop so that no tool failure mode — known or
-      // unknown — can park the checkpoint loop (and the chat's pending-stream
-      // lock) forever.
-      const waitBudgetMs =
-        Array.from(context.pendingToolPromises.keys()).reduce(
-          (max, toolCallId) =>
-            Math.max(max, pendingToolWaitBudgetMs(context.toolCalls.get(toolCallId))),
-          0
-        ) + TOOL_WATCHDOG_RESUME_GRACE_MS
+      // Snapshot the gate by tool. Human waits remain durable, but they must
+      // not disable the structural watchdog for an unrelated parallel tool.
+      const pendingTools = Array.from(context.pendingToolPromises.entries()).map(
+        ([toolCallId, promise]) => ({
+          toolCallId,
+          promise,
+          waitBudgetMs: pendingToolWaitBudgetMs(context.toolCalls.get(toolCallId)),
+        })
+      )
+      const durableTools = pendingTools.filter((tool) => tool.waitBudgetMs === null)
+      const boundedTools = pendingTools.flatMap((tool) =>
+        tool.waitBudgetMs === null ? [] : [{ ...tool, waitBudgetMs: tool.waitBudgetMs }]
+      )
+      const boundedWaitBudgetMs =
+        boundedTools.length > 0
+          ? Math.max(...boundedTools.map((tool) => tool.waitBudgetMs)) +
+            TOOL_WATCHDOG_RESUME_GRACE_MS
+          : null
       const waitSpan = context.trace.startSpan('Wait for Tools', 'lifecycle.wait_tools', {
         checkpointId: continuation.checkpointId,
         pendingCount: context.pendingToolPromises.size,
-        waitBudgetMs,
+        durableCount: durableTools.length,
+        ...(boundedWaitBudgetMs !== null ? { waitBudgetMs: boundedWaitBudgetMs } : {}),
       })
       logger.info('Waiting for in-flight tool executions before resume', {
         checkpointId: continuation.checkpointId,
         pendingCount: context.pendingToolPromises.size,
-        waitBudgetMs,
+        durableCount: durableTools.length,
+        waitBudgetMs: boundedWaitBudgetMs,
       })
-      const settledInTime = await Promise.race([
-        Promise.allSettled(context.pendingToolPromises.values()).then(() => true),
-        sleep(waitBudgetMs).then(() => false),
-      ])
-      if (!settledInTime) {
-        const hungToolCallIds = Array.from(context.pendingToolPromises.keys())
+      const boundedSettledInTime =
+        boundedWaitBudgetMs === null
+          ? true
+          : await Promise.race([
+              Promise.allSettled(boundedTools.map((tool) => tool.promise)).then(() => true),
+              sleep(boundedWaitBudgetMs).then(() => false),
+            ])
+      if (!boundedSettledInTime) {
+        const hungToolCallIds = boundedTools
+          .filter(
+            ({ toolCallId, promise }) => context.pendingToolPromises.get(toolCallId) === promise
+          )
+          .map(({ toolCallId }) => toolCallId)
         logger.error('Pending tool executions exceeded the resume wait budget; force-failing', {
           checkpointId: continuation.checkpointId,
-          waitBudgetMs,
+          waitBudgetMs: boundedWaitBudgetMs,
           hungToolCallIds,
         })
         for (const toolCallId of hungToolCallIds) {
@@ -994,7 +1113,8 @@ async function runCheckpointLoop(
           context.pendingToolPromises.delete(toolCallId)
         }
       }
-      waitSpan.attributes = { ...waitSpan.attributes, settledInTime }
+      await Promise.allSettled(durableTools.map((tool) => tool.promise))
+      waitSpan.attributes = { ...waitSpan.attributes, settledInTime: boundedSettledInTime }
       context.trace.endSpan(waitSpan)
     }
 
@@ -1057,9 +1177,10 @@ async function runCheckpointLoop(
         })
         throw new Error(`Cannot resume: missing result for pending tool call ${toolCallId}`)
       }
+      const name = tool.name || ''
       results.push({
         callId: toolCallId,
-        name: tool.name || '',
+        name,
         data: getToolCallTerminalData(tool),
         success: requireToolCallStateResult(tool).success,
       })
@@ -1104,9 +1225,7 @@ async function runCheckpointLoop(
   }
 }
 
-// ---------------------------------------------------------------------------
 // Execution context builder
-// ---------------------------------------------------------------------------
 
 async function buildExecutionContext(
   requestPayload: Record<string, unknown>,
@@ -1230,9 +1349,7 @@ async function ensureHeadlessRunIdentity(input: {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Adds `enterpriseByokEligible: true` to the initial mothership payload when the

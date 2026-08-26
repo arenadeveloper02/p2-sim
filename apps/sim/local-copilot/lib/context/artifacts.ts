@@ -55,12 +55,7 @@ export function createArtifactStore(): ArtifactStore {
  */
 export function summarizeArtifactBody(toolName: string, body: unknown): string {
   const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : null
-  const candidates = [
-    record?.summary,
-    record?.message,
-    record?.content,
-    record?.error,
-  ]
+  const candidates = [record?.summary, record?.message, record?.content, record?.error]
   for (const candidate of candidates) {
     if (typeof candidate === 'string' && candidate.trim()) {
       return truncate(candidate.trim(), 180, '…')

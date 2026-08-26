@@ -312,6 +312,7 @@ async function executeLocalCopilotToolInner(
         workflowId: ctx.workflowId,
         chatId: ctx.chatId,
         abortSignal: ctx.abortSignal,
+        activeToolCallId: ctx.activeToolCallId,
       })
       const output = mutation.output as Record<string, unknown> | undefined
       const createdWorkflowId =
@@ -448,6 +449,7 @@ async function executeLocalCopilotToolInner(
         workflowId: ctx.workflowId,
         chatId: ctx.chatId,
         abortSignal: ctx.abortSignal,
+        activeToolCallId: ctx.activeToolCallId,
       })
 
       if (mutation.success) {
@@ -799,6 +801,7 @@ async function executeLocalCopilotToolInner(
         abortSignal: ctx.abortSignal,
         copilotToolExecution: true,
         userPermission: ctx.userPermission,
+        ...(ctx.activeToolCallId?.trim() ? { toolCallId: ctx.activeToolCallId.trim() } : {}),
       }
 
       const separateRecipients = params[SEPARATE_DRAFT_RECIPIENTS_KEY]

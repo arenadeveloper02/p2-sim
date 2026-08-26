@@ -14,8 +14,8 @@ export const defaultBrandConfig: BrandConfig = {
   customCssUrl: undefined,
   supportEmail: 'arenadeveloper@position2.com',
   documentationUrl: undefined,
-  termsUrl: 'https://help.thearena.ai/terms-use',
-  privacyUrl: 'https://help.thearena.ai/privacy-policy',
+  termsUrl: 'https://thearena.ai/terms',
+  privacyUrl: 'https://thearena.ai/privacy',
   theme: {
     primaryColor: '#1a73e8',
     primaryHoverColor: '#155cba',

@@ -95,8 +95,12 @@ export async function processChatFiles(
   )
 
   const durableReferences: UserFile[] = []
-  const transformedFiles: Array<{ type: 'file' | 'url'; data: string; name: string; mime?: string }> =
-    []
+  const transformedFiles: Array<{
+    type: 'file' | 'url'
+    data: string
+    name: string
+    mime?: string
+  }> = []
 
   for (const file of files) {
     const directUrl = file.url?.trim()
@@ -158,25 +162,4 @@ export async function processChatFiles(
   })
 
   return userFiles
-}
-
-/**
- * Upload a single chat file to temporary execution storage
- *
- * This is a convenience function for uploading individual files.
- * For batch uploads, use processChatFiles() for better performance.
- *
- * @param file Chat file to upload
- * @param executionContext Execution context for temporary storage
- * @param requestId Unique request identifier
- * @returns UserFile object with upload result
- */
-async function uploadChatFile(
-  file: ChatFile,
-  executionContext: ChatExecutionContext,
-  requestId: string,
-  userId?: string
-): Promise<UserFile> {
-  const [userFile] = await processChatFiles([file], executionContext, requestId, userId)
-  return userFile
 }

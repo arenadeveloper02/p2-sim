@@ -10,6 +10,10 @@ import { useRouter } from 'next/navigation'
 import { client } from '@/lib/auth/auth-client'
 import { useGeneratedImageReuse } from '@/lib/chat/use-generated-image-reuse'
 import { getCustomInputFields, normalizeInputFormatValue } from '@/lib/workflows/input-format-utils'
+import {
+  AGENT_STREAM_PROTOCOL_HEADER,
+  AGENT_STREAM_PROTOCOL_V1,
+} from '@/lib/workflows/streaming/agent-stream-protocol'
 import type { InputFormatField } from '@/lib/workflows/types'
 import {
   ChatErrorState,
@@ -412,18 +416,45 @@ export default function ChatClient({ identifier }: { identifier: string }) {
                       attachments: Array.isArray(log.attachments) ? log.attachments : undefined,
                     })
                   }
-                  if (log.modelOutput) {
+                  if (
+                    log.modelOutput ||
+                    (Array.isArray(log.generatedImages) && log.generatedImages.length > 0)
+                  ) {
+                    const historyImages = Array.isArray(log.generatedImages)
+                      ? log.generatedImages
+                      : undefined
+                    const imageUrls =
+                      historyImages
+                        ?.map((image: { url?: string }) => image?.url)
+                        .filter((url: string | undefined): url is string => Boolean(url)) ?? []
+                    const historyContent =
+                      imageUrls.length > 0
+                        ? {
+                            content:
+                              typeof log.modelOutput === 'string'
+                                ? log.modelOutput
+                                    .split('\n')
+                                    .filter(
+                                      (line: string) =>
+                                        !imageUrls.some((url: string) => line.trim() === url.trim())
+                                    )
+                                    .join('\n')
+                                    .trim()
+                                : '',
+                            image: imageUrls[0] ?? '',
+                            images: imageUrls,
+                          }
+                        : log.modelOutput || ''
+
                     historyMessages.push({
                       id: `${log.id}-assistant`,
-                      content: log.modelOutput || '',
+                      content: historyContent,
                       type: 'assistant',
                       timestamp: new Date(log.endedAt || log.startedAt),
                       isStreaming: false,
                       executionId: log?.executionId || '',
-                      liked: log.liked,
-                      generatedImages: Array.isArray(log.generatedImages)
-                        ? log.generatedImages
-                        : undefined,
+                      liked: log.liked ?? null,
+                      generatedImages: historyImages,
                       knowledgeRefs: Array.isArray(log.knowledgeRefs)
                         ? log.knowledgeRefs
                         : undefined,
@@ -850,11 +881,13 @@ export default function ChatClient({ identifier }: { identifier: string }) {
         files: payload.files ? `${payload.files.length} files` : undefined,
       })
 
+      // boundary-raw-fetch: deployed chat endpoint returns an SSE stream consumed by handleStreamedResponse via response.body.getReader()
       const response = await fetch(`/api/chat/${identifier}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
+          [AGENT_STREAM_PROTOCOL_HEADER]: AGENT_STREAM_PROTOCOL_V1,
         },
         body: JSON.stringify(payload),
         credentials: 'same-origin',

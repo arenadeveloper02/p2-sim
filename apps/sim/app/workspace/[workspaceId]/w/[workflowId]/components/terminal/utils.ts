@@ -1,12 +1,5 @@
 import type React from 'react'
-import {
-  AlertTriangleIcon,
-  BanIcon,
-  NetworkIcon,
-  RepeatIcon,
-  SplitIcon,
-  XCircleIcon,
-} from 'lucide-react'
+import { Ban, CircleX, Repeat, Split, TriangleAlert, Workflow } from '@sim/emcn/icons'
 import { getBlock } from '@/blocks'
 import { isWorkflowBlockType } from '@/executor/constants'
 import { TERMINAL_BLOCK_COLUMN_WIDTH } from '@/stores/constants'
@@ -43,27 +36,27 @@ export function getBlockIcon(
   }
 
   if (blockType === 'loop') {
-    return RepeatIcon
+    return Repeat
   }
 
   if (blockType === 'parallel') {
-    return SplitIcon
+    return Split
   }
 
   if (blockType === 'workflow') {
-    return NetworkIcon
+    return Workflow
   }
 
   if (blockType === 'error') {
-    return XCircleIcon
+    return CircleX
   }
 
   if (blockType === 'validation') {
-    return AlertTriangleIcon
+    return TriangleAlert
   }
 
   if (blockType === 'cancelled') {
-    return BanIcon
+    return Ban
   }
 
   return null
@@ -649,20 +642,6 @@ export function groupEntriesByExecution(entries: ConsoleEntry[]): ExecutionGroup
   // Sort by start time descending (newest first)
   result.sort((a, b) => b.startTimeMs - a.startTimeMs)
 
-  return result
-}
-
-/**
- * Flattens entry tree into display order for keyboard navigation
- */
-export function flattenEntryTree(nodes: EntryNode[]): ConsoleEntry[] {
-  const result: ConsoleEntry[] = []
-  for (const node of nodes) {
-    result.push(node.entry)
-    if (node.children.length > 0) {
-      result.push(...flattenEntryTree(node.children))
-    }
-  }
   return result
 }
 

@@ -1,9 +1,11 @@
 import { firecrawlHosting } from '@/tools/firecrawl/hosting'
+import {
+  applyFirecrawlScrapeOptionsModelInput,
+  selectFirecrawlScrapeOptionsModelInput,
+} from '@/tools/firecrawl/model-input'
 import type { SearchParams, SearchResponse } from '@/tools/firecrawl/types'
 import { SEARCH_RESULT_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import type { ToolConfig } from '@/tools/types'
-
-const firecrawlApiKey = process.env.FIRECRAWL_API_KEY || process.env.NEXT_PUBLIC_FIRECRAWL_API_KEY
 
 export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
   id: 'firecrawl_search',
@@ -18,9 +20,15 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
       visibility: 'user-or-llm',
       description: 'The search query to use',
     },
+    scrapeOptions: {
+      type: 'json',
+      required: false,
+      visibility: 'hidden',
+      description: 'Advanced scrape options supplied by existing configurations',
+    },
     apiKey: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
@@ -29,11 +37,23 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
   hosting: firecrawlHosting(),
 
   request: {
+    modelInput: {
+      mode: 'project',
+      select: (params) => ({
+        scrapeOptions: selectFirecrawlScrapeOptionsModelInput(params.scrapeOptions),
+      }),
+      applyProjected: (selectedParams, projectedSelection) => ({
+        scrapeOptions: applyFirecrawlScrapeOptionsModelInput(
+          selectedParams.scrapeOptions,
+          projectedSelection.scrapeOptions
+        ),
+      }),
+    },
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/search',
-    headers: () => ({
+    headers: (params) => ({
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${firecrawlApiKey}`,
+      Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
       const body: Record<string, any> = {
@@ -63,6 +83,7 @@ export const searchTool: ToolConfig<SearchParams, SearchResponse> = {
       success: true,
       output: {
         data: data.data,
+        creditsUsed: data.creditsUsed,
       },
     }
   },

@@ -14,11 +14,11 @@ import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { ZoomIcon } from '@/components/icons'
 import type { OrganizationOAuthAppSummary } from '@/lib/api/contracts/organization-oauth-apps'
-import { useSession } from '@/lib/auth/auth-client'
+import { useActiveOrganization, useSession } from '@/lib/auth/auth-client'
 import { getCustomOAuthAppConfig, listCustomOAuthAppKeys } from '@/lib/oauth/custom-app-config'
 import { isAdminOrOwner } from '@/lib/workspaces/organization'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
-import { useOrganization, useOrganizations } from '@/hooks/queries/organization'
+import { useOrganization } from '@/hooks/queries/organization'
 import {
   useDeleteOrganizationOAuthApp,
   useOrganizationOAuthApps,
@@ -87,8 +87,7 @@ const providerMeta = SUPPORTED_APP_KEYS.map((appKey) => {
  */
 export function OAuthAppsSettings() {
   const { data: session } = useSession()
-  const { data: organizationsData } = useOrganizations()
-  const activeOrganization = organizationsData?.activeOrganization
+  const { data: activeOrganization } = useActiveOrganization()
   const organizationId = activeOrganization?.id
 
   const { data: organization, isLoading: orgLoading } = useOrganization(organizationId || '')

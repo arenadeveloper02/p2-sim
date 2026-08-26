@@ -10,7 +10,12 @@ import type { BlockState } from '@/stores/workflows/workflow/types'
 
 // deploy.ts pulls in the trigger/block/provider registries at module load; none are exercised by
 // buildProviderConfig (a pure function), so stub them to keep this unit test fast and isolated.
-vi.mock('@/blocks', () => ({ getBlock: vi.fn() }))
+const { mockGetBlock } = vi.hoisted(() => ({ mockGetBlock: vi.fn() }))
+// `deploy.ts` reads the registry through `@/blocks`, while the trigger-id resolution it now
+// shares (`@/triggers/webhook-url`) reads `@/blocks/registry`. Point both specifiers at ONE spy
+// so a test configuring the block config governs the whole path, not half of it.
+vi.mock('@/blocks', () => ({ getBlock: mockGetBlock }))
+vi.mock('@/blocks/registry', () => ({ getBlock: mockGetBlock }))
 vi.mock('@/triggers', () => ({ getTrigger: vi.fn(), isTriggerValid: vi.fn(() => true) }))
 vi.mock('@/lib/webhooks/providers', () => ({ getProviderHandler: vi.fn() }))
 vi.mock('@/lib/webhooks/provider-subscriptions', () => ({
@@ -36,7 +41,7 @@ const {
   mockRefreshAccessTokenIfNeeded: vi.fn(),
   mockFetchSlackTeamId: vi.fn(),
 }))
-vi.mock('@/app/api/auth/oauth/utils', () => ({
+vi.mock('@/lib/oauth/credential-service', () => ({
   getSlackBotCredential: mockGetSlackBotCredential,
   resolveOAuthAccountId: mockResolveOAuthAccountId,
   refreshAccessTokenIfNeeded: mockRefreshAccessTokenIfNeeded,
@@ -88,6 +93,15 @@ const slackTrigger = trigger([
     id: 'manualBotCredential',
     mode: 'trigger-advanced',
     canonicalParamId: 'botCredential',
+    required: true,
+  },
+])
+
+const tiktokTrigger = trigger([
+  {
+    id: 'triggerCredentials',
+    mode: 'trigger',
+    serviceId: 'tiktok',
     required: true,
   },
 ])
@@ -357,5 +371,65 @@ describe('resolveWebhookConfigForBlock — slack_oauth routing', () => {
     expect(result?.error?.status).toBe(400)
     expect(result?.error?.message).toContain('Could not access the connected Slack account')
     expect(mockFetchSlackTeamId).not.toHaveBeenCalled()
+  })
+})
+
+describe('resolveWebhookConfigForBlock — TikTok routing', () => {
+  const tiktokTriggerDef = {
+    provider: 'tiktok',
+    name: 'TikTok',
+    subBlocks: tiktokTrigger.subBlocks,
+  }
+
+  function resolveTikTok(
+    credentialReference = 'credential-1',
+    workflow: Record<string, unknown> = { workspaceId: 'ws-1' }
+  ) {
+    ;(getBlock as unknown as Mock).mockReturnValue({ category: 'triggers' })
+    ;(getTrigger as unknown as Mock).mockReturnValue(tiktokTriggerDef)
+    return resolveWebhookConfigForBlock({
+      block: makeBlock('tiktok', { triggerCredentials: credentialReference }),
+      workflow,
+      userId: 'deployer-1',
+      requestId: 'req-1',
+    })
+  }
+
+  it('routes a canonical workspace credential by its TikTok open_id', async () => {
+    queueTableRows(credential, [{ id: 'credential-1' }])
+    mockResolveOAuthAccountId.mockResolvedValue({ accountId: 'account-1' })
+    queueTableRows(account, [
+      { accountId: 'open-id-with-hyphens-12345678-1234-1234-1234-123456789abc' },
+    ])
+
+    const result = await resolveTikTok()
+
+    expect(result?.success).toBe(true)
+    if (!result?.success) throw new Error('expected success')
+    expect(result.config.provider).toBe('tiktok')
+    expect(result.config.routingKey).toBe('open-id-with-hyphens')
+    expect(result.config.triggerPath).toBeNull()
+    expect(result.config.providerConfig.credentialId).toBe('credential-1')
+  })
+
+  it('rejects a TikTok credential not available in the workflow workspace', async () => {
+    const result = await resolveTikTok('foreign-credential')
+
+    expect(result?.success).toBe(false)
+    if (result?.success) throw new Error('expected failure')
+    expect(result?.error.message).toContain('not available in this workspace')
+    expect(mockResolveOAuthAccountId).not.toHaveBeenCalled()
+  })
+
+  it('rejects a malformed TikTok account identity', async () => {
+    queueTableRows(credential, [{ id: 'credential-1' }])
+    mockResolveOAuthAccountId.mockResolvedValue({ accountId: 'account-1' })
+    queueTableRows(account, [{ accountId: 'missing-generated-uuid' }])
+
+    const result = await resolveTikTok()
+
+    expect(result?.success).toBe(false)
+    if (result?.success) throw new Error('expected failure')
+    expect(result?.error.message).toContain('Reconnect')
   })
 })

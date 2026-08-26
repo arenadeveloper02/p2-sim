@@ -22,6 +22,7 @@ import {
   humanizeToolName,
 } from '@/lib/copilot/tools/tool-display'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
+import type { CredentialSubmissionPayload } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags'
 import type { ContentBlock, OptionItem, ToolCallData } from '../../types'
 import { SUBAGENT_LABELS } from '../../types'
 import type { AgentGroupItem } from './components'
@@ -310,7 +311,7 @@ function toToolData(tc: NonNullable<ContentBlock['toolCall']>): ToolCallData {
   const overrideDisplayTitle = getOverrideDisplayTitle(tc)
   const resolvedTitle =
     overrideDisplayTitle || tc.displayTitle || getToolDisplayTitle(tc.name, tc.params)
-  const displayTitle = getToolStatusDisplayTitle(resolvedTitle, tc.status)
+  const displayTitle = getToolStatusDisplayTitle(resolvedTitle, tc.status, tc.name)
 
   return {
     id: tc.id,
@@ -931,6 +932,7 @@ export function deriveThinkingLabel(blocks: ContentBlock[]): string | null {
 interface MessageContentProps {
   blocks: ContentBlock[]
   fallbackContent: string
+  messageId?: string
   isStreaming: boolean
   liveStatus?: string
   /**
@@ -941,6 +943,10 @@ interface MessageContentProps {
   isLast?: boolean
   /** Transcript-derived answers for this message's question card (renders the recap). */
   questionAnswers?: string[]
+  /** Transcript-derived status payload for this message's credential card. */
+  credentialSubmission?: CredentialSubmissionPayload
+  /** The user moved on without submitting this message's credential card. */
+  credentialAbandoned?: boolean
   onOptionSelect?: (id: string) => void
   onQuestionDismiss?: () => void
   onPhaseChange?: (phase: MessagePhase) => void
@@ -957,12 +963,15 @@ interface MessageContentProps {
 function MessageContentInner({
   blocks,
   fallbackContent,
+  messageId,
   isStreaming = false,
   // liveStatus prop still accepted from callers, but unused after upstream's
   // shimmer tail (thinkingLabel) replaced HEAD's trailing-live-status path.
   // liveStatus,
   isLast = false,
   questionAnswers,
+  credentialSubmission,
+  credentialAbandoned,
   onOptionSelect,
   onQuestionDismiss,
   onPhaseChange,
@@ -1082,12 +1091,15 @@ function MessageContentInner({
                   // HEAD preprocessing preserved: repairs collapsed markdown
                   // tables before render.
                   content={prepareChatMarkdownForRender(segment.content)}
+                  messageId={messageId}
                   isStreaming={shouldSmoothTextSegment({
                     isStreaming,
                     segmentIndex: i,
                     segmentCount: segments.length,
                   })}
                   questionAnswers={questionAnswers}
+                  credentialSubmission={credentialSubmission}
+                  credentialAbandoned={credentialAbandoned}
                   onOptionSelect={onOptionSelect}
                   onQuestionDismiss={onQuestionDismiss}
                   onWorkspaceResourceSelect={onWorkspaceResourceSelect}

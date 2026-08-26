@@ -55,7 +55,8 @@ const ENGINEERING_LOOP_CONTENT: EnterpriseLoopContent = {
       id: 'triage',
       name: 'Triage alert',
       icon: AgentIcon,
-      bgColor: 'var(--text-primary)',
+      bgColor: '#FFFFFF',
+      tileBorder: true,
       rows: [
         { title: 'Messages', value: '-' },
         { title: 'Model', value: '-' },

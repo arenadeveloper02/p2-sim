@@ -1,6 +1,7 @@
 import { type Context, SpanStatusCode } from '@opentelemetry/api'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { isRecordLike } from '@sim/utils/object'
 import { ORCHESTRATION_TIMEOUT_MS } from '@/lib/copilot/constants'
 import {
   MothershipStreamV1EventType,
@@ -57,9 +58,7 @@ type SubagentSpanData = {
 }
 
 function asJsonRecord(value: unknown): JsonRecord | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined
+  return isRecordLike(value) ? (value as JsonRecord) : undefined
 }
 
 function parseSubagentSpanData(value: unknown): SubagentSpanData | undefined {
@@ -374,14 +373,26 @@ export async function runStreamLoop(
           return
         }
 
-        await processFilePreviewStreamEvent({
-          streamId: envelope.stream.streamId,
-          streamEvent,
-          context,
-          execContext,
-          options,
-          state: filePreviewAdapterState,
-        })
+        // Presentation only. A throw here abandons the rest of the event, so
+        // the tool-call frame never registers its arguments and the call is
+        // later dispatched with an empty payload.
+        try {
+          await processFilePreviewStreamEvent({
+            streamId: envelope.stream.streamId,
+            streamEvent,
+            context,
+            execContext,
+            options,
+            state: filePreviewAdapterState,
+          })
+        } catch (error) {
+          logger.warn('Failed to process file preview stream event', {
+            type: streamEvent.type,
+            requestId: context.requestId,
+            messageId: context.messageId,
+            error: getErrorMessage(error),
+          })
+        }
 
         await prePersistClientExecutableToolCall(streamEvent, context, options, execContext)
 

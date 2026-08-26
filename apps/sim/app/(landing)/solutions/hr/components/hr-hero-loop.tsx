@@ -54,7 +54,8 @@ const HR_LOOP_CONTENT: EnterpriseLoopContent = {
       id: 'onboard',
       name: 'Onboard hire',
       icon: AgentIcon,
-      bgColor: 'var(--text-primary)',
+      bgColor: '#FFFFFF',
+      tileBorder: true,
       rows: [
         { title: 'Messages', value: '-' },
         { title: 'Model', value: '-' },

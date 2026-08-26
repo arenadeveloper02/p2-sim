@@ -25,14 +25,13 @@ import type {
   ParameterVisibility,
   ToolConfig,
   ToolParameterItemSchema,
+  WorkflowToolExecutionContext,
 } from '@/tools/types'
 
 const logger = createLogger('ToolsParams')
 type ToolParamDefinition = ToolConfig['params'][string]
 
-// ============================================================================
 // Tag/Value Parsing Utilities
-// ============================================================================
 
 interface Option {
   label: string
@@ -153,6 +152,13 @@ export interface LLMToolSchemaResult {
    * schema for `prepareToolExecution` to strip.
    */
   modelBlockedParams?: string[]
+}
+
+export class ToolSchemaEnrichmentError extends Error {
+  constructor(toolId: string, cause: unknown) {
+    super(`Failed to enrich schema for tool "${toolId}"`, { cause })
+    this.name = 'ToolSchemaEnrichmentError'
+  }
 }
 
 export interface ValidationResult {
@@ -640,7 +646,8 @@ export function createUserToolSchema(
 
 export async function createLLMToolSchema(
   toolConfig: ToolConfig,
-  userProvidedParams: Record<string, unknown>
+  userProvidedParams: Record<string, unknown>,
+  enrichmentContext: WorkflowToolExecutionContext = {}
 ): Promise<LLMToolSchemaResult> {
   const schema: ToolSchema = {
     type: 'object',
@@ -668,7 +675,7 @@ export async function createLLMToolSchema(
       }
 
       const propertySchema = buildParameterSchema(toolConfig.id, paramId, param)
-      const enrichedSchema = await enrichmentConfig.enrichSchema(dependencyValue)
+      const enrichedSchema = await enrichmentConfig.enrichSchema(dependencyValue, enrichmentContext)
 
       if (enrichedSchema) {
         safeAssign(propertySchema, enrichedSchema as Record<string, unknown>)
@@ -700,7 +707,7 @@ export async function createLLMToolSchema(
     if (isWorkflowInputMapping) {
       const workflowId = userProvidedParams.workflowId as string
       if (workflowId) {
-        await applyDynamicSchemaForWorkflow(propertySchema, workflowId)
+        await applyDynamicSchemaForWorkflow(propertySchema, workflowId, enrichmentContext)
       }
     }
 
@@ -714,11 +721,17 @@ export async function createLLMToolSchema(
   if (toolConfig.toolEnrichment) {
     const dependencyValue = userProvidedParams[toolConfig.toolEnrichment.dependsOn] as string
     if (dependencyValue) {
-      const enriched = await toolConfig.toolEnrichment.enrichTool(
-        dependencyValue,
-        schema,
-        toolConfig.description
-      )
+      let enriched
+      try {
+        enriched = await toolConfig.toolEnrichment.enrichTool(
+          dependencyValue,
+          schema,
+          toolConfig.description,
+          enrichmentContext
+        )
+      } catch (error) {
+        throw new ToolSchemaEnrichmentError(toolConfig.id, error)
+      }
       if (enriched) {
         return {
           schema: enriched.parameters as ToolSchema,
@@ -737,10 +750,11 @@ export async function createLLMToolSchema(
  */
 async function applyDynamicSchemaForWorkflow(
   propertySchema: SchemaProperty,
-  workflowId: string
+  workflowId: string,
+  context: WorkflowToolExecutionContext
 ): Promise<void> {
   try {
-    const workflowInputFields = await fetchWorkflowInputFields(workflowId)
+    const workflowInputFields = await fetchWorkflowInputFields(workflowId, context)
 
     if (workflowInputFields && workflowInputFields.length > 0) {
       propertySchema.type = 'object'
@@ -766,19 +780,32 @@ async function applyDynamicSchemaForWorkflow(
 
 /**
  * Fetches workflow input fields from the API.
+ *
+ * The workflow read route accepts only scoped executor delegations, so the call is
+ * bound to the acting execution subject.
  */
 async function fetchWorkflowInputFields(
-  workflowId: string
+  workflowId: string,
+  context: WorkflowToolExecutionContext
 ): Promise<Array<{ name: string; type: string; description?: string }>> {
   try {
-    const { buildAuthHeaders, buildAPIUrl } = await import('@/executor/utils/http')
+    if (!context.userId) {
+      throw new Error('Workflow input enrichment requires a trusted execution subject')
+    }
+    const { buildAPIUrl, buildExecutorDelegationHeaders } = await import('@/executor/utils/http')
+    const { executionScopeForTarget } = await import('@/executor/utils/delegation')
 
-    const headers = await buildAuthHeaders()
+    const headers = await buildExecutorDelegationHeaders({
+      subjectUserId: context.userId,
+      workflowId,
+      ...executionScopeForTarget(context, workflowId),
+    })
     const url = buildAPIUrl(`/api/workflows/${workflowId}`)
 
     const response = await fetch(url.toString(), { headers })
     if (!response.ok) {
-      throw new Error('Failed to fetch workflow')
+      await response.text().catch(() => {})
+      throw new Error(`Failed to fetch workflow (${response.status})`)
     }
 
     const { data } = await response.json()
@@ -840,13 +867,16 @@ function isVariableReference(value: unknown): boolean {
   return typeof value === 'string' && value.trim().startsWith('<') && value.trim().endsWith('>')
 }
 
-/**
- * Filters out user-provided parameters from tool schema for LLM
- */
-export function filterSchemaForLLM(
-  originalSchema: ToolSchema,
+interface FilterableToolSchema {
+  properties?: Record<string, unknown>
+  required?: string[]
+}
+
+/** Filters user-provided parameters from any object-shaped tool schema sent to an LLM. */
+export function filterSchemaForLLM<T extends FilterableToolSchema>(
+  originalSchema: T,
   userProvidedParams: Record<string, unknown>
-): ToolSchema {
+): T {
   if (!originalSchema || !originalSchema.properties) {
     return originalSchema
   }
@@ -873,11 +903,10 @@ export function filterSchemaForLLM(
     }
   })
 
-  return {
-    ...originalSchema,
+  return Object.assign({}, originalSchema, {
     properties: filteredProperties,
     required: filteredRequired,
-  }
+  })
 }
 
 /**

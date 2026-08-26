@@ -55,16 +55,21 @@ export function UserSelectorInput({
     isPreview,
   })
 
-  // Choose credential strictly based on auth method
-  const credential: string =
-    (authMethod as string) === 'bot_token'
-      ? (botToken as string) || ''
-      : (connectedCredential as string) || ''
+  // Custom Bot (bot_token) uses the OAuth credential id unless a legacy
+  // pasted botToken is present (webhook / setup wizard).
+  const usingPastedBotToken = (authMethod as string) === 'bot_token' && Boolean(botToken)
+  const credential: string = usingPastedBotToken
+    ? String(botToken)
+    : String(connectedCredential || '')
+  // Custom Bot on a connected Slack account lists with the user token.
+  // Pasted `xoxb-` has no user token — the users route ignores the flag.
+  const useUserToken =
+    (authMethod as string) === 'bot_token' && Boolean(credential) && !credential.startsWith('xoxb-')
 
   // Determine if connected OAuth credential is foreign
   const { isForeignCredential } = useForeignCredential(
     'slack',
-    (authMethod as string) === 'bot_token' ? '' : (connectedCredential as string) || ''
+    usingPastedBotToken ? '' : (connectedCredential as string) || ''
   )
 
   // Get the current value from the store or prop value if in preview mode
@@ -124,6 +129,7 @@ export function UserSelectorInput({
                 workflowId={workflowIdFromUrl}
                 isForeignCredential={isForeignCredential}
                 multiple={isMultiple}
+                useUserToken={useUserToken}
               />
             </div>
           </Tooltip.Trigger>

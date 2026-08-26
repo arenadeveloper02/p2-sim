@@ -2,11 +2,13 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { slackUsersListOrDetailContract } from '@/lib/api/contracts/selectors/slack'
 import { parseRequest } from '@/lib/api/server'
-import { authorizeCredentialUse } from '@/lib/auth/credential-access'
 import { validateAlphanumericId } from '@/lib/core/security/input-validation'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
+import {
+  resolveSlackSelectorToken,
+  type SlackSelectorTokenResult,
+} from '@/app/api/tools/slack/resolve-selector-token'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,7 +42,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       logger.error('Missing credential in request')
       return parsed.response
     }
-    const { credential, workflowId, userId } = parsed.data.body
+    const { credential, workflowId, userId, useUserToken } = parsed.data.body
 
     if (userId !== undefined && userId !== null) {
       const validation = validateAlphanumericId(userId, 'userId', 100)
@@ -50,41 +52,17 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       }
     }
 
-    let accessToken: string
-    const isBotToken = credential.startsWith('xoxb-')
-
-    if (isBotToken) {
-      accessToken = credential
-      logger.info('Using direct bot token for Slack API')
-    } else {
-      const authz = await authorizeCredentialUse(request, {
-        credentialId: credential,
-        workflowId,
-      })
-      if (!authz.ok || !authz.credentialOwnerUserId) {
-        return NextResponse.json({ error: authz.error || 'Unauthorized' }, { status: 403 })
-      }
-      const resolvedToken = await refreshAccessTokenIfNeeded(
-        credential,
-        authz.credentialOwnerUserId,
-        requestId
-      )
-      if (!resolvedToken) {
-        logger.error('Failed to get access token', {
-          credentialId: credential,
-          userId: authz.credentialOwnerUserId,
-        })
-        return NextResponse.json(
-          {
-            error: 'Could not retrieve access token',
-            authRequired: true,
-          },
-          { status: 401 }
-        )
-      }
-      accessToken = resolvedToken
-      logger.info('Using OAuth token for Slack API')
+    const token = await resolveSlackSelectorToken({
+      request,
+      credential,
+      workflowId,
+      useUserToken,
+      requestId,
+    })
+    if (!token.ok) {
+      return selectorTokenErrorResponse(token)
     }
+    const { accessToken, kind } = token
 
     if (userId) {
       const userData = await fetchSlackUser(accessToken, userId)
@@ -115,7 +93,7 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     logger.info(`Successfully fetched ${users.length} Slack users`, {
       total: data.members?.length || 0,
       active: users.length,
-      tokenType: isBotToken ? 'bot_token' : 'oauth',
+      tokenType: kind,
     })
     return NextResponse.json({ users })
   } catch (error) {
@@ -126,6 +104,13 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     )
   }
 })
+
+function selectorTokenErrorResponse(token: Extract<SlackSelectorTokenResult, { ok: false }>) {
+  return NextResponse.json(
+    token.authRequired ? { error: token.error, authRequired: true } : { error: token.error },
+    { status: token.status }
+  )
+}
 
 async function fetchSlackUser(accessToken: string, userId: string) {
   const url = new URL('https://slack.com/api/users.info')

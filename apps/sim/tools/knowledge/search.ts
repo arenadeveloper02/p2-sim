@@ -100,8 +100,14 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
   },
 
   request: {
+    internalAuth: 'executor_delegation',
     url: () => '/api/knowledge/search',
     method: 'POST',
+    modelInput: {
+      mode: 'private-provenance',
+      inputPaths: () => [['query']],
+    },
+    secretProvenance: { response: { incomplete: 'reject' } },
     headers: () => ({
       'Content-Type': 'application/json',
     }),
@@ -114,11 +120,21 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
       // Parse tag filters from various formats (array, JSON string)
       const structuredFilters = parseTagFilters(params.tagFilters)
 
-      const rerankerEnabled = params.rerankerEnabled === true || params.rerankerEnabled === 'true'
+      const rerankConfig =
+        params.rerank && typeof params.rerank === 'object'
+          ? (params.rerank as { enabled?: unknown; model?: unknown; topN?: unknown })
+          : undefined
+      const rerankerEnabled =
+        params.rerankerEnabled === true ||
+        params.rerankerEnabled === 'true' ||
+        rerankConfig?.enabled === true ||
+        rerankConfig?.enabled === 'true'
       const rerankerModel =
         typeof params.rerankerModel === 'string' && params.rerankerModel.length > 0
           ? params.rerankerModel
-          : DEFAULT_RERANKER_MODEL
+          : typeof rerankConfig?.model === 'string' && rerankConfig.model.length > 0
+            ? rerankConfig.model
+            : DEFAULT_RERANKER_MODEL
       const rerankerApiKey =
         typeof params.apiKey === 'string' && params.apiKey.length > 0 ? params.apiKey : undefined
       const rawInputCount =
@@ -126,7 +142,9 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
         params.rerankerInputCount !== null &&
         params.rerankerInputCount !== ''
           ? Number(params.rerankerInputCount)
-          : Number.NaN
+          : rerankConfig?.topN !== undefined && rerankConfig.topN !== null
+            ? Number(rerankConfig.topN)
+            : Number.NaN
       const rerankerInputCount = Number.isFinite(rawInputCount)
         ? Math.max(1, Math.min(100, Math.floor(rawInputCount)))
         : undefined
@@ -135,7 +153,6 @@ export const knowledgeSearchTool: ToolConfig<any, KnowledgeSearchResponse> = {
         knowledgeBaseIds,
         query: params.query,
         topK: params.topK ? Math.max(1, Math.min(100, Number(params.topK))) : 10,
-        ...(params.rerank ? { rerank: params.rerank } : {}),
         ...(structuredFilters.length > 0 && { tagFilters: structuredFilters }),
         ...(params.searchMode === 'hybrid' && { searchMode: 'hybrid' }),
         ...(rerankerEnabled && {

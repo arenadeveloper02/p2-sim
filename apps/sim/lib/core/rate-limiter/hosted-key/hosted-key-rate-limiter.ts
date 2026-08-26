@@ -428,10 +428,7 @@ export class HostedKeyRateLimiter {
       }
 
       const envKeys = resolveEnvKeys(envKeyPrefix)
-      const availableKeys = preferGeminiKeysForGoogle(
-        envKeyPrefix,
-        this.getAvailableKeys(envKeys)
-      )
+      const availableKeys = preferGeminiKeysForGoogle(envKeyPrefix, this.getAvailableKeys(envKeys))
 
       if (availableKeys.length === 0) {
         logger.warn(`No hosted keys configured for provider ${provider}`)

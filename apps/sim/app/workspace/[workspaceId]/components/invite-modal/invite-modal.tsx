@@ -43,7 +43,7 @@ type Membership = (typeof MEMBERSHIP_OPTIONS)[number]['value']
 const MEMBERSHIP_HINTS: Partial<Record<Membership, string>> = {
   admin: 'Joins your organization and can manage it. Adds a seat.',
   external:
-    'Access to the selected workspaces only — no seat. Only available for people already on a paid Sim plan.',
+    'Access to the selected workspaces only — no seat. Only available for people already on a paid Arena AI plan.',
 }
 
 const EMPTY_WORKSPACE_IDS: string[] = []
@@ -327,7 +327,6 @@ export function InviteModal({
             searchable={isOrganizationInvite}
             searchPlaceholder='Search workspaces...'
             fullWidth
-            flush
             disabled={isSubmitting || !canInvite || workspaceOptions.length <= 1}
           />
         </ChipModalField>

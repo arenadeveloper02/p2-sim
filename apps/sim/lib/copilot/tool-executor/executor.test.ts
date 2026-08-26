@@ -7,12 +7,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_EXECUTION_TIMEOUT_MS } from '@/lib/execution/constants'
 import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 
-const { getToolEntry, isKnownTool, isSimExecuted, isClientExecuted } = vi.hoisted(() => ({
-  getToolEntry: vi.fn(),
-  isKnownTool: vi.fn(),
-  isSimExecuted: vi.fn(),
-  isClientExecuted: vi.fn(),
-}))
+const { getToolEntry, isKnownTool, isSimExecuted, isGoExecuted, isClientExecuted } = vi.hoisted(
+  () => ({
+    getToolEntry: vi.fn(),
+    isKnownTool: vi.fn(),
+    isSimExecuted: vi.fn(),
+    isGoExecuted: vi.fn(),
+    isClientExecuted: vi.fn(),
+  })
+)
 
 const { executeAppTool } = vi.hoisted(() => ({
   executeAppTool: vi.fn(),
@@ -22,6 +25,7 @@ vi.mock('./router', () => ({
   getToolEntry,
   isKnownTool,
   isSimExecuted,
+  isGoExecuted,
   isClientExecuted,
 }))
 
@@ -40,6 +44,7 @@ describe('copilot tool executor fallback', () => {
     vi.clearAllMocks()
     clearHandlers()
     getToolEntry.mockReturnValue(undefined)
+    isGoExecuted.mockReturnValue(false)
   })
 
   it('enforces catalog-required permissions before dispatch and fails closed when absent', async () => {
@@ -94,7 +99,7 @@ describe('copilot tool executor fallback', () => {
     const registry = new ResolvedSecretTraceRegistry([
       { name: 'API_KEY', plaintext: secret, encryptedValue: 'encrypted-secret' },
     ])
-    registry.recordResolved('API_KEY', secret)
+    registry.recordResolved('API_KEY', secret, { propagated: true })
     isKnownTool.mockReturnValue(true)
     isSimExecuted.mockReturnValue(true)
     isClientExecuted.mockReturnValue(false)
@@ -138,7 +143,13 @@ describe('copilot tool executor fallback', () => {
           chatId: 'chat-1',
           enforceCredentialAccess: true,
         }),
-      })
+      }),
+      {
+        internalExecutorDelegation: {
+          subjectUserId: 'user-1',
+          workflowId: 'workflow-1',
+        },
+      }
     )
     expect(result).toEqual({ success: true, output: { emails: [] } })
   })
@@ -214,7 +225,13 @@ describe('copilot tool executor fallback', () => {
         query: 'hello',
         _context: expect.not.objectContaining({ resolvedSecretTraceRegistry: expect.anything() }),
       }),
-      { resolvedSecretTraceRegistry: registry }
+      {
+        resolvedSecretTraceRegistry: registry,
+        internalExecutorDelegation: {
+          subjectUserId: 'user-1',
+          workflowId: 'workflow-1',
+        },
+      }
     )
     const appParams = executeAppTool.mock.calls[0]?.[1]
     expect(JSON.stringify(appParams)).not.toContain('resolvedSecretTraceRegistry')
@@ -235,6 +252,23 @@ describe('copilot tool executor fallback', () => {
     expect(runWorkflowHandler).toHaveBeenCalledWith({ workflow_input: {} }, context)
     expect(executeAppTool).not.toHaveBeenCalled()
     expect(result).toEqual({ success: true, output: { ran: true } })
+  })
+
+  it('uses the registered handler for go-routed catalog tools in Local Arena', async () => {
+    isKnownTool.mockReturnValue(true)
+    isSimExecuted.mockReturnValue(false)
+    isGoExecuted.mockReturnValue(true)
+    isClientExecuted.mockReturnValue(false)
+
+    const listHandler = vi.fn().mockResolvedValue({ success: true, output: { tools: [] } })
+    registerHandler('list_integration_tools', listHandler)
+
+    const context = { userId: 'user-1', workflowId: 'workflow-1', workspaceId: 'ws-1' }
+    const result = await executeTool('list_integration_tools', {}, context)
+
+    expect(listHandler).toHaveBeenCalledWith({}, context)
+    expect(executeAppTool).not.toHaveBeenCalled()
+    expect(result).toEqual({ success: true, output: { tools: [] } })
   })
 
   it('falls back to app tool executor for client-routed tools with no registered handler', async () => {
@@ -274,7 +308,13 @@ describe('copilot tool executor fallback', () => {
         _context: expect.objectContaining({
           copilotToolExecution: true,
         }),
-      })
+      }),
+      {
+        internalExecutorDelegation: {
+          subjectUserId: 'user-1',
+          workflowId: 'workflow-1',
+        },
+      }
     )
   })
 
@@ -323,7 +363,13 @@ describe('copilot tool executor fallback', () => {
       'function_execute',
       expect.objectContaining({
         timeout: 10_000,
-      })
+      }),
+      {
+        internalExecutorDelegation: {
+          subjectUserId: 'user-1',
+          workflowId: 'workflow-1',
+        },
+      }
     )
   })
 
@@ -347,7 +393,13 @@ describe('copilot tool executor fallback', () => {
       'function_execute',
       expect.objectContaining({
         timeout: 10_000,
-      })
+      }),
+      {
+        internalExecutorDelegation: {
+          subjectUserId: 'user-1',
+          workflowId: 'workflow-1',
+        },
+      }
     )
   })
 
@@ -371,7 +423,13 @@ describe('copilot tool executor fallback', () => {
       'function_execute',
       expect.objectContaining({
         timeout: DEFAULT_EXECUTION_TIMEOUT_MS,
-      })
+      }),
+      {
+        internalExecutorDelegation: {
+          subjectUserId: 'user-1',
+          workflowId: 'workflow-1',
+        },
+      }
     )
   })
 })
