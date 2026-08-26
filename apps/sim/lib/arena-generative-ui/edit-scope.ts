@@ -53,6 +53,7 @@ export type ArenaGenerativeEditScope = z.output<typeof editScopeSchema>
 
 const SCOPE_SYSTEM_PROMPT = [
   'You decide which pages of an existing multi-page app a change request touches. Output one JSON object. No markdown fences, no explanation.',
+  'Operators name the thing they see — "the search box", "the score", "Open on a row" — more often than a page path. Map those to pages from the index (titles, components, onLoad, navigatesTo). "the form" / search / generate is usually home; "the answer" / output / score / results table is usually the destination of that submit; a row, Open, or history is the list page. Include every page that change actually mutates (a submit-label tweak is home only; "show X on results" is results; moving waiting chrome off the form is both).',
   'Shape: { "mode": "pages" | "global", "pages": string[], "pageSetStable": boolean, "touchesActions": boolean, "touchesTheme": boolean }',
   'mode "pages": the change is confined to specific pages. List their paths in "pages".',
   'mode "global": the change is about branding, theme, colour, dark mode, density or typography; or it applies to every page ("all pages", "everywhere", "the whole app"); or it adds or removes a page; or it changes which page opens first; or it rewires actions across pages. Set "pages" to [].',

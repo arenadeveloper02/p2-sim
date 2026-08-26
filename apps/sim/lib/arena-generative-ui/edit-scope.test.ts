@@ -194,6 +194,8 @@ describe('planArenaGenerativeEditScope', () => {
     const payload = options.messages[0].content as string
     expect(options.max_tokens).toBeLessThanOrEqual(1_024)
     expect(options.temperature).toBe(0)
+    expect(options.system).toContain('Operators name the thing they see')
+    expect(options.system).toContain('more often than a page path')
     expect(payload).toContain('"path": "dashboard"')
     expect(payload).toContain('load_leads')
     expect(payload).not.toContain('"elements"')

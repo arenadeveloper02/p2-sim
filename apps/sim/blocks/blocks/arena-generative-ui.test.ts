@@ -111,6 +111,9 @@ describe('ArenaGenerativeUiBlock field tooltips', () => {
       (subBlock) => subBlock.id === 'existingDraftId'
     )
     expect(userInput?.rows).toBe(10)
+    expect(userInput?.wandConfig?.prompt).toContain('principal product engineer')
+    expect(userInput?.wandConfig?.prompt).toContain('often a job, not a spec')
+    expect(userInput?.wandConfig?.prompt).toContain('Do not invent API keys')
     expect(editInstructions?.rows).toBeUndefined()
     expect(designNotes?.rows).toBeUndefined()
     expect(existingDraftId?.previewHelper).toBe('arena-draft-brief')

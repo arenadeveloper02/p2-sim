@@ -233,6 +233,7 @@ describe('structured brief helpers', () => {
     expect(formatted).toContain('Structured brief')
     expect(formatted).toContain('"archetype": "list-detail"')
     expect(formatted).toContain('emptyCopy as emptyText')
+    expect(formatted).toContain('senior engineer would not skip')
   })
 
   it('serialises the stored brief as edit context without pinning the sitemap', () => {
@@ -277,9 +278,17 @@ describe('planArenaGenerativeStructuredBrief', () => {
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
     expect(system).toContain('Plan sitemap, data, and actions')
     expect(system).toContain('the host compiles those')
+    expect(system).toContain('principal product engineer')
+    expect(system).toContain('often a job, not a spec')
+    expect(system).toContain('Infer only what they assumed')
+    expect(system).toContain('primary verb')
+    expect(system).toContain('never "users"')
+    expect(system).toContain('Bindings are the data contract')
+    expect(system).toContain('must not onLoad that same action')
     expect(system).not.toContain('nested ProgressSteps')
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('Do not emit page specs')
+    expect(userMessage).toContain('Treat User request as product intent')
     expect(userMessage).toContain('Order inbox with a detail page.')
   })
 

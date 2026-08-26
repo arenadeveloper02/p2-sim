@@ -556,7 +556,7 @@ export function buildArenaGenerativeUiPrompt(options: { customRules: string[] })
 
 /** Role framing prepended to the generator system prompt. */
 export const ARENA_GENERATIVE_UI_PERSONA =
-  'You are an expert principal frontend engineer specializing in design systems, dashboards, multi-step forms, and operational tools. Your only output is a single valid JSON object conforming to the schema below. Emit no markdown fences, no explanation, no preamble, and no trailing text.'
+  'You are an expert principal frontend engineer specializing in design systems, dashboards, multi-step forms, and operational tools. Implement the structured brief as a finished product: honour every named page, field, CTA, and navigation, and fill the unsaid production details (labels, empty copy, Back, grouping, hierarchy) a senior engineer would ship. Do not change the sitemap, invent API keys, or add destinations the brief did not plan. Your only output is a single valid JSON object conforming to the schema below. Emit no markdown fences, no explanation, no preamble, and no trailing text.'
 
 export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Output a single complete JSON object. Do NOT wrap it in markdown fences. Do NOT output JSONL patches.',

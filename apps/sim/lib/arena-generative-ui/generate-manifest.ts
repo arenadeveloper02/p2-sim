@@ -406,7 +406,7 @@ export async function generateArenaGenerativeManifest(
             : [
                 isEdit
                   ? EDIT_KEEP_PAGES_INSTRUCTION
-                  : 'No explicit page list. Infer a small coherent sitemap from the brief. Emit manifest.pages as an object keyed by path (home, person, …), never as an array.',
+                  : 'No explicit page list. Infer a small coherent sitemap from the brief, including destination and collection pages the job needs even if the user only named the starting screen. Emit manifest.pages as an object keyed by path (home, person, …), never as an array.',
                 bindingKeyLine,
               ]
                 .filter((line) => line.length > 0)

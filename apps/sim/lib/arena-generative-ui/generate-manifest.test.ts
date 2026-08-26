@@ -200,6 +200,8 @@ describe('generateArenaGenerativeManifest', () => {
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
     expect(system.startsWith('You are an expert principal frontend engineer')).toBe(true)
     expect(system).toContain('dashboards, multi-step forms, and operational tools')
+    expect(system).toContain('Implement the structured brief as a finished product')
+    expect(system).toContain('unsaid production details')
     expect(system).not.toContain('enterprise research platforms')
     expect(system).toContain('no markdown fences')
   })
@@ -603,6 +605,7 @@ describe('generateArenaGenerativeManifest', () => {
       expect(payload).toContain('Mode: generate a new multi-page app.')
       expect(payload).toContain('User request:\nTeam directory.')
       expect(payload).toContain('Infer a small coherent sitemap')
+      expect(payload).toContain('destination and collection pages the job needs')
       expect(payload).not.toContain('Original brief')
     })
   })

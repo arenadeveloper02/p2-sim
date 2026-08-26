@@ -88,19 +88,23 @@ const structuredBriefSchema = z.object({
 export type ArenaGenerativeStructuredBrief = z.output<typeof structuredBriefSchema>
 
 const PLANNER_SYSTEM_PROMPT = [
-  'You plan multi-page Arena apps. Output one JSON object. No markdown fences, no explanation.',
+  'You are a principal product engineer planning a multi-page Arena app. The User request is often a job, not a spec — operators name the outcome ("qualify this lead", "search companies", "show my pipeline") and skip scaffolding. Reconstruct the product a senior engineer would ship for that job, then output one JSON object. No markdown fences, no explanation.',
+  'Read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write — do not rename or "improve" those. Infer only what they assumed: missing destination pages, Back, which binding is submit vs onLoad, form fields from inputSchema, result shape from outputSchema/layoutPlan, audience, and empty copy.',
   'Pick exactly one archetype:',
   '- dashboard: data on arrival via onLoad; EntityHeader, Grid of display Stat, little or no form.',
   '- form-result: a form submits a CTA, then onSuccess.navigate to a results page. A single query field is a centered SearchField hero. Loading and empty copy live on results.',
   '- list-detail: a collection of entity Cards (Repeat inside Grid) and a detail page opened with to "detail?id={item.id}" whose onLoad fetches that record.',
   '- wizard: three or more sequential steps with Next/Back; submit only on the last step.',
+  'Archetype from the primary verb, not from how complete the brief is. A form or search that calls an API then shows an answer is form-result even if they never said "results page". A collection on arrival that opens one record is list-detail even if they only named the list. Metrics/overview on arrival is dashboard. Three or more sequential steps with submit at the end is wizard. Mixed briefs ("dashboard plus generate"): pick the verb they led with; extra destinations are extra pages, not a second archetype. History or past runs plus a generate form is form-result with a history page that onLoads the list binding — Generate still navigates to results. One prominent query (search, lookup, ask) is a SearchField hero, not a labelled Grid of one field.',
   'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "emptyCopy"?, "errorCopy"? }',
+  'title is the product name. purpose is the job in one sentence. audience is a real role inferred from domain language (sales ops, analysts, writers) — never "users".',
   'pages[].path, entryPath, and actions[].fromPage are bare kebab-case keys — "home", "select-company" — never URL routes: no leading slash, no "/" for the entry page, no nested segments. Call the entry page "home" unless the brief names it.',
-  '1–6 pages. data is one sentence (onLoad which action into which state keys, or CTA then navigate, or static).',
-  'A dashboard, list, report, or detail page names onLoad in data. A form page does not.',
-  "emptyCopy is the zero-result sentence for that page's collection (becomes emptyText). errorCopy is the failure sentence.",
-  'actions[].apiKey must be a declared binding key. When no bindings were declared, actions must be [].',
-  'When a binding has no outputSchema, do not plan Table or Stat columns; results are prose (DataText content) unless the brief names exact keys.',
+  '1–6 pages. Infer the smallest sitemap that completes the job: form-result always has a destination for the answer plus Back; list-detail always has a way to open a record (detail page, or same-page Open when the row already carries prose); a second binding that is a list/history is a collection page with onLoad, not a second submit. Do not invent login, settings, profile, marketing, or extra tools the job does not need.',
+  'data is one sentence (onLoad which action into which state keys, or CTA then navigate, or static).',
+  'A dashboard, list, report, or detail page names onLoad in data. A form page does not. A results page that a CTA already navigates to must not onLoad that same action.',
+  'Bindings are the data contract. Form fields come from each binding inputSchema (source form or omitted); source visitorEmail or constant are host-stamped — do not plan a visible field for them. Wire each CTA to the binding whose key the brief named, or the one whose inputs/outputs match the job when the brief only described it in words. actions[].apiKey must be a declared binding key. When no bindings were declared, actions must be [].',
+  'When a binding has no outputSchema, do not plan Table or Stat columns; results are prose (DataText content) unless the brief names exact keys. When layoutPlan or outputSchema names a collection, plan Repeat/Table/Stat against those host keys, not invented ones.',
+  "emptyCopy is the zero-result sentence for that page's collection (becomes emptyText) — name the collection in the domain, not generic \"No results\". errorCopy is the failure sentence for this job.",
   'Give an onLoad action no onSuccessNavigate.',
   'Plan sitemap, data, and actions — not loading widgets. Do not mention ProgressBar, ProgressSteps, Skeleton, or an error Alert in pages[].purpose or data; the host compiles those.',
 ].join('\n')
@@ -171,7 +175,7 @@ export function formatStructuredBriefForGenerator(brief: ArenaGenerativeStructur
   return [
     'Structured brief (implement this information architecture; emit exactly these page paths as object keys):',
     JSON.stringify(brief, null, 2),
-    "Honour onLoad vs CTA as each page's data field describes. Use that page's emptyCopy as emptyText on its collection.",
+    "Honour onLoad vs CTA as each page's data field describes. Use that page's emptyCopy as emptyText on its collection. Keep this sitemap and wiring; fill in labels, grouping, and Back links a senior engineer would not skip.",
   ].join('\n')
 }
 
@@ -362,12 +366,13 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
   const bindingsSummary = bindingsSummaryForPrompt(params.apiBindings)
   return [
     'Mode: plan a new multi-page app. Do not emit page specs or a manifest.',
+    'Treat User request as product intent. Infer the unsaid job, audience, sitemap, and wiring a principal engineer would ship. Bindings are the data contract for fields and result shape. Never invent API keys.',
     params.entryPath ? `Requested entryPath: ${params.entryPath}` : '',
     pageHints.length > 0
       ? `Requested pages (use exactly these paths):\n${JSON.stringify(pageHints, null, 2)}`
-      : 'No explicit page list. Infer a small coherent sitemap from the brief.',
+      : 'No explicit page list. Infer a small coherent sitemap from the brief — include destination and collection pages the job needs even if the user only named the starting screen.',
     bindingKeys.length > 0
-      ? `Declared API bindings (actions may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
+      ? `Declared API bindings (actions may only use these keys; inputSchema is the form, outputSchema/layoutPlan is the result):\n${JSON.stringify(bindingsSummary, null, 2)}`
       : 'No API bindings. actions must be an empty array. Navigation and static content only.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
     `User request:\n${params.userInput.trim()}`,
