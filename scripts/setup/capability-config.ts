@@ -989,6 +989,10 @@ export const OAUTH_CLIENT_SETUP_FIELDS = {
     MONDAY_CLIENT_SECRET: { input: 'secret' },
   },
   trello: { TRELLO_API_KEY: { input: 'secret' } },
+  'facebook-ads': {
+    FB_CLIENT_ID: { input: 'text' },
+    FB_CLIENT_SECRET: { input: 'secret' },
+  },
   'unipile-linkedin': { UNIPILE_API_KEY: { input: 'secret' } },
   'zoho-desk': {
     ZOHO_CLIENT_ID: { input: 'text' },

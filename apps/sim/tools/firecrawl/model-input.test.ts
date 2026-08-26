@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { firecrawlParseBodySchema } from '@/lib/api/contracts/tools/firecrawl'
 import { RESOLVED_SECRET_PROVENANCE_FIELD } from '@/lib/execution/private-tool-metadata'
+import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 import {
   applyFirecrawlFormatModelInput,
   applyFirecrawlScrapeOptionsModelInput,
@@ -12,7 +13,9 @@ import {
   selectFirecrawlFormatModelInput,
   selectFirecrawlScrapeOptionsModelInput,
 } from '@/tools/firecrawl/model-input'
+import { scrapeTool } from '@/tools/firecrawl/scrape'
 import type { FirecrawlFormat, ScrapeOptions } from '@/tools/firecrawl/types'
+import { projectToolModelInputParams } from '@/tools/request-transport'
 
 describe('Firecrawl nested model input', () => {
   it('retains the private provenance envelope at the internal route boundary', () => {
@@ -145,5 +148,44 @@ describe('Firecrawl nested model input', () => {
         parsers: [{ type: 'pdf', mode: 'fast' }],
       })
     ).toBe(true)
+  })
+
+  it('ignores non-array format values instead of treating them as model input', () => {
+    expect(selectFirecrawlFormatModelInput('markdown' as never)).toBeUndefined()
+    expect(
+      selectFirecrawlScrapeOptionsModelInput({ formats: 'markdown' as never, onlyMainContent: true })
+    ).toStrictEqual({})
+    expect(applyFirecrawlFormatModelInput('markdown', undefined)).toBe('markdown')
+    expect(
+      applyFirecrawlScrapeOptionsModelInput(
+        { formats: 'markdown' as never, onlyMainContent: true },
+        {}
+      )
+    ).toStrictEqual({ formats: 'markdown', onlyMainContent: true })
+  })
+
+  it('projects Firecrawl scrape block params with string formats', () => {
+    const registry = new ResolvedSecretTraceRegistry()
+    const params = {
+      url: 'https://example.com',
+      formats: ['markdown', 'html'],
+      apiKey: 'fc-key',
+      onlyMainContent: true,
+      timeout: 60000,
+    }
+
+    expect(projectToolModelInputParams(scrapeTool, params, registry)).toEqual(params)
+  })
+
+  it('projects Firecrawl scrape from top-level formats when scrapeOptions is also present', () => {
+    const registry = new ResolvedSecretTraceRegistry()
+    const params = {
+      url: 'https://example.com',
+      formats: ['markdown'],
+      scrapeOptions: { formats: 'markdown', headers: { Authorization: 'secret' } },
+      apiKey: 'fc-key',
+    }
+
+    expect(projectToolModelInputParams(scrapeTool, params, registry)).toEqual(params)
   })
 })

@@ -123,6 +123,7 @@ describe('model-facing integration selectors', () => {
           'markdown',
           { type: 'json', prompt: 'extract pricing', schema: { type: 'object' } },
         ],
+        scrapeOptions: { formats: 'markdown' },
       },
       { formats: [{}, { prompt: 'extract pricing', schema: { type: 'object' } }] },
     ],

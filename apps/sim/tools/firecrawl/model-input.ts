@@ -27,7 +27,8 @@ function haveExactKeys(left: Record<string, unknown>, right: Record<string, unkn
 export function selectFirecrawlFormatModelInput(
   formats: FirecrawlFormat[] | undefined
 ): ProjectedFormat[] | undefined {
-  return formats?.map(modelVisibleFormatFields)
+  if (!Array.isArray(formats)) return undefined
+  return formats.map(modelVisibleFormatFields)
 }
 
 /** Returns whether any requested output format sends page content through a model. */
@@ -99,12 +100,18 @@ export function hasFirecrawlParseModelInput(params: {
 
 /** Reapplies projected Firecrawl format leaves without changing format controls or array shape. */
 export function applyFirecrawlFormatModelInput(
-  original: FirecrawlFormat[] | undefined,
+  original: unknown,
   projected: unknown
 ): FirecrawlFormat[] | undefined {
   if (original === undefined) {
     if (projected !== undefined) throw new Error('Unexpected projected Firecrawl formats')
     return undefined
+  }
+  if (!Array.isArray(original)) {
+    if (projected !== undefined) {
+      throw new Error('Projected Firecrawl formats do not match the original formats')
+    }
+    return original as FirecrawlFormat[]
   }
   if (!Array.isArray(projected) || projected.length !== original.length) {
     throw new Error('Projected Firecrawl formats do not match the original formats')
@@ -125,7 +132,7 @@ export function selectFirecrawlScrapeOptionsModelInput(
   options: ScrapeOptions | undefined
 ): Record<string, unknown> | undefined {
   if (options === undefined) return undefined
-  return Object.hasOwn(options, 'formats')
+  return Array.isArray(options.formats)
     ? { formats: selectFirecrawlFormatModelInput(options.formats) }
     : {}
 }

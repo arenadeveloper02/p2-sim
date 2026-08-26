@@ -28,6 +28,7 @@ const EXPECTED_PROVIDER_BY_SLUG: Record<string, string> = {
   confluence: 'confluence',
   docusign: 'docusign',
   dropbox: 'dropbox',
+  'facebook-ads': 'facebook-ads',
   gmail: 'google-email',
   'google-ads': 'google-ads',
   'google-bigquery': 'google-bigquery',
