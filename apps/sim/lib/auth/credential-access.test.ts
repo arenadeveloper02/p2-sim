@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { account, credential, credentialMember, workflow } from '@sim/db/schema'
+import { account, accountTokens, credential, credentialMember, workflow } from '@sim/db/schema'
 import { createMockRequest, queueTableRows, resetDbChainMock } from '@sim/testing'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -227,9 +227,58 @@ describe('authorizeCredentialUse', () => {
     it('reports an unknown credential id', async () => {
       queueTableRows(credential, [])
       queueTableRows(credential, [])
+      queueTableRows(accountTokens, [])
       queueTableRows(account, [])
 
       const result = await authorize('nope')
+
+      expect(result.ok).toBe(false)
+      expect(result.error).toBe('Credential not found')
+    })
+  })
+
+  describe('HubSpot shared portal aliases', () => {
+    const ALIAS = 'northstar_anesthesia'
+    const sharedTokenRow = {
+      userId: OWNER,
+      providerId: 'hubspot',
+      alias: ALIAS,
+    }
+
+    it('authorizes a shared portal alias without a workflow', async () => {
+      queueTableRows(credential, [])
+      queueTableRows(credential, [])
+      queueTableRows(accountTokens, [sharedTokenRow])
+
+      const result = await authorize(ALIAS)
+
+      expect(result.ok).toBe(true)
+      expect(result.resolvedCredentialId).toBe(ALIAS)
+      expect(result.credentialOwnerUserId).toBe(OWNER)
+      expect(result.credentialType).toBe('oauth')
+    })
+
+    it('authorizes a shared portal alias when a workflow pins the workspace', async () => {
+      queueTableRows(workflow, [{ workspaceId: WORKSPACE }])
+      queueTableRows(credential, [])
+      queueTableRows(credential, [])
+      queueTableRows(accountTokens, [sharedTokenRow])
+
+      const result = await authorize(ALIAS, 'wf-1')
+
+      expect(result.ok).toBe(true)
+      expect(result.resolvedCredentialId).toBe(ALIAS)
+      expect(result.credentialOwnerUserId).toBe(OWNER)
+      expect(result.credentialType).toBe('oauth')
+    })
+
+    it('rejects an unknown alias even when a workflow is supplied', async () => {
+      queueTableRows(workflow, [{ workspaceId: WORKSPACE }])
+      queueTableRows(credential, [])
+      queueTableRows(credential, [])
+      queueTableRows(accountTokens, [])
+
+      const result = await authorize('missing_portal', 'wf-1')
 
       expect(result.ok).toBe(false)
       expect(result.error).toBe('Credential not found')

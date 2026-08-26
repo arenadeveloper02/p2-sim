@@ -186,9 +186,51 @@ describe('LoopOrchestrator', () => {
       'loop-loop-1-sentinel-start',
       '<Producer.items>',
       undefined,
-      { allowLargeValueRefs: true }
+      { allowLargeValueRefs: true, inputPath: ['forEachItems'] }
     )
     expect(scope.maxIterations).toBe(1)
+  })
+
+  it('isolates incomplete forEach collection provenance so the parent registry stays complete', async () => {
+    const loopId = 'loop-1'
+    const dag: DAG = {
+      nodes: new Map(),
+      loopConfigs: new Map([
+        [
+          loopId,
+          {
+            id: loopId,
+            nodes: ['task-1'],
+            loopType: 'forEach',
+            forEachItems: '<Producer.items>',
+          },
+        ],
+      ]),
+      parallelConfigs: new Map(),
+    }
+    const resolver = {
+      resolveSingleReference: vi.fn().mockImplementation(async (resolutionContext) => {
+        const items = ['item-1', 'item-2']
+        await resolutionContext.resolvedSecretTraceRegistry?.importProvenanceForValueAtInputPath(
+          { version: 1, complete: false, entries: [] },
+          items,
+          ['forEachItems'],
+          { trusted: true, origin: 'blockResolver.outputCrossing' }
+        )
+        return items
+      }),
+    }
+    const orchestrator = new LoopOrchestrator(dag, createState(), resolver as any)
+    const ctx = createContext()
+    const registry = new ResolvedSecretTraceRegistry([])
+    ctx.resolvedSecretTraceRegistry = registry
+
+    const scope = await orchestrator.initializeLoopScope(ctx, loopId)
+
+    expect(scope.maxIterations).toBe(2)
+    expect(scope.inputResolvedSecretTraceProvenance).toBeUndefined()
+    expect(registry.isComplete()).toBe(true)
+    expect(registry.isPermanentlyIncomplete()).toBe(false)
   })
 
   it('projects forEach resolution failures before logging or persisting them', async () => {

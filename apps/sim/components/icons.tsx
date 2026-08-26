@@ -1,6 +1,7 @@
 import type { SVGProps } from 'react'
 import { useId } from 'react'
 import { cn } from '@sim/emcn'
+import Image, { type ImageProps } from 'next/image'
 
 export function EnrichmentIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -154,45 +155,28 @@ export function Spinner() {
 }
 
 /**
- * Arena Agent glyph — sparkle on the purple→teal gradient.
- * Inline SVG so canvas, toolbar, and chat never depend on a remote asset
- * (the prior S3 PNG 403s and left only the gradient fill).
+ * Arena Agent glyph — vimi sparkle PNG on the purple→teal gradient.
+ * Rendered via next/image so tiled surfaces that opt in with `[&_img]:size-full`
+ * get the same full-bleed presence as Image Generator's colored tile.
  */
-export function AgentIcon({ className, style, ...props }: SVGProps<SVGSVGElement>) {
-  const gradientId = useId()
+export function AgentIcon({
+  className,
+  style,
+  ...props
+}: Omit<ImageProps, 'src' | 'alt' | 'fill'>) {
   return (
-    <svg
-      viewBox='0 0 24 24'
-      fill='none'
-      role='img'
-      aria-label='Agent'
-      xmlns='http://www.w3.org/2000/svg'
-      className={cn('box-border size-full rounded-[4px]', className)}
-      style={style}
+    <Image
+      src='https://arenav2image.s3.us-west-1.amazonaws.com/vimi-sparkle.png'
+      alt='Agent'
+      width={14}
+      height={14}
       {...props}
-    >
-      <defs>
-        <linearGradient id={gradientId} x1='0' y1='0' x2='0' y2='1'>
-          <stop offset='0%' stopColor='#7B4796' />
-          <stop offset='100%' stopColor='#017496' />
-        </linearGradient>
-      </defs>
-      <rect width='24' height='24' rx='4' fill={`url(#${gradientId})`} />
-      <path
-        d='M12 5.5l1.15 2.75 2.75 1.15-2.75 1.15L12 13.3l-1.15-2.75L8.1 9.4l2.75-1.15L12 5.5z'
-        fill='white'
-      />
-      <path
-        d='M17.2 13.2l.7 1.65 1.65.7-1.65.7-.7 1.65-.7-1.65-1.65-.7 1.65-.7.7-1.65z'
-        fill='white'
-        opacity='0.9'
-      />
-      <path
-        d='M6.8 13.6l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5.5-1.2z'
-        fill='white'
-        opacity='0.85'
-      />
-    </svg>
+      style={{
+        backgroundImage: 'linear-gradient(179.65deg, #7B4796 -0.59%, #017496 102.42%)',
+        ...style,
+      }}
+      className={cn('box-border size-full rounded-[4px] object-contain p-[20%]', className)}
+    />
   )
 }
 

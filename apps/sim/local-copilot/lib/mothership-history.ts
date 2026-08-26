@@ -265,7 +265,5 @@ async function loadRecentCopilotChatMessages(chatId: string): Promise<PersistedM
     .orderBy(desc(copilotMessages.seq), desc(copilotMessages.createdAt), desc(copilotMessages.id))
     .limit(MAX_HISTORY_MESSAGES)
 
-  return [...rows]
-    .reverse()
-    .map((row) => stripToolResultOutput(row.content as PersistedMessage))
+  return [...rows].reverse().map((row) => stripToolResultOutput(row.content as PersistedMessage))
 }

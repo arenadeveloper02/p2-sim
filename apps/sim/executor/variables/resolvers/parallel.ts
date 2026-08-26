@@ -385,7 +385,7 @@ export class ParallelResolver implements Resolver {
   ): Promise<unknown> {
     const resolvedValue = await value
     const registry = context.executionContext.resolvedSecretTraceRegistry
-    if (!registry || !provenance) return resolvedValue
+    if (!registry || !provenance || !provenance.complete) return resolvedValue
     const imported = await registry.importProvenanceForValueAtInputPath(
       provenance,
       resolvedValue,
