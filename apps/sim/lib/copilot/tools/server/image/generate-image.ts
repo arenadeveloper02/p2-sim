@@ -142,7 +142,8 @@ export const generateImageServerTool: BaseServerTool<GenerateImageArgs, Generate
       return { success: false, message: 'Workspace ID is required' }
     }
 
-    if (!params.prompt) {
+    const prompt = params.prompt
+    if (!prompt) {
       return { success: false, message: 'prompt is required' }
     }
 
