@@ -113,6 +113,7 @@ const KNOWN_RENDERER_TYPES = new Set([
   'Skeleton',
   'Spinner',
   'ProgressSteps',
+  'WorkingCard',
   'ProgressBar',
   'SearchField',
   'Chip',

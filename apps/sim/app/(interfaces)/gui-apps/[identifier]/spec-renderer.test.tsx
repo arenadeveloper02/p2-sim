@@ -107,11 +107,13 @@ describe('SpecRenderer', () => {
     onRunAction?: ReturnType<typeof vi.fn>
     onSelectItem?: ReturnType<typeof vi.fn>
     onClearItem?: ReturnType<typeof vi.fn>
+    onCancelPending?: ReturnType<typeof vi.fn>
   }) {
     const onNavigate = options?.onNavigate ?? vi.fn()
     const onRunAction = options?.onRunAction ?? vi.fn().mockResolvedValue(undefined)
     const onSelectItem = options?.onSelectItem ?? vi.fn()
     const onClearItem = options?.onClearItem ?? vi.fn()
+    const onCancelPending = options?.onCancelPending ?? vi.fn()
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -131,6 +133,7 @@ describe('SpecRenderer', () => {
           onRunAction={onRunAction}
           onSelectItem={onSelectItem}
           onClearItem={onClearItem}
+          onCancelPending={onCancelPending}
         />
       )
     })
@@ -140,7 +143,7 @@ describe('SpecRenderer', () => {
       })
       container.remove()
     }
-    return { container, onNavigate, onRunAction, onSelectItem, onClearItem }
+    return { container, onNavigate, onRunAction, onSelectItem, onClearItem, onCancelPending }
   }
 
   it('navigates when a NavLink is clicked', () => {
@@ -1660,6 +1663,84 @@ describe('SpecRenderer', () => {
       const after = Array.from(container.querySelectorAll('li')).map((item) => item.textContent)
       expect(after[0]).toContain('✓')
       expect(after[1]).not.toContain('✓')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('hides WorkingCard when idle', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Results' }, children: ['working'] },
+        working: {
+          type: 'WorkingCard',
+          props: {
+            title: 'Working on it…',
+            steps: 'Connecting…\nDrafting…',
+            cancelTo: 'home',
+          },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec, pending: false })
+    expect(container.querySelector('[data-testid="working-card"]')).toBeNull()
+  })
+
+  it('ticks WorkingCard steps and bar in lockstep, interpolates copy, and Cancel returns to idle', () => {
+    vi.useFakeTimers()
+    try {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Results' }, children: ['working'] },
+          working: {
+            type: 'WorkingCard',
+            props: {
+              title: "Working on '{targetKeyword}' for {clientBrand}...",
+              steps:
+                'Connecting to the recommendation agent…\nResearching the client\'s market & competitors…\nAnalyzing keyword demand & search intent…\nScoring topic opportunities…\nDrafting article recommendations…',
+              estimate: 'Usually takes 90–150s',
+              intervalMs: 2000,
+              tip: "Tip: Articles targeting '{targetKeyword}' perform best when every H2 maps to one distinct search intent.",
+              cancelTo: 'home',
+              skeleton: true,
+            },
+            children: [],
+          },
+        },
+      }
+      const { container, onNavigate, onCancelPending } = render({
+        spec,
+        pending: true,
+        state: { inputs: { targetKeyword: 'CFL Bulbs', clientBrand: 'Philips' } },
+      })
+      expect(container.textContent).toContain("Working on 'CFL Bulbs' for Philips...")
+      expect(container.textContent).toContain('Usually takes 90–150s')
+      expect(container.textContent).toContain("Articles targeting 'CFL Bulbs'")
+      expect(container.querySelector('[data-testid="skeleton"]')).toBeTruthy()
+      const bar = container.querySelector('[data-testid="working-card-bar"]')
+      expect(bar?.getAttribute('aria-valuenow')).toBe('20')
+      const first = container.querySelectorAll('li')[0]
+      expect(first?.className).not.toContain('line-through')
+
+      act(() => {
+        vi.advanceTimersByTime(2000)
+      })
+
+      expect(container.querySelector('[data-testid="working-card-bar"]')?.getAttribute('aria-valuenow')).toBe(
+        '40'
+      )
+      expect(container.querySelectorAll('li')[0]?.className).toContain('line-through')
+
+      act(() => {
+        container
+          .querySelector('[data-testid="working-card-cancel"]')
+          ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onCancelPending).toHaveBeenCalled()
+      expect(onNavigate).toHaveBeenCalledWith('home')
     } finally {
       vi.useRealTimers()
     }

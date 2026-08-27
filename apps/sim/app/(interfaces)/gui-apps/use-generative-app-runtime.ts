@@ -240,6 +240,16 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
     restoreTrigger()
   }, [restoreTrigger])
 
+  const cancelPending = useCallback(() => {
+    const current = optionsRef.current
+    const inflight = [...inFlightRef.current]
+    for (const actionId of inflight) {
+      clockRef.current.begin(actionId)
+      current.setActionPending(actionId, false)
+    }
+    inFlightRef.current.clear()
+  }, [])
+
   const clearToast = useCallback(() => {
     setToast(null)
   }, [])
@@ -255,5 +265,6 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
     confirm,
     confirmDestructive,
     cancelDestructive,
+    cancelPending,
   }
 }

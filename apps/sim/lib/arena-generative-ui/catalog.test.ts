@@ -22,6 +22,7 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'Icon',
       'Avatar',
       'EntityHeader',
+      'WorkingCard',
       'ProgressBar',
       'Card',
       'Sparkline',

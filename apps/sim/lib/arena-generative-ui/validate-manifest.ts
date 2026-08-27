@@ -97,7 +97,7 @@ export function collectNavTargets(spec: Spec): string[] {
   const targets: string[] = []
   for (const element of Object.values(elements ?? {})) {
     const props = element.props ?? {}
-    const to = asString(props.to) || asString(props.navigateTo)
+    const to = asString(props.to) || asString(props.navigateTo) || asString(props.cancelTo)
     if (to) {
       targets.push(splitNavTarget(to).path)
     }

@@ -205,6 +205,7 @@ describe('structured brief helpers', () => {
       expect(recipe).not.toContain('one Card')
     }
     expect(archetypeRecipe('form-result')).toContain('SearchField')
+    expect(archetypeRecipe('form-result')).toContain('WorkingCard')
     expect(archetypeRecipe('form-result')).toContain('not ProgressSteps')
     expect(archetypeRecipe('form-result')).toContain('destination page')
     expect(archetypeRecipe('form-result')).toContain('inputs.targetKeyword')

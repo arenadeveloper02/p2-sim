@@ -466,7 +466,7 @@ Data display: `Table` (static `columns` + `rows`, or `statePath` bound to an arr
 
 Input: `Form`, `TextInput`, `TextArea`, `NumberInput`, `DateInput`, `Select`, `RadioGroup`, `MultiSelect`, `Checkbox`, `Switch`, `SubmitButton`
 
-Loading: `Skeleton` (`variant`: `text` / `stat` / `table` / `card` / `form`, plus `lines`) for static-children regions. `Spinner` and `ProgressSteps` remain in the catalog for legacy specs; the host compiles pending chrome, so new apps should bind `statePath` instead of emitting them.
+Loading: `WorkingCard` (status steps, lockstep bar, elapsed, Cancel, optional document skeleton) when the brief names a generate wait. `Skeleton` (`variant`: `text` / `stat` / `table` / `card` / `form` / `outline`) for static-children regions. `Spinner` and `ProgressSteps` remain for legacy specs.
 
 Nav / CTA: `NavLink` (`to` = page path), `Button` (`navigateTo` / `actionId` / `selectItem` / `clearItem` / outbound `href`, plus `variant`, `size`, and `showWhen`), `Link`
 
@@ -549,6 +549,7 @@ Models often reach for names from other design systems. Those are rewritten to t
 | `Paragraph` | `Text` |
 | `Loader`, `Loading` | `Skeleton` |
 | `ForEach`, `Collection` | `Repeat` |
+| `StatusCard`, `LoadingCard`, `JobStatus`, `GenerationStatus` | `WorkingCard` |
 
 The same pass repairs shape as well as names: a nested `children` tree of objects is flattened into the `{ root, elements }` map, a non-`Page` root is wrapped in `Page` (and `Section`), `Form.submitLabel` becomes a `SubmitButton` child, `Grid.cols: { default: 1, md: 3 }` becomes `columns: "3"`, spacing words such as `md` and `lg` become real lengths, and list props supplied as arrays (`Select.options`, `Table.rows`, `Tabs.items`) are joined into the string encodings the catalog expects. An unknown component type is left alone so validation still reports it instead of silently dropping content.
 
@@ -556,9 +557,10 @@ The same pass repairs shape as well as names: a nested `children` tree of object
 
 Every region that fills from a CTA response gets a placeholder while the action is in flight:
 
-- **Automatic.** `Table`, `Repeat`, `Stat`, `KeyValue` and `DataText` bound to a `statePath` render a shape-matched skeleton while **the action that writes that path** is pending and the value is still empty. A list `onLoad` does not skeleton unrelated Stats on the same page. Nothing is needed in the manifest, so apps generated before this existed gain the behaviour too. A `DataText` `fallback` is empty-state copy, not loading copy — it no longer suppresses the skeleton. Once the action has finished, an empty array or object on `Table` / `Repeat` / `KeyValue` shows the empty message instead of disappearing.
+- **Automatic.** `Table`, `Repeat`, `Stat`, `KeyValue` and `DataText` bound to a `statePath` render a shape-matched skeleton while **the action that writes that path** is pending and the value is still empty. A list `onLoad` does not skeleton unrelated Stats on the same page. Nothing is needed in the manifest, so apps generated before this existed gain the behaviour too. A `DataText` `fallback` is empty-state copy, not loading copy — it no longer suppresses the skeleton. Once the action has finished, an empty array or object on `Table` / `Repeat` / `KeyValue` shows the empty message instead of disappearing. A page that already has `WorkingCard` skips those bound skeletons so the wait card is the only pending surface.
 - **Explicit.** `Skeleton` covers regions built from static children. It renders only while an action is pending, so it disappears on its own. A `Stat` with a literal `value`, or a `Table` with literal `rows`, is not bound to anything and needs one.
-- The host also compiles busy chrome on pending CTAs, an error banner with Retry, a same-page save toast, and a confirm step for destructive buttons. Do not emit `ProgressSteps` or a filling `ProgressBar` as loading theater. `ProgressBar` is only for a real 0–100 value from the API.
+- **Named generate wait.** When the brief lists status lines, an estimate, or Cancel, emit `WorkingCard` on the destination (or below submit if the brief stays on the form). The host rotates one step every ~2.5s and fills the bar in lockstep. Cancel abandons the in-flight CTA and navigates to `cancelTo`. Do not also emit `ProgressSteps` or a filling `ProgressBar`. `ProgressBar` is only for a real 0–100 value from the API.
+- The host also compiles busy chrome on pending CTAs, an error banner with Retry, a same-page save toast, and a confirm step for destructive buttons.
 
 **Loaders survive `onSuccess.navigate`.** A CTA that navigates on success sends the user to the destination page *before* the request is issued, and the action stays pending until it resolves — so the loading state belongs on the destination page, not on the form page the user has already left. This holds for streaming and non-streaming CTAs alike. If the action fails, the error is written to state and the user stays where they landed.
 

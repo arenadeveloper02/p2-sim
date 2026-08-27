@@ -237,7 +237,7 @@ const goldResultsSpec: Spec = {
 }
 
 /**
- * Run destination: EntityHeader plus bound DataText. The host supplies pending chrome.
+ * Run destination: WorkingCard while the CTA is pending, then EntityHeader plus bound DataText.
  */
 const goldProgressSpec: Spec = {
   root: 'page',
@@ -250,11 +250,27 @@ const goldProgressSpec: Spec = {
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['back', 'entity', 'reply', 'continue'],
+      children: ['back', 'working', 'entity', 'reply', 'continue'],
     },
     back: {
       type: 'NavLink',
       props: { label: 'Back to results', to: 'results' },
+      children: [],
+    },
+    working: {
+      type: 'WorkingCard',
+      props: {
+        title: 'Working on this analysis…',
+        steps:
+          'Connecting to the analysis agent\nResolving company profile\nReading source documents\nDrafting the analysis',
+        estimate: 'Usually takes 90–150s',
+        intervalMs: '2500',
+        durationMs: null,
+        tip: 'Tip: A strong analysis names the sources it used.',
+        cancelTo: 'results',
+        cancelLabel: 'Cancel',
+        skeleton: true,
+      },
       children: [],
     },
     entity: {
@@ -275,7 +291,7 @@ const goldProgressSpec: Spec = {
       type: 'DataText',
       props: {
         statePath: 'content',
-        fallback: 'Waiting for analysis…',
+        fallback: null,
         color: null,
         size: null,
       },
@@ -464,7 +480,7 @@ export const goldExampleOutput = {
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT (form-result)',
   'Match this structure and density, not its subject matter. Note the default Arena theme, the four screens (centered search hero, entity result cards, analysis destination, entity dashboard), SearchField with nested submit, Icon wells, Avatar on entity Cards, EntityHeader, display Stats, and result components bound by statePath.',
-  'Note also how data moves: home has no onLoad — SearchField runs the search CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.query and "{query}" — Results echoes the query on a Chip. Results is a Repeat of entity Cards inside a Grid; Card.title uses "{item.name}", Avatar.src uses "{item.logo}", and Analyze sends the item fields. Progress binds DataText to content (the host shows pending chrome). Overview declares onLoad and binds each Stat by statePath. emptyText is the zero-result copy when the companies array is empty.',
+  'Note also how data moves: home has no onLoad — SearchField runs the search CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.query and "{query}" — Results echoes the query on a Chip. Results is a Repeat of entity Cards inside a Grid; Card.title uses "{item.name}", Avatar.src uses "{item.logo}", and Analyze sends the item fields. Progress is a WorkingCard (status steps, estimate, Cancel back to results, document skeleton) above DataText bound to content — the host ticks the card while pending. Overview declares onLoad and binds each Stat by statePath. emptyText is the zero-result copy when the companies array is empty.',
   `Replace the actions apiKey values ("${GOLD_EXAMPLE_LOAD_API_KEY}", "${GOLD_EXAMPLE_API_KEY}", "${GOLD_EXAMPLE_RUN_API_KEY}") with declared API binding keys, and drop manifest.actions and every onLoad entirely when no bindings were declared.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')

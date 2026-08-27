@@ -54,7 +54,7 @@ Edit does **not** re-plan the product by default. Theme-only Requested Changes s
 
 Followed in spirit, implemented as compile, not a second planner. `compileGenerativeUx` relocates loaders, injects same-page Open chrome, fills pending status, and builds `uxPlan` (kind, confirm, retry).
 
-Policy lives in `ux-policy.ts` (`HOST UX: the runtime compiles loading, error, retry…`). The generator is told not to emit Alert/Toast/ProgressSteps for that chrome.
+Policy lives in `ux-policy.ts` (`HOST UX: the runtime compiles loading, error, retry…`). The generator is told not to emit Alert/Toast for that chrome. When the brief names a generate wait, it emits `WorkingCard` and the host ticks it.
 
 `BindingLayoutPlan` sits beside this: it is the **data** contract (hostKeys, Table vs DataText), not interaction chrome.
 

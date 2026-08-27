@@ -254,7 +254,22 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         durationMs: z.union([z.number(), z.string()]).nullable().optional(),
       }),
       description:
-        'Legacy. Do not emit — timed steps are fake progress. The host shows indeterminate status while a CTA is pending. Existing specs still render.',
+        'Legacy step list. Do not emit — use WorkingCard when the brief names a generate wait. Existing specs still render.',
+    },
+    WorkingCard: {
+      props: z.object({
+        steps: z.string(),
+        title: z.string().nullable(),
+        estimate: z.string().nullable(),
+        intervalMs: z.union([z.number(), z.string()]).nullable().optional(),
+        durationMs: z.union([z.number(), z.string()]).nullable().optional(),
+        tip: z.string().nullable(),
+        cancelTo: z.string().nullable(),
+        cancelLabel: z.string().nullable(),
+        skeleton: z.boolean().nullable(),
+      }),
+      description:
+        'Long-run wait while a CTA is pending. Visible only while pending; hides when the answer arrives. steps is newline-separated status copy from the brief. The host rotates one current step every intervalMs (default 2500) and fills a thin bar in lockstep — one increment per step, no independent loop, no wrap. title and tip interpolate form fields (`Working on \'{targetKeyword}\' for {clientBrand}...`). estimate is duration copy such as "Usually takes 90–150s"; the host appends elapsed. cancelTo is the form page path — Cancel abandons the in-flight CTA and navigates there. skeleton defaults true and draws a document-outline placeholder under the card. Put this on the destination of a navigate-first generate, or below SubmitButton when the brief stays on the form. Do not also emit ProgressBar, ProgressSteps, or Spinner.',
     },
     ProgressBar: {
       props: z.object({
@@ -591,7 +606,7 @@ export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
   'Navigation: when the app has three or more top-level destinations, put a Tabs element with one "Label|path" line per top-level page on those destination pages and set activePath to the current path. A search hero omits Tabs. Detail and progress pages are reached with NavLink/navigateTo and offer a Back NavLink.',
   'Typography: one h1-level page title per page (PageHeader.title counts), then a short supporting subtitle. Never title a page "Page 1" or use lorem ipsum.',
   'Heading order: nest levels sequentially and never skip or invert them. PageHeader.title is the page h1 and Card.title renders an h2, so a Heading inside a Card starts at h3.',
-  'Loading: bind every CTA or onLoad result region to a statePath. Table, Repeat, Stat, KeyValue and DataText then show a placeholder automatically while pending and empty. A Stat with a literal value or a Table with literal rows never shows one. For a region built from static children you may add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]}. Do not emit ProgressSteps or a filling ProgressBar — the host compiles pending chrome.',
+  'Loading: bind every CTA or onLoad result region to a statePath. Table, Repeat, Stat, KeyValue and DataText then show a placeholder automatically while pending and empty. When the brief names rotating status lines, a step checklist, elapsed/estimate, or Cancel during generate, emit WorkingCard on the waiting page (destination of onSuccess.navigate, or below SubmitButton if the brief stays on the form). The host ticks steps and the bar together — do not also emit ProgressBar, ProgressSteps, or Spinner. A Stat with a literal value or a Table with literal rows never shows a skeleton. For a static-children region you may add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]}.',
   'Empty results: when a bound Table, Repeat, or KeyValue has loaded and the value is empty, the host shows emptyText (defaults: "No results" for Table and Repeat, "No details" for KeyValue). Do not add a second Text or Alert for that. A DataText fallback is the empty copy for prose. Customise emptyText when the brief names the collection ("No matching articles").',
   'Result pages: when onSuccess.navigate sends the user to another page, the host navigates there immediately and the action stays pending, so bind the destination Table/Repeat/Stat/KeyValue/DataText — not loaders on the form page the user has already left. The host supplies pending chrome.',
   'Avatars: content logos and initials belong on Avatar or EntityHeader (src, initials, or statePath including "{item.logo}"). Do not add a decorative app wordmark or branding Image — the host already provides the outer shell.',
@@ -660,10 +675,10 @@ export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
   'ARENA DESIGN SYSTEM',
   'The host already paints Poppins, brand blue #1A73E8, grey text hierarchy, 12px radius, 40px controls, display titles, and shadow-first cards. You compose catalog components; you do not invent hex, fonts, or CSS.',
   'Viewport: full page up to 1280px; the same layout stacks in a narrow Arena iframe because Grid and Columns collapse. Do not author a permanently narrow centre column.',
-  'Every generate reply includes the default theme above. Page → Section (width wide, no maxWidth) → PageHeader, then groups of Grid / Columns / Card with gap "24px". A one-field search is a centered PageHeader (kicker + display title) plus SearchField and suggestion Chips, then a Grid of Icon Cards. Multi-field forms pair short fields in a 2-column Grid. Dashboard metrics are a Grid of Stat size "display" under EntityHeader, optional Sparkline, and Tabs. Named collections are Repeat-in-Grid entity Cards (Avatar, subtitle, footer). Record details are EntityHeader or KeyValue. One primary SearchField or SubmitButton per form; history is outline + pill; Back is a ghost Button or NavLink. A page with nothing to show yet uses EmptyState, not a blank canvas.',
+  'Every generate reply includes the default theme above. Page → Section (width wide, no maxWidth) → PageHeader, then groups of Grid / Columns / Card with gap "24px". A one-field search is a centered PageHeader (kicker + display title) plus SearchField and suggestion Chips, then a Grid of Icon Cards. Multi-field forms pair short fields in a 2-column Grid. Dashboard metrics are a Grid of Stat size "display" under EntityHeader, optional Sparkline, and Tabs. Named collections are Repeat-in-Grid entity Cards (Avatar, subtitle, footer). Record details are EntityHeader or KeyValue. One primary SearchField or SubmitButton per form; history is outline + pill; Back is a ghost Button or NavLink. A generate wait the brief named (status lines, estimate, Cancel) is WorkingCard on the waiting page. A page with nothing to show yet uses EmptyState, not a blank canvas.',
   'Copy is specific product language. Never title a page "Page 1" or use lorem ipsum. Content avatars and company logos are allowed; do not add an app wordmark.',
 ].join('\n')
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */
 export const ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE =
-  'If a declared API binding has stream: true, still infer a multi-page sitemap from the brief. For prose streams, put DataText with statePath "content" in the section or page that shows that API body (often a results page). If the binding has outputHint, treat it as an example of the streamed body — match that shape in DataText and page copy; do not invent Table columns from it. If the binding also declares outputSchema, bind those fields as Table, Stat, or KeyValue instead of dumping content — an array field such as companies becomes Table statePath="companies". If the result is not on the form page, set onSuccess.navigate to that page and add a Back NavLink to the form. Do not emit ProgressSteps; the host shows pending chrome on that page.'
+  'If a declared API binding has stream: true, still infer a multi-page sitemap from the brief. For prose streams, put DataText with statePath "content" in the section or page that shows that API body (often a results page). If the binding has outputHint, treat it as an example of the streamed body — match that shape in DataText and page copy; do not invent Table columns from it. If the binding also declares outputSchema, bind those fields as Table, Stat, or KeyValue instead of dumping content — an array field such as companies becomes Table statePath="companies". If the result is not on the form page, set onSuccess.navigate to that page and add a Back NavLink to the form. When the brief names status steps for that wait, emit WorkingCard on that page; otherwise the host shows pending chrome.'

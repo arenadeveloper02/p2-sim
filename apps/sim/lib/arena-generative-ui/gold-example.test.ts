@@ -93,10 +93,12 @@ describe('gold example', () => {
       'Repeat',
       'Tabs',
       'DataText',
+      'WorkingCard',
     ]) {
       expect(serialized).toContain(`"${type}"`)
     }
     expect(serialized).toContain('"type":"DataText"')
+    expect(serialized).toContain('"type":"WorkingCard"')
     expect(serialized).not.toContain('"type":"ProgressSteps"')
     expect(serialized).not.toContain('"type":"ProgressBar"')
     expect(serialized).toContain('"align":"center"')

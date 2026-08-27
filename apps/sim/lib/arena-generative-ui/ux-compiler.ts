@@ -38,8 +38,19 @@ interface SpecElement {
   children?: string[]
 }
 
-const EXPLICIT_LOADING_TYPES = new Set(['Skeleton', 'Spinner', 'ProgressBar', 'ProgressSteps'])
-const RELOCATABLE_LOADING_TYPES = new Set(['ProgressBar', 'ProgressSteps', 'Spinner'])
+const EXPLICIT_LOADING_TYPES = new Set([
+  'Skeleton',
+  'Spinner',
+  'ProgressBar',
+  'ProgressSteps',
+  'WorkingCard',
+])
+const RELOCATABLE_LOADING_TYPES = new Set([
+  'ProgressBar',
+  'ProgressSteps',
+  'Spinner',
+  'WorkingCard',
+])
 const BOUND_LOADING_TYPES = new Set(['Table', 'Repeat', 'Stat', 'KeyValue', 'DataText'])
 const ACTION_ID_PROP_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip'])
 const LIST_WRAPPER_TYPES = new Set(['Grid', 'Stack', 'Section'])
@@ -327,7 +338,7 @@ function attachElements(spec: Spec, incoming: Array<{ key: string; element: Spec
 }
 
 /**
- * Moves ProgressBar / ProgressSteps / Spinner off a form whose CTAs all
+ * Moves ProgressBar / ProgressSteps / Spinner / WorkingCard off a form whose CTAs all
  * navigate away, onto each destination that has no pending surface yet.
  */
 export function relocateNavigateFirstLoaders(

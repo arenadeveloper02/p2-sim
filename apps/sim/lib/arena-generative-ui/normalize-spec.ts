@@ -37,7 +37,10 @@ const TYPE_ALIASES: Record<string, string> = {
   DatePicker: 'DateInput',
   Dropdown: 'Select',
   ForEach: 'Repeat',
+  GenerationStatus: 'WorkingCard',
   HeroHeader: 'PageHeader',
+  JobStatus: 'WorkingCard',
+  LoadingCard: 'WorkingCard',
   Input: 'TextInput',
   InputField: 'TextInput',
   KPI: 'Stat',
@@ -54,6 +57,7 @@ const TYPE_ALIASES: Record<string, string> = {
   Radio: 'RadioGroup',
   RadioButtons: 'RadioGroup',
   Search: 'SearchField',
+  StatusCard: 'WorkingCard',
   SelectField: 'Select',
   SwitchField: 'Switch',
   Tag: 'Chip',
@@ -421,6 +425,7 @@ function normalizeTypeProps(type: string, props: Record<string, unknown>): void 
       }
       break
     case 'ProgressSteps':
+    case 'WorkingCard':
       setProp(props, 'steps', joinLines(props.steps))
       break
     default:

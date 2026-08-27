@@ -207,6 +207,7 @@ export function GenerativeAppHost({
             })
             scrollGenerativeAppToTop()
           }}
+          onCancelPending={runtime.cancelPending}
         />
       </SpecRenderErrorBoundary>
       {runtime.toast ? (

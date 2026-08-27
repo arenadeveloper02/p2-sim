@@ -20,6 +20,7 @@ import {
   Globe,
   Inbox,
   Link2,
+  Loader2,
   type LucideIcon,
   MessageSquare,
   Search,
@@ -78,6 +79,8 @@ interface SpecRendererProps {
   spec: Spec
   state: Record<string, unknown>
   pending: boolean
+  /** Abandon in-flight CTAs so WorkingCard Cancel returns to idle. */
+  onCancelPending?: () => void
   /** In-flight action ids. When set, bound regions and controls pending is per action. */
   pendingActionIds?: ReadonlySet<string>
   /** Host keys each action writes. Required for per-action bound-region pending. */
@@ -460,6 +463,143 @@ function ProgressStepsView({ pending, steps, durationMs }: ProgressStepsViewProp
   )
 }
 
+const DEFAULT_WORKING_INTERVAL_MS = 2500
+
+function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  if (seconds < 60) return `${seconds}s elapsed`
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}m ${seconds % 60}s elapsed`
+}
+
+interface WorkingCardViewProps {
+  pending: boolean
+  title: string
+  estimate: string
+  tip: string
+  steps: Array<{ label: string; nested: boolean }>
+  intervalMs: number
+  cancelLabel: string
+  showSkeleton: boolean
+  onCancel?: () => void
+}
+
+function WorkingCardView({
+  pending,
+  title,
+  estimate,
+  tip,
+  steps,
+  intervalMs,
+  cancelLabel,
+  showSkeleton,
+  onCancel,
+}: WorkingCardViewProps) {
+  const [elapsedMs, setElapsedMs] = useState(0)
+
+  useEffect(() => {
+    if (!pending) {
+      setElapsedMs(0)
+      return
+    }
+    const startedAt = Date.now()
+    const timer = setInterval(() => {
+      setElapsedMs(Date.now() - startedAt)
+    }, 250)
+    return () => clearInterval(timer)
+  }, [pending])
+
+  if (!pending || steps.length === 0) {
+    return null
+  }
+
+  const currentIndex = Math.min(steps.length - 1, Math.floor(elapsedMs / intervalMs))
+  const percent = Math.round(((currentIndex + 1) / steps.length) * 100)
+  const meta = [estimate, formatElapsed(elapsedMs)].filter(Boolean).join(' · ')
+
+  return (
+    <div className='flex w-full flex-col gap-4' data-testid='working-card'>
+      <div className='flex flex-col gap-4 rounded-[var(--gui-radius,12px)] border border-[var(--gui-info-border,#a3c7f6)] bg-[var(--gui-info-surface,#f3f8fe)] p-5'>
+        <div className='flex flex-wrap items-start justify-between gap-2'>
+          <p className='font-semibold text-[var(--gui-brand,#1a73e8)]'>
+            {title || steps[currentIndex]?.label}
+          </p>
+          {meta ? (
+            <p className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-info-text,#10458b)]'>
+              {meta}
+            </p>
+          ) : null}
+        </div>
+        <div
+          data-testid='working-card-bar'
+          className='h-1.5 w-full overflow-hidden rounded-full bg-[var(--gui-info-border,#a3c7f6)]'
+          role='progressbar'
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
+        >
+          <div
+            className='h-full rounded-full bg-[var(--gui-brand,#1a73e8)] transition-[width] duration-300'
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        <ol className='flex flex-col gap-2.5'>
+          {steps.map((step, index) => {
+            const done = index < currentIndex
+            const current = index === currentIndex
+            return (
+              <li
+                key={`${index}-${step.label}`}
+                className={cn(
+                  'flex items-center gap-2.5 text-sm',
+                  step.nested && 'pl-6',
+                  done && 'text-[var(--gui-info-text,#10458b)] line-through',
+                  current && 'font-semibold text-[var(--gui-brand-pressed,#10458b)]',
+                  !done && !current && 'text-[var(--gui-info-text,#10458b)]'
+                )}
+              >
+                {done ? (
+                  <span className='inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--gui-success-text,#23784f)] text-white'>
+                    <Check className='size-3' aria-hidden />
+                  </span>
+                ) : current ? (
+                  <Loader2
+                    className='size-5 shrink-0 animate-spin text-[var(--gui-brand,#1a73e8)]'
+                    aria-hidden
+                  />
+                ) : (
+                  <span className='size-5 shrink-0 rounded-full border border-[var(--gui-info-border,#a3c7f6)]' />
+                )}
+                <span aria-current={current ? 'step' : undefined}>{step.label}</span>
+              </li>
+            )
+          })}
+        </ol>
+        {tip || onCancel ? (
+          <div className='flex flex-col gap-3 border-[var(--gui-info-border,#a3c7f6)] border-t pt-3'>
+            {tip ? (
+              <p className='text-[length:var(--gui-label-size,12px)] text-[var(--gui-info-text,#10458b)] italic'>
+                {tip}
+              </p>
+            ) : null}
+            {onCancel ? (
+              <button
+                type='button'
+                data-testid='working-card-cancel'
+                className={cn(BUTTON_BASE_CLASS, BUTTON_VARIANT_CLASSES.outline, BUTTON_SIZE_CLASSES.sm, 'w-fit')}
+                onClick={onCancel}
+              >
+                {cancelLabel}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      {showSkeleton ? <SkeletonBlock variant='outline' lines={6} /> : null}
+    </div>
+  )
+}
+
 const SKELETON_BAR =
   'animate-pulse rounded-[var(--gui-radius-sm,8px)] bg-[var(--gui-border,#e2e3e5)]'
 
@@ -469,9 +609,10 @@ const DEFAULT_SKELETON_LINES: Record<SkeletonVariant, number> = {
   table: 4,
   card: 3,
   form: 3,
+  outline: 6,
 }
 
-type SkeletonVariant = 'text' | 'stat' | 'table' | 'card' | 'form'
+type SkeletonVariant = 'text' | 'stat' | 'table' | 'card' | 'form' | 'outline'
 
 function skeletonVariant(value: unknown): SkeletonVariant {
   const variant = asString(value, 'text')
@@ -505,6 +646,22 @@ function SkeletonBlock({ variant, lines }: SkeletonBlockProps) {
         <div className={cn(SKELETON_BAR, 'h-4 w-full opacity-70')} />
         {Array.from({ length: rows }, (_, index) => (
           <div key={index} className={cn(SKELETON_BAR, 'h-8 w-full')} />
+        ))}
+      </div>
+    )
+  }
+
+  if (variant === 'outline') {
+    const widths = ['100%', '92%', '78%', '85%', '64%', '45%']
+    return (
+      <div aria-hidden data-testid='skeleton' className='flex w-full flex-col gap-3'>
+        <div className={cn(SKELETON_BAR, 'h-5 w-full')} />
+        {Array.from({ length: Math.max(0, rows - 1) }, (_, index) => (
+          <div
+            key={index}
+            className={cn(SKELETON_BAR, 'h-3')}
+            style={{ width: widths[Math.min(index + 1, widths.length - 1)] }}
+          />
         ))}
       </div>
     )
@@ -993,17 +1150,24 @@ export function SpecRenderer({
   onRunAction,
   onSelectItem,
   onClearItem,
+  onCancelPending,
 }: SpecRendererProps) {
   const elements = (spec.elements ?? {}) as Record<string, SpecElement>
+  const suppressBoundSkeleton = Object.values(elements).some((element) => {
+    if (element.type !== 'WorkingCard') return false
+    return element.props?.skeleton !== false
+  })
   const [formValues, setFormValues] = useState<Record<string, unknown>>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const selectedIdSet = isTruthyFieldValue(state[ARENA_GENERATIVE_SELECTED_ID_KEY])
   const hideListForSelection = selectedIdSet && specHasSamePageSelectItem(spec, currentPath)
 
-  const boundPending = (statePath: string) =>
-    pendingActionIds
+  const boundPending = (statePath: string) => {
+    if (suppressBoundSkeleton) return false
+    return pendingActionIds
       ? isBoundPathPending(statePath, pendingActionIds, actionHostKeys ?? {})
       : pending
+  }
 
   const controlPending = (actionId: string) => {
     if (!UX_DEFAULTS.Button.disabledWhileLoading) return false
@@ -1792,6 +1956,38 @@ export function SpecRenderer({
             pending={pending}
             steps={steps}
             durationMs={asPositiveNumber(props.durationMs, DEFAULT_PROGRESS_DURATION_MS)}
+          />
+        )
+      }
+      case 'WorkingCard': {
+        const steps = parseProgressStepLines(asString(props.steps))
+        const intervalMs = asPositiveNumber(
+          props.intervalMs,
+          steps.length > 0
+            ? asPositiveNumber(props.durationMs, DEFAULT_WORKING_INTERVAL_MS * steps.length) /
+                steps.length
+            : DEFAULT_WORKING_INTERVAL_MS
+        )
+        const cancelTo = asString(props.cancelTo)
+        const showSkeleton = props.skeleton !== false
+        return (
+          <WorkingCardView
+            pending={pending}
+            title={asString(props.title)}
+            estimate={asString(props.estimate)}
+            tip={asString(props.tip)}
+            steps={steps}
+            intervalMs={intervalMs}
+            cancelLabel={asString(props.cancelLabel, 'Cancel')}
+            showSkeleton={showSkeleton}
+            onCancel={
+              onCancelPending || cancelTo
+                ? () => {
+                    onCancelPending?.()
+                    if (cancelTo) onNavigate(cancelTo)
+                  }
+                : undefined
+            }
           />
         )
       }

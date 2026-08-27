@@ -233,6 +233,69 @@ describe('compileGenerativeUx', () => {
     expect(resultsSection.children?.[0]).toBe('steps')
   })
 
+  it('relocates WorkingCard from a navigate-first form onto results', () => {
+    const homeWithCard: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Form' }, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { padding: null, backgroundColor: null, maxWidth: null },
+          children: ['form', 'working'],
+        },
+        form: {
+          type: 'Form',
+          props: { actionId: 'submit_lead' },
+          children: ['submit'],
+        },
+        submit: {
+          type: 'SubmitButton',
+          props: { label: 'Submit', actionId: null, size: null, variant: null, shape: null },
+          children: [],
+        },
+        working: {
+          type: 'WorkingCard',
+          props: {
+            steps: 'Connecting\nScoring',
+            cancelTo: 'home',
+          },
+          children: [],
+        },
+      },
+    }
+    const resultsBare: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Results' }, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { padding: null, backgroundColor: null, maxWidth: null },
+          children: ['heading'],
+        },
+        heading: { type: 'Heading', props: { text: 'Score', level: 'h2' }, children: [] },
+      },
+    }
+    const manifest: ArenaGenerativeAppManifest = {
+      entryPath: 'home',
+      pages: {
+        home: { title: 'Form', path: 'home', spec: homeWithCard },
+        results: { title: 'Score', path: 'results', spec: resultsBare },
+      },
+      actions: {
+        submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+      },
+    }
+    const compiled = compileGenerativeUx(manifest, twoPageApiBindings)
+    const homeTypes = Object.values(compiled.pages.home.spec.elements ?? {}).map(
+      (element) => (element as { type?: string }).type
+    )
+    const resultsTypes = Object.values(compiled.pages.results.spec.elements ?? {}).map(
+      (element) => (element as { type?: string }).type
+    )
+    expect(homeTypes).not.toContain('WorkingCard')
+    expect(resultsTypes).toContain('WorkingCard')
+  })
+
   it('keeps ProgressSteps on a same-page submit', () => {
     const spec: Spec = {
       root: 'page',
