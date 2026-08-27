@@ -117,16 +117,17 @@ export function sortToolCallsForExecution<T extends { name: string }>(calls: T[]
 }
 
 /**
- * Local has no file-subagent span, so `workspace_file` uses its own call id as
- * the intent channel. `edit_content` must reuse that id or it consumes the
- * newest intent in the turn (often a different file).
+ * Binds `workspace_file` → `edit_content` Redis intents to one channel.
+ * When a File Agent pass already seeded `previousChannelId` (the specialist
+ * tool-call id), keep it so preview, span, and consume all share that id.
+ * Otherwise fall back to this `workspace_file` call id (parent-lane writes).
  */
 export function bindLocalFileIntentChannel(
   toolName: string,
   toolCallId: string,
   previousChannelId: string | undefined
 ): string | undefined {
-  if (toolName === 'workspace_file') return toolCallId
+  if (toolName === 'workspace_file') return previousChannelId ?? toolCallId
   return previousChannelId
 }
 
@@ -413,14 +414,14 @@ export function formatToolResultForLlm(
           ...record,
           needsFollowUpWorkspaceFile: true,
           followUpHint:
-            'Office file shell is empty. Call workspace_file operation=update on data.vfsPath (with title), then edit_content in a later round with pptx/docx/pdf script content. Do not call edit_content yet.',
+            'Office file shell is empty. Do not create another file. Call workspace_file operation=update with target.kind=path and data.vfsPath (plus title), then edit_content in a later round.',
         }
       } else {
         formatted = {
           ...record,
           needsFollowUpWrite: true,
           followUpHint:
-            'File is empty. For markdown/text, call create_file again with `content`, or call workspace_file operation=update on data.vfsPath then edit_content with the full body in the next step.',
+            'File is empty. Do not create another file. Call workspace_file operation=update with target.kind=path and data.vfsPath, then edit_content with the full body.',
         }
       }
     } else {
@@ -542,7 +543,7 @@ export function detectMandatoryFollowUp(
       hint:
         hint ??
         'File shell is empty. Write content via create_file with content or workspace_file then edit_content.',
-      resolveWith: ['edit_content', 'create_file', 'workspace_file'],
+      resolveWith: ['workspace_file', 'edit_content'],
     }
   }
 

@@ -348,7 +348,7 @@ Rules:
   - When the user asks to create a new table, knowledge base, or file, call the matching create operation.
   - Chat uploads under \`uploads/\` are not sandbox-mounted — call \`materialize_file\` into \`files/...\` (or reuse an existing \`files/...\` path) before \`function_execute\`.
   - Find files: \`glob\` with a pattern like \`files/**/*.csv\`, then \`read\` using the exact path from results.
-  - Create files: \`create_file_folder\` when needed, then \`create_file\` with \`content\` for markdown/text/json/csv (one step). Never call \`create_file\` without \`content\` for .md files unless you will immediately follow with \`workspace_file\` update + \`edit_content\`.
+  - Create files: \`create_file_folder\` when needed, then \`create_file\` once with \`content\` for markdown/text/json/csv. Never call \`create_file\` twice for the same path, and never follow it with \`workspace_file\` kind=new_file or operation=create.
   - Rename/move/delete files: \`rename_file\`, \`move_file\`, \`delete_file\` (paths arrays). Folders: \`list_file_folders\`, \`rename_file_folder\`, \`move_file_folder\`, \`delete_file_folder\`. Delete only when the user explicitly asked.
   - Read or update existing files: \`workspace_file\` (update/append/patch) then \`edit_content\` in the **next** step with the body — never parallel.
   - Restore archived items with \`restore_resource\` (type + id). Disable a block with \`set_block_enabled\`; edit workflow globals with \`set_global_workflow_variables\`.

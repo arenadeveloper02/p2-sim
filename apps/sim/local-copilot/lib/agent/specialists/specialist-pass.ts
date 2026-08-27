@@ -81,6 +81,11 @@ export interface RunSpecialistPassParams {
   getToolExecutor: () => Promise<typeof import('@/local-copilot/lib/tools/executor')>
   budget: SpecialistBudget
   parentDepth?: number
+  /**
+   * Outer specialist tool-call id (`file`, `workflow`, …). File Agent passes
+   * bind Redis intents and live preview to this id so they match the subagent span.
+   */
+  parentDispatchToolCallId?: string
   /** Durable run id for authenticated confirmation gating. */
   runId?: string
   /**
@@ -212,11 +217,7 @@ export async function executeSpecialistLoop(
       }
     }
 
-    await emitSpecialistEvent(
-      events,
-      { type: 'status', message: 'Working on it…' },
-      params.onEvent
-    )
+    await emitSpecialistEvent(events, { type: 'status', message: 'Working on it…' }, params.onEvent)
 
     const messages: ChatMessage[] = [
       {
@@ -249,6 +250,11 @@ export async function executeSpecialistLoop(
     let toolRoundCount = 0
     let pendingFollowUps: MandatoryFollowUp[] = []
     let forcedFollowUpRounds = 0
+    const persistFileIntentChannel =
+      params.domain === 'file' && Boolean(params.parentDispatchToolCallId)
+    let fileIntentChannelId = persistFileIntentChannel
+      ? params.parentDispatchToolCallId
+      : params.toolCtx.fileIntentChannelId
 
     const maxRounds = SPECIALIST_PASS_MAX_ROUNDS + MAX_SPECIALIST_FORCED_FOLLOW_UP_ROUNDS
     for (let round = 0; round < maxRounds; round++) {
@@ -355,6 +361,7 @@ export async function executeSpecialistLoop(
             signal,
             parentDepth: entered.depth,
             onEvent: params.onEvent,
+            parentDispatchToolCallId: call.id,
           })
           for (const event of nested.events) events.push(event)
 
@@ -444,11 +451,7 @@ export async function executeSpecialistLoop(
 
         const { executeLocalCopilotTool, refreshToolContext } = await params.getToolExecutor()
         if (!toolResult) {
-          params.toolCtx.fileIntentChannelId = bindLocalFileIntentChannel(
-            call.name,
-            call.id,
-            params.toolCtx.fileIntentChannelId
-          )
+          fileIntentChannelId = bindLocalFileIntentChannel(call.name, call.id, fileIntentChannelId)
           const toolStatus = runToolWithStatus({
             toolCallId: call.id,
             toolName: call.name,
@@ -458,6 +461,7 @@ export async function executeSpecialistLoop(
             execute: (onProgress) =>
               executeLocalCopilotTool(call.name, parsedArgs, {
                 ...params.toolCtx,
+                fileIntentChannelId,
                 onProgress,
                 activeToolCallId: call.id,
               }),
@@ -471,10 +475,9 @@ export async function executeSpecialistLoop(
           toolResult = next.value
         }
 
-        params.toolCtx.fileIntentChannelId = clearLocalFileIntentChannel(
-          call.name,
-          params.toolCtx.fileIntentChannelId
-        )
+        if (!persistFileIntentChannel) {
+          fileIntentChannelId = clearLocalFileIntentChannel(call.name, fileIntentChannelId)
+        }
 
         if (toolResult.createdWorkflowId) {
           params.toolCtx.workflowId = toolResult.createdWorkflowId

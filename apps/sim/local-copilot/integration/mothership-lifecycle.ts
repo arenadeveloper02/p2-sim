@@ -18,9 +18,17 @@ import {
   type FilePreviewAdapterState,
   processFilePreviewStreamEvent,
 } from '@/lib/copilot/request/go/file-preview-adapter'
-import { sseHandlers } from '@/lib/copilot/request/handlers'
+import {
+  handleSubagentRouting,
+  sseHandlers,
+  subAgentHandlers,
+} from '@/lib/copilot/request/handlers'
 import type { CopilotLifecycleOptions } from '@/lib/copilot/request/lifecycle/run'
-import { isToolCallStreamEvent, LOCAL_STATUS_PHASE } from '@/lib/copilot/request/session'
+import {
+  isSubagentSpanStreamEvent,
+  isToolCallStreamEvent,
+  LOCAL_STATUS_PHASE,
+} from '@/lib/copilot/request/session'
 import { handleResourceSideEffects } from '@/lib/copilot/request/tools/resources'
 import type {
   ExecutionContext,
@@ -33,6 +41,17 @@ import {
   extractLocalFileChatResources,
   stripLocalFileBodyToolParams,
 } from '@/local-copilot/integration/file-turn-persist'
+import {
+  adaptLocalFilePreviewStreamEvent,
+  emitLocalCreateFilePreview,
+} from '@/local-copilot/integration/local-file-preview'
+import {
+  applyLocalSubagentSpanToContext,
+  createSpecialistSpanTracker,
+  type SpecialistSpanTracker,
+  specialistSpanEndEvent,
+  specialistSpanStartEvent,
+} from '@/local-copilot/integration/specialist-stream-scope'
 import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
 import { formatUxPhaseStatus } from '@/local-copilot/lib/agent/ux-phase'
 import type { LocalTurnCostSummary } from '@/local-copilot/lib/billing/turn-cost-accumulator'
@@ -136,21 +155,27 @@ function withStrippedFileToolArgs(event: StreamEvent): StreamEvent {
   }
 }
 
+interface LocalFilePreviewRuntime {
+  adapterState: FilePreviewAdapterState
+  createFileSessions: Set<string>
+}
+
 async function dispatchStreamEvent(
   event: StreamEvent,
   context: StreamingContext,
   execContext: ExecutionContext,
   options: OrchestratorOptions,
-  filePreviewState: FilePreviewAdapterState
+  filePreview: LocalFilePreviewRuntime
 ): Promise<void> {
+  const previewEvent = adaptLocalFilePreviewStreamEvent(event)
   try {
     await processFilePreviewStreamEvent({
       streamId: context.messageId,
-      streamEvent: event,
+      streamEvent: previewEvent,
       context,
       execContext,
       options,
-      state: filePreviewState,
+      state: filePreview.adapterState,
     })
   } catch (error) {
     logger.warn('Failed to process file preview stream event', {
@@ -161,8 +186,27 @@ async function dispatchStreamEvent(
     })
   }
 
+  await emitLocalCreateFilePreview({
+    streamEvent: previewEvent,
+    options,
+    sessions: filePreview.createFileSessions,
+  })
+
   const clientEvent = withStrippedFileToolArgs(event)
   await options.onEvent?.(clientEvent)
+
+  if (isSubagentSpanStreamEvent(clientEvent)) {
+    applyLocalSubagentSpanToContext(clientEvent, context)
+  }
+
+  if (handleSubagentRouting(clientEvent, context)) {
+    const subagentHandler = subAgentHandlers[clientEvent.type]
+    if (subagentHandler) {
+      await subagentHandler(clientEvent, context, execContext, options)
+    }
+    return
+  }
+
   const handler = sseHandlers[clientEvent.type]
   if (handler) {
     await handler(clientEvent, context, execContext, options)
@@ -175,7 +219,8 @@ async function dispatchLocalCopilotEvent(
   execContext: ExecutionContext,
   options: CopilotLifecycleOptions,
   toolArgsByCallId: Map<string, Record<string, unknown>>,
-  filePreviewState: FilePreviewAdapterState
+  filePreview: LocalFilePreviewRuntime,
+  specialistSpans: SpecialistSpanTracker
 ): Promise<void> {
   if (event.type === 'status') {
     // Ephemeral UI-only: publish synthetic envelope via onEvent, skip content-block handlers.
@@ -199,6 +244,8 @@ async function dispatchLocalCopilotEvent(
 
   if (event.type === 'tool_call_start') {
     toolArgsByCallId.set(event.toolCallId, event.args ?? {})
+    const dispatchFrame = specialistSpans.pushDispatch(event.toolCallId, event.toolName)
+    const nestedScope = dispatchFrame ? undefined : specialistSpans.scopeForNested()
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.tool,
@@ -213,12 +260,22 @@ async function dispatchLocalCopilotEvent(
           mode: MothershipStreamV1ToolMode.sync,
           arguments: event.args,
         },
+        ...(nestedScope ? { scope: nestedScope } : {}),
       },
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
+    if (dispatchFrame) {
+      await dispatchStreamEvent(
+        specialistSpanStartEvent(dispatchFrame),
+        context,
+        execContext,
+        options,
+        filePreview
+      )
+    }
     return
   }
 
@@ -228,6 +285,18 @@ async function dispatchLocalCopilotEvent(
       output: event.output,
       error: event.error,
       ...(event.resources?.length ? { resources: event.resources } : {}),
+    }
+
+    const dispatchFrame = specialistSpans.popDispatch(event.toolCallId)
+    const nestedScope = dispatchFrame ? undefined : specialistSpans.scopeForNested()
+    if (dispatchFrame) {
+      await dispatchStreamEvent(
+        specialistSpanEndEvent(dispatchFrame),
+        context,
+        execContext,
+        options,
+        filePreview
+      )
     }
 
     await dispatchStreamEvent(
@@ -246,11 +315,12 @@ async function dispatchLocalCopilotEvent(
             ? MothershipStreamV1ToolOutcome.success
             : MothershipStreamV1ToolOutcome.error,
         },
+        ...(nestedScope ? { scope: nestedScope } : {}),
       },
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
 
     if (
@@ -280,7 +350,7 @@ async function dispatchLocalCopilotEvent(
         toolResult,
         chatId,
         (streamEvent) =>
-          dispatchStreamEvent(streamEvent, context, execContext, options, filePreviewState),
+          dispatchStreamEvent(streamEvent, context, execContext, options, filePreview),
         () => Boolean(options.abortSignal?.aborted)
       )
       const fileResources = extractLocalFileChatResources(
@@ -290,7 +360,7 @@ async function dispatchLocalCopilotEvent(
       )
       if (fileResources.length > 0) {
         await persistChatResources(chatId, fileResources)
-        if (event.toolName === 'edit_content') {
+        if (event.toolName === 'edit_content' || event.toolName === 'create_file') {
           for (const resource of fileResources) {
             await dispatchStreamEvent(
               {
@@ -308,7 +378,7 @@ async function dispatchLocalCopilotEvent(
               context,
               execContext,
               options,
-              filePreviewState
+              filePreview
             )
           }
         }
@@ -320,6 +390,7 @@ async function dispatchLocalCopilotEvent(
   if (event.type === 'text_delta' && event.content) {
     const safeText = stripIdsFromUserFacingText(event.content)
     if (!safeText) return
+    const nestedScope = specialistSpans.scopeForNested()
     await dispatchStreamEvent(
       {
         type: MothershipStreamV1EventType.text,
@@ -327,11 +398,12 @@ async function dispatchLocalCopilotEvent(
           channel: MothershipStreamV1TextChannel.assistant,
           text: safeText,
         },
+        ...(nestedScope ? { scope: nestedScope } : {}),
       },
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
     return
   }
@@ -348,7 +420,7 @@ async function dispatchLocalCopilotEvent(
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
     return
   }
@@ -376,7 +448,7 @@ async function dispatchLocalCopilotEvent(
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
     return
   }
@@ -423,7 +495,7 @@ async function dispatchLocalCopilotEvent(
         context,
         execContext,
         options,
-        filePreviewState
+        filePreview
       )
       return
     }
@@ -441,7 +513,7 @@ async function dispatchLocalCopilotEvent(
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
     return
   }
@@ -457,7 +529,7 @@ async function dispatchLocalCopilotEvent(
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
   }
 }
@@ -487,7 +559,10 @@ export async function runLocalCopilotMothershipLifecycle(
     })
   const workspaceId = options.workspaceId ?? extractString(requestPayload.workspaceId)
   const userId = options.userId
-  const filePreviewState = createFilePreviewAdapterState()
+  const filePreview: LocalFilePreviewRuntime = {
+    adapterState: createFilePreviewAdapterState(),
+    createFileSessions: new Set<string>(),
+  }
 
   if (!message) {
     context.errors.push('Message is required')
@@ -499,7 +574,7 @@ export async function runLocalCopilotMothershipLifecycle(
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
     await dispatchStreamEvent(
       {
@@ -509,7 +584,7 @@ export async function runLocalCopilotMothershipLifecycle(
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
     return
   }
@@ -527,7 +602,7 @@ export async function runLocalCopilotMothershipLifecycle(
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
     await dispatchStreamEvent(
       {
@@ -537,7 +612,7 @@ export async function runLocalCopilotMothershipLifecycle(
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
     return
   }
@@ -556,6 +631,7 @@ export async function runLocalCopilotMothershipLifecycle(
 
   const startedAt = Date.now()
   const toolArgsByCallId = new Map<string, Record<string, unknown>>()
+  const specialistSpans = createSpecialistSpanTracker()
   const userMessageId =
     typeof requestPayload.messageId === 'string' ? requestPayload.messageId : undefined
   let turnUsage:
@@ -606,7 +682,7 @@ export async function runLocalCopilotMothershipLifecycle(
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
     const agent = runLocalCopilotAgent({
       userId,
@@ -668,7 +744,8 @@ export async function runLocalCopilotMothershipLifecycle(
         execContext,
         options,
         toolArgsByCallId,
-        filePreviewState
+        filePreview,
+        specialistSpans
       )
     }
 
@@ -734,7 +811,7 @@ export async function runLocalCopilotMothershipLifecycle(
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
     await dispatchStreamEvent(
       {
@@ -744,7 +821,7 @@ export async function runLocalCopilotMothershipLifecycle(
       context,
       execContext,
       options,
-      filePreviewState
+      filePreview
     )
   }
 }
