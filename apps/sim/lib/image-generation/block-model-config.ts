@@ -47,13 +47,13 @@ const OPENAI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [
     supportsReferenceImages: true,
     maxReferenceImages: 1,
   },
-  // {
-  //   id: 'chatgpt-image-latest',
-  //   label: 'ChatGPT Image Latest',
-  //   provider: 'openai',
-  //   supportsReferenceImages: true,
-  //   maxReferenceImages: 1,
-  // },
+  {
+    id: 'chatgpt-image-latest',
+    label: 'ChatGPT Image Latest',
+    provider: 'openai',
+    supportsReferenceImages: true,
+    maxReferenceImages: 1,
+  },
 ]
 
 const GEMINI_MODEL_DEFINITIONS: ImageBlockModelDefinition[] = [

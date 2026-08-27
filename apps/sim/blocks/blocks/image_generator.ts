@@ -4,6 +4,7 @@ import {
   IMAGE_BLOCK_ALL_MODEL_OPTIONS,
   IMAGE_BLOCK_PROVIDER_OPTIONS,
   normalizeImageModelId,
+  OPENAI_IMAGE_MODEL_IDS,
   reconcileImageProviderAndModel,
 } from '@/lib/image-generation/block-model-config'
 import {
@@ -18,8 +19,20 @@ import { createVersionedToolSelector, parseOptionalBooleanInput } from '@/blocks
 import { START_FILES_REF } from '@/executor/constants'
 import type { ImageGenerationResponse } from '@/tools/image/types'
 
+const OPENAI_STANDARD_SIZE_MODELS = OPENAI_IMAGE_MODEL_IDS.filter(
+  (modelId) => modelId !== 'gpt-image-2'
+)
+
 function normalizeReferenceFiles(input: unknown): unknown[] {
   return normalizeReferenceFileParams(input) ?? []
+}
+
+function requireOpenAIImageSize(size: unknown): string {
+  const trimmed = typeof size === 'string' ? size.trim() : ''
+  if (!trimmed) {
+    throw new Error('Size is required')
+  }
+  return trimmed
 }
 
 function resolveFalaiNanoBanana2References(params: Record<string, unknown>): {
@@ -129,7 +142,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: '1024x1792', id: '1024x1792' },
         { label: '1792x1024', id: '1792x1024' },
       ],
-      clearable: true,
+      required: true,
       value: () => '',
       condition: { field: 'model', value: 'dall-e-3' },
       dependsOn: ['model'],
@@ -144,7 +157,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: '1536x1024', id: '1536x1024' },
         { label: '1024x1536', id: '1024x1536' },
       ],
-      clearable: true,
+      required: true,
       value: () => '',
       condition: { field: 'model', value: 'gpt-image-1' },
       dependsOn: ['model'],
@@ -161,7 +174,7 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         { label: '2K (2560x1440)', id: '2560x1440' },
         { label: '4K (3840x2160)', id: '3840x2160' },
       ],
-      clearable: true,
+      required: true,
       value: () => '',
       condition: { field: 'model', value: 'gpt-image-2' },
       dependsOn: ['model'],
@@ -454,12 +467,8 @@ export const ImageGeneratorBlockV2: BlockConfig = {
         }
 
         const model = params.model || 'dall-e-3'
+        const size = requireOpenAIImageSize(params.size)
 
-        const ALLOWED_SIZES: Record<string, string[]> = {
-          'dall-e-3': ['1024x1024', '1024x1792', '1792x1024'],
-          'gpt-image-1': ['auto', '1024x1024', '1536x1024', '1024x1536'],
-          'gpt-image-2': ['auto', '1024x1024', '1536x1024', '1024x1536', '2560x1440', '3840x2160'],
-        }
         const ALLOWED_QUALITIES: Record<string, string[]> = {
           'dall-e-3': ['standard', 'hd'],
           'gpt-image-1': ['auto', 'low', 'medium', 'high'],
@@ -469,9 +478,6 @@ export const ImageGeneratorBlockV2: BlockConfig = {
           'gpt-image-1': ['auto', 'transparent', 'opaque'],
           'gpt-image-2': ['auto', 'opaque'],
         }
-
-        const defaultSize = model === 'dall-e-3' ? '1024x1024' : 'auto'
-        const size = ALLOWED_SIZES[model]?.includes(params.size) ? params.size : defaultSize
 
         const baseParams = {
           prompt: params.prompt,
@@ -629,12 +635,12 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: 'Landscape (1536x1024)', id: '1536x1024' },
         { label: 'Portrait (1024x1536)', id: '1024x1536' },
       ],
-      clearable: true,
+      required: true,
       value: () => '',
       condition: {
         field: 'provider',
         value: 'openai',
-        and: { field: 'model', value: ['gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini'] },
+        and: { field: 'model', value: OPENAI_STANDARD_SIZE_MODELS },
       },
       dependsOn: ['provider', 'model'],
     },
@@ -650,7 +656,7 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
         { label: '2K (2560x1440)', id: '2560x1440' },
         { label: '4K (3840x2160)', id: '3840x2160' },
       ],
-      clearable: true,
+      required: true,
       value: () => '',
       condition: {
         field: 'provider',
@@ -1242,7 +1248,11 @@ export const ImageGeneratorV2Block: BlockConfig<ImageGenerationResponse> = {
           model,
           prompt: params.prompt,
           apiKey: params.apiKey,
-          ...(params.size && { size: params.size }),
+          ...(provider === 'openai'
+            ? { size: requireOpenAIImageSize(params.size) }
+            : params.size
+              ? { size: params.size }
+              : {}),
           ...(params.aspectRatio && { aspectRatio: params.aspectRatio }),
           ...(params.resolution && { resolution: params.resolution }),
           ...(params.quality && { quality: params.quality }),
