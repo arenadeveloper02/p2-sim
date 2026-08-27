@@ -22,6 +22,7 @@ import {
   humanizeToolName,
 } from '@/lib/copilot/tools/tool-display'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
+import type { CredentialSubmissionPayload } from '@/app/workspace/[workspaceId]/home/components/message-content/components/special-tags'
 import type { ContentBlock, OptionItem, ToolCallData } from '../../types'
 import { SUBAGENT_LABELS } from '../../types'
 import type { AgentGroupItem } from './components'
@@ -310,7 +311,7 @@ function toToolData(tc: NonNullable<ContentBlock['toolCall']>): ToolCallData {
   const overrideDisplayTitle = getOverrideDisplayTitle(tc)
   const resolvedTitle =
     overrideDisplayTitle || tc.displayTitle || getToolDisplayTitle(tc.name, tc.params)
-  const displayTitle = getToolStatusDisplayTitle(resolvedTitle, tc.status)
+  const displayTitle = getToolStatusDisplayTitle(resolvedTitle, tc.status, tc.name)
 
   return {
     id: tc.id,
@@ -928,9 +929,23 @@ export function deriveThinkingLabel(blocks: ContentBlock[]): string | null {
   }
 }
 
+/**
+ * Turn-level shimmer copy. Local Copilot streams `liveStatus` (Proposing…,
+ * tool heartbeats, engagement lines); cloud mothership leaves it empty so the
+ * block-derived fallback stays in place. `null` still means an open subagent
+ * lane owns the shimmer.
+ */
+export function resolveThinkingLabel(blocks: ContentBlock[], liveStatus?: string): string | null {
+  const fromBlocks = deriveThinkingLabel(blocks)
+  if (fromBlocks === null) return null
+  const liveLabel = liveStatus?.trim()
+  return liveLabel || fromBlocks
+}
+
 interface MessageContentProps {
   blocks: ContentBlock[]
   fallbackContent: string
+  messageId?: string
   isStreaming: boolean
   liveStatus?: string
   /**
@@ -941,6 +956,10 @@ interface MessageContentProps {
   isLast?: boolean
   /** Transcript-derived answers for this message's question card (renders the recap). */
   questionAnswers?: string[]
+  /** Transcript-derived status payload for this message's credential card. */
+  credentialSubmission?: CredentialSubmissionPayload
+  /** The user moved on without submitting this message's credential card. */
+  credentialAbandoned?: boolean
   onOptionSelect?: (id: string) => void
   onQuestionDismiss?: () => void
   onPhaseChange?: (phase: MessagePhase) => void
@@ -957,12 +976,13 @@ interface MessageContentProps {
 function MessageContentInner({
   blocks,
   fallbackContent,
+  messageId,
   isStreaming = false,
-  // liveStatus prop still accepted from callers, but unused after upstream's
-  // shimmer tail (thinkingLabel) replaced HEAD's trailing-live-status path.
-  // liveStatus,
+  liveStatus,
   isLast = false,
   questionAnswers,
+  credentialSubmission,
+  credentialAbandoned,
   onOptionSelect,
   onQuestionDismiss,
   onPhaseChange,
@@ -1043,32 +1063,21 @@ function MessageContentInner({
 
   if (segments.length === 0 && !isLast) return null
 
-  // Prior HEAD trailing-thinking path, superseded by upstream's shimmer tail
-  // (showShimmer + thinkingLabel below). Kept for reference:
-  // const hasRunningWork = blocks.some(
-  //   (b) =>
-  //     b.toolCall?.status === 'executing' ||
-  //     (b.type === 'subagent' && b.endedAt === undefined)
-  // )
-  // const showTrailingThinking = shouldShowTrailingLiveStatus({
-  //   isStreaming,
-  //   liveStatus,
-  //   hasTrailingContent,
-  //   hasRunningWork,
-  // })
-
   // A visible executing tool row already spins — the turn-level shimmer would
   // double it. (A null label means a just-opened lane's shimmer owns the state.)
   // A mid-stream special tag renders nothing until complete, so its bytes are a
   // wait, not output — the shimmer bridges it without the quiet-period delay.
-  const thinkingLabel = deriveThinkingLabel(blocks)
+  // Local Copilot `liveStatus` is already a wait phrase, so skip the 1.5s idle
+  // gate; cloud has no liveStatus and still waits for STREAM_IDLE_DELAY_MS.
+  const liveLabel = liveStatus?.trim() ?? ''
+  const thinkingLabel = resolveThinkingLabel(blocks, liveStatus)
   const hasExecutingTool = assistantMessageHasVisibleExecutingTool(blocks)
   const showShimmer =
     thinkingExpanded &&
     thinkingLabel !== null &&
     (segments.length === 0 ||
       trailingPendingTag ||
-      (isStreamIdle && !trailingStreamActivity && !hasExecutingTool))
+      (!trailingStreamActivity && !hasExecutingTool && (Boolean(liveLabel) || isStreamIdle)))
 
   return (
     <div>
@@ -1082,12 +1091,15 @@ function MessageContentInner({
                   // HEAD preprocessing preserved: repairs collapsed markdown
                   // tables before render.
                   content={prepareChatMarkdownForRender(segment.content)}
+                  messageId={messageId}
                   isStreaming={shouldSmoothTextSegment({
                     isStreaming,
                     segmentIndex: i,
                     segmentCount: segments.length,
                   })}
                   questionAnswers={questionAnswers}
+                  credentialSubmission={credentialSubmission}
+                  credentialAbandoned={credentialAbandoned}
                   onOptionSelect={onOptionSelect}
                   onQuestionDismiss={onQuestionDismiss}
                   onWorkspaceResourceSelect={onWorkspaceResourceSelect}

@@ -25,7 +25,8 @@ export function parseSpecialistCheckpoint(value: unknown): SpecialistCheckpoint 
   const domain = typeof record.domain === 'string' ? record.domain.trim() : ''
   const objective = typeof record.objective === 'string' ? record.objective.trim() : ''
   const findings = typeof record.findings === 'string' ? record.findings : ''
-  const toolRound = typeof record.toolRound === 'number' ? Math.max(0, Math.floor(record.toolRound)) : 0
+  const toolRound =
+    typeof record.toolRound === 'number' ? Math.max(0, Math.floor(record.toolRound)) : 0
   if (!domain || !objective) return null
   if (record.status !== 'paused') return null
   const updatedAt =

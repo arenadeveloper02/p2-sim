@@ -1,3 +1,4 @@
+import { isRecordLike } from '@sim/utils/object'
 import { stripVersionSuffix } from '@sim/utils/string'
 
 /**
@@ -45,9 +46,7 @@ function nestedStringArg(args: ToolArgs, parentKey: string, ...keys: string[]): 
 
 function recordArg(args: ToolArgs, key: string): Record<string, unknown> | undefined {
   const value = args?.[key]
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
+  return isRecordLike(value) ? (value as Record<string, unknown>) : undefined
 }
 
 function stringOrNumberArg(args: ToolArgs, key: string): string {
@@ -62,7 +61,6 @@ function deploymentTitle(args: ToolArgs, deploymentType: string): string {
 function resourceTypeLabel(type: string): string {
   const labels: Record<string, string> = {
     knowledgebase: 'knowledge base',
-    scheduledtask: 'scheduled task',
     file_folder: 'file folder',
     log: 'logs',
   }
@@ -245,6 +243,29 @@ function searchKnowledgeBaseTitle(args: ToolArgs): string {
   return titles[stringArg(args, 'operation')] ?? 'Searching knowledge base'
 }
 
+function manageSandboxTitle(args: ToolArgs): string {
+  const titles: Record<string, string> = {
+    add: 'Creating sandbox',
+    edit: 'Updating sandbox',
+    delete: 'Deleting sandbox',
+    list: 'Listing sandboxes',
+  }
+  return titles[stringArg(args, 'operation')] ?? 'Managing sandbox'
+}
+
+function manageScheduledTaskTitle(args: ToolArgs): string {
+  const operationArgs = recordArg(args, 'args')
+  const title = stringArg(operationArgs, 'title')
+  const titles: Record<string, string> = {
+    create: `Creating ${title || 'scheduled task'}`,
+    list: 'Listing scheduled tasks',
+    get: 'Reading scheduled task',
+    update: `Updating ${title || 'scheduled task'}`,
+    delete: 'Deleting scheduled task',
+  }
+  return titles[stringArg(args, 'operation')] ?? 'Managing scheduled task'
+}
+
 function userTableTitle(args: ToolArgs): string {
   const operation = stringArg(args, 'operation')
   const operationArgs = recordArg(args, 'args')
@@ -347,9 +368,8 @@ function setGlobalWorkflowVariablesTitle(args: ToolArgs): string {
   const operations = args?.operations
   if (!Array.isArray(operations) || operations.length === 0) return 'Setting workflow variables'
 
-  const parsed = operations.filter(
-    (operation): operation is Record<string, unknown> =>
-      Boolean(operation) && typeof operation === 'object' && !Array.isArray(operation)
+  const parsed = operations.filter((operation): operation is Record<string, unknown> =>
+    isRecordLike(operation)
   )
   const operationNames = parsed.map((operation) => stringArg(operation, 'operation'))
   const firstOperation = operationNames[0]
@@ -434,7 +454,6 @@ const TOOL_TITLES: Record<string, string> = {
   generate_audio: 'Generating audio',
   ffmpeg: 'Processing media',
   check_deployment_status: 'Checking deployment status',
-  complete_scheduled_task: 'Completing scheduled task',
   create_file: 'Creating file',
   create_file_folder: 'Creating folder',
   create_workspace_mcp_server: 'Creating MCP server',
@@ -446,13 +465,14 @@ const TOOL_TITLES: Record<string, string> = {
   diff_workflows: 'Comparing workflows',
   download_to_workspace_file: 'Downloading file',
   function_execute: 'Running code',
+  complete_scheduled_task: 'Completing scheduled task',
   generate_api_key: 'Generating API key',
   get_block_outputs: 'Getting block outputs',
   get_block_upstream_references: 'Getting block references',
   get_deployed_workflow_state: 'Getting deployed workflow',
   get_deployment_log: 'Getting deployment logs',
   get_platform_actions: 'Getting platform actions',
-  get_scheduled_task_logs: 'Getting scheduled task logs',
+  get_scheduled_task_logs: 'Reading scheduled task logs',
   get_workflow_data: 'Getting workflow data',
   get_workflow_run_options: 'Getting run options',
   list_file_folders: 'Listing folders',
@@ -463,6 +483,8 @@ const TOOL_TITLES: Record<string, string> = {
   list_workspace_mcp_servers: 'Listing MCP servers',
   load_deployment: 'Loading deployment',
   materialize_file: 'Preparing file',
+  manage_sandbox: 'Managing sandbox',
+  manage_scheduled_task: 'Managing scheduled task',
   move_file: 'Moving file',
   move_file_folder: 'Moving folder',
   move_workflow: 'Moving workflow',
@@ -475,13 +497,14 @@ const TOOL_TITLES: Record<string, string> = {
   rename_workflow: 'Renaming workflow',
   restore_resource: 'Restoring resource',
   run_block: 'Running block',
+  scheduled_task: 'Managing scheduled task',
   search_documentation: 'Searching documentation',
   search_patterns: 'Searching patterns',
   set_block_enabled: 'Toggling block',
   set_environment_variables: 'Setting environment variables',
   set_global_workflow_variables: 'Setting workflow variables',
   update_deployment_version: 'Updating deployment',
-  update_scheduled_task_history: 'Updating task history',
+  update_scheduled_task_history: 'Updating scheduled task history',
   update_workspace_mcp_server: 'Updating MCP server',
   // Browser agent tools without an argument-aware title.
   browser_go_back: 'Going back',
@@ -504,7 +527,6 @@ const TOOL_TITLES: Record<string, string> = {
   auth: 'Auth Agent',
   knowledge: 'Knowledge Agent',
   table: 'Table Agent',
-  scheduled_task: 'Scheduled Task Agent',
   agent: 'Tools Agent',
   research: 'Research Agent',
   scout: 'Scout Agent',
@@ -623,10 +645,7 @@ const TERMINAL_OPERATION_TITLES: Record<string, string> = {
 function terminalTitle(args: ToolArgs): string {
   const operation = stringArg(args, 'operation')
   const nested = args?.args
-  const inner: ToolArgs =
-    nested && typeof nested === 'object' && !Array.isArray(nested)
-      ? (nested as Record<string, unknown>)
-      : undefined
+  const inner: ToolArgs = isRecordLike(nested) ? (nested as Record<string, unknown>) : undefined
   if (operation === 'run') return runningCommandTitle(stringArg(inner, 'command'))
   if (operation === 'handoff') {
     // Matches the browser takeover row: the reason is the whole point of the
@@ -663,6 +682,10 @@ export function getToolDisplayTitle(name: string, args?: Record<string, unknown>
       return queryUserTableTitle(args)
     case 'search_knowledge_base':
       return searchKnowledgeBaseTitle(args)
+    case 'manage_sandbox':
+      return manageSandboxTitle(args)
+    case 'manage_scheduled_task':
+      return manageScheduledTaskTitle(args)
     case 'user_table':
       return userTableTitle(args)
     case 'materialize_file':
@@ -898,17 +921,6 @@ export function getToolDisplayTitle(name: string, args?: Record<string, unknown>
         list: { verb: 'Viewing', resource: 'skills' },
       })
     }
-    case 'manage_scheduled_task': {
-      const target =
-        firstStringArg(args, 'title', 'taskName', 'name') || nestedStringArg(args, 'args', 'title')
-      return namedOperationTitle(args, target, 'Scheduled task action', {
-        create: { verb: 'Creating', resource: 'scheduled task' },
-        get: { verb: 'Reading', resource: 'scheduled task' },
-        update: { verb: 'Updating', resource: 'scheduled task' },
-        delete: { verb: 'Deleting', resource: 'scheduled task' },
-        list: { verb: 'Viewing', resource: 'scheduled tasks' },
-      })
-    }
     case 'manage_credential': {
       const operation = stringArg(args, 'operation')
       if (operation === 'rename') {
@@ -1053,6 +1065,13 @@ export function getToolCompletedTitle(title: string): string | undefined {
  * running/error row remains truthful; every successful renderer calls this to
  * project the corresponding completed title from the canonical verb map.
  */
-export function getToolStatusDisplayTitle(title: string, status: string): string {
+export function getToolStatusDisplayTitle(
+  title: string,
+  status: string,
+  toolName?: string
+): string {
+  if (status === 'success' && toolName === 'browser_request_takeover') {
+    return 'Resumed browser control'
+  }
   return status === 'success' ? (getToolCompletedTitle(title) ?? title) : title
 }

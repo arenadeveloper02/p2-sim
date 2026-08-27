@@ -10,18 +10,33 @@ import { notFound } from 'next/navigation'
 import { PageFooter } from '@/components/docs-layout/page-footer'
 import { PageNavigationArrows } from '@/components/docs-layout/page-navigation-arrows'
 import { LLMCopyButton } from '@/components/page-actions'
-import { PageTypeBadge } from '@/components/page-type-badge'
 import { StructuredData } from '@/components/structured-data'
+import { APIExampleSelector } from '@/components/ui/api-example-selector'
 import { CodeBlock } from '@/components/ui/code-block'
 import { Heading } from '@/components/ui/heading'
 import { ResponseSection } from '@/components/ui/response-section'
 import { i18n } from '@/lib/i18n'
-import { getApiSpecContent, openapi } from '@/lib/openapi'
+import { getApiSpecContent, getAuthenticatedCodeSamples, openapi } from '@/lib/openapi'
 import { type PageData, source } from '@/lib/source'
 import { DOCS_BASE_URL } from '@/lib/urls'
 
 const SUPPORTED_LANGUAGES: Set<string> = new Set(i18n.languages)
 const BASE_URL = DOCS_BASE_URL
+
+/**
+ * Most pages close with a `## Next` / `## Next steps` grid of onward links.
+ * That heading is navigation, not content, so it is kept out of the table of
+ * contents — the ToC should say what the page covers, not where to go after it.
+ * The heading itself still renders above the cards.
+ *
+ * Matched on the slug rather than the rendered title because a ToC title is a
+ * `ReactNode`; the trailing group tolerates the slugger's dedupe suffix.
+ */
+const ONWARD_NAV_SLUG = /^#next(-steps)?(-\d+)?$/i
+
+function isContentHeading(item: { url: string }): boolean {
+  return !ONWARD_NAV_SLUG.test(item.url)
+}
 
 const OG_LOCALE_MAP: Record<string, string> = {
   en: 'en_US',
@@ -56,12 +71,17 @@ function stripLocalePrefix(url: string, lang: string): string {
 
 const APIPage = createAPIPage(openapi, {
   playground: { enabled: false },
+  generateCodeSamples: getAuthenticatedCodeSamples,
+  client: {
+    operation: { APIExampleSelector },
+  },
   content: {
-    renderOperationLayout: async (slots) => {
+    renderOperationLayout: (slots) => {
       return (
         <div className='flex @4xl:flex-row flex-col @4xl:items-start gap-x-6 gap-y-4'>
           <div className='min-w-0 flex-1'>
             {slots.header}
+            {slots.description}
             {slots.apiPlayground}
             {slots.authSchemes && <div className='api-section-divider'>{slots.authSchemes}</div>}
             {slots.parameters}
@@ -93,14 +113,21 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
   // Academy lessons are video-first: drop the "On this page" TOC and go full
   // width so the lesson hero/video gets the room (chapters live in-page instead).
   const isAcademy = slug?.[0] === 'academy'
+  const isCli = slug?.[0] === 'cli'
 
   const pageTreeRecord = source.pageTree as Record<string, Root>
   const pageTree = pageTreeRecord[lang] ?? pageTreeRecord.en ?? Object.values(pageTreeRecord)[0]
   const rawNeighbours = pageTree ? findNeighbour(pageTree, page.url) : null
-  // Academy and API Reference are self-contained sections; keep prev/next inside
-  // the section instead of spilling into the main documentation tree. Match both
-  // the section's pages (`/<slug>/...`) and its index (`/<slug>`).
-  const sectionSlug = isApiReference ? 'api-reference' : isAcademy ? 'academy' : null
+  // Academy, API Reference, and CLI are self-contained sections; keep prev/next
+  // inside the section instead of spilling into the main documentation tree.
+  // Match both the section's pages (`/<slug>/...`) and its index (`/<slug>`).
+  const sectionSlug = isApiReference
+    ? 'api-reference'
+    : isAcademy
+      ? 'academy'
+      : isCli
+        ? 'cli'
+        : null
   const inSection = (url?: string) =>
     url != null && (url.includes(`/${sectionSlug}/`) || url.endsWith(`/${sectionSlug}`))
   const neighbours = sectionSlug
@@ -171,7 +198,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
           breadcrumb={breadcrumbs}
         />
         <DocsPage
-          toc={data.toc}
+          toc={data.toc.filter(isContentHeading)}
           breadcrumb={{
             enabled: false,
           }}
@@ -218,7 +245,7 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
         breadcrumb={breadcrumbs}
       />
       <DocsPage
-        toc={data.toc}
+        toc={data.toc.filter(isContentHeading)}
         full={data.full || isAcademy}
         breadcrumb={{
           enabled: false,
@@ -244,7 +271,6 @@ export default async function Page(props: { params: Promise<{ slug?: string[]; l
             </div>
             <PageNavigationArrows previous={neighbours?.previous} next={neighbours?.next} />
           </div>
-          {data.pageType && <PageTypeBadge type={data.pageType} className='mb-3' />}
           <DocsTitle className='mb-2'>{data.title}</DocsTitle>
         </div>
         <DocsBody>

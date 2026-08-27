@@ -24,6 +24,7 @@ import * as agentmail from '@/lib/mothership/inbox/agentmail-client'
 import { formatEmailAsMessage } from '@/lib/mothership/inbox/format'
 import { sendInboxResponse } from '@/lib/mothership/inbox/response'
 import type { AgentMailAttachment } from '@/lib/mothership/inbox/types'
+import { buildStorageKeySegment } from '@/lib/uploads/core/storage-key'
 import { uploadFile } from '@/lib/uploads/core/storage-service'
 import { createFileContent, type MessageContent } from '@/lib/uploads/utils/file-utils'
 import { checkWorkspaceAccess, getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
@@ -216,10 +217,14 @@ export async function executeInboxTask(taskId: string): Promise<void> {
 
     const workspaceAccess = await checkWorkspaceAccess(ws.id, userId)
     const userPermission = workspaceAccess.permission
+    const secretMountPolicy = normalizeSecretMountPolicy({
+      secretScope: ws.inboxSecretScope,
+      mountedSecrets: ws.inboxMountedSecrets,
+    })
     const [attachmentResult, workspaceContext, integrationTools, billingAttribution, entitlements] =
       await Promise.all([
         fetchAttachments(),
-        generateWorkspaceContext(ws.id, userId, { workspaceAccess }),
+        generateWorkspaceContext(ws.id, userId, { workspaceAccess, secretMountPolicy }),
         buildIntegrationToolSchemas(userId, undefined, undefined, ws.id),
         resolveBillingAttribution({ actorUserId: userId, workspaceId: ws.id }),
         computeWorkspaceEntitlements(ws.id, userId),
@@ -258,10 +263,7 @@ export async function executeInboxTask(taskId: string): Promise<void> {
       billingAttribution,
       ...(userPermission ? { userPermission } : {}),
       secretActorUserId: actor.secretActorUserId,
-      secretMountPolicy: normalizeSecretMountPolicy({
-        secretScope: ws.inboxSecretScope,
-        mountedSecrets: ws.inboxMountedSecrets,
-      }),
+      secretMountPolicy,
     })
 
     const cleanContent = stripThinkingTags(result.content || '')
@@ -481,7 +483,10 @@ async function downloadAttachmentContents(
       const fileContent = createFileContent(buffer, attachment.content_type)
       if (!fileContent) return null
 
-      const storageKey = `copilot/${Date.now()}-${attachment.attachment_id}-${attachment.filename}`
+      const storageKey = `copilot/${buildStorageKeySegment(
+        `${Date.now()}-${attachment.attachment_id}-`,
+        attachment.filename
+      )}`
       const uploaded = await uploadFile({
         file: buffer,
         fileName: attachment.filename,

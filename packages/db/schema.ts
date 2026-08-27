@@ -271,7 +271,7 @@ export const pinnedItem = pgTable(
     workspaceId: text('workspace_id')
       .notNull()
       .references(() => workspace.id, { onDelete: 'cascade' }),
-    resourceType: text('resource_type').notNull(), // 'workflow' | 'file' | 'knowledge_base' | 'table' | 'folder'
+    resourceType: text('resource_type').notNull(), // 'workflow' | 'file' | 'knowledge_base' | 'table' | 'folder' | 'workspace'
     resourceId: text('resource_id').notNull(),
     pinnedAt: timestamp('pinned_at').notNull().defaultNow(),
   },
@@ -290,6 +290,27 @@ export const workflow = pgTable(
   'workflow',
   {
     id: text('id').primaryKey(),
+    /**
+     * Creator and owner. Legitimate as ownership: it anchors personal
+     * (workspace-less) workflows, cascades the workflow away with the account,
+     * and names the owner for webhook config and deploy-as-block resolution.
+     *
+     * @deprecated As an execution identity. Do not use it to decide who a run
+     * acts as, what it may read, or what it may authorize. The acting principal
+     * is `ExecutionMetadata.userId`, which the principal layer
+     * (`resolvePrincipalAttribution`) resolves to the caller for a session,
+     * personal API key, or delegated run, and to the workspace billing account
+     * for a workspace API key, schedule, or webhook.
+     *
+     * Exactly one execution use survives, carried as
+     * `ExecutionMetadata.workflowUserId`: the personal-environment fallback in
+     * `executeWorkflowCore`, for runs with no identifiable caller — workspace
+     * API keys, schedules, webhooks, and unauthenticated public-API calls. Those
+     * have nobody to resolve personal variables as, and a deployed workflow is
+     * routinely authored against its owner's personal keys, so dropping the
+     * fallback would break them. Workspace variables never fall back here; they
+     * always authorize against the actor.
+     */
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
@@ -378,6 +399,9 @@ export const workflowBlocks = pgTable(
     isWide: boolean('is_wide').notNull().default(false),
     advancedMode: boolean('advanced_mode').notNull().default(false),
     triggerMode: boolean('trigger_mode').notNull().default(false),
+    errorEnabled: boolean('error_enabled').notNull().default(false),
+    /** Opt-in {@link BlockRetryConfig}; NULL means the block never retries. */
+    retry: jsonb('retry'),
     locked: boolean('locked').notNull().default(false),
     height: decimal('height').notNull().default('0'),
 
@@ -492,11 +516,21 @@ export const workflowExecutionLogs = pgTable(
     ),
 
     level: text('level').notNull(), // 'info' | 'error'
-    status: text('status').notNull().default('running'), // 'running' | 'pending' | 'completed' | 'failed' | 'cancelled'
+    /** See `PERSISTED_WORKFLOW_EXECUTION_STATUSES` in `apps/sim/lib/logs/types.ts`. */
+    status: text('status').notNull().default('running'),
     trigger: text('trigger').notNull(), // 'api' | 'webhook' | 'schedule' | 'manual' | 'chat'
 
     startedAt: timestamp('started_at').notNull(),
+    /** Absolute deadline for the current active attempt; cleared while paused or terminal. */
+    executionDeadlineAt: timestamp('execution_deadline_at'),
     endedAt: timestamp('ended_at'),
+    /**
+     * Wall clock from `started_at` for a terminal row; for a `pending` (paused)
+     * row, the active duration recorded at the checkpoint, which excludes the
+     * time the run sits waiting. Resuming leaves that checkpoint value in place
+     * while the row accrues time again, so a `running` row's value is stale
+     * until the next terminal write recomputes it.
+     */
     totalDurationMs: integer('total_duration_ms'),
 
     /**
@@ -588,6 +622,9 @@ export const workflowExecutionLogs = pgTable(
     rootExecutionIdIdx: index('workflow_execution_logs_root_execution_id_idx').on(
       table.rootExecutionId
     ),
+    runningExecutionDeadlineIdx: index('workflow_execution_logs_running_deadline_idx')
+      .on(table.executionDeadlineAt)
+      .where(sql`${table.status} = 'running' AND ${table.executionDeadlineAt} IS NOT NULL`),
     completedEndedAtIdx: index('workflow_execution_logs_completed_ended_at_idx')
       .on(table.endedAt, table.workspaceId, table.executionId)
       .where(
@@ -817,6 +854,7 @@ export const settings = pgTable('settings', {
   // Canvas preferences
   snapToGridSize: integer('snap_to_grid_size').notNull().default(0), // 0 = off, 10-50 = grid size
   showActionBar: boolean('show_action_bar').notNull().default(true),
+  autoFocusOnClick: boolean('auto_focus_on_click').notNull().default(true),
 
   timezone: text('timezone'),
 
@@ -946,11 +984,6 @@ export const jobExecutionLogs = pgTable(
   })
 )
 
-/** Extracts the canonical credential ID persisted in webhook provider configuration. */
-export function webhookCredentialIdExpression(column: AnyPgColumn): SQL<string> {
-  return sql<string>`((${column})::jsonb ->> 'credentialId')`
-}
-
 export const webhook = pgTable(
   'webhook',
   {
@@ -969,15 +1002,15 @@ export const webhook = pgTable(
     blockId: text('block_id'),
     /**
      * URL-addressable webhook path. NULL for shared-app providers (e.g. the
-     * native Slack OAuth trigger) whose events arrive on a single shared
+     * native Slack and TikTok triggers) whose events arrive on a single shared
      * endpoint and route by `routingKey` instead of a per-workflow path.
      */
     path: text('path'),
     /**
-     * Tenant routing key for shared-app providers. For `provider='slack_app'`
-     * this is the Slack `team_id`, derived server-side from the connected
-     * credential at deploy time — never user input. Inbound events match on
-     * this after HMAC verification.
+     * Tenant routing key for shared-app providers, such as Slack `team_id` or
+     * TikTok `open_id`, derived server-side from the connected credential at
+     * deploy time — never user input. Inbound events match on this after HMAC
+     * verification.
      */
     routingKey: text('routing_key'),
     provider: text('provider'), // e.g., "whatsapp", "github", etc.
@@ -1009,11 +1042,6 @@ export const webhook = pgTable(
       providerActiveWorkflowDeploymentIdx: index(
         'idx_webhook_on_provider_is_active_workflow_id_deploym_bdeed5468'
       ).on(table.provider, table.isActive, table.workflowId, table.deploymentVersionId),
-      tiktokCredentialIdIdx: index('webhook_tiktok_credential_id_idx')
-        .on(webhookCredentialIdExpression(table.providerConfig))
-        .where(
-          sql`${table.provider} = 'tiktok' AND ${table.isActive} = true AND ${table.archivedAt} IS NULL`
-        ),
       workflowBlockUpdatedDescIdx: index('idx_webhook_on_workflow_id_block_id_updated_at_desc').on(
         table.workflowId,
         table.blockId,
@@ -1785,6 +1813,15 @@ export const workspace = pgTable(
     forkedFromWorkspaceIdx: index('workspace_forked_from_workspace_id_idx').on(
       table.forkedFromWorkspaceId
     ),
+    /**
+     * Routes an unauthenticated AgentMail delivery to exactly one tenant's
+     * webhook secret. Unique so "one signature check per request" is a storage
+     * invariant rather than something the receiver has to defend against, and
+     * partial because only a small fraction of workspaces enable an inbox.
+     */
+    inboxProviderIdIdx: uniqueIndex('workspace_inbox_provider_id_idx')
+      .on(table.inboxProviderId)
+      .where(sql`${table.inboxProviderId} IS NOT NULL`),
   })
 )
 
@@ -2080,7 +2117,17 @@ export const workspaceFiles = pgTable(
      */
     displayName: text('display_name'),
     contentType: text('content_type').notNull(),
+    // contract-pending(after #6188 is fully deployed and sizeBytes is backfilled): drop size — new code dual-writes and reads sizeBytes first
     size: integer('size').notNull(),
+    /** Exact byte size for files above PostgreSQL's int4 ceiling; legacy rows fall back to `size`. */
+    sizeBytes: bigint('size_bytes', { mode: 'number' }),
+    /**
+     * Intrinsic pixel dimensions of an image file, captured lazily on first view (and stored so later
+     * views reserve layout space before the image loads, via aspect-ratio). NULL for non-images and for
+     * rows not yet backfilled. Purely a rendering hint — never affects stored file content.
+     */
+    width: integer('width'),
+    height: integer('height'),
     deletedAt: timestamp('deleted_at'),
     uploadedAt: timestamp('uploaded_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -2095,6 +2142,13 @@ export const workspaceFiles = pgTable(
      * is covered without per-call plumbing. Only a content write (upload / overwrite) advances it.
      */
     contentUpdatedAt: timestamp('content_updated_at').notNull().defaultNow(),
+    /**
+     * Durable cutover marker for content secret provenance. NULL is reserved for legacy rows and
+     * writes from app versions that predate tracking. Provenance-aware writers set version 1 in the
+     * same transaction as the matching sidecar. A tracked version without a matching sidecar fails
+     * closed.
+     */
+    secretProvenanceVersion: integer('secret_provenance_version'),
   },
   (table) => ({
     keyActiveUniqueIdx: uniqueIndex('workspace_files_key_active_unique')
@@ -2130,6 +2184,133 @@ export const workspaceFiles = pgTable(
       .where(sql`${table.deletedAt} IS NOT NULL`),
   })
 )
+
+export const uploadSessionStatusEnum = pgEnum('upload_session_status', [
+  'uploading',
+  'completing',
+  'finalizing',
+  'completed',
+  'aborting',
+  'aborted',
+  'failed',
+  'expired',
+])
+
+export const uploadSessionMethodEnum = pgEnum('upload_session_method', ['put', 'multipart'])
+
+export const uploadSessionProviderEnum = pgEnum('upload_session_provider', [
+  'local',
+  's3',
+  'blob',
+  'gcs',
+])
+
+export const uploadSessionPurposeEnum = pgEnum('upload_session_purpose', [
+  'workspace_file',
+  'table_import',
+  'knowledge_document',
+  'profile_picture',
+  'workspace_logo',
+  'mothership_attachment',
+  'execution_attachment',
+])
+
+/** Durable control-plane state for direct-to-provider PUT and multipart uploads. */
+export const uploadSession = pgTable(
+  'upload_session',
+  {
+    id: text('id').primaryKey(),
+    tokenHash: text('token_hash').notNull(),
+    userId: text('user_id').notNull(),
+    workspaceId: text('workspace_id'),
+    knowledgeBaseId: text('knowledge_base_id'),
+    workflowId: text('workflow_id'),
+    executionId: text('execution_id'),
+    purpose: uploadSessionPurposeEnum('purpose').notNull(),
+    method: uploadSessionMethodEnum('method').notNull(),
+    storageContext: text('storage_context').notNull(),
+    finalKey: text('final_key').notNull(),
+    storageProvider: uploadSessionProviderEnum('storage_provider').notNull(),
+    providerUploadId: text('provider_upload_id'),
+    providerObjectVersion: text('provider_object_version'),
+    fileName: text('file_name').notNull(),
+    contentType: text('content_type').notNull(),
+    fileSize: bigint('file_size', { mode: 'number' }).notNull(),
+    partSize: integer('part_size'),
+    partCount: integer('part_count'),
+    status: uploadSessionStatusEnum('status').notNull().default('uploading'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    processingLeaseId: text('processing_lease_id'),
+    processingLeaseExpiresAt: timestamp('processing_lease_expires_at'),
+    completedFileId: text('completed_file_id'),
+    error: text('error'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    expiresAt: timestamp('expires_at').notNull(),
+    completedAt: timestamp('completed_at'),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    tokenHashUnique: uniqueIndex('upload_session_token_hash_unique').on(table.tokenHash),
+    finalKeyUnique: uniqueIndex('upload_session_final_key_unique').on(table.finalKey),
+    statusExpiresAtIdx: index('upload_session_status_expires_at_idx').on(
+      table.status,
+      table.expiresAt
+    ),
+  })
+)
+
+export interface WorkspaceFileSecretProvenanceEntry extends DurableSecretProvenanceEntry {
+  sourceUserId: string
+}
+
+export interface StoredWorkspaceFileSecretProvenanceEntry
+  extends WorkspaceFileSecretProvenanceEntry {
+  name: string
+  anonymous?: true
+}
+
+/**
+ * Private, durable provenance for bytes stored in `workspace_files`.
+ *
+ * Absence is reserved for legacy files that predate provenance tracking. `exact` records carry the
+ * encrypted values found in one content version (including an empty set); `unknown` records fail
+ * closed at model attachment boundaries. Keeping this one-to-one state outside `workspace_files`
+ * prevents private metadata from leaking through broad workspace-file record projections.
+ */
+export const workspaceFileSecretProvenance = pgTable(
+  'workspace_file_secret_provenance',
+  {
+    fileId: text('file_id')
+      .primaryKey()
+      .references(() => workspaceFiles.id, { onDelete: 'cascade' }),
+    contentUpdatedAt: timestamp('content_updated_at').notNull(),
+    status: text('status').notNull(),
+    entries: jsonb('entries')
+      .$type<StoredWorkspaceFileSecretProvenanceEntry[]>()
+      .notNull()
+      .default([]),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    statusCheck: check(
+      'workspace_file_secret_provenance_status_check',
+      sql`${table.status} IN ('exact', 'unknown')`
+    ),
+  })
+)
+
+export interface DurableSecretProvenanceEntry {
+  encryptedValue: string
+  name?: string
+  sourceUserId?: string
+  sourceWorkspaceId?: string
+  /** Optional canonical hash of the exact persisted sub-value that contributed this entry. */
+  sourceValueHash?: string
+}
+
+export interface TableRowSecretProvenanceEntry extends DurableSecretProvenanceEntry {
+  columnId: string
+}
 
 /**
  * Cached collaborative-document state for a workspace markdown file: the last-persisted Yjs binary and
@@ -2281,6 +2462,8 @@ export const memory = pgTable(
       .references(() => workspace.id, { onDelete: 'cascade' }),
     key: text('key').notNull(),
     data: jsonb('data').notNull(),
+    /** NULL is a legacy/untracked record; version 1 requires a fresh private sidecar. */
+    secretProvenanceVersion: integer('secret_provenance_version'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     deletedAt: timestamp('deleted_at'),
@@ -2298,6 +2481,26 @@ export const memory = pgTable(
         .where(sql`${table.deletedAt} IS NOT NULL`),
     }
   }
+)
+
+/** Private provenance bound to one exact canonical hash of the persisted memory data. */
+export const memorySecretProvenance = pgTable(
+  'memory_secret_provenance',
+  {
+    memoryId: text('memory_id')
+      .primaryKey()
+      .references(() => memory.id, { onDelete: 'cascade' }),
+    contentHash: text('content_hash').notNull(),
+    status: text('status').notNull(),
+    entries: jsonb('entries').$type<DurableSecretProvenanceEntry[]>().notNull().default([]),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    statusCheck: check(
+      'memory_secret_provenance_status_check',
+      sql`${table.status} IN ('exact', 'unknown')`
+    ),
+  })
 )
 
 export const knowledgeBase = pgTable(
@@ -2457,6 +2660,8 @@ export const document = pgTable(
     externalId: text('external_id'),
     contentHash: text('content_hash'),
     sourceUrl: text('source_url'),
+    /** NULL is a legacy/untracked source; version 1 requires a matching source sidecar. */
+    secretProvenanceVersion: integer('secret_provenance_version'),
 
     /** User who uploaded the document, for usage attribution. Null for
      *  connector/cron-synced docs (and pre-migration rows) → indexing billing
@@ -2516,6 +2721,26 @@ export const document = pgTable(
   })
 )
 
+/** Private provenance for a document ingestion source, bound by a deterministic source hash. */
+export const documentSecretProvenance = pgTable(
+  'document_secret_provenance',
+  {
+    documentId: text('document_id')
+      .primaryKey()
+      .references(() => document.id, { onDelete: 'cascade' }),
+    sourceHash: text('source_hash').notNull(),
+    status: text('status').notNull(),
+    entries: jsonb('entries').$type<DurableSecretProvenanceEntry[]>().notNull().default([]),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    statusCheck: check(
+      'document_secret_provenance_status_check',
+      sql`${table.status} IN ('exact', 'unknown')`
+    ),
+  })
+)
+
 export const knowledgeBaseTagDefinitions = pgTable(
   'knowledge_base_tag_definitions',
   {
@@ -2562,6 +2787,8 @@ export const embedding = pgTable(
     chunkIndex: integer('chunk_index').notNull(),
     chunkHash: text('chunk_hash').notNull(),
     content: text('content').notNull(),
+    /** NULL is a legacy/untracked chunk; version 1 requires a fresh private sidecar. */
+    secretProvenanceVersion: integer('secret_provenance_version'),
     contentLength: integer('content_length').notNull(),
     tokenCount: integer('token_count').notNull(),
 
@@ -2660,6 +2887,26 @@ export const embedding = pgTable(
 
     // Ensure embedding exists (simplified since we only support one model)
     embeddingNotNullCheck: check('embedding_not_null_check', sql`"embedding" IS NOT NULL`),
+  })
+)
+
+/** Private provenance bound to one exact SHA-256 hash of the persisted chunk content. */
+export const embeddingSecretProvenance = pgTable(
+  'embedding_secret_provenance',
+  {
+    embeddingId: text('embedding_id')
+      .primaryKey()
+      .references(() => embedding.id, { onDelete: 'cascade' }),
+    contentHash: text('content_hash').notNull(),
+    status: text('status').notNull(),
+    entries: jsonb('entries').$type<DurableSecretProvenanceEntry[]>().notNull().default([]),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    statusCheck: check(
+      'embedding_secret_provenance_status_check',
+      sql`${table.status} IN ('exact', 'unknown')`
+    ),
   })
 )
 
@@ -3090,6 +3337,25 @@ export const localCopilotAuditStatusEnum = pgEnum('local_copilot_audit_status', 
   'rejected',
 ])
 
+/**
+ * Allowlisted Local Copilot picker ids. Keep in sync with
+ * `LOCAL_COPILOT_CATALOG` in `apps/sim/local-copilot/lib/model-catalog.ts`.
+ */
+export const localCopilotDefaultModelEnum = pgEnum('local_copilot_default_model', [
+  'claude',
+  'gemini-2.5-pro',
+  'gemini-3.1-pro',
+  'bedrock-claude-opus-5',
+  'bedrock-claude-sonnet-5',
+  'bedrock-claude-opus-4-8',
+  'bedrock-claude-opus-4-6',
+  'bedrock-claude-sonnet-4-6',
+  'bedrock-zai-glm-5',
+  'bedrock-nemotron-super-3-120b',
+  'bedrock-mistral-large-3',
+  'bedrock-llama-3.3-70b',
+])
+
 export const localCopilotConversations = pgTable(
   'local_copilot_conversations',
   {
@@ -3222,7 +3488,8 @@ export const localCopilotAuditLogs = pgTable(
 
 /**
  * Per-user Arena Copilot allowlist. Access is denied unless a row exists for the
- * user with `hasAccess = true`. Managed via SQL only (no admin UI).
+ * user with `hasAccess = true` or `localOnly = true`. Managed via SQL only
+ * (no admin UI). New accounts default to `localOnly = true` and Gemini.
  */
 export const localCopilotUserAccess = pgTable(
   'local_copilot_user_access',
@@ -3233,7 +3500,8 @@ export const localCopilotUserAccess = pgTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     email: text('email').notNull(),
     hasAccess: boolean('has_access').notNull().default(false),
-    localOnly: boolean('local_only').notNull().default(false),
+    localOnly: boolean('local_only').notNull().default(true),
+    defaultModel: localCopilotDefaultModelEnum('default_model').notNull().default('gemini-2.5-pro'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
@@ -3635,9 +3903,20 @@ export const ssoProvider = pgTable(
     organizationId: text('organization_id').references(() => organization.id, {
       onDelete: 'cascade',
     }),
+    /**
+     * Better Auth's SSO `domainVerification` flag. Sim proves ownership itself
+     * via {@link ssoDomain} before registration, so this mirrors that decision
+     * rather than driving a second flow. It makes Better Auth treat the provider
+     * as authoritative for its domain and auto-link same-email accounts; without
+     * it, IdPs omitting `email_verified` (notably Entra) strand those users.
+     * Defaults to true so pre-existing providers keep signing in across deploy.
+     */
+    domainVerified: boolean('domain_verified').notNull().default(true),
   },
   (table) => ({
-    providerIdIdx: index('sso_provider_provider_id_idx').on(table.providerId),
+    // Better Auth resolves providers by `providerId` alone (no org scoping), so
+    // a duplicate makes registration and updates ambiguous across tenants.
+    providerIdUnique: uniqueIndex('sso_provider_provider_id_unique').on(table.providerId),
     domainIdx: index('sso_provider_domain_idx').on(table.domain),
     userIdIdx: index('sso_provider_user_id_idx').on(table.userId),
     organizationIdIdx: index('sso_provider_organization_id_idx').on(table.organizationId),
@@ -4206,10 +4485,25 @@ export const slackSummary = pgTable(
 )
 export const credentialTypeEnum = pgEnum('credential_type', [
   'oauth',
+  'managed_oauth',
   'env_workspace',
   'env_personal',
   'service_account',
 ])
+
+export const managedOauthCredentialStatusEnum = pgEnum('managed_oauth_credential_status', [
+  'active',
+  'needs_reauth',
+  'revoked',
+])
+
+export interface ManagedOAuthProviderMetadata {
+  email: string
+  displayName?: string
+  avatarUrl?: string
+  username?: string
+  tenantDisplayName?: string
+}
 
 export const credential = pgTable(
   'credential',
@@ -4226,6 +4520,24 @@ export const credential = pgTable(
     envKey: text('env_key'),
     envOwnerUserId: text('env_owner_user_id').references(() => user.id, { onDelete: 'cascade' }),
     encryptedServiceAccountKey: text('encrypted_service_account_key'),
+    authorizationAppId: text('authorization_app_id'),
+    credentialGroupEnrollmentId: text('credential_group_enrollment_id').references(
+      (): AnyPgColumn => credentialGroupEnrollment.id,
+      { onDelete: 'cascade' }
+    ),
+    credentialGroupOptionId: text('credential_group_option_id'),
+    managedOauthScopeVersion: integer('managed_oauth_scope_version'),
+    providerSubjectId: text('provider_subject_id'),
+    providerTenantId: text('provider_tenant_id'),
+    managedOauthStatus: managedOauthCredentialStatusEnum('managed_oauth_status'),
+    grantedScopes: text('granted_scopes').array(),
+    providerMetadata: jsonb('provider_metadata').$type<ManagedOAuthProviderMetadata>(),
+    encryptedOauthTokenSet: text('encrypted_oauth_token_set'),
+    grantedAt: timestamp('granted_at'),
+    revokedAt: timestamp('revoked_at'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at'),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
+    lastRefreshedAt: timestamp('last_refreshed_at'),
     createdBy: text('created_by')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
@@ -4238,6 +4550,12 @@ export const credential = pgTable(
     providerIdIdx: index('credential_provider_id_idx').on(table.providerId),
     accountIdIdx: index('credential_account_id_idx').on(table.accountId),
     envOwnerUserIdIdx: index('credential_env_owner_user_id_idx').on(table.envOwnerUserId),
+    credentialGroupEnrollmentIdx: index('credential_group_enrollment_idx').on(
+      table.credentialGroupEnrollmentId
+    ),
+    credentialGroupOptionUnique: uniqueIndex('credential_group_option_unique')
+      .on(table.credentialGroupEnrollmentId, table.credentialGroupOptionId)
+      .where(sql`${table.type} = 'managed_oauth'`),
     workspaceAccountUnique: uniqueIndex('credential_workspace_account_unique')
       .on(table.workspaceId, table.accountId)
       .where(sql`account_id IS NOT NULL`),
@@ -4250,6 +4568,29 @@ export const credential = pgTable(
     oauthSourceConstraint: check(
       'credential_oauth_source_check',
       sql`(type <> 'oauth') OR (account_id IS NOT NULL AND provider_id IS NOT NULL)`
+    ),
+    managedOauthSourceConstraint: check(
+      'credential_managed_oauth_source_check',
+      sql`(type::text <> 'managed_oauth') OR (
+        account_id IS NULL
+        AND provider_id IS NOT NULL
+        AND authorization_app_id IS NOT NULL
+        AND provider_subject_id IS NOT NULL
+        AND managed_oauth_status IS NOT NULL
+        AND granted_scopes IS NOT NULL
+        AND cardinality(granted_scopes) > 0
+        AND encrypted_oauth_token_set IS NOT NULL
+        AND granted_at IS NOT NULL
+      )`
+    ),
+    managedOauthGroupBindingConstraint: check(
+      'credential_managed_oauth_group_binding_check',
+      sql`(type::text <> 'managed_oauth') OR (
+        credential_group_enrollment_id IS NOT NULL
+        AND credential_group_option_id IS NOT NULL
+        AND managed_oauth_scope_version IS NOT NULL
+        AND managed_oauth_scope_version > 0
+      )`
     ),
     workspaceEnvSourceConstraint: check(
       'credential_workspace_env_source_check',
@@ -4392,6 +4733,108 @@ export const clientDetails = pgTable(
   },
   (table) => ({
     clientIdIdx: index('client_details_client_id_idx').on(table.clientId),
+  })
+)
+
+export const credentialGroupStatusEnum = pgEnum('credential_group_status', ['active', 'disabled'])
+
+export interface CredentialGroupOptionConfig {
+  id: string
+  provider: string
+  label: string
+  slackBotCredentialId?: string
+  authorizationAppId: string
+  requiredScopes: string[]
+  scopeVersion: number
+  required: boolean
+  status: 'active' | 'disabled'
+}
+
+/** Workspace-owned configuration for collecting several managed OAuth credentials. */
+export const credentialGroup = pgTable(
+  'credential_group',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    publicId: text('public_id').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    options: jsonb('options').$type<CredentialGroupOptionConfig[]>().notNull(),
+    encryptedProviderConfiguration: text('encrypted_provider_configuration'),
+    status: credentialGroupStatusEnum('status').notNull().default('active'),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    publicIdUnique: uniqueIndex('credential_group_public_id_unique').on(table.publicId),
+    workspaceStatusIdx: index('credential_group_workspace_status_idx').on(
+      table.workspaceId,
+      table.status
+    ),
+    workspaceNameUnique: uniqueIndex('credential_group_workspace_name_unique').on(
+      table.workspaceId,
+      sql`lower(${table.name})`
+    ),
+  })
+)
+
+export const credentialGroupEnrollmentStatusEnum = pgEnum('credential_group_enrollment_status', [
+  'invited',
+  'delivery_failed',
+  'in_progress',
+  'completed',
+  'revoked',
+])
+
+/** Email-bound invitation and resumable progress for one credential-group recipient. */
+export const credentialGroupEnrollment = pgTable(
+  'credential_group_enrollment',
+  {
+    id: text('id').primaryKey(),
+    credentialGroupId: text('credential_group_id')
+      .notNull()
+      .references(() => credentialGroup.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    status: credentialGroupEnrollmentStatusEnum('status').notNull().default('invited'),
+    invitationTokenHash: text('invitation_token_hash').notNull(),
+    invitationExpiresAt: timestamp('invitation_expires_at').notNull(),
+    invitedAt: timestamp('invited_at').notNull(),
+    sentAt: timestamp('sent_at'),
+    completedAt: timestamp('completed_at'),
+    revokedAt: timestamp('revoked_at'),
+    lastDeliveryError: text('last_delivery_error'),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    groupEmailUnique: uniqueIndex('credential_group_enrollment_group_email_unique').on(
+      table.credentialGroupId,
+      table.email
+    ),
+    invitationTokenHashUnique: uniqueIndex(
+      'credential_group_enrollment_invitation_token_hash_unique'
+    ).on(table.invitationTokenHash),
+    groupStatusIdx: index('credential_group_enrollment_group_status_idx').on(
+      table.credentialGroupId,
+      table.status
+    ),
+    groupInvitedAtIdIdx: index('credential_group_enrollment_group_invited_at_id_idx').on(
+      table.credentialGroupId,
+      table.invitedAt,
+      table.id
+    ),
+    normalizedEmail: check(
+      'credential_group_enrollment_normalized_email_check',
+      sql`${table.email} = lower(btrim(${table.email})) AND length(${table.email}) BETWEEN 3 AND 320`
+    ),
+    invitationTokenHashLength: check(
+      'credential_group_enrollment_invitation_token_hash_length_check',
+      sql`length(${table.invitationTokenHash}) = 64`
+    ),
   })
 )
 
@@ -4773,6 +5216,7 @@ export const userTableRows = pgTable(
      * express column collation, so the collation lives only in the migration.
      */
     orderKey: text('order_key'),
+    secretProvenanceVersion: integer('secret_provenance_version'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
@@ -4808,6 +5252,30 @@ export const userTableRows = pgTable(
      * O(all rows) per page.
      */
     tableIdIdIdx: index('user_table_rows_table_id_id_idx').on(table.tableId, table.id),
+  })
+)
+
+/**
+ * Encrypted secret provenance for a table row's current JSONB payload.
+ * The sidecar is bound to `user_table_rows.updated_at`; a missing or stale
+ * sidecar on a tracked row is treated as unknown at model re-entry.
+ */
+export const userTableRowSecretProvenance = pgTable(
+  'user_table_row_secret_provenance',
+  {
+    rowId: text('row_id')
+      .primaryKey()
+      .references(() => userTableRows.id, { onDelete: 'cascade' }),
+    contentUpdatedAt: timestamp('content_updated_at').notNull(),
+    status: text('status').notNull(),
+    entries: jsonb('entries').$type<TableRowSecretProvenanceEntry[]>().notNull().default([]),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    statusCheck: check(
+      'user_table_row_secret_provenance_status_check',
+      sql`${table.status} IN ('exact', 'unknown')`
+    ),
   })
 )
 
@@ -5316,6 +5784,8 @@ export const workspaceSandbox = pgTable(
     name: text('name').notNull(),
     language: sandboxLanguageEnum('language').notNull(),
     dependencies: jsonb('dependencies').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    cliTools: jsonb('cli_tools').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    systemPackages: jsonb('system_packages').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     specHash: text('spec_hash').notNull(),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -5349,6 +5819,8 @@ export const sandboxImage = pgTable(
     /** Provider-side image identifier, when it differs from `imageRef`. */
     providerImageId: text('provider_image_id'),
     buildId: text('build_id'),
+    /** Monotonic target release for this provider materialization; legacy rows are generation 0. */
+    materializationGeneration: bigint('materialization_generation', { mode: 'number' }),
     /** Classified taxonomy code; see lib/execution/remote-sandbox/build-errors.ts. */
     errorCode: text('error_code'),
     /** User-facing copy rendered from the code at classification time. */

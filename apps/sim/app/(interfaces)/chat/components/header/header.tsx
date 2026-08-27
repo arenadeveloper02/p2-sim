@@ -77,7 +77,7 @@ export function ChatHeader({ chatConfig, starCount, workflowId }: ChatHeaderProp
               className='size-6 rounded-md object-cover'
             />
           )}
-          <h2 className='font-medium text-[var(--text-primary)] text-lg'>
+          <h2 className='text-[var(--text-primary)] text-lg'>
             {chatConfig?.customizations?.headerText || chatConfig?.title || 'Chat'}
           </h2>
         </div>

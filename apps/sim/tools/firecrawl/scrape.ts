@@ -1,4 +1,10 @@
 import { firecrawlHosting } from '@/tools/firecrawl/hosting'
+import {
+  applyFirecrawlFormatModelInput,
+  applyFirecrawlScrapeOptionsModelInput,
+  selectFirecrawlFormatModelInput,
+  selectFirecrawlScrapeOptionsModelInput,
+} from '@/tools/firecrawl/model-input'
 import type { ScrapeParams, ScrapeResponse } from '@/tools/firecrawl/types'
 import { PAGE_METADATA_OUTPUT_PROPERTIES } from '@/tools/firecrawl/types'
 import { safeAssign } from '@/tools/safe-assign'
@@ -18,6 +24,12 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
       visibility: 'user-or-llm',
       description: 'The URL to scrape content from (e.g., "https://example.com/page")',
     },
+    formats: {
+      type: 'json',
+      required: false,
+      visibility: 'hidden',
+      description: 'Output formats supplied by existing Firecrawl block configurations',
+    },
     scrapeOptions: {
       type: 'json',
       required: false,
@@ -26,7 +38,7 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
     },
     apiKey: {
       type: 'string',
-      required: false,
+      required: true,
       visibility: 'user-only',
       description: 'Firecrawl API key',
     },
@@ -35,6 +47,29 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
   hosting: firecrawlHosting(),
 
   request: {
+    modelInput: {
+      mode: 'project',
+      select: (params) =>
+        Array.isArray(params.formats)
+          ? { formats: selectFirecrawlFormatModelInput(params.formats) }
+          : { scrapeOptions: selectFirecrawlScrapeOptionsModelInput(params.scrapeOptions) },
+      applyProjected: (selectedParams, projectedSelection) => {
+        if (Object.hasOwn(projectedSelection, 'formats')) {
+          return {
+            formats: applyFirecrawlFormatModelInput(
+              selectedParams.formats,
+              projectedSelection.formats
+            ),
+          }
+        }
+        return {
+          scrapeOptions: applyFirecrawlScrapeOptionsModelInput(
+            selectedParams.scrapeOptions,
+            projectedSelection.scrapeOptions
+          ),
+        }
+      },
+    },
     method: 'POST',
     url: 'https://api.firecrawl.dev/v2/scrape',
     headers: (params) => ({
@@ -42,10 +77,6 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
       Authorization: `Bearer ${params.apiKey}`,
     }),
     body: (params) => {
-      if (!params.apiKey || typeof params.apiKey !== 'string' || params.apiKey.trim() === '') {
-        throw new Error('Missing or invalid API key: A valid Firecrawl API key is required')
-      }
-
       const body: Record<string, any> = {
         url: params.url,
         formats: params.formats || params.scrapeOptions?.formats || ['markdown'],
@@ -82,17 +113,14 @@ export const scrapeTool: ToolConfig<ScrapeParams, ScrapeResponse> = {
 
   transformResponse: async (response: Response) => {
     const data = await response.json()
-    const creditsUsed = data.creditsUsed ?? data.data?.metadata?.creditsUsed
 
     return {
       success: true,
       output: {
         markdown: data.data.markdown,
         html: data.data.html,
-        metadata: {
-          ...data.data.metadata,
-          ...(creditsUsed != null ? { creditsUsed } : {}),
-        },
+        metadata: data.data.metadata,
+        creditsUsed: data.creditsUsed,
       },
     }
   },

@@ -4,6 +4,7 @@ import {
   checkAttributedUsageLimits,
 } from '@/lib/billing/core/billing-attribution'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
+import { combineExecutionAbortSignals } from '@/lib/core/execution-limits'
 import {
   getCancellationChannel,
   isExecutionCancelled,
@@ -106,14 +107,15 @@ export async function createChildCancellationSignal(params: {
   parentExecutionId?: string
 }): Promise<{ signal: AbortSignal; dispose: () => void }> {
   const controller = new AbortController()
+  const signal = params.parentSignal
+    ? combineExecutionAbortSignals([params.parentSignal, controller.signal])
+    : controller.signal
 
-  if (params.parentSignal?.aborted) {
-    controller.abort(params.parentSignal.reason)
-    return { signal: controller.signal, dispose: () => {} }
+  if (signal.aborted) {
+    return { signal, dispose: () => {} }
   }
 
-  const onParentAbort = () => controller.abort(params.parentSignal?.reason)
-  params.parentSignal?.addEventListener('abort', onParentAbort, { once: true })
+  const abort = () => controller.abort(new DOMException('user', 'AbortError'))
 
   let unsubscribe: (() => void) | undefined
   if (params.parentExecutionId) {
@@ -123,13 +125,16 @@ export async function createChildCancellationSignal(params: {
     // caught by the subscription, and one published earlier — while the child's
     // session and admission were still being set up — by the read itself. The
     // child's own engine backstop cannot cover this, since it checks the CHILD's
-    // execution id, which is never the one marked cancelled.
+    // execution id, which is never the one marked cancelled. For the same reason
+    // the child's steady-state coverage is transitive: a cancel published after
+    // setup reaches the child only via this subscription, or via the PARENT
+    // engine's durable poll aborting `parentSignal`.
     unsubscribe = getCancellationChannel().subscribe((event) => {
-      if (event.executionId === parentExecutionId) controller.abort()
+      if (event.executionId === parentExecutionId) abort()
     })
     if (isRedisCancellationEnabled()) {
       try {
-        if (await isExecutionCancelled(parentExecutionId)) controller.abort()
+        if (await isExecutionCancelled(parentExecutionId)) abort()
       } catch {
         // Fail open, matching the engine's own backstop: a failed read must not
         // stop a child whose parent was never actually cancelled.
@@ -138,9 +143,8 @@ export async function createChildCancellationSignal(params: {
   }
 
   return {
-    signal: controller.signal,
+    signal,
     dispose: () => {
-      params.parentSignal?.removeEventListener('abort', onParentAbort)
       unsubscribe?.()
     },
   }

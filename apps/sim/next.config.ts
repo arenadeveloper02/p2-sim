@@ -37,7 +37,6 @@ const LANDING_ROUTES = [
   'models',
   'pricing',
   'privacy',
-  'scheduled-tasks',
   'solutions',
   'tables',
   'terms',
@@ -400,9 +399,24 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        source: '/api/v2/workflows/:id/execute',
+        headers: [
+          { key: 'Cross-Origin-Embedder-Policy', value: 'unsafe-none' },
+          { key: 'Cross-Origin-Opener-Policy', value: 'unsafe-none' },
+          {
+            key: 'Content-Security-Policy',
+            value: getWorkflowExecutionCSPPolicy(),
+          },
+        ],
+      },
+      {
         // Exclude Vercel internal resources and static assets from strict COOP, Google Drive Picker
-        // and the /demo Cal.com booking embed to prevent 'refused to connect' / slow-load issues
-        source: '/((?!_next|_vercel|api|favicon.ico|w/.*|workspace/.*|api/tools/drive|demo).*)',
+        // and the /demo Cal.com booking embed to prevent 'refused to connect' / slow-load issues.
+        // The pages an OAuth popup can land on are excluded too: `same-origin` would disown the
+        // popup from its opener, leaving it not reliably script-closable and reporting `closed`
+        // for a live window.
+        source:
+          '/((?!_next|_vercel|api|favicon.ico|w/.*|workspace|api/tools/drive|demo|oauth-error|oauth/chat-complete).*)',
         headers: [
           {
             key: 'Cross-Origin-Opener-Policy',
@@ -425,8 +439,11 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // For main app routes, Google Drive Picker, the /demo Cal.com embed, and Vercel resources - use permissive policies
-        source: '/(w/.*|workspace/.*|api/tools/drive|demo.*|_next/.*|_vercel/.*)',
+        // For main app routes, Google Drive Picker, the /demo Cal.com embed, the OAuth popup pages,
+        // and Vercel resources - use permissive policies. The popup pages match their opener's
+        // value so the two stay in one browsing-context group.
+        source:
+          '/(w/.*|workspace.*|api/tools/drive|demo.*|oauth-error|oauth/chat-complete|_next/.*|_vercel/.*)',
         headers: [
           {
             key: 'Cross-Origin-Embedder-Policy',
@@ -557,6 +574,15 @@ const nextConfig: NextConfig = {
         permanent: true,
       }
     )
+
+    // The scheduled-tasks marketing page is retired with the feature. The URL is
+    // indexed, so send it to the surface that still carries scheduled execution
+    // (the workflow Schedule trigger) instead of letting it 404.
+    redirects.push({
+      source: '/scheduled-tasks',
+      destination: '/workflows',
+      permanent: true,
+    })
 
     /**
      * The marketing Academy course/lesson pages were removed; content is

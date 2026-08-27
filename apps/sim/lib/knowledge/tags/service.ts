@@ -1,9 +1,16 @@
 import { db } from '@sim/db'
-import { document, embedding, knowledgeBaseTagDefinitions } from '@sim/db/schema'
+import {
+  document,
+  documentSecretProvenance,
+  embedding,
+  knowledgeBase,
+  knowledgeBaseTagDefinitions,
+} from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
-import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm'
-import type { DbOrTx } from '@/lib/db/types'
+import { and, eq, isNotNull, isNull, or, sql } from 'drizzle-orm'
+import { OrchestrationError } from '@/lib/core/orchestration/types'
+import type { DbOrTx, DbTransaction } from '@/lib/db/types'
 import { getSlotsForFieldType, SUPPORTED_FIELD_TYPES } from '@/lib/knowledge/constants'
 import type { BulkTagDefinitionsData, DocumentTagDefinition } from '@/lib/knowledge/tags/types'
 import type {
@@ -32,6 +39,20 @@ const VALID_TAG_SLOTS = [
 ] as const
 
 type ValidTagSlot = (typeof VALID_TAG_SLOTS)[number]
+type ClearedTagValues = Partial<Record<ValidTagSlot, null>>
+const TAG_MUTATION_STATEMENT_TIMEOUT_MS = 120_000
+const TAG_MUTATION_LOCK_TIMEOUT_MS = 5_000
+const TAG_MUTATION_IDLE_TIMEOUT_MS = 30_000
+
+export class KnowledgeTagProvenanceConflictError extends OrchestrationError {
+  constructor() {
+    super(
+      'conflict',
+      'Tag definitions cannot be deleted while resolved-secret document provenance is present'
+    )
+    this.name = 'KnowledgeTagProvenanceConflictError'
+  }
+}
 
 /**
  * Validates that a tag slot is a valid slot name
@@ -40,6 +61,87 @@ function validateTagSlot(tagSlot: string): asserts tagSlot is ValidTagSlot {
   if (!VALID_TAG_SLOTS.includes(tagSlot as ValidTagSlot)) {
     throw new Error(`Invalid tag slot: ${tagSlot}. Must be one of: ${VALID_TAG_SLOTS.join(', ')}`)
   }
+}
+
+/** Applies transaction-scoped bounds that are safe with pooled Postgres connections. */
+async function setTagMutationTransactionTimeouts(tx: DbTransaction): Promise<void> {
+  await tx.execute(
+    sql`SELECT set_config('statement_timeout', ${`${TAG_MUTATION_STATEMENT_TIMEOUT_MS}ms`}, true),
+        set_config('lock_timeout', ${`${TAG_MUTATION_LOCK_TIMEOUT_MS}ms`}, true),
+        set_config('idle_in_transaction_session_timeout', ${`${TAG_MUTATION_IDLE_TIMEOUT_MS}ms`}, true)`
+  )
+}
+
+/** Serializes tag deletion with document creation, which locks the same KB row first. */
+async function lockKnowledgeBaseForTagMutation(
+  tx: DbTransaction,
+  knowledgeBaseId: string
+): Promise<void> {
+  await tx
+    .select({ id: knowledgeBase.id })
+    .from(knowledgeBase)
+    .where(eq(knowledgeBase.id, knowledgeBaseId))
+    .limit(1)
+    .for('update')
+}
+
+/** Prevents tag cleanup from demoting nonempty or unverifiable provenance to legacy state. */
+async function assertKnowledgeBaseTagsCanBeClearedInTx(
+  tx: DbTransaction,
+  knowledgeBaseId: string
+): Promise<void> {
+  const [conflict] = await tx
+    .select({ id: document.id })
+    .from(document)
+    .leftJoin(documentSecretProvenance, eq(documentSecretProvenance.documentId, document.id))
+    .where(
+      and(
+        eq(document.knowledgeBaseId, knowledgeBaseId),
+        eq(document.secretProvenanceVersion, 1),
+        or(
+          isNull(documentSecretProvenance.documentId),
+          sql`${documentSecretProvenance.status} IS DISTINCT FROM 'exact'`,
+          sql`${documentSecretProvenance.entries} <> '[]'::jsonb`
+        )
+      )
+    )
+    .limit(1)
+    .for('update', { of: document })
+
+  if (conflict) throw new KnowledgeTagProvenanceConflictError()
+}
+
+async function clearTagSlotsInTx(
+  tx: DbTransaction,
+  knowledgeBaseId: string,
+  tagSlots: readonly ValidTagSlot[]
+): Promise<void> {
+  if (tagSlots.length === 0) return
+
+  const clearedTagValues: ClearedTagValues = {}
+  for (const tagSlot of tagSlots) clearedTagValues[tagSlot] = null
+
+  await assertKnowledgeBaseTagsCanBeClearedInTx(tx, knowledgeBaseId)
+
+  await tx
+    .update(embedding)
+    .set(clearedTagValues)
+    .where(
+      and(
+        eq(embedding.knowledgeBaseId, knowledgeBaseId),
+        or(...tagSlots.map((tagSlot) => isNotNull(embedding[tagSlot])))
+      )
+    )
+
+  await tx
+    .update(document)
+    .set(clearedTagValues)
+    .where(
+      and(
+        eq(document.knowledgeBaseId, knowledgeBaseId),
+        or(...tagSlots.map((tagSlot) => isNotNull(document[tagSlot])))
+      )
+    )
 }
 
 /**
@@ -159,34 +261,28 @@ export async function createOrUpdateTagDefinitionsBulk(
   const updated: DocumentTagDefinition[] = []
   const errors: string[] = []
 
-  // Get existing definitions to check for conflicts and determine operations
   const existingDefinitions = await getDocumentTagDefinitions(knowledgeBaseId)
   const existingBySlot = new Map(existingDefinitions.map((def) => [def.tagSlot, def]))
   const existingByDisplayName = new Map(existingDefinitions.map((def) => [def.displayName, def]))
 
-  // Process each definition
   for (const defData of definitions) {
     try {
       const { tagSlot, displayName, fieldType, originalDisplayName } = defData
 
-      // Validate field type
       if (!SUPPORTED_FIELD_TYPES.includes(fieldType as (typeof SUPPORTED_FIELD_TYPES)[number])) {
         errors.push(`Invalid field type: ${fieldType}`)
         continue
       }
 
-      // Check if this is an update (has originalDisplayName) or create
       const isUpdate = !!originalDisplayName
 
       if (isUpdate) {
-        // Update existing definition
         const existingDef = existingByDisplayName.get(originalDisplayName!)
         if (!existingDef) {
           errors.push(`Tag definition with display name "${originalDisplayName}" not found`)
           continue
         }
 
-        // Check if new display name conflicts with another definition
         if (displayName !== originalDisplayName && existingByDisplayName.has(displayName)) {
           errors.push(`Display name "${displayName}" already exists`)
           continue
@@ -212,10 +308,8 @@ export async function createOrUpdateTagDefinitionsBulk(
           updatedAt: now,
         })
       } else {
-        // Create new definition
         let finalTagSlot = tagSlot
 
-        // If no slot provided or slot is taken, find next available
         if (!finalTagSlot || existingBySlot.has(finalTagSlot)) {
           const nextSlot = await getNextAvailableSlot(knowledgeBaseId, fieldType, existingBySlot)
           if (!nextSlot) {
@@ -225,13 +319,11 @@ export async function createOrUpdateTagDefinitionsBulk(
           finalTagSlot = nextSlot
         }
 
-        // Check slot conflicts
         if (existingBySlot.has(finalTagSlot)) {
           errors.push(`Tag slot "${finalTagSlot}" is already in use`)
           continue
         }
 
-        // Check display name conflicts
         if (existingByDisplayName.has(displayName)) {
           errors.push(`Display name "${displayName}" already exists`)
           continue
@@ -302,60 +394,6 @@ export async function getTagDefinitionById(
 }
 
 /**
- * Update tags on all documents and chunks when a tag value is changed
- */
-async function updateTagValuesInDocumentsAndChunks(
-  knowledgeBaseId: string,
-  tagSlot: string,
-  oldValue: string | null,
-  newValue: string | null,
-  requestId: string
-): Promise<{ documentsUpdated: number; chunksUpdated: number }> {
-  validateTagSlot(tagSlot)
-
-  let documentsUpdated = 0
-  let chunksUpdated = 0
-
-  await db.transaction(async (tx) => {
-    if (oldValue) {
-      await tx
-        .update(document)
-        .set({
-          [tagSlot]: newValue,
-        })
-        .where(
-          and(
-            eq(document.knowledgeBaseId, knowledgeBaseId),
-            eq(sql.raw(`${document}.${tagSlot}`), oldValue)
-          )
-        )
-      documentsUpdated = 1
-    }
-
-    if (oldValue) {
-      await tx
-        .update(embedding)
-        .set({
-          [tagSlot]: newValue,
-        })
-        .where(
-          and(
-            eq(embedding.knowledgeBaseId, knowledgeBaseId),
-            eq(sql.raw(`${embedding}.${tagSlot}`), oldValue)
-          )
-        )
-      chunksUpdated = 1
-    }
-  })
-
-  logger.info(
-    `[${requestId}] Updated tag values: ${documentsUpdated} documents, ${chunksUpdated} chunks`
-  )
-
-  return { documentsUpdated, chunksUpdated }
-}
-
-/**
  * Cleanup unused tag definitions for a knowledge base
  */
 export async function cleanupUnusedTagDefinitions(
@@ -418,37 +456,30 @@ export async function deleteAllTagDefinitions(
   knowledgeBaseId: string,
   requestId: string
 ): Promise<number> {
-  const definitions = await db
-    .select({ id: knowledgeBaseTagDefinitions.id, tagSlot: knowledgeBaseTagDefinitions.tagSlot })
-    .from(knowledgeBaseTagDefinitions)
-    .where(eq(knowledgeBaseTagDefinitions.knowledgeBaseId, knowledgeBaseId))
+  const deletedCount = await db.transaction(async (tx) => {
+    await setTagMutationTransactionTimeouts(tx)
+    await lockKnowledgeBaseForTagMutation(tx, knowledgeBaseId)
 
-  await db.transaction(async (tx) => {
-    for (const definition of definitions) {
+    const definitions = await tx
+      .select({ id: knowledgeBaseTagDefinitions.id, tagSlot: knowledgeBaseTagDefinitions.tagSlot })
+      .from(knowledgeBaseTagDefinitions)
+      .where(eq(knowledgeBaseTagDefinitions.knowledgeBaseId, knowledgeBaseId))
+      .for('update')
+    const tagSlots = definitions.map((definition) => {
       const tagSlot = definition.tagSlot as string
       validateTagSlot(tagSlot)
+      return tagSlot
+    })
 
-      await tx
-        .update(document)
-        .set({ [tagSlot]: null })
-        .where(
-          and(eq(document.knowledgeBaseId, knowledgeBaseId), isNotNull(sql`${sql.raw(tagSlot)}`))
-        )
-
-      await tx
-        .update(embedding)
-        .set({ [tagSlot]: null })
-        .where(
-          and(eq(embedding.knowledgeBaseId, knowledgeBaseId), isNotNull(sql`${sql.raw(tagSlot)}`))
-        )
-    }
+    await clearTagSlotsInTx(tx, knowledgeBaseId, tagSlots)
 
     await tx
       .delete(knowledgeBaseTagDefinitions)
       .where(eq(knowledgeBaseTagDefinitions.knowledgeBaseId, knowledgeBaseId))
+
+    return definitions.length
   })
 
-  const deletedCount = definitions.length
   logger.info(`[${requestId}] Deleted ${deletedCount} tag definitions for KB: ${knowledgeBaseId}`)
 
   return deletedCount
@@ -463,57 +494,40 @@ export async function deleteTagDefinition(
   tagDefinitionId: string,
   requestId: string
 ): Promise<{ tagSlot: string; displayName: string }> {
-  const tagDef = await db
-    .select({
-      id: knowledgeBaseTagDefinitions.id,
-      knowledgeBaseId: knowledgeBaseTagDefinitions.knowledgeBaseId,
-      tagSlot: knowledgeBaseTagDefinitions.tagSlot,
-      displayName: knowledgeBaseTagDefinitions.displayName,
-    })
-    .from(knowledgeBaseTagDefinitions)
-    .where(
-      and(
-        eq(knowledgeBaseTagDefinitions.id, tagDefinitionId),
-        eq(knowledgeBaseTagDefinitions.knowledgeBaseId, knowledgeBaseId)
-      )
-    )
-    .limit(1)
+  const definition = await db.transaction(async (tx) => {
+    await setTagMutationTransactionTimeouts(tx)
+    await lockKnowledgeBaseForTagMutation(tx, knowledgeBaseId)
 
-  if (tagDef.length === 0) {
-    throw new Error(`Tag definition ${tagDefinitionId} not found`)
-  }
-
-  const definition = tagDef[0]
-  const definitionKnowledgeBaseId = definition.knowledgeBaseId
-  const tagSlot = definition.tagSlot as string
-
-  validateTagSlot(tagSlot)
-
-  await db.transaction(async (tx) => {
-    await tx
-      .update(document)
-      .set({ [tagSlot]: null })
+    const [tagDef] = await tx
+      .select({
+        id: knowledgeBaseTagDefinitions.id,
+        knowledgeBaseId: knowledgeBaseTagDefinitions.knowledgeBaseId,
+        tagSlot: knowledgeBaseTagDefinitions.tagSlot,
+        displayName: knowledgeBaseTagDefinitions.displayName,
+      })
+      .from(knowledgeBaseTagDefinitions)
       .where(
         and(
-          eq(document.knowledgeBaseId, definitionKnowledgeBaseId),
-          isNotNull(sql`${sql.raw(tagSlot)}`)
+          eq(knowledgeBaseTagDefinitions.id, tagDefinitionId),
+          eq(knowledgeBaseTagDefinitions.knowledgeBaseId, knowledgeBaseId)
         )
       )
+      .limit(1)
+      .for('update')
+    if (!tagDef) throw new Error(`Tag definition ${tagDefinitionId} not found`)
 
-    await tx
-      .update(embedding)
-      .set({ [tagSlot]: null })
-      .where(
-        and(
-          eq(embedding.knowledgeBaseId, definitionKnowledgeBaseId),
-          isNotNull(sql`${sql.raw(tagSlot)}`)
-        )
-      )
+    const tagSlot = tagDef.tagSlot as string
+    validateTagSlot(tagSlot)
+    await clearTagSlotsInTx(tx, tagDef.knowledgeBaseId, [tagSlot])
 
     await tx
       .delete(knowledgeBaseTagDefinitions)
       .where(eq(knowledgeBaseTagDefinitions.id, tagDefinitionId))
+
+    return tagDef
   })
+
+  const tagSlot = definition.tagSlot as string
 
   logger.info(
     `[${requestId}] Deleted tag definition with cleanup: ${definition.displayName} (${tagSlot})`
@@ -636,7 +650,6 @@ export async function getTagUsage(
     const tagSlot = def.tagSlot
     validateTagSlot(tagSlot)
 
-    // Build WHERE conditions based on field type
     // Text columns need both IS NOT NULL and != '' checks
     // Numeric/date/boolean columns only need IS NOT NULL
     const fieldType = getFieldTypeForSlot(tagSlot)
@@ -650,7 +663,6 @@ export async function getTagUsage(
       isNotNull(sql`${sql.raw(tagSlot)}`),
     ]
 
-    // Only add empty string check for text columns
     if (isTextColumn) {
       whereConditions.push(sql`${sql.raw(tagSlot)} != ''`)
     }

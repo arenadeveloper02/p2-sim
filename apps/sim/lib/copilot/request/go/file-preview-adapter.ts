@@ -1,5 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { isRecordLike } from '@sim/utils/object'
+import { executeCopilotFileUseCase } from '@/lib/copilot/application/execute-file-use-case'
 import { MothershipStreamV1EventType } from '@/lib/copilot/generated/mothership-stream-v1'
 import {
   createFilePreviewSession,
@@ -25,7 +27,8 @@ import {
   loadWorkspaceFileTextForPreview,
   type WorkspaceFilePreviewBase,
 } from '@/lib/copilot/tools/server/files/file-preview'
-import { resolveWorkspaceFileReference } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { findWorkspaceFileRecord } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import { listAllWorkspaceFiles } from '@/lib/workspace-files/application/list-workspace-files'
 
 const logger = createLogger('CopilotFilePreviewAdapter')
 
@@ -55,16 +58,33 @@ const PATCH_PREVIEW_SNAPSHOT_INTERVAL_MS = 80
 const DELTA_PREVIEW_CHECKPOINT_INTERVAL_MS = 1000
 
 function asJsonRecord(value: unknown): JsonRecord | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined
+  return isRecordLike(value) ? (value as JsonRecord) : undefined
 }
 
 function toPreviewTargetKind(kind: string | undefined): FilePreviewTargetKind | undefined {
   return kind === 'new_file' || kind === 'file_id' ? kind : undefined
 }
 
+/**
+ * Binds the turn-scoped execution context to the tool call whose preview is
+ * being rendered. This adapter runs while the tool-call frame is still on the
+ * wire, before per-call dispatch builds a call-scoped context, so the turn
+ * context carries no `toolCallId` of its own — the frame is the only place that
+ * identity exists, and the file delegation requires one.
+ */
+function bindPreviewToolCall(context: ExecutionContext, toolCallId: string): ExecutionContext {
+  return { ...context, toolCallId }
+}
+
+/**
+ * Upgrades a model-supplied path target to the backing file id so the preview
+ * can seed itself from the existing content. Resolution is best effort, exactly
+ * like the preview base load: leaving the target as a path only costs an
+ * un-seeded preview until the tool result arrives with the real file id, so a
+ * failure here must never escape into the stream loop.
+ */
 async function resolvePreviewTarget(args: {
+  context: ExecutionContext
   workspaceId?: string
   target: FileIntent['target']
 }): Promise<FileIntent['target']> {
@@ -72,16 +92,28 @@ async function resolvePreviewTarget(args: {
     return args.target
   }
 
-  const file = await resolveWorkspaceFileReference(args.workspaceId, args.target.path)
-  if (!file) {
-    return args.target
-  }
+  try {
+    const { files } = await executeCopilotFileUseCase(args.context, listAllWorkspaceFiles, {
+      workspaceId: args.workspaceId,
+      scope: 'active',
+    })
+    const file = findWorkspaceFileRecord(files, args.target.path)
+    if (!file) {
+      return args.target
+    }
 
-  return {
-    kind: 'file_id',
-    fileId: file.id,
-    fileName: args.target.fileName ?? file.name,
-    path: args.target.path,
+    return {
+      kind: 'file_id',
+      fileId: file.id,
+      fileName: args.target.fileName ?? file.name,
+      path: args.target.path,
+    }
+  } catch (error) {
+    logger.warn('Failed to resolve workspace file preview target', {
+      toolCallId: args.context.toolCallId,
+      error: toError(error).message,
+    })
+    return args.target
   }
 }
 
@@ -365,7 +397,9 @@ export async function processFilePreviewStreamEvent(input: {
     const parsedArgs = parseWorkspaceFileArgs(streamEvent.payload.arguments)
     if (toolCallId && parsedArgs) {
       const { operation, title, contentType, edit } = parsedArgs
+      const previewContext = bindPreviewToolCall(execContext, toolCallId)
       const target = await resolvePreviewTarget({
+        context: previewContext,
         workspaceId: execContext.workspaceId,
         target: parsedArgs.target,
       })
@@ -393,7 +427,11 @@ export async function processFilePreviewStreamEvent(input: {
           fileId &&
           (operation === 'append' || operation === 'patch')
         ) {
-          previewBase = await loadWorkspaceFileTextForPreview(execContext.workspaceId, fileId)
+          previewBase = await loadWorkspaceFileTextForPreview(
+            previewContext,
+            execContext.workspaceId,
+            fileId
+          )
         }
 
         let session = buildPreviewSessionFromIntent(streamId, intent)
@@ -464,7 +502,11 @@ export async function processFilePreviewStreamEvent(input: {
         execContext.workspaceId &&
         (intent.operation === 'append' || intent.operation === 'patch')
       ) {
-        previewBase = await loadWorkspaceFileTextForPreview(execContext.workspaceId, result.fileId)
+        previewBase = await loadWorkspaceFileTextForPreview(
+          bindPreviewToolCall(execContext, intent.toolCallId),
+          execContext.workspaceId,
+          result.fileId
+        )
       }
 
       let session = buildPreviewSessionFromIntent(streamId, intent)
@@ -565,132 +607,135 @@ export async function processFilePreviewStreamEvent(input: {
     }
   }
 
+  /**
+   * Seeds or updates the in-flight preview from decoded `edit_content` text.
+   * Shared by streamed `args_delta` (Go) and a full `arguments.content` call
+   * frame (Arena Copilot executes the tool in-process and never streams deltas).
+   */
+  const applyStreamedEditContent = async (streamedContent: string): Promise<void> => {
+    const editIntent = getIntent()
+    if (!editIntent) return
+
+    let currentPreview = filePreviewState.get(editIntent.toolCallId) ?? {
+      session: buildPreviewSessionFromIntent(streamId, editIntent),
+      lastEmittedPreviewText: '',
+      lastSnapshotAt: 0,
+    }
+
+    if (
+      currentPreview.session.baseContent === undefined &&
+      (editIntent.operation === 'append' || editIntent.operation === 'patch') &&
+      execContext.workspaceId &&
+      editIntent.target.fileId
+    ) {
+      const intentBase = await peekFileIntent(execContext.workspaceId, editIntent.target.fileId, {
+        chatId: execContext.chatId,
+        messageId: execContext.messageId,
+        channelId,
+      })
+      if (typeof intentBase?.existingContent === 'string') {
+        const seededSession: FilePreviewSession = {
+          ...currentPreview.session,
+          baseContent: intentBase.existingContent,
+          ...(intentBase.edit ? { edit: intentBase.edit } : {}),
+        }
+        currentPreview = {
+          ...currentPreview,
+          session: seededSession,
+        }
+        filePreviewState.set(editIntent.toolCallId, currentPreview)
+        await persistFilePreviewSession(seededSession)
+      }
+    }
+
+    const previewText = isContentOperation(editIntent.operation)
+      ? buildFilePreviewText({
+          operation: editIntent.operation,
+          streamedContent,
+          existingContent: currentPreview.session.baseContent,
+          edit: currentPreview.session.edit,
+        })
+      : undefined
+
+    if (previewText === undefined) {
+      filePreviewState.set(editIntent.toolCallId, {
+        session: currentPreview.session,
+        lastEmittedPreviewText: currentPreview.lastEmittedPreviewText,
+        lastSnapshotAt: currentPreview.lastSnapshotAt,
+      })
+      return
+    }
+
+    const baseSession = buildPreviewSessionFromIntent(streamId, editIntent, currentPreview.session)
+    const now = Date.now()
+    const nextSession: FilePreviewSession = {
+      ...baseSession,
+      status: 'streaming',
+      previewText,
+      previewVersion: (currentPreview.session.previewVersion ?? 0) + 1,
+      updatedAt: new Date(now).toISOString(),
+    }
+
+    await persistFilePreviewSession(nextSession)
+
+    // The growing content is NOT merged into the live collaborative Y.Doc from here. When a
+    // collaborative editor for this file is open, that client applies the stream to the shared
+    // doc as minimal CRDT diffs (see `applyStreamedMarkdownToLiveDoc` in the editor), which
+    // renders smoothly locally AND broadcasts to every peer — so a server-side streaming merge
+    // would double-write the shared doc. The final `edit_content` durable write still reconciles
+    // the file and seeds any late joiner.
+
+    if (
+      nextSession.operation === 'patch' &&
+      now - currentPreview.lastSnapshotAt < PATCH_PREVIEW_SNAPSHOT_INTERVAL_MS
+    ) {
+      filePreviewState.set(editIntent.toolCallId, {
+        session: nextSession,
+        lastEmittedPreviewText: currentPreview.lastEmittedPreviewText,
+        lastSnapshotAt: currentPreview.lastSnapshotAt,
+      })
+      return
+    }
+
+    const previewUpdate = buildPreviewContentUpdate(
+      currentPreview.lastEmittedPreviewText,
+      nextSession.previewText,
+      currentPreview.lastSnapshotAt,
+      now,
+      nextSession.operation
+    )
+
+    filePreviewState.set(editIntent.toolCallId, {
+      session: nextSession,
+      lastEmittedPreviewText: nextSession.previewText,
+      lastSnapshotAt: previewUpdate.lastSnapshotAt,
+    })
+
+    await emitPreviewEvent(streamEvent, options, {
+      toolCallId: nextSession.toolCallId,
+      toolName: 'workspace_file',
+      previewPhase: 'file_preview_content',
+      content: previewUpdate.content,
+      contentMode: previewUpdate.contentMode,
+      previewVersion: nextSession.previewVersion,
+      fileName: nextSession.fileName,
+      ...(nextSession.fileId ? { fileId: nextSession.fileId } : {}),
+      ...(nextSession.targetKind ? { targetKind: nextSession.targetKind } : {}),
+      ...(nextSession.operation ? { operation: nextSession.operation } : {}),
+      ...(nextSession.edit ? { edit: nextSession.edit } : {}),
+    })
+  }
+
   if (isToolArgsDeltaStreamEvent(streamEvent) && streamEvent.payload.toolName === 'edit_content') {
     const toolCallId = streamEvent.payload.toolCallId
     const delta = streamEvent.payload.argumentsDelta
     const stateForTool = editContentState.get(toolCallId) ?? { raw: '' }
     stateForTool.raw += delta
 
-    const editIntent = getIntent()
-    if (editIntent) {
-      const streamedContent = extractEditContent(stateForTool.raw)
-      if (streamedContent !== (stateForTool.lastContentSnapshot ?? '')) {
-        stateForTool.lastContentSnapshot = streamedContent
-        let currentPreview = filePreviewState.get(editIntent.toolCallId) ?? {
-          session: buildPreviewSessionFromIntent(streamId, editIntent),
-          lastEmittedPreviewText: '',
-          lastSnapshotAt: 0,
-        }
-
-        if (
-          currentPreview.session.baseContent === undefined &&
-          (editIntent.operation === 'append' || editIntent.operation === 'patch') &&
-          execContext.workspaceId &&
-          editIntent.target.fileId
-        ) {
-          const intentBase = await peekFileIntent(
-            execContext.workspaceId,
-            editIntent.target.fileId,
-            {
-              chatId: execContext.chatId,
-              messageId: execContext.messageId,
-              channelId,
-            }
-          )
-          if (typeof intentBase?.existingContent === 'string') {
-            const seededSession: FilePreviewSession = {
-              ...currentPreview.session,
-              baseContent: intentBase.existingContent,
-              ...(intentBase.edit ? { edit: intentBase.edit } : {}),
-            }
-            currentPreview = {
-              ...currentPreview,
-              session: seededSession,
-            }
-            filePreviewState.set(editIntent.toolCallId, currentPreview)
-            await persistFilePreviewSession(seededSession)
-          }
-        }
-
-        const previewText = isContentOperation(editIntent.operation)
-          ? buildFilePreviewText({
-              operation: editIntent.operation,
-              streamedContent,
-              existingContent: currentPreview.session.baseContent,
-              edit: currentPreview.session.edit,
-            })
-          : undefined
-
-        if (previewText !== undefined) {
-          const baseSession = buildPreviewSessionFromIntent(
-            streamId,
-            editIntent,
-            currentPreview.session
-          )
-          const now = Date.now()
-          const nextSession: FilePreviewSession = {
-            ...baseSession,
-            status: 'streaming',
-            previewText,
-            previewVersion: (currentPreview.session.previewVersion ?? 0) + 1,
-            updatedAt: new Date(now).toISOString(),
-          }
-
-          await persistFilePreviewSession(nextSession)
-
-          // The growing content is NOT merged into the live collaborative Y.Doc from here. When a
-          // collaborative editor for this file is open, that client applies the stream to the shared
-          // doc as minimal CRDT diffs (see `applyStreamedMarkdownToLiveDoc` in the editor), which
-          // renders smoothly locally AND broadcasts to every peer — so a server-side streaming merge
-          // would double-write the shared doc. The final `edit_content` durable write still reconciles
-          // the file and seeds any late joiner.
-
-          if (
-            nextSession.operation === 'patch' &&
-            now - currentPreview.lastSnapshotAt < PATCH_PREVIEW_SNAPSHOT_INTERVAL_MS
-          ) {
-            filePreviewState.set(editIntent.toolCallId, {
-              session: nextSession,
-              lastEmittedPreviewText: currentPreview.lastEmittedPreviewText,
-              lastSnapshotAt: currentPreview.lastSnapshotAt,
-            })
-          } else {
-            const previewUpdate = buildPreviewContentUpdate(
-              currentPreview.lastEmittedPreviewText,
-              nextSession.previewText,
-              currentPreview.lastSnapshotAt,
-              now,
-              nextSession.operation
-            )
-
-            filePreviewState.set(editIntent.toolCallId, {
-              session: nextSession,
-              lastEmittedPreviewText: nextSession.previewText,
-              lastSnapshotAt: previewUpdate.lastSnapshotAt,
-            })
-
-            await emitPreviewEvent(streamEvent, options, {
-              toolCallId: nextSession.toolCallId,
-              toolName: 'workspace_file',
-              previewPhase: 'file_preview_content',
-              content: previewUpdate.content,
-              contentMode: previewUpdate.contentMode,
-              previewVersion: nextSession.previewVersion,
-              fileName: nextSession.fileName,
-              ...(nextSession.fileId ? { fileId: nextSession.fileId } : {}),
-              ...(nextSession.targetKind ? { targetKind: nextSession.targetKind } : {}),
-              ...(nextSession.operation ? { operation: nextSession.operation } : {}),
-              ...(nextSession.edit ? { edit: nextSession.edit } : {}),
-            })
-          }
-        } else {
-          filePreviewState.set(editIntent.toolCallId, {
-            session: currentPreview.session,
-            lastEmittedPreviewText: currentPreview.lastEmittedPreviewText,
-            lastSnapshotAt: currentPreview.lastSnapshotAt,
-          })
-        }
-      }
+    const streamedContent = extractEditContent(stateForTool.raw)
+    if (streamedContent !== (stateForTool.lastContentSnapshot ?? '')) {
+      stateForTool.lastContentSnapshot = streamedContent
+      await applyStreamedEditContent(streamedContent)
     }
 
     editContentState.set(toolCallId, stateForTool)
@@ -698,6 +743,11 @@ export async function processFilePreviewStreamEvent(input: {
 
   if (isToolCallStreamEvent(streamEvent) && streamEvent.payload.toolName === 'edit_content') {
     const toolCallId = streamEvent.payload.toolCallId
+    const args = asJsonRecord(streamEvent.payload.arguments)
+    const fullContent = typeof args?.content === 'string' ? args.content : undefined
+    if (fullContent) {
+      await applyStreamedEditContent(fullContent)
+    }
     if (toolCallId) {
       editContentState.delete(toolCallId)
     }

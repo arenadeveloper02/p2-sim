@@ -297,7 +297,7 @@ export function getDocumentIcon(
  * @param props - The icon props for customizing the className and styling.
  * @returns The Spyfu icon as a React functional component.
  */
-export const SpyfuIcon: React.FC<IconProps> = (props) => (
+export const SpyfuIcon: React.FC<SVGProps<SVGSVGElement>> = (props) => (
   <svg
     {...props}
     width='32'

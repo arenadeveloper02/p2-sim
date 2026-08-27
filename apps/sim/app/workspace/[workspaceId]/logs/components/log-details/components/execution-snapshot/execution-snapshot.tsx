@@ -16,7 +16,7 @@ import {
   ModalDescription,
   ModalHeader,
 } from '@sim/emcn'
-import { AlertCircle } from 'lucide-react'
+import { CircleAlert } from '@sim/emcn/icons'
 import { createPortal } from 'react-dom'
 import { Preview } from '@/app/workspace/[workspaceId]/w/components/preview'
 import { useExecutionSnapshot } from '@/hooks/queries/logs'
@@ -109,7 +109,7 @@ export function ExecutionSnapshot({
           style={{ height, width }}
         >
           <div className='flex items-center gap-2 text-[var(--text-error)]'>
-            <AlertCircle className='size-[16px]' />
+            <CircleAlert className='size-[16px]' />
             <span className='text-small'>Failed to load run snapshot: {error.message}</span>
           </div>
         </div>
@@ -137,8 +137,8 @@ export function ExecutionSnapshot({
           style={{ height, width }}
         >
           <div className='flex items-center gap-3 text-[var(--text-warning)]'>
-            <AlertCircle className='size-[20px]' />
-            <span className='font-medium text-base'>Logged State Not Found</span>
+            <CircleAlert className='size-[20px]' />
+            <span className='text-base'>Logged State Not Found</span>
           </div>
           <div className='max-w-md text-center text-[var(--text-secondary)] text-small'>
             This log was migrated from the old logging system. The workflow state at the time of

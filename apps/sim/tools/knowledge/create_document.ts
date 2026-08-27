@@ -1,3 +1,4 @@
+import { selectKnowledgeDocumentWriteSecretProvenance } from '@/tools/knowledge/secret-provenance'
 import {
   inferDocumentFileInfo,
   type KnowledgeCreateDocumentResponse,
@@ -47,8 +48,13 @@ export const knowledgeCreateDocumentTool: ToolConfig<any, KnowledgeCreateDocumen
   },
 
   request: {
+    internalAuth: 'executor_delegation',
     url: (params) => `/api/knowledge/${params.knowledgeBaseId}/documents`,
     method: 'POST',
+    secretProvenance: {
+      request: selectKnowledgeDocumentWriteSecretProvenance,
+      response: { incomplete: 'reject' },
+    },
     headers: () => ({
       'Content-Type': 'application/json',
     }),

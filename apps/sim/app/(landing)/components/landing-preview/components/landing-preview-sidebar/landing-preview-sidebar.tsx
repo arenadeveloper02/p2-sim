@@ -1,25 +1,16 @@
 'use client'
-import { ChevronDown, cn, Home, Library } from '@sim/emcn'
 import {
-  Calendar,
-  Database,
-  File,
-  HelpCircle,
-  Search,
-  Settings,
-  Table,
-  Workflow,
-} from '@sim/emcn/icons'
+  ChevronDown,
+  chipActiveSurfaceClass,
+  chipHoverSurfaceClass,
+  cn,
+  Home,
+  Library,
+} from '@sim/emcn'
+import { Database, File, HelpCircle, Search, Settings, Table, Workflow } from '@sim/emcn/icons'
 import type { PreviewWorkflow } from '@/app/(landing)/components/landing-preview/components/landing-preview-workflow/workflow-data'
 
-export type SidebarView =
-  | 'home'
-  | 'workflow'
-  | 'tables'
-  | 'files'
-  | 'knowledge'
-  | 'logs'
-  | 'scheduled-tasks'
+export type SidebarView = 'home' | 'workflow' | 'tables' | 'files' | 'knowledge' | 'logs'
 
 interface LandingPreviewSidebarProps {
   workflows: PreviewWorkflow[]
@@ -34,7 +25,6 @@ const WORKSPACE_NAV = [
   { id: 'tables', label: 'Tables', icon: Table },
   { id: 'files', label: 'Files', icon: File },
   { id: 'knowledge', label: 'Knowledge Base', icon: Database },
-  { id: 'scheduled-tasks', label: 'Scheduled Tasks', icon: Calendar },
   { id: 'logs', label: 'Logs', icon: Library },
 ] as const
 
@@ -58,9 +48,7 @@ function NavItem({
     return (
       <div className='pointer-events-none mx-0.5 flex h-[28px] items-center gap-2 rounded-[8px] px-2'>
         <Icon className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
-        <span className='truncate text-[13px] text-[var(--text-body)]' style={{ fontWeight: 450 }}>
-          {label}
-        </span>
+        <span className='truncate text-[13px] text-[var(--text-body)]'>{label}</span>
       </div>
     )
   }
@@ -70,14 +58,12 @@ function NavItem({
       type='button'
       onClick={onClick}
       className={cn(
-        'mx-0.5 flex h-[28px] items-center gap-2 rounded-[8px] px-2 transition-colors hover-hover:bg-[var(--c-active)]',
-        isActive && 'bg-[var(--c-active)]'
+        'mx-0.5 flex h-[28px] items-center gap-2 rounded-[8px] px-2 transition-colors',
+        isActive ? chipActiveSurfaceClass : chipHoverSurfaceClass
       )}
     >
       <Icon className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
-      <span className='truncate text-[13px] text-[var(--text-body)]' style={{ fontWeight: 450 }}>
-        {label}
-      </span>
+      <span className='truncate text-[13px] text-[var(--text-body)]'>{label}</span>
     </button>
   )
 }
@@ -98,10 +84,7 @@ export function LandingPreviewSidebar({
   const isHomeActive = activeView === 'home'
 
   return (
-    <div
-      className='flex h-full w-[248px] flex-shrink-0 flex-col bg-[var(--surface-1)] pt-3'
-      style={{ '--c-active': 'var(--surface-active)' } as React.CSSProperties}
-    >
+    <div className='flex h-full w-[248px] flex-shrink-0 flex-col bg-[var(--surface-1)] pt-3'>
       {/* Workspace Header */}
       <div className='flex-shrink-0 px-2.5'>
         <div className='pointer-events-none flex h-[32px] w-full items-center gap-2 rounded-[8px] border border-[var(--border-1)] bg-[var(--surface-2)] pr-2 pl-[5px]'>
@@ -118,7 +101,7 @@ export function LandingPreviewSidebar({
           <span className='min-w-0 flex-1 truncate text-left font-medium text-[13px] text-[var(--text-primary)]'>
             Superark
           </span>
-          <ChevronDown className='h-[8px] w-[10px] flex-shrink-0 text-[var(--text-icon)]' />
+          <ChevronDown className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
         </div>
       </div>
 
@@ -128,17 +111,12 @@ export function LandingPreviewSidebar({
           type='button'
           onClick={onSelectHome}
           className={cn(
-            'mx-0.5 flex h-[28px] items-center gap-2 rounded-[8px] px-2 transition-colors hover-hover:bg-[var(--c-active)]',
-            isHomeActive && 'bg-[var(--c-active)]'
+            'mx-0.5 flex h-[28px] items-center gap-2 rounded-[8px] px-2 transition-colors',
+            isHomeActive ? chipActiveSurfaceClass : chipHoverSurfaceClass
           )}
         >
           <Home className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
-          <span
-            className='truncate text-[13px] text-[var(--text-body)]'
-            style={{ fontWeight: 450 }}
-          >
-            Home
-          </span>
+          <span className='truncate text-[13px] text-[var(--text-body)]'>Home</span>
         </button>
         <NavItem icon={Search} label='Search' />
       </div>
@@ -177,15 +155,12 @@ export function LandingPreviewSidebar({
                   type='button'
                   onClick={() => onSelectWorkflow(workflow.id)}
                   className={cn(
-                    'mx-0.5 flex h-[28px] w-full items-center gap-2 rounded-[8px] px-2 transition-colors hover-hover:bg-[var(--surface-active)]',
-                    isActive && 'bg-[var(--surface-active)]'
+                    'mx-0.5 flex h-[28px] w-full items-center gap-2 rounded-[8px] px-2 transition-colors',
+                    isActive ? chipActiveSurfaceClass : chipHoverSurfaceClass
                   )}
                 >
                   <Workflow className='size-[14px] flex-shrink-0 text-[var(--text-icon)]' />
-                  <div
-                    className='min-w-0 flex-1 truncate text-left text-[13px] text-[var(--text-body)]'
-                    style={{ fontWeight: 450 }}
-                  >
+                  <div className='min-w-0 flex-1 truncate text-left text-[13px] text-[var(--text-body)]'>
                     {workflow.name}
                   </div>
                 </button>

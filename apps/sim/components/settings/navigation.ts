@@ -4,23 +4,21 @@ import {
   Clock,
   Credit,
   Database,
-  // HexSimple,
+  GridOffset,
   Key,
   // KeySquare,
   Lock,
-  // LogIn,
+  LogIn,
   Palette,
   PanelLeft,
   // Send,
   Server,
   Settings,
   ShieldCheck,
-  // Shuffle,
   Sprout,
   TerminalWindow,
-  TrashOutline,
-  // Upload,
-  User,
+  Trash,
+  Upload,
   Users,
   Wrench,
 } from '@sim/emcn/icons'
@@ -65,6 +63,7 @@ export type OrganizationSettingsSection =
 export type WorkspaceSettingsSection =
   | 'teammates'
   | 'secrets'
+  | 'credential-groups'
   | 'byok'
   | 'sandboxes'
   | 'custom-tools'
@@ -100,6 +99,7 @@ export type UnifiedSettingsSection =
   | 'browser'
   | 'terminal'
   | 'secrets'
+  | 'credential-groups'
   | 'access-control'
   | 'custom-blocks'
   | 'audit-logs'
@@ -230,25 +230,6 @@ const SETTINGS_SELF_HOSTED_OVERRIDES = {
   sso: isSsoEnabled,
   whitelabeling: isWhitelabelingEnabled,
 } as const
-
-/**
- * Whether this deployment can run remote sandboxes at all.
- *
- * Entitlement decides whether a workspace may *author* sandboxes; this decides
- * whether anything could ever *run* one. Without a provider the tab is a dead
- * end — you can define a dependency set that nothing will build and no Function
- * block can select, because the picker is gated on this same pair of vars.
- *
- * It reads those browser twins rather than the server's `isRemoteSandboxEnabled`
- * precisely so the two agree: that flag reads non-public vars, and this module
- * renders on both sides. `NEXT_PUBLIC_E2B_ENABLED` is the pre-Daytona fallback,
- * matching the picker's `showWhenEnvSet` order.
- */
-function isSandboxExecutionAvailable(): boolean {
-  return (
-    isTruthy(getEnv('NEXT_PUBLIC_SANDBOX_ENABLED')) || isTruthy(getEnv('NEXT_PUBLIC_E2B_ENABLED'))
-  )
-}
 
 export const SETTINGS_NAVIGATION_BILLING_ENABLED = isTruthy(getEnv('NEXT_PUBLIC_BILLING_ENABLED'))
 
@@ -560,7 +541,7 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
   arenaAgentsUsage,
   {
     label: 'Teammates',
-    icon: User,
+    icon: Users,
     unified: {
       id: 'teammates',
       description: 'Manage your teammates in this workspace.',
@@ -616,6 +597,22 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     },
     planes: {
       workspace: { id: 'secrets', group: 'workspace', order: 1 },
+    },
+  },
+  {
+    label: 'Credential groups',
+    icon: GridOffset,
+    unified: {
+      id: 'credential-groups',
+      description: 'Collect and manage OAuth credentials for people outside this workspace.',
+      group: 'workspace',
+      order: 9,
+      requiresEnterprise: true,
+      allowNonOrgAdmin: true,
+      selfHostedOverride: true,
+    },
+    planes: {
+      workspace: { id: 'credential-groups', group: 'workspace', order: 4 },
     },
   },
   {
@@ -743,12 +740,12 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
   // },
   {
     label: 'Recently deleted',
-    icon: TrashOutline,
+    icon: Trash,
     unified: {
       id: 'recently-deleted',
       description: 'Restore items deleted in the last 30 days.',
       group: 'workspace',
-      order: 9,
+      order: 10,
     },
     planes: {
       workspace: { id: 'recently-deleted', group: 'system', order: 9 },
@@ -763,6 +760,23 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       group: 'platform',
       order: 2,
       requiresSelfHosted: true,
+    },
+    planes: {
+      workspace: { id: 'self-host', group: 'system', order: 12 },
+    },
+  },
+  {
+    label: 'Single sign-on',
+    icon: LogIn,
+    docsLink: 'https://docs.sim.ai/platform/enterprise/sso',
+    unified: {
+      id: 'sso',
+      description: 'Configure single sign-on for your organization.',
+      group: 'organization',
+      order: 6,
+      requiresHosted: true,
+      requiresEnterprise: true,
+      selfHostedOverride: SETTINGS_SELF_HOSTED_OVERRIDES.sso,
     },
     planes: {
       workspace: { id: 'self-host', group: 'system', order: 12 },
@@ -838,6 +852,23 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
   //   },
   // },
   {
+    label: 'Data drains',
+    icon: Upload,
+    docsLink: 'https://docs.sim.ai/platform/enterprise/data-drains',
+    unified: {
+      id: 'data-drains',
+      description: 'Stream your logs and events to external destinations.',
+      group: 'organization',
+      order: 9,
+      requiresHosted: true,
+      requiresEnterprise: true,
+      selfHostedOverride: SETTINGS_SELF_HOSTED_OVERRIDES.dataDrains,
+    },
+    planes: {
+      organization: { id: 'data-drains', group: 'enterprise', order: 7 },
+    },
+  },
+  {
     label: 'White-labeling',
     icon: Palette,
     docsLink: 'https://docs.sim.ai/platform/enterprise/whitelabeling',
@@ -905,10 +936,6 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
 export function buildUnifiedSettingsNavigation(): UnifiedSettingsNavigationItem[] {
   return SETTINGS_SECTION_REGISTRY.flatMap(({ label, icon, docsLink, unified }) => {
     if (!unified) return []
-    // Dropped here rather than in each consumer's filter: the sidebar's
-    // `selfHostedOverride` short-circuit would otherwise reveal the tab on a
-    // deployment that has the entitlement but no provider to run what it builds.
-    if (unified.id === 'sandboxes' && !isSandboxExecutionAvailable()) return []
     // Dropped here so the sidebar, the route's `parseSection` gate, and section
     // metadata all agree that the section does not exist on Sim Cloud.
     if (unified.requiresSelfHosted && isHosted) return []
@@ -1043,6 +1070,7 @@ export interface WorkspacePermissionConfig {
 
 export interface WorkspaceSettingsEntitlements {
   byok: boolean
+  credentialGroups: boolean
   customBlocks: boolean
   forks: boolean
   inbox: boolean
@@ -1077,6 +1105,7 @@ export interface ResolvedWorkspaceNavigationItem
 const WORKSPACE_MUTATION_PERMISSION: Record<WorkspaceSettingsSection, PermissionType> = {
   teammates: 'admin',
   secrets: 'write',
+  'credential-groups': 'admin',
   byok: 'admin',
   sandboxes: 'admin',
   'custom-tools': 'write',
@@ -1116,10 +1145,14 @@ export function resolveWorkspaceNavigation({
     if (item.id === 'mcp' && permissionConfig.disableMcpTools) return []
     if (item.id === 'custom-tools' && permissionConfig.disableCustomTools) return []
     if (item.id === 'forks' && (permission !== 'admin' || !entitlements.forks)) return []
+    if (
+      item.id === 'credential-groups' &&
+      (permission !== 'admin' || !entitlements.credentialGroups)
+    ) {
+      return []
+    }
     if (item.id === 'byok' && !entitlements.byok) return []
     if (item.id === 'custom-blocks' && !entitlements.customBlocks) return []
-    // Removed, not locked: a missing provider is not something an upgrade fixes.
-    if (item.id === 'sandboxes' && !isSandboxExecutionAvailable()) return []
     // Absent on Sim Cloud, where the managed service owns these settings.
     if (item.id === 'self-host' && isHosted) return []
 

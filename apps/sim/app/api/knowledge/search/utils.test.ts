@@ -15,6 +15,8 @@ import {
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { env } from '@/lib/core/config/env'
 import * as documentsUtilsModule from '@/lib/knowledge/documents/utils'
+import { runWithKnowledgeModelInputProvenance } from '@/lib/knowledge/model-input-provenance'
+import { ResolvedSecretTraceRegistry } from '@/executor/utils/resolved-secret-trace-registry'
 
 /**
  * Spy on the real documents/utils namespace instead of vi.mock: the shared
@@ -56,7 +58,7 @@ import {
   handleVectorOnlySearch,
   RRF_K,
   type SearchResult,
-} from '@/app/api/knowledge/search/utils'
+} from '@/lib/knowledge/search/queries'
 
 /** Minimal SearchResult builder — only the fields fusion and ordering read. */
 function makeResult(id: string, distance = 0.1): SearchResult {
@@ -664,23 +666,17 @@ describe('Knowledge Search Utils', () => {
     it('should throw error when no API configuration provided', async () => {
       const { env } = await import('@/lib/core/config/env')
       Object.keys(env).forEach((key) => delete (env as any)[key])
-      // The env object lazily reads process.env, so a developer's local .env
-      // keys survive the deletion above — stub the direct key empty and fail
-      // the hosted rotation fallback for hermeticity on any machine.
-      vi.stubEnv('OPENAI_API_KEY', '')
-      const apiKeysModule = await import('@/lib/core/config/api-keys')
-      const rotationSpy = vi.spyOn(apiKeysModule, 'getRotatingApiKey').mockImplementation(() => {
-        throw new Error('No rotation keys configured')
+      Object.assign(env, {
+        OPENAI_API_KEY: undefined,
+        OPENAI_API_KEY_1: undefined,
+        OPENAI_API_KEY_2: undefined,
+        OPENAI_API_KEY_3: undefined,
+        OPENROUTER_API_KEY: undefined,
       })
 
-      try {
-        await expect(generateSearchEmbedding('test query')).rejects.toThrow(
-          'OPENAI_API_KEY is not configured'
-        )
-      } finally {
-        rotationSpy.mockRestore()
-        vi.unstubAllEnvs()
-      }
+      await expect(generateSearchEmbedding('test query')).rejects.toThrow(
+        'OPENAI_API_KEY is not configured'
+      )
     })
 
     it('should handle Azure OpenAI API errors properly', async () => {
@@ -711,6 +707,7 @@ describe('Knowledge Search Utils', () => {
       Object.keys(env).forEach((key) => delete (env as any)[key])
       Object.assign(env, {
         OPENAI_API_KEY: 'test-openai-key',
+        OPENROUTER_API_KEY: undefined,
       })
 
       mockNextFetchResponse({
@@ -791,11 +788,43 @@ describe('Knowledge Search Utils', () => {
       // Clean up
       Object.keys(env).forEach((key) => delete (env as any)[key])
     })
+
+    it('projects verified provenance only in the model-bound embedding payload', async () => {
+      Object.keys(env).forEach((key) => delete (env as any)[key])
+      Object.assign(env, { OPENAI_API_KEY: 'test-openai-key' })
+      mockNextFetchResponse({
+        json: {
+          data: [{ embedding: [0.1, 0.2, 0.3] }],
+          usage: { prompt_tokens: 1, total_tokens: 1 },
+        },
+      })
+
+      const registry = new ResolvedSecretTraceRegistry([
+        { name: 'TOKEN', plaintext: 'secret-value', encryptedValue: 'encrypted-token' },
+      ])
+      registry.recordResolved('TOKEN', 'secret-value')
+
+      await runWithKnowledgeModelInputProvenance(registry, () =>
+        generateSearchEmbedding('prefix secret-value suffix', 'text-embedding-3-small')
+      )
+
+      expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+        'https://api.openai.com/v1/embeddings',
+        expect.objectContaining({
+          body: JSON.stringify({
+            input: ['prefix {{TOKEN}} suffix'],
+            model: 'text-embedding-3-small',
+            encoding_format: 'float',
+            dimensions: 1536,
+          }),
+        })
+      )
+    })
   })
 
   describe('getDocumentMetadataByIds', () => {
     it('should handle empty input gracefully', async () => {
-      const { getDocumentMetadataByIds } = await import('./utils')
+      const { getDocumentMetadataByIds } = await import('@/lib/knowledge/search/queries')
 
       const result = await getDocumentMetadataByIds([])
 

@@ -4,6 +4,7 @@ import type { EdgeManager } from '@/executor/execution/edge-manager'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionMetadata, SerializableExecutionState } from '@/executor/execution/types'
 import type { ExecutionContext, SerializedSnapshot } from '@/executor/types'
+import { RESOLVED_SECRET_TRACE_CHECKPOINT_VERSION } from '@/executor/utils/resolved-secret-trace-registry'
 
 const JSON_SYNTAX_BYTES = {
   QUOTE: 1,
@@ -236,7 +237,15 @@ export function serializePauseSnapshot(
       largeValueKeys: Array.from(new Set(context.largeValueKeys ?? [])),
       fileKeys: Array.from(new Set(context.fileKeys ?? [])),
     },
-    resolvedSecretTraceProvenance: context.resolvedSecretTraceRegistry?.exportProvenance(),
+    resolvedSecretTraceProvenance:
+      context.resolvedSecretTraceRegistry?.exportCheckpointProvenance(),
+    workflowVariableResolvedSecretTraceProvenance:
+      context.workflowVariableResolvedSecretTraceProvenance,
+    workflowInputResolvedSecretTraceProvenance: context.workflowInputResolvedSecretTraceProvenance,
+    finalOutputResolvedSecretTraceProvenance: context.finalOutputResolvedSecretTraceProvenance,
+    resolvedSecretTraceCheckpointVersion: context.resolvedSecretTraceRegistry
+      ? RESOLVED_SECRET_TRACE_CHECKPOINT_VERSION
+      : undefined,
   }
 
   assertSnapshotValueIsCompact(context.workflowVariables, 'workflow variables')
@@ -264,6 +273,13 @@ export function serializePauseSnapshot(
     useDraftState,
     startTime: metadataFromContext?.startTime ?? new Date().toISOString(),
     isClientSession: metadataFromContext?.isClientSession,
+    /**
+     * Both identity flags survive pause/resume. Dropping them would silently
+     * re-resolve a resumed run's personal variables as the workflow owner even
+     * though the original run authorized as its caller.
+     */
+    enforceCredentialAccess: metadataFromContext?.enforceCredentialAccess,
+    isPublicApiAccess: metadataFromContext?.isPublicApiAccess,
     executionMode: metadataFromContext?.executionMode,
     /** Preserve deployed-chat thinking gate across HITL pause/resume. */
     includeThinking: metadataFromContext?.includeThinking === true ? true : undefined,

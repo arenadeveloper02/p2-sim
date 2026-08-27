@@ -2,6 +2,7 @@ import { db, webhook, webhookPathClaim, workflow, workflowDeploymentVersion } fr
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
+import { isRecordLike } from '@sim/utils/object'
 import { truncate } from '@sim/utils/string'
 import { and, eq, isNull, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
@@ -15,6 +16,7 @@ import {
 } from '@/lib/core/admission/transient-failure'
 import { getInlineJobQueue, getJobQueue, shouldExecuteInline } from '@/lib/core/async-jobs'
 import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
+import { toTriggerMaxDurationSeconds } from '@/lib/core/execution-limits'
 import {
   assertContentLengthWithinLimit,
   isPayloadSizeLimitError,
@@ -56,6 +58,7 @@ export interface WebhookProcessorOptions {
   billingAttribution?: BillingAttributionSnapshot
   executionId?: string
   correlation?: AsyncExecutionCorrelation
+  executionTimeoutMs?: number
   /** Epoch ms when the webhook HTTP request was first received (for dispatch-latency metrics). */
   receivedAt?: number
   /** Epoch ms of the originating provider interaction (e.g. Slack x-slack-request-timestamp). */
@@ -69,6 +72,7 @@ export interface WebhookPreprocessingResult {
   billingAttribution?: BillingAttributionSnapshot
   executionId?: string
   correlation?: AsyncExecutionCorrelation
+  executionTimeoutMs?: number
 }
 
 const WEBHOOK_BODY_LABEL = 'Webhook request body'
@@ -294,84 +298,6 @@ export function handlePreDeploymentVerification(
       message: 'Webhook endpoint verified',
     })
   }
-  return null
-}
-
-async function findWebhookAndWorkflow(
-  options: WebhookProcessorOptions
-): Promise<WebhookTarget | null> {
-  if (options.webhookId) {
-    const results = await db
-      .select({
-        webhook: webhook,
-        workflow: workflow,
-      })
-      .from(webhook)
-      .innerJoin(workflow, eq(webhook.workflowId, workflow.id))
-      .leftJoin(
-        workflowDeploymentVersion,
-        and(
-          eq(workflowDeploymentVersion.workflowId, workflow.id),
-          eq(workflowDeploymentVersion.isActive, true)
-        )
-      )
-      .where(
-        and(
-          eq(webhook.id, options.webhookId),
-          deliverableWebhookPredicate(webhook),
-          isNull(workflow.archivedAt),
-          or(
-            eq(webhook.deploymentVersionId, workflowDeploymentVersion.id),
-            and(isNull(workflowDeploymentVersion.id), isNull(webhook.deploymentVersionId))
-          )
-        )
-      )
-      .limit(1)
-
-    if (results.length === 0) {
-      logger.warn(`[${options.requestId}] No active webhook found for id: ${options.webhookId}`)
-      return null
-    }
-
-    return { webhook: results[0].webhook, workflow: results[0].workflow }
-  }
-
-  if (options.path) {
-    const results = await db
-      .select({
-        webhook: webhook,
-        workflow: workflow,
-      })
-      .from(webhook)
-      .innerJoin(workflow, eq(webhook.workflowId, workflow.id))
-      .leftJoin(
-        workflowDeploymentVersion,
-        and(
-          eq(workflowDeploymentVersion.workflowId, workflow.id),
-          eq(workflowDeploymentVersion.isActive, true)
-        )
-      )
-      .where(
-        and(
-          eq(webhook.path, options.path),
-          deliverableWebhookPredicate(webhook),
-          isNull(workflow.archivedAt),
-          or(
-            eq(webhook.deploymentVersionId, workflowDeploymentVersion.id),
-            and(isNull(workflowDeploymentVersion.id), isNull(webhook.deploymentVersionId))
-          )
-        )
-      )
-      .limit(1)
-
-    if (results.length === 0) {
-      logger.warn(`[${options.requestId}] No active webhook found for path: ${options.path}`)
-      return null
-    }
-
-    return { webhook: results[0].webhook, workflow: results[0].workflow }
-  }
-
   return null
 }
 
@@ -637,6 +563,7 @@ export async function checkWebhookPreprocessing(
       checkDeployment: true,
       workspaceId: foundWorkflow.workspaceId ?? undefined,
       workflowRecord: foundWorkflow,
+      executionType: 'async',
     })
 
     if (!preprocessResult.success) {
@@ -663,6 +590,7 @@ export async function checkWebhookPreprocessing(
       billingAttribution: preprocessResult.billingAttribution,
       executionId,
       correlation,
+      executionTimeoutMs: preprocessResult.executionTimeout.async,
     }
   } catch (preprocessError) {
     logger.error(`[${requestId}] Error during webhook preprocessing:`, preprocessError)
@@ -688,9 +616,7 @@ export interface WebhookDispatchResult {
 }
 
 function parseProviderConfig(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
+  return isRecordLike(value) ? (value as Record<string, unknown>) : {}
 }
 
 function getCredentialId(providerConfig: Record<string, unknown>): string | undefined {
@@ -780,9 +706,13 @@ async function queueWebhookExecutionWithResult(
       ...(options.triggerTimestampMs !== undefined
         ? { triggerTimestampMs: options.triggerTimestampMs }
         : {}),
+      ...(options.executionTimeoutMs !== undefined
+        ? { executionTimeoutMs: options.executionTimeoutMs }
+        : {}),
     } satisfies WebhookExecutionPayload
 
     const shouldUseQueue = shouldUseDurableQueue(payload.provider, handler)
+    const maxDurationSeconds = toTriggerMaxDurationSeconds(options.executionTimeoutMs)
 
     if (shouldUseQueue && !shouldExecuteInline()) {
       const jobId = await (await getJobQueue()).enqueue('webhook-execution', payload, {
@@ -792,6 +722,7 @@ async function queueWebhookExecutionWithResult(
           userId: actorUserId,
           correlation,
         },
+        maxDurationSeconds,
       })
       reservationTransferred = true
       logger.info(
@@ -806,41 +737,14 @@ async function queueWebhookExecutionWithResult(
           userId: actorUserId,
           correlation,
         },
+        maxDurationSeconds,
+        runner: (_queuedPayload: unknown, signal: AbortSignal) =>
+          executeWebhookJob(payload, signal),
       })
       reservationTransferred = true
       logger.info(
         `[${options.requestId}] Queued ${foundWebhook.provider} webhook execution ${jobId} via inline backend`
       )
-
-      void (async () => {
-        let workerOwnsReservation = false
-        try {
-          await jobQueue.startJob(jobId)
-          workerOwnsReservation = true
-          const output = await executeWebhookJob(payload)
-          await jobQueue.completeJob(jobId, output)
-        } catch (error) {
-          const errorMessage = toError(error).message
-          logger.error(`[${options.requestId}] Webhook execution failed`, {
-            jobId,
-            error: errorMessage,
-          })
-          if (!workerOwnsReservation) {
-            await releaseExecutionSlot(executionId)
-          }
-          try {
-            await jobQueue.markJobFailed(jobId, errorMessage)
-          } catch (markFailedError) {
-            logger.error(`[${options.requestId}] Failed to mark job as failed`, {
-              jobId,
-              error:
-                markFailedError instanceof Error
-                  ? markFailedError.message
-                  : String(markFailedError),
-            })
-          }
-        }
-      })()
     }
 
     const successResponse = handler.formatSuccessResponse?.(providerConfig) ?? null
@@ -954,6 +858,7 @@ export async function dispatchResolvedWebhookTarget(
     billingAttribution: preprocessResult.billingAttribution,
     executionId: preprocessResult.executionId,
     correlation: preprocessResult.correlation,
+    executionTimeoutMs: preprocessResult.executionTimeoutMs,
   })
 }
 
@@ -1090,9 +995,13 @@ export async function processPolledWebhookEvent(
         : {}),
       workspaceId,
       ...(credentialId ? { credentialId } : {}),
+      ...(preprocessResult.executionTimeoutMs !== undefined
+        ? { executionTimeoutMs: preprocessResult.executionTimeoutMs }
+        : {}),
     } satisfies WebhookExecutionPayload
 
     const isQueueRoutedProvider = shouldUseDurableQueue(provider, getProviderHandler(provider))
+    const maxDurationSeconds = toTriggerMaxDurationSeconds(preprocessResult.executionTimeoutMs)
     if (isQueueRoutedProvider && !shouldExecuteInline()) {
       const jobId = await (await getJobQueue()).enqueue('webhook-execution', payload, {
         metadata: {
@@ -1101,6 +1010,7 @@ export async function processPolledWebhookEvent(
           userId: actorUserId,
           correlation,
         },
+        maxDurationSeconds,
       })
       reservationTransferred = true
       logger.info(
@@ -1115,39 +1025,12 @@ export async function processPolledWebhookEvent(
           userId: actorUserId,
           correlation,
         },
+        maxDurationSeconds,
+        runner: (_queuedPayload: unknown, signal: AbortSignal) =>
+          executeWebhookJob(payload, signal),
       })
       reservationTransferred = true
       logger.info(`[${requestId}] Queued ${provider} webhook execution ${jobId} via inline backend`)
-
-      void (async () => {
-        let workerOwnsReservation = false
-        try {
-          await jobQueue.startJob(jobId)
-          workerOwnsReservation = true
-          const output = await executeWebhookJob(payload)
-          await jobQueue.completeJob(jobId, output)
-        } catch (error) {
-          const errorMessage = toError(error).message
-          logger.error(`[${requestId}] Webhook execution failed`, {
-            jobId,
-            error: errorMessage,
-          })
-          if (!workerOwnsReservation) {
-            await releaseExecutionSlot(executionId)
-          }
-          try {
-            await jobQueue.markJobFailed(jobId, errorMessage)
-          } catch (markFailedError) {
-            logger.error(`[${requestId}] Failed to mark job as failed`, {
-              jobId,
-              error:
-                markFailedError instanceof Error
-                  ? markFailedError.message
-                  : String(markFailedError),
-            })
-          }
-        }
-      })()
     }
 
     return { success: true, executionId }

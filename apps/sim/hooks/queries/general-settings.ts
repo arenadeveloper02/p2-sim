@@ -28,7 +28,6 @@ export const GENERAL_SETTINGS_STALE_TIME = 60 * 60 * 1000
  */
 export interface GeneralSettings {
   autoConnect: boolean
-  showTrainingControls: boolean
   superUserModeEnabled: boolean
   mothershipEnvironment: MothershipEnvironment
   theme: 'light' | 'dark' | 'system'
@@ -37,6 +36,8 @@ export interface GeneralSettings {
   errorNotificationsEnabled: boolean
   snapToGridSize: number
   showActionBar: boolean
+  /** Whether clicking a block on the canvas animates the camera to center it. */
+  autoFocusOnClick: boolean
   /** Copilot tool ids the user picked "always allow" for. */
   copilotAutoAllowedTools: string[]
   /** Saved IANA timezone, or `null` when unset (the app falls back to the browser zone). */
@@ -50,7 +51,6 @@ export interface GeneralSettings {
 export function mapGeneralSettingsResponse(data: UserSettingsApi): GeneralSettings {
   return {
     autoConnect: data.autoConnect,
-    showTrainingControls: data.showTrainingControls,
     superUserModeEnabled: data.superUserModeEnabled,
     mothershipEnvironment: data.mothershipEnvironment,
     theme: data.theme,
@@ -59,6 +59,7 @@ export function mapGeneralSettingsResponse(data: UserSettingsApi): GeneralSettin
     errorNotificationsEnabled: data.errorNotificationsEnabled,
     snapToGridSize: data.snapToGridSize,
     showActionBar: data.showActionBar,
+    autoFocusOnClick: data.autoFocusOnClick,
     copilotAutoAllowedTools: data.copilotAutoAllowedTools ?? [],
     timezone: data.timezone ?? null,
   }
@@ -114,11 +115,6 @@ export function useAutoConnect(): boolean {
   return data?.autoConnect ?? true
 }
 
-export function useShowTrainingControls(): boolean {
-  const { data } = useGeneralSettings()
-  return data?.showTrainingControls ?? false
-}
-
 export function useSnapToGridSize(): number {
   const { data } = useGeneralSettings()
   return data?.snapToGridSize ?? 0
@@ -129,14 +125,22 @@ export function useShowActionBar(): boolean {
   return data?.showActionBar ?? true
 }
 
+/**
+ * Whether the canvas camera animates to center a block when it is clicked.
+ *
+ * Scoped to clicks only. Arrow-key navigation and block creation deliberately
+ * keep following the camera regardless — both move selection to a block that
+ * may be off-screen, so suppressing the move would leave the user with no way
+ * to tell where the selection went.
+ */
+export function useAutoFocusOnClick(): boolean {
+  const { data } = useGeneralSettings()
+  return data?.autoFocusOnClick ?? true
+}
+
 export function useBillingUsageNotifications(): boolean {
   const { data } = useGeneralSettings()
   return data?.billingUsageNotificationsEnabled ?? true
-}
-
-export function useErrorNotificationsEnabled(): boolean {
-  const { data } = useGeneralSettings()
-  return data?.errorNotificationsEnabled ?? true
 }
 
 /**

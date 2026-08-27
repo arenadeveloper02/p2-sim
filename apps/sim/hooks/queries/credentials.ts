@@ -20,9 +20,11 @@ import {
   type WorkspaceCredentialType,
 } from '@/lib/api/contracts'
 import { environmentKeys } from '@/hooks/queries/environment'
+import { oauthConnectionsKeys } from '@/hooks/queries/oauth/oauth-connections'
 import { workspaceCredentialKeys } from '@/hooks/queries/utils/credential-keys'
 import {
   fetchWorkspaceCredentialList,
+  requireWorkspaceCredentialListResponse,
   WORKSPACE_CREDENTIAL_LIST_STALE_TIME,
 } from '@/hooks/queries/utils/fetch-workspace-credentials'
 
@@ -74,7 +76,7 @@ export function useWorkspaceCredentials(params: {
         },
         signal,
       })
-      return data.credentials ?? []
+      return requireWorkspaceCredentialListResponse(data)
     },
     enabled: Boolean(workspaceId) && enabled,
     staleTime: WORKSPACE_CREDENTIAL_LIST_STALE_TIME,
@@ -104,7 +106,7 @@ export function useWorkspaceCredential(credentialId?: string, enabled = true) {
 export function useCreateCredentialDraft() {
   return useMutation({
     mutationFn: async (payload: ContractBodyInput<typeof createCredentialDraftContract>) => {
-      await requestJson(createCredentialDraftContract, { body: payload })
+      return requestJson(createCredentialDraftContract, { body: payload })
     },
   })
 }
@@ -136,21 +138,13 @@ export function useUpdateWorkspaceCredential() {
         credentialId: string
       } & ContractBodyInput<typeof updateWorkspaceCredentialContract>
     ) => {
+      // Forward the whole contract body rather than re-listing its fields: a
+      // hand-maintained allowlist silently drops any field added to the
+      // contract later, and the payload type makes that invisible to `tsc`.
+      const { credentialId, ...body } = payload
       return requestJson(updateWorkspaceCredentialContract, {
-        params: { id: payload.credentialId },
-        body: {
-          displayName: payload.displayName,
-          description: payload.description,
-          serviceAccountJson: payload.serviceAccountJson,
-          signingSecret: payload.signingSecret,
-          botToken: payload.botToken,
-          apiToken: payload.apiToken,
-          domain: payload.domain,
-          clientId: payload.clientId,
-          clientSecret: payload.clientSecret,
-          orgId: payload.orgId,
-          dataCenter: payload.dataCenter,
-        },
+        params: { id: credentialId },
+        body,
       })
     },
     onMutate: async (variables) => {
@@ -218,6 +212,7 @@ export function useDeleteWorkspaceCredential() {
       queryClient.invalidateQueries({ queryKey: workspaceCredentialKeys.lists() })
       queryClient.invalidateQueries({ queryKey: OAUTH_CREDENTIALS_KEY })
       queryClient.invalidateQueries({ queryKey: environmentKeys.all })
+      queryClient.invalidateQueries({ queryKey: oauthConnectionsKeys.connections() })
     },
   })
 }

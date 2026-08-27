@@ -671,7 +671,7 @@ const LeftNavThread = ({
           Chats
         </p>
 
-        <div className='mb-1.5'>
+        <div className='mb-3'>
           <ChipInput
             ref={resolvedSearchRef}
             value={searchQuery}
@@ -695,13 +695,10 @@ const LeftNavThread = ({
               <div className='text-red-500 text-sm'>Failed to load threads</div>
             </div>
           ) : groupedThreads.length > 0 ? (
-            <div className='flex flex-col gap-2'>
+            <div className='flex flex-col gap-3'>
               {groupedThreads.map((group) => (
                 <div key={group.label} className='flex flex-col'>
-                  <p
-                    className='mb-[var(--spacing-ds-component-md,12px)] px-1 text-xs'
-                    style={{ color: DEPLOYED_CHAT_TEXT_SUBTLE }}
-                  >
+                  <p className='mb-1 px-1 text-xs' style={{ color: DEPLOYED_CHAT_TEXT_SUBTLE }}>
                     {group.label}
                   </p>
                   <div className='flex flex-col gap-1'>

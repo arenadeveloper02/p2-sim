@@ -1,5 +1,10 @@
-import { createLogger } from '@sim/logger'
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { requestJson } from '@/lib/api/client/request'
 import {
   type ConnectorData,
@@ -15,9 +20,8 @@ import {
   triggerKnowledgeConnectorSyncContract,
   updateKnowledgeConnectorContract,
 } from '@/lib/api/contracts/knowledge'
+import { MAX_KNOWLEDGE_CONNECTOR_DOCUMENT_PAGE_SIZE } from '@/lib/knowledge/constants'
 import { knowledgeKeys } from '@/hooks/queries/utils/knowledge-keys'
-
-const logger = createLogger('KnowledgeConnectorQueries')
 
 export type { ConnectorData, ConnectorDetailData, SyncLogData }
 
@@ -224,9 +228,13 @@ export function useTriggerSync() {
 
   return useMutation({
     mutationFn: triggerSync,
+    /**
+     * The sync itself runs async — the connector list's own syncing poll surfaces its
+     * progress. Only the connector rows have anything to say yet.
+     */
     onSettled: (_data, _error, { knowledgeBaseId }) => {
       queryClient.invalidateQueries({
-        queryKey: knowledgeKeys.detail(knowledgeBaseId),
+        queryKey: connectorKeys.all(knowledgeBaseId),
       })
     },
   })
@@ -237,19 +245,24 @@ export const connectorDocumentKeys = {
     [...connectorKeys.detail(knowledgeBaseId, connectorId), 'documents'] as const,
   lists: (knowledgeBaseId?: string, connectorId?: string) =>
     [...connectorDocumentKeys.all(knowledgeBaseId, connectorId), 'list'] as const,
-  list: (knowledgeBaseId?: string, connectorId?: string) =>
-    connectorDocumentKeys.lists(knowledgeBaseId, connectorId),
+  list: (knowledgeBaseId?: string, connectorId?: string, includeExcluded = false) =>
+    [...connectorDocumentKeys.lists(knowledgeBaseId, connectorId), includeExcluded] as const,
 }
 
 async function fetchConnectorDocuments(
   knowledgeBaseId: string,
   connectorId: string,
   includeExcluded: boolean,
+  offset: number,
   signal?: AbortSignal
 ): Promise<ConnectorDocumentsData> {
   const result = await requestJson(listKnowledgeConnectorDocumentsContract, {
     params: { id: knowledgeBaseId, connectorId },
-    query: { includeExcluded },
+    query: {
+      includeExcluded,
+      limit: MAX_KNOWLEDGE_CONNECTOR_DOCUMENT_PAGE_SIZE,
+      offset,
+    },
     signal,
   })
 
@@ -261,18 +274,24 @@ export function useConnectorDocuments(
   connectorId?: string,
   options?: { includeExcluded?: boolean }
 ) {
-  return useQuery({
-    queryKey: [
-      ...connectorDocumentKeys.list(knowledgeBaseId, connectorId),
-      options?.includeExcluded ?? false,
-    ],
-    queryFn: ({ signal }) =>
+  const includeExcluded = options?.includeExcluded ?? false
+  return useInfiniteQuery({
+    queryKey: connectorDocumentKeys.list(knowledgeBaseId, connectorId, includeExcluded),
+    queryFn: ({ signal, pageParam }) =>
       fetchConnectorDocuments(
         knowledgeBaseId as string,
         connectorId as string,
-        options?.includeExcluded ?? false,
+        includeExcluded,
+        pageParam,
         signal
       ),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, pages) => {
+      const loadedCount = pages.reduce((total, page) => total + page.documents.length, 0)
+      const totalCount = lastPage.counts.active + (includeExcluded ? lastPage.counts.excluded : 0)
+      if (lastPage.documents.length === 0 || loadedCount >= totalCount) return undefined
+      return loadedCount
+    },
     enabled: Boolean(knowledgeBaseId && connectorId),
     staleTime: CONNECTOR_DOCUMENT_LIST_STALE_TIME,
     placeholderData: keepPreviousData,
@@ -305,7 +324,7 @@ export function useExcludeConnectorDocument() {
     mutationFn: excludeConnectorDocuments,
     onSettled: (_data, _error, { knowledgeBaseId, connectorId }) => {
       queryClient.invalidateQueries({
-        queryKey: connectorDocumentKeys.list(knowledgeBaseId, connectorId),
+        queryKey: connectorDocumentKeys.lists(knowledgeBaseId, connectorId),
       })
       queryClient.invalidateQueries({
         queryKey: knowledgeKeys.detail(knowledgeBaseId),
@@ -334,7 +353,7 @@ export function useRestoreConnectorDocument() {
     mutationFn: restoreConnectorDocuments,
     onSettled: (_data, _error, { knowledgeBaseId, connectorId }) => {
       queryClient.invalidateQueries({
-        queryKey: connectorDocumentKeys.list(knowledgeBaseId, connectorId),
+        queryKey: connectorDocumentKeys.lists(knowledgeBaseId, connectorId),
       })
       queryClient.invalidateQueries({
         queryKey: knowledgeKeys.detail(knowledgeBaseId),

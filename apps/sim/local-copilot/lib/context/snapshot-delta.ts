@@ -167,7 +167,10 @@ export function parseWorkspaceSnapshotMeta(
     : { generatedAt, contentRevision }
 }
 
-function itemLabel(kind: SnapshotFingerprintKind, item: Record<string, unknown>): string | undefined {
+function itemLabel(
+  kind: SnapshotFingerprintKind,
+  item: Record<string, unknown>
+): string | undefined {
   if (kind === 'envVars') return asString(item.value)
   if (kind === 'members') return asString(item.email) ?? asString(item.name)
   if (kind === 'customBlocks') return asString(item.name) ?? asString(item.type)
@@ -271,8 +274,7 @@ export function buildWorkspaceSnapshotFingerprints(params: {
   generatedAt: string
   contentRevision?: string
 }): WorkspaceSnapshotFingerprints {
-  const revision =
-    params.contentRevision?.trim() || computeSnapshotContentRevision(params.snapshot)
+  const revision = params.contentRevision?.trim() || computeSnapshotContentRevision(params.snapshot)
   const kinds: WorkspaceSnapshotFingerprints['kinds'] = {}
 
   for (const kind of SNAPSHOT_FINGERPRINT_KINDS) {

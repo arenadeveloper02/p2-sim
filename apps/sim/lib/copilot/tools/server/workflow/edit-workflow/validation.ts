@@ -3,6 +3,7 @@ import { toError } from '@sim/utils/errors'
 import { omit } from '@sim/utils/object'
 import { validateSelectorIds } from '@/lib/copilot/validation/selector-validator'
 import { isHosted as isHostedDeployment } from '@/lib/core/config/env-flags'
+import { isIntegrationDeploymentAvailableForVisibility } from '@/lib/integrations/availability.server'
 import { isBlockTypeAccessControlExempt } from '@/lib/permission-groups/block-access'
 import type { PermissionGroupConfig } from '@/lib/permission-groups/types'
 import { getCustomToolById } from '@/lib/workflows/custom-tools/operations'
@@ -15,9 +16,15 @@ import {
 } from '@/lib/workflows/subblocks/visibility'
 import { getBlock } from '@/blocks/registry'
 import type { SubBlockConfig } from '@/blocks/types'
-import { getModelOptions } from '@/blocks/utils'
+import { getAgentModelOptions, getModelOptions, getPiModelOptions } from '@/blocks/utils'
+import { overlayVisibility } from '@/blocks/visibility/context'
 import { BlockType, EDGE, normalizeName } from '@/executor/constants'
-import { isAutoModel, isKnownModelId, suggestModelIdsForUnknownModel } from '@/providers/models'
+import {
+  getModelSunsetStatus,
+  isAutoModel,
+  isKnownModelId,
+  suggestModelIdsForUnknownModel,
+} from '@/providers/models'
 import { isPiByokOnlyMode } from '@/providers/pi-providers'
 import { getTool } from '@/tools/utils'
 import { TRIGGER_RUNTIME_SUBBLOCK_IDS, TRIGGER_WEBHOOK_URL_FIELD } from '@/triggers/constants'
@@ -184,9 +191,8 @@ export function validateInputsForBlock(
       : inputs
 
   if (!blockConfig) {
-    // Unknown block type - return inputs as-is (let it fail later if invalid)
     validationLogger.warn(`Unknown block type: ${blockType}, skipping validation`)
-    return { validInputs: normalizedInputs, errors: [] }
+    return { validInputs: normalizedInputs, errors }
   }
 
   const validatedInputs: Record<string, any> = {}
@@ -350,6 +356,37 @@ function validateAgentToolEntry(item: any, index: number): string | null {
     }
     if (!Array.isArray(block.tools?.access) || block.tools.access.length === 0) {
       return `${where} block type "${type}" cannot be attached as an agent tool (it exposes no callable tools)`
+    }
+    if (!isIntegrationDeploymentAvailableForVisibility(type, overlayVisibility())) {
+      return `${where} block type "${type}" is unavailable in this deployment`
+    }
+
+    const operationConfig = block.subBlocks?.find((subBlock) => subBlock.id === 'operation')
+    if (operationConfig?.options) {
+      let validOperations: string[]
+      try {
+        const options =
+          typeof operationConfig.options === 'function'
+            ? operationConfig.options()
+            : operationConfig.options
+        validOperations = options.map((option) => option.id)
+      } catch (error) {
+        return `${where} could not validate operations for block type "${type}": ${toError(error).message}`
+      }
+
+      const operation = item.operation
+      if (
+        validOperations.length > 1 &&
+        (typeof operation !== 'string' || operation.trim() === '')
+      ) {
+        return `${where} block type "${type}" requires an operation. Valid operations: ${validOperations.join(', ')}`
+      }
+      if (
+        operation !== undefined &&
+        (typeof operation !== 'string' || !validOperations.includes(operation))
+      ) {
+        return `${where} block type "${type}" has invalid operation "${String(operation)}". Valid operations: ${validOperations.join(', ')}. Use one of the block operation ids above; it may differ from the underlying tool id.`
+      }
     }
   }
 
@@ -723,7 +760,10 @@ export function validateValueForSubBlockType(
     case 'long-input':
     case 'combobox': {
       const usesProviderCatalog =
-        fieldName === 'model' && subBlockConfig.options === getModelOptions
+        fieldName === 'model' &&
+        (subBlockConfig.options === getModelOptions ||
+          subBlockConfig.options === getAgentModelOptions ||
+          subBlockConfig.options === getPiModelOptions)
 
       if (usesProviderCatalog) {
         const stringValue = typeof value === 'string' ? value : String(value)
@@ -746,6 +786,24 @@ export function validateValueForSubBlockType(
               field: fieldName,
               value,
               error: `Unknown model id "${trimmed}" for block "${blockType}". Read components/blocks/${blockType}.json (the model.options array) for valid ids; prefer entries with recommended: true and avoid deprecated: true. For user-configured models (Ollama, Ollama Cloud, vLLM, LiteLLM, OpenRouter, Fireworks, Together AI, Baseten), prefix the id with the provider slash, e.g. "ollama/llama3.1:8b" or "ollama-cloud/gpt-oss:120b".${suggestionText}`,
+            },
+          }
+        }
+        const sunset = getModelSunsetStatus(trimmed)
+        if (sunset === 'legacy' || sunset === 'deprecated') {
+          const suggestions = suggestModelIdsForUnknownModel(trimmed)
+          const suggestionText =
+            suggestions.length > 0
+              ? ` Use a current recommended model instead: ${suggestions.join(', ')}.`
+              : ''
+          return {
+            valid: false,
+            error: {
+              blockId,
+              blockType,
+              field: fieldName,
+              value,
+              error: `"${trimmed}" is a ${sunset} model and must not be written on new or updated blocks.${suggestionText}`,
             },
           }
         }
@@ -872,12 +930,15 @@ export function validateSourceHandleForBlock(
   }
 }
 
+const DEFAULT_FIRST_CONDITION_HANDLES = new Set(['source', 'default', 'success', ''])
+
 /**
  * Validates condition handle references a valid condition in the block.
  * Accepts multiple formats:
- * - Simple format: "if", "else-if-0", "else-if-1", "else"
+ * - Simple format: "if", "else-if-0", "else" (by branch index, even when titles are custom)
+ * - Default source aliases: "source", "default", "success", "" map to the first branch
  * - Legacy semantic format: "condition-{blockId}-if", "condition-{blockId}-else-if"
- * - Internal ID format: "condition-{conditionId}"
+ * - Internal ID format: "condition-{conditionId}" or the raw condition id
  *
  * Returns the normalized handle (condition-{conditionId}) for storage.
  */
@@ -912,29 +973,35 @@ export function validateConditionHandle(
     }
   }
 
-  // Build a map of all valid handle formats -> normalized handle (condition-{conditionId})
   const handleToNormalized = new Map<string, string>()
   const legacySemanticPrefix = `condition-${blockId}-`
+  const simpleOptions: string[] = []
   let elseIfIndex = 0
 
-  for (const condition of conditions) {
-    if (!condition.id) continue
+  for (let index = 0; index < conditions.length; index++) {
+    const condition = conditions[index]
+    if (!condition?.id) continue
 
     const normalizedHandle = `condition-${condition.id}`
-    const title = condition.title?.toLowerCase()
-
-    // Always accept internal ID format
     handleToNormalized.set(normalizedHandle, normalizedHandle)
+    handleToNormalized.set(String(condition.id), normalizedHandle)
 
-    if (title === 'if') {
-      // Simple format: "if"
+    const isFirst = index === 0
+    const isLast = index === conditions.length - 1 && conditions.length > 1
+
+    if (isFirst) {
       handleToNormalized.set('if', normalizedHandle)
-      // Legacy format: "condition-{blockId}-if"
       handleToNormalized.set(`${legacySemanticPrefix}if`, normalizedHandle)
-    } else if (title === 'else if') {
-      // Simple format: "else-if-0", "else-if-1", etc. (0-indexed)
+      for (const alias of DEFAULT_FIRST_CONDITION_HANDLES) {
+        handleToNormalized.set(alias, normalizedHandle)
+      }
+      simpleOptions.push('if')
+    } else if (isLast) {
+      handleToNormalized.set('else', normalizedHandle)
+      handleToNormalized.set(`${legacySemanticPrefix}else`, normalizedHandle)
+      simpleOptions.push('else')
+    } else {
       handleToNormalized.set(`else-if-${elseIfIndex}`, normalizedHandle)
-      // Legacy format: "condition-{blockId}-else-if" for first, "condition-{blockId}-else-if-2" for second
       if (elseIfIndex === 0) {
         handleToNormalized.set(`${legacySemanticPrefix}else-if`, normalizedHandle)
       } else {
@@ -943,11 +1010,16 @@ export function validateConditionHandle(
           normalizedHandle
         )
       }
+      simpleOptions.push(`else-if-${elseIfIndex}`)
       elseIfIndex++
+    }
+
+    const title = typeof condition.title === 'string' ? condition.title.toLowerCase() : ''
+    if (title === 'if') {
+      handleToNormalized.set('if', normalizedHandle)
+      handleToNormalized.set(`${legacySemanticPrefix}if`, normalizedHandle)
     } else if (title === 'else') {
-      // Simple format: "else"
       handleToNormalized.set('else', normalizedHandle)
-      // Legacy format: "condition-{blockId}-else"
       handleToNormalized.set(`${legacySemanticPrefix}else`, normalizedHandle)
     }
   }
@@ -957,24 +1029,9 @@ export function validateConditionHandle(
     return { valid: true, normalizedHandle }
   }
 
-  // Build list of valid simple format options for error message
-  const simpleOptions: string[] = []
-  elseIfIndex = 0
-  for (const condition of conditions) {
-    const title = condition.title?.toLowerCase()
-    if (title === 'if') {
-      simpleOptions.push('if')
-    } else if (title === 'else if') {
-      simpleOptions.push(`else-if-${elseIfIndex}`)
-      elseIfIndex++
-    } else if (title === 'else') {
-      simpleOptions.push('else')
-    }
-  }
-
   return {
     valid: false,
-    error: `Invalid condition handle "${sourceHandle}". Valid handles: ${simpleOptions.join(', ')}`,
+    error: `Invalid condition handle "${sourceHandle}". Valid handles: ${simpleOptions.join(', ') || 'if, else'}`,
   }
 }
 
@@ -1083,6 +1140,7 @@ export function isBlockTypeAllowed(
   blockType: string,
   permissionConfig: PermissionGroupConfig | null
 ): boolean {
+  if (!isIntegrationDeploymentAvailableForVisibility(blockType, overlayVisibility())) return false
   if (isBlockTypeAccessControlExempt(blockType)) {
     return true
   }

@@ -86,6 +86,20 @@ export const agentMailEnvelopeSchema = z
   })
   .passthrough()
 
+/**
+ * Unverified view of an AgentMail envelope, read only to pick which secret to
+ * check. An AgentMail inbox id is the inbox's email address, so the bound is
+ * RFC 5321's maximum address length rather than an arbitrary cutoff.
+ */
+export const agentMailRoutingSchema = z.object({
+  message: z.object({
+    inbox_id: z
+      .string()
+      .min(1, 'message.inbox_id cannot be empty')
+      .max(320, 'message.inbox_id exceeds the maximum email address length'),
+  }),
+})
+
 const agentMailAttachmentSchema = z
   .object({
     attachment_id: z.string(),
@@ -281,15 +295,3 @@ export const tiktokWebhookResponseSchema = z.union([
   z.object({ ok: z.literal(true) }),
   z.object({ error: z.string().min(1) }),
 ])
-
-export const tiktokWebhookContract = defineRouteContract({
-  method: 'POST',
-  path: '/api/webhooks/tiktok',
-  headers: tiktokWebhookHeadersSchema,
-  // Body is validated after HMAC verification against the raw payload.
-  body: tiktokWebhookEnvelopeSchema,
-  response: {
-    mode: 'json',
-    schema: tiktokWebhookResponseSchema,
-  },
-})

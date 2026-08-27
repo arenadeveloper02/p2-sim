@@ -1,7 +1,7 @@
 import type { LocalCopilotProviderId } from '@/local-copilot/lib/types'
 
-/** Default catalog selection for new local chats. */
-export const DEFAULT_LOCAL_COPILOT_CATALOG_ID = 'claude' as const
+/** Default catalog selection for new local chats and new user-access rows. */
+export const DEFAULT_LOCAL_COPILOT_CATALOG_ID = 'gemini-2.5-pro' as const
 
 /** Top-level picker groups shown when Local is selected. */
 export type LocalCopilotProviderGroup = 'claude' | 'gemini' | 'bedrock'
@@ -45,6 +45,27 @@ export const LOCAL_COPILOT_CATALOG = [
     label: 'Claude Sonnet 5',
     provider: 'bedrock' as LocalCopilotProviderId,
     model: 'anthropic.claude-sonnet-5',
+  },
+  {
+    id: 'bedrock-claude-opus-4-8',
+    providerGroup: 'bedrock',
+    label: 'Claude Opus 4.8',
+    provider: 'bedrock' as LocalCopilotProviderId,
+    model: 'anthropic.claude-opus-4-8',
+  },
+  {
+    id: 'bedrock-claude-opus-4-6',
+    providerGroup: 'bedrock',
+    label: 'Claude Opus 4.6',
+    provider: 'bedrock' as LocalCopilotProviderId,
+    model: 'anthropic.claude-opus-4-6-v1',
+  },
+  {
+    id: 'bedrock-claude-sonnet-4-6',
+    providerGroup: 'bedrock',
+    label: 'Claude Sonnet 4.6',
+    provider: 'bedrock' as LocalCopilotProviderId,
+    model: 'anthropic.claude-sonnet-4-6',
   },
   {
     id: 'bedrock-zai-glm-5',
@@ -97,6 +118,28 @@ const CATALOG_BY_ID = new Map<string, (typeof LOCAL_COPILOT_CATALOG)[number]>(
 /** Type guard for allowlisted catalog ids. */
 export function isLocalCopilotCatalogId(value: string): value is LocalCopilotCatalogId {
   return CATALOG_BY_ID.has(value)
+}
+
+/**
+ * Returns an allowlisted catalog id, falling back to the Gemini default.
+ */
+export function resolveLocalCopilotCatalogId(
+  value: string | undefined | null
+): LocalCopilotCatalogId {
+  if (value && isLocalCopilotCatalogId(value)) return value
+  return DEFAULT_LOCAL_COPILOT_CATALOG_ID
+}
+
+/**
+ * Local request model: honor a valid picker id, otherwise the per-user
+ * `default_model` enum (Gemini when that is missing or a Cloud model string).
+ */
+export function resolveLocalCopilotRequestCatalogId(
+  requested: string | undefined | null,
+  defaultFromAccess: string | undefined | null
+): LocalCopilotCatalogId {
+  if (requested && isLocalCopilotCatalogId(requested)) return requested
+  return resolveLocalCopilotCatalogId(defaultFromAccess)
 }
 
 /**

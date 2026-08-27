@@ -34,6 +34,24 @@ const INCLUDED_EXTENSIONS = new Set([
 const MAX_TOTAL_CHARS = 200_000
 const MAX_FILE_CHARS = 24_000
 
+/**
+ * Always read these first so edit/E2B validation cannot drop tsconfig.json (or
+ * other scaffolding) when the 200k char budget is spent on app/components first.
+ */
+const PINNED_SOURCE_PATHS = [
+  'package.json',
+  'tsconfig.json',
+  'next.config.ts',
+  'next-env.d.ts',
+  'prisma/schema.prisma',
+  'lib/prisma.ts',
+  'lib/actions.ts',
+  'lib/types.ts',
+  'app/layout.tsx',
+  'app/page.tsx',
+  'REPO_SUMMARY.md',
+] as const
+
 function shouldIncludeFile(relativePath: string): boolean {
   const normalized = relativePath.replace(/\\/g, '/')
   const segments = normalized.split('/')
@@ -50,11 +68,47 @@ function shouldIncludeFile(relativePath: string): boolean {
   return INCLUDED_EXTENSIONS.has(extension)
 }
 
+function pushFileIfBudgetAllows(
+  files: GeneratedAppFile[],
+  totalChars: { value: number },
+  seenPaths: Set<string>,
+  relativePath: string,
+  content: string
+): void {
+  const safePath = sanitizeRelativeFilePath(relativePath)
+  if (!safePath) {
+    return
+  }
+
+  const normalized = safePath.replace(/\\/g, '/')
+  if (seenPaths.has(normalized)) {
+    return
+  }
+
+  let nextContent = content
+  if (nextContent.length > MAX_FILE_CHARS) {
+    nextContent = `${nextContent.slice(0, MAX_FILE_CHARS)}\n…(truncated)`
+  }
+
+  const remaining = MAX_TOTAL_CHARS - totalChars.value
+  if (remaining <= 0) {
+    return
+  }
+  if (nextContent.length > remaining) {
+    nextContent = `${nextContent.slice(0, remaining)}\n…(truncated)`
+  }
+
+  files.push({ path: safePath, content: nextContent })
+  seenPaths.add(normalized)
+  totalChars.value += nextContent.length
+}
+
 async function walkDirectory(
   rootDir: string,
   currentDir: string,
   files: GeneratedAppFile[],
-  totalChars: { value: number }
+  totalChars: { value: number },
+  seenPaths: Set<string>
 ): Promise<void> {
   if (totalChars.value >= MAX_TOTAL_CHARS) {
     return
@@ -74,7 +128,7 @@ async function walkDirectory(
       if (SKIP_DIR_NAMES.has(entry.name)) {
         continue
       }
-      await walkDirectory(rootDir, absolutePath, files, totalChars)
+      await walkDirectory(rootDir, absolutePath, files, totalChars, seenPaths)
       continue
     }
 
@@ -82,24 +136,9 @@ async function walkDirectory(
       continue
     }
 
-    const safePath = sanitizeRelativeFilePath(relativePath)
-    if (!safePath) {
-      continue
-    }
-
     try {
-      let content = await readFile(absolutePath, 'utf-8')
-      if (content.length > MAX_FILE_CHARS) {
-        content = `${content.slice(0, MAX_FILE_CHARS)}\n…(truncated)`
-      }
-
-      const remaining = MAX_TOTAL_CHARS - totalChars.value
-      if (content.length > remaining) {
-        content = `${content.slice(0, remaining)}\n…(truncated)`
-      }
-
-      files.push({ path: safePath, content })
-      totalChars.value += content.length
+      const content = await readFile(absolutePath, 'utf-8')
+      pushFileIfBudgetAllows(files, totalChars, seenPaths, relativePath, content)
     } catch (error) {
       logger.warn('Skipping unreadable generated app file', {
         path: relativePath,
@@ -119,7 +158,25 @@ export async function readGeneratedAppFiles(outputDir: string): Promise<Generate
 
   const files: GeneratedAppFile[] = []
   const totalChars = { value: 0 }
-  await walkDirectory(outputDir, outputDir, files, totalChars)
+  const seenPaths = new Set<string>()
+
+  for (const relativePath of PINNED_SOURCE_PATHS) {
+    const absolutePath = join(outputDir, relativePath)
+    if (!existsSync(absolutePath)) {
+      continue
+    }
+    try {
+      const content = await readFile(absolutePath, 'utf-8')
+      pushFileIfBudgetAllows(files, totalChars, seenPaths, relativePath, content)
+    } catch (error) {
+      logger.warn('Skipping unreadable generated app file', {
+        path: relativePath,
+        error: toError(error).message,
+      })
+    }
+  }
+
+  await walkDirectory(outputDir, outputDir, files, totalChars, seenPaths)
 
   if (files.length === 0) {
     throw new Error('No readable source files found in the selected repository')

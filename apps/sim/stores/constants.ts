@@ -23,10 +23,10 @@ export const CONTENT_WINDOW_GAP = 8
 
 /** Sidebar width constraints */
 export const SIDEBAR_WIDTH = {
-  DEFAULT: 248,
-  MIN: 248,
+  DEFAULT: 238,
+  MIN: 238,
   /** Width when sidebar is collapsed to icon-only mode */
-  COLLAPSED: 51,
+  COLLAPSED: 48,
   /** Maximum is 30% of viewport, enforced dynamically */
   MAX_PERCENTAGE: 0.3,
 } as const

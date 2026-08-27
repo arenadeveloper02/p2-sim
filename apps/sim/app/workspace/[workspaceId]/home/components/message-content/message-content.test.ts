@@ -452,6 +452,23 @@ describe('completed tool titles', () => {
     )
   })
 
+  it('renders an accepted async workflow launch in past tense', () => {
+    expect(
+      firstToolTitle([
+        {
+          type: 'tool_call',
+          toolCall: {
+            id: 'async-workflow',
+            name: 'run_workflow',
+            status: 'success',
+            params: { async: true },
+          },
+          timestamp: 1,
+        },
+      ])
+    ).toBe('Ran workflow')
+  })
+
   it('renders the completed deployment action and deployment type', () => {
     expect(
       firstToolTitle([
@@ -564,7 +581,7 @@ describe('completed tool titles', () => {
       )
 
       const presentTitle = getToolDisplayTitle(toolName, args)
-      const expectedTitle = getToolStatusDisplayTitle(presentTitle, 'success')
+      const expectedTitle = getToolStatusDisplayTitle(presentTitle, 'success', toolName)
       const actualTitle = firstToolTitle(modelToContentBlocks(model))
       if (actualTitle !== expectedTitle) {
         failures.push(`${toolName}: expected ${expectedTitle}, received ${actualTitle}`)

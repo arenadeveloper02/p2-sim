@@ -5,7 +5,18 @@ import {
   workspaceIdSchema,
 } from '@/lib/api/contracts/primitives'
 import { defineRouteContract } from '@/lib/api/contracts/types'
+import {
+  LOCAL_COPILOT_CATALOG,
+  type LocalCopilotCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 import type { WorkflowPatch } from '@/local-copilot/lib/types'
+
+const localCopilotCatalogIdSchema = z.enum(
+  LOCAL_COPILOT_CATALOG.map((entry) => entry.id) as [
+    LocalCopilotCatalogId,
+    ...LocalCopilotCatalogId[],
+  ]
+)
 
 /**
  * Runtime-permissive patch shape (LLM / DB payloads). Typed as {@link WorkflowPatch}
@@ -47,15 +58,31 @@ export const localCopilotConfigResponseSchema = z.object({
   enabled: z.boolean(),
   canSwitchBackend: z.boolean(),
   localOnly: z.boolean(),
+  defaultCatalogId: localCopilotCatalogIdSchema,
   provider: z.string(),
   model: z.string(),
   specialistModel: z.string(),
   selfHosted: z.boolean(),
 })
 
+export type LocalCopilotConfigResponse = z.output<typeof localCopilotConfigResponseSchema>
+
 export const getLocalCopilotConfigContract = defineRouteContract({
   method: 'GET',
   path: '/api/local-copilot/config',
+  response: { mode: 'json', schema: localCopilotConfigResponseSchema },
+})
+
+export const updateLocalCopilotConfigBodySchema = z.object({
+  defaultCatalogId: localCopilotCatalogIdSchema,
+})
+
+export type UpdateLocalCopilotConfigBody = z.input<typeof updateLocalCopilotConfigBodySchema>
+
+export const updateLocalCopilotConfigContract = defineRouteContract({
+  method: 'PATCH',
+  path: '/api/local-copilot/config',
+  body: updateLocalCopilotConfigBodySchema,
   response: { mode: 'json', schema: localCopilotConfigResponseSchema },
 })
 

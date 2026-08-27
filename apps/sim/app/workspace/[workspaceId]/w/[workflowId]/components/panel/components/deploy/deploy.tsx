@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Tooltip } from '@sim/emcn'
+import { Chip, Tooltip, toast } from '@sim/emcn'
 import { useParams } from 'next/navigation'
 import { workflowDeployCTAEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
+import { useRegisterGlobalCommands } from '@/app/workspace/[workspaceId]/providers/global-commands-provider'
 import { DeployModal } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/deploy/components/deploy-modal/deploy-modal'
 import {
   useChangeDetection,
@@ -19,16 +20,10 @@ import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 interface DeployProps {
   activeWorkflowId: string | null
   userPermissions: WorkspaceUserPermissions
-  className?: string
   disabled?: boolean
 }
 
-export function Deploy({
-  activeWorkflowId,
-  userPermissions,
-  className,
-  disabled = false,
-}: DeployProps) {
+export function Deploy({ activeWorkflowId, userPermissions, disabled = false }: DeployProps) {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -76,7 +71,8 @@ export function Deploy({
     (!isDeployed && deployReadiness.isBlocked && !deployReadiness.isSyncing)
 
   const onDeployClick = async () => {
-    if (disabled || !canDeploy || !activeWorkflowId) return
+    if (isRegistryLoading || isDisabled || !activeWorkflowId) return
+
     workflowDeployCTAEvent({
       'Workspace Name': workspaceName,
       'Workspace ID': workspaceId,
@@ -93,6 +89,21 @@ export function Deploy({
       setIsModalOpen(true)
     }
   }
+
+  useRegisterGlobalCommands(() => [
+    {
+      id: 'deploy-workflow',
+      handler: () => {
+        /* The palette can't render a disabled state for this action yet, so a
+           gated invocation reports the same reason the button's tooltip shows. */
+        if (isRegistryLoading || isDisabled) {
+          toast({ message: isRegistryLoading ? 'Workflow is still loading' : getTooltipText() })
+          return
+        }
+        void onDeployClick()
+      },
+    },
+  ])
 
   const getTooltipText = () => {
     if (isEmpty) {
@@ -136,17 +147,14 @@ export function Deploy({
     <>
       <Tooltip.Root>
         <Tooltip.Trigger asChild>
-          <span>
-            <Button
-              className='h-[30px] gap-1.5 px-2.5'
-              variant={
-                isRegistryLoading ? 'active' : changeDetected || !isDeployed ? 'tertiary' : 'active'
-              }
+          <span className='inline-flex'>
+            <Chip
+              variant='border'
               onClick={onDeployClick}
               disabled={isRegistryLoading || isDisabled}
             >
               {getButtonLabel()}
-            </Button>
+            </Chip>
           </span>
         </Tooltip.Trigger>
         <Tooltip.Content>{getTooltipText()}</Tooltip.Content>

@@ -1,16 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
-
-/**
- * The Sandboxes section is dropped when no sandbox provider is configured, and
- * `allNavigationItems` is built once at module load — so this has to be set before
- * the module graph is imported, where a `beforeEach` would run too late. Pinning it
- * also keeps the catalog assertions off the developer's untracked `apps/sim/.env`,
- * which CI does not have.
- */
-vi.hoisted(() => {
-  process.env.NEXT_PUBLIC_SANDBOX_ENABLED = 'true'
-})
-
+import { describe, expect, it } from 'vitest'
 import {
   ORGANIZATION_SETTINGS_ITEMS,
   SETTINGS_SECTION_REGISTRY,
@@ -24,7 +12,6 @@ describe('unified settings navigation', () => {
   it('groups settings by the scope they affect', () => {
     expect(sectionConfig).toEqual([
       { key: 'account', title: 'Account' },
-      { key: 'subscription', title: 'Subscription' },
       { key: 'workspace', title: 'Workspace' },
       { key: 'organization', title: 'Organization' },
       { key: 'platform', title: 'Platform' },
@@ -39,24 +26,29 @@ describe('unified settings navigation', () => {
       { id: 'terminal', label: 'Terminal', section: 'account' },
       { id: 'access-control', label: 'Permission groups', section: 'organization' },
       { id: 'audit-logs', label: 'Audit logs', section: 'organization' },
+      { id: 'forks', label: 'Workspace forks', section: 'organization' },
       { id: 'billing', label: 'Subscription', section: 'account' },
-      { id: 'arena-billing', label: 'Billing', section: 'subscription' },
-      { id: 'usage', label: 'Usage', section: 'subscription' },
       { id: 'teammates', label: 'Teammates', section: 'workspace' },
       { id: 'organization', label: 'Members', section: 'organization' },
-      { id: 'oauth-apps', label: 'Custom OAuth Apps', section: 'organization' },
       { id: 'secrets', label: 'Secrets', section: 'workspace' },
+      { id: 'credential-groups', label: 'Credential groups', section: 'workspace' },
       { id: 'custom-tools', label: 'Custom tools', section: 'workspace' },
       { id: 'mcp', label: 'MCP tools', section: 'workspace' },
       { id: 'apikeys', label: 'Sim API keys', section: 'workspace' },
       { id: 'workflow-mcp-servers', label: 'MCP servers', section: 'workspace' },
+      { id: 'byok', label: 'BYOK', section: 'workspace' },
       { id: 'sandboxes', label: 'Sandboxes', section: 'workspace' },
+      { id: 'inbox', label: 'Sim Mailer', section: 'workspace' },
       { id: 'recently-deleted', label: 'Recently deleted', section: 'workspace' },
       { id: 'self-host', label: 'Self hosting', section: 'platform' },
+      { id: 'sso', label: 'Single sign-on', section: 'organization' },
       { id: 'sessions', label: 'Session policies', section: 'organization' },
       { id: 'data-retention', label: 'Data retention', section: 'organization' },
+      { id: 'data-drains', label: 'Data drains', section: 'organization' },
       { id: 'whitelabeling', label: 'White-labeling', section: 'organization' },
+      { id: 'custom-blocks', label: 'Custom blocks', section: 'organization' },
       { id: 'admin', label: 'Admin', section: 'platform' },
+      { id: 'mothership', label: 'Mothership', section: 'platform' },
     ])
   })
 
@@ -74,47 +66,32 @@ describe('unified settings navigation', () => {
       'browser',
       'terminal',
     ])
-    expect(idsForSection('subscription')).toEqual(['arena-billing', 'usage'])
     expect(idsForSection('workspace')).toEqual([
       'teammates',
       'secrets',
       'mcp',
       'custom-tools',
+      'byok',
+      'inbox',
       'workflow-mcp-servers',
       'apikeys',
       'sandboxes',
+      'credential-groups',
       'recently-deleted',
     ])
     expect(idsForSection('organization')).toEqual([
       'organization',
-      'oauth-apps',
+      'custom-blocks',
+      'forks',
       'access-control',
       'audit-logs',
       'whitelabeling',
+      'sso',
       'sessions',
       'data-retention',
+      'data-drains',
     ])
-    expect(idsForSection('platform')).toEqual(['admin', 'self-host'])
-  })
-
-  it('only places unified items in sidebar sections that are rendered', () => {
-    const sectionKeys = new Set(sectionConfig.map(({ key }) => key))
-    for (const item of allNavigationItems) {
-      expect(sectionKeys.has(item.section)).toBe(true)
-    }
-  })
-
-  it('keeps Usage visible to every workspace member', () => {
-    const usage = allNavigationItems.find(({ id }) => id === 'usage')
-    expect(usage?.section).toBe('subscription')
-    expect(usage).not.toHaveProperty('requiresWorkspaceAdmin')
-  })
-
-  it('keeps Arena billing visible for capability or payer gates (enforced in sidebar)', () => {
-    const arenaBilling = allNavigationItems.find(({ id }) => id === 'arena-billing')
-    expect(arenaBilling?.section).toBe('subscription')
-    expect(arenaBilling).not.toHaveProperty('hideWhenBillingDisabled')
-    expect(arenaBilling).not.toHaveProperty('requiresWorkspaceAdmin')
+    expect(idsForSection('platform')).toEqual(['admin', 'mothership', 'self-host'])
   })
 
   it('derives every unified item from exactly one registry entry', () => {

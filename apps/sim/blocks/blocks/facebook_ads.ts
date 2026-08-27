@@ -5,8 +5,8 @@ import {
   resolveExecutionWorkspaceId,
   resolveWorkspaceIdForAdminCheck,
 } from '@/lib/workspaces/is-admin-workspace'
-import type { BlockConfig } from '@/blocks/types'
-import { AuthMode } from '@/blocks/types'
+import type { BlockConfig, BlockMeta } from '@/blocks/types'
+import { AuthMode, IntegrationType } from '@/blocks/types'
 import type { FacebookAdsQueryResponse } from '@/tools/facebook_ads/index'
 
 const FACEBOOK_ADS_COND_NEVER = '__facebook_ads_cond_never__'
@@ -37,6 +37,7 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
     'Connect to Facebook Ads API and query campaign performance, ad set metrics, and account insights using natural language. Supports all 22 Position2 Facebook ad accounts with AI-powered query parsing.',
   docsLink: 'https://docs.sim.ai/blocks/facebook-ads',
   category: 'tools',
+  integrationType: IntegrationType.Marketing,
   authMode: AuthMode.OAuth,
   bgColor: '#1877F2',
   icon: MetaIcon,
@@ -184,3 +185,8 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
     },
   },
 }
+
+export const FacebookAdsBlockMeta = {
+  tags: ['marketing', 'data-analytics'],
+  url: 'https://www.facebook.com/business/ads',
+} as const satisfies BlockMeta

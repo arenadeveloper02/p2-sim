@@ -5,7 +5,9 @@ import { Chip } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import type { WorkBook } from 'xlsx'
+import { assertOoxmlPreviewWithinLimits } from '@/lib/file-parsers/ooxml-preview-guard'
 import type { WorkspaceFileRecord } from '@/lib/uploads/contexts/workspace'
+import { useHorizontalWheelScroll } from '@/app/workspace/[workspaceId]/files/components/file-viewer/use-horizontal-wheel-scroll'
 import { DataTable } from './data-table'
 import { PreviewError, PreviewLoadingFrame, resolvePreviewError } from './preview-shared'
 import { useDocPreviewBinary } from './use-doc-preview-binary'
@@ -28,6 +30,7 @@ export const XlsxPreview = memo(function XlsxPreview({
   file: WorkspaceFileRecord
   workspaceId: string
 }) {
+  const scrollRef = useHorizontalWheelScroll()
   const preview = useDocPreviewBinary(workspaceId, file)
   const fileData = preview.data
 
@@ -46,6 +49,7 @@ export const XlsxPreview = memo(function XlsxPreview({
     async function parse() {
       try {
         setRenderError(null)
+        await assertOoxmlPreviewWithinLimits(data)
         const XLSX = await import('xlsx')
         const workbook = XLSX.read(new Uint8Array(data), { type: 'array' })
         if (!cancelled) {
@@ -115,7 +119,7 @@ export const XlsxPreview = memo(function XlsxPreview({
   return (
     <div className='flex flex-1 flex-col overflow-hidden'>
       <div className='flex shrink-0 items-center border-[var(--border)] border-b bg-[var(--surface-1)] px-2 py-1'>
-        <div className='flex items-center overflow-x-auto'>
+        <div className='flex items-center gap-1 overflow-x-auto'>
           {sheetNames.map((name, i) => (
             <Chip
               key={name}
@@ -128,7 +132,7 @@ export const XlsxPreview = memo(function XlsxPreview({
           ))}
         </div>
       </div>
-      <div className='flex-1 overflow-auto p-6'>
+      <div ref={scrollRef} className='flex-1 overflow-auto p-6'>
         <DataTable headers={currentSheet.headers} rows={currentSheet.rows} />
         {currentSheet.truncated && (
           <p className='mt-3 text-center text-[12px] text-[var(--text-muted)]'>

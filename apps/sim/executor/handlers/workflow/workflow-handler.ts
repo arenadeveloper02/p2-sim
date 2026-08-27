@@ -3,6 +3,7 @@ import { findCause, getErrorMessage, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { isRecordLike } from '@sim/utils/object'
 import { resolveBillingAttribution } from '@/lib/billing/core/billing-attribution'
+import { getExecutionDeadlineAt } from '@/lib/core/execution-limits'
 import { getPersonalAndWorkspaceEnv } from '@/lib/environment/utils'
 import { buildNextCallChain, validateCallChain } from '@/lib/execution/call-chain'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
@@ -36,12 +37,13 @@ import {
   type BlockHandler,
   type ExecutionContext,
   type ExecutionResult,
+  type ExecutorDelegationOrigin,
   START_BLOCK_METADATA_FIELD,
   type StartBlockRunMetadata,
   type StreamingExecution,
 } from '@/executor/types'
 import { hasExecutionResult } from '@/executor/utils/errors'
-import { buildAPIUrl, buildAuthHeaders } from '@/executor/utils/http'
+import { buildAPIUrl, buildExecutorDelegationHeaders } from '@/executor/utils/http'
 import { getIterationContext } from '@/executor/utils/iteration-context'
 import { parseJSON } from '@/executor/utils/json'
 import { lazyCleanupInputMapping } from '@/executor/utils/lazy-cleanup'
@@ -277,15 +279,29 @@ export class WorkflowBlockHandler implements BlockHandler {
     /** Large-value id list shared with the child (and any nested custom blocks). */
     let sharedLargeValueIds: string[] | undefined
     let childCancellation: { signal: AbortSignal; dispose: () => void } | undefined
+    let childExecutorDelegationOrigin: ExecutorDelegationOrigin | undefined
     /** Settled in `finally` once the child is fully done — see `trackChildRun`. */
     let settleChildRun: (() => void) | undefined
     try {
+      if (!loadUserId) {
+        throw new Error('Workflow child loading requires a human execution subject')
+      }
+      const workflowReadDelegationOrigin: ExecutorDelegationOrigin = isCustomBlock
+        ? { subjectUserId: loadUserId, workflowId }
+        : (ctx.executorDelegationOrigin ?? {
+            subjectUserId: loadUserId,
+            workflowId: ctx.workflowId,
+            ...(ctx.executionId ? { executionId: ctx.executionId } : {}),
+          })
+      if (!isCustomBlock) childExecutorDelegationOrigin = workflowReadDelegationOrigin
+      const workflowReadHeaders = await buildExecutorDelegationHeaders(workflowReadDelegationOrigin)
+
       // A custom block runs the source's latest deployment; if the source has been
       // undeployed there's nothing to run. `BoundarySafeError` marks the message as
       // safe to cross the invocation boundary verbatim (it names no source
       // internals), so the catch forwards it instead of the generic failure.
       if (isCustomBlock) {
-        const deployed = await this.checkChildDeployment(workflowId, loadUserId)
+        const deployed = await this.checkChildDeployment(workflowId, workflowReadHeaders)
         if (!deployed) {
           throw new BoundarySafeError({
             errorType: 'not_deployed',
@@ -295,7 +311,7 @@ export class WorkflowBlockHandler implements BlockHandler {
       }
 
       if (useDeployed && !isCustomBlock) {
-        const hasActiveDeployment = await this.checkChildDeployment(workflowId, loadUserId)
+        const hasActiveDeployment = await this.checkChildDeployment(workflowId, workflowReadHeaders)
         if (!hasActiveDeployment) {
           throw new Error(
             `Child workflow is not deployed. Please deploy the workflow before invoking it.`
@@ -304,8 +320,8 @@ export class WorkflowBlockHandler implements BlockHandler {
       }
 
       const childWorkflow = useDeployed
-        ? await this.loadChildWorkflowDeployed(workflowId, loadUserId, ctx.workspaceId)
-        : await this.loadChildWorkflow(workflowId, ctx.userId, ctx.workspaceId)
+        ? await this.loadChildWorkflowDeployed(workflowId, workflowReadHeaders, ctx.workspaceId)
+        : await this.loadChildWorkflow(workflowId, workflowReadHeaders, ctx.workspaceId)
 
       if (!childWorkflow) {
         throw new Error(`Child workflow ${workflowId} not found`)
@@ -331,7 +347,7 @@ export class WorkflowBlockHandler implements BlockHandler {
       if (inputs.inputMapping !== undefined && inputs.inputMapping !== null) {
         const normalized = parseJSON(inputs.inputMapping, inputs.inputMapping)
 
-        if (normalized && typeof normalized === 'object' && !Array.isArray(normalized)) {
+        if (isRecordLike(normalized)) {
           // Custom blocks key their mapping by the source field's stable id so a
           // rename never orphans the consumer's value; remap id → current name
           // before the child (which is addressed by name) receives it.
@@ -442,13 +458,14 @@ export class WorkflowBlockHandler implements BlockHandler {
           scope: { userId: loadUserId, workspaceId: sourceWorkspaceId },
         })
         if (ctx.resolvedSecretTraceRegistry) {
-          const crossingProvenance = ctx.resolvedSecretTraceRegistry.exportProvenanceForValue(
-            childWorkflowInput,
-            { anonymous: true }
-          )
+          const crossingProvenance =
+            ctx.resolvedSecretTraceRegistry.exportCommittedProvenanceForValue(childWorkflowInput, {
+              anonymous: true,
+            })
           await childResolvedSecretTraceRegistry.importProvenance(crossingProvenance, {
             trusted: true,
             anonymous: true,
+            origin: 'workflowHandler.childCrossing',
           })
         }
         // Custom-block children authenticate internal tool calls as the source
@@ -479,6 +496,7 @@ export class WorkflowBlockHandler implements BlockHandler {
           // child is part of that same logical run and must not add a second.
           { baseExecutionCharge: 0 }
         )
+        childSession.setExecutionDeadlineAt(getExecutionDeadlineAt(ctx.abortSignal))
         childSession.setResolvedSecretTraceRegistry(childResolvedSecretTraceRegistry)
         const correlation = buildCustomBlockCorrelation({
           invokerExecutionId: ctx.executionId,
@@ -497,10 +515,13 @@ export class WorkflowBlockHandler implements BlockHandler {
           ...(correlation ? { triggerData: { correlation } } : {}),
         })
         if (!childSessionStarted) {
-          logger.error('Custom block child logging failed to start; child spend will be unbilled', {
-            workflowId,
-            childExecutionId,
-          })
+          childExecutionId = undefined
+          throw new Error('Custom block child logging failed to start')
+        }
+        childExecutorDelegationOrigin = {
+          subjectUserId: loadUserId,
+          workflowId,
+          executionId: childExecutionId,
         }
         // The child no longer shares the parent's execution id, so it no longer
         // hears the parent's cancellation event — bridge it explicitly.
@@ -587,6 +608,7 @@ export class WorkflowBlockHandler implements BlockHandler {
           enforceCredentialAccess: ctx.enforceCredentialAccess,
           workspaceId: childWorkspaceId,
           userId: childUserId,
+          executorDelegationOrigin: childExecutorDelegationOrigin,
           executionId: childExecutionId ?? ctx.executionId,
           metadata: ctx.metadata as ExecutionMetadata | undefined,
           // Large values are cached per execution id, so a child running under its
@@ -703,13 +725,14 @@ export class WorkflowBlockHandler implements BlockHandler {
       if (isCustomBlock) {
         const exposedOutput = this.projectCustomBlockOutput(executionResult, exposedOutputs)
         if (ctx.resolvedSecretTraceRegistry && childResolvedSecretTraceRegistry) {
-          const crossingProvenance = childResolvedSecretTraceRegistry.exportProvenanceForValue(
-            exposedOutput,
-            { anonymous: true }
-          )
+          const crossingProvenance =
+            childResolvedSecretTraceRegistry.exportCommittedProvenanceForValue(exposedOutput, {
+              anonymous: true,
+            })
           await ctx.resolvedSecretTraceRegistry.importProvenance(crossingProvenance, {
             trusted: true,
             anonymous: true,
+            origin: 'workflowHandler.parentCrossing',
           })
         }
         return exposedOutput
@@ -717,7 +740,10 @@ export class WorkflowBlockHandler implements BlockHandler {
 
       return mappedResult
     } catch (error: unknown) {
-      logger.error(`Error executing child workflow ${workflowId}:`, error)
+      logger.error('Error executing child workflow', {
+        errorName: toError(error).name,
+        hasWorkflowId: workflowId.length > 0,
+      })
 
       // The child's own log row records the real failure in the source workspace,
       // so the publisher sees what the consumer deliberately cannot.
@@ -946,8 +972,11 @@ export class WorkflowBlockHandler implements BlockHandler {
     }
   }
 
-  private async loadChildWorkflow(workflowId: string, userId?: string, workspaceId?: string) {
-    const headers = await buildAuthHeaders(userId)
+  private async loadChildWorkflow(
+    workflowId: string,
+    headers: Record<string, string>,
+    workspaceId?: string
+  ) {
     const url = buildAPIUrl(`/api/workflows/${workflowId}`)
 
     const response = await fetch(url.toString(), { headers })
@@ -1009,9 +1038,11 @@ export class WorkflowBlockHandler implements BlockHandler {
     }
   }
 
-  private async checkChildDeployment(workflowId: string, userId?: string): Promise<boolean> {
+  private async checkChildDeployment(
+    workflowId: string,
+    headers: Record<string, string>
+  ): Promise<boolean> {
     try {
-      const headers = await buildAuthHeaders(userId)
       const url = buildAPIUrl(`/api/workflows/${workflowId}/deployed`)
 
       const response = await fetch(url.toString(), {
@@ -1023,18 +1054,20 @@ export class WorkflowBlockHandler implements BlockHandler {
 
       const json = await response.json()
       return !!json?.data?.deployedState || !!json?.deployedState
-    } catch (e) {
-      logger.error(`Failed to check child deployment for ${workflowId}:`, e)
+    } catch (error) {
+      logger.error('Failed to check child deployment', {
+        errorName: toError(error).name,
+        hasWorkflowId: workflowId.length > 0,
+      })
       return false
     }
   }
 
   private async loadChildWorkflowDeployed(
     workflowId: string,
-    userId?: string,
+    headers: Record<string, string>,
     workspaceId?: string
   ) {
-    const headers = await buildAuthHeaders(userId)
     const deployedUrl = buildAPIUrl(`/api/workflows/${workflowId}/deployed`)
 
     const deployedRes = await fetch(deployedUrl.toString(), {
@@ -1129,7 +1162,10 @@ export class WorkflowBlockHandler implements BlockHandler {
 
       return transformedSpans
     } catch (error) {
-      logger.error(`Error capturing child workflow logs for ${childWorkflowName}:`, error)
+      logger.error('Error capturing child workflow logs', {
+        errorName: toError(error).name,
+        hasChildWorkflowName: childWorkflowName.length > 0,
+      })
       return []
     }
   }

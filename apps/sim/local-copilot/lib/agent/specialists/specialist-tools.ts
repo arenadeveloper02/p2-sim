@@ -114,7 +114,8 @@ const SPECIALIST_SPECS: SpecialistToolSpec[] = [
   },
   {
     domain: 'file',
-    description: 'File Agent — workspace VFS read/write and office file creation.',
+    description:
+      'File Agent — workspace VFS read/write and office file creation. Produce laid-out markdown (GFM headings/lists) and office files (slide geometry, Word headings) — never an unstyled dump.',
     properties: {
       prompt: { type: 'string', description: 'Optional brief instruction to scope the file task.' },
     },
