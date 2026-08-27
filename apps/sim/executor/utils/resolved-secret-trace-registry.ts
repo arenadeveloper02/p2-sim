@@ -937,14 +937,21 @@ export class ResolvedSecretTraceRegistry {
     }
   }
 
-  /** Merges one settled tool-call registry into the turn-scoped registry. */
+  /**
+   * Merges one settled tool-call registry into the turn-scoped registry.
+   *
+   * Pending activation guards are temporary: they keep `isComplete()` false while a call is still
+   * establishing output, but they must not permanently latch the parent. A leaked or in-flight
+   * guard on an otherwise settled child would otherwise poison Agent model-input projection for
+   * every later block in the run.
+   */
   mergeToolCallRegistry(child: ResolvedSecretTraceRegistry): void {
     if (!scopesMatch(this.scope, child.scope)) {
       this.markIncomplete('tool-call-scope-mismatch')
       return
     }
 
-    if (!child.isComplete()) {
+    if (child.isPermanentlyIncomplete()) {
       this.markIncomplete('inherited-incomplete-source', { source: child })
       return
     }

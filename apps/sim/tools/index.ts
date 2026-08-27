@@ -1962,10 +1962,6 @@ async function executeToolImplementation(
             : undefined
     const privateToolMetadataType = privateToolMetadataPolicy?.type
 
-    if (resolvedSecretTraceRegistry && privateToolMetadataType) {
-      completePendingSecretActivation = resolvedSecretTraceRegistry.beginPendingActivation()
-    }
-
     if (resolvedSecretTraceRegistry && (privateToolMetadataType || toolKind === 'mcp')) {
       completePendingSecretActivation = resolvedSecretTraceRegistry.beginPendingActivation()
     }
