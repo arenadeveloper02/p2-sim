@@ -383,7 +383,9 @@ async function fetchDeploymentBuildLog(
 
   const focused = lines.filter(
     (line) =>
-      /error|failed|ERR!|Module not found|Type error|Cannot find/i.test(line) || lines.length <= 40
+      /error|failed|ERR!|Module not found|Type error|Cannot find|Build Completed|Deploying outputs|Vulnerable version/i.test(
+        line
+      ) || lines.length <= 40
   )
 
   const log = (focused.length > 0 ? focused : lines).join('\n')
@@ -391,6 +393,25 @@ async function fetchDeploymentBuildLog(
     return log
   }
   return `${log.slice(-MAX_BUILD_LOG_CHARS)}\n…(truncated)`
+}
+
+/**
+ * True when Vercel flagged the deployment only for a vulnerable Next.js version
+ * while the build itself completed. That flag is advisory — the app is built and
+ * served — so it must surface as a warning, not fail the whole block.
+ */
+function isVulnerableNextWarningOnly(deployment: VercelDeployment, buildLog: string): boolean {
+  const vulnerablePattern = /vulnerable version of next/i
+  const flagged =
+    vulnerablePattern.test(deployment.errorMessage ?? '') || vulnerablePattern.test(buildLog)
+  if (!flagged) {
+    return false
+  }
+  const buildCompleted = /build completed|deploying outputs/i.test(buildLog)
+  const hasOtherFailure = /Command "npm run build" exited with [1-9]|Module not found|Type error/i.test(
+    buildLog
+  )
+  return buildCompleted && !hasOtherFailure
 }
 
 function formatDeploymentFailure(deployment: VercelDeployment, buildLog: string): string {
@@ -602,6 +623,13 @@ async function waitForDeploymentReady(
     }
     if (state === 'ERROR' || state === 'CANCELED') {
       const buildLog = await fetchDeploymentBuildLog(token, deploymentId, teamId)
+      if (isVulnerableNextWarningOnly(deployment, buildLog)) {
+        logger.warn(
+          'Vercel flagged a vulnerable Next.js version but the build completed; treating as deployed with a warning',
+          { deploymentId, errorMessage: deployment.errorMessage }
+        )
+        return deployment
+      }
       logGeneratedAppValidationErrors({
         phase: 'vercel',
         round: 0,
