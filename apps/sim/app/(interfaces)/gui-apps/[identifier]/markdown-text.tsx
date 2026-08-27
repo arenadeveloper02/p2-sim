@@ -4,7 +4,8 @@ import type { CSSProperties, HTMLAttributes } from 'react'
 import { Streamdown } from 'streamdown'
 import 'streamdown/styles.css'
 
-const BODY = 'text-[var(--color-ds-grey-700,#3d414d)]'
+const HEADING = 'text-[var(--gui-text,#2c2d33)]'
+const BODY = 'text-[var(--gui-text-muted,#575a66)]'
 
 function safeHref(href: string | undefined): string | undefined {
   if (!href) return undefined
@@ -19,28 +20,28 @@ const COMPONENTS = {
     <p className={`mb-2 text-sm leading-relaxed last:mb-0 ${BODY}`}>{children}</p>
   ),
   h1: ({ children }: HTMLAttributes<HTMLHeadingElement>) => (
-    <h1 className={`mt-4 mb-2 font-semibold text-xl first:mt-0 ${BODY}`}>{children}</h1>
+    <h1 className={`mt-4 mb-2 font-bold text-xl first:mt-0 ${HEADING}`}>{children}</h1>
   ),
   h2: ({ children }: HTMLAttributes<HTMLHeadingElement>) => (
-    <h2 className={`mt-3 mb-2 font-semibold text-lg first:mt-0 ${BODY}`}>{children}</h2>
+    <h2 className={`mt-4 mb-2 font-bold text-lg first:mt-0 ${HEADING}`}>{children}</h2>
   ),
   h3: ({ children }: HTMLAttributes<HTMLHeadingElement>) => (
-    <h3 className={`mt-3 mb-1 font-semibold text-base first:mt-0 ${BODY}`}>{children}</h3>
+    <h3 className={`mt-3 mb-2 font-semibold text-base first:mt-0 ${HEADING}`}>{children}</h3>
   ),
   h4: ({ children }: HTMLAttributes<HTMLHeadingElement>) => (
-    <h4 className={`mt-2 mb-1 font-semibold text-sm first:mt-0 ${BODY}`}>{children}</h4>
+    <h4 className={`mt-2 mb-1 font-semibold text-sm first:mt-0 ${HEADING}`}>{children}</h4>
   ),
   ul: ({ children }: HTMLAttributes<HTMLUListElement>) => (
-    <ul className={`mb-2 list-disc space-y-1 pl-5 text-sm last:mb-0 ${BODY}`}>{children}</ul>
+    <ul className={`mb-3 list-disc space-y-2 pl-5 text-sm last:mb-0 ${BODY}`}>{children}</ul>
   ),
   ol: ({ children }: HTMLAttributes<HTMLOListElement>) => (
-    <ol className={`mb-2 list-decimal space-y-1 pl-5 text-sm last:mb-0 ${BODY}`}>{children}</ol>
+    <ol className={`mb-3 list-decimal space-y-2 pl-5 text-sm last:mb-0 ${BODY}`}>{children}</ol>
   ),
   li: ({ children }: HTMLAttributes<HTMLLIElement>) => (
-    <li className={`text-sm ${BODY}`}>{children}</li>
+    <li className={`text-sm leading-relaxed ${BODY}`}>{children}</li>
   ),
   strong: ({ children }: HTMLAttributes<HTMLElement>) => (
-    <strong className='font-semibold'>{children}</strong>
+    <strong className={`font-semibold ${HEADING}`}>{children}</strong>
   ),
   em: ({ children }: HTMLAttributes<HTMLElement>) => <em>{children}</em>,
   pre: ({ children }: HTMLAttributes<HTMLPreElement>) => (

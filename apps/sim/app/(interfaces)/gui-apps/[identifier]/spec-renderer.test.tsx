@@ -1815,6 +1815,7 @@ describe('SpecRenderer', () => {
       const button = container.querySelector('button')
 
       expect(button?.getAttribute('type')).toBe('button')
+      expect(button?.className).not.toContain('w-full')
       act(() => {
         button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
@@ -2153,6 +2154,14 @@ describe('SpecRenderer', () => {
     expect(submit?.disabled).toBe(true)
     expect(submit?.getAttribute('aria-busy')).toBe('true')
     expect(submit?.querySelector('[data-testid="action-busy"]')).toBeTruthy()
+  })
+
+  it('stretches a form SubmitButton full width and tints inputs on focus', () => {
+    const { container } = render()
+    const submit = container.querySelector('button[type="submit"]')
+    expect(submit?.className).toContain('w-full')
+    const input = container.querySelector('input[name="name"]')
+    expect(input?.className).toContain('focus-visible:bg-[var(--gui-brand-surface,#f3f8fe)]')
   })
 
   it('shows busy chrome on a pending SearchField submit', () => {

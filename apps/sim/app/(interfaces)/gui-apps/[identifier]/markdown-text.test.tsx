@@ -49,6 +49,18 @@ describe('MarkdownText', () => {
     )
   })
 
+  it('renders headings darker than body lists', () => {
+    const container = render(
+      '## H2: What are CFL bulbs?\n\n- Cite EPA sources\n- **Target Keywords:** CFL bulbs'
+    )
+    const heading = container.querySelector('h2')
+    const list = container.querySelector('ul')
+    expect(heading?.className).toContain('font-bold')
+    expect(heading?.className).toContain('text-[var(--gui-text,#2c2d33)]')
+    expect(list?.className).toContain('space-y-2')
+    expect(list?.className).toContain('text-[var(--gui-text-muted,#575a66)]')
+  })
+
   it('opens markdown links in a new tab and drops javascript hrefs', () => {
     const container = render('[ok](https://example.com) [bad](javascript:alert(1))')
     const links = Array.from(container.querySelectorAll('a'))
