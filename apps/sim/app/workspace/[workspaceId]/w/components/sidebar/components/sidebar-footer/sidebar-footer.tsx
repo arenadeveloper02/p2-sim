@@ -15,10 +15,18 @@ import {
   DropdownMenuTrigger,
   Skeleton,
 } from '@sim/emcn'
-import { BookOpen, Credit, Download, HelpCircle, Settings, Trash, Users } from '@sim/emcn/icons'
+import {
+  BookOpen,
+  ClipboardList,
+  Download,
+  HelpCircle,
+  Settings,
+  Trash,
+  Users,
+} from '@sim/emcn/icons'
 import { SlackIcon } from '@/components/icons'
 import { useSession } from '@/lib/auth/auth-client'
-import { canViewWorkspaceBillingSettings } from '@/lib/billing/workspace-permissions'
+import { canAccessArenaBillingSettings } from '@/lib/billing/workspace-permissions'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { getDesktopUpdates } from '@/lib/desktop'
 import { getUserColor } from '@/lib/workspaces/colors'
@@ -29,6 +37,7 @@ import {
   SIDEBAR_RAIL_CHIP_CLASS,
 } from '@/app/workspace/[workspaceId]/w/components/sidebar/constants'
 import { SidebarTooltip } from '@/app/workspace/[workspaceId]/w/components/sidebar/sidebar'
+import { useHasBillingNavAccess } from '@/hooks/queries/user-access'
 import { useUserProfile } from '@/hooks/queries/user-profile'
 import { useWorkspaceInvitePolicy } from '@/hooks/use-workspace-invite-policy'
 
@@ -47,7 +56,7 @@ const PROFILE_MENU_ITEMS: readonly {
   icon: ComponentType<{ className?: string }>
 }[] = [
   { section: 'general', label: 'Settings', icon: Settings },
-  { section: 'billing', label: 'Subscription', icon: Credit },
+  { section: 'arena-billing', label: 'Billing', icon: ClipboardList },
   { section: 'teammates', label: 'Teammates', icon: Users },
   { section: 'recently-deleted', label: 'Recently deleted', icon: Trash },
 ]
@@ -127,6 +136,7 @@ export function SidebarFooter({
   const { data: profile } = useUserProfile()
   const { data: session } = useSession()
   const hostContext = useWorkspaceHostContext()
+  const { hasBillingNavAccess } = useHasBillingNavAccess()
   const { isInvitationsDisabled } = useWorkspaceInvitePolicy(workspaceId)
   const [updateState, setUpdateState] = useState<DesktopUpdateState>({ status: 'idle' })
 
@@ -161,14 +171,14 @@ export function SidebarFooter({
   }
 
   /**
-   * Subscription is dropped for viewers the Billing page would turn away — a
-   * deployment with billing off, or anyone who is not the payer (on an
-   * organization-hosted workspace, every member who is not an org admin). The
-   * settings sidebar hides its own Billing entry on exactly this test.
+   * Billing is dropped for viewers the Arena Billing page would turn away —
+   * anyone without `billing_nav` who also cannot manage the payer. The settings
+   * sidebar hides its own Billing entry on exactly this test.
    */
   const menuItems = PROFILE_MENU_ITEMS.filter(
     (item) =>
-      item.section !== 'billing' || canViewWorkspaceBillingSettings(hostContext, session?.user?.id)
+      item.section !== 'arena-billing' ||
+      canAccessArenaBillingSettings(hostContext, session?.user?.id, hasBillingNavAccess)
   )
 
   /**
@@ -181,7 +191,7 @@ export function SidebarFooter({
    */
   const handleSelectSection = (section: SettingsSection) => {
     if (section === 'teammates' && isInvitationsDisabled) {
-      if (isBillingEnabled) onOpenSettings('billing')
+      if (isBillingEnabled) onOpenSettings('arena-billing')
       return
     }
     onOpenSettings(section)

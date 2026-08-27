@@ -29,10 +29,13 @@ vi.mock('@/lib/auth/auth-client', () => ({
   useSession: () => ({ data: { user: { id: 'user-1' } } }),
 }))
 vi.mock('@/lib/billing/workspace-permissions', () => ({
-  canViewWorkspaceBillingSettings: () => true,
+  canAccessArenaBillingSettings: () => true,
 }))
 vi.mock('@/lib/core/config/env-flags', () => ({ isBillingEnabled: true }))
 vi.mock('@/lib/workspaces/colors', () => ({ getUserColor: () => '#000000' }))
+vi.mock('@/hooks/queries/user-access', () => ({
+  useHasBillingNavAccess: () => ({ hasBillingNavAccess: true }),
+}))
 vi.mock('@/hooks/use-workspace-invite-policy', () => ({
   useWorkspaceInvitePolicy: () => ({ isInvitationsDisabled: false }),
 }))
