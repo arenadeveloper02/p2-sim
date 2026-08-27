@@ -5,7 +5,14 @@ import { V2_OPERATIONS, type V2OperationName } from '../generated/v2-api'
 import { deriveCommandPath } from './derive'
 import { executeOperation } from './execute'
 import { addOperationOptions } from './options'
-import { flagNameFor, flagSpecFor, isProfileWorkspacePath, PROFILE_INJECTED_FIELD } from './request'
+import { warnRenamedCommand } from './renamed'
+import {
+  flagNameFor,
+  flagSpecFor,
+  isProfileWorkspacePath,
+  PROFILE_INJECTED_FIELD,
+  RESERVED_PROGRAM_FLAGS,
+} from './request'
 import type { OperationSpec } from './types'
 
 const GROUP_ALIASES: Readonly<Record<string, string>> = {
@@ -57,6 +64,67 @@ function addMissingArgumentExample(command: Command): Command {
     },
   })
   return command
+}
+
+/**
+ * Refuses a leaf option the root program would swallow.
+ *
+ * A collision is invisible at runtime — either the root's handler answers and
+ * exits `0`, or the root simply keeps the value and the leaf reads `undefined`.
+ * Either way the command reports success while doing nothing the caller asked
+ * for. Raising here means the CLI cannot start with one, which the command-tree
+ * tests exercise on every operation, so a contract that introduces one fails in
+ * CI rather than in somebody's pipeline.
+ */
+function assertNoReservedFlags(command: Command, operation: V2OperationName): void {
+  for (const option of command.options) {
+    for (const flag of [option.long, option.short]) {
+      if (flag && RESERVED_PROGRAM_FLAGS.has(flag)) {
+        throw new Error(
+          `${operation} declares ${flag}, which the root program already owns; give the flag another name`
+        )
+      }
+    }
+  }
+}
+
+/**
+ * Commands allowed to re-declare a flag the root owns, by full command path.
+ *
+ * `profiles add` declares `-w, --workspace` so that its own `--help` names the
+ * workspace it takes. Its action never reads the leaf option: it reads
+ * `globalsOf(command).workspace`, which is the root's value — the very value
+ * the root swallowed. The declaration is help text, so the collision is
+ * deliberate and inert.
+ */
+const RESERVED_FLAG_EXEMPTIONS: ReadonlySet<string> = new Set(['profiles add'])
+
+/**
+ * Sweeps the assembled program for a flag the root already owns.
+ *
+ * `assertNoReservedFlags` runs while a generated leaf is configured, so it sees
+ * nothing that is attached by hand (`attachSecretCommands`,
+ * `attachProtocolCommands`, `attachCredentialCommands`) or added to a leaf
+ * after it is built. Walking the finished tree is what covers those.
+ */
+export function assertNoReservedProgramFlags(program: Command): void {
+  const walk = (command: Command, prefix: string[]): void => {
+    const path = [...prefix, command.name()]
+    const name = path.join(' ')
+    if (!RESERVED_FLAG_EXEMPTIONS.has(name)) {
+      for (const option of command.options) {
+        for (const flag of [option.long, option.short]) {
+          if (flag && RESERVED_PROGRAM_FLAGS.has(flag)) {
+            throw new Error(
+              `"sim ${name}" declares ${flag}, which the root program already owns; give the flag another name`
+            )
+          }
+        }
+      }
+    }
+    for (const child of command.commands) walk(child, path)
+  }
+  for (const child of program.commands) walk(child, [])
 }
 
 function configureOperation(
@@ -124,11 +192,15 @@ function configureOperation(
 
   if (spec.requestFields) {
     for (const field of spec.requestFields) {
-      if (!operationSpec.query?.[field] && !operationSpec.body?.[field]) {
+      if (
+        !operationSpec.query?.[field] &&
+        !operationSpec.body?.[field] &&
+        !operationSpec.headers?.[field]
+      ) {
         throw new Error(`${operation}.${field} is not a request field`)
       }
     }
-    for (const slot of ['query', 'body'] as const) {
+    for (const slot of ['query', 'body', 'headers'] as const) {
       for (const [field, descriptor] of Object.entries(operationSpec[slot] ?? {})) {
         if (
           descriptor.required &&
@@ -145,6 +217,7 @@ function configureOperation(
     spec.describe ?? operationSpec.summary ?? `${operationSpec.method} ${operationSpec.path}`
   )
   addOperationOptions(command, operation, spec, operationSpec)
+  assertNoReservedFlags(command, operation)
   command.action((...invocation: unknown[]) =>
     executeOperation(operation, spec, operationSpec, invocation)
   )
@@ -153,6 +226,58 @@ function configureOperation(
 
 function buildLeaf(operation: V2OperationName, spec: CommandSpec, leafName: string): Command {
   return addMissingArgumentExample(configureOperation(new Command(leafName), operation, spec))
+}
+
+/**
+ * Registers a command at a path it used to have, hidden and warning on use.
+ *
+ * The leaf is built by the same `buildLeaf` the current spelling uses, so a
+ * renamed command cannot drift from the one it forwards to — there is one
+ * definition and two ways to reach it.
+ *
+ * Commander resolves a subcommand before it fills a positional, so a rename
+ * that turned a group into a leaf (`files restore create` into `files restore`)
+ * still parses: `create` is matched as the hidden subcommand rather than being
+ * read as the file id. The cost is that a resource whose id is literally
+ * `create` cannot be addressed through the current spelling, which no id
+ * generated by `@sim/utils/id` ever is.
+ */
+function addRenamedCommand(
+  groups: Map<string, Command>,
+  operation: V2OperationName,
+  spec: CommandSpec,
+  from: string,
+  to: string
+): void {
+  const segments = from.split(' ')
+  const [groupName, ...rest] = segments
+  if (rest.length === 0) throw new Error(`${operation}.renamedFrom "${from}" must include a verb`)
+
+  let parent = groupFor(groups, groupName)
+  for (const segment of rest.slice(0, -1)) {
+    parent = nestedGroup(parent, segment, { hidden: true })
+  }
+
+  const leaf = buildLeaf(operation, spec, rest[rest.length - 1])
+  leaf.hook('preAction', () => warnRenamedCommand(from, to))
+  addSubcommand(parent, leaf, { hidden: true })
+}
+
+/**
+ * Attaches a subcommand without letting it rewrite the parent's usage line.
+ *
+ * Commander derives that line from `commands.length` alone, so hanging the
+ * retired `files restore create` under the live `files restore` leaf made its
+ * help read `sim files restore [options] [command] <fileId>` — a subcommand slot
+ * with nothing visible to put in it, on the only leaf of the whole surface that
+ * advertised one. Pinning the line the leaf already had leaves the retired
+ * spelling working, warning, and out of the help.
+ */
+function addSubcommand(parent: Command, child: Command, options: { hidden?: boolean } = {}): void {
+  const wasLeaf = parent.commands.length === 0 && parent.registeredArguments.length > 0
+  const usage = wasLeaf ? parent.usage() : null
+  parent.addCommand(child, { hidden: options.hidden })
+  if (usage !== null) parent.usage(usage)
 }
 
 function groupFor(groups: Map<string, Command>, name: string): Command {
@@ -171,14 +296,20 @@ function resourceLabel(name: string): string {
   return label.replaceAll('-', ' ')
 }
 
-function nestedGroup(parent: Command, name: string): Command {
+/**
+ * `hidden` applies only when this call is what creates the group. A rename that
+ * reaches through a group the current surface also uses (`tables rows`) must
+ * leave it in help; only a group resurrected solely to host a renamed leaf
+ * (`tables count`) stays hidden.
+ */
+function nestedGroup(parent: Command, name: string, options: { hidden?: boolean } = {}): Command {
   const existing = parent.commands.find((candidate) => candidate.name() === name)
   if (existing) return existing
 
   const created = new Command(name).description(
     `Manage ${resourceLabel(parent.name())} ${name.replaceAll('-', ' ')}`
   )
-  parent.addCommand(created)
+  addSubcommand(parent, created, { hidden: options.hidden })
   return created
 }
 
@@ -193,8 +324,11 @@ function addLeafCommand(
   const group = groupFor(groups, groupName)
 
   if (rest.length > 1) {
-    const [subName, ...tail] = rest
-    nestedGroup(group, subName).addCommand(buildLeaf(operation, spec, tail.join(' ')))
+    let parent = group
+    for (const segment of rest.slice(0, -1)) {
+      parent = nestedGroup(parent, segment)
+    }
+    parent.addCommand(buildLeaf(operation, spec, rest[rest.length - 1]))
     return
   }
 
@@ -217,6 +351,12 @@ function variantCommandSpec(spec: CommandSpec, variant: CommandVariantSpec): Com
 /** Builds every JSON command described by the generated operation table. */
 export function buildGeneratedCommands(): Command[] {
   const groups = new Map<string, Command>()
+  const renamed: Array<{
+    operation: V2OperationName
+    spec: CommandSpec
+    from: string
+    to: string
+  }> = []
 
   for (const operation of Object.keys(V2_OPERATIONS) as V2OperationName[]) {
     const spec = CLI_CONTRACT[operation] ?? {}
@@ -247,6 +387,18 @@ export function buildGeneratedCommands(): Command[] {
         variant.command.split(' ')
       )
     }
+
+    for (const from of spec.renamedFrom ?? []) {
+      renamed.push({ operation, spec, from, to: segments.join(' ') })
+    }
+  }
+
+  // Second pass on purpose. Commander resolves a duplicate name to whichever
+  // was registered first, so registering every current spelling before any
+  // renamed one makes it impossible for a retired path to shadow a live command
+  // that happens to reuse its name.
+  for (const { operation, spec, from, to } of renamed) {
+    addRenamedCommand(groups, operation, spec, from, to)
   }
 
   return [...groups.values()].sort((a, b) => a.name().localeCompare(b.name()))

@@ -7,9 +7,8 @@ const {
   mockCanOpenOrganizationSettingsSection,
   mockGetSession,
   mockGetWorkspaceHostContext,
-  mockHasWorkspaceInboxAccess,
-  mockHasWorkspaceSandboxAccess,
   mockIsForkingAvailable,
+  mockIsCustomBlocksEligibleForOrganization,
   mockIsOrganizationOnEnterprisePlan,
   mockIsOrganizationSettingsSectionAvailable,
   mockNotFound,
@@ -20,9 +19,8 @@ const {
   mockCanOpenOrganizationSettingsSection: vi.fn(),
   mockGetSession: vi.fn(),
   mockGetWorkspaceHostContext: vi.fn(),
-  mockHasWorkspaceInboxAccess: vi.fn(),
-  mockHasWorkspaceSandboxAccess: vi.fn(),
   mockIsForkingAvailable: vi.fn(),
+  mockIsCustomBlocksEligibleForOrganization: vi.fn(),
   mockIsOrganizationOnEnterprisePlan: vi.fn(),
   mockIsOrganizationSettingsSectionAvailable: vi.fn(),
   mockNotFound: vi.fn(() => {
@@ -44,6 +42,9 @@ vi.mock('@/components/settings/navigation', () => ({
   getOrganizationSettingsFeatures: vi.fn(() => ({})),
   isOrganizationSettingsSectionAvailable: mockIsOrganizationSettingsSectionAvailable,
   resolveWorkspaceNavigation: mockResolveWorkspaceNavigation,
+  workspaceSectionUsesPermissionConfig: vi.fn((section: string) =>
+    ['secrets', 'api-keys', 'inbox', 'mcp', 'custom-tools'].includes(section)
+  ),
 }))
 
 vi.mock('@/lib/auth', () => ({
@@ -52,11 +53,6 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@/lib/billing', () => ({
   isOrganizationOnEnterprisePlan: mockIsOrganizationOnEnterprisePlan,
-}))
-
-vi.mock('@/lib/billing/core/subscription', () => ({
-  hasWorkspaceInboxAccess: mockHasWorkspaceInboxAccess,
-  hasWorkspaceSandboxAccess: mockHasWorkspaceSandboxAccess,
 }))
 
 vi.mock('@/lib/core/config/env', () => ({
@@ -79,16 +75,47 @@ vi.mock('@/lib/permissions/super-user', () => ({
   isPlatformAdmin: vi.fn(() => false),
 }))
 
+vi.mock('@/lib/workflows/custom-blocks/operations', () => ({
+  isCustomBlocksEligibleForOrganization: mockIsCustomBlocksEligibleForOrganization,
+}))
+
 vi.mock('@/lib/workspaces/host-context', () => ({
   getWorkspaceHostContextForViewer: mockGetWorkspaceHostContext,
 }))
 
 vi.mock('@/app/_shell/providers/get-query-client', () => ({
-  getQueryClient: vi.fn(),
+  getQueryClient: mockGetQueryClient,
+}))
+
+const { mockGetQueryClient, mockSectionPrefetch } = vi.hoisted(() => ({
+  mockGetQueryClient: vi.fn(),
+  mockSectionPrefetch: vi.fn(),
+}))
+
+const { mockSections, mockAliases } = vi.hoisted(() => ({
+  mockSections: [
+    'general',
+    'billing',
+    'secrets',
+    'sessions',
+    'admin',
+    'teammates',
+    'custom-blocks',
+  ],
+  /** Mirrors the real alias table so a legacy segment behaves here as it does in production. */
+  mockAliases: {
+    subscription: 'billing',
+    team: 'organization',
+    'api-keys': 'apikeys',
+    domains: 'sso',
+  } as Record<string, string>,
 }))
 
 vi.mock('@/app/workspace/[workspaceId]/settings/navigation', () => ({
-  allNavigationItems: [{ id: 'general' }, { id: 'billing' }, { id: 'secrets' }, { id: 'sessions' }],
+  resolveSettingsSection: vi.fn((section: string) => {
+    const id = mockAliases[section] ?? section
+    return mockSections.includes(id) ? { id, meta: { title: id } } : null
+  }),
   getSettingsSectionMeta: vi.fn(() => null),
 }))
 
@@ -101,13 +128,20 @@ vi.mock('@/ee/workspace-forking/lib/lineage/authz', () => ({
 }))
 
 vi.mock('@/app/workspace/[workspaceId]/settings/[section]/prefetch', () => ({
-  prefetchGeneralSettings: vi.fn(),
+  /** Mirrors the real registry's keys so a section absent from it prefetches nothing. */
+  SECTION_PREFETCHERS: {
+    general: mockSectionPrefetch,
+    billing: mockSectionPrefetch,
+    admin: mockSectionPrefetch,
+    'credential-groups': mockSectionPrefetch,
+  },
 }))
 
 vi.mock('@/app/workspace/[workspaceId]/settings/[section]/settings', () => ({
   SettingsPage: vi.fn(() => null),
 }))
 
+import { QueryClient } from '@tanstack/react-query'
 import WorkspaceSettingsSectionPage from '@/app/workspace/[workspaceId]/settings/[section]/page'
 
 const PERSONAL_HOST_CONTEXT = {
@@ -125,6 +159,21 @@ const PERSONAL_HOST_CONTEXT = {
   },
 }
 
+const ORGANIZATION_HOST_CONTEXT = {
+  workspace: {
+    id: 'workspace-b',
+    billedAccountUserId: 'owner-b',
+  },
+  hostOrganizationId: 'organization-b',
+  ownerBilling: {
+    isEnterprise: true,
+  },
+  viewer: {
+    permission: 'admin',
+    isHostOrganizationAdmin: true,
+  },
+}
+
 function pageProps(section: string) {
   return {
     params: Promise.resolve({ workspaceId: 'workspace-b', section }),
@@ -139,11 +188,11 @@ describe('WorkspaceSettingsSectionPage unavailable sections', () => {
     mockResolveWorkspaceNavigation.mockReturnValue([])
     mockResolveWorkspaceGroup.mockResolvedValue(null)
     mockIsForkingAvailable.mockResolvedValue(false)
-    mockHasWorkspaceInboxAccess.mockResolvedValue(false)
-    mockHasWorkspaceSandboxAccess.mockResolvedValue(false)
+    mockIsCustomBlocksEligibleForOrganization.mockResolvedValue(false)
     mockCanOpenOrganizationSettingsSection.mockResolvedValue(false)
     mockIsOrganizationOnEnterprisePlan.mockResolvedValue(false)
     mockIsOrganizationSettingsSectionAvailable.mockReturnValue(true)
+    mockGetQueryClient.mockReturnValue(new QueryClient())
   })
 
   it('redirects an unavailable subscription section to General', async () => {
@@ -156,6 +205,29 @@ describe('WorkspaceSettingsSectionPage unavailable sections', () => {
     await expect(WorkspaceSettingsSectionPage(pageProps('secrets'))).rejects.toThrow(
       'NEXT_REDIRECT:/workspace/workspace-b/settings/general'
     )
+  })
+
+  it('redirects Custom Blocks for a personal workspace without resolving an org entitlement', async () => {
+    mockResolveWorkspaceNavigation.mockImplementation(({ entitlements }) =>
+      entitlements.customBlocks ? [{ id: 'custom-blocks' }] : []
+    )
+
+    await expect(WorkspaceSettingsSectionPage(pageProps('custom-blocks'))).rejects.toThrow(
+      'NEXT_REDIRECT:/workspace/workspace-b/settings/general'
+    )
+    expect(mockIsCustomBlocksEligibleForOrganization).not.toHaveBeenCalled()
+  })
+
+  it('uses the shared Custom Blocks entitlement for an organization workspace', async () => {
+    mockGetWorkspaceHostContext.mockResolvedValue(ORGANIZATION_HOST_CONTEXT)
+    mockIsCustomBlocksEligibleForOrganization.mockResolvedValue(true)
+    mockResolveWorkspaceNavigation.mockImplementation(({ entitlements }) =>
+      entitlements.customBlocks ? [{ id: 'custom-blocks' }] : []
+    )
+
+    await WorkspaceSettingsSectionPage(pageProps('custom-blocks'))
+
+    expect(mockIsCustomBlocksEligibleForOrganization).toHaveBeenCalledWith('organization-b')
   })
 
   it('redirects an organization section when the destination has no organization', async () => {
@@ -171,11 +243,74 @@ describe('WorkspaceSettingsSectionPage unavailable sections', () => {
     expect(mockGetWorkspaceHostContext).not.toHaveBeenCalled()
   })
 
+  it('prefetches only for the sections that declare a prefetcher', async () => {
+    // The saving the registry exists for: a section with no entry blocks on nothing.
+    mockResolveWorkspaceNavigation.mockReturnValue([{ id: 'secrets' }])
+
+    await WorkspaceSettingsSectionPage(pageProps('general'))
+    expect(mockSectionPrefetch).toHaveBeenCalledTimes(1)
+
+    mockSectionPrefetch.mockClear()
+    await WorkspaceSettingsSectionPage(pageProps('secrets'))
+    expect(mockSectionPrefetch).not.toHaveBeenCalled()
+  })
+
+  it('resolves a permission group only when its config can hide the requested section', async () => {
+    mockGetWorkspaceHostContext.mockResolvedValue(ORGANIZATION_HOST_CONTEXT)
+    mockResolveWorkspaceNavigation.mockReturnValue([{ id: 'teammates' }])
+
+    await WorkspaceSettingsSectionPage(pageProps('teammates'))
+
+    expect(mockResolveWorkspaceGroup).not.toHaveBeenCalled()
+
+    mockResolveWorkspaceNavigation.mockReturnValue([{ id: 'secrets' }])
+    await WorkspaceSettingsSectionPage(pageProps('secrets'))
+
+    expect(mockResolveWorkspaceGroup).toHaveBeenCalledTimes(1)
+    expect(mockResolveWorkspaceGroup).toHaveBeenCalledWith(
+      'viewer-a',
+      'organization-b',
+      'workspace-b'
+    )
+  })
+
+  it('overlaps the section prefetch with the organization section gate', async () => {
+    let resolveCanOpenSection: ((value: boolean) => void) | undefined
+    mockGetWorkspaceHostContext.mockResolvedValue(ORGANIZATION_HOST_CONTEXT)
+    mockCanOpenOrganizationSettingsSection.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        resolveCanOpenSection = resolve
+      })
+    )
+
+    const render = WorkspaceSettingsSectionPage(pageProps('billing'))
+    await vi.waitFor(() => expect(mockCanOpenOrganizationSettingsSection).toHaveBeenCalledTimes(1))
+
+    expect(mockSectionPrefetch).toHaveBeenCalledWith(
+      expect.any(QueryClient),
+      expect.objectContaining({ userId: 'viewer-a', workspaceId: 'workspace-b' })
+    )
+
+    resolveCanOpenSection?.(true)
+    await render
+  })
+
+  it('selects the prefetcher by resolved section, not the raw segment', async () => {
+    // `/settings/subscription` is a legacy link for billing, which does read the key. Billing on
+    // a personal workspace is only reachable by the billed account owner.
+    mockGetSession.mockResolvedValue({ user: { id: 'owner-b' } })
+
+    await WorkspaceSettingsSectionPage(pageProps('subscription'))
+
+    expect(mockSectionPrefetch).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps inaccessible workspaces fail-fast', async () => {
     mockGetWorkspaceHostContext.mockResolvedValue(null)
 
     await expect(WorkspaceSettingsSectionPage(pageProps('general'))).rejects.toThrow(
       'NEXT_NOT_FOUND'
     )
+    expect(mockSectionPrefetch).not.toHaveBeenCalled()
   })
 })

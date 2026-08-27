@@ -131,6 +131,91 @@ describe('collectForkDependentReconfigs', () => {
     ])
   })
 
+  it('anchors duplicate trigger selectors to the active trigger credential', () => {
+    vi.mocked(getBlock).mockReturnValue(
+      blockWith([
+        {
+          id: 'credential',
+          title: 'Credential',
+          type: 'oauth-input',
+          canonicalParamId: 'oauthCredential',
+          mode: 'basic',
+        },
+        {
+          id: 'workspacePicker',
+          title: 'Workspace',
+          type: 'project-selector',
+          canonicalParamId: 'workspaceSlug',
+          selectorKey: 'bitbucket.workspaces',
+          dependsOn: ['credential'],
+          mode: 'basic',
+        },
+        {
+          id: 'selectedTriggerId',
+          title: 'Trigger Type',
+          type: 'dropdown',
+          mode: 'trigger',
+        },
+        {
+          id: 'triggerCredentials',
+          title: 'Trigger Credential',
+          type: 'oauth-input',
+          canonicalParamId: 'oauthCredential',
+          mode: 'trigger',
+          condition: { field: 'selectedTriggerId', value: 'bitbucket_push' },
+        },
+        {
+          id: 'workspacePicker',
+          title: 'Workspace',
+          type: 'project-selector',
+          canonicalParamId: 'workspaceSlug',
+          selectorKey: 'bitbucket.workspaces',
+          dependsOn: ['triggerCredentials'],
+          mode: 'trigger',
+          condition: { field: 'selectedTriggerId', value: 'bitbucket_push' },
+        },
+        {
+          id: 'triggerCredentials',
+          title: 'Trigger Credential',
+          type: 'oauth-input',
+          canonicalParamId: 'oauthCredential',
+          mode: 'trigger',
+          condition: { field: 'selectedTriggerId', value: 'bitbucket_pull_request_created' },
+        },
+        {
+          id: 'workspacePicker',
+          title: 'Workspace',
+          type: 'project-selector',
+          canonicalParamId: 'workspaceSlug',
+          selectorKey: 'bitbucket.workspaces',
+          dependsOn: ['triggerCredentials'],
+          mode: 'trigger',
+          condition: { field: 'selectedTriggerId', value: 'bitbucket_pull_request_created' },
+        },
+      ])
+    )
+    const state = sourceState('bitbucket', {
+      credential: { value: 'dormant-action-credential' },
+      selectedTriggerId: { value: 'bitbucket_push' },
+      triggerCredentials: { value: 'active-trigger-credential' },
+      workspacePicker: { value: 'acme' },
+    })
+    state.blocks['block-1'].triggerMode = true
+
+    const result = collectForkDependentReconfigs(
+      [replaceItem],
+      new Map([['wf-src', state]]),
+      resolve
+    )
+
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({
+      parentSourceId: 'active-trigger-credential',
+      subBlockKey: 'workspacePicker',
+      currentValue: 'acme',
+    })
+  })
+
   it('skips an anchor whose canonical pair is in advanced (manual) mode - the value passes through', () => {
     vi.mocked(getBlock).mockReturnValue(
       blockWith([
@@ -357,6 +442,72 @@ describe('collectForkDependentReconfigs', () => {
     expect(sheet?.consumesContextKeys).toEqual(['spreadsheetId'])
     // The source spreadsheet rides in context; the modal overlays the re-picked one.
     expect(sheet?.context.spreadsheetId).toBe('ss-src')
+  })
+
+  it('offers a plain text dependent of a remapped credential', () => {
+    // `clearDependentsOnRemap` wipes it on EVERY sync (a credential mapped across environments
+    // changes value each time), so a text field the modal never offered was re-emptied on every
+    // push with nowhere to set it that stuck.
+    vi.mocked(getBlock).mockReturnValue(
+      blockWith([
+        { id: 'credential', title: 'Credential', type: 'oauth-input' },
+        {
+          id: 'issueType',
+          title: 'Issue Type',
+          type: 'short-input',
+          dependsOn: ['credential'],
+        },
+      ])
+    )
+    const states = new Map<string, WorkflowState>([
+      [
+        'wf-src',
+        sourceState('jira', { credential: { value: 'cred-src' }, issueType: { value: 'Bug' } }),
+      ],
+    ])
+    const fields = collectForkDependentReconfigs([replaceItem], states, resolve)
+    expect(fields).toHaveLength(1)
+    expect(fields[0]).toMatchObject({ subBlockKey: 'issueType', fieldType: 'short-input' })
+    expect(fields[0].selectorKey).toBeUndefined()
+  })
+
+  it('does not offer the manual half of a selector-backed canonical pair', () => {
+    // The pair's selector member already represents the field, and the manual member is
+    // verbatim by policy — offering both shows one concept twice and invites writing into the
+    // inactive half.
+    vi.mocked(getBlock).mockReturnValue(
+      blockWith([
+        { id: 'credential', title: 'Credential', type: 'oauth-input' },
+        {
+          id: 'projectId',
+          title: 'Project',
+          type: 'project-selector',
+          canonicalParamId: 'projectId',
+          mode: 'basic',
+          selectorKey: 'jira.projects',
+          dependsOn: ['credential'],
+        },
+        {
+          id: 'manualProjectId',
+          title: 'Project ID',
+          type: 'short-input',
+          canonicalParamId: 'projectId',
+          mode: 'advanced',
+          dependsOn: ['credential'],
+        },
+      ])
+    )
+    const states = new Map<string, WorkflowState>([
+      [
+        'wf-src',
+        sourceState('jira', { credential: { value: 'cred-src' }, projectId: { value: 'PROJ' } }),
+      ],
+    ])
+    const keys = collectForkDependentReconfigs([replaceItem], states, resolve).map(
+      (field) => field.subBlockKey
+    )
+    expect(keys).toContain('projectId')
+    expect(keys).not.toContain('manualProjectId')
   })
 
   it('uses the persisted canonical mode when building a dependent selector context', () => {

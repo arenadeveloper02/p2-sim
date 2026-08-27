@@ -72,7 +72,7 @@ import {
   type ResolvedSecretTraceRegistry,
 } from '@/executor/utils/resolved-secret-trace-registry'
 import type { ErrorInfo } from '@/tools/error-extractors'
-import { extractErrorMessage } from '@/tools/error-extractors'
+import { extractErrorMessage, redactErrorData } from '@/tools/error-extractors'
 import { HostedKeyRateLimitedError, HostedKeyUnavailableError } from '@/tools/errors'
 import {
   getOwnEnumerableDataEntries,
@@ -352,12 +352,26 @@ async function resolveCopilotEnvReferences(
     return
   }
 
-  const pending: Array<{ paramId: string; value: string }> = []
+  // Models improvise reference syntax: after `{{NAME}}`, the bare variable
+  // name is the common fallback — it previously went upstream as the literal
+  // credential and failed with an undiagnosable 401. `{{NAME}}` is the one
+  // explicit reference form, so a missing variable is a hard error. A bare
+  // name is a reference only when a variable by that exact name exists
+  // (`soft`): plenty of real API keys match the identifier pattern, and
+  // those must pass through verbatim. `$NAME` is deliberately NOT a
+  // reference — real credentials can start with `$`, and a secret must never
+  // be reinterpreted as a lookup.
+  const pending: Array<{ paramId: string; value: string; soft?: boolean }> = []
   for (const [paramId, paramDef] of Object.entries(tool.params || {})) {
     if (paramDef?.visibility !== 'user-only') continue
     const value = params[paramId]
-    if (typeof value === 'string' && value.startsWith('{{') && value.endsWith('}}')) {
+    if (typeof value !== 'string') continue
+    if (value.startsWith('{{') && value.endsWith('}}')) {
       pending.push({ paramId, value })
+      continue
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+      pending.push({ paramId, value: `{{${value}}}`, soft: true })
     }
   }
 
@@ -376,7 +390,7 @@ async function resolveCopilotEnvReferences(
     const { getEffectiveDecryptedEnv } = await import('@/lib/environment/utils')
     const envVars = await getEffectiveDecryptedEnv(scope.userId, scope.workspaceId)
 
-    for (const { paramId, value } of pending) {
+    for (const { paramId, value, soft } of pending) {
       const missingKeys: string[] = []
       const resolved = resolveEnvVarReferences(value, envVars, {
         allowEmbedded: false,
@@ -388,6 +402,9 @@ async function resolveCopilotEnvReferences(
         },
       })
       if (missingKeys.length > 0) {
+        // A bare name that matches no variable is treated as the literal
+        // credential it probably is; only explicit reference forms error.
+        if (soft) continue
         const scopeHint = scope.workspaceId
           ? ''
           : ' (no workspace context — only personal variables are available here)'
@@ -784,8 +801,14 @@ interface HostedKeyCostResult {
 }
 
 /**
- * Calculate and log hosted key cost for a tool execution.
- * Logs to usageLog for audit trail and returns cost + metadata for output.
+ * Calculate hosted-key cost for a tool execution.
+ *
+ * Returns the cost and its metadata for the caller to attach to the tool
+ * output. It does NOT write a usage-ledger row: the only `usageLog` insert is
+ * `recordUsage` in `lib/billing/core/usage-log.ts`, which nothing on this path
+ * calls. Cost reaches the ledger only through the `_serviceCost` field
+ * `applyHostedKeyCostToResult` emits under `copilotToolExecution`, so any new
+ * caller of `executeTool` that is not Copilot must arrange its own metering.
  */
 async function processHostedKeyCost(
   tool: ToolConfig,
@@ -801,10 +824,6 @@ async function processHostedKeyCost(
   const { cost, metadata } = calculateToolCost(tool.hosting.pricing, params, response, tool.id)
 
   if (cost <= 0) return { cost: 0 }
-
-  const { userId } = resolveToolScope(params, executionContext)
-
-  if (!userId) return { cost, metadata }
 
   logger.debug(
     `[${requestId}] Hosted key cost for ${tool.id}: $${cost}`,
@@ -952,6 +971,24 @@ import { normalizeToolId } from '@/tools/normalize'
  */
 const MAX_REQUEST_BODY_SIZE_BYTES = 10 * 1024 * 1024 // 10MB
 const MAX_TOOL_RESPONSE_BODY_BYTES = 10 * 1024 * 1024 // 10MB
+
+/**
+ * Headroom added to an internal route's requested timeout before it becomes the
+ * transport deadline.
+ *
+ * A `timeout` param bounds the work the route was asked to do — the code a
+ * sandbox runs, the upstream call a proxy route makes. The fetch around it also
+ * pays authentication, body parsing, workspace authorization, worker
+ * acquisition, and response serialization, none of which that budget was sized
+ * for. Arming the client with the bare number makes the caller give up at the
+ * same instant the route's own deadline fires, so the route can never win the
+ * race and report which part actually ran long; the caller sees an
+ * unattributable `Request timed out` instead.
+ *
+ * Sized above the isolated-vm worker's own 10s startup budget so a cold worker
+ * spawn stays inside the transport deadline rather than aborting it.
+ */
+const INTERNAL_ROUTE_TRANSPORT_OVERHEAD_MS = 30_000
 
 /**
  * User-friendly error message for body size limit exceeded
@@ -1131,7 +1168,7 @@ function createTransformedErrorFromErrorInfo(errorInfo?: ErrorInfo, extractorId?
   Object.assign(transformed, {
     status: errorInfo?.status,
     statusText: errorInfo?.statusText,
-    data: errorInfo?.data,
+    data: redactErrorData(errorInfo, extractorId),
   })
   return transformed
 }
@@ -1561,7 +1598,7 @@ async function executeToolImplementation(
   try {
     let tool: ToolConfig | undefined
 
-    // Normalize tool ID to strip resource suffixes (e.g., workflow_executor_<uuid> -> workflow_executor)
+    // Preserve direct-call compatibility with legacy resource-suffixed tool ids.
     const normalizedToolId = normalizeToolId(toolId)
     if (internalSandboxProfile && normalizedToolId !== 'function_execute') {
       throw new Error('An internal sandbox profile may only be used with function_execute')
@@ -1697,9 +1734,7 @@ async function executeToolImplementation(
       contextParams.credential = contextParams.oauthCredential
     }
     if (contextParams.credential) {
-      logger.info(
-        `[${requestId}] Tool ${toolId} needs access token for credential: ${contextParams.credential}`
-      )
+      logger.info(`[${requestId}] Resolving tool access token`, { toolId: normalizedToolId })
       try {
         const workflowId = scope.workflowId
         const userId = scope.userId
@@ -2540,9 +2575,11 @@ async function executeToolRequest(
           let didTimeout = false
           // With a caller/execution abort signal present, the plan-based timeout bounds the call and
           // this only acts as a ceiling; without one, keep the tighter default as the hang safety net.
-          const timeout =
-            requestParams.timeout ||
-            (signal ? getMaxExecutionTimeout() : DEFAULT_EXECUTION_TIMEOUT_MS)
+          const timeout = requestParams.timeout
+            ? requestParams.timeout + INTERNAL_ROUTE_TRANSPORT_OVERHEAD_MS
+            : signal
+              ? getMaxExecutionTimeout()
+              : DEFAULT_EXECUTION_TIMEOUT_MS
           const timeoutId = setTimeout(() => {
             didTimeout = true
             controller.abort(new DOMException('timeout', 'AbortError'))
@@ -2562,8 +2599,9 @@ async function executeToolRequest(
           try {
             /*
              * `controller` above is armed with `timeout`, so the plan deadline is
-             * already enforced in-process; the transport timer is disarmed so its
-             * 300s default cannot undercut it.
+             * already enforced in-process; the transport timers (Bun's idle timer,
+             * undici's header/body timers in the Node workers) are disarmed so
+             * their 300s defaults cannot undercut it.
              */
             const internalResponse = await fetch(
               fullUrl,
@@ -2666,6 +2704,7 @@ async function executeToolRequest(
             signal,
             proxyUrl: proxyOption,
             stripAuthOnRedirect: requestParams.stripAuthOnRedirect,
+            redirectPolicy: requestParams.redirectPolicy,
           })
 
           const responseHeaders = new Headers(secureResponse.headers.toRecord())

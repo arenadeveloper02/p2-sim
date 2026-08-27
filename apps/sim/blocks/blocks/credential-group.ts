@@ -1,5 +1,4 @@
 import { GridOffset } from '@sim/emcn/icons'
-import { getCredentialGroupProviderService } from '@/lib/credential-groups/providers'
 import {
   type CanonicalGroup,
   resolveActiveCanonicalValue,
@@ -84,13 +83,15 @@ interface CredentialGroupBlockOutput {
     status: string
     invitedAt: string
     expiresAt: string
+    invitationLink: string
     count: number
     hasMore: boolean
     nextCursor: string | null
   }
 }
 
-const GROUP_OPERATIONS = ['list_credentials', 'send_invite', 'list_people'] as const
+const INVITE_OPERATIONS = ['send_invite', 'get_invite_link'] as const
+const GROUP_OPERATIONS = ['list_credentials', ...INVITE_OPERATIONS, 'list_people'] as const
 const LIST_OPERATIONS = ['list_credentials', 'list_people', 'list_groups'] as const
 
 export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
@@ -98,7 +99,7 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
   name: 'Credential Groups',
   description: 'Invite people and use credentials collected by Credential Groups',
   longDescription:
-    'List usable managed credentials, inspect invited people, send an account-connection invitation, or discover Credential Groups in the current workspace. The block returns credential IDs and account metadata without exposing OAuth tokens.',
+    'List usable managed credentials, inspect invited people, send or generate an account-connection invitation, or discover Credential Groups in the current workspace. The block returns credential IDs and account metadata without exposing OAuth tokens.',
   bestPractices: `
   - Use "List Credentials" with a ForEach loop to run a provider block once for every connected account.
   - Filter by email to select credentials belonging to one invited person, by provider to select one account type, or by both for an exact match.
@@ -106,6 +107,7 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
   - "List Credentials" returns active, usable credentials only. Reconnect-needed and revoked credentials are excluded.
   - Use "List People" to inspect invitation and connection progress without exposing credential secrets.
   - "Send Invite" sends one email. Use a loop when invitations should come from a dynamic list.
+  - "Get Invite Link" issues a fresh seven-day bearer link without sending email. It invalidates the previous link for that email, so treat the output as a secret.
   `,
   docsLink: 'https://docs.sim.ai/workflows/blocks/credential-group',
   bgColor: '#8B5CF6',
@@ -132,6 +134,14 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
             core: true,
           },
         ],
+        get_invite_link: [
+          { text: 'Get invite link for', field: 'email', core: true },
+          {
+            text: 'in',
+            field: ['credentialGroup', 'manualCredentialGroup'],
+            core: true,
+          },
+        ],
         list_people: [
           {
             text: 'List people in',
@@ -154,6 +164,7 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
       options: [
         { label: 'List Credentials', id: 'list_credentials' },
         { label: 'Send Invite', id: 'send_invite' },
+        { label: 'Get Invite Link', id: 'get_invite_link' },
         { label: 'List People', id: 'list_people' },
         { label: 'List Credential Groups', id: 'list_groups' },
       ],
@@ -163,23 +174,11 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
       id: 'credentialGroup',
       title: 'Credential Group',
       type: 'dropdown',
-      options: [],
+      selectorKey: 'workspace.credentialGroups',
       required: { field: 'operation', value: [...GROUP_OPERATIONS] },
       mode: 'basic',
       canonicalParamId: 'credentialGroupId',
       condition: { field: 'operation', value: [...GROUP_OPERATIONS] },
-      fetchOptions: async () => {
-        const groups = await fetchCachedCredentialGroups()
-        return groups
-          .filter((group) => group.status === 'active')
-          .map((group) => ({ label: group.name, id: group.id }))
-          .sort((a, b) => a.label.localeCompare(b.label))
-      },
-      fetchOptionById: async (_blockId: string, optionId: string) => {
-        const groups = await fetchCachedCredentialGroups()
-        const group = groups.find((candidate) => candidate.id === optionId)
-        return group ? { label: group.name, id: group.id } : null
-      },
     },
     {
       id: 'manualCredentialGroup',
@@ -195,7 +194,7 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
       id: 'email',
       title: 'Email',
       type: 'short-input',
-      required: { field: 'operation', value: 'send_invite' },
+      required: { field: 'operation', value: [...INVITE_OPERATIONS] },
       placeholder: 'person@example.com',
       condition: { field: 'operation', value: [...GROUP_OPERATIONS] },
     },
@@ -203,44 +202,14 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
       id: 'providerFilter',
       title: 'Provider',
       type: 'dropdown',
+      selectorKey: 'workspace.credentialGroupProviders',
       multiSelect: true,
       emptyIsValid: true,
-      options: [],
       required: false,
       mode: 'basic',
       canonicalParamId: 'credentialProviderIds',
       dependsOn: ['credentialGroupId'],
       condition: { field: 'operation', value: 'list_credentials' },
-      fetchOptions: async (blockId: string) => {
-        const credentialGroupId = resolveCredentialGroupIdForBlock(blockId)
-        if (!credentialGroupId) return []
-        const groups = await fetchCachedCredentialGroups()
-        const group = groups.find((candidate) => candidate.id === credentialGroupId)
-        if (!group) return []
-        return group.options
-          .filter((option) => option.status === 'active')
-          .map((option) => {
-            const service = getCredentialGroupProviderService(option.provider)
-            return { id: service.providerId, label: service.name }
-          })
-          .sort((a, b) => a.label.localeCompare(b.label))
-      },
-      fetchOptionById: async (blockId: string, optionId: string) => {
-        const credentialGroupId = resolveCredentialGroupIdForBlock(blockId)
-        if (!credentialGroupId) return null
-        const groups = await fetchCachedCredentialGroups()
-        const group = groups.find((candidate) => candidate.id === credentialGroupId)
-        const option = group?.options.find(
-          (candidate) =>
-            candidate.status === 'active' &&
-            getCredentialGroupProviderService(candidate.provider).providerId === optionId
-        )
-        if (!option) return null
-        return {
-          id: optionId,
-          label: getCredentialGroupProviderService(option.provider).name,
-        }
-      },
     },
     {
       id: 'manualProviderIds',
@@ -290,7 +259,8 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
   inputs: {
     operation: {
       type: 'string',
-      description: "'list_credentials', 'send_invite', 'list_people', or 'list_groups'",
+      description:
+        "'list_credentials', 'send_invite', 'get_invite_link', 'list_people', or 'list_groups'",
     },
     credentialGroupId: { type: 'string', description: 'Credential Group ID' },
     email: {
@@ -330,27 +300,32 @@ export const CredentialGroupBlock: BlockConfig<CredentialGroupBlockOutput> = {
     enrollmentId: {
       type: 'string',
       description: 'Enrollment ID created or refreshed by the invitation',
-      condition: { field: 'operation', value: 'send_invite' },
+      condition: { field: 'operation', value: [...INVITE_OPERATIONS] },
     },
     email: {
       type: 'string',
       description: 'Normalized invitation recipient email',
-      condition: { field: 'operation', value: 'send_invite' },
+      condition: { field: 'operation', value: [...INVITE_OPERATIONS] },
     },
     status: {
       type: 'string',
       description: 'Invitation status',
-      condition: { field: 'operation', value: 'send_invite' },
+      condition: { field: 'operation', value: [...INVITE_OPERATIONS] },
     },
     invitedAt: {
       type: 'string',
       description: 'Invitation timestamp',
-      condition: { field: 'operation', value: 'send_invite' },
+      condition: { field: 'operation', value: [...INVITE_OPERATIONS] },
     },
     expiresAt: {
       type: 'string',
       description: 'Invitation expiration timestamp',
-      condition: { field: 'operation', value: 'send_invite' },
+      condition: { field: 'operation', value: [...INVITE_OPERATIONS] },
+    },
+    invitationLink: {
+      type: 'string',
+      description: 'Fresh bearer invitation link for the recipient',
+      condition: { field: 'operation', value: 'get_invite_link' },
     },
     count: {
       type: 'number',

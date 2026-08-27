@@ -12,7 +12,18 @@ import {
 import { configPath, credentialsPath } from './paths'
 
 export const DEFAULT_PROFILE = 'default'
-export const DEFAULT_ENDPOINT = 'https://sim.ai'
+
+/**
+ * The API host, which is the `www` one and not the apex.
+ *
+ * `sim.ai` answers `/api/**` with a 301 to `www.sim.ai`, and the CLI refuses to
+ * follow a redirect — a 301 rewrites a POST into a bodyless GET, so following
+ * one turns a write into a silent no-op and hands the API key to whatever host
+ * `Location` names. Defaulting to the apex therefore made every command fail
+ * for anyone who never set an endpoint, and before the refusal existed it was
+ * worse: reads succeeded while writes quietly did nothing.
+ */
+export const DEFAULT_ENDPOINT = 'https://www.sim.ai'
 
 /**
  * Output formats, in the order `--help` lists them.
@@ -56,6 +67,12 @@ export interface ProfileOverrides {
   apiKey?: string
   workspaceId?: string
   output?: OutputFormat
+  /**
+   * Skips the "does this profile exist?" check for the two commands that
+   * legitimately name a profile before it exists — `sim login --profile x` and
+   * `sim configure --profile x --set-…`, both of which create it.
+   */
+  allowUnknownProfile?: boolean
 }
 
 /**
@@ -90,6 +107,54 @@ export function readCredentialsProfile(profile: string): Record<string, string> 
   return getSection(readIni(credentialsPath()), profile) ?? {}
 }
 
+/**
+ * Resolves the one stored identity a profile authenticates through.
+ *
+ * Existing profiles authenticate through their same-named credentials section.
+ * A workspace alias may instead name one direct `auth_profile`; references are
+ * deliberately non-recursive so a hand-edited cycle or missing target fails
+ * with the setting that needs repair rather than surfacing later as "no key".
+ */
+export function resolveAuthenticationProfileName(profile: string): string {
+  const config = readConfigProfile(profile)
+  if (!Object.hasOwn(config, 'auth_profile')) return profile
+
+  const authProfile = config.auth_profile.trim()
+  if (!authProfile) {
+    throw new ProfileConfigError(`Profile "${profile}" has an empty auth_profile.`)
+  }
+  if (authProfile === profile) {
+    throw new ProfileConfigError(
+      `Profile "${profile}" cannot use itself as auth_profile. Remove the auth_profile setting instead.`
+    )
+  }
+  if (Object.hasOwn(config, 'endpoint')) {
+    throw new ProfileConfigError(
+      `Profile "${profile}" cannot set both auth_profile and endpoint. Set the endpoint on authentication profile "${authProfile}".`
+    )
+  }
+  if (readCredentialsProfile(profile).api_key) {
+    throw new ProfileConfigError(
+      `Profile "${profile}" cannot set both auth_profile and its own API key. Remove one of them.`
+    )
+  }
+
+  const authConfig = readConfigProfile(authProfile)
+  const credentials = readCredentialsProfile(authProfile)
+  if (Object.keys(authConfig).length === 0 && Object.keys(credentials).length === 0) {
+    throw new ProfileConfigError(
+      `Profile "${profile}" references missing auth_profile "${authProfile}".`
+    )
+  }
+  if (Object.hasOwn(authConfig, 'auth_profile')) {
+    throw new ProfileConfigError(
+      `Profile "${profile}" references auth_profile "${authProfile}", which also has auth_profile set. Authentication profile references cannot be chained.`
+    )
+  }
+
+  return authProfile
+}
+
 /** Every profile named by either file, deduplicated and sorted. */
 export function listProfiles(): string[] {
   const names = new Set<string>()
@@ -103,6 +168,78 @@ export function listProfiles(): string[] {
   }
 
   return [...names].sort()
+}
+
+/** Levenshtein distance. The inputs are profile names, so the matrix is tiny. */
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index)
+
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i]
+    for (let j = 1; j <= b.length; j++) {
+      current[j] = Math.min(
+        previous[j] + 1,
+        current[j - 1] + 1,
+        previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      )
+    }
+    previous = current
+  }
+
+  return previous[b.length]
+}
+
+/** The closest configured profile, when it is within two edits of the typo. */
+function nearestProfile(name: string, known: string[]): string | null {
+  const lowered = name.toLowerCase()
+  let best: string | null = null
+  let bestDistance = Number.POSITIVE_INFINITY
+
+  for (const candidate of known) {
+    const distance = editDistance(lowered, candidate.toLowerCase())
+    if (distance < bestDistance) {
+      best = candidate
+      bestDistance = distance
+    }
+  }
+
+  return bestDistance <= 2 ? best : null
+}
+
+/**
+ * Refuses a profile name that names nothing.
+ *
+ * Without this, a typo resolved to the built-in defaults — meaning
+ * `sim --profile stagng …` silently talked to production and sent it whatever
+ * key `SIM_API_KEY` or the `default` credentials held. Only an explicitly named
+ * profile is checked: `default` stays valid with no config file at all, which
+ * is the documented CI path of setting `SIM_API_KEY`/`SIM_WORKSPACE` and never
+ * running `sim login`.
+ */
+function requireKnownProfile(name: string): void {
+  if (name === DEFAULT_PROFILE) return
+
+  const known = listProfiles()
+  if (known.includes(name)) return
+
+  if (known.length === 0) {
+    throw new ProfileConfigError(
+      `Unknown profile "${name}". No profiles are configured yet. Run: sim login --profile ${name}`
+    )
+  }
+
+  const suggestion = nearestProfile(name, known)
+  throw new ProfileConfigError(
+    `Unknown profile "${name}".${suggestion ? ` Did you mean "${suggestion}"?` : ''} Configured profiles: ${known.join(', ')}.`
+  )
+}
+
+/** Profiles that directly share the named profile's stored authentication. */
+export function listAuthenticationDependents(authProfile: string): string[] {
+  return listProfiles().filter(
+    (profile) =>
+      profile !== authProfile && readConfigProfile(profile).auth_profile?.trim() === authProfile
+  )
 }
 
 export function writeConfigProfile(profile: string, values: Record<string, string | null>): void {
@@ -130,10 +267,38 @@ export function deleteProfile(profile: string): { config: boolean; credentials: 
   return { config, credentials }
 }
 
-function normalizeEndpoint(endpoint: string): string {
+/**
+ * Validates an endpoint and strips its trailing slashes.
+ *
+ * The check has to live here rather than at the call sites because an endpoint
+ * reaches the HTTP client from four directions — `--endpoint`, `SIM_ENDPOINT`,
+ * `configure --set-endpoint`, and a hand-edited `~/.sim/config` — and an
+ * unparseable one escapes as a raw `TypeError: Invalid URL` stack trace from
+ * inside Node's URL parser instead of a CLI error.
+ *
+ * `source` names where the value came from, so the message points at the thing
+ * the user has to edit.
+ */
+export function normalizeEndpoint(endpoint: string, source: string): string {
   // A trailing slash here produces `https://sim.ai//api/v2/...`, which some
   // proxies 404 rather than normalize.
-  return endpoint.replace(/\/+$/, '')
+  const trimmed = endpoint.replace(/\/+$/, '')
+
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    throw new ProfileConfigError(
+      `Invalid endpoint "${endpoint}" from ${source}. Use an absolute URL, e.g. ${DEFAULT_ENDPOINT} or http://localhost:3000`
+    )
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new ProfileConfigError(
+      `Unsupported endpoint scheme "${parsed.protocol.replace(/:$/, '')}" from ${source}. Use http or https, e.g. ${DEFAULT_ENDPOINT}`
+    )
+  }
+
+  return trimmed
 }
 
 /**
@@ -154,15 +319,20 @@ function resolve<T>(
 }
 
 export function resolveProfile(overrides: ProfileOverrides = {}): ResolvedProfile {
-  const name = overrides.profile || process.env.SIM_PROFILE || DEFAULT_PROFILE
+  const named = overrides.profile || process.env.SIM_PROFILE
+  const name = named || DEFAULT_PROFILE
+  if (named && !overrides.allowUnknownProfile) requireKnownProfile(named)
+
   const config = readConfigProfile(name)
-  const credentials = readCredentialsProfile(name)
+  const authProfile = resolveAuthenticationProfileName(name)
+  const authConfig = authProfile === name ? config : readConfigProfile(authProfile)
+  const credentials = readCredentialsProfile(authProfile)
 
   const endpoint = resolve<string>(
     [
       ['flag', overrides.endpoint],
       ['env', process.env.SIM_ENDPOINT],
-      ['config', config.endpoint],
+      ['config', authConfig.endpoint],
     ],
     DEFAULT_ENDPOINT,
     'default'
@@ -205,7 +375,7 @@ export function resolveProfile(overrides: ProfileOverrides = {}): ResolvedProfil
 
   return {
     name,
-    endpoint: normalizeEndpoint(endpoint.value as string),
+    endpoint: normalizeEndpoint(endpoint.value as string, endpoint.source),
     apiKey: apiKey.value,
     workspaceId: workspaceId.value,
     output: output.value as OutputFormat,

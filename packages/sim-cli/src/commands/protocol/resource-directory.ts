@@ -15,7 +15,8 @@ import {
 import { requestAllPages, SimApiError, type SimClient, type V2Page } from '../../http/client'
 import { type Column, printList, text, timestamp } from '../../output/render'
 import { DEFAULT_LIMIT } from '../../runtime/options'
-import { renderResult } from '../../runtime/result'
+import { encodeFolderPath } from '../../runtime/request'
+import { decodeFolderPath, renderResult } from '../../runtime/result'
 
 type FolderListOperation =
   | 'listFileFolders'
@@ -39,6 +40,7 @@ interface DirectoryEntry {
   kind: string
   name: string
   ref: string
+  webUrl?: string
   folderPath: string
   updatedAt: string
 }
@@ -74,11 +76,19 @@ interface ListOptions {
   limit: string
 }
 
+/**
+ * A folder's `ref` is its path, so it decodes like one; a resource's `ref` is an
+ * opaque id and is shown as it arrived. Both stay pasteable into the next
+ * command because `encodeFolderPath` accepts either form.
+ */
 const COLUMNS: Column<DirectoryEntry>[] = [
   { header: 'kind', value: (entry) => text(entry.kind) },
   { header: 'name', value: (entry) => text(entry.name) },
-  { header: 'ref', value: (entry) => text(entry.ref) },
-  { header: 'folder', value: (entry) => text(entry.folderPath) },
+  {
+    header: 'ref',
+    value: (entry) => text(entry.kind === 'folder' ? decodeFolderPath(entry.ref) : entry.ref),
+  },
+  { header: 'folder', value: (entry) => text(decodeFolderPath(entry.folderPath)) },
   { header: 'updated', value: (entry) => timestamp(entry.updatedAt) },
 ]
 
@@ -140,6 +150,7 @@ function entriesFor(
       kind: config.kind,
       name: resource.name,
       ref: resource.id,
+      webUrl: resource.webUrl,
       folderPath: resource.folderPath,
       updatedAt: resource.updatedAt,
     })),
@@ -170,7 +181,10 @@ export function attachResourceDirectoryCommands(
       }
 
       const limit = rawLimit === 0 ? Number.POSITIVE_INFINITY : rawLimit
-      const folderPath = path ?? '/'
+      // These commands build their own request, so the encoding `buildRequest`
+      // applies to every contract-driven folder flag has to be applied here too
+      // — otherwise `--folder '/Folder 1'` works and `ls '/Folder 1'` does not.
+      const folderPath = encodeFolderPath(path ?? '/')
       const { client, profile } = clientFrom(command)
       const workspaceId = client.requireWorkspace()
       const [folders, resources] = await Promise.all([
@@ -191,7 +205,7 @@ export function attachResourceDirectoryCommands(
       const operation = V2_OPERATIONS[config.createFolder]
       const result = await client.request<{ data?: unknown }>(operation.path, {
         method: operation.method,
-        body: { workspaceId: client.requireWorkspace(), path },
+        body: { workspaceId: client.requireWorkspace(), path: encodeFolderPath(path) },
       })
       renderResult(config.createFolder, profile.output, result.data ?? result, {})
     })

@@ -4,9 +4,12 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { configPath, credentialsPath } from './paths'
 import {
+  DEFAULT_ENDPOINT,
   deleteProfile,
+  listAuthenticationDependents,
   listProfiles,
   OUTPUT_FORMATS,
+  resolveAuthenticationProfileName,
   resolveProfile,
   writeConfigProfile,
   writeCredentialsProfile,
@@ -31,7 +34,7 @@ describe('profile resolution', () => {
   it('falls back to built-in defaults with nothing configured', () => {
     const profile = resolveProfile()
     expect(profile.name).toBe('default')
-    expect(profile.endpoint).toBe('https://sim.ai')
+    expect(profile.endpoint).toBe('https://www.sim.ai')
     expect(profile.apiKey).toBeNull()
     expect(profile.output).toBe('table')
     expect(profile.sources.apiKey).toBe('unset')
@@ -70,6 +73,88 @@ describe('profile resolution', () => {
     })
   })
 
+  it('keeps existing profiles self-authenticating when auth_profile is absent', () => {
+    writeConfigProfile('dev', { endpoint: 'https://dev.example', workspace: 'ws_dev' })
+    writeCredentialsProfile('dev', 'key_dev')
+
+    expect(resolveAuthenticationProfileName('dev')).toBe('dev')
+    expect(resolveProfile({ profile: 'dev' })).toMatchObject({
+      endpoint: 'https://dev.example',
+      workspaceId: 'ws_dev',
+      apiKey: 'key_dev',
+    })
+  })
+
+  it('shares only authentication and endpoint through auth_profile', () => {
+    writeConfigProfile('default', {
+      endpoint: 'https://sim.example',
+      workspace: 'ws_default',
+      output: 'yaml',
+    })
+    writeCredentialsProfile('default', 'key_default')
+    writeConfigProfile('acme', {
+      auth_profile: 'default',
+      workspace: 'ws_acme',
+      output: 'json',
+    })
+
+    expect(resolveAuthenticationProfileName('acme')).toBe('default')
+    expect(resolveProfile({ profile: 'acme' })).toMatchObject({
+      name: 'acme',
+      endpoint: 'https://sim.example',
+      workspaceId: 'ws_acme',
+      output: 'json',
+      apiKey: 'key_default',
+      sources: {
+        endpoint: 'config',
+        workspaceId: 'config',
+        output: 'config',
+        apiKey: 'credentials',
+      },
+    })
+  })
+
+  it('fails fast on empty, missing, self-referential, or chained auth profiles', () => {
+    writeConfigProfile('empty', { auth_profile: '' })
+    expect(() => resolveProfile({ profile: 'empty' })).toThrow(
+      'Profile "empty" has an empty auth_profile.'
+    )
+
+    writeConfigProfile('missing', { auth_profile: 'gone' })
+    expect(() => resolveProfile({ profile: 'missing' })).toThrow(
+      'Profile "missing" references missing auth_profile "gone".'
+    )
+
+    writeConfigProfile('self', { auth_profile: 'self' })
+    expect(() => resolveProfile({ profile: 'self' })).toThrow(
+      'Profile "self" cannot use itself as auth_profile.'
+    )
+
+    writeConfigProfile('base', { auth_profile: 'root' })
+    writeCredentialsProfile('root', 'key_root')
+    writeConfigProfile('chained', { auth_profile: 'base' })
+    expect(() => resolveProfile({ profile: 'chained' })).toThrow(
+      'Profile "chained" references auth_profile "base", which also has auth_profile set.'
+    )
+  })
+
+  it('rejects ambiguous local authentication settings on a shared profile', () => {
+    writeCredentialsProfile('default', 'key_default')
+    writeConfigProfile('endpoint-alias', {
+      auth_profile: 'default',
+      endpoint: 'https://other.example',
+    })
+    expect(() => resolveProfile({ profile: 'endpoint-alias' })).toThrow(
+      'Profile "endpoint-alias" cannot set both auth_profile and endpoint.'
+    )
+
+    writeConfigProfile('key-alias', { auth_profile: 'default' })
+    writeCredentialsProfile('key-alias', 'key_alias')
+    expect(() => resolveProfile({ profile: 'key-alias' })).toThrow(
+      'Profile "key-alias" cannot set both auth_profile and its own API key.'
+    )
+  })
+
   it('lets a flag beat the environment, and the environment beat the file', () => {
     writeConfigProfile('default', { endpoint: 'https://file.example' })
 
@@ -92,8 +177,96 @@ describe('profile resolution', () => {
     expect(resolveProfile({ profile: 'default' }).name).toBe('default')
   })
 
+  it('refuses an unknown profile instead of silently resolving it to production', () => {
+    // A typo used to fall through to the built-in defaults, so `--profile
+    // stagng` talked to https://www.sim.ai and handed it whatever key resolved.
+    writeConfigProfile('staging', { endpoint: 'https://staging.example' })
+    writeCredentialsProfile('staging', 'key_staging')
+
+    expect(() => resolveProfile({ profile: 'stagng' })).toThrow(
+      'Unknown profile "stagng". Did you mean "staging"? Configured profiles: staging.'
+    )
+
+    process.env.SIM_PROFILE = 'ghost'
+    expect(() => resolveProfile()).toThrow('Unknown profile "ghost". Configured profiles: staging.')
+  })
+
+  it('points a first-time typo at login rather than an empty profile list', () => {
+    expect(() => resolveProfile({ profile: 'dev' })).toThrow(
+      'Unknown profile "dev". No profiles are configured yet. Run: sim login --profile dev'
+    )
+  })
+
+  it('keeps the default profile working with no config file at all', () => {
+    // The documented CI path: set SIM_API_KEY and SIM_WORKSPACE, skip `sim
+    // login`, and never touch the filesystem.
+    process.env.SIM_API_KEY = 'ci_key'
+    process.env.SIM_WORKSPACE = 'ws_ci'
+
+    expect(resolveProfile()).toMatchObject({ name: 'default', apiKey: 'ci_key' })
+    expect(resolveProfile({ profile: 'default' })).toMatchObject({ name: 'default' })
+
+    process.env.SIM_PROFILE = 'default'
+    expect(resolveProfile()).toMatchObject({ name: 'default', workspaceId: 'ws_ci' })
+  })
+
+  it('lets the commands that create a profile name one that does not exist yet', () => {
+    expect(resolveProfile({ profile: 'brand-new', allowUnknownProfile: true })).toMatchObject({
+      name: 'brand-new',
+      endpoint: DEFAULT_ENDPOINT,
+    })
+  })
+
+  it('accepts a profile that exists in only one of the two files', () => {
+    writeCredentialsProfile('creds-only', 'key')
+    writeConfigProfile('config-only', { workspace: 'ws_1' })
+
+    expect(resolveProfile({ profile: 'creds-only' }).apiKey).toBe('key')
+    expect(resolveProfile({ profile: 'config-only' }).workspaceId).toBe('ws_1')
+  })
+
+  it('defaults to the host that serves the API, not the apex that redirects to it', () => {
+    // `sim.ai` answers /api/** with a 301 to `www.sim.ai`, and the client
+    // refuses redirects because following one rewrites a POST into a bodyless
+    // GET. Defaulting to the apex therefore broke every command for anyone who
+    // never set an endpoint, so the host itself is the assertion.
+    expect(DEFAULT_ENDPOINT).toBe('https://www.sim.ai')
+    expect(new URL(DEFAULT_ENDPOINT).hostname).toBe('www.sim.ai')
+    expect(resolveProfile().endpoint).toBe(DEFAULT_ENDPOINT)
+  })
+
   it('strips a trailing slash so paths do not double up', () => {
     expect(resolveProfile({ endpoint: 'https://sim.ai///' }).endpoint).toBe('https://sim.ai')
+  })
+
+  it('fails fast on an endpoint Node cannot parse, naming the source', () => {
+    expect(() => resolveProfile({ endpoint: 'not-a-url' })).toThrow(
+      'Invalid endpoint "not-a-url" from flag. Use an absolute URL, e.g. https://www.sim.ai or http://localhost:3000'
+    )
+
+    process.env.SIM_ENDPOINT = 'not-a-url'
+    expect(() => resolveProfile()).toThrow('Invalid endpoint "not-a-url" from env.')
+
+    Reflect.deleteProperty(process.env, 'SIM_ENDPOINT')
+    writeConfigProfile('default', { endpoint: 'not-a-url' })
+    expect(() => resolveProfile()).toThrow('Invalid endpoint "not-a-url" from config.')
+  })
+
+  it('rejects a parseable endpoint the HTTP client could never call', () => {
+    expect(() => resolveProfile({ endpoint: 'ftp://x.com' })).toThrow(
+      'Unsupported endpoint scheme "ftp" from flag. Use http or https, e.g. https://www.sim.ai'
+    )
+  })
+
+  it('accepts every endpoint shape a self-hosted install needs', () => {
+    for (const endpoint of [
+      'http://localhost:3000',
+      'https://10.0.0.7:8443',
+      'https://sim.internal:8080/sim',
+      'http://127.0.0.1:3000/',
+    ]) {
+      expect(resolveProfile({ endpoint }).endpoint).toBe(endpoint.replace(/\/+$/, ''))
+    }
   })
 
   it('fails fast on an unrecognized active output format', () => {
@@ -143,6 +316,16 @@ describe('profile resolution', () => {
     writeCredentialsProfile('ci', 'key')
 
     expect(listProfiles()).toEqual(['ci', 'default', 'dev'])
+  })
+
+  it('lists direct authentication dependents without treating a bad self-reference as one', () => {
+    writeCredentialsProfile('default', 'key')
+    writeConfigProfile('acme', { auth_profile: 'default', workspace: 'ws_acme' })
+    writeConfigProfile('beta', { auth_profile: 'default', workspace: 'ws_beta' })
+    writeConfigProfile('broken', { auth_profile: 'broken' })
+
+    expect(listAuthenticationDependents('default')).toEqual(['acme', 'beta'])
+    expect(listAuthenticationDependents('broken')).toEqual([])
   })
 
   it('deletes a profile from both files', () => {

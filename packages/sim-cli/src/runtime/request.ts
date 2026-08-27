@@ -36,9 +36,49 @@ export function flagSpecFor(operation: V2OperationName, field: string): FlagSpec
   return CLI_CONTRACT[operation]?.flags?.[field] ?? {}
 }
 
+/**
+ * Long and short flags the root program has already claimed.
+ *
+ * Commander matches the root's own options across the whole of argv, including
+ * after a subcommand name, so a leaf that declares one of these never sees what
+ * the caller typed. The two failure modes differ only in how loud they are:
+ * `--version` and `--help` terminate, so `sim workflows rollback wf_1 --version
+ * 1` printed the CLI version and exited `0` without issuing a request; the
+ * root's value flags do not terminate, so a colliding leaf simply reads
+ * `undefined` and acts as though the flag were never typed.
+ */
+export const RESERVED_PROGRAM_FLAGS: ReadonlySet<string> = new Set([
+  '--version',
+  '-V',
+  '--help',
+  '-h',
+  '--profile',
+  '-P',
+  '--endpoint',
+  '--workspace',
+  '-w',
+  '--output',
+])
+
+/**
+ * Spellings a derived flag name is moved to when it would be shadowed.
+ *
+ * Only the name the CLI derives is rewritten. A name the contract states
+ * outright is left as written and caught by the build-time collision check
+ * instead — an explicit spelling is somebody's decision, and quietly serving a
+ * different flag than the one they wrote is how the shadowing went unnoticed in
+ * the first place.
+ */
+const RESERVED_FLAG_REPLACEMENTS: Readonly<Record<string, string>> = {
+  version: 'to-version',
+}
+
 /** The flag name a field is exposed under, honouring any contract override. */
 export function flagNameFor(operation: V2OperationName, field: string): string {
-  return flagSpecFor(operation, field).name ?? kebab(field)
+  const declared = flagSpecFor(operation, field).name
+  if (declared) return declared
+  const derived = kebab(field)
+  return RESERVED_FLAG_REPLACEMENTS[derived] ?? derived
 }
 
 /** The named option used for a path parameter that is contextual rather than primary. */
@@ -47,7 +87,25 @@ export function pathFlagNameFor(commandSpec: CommandSpec, param: string): string
 }
 
 export function takesJson(field: FieldSpec, flag: FlagSpec): boolean {
+  // `rowCap` builds the object itself from a typed number, so the field's
+  // object kind must not pull the flag back into the JSON form it replaces.
+  if (flag.rowCap) return false
   return flag.json === true || JSON_KINDS.has(field.kind)
+}
+
+/** The route's ceiling on `limit.max`; stated here so the refusal can name it. */
+const MAX_ROW_CAP = 1_000_000
+
+/** Reads `--max-rows 100` as the `{ type: 'rows', max: 100 }` the route declares. */
+function coerceRowCap(raw: unknown, flagName: string): { type: 'rows'; max: number } {
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < 1 || value > MAX_ROW_CAP) {
+    throw new SimApiError(
+      `--${flagName} must be a whole number between 1 and ${MAX_ROW_CAP.toLocaleString('en-US')}`,
+      0
+    )
+  }
+  return { type: 'rows', max: value }
 }
 
 /**
@@ -97,8 +155,15 @@ function readStdin(): string {
  * unpleasant — unquoted `$(cat f.json)` word-splits into broken JSON, and the
  * quoted form is easy to get wrong. JSON never starts with `@`; primitive list
  * flags reserve it for this explicit file-input form.
+ *
+ * A value that genuinely starts with `@` is written `@@`, and only the leading
+ * `@` is dropped. The escape lives here rather than in any one command so that
+ * every `@`-aware flag inherits it: without it `--tag @urgent` has no spelling
+ * at all, because it can only be read as a request to open a file named
+ * `urgent`.
  */
-function readArgumentSource(raw: string, flagName: string): { text: string; from: string } {
+export function readArgumentSource(raw: string, flagName: string): { text: string; from: string } {
+  if (raw.startsWith('@@')) return { text: raw.slice(1), from: '' }
   if (!raw.startsWith('@')) return { text: raw, from: '' }
 
   const path = raw.slice(1)
@@ -156,6 +221,64 @@ function readListValues(raw: unknown, flagName: string): string[] {
   })
 }
 
+/** A percent-escape the caller has already applied, well-formed enough to decode. */
+const PERCENT_ESCAPE = /%[0-9A-Fa-f]{2}/
+
+/** What `encodeURIComponent` leaves raw and the server's canonical encoder does not. */
+const SUB_DELIMITERS = /[!'()*]/g
+
+/**
+ * Encodes one segment exactly as `encodeFolderPathSegment` does server-side.
+ *
+ * The route does not merely decode a path, it re-encodes each segment and
+ * demands the result match byte for byte, so "close enough" is rejected outright
+ * with `Path must be a canonical folder path`. `encodeURIComponent` alone leaves
+ * `!'()*` raw — common in real folder names (`Q1 (draft)`, `Sam's stuff`) — and
+ * spells a lone `.` or `..` as itself, which the server refuses to let address a
+ * folder actually named that.
+ */
+function encodeFolderPathSegment(name: string): string {
+  if (name === '.') return '%2E'
+  if (name === '..') return '%2E%2E'
+  return encodeURIComponent(name).replace(
+    SUB_DELIMITERS,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  )
+}
+
+/**
+ * Rewrites one folder path into the API's canonical wire form.
+ *
+ * The wire form encodes each segment, so `/Folder 1` in the app is
+ * `/Folder%201` to the API — and typing the name you can see was rejected with
+ * a message that never said the word encoding. Splitting on `/` first is what
+ * keeps the separators: `encodeURIComponent` over the whole path would turn
+ * every one of them into `%2F` and address a single top-level folder whose name
+ * contains slashes.
+ *
+ * Decoding each segment before encoding it is what makes this idempotent, and
+ * it has to be: the encoded spelling is what the CLI prints today, what the
+ * README shows, and therefore what people will paste back. `/Folder 1` and
+ * `/Folder%201` must reach the same folder, and `%2520` is the failure to
+ * avoid. The limit of that rule is a folder whose name really contains a `%`
+ * followed by two hex digits — `100%20off` reads as `100 off`. A stray `%` is
+ * safe, because it fails to decode and is encoded literally, and the ambiguous
+ * name can always be typed in its encoded form (`100%2520off`).
+ */
+export function encodeFolderPath(value: string): string {
+  return value
+    .split('/')
+    .map((segment) => {
+      if (!PERCENT_ESCAPE.test(segment)) return encodeFolderPathSegment(segment)
+      try {
+        return encodeFolderPathSegment(decodeURIComponent(segment))
+      } catch {
+        return encodeFolderPathSegment(segment)
+      }
+    })
+    .join('/')
+}
+
 /**
  * Points at `@` when a value that failed to parse looks like a filename.
  *
@@ -192,9 +315,16 @@ export function coerce(raw: unknown, field: FieldSpec, flag: FlagSpec, flagName:
    *   or failed validation outright.
    */
   if (flag.list) {
-    const values = readListValues(raw, flagName)
+    const values = readListValues(raw, flagName).map((value) =>
+      flag.folderPath ? encodeFolderPath(value) : value
+    )
+    // Encoding first is also what keeps the comma-joined form unambiguous: a
+    // folder name containing a comma leaves here as `%2C`, so the route's split
+    // cannot cut one path in half.
     return field.kind === 'string' ? values.join(',') : values
   }
+
+  if (flag.rowCap) return coerceRowCap(raw, flagName)
 
   if (takesJson(field, flag)) {
     if (typeof raw !== 'string') return raw
@@ -222,6 +352,8 @@ export function coerce(raw: unknown, field: FieldSpec, flag: FlagSpec, flagName:
     throw new SimApiError(`--${flagName} must be one of: ${choices.join(', ')}`, 0)
   }
 
+  if (flag.folderPath && typeof raw === 'string') return encodeFolderPath(raw)
+
   return raw
 }
 
@@ -229,6 +361,8 @@ export interface BuiltRequest {
   path: string
   query: Record<string, QueryValue>
   body: Record<string, unknown> | undefined
+  /** Contract-declared request headers, absent when the operation declares none. */
+  headers?: Record<string, string>
 }
 
 /**
@@ -265,6 +399,7 @@ export function buildRequest(
     pathParams: readonly string[]
     query?: Record<string, FieldSpec>
     body?: Record<string, FieldSpec>
+    headers?: Record<string, FieldSpec>
     opaqueBody?: boolean
   }
 
@@ -301,8 +436,9 @@ export function buildRequest(
 
   const query: Record<string, QueryValue> = {}
   const body: Record<string, unknown> = {}
+  const headers: Record<string, string> = {}
 
-  for (const slot of ['query', 'body'] as const) {
+  for (const slot of ['query', 'body', 'headers'] as const) {
     for (const [field, descriptor] of Object.entries(spec[slot] ?? {})) {
       const flag = flagSpecFor(operation, field)
       if (flag.omit) continue
@@ -311,12 +447,16 @@ export function buildRequest(
       // Commander stores `--min-duration-ms` as `minDurationMs`; reading by the
       // flag's own name silently finds nothing.
       const omitProfileWorkspace = commandSpec.allWorkspaces && flags.allWorkspaces === true
-      const raw =
+      const provided =
         field === PROFILE_INJECTED_FIELD
           ? omitProfileWorkspace
             ? undefined
             : workspaceId
           : flags[camel(flagName)]
+      // A contract default only applies to what the caller left unsaid, so
+      // typing the flag — including typing the server's own default back — still
+      // decides. It is validated like any other value, enum choices included.
+      const raw = provided ?? flag.requestDefault
       const value = coerce(raw ?? undefined, descriptor, flag, flagName)
 
       if (value === undefined) {
@@ -334,9 +474,18 @@ export function buildRequest(
       }
 
       if (slot === 'query') query[field] = asQueryValue(value)
+      // A header is a wire string: the contracts declare only string headers,
+      // and anything else would reach `fetch` as `[object Object]`.
+      else if (slot === 'headers') headers[field] = String(value)
       else body[field] = value
     }
   }
+
+  /**
+   * Left off entirely when the operation declared none, so a request without
+   * contract headers is byte-for-byte the request it was before.
+   */
+  const headerSlot = Object.keys(headers).length > 0 ? { headers } : {}
 
   // A union body comes in whole through `--body`, merged over the fields the
   // branches share. Replacing outright dropped the profile's `workspaceId`,
@@ -363,7 +512,7 @@ export function buildRequest(
       ) {
         throw new SimApiError(`--${variant.name} must be a JSON ${variant.kind}`, 0)
       }
-      return { path, query, body: { ...body, [variant.property]: parsed } }
+      return { path, query, body: { ...body, [variant.property]: parsed }, ...headerSlot }
     }
 
     const raw = flags.body
@@ -372,7 +521,7 @@ export function buildRequest(
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new SimApiError('--body must be a JSON object', 0)
     }
-    return { path, query, body: { ...body, ...(parsed as Record<string, unknown>) } }
+    return { path, query, body: { ...body, ...(parsed as Record<string, unknown>) }, ...headerSlot }
   }
 
   return {
@@ -383,5 +532,6 @@ export function buildRequest(
      * Sending no bytes makes the server reject before field defaults can apply.
      */
     body: spec.body ? body : undefined,
+    ...headerSlot,
   }
 }

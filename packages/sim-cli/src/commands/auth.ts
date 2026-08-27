@@ -9,17 +9,34 @@ import {
   pollForKey,
 } from '../auth/device-flow'
 import {
+  configPath,
   credentialsPath,
+  DEFAULT_PROFILE,
   deleteProfile,
+  listAuthenticationDependents,
   listProfiles,
+  ProfileConfigError,
+  type ResolvedProfile,
   readCredentialsProfile,
+  resolveAuthenticationProfileName,
   type SettingSource,
   writeConfigProfile,
   writeCredentialsProfile,
 } from '../config/index'
-import { profileFrom } from '../context'
-import { SimApiError } from '../http/client'
-import { printRecord } from '../output/render'
+import { clientFrom, globalsOf, profileFrom } from '../context'
+import {
+  type GetMetaResponse,
+  type GetWorkspaceResponse,
+  type ListWorkspacesResponse,
+  V2_OPERATIONS,
+} from '../generated/v2-api'
+import { requestAllPages, resolvePath, SimApiError, type SimClient } from '../http/client'
+import { printRecord, safeOneLine } from '../output/render'
+
+type SelectableWorkspace = ListWorkspacesResponse['data'][number]
+
+const PROFILE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+const MAX_INTERACTIVE_WORKSPACES = 1000
 
 /**
  * Best-effort browser launch. Failure is not an error: the URL is always printed
@@ -86,6 +103,128 @@ async function confirmProfileOverwrite(profileName: string): Promise<boolean> {
   }
 }
 
+function selectedProfileName(command: Command): string {
+  return globalsOf(command).profile || process.env.SIM_PROFILE || DEFAULT_PROFILE
+}
+
+function validateNewProfileName(profileName: string): void {
+  if (!PROFILE_NAME_PATTERN.test(profileName)) {
+    throw new SimApiError(
+      `Invalid profile name "${profileName}". Use letters, numbers, dots, underscores, or hyphens, starting with a letter or number.`,
+      0
+    )
+  }
+  if (listProfiles().includes(profileName)) {
+    throw new SimApiError(
+      `Profile "${profileName}" already exists. Remove it first with: sim logout --all --profile ${profileName}`,
+      0
+    )
+  }
+}
+
+function requireStoredAuthentication(profile: ResolvedProfile): string {
+  const authProfile = resolveAuthenticationProfileName(profile.name)
+  const storedKey = readCredentialsProfile(authProfile).api_key
+  if (profile.sources.apiKey !== 'credentials' || !storedKey) {
+    throw new SimApiError(
+      `Cannot create a shared profile from "${profile.name}": the active API key is not stored. Run: sim login --profile ${authProfile}`,
+      0
+    )
+  }
+  if (profile.sources.endpoint === 'flag' || profile.sources.endpoint === 'env') {
+    throw new SimApiError(
+      `Cannot create a shared profile from "${profile.name}": the active endpoint comes from ${profile.sources.endpoint}. Save it with: sim configure --profile ${authProfile} --set-endpoint ${profile.endpoint}`,
+      0
+    )
+  }
+  return authProfile
+}
+
+async function getWorkspaceById(
+  client: Pick<SimClient, 'request'>,
+  workspaceId: string
+): Promise<SelectableWorkspace> {
+  const operation = V2_OPERATIONS.getWorkspace
+  const response = await client.request<GetWorkspaceResponse>(
+    resolvePath(operation.path, { workspaceId }),
+    { method: operation.method }
+  )
+  return response.data
+}
+
+async function chooseWorkspace(client: Pick<SimClient, 'request'>): Promise<SelectableWorkspace> {
+  if (!process.stdin.isTTY) {
+    throw new SimApiError(
+      'No workspace provided. Pass --workspace <id> when creating a profile non-interactively.',
+      0
+    )
+  }
+
+  const operation = V2_OPERATIONS.listWorkspaces
+  const workspaces = await requestAllPages<SelectableWorkspace>(client, operation.path, {
+    method: operation.method,
+    query: { sortBy: 'name', sortOrder: 'asc' },
+    pageSize: 100,
+    limit: MAX_INTERACTIVE_WORKSPACES + 1,
+  })
+  if (workspaces.length === 0) {
+    throw new SimApiError('The active API key cannot access any workspaces.', 0)
+  }
+  if (workspaces.length > MAX_INTERACTIVE_WORKSPACES) {
+    throw new SimApiError(
+      `The active API key can access more than ${MAX_INTERACTIVE_WORKSPACES} workspaces, which is too many to show interactively. Pass --workspace <id> instead.`,
+      0
+    )
+  }
+
+  console.log('\nAvailable workspaces:')
+  for (const [index, workspace] of workspaces.entries()) {
+    console.log(`  ${index + 1}) ${safeOneLine(workspace.name)} (${workspace.id})`)
+  }
+
+  const prompt = createInterface({ input: process.stdin, output: process.stderr })
+  try {
+    const answer = await prompt.question(`Choose a workspace [1-${workspaces.length}]: `)
+    const selected = Number(answer.trim())
+    if (!Number.isInteger(selected) || selected < 1 || selected > workspaces.length) {
+      throw new SimApiError(
+        `Invalid workspace selection "${safeOneLine(answer)}". Choose a number from 1 to ${workspaces.length}.`,
+        0
+      )
+    }
+    return workspaces[selected - 1]
+  } finally {
+    prompt.close()
+  }
+}
+
+function addProfileCommand(): Command {
+  return new Command('add')
+    .description('Add a workspace profile that shares the active stored login')
+    .argument('<name>', 'Name for the new profile')
+    .option('-w, --workspace <id>', 'Existing workspace to use; omit for an interactive picker')
+    .action(async (profileName: string, _options: unknown, command: Command) => {
+      validateNewProfileName(profileName)
+
+      const { client, profile } = clientFrom(command)
+      const authProfile = requireStoredAuthentication(profile)
+      const workspaceId = globalsOf(command).workspace
+      const workspace = workspaceId
+        ? await getWorkspaceById(client, workspaceId)
+        : await chooseWorkspace(client)
+
+      writeConfigProfile(profileName, {
+        auth_profile: authProfile,
+        workspace: workspace.id,
+      })
+
+      console.log(chalk.green(`✓ Added profile "${profileName}" in ${configPath()}`))
+      console.log(`  Workspace: ${safeOneLine(workspace.name)} (${workspace.id})`)
+      console.log(`  Authentication: ${authProfile}`)
+      console.log(chalk.dim(`  Try: sim --profile ${profileName} whoami`))
+    })
+}
+
 export function loginCommand(): Command {
   return new Command('login')
     .description('Authorize this terminal and store an API key for the profile')
@@ -94,7 +233,17 @@ export function loginCommand(): Command {
     .option('-y, --yes', 'Overwrite an existing profile without prompting')
     .action(
       async (options: { scope: string; browser: boolean; yes?: boolean }, command: Command) => {
-        const profile = profileFrom(command)
+        // `login --profile x` is how a profile comes into existence, so the name
+        // is allowed to be one resolution would otherwise reject as unknown.
+        const profile = profileFrom(command, { allowUnknownProfile: true })
+        const authProfile = resolveAuthenticationProfileName(profile.name)
+
+        if (authProfile !== profile.name) {
+          throw new SimApiError(
+            `Profile "${profile.name}" shares authentication with "${authProfile}". Run: sim login --profile ${authProfile}`,
+            0
+          )
+        }
 
         if (options.scope !== 'platform' && options.scope !== 'copilot') {
           throw new SimApiError(`Unknown scope "${options.scope}". Use platform or copilot.`, 0)
@@ -178,16 +327,31 @@ export function logoutCommand(): Command {
     .description("Remove the profile's stored API key")
     .option('--all', 'Remove the profile entirely, including its settings')
     .action((options: { all?: boolean }, command: Command) => {
-      const profile = profileFrom(command)
-
       if (options.all) {
-        const removed = deleteProfile(profile.name)
+        const profileName = selectedProfileName(command)
+        const dependents = listAuthenticationDependents(profileName)
+        if (dependents.length > 0) {
+          throw new SimApiError(
+            `Cannot remove authentication profile "${profileName}" because it is used by: ${dependents.join(', ')}. Remove those profiles first.`,
+            0
+          )
+        }
+        const removed = deleteProfile(profileName)
         if (!removed.config && !removed.credentials) {
-          console.log(chalk.dim(`Nothing stored for profile "${profile.name}".`))
+          console.log(chalk.dim(`Nothing stored for profile "${profileName}".`))
           return
         }
-        console.log(chalk.green(`✓ Removed profile "${profile.name}".`))
+        console.log(chalk.green(`✓ Removed profile "${profileName}".`))
         return
+      }
+
+      const profile = profileFrom(command)
+      const authProfile = resolveAuthenticationProfileName(profile.name)
+      if (authProfile !== profile.name) {
+        throw new SimApiError(
+          `Profile "${profile.name}" shares authentication with "${authProfile}". Log out of the authentication profile instead: sim logout --profile ${authProfile}`,
+          0
+        )
       }
 
       if (!readCredentialsProfile(profile.name).api_key) {
@@ -203,13 +367,184 @@ export function logoutCommand(): Command {
     })
 }
 
+interface VerifiedWorkspace {
+  id: string
+  name: string
+  memberCount: number
+}
+
+/**
+ * The outcome of checking the resolved settings against the API.
+ *
+ * Split by cause rather than into a boolean because each cause has a different
+ * fix, and `whoami` exists to name that fix: a rejected key needs a new login, a
+ * missing workspace needs `sim configure`, and an unreachable endpoint needs
+ * neither.
+ */
+type Verification = { keyType: KeyType | null } & (
+  | { status: 'verified'; workspace: VerifiedWorkspace; detail: null }
+  | {
+      status: 'rejected' | 'unreachable' | 'unauthenticated' | 'no-workspace' | 'disabled'
+      workspace: null
+      detail: string
+    }
+)
+
+type KeyType = GetMetaResponse['data']['keyType']
+
+/**
+ * Reads which kind of key is in play, as a diagnostic only.
+ *
+ * `PRINCIPAL_KIND_NOT_PERMITTED` is the failure this answers: a personal key on
+ * a workspace-key operation refuses every call, and the natural move — running
+ * `whoami` — used to show a green check and say nothing about the kind. Failures
+ * are swallowed to `null` because the verdict and the exit code belong to the
+ * workspace read below; a diagnostic must not change either.
+ */
+async function readKeyType(client: Pick<SimClient, 'request'>): Promise<KeyType | null> {
+  const operation = V2_OPERATIONS.getMeta
+  try {
+    const response = await client.request<GetMetaResponse>(operation.path, {
+      method: operation.method,
+    })
+    return response.data.keyType
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The only answers that are a verdict on the credentials themselves.
+ *
+ * 401 and 403 are the server judging the key; 404 means the configured
+ * workspace is not one this key can see. Everything else — a 502 from a proxy
+ * mid-deploy, a 429, a transport failure (status 0), an endpoint answering 200
+ * with a login page — says nothing about the key, and calling it `rejected`
+ * told a user to run `sim login` for something logging in cannot fix. That is
+ * the flaky-VPN confusion the exit-code split exists to prevent.
+ */
+const CREDENTIAL_VERDICT_STATUSES = new Set([401, 403, 404])
+
+/**
+ * `whoami` is the command people run to answer "am I set up correctly?", so the
+ * exit status has to carry that answer — reporting a junk key with exit 0 is the
+ * defect this mapping closes.
+ *
+ * 1 is the CLI's blanket "explained failure" code and means the credentials
+ * themselves are wrong. 2 is reserved for a check that could not be made at all:
+ * that is a different fix — retrying or setting a workspace helps, logging in
+ * again does not — and a script must be able to tell the two apart.
+ */
+const WHOAMI_EXIT_CODES = {
+  verified: 0,
+  disabled: 0,
+  unauthenticated: 1,
+  rejected: 1,
+  unreachable: 2,
+  'no-workspace': 2,
+} as const satisfies Record<Verification['status'], number>
+
+/**
+ * Confirms the resolved key really works, by reading the profile's own
+ * workspace.
+ *
+ * `getWorkspace` is the check because it is the cheapest read that proves all
+ * three settings at once — the endpoint answers, the key is accepted, and the
+ * key can reach the configured workspace — and because it comes back with the
+ * workspace's *name*, which is what tells a user the id they pasted is the
+ * workspace they meant.
+ *
+ * It is workspace-scoped, so a profile with no workspace has nothing to check
+ * against. That is reported rather than papered over with an account-scoped call
+ * a workspace-bound key would fail for reasons having nothing to do with its
+ * validity.
+ */
+async function verifyProfile(
+  client: Pick<SimClient, 'request'>,
+  profile: ResolvedProfile
+): Promise<Verification> {
+  if (!profile.apiKey) {
+    return {
+      status: 'unauthenticated',
+      workspace: null,
+      keyType: null,
+      detail: `no API key — run: sim login --profile ${profile.name}`,
+    }
+  }
+
+  // Read the kind before the workspace, so it is reported even for a profile
+  // with no workspace to check against — the case where a key that cannot be
+  // used is most likely to look merely unconfigured.
+  const keyType = await readKeyType(client)
+
+  if (!profile.workspaceId) {
+    return {
+      status: 'no-workspace',
+      workspace: null,
+      keyType,
+      detail: `no workspace to check against — run: sim configure --profile ${profile.name} --set-workspace <id>`,
+    }
+  }
+
+  const operation = V2_OPERATIONS.getWorkspace
+  try {
+    const response = await client.request<GetWorkspaceResponse>(
+      resolvePath(operation.path, { workspaceId: profile.workspaceId }),
+      { method: operation.method }
+    )
+    const { id, name, memberCount } = response.data
+    // Projected field by field: the record carries display fields the machine
+    // output has no business inventing a contract for.
+    return { status: 'verified', workspace: { id, name, memberCount }, keyType, detail: null }
+  } catch (error) {
+    if (!(error instanceof SimApiError)) throw error
+    return {
+      status: CREDENTIAL_VERDICT_STATUSES.has(error.status) ? 'rejected' : 'unreachable',
+      workspace: null,
+      keyType,
+      detail: error.message,
+    }
+  }
+}
+
+function presentVerification(verification: Verification): string {
+  if (verification.status === 'verified') {
+    const { name, memberCount } = verification.workspace
+    const members = `${memberCount} ${memberCount === 1 ? 'member' : 'members'}`
+    // The name is server-supplied and lands in a terminal unescaped otherwise.
+    return `${chalk.green('✓')} ${safeOneLine(name)} · ${members}`
+  }
+
+  const detail = safeOneLine(verification.detail)
+  switch (verification.status) {
+    case 'rejected':
+      return `${chalk.red('✗')} ${detail}`
+    case 'unauthenticated':
+      return chalk.yellow(`not logged in — ${detail}`)
+    case 'disabled':
+      return chalk.dim(detail)
+    default:
+      return chalk.yellow(`could not check — ${detail}`)
+  }
+}
+
 export function whoamiCommand(): Command {
   return new Command('whoami')
-    .description('Show the resolved profile and where each setting came from')
-    .action((_options: unknown, command: Command) => {
-      const profile = profileFrom(command)
+    .description('Show the resolved profile, where each setting came from, and whether it works')
+    .option('--no-verify', 'Skip the API check and only print the resolved settings')
+    .action(async (options: { verify: boolean }, command: Command) => {
+      const { client, profile } = clientFrom(command)
       const { sources } = profile
       const authentication = presentAuthentication(sources.apiKey)
+
+      const verification: Verification = options.verify
+        ? await verifyProfile(client, profile)
+        : {
+            status: 'disabled',
+            workspace: null,
+            keyType: null,
+            detail: 'not checked (--no-verify)',
+          }
 
       const annotate = (value: string, source: string) =>
         source === 'unset' ? chalk.dim('not set') : `${value} ${chalk.dim(`(${source})`)}`
@@ -225,8 +560,14 @@ export function whoamiCommand(): Command {
               ? annotate('configured', authentication.source)
               : chalk.yellow('not logged in'),
           ],
+          [
+            'Key type',
+            verification.keyType ??
+              chalk.dim(options.verify ? 'unknown' : 'not checked (--no-verify)'),
+          ],
           ['Workspace', annotate(profile.workspaceId ?? '', sources.workspaceId)],
           ['Output', annotate(profile.output, sources.output)],
+          ['Verified', presentVerification(verification)],
         ],
         {
           profile: profile.name,
@@ -240,27 +581,60 @@ export function whoamiCommand(): Command {
             workspaceId: sources.workspaceId,
             output: sources.output,
           },
+          verification: {
+            status: verification.status,
+            workspace: verification.workspace,
+            keyType: verification.keyType,
+            detail: verification.detail,
+          },
         }
       )
+
+      // Set rather than thrown: the resolved settings above are the answer the
+      // user came for, and a thrown error would replace them with one red line.
+      const exitCode = WHOAMI_EXIT_CODES[verification.status]
+      if (exitCode !== 0) process.exitCode = exitCode
     })
 }
 
 export function profilesCommand(): Command {
-  return new Command('profiles')
+  const command = new Command('profiles')
     .alias('profile')
-    .description('List the profiles defined in the config and credentials files')
-    .action((_options: unknown, command: Command) => {
-      const profiles = listProfiles()
-      if (profiles.length === 0) {
-        console.log(chalk.dim('No profiles yet. Run: sim login'))
-        return
+    .description('List profiles or add a workspace profile that shares a stored login')
+
+  const printProfiles = (_options: unknown, actionCommand: Command): void => {
+    const profiles = listProfiles()
+    if (profiles.length === 0) {
+      console.log(chalk.dim('No profiles yet. Run: sim login'))
+      return
+    }
+
+    const active = selectedProfileName(actionCommand)
+    for (const name of profiles) {
+      const marker = name === active ? chalk.green('*') : ' '
+
+      // `profiles` is the command someone runs *because* a profile is broken,
+      // so one bad `auth_profile` must mark its own row rather than abort the
+      // listing and leave them with no profiles shown at all.
+      let authProfile: string
+      try {
+        authProfile = resolveAuthenticationProfileName(name)
+      } catch (error) {
+        if (!(error instanceof ProfileConfigError)) throw error
+        console.log(`${marker} ${name}${chalk.red(`  (${safeOneLine(error.message)})`)}`)
+        continue
       }
 
-      const active = profileFrom(command).name
-      for (const name of profiles) {
-        const marker = name === active ? chalk.green('*') : ' '
-        const hasKey = Boolean(readCredentialsProfile(name).api_key)
-        console.log(`${marker} ${name}${hasKey ? '' : chalk.dim('  (no key)')}`)
-      }
-    })
+      const hasKey = Boolean(readCredentialsProfile(authProfile).api_key)
+      const authentication = authProfile === name ? '' : chalk.dim(`  (auth: ${authProfile})`)
+      console.log(`${marker} ${name}${hasKey ? '' : chalk.dim('  (no key)')}${authentication}`)
+    }
+  }
+
+  command.action(printProfiles)
+  command.addCommand(
+    new Command('list').description('List configured profiles').action(printProfiles)
+  )
+  command.addCommand(addProfileCommand())
+  return command
 }

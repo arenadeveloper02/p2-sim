@@ -22,7 +22,7 @@ sim files batch-delete [options]
 | Option | Required | Description |
 | --- | --- | --- |
 | `--file-ids <value...>` | Yes | File identifiers to update. (space-separated, or @path / @- with one value per line). |
-| `-y, --yes` | No | Skip the confirmation. |
+| `-y, --yes` | Yes | Confirm this destructive operation. |
 
 </CommandTable>
 
@@ -40,7 +40,7 @@ sim files create [options]
 | --- | --- | --- |
 | `--name <value>` | Yes | File name, including its extension. Path separators and dot segments are rejected. |
 | `--content-type <value>` | No | MIME type. When omitted, it is inferred from the file extension. |
-| `--folder <value>` | No | Folder path; the leading / is optional. |
+| `--folder <value>` | No | Folder path as shown in the app; the leading / is optional. |
 | `--content <value>` | No | Initial file content. Omit or send an empty string for a zero-byte file. The 70,000,000-character bound guards the JSON envelope; the decoded bytes must be at most 50 MiB, and a longer base64 payload is rejected with `413`. Use an upload session for anything larger. |
 | `--encoding <value>` | No | Encoding of the content field. Accepted values: `utf-8`, `base64`. |
 
@@ -58,7 +58,7 @@ sim files folders create <path>
 
 | Argument | Required | Description |
 | --- | --- | --- |
-| `path` | Yes | Folder path; the leading / is optional |
+| `path` | Yes | Folder path as shown in the app; the leading / is optional |
 
 </CommandTable>
 
@@ -74,7 +74,7 @@ sim files folders delete <path> [options]
 
 | Argument | Required | Description |
 | --- | --- | --- |
-| `path` | Yes | Folder path; the leading / is optional |
+| `path` | Yes | Folder path as shown in the app; the leading / is optional |
 
 </CommandTable>
 
@@ -85,7 +85,7 @@ sim files folders delete <path> [options]
 | Option | Required | Description |
 | --- | --- | --- |
 | `--recursive` | No | Delete the folder and its descendants. |
-| `-y, --yes` | No | Skip the confirmation. |
+| `-y, --yes` | Yes | Confirm this destructive operation. |
 
 </CommandTable>
 
@@ -107,6 +107,7 @@ Also available as `sim files folders ls`.
 | `--search <value>` | No | Case-insensitive substring match against the folder name. |
 | `--sort-by <value>` | No | Field used to sort the result. Sorting by `name` is case-sensitive and follows the storage collation, so do not rely on a case-insensitive order. Accepted values: `name`, `createdAt`, `updatedAt`. |
 | `--sort-order <value>` | No | Sort direction. Accepted values: `asc`, `desc`. |
+| `--scope <value>` | No | Which lifecycle set to list: `active` (default) returns live folders only; `archived` returns folders a recursive `DELETE` soft-deleted, which is how a caller finds a path to hand to `POST /api/v2/files/folders/restore`. Authorization is identical for both. Accepted values: `active`, `archived`. |
 
 </CommandTable>
 
@@ -124,8 +125,24 @@ Also available as `sim files folders mv`.
 
 | Argument | Required | Description |
 | --- | --- | --- |
-| `path` | Yes | Folder path; the leading / is optional |
-| `destination` | Yes | Folder path; the leading / is optional |
+| `path` | Yes | Folder path as shown in the app; the leading / is optional |
+| `destination` | Yes | Folder path as shown in the app; the leading / is optional |
+
+</CommandTable>
+
+## Restore an archived file folder
+
+```bash
+sim files folders restore <path>
+```
+
+**Arguments**
+
+<CommandTable>
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `path` | Yes | Folder path as shown in the app; the leading / is optional |
 
 </CommandTable>
 
@@ -151,7 +168,7 @@ sim files delete <fileId> [options]
 
 | Option | Required | Description |
 | --- | --- | --- |
-| `-y, --yes` | No | Skip the confirmation. |
+| `-y, --yes` | Yes | Confirm this destructive operation. |
 
 </CommandTable>
 
@@ -238,7 +255,9 @@ sim files list [options]
 
 | Option | Required | Description |
 | --- | --- | --- |
-| `--folder <value>` | No | Folder path; the leading / is optional. |
+| `--folder <value>` | No | Folder path as shown in the app; the leading / is optional. |
+| `--recursive` | No | Whether the folder filter includes files in subfolders. Defaults to true when a search is set, false otherwise, so listing a folder shows that folder while searching one looks through everything in it. Ignored when no folder filter is set, which already spans the workspace. |
+| `--no-recursive` | No | Send --recursive as false. |
 | `--scope <value>` | No | Which lifecycle set to list: `active` (default) for live files, `archived` for files a `DELETE` soft-deleted. `folderPath` resolves against active folders only, so pairing it with `scope=archived` returns an empty page when the containing folder was archived too. Accepted values: `active`, `archived`. |
 | `--search <value>` | No | Case-insensitive substring match against the file name. |
 | `--sort-by <value>` | No | Field used to sort the result. Sorting by `name` is case-sensitive and follows the storage collation, so do not rely on a case-insensitive order. Accepted values: `name`, `size`, `uploadedAt`, `updatedAt`. |
@@ -263,6 +282,32 @@ Also available as `sim files mv`.
 | --- | --- | --- |
 | `--file-ids <value...>` | Yes | File identifiers to update. (space-separated, or @path / @- with one value per line). |
 | `--to <value>` | No | Destination folder path; omit for root. |
+
+</CommandTable>
+
+## Read a file’s text content
+
+```bash
+sim files read <fileId> [options]
+```
+
+**Arguments**
+
+<CommandTable>
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `fileId` | Yes | File identifier. |
+
+</CommandTable>
+
+**Options**
+
+<CommandTable>
+
+| Option | Required | Description |
+| --- | --- | --- |
+| `--max-bytes <value>` | No | Optional ceiling on the source bytes fed to the parser, lowering but never raising the server limit. |
 
 </CommandTable>
 
@@ -292,10 +337,10 @@ sim files rename <fileId> [options]
 
 </CommandTable>
 
-## Restore file
+## Restore an archived file
 
 ```bash
-sim files restore create <fileId>
+sim files restore <fileId>
 ```
 
 **Arguments**
@@ -305,6 +350,32 @@ sim files restore create <fileId>
 | Argument | Required | Description |
 | --- | --- | --- |
 | `fileId` | Yes | File identifier. |
+
+</CommandTable>
+
+## Unzip an archive into a new folder beside it
+
+```bash
+sim files unzip <fileId> [options]
+```
+
+**Arguments**
+
+<CommandTable>
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `fileId` | Yes | File identifier. |
+
+</CommandTable>
+
+**Options**
+
+<CommandTable>
+
+| Option | Required | Description |
+| --- | --- | --- |
+| `-y, --yes` | Yes | Confirm this destructive operation. |
 
 </CommandTable>
 
@@ -357,7 +428,7 @@ sim files upload <path> [options]
 
 | Option | Required | Description |
 | --- | --- | --- |
-| `--folder <path>` | No | Destination folder path (defaults to /). |
+| `--folder <path>` | No | Folder path as shown in the app; defaults to the root folder. |
 | `--name <name>` | No | Store it under a different name. |
 
 </CommandTable>

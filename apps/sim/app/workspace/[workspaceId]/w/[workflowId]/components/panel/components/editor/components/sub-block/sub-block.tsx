@@ -680,8 +680,8 @@ function SubBlockComponent({
               previewValue={previewValue}
               disabled={isDisabled}
               multiSelect={config.multiSelect}
-              fetchOptions={config.fetchOptions}
-              fetchOptionById={config.fetchOptionById}
+              selectorKey={config.selectorKey}
+              selectorExcludeSelf={config.selectorExcludeSelf}
               dependsOn={config.dependsOn}
               searchable={config.searchable}
               preserveLabelCase={config.preserveLabelCase}
@@ -715,8 +715,8 @@ function SubBlockComponent({
               previewValue={previewValue as any}
               disabled={isDisabled}
               config={config}
-              fetchOptions={config.fetchOptions}
-              fetchOptionById={config.fetchOptionById}
+              selectorKey={config.selectorKey}
+              selectorExcludeSelf={config.selectorExcludeSelf}
               dependsOn={config.dependsOn}
             />
           </div>
@@ -790,6 +790,7 @@ function SubBlockComponent({
             blockId={blockId}
             subBlockId={config.id}
             title={config.title ?? ''}
+            value={typeof config.defaultValue === 'boolean' ? config.defaultValue : undefined}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
@@ -843,12 +844,10 @@ function SubBlockComponent({
           <GroupedCheckboxList
             blockId={blockId}
             subBlockId={config.id}
-            title={config.title ?? ''}
             options={config.options as { label: string; id: string; group?: string }[]}
             isPreview={isPreview}
             subBlockValues={subBlockValues ?? {}}
             disabled={isDisabled}
-            maxHeight={config.maxHeight}
           />
         )
 

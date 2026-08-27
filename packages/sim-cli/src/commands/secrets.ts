@@ -1,12 +1,16 @@
+import chalk from 'chalk'
 import { type Command, Option } from 'commander'
 import { clientFrom } from '../context'
 import type { CommandSpec } from '../contract/types'
 import { type SetSecretResponse, V2_OPERATIONS } from '../generated/v2-api'
 import { resolvePath, SimApiError } from '../http/client'
+import { readArgumentSource } from '../runtime/request'
 import { renderResult } from '../runtime/result'
-import { promptSecret } from '../terminal/secret-input'
+import { promptSecret, SecretInputCancelledError } from '../terminal/secret-input'
 
 const MAX_SECRET_LENGTH = 65_536
+/** Conventional shell exit code for a command the user aborted at a prompt. */
+const CANCELLED_EXIT_CODE = 130
 const SECRET_SCOPES = ['workspace', 'personal'] as const
 
 const SECRET_RESULT: CommandSpec = {
@@ -15,12 +19,32 @@ const SECRET_RESULT: CommandSpec = {
     { header: 'scope' },
     { header: 'role' },
     { header: 'updated', path: 'updatedAt', format: 'timestamp' },
+    { header: 'description' },
   ],
 }
 
 interface SetSecretOptions {
   scope: (typeof SECRET_SCOPES)[number]
   value?: string
+  description?: string
+  unredacted?: boolean
+}
+
+/**
+ * Resolves a `--value` argument that names a file rather than carrying the
+ * secret inline.
+ *
+ * `@path` and `@-` are the same curl convention the JSON flags already accept,
+ * and a secret is the one value that most needs them: anything passed inline
+ * lands in shell history and in `ps` for every other user on the box. The file
+ * is used verbatim, trailing newline included, because a secret is bytes.
+ * A value that genuinely starts with `@` is written `@@`, and only the leading
+ * `@` is dropped.
+ */
+function readValueArgument(raw: string): string {
+  if (raw.startsWith('@@')) return raw.slice(1)
+  if (!raw.startsWith('@')) return raw
+  return readArgumentSource(raw, 'value').text
 }
 
 function validateSecretValue(value: string): string {
@@ -31,8 +55,50 @@ function validateSecretValue(value: string): string {
   return value
 }
 
+/**
+ * A description and a redaction opt-out both belong to the workspace secret
+ * teammates share; a personal secret has neither, and the API rejects both.
+ * Failing here names the flag rather than surfacing a validation error against
+ * the request body, and does so before the interactive value prompt. The
+ * description's length bound is left to the API, whose message already names the
+ * field — a copy here would silently drift from it.
+ */
+function validateWorkspaceOnlyFlag<T>(
+  flag: string,
+  value: T | undefined,
+  scope: SetSecretOptions['scope']
+): T | undefined {
+  if (value === undefined) return undefined
+  if (scope === 'personal') {
+    throw new SimApiError(`--${flag} is only supported for a workspace secret.`, 0)
+  }
+  return value
+}
+
+/**
+ * Reads the secret, from the flag or the prompt.
+ *
+ * An abort at the prompt is reported here rather than thrown: Ctrl-C is the
+ * user deciding not to run the command, and the shell's convention for that is
+ * 130, which the top-level handler cannot tell apart from a real failure. The
+ * exit is immediate for the same reason the handler's is — the prompt leaves
+ * stdin listening, so a returning process would sit there instead of ending.
+ */
+async function readSecretValue(options: SetSecretOptions): Promise<string> {
+  if (options.value !== undefined) return validateSecretValue(readValueArgument(options.value))
+  try {
+    return validateSecretValue(await promptSecret())
+  } catch (error) {
+    if (!(error instanceof SecretInputCancelledError)) throw error
+    console.error(chalk.red(`Error: ${error.message}`))
+    return process.exit(CANCELLED_EXIT_CODE)
+  }
+}
+
 async function setSecret(name: string, options: SetSecretOptions, command: Command): Promise<void> {
-  const value = validateSecretValue(options.value ?? (await promptSecret()))
+  const description = validateWorkspaceOnlyFlag('description', options.description, options.scope)
+  const unredacted = validateWorkspaceOnlyFlag('unredacted', options.unredacted, options.scope)
+  const value = await readSecretValue(options)
   const { client, profile } = clientFrom(command)
   const operation = V2_OPERATIONS.setSecret
   const response = await client.request<SetSecretResponse>(resolvePath(operation.path, { name }), {
@@ -41,6 +107,8 @@ async function setSecret(name: string, options: SetSecretOptions, command: Comma
       workspaceId: client.requireWorkspace(),
       scope: options.scope,
       value,
+      description,
+      ...(unredacted === undefined ? {} : { unredacted }),
     },
   })
 
@@ -61,7 +129,19 @@ export function attachSecretCommands(program: Command): void {
         .choices([...SECRET_SCOPES])
         .makeOptionMandatory()
     )
-    .option('--value <value>', 'Secret value; visible to shell history when supplied directly')
+    .option(
+      '--value <value|@file>',
+      'Secret value. Passing it inline exposes it to shell history and process listings; @path reads it from a file and @- from stdin, verbatim — a trailing newline is part of the value, so write the file with printf rather than echo. Prefix a literal leading @ with a second one'
+    )
+    .option(
+      '--description <description>',
+      'What the secret is for, shown to teammates; workspace scope only. Omit to leave an existing description unchanged'
+    )
+    .option(
+      '--unredacted',
+      `${V2_OPERATIONS.setSecret.body.unredacted.describe} Pass --no-unredacted to restore redaction`
+    )
+    .option('--no-unredacted', 'Send --unredacted as false')
     .action((name: string, options: SetSecretOptions, command: Command) =>
       setSecret(name, options, command)
     )

@@ -103,7 +103,6 @@ import {
 } from '@/executor/utils/reference-validation'
 import {
   createResolvedSecretMatcher,
-  projectResolvedSecretContent,
   type ResolvedSecretMatcher,
   scanResolvedSecretString,
 } from '@/executor/utils/resolved-secret-content-projection'
@@ -992,6 +991,13 @@ interface FunctionRouteExecutionContext {
   outputSecretMatcher?: ResolvedSecretMatcher
   outputSecretNamesByScanLiteral: Map<string, string[]>
   outputSecretPlaintextsByName: Map<string, string>
+  /**
+   * In-scope names the caller's registry certified as redaction-exempt. They stay in
+   * `outputSecretPlaintextsByName` — the response's resolved-name reporting and the usage
+   * trail must not lose them — but contribute no scan literals, so exported files carrying
+   * only their values classify exact-empty instead of locking.
+   */
+  unredactedSecretNames: Set<string>
   mountedFileSecretProvenanceScanner?: MountedFileSecretProvenanceScanner
 }
 
@@ -1164,7 +1170,7 @@ async function functionJsonResponse<T>(
     fileKeys: context.fileKeys,
   }
   if (context.includePrivateResolvedSecretNames) {
-    activateOutputSecretProvenance(getFunctionResultProvenanceSurface(body), context)
+    activateReferencedSecretProvenance(context)
   }
   const response = NextResponse.json(await compactFunctionRouteBody(responseBody, context), init)
   return appendPrivateResolvedSecretNames(
@@ -1174,66 +1180,41 @@ async function functionJsonResponse<T>(
   )
 }
 
-function getFunctionResultProvenanceSurface(body: unknown): unknown {
-  const record = toRecord(body)
-  const output = toRecord(record.output)
-  const debug = toRecord(record.debug)
-  return [
-    Object.hasOwn(record, 'error') ? record.error : undefined,
-    Object.hasOwn(output, 'result') ? output.result : undefined,
-    Object.hasOwn(output, 'stdout') ? output.stdout : undefined,
-    Object.hasOwn(debug, 'lineContent') ? debug.lineContent : undefined,
-    Object.hasOwn(debug, 'stack') ? debug.stack : undefined,
-  ]
-}
-
-function activateOutputSecretProvenance(
-  body: unknown,
-  context: FunctionRouteExecutionContext
-): void {
-  if (!context.outputSecretMatcher) {
-    activateCompiledSecretProvenance(context)
-    return
-  }
-
-  const matchedPlaintexts = new Set<string>()
-  const projection = projectResolvedSecretContent(
-    body,
-    context.outputSecretMatcher,
-    MAX_SANDBOX_OUTPUT_BYTES,
-    {
-      onMatch: (plaintext) => matchedPlaintexts.add(plaintext),
-    }
-  )
-  if (!projection.safe) {
-    activateCompiledSecretProvenance(context)
-    return
-  }
-  for (const plaintext of matchedPlaintexts) {
-    for (const name of context.outputSecretNamesByScanLiteral.get(plaintext) ?? []) {
-      context.resolvedSecretNames.add(name)
-    }
-  }
-}
-
 /**
- * Conservatively activates only secrets whose placeholders were compiled for this invocation.
- * This fallback is used when the bounded output classifier cannot inspect a result; it never
- * considers configured-but-unused environment values and never mutates the functional result.
+ * Activates every secret this invocation's code referenced — compiled `{{KEY}}` bindings and
+ * recognized direct reads, filtered to configured environment values.
+ *
+ * Deliberately not gated on the value appearing in the output. Gating it was backwards for
+ * both consumers of these names: a run that used a key silently — an ordinary API call, or a
+ * value exfiltrated in transformed form — reported nothing, so the usage trail missed exactly
+ * the runs it exists to catch, while downstream masking never learned a value the code
+ * demonstrably held. The referenced set errs toward reporting instead: an extra name only
+ * hands the matcher a value that never appears. Configured-but-unreferenced values are never
+ * included, and the functional result is never mutated.
  */
-function activateCompiledSecretProvenance(context: FunctionRouteExecutionContext): void {
+function activateReferencedSecretProvenance(context: FunctionRouteExecutionContext): void {
   for (const name of context.outputSecretPlaintextsByName.keys()) {
     context.resolvedSecretNames.add(name)
   }
 }
 
+/** Compiled secret names that still demand redaction — the exempt ones don't count. */
+function countProtectedOutputSecretNames(context: FunctionRouteExecutionContext): number {
+  let count = 0
+  for (const name of context.outputSecretPlaintextsByName.keys()) {
+    if (!context.unredactedSecretNames.has(name)) count += 1
+  }
+  return count
+}
+
 /**
  * True when this execution compiled a secret placeholder or received a mounted file with verified
  * secret provenance. Ordinary mounts without a provenance envelope are user data, not evidence that
- * a Sim secret was resolved in this call.
+ * a Sim secret was resolved in this call. Exempt names don't count: a binary export whose only
+ * in-scope secrets are redaction-exempt is deliberately classified exact-empty rather than locked.
  */
 function hasSecretMaterialInScope(context: FunctionRouteExecutionContext): boolean {
-  if (context.outputSecretPlaintextsByName.size > 0) return true
+  if (countProtectedOutputSecretNames(context) > 0) return true
   return context.mountedFileSecretProvenanceScanner?.hasSecrets ?? false
 }
 
@@ -1261,7 +1242,7 @@ async function getOutputFileSecretProvenance(
     status: 'exact' as const,
     entries: [],
   }
-  if (context.outputSecretPlaintextsByName.size === 0) {
+  if (countProtectedOutputSecretNames(context) === 0) {
     return mountedFileProvenance
   }
   if (!context.outputSecretMatcher) return { status: 'unknown' }
@@ -1309,11 +1290,10 @@ function getPrivateResolvedSecretNames(context: FunctionRouteExecutionContext): 
 
 async function appendResolvedSecretNames(
   response: NextResponse,
-  context: FunctionRouteExecutionContext,
-  provenanceValue: unknown
+  context: FunctionRouteExecutionContext
 ): Promise<NextResponse> {
   if (!context.includePrivateResolvedSecretNames) return response
-  activateOutputSecretProvenance(provenanceValue, context)
+  activateReferencedSecretProvenance(context)
   return appendPrivateResolvedSecretNames(
     response,
     getPrivateResolvedSecretNames(context),
@@ -1951,6 +1931,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       envVars: rawEnvVars = {},
       secretScope,
       mountedSecrets,
+      unredactedSecretNames = [],
       sandboxId: selectedSandboxId,
       blockData = {},
       blockNameMapping = {},
@@ -2072,6 +2053,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       privateResolvedSecretNamesMetadataType,
       outputSecretNamesByScanLiteral: new Map(),
       outputSecretPlaintextsByName: new Map(),
+      unredactedSecretNames: new Set(
+        unredactedSecretNames.filter((name) => Object.hasOwn(envVars, name))
+      ),
       mountedFileSecretProvenanceScanner,
     }
 
@@ -2106,6 +2090,12 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       const plaintext = envVars[name]
       if (!plaintext) continue
       routeContext.outputSecretPlaintextsByName.set(name, plaintext)
+      /**
+       * Skipped per NAME, never per literal: a plaintext shared by an exempt and a non-exempt
+       * name keeps its literal through the non-exempt owner, so the export still records that
+       * owner's provenance and the file still locks.
+       */
+      if (routeContext.unredactedSecretNames.has(name)) continue
       const scanLiterals = new Set([plaintext, JSON.stringify(plaintext).slice(1, -1)])
       for (const scanLiteral of scanLiterals) {
         const names = routeContext.outputSecretNamesByScanLiteral.get(scanLiteral) ?? []
@@ -2122,7 +2112,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           }))
         )
       } catch {
-        activateCompiledSecretProvenance(routeContext)
+        activateReferencedSecretProvenance(routeContext)
       }
     }
     resolvedCode = compilation.code
@@ -2230,11 +2220,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           executionTime,
         })
         if (fileExportResponse) {
-          return appendResolvedSecretNames(
-            fileExportResponse,
-            routeContext,
-            cleanStdout(shellStdout)
-          )
+          return appendResolvedSecretNames(fileExportResponse, routeContext)
         }
       }
 
@@ -2414,7 +2400,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
             executionTime,
           })
           if (fileExportResponse) {
-            return appendResolvedSecretNames(fileExportResponse, routeContext, cleanStdout(stdout))
+            return appendResolvedSecretNames(fileExportResponse, routeContext)
           }
         }
 
@@ -2505,7 +2491,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
           executionTime,
         })
         if (fileExportResponse) {
-          return appendResolvedSecretNames(fileExportResponse, routeContext, cleanStdout(stdout))
+          return appendResolvedSecretNames(fileExportResponse, routeContext)
         }
       }
 

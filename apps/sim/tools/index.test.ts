@@ -35,6 +35,8 @@ import {
   ANONYMOUS_SECRET_TRACE_REPLACEMENT,
   ResolvedSecretTraceRegistry,
 } from '@/executor/utils/resolved-secret-trace-registry'
+import { bitbucketGetPipelineStepLogTool } from '@/tools/bitbucket/get_pipeline_step_log'
+import { ErrorExtractorId } from '@/tools/error-extractors'
 import { fileGetContentTool } from '@/tools/file/get'
 import { memoryAddTool } from '@/tools/memory/add'
 import { tableBatchInsertRowsTool } from '@/tools/table/batch_insert_rows'
@@ -143,6 +145,7 @@ vi.mock('@/executor/handlers/workflow/custom-block-tool-runner', () => ({
 // Mock the tools registry to avoid loading the full 4500+ line registry file.
 // Only the tools actually exercised in tests are provided.
 const mockRegistryTools: Record<string, any> = {
+  bitbucket_get_pipeline_step_log: bitbucketGetPipelineStepLogTool,
   deployed_block_executor: customBlockExecutorTool,
   workflow_executor: workflowExecutorTool,
   file_get_content: fileGetContentTool,
@@ -702,6 +705,56 @@ describe('executeTool Function', () => {
     expect(result.timing?.duration).toBeGreaterThanOrEqual(0)
 
     tools.function_execute = originalFunctionTool
+  })
+
+  it('bounds ignored Bitbucket pipeline log ranges through the execution path', async () => {
+    mockValidateUrlWithDNS.mockResolvedValue({ isValid: true, resolvedIP: '93.184.216.34' })
+
+    const log = 'line 1\nDONE\n'
+    const response = new Response(log, {
+      status: 200,
+      headers: {
+        'content-length': String(Buffer.byteLength(log)),
+        'content-type': 'text/plain',
+      },
+    })
+    mockSecureFetchWithPinnedIP.mockResolvedValueOnce({
+      ok: true,
+      status: response.status,
+      statusText: response.statusText,
+      headers: {
+        get: (name: string) => response.headers.get(name),
+        toRecord: () => Object.fromEntries(response.headers.entries()),
+      },
+      body: response.body,
+    })
+
+    const params = {
+      accessToken: 'oauth-token',
+      workspaceSlug: 'acme',
+      repoSlug: 'demo',
+      pipelineUuid: '{pipeline}',
+      stepUuid: '{step}',
+      maxCharacters: 5,
+    }
+    const accepted = await executeTool('bitbucket_get_pipeline_step_log', params, {
+      skipPostProcess: true,
+    })
+
+    expect(accepted).toMatchObject({
+      success: true,
+      output: {
+        log: 'DONE\n',
+        truncated: true,
+        totalBytes: Buffer.byteLength(log),
+      },
+    })
+
+    expect(mockSecureFetchWithPinnedIP).toHaveBeenCalledWith(
+      expect.stringContaining('/pipelines/%7Bpipeline%7D/steps/%7Bstep%7D/log'),
+      '93.184.216.34',
+      expect.objectContaining({ maxResponseBytes: 16 * 1024 * 1024 })
+    )
   })
 
   it('retries transient database failures during permission preflight', async () => {
@@ -2323,6 +2376,53 @@ describe('executeTool Function', () => {
     tools.function_execute = originalFunctionTool
   })
 
+  it('gives an internal route transport headroom past its requested execution budget', async () => {
+    const originalFunctionTool = { ...tools.function_execute }
+    tools.function_execute = {
+      ...tools.function_execute,
+      transformResponse: vi.fn().mockResolvedValue({ success: true, output: {} }),
+    }
+
+    let observedSignal: AbortSignal | undefined
+    global.fetch = Object.assign(
+      vi.fn().mockImplementation(
+        async (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            observedSignal = init.signal as AbortSignal
+            observedSignal.addEventListener('abort', () => {
+              const err = new Error('aborted')
+              err.name = 'AbortError'
+              reject(err)
+            })
+          })
+      ),
+      { preconnect: vi.fn() }
+    ) as typeof fetch
+
+    vi.useFakeTimers()
+    try {
+      const resultPromise = executeTool(
+        'function_execute',
+        { code: 'return 1', timeout: 5000 },
+        { skipPostProcess: true }
+      )
+
+      // The route owns the 5s execution budget and needs to outlive it to report
+      // its own timeout, so the transport must still be waiting at that instant.
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(observedSignal?.aborted).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(30_000)
+      const result = await resultPromise
+
+      expect(result.success).toBe(false)
+      expect(result.error).toMatch(/timed out after 35000ms/)
+    } finally {
+      vi.useRealTimers()
+      tools.function_execute = originalFunctionTool
+    }
+  })
+
   it('should add timing information to results', async () => {
     const result = await executeTool(
       'http_request',
@@ -2339,7 +2439,7 @@ describe('executeTool Function', () => {
   })
 })
 
-describe('Automatic Internal Route Detection', () => {
+describe('Internal Route Trust', () => {
   let cleanupEnvVars: () => void
 
   beforeEach(() => {
@@ -2410,6 +2510,21 @@ describe('Automatic Internal Route Detection', () => {
     expect(mockTool.transformResponse).toHaveBeenCalled()
 
     Object.assign(tools, originalTools)
+  })
+
+  it('rejects a caller-controlled relative URL without minting internal credentials', async () => {
+    global.fetch = Object.assign(vi.fn(), { preconnect: vi.fn() }) as typeof fetch
+
+    const result = await executeTool('http_request', {
+      url: '/api/auth/oauth/token',
+      method: 'GET',
+      _context: { userId: 'workflow-owner' },
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('External tool requests require an absolute HTTP(S) URL')
+    expect(mockGenerateInternalToken).not.toHaveBeenCalled()
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
   it('transports only active provenance selected for an internal model input', async () => {
@@ -3433,6 +3548,7 @@ describe('Automatic Internal Route Detection', () => {
         resourceId: { type: 'string', required: true },
       },
       request: {
+        internal: true,
         url: (params: any) => `/api/resources/${params.resourceId}`,
         method: 'GET',
         headers: () => ({ 'Content-Type': 'application/json' }),
@@ -3521,12 +3637,6 @@ describe('Automatic Internal Route Detection', () => {
 
     // Result will fail in test env due to network, but that's expected
     Object.assign(tools, originalTools)
-  })
-
-  it('PLACEHOLDER - external routes are called directly', async () => {
-    // Placeholder test to maintain test count - external URLs now go direct
-    // No proxy is used for external URLs anymore - they use secureFetchWithPinnedIP
-    expect(true).toBe(true)
   })
 
   it('should call external URLs directly with SSRF protection', async () => {
@@ -4163,6 +4273,17 @@ describe('Centralized Error Handling', () => {
       { errors: [{ detail: 'Rate limit exceeded' }] },
       'Rate limit exceeded'
     )
+  })
+
+  it('uses a tool-specific Prospeo extractor before flattening a failed response', async () => {
+    const originalExtractor = tools.function_execute.errorExtractor
+    tools.function_execute.errorExtractor = ErrorExtractorId.PROSPEO_ERRORS
+
+    try {
+      await testErrorFormat('Prospeo', { error: true, error_code: 'NO_MATCH' }, 'NO_MATCH')
+    } finally {
+      tools.function_execute.errorExtractor = originalExtractor
+    }
   })
 
   it('should extract Hunter API error format', async () => {
@@ -4920,6 +5041,14 @@ describe('MCP Tool Execution', () => {
   })
 
   describe('Tool request retries', () => {
+    beforeAll(() => {
+      ;(tools.http_request.request as { internal?: true }).internal = true
+    })
+
+    afterAll(() => {
+      ;(tools.http_request.request as { internal?: true }).internal = undefined
+    })
+
     function makeJsonResponse(
       status: number,
       body: unknown,

@@ -35,6 +35,15 @@ export interface FlagSpec {
   /** Short alias, e.g. `w` for `--workspace`. */
   short?: string
   /**
+   * Flag names this field used to answer to, such as `predicate` before the
+   * count command's filter was spelled the same as its six siblings'.
+   *
+   * Kept only so an existing script does not break: hidden from help and from
+   * the generated docs, warns on stderr, and refuses when combined with the
+   * current spelling rather than silently picking one.
+   */
+  renamedFrom?: readonly string[]
+  /**
    * Accept one or more space-separated values, or `@path` / `@-` with one
    * value per line.
    *
@@ -50,12 +59,68 @@ export interface FlagSpec {
   list?: boolean
   /** Take a JSON string. Implied for object/array/unknown fields. */
   json?: boolean
+  /**
+   * Accept a plain whole number and send the route's `{ type: 'rows', max: n }`.
+   *
+   * A deliberate one-off for `tables dispatches create --max-rows`: the only
+   * request field in the CLI whose object shape holds exactly one free value,
+   * because its `type` is a `z.literal('rows')`. Left as JSON, the flag made a
+   * caller type `{"type":"rows","max":100}` — four tokens of ceremony to say
+   * `100`, in a shape nothing in the terminal spells out. Not a general
+   * value-transform hook: no second field wants one, and a second one arriving
+   * is the point at which this should become one.
+   */
+  rowCap?: true
   /** Overrides the help text otherwise taken from the OpenAPI description. */
   describe?: string
+  /**
+   * Value sent when the caller passes nothing, in place of the server's default.
+   *
+   * For a command whose declared `columns` read a field the API only sends at a
+   * heavier setting: `logs list` shows `workflow.name`, which `details=basic`
+   * omits, so the primary debugging table had a permanently empty column. It is
+   * a request default, not a flag default — whatever the caller types wins,
+   * including a deliberate `--details basic`.
+   */
+  requestDefault?: string
   /** Accepted values when the generated descriptor cannot recover an enum. */
   choices?: readonly string[]
-  /** Expose a string-backed API boolean as a conventional terminal toggle. */
+  /**
+   * Expose a string-backed API boolean as a conventional terminal toggle.
+   *
+   * A toggle declared here carries no generated `--no-<name>` twin by default,
+   * because sending false is usually either meaningless — the server already
+   * defaults the field to false — or rejected outright, as on a field the API
+   * declares as `z.literal(true)`. {@link negatable} asks for the twin back on
+   * the one kind of field where false is a real request.
+   */
   boolean?: true
+  /**
+   * Give a {@link boolean} toggle its `--no-<name>` twin after all.
+   *
+   * Withholding the twin is right for a one-way switch: most string-backed
+   * toggles sit on a field the server already defaults to false, so a negation
+   * would only restate the default, and on a `z.literal(true)` field it would
+   * send a request the route rejects. `files list --recursive` is neither — the
+   * API turns it on by itself as soon as a search is set, so without a spelling
+   * for false there is no way to search one folder without descending into it.
+   * Declared per flag rather than derived from the union's false spellings,
+   * which every one of these toggles publishes whether or not sending one means
+   * anything.
+   */
+  negatable?: true
+  /**
+   * This field carries a folder path, so percent-encode each of its segments.
+   *
+   * The API's canonical folder path is percent-encoded per segment, which made
+   * the terminal the only place a folder had to be spelled `/Folder%201`
+   * instead of the `/Folder 1` shown everywhere else; typing what you see was
+   * rejected with a message that never mentioned encoding. Marked rather than
+   * inferred from the field's name: `files upload` and `knowledge documents
+   * upload` take a `path` that is a LOCAL file, and encoding one of those would
+   * break the read.
+   */
+  folderPath?: true
   /**
    * Never expose this field as a flag, and never send it.
    *
@@ -65,6 +130,8 @@ export interface FlagSpec {
    * owns that instead.
    */
   omit?: boolean
+  /** Accept and send this generated field, but hide its low-level flag from help. */
+  hidden?: boolean
 }
 
 /** How a route path parameter is exposed as a required named option. */
@@ -85,8 +152,29 @@ export interface ColumnSpec {
   header: string
   /** Dot path into the row. Defaults to `header`. */
   path?: string
-  /** Rendering hint; `auto` inspects the value. */
-  format?: 'auto' | 'timestamp' | 'bytes' | 'duration' | 'bool' | 'cost' | 'count' | 'trace-count'
+  /**
+   * Rendering hint; `auto` inspects the value.
+   *
+   * `folder-path` is the display half of `FlagSpec.folderPath`: it undoes the
+   * wire encoding for the human formats, so a folder no longer prints as
+   * `/cli-test-a/nested%20one` in the same row as the `nested one` the server
+   * put in the adjacent name column.
+   *
+   * `score` fixes a similarity to four decimals. The raw double arrives as
+   * `0.2818957269585687`, a nineteen-character column whose last dozen digits
+   * cannot separate one result from another.
+   */
+  format?:
+    | 'auto'
+    | 'timestamp'
+    | 'bytes'
+    | 'duration'
+    | 'bool'
+    | 'cost'
+    | 'count'
+    | 'trace-count'
+    | 'folder-path'
+    | 'score'
 }
 
 export interface BodyVariantSpec {
@@ -121,6 +209,16 @@ export interface CommandSpec {
   groupDefault?: boolean
   /** Alternate leaf command names, such as `ls` for `list`. */
   aliases?: readonly string[]
+  /**
+   * Full command paths this operation used to answer to, such as
+   * `tables count create` before it became `tables rows count`.
+   *
+   * Unlike {@link aliases}, these are kept only so an existing script does not
+   * break: each is hidden from help and from the generated docs, and warns on
+   * stderr with the current spelling. Give the whole path, because a rename can
+   * move a command between groups rather than just retitle its leaf.
+   */
+  renamedFrom?: readonly string[]
   /** Route path parameters exposed as required named options instead of positionals. */
   pathFlags?: Record<string, PathFlagSpec>
   /** Friendly placeholders for route path parameters that remain positional. */
@@ -147,6 +245,19 @@ export interface CommandSpec {
   expandedTrace?: boolean
   /** Dot path to a nested result array rendered as the command's human list. */
   itemsPath?: string
+  /**
+   * A page-envelope field that qualifies the whole list, stated once for the
+   * human formats.
+   *
+   * `billing logs` answers a different question depending on the kind of API
+   * key that asked — a personal key sees the caller's own events, a workspace
+   * key the whole workspace ledger — and the response says which. The value
+   * belongs to the query rather than to any row, so it is not a column; it goes
+   * to stderr so that a `--output text` consumer cutting tab-separated fields
+   * still reads only rows. The machine formats print the envelope whole and
+   * carry it already.
+   */
+  pageNote?: { path: string; label: string }
   /** Allow an optional workspaceId field to omit the configured workspace filter. */
   allWorkspaces?: boolean
   /**

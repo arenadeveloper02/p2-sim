@@ -48,8 +48,10 @@ import {
   resolveCanvasSentence,
 } from '@/lib/workflows/blocks/canvas-sentence'
 import { resolveSelectedTriggerId } from '@/lib/workflows/blocks/canvas-trigger-sentence'
+import { resolveCanvasCodePreview } from '@/lib/workflows/blocks/code-preview'
 import { calculateWorkflowBlockDimensions } from '@/lib/workflows/blocks/deterministic-dimensions'
 import { getConditionRows, getRouterRows } from '@/lib/workflows/dynamic-handle-topology'
+import { getDependsOnFields } from '@/lib/workflows/subblocks/dependencies'
 import {
   getDisplayValue,
   hasDisplayableRowValue,
@@ -64,6 +66,7 @@ import {
 } from '@/lib/workflows/subblocks/display'
 import {
   buildCanonicalIndex,
+  buildCanonicalIndexForSurface,
   hasAdvancedValues,
   resolveDependencyValue,
 } from '@/lib/workflows/subblocks/visibility'
@@ -96,7 +99,6 @@ import {
   SELECTOR_TYPES_HYDRATION_REQUIRED,
   type SubBlockConfig,
 } from '@/blocks/types'
-import { getDependsOnFields } from '@/blocks/utils'
 import { useKnowledgeBase } from '@/hooks/kb/use-knowledge'
 import { useCustomTools } from '@/hooks/queries/custom-tools'
 import { useDeployWorkflow } from '@/hooks/queries/deployments'
@@ -287,6 +289,9 @@ const areSubBlockRowPropsEqual = (
   const prevValue = subBlockId ? prevProps.allSubBlockValues?.[subBlockId]?.value : undefined
   const nextValue = subBlockId ? nextProps.allSubBlockValues?.[subBlockId]?.value : undefined
   const valueEqual = prevValue === nextValue || isEqual(prevValue, nextValue)
+  const codeLanguageEqual =
+    prevProps.subBlock?.type !== 'code' ||
+    prevProps.allSubBlockValues?.language?.value === nextProps.allSubBlockValues?.language?.value
 
   return (
     prevProps.title === nextProps.title &&
@@ -297,6 +302,7 @@ const areSubBlockRowPropsEqual = (
     prevProps.workflowId === nextProps.workflowId &&
     prevProps.blockId === nextProps.blockId &&
     valueEqual &&
+    codeLanguageEqual &&
     prevProps.displayAdvancedOptions === nextProps.displayAdvancedOptions &&
     prevProps.canonicalIndex === nextProps.canonicalIndex &&
     prevProps.canonicalModeOverrides === nextProps.canonicalModeOverrides &&
@@ -500,6 +506,12 @@ const SubBlockRow = memo(function SubBlockRow({
     if (!subBlock?.id?.startsWith('webhookUrlDisplay') || !blockId) {
       return null
     }
+    /* Deliberately unguarded. `getBaseUrl` throws when no application base URL is
+       configured, and that is the right outcome here: this value gets copied into
+       a third-party provider, so a guessed origin would hand the user a URL that
+       provider accepts and then never delivers to, and a blank row explains
+       nothing. The error boundary reports what it caught, so the throw names its
+       own cause. */
     const baseUrl = getBaseUrl()
     const triggerPath = allSubBlockValues?.triggerPath?.value as string | undefined
     return triggerPath
@@ -589,12 +601,15 @@ const SubBlockRow = memo(function SubBlockRow({
     webhookUrlDisplayValue ||
     selectorDisplayName
   const displayValue = maskedValue || hydratedName || (isSelectorType && value ? '-' : value)
+  const codePreview =
+    variant === 'inline-value' ? resolveCanvasCodePreview(subBlock, rawValue, rawValues) : undefined
 
   return (
     <SubBlockRowView
       title={title}
       displayValue={displayValue}
       isMonospace={isMonospaceField}
+      codePreview={codePreview}
       variant={variant}
       icon={icon}
     />
@@ -799,14 +814,18 @@ export const WorkflowBlock = memo(function WorkflowBlock({
     ])
   }
 
-  const canonicalIndex = useMemo(() => buildCanonicalIndex(config.subBlocks), [config.subBlocks])
+  const canonicalIndex = useMemo(
+    () => buildCanonicalIndexForSurface(config.subBlocks, displayTriggerMode),
+    [config.subBlocks, displayTriggerMode]
+  )
   const canonicalModeOverrides = currentStoreBlock?.data?.canonicalModes
 
   const hiddenByReactiveCondition = useReactiveConditions(
     config.subBlocks,
     id,
     activeWorkflowId,
-    canonicalModeOverrides
+    canonicalModeOverrides,
+    displayTriggerMode
   )
 
   const subBlockRowsData = useMemo(() => {
@@ -853,7 +872,6 @@ export const WorkflowBlock = memo(function WorkflowBlock({
     const displayableSubBlocks = getCardSubBlocks(config, {
       advanced: effectiveAdvanced,
       values: rawValues,
-      canonicalIndex,
       canonicalModeOverrides,
       triggerMode: effectiveTrigger,
       hiddenIds: hiddenByReactiveCondition,
@@ -1230,7 +1248,6 @@ export const WorkflowBlock = memo(function WorkflowBlock({
       ringStyles={ringStyles}
       runPathStatus={runPathStatus}
       isRunning={isExecuting}
-      isWorkflowRunning={isWorkflowRunning}
       isExecutionHighlighted={isExecutionHighlighted}
       Icon={config.icon}
       iconBgColor={config.bgColor}

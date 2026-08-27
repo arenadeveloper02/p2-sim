@@ -1,5 +1,11 @@
 import { db } from '@sim/db'
-import { credential, credentialMember, permissions, workspace } from '@sim/db/schema'
+import {
+  credential,
+  credentialMember,
+  permissions,
+  workspace,
+  workspaceEnvironment,
+} from '@sim/db/schema'
 import { permissionSatisfies } from '@sim/platform-authz/workspace'
 import { chunkArray } from '@sim/utils/helpers'
 import { generateId } from '@sim/utils/id'
@@ -170,6 +176,32 @@ export async function getPersonalEnvKeyRawAccess(params: {
 }
 
 /**
+ * Whether the workspace holds a value under this env key, read from the authoritative
+ * `workspace_environment.variables` map.
+ *
+ * Deliberately NOT {@link getWorkspaceEnvKeyAdminAccess}'s `knownKeys`, which answers the
+ * narrower "does an `env_workspace` credential row exist". A legacy value written before the
+ * credential ACL existed has no such row yet still wins at run time, so a gate that reads
+ * `knownKeys` as "there is no workspace secret here" would let a non-admin through on exactly
+ * the keys that predate the ACL. Callers deciding whether a NAME belongs to the workspace must
+ * ask this; callers deciding who may administer an ACL keep asking `knownKeys`.
+ */
+export async function hasWorkspaceEnvValue(params: {
+  workspaceId: string
+  envKey: string
+}): Promise<boolean> {
+  const [row] = await db
+    .select({ variables: workspaceEnvironment.variables })
+    .from(workspaceEnvironment)
+    .where(eq(workspaceEnvironment.workspaceId, params.workspaceId))
+    .limit(1)
+
+  const variables = row?.variables
+  if (!variables || typeof variables !== 'object') return false
+  return Object.hasOwn(variables as Record<string, unknown>, params.envKey)
+}
+
+/**
  * For a set of workspace env keys, resolves which the caller may administer
  * (active `credential_member` with role `admin`) and which already have an
  * `env_workspace` credential at all. Keys absent from `knownKeys` have no ACL
@@ -217,6 +249,10 @@ interface AccessibleEnvCredential {
   type: 'env_workspace' | 'env_personal'
   envKey: string
   envOwnerUserId: string | null
+  /** Always null on `env_personal`: a mirror row cannot own a user-global secret's note. */
+  description: string | null
+  /** Always false on `env_personal`: only workspace secrets can opt out of redaction. */
+  unredacted: boolean
   updatedAt: Date
 }
 
@@ -740,6 +776,8 @@ export async function getAccessibleEnvCredentials(
       type: credential.type,
       envKey: credential.envKey,
       envOwnerUserId: credential.envOwnerUserId,
+      description: credential.description,
+      unredacted: credential.unredacted,
       updatedAt: credential.updatedAt,
     })
     .from(credential)
@@ -772,6 +810,8 @@ export async function getAccessibleEnvCredentials(
       type: row.type,
       envKey: row.envKey,
       envOwnerUserId: row.envOwnerUserId,
+      description: row.type === 'env_workspace' ? row.description : null,
+      unredacted: row.type === 'env_workspace' ? row.unredacted : false,
       updatedAt: row.updatedAt,
     }))
 }

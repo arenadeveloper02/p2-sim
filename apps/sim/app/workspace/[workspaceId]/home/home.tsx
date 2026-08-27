@@ -38,10 +38,7 @@ import { RESOURCE_HEADER_CLASSES } from '@/app/workspace/[workspaceId]/home/comp
 import { resolveWorkspaceResourceRef } from '@/app/workspace/[workspaceId]/home/resolve-resource-ref'
 import { resourceParam, resourceUrlKeys } from '@/app/workspace/[workspaceId]/home/search-params'
 import { useFolders } from '@/hooks/queries/folders'
-import {
-  useMarkMothershipChatRead,
-  useMothershipChatHistory,
-} from '@/hooks/queries/mothership-chats'
+import { useMarkMothershipChatRead } from '@/hooks/queries/mothership-chats'
 import { useWorkflows } from '@/hooks/queries/workflows'
 import { getWorkspaceFilesQueryOptions, useWorkspaceFiles } from '@/hooks/queries/workspace-files'
 import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
@@ -55,7 +52,13 @@ import {
   UserInput,
   type UserInputHandle,
 } from './components'
-import { getMothershipUseChatOptions, useChat, useMothershipResize } from './hooks'
+import {
+  getMothershipUseChatOptions,
+  type ResourceEventOptions,
+  shouldActivateResourceEvent,
+  useChat,
+  useMothershipResize,
+} from './hooks'
 import type {
   FileAttachmentForApi,
   MothershipResource,
@@ -80,11 +83,9 @@ interface HomeProps {
   chatId?: string
   userName?: string
   userId?: string
-  /** Resolved server-side by the page — the embedded table can't reach AppConfig. */
-  tableViewsEnabled?: boolean
 }
 
-export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps) {
+export function Home({ chatId, userName, userId }: HomeProps) {
   useOAuthReturnRouter()
   const { workspaceId } = useParams<{ workspaceId: string }>()
   const router = useRouter()
@@ -199,7 +200,6 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
 
   const wasSendingRef = useRef(false)
 
-  const { isPending: isChatHistoryPending } = useMothershipChatHistory(chatId)
   const { mutate: markRead } = useMarkMothershipChatRead(workspaceId)
 
   const [isResourceCollapsed, setIsResourceCollapsed] = useState(true)
@@ -211,14 +211,14 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
   const activeResourceParamRef = useRef(activeResourceParam)
   activeResourceParamRef.current = activeResourceParam
 
-  function handleResourceEvent(resourceId: string) {
-    // Agent work should always make the resource surface available, but it
-    // must never replace an existing selection. Activity in another resource
-    // stays in the background and gets an attention marker instead.
+  function handleResourceEvent(resourceId: string, options?: ResourceEventOptions) {
+    // Agent work surfaces the resource and switches to it as it is created or
+    // edited; only the browser session stays in the background behind an
+    // existing selection (see shouldActivateResourceEvent).
     if (isResourceCollapsedRef.current) setIsResourceCollapsed(false)
 
     const activeResourceId = activeResourceParamRef.current
-    if (activeResourceId && activeResourceId !== resourceId) {
+    if (!shouldActivateResourceEvent(activeResourceId, resourceId, options)) {
       setResourceActivityIds((current) => new Set(current).add(resourceId))
       return
     }
@@ -228,11 +228,15 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
       next.delete(resourceId)
       return next
     })
-    if (activeResourceId !== resourceId) setActiveResourceUrl(resourceId)
+    if (activeResourceId !== resourceId) {
+      activeResourceParamRef.current = resourceId
+      setActiveResourceUrl(resourceId)
+    }
   }
 
   const {
     messages,
+    isChatHistoryPending,
     isSending,
     isReconnecting,
     sendMessage,
@@ -643,6 +647,7 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
           </div>
         ) : (
           <MothershipChat
+            workspaceId={workspaceId}
             messages={messages}
             isSending={isSending}
             isReconnecting={isReconnecting}
@@ -701,7 +706,6 @@ export function Home({ chatId, userName, userId, tableViewsEnabled }: HomeProps)
             previewSession={previewSession}
             isAgentResponding={isSending}
             genericResourceData={genericResourceData ?? undefined}
-            tableViewsEnabled={tableViewsEnabled}
             onUserInteraction={handleResourceInteraction}
             className={skipResourceTransition ? '!transition-none' : undefined}
           />

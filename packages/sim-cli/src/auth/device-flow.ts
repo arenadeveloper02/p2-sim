@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomInt } from 'node:crypto'
 import { sleep } from '../helpers'
-import { SimApiError } from '../http/client'
+import { buildUrl, REDIRECT_STATUSES, redirectEndpoint, SimApiError } from '../http/client'
+import { USER_AGENT } from '../version'
 
 /**
  * The terminal half of the CLI key handoff.
@@ -19,6 +20,12 @@ const PAIRING_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 15 * 60 * 1000
 
+/** The page the browser is sent to for approval. */
+const APPROVAL_PATH = '/cli/auth'
+
+/** The route the login poll targets; also the suffix a redirect target is measured against. */
+const POLL_PATH = '/api/cli/auth/poll'
+
 /**
  * Poll statuses that leave the approval still redeemable, so the login should
  * keep waiting rather than making the user restart the browser handoff.
@@ -35,6 +42,17 @@ const POLL_TIMEOUT_MS = 15 * 60 * 1000
  * spins until the 15-minute timeout.
  */
 const RETRYABLE_POLL_STATUSES = new Set([409, 429, 500, 502, 503, 504])
+
+/**
+ * Consecutive transport failures before the poll says so on stderr.
+ *
+ * Three at the 2s interval is about six seconds: past any single DNS, TLS, or
+ * connection-reset blip, and far short of the point where someone starts
+ * wondering whether their approval registered. An endpoint that nothing is
+ * listening on fails every attempt, so it trips this within seconds instead of
+ * looking exactly like a slow approval for the full 15 minutes.
+ */
+const TRANSPORT_FAILURES_BEFORE_WARNING = 3
 
 export type CliAuthScope = 'copilot' | 'platform'
 
@@ -88,13 +106,13 @@ export function buildApprovalUrl(
   scope: CliAuthScope,
   workspaceId?: string
 ): string {
-  const url = new URL('/cli/auth', endpoint)
-  url.searchParams.set('request', auth.request)
-  url.searchParams.set('challenge', auth.challenge)
-  url.searchParams.set('pairing', auth.pairing)
-  url.searchParams.set('scope', scope)
-  if (workspaceId) url.searchParams.set('workspace', workspaceId)
-  return url.toString()
+  return buildUrl(endpoint, APPROVAL_PATH, {
+    request: auth.request,
+    challenge: auth.challenge,
+    pairing: auth.pairing,
+    scope,
+    workspace: workspaceId,
+  })
 }
 
 interface PollResponse {
@@ -106,6 +124,42 @@ interface PollResponse {
 }
 
 /**
+ * Explains a redirected poll rather than following it.
+ *
+ * The same policy `SimClient` applies, for the same two reasons and one more:
+ * a 301/302/303 rewrites this POST into a bodyless GET, which the route answers
+ * `405` — the login then fails naming a method nobody chose — and a redirect
+ * that IS followed hands `pollSecret`, the one redeemable value in the handoff,
+ * to whatever origin `Location` names.
+ */
+function toRedirectError(endpoint: string, response: Response): SimApiError {
+  const location = response.headers.get('location')?.trim()
+  let target: URL | null = null
+  if (location) {
+    try {
+      target = new URL(location, endpoint)
+    } catch {
+      target = null
+    }
+  }
+
+  if (!target) {
+    return new SimApiError(
+      `${endpoint} answered the login poll with HTTP ${response.status} and no usable redirect target. Check the endpoint.`,
+      response.status
+    )
+  }
+  const refusal = `${endpoint} redirected the login poll to ${target.href}. The CLI does not follow redirects, because a redirect drops the request body and would carry the login secret to another origin.`
+  const suggested = redirectEndpoint(endpoint, POLL_PATH, target)
+  return new SimApiError(
+    suggested
+      ? `${refusal} Re-run with --endpoint ${suggested}, or run: sim configure --set-endpoint ${suggested}`
+      : refusal,
+    response.status
+  )
+}
+
+/**
  * Polls until the user approves in the browser.
  *
  * Transport failures are swallowed and retried rather than aborting the login:
@@ -113,6 +167,12 @@ interface PollResponse {
  * wait are all recoverable, and the approval sits in Redis with its own TTL. A
  * non-2xx *response*, by contrast, is the server refusing on purpose and is
  * surfaced immediately.
+ *
+ * Retried is not the same as unreported: once
+ * {@link TRANSPORT_FAILURES_BEFORE_WARNING} attempts in a row fail to reach the
+ * endpoint at all, the reason is printed once to stderr and the poll carries on.
+ * Without it a typo'd endpoint was indistinguishable from a slow approval for
+ * the entire 15-minute timeout.
  */
 export async function pollForKey(
   endpoint: string,
@@ -120,23 +180,44 @@ export async function pollForKey(
   signal?: AbortSignal
 ): Promise<MintedKey> {
   const deadline = Date.now() + POLL_TIMEOUT_MS
+  let consecutiveTransportFailures = 0
+  let warnedAboutTransport = false
 
   while (Date.now() < deadline) {
     if (signal?.aborted) throw new SimApiError('Login cancelled.', 0)
 
     let response: Response | null = null
     try {
-      response = await fetch(new URL('/api/cli/auth/poll', endpoint), {
+      response = await fetch(buildUrl(endpoint, POLL_PATH), {
         method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+          'user-agent': USER_AGENT,
+        },
         body: JSON.stringify({ request: auth.request, verifier: auth.pollSecret }),
         signal,
+        redirect: 'manual',
       })
-    } catch {
+    } catch (cause) {
       response = null
+      consecutiveTransportFailures++
+      if (
+        !warnedAboutTransport &&
+        consecutiveTransportFailures >= TRANSPORT_FAILURES_BEFORE_WARNING
+      ) {
+        warnedAboutTransport = true
+        process.stderr.write(
+          `Still waiting: ${endpoint} is not answering the login poll (${(cause as Error).message}). Check the endpoint; retrying until you approve or the login times out.\n`
+        )
+      }
     }
 
     if (response) {
+      consecutiveTransportFailures = 0
+
+      if (REDIRECT_STATUSES.has(response.status)) throw toRedirectError(endpoint, response)
+
       const raw = await response.text()
 
       if (!response.ok) {

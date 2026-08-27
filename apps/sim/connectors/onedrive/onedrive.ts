@@ -1,15 +1,31 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage, toError } from '@sim/utils/errors'
-import { fetchWithRetry, VALIDATE_RETRY_OPTIONS } from '@/lib/knowledge/documents/utils'
+import {
+  fetchWithRetry,
+  readBoundedHttpErrorBody,
+  VALIDATE_RETRY_OPTIONS,
+} from '@/lib/knowledge/documents/utils'
 import { onedriveConnectorMeta } from '@/connectors/onedrive/meta'
 import type { ConnectorConfig, ExternalDocument, ExternalDocumentList } from '@/connectors/types'
 import {
+  appendPendingMicrosoftGraphFolders,
+  assertMicrosoftGraphNextLink,
   CONNECTOR_MAX_FILE_BYTES,
   ConnectorFileTooLargeError,
-  htmlToPlainText,
+  connectorFileExtension,
+  decodeMicrosoftGraphTraversalCursor,
+  encodeMicrosoftGraphTraversalCursor,
+  extractConnectorText,
+  hasIndexablePayload,
+  isIndexableConnectorFile,
+  isMicrosoftGraphDriveItem,
   isSkippedDocument,
+  type MicrosoftGraphTraversalState,
   markSkipped,
+  parseMicrosoftGraphDriveItemList,
+  parseOptionalUnlimitedSafeInteger,
   parseTagDate,
+  pipelineParsedMimeType,
   readBodyWithLimit,
   sizeLimitSkipReason,
   stubOrSkipBySize,
@@ -18,22 +34,10 @@ import {
 
 const logger = createLogger('OneDriveConnector')
 
-const SUPPORTED_EXTENSIONS = new Set([
-  '.txt',
-  '.md',
-  '.html',
-  '.htm',
-  '.csv',
-  '.json',
-  '.xml',
-  '.yaml',
-  '.yml',
-  '.log',
-  '.rst',
-  '.tsv',
-])
-
 const MAX_FILE_SIZE = CONNECTOR_MAX_FILE_BYTES
+
+/** Distinct extensions named in the per-page skipped-file diagnostic. */
+const MAX_LOGGED_SKIPPED_EXTENSIONS = 10
 
 const GRAPH_API_ORIGIN = 'https://graph.microsoft.com'
 const GRAPH_BASE_URL = `${GRAPH_API_ORIGIN}/v1.0`
@@ -42,7 +46,8 @@ const GRAPH_BASE_URL = `${GRAPH_API_ORIGIN}/v1.0`
  * The exact driveItem fields the stub is built from. Graph returns the full
  * driveItem otherwise, which is an order of magnitude larger per item.
  */
-const ITEM_SELECT = 'id,name,webUrl,size,file,folder,lastModifiedDateTime,createdBy,parentReference'
+const ITEM_SELECT =
+  'id,name,webUrl,size,file,folder,package,remoteItem,lastModifiedDateTime,createdBy,parentReference'
 
 /**
  * Requested page size for a children collection, matching Graph's own default.
@@ -67,11 +72,20 @@ const PAGE_SIZE = 200
  */
 const MAX_LIST_REQUESTS_PER_CALL = 25
 
+function parseMaxFiles(value: unknown): number {
+  return parseOptionalUnlimitedSafeInteger(
+    value,
+    'Max files must be a positive safe integer, or 0 for unlimited'
+  )
+}
+
 interface OneDriveItem {
   id: string
   name: string
   file?: { mimeType: string }
   folder?: { childCount: number }
+  package?: Record<string, unknown>
+  remoteItem?: Record<string, unknown>
   size?: number
   webUrl?: string
   lastModifiedDateTime?: string
@@ -79,25 +93,21 @@ interface OneDriveItem {
   parentReference?: { path?: string }
 }
 
-interface OneDriveListResponse {
-  value: OneDriveItem[]
-  '@odata.nextLink'?: string
+function isOneDriveItemMetadata(value: unknown, expectedId: string): value is OneDriveItem {
+  return isMicrosoftGraphDriveItem(value) && value.id === expectedId
+}
+
+function parseOneDriveItemMetadata(value: unknown, expectedId: string): OneDriveItem {
+  if (!isOneDriveItemMetadata(value, expectedId)) {
+    throw new Error('Microsoft Graph returned malformed OneDrive item metadata')
+  }
+  return value
 }
 
 /**
- * Checks whether a file has a supported text extension.
+ * Downloads the raw bytes of a OneDrive file.
  */
-function isSupportedTextFile(name: string): boolean {
-  const dotIndex = name.lastIndexOf('.')
-  if (dotIndex === -1) return false
-  const ext = name.slice(dotIndex).toLowerCase()
-  return SUPPORTED_EXTENSIONS.has(ext)
-}
-
-/**
- * Downloads the raw content of a OneDrive file.
- */
-async function downloadFileContent(accessToken: string, fileId: string): Promise<string> {
+async function downloadFileContent(accessToken: string, fileId: string): Promise<Buffer> {
   const url = `${GRAPH_BASE_URL}/me/drive/items/${encodeURIComponent(fileId)}/content`
 
   const response = await fetchWithRetry(url, {
@@ -114,25 +124,26 @@ async function downloadFileContent(accessToken: string, fileId: string): Promise
   if (!buffer) {
     throw new ConnectorFileTooLargeError(MAX_FILE_SIZE)
   }
-  return buffer.toString('utf8')
+  return buffer
 }
 
 /**
- * Fetches file content, converting HTML to plain text when applicable.
+ * Fetches a file and extracts its indexable text — a UTF-8 decode for text
+ * formats, and the shared knowledge-base parsers for Office documents and PDFs.
  */
-async function fetchFileContent(
+async function fetchFilePayload(
   accessToken: string,
   fileId: string,
   fileName: string
-): Promise<string> {
-  const ext = fileName.slice(fileName.lastIndexOf('.')).toLowerCase()
-  const raw = await downloadFileContent(accessToken, fileId)
+): Promise<Pick<ExternalDocument, 'content' | 'sourceFile' | 'mimeType'>> {
+  const buffer = await downloadFileContent(accessToken, fileId)
 
-  if (ext === '.html' || ext === '.htm') {
-    return htmlToPlainText(raw)
+  const mimeType = pipelineParsedMimeType(fileName)
+  if (mimeType) {
+    return { content: '', mimeType, sourceFile: { bytes: buffer, fileName, mimeType } }
   }
 
-  return raw
+  return { content: extractConnectorText(buffer, fileName), mimeType: 'text/plain' }
 }
 
 /**
@@ -187,43 +198,21 @@ function buildListUrl(folderPath: string | undefined, folderId: string | undefin
 
 /**
  * Asserts a paging URL points at Microsoft Graph before it is followed with the
- * bearer token in the `Authorization` header. The `@odata.nextLink` this connector
- * follows is persisted into the sync cursor, so it round-trips through storage
- * rather than arriving straight off a TLS response — a tampered cursor must never
- * be able to redirect the access token to a third-party host. Mirrors
- * `assertGraphNextPageUrl` used by the Graph tool routes.
+ * bearer token in the `Authorization` header. Provider-controlled continuation
+ * state must never be able to redirect the access token to a third-party host.
+ * Mirrors `assertGraphNextPageUrl` used by the Graph tool routes.
  */
 function assertGraphNextLink(nextLink: string): string {
-  const url = new URL(nextLink.trim())
-  if (url.origin !== GRAPH_API_ORIGIN) {
-    throw new Error('Refusing to follow a non-Microsoft Graph @odata.nextLink')
-  }
-  return url.toString()
+  return assertMicrosoftGraphNextLink(nextLink)
 }
 
 /**
  * Depth-first traversal position carried across `listDocuments` calls.
  */
-interface OneDriveTraversalState {
-  /** Absolute `@odata.nextLink` for the current folder's next page, if any. */
-  nextLink?: string
-  /** Item id of the folder being listed; `undefined` means the configured root. */
-  currentFolder?: string
-  /** Subfolder ids discovered but not yet listed. */
-  folderStack: string[]
-}
+type OneDriveTraversalState = MicrosoftGraphTraversalState
 
 function decodeCursor(cursor: string): OneDriveTraversalState {
-  try {
-    const parsed = JSON.parse(cursor) as Partial<OneDriveTraversalState>
-    return {
-      nextLink: typeof parsed.nextLink === 'string' ? parsed.nextLink : undefined,
-      currentFolder: typeof parsed.currentFolder === 'string' ? parsed.currentFolder : undefined,
-      folderStack: Array.isArray(parsed.folderStack) ? parsed.folderStack : [],
-    }
-  } catch {
-    return { folderStack: [] }
-  }
+  return decodeMicrosoftGraphTraversalCursor(cursor, 'OneDrive')
 }
 
 export const onedriveConnector: ConnectorConfig = {
@@ -237,8 +226,7 @@ export const onedriveConnector: ConnectorConfig = {
   ): Promise<ExternalDocumentList> => {
     const folderPath = sourceConfig.folderPath as string | undefined
 
-    const parsedMaxFiles = Number(sourceConfig.maxFiles)
-    const maxFiles = Number.isFinite(parsedMaxFiles) && parsedMaxFiles > 0 ? parsedMaxFiles : 0
+    const maxFiles = parseMaxFiles(sourceConfig.maxFiles)
 
     const state: OneDriveTraversalState = cursor ? decodeCursor(cursor) : { folderStack: [] }
 
@@ -270,7 +258,7 @@ export const onedriveConnector: ConnectorConfig = {
       })
 
       if (!response.ok) {
-        const errorText = await response.text()
+        const errorText = await readBoundedHttpErrorBody(response)
         logger.error('Failed to list OneDrive files', {
           status: response.status,
           error: errorText,
@@ -278,17 +266,42 @@ export const onedriveConnector: ConnectorConfig = {
         throw new Error(`Failed to list OneDrive files: ${response.status}`)
       }
 
-      const data = (await response.json()) as OneDriveListResponse
-      const items = data.value || []
+      const data = parseMicrosoftGraphDriveItemList(await response.json(), 'OneDrive')
+      const items = data.value as OneDriveItem[]
 
       const files: OneDriveItem[] = []
+      const subfolders: string[] = []
+      /**
+       * Extensions this connector cannot index, tallied per page. A folder of
+       * unsupported files otherwise syncs as "success, 0 documents", which reads
+       * exactly like a wrong folder path — the failure mode this log exists for.
+       * Unsupported files are counted rather than turned into `failed` document
+       * rows, so a drive full of images does not fill the knowledge base with noise.
+       */
+      const skippedExtensions = new Map<string, number>()
+
       for (const item of items) {
         if (item.folder) {
-          state.folderStack.push(item.id)
-        } else if (item.file && isSupportedTextFile(item.name)) {
-          // Keep oversized files; they are surfaced as skipped (failed) docs below.
-          files.push(item)
+          subfolders.push(item.id)
+        } else if (item.file) {
+          if (isIndexableConnectorFile(item.name)) {
+            // Keep oversized files; they are surfaced as skipped (failed) docs below.
+            files.push(item)
+          } else {
+            const extension = connectorFileExtension(item.name) ?? '(none)'
+            skippedExtensions.set(extension, (skippedExtensions.get(extension) ?? 0) + 1)
+          }
         }
+      }
+
+      if (skippedExtensions.size > 0) {
+        let skippedCount = 0
+        for (const count of skippedExtensions.values()) skippedCount += count
+        logger.info('Skipped OneDrive files with unsupported extensions', {
+          folderId: state.currentFolder ?? 'root',
+          skippedCount,
+          extensions: Array.from(skippedExtensions.keys()).slice(0, MAX_LOGGED_SKIPPED_EXTENSIONS),
+        })
       }
 
       const stubs = files.map((item) =>
@@ -298,7 +311,7 @@ export const onedriveConnector: ConnectorConfig = {
       documents.push(...take.documents)
       totalFetched += take.indexableCount
 
-      const nextLink = data['@odata.nextLink']
+      const nextLink = data.nextLink
 
       if (take.capReached) {
         done = true
@@ -312,9 +325,14 @@ export const onedriveConnector: ConnectorConfig = {
          * block deletion reconciliation for a complete listing.
          */
         cappedWithItemsLeft =
-          take.documents.length < stubs.length || Boolean(nextLink) || state.folderStack.length > 0
+          take.documents.length < stubs.length ||
+          Boolean(nextLink) ||
+          subfolders.length > 0 ||
+          state.folderStack.length > 0
         break
       }
+
+      appendPendingMicrosoftGraphFolders(state.folderStack, subfolders, 'OneDrive')
 
       if (nextLink) {
         state.nextLink = nextLink
@@ -346,7 +364,7 @@ export const onedriveConnector: ConnectorConfig = {
      */
     return {
       documents,
-      nextCursor: JSON.stringify(state),
+      nextCursor: encodeMicrosoftGraphTraversalCursor(state, 'OneDrive'),
       hasMore: true,
     }
   },
@@ -371,16 +389,26 @@ export const onedriveConnector: ConnectorConfig = {
       throw new Error(`Failed to get OneDrive file: ${response.status}`)
     }
 
-    const item = (await response.json()) as OneDriveItem
+    const item = parseOneDriveItemMetadata(await response.json(), externalId)
 
-    if (!item.file || !isSupportedTextFile(item.name)) return null
+    if (!item.file || !isIndexableConnectorFile(item.name)) {
+      return {
+        ...markSkipped(fileToStub(item), 'File is no longer an indexable document'),
+        skippedExistingDisposition: 'replace',
+      }
+    }
 
     try {
-      const content = await fetchFileContent(accessToken, item.id, item.name)
-      if (!content.trim()) return null
+      const payload = await fetchFilePayload(accessToken, item.id, item.name)
+      if (!hasIndexablePayload(payload)) {
+        return {
+          ...markSkipped(fileToStub(item), 'Document contains no extractable text'),
+          skippedExistingDisposition: 'replace',
+        }
+      }
 
       const stub = fileToStub(item)
-      return { ...stub, content, contentDeferred: false }
+      return { ...stub, ...payload, contentDeferred: false }
     } catch (error) {
       if (error instanceof ConnectorFileTooLargeError) {
         logger.info('Skipping oversized OneDrive file', { fileId: item.id, name: item.name })
@@ -403,10 +431,10 @@ export const onedriveConnector: ConnectorConfig = {
     sourceConfig: Record<string, unknown>
   ): Promise<{ valid: boolean; error?: string }> => {
     const folderPath = sourceConfig.folderPath as string | undefined
-    const maxFiles = sourceConfig.maxFiles as string | undefined
-
-    if (maxFiles && (Number.isNaN(Number(maxFiles)) || Number(maxFiles) <= 0)) {
-      return { valid: false, error: 'Max files must be a positive number' }
+    try {
+      parseMaxFiles(sourceConfig.maxFiles)
+    } catch (error) {
+      return { valid: false, error: toError(error).message }
     }
 
     try {
