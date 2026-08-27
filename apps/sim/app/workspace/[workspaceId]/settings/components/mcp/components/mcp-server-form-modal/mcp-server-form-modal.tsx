@@ -14,9 +14,9 @@ import {
   cn,
   SecretInput,
 } from '@sim/emcn'
+import { ChevronDown, ChevronRight } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { McpAuthType, McpTransport } from '@/lib/mcp/types'
 import {
   checkEnvVarTrigger,
@@ -157,9 +157,9 @@ function FormattedInput({
         onChange={onChange}
         onScroll={handleScroll}
         onInput={handleScroll}
-        inputClassName='font-medium font-sans text-transparent caret-[var(--text-primary)]'
+        inputClassName='font-sans text-transparent caret-[var(--text-primary)]'
       />
-      <div className='pointer-events-none absolute inset-0 flex items-center overflow-hidden px-2 py-1.5 font-medium font-sans text-sm'>
+      <div className='pointer-events-none absolute inset-0 flex items-center overflow-hidden px-2 py-1.5 font-sans text-sm'>
         <div className='whitespace-nowrap' style={{ transform: `translateX(-${scrollLeft}px)` }}>
           {formatDisplayText(value, { availableEnvVars })}
         </div>

@@ -3,7 +3,7 @@ import { permissions, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { normalizeEmail } from '@sim/utils/string'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { batchWorkspaceInvitationsContract } from '@/lib/api/contracts/invitations'
 import { parseRequest } from '@/lib/api/server'
@@ -66,6 +66,9 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
       inviterEmail: session.user.email,
     })
 
+    const workspaceIds = context.targets.map((target) => target.workspaceId)
+    const invitePolicy = context.targets[0].invitePolicy
+
     const successful: string[] = []
     const added: string[] = []
     const failed: BatchInvitationFailure[] = []
@@ -97,31 +100,33 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         continue
       }
 
-      const existingPermission = await db
-        .select()
+      const existingPermissionRows = await db
+        .select({ workspaceId: permissions.entityId })
         .from(permissions)
         .where(
           and(
-            eq(permissions.entityId, context.workspaceId),
+            inArray(permissions.entityId, workspaceIds),
             eq(permissions.entityType, 'workspace'),
             eq(permissions.userId, existingUser.id)
           )
         )
-        .then((rows) => rows[0])
 
-      if (existingPermission) {
+      if (existingPermissionRows.length === workspaceIds.length) {
         failed.push({
           email: normalizedEmail,
-          error: `${normalizedEmail} already has access to this workspace`,
+          error:
+            workspaceIds.length === 1
+              ? `${normalizedEmail} already has access to this workspace`
+              : `${normalizedEmail} already has access to every selected workspace`,
         })
         continue
       }
 
-      if (context.invitePolicy.requiresSeat && context.invitePolicy.organizationId) {
+      if (invitePolicy.requiresSeat && invitePolicy.organizationId) {
         const existingMembership = await getUserOrganization(existingUser.id)
         if (
           existingMembership &&
-          existingMembership.organizationId !== context.invitePolicy.organizationId
+          existingMembership.organizationId !== invitePolicy.organizationId
         ) {
           failed.push({
             email: normalizedEmail,
@@ -132,10 +137,7 @@ export const POST = withRouteHandler(async (req: NextRequest) => {
         }
 
         if (!existingMembership) {
-          const seatValidation = await validateSeatAvailability(
-            context.invitePolicy.organizationId,
-            1
-          )
+          const seatValidation = await validateSeatAvailability(invitePolicy.organizationId, 1)
           if (!seatValidation.canInvite) {
             failed.push({
               email: normalizedEmail,

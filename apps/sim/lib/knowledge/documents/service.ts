@@ -1,7 +1,9 @@
 import { db } from '@sim/db'
 import {
   document,
+  documentSecretProvenance,
   embedding,
+  embeddingSecretProvenance,
   knowledgeBase,
   knowledgeBaseTagDefinitions,
   knowledgeConnector,
@@ -12,7 +14,19 @@ import { sha256Hex } from '@sim/security/hash'
 import { getErrorMessage, toError } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { tasks } from '@trigger.dev/sdk'
-import { and, asc, desc, eq, inArray, isNotNull, isNull, type SQL, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  inArray,
+  isNotNull,
+  isNull,
+  type SQL,
+  sql,
+} from 'drizzle-orm'
+import { searchFilter } from '@/lib/api/list-query'
 import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import {
   assertBillingAttributionSnapshot,
@@ -32,6 +46,7 @@ import {
   maybeNotifyStorageLimitForBillingContext,
   resolveStorageBillingContext,
   type StorageBillingContext,
+  StorageLimitExceededError,
 } from '@/lib/billing/storage'
 import {
   checkAndBillOverageThreshold,
@@ -41,8 +56,17 @@ import type { ChunkingStrategy, StrategyOptions } from '@/lib/chunkers/types'
 import { resolveTriggerRegion } from '@/lib/core/async-jobs/region'
 import { env, envNumber } from '@/lib/core/config/env'
 import { getCostMultiplier, isTriggerDevEnabled } from '@/lib/core/config/env-flags'
+import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { mapWithConcurrency } from '@/lib/core/utils/concurrency'
+import {
+  type DurableSecretProvenance,
+  durableSecretProvenanceFromRegistry,
+  EXACT_EMPTY_DURABLE_SECRET_PROVENANCE,
+  mergeDurableSecretProvenance,
+} from '@/lib/execution/durable-secret-provenance'
 import { processDocument } from '@/lib/knowledge/documents/document-processor'
+import { failStaleDocumentProcessingClaim } from '@/lib/knowledge/documents/processing-claim'
+import { enqueueKnowledgeDocumentProcessing } from '@/lib/knowledge/documents/processing-outbox-event'
 import {
   assertDocumentProcessingBillingContext,
   createDocumentProcessingPayload,
@@ -59,18 +83,34 @@ import {
 import type { DocumentSortField, SortOrder } from '@/lib/knowledge/documents/types'
 import { getEmbeddingModelInfo } from '@/lib/knowledge/embedding-models'
 import { generateEmbeddings } from '@/lib/knowledge/embeddings'
+import { runWithKnowledgeModelInputProvenance } from '@/lib/knowledge/model-input-provenance'
+import {
+  bindKnowledgeDocumentFieldSecretProvenance,
+  createKnowledgeDocumentSourceValue,
+  type KnowledgeDocumentMetadataField,
+  type KnowledgeDocumentWriteSecretProvenance,
+  loadKnowledgeDocumentSecretRegistry,
+  readBoundKnowledgeDocumentSecretProvenance,
+  rebindKnowledgeDocumentSecretProvenance,
+  replaceKnowledgeDocumentSecretProvenanceInTx,
+} from '@/lib/knowledge/secret-provenance'
 import {
   buildUndefinedTagsError,
   parseBooleanValue,
   parseDateValue,
   parseNumberValue,
+  uncompilableTagFilterError,
   validateTagValue,
 } from '@/lib/knowledge/tags/utils'
 import type { ProcessedDocumentTags } from '@/lib/knowledge/types'
 import { estimateTokenCount } from '@/lib/tokenization/estimators'
+import {
+  getBoundWorkspaceFileSecretProvenanceByMetadata,
+  type WorkspaceFileSecretProvenance,
+} from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import { deleteFile } from '@/lib/uploads/core/storage-service'
 import {
-  deleteFileMetadata,
+  deleteFileMetadataByIdentity,
   type FileMetadataRecord,
   getFileMetadataByKeys,
 } from '@/lib/uploads/server/metadata'
@@ -81,20 +121,27 @@ import { calculateCost } from '@/providers/utils'
 const logger = createLogger('DocumentService')
 
 /**
- * Thrown when a knowledge-base document's `fileUrl` references an internal `kb/`
- * storage object that is not owned by the target knowledge base's workspace.
+ * Thrown when a knowledge-base document's `fileUrl` references an internal
+ * knowledge-base storage object not owned by the target knowledge base's workspace.
  * Routes map this to a 403.
+ *
+ * Deliberately carries no `details.code`. It belongs to the cross-tenant class
+ * the closed set in `lib/core/application/forbidden.ts` excludes: it fires
+ * identically for a key bound to another tenant and for a key bound to nothing
+ * at all, so the single fixed message is the whole of what a caller may learn,
+ * and a machine-readable name would only invite a client to read resource
+ * existence into it.
  */
-export class KnowledgeBaseFileOwnershipError extends Error {
+export class KnowledgeBaseFileOwnershipError extends OrchestrationError {
   constructor(public readonly storageKey: string) {
-    super('Document file is not owned by this knowledge base')
+    super('forbidden', 'Document file is not owned by this knowledge base')
     this.name = 'KnowledgeBaseFileOwnershipError'
   }
 }
 
 /**
  * Guard document `fileUrl`s at creation time. When a URL points at an internal
- * `kb/` storage object, require that the target knowledge base owns the object,
+ * knowledge-base storage object, require that the target knowledge base owns the object,
  * resolved from the trusted `workspace_files` binding:
  *
  * - Workspace KB (`kbWorkspaceId` set): the binding's `workspaceId` must match.
@@ -102,13 +149,65 @@ export class KnowledgeBaseFileOwnershipError extends Error {
  *   owner. A key bound to another tenant is rejected; an unbound key (legacy /
  *   never reserved) passes since it carries no cross-tenant ownership.
  *
- * External `http(s)`/`data:` URLs (ingestion sources) and non-`kb/` internal keys
+ * External `http(s)`/`data:` URLs (ingestion sources) and other internal keys
  * pass through unchanged. This blocks a user from asserting ownership of another
- * tenant's `kb/` key via a planted `fileUrl` — including in a personal KB, which
+ * tenant's object via a planted `fileUrl` — including in a personal KB, which
  * otherwise could be moved into a workspace to launder the binding. All
  * referenced bindings are resolved in one query (no N+1 inside the `FOR UPDATE`
  * window). Single-document callers pass a one-element array.
  */
+function isKnowledgeBaseOwnedStorageKey(key: string): boolean {
+  return key.startsWith('kb/') || key.startsWith('knowledge-base/')
+}
+
+function getKnowledgeBaseStorageKeys(fileUrls: readonly string[]): string[] {
+  return [
+    ...new Set(
+      fileUrls
+        .map((url) => getKnowledgeBaseStorageKey(url))
+        .filter(
+          (key): key is string => typeof key === 'string' && isKnowledgeBaseOwnedStorageKey(key)
+        )
+    ),
+  ]
+}
+
+function getWorkspaceSourceStorageKeys(fileUrls: readonly string[]): string[] {
+  return [
+    ...new Set(
+      fileUrls
+        .map((url) => getKnowledgeBaseStorageKey(url))
+        .filter((key): key is string => typeof key === 'string' && key.startsWith('workspace/'))
+    ),
+  ]
+}
+
+async function loadKnowledgeBaseFileBindings(
+  fileUrls: readonly string[],
+  executor: DbExecutor = db
+): Promise<Map<string, FileMetadataRecord>> {
+  const keys = getKnowledgeBaseStorageKeys(fileUrls)
+  const bindings =
+    keys.length > 0 ? await getFileMetadataByKeys(keys, 'knowledge-base', executor) : []
+
+  return new Map(bindings.map((binding) => [binding.key, binding]))
+}
+
+async function loadWorkspaceSourceFileBindings(
+  fileUrls: readonly string[],
+  executor: DbExecutor = db
+): Promise<Map<string, FileMetadataRecord>> {
+  const keys = getWorkspaceSourceStorageKeys(fileUrls)
+  if (keys.length === 0) return new Map()
+
+  const workspaceBindings = await getFileMetadataByKeys(keys, 'workspace', executor)
+  const mothershipBindings = await getFileMetadataByKeys(keys, 'mothership', executor)
+
+  return new Map(
+    [...workspaceBindings, ...mothershipBindings].map((binding) => [binding.key, binding])
+  )
+}
+
 async function assertKnowledgeBaseFileUrlsOwnership(
   fileUrls: string[],
   kbWorkspaceId: string | null,
@@ -116,21 +215,12 @@ async function assertKnowledgeBaseFileUrlsOwnership(
   requestId: string,
   executor: DbExecutor = db
 ): Promise<Map<string, FileMetadataRecord>> {
-  const keys = [
-    ...new Set(
-      fileUrls
-        .map((url) => getKnowledgeBaseStorageKey(url))
-        .filter((key): key is string => typeof key === 'string' && key.startsWith('kb/'))
-    ),
-  ]
+  const keys = getKnowledgeBaseStorageKeys(fileUrls)
   if (keys.length === 0) {
     return new Map()
   }
 
-  // Read bindings on the caller's transaction so the security check shares the
-  // same connection/lock context as the FOR UPDATE'd insert that follows.
-  const bindings = await getFileMetadataByKeys(keys, 'knowledge-base', executor)
-  const bindingByKey = new Map(bindings.map((binding) => [binding.key, binding]))
+  const bindingByKey = await loadKnowledgeBaseFileBindings(fileUrls, executor)
 
   for (const key of keys) {
     const binding = bindingByKey.get(key)
@@ -164,6 +254,21 @@ async function assertKnowledgeBaseFileUrlsOwnership(
   }
 
   return bindingByKey
+}
+
+async function loadCurrentWorkspaceSourceFileSecretProvenance(options: {
+  fileUrl: string
+}): Promise<DurableSecretProvenance | undefined> {
+  const storageKey = getKnowledgeBaseStorageKey(options.fileUrl)
+  if (!storageKey?.startsWith('workspace/')) return undefined
+
+  const bindingByKey = await loadWorkspaceSourceFileBindings([options.fileUrl])
+  const binding = bindingByKey.get(storageKey)
+  if (!binding) return undefined
+
+  const provenanceById = await getBoundWorkspaceFileSecretProvenanceByMetadata(db, [binding])
+  const provenance = provenanceById.get(binding.id) ?? { status: 'unknown' as const }
+  return durableSecretProvenanceFromWorkspaceFile(provenance, binding)
 }
 
 const TIMEOUTS = {
@@ -402,10 +507,98 @@ function resolveDocumentTags(
       setTagValue(result, targetSlot, stringValue)
     }
 
-    logger.info(`[${requestId}] Set tag ${tagName} (${targetSlot}) = ${stringValue}`)
+    logger.info(`[${requestId}] Set tag ${tagName} (${targetSlot})`, {
+      fieldType: actualFieldType,
+    })
   }
 
   return result
+}
+
+const KNOWLEDGE_DOCUMENT_TAG_FIELDS = new Set<KnowledgeDocumentMetadataField>([
+  'tag1',
+  'tag2',
+  'tag3',
+  'tag4',
+  'tag5',
+  'tag6',
+  'tag7',
+  'number1',
+  'number2',
+  'number3',
+  'number4',
+  'number5',
+  'date1',
+  'date2',
+  'boolean1',
+  'boolean2',
+  'boolean3',
+])
+
+function durableSecretProvenanceFromWorkspaceFile(
+  provenance: WorkspaceFileSecretProvenance,
+  binding: FileMetadataRecord
+): DurableSecretProvenance {
+  if (provenance.status === 'unknown') return provenance
+  return {
+    status: 'exact',
+    entries: provenance.entries.map((entry) => ({
+      ...entry,
+      sourceUserId: binding.userId,
+      ...(binding.workspaceId ? { sourceWorkspaceId: binding.workspaceId } : {}),
+    })),
+  }
+}
+
+function bindKnowledgeDocumentWriteSecretProvenance(options: {
+  source: ReturnType<typeof createKnowledgeDocumentSourceValue>
+  provenance?: KnowledgeDocumentWriteSecretProvenance
+  tagDefinitions: TagDefinitionsByName
+  boundFile?: {
+    binding: FileMetadataRecord
+    provenance: WorkspaceFileSecretProvenance
+  }
+}): DurableSecretProvenance | undefined {
+  const values: DurableSecretProvenance[] = []
+  if (options.provenance) {
+    values.push(
+      bindKnowledgeDocumentFieldSecretProvenance(
+        options.provenance.filename,
+        'filename',
+        options.source.filename
+      ),
+      bindKnowledgeDocumentFieldSecretProvenance(options.provenance.content, 'content', {
+        fileUrl: options.source.fileUrl,
+        contentHash: options.source.contentHash,
+      })
+    )
+    for (const tag of options.provenance.tags) {
+      const tagField = options.tagDefinitions.get(tag.tagName)?.tagSlot
+      if (
+        !tagField ||
+        !KNOWLEDGE_DOCUMENT_TAG_FIELDS.has(tagField as KnowledgeDocumentMetadataField)
+      ) {
+        return { status: 'unknown' }
+      }
+      const field = tagField as KnowledgeDocumentMetadataField
+      values.push(
+        bindKnowledgeDocumentFieldSecretProvenance(tag.provenance, field, options.source[field])
+      )
+    }
+  }
+  if (options.boundFile) {
+    values.push(
+      bindKnowledgeDocumentFieldSecretProvenance(
+        durableSecretProvenanceFromWorkspaceFile(
+          options.boundFile.provenance,
+          options.boundFile.binding
+        ),
+        'content',
+        { fileUrl: options.source.fileUrl, contentHash: options.source.contentHash }
+      )
+    )
+  }
+  return values.length > 0 ? mergeDurableSecretProvenance(...values) : undefined
 }
 
 /** Per-call cap for `tasks.batchTrigger` on Trigger.dev SDK 4.3.1+. */
@@ -595,8 +788,13 @@ export async function processDocumentAsync(
   providedBillingContext?: BillingAttributionSnapshot | DocumentProcessingBillingContext
 ): Promise<void> {
   const startTime = Date.now()
+  const processingStartedAt = new Date()
   try {
-    logger.info(`[${documentId}] Starting document processing: ${docData.filename}`)
+    logger.info(`[${documentId}] Starting document processing`, {
+      knowledgeBaseId,
+      mimeType: docData.mimeType,
+      fileSize: docData.fileSize,
+    })
 
     // KB config + workspace billing + doc tags in one JOIN (was 3 SELECTs).
     const contextRows = await db
@@ -607,6 +805,10 @@ export async function processDocumentAsync(
         embeddingModel: knowledgeBase.embeddingModel,
         billedAccountUserId: workspaceTable.billedAccountUserId,
         uploadedBy: document.uploadedBy,
+        filename: document.filename,
+        fileUrl: document.fileUrl,
+        fileSize: document.fileSize,
+        mimeType: document.mimeType,
         tag1: document.tag1,
         tag2: document.tag2,
         tag3: document.tag3,
@@ -658,12 +860,18 @@ export async function processDocumentAsync(
     }
 
     const ctx = contextRows[0]
+    const persistedDocData = {
+      filename: ctx.filename,
+      fileUrl: ctx.fileUrl,
+      fileSize: ctx.fileSize,
+      mimeType: ctx.mimeType,
+    }
 
     await db
       .update(document)
       .set({
         processingStatus: 'processing',
-        processingStartedAt: new Date(),
+        processingStartedAt,
         processingCompletedAt: null,
         processingError: null,
       })
@@ -738,181 +946,246 @@ export async function processDocumentAsync(
             usageGate.message ?? 'Usage limit exceeded. Please upgrade your plan to continue.',
           processingCompletedAt: new Date(),
         })
-        .where(eq(document.id, documentId))
+        .where(
+          and(
+            eq(document.id, documentId),
+            eq(document.processingStatus, 'processing'),
+            eq(document.processingStartedAt, processingStartedAt)
+          )
+        )
       return
     }
-    let totalEmbeddingTokens = 0
-    let embeddingIsBYOK = false
+    let billableEmbeddingTokens = 0
     let embeddingModelName = kbEmbeddingModel
     let embeddingPricingId = kbEmbeddingModel
 
+    const currentSourceFileProvenance = await loadCurrentWorkspaceSourceFileSecretProvenance({
+      fileUrl: persistedDocData.fileUrl,
+    })
+    const documentSecretContext = await loadKnowledgeDocumentSecretRegistry(
+      documentId,
+      {
+        userId: documentActorUserId,
+        ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
+      },
+      currentSourceFileProvenance
+    )
+
+    let processingCommitted = false
     await withTimeout(
-      (async () => {
-        const processed = await processDocument(
-          docData.fileUrl,
-          docData.filename,
-          docData.mimeType,
-          kbConfig.maxSize,
-          kbConfig.overlap,
-          kbConfig.minSize,
-          /**
-           * Authorize source-file processing as the actor, not the payer. Using
-           * the KB owner would let a writer ingest an internal file that only the
-           * owner can read.
-           */
-          documentActorUserId,
-          ctx.workspaceId,
-          rawConfig?.strategy,
-          rawConfig?.strategyOptions
-        )
-
-        if (processed.chunks.length > LARGE_DOC_CONFIG.MAX_CHUNKS_PER_DOCUMENT) {
-          throw new Error(
-            `Document has ${processed.chunks.length.toLocaleString()} chunks, exceeding maximum of ${LARGE_DOC_CONFIG.MAX_CHUNKS_PER_DOCUMENT.toLocaleString()}. ` +
-              `This document is unusually large and may need to be split into multiple files or preprocessed to reduce content.`
+      runWithKnowledgeModelInputProvenance(
+        documentSecretContext.registry,
+        async () => {
+          const processed = await processDocument(
+            persistedDocData.fileUrl,
+            persistedDocData.filename,
+            persistedDocData.mimeType,
+            kbConfig.maxSize,
+            kbConfig.overlap,
+            kbConfig.minSize,
+            /**
+             * Authorize source-file processing as the actor, not the payer. Using
+             * the KB owner would let a writer ingest an internal file that only the
+             * owner can read.
+             */
+            documentActorUserId,
+            ctx.workspaceId,
+            rawConfig?.strategy,
+            rawConfig?.strategyOptions
           )
-        }
 
-        const now = new Date()
-
-        logger.info(
-          `[${documentId}] Document parsed successfully, generating embeddings for ${processed.chunks.length} chunks`
-        )
-
-        const chunkTexts = processed.chunks.map((chunk) => chunk.text)
-        const embeddings: number[][] = []
-
-        if (chunkTexts.length > 0) {
-          const batchSize = LARGE_DOC_CONFIG.MAX_EMBEDDING_BATCH
-          const totalBatches = Math.ceil(chunkTexts.length / batchSize)
-
-          logger.info(`[${documentId}] Generating embeddings in ${totalBatches} batches`)
-
-          for (let i = 0; i < chunkTexts.length; i += batchSize) {
-            const batch = chunkTexts.slice(i, i + batchSize)
-            const batchNum = Math.floor(i / batchSize) + 1
-
-            logger.info(`[${documentId}] Processing embedding batch ${batchNum}/${totalBatches}`)
-            const {
-              embeddings: batchEmbeddings,
-              totalTokens: batchTokens,
-              isBYOK,
-              modelName,
-              pricingId,
-            } = await generateEmbeddings(batch, kbEmbeddingModel, ctx.workspaceId)
-            for (const emb of batchEmbeddings) {
-              embeddings.push(emb)
-            }
-            totalEmbeddingTokens += batchTokens
-            if (i === 0) {
-              embeddingIsBYOK = isBYOK
-              embeddingModelName = modelName
-              embeddingPricingId = pricingId
-            }
-          }
-        }
-
-        // Tag values prefetched above; reuse for the embedding rows.
-        const documentTags = ctx
-
-        logger.info(`[${documentId}] Embeddings generated, creating embedding records with tags`)
-
-        const tokenizerProvider = getEmbeddingModelInfo(kbEmbeddingModel).tokenizerProvider
-
-        const embeddingRecords = processed.chunks.map((chunk, chunkIndex) => ({
-          id: generateId(),
-          knowledgeBaseId,
-          documentId,
-          chunkIndex,
-          chunkHash: sha256Hex(chunk.text),
-          content: chunk.text,
-          contentLength: chunk.text.length,
-          tokenCount: estimateTokenCount(chunk.text, tokenizerProvider).count,
-          embedding: embeddings[chunkIndex] || null,
-          embeddingModel: kbEmbeddingModel,
-          startOffset: chunk.metadata.startIndex,
-          endOffset: chunk.metadata.endIndex,
-          tag1: documentTags.tag1,
-          tag2: documentTags.tag2,
-          tag3: documentTags.tag3,
-          tag4: documentTags.tag4,
-          tag5: documentTags.tag5,
-          tag6: documentTags.tag6,
-          tag7: documentTags.tag7,
-          number1: documentTags.number1,
-          number2: documentTags.number2,
-          number3: documentTags.number3,
-          number4: documentTags.number4,
-          number5: documentTags.number5,
-          date1: documentTags.date1,
-          date2: documentTags.date2,
-          boolean1: documentTags.boolean1,
-          boolean2: documentTags.boolean2,
-          boolean3: documentTags.boolean3,
-          createdAt: now,
-          updatedAt: now,
-        }))
-
-        await db.transaction(async (tx) => {
-          const activeDocument = await tx
-            .select({ id: document.id })
-            .from(document)
-            .innerJoin(knowledgeBase, eq(document.knowledgeBaseId, knowledgeBase.id))
-            .where(
-              and(
-                eq(document.id, documentId),
-                isNull(document.archivedAt),
-                isNull(document.deletedAt),
-                isNull(knowledgeBase.deletedAt)
-              )
+          if (processed.chunks.length > LARGE_DOC_CONFIG.MAX_CHUNKS_PER_DOCUMENT) {
+            throw new Error(
+              `Document has ${processed.chunks.length.toLocaleString()} chunks, exceeding maximum of ${LARGE_DOC_CONFIG.MAX_CHUNKS_PER_DOCUMENT.toLocaleString()}. ` +
+                `This document is unusually large and may need to be split into multiple files or preprocessed to reduce content.`
             )
-            .limit(1)
-
-          if (activeDocument.length === 0) {
-            return
           }
 
-          if (embeddingRecords.length > 0) {
-            await tx.delete(embedding).where(eq(embedding.documentId, documentId))
+          const now = new Date()
 
-            const insertBatchSize = LARGE_DOC_CONFIG.MAX_CHUNKS_PER_BATCH
-            const batches: (typeof embeddingRecords)[] = []
-            for (let i = 0; i < embeddingRecords.length; i += insertBatchSize) {
-              batches.push(embeddingRecords.slice(i, i + insertBatchSize))
-            }
+          logger.info(
+            `[${documentId}] Document parsed successfully, generating embeddings for ${processed.chunks.length} chunks`
+          )
 
-            logger.info(`[${documentId}] Inserting ${embeddingRecords.length} embeddings`)
-            for (const batch of batches) {
-              await tx.insert(embedding).values(batch)
+          const chunkTexts = processed.chunks.map((chunk) => chunk.text)
+          const embeddings: number[][] = []
+
+          if (chunkTexts.length > 0) {
+            const batchSize = LARGE_DOC_CONFIG.MAX_EMBEDDING_BATCH
+            const totalBatches = Math.ceil(chunkTexts.length / batchSize)
+
+            logger.info(`[${documentId}] Generating embeddings in ${totalBatches} batches`)
+
+            for (let i = 0; i < chunkTexts.length; i += batchSize) {
+              const batch = chunkTexts.slice(i, i + batchSize)
+              const batchNum = Math.floor(i / batchSize) + 1
+
+              logger.info(`[${documentId}] Processing embedding batch ${batchNum}/${totalBatches}`)
+              const {
+                embeddings: batchEmbeddings,
+                billableTokens: batchBillableTokens,
+                modelName,
+                pricingId,
+              } = await generateEmbeddings(batch, kbEmbeddingModel, ctx.workspaceId)
+              for (const emb of batchEmbeddings) {
+                embeddings.push(emb)
+              }
+              billableEmbeddingTokens += batchBillableTokens
+              if (i === 0) {
+                embeddingModelName = modelName
+                embeddingPricingId = pricingId
+              }
             }
           }
 
-          await tx
-            .update(document)
-            .set({
-              chunkCount: processed.metadata.chunkCount,
-              tokenCount: processed.metadata.tokenCount,
-              characterCount: processed.metadata.characterCount,
-              processingStatus: 'completed',
-              processingCompletedAt: now,
-              processingError: null,
-            })
-            .where(eq(document.id, documentId))
-        })
-      })(),
+          // Tag values prefetched above; reuse for the embedding rows.
+          const documentTags = ctx
+
+          logger.info(`[${documentId}] Embeddings generated, creating embedding records with tags`)
+
+          const tokenizerProvider = getEmbeddingModelInfo(kbEmbeddingModel).tokenizerProvider
+
+          const chunkProvenances = processed.chunks.map((chunk) =>
+            documentSecretContext.tracked
+              ? documentSecretContext.registry
+                ? durableSecretProvenanceFromRegistry(documentSecretContext.registry, chunk.text)
+                : EXACT_EMPTY_DURABLE_SECRET_PROVENANCE
+              : undefined
+          )
+          const embeddingRecords = processed.chunks.map((chunk, chunkIndex) => ({
+            id: generateId(),
+            knowledgeBaseId,
+            documentId,
+            chunkIndex,
+            chunkHash: sha256Hex(chunk.text),
+            content: chunk.text,
+            secretProvenanceVersion: chunkProvenances[chunkIndex] ? 1 : null,
+            contentLength: chunk.text.length,
+            tokenCount: estimateTokenCount(chunk.text, tokenizerProvider).count,
+            embedding: embeddings[chunkIndex] || null,
+            embeddingModel: kbEmbeddingModel,
+            startOffset: chunk.metadata.startIndex,
+            endOffset: chunk.metadata.endIndex,
+            tag1: documentTags.tag1,
+            tag2: documentTags.tag2,
+            tag3: documentTags.tag3,
+            tag4: documentTags.tag4,
+            tag5: documentTags.tag5,
+            tag6: documentTags.tag6,
+            tag7: documentTags.tag7,
+            number1: documentTags.number1,
+            number2: documentTags.number2,
+            number3: documentTags.number3,
+            number4: documentTags.number4,
+            number5: documentTags.number5,
+            date1: documentTags.date1,
+            date2: documentTags.date2,
+            boolean1: documentTags.boolean1,
+            boolean2: documentTags.boolean2,
+            boolean3: documentTags.boolean3,
+            createdAt: now,
+            updatedAt: now,
+          }))
+
+          processingCommitted = await db.transaction(async (tx) => {
+            const activeDocument = await tx
+              .select({ id: document.id })
+              .from(document)
+              .innerJoin(knowledgeBase, eq(document.knowledgeBaseId, knowledgeBase.id))
+              .where(
+                and(
+                  eq(document.id, documentId),
+                  eq(document.processingStatus, 'processing'),
+                  eq(document.processingStartedAt, processingStartedAt),
+                  isNull(document.archivedAt),
+                  isNull(document.deletedAt),
+                  isNull(knowledgeBase.deletedAt)
+                )
+              )
+              .for('update', { of: document })
+              .limit(1)
+
+            if (activeDocument.length === 0) {
+              return false
+            }
+
+            if (embeddingRecords.length > 0) {
+              await tx.delete(embedding).where(eq(embedding.documentId, documentId))
+
+              const insertBatchSize = LARGE_DOC_CONFIG.MAX_CHUNKS_PER_BATCH
+              const batches: (typeof embeddingRecords)[] = []
+              for (let i = 0; i < embeddingRecords.length; i += insertBatchSize) {
+                batches.push(embeddingRecords.slice(i, i + insertBatchSize))
+              }
+
+              logger.info(`[${documentId}] Inserting ${embeddingRecords.length} embeddings`)
+              for (const batch of batches) {
+                await tx.insert(embedding).values(batch)
+              }
+              const provenanceRecords = embeddingRecords.flatMap((record, index) => {
+                const provenance = chunkProvenances[index]
+                if (!provenance) return []
+                return [
+                  {
+                    embeddingId: record.id,
+                    contentHash: record.chunkHash,
+                    status: provenance.status,
+                    entries: provenance.status === 'exact' ? [...provenance.entries] : [],
+                    updatedAt: now,
+                  },
+                ]
+              })
+              for (let i = 0; i < provenanceRecords.length; i += insertBatchSize) {
+                await tx
+                  .insert(embeddingSecretProvenance)
+                  .values(provenanceRecords.slice(i, i + insertBatchSize))
+              }
+            }
+
+            await tx
+              .update(document)
+              .set({
+                chunkCount: processed.metadata.chunkCount,
+                tokenCount: processed.metadata.tokenCount,
+                characterCount: processed.metadata.characterCount,
+                processingStatus: 'completed',
+                processingCompletedAt: now,
+                processingError: null,
+              })
+              .where(
+                and(
+                  eq(document.id, documentId),
+                  eq(document.processingStatus, 'processing'),
+                  eq(document.processingStartedAt, processingStartedAt)
+                )
+              )
+            return true
+          })
+        },
+        {
+          opaqueInputSafe:
+            documentSecretContext.provenance.status === 'exact' &&
+            documentSecretContext.provenance.entries.length === 0,
+        }
+      ),
       TIMEOUTS.OVERALL_PROCESSING,
       'Document processing'
     )
 
+    if (!processingCommitted) {
+      logger.info(`[${documentId}] Discarded output from an obsolete processing attempt`)
+      return
+    }
+
     const processingTime = Date.now() - startTime
     logger.info(`[${documentId}] Successfully processed document in ${processingTime}ms`)
 
-    if (!embeddingIsBYOK && totalEmbeddingTokens > 0) {
+    if (billableEmbeddingTokens > 0) {
       try {
         const costMultiplier = getCostMultiplier()
         const { total: cost } = calculateCost(
           embeddingPricingId,
-          totalEmbeddingTokens,
+          billableEmbeddingTokens,
           0,
           false,
           costMultiplier
@@ -929,7 +1202,7 @@ export async function processDocumentAsync(
                 description: embeddingModelName,
                 cost,
                 sourceReference: `knowledge-document:${documentId}:${startTime}`,
-                metadata: { inputTokens: totalEmbeddingTokens, outputTokens: 0 },
+                metadata: { inputTokens: billableEmbeddingTokens, outputTokens: 0 },
               },
             ],
           })
@@ -941,7 +1214,7 @@ export async function processDocumentAsync(
         } else {
           logger.warn(
             `[${documentId}] Embedding model "${embeddingModelName}" has no pricing entry — billing skipped`,
-            { totalEmbeddingTokens, embeddingModelName }
+            { billableEmbeddingTokens, embeddingModelName }
           )
         }
       } catch (billingError) {
@@ -952,11 +1225,10 @@ export async function processDocumentAsync(
     const processingTime = Date.now() - startTime
     const errorMessage = getErrorMessage(error, 'Unknown error')
     logger.error(`[${documentId}] Failed to process document after ${processingTime}ms:`, {
-      error: errorMessage,
-      stack: error instanceof Error ? error.stack : undefined,
-      filename: docData.filename,
-      fileUrl: docData.fileUrl,
+      errorType: toError(error).name,
+      knowledgeBaseId,
       mimeType: docData.mimeType,
+      fileSize: docData.fileSize,
     })
 
     await db
@@ -966,7 +1238,13 @@ export async function processDocumentAsync(
         processingError: errorMessage,
         processingCompletedAt: new Date(),
       })
-      .where(eq(document.id, documentId))
+      .where(
+        and(
+          eq(document.id, documentId),
+          eq(document.processingStatus, 'processing'),
+          eq(document.processingStartedAt, processingStartedAt)
+        )
+      )
 
     throw error
   }
@@ -1018,15 +1296,9 @@ function getServerKnownDocumentSize(
 async function resolveServerKnownDocumentSizes<
   T extends { readonly fileUrl: string; readonly fileSize: number },
 >(documents: readonly T[]): Promise<Array<T & { fileSize: number }>> {
-  const keys = [
-    ...new Set(
-      documents
-        .map((docData) => getKnowledgeBaseStorageKey(docData.fileUrl))
-        .filter((key): key is string => typeof key === 'string' && key.startsWith('kb/'))
-    ),
-  ]
-  const bindings = keys.length > 0 ? await getFileMetadataByKeys(keys, 'knowledge-base') : []
-  const bindingByKey = new Map(bindings.map((binding) => [binding.key, binding]))
+  const bindingByKey = await loadKnowledgeBaseFileBindings(
+    documents.map((document) => document.fileUrl)
+  )
   return documents.map((docData) => ({
     ...docData,
     fileSize: getServerKnownDocumentSize(docData.fileUrl, docData.fileSize, bindingByKey),
@@ -1052,7 +1324,7 @@ async function resolveDocumentStorageAdmission(
     .where(and(eq(knowledgeBase.id, knowledgeBaseId), isNull(knowledgeBase.deletedAt)))
     .limit(1)
   if (!kb) {
-    throw new Error('Knowledge base not found')
+    throw new OrchestrationError('not_found', 'Knowledge base not found')
   }
 
   if (bytes <= 0) {
@@ -1064,7 +1336,7 @@ async function resolveDocumentStorageAdmission(
     const context = await resolveStorageBillingContext(kb.workspaceId)
     const quotaCheck = await checkStorageQuotaForBillingContext(context, bytes)
     if (!quotaCheck.allowed) {
-      throw new Error(quotaCheck.error || 'Storage limit exceeded')
+      throw new StorageLimitExceededError(quotaCheck.error || 'Storage limit exceeded')
     }
     return {
       workspaceId: kb.workspaceId,
@@ -1078,7 +1350,7 @@ async function resolveDocumentStorageAdmission(
     getHighestPrioritySubscription(billedUserId),
   ])
   if (!quotaCheck.allowed) {
-    throw new Error(quotaCheck.error || 'Storage limit exceeded')
+    throw new StorageLimitExceededError(quotaCheck.error || 'Storage limit exceeded')
   }
   return {
     workspaceId: null,
@@ -1104,12 +1376,15 @@ export async function createDocumentRecords(
   }>,
   knowledgeBaseId: string,
   requestId: string,
-  uploadedBy: string | null = null
+  uploadedBy: string | null = null,
+  secretProvenances?: readonly KnowledgeDocumentWriteSecretProvenance[]
 ): Promise<DocumentData[]> {
+  if (secretProvenances && secretProvenances.length !== documents.length) {
+    throw new Error('Knowledge document secret provenance count does not match the request')
+  }
   const resolvedDocuments = await resolveServerKnownDocumentSizes(documents)
   const totalBytes = resolvedDocuments.reduce((sum, docData) => sum + (docData.fileSize || 0), 0)
   const admission = await resolveDocumentStorageAdmission(knowledgeBaseId, uploadedBy, totalBytes)
-
   const { returnData, storageNotification } = await db.transaction(async (tx) => {
     let storageNotification: DocumentStorageNotification | null = null
 
@@ -1126,7 +1401,7 @@ export async function createDocumentRecords(
       .limit(1)
 
     if (kb.length === 0) {
-      throw new Error('Knowledge base not found')
+      throw new OrchestrationError('not_found', 'Knowledge base not found')
     }
 
     if (
@@ -1146,7 +1421,19 @@ export async function createDocumentRecords(
       requestId,
       tx
     )
-    for (const docData of resolvedDocuments) {
+    const sourceBindingByKey = await loadWorkspaceSourceFileBindings(
+      resolvedDocuments.map((docData) => docData.fileUrl),
+      tx
+    )
+    const trackedBindings = [
+      ...[...bindingByKey.values()].filter((binding) => binding.secretProvenanceVersion !== null),
+      ...sourceBindingByKey.values(),
+    ]
+    const boundFileProvenanceById = await getBoundWorkspaceFileSecretProvenanceByMetadata(
+      tx,
+      trackedBindings
+    )
+    for (const [documentIndex, docData] of resolvedDocuments.entries()) {
       const currentSize = getServerKnownDocumentSize(
         docData.fileUrl,
         docData.fileSize,
@@ -1176,7 +1463,7 @@ export async function createDocumentRecords(
           preparedBilling.bytes
         )
         if (!quotaCheck.allowed) {
-          throw new Error(quotaCheck.error || 'Storage limit exceeded')
+          throw new StorageLimitExceededError(quotaCheck.error || 'Storage limit exceeded')
         }
       }
     }
@@ -1189,9 +1476,10 @@ export async function createDocumentRecords(
 
     const now = new Date()
     const documentRecords = []
+    const documentProvenances: (DurableSecretProvenance | undefined)[] = []
     const returnData: DocumentData[] = []
 
-    for (const docData of resolvedDocuments) {
+    for (const [documentIndex, docData] of resolvedDocuments.entries()) {
       const documentId = generateId()
 
       let processedTags: Partial<ProcessedDocumentTags> = {}
@@ -1211,12 +1499,14 @@ export async function createDocumentRecords(
         }
       }
 
-      const newDocument = {
+      const storageKey = getKnowledgeBaseStorageKey(docData.fileUrl)
+      const baseDocument = {
         id: documentId,
         knowledgeBaseId,
         filename: docData.filename,
         fileUrl: docData.fileUrl,
-        storageKey: getKnowledgeBaseStorageKey(docData.fileUrl),
+        storageKey,
+        contentHash: null,
         fileSize: docData.fileSize,
         mimeType: docData.mimeType,
         chunkCount: 0,
@@ -1244,8 +1534,32 @@ export async function createDocumentRecords(
         boolean2: processedTags.boolean2 ?? null,
         boolean3: processedTags.boolean3 ?? null,
       }
+      const source = createKnowledgeDocumentSourceValue(baseDocument)
+      const binding = storageKey
+        ? (bindingByKey.get(storageKey) ?? sourceBindingByKey.get(storageKey))
+        : undefined
+      const provenanceBinding =
+        binding && (binding.secretProvenanceVersion !== null || sourceBindingByKey.has(binding.key))
+          ? binding
+          : undefined
+      const boundFileProvenance = provenanceBinding
+        ? (boundFileProvenanceById.get(provenanceBinding.id) ?? { status: 'unknown' as const })
+        : undefined
+      const provenance = bindKnowledgeDocumentWriteSecretProvenance({
+        source,
+        provenance: secretProvenances?.[documentIndex],
+        tagDefinitions,
+        ...(provenanceBinding && boundFileProvenance
+          ? { boundFile: { binding: provenanceBinding, provenance: boundFileProvenance } }
+          : {}),
+      })
+      const newDocument = {
+        ...baseDocument,
+        secretProvenanceVersion: provenance ? 1 : null,
+      }
 
       documentRecords.push(newDocument)
+      documentProvenances.push(provenance)
       returnData.push({
         documentId,
         filename: docData.filename,
@@ -1257,6 +1571,16 @@ export async function createDocumentRecords(
 
     if (documentRecords.length > 0) {
       await tx.insert(document).values(documentRecords)
+      for (const [documentIndex, record] of documentRecords.entries()) {
+        const provenance = documentProvenances[documentIndex]
+        if (!provenance) continue
+        await replaceKnowledgeDocumentSecretProvenanceInTx(
+          tx,
+          record.id,
+          createKnowledgeDocumentSourceValue(record),
+          provenance
+        )
+      }
       logger.info(
         `[${requestId}] Bulk created ${documentRecords.length} document records in knowledge base ${knowledgeBaseId}`
       )
@@ -1361,15 +1685,14 @@ export async function getDocuments(
   }
 
   if (search) {
-    whereConditions.push(sql`LOWER(${document.filename}) LIKE LOWER(${`%${search}%`})`)
+    whereConditions.push(searchFilter(document.filename, search))
   }
 
   if (tagFilters && tagFilters.length > 0) {
     for (const filter of tagFilters) {
       const condition = buildTagFilterCondition(filter)
-      if (condition) {
-        whereConditions.push(condition)
-      }
+      if (!condition) throw uncompilableTagFilterError(filter)
+      whereConditions.push(condition)
     }
   }
 
@@ -1502,6 +1825,60 @@ export async function getDocuments(
   }
 }
 
+export type ActiveKnowledgeDocument = typeof document.$inferSelect & {
+  connectorType: string | null
+}
+
+/** Loads one visible document and its connector metadata for every API adapter. */
+export async function getKnowledgeDocument(
+  knowledgeBaseId: string,
+  documentId: string
+): Promise<ActiveKnowledgeDocument | null> {
+  const [row] = await db
+    .select({
+      ...getTableColumns(document),
+      connectorType: knowledgeConnector.connectorType,
+    })
+    .from(document)
+    .leftJoin(knowledgeConnector, eq(document.connectorId, knowledgeConnector.id))
+    .where(
+      and(
+        eq(document.id, documentId),
+        eq(document.knowledgeBaseId, knowledgeBaseId),
+        eq(document.userExcluded, false),
+        isNull(document.archivedAt),
+        isNull(document.deletedAt)
+      )
+    )
+    .limit(1)
+
+  return row ? { ...row, connectorType: row.connectorType ?? null } : null
+}
+
+/** Loads one visible document by its canonical ID before any asserted parent is trusted. */
+export async function getKnowledgeDocumentById(
+  documentId: string
+): Promise<ActiveKnowledgeDocument | null> {
+  const [row] = await db
+    .select({
+      ...getTableColumns(document),
+      connectorType: knowledgeConnector.connectorType,
+    })
+    .from(document)
+    .leftJoin(knowledgeConnector, eq(document.connectorId, knowledgeConnector.id))
+    .where(
+      and(
+        eq(document.id, documentId),
+        eq(document.userExcluded, false),
+        isNull(document.archivedAt),
+        isNull(document.deletedAt)
+      )
+    )
+    .limit(1)
+
+  return row ? { ...row, connectorType: row.connectorType ?? null } : null
+}
+
 export async function createSingleDocument(
   documentData: {
     filename: string
@@ -1519,7 +1896,16 @@ export async function createSingleDocument(
   },
   knowledgeBaseId: string,
   requestId: string,
-  uploadedBy: string | null = null
+  uploadedBy: string | null = null,
+  documentId = generateId(),
+  secretProvenance?: KnowledgeDocumentWriteSecretProvenance,
+  options?: {
+    expectedWorkspaceId?: string
+    processing?: {
+      processingOptions: ProcessingOptions
+      billingAttribution: BillingAttributionSnapshot
+    }
+  }
 ): Promise<{
   id: string
   knowledgeBaseId: string
@@ -1530,6 +1916,7 @@ export async function createSingleDocument(
   chunkCount: number
   tokenCount: number
   characterCount: number
+  processingStatus: 'pending'
   enabled: boolean
   uploadedAt: Date
   tag1: string | null
@@ -1540,7 +1927,6 @@ export async function createSingleDocument(
   tag6: string | null
   tag7: string | null
 }> {
-  const documentId = generateId()
   const now = new Date()
   const [resolvedDocumentData] = await resolveServerKnownDocumentSizes([documentData])
   const admission = await resolveDocumentStorageAdmission(
@@ -1548,7 +1934,6 @@ export async function createSingleDocument(
     uploadedBy,
     resolvedDocumentData.fileSize
   )
-
   let processedTags: ProcessedDocumentTags = {
     tag1: documentData.tag1 ?? null,
     tag2: documentData.tag2 ?? null,
@@ -1568,12 +1953,13 @@ export async function createSingleDocument(
     boolean2: null,
     boolean3: null,
   }
+  let tagDefinitions: TagDefinitionsByName = new Map()
 
   if (documentData.documentTagsData) {
     try {
       const tagData = JSON.parse(documentData.documentTagsData)
       if (Array.isArray(tagData)) {
-        const tagDefinitions = await loadTagDefinitions(knowledgeBaseId)
+        tagDefinitions = await loadTagDefinitions(knowledgeBaseId)
         processedTags = resolveDocumentTags(tagData, tagDefinitions, requestId)
       }
     } catch (error) {
@@ -1596,6 +1982,7 @@ export async function createSingleDocument(
     chunkCount: 0,
     tokenCount: 0,
     characterCount: 0,
+    processingStatus: 'pending' as const,
     enabled: true,
     uploadedAt: now,
     uploadedBy,
@@ -1618,7 +2005,14 @@ export async function createSingleDocument(
       .limit(1)
 
     if (kb.length === 0) {
-      throw new Error('Knowledge base not found')
+      throw new OrchestrationError('not_found', 'Knowledge base not found')
+    }
+
+    if (
+      options?.expectedWorkspaceId !== undefined &&
+      kb[0].workspaceId !== options.expectedWorkspaceId
+    ) {
+      throw new OrchestrationError('not_found', 'Knowledge base not found')
     }
 
     if (
@@ -1636,6 +2030,22 @@ export async function createSingleDocument(
       kb[0].userId,
       requestId,
       tx
+    )
+    const sourceBindingByKey = await loadWorkspaceSourceFileBindings(
+      [resolvedDocumentData.fileUrl],
+      tx
+    )
+    const storageKey = getKnowledgeBaseStorageKey(resolvedDocumentData.fileUrl)
+    const binding = storageKey
+      ? (bindingByKey.get(storageKey) ?? sourceBindingByKey.get(storageKey))
+      : undefined
+    const provenanceBinding =
+      binding && (binding.secretProvenanceVersion !== null || sourceBindingByKey.has(binding.key))
+        ? binding
+        : undefined
+    const boundFileProvenanceById = await getBoundWorkspaceFileSecretProvenanceByMetadata(
+      tx,
+      provenanceBinding ? [provenanceBinding] : []
     )
     const currentSize = getServerKnownDocumentSize(
       resolvedDocumentData.fileUrl,
@@ -1665,17 +2075,44 @@ export async function createSingleDocument(
           preparedBilling.bytes
         )
         if (!quotaCheck.allowed) {
-          throw new Error(quotaCheck.error || 'Storage limit exceeded')
+          throw new StorageLimitExceededError(quotaCheck.error || 'Storage limit exceeded')
         }
       }
     }
 
-    await tx.insert(document).values(newDocument)
+    const source = createKnowledgeDocumentSourceValue(newDocument)
+    const boundFileProvenance = provenanceBinding
+      ? (boundFileProvenanceById.get(provenanceBinding.id) ?? { status: 'unknown' as const })
+      : undefined
+    const documentProvenance = bindKnowledgeDocumentWriteSecretProvenance({
+      source,
+      provenance: secretProvenance,
+      tagDefinitions,
+      ...(provenanceBinding && boundFileProvenance
+        ? { boundFile: { binding: provenanceBinding, provenance: boundFileProvenance } }
+        : {}),
+    })
+    await tx.insert(document).values({
+      ...newDocument,
+      secretProvenanceVersion: documentProvenance ? 1 : null,
+    })
+    if (documentProvenance) {
+      await replaceKnowledgeDocumentSecretProvenanceInTx(tx, documentId, source, documentProvenance)
+    }
 
     await tx
       .update(knowledgeBase)
       .set({ updatedAt: now })
       .where(eq(knowledgeBase.id, knowledgeBaseId))
+
+    if (options?.processing) {
+      await enqueueKnowledgeDocumentProcessing(tx, {
+        knowledgeBaseId,
+        documentId,
+        processingOptions: options.processing.processingOptions,
+        billingAttribution: options.processing.billingAttribution,
+      })
+    }
 
     return storageNotification
   })
@@ -1699,6 +2136,7 @@ export async function createSingleDocument(
     chunkCount: number
     tokenCount: number
     characterCount: number
+    processingStatus: 'pending'
     enabled: boolean
     uploadedAt: Date
     tag1: string | null
@@ -1709,6 +2147,60 @@ export async function createSingleDocument(
     tag6: string | null
     tag7: string | null
   }
+}
+
+/** Returns one active document by its deterministic upload id. */
+export async function getDocumentByUploadId(
+  documentId: string,
+  knowledgeBaseId: string
+): Promise<
+  | (Omit<Awaited<ReturnType<typeof createSingleDocument>>, 'processingStatus'> & {
+      processingStatus: 'pending' | 'processing' | 'completed' | 'failed'
+    })
+  | null
+> {
+  const [existing] = await db
+    .select({
+      id: document.id,
+      knowledgeBaseId: document.knowledgeBaseId,
+      filename: document.filename,
+      fileUrl: document.fileUrl,
+      fileSize: document.fileSize,
+      mimeType: document.mimeType,
+      chunkCount: document.chunkCount,
+      tokenCount: document.tokenCount,
+      characterCount: document.characterCount,
+      enabled: document.enabled,
+      uploadedAt: document.uploadedAt,
+      tag1: document.tag1,
+      tag2: document.tag2,
+      tag3: document.tag3,
+      tag4: document.tag4,
+      tag5: document.tag5,
+      tag6: document.tag6,
+      tag7: document.tag7,
+      processingStatus: document.processingStatus,
+    })
+    .from(document)
+    .where(
+      and(
+        eq(document.id, documentId),
+        eq(document.knowledgeBaseId, knowledgeBaseId),
+        isNull(document.deletedAt)
+      )
+    )
+    .limit(1)
+  if (!existing) return null
+  const processingStatus = existing.processingStatus
+  if (
+    processingStatus !== 'pending' &&
+    processingStatus !== 'processing' &&
+    processingStatus !== 'completed' &&
+    processingStatus !== 'failed'
+  ) {
+    throw new Error(`Document ${existing.id} has invalid processing status`)
+  }
+  return { ...existing, processingStatus }
 }
 
 export async function bulkDocumentOperation(
@@ -1747,7 +2239,7 @@ export async function bulkDocumentOperation(
     )
 
   if (documentsToUpdate.length === 0) {
-    throw new Error('No valid documents found to update')
+    throw new OrchestrationError('not_found', 'No valid documents found to update')
   }
 
   if (documentsToUpdate.length !== documentIds.length) {
@@ -1876,31 +2368,17 @@ export async function markDocumentAsFailedTimeout(
   processingStartedAt: Date,
   requestId: string
 ): Promise<{ success: boolean; processingDuration: number }> {
-  const now = new Date()
-  const processingDuration = now.getTime() - processingStartedAt.getTime()
-  const DEAD_PROCESS_THRESHOLD_MS = 600 * 1000 // 10 minutes
+  const result = await failStaleDocumentProcessingClaim({ documentId, processingStartedAt })
 
-  if (processingDuration <= DEAD_PROCESS_THRESHOLD_MS) {
-    throw new Error('Document has not been processing long enough to be considered dead')
+  if (result.success) {
+    logger.info(
+      `[${requestId}] Marked document ${documentId} as failed due to dead process (processing time: ${Math.round(result.processingDuration / 1000)}s)`
+    )
+  } else {
+    logger.info(`[${requestId}] Did not time out document ${documentId} because its claim changed`)
   }
 
-  await db
-    .update(document)
-    .set({
-      processingStatus: 'failed',
-      processingError: 'Processing timed out. Please retry or re-sync the connector.',
-      processingCompletedAt: now,
-    })
-    .where(eq(document.id, documentId))
-
-  logger.info(
-    `[${requestId}] Marked document ${documentId} as failed due to dead process (processing time: ${Math.round(processingDuration / 1000)}s)`
-  )
-
-  return {
-    success: true,
-    processingDuration,
-  }
+  return result
 }
 
 export async function retryDocumentProcessing(
@@ -2113,7 +2591,7 @@ export async function updateDocument(
     }
   })
 
-  await db.transaction(async (tx) => {
+  const doc = await db.transaction(async (tx) => {
     const hasTagUpdates = ALL_TAG_SLOTS.some((field) => typedUpdateData[field] !== undefined)
 
     if (hasTagUpdates) {
@@ -2132,22 +2610,54 @@ export async function updateDocument(
         .where(eq(embedding.documentId, documentId))
     }
 
-    await tx.update(document).set(dbUpdateData).where(eq(document.id, documentId))
+    const [current] = await tx
+      .select()
+      .from(document)
+      .where(eq(document.id, documentId))
+      .limit(1)
+      .for('update')
+    if (!current) return undefined
+
+    const [sidecar] =
+      current.secretProvenanceVersion === 1
+        ? await tx
+            .select()
+            .from(documentSecretProvenance)
+            .where(eq(documentSecretProvenance.documentId, documentId))
+            .limit(1)
+        : []
+    const currentSource = createKnowledgeDocumentSourceValue(current)
+    const currentProvenance = readBoundKnowledgeDocumentSecretProvenance({
+      secretProvenanceVersion: current.secretProvenanceVersion,
+      source: currentSource,
+      provenanceSourceHash: sidecar?.sourceHash ?? null,
+      status: sidecar?.status ?? null,
+      entries: sidecar?.entries,
+    })
+
+    const [updated] = await tx
+      .update(document)
+      .set(dbUpdateData)
+      .where(eq(document.id, documentId))
+      .returning()
+    if (updated && current.secretProvenanceVersion === 1) {
+      const updatedSource = createKnowledgeDocumentSourceValue(updated)
+      await replaceKnowledgeDocumentSecretProvenanceInTx(
+        tx,
+        documentId,
+        updatedSource,
+        rebindKnowledgeDocumentSecretProvenance(currentProvenance, currentSource, updatedSource)
+      )
+    }
+    return updated
   })
 
-  const updatedDocument = await db
-    .select()
-    .from(document)
-    .where(eq(document.id, documentId))
-    .limit(1)
-
-  if (updatedDocument.length === 0) {
+  if (!doc) {
     throw new Error(`Document ${documentId} not found`)
   }
 
   logger.info(`[${requestId}] Document updated: ${documentId}`)
 
-  const doc = updatedDocument[0]
   return {
     id: doc.id,
     knowledgeBaseId: doc.knowledgeBaseId,
@@ -2211,20 +2721,20 @@ export async function deleteDocumentStorageFiles(
     storageKey: getKnowledgeBaseStorageKey(doc.fileUrl),
   }))
 
-  // Resolve all kb/ ownership bindings in one query (avoids an N+1 across the
-  // delete fan-out below).
-  const kbKeys = [
+  const storageKeys = [
     ...new Set(
       entries
         .map((entry) => entry.storageKey)
-        .filter((key): key is string => typeof key === 'string' && key.startsWith('kb/'))
+        .filter(
+          (key): key is string => typeof key === 'string' && isKnowledgeBaseOwnedStorageKey(key)
+        )
     ),
   ]
-  const ownerByKey = new Map<string, string | null>()
-  if (kbKeys.length > 0) {
-    const bindings = await getFileMetadataByKeys(kbKeys, 'knowledge-base')
+  const bindingByKey = new Map<string, FileMetadataRecord>()
+  if (storageKeys.length > 0) {
+    const bindings = await getFileMetadataByKeys(storageKeys, 'knowledge-base')
     for (const binding of bindings) {
-      ownerByKey.set(binding.key, binding.workspaceId)
+      bindingByKey.set(binding.key, binding)
     }
   }
 
@@ -2233,32 +2743,43 @@ export async function deleteDocumentStorageFiles(
       return
     }
 
-    // Only delete a kb/ object when its trusted ownership binding confirms the
-    // deleting document's workspace owns it. Prevents deleting another tenant's
-    // object via a document with a planted fileUrl.
-    if (storageKey.startsWith('kb/')) {
-      const bindingWorkspaceId = ownerByKey.get(storageKey)
-      if (!bindingWorkspaceId) {
-        logger.warn(`[${requestId}] Skipping storage delete: no ownership binding for key`, {
-          documentId: doc.id,
-          storageKey,
-        })
-        return
-      }
-      if (!doc.workspaceId || bindingWorkspaceId !== doc.workspaceId) {
-        logger.warn(`[${requestId}] Skipping storage delete: ownership binding mismatch`, {
-          documentId: doc.id,
-          storageKey,
-          bindingWorkspaceId,
-          documentWorkspaceId: doc.workspaceId ?? null,
-        })
-        return
-      }
+    if (!isKnowledgeBaseOwnedStorageKey(storageKey)) {
+      return
+    }
+
+    const binding = bindingByKey.get(storageKey)
+    if (!binding?.workspaceId || binding.context !== 'knowledge-base') {
+      logger.warn(`[${requestId}] Skipping storage delete: no ownership binding for key`, {
+        documentId: doc.id,
+        storageKey,
+      })
+      return
+    }
+    if (!doc.workspaceId || binding.workspaceId !== doc.workspaceId) {
+      logger.warn(`[${requestId}] Skipping storage delete: ownership binding mismatch`, {
+        documentId: doc.id,
+        storageKey,
+        bindingWorkspaceId: binding.workspaceId,
+        documentWorkspaceId: doc.workspaceId ?? null,
+      })
+      return
     }
 
     try {
+      const metadataDeleted = await deleteFileMetadataByIdentity({
+        id: binding.id,
+        key: binding.key,
+        context: binding.context,
+        contentUpdatedAt: binding.contentUpdatedAt,
+      })
+      if (!metadataDeleted) {
+        logger.warn(`[${requestId}] Skipping storage delete: ownership binding changed`, {
+          documentId: doc.id,
+          storageKey,
+        })
+        return
+      }
       await deleteFile({ key: storageKey, context: 'knowledge-base' })
-      await deleteFileMetadata(storageKey)
     } catch (error) {
       logger.warn(`[${requestId}] Failed to delete document storage file`, {
         documentId: doc.id,
@@ -2297,7 +2818,8 @@ async function excludeConnectorDocuments(
 
 async function deleteDocumentsByLifecyclePolicy(
   documentIds: string[],
-  requestId: string
+  requestId: string,
+  expectedKnowledgeBaseId?: string
 ): Promise<number> {
   const ids = [...new Set(documentIds)]
   if (ids.length === 0) {
@@ -2310,14 +2832,26 @@ async function deleteDocumentsByLifecyclePolicy(
       connectorId: document.connectorId,
     })
     .from(document)
-    .where(inArray(document.id, ids))
+    .where(
+      expectedKnowledgeBaseId
+        ? and(
+            inArray(document.id, ids),
+            eq(document.knowledgeBaseId, expectedKnowledgeBaseId),
+            eq(document.userExcluded, false),
+            isNull(document.archivedAt),
+            isNull(document.deletedAt)
+          )
+        : inArray(document.id, ids)
+    )
 
   const connectorBackedIds = docs.filter((doc) => doc.connectorId !== null).map((doc) => doc.id)
   const hardDeleteIds = docs.filter((doc) => doc.connectorId === null).map((doc) => doc.id)
 
   const [excludedCount, hardDeletedCount] = await Promise.all([
-    excludeConnectorDocuments(connectorBackedIds, requestId),
-    hardDeleteDocuments(hardDeleteIds, requestId),
+    expectedKnowledgeBaseId
+      ? excludeConnectorKnowledgeDocuments(expectedKnowledgeBaseId, connectorBackedIds, requestId)
+      : excludeConnectorDocuments(connectorBackedIds, requestId),
+    hardDeleteDocuments(hardDeleteIds, requestId, undefined, expectedKnowledgeBaseId),
   ])
 
   return excludedCount + hardDeletedCount
@@ -2335,7 +2869,8 @@ export async function hardDeleteDocuments(
    * connector, keep documents") would otherwise still have them purged here
    * despite no longer belonging to the connector the caller reasoned about.
    */
-  expectedConnectorId?: string
+  expectedConnectorId?: string,
+  expectedKnowledgeBaseId?: string
 ): Promise<number> {
   const ids = [...new Set(documentIds)]
   if (ids.length === 0) {
@@ -2347,7 +2882,8 @@ export async function hardDeleteDocuments(
     deletedCount += await hardDeleteDocumentBatch(
       ids.slice(offset, offset + HARD_DELETE_DOCUMENT_BATCH_SIZE),
       requestId,
-      expectedConnectorId
+      expectedConnectorId,
+      expectedKnowledgeBaseId
     )
   }
   return deletedCount
@@ -2360,7 +2896,8 @@ export async function hardDeleteDocuments(
 async function hardDeleteDocumentBatch(
   documentIds: string[],
   requestId: string,
-  expectedConnectorId?: string
+  expectedConnectorId?: string,
+  expectedKnowledgeBaseId?: string
 ): Promise<number> {
   const ids = [...new Set(documentIds)]
   const documentsToDelete = await db
@@ -2377,9 +2914,14 @@ async function hardDeleteDocumentBatch(
     .from(document)
     .innerJoin(knowledgeBase, eq(document.knowledgeBaseId, knowledgeBase.id))
     .where(
-      expectedConnectorId
-        ? and(inArray(document.id, ids), eq(document.connectorId, expectedConnectorId))
-        : inArray(document.id, ids)
+      and(
+        inArray(document.id, ids),
+        expectedConnectorId ? eq(document.connectorId, expectedConnectorId) : undefined,
+        expectedKnowledgeBaseId ? eq(document.knowledgeBaseId, expectedKnowledgeBaseId) : undefined,
+        expectedKnowledgeBaseId ? eq(document.userExcluded, false) : undefined,
+        expectedKnowledgeBaseId ? isNull(document.archivedAt) : undefined,
+        expectedKnowledgeBaseId ? isNull(document.deletedAt) : undefined
+      )
     )
 
   if (documentsToDelete.length === 0) {
@@ -2461,16 +3003,26 @@ async function hardDeleteDocumentBatch(
      * embedding delete and the document delete are scoped to this re-verified
      * ID set rather than the stale `existingIds`.
      */
-    const stillTargetedIds = expectedConnectorId
-      ? (
-          await tx
-            .select({ id: document.id })
-            .from(document)
-            .where(
-              and(inArray(document.id, existingIds), eq(document.connectorId, expectedConnectorId))
-            )
-        ).map((d) => d.id)
-      : existingIds
+    const stillTargetedIds =
+      expectedConnectorId || expectedKnowledgeBaseId
+        ? (
+            await tx
+              .select({ id: document.id })
+              .from(document)
+              .where(
+                and(
+                  inArray(document.id, existingIds),
+                  expectedConnectorId ? eq(document.connectorId, expectedConnectorId) : undefined,
+                  expectedKnowledgeBaseId
+                    ? eq(document.knowledgeBaseId, expectedKnowledgeBaseId)
+                    : undefined,
+                  expectedKnowledgeBaseId ? eq(document.userExcluded, false) : undefined,
+                  expectedKnowledgeBaseId ? isNull(document.archivedAt) : undefined,
+                  expectedKnowledgeBaseId ? isNull(document.deletedAt) : undefined
+                )
+              )
+          ).map((d) => d.id)
+        : existingIds
 
     await tx.delete(embedding).where(inArray(embedding.documentId, stillTargetedIds))
     const deletedRows = await tx
@@ -2535,4 +3087,45 @@ export async function deleteDocument(
     success: true,
     message: 'Document deleted successfully',
   }
+}
+
+/** Deletes one currently visible document within its canonical knowledge base. */
+export async function deleteKnowledgeDocumentInKnowledgeBase(
+  knowledgeBaseId: string,
+  documentId: string,
+  requestId: string
+): Promise<void> {
+  const current = await getKnowledgeDocument(knowledgeBaseId, documentId)
+  if (!current) throw new OrchestrationError('not_found', 'Document not found')
+  const affected = await deleteDocumentsByLifecyclePolicy([documentId], requestId, knowledgeBaseId)
+  if (affected !== 1) throw new OrchestrationError('not_found', 'Document not found')
+}
+
+async function excludeConnectorKnowledgeDocuments(
+  knowledgeBaseId: string,
+  documentIds: string[],
+  requestId: string
+): Promise<number> {
+  if (documentIds.length === 0) return 0
+  const updated = await db
+    .update(document)
+    .set({ userExcluded: true, enabled: false })
+    .where(
+      and(
+        inArray(document.id, documentIds),
+        eq(document.knowledgeBaseId, knowledgeBaseId),
+        isNotNull(document.connectorId),
+        eq(document.userExcluded, false),
+        isNull(document.archivedAt),
+        isNull(document.deletedAt)
+      )
+    )
+    .returning({ id: document.id })
+  if (updated.length > 0) {
+    logger.info(`[${requestId}] Excluded ${updated.length} connector-backed document(s)`, {
+      documentIds: updated.map((row) => row.id),
+      knowledgeBaseId,
+    })
+  }
+  return updated.length
 }

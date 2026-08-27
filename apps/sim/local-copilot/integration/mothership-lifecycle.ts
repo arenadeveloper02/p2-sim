@@ -1,8 +1,11 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { generateId } from '@sim/utils/id'
 import {
   MothershipStreamV1CompletionStatus,
   MothershipStreamV1EventType,
+  MothershipStreamV1ResourceOp,
+  MothershipStreamV1SessionKind,
   MothershipStreamV1TextChannel,
   MothershipStreamV1ToolExecutor,
   MothershipStreamV1ToolMode,
@@ -10,9 +13,14 @@ import {
   MothershipStreamV1ToolPhase,
 } from '@/lib/copilot/generated/mothership-stream-v1'
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
+import {
+  createFilePreviewAdapterState,
+  type FilePreviewAdapterState,
+  processFilePreviewStreamEvent,
+} from '@/lib/copilot/request/go/file-preview-adapter'
 import { sseHandlers } from '@/lib/copilot/request/handlers'
 import type { CopilotLifecycleOptions } from '@/lib/copilot/request/lifecycle/run'
-import { LOCAL_STATUS_PHASE } from '@/lib/copilot/request/session'
+import { isToolCallStreamEvent, LOCAL_STATUS_PHASE } from '@/lib/copilot/request/session'
 import { handleResourceSideEffects } from '@/lib/copilot/request/tools/resources'
 import type {
   ExecutionContext,
@@ -20,10 +28,16 @@ import type {
   StreamEvent,
   StreamingContext,
 } from '@/lib/copilot/request/types'
+import { persistChatResources } from '@/lib/copilot/resources/persistence'
+import {
+  extractLocalFileChatResources,
+  stripLocalFileBodyToolParams,
+} from '@/local-copilot/integration/file-turn-persist'
 import { runLocalCopilotAgent } from '@/local-copilot/lib/agent/orchestrator'
 import { formatUxPhaseStatus } from '@/local-copilot/lib/agent/ux-phase'
 import type { LocalTurnCostSummary } from '@/local-copilot/lib/billing/turn-cost-accumulator'
 import { getLocalCopilotConfig } from '@/local-copilot/lib/config'
+import { resolveOpenWorkflowId } from '@/local-copilot/lib/context/open-workflow'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import {
   DEFAULT_LOCAL_COPILOT_CATALOG_ID,
@@ -107,16 +121,51 @@ function extractFileAttachments(value: unknown): CopilotFileAttachmentRef[] | un
   return attachments.length > 0 ? attachments : undefined
 }
 
+function withStrippedFileToolArgs(event: StreamEvent): StreamEvent {
+  if (!isToolCallStreamEvent(event)) return event
+  const args = event.payload.arguments
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return event
+  const stripped = stripLocalFileBodyToolParams(event.payload.toolName, args)
+  if (stripped === args) return event
+  return {
+    ...event,
+    payload: {
+      ...event.payload,
+      arguments: stripped,
+    },
+  }
+}
+
 async function dispatchStreamEvent(
   event: StreamEvent,
   context: StreamingContext,
   execContext: ExecutionContext,
-  options: OrchestratorOptions
+  options: OrchestratorOptions,
+  filePreviewState: FilePreviewAdapterState
 ): Promise<void> {
-  await options.onEvent?.(event)
-  const handler = sseHandlers[event.type]
+  try {
+    await processFilePreviewStreamEvent({
+      streamId: context.messageId,
+      streamEvent: event,
+      context,
+      execContext,
+      options,
+      state: filePreviewState,
+    })
+  } catch (error) {
+    logger.warn('Failed to process file preview stream event', {
+      type: event.type,
+      requestId: context.requestId,
+      messageId: context.messageId,
+      error: getErrorMessage(error),
+    })
+  }
+
+  const clientEvent = withStrippedFileToolArgs(event)
+  await options.onEvent?.(clientEvent)
+  const handler = sseHandlers[clientEvent.type]
   if (handler) {
-    await handler(event, context, execContext, options)
+    await handler(clientEvent, context, execContext, options)
   }
 }
 
@@ -125,7 +174,8 @@ async function dispatchLocalCopilotEvent(
   context: StreamingContext,
   execContext: ExecutionContext,
   options: CopilotLifecycleOptions,
-  toolArgsByCallId: Map<string, Record<string, unknown>>
+  toolArgsByCallId: Map<string, Record<string, unknown>>,
+  filePreviewState: FilePreviewAdapterState
 ): Promise<void> {
   if (event.type === 'status') {
     // Ephemeral UI-only: publish synthetic envelope via onEvent, skip content-block handlers.
@@ -166,7 +216,8 @@ async function dispatchLocalCopilotEvent(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
     return
   }
@@ -198,7 +249,8 @@ async function dispatchLocalCopilotEvent(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
 
     if (
@@ -227,9 +279,40 @@ async function dispatchLocalCopilotEvent(
         toolResult,
         toolResult,
         chatId,
-        (streamEvent) => dispatchStreamEvent(streamEvent, context, execContext, options),
+        (streamEvent) =>
+          dispatchStreamEvent(streamEvent, context, execContext, options, filePreviewState),
         () => Boolean(options.abortSignal?.aborted)
       )
+      const fileResources = extractLocalFileChatResources(
+        event.toolName,
+        toolArgsByCallId.get(event.toolCallId),
+        event.output
+      )
+      if (fileResources.length > 0) {
+        await persistChatResources(chatId, fileResources)
+        if (event.toolName === 'edit_content') {
+          for (const resource of fileResources) {
+            await dispatchStreamEvent(
+              {
+                type: MothershipStreamV1EventType.resource,
+                payload: {
+                  op: MothershipStreamV1ResourceOp.upsert,
+                  resource: {
+                    type: resource.type,
+                    id: resource.id,
+                    title: resource.title,
+                    ...(resource.path ? { path: resource.path } : {}),
+                  },
+                },
+              },
+              context,
+              execContext,
+              options,
+              filePreviewState
+            )
+          }
+        }
+      }
     }
     return
   }
@@ -247,7 +330,8 @@ async function dispatchLocalCopilotEvent(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
     return
   }
@@ -263,7 +347,8 @@ async function dispatchLocalCopilotEvent(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
     return
   }
@@ -290,7 +375,8 @@ async function dispatchLocalCopilotEvent(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
     return
   }
@@ -309,13 +395,10 @@ async function dispatchLocalCopilotEvent(
   }
 
   if (event.type === 'turn_completion') {
-    await options.onEvent?.({
-      type: 'run',
-      payload: {
-        statusPhase: LOCAL_STATUS_PHASE,
-        message: `Turn completion: ${event.status}`,
-      },
-    })
+    // Internal completion verdict — not a user-facing status line. Publishing it
+    // as agent_live_status replaced the last useful status ("Reviewing…") with
+    // "Turn completion: completed_verified" and then the complete event cleared
+    // the line, which made option-only settles look like the reply vanished.
     return
   }
 
@@ -339,7 +422,8 @@ async function dispatchLocalCopilotEvent(
         },
         context,
         execContext,
-        options
+        options,
+        filePreviewState
       )
       return
     }
@@ -356,7 +440,8 @@ async function dispatchLocalCopilotEvent(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
     return
   }
@@ -371,7 +456,8 @@ async function dispatchLocalCopilotEvent(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
   }
 }
@@ -391,9 +477,17 @@ export async function runLocalCopilotMothershipLifecycle(
   const fileAttachments = extractFileAttachments(requestPayload.fileAttachments)
   const workspaceContext = extractString(requestPayload.workspaceContext)
   const workspaceSnapshot = extractWorkspaceSnapshot(requestPayload.vfs)
-  const workflowId = options.workflowId ?? extractString(requestPayload.workflowId)
+  const workflowId =
+    extractString(options.workflowId) ??
+    extractString(requestPayload.workflowId) ??
+    extractString(execContext.workflowId) ??
+    resolveOpenWorkflowId({
+      contexts,
+      snapshotWorkflows: workspaceSnapshot?.workflows,
+    })
   const workspaceId = options.workspaceId ?? extractString(requestPayload.workspaceId)
   const userId = options.userId
+  const filePreviewState = createFilePreviewAdapterState()
 
   if (!message) {
     context.errors.push('Message is required')
@@ -404,7 +498,8 @@ export async function runLocalCopilotMothershipLifecycle(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
     await dispatchStreamEvent(
       {
@@ -413,7 +508,8 @@ export async function runLocalCopilotMothershipLifecycle(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
     return
   }
@@ -430,7 +526,8 @@ export async function runLocalCopilotMothershipLifecycle(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
     await dispatchStreamEvent(
       {
@@ -439,7 +536,8 @@ export async function runLocalCopilotMothershipLifecycle(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
     return
   }
@@ -497,6 +595,19 @@ export async function runLocalCopilotMothershipLifecycle(
     let eventCount = 0
     let toolCallCount = 0
     const catalogId = resolveCatalogIdFromPayload(requestPayload)
+    await dispatchStreamEvent(
+      {
+        type: MothershipStreamV1EventType.session,
+        payload: {
+          kind: MothershipStreamV1SessionKind.start,
+          data: { responseId: generateId() },
+        },
+      },
+      context,
+      execContext,
+      options,
+      filePreviewState
+    )
     const agent = runLocalCopilotAgent({
       userId,
       workspaceId,
@@ -551,7 +662,14 @@ export async function runLocalCopilotMothershipLifecycle(
         turnUsage = event.usage
       }
 
-      await dispatchLocalCopilotEvent(event, context, execContext, options, toolArgsByCallId)
+      await dispatchLocalCopilotEvent(
+        event,
+        context,
+        execContext,
+        options,
+        toolArgsByCallId,
+        filePreviewState
+      )
     }
 
     const status =
@@ -563,6 +681,7 @@ export async function runLocalCopilotMothershipLifecycle(
 
     const billingModel = turnUsage?.model || getLocalCopilotConfig().model
     context.billingModel = billingModel
+    context.completionStatus = status
 
     logger.info('Arena Copilot mothership lifecycle finished', {
       workspaceId,
@@ -590,7 +709,7 @@ export async function runLocalCopilotMothershipLifecycle(
       }
     }
 
-    if (isMothershipBlockExecute && blockExecuteCost && blockExecuteCost.total > 0) {
+    if (blockExecuteCost && blockExecuteCost.total > 0) {
       context.cost = {
         input: blockExecuteCost.input,
         output: blockExecuteCost.output,
@@ -614,7 +733,8 @@ export async function runLocalCopilotMothershipLifecycle(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
     await dispatchStreamEvent(
       {
@@ -623,7 +743,8 @@ export async function runLocalCopilotMothershipLifecycle(
       },
       context,
       execContext,
-      options
+      options,
+      filePreviewState
     )
   }
 }

@@ -14,6 +14,8 @@ export interface LocalCopilotMutationContext {
   workflowId?: string
   chatId?: string
   abortSignal?: AbortSignal
+  /** Active tool_use id — required by Copilot application-use-case delegation. */
+  activeToolCallId?: string
 }
 
 export { normalizeEditWorkflowArgs, resolveEditWorkflowOperations }
@@ -22,12 +24,22 @@ export async function runCreateWorkflowTool(
   args: Record<string, unknown>,
   ctx: LocalCopilotMutationContext
 ): Promise<ToolCallResult> {
+  const toolCallId = ctx.activeToolCallId?.trim()
+  if (!toolCallId) {
+    return {
+      success: false,
+      error: 'create_workflow requires a trusted Copilot tool call ID',
+    }
+  }
+
   const execContext = {
     userId: ctx.userId,
     workspaceId: ctx.workspaceId,
     workflowId: ctx.workflowId ?? '',
     chatId: ctx.chatId,
     abortSignal: ctx.abortSignal,
+    copilotToolExecution: true as const,
+    toolCallId,
   }
 
   return executeCreateWorkflow(
@@ -79,6 +91,8 @@ export async function runEditWorkflowTool(
         chatId: ctx.chatId,
         abortSignal: ctx.abortSignal,
         userStopSignal: ctx.abortSignal,
+        copilotToolExecution: true,
+        ...(ctx.activeToolCallId?.trim() ? { toolCallId: ctx.activeToolCallId.trim() } : {}),
       }
     )
 

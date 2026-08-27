@@ -1,3 +1,4 @@
+import { DOCUMENT_FORMAT_GUIDANCE } from '@/lib/copilot/chat/document-format-guidance'
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
 
 /**
@@ -167,6 +168,9 @@ const RESEARCH_TOOLS = [
   'search_documentation',
   'function_execute',
   'user_memory',
+  'read',
+  'glob',
+  'grep',
 ] as const
 
 const MEDIA_TOOLS = ['generate_image', 'generate_audio', 'generate_video', 'ffmpeg'] as const
@@ -181,6 +185,7 @@ const FILE_TOOLS = [
   'download_to_workspace_file',
   'materialize_file',
   'edit_content',
+  'function_execute',
   'delete_file',
   'rename_file',
   'move_file',
@@ -307,7 +312,7 @@ export function isSpecialistDomain(name: string): name is LocalCopilotCloudSpeci
 export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
   switch (domain) {
     case 'workflow':
-      return 'Focus on editing/running existing workflows first. If workspaceWorkflows lists anything suitable, call get_workflow_data / get_workflow_context (or get_workflow_run_options to run) — do not create_workflow unless the user explicitly wants a brand-new distinct workflow (confirmNewWorkflow: true).'
+      return 'Build, edit, and run workflows. Use get_workflow_data / get_workflow_context or get_workflow_run_options when inspecting an existing workflow; create_workflow when the user wants a new one. When adding blocks, use current types from get_blocks_metadata (never sunset/legacy types like gmail or router). For Agent/Router model, use a current recommended id or omit to keep the default (gpt-5) — never gpt-4o or other sunset/legacy models.'
     case 'run':
       return 'Focus on running and debugging workflows (get_workflow_run_options, run_workflow, run_block, run_from_block, query_logs). Prefer existing workspaceWorkflows entries — never create a workflow just to run something.'
     case 'deploy':
@@ -315,22 +320,22 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'auth':
       return 'Focus on credentials, OAuth links, and API keys.'
     case 'knowledge':
-      return 'Focus on existing knowledge bases first. If knowledgeBases is non-empty, call knowledge_base get / list / query and reuse — create only when nothing suitable exists and the user wants a new KB (confirmCreateNew: true).'
+      return 'Query, create, and ingest knowledge bases (knowledge_base get / list / query / create / add_file).'
     case 'table':
-      return 'Focus on existing tables first. If tables is non-empty, call user_table get / get_schema / query_rows and reuse — create only when nothing suitable exists and the user wants a new table (confirmCreateNew: true).'
+      return 'Create and manage tables, rows, schemas, and enrichments (user_table).'
     case 'scheduled_task':
       return 'Focus on scheduled tasks (create/list/update/complete/logs).'
     case 'agent':
       return 'Focus on integration tools, MCP tools, skills, and function_execute.'
     case 'research':
-      return 'Focus on research. For ANY real-world factual or current question, call a live search tool FIRST (exa_answer via invoke_integration_tool, or search_online) before answering — never answer from training memory alone. Also search_docs, search_documentation, user_memory.'
+      return 'Focus on research. For ANY real-world factual or current question, call a live search tool FIRST (exa_answer via invoke_integration_tool, or search_online) before answering — never answer from training memory alone. When the question is about a workspace file, glob/read/grep that exact VFS path — do not open a similarly named file. Use search_documentation only for Sim product questions.'
     case 'media':
       return 'Focus on image/audio/video generation and ffmpeg.'
     case 'file':
-      return 'Focus on existing workspace files first. If workspaceFiles may match, glob then read, then update via workspace_file + edit_content — create_file only for a truly new path (confirmCreateNew: true). Chat uploads/ need materialize_file into files/ before function_execute.'
+      return `Read, create, and update workspace files. Write path is create_file → workspace_file (operation + target.path + title) → edit_content in the next round — there is no prepare_file_edit, edit_file, or run_function tool. Use function_execute only for sandbox data processing (mount via inputs, save with outputs.files), not office docs. Chat uploads/ need materialize_file into files/ before the sandbox can open them.\n\n${DOCUMENT_FORMAT_GUIDANCE}`
     case 'superagent':
       return 'Focus on third-party integration actions. Authenticate if needed, then invoke the right integration tool.'
     default:
-      return 'Reuse existing workflows/tables/knowledge bases/files whenever present. Inspect with tools first; create new resources only when inventory has nothing suitable or the user explicitly asks for something brand-new.'
+      return 'Use the tools for this domain to complete the request.'
   }
 }

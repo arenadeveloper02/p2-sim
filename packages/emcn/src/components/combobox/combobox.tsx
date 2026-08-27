@@ -15,14 +15,14 @@ import {
   useState,
 } from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
-import { Check, ChevronDown, Search } from 'lucide-react'
-import { Loader } from '../../icons'
+import { Check, ChevronDown, Loader, Search } from '../../icons'
 import { cn } from '../../lib/cn'
+import { chipActiveSurfaceClass, chipHoverSurfaceClass } from '../chip/chip-chrome'
 import { Input } from '../input/input'
 import { Popover, PopoverAnchor, PopoverContent, PopoverScrollArea } from '../popover/popover'
 
 export const comboboxVariants = cva(
-  'flex w-full rounded-sm border border-[var(--border-1)] bg-[var(--surface-5)] px-2 font-sans font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none disabled:cursor-not-allowed disabled:opacity-50',
+  'flex w-full rounded-sm border border-[var(--border-1)] bg-[var(--surface-5)] px-2 font-sans text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none disabled:cursor-not-allowed disabled:opacity-50',
   {
     variants: {
       variant: {
@@ -227,6 +227,13 @@ const Combobox = memo(
       const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>(null)
       const internalInputRef = useRef<HTMLInputElement>(null)
       const inputRef = externalInputRef || internalInputRef
+      /**
+       * True while a pointer press that began inside the dropdown is still held.
+       * Grabbing the list's native scrollbar blurs the editable input and parks
+       * focus on `<body>` — which `handleBlur` would otherwise read as "focus
+       * left the combobox" and close the dropdown mid-drag.
+       */
+      const pointerDownInsideRef = useRef(false)
 
       const effectiveSelectedValue = selectedValue ?? value
 
@@ -236,6 +243,34 @@ const Combobox = memo(
           if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current)
         }
       }, [])
+
+      /**
+       * Releases the pointer-press window and restores focus to the editable input,
+       * which a scrollbar drag left on `<body>`. Bound to `window` so a release
+       * outside the popover still clears the flag; `pointercancel` is included
+       * because a touch scroll gesture ends there instead of `pointerup`.
+       *
+       * Focus is only restored when the press actually stole it — a press inside the
+       * popover parks it on `<body>` or the `tabIndex={-1}` content, but option
+       * mousedown is prevented, so it often never left the input or the search box.
+       */
+      useEffect(() => {
+        if (!editable) return
+        const endPointerPress = () => {
+          if (!pointerDownInsideRef.current) return
+          pointerDownInsideRef.current = false
+          const active = document.activeElement
+          const isTextEntry =
+            active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
+          if (!isTextEntry) inputRef.current?.focus({ preventScroll: true })
+        }
+        window.addEventListener('pointerup', endPointerPress)
+        window.addEventListener('pointercancel', endPointerPress)
+        return () => {
+          window.removeEventListener('pointerup', endPointerPress)
+          window.removeEventListener('pointercancel', endPointerPress)
+        }
+      }, [editable, inputRef])
 
       // Flatten groups into options if groups are provided
       const allOptions = useMemo(() => {
@@ -327,7 +362,9 @@ const Combobox = memo(
       }, [groups, searchable, searchQuery])
 
       /**
-       * Handles selection of an option
+       * Handles selection of an option. In editable mode the input is blurred on
+       * purpose, so the pointer-press window is ended first — otherwise the `pointerup`
+       * that follows would hand focus back and reopen the dropdown.
        */
       const handleSelect = useCallback(
         (selectedValue: string, customOnSelect?: () => void, keepOpen?: boolean) => {
@@ -356,6 +393,7 @@ const Combobox = memo(
               setHighlightedIndex(-1)
               updateSearchQuery('')
               if (editable && inputRef.current) {
+                pointerDownInsideRef.current = false
                 inputRef.current.blur()
               }
             }
@@ -393,6 +431,7 @@ const Combobox = memo(
         if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current)
         // Delay to allow dropdown clicks
         blurTimeoutRef.current = setTimeout(() => {
+          if (pointerDownInsideRef.current) return
           const activeElement = document.activeElement
           // Check if focus is in the container, dropdown, or search input
           const isInContainer = containerRef.current?.contains(activeElement)
@@ -573,7 +612,7 @@ const Combobox = memo(
                     <Input
                       ref={inputRef}
                       className={cn(
-                        'w-full pr-10 font-medium transition-colors',
+                        'w-full pr-10 transition-colors',
                         (overlayContent || SelectedIcon) && 'text-transparent caret-foreground',
                         SelectedIcon && !overlayContent && 'pl-7',
                         open && 'focus-visible:border-[var(--border-1)]',
@@ -591,7 +630,7 @@ const Combobox = memo(
                     {(overlayContent || SelectedIcon) && (
                       <div
                         className={cn(
-                          'pointer-events-none absolute top-0 right-[42px] bottom-0 left-0 flex items-center bg-transparent px-2 py-1.5 font-medium font-sans text-sm',
+                          'pointer-events-none absolute top-0 right-[42px] bottom-0 left-0 flex items-center bg-transparent px-2 py-1.5 font-sans text-sm',
                           disabled && 'opacity-50'
                         )}
                       >
@@ -681,6 +720,9 @@ const Combobox = memo(
                 if (searchable && !editable) {
                   setTimeout(() => searchInputRef.current?.focus(), 0)
                 }
+              }}
+              onPointerDownCapture={() => {
+                if (editable) pointerDownInsideRef.current = true
               }}
               onInteractOutside={(e) => {
                 // If the user clicks the anchor/trigger while the popover is open,
@@ -798,10 +840,19 @@ const Combobox = memo(
                                   !option.disabled && setHighlightedIndex(globalIndex)
                                 }
                                 className={cn(
-                                  'relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-1.5 font-medium font-sans',
+                                  'relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-1.5 font-sans',
                                   size === 'sm' ? 'py-[5px] text-caption' : 'py-1.5 text-sm',
-                                  'hover-hover:bg-[var(--surface-active)]',
-                                  (isHighlighted || isSelected) && 'bg-[var(--surface-active)]',
+                                  /*
+                                     No CSS `:hover` here — `isHighlighted` is the
+                                     single source of truth for the cursor, because
+                                     it is also what Enter commits. A `:hover` class
+                                     tracks the pointer continuously while
+                                     `highlightedIndex` only moves on `mouseenter`,
+                                     so after the list scrolls under a stationary
+                                     pointer the two disagree and the row that looks
+                                     selected is not the one Enter would choose.
+                                  */
+                                  (isHighlighted || isSelected) && chipActiveSurfaceClass,
                                   option.disabled && 'cursor-not-allowed opacity-50'
                                 )}
                               >
@@ -838,10 +889,12 @@ const Combobox = memo(
                           }}
                           onMouseEnter={() => setHighlightedIndex(-1)}
                           className={cn(
-                            'relative flex cursor-pointer select-none items-center rounded-sm px-1.5 font-medium font-sans',
+                            'relative flex cursor-pointer select-none items-center rounded-sm px-1.5 font-sans',
                             size === 'sm' ? 'py-[5px] text-caption' : 'py-1.5 text-sm',
-                            'hover-hover:bg-[var(--surface-active)]',
-                            !multiSelectValues?.length && 'bg-[var(--surface-active)]'
+                            // Clears the highlight rather than taking it, so unlike option rows it hovers.
+                            !multiSelectValues?.length
+                              ? chipActiveSurfaceClass
+                              : chipHoverSurfaceClass
                           )}
                         >
                           <span className='flex-1 truncate text-[var(--text-primary)]'>
@@ -872,10 +925,10 @@ const Combobox = memo(
                             }}
                             onMouseEnter={() => !option.disabled && setHighlightedIndex(index)}
                             className={cn(
-                              'relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-1.5 font-medium font-sans',
+                              'relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-1.5 font-sans',
                               size === 'sm' ? 'py-[5px] text-caption' : 'py-1.5 text-sm',
-                              'hover-hover:bg-[var(--surface-active)]',
-                              (isHighlighted || isSelected) && 'bg-[var(--surface-active)]',
+                              // See above: `isHighlighted` alone, so paint matches what Enter commits.
+                              (isHighlighted || isSelected) && chipActiveSurfaceClass,
                               option.disabled && 'cursor-not-allowed opacity-50'
                             )}
                           >

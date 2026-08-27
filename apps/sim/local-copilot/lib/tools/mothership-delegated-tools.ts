@@ -10,6 +10,7 @@ import {
   enrichEditContentArgs,
   enrichWorkspaceFileArgs,
 } from '@/local-copilot/lib/tools/enrich-file-tool-args'
+import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   buildMothershipDelegatedToolDefinitions,
   isMothershipDelegatedTool,
@@ -363,6 +364,7 @@ export async function executeMothershipDelegatedTool(
     abortSignal: ctx.abortSignal,
     copilotToolExecution: true,
     userPermission: ctx.userPermission,
+    ...(ctx.activeToolCallId?.trim() ? { toolCallId: ctx.activeToolCallId.trim() } : {}),
     ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
   })
 

@@ -40,7 +40,6 @@ const PRODUCT_LINKS: FooterItem[] = [
   { label: 'Tables', href: '/tables' },
   { label: 'Files', href: '/files' },
   { label: 'Logs', href: '/logs' },
-  { label: 'Scheduled Tasks', href: '/scheduled-tasks' },
   { label: 'MCP', href: 'https://docs.sim.ai/agents/mcp', external: true },
   { label: 'API', href: 'https://docs.sim.ai/api-reference/getting-started', external: true },
   { label: 'Self Hosting', href: 'https://docs.sim.ai/platform/self-hosting', external: true },
@@ -165,7 +164,7 @@ export function Footer() {
           <FooterColumn title='Legal' items={LEGAL_LINKS} />
         </nav>
 
-        <p className='mt-16 text-[var(--text-muted)] text-sm'>© 2026 Sim. All rights reserved.</p>
+        <p className='mt-16 text-[var(--text-muted)] text-sm'>© 2026 Arena. All rights reserved.</p>
       </div>
     </footer>
   )

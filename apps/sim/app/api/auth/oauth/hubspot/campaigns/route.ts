@@ -2,7 +2,7 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { getCredential, refreshAccessTokenIfNeeded } from '@/app/api/auth/oauth/utils'
+import { getCredential, refreshAccessTokenIfNeeded } from '@/lib/oauth/credential-service'
 import { fetchHubSpotCampaigns } from '@/tools/hubspot/campaigns'
 
 export const dynamic = 'force-dynamic'

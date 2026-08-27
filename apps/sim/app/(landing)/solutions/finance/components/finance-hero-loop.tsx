@@ -1,6 +1,7 @@
 'use client'
 
-import { AgentIcon, ConditionalIcon, MailIcon, StartIcon, TableIcon } from '@/components/icons'
+import { Table as TableIcon } from '@sim/emcn/icons'
+import { AgentIcon, ConditionalIcon, MailIcon, StartIcon } from '@/components/icons'
 import { EnterprisePlatformLoop } from '@/app/(landing)/enterprise/components/enterprise-platform-loop'
 import type { EnterpriseLoopContent } from '@/app/(landing)/enterprise/components/enterprise-platform-loop/stage-data'
 
@@ -53,7 +54,8 @@ const FINANCE_LOOP_CONTENT: EnterpriseLoopContent = {
       id: 'match',
       name: 'Match transactions',
       icon: AgentIcon,
-      bgColor: 'var(--text-primary)',
+      bgColor: '#FFFFFF',
+      tileBorder: true,
       rows: [
         { title: 'Messages', value: '-' },
         { title: 'Model', value: '-' },

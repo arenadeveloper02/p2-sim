@@ -95,7 +95,9 @@ export function formatLocalToolConfirmationTag(
     ...(requirement.estimatedCostUsd !== undefined
       ? { estimatedCostUsd: requirement.estimatedCostUsd }
       : {}),
-    ...(requirement.estimatedCostLabel ? { estimatedCostLabel: requirement.estimatedCostLabel } : {}),
+    ...(requirement.estimatedCostLabel
+      ? { estimatedCostLabel: requirement.estimatedCostLabel }
+      : {}),
   })}</tool_confirmation>`
 }
 

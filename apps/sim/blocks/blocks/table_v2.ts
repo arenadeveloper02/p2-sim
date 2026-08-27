@@ -1,16 +1,24 @@
+import { Table } from '@sim/emcn/icons'
 import { toError } from '@sim/utils/errors'
-import { TableIcon } from '@/components/icons'
 import { TABLE_LIMITS } from '@/lib/table/constants'
 import { filterRulesToPredicate, sortRulesToSortSpec } from '@/lib/table/query-builder/converters'
-import type { FilterRule, SortRule, SortSpec, TablePredicate } from '@/lib/table/types'
+import { normalizeTablePredicate } from '@/lib/table/query-builder/predicate'
+import { validatePredicateShape } from '@/lib/table/query-builder/validate'
+import type {
+  FilterRule,
+  SortRule,
+  SortSpec,
+  TablePredicate,
+  TablePredicateInput,
+} from '@/lib/table/types'
 import type { BlockConfig } from '@/blocks/types'
 import type { TableQueryV2Response } from '@/tools/table/types'
 import { getTrigger } from '@/triggers'
 
 /**
  * Table v2 — same operations as the v1 Table block, but the filter grammar is a
- * typed predicate tree (`{all:[{field:'wins',op:'gte',value:10}]}`), validated
- * server-side. Pagination is an opaque cursor (no offset). The filter compiler,
+ * typed predicate (`{field:'wins',op:'gte',value:10}`), with `all`/`any` groups
+ * for compound conditions, validated server-side. Pagination is an opaque cursor (no offset). The filter compiler,
  * upsert conflict probe, and unique checks share one case-sensitive containment
  * leaf, so upserts can't wedge on a case-mismatched unique value the way they
  * could under v1.
@@ -64,7 +72,10 @@ function resolveFilter(params: TableBlockParams): TablePredicate | undefined {
     return raw.length > 0 ? (filterRulesToPredicate(raw as FilterRule[]) ?? undefined) : undefined
   }
   const parsed = parseJSON(raw, 'Filter')
-  return (parsed as TablePredicate | undefined) || undefined
+  if (parsed === undefined) return undefined
+  const predicate = parsed as TablePredicateInput
+  validatePredicateShape(predicate)
+  return normalizeTablePredicate(predicate)
 }
 
 function resolveOrder(params: TableBlockParams): SortSpec | undefined {
@@ -172,22 +183,31 @@ const paramTransformers: Record<string, (params: TableBlockParams) => ParsedPara
   }),
 }
 
+/*
+ * Canonical basic/advanced pairs, shared by the card summaries below. Listing
+ * both members is what keeps the sentence working for an advanced-mode user,
+ * who has only the manual field filled.
+ */
+const TABLE_FIELD = ['tableSelector', 'manualTableId'] as const
+const FILTER_FIELD = ['filterBuilder', 'filter'] as const
+const SORT_FIELD = ['sortBuilder', 'order'] as const
+
 export const TableV2Block: BlockConfig<TableQueryV2Response> = {
   type: 'table_v2',
   name: 'Table',
   description: 'User-defined data tables',
   longDescription:
     'Create and manage custom data tables. Store, query, and manipulate structured data within workflows. ' +
-    'Query Rows filters with a predicate tree — `{"all":[{"field":"wins","op":"gte","value":10}]}` ' +
-    '(`all` = AND, `any` = OR; groups nest). Operators: eq, ne, gt, gte, lt, lte, in, nin, like, ilike, ' +
+    'Query Rows accepts a plain predicate — `{"field":"wins","op":"gte","value":10}` — for one condition. ' +
+    'Use `all` (AND) or `any` (OR) groups for multiple or nested conditions. Operators: eq, ne, gt, gte, lt, lte, in, nin, like, ilike, ' +
     'nlike, nilike, contains, startsWith, endsWith, isNull, isNotNull, isEmpty, isNotEmpty. Order is a sort ' +
     'spec `[{"field":"wins","direction":"desc"}]`. Query Rows returns every matching row when Limit is omitted ' +
     '(fails if the result exceeds 5MB — add a filter or a Limit). With a Limit, responses page: a non-null ' +
     'nextCursor means more rows exist — pass it back as the cursor.',
   bestPractices: `
-- To fetch specific rows, use Query Rows with a predicate filter (e.g. {"all":[{"field":"slack_user_id","op":"in","value":["U1","U2"]}]}) — do NOT read every row and filter downstream with a Condition block.
+- To fetch specific rows, use Query Rows with a predicate filter (e.g. {"field":"slack_user_id","op":"in","value":["U1","U2"]}) — do NOT read every row and filter downstream with a Condition block.
 - Use "Get Row by ID" only when you have the row's id; otherwise filter with a predicate.
-- A group is {"all":[...]} (AND) or {"any":[...]} (OR); nest groups as members for mixed logic.
+- A single condition can be plain. For multiple conditions, use {"all":[...]} (AND) or {"any":[...]} (OR); nest groups as members for mixed logic.
 - Example: players who won ≥10 and are active → {"all":[{"field":"wins","op":"gte","value":10},{"field":"status","op":"eq","value":"active"}]}.
 - like/ilike use * as the wildcard (e.g. {"field":"name","op":"ilike","value":"*jo*"}).
 - Omit Limit to get the entire matching result in one response — the query fails with a clear error if it exceeds 5MB (narrow with a filter or set a Limit).
@@ -201,7 +221,68 @@ export const TableV2Block: BlockConfig<TableQueryV2Response> = {
   // and mark v1 `table` superseded.
   preview: true,
   bgColor: '#10B981',
-  icon: TableIcon,
+  icon: Table,
+  canvasPresentation: {
+    defaultTitle: 'Table',
+    /*
+     * The trigger reuses the block's table pair, so both members are named or
+     * the sentence drops for an advanced-mode user. The watched columns only
+     * exist for row updates, so that clause stays optional and disappears with
+     * them.
+     */
+    triggerSentences: {
+      default: [
+        'Run on',
+        { field: 'eventType', core: true },
+        { text: 'in', field: TABLE_FIELD, core: true },
+        { text: ', watching', field: 'watchColumns' },
+      ],
+    },
+    sentences: {
+      byOperation: {
+        query_rows: [
+          { text: 'Query rows from', field: TABLE_FIELD, core: true },
+          { text: ', where', field: FILTER_FIELD },
+          { text: ', sorted by', field: SORT_FIELD },
+        ],
+        insert_row: [
+          { text: 'Insert a row into', field: TABLE_FIELD, core: true },
+          { text: ', with', field: 'data' },
+        ],
+        upsert_row: [
+          { text: 'Upsert a row into', field: TABLE_FIELD, core: true },
+          { text: ', keyed on', field: ['conflictColumnSelector', 'manualConflictColumn'] },
+        ],
+        batch_insert_rows: [
+          { text: 'Insert', field: 'rows', core: true },
+          { text: 'into', field: TABLE_FIELD, core: true },
+        ],
+        update_rows_by_filter: [
+          { text: 'Update rows in', field: TABLE_FIELD, core: true },
+          { text: ', where', field: FILTER_FIELD },
+          { text: ', setting', field: 'data' },
+        ],
+        delete_rows_by_filter: [
+          { text: 'Delete rows from', field: TABLE_FIELD, core: true },
+          { text: ', where', field: FILTER_FIELD },
+        ],
+        update_row: [
+          { text: 'Update row', field: 'rowId', core: true },
+          { text: 'in', field: TABLE_FIELD, core: true },
+          { text: ', setting', field: 'data' },
+        ],
+        delete_row: [
+          { text: 'Delete row', field: 'rowId', core: true },
+          { text: 'from', field: TABLE_FIELD, core: true },
+        ],
+        get_row: [
+          { text: 'Fetch row', field: 'rowId', core: true },
+          { text: 'from', field: TABLE_FIELD, core: true },
+        ],
+        get_schema: [{ text: 'Read the schema of', field: TABLE_FIELD, core: true }],
+      },
+    },
+  },
   subBlocks: [
     {
       id: 'operation',
@@ -354,7 +435,7 @@ Return ONLY the rows array:`,
       type: 'code',
       canonicalParamId: 'filterInput',
       mode: 'advanced',
-      placeholder: '{"all":[{"field":"wins","op":"gte","value":10}]}',
+      placeholder: '{"field":"wins","op":"gte","value":10}',
       condition: {
         field: 'operation',
         value: ['query_rows', 'update_rows_by_filter', 'delete_rows_by_filter'],
@@ -370,16 +451,16 @@ Return ONLY the rows array:`,
 ### INSTRUCTION
 Return ONLY the JSON object. No explanations, surrounding quotes, or markdown.
 
-A predicate is a tree: {"all":[...]} (AND) or {"any":[...]} (OR); members are leaves {"field","op","value"} or nested groups.
+A single condition is a plain predicate {"field","op","value"}. Use {"all":[...]} (AND) or {"any":[...]} (OR) for multiple conditions; group members may be conditions or nested groups.
 
 ### OPERATORS
 eq, ne, gt, gte, lt, lte, in, nin (in/nin take an array value), like, ilike (use * as the wildcard), nlike, nilike, contains, startsWith, endsWith, isNull, isNotNull, isEmpty, isNotEmpty.
 
 ### EXAMPLES
-"status is active" → {"all":[{"field":"status","op":"eq","value":"active"}]}
+"status is active" → {"field":"status","op":"eq","value":"active"}
 "wins at least 10 and active" → {"all":[{"field":"wins","op":"gte","value":10},{"field":"active","op":"eq","value":true}]}
 "status active or pending" → {"any":[{"field":"status","op":"eq","value":"active"},{"field":"status","op":"eq","value":"pending"}]}
-"name contains jo (any case)" → {"all":[{"field":"name","op":"ilike","value":"*jo*"}]}
+"name contains jo (any case)" → {"field":"name","op":"ilike","value":"*jo*"}
 
 Return ONLY the JSON object:`,
         generationType: 'table-schema',
@@ -475,7 +556,7 @@ Return ONLY the JSON object:`,
     filterInput: {
       type: 'json',
       description:
-        'Filter — a predicate object {"all":[{"field":"wins","op":"gte","value":10}]} (or visual builder conditions). Used by query and bulk update/delete.',
+        'Filter — a predicate object {"field":"wins","op":"gte","value":10}; use all/any groups for multiple conditions (or use visual builder conditions). Used by query and bulk update/delete.',
     },
     sortInput: {
       type: 'json',

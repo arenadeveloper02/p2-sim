@@ -6,6 +6,7 @@ import { requestJson } from '@/lib/api/client/request'
 import type {
   ApplyLocalCopilotPatchBody,
   LocalCopilotChatBody,
+  LocalCopilotConfigResponse,
 } from '@/local-copilot/contracts/local-copilot'
 import {
   applyLocalCopilotPatchContract,
@@ -14,6 +15,7 @@ import {
   getLocalCopilotSessionMemoryContract,
   listLocalCopilotConversationsContract,
   rejectLocalCopilotPatchContract,
+  updateLocalCopilotConfigContract,
 } from '@/local-copilot/contracts/local-copilot'
 import { formatLocalToolConfirmationTag } from '@/local-copilot/lib/security/tool-confirmation-policy'
 import { formatTrustedControl } from '@/local-copilot/lib/security/trusted-controls'
@@ -76,6 +78,38 @@ export function useLocalCopilotConfig() {
   })
 }
 
+/**
+ * Persists the Local picker selection to `local_copilot_user_access.default_model`.
+ */
+export function useUpdateLocalCopilotDefaultModel() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (defaultCatalogId: LocalCopilotConfigResponse['defaultCatalogId']) =>
+      requestJson(updateLocalCopilotConfigContract, { body: { defaultCatalogId } }),
+    onMutate: async (defaultCatalogId) => {
+      await queryClient.cancelQueries({ queryKey: localCopilotKeys.config() })
+      const previous = queryClient.getQueryData<LocalCopilotConfigResponse>(
+        localCopilotKeys.config()
+      )
+      if (previous) {
+        queryClient.setQueryData<LocalCopilotConfigResponse>(localCopilotKeys.config(), {
+          ...previous,
+          defaultCatalogId,
+        })
+      }
+      return { previous }
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(localCopilotKeys.config(), context.previous)
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: localCopilotKeys.config() })
+    },
+  })
+}
+
 export function useLocalCopilotConversations(workspaceId: string, workflowId?: string) {
   return useQuery({
     queryKey: localCopilotKeys.conversationList(workspaceId, workflowId),
@@ -123,6 +157,7 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
 
       abortRef.current?.abort()
       abortRef.current = new AbortController()
+      let assistantText = ''
 
       const body: LocalCopilotChatBody = {
         workspaceId,
@@ -152,7 +187,6 @@ export function useLocalCopilot(options: UseLocalCopilotOptions) {
 
         const decoder = new TextDecoder()
         let buffer = ''
-        let assistantText = ''
         let patchId: string | undefined
         let patch: WorkflowPatch | undefined
         let recommendations: string[] = []

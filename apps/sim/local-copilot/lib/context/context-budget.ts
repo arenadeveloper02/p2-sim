@@ -4,17 +4,39 @@ import { sanitizeForExport } from '@/lib/workflows/sanitization/json-sanitizer'
 import { getMessageContentText } from '@/local-copilot/lib/providers/message-content'
 import type { ChatMessage } from '@/local-copilot/lib/providers/types'
 import { sanitizeForLlm } from '@/local-copilot/lib/security/sanitize'
-import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
+import type {
+  LocalCopilotProviderId,
+  LocalCopilotStructuredContext,
+} from '@/local-copilot/lib/types'
 import { findCatalogModel } from '@/providers/models'
 
+/**
+ * Stable tiktoken encoding for prompt fitting. Bedrock IDs have no encoding and
+ * would otherwise under-count Claude/JSON tokens via a silent gpt-4 fallback.
+ */
+export const LOCAL_COPILOT_TOKEN_COUNT_MODEL = 'gpt-4o'
+
 /** Fallback tiktoken model when the configured provider model has no encoding. */
-const DEFAULT_TOKEN_COUNT_MODEL = 'gpt-4o'
+const DEFAULT_TOKEN_COUNT_MODEL = LOCAL_COPILOT_TOKEN_COUNT_MODEL
 
 /**
  * Soft ceiling for prompt tokens on large-context models.
  * Keeps cost/latency bounded even when the catalog window is 200k–1M+.
  */
 export const LOCAL_COPILOT_PROMPT_TOKEN_BUDGET = 120_000
+
+/**
+ * Tighter ceiling for Bedrock Converse. Catalog Claude entries list 1M windows
+ * (and Llama Scout 10M) but on-demand Converse is typically 200k without the
+ * 1M beta, Llama/Mistral/GLM do not cache, and tiktoken undercounts Claude.
+ */
+export const LOCAL_COPILOT_BEDROCK_PROMPT_TOKEN_BUDGET = 48_000
+
+/**
+ * Budgeting cap for Bedrock catalog windows. Extended 1M Claude on Bedrock
+ * requires a beta header we do not send.
+ */
+export const LOCAL_COPILOT_BEDROCK_CONTEXT_WINDOW_CAP = 200_000
 
 /** Floor so extreme reservations still leave a usable prompt. */
 export const LOCAL_COPILOT_MIN_PROMPT_TOKEN_BUDGET = 8_000
@@ -28,14 +50,22 @@ export const LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS = 8_192
  */
 export const LOCAL_COPILOT_CONTEXT_SAFETY_BUFFER_TOKENS = 4_000
 
+/** Extra Converse framing / toolConfig / cache-point overhead on Bedrock. */
+export const LOCAL_COPILOT_BEDROCK_CONTEXT_SAFETY_BUFFER_TOKENS = 8_000
+
 /** Assumed window when the model is missing from the pricing catalog. */
 export const LOCAL_COPILOT_DEFAULT_CONTEXT_WINDOW = 128_000
 
 /** Workflow JSON above this size is sent as block summaries instead of full state. */
 export const LOCAL_COPILOT_WORKFLOW_FULL_STATE_TOKEN_BUDGET = 24_000
 
+/** Compact sooner on Bedrock so multi-agent graphs do not fill the 48k cap. */
+export const LOCAL_COPILOT_BEDROCK_WORKFLOW_FULL_STATE_TOKEN_BUDGET = 8_000
+
 export interface ResolveLocalCopilotPromptTokenBudgetOptions {
   model: string
+  /** When `bedrock`, applies the tighter Converse window and soft cap. */
+  provider?: LocalCopilotProviderId
   /** Estimated tokens for tool definitions sent beside the prompt. */
   toolDefinitionTokens?: number
   /** Actual `maxTokens` / max output for this request (not catalog capability). */
@@ -60,32 +90,52 @@ export interface ResolvedLocalCopilotPromptTokenBudget {
  * `min(softCap, max(minBudget, contextWindow − maxOutput − tools − safety))`.
  *
  * Smaller Bedrock windows (e.g. Llama 128k) shrink below the 120k soft cap so
- * input + tools + maxTokens fit. Larger windows stay soft-capped at 120k.
+ * input + tools + maxTokens fit. Larger Anthropic/OpenAI windows stay
+ * soft-capped at 120k. Bedrock uses a 48k soft cap and a 200k window cap.
  */
 export function resolveLocalCopilotPromptTokenBudget(
   options: ResolveLocalCopilotPromptTokenBudgetOptions
 ): ResolvedLocalCopilotPromptTokenBudget {
-  const softCap = options.softCap ?? LOCAL_COPILOT_PROMPT_TOKEN_BUDGET
+  const isBedrock = options.provider === 'bedrock'
+  const softCap =
+    options.softCap ??
+    (isBedrock ? LOCAL_COPILOT_BEDROCK_PROMPT_TOKEN_BUDGET : LOCAL_COPILOT_PROMPT_TOKEN_BUDGET)
   const maxOutputTokens = Math.max(
     0,
     options.maxOutputTokens ?? LOCAL_COPILOT_DEFAULT_MAX_OUTPUT_TOKENS
   )
   const toolDefinitionTokens = Math.max(0, Math.ceil(options.toolDefinitionTokens ?? 0))
-  const reservedTokens =
-    maxOutputTokens + toolDefinitionTokens + LOCAL_COPILOT_CONTEXT_SAFETY_BUFFER_TOKENS
+  const safetyBuffer = isBedrock
+    ? LOCAL_COPILOT_BEDROCK_CONTEXT_SAFETY_BUFFER_TOKENS
+    : LOCAL_COPILOT_CONTEXT_SAFETY_BUFFER_TOKENS
+  const reservedTokens = maxOutputTokens + toolDefinitionTokens + safetyBuffer
 
   const catalog = findCatalogModel(options.model)
   const catalogWindow = catalog?.model.contextWindow
-  const contextWindow =
+  let contextWindow =
     typeof catalogWindow === 'number' && catalogWindow > 0
       ? catalogWindow
       : LOCAL_COPILOT_DEFAULT_CONTEXT_WINDOW
+  if (isBedrock) {
+    contextWindow = Math.min(contextWindow, LOCAL_COPILOT_BEDROCK_CONTEXT_WINDOW_CAP)
+  }
 
   const usable = Math.max(LOCAL_COPILOT_MIN_PROMPT_TOKEN_BUDGET, contextWindow - reservedTokens)
   const softCapped = usable > softCap
   const tokenBudget = Math.min(softCap, usable)
 
   return { tokenBudget, contextWindow, reservedTokens, softCapped }
+}
+
+/**
+ * Encoding used to fit prompts. Bedrock model IDs are not in tiktoken.
+ */
+export function resolveLocalCopilotTokenCountModel(
+  model: string,
+  provider?: LocalCopilotProviderId
+): string {
+  if (provider === 'bedrock') return LOCAL_COPILOT_TOKEN_COUNT_MODEL
+  return model || DEFAULT_TOKEN_COUNT_MODEL
 }
 
 /** Recent user/assistant turns kept verbatim (full message bodies) in chat history. */
@@ -302,7 +352,7 @@ export function buildContextPromptPayload(
   )
 }
 
-function buildWorkflowPromptPayload(
+export function buildWorkflowPromptPayload(
   workflow: NonNullable<LocalCopilotStructuredContext['workflow']>,
   detail: WorkflowContextDetail,
   selectedBlockId?: string
@@ -332,6 +382,50 @@ function buildWorkflowPromptPayload(
     state: buildCompactWorkflowState(workflow, selectedBlockId),
     credentials: workflow.credentials,
   }
+}
+
+export interface GetWorkflowContextSelector {
+  blockIds?: string[]
+  blockNames?: string[]
+}
+
+/**
+ * Standalone get_workflow_context payload. Returns the open workflow only —
+ * never the full workspace snapshot (that is already in the system prompt and
+ * offloading it as an artifact stalls the following edit).
+ */
+export function buildGetWorkflowContextResult(
+  context: LocalCopilotStructuredContext,
+  selector: GetWorkflowContextSelector = {}
+): Record<string, unknown> {
+  const workflow = context.workflow
+  if (!workflow) {
+    return {
+      workflow: null,
+      message:
+        'No workflow is open. After create_workflow, use the returned workflowId and startBlockId with edit_workflow. Do not call get_workflow_context for workspace inventory.',
+    }
+  }
+
+  const blockIds = (selector.blockIds ?? []).filter((id) => id.trim().length > 0)
+  const blockNames = (selector.blockNames ?? []).filter((name) => name.trim().length > 0)
+  if (blockIds.length > 0 || blockNames.length > 0) {
+    return buildWorkflowBlockInspection(workflow, { blockIds, blockNames }) as Record<
+      string,
+      unknown
+    >
+  }
+
+  const detail = resolveWorkflowContextDetail(context)
+  const payload = buildWorkflowPromptPayload(workflow, detail, context.selectedBlockId)
+  const blockCount = Object.keys(workflow.blocks ?? {}).length
+  if (blockCount <= 1) {
+    return {
+      ...payload,
+      hint: 'Start-only workflow. Call edit_workflow to add blocks. Do not call get_workflow_context or load_copilot_artifact again.',
+    }
+  }
+  return payload
 }
 
 export interface WorkflowBlockInspectionSelector {

@@ -69,7 +69,8 @@ export function getParentDomainFromPublicHostname(hostname: string): string | un
  * Full Set-Cookie sweep for the three session cookies: host-only, `Domain=publicUrlHostname`, and
  * `Domain=parent` when the hostname has 3+ labels. A clear only removes the store that matches
  * that exact name+Domain+Path; a cookie set with `Domain=thearena.ai` is *not* removed by
- * `Domain=test-agent.thearena.ai` alone.
+ * `Domain=test-agent.thearena.ai` alone. Chromium may store the parent cookie as `.thearena.ai`,
+ * so both undotted and dotted parent Domain attributes are expired.
  */
 export function buildComprehensiveSessionCookieClearHeaderValues(
   publicUrlHostname: string,
@@ -89,6 +90,7 @@ export function buildComprehensiveSessionCookieClearHeaderValues(
   const parent = getParentDomainFromPublicHostname(publicUrlHostname)
   if (parent && parent !== publicUrlHostname) {
     lines.push(...buildDomainSessionCookieClearHeaderValues(parent, useHttps))
+    lines.push(...buildDomainSessionCookieClearHeaderValues(`.${parent}`, useHttps))
   }
   return lines
 }

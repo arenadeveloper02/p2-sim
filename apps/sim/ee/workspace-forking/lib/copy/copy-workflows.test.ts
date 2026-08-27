@@ -3,6 +3,8 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import type { DbOrTx } from '@/lib/db/types'
+import { MAX_FOLDERS_PER_WORKSPACE } from '@/lib/folders/constants'
+import { FolderCollectionFullError } from '@/lib/folders/errors'
 
 const { mockSaveWorkflowToNormalizedTables } = vi.hoisted(() => ({
   mockSaveWorkflowToNormalizedTables: vi.fn(),
@@ -109,16 +111,22 @@ function folderRow(id: string, name: string, parentId: string | null = null): Fo
 
 /**
  * Transaction stub for {@link resolveForkFolderMapping}: the first awaited select resolves
- * the source folders, the second the target folders, and inserted rows are captured.
+ * the source folders, the second the target folders, the third the target's active folder
+ * count (the ceiling check, which only runs when the copy has folders to insert), and
+ * inserted rows are captured.
  */
-function buildFolderTx(sourceFolders: FolderRow[], targetFolders: FolderRow[] = []) {
+function buildFolderTx(
+  sourceFolders: FolderRow[],
+  targetFolders: FolderRow[] = [],
+  targetFolderCount = 0
+) {
   const insertedRows: FolderRow[] = []
-  const selects = [sourceFolders, targetFolders]
+  const selects: unknown[][] = [sourceFolders, targetFolders, [{ total: targetFolderCount }]]
   let selectIndex = 0
   const tx = {
     select: () => ({
       from: () => ({
-        where: () => Promise.resolve(selects[selectIndex++] ?? []),
+        where: () => Promise.resolve((selects[selectIndex++] ?? []) as FolderRow[]),
       }),
     }),
     insert: () => ({
@@ -254,6 +262,55 @@ describe('resolveForkFolderMapping', () => {
     expect(insertedRows[0].name).toBe('Child')
     expect(insertedRows[0].parentId).toBe('T-parent')
   })
+
+  /**
+   * The fork mirrors a whole source subtree into the target in one bulk insert, so it can
+   * push the target past `MAX_FOLDERS_PER_WORKSPACE` — the ceiling every capped folder
+   * reader materializes under — and leave the target's folder list unreadable. The refusal
+   * is raised before the insert and inside the fork transaction, so the copy rolls back.
+   */
+  it('refuses a fork whose new folders would cross the target workspace ceiling', async () => {
+    const { tx, insertedRows } = buildFolderTx(
+      [folderRow('A', 'Alpha'), folderRow('B', 'Beta', 'A'), folderRow('C', 'Gamma', 'B')],
+      [],
+      MAX_FOLDERS_PER_WORKSPACE - 2
+    )
+
+    const rejection = expect(resolveMapping({ tx, contentFolderIds: ['C'] })).rejects
+    await rejection.toBeInstanceOf(FolderCollectionFullError)
+    await rejection.toMatchObject({ code: 'conflict' })
+    expect(insertedRows).toHaveLength(0)
+  })
+
+  it('allows a fork whose new folders exactly fill the target workspace ceiling', async () => {
+    const { tx, insertedRows } = buildFolderTx(
+      [folderRow('A', 'Alpha'), folderRow('B', 'Beta', 'A'), folderRow('C', 'Gamma', 'B')],
+      [],
+      MAX_FOLDERS_PER_WORKSPACE - 3
+    )
+
+    await resolveMapping({ tx, contentFolderIds: ['C'] })
+
+    expect(insertedRows).toHaveLength(3)
+  })
+
+  /**
+   * A sync that reuses every target folder adds no rows, so an already-over-cap target must
+   * not have it refused — the ceiling gates writes, never reads.
+   */
+  it('does not refuse a sync into an over-cap target when it creates no folders', async () => {
+    const existing = { ...folderRow('T1', 'Shared'), workspaceId: 'ws-target' }
+    const { tx, insertedRows } = buildFolderTx(
+      [folderRow('G', 'Shared')],
+      [existing],
+      MAX_FOLDERS_PER_WORKSPACE + 5
+    )
+
+    const map = await resolveMapping({ tx, contentFolderIds: ['G'] })
+
+    expect(insertedRows).toHaveLength(0)
+    expect(map.get('G')).toBe('T1')
+  })
 })
 
 describe('copyWorkflowStateIntoTarget folder fallback', () => {
@@ -353,4 +410,82 @@ describe('copyWorkflowStateIntoTarget canonicalModes reindex propagation', () =>
       expect(persistedBlock.data?.canonicalModes).toEqual({ '0:credential': 'advanced' })
     }
   )
+})
+
+describe('copyWorkflowStateIntoTarget webhook path pinning', () => {
+  const sourceState = {
+    blocks: {
+      'blk-src': {
+        id: 'blk-src',
+        type: 'slack',
+        name: 'Slack',
+        // The SOURCE's own path, written back into its draft after its deploy. Copying it would
+        // point the target at the source's URL, so the sanitizer strips it.
+        subBlocks: { triggerPath: { id: 'triggerPath', type: 'short-input', value: 'src-path' } },
+        outputs: {},
+        enabled: true,
+      },
+    },
+    edges: [],
+    loops: {},
+    parallels: {},
+    variables: {},
+  } as never
+
+  const baseParams = {
+    targetWorkflowId: 'wf-tgt',
+    targetWorkspaceId: 'ws-target',
+    userId: 'target-user',
+    mode: 'replace' as const,
+    now: new Date('2026-07-01'),
+    sourceState,
+    sourceMeta: { name: 'Prod', description: null, folderId: null, sortOrder: 0 },
+    workflowIdMap: new Map(),
+    folderIdMap: new Map(),
+    nameRegistry: buildWorkflowNameRegistry([]),
+    resolveBlockId: (_targetWorkflowId: string, sourceBlockId: string) => `tgt-${sourceBlockId}`,
+  }
+
+  /** `replace` mode updates the existing target workflow row; stub just that chain. */
+  const stubTx = () =>
+    ({
+      update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
+    }) as unknown as DbOrTx
+
+  function writtenSubBlocks() {
+    const state = mockSaveWorkflowToNormalizedTables.mock.calls.at(-1)?.[1] as {
+      blocks: Record<string, { subBlocks?: Record<string, { value?: unknown }> }>
+    }
+    return state.blocks['tgt-blk-src'].subBlocks ?? {}
+  }
+
+  it("pins the TARGET's live webhook path so a sync never moves a URL already in the wild", async () => {
+    mockSaveWorkflowToNormalizedTables.mockResolvedValue({ success: true })
+    await copyWorkflowStateIntoTarget({
+      ...baseParams,
+      tx: stubTx(),
+      triggerPathByBlockId: new Map([['tgt-blk-src', 'parent-live-path']]),
+    })
+    expect(writtenSubBlocks().triggerPath?.value).toBe('parent-live-path')
+  })
+
+  /**
+   * The adoption case: the arriving trigger has a different target block id (re-created in the
+   * source), and the resolver handed it the URL retiring in the same target workflow.
+   */
+  it('writes an ADOPTED path onto a trigger block that serves no webhook of its own', async () => {
+    mockSaveWorkflowToNormalizedTables.mockResolvedValue({ success: true })
+    await copyWorkflowStateIntoTarget({
+      ...baseParams,
+      tx: stubTx(),
+      triggerPathByBlockId: new Map([['tgt-blk-src', 'retiring-slack-path']]),
+    })
+    expect(writtenSubBlocks().triggerPath?.value).toBe('retiring-slack-path')
+  })
+
+  it('leaves the path unset when the target block serves no webhook yet (derives as before)', async () => {
+    mockSaveWorkflowToNormalizedTables.mockResolvedValue({ success: true })
+    await copyWorkflowStateIntoTarget({ ...baseParams, tx: stubTx() })
+    expect(writtenSubBlocks().triggerPath).toBeUndefined()
+  })
 })

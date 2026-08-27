@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { isRecordLike } from '@sim/utils/object'
 import { z } from 'zod'
 import { getBlockVisibilityForCopilot } from '@/lib/copilot/block-visibility'
 import {
@@ -43,7 +44,6 @@ import { workspaceFileServerTool } from '@/lib/copilot/tools/server/files/worksp
 import { validateGeneratedToolPayload } from '@/lib/copilot/tools/server/generated-schema'
 import { generateImageServerTool } from '@/lib/copilot/tools/server/image/generate-image'
 import { normalizeGenerateImageArgs } from '@/lib/copilot/tools/server/image/normalize-args'
-import { getJobLogsServerTool } from '@/lib/copilot/tools/server/jobs/get-job-logs'
 import { knowledgeBaseServerTool } from '@/lib/copilot/tools/server/knowledge/knowledge-base'
 import { searchKnowledgeBaseServerTool } from '@/lib/copilot/tools/server/knowledge/search-knowledge-base'
 import { ffmpegServerTool } from '@/lib/copilot/tools/server/media/ffmpeg'
@@ -77,14 +77,16 @@ const logger = createLogger('ServerToolRouter')
 const CUSTOM_BLOCK_OVERLAY_TOOLS = new Set(['edit_workflow', 'get_blocks_metadata'])
 
 /**
- * DISCOVERY tools that must run inside the viewer's block-visibility context so
- * gated (preview / kill-switched) blocks disappear from what the agent can
- * list. Deliberately a DIFFERENT set from {@link CUSTOM_BLOCK_OVERLAY_TOOLS}:
- * `edit_workflow` is excluded because its registry use is functional
- * (find-by-type over clones, never a discovery listing) and gating it would
- * only risk leaking display projections into persisted state.
+ * Discovery tools that consume the viewer's block-visibility context to hide
+ * gated blocks and credentials. `edit_workflow` establishes a narrower scope
+ * around operation validation after it resolves the workflow's actual
+ * workspace.
  */
-const VISIBILITY_GATED_TOOLS = new Set(['get_blocks_metadata', 'get_trigger_blocks'])
+const VISIBILITY_GATED_TOOLS = new Set([
+  'get_blocks_metadata',
+  'get_credentials',
+  'get_trigger_blocks',
+])
 
 const WRITE_ACTIONS: Record<string, string[]> = {
   [KnowledgeBase.id]: [
@@ -107,6 +109,7 @@ const WRITE_ACTIONS: Record<string, string[]> = {
     'create_from_file',
     'import_file',
     'delete',
+    'rename',
     'insert_row',
     'batch_insert_rows',
     'update_row',
@@ -119,6 +122,13 @@ const WRITE_ACTIONS: Record<string, string[]> = {
     'rename_column',
     'delete_column',
     'update_column',
+    'add_workflow_group',
+    'update_workflow_group',
+    'delete_workflow_group',
+    'add_workflow_group_output',
+    'delete_workflow_group_output',
+    'run_column',
+    'cancel_table_runs',
     'add_enrichment',
   ],
   [ManageCustomTool.id]: ['add', 'edit', 'delete'],
@@ -159,7 +169,6 @@ const baseServerToolRegistry: Record<string, BaseServerTool> = {
   [getTriggerBlocksServerTool.name]: getTriggerBlocksServerTool,
   [editWorkflowServerTool.name]: editWorkflowServerTool,
   [queryLogsServerTool.name]: queryLogsServerTool,
-  [getJobLogsServerTool.name]: getJobLogsServerTool,
   [searchDocumentationServerTool.name]: searchDocumentationServerTool,
   [searchOnlineServerTool.name]: searchOnlineServerTool,
   [userMemoryServerTool.name]: userMemoryServerTool,
@@ -231,11 +240,7 @@ export async function routeExecution(
   // nested "args" object. Unwrap that before validation so the generated
   // JSON Schema sees the flat tool contract shape.
   let normalizedPayload = payload ?? {}
-  if (
-    normalizedPayload &&
-    typeof normalizedPayload === 'object' &&
-    !Array.isArray(normalizedPayload)
-  ) {
+  if (isRecordLike(normalizedPayload)) {
     const raw = normalizedPayload as Record<string, unknown>
     if (raw.args && typeof raw.args === 'object' && !raw.operation) {
       const nested = raw.args as Record<string, unknown>

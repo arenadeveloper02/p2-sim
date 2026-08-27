@@ -139,7 +139,12 @@ export function buildPlanName(type: 'pro' | 'team', credits: number): string {
 export function getValidPlanNames(type: 'pro' | 'team'): string[] {
   return CREDIT_TIERS.map((t) => buildPlanName(type, t.credits))
 }
-
+/**
+ * Get the user-facing display name for a plan.
+ * @example getDisplayPlanName('pro_25000') => 'Max'
+ * @example getDisplayPlanName('team_6000') => 'Pro for Teams'
+ * @example getDisplayPlanName('pro') => 'Legacy Pro'
+ */
 /**
  * SQL-level plan filters for Drizzle queries.
  * These are the SQL equivalents of the JS helpers above.

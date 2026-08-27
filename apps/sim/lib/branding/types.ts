@@ -21,6 +21,7 @@ export interface BrandConfig {
   documentationUrl?: string
   termsUrl?: string
   privacyUrl?: string
+  slackCommunityUrl?: string
   theme?: ThemeColors
   /** Whether this instance has custom branding applied (any brand env var is set) */
   isWhitelabeled: boolean

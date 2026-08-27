@@ -7,7 +7,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@sim/emcn'
-import { Eye, Pencil, Plus, SquareArrowUpRight, TagIcon, Trash } from '@sim/emcn/icons'
+import { Eye, Pencil, Plus, RefreshCw, SquareArrowUpRight, TagIcon, Trash } from '@sim/emcn/icons'
 
 interface DocumentContextMenuProps {
   isOpen: boolean
@@ -18,6 +18,7 @@ interface DocumentContextMenuProps {
   onRename?: () => void
   onToggleEnabled?: () => void
   onViewTags?: () => void
+  onRetry?: () => void
   onDelete?: () => void
   onAddDocument?: () => void
   isDocumentEnabled?: boolean
@@ -45,6 +46,7 @@ export function DocumentContextMenu({
   onRename,
   onToggleEnabled,
   onViewTags,
+  onRetry,
   onDelete,
   onAddDocument,
   isDocumentEnabled = true,
@@ -69,7 +71,7 @@ export function DocumentContextMenu({
 
   const hasNavigationSection = !isMultiSelect && (!!onOpenInNewTab || !!onOpenSource)
   const hasEditSection = !isMultiSelect && (!!onRename || !!onViewTags)
-  const hasStateSection = !!onToggleEnabled
+  const hasStateSection = !!onToggleEnabled || !!onRetry
   const hasDestructiveSection = !!onDelete
 
   return (
@@ -133,6 +135,12 @@ export function DocumentContextMenu({
               <DropdownMenuItem disabled={disableToggleEnabled} onSelect={onToggleEnabled}>
                 <Eye />
                 {getToggleLabel()}
+              </DropdownMenuItem>
+            )}
+            {onRetry && (
+              <DropdownMenuItem onSelect={onRetry}>
+                <RefreshCw />
+                Retry processing
               </DropdownMenuItem>
             )}
 

@@ -1,8 +1,8 @@
 import { db } from '@sim/db'
 import { workflow } from '@sim/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
-import { revisionFromDate } from '@/local-copilot/lib/writes/revision'
 import { assertWorkflowInWorkspace } from '@/local-copilot/lib/writes/pin-ids'
+import { revisionFromDate } from '@/local-copilot/lib/writes/revision'
 
 /**
  * Loads the CAS revision token for a workflow in a workspace.

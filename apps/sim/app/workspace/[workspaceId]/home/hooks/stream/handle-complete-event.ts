@@ -10,6 +10,8 @@ type CompleteEvent = Extract<PersistedStreamEventEnvelope, { type: 'complete' }>
  * async pause). This handler only records the terminal flag and flushes.
  */
 export function handleCompleteEvent(ctx: StreamLoopContext, _parsed: CompleteEvent): void {
+  ctx.deps.clearBrowserAgentRuns()
+  ctx.state.browserAgentRunIds.clear()
   ctx.state.sawCompleteEvent = true
   ctx.state.liveStatus = undefined
   setLocalLiveStatus(undefined)

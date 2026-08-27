@@ -13,6 +13,7 @@ const {
   mockMaybeNotifyStorageLimitForBillingContext,
   mockResolveStorageBillingContext,
   mockGetFileMetadataByKeys,
+  mockEnqueueKnowledgeDocumentProcessing,
 } = vi.hoisted(() => ({
   mockApplyStorageUsageDeltasInTx: vi.fn(),
   mockCheckStorageQuota: vi.fn(),
@@ -22,6 +23,7 @@ const {
   mockMaybeNotifyStorageLimitForBillingContext: vi.fn(),
   mockResolveStorageBillingContext: vi.fn(),
   mockGetFileMetadataByKeys: vi.fn(),
+  mockEnqueueKnowledgeDocumentProcessing: vi.fn(),
 }))
 
 vi.mock('@/lib/billing/storage', () => ({
@@ -37,6 +39,10 @@ vi.mock('@/lib/billing/storage', () => ({
 vi.mock('@/lib/uploads/server/metadata', () => ({
   deleteFileMetadata: vi.fn(),
   getFileMetadataByKeys: mockGetFileMetadataByKeys,
+}))
+
+vi.mock('@/lib/knowledge/documents/processing-outbox-event', () => ({
+  enqueueKnowledgeDocumentProcessing: mockEnqueueKnowledgeDocumentProcessing,
 }))
 
 import {
@@ -70,6 +76,7 @@ describe('knowledge document storage attribution', () => {
     mockApplyStorageUsageDeltasInTx.mockResolvedValue(undefined)
     mockMaybeNotifyStorageLimitForBillingContext.mockResolvedValue(undefined)
     mockGetFileMetadataByKeys.mockResolvedValue([])
+    mockEnqueueKnowledgeDocumentProcessing.mockResolvedValue('outbox-1')
   })
 
   it.each(['external-collaborator', 'personal-api-key-user'])(
@@ -137,6 +144,25 @@ describe('knowledge document storage attribution', () => {
     expect(mockMaybeNotifyStorageLimitForBillingContext).toHaveBeenCalledWith(STORAGE_CONTEXT, 5)
   })
 
+  it('returns the pending processing state persisted for a new document', async () => {
+    const created = await createSingleDocument(
+      {
+        filename: 'note.txt',
+        fileUrl: 'data:text/plain;base64,SGVsbG8=',
+        fileSize: 5,
+        mimeType: 'text/plain',
+      },
+      'knowledge-base-1',
+      'request-1',
+      'external-collaborator'
+    )
+
+    expect(created.processingStatus).toBe('pending')
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({ processingStatus: 'pending' })
+    )
+  })
+
   it('resolves admission before opening the document transaction', async () => {
     let transactionOpen = false
     mockResolveStorageBillingContext.mockImplementationOnce(async () => {
@@ -167,39 +193,124 @@ describe('knowledge document storage attribution', () => {
     )
   })
 
-  it('uses server-known file metadata size for quota, ledger, and document row', async () => {
-    const fileUrl = '/api/files/serve/kb%2Fverified-file?context=knowledge-base'
-    mockGetFileMetadataByKeys.mockResolvedValue([
-      {
-        key: 'kb/verified-file',
-        workspaceId: 'workspace-1',
-        userId: 'external-collaborator',
-        size: 8,
+  it('enqueues processing inside the document storage transaction', async () => {
+    const billingAttribution = {
+      actorUserId: 'external-collaborator',
+      workspaceId: 'workspace-1',
+      organizationId: null,
+      billedAccountUserId: 'workspace-owner',
+      billingEntity: { type: 'user' as const, id: 'workspace-owner' },
+      billingPeriod: {
+        start: '2026-08-01T00:00:00.000Z',
+        end: '2026-09-01T00:00:00.000Z',
       },
-    ])
-    mockIncrementStorageUsageForBillingContextInTx.mockResolvedValue(13)
+      payerSubscription: null,
+    }
 
-    const result = await createSingleDocument(
+    await createSingleDocument(
       {
         filename: 'note.txt',
-        fileUrl,
+        fileUrl: 'data:text/plain;base64,SGVsbG8=',
         fileSize: 5,
         mimeType: 'text/plain',
       },
       'knowledge-base-1',
       'request-1',
-      'external-collaborator'
+      'external-collaborator',
+      'document-1',
+      undefined,
+      {
+        expectedWorkspaceId: 'workspace-1',
+        processing: { processingOptions: { lang: 'en' }, billingAttribution },
+      }
     )
 
-    expect(mockCheckStorageQuotaForBillingContext).toHaveBeenCalledWith(STORAGE_CONTEXT, 8)
-    expect(mockIncrementStorageUsageForBillingContextInTx).toHaveBeenCalledWith(
-      expect.anything(),
-      STORAGE_CONTEXT,
-      8
-    )
-    expect(result.fileSize).toBe(8)
-    expect(dbChainMockFns.values).toHaveBeenCalledWith(expect.objectContaining({ fileSize: 8 }))
+    expect(mockEnqueueKnowledgeDocumentProcessing).toHaveBeenCalledWith(dbChainMock.db, {
+      knowledgeBaseId: 'knowledge-base-1',
+      documentId: 'document-1',
+      processingOptions: { lang: 'en' },
+      billingAttribution,
+    })
   })
+
+  it('rolls back document creation when durable processing enqueue fails', async () => {
+    const failure = new Error('outbox unavailable')
+    mockEnqueueKnowledgeDocumentProcessing.mockRejectedValueOnce(failure)
+
+    await expect(
+      createSingleDocument(
+        {
+          filename: 'note.txt',
+          fileUrl: 'data:text/plain;base64,SGVsbG8=',
+          fileSize: 5,
+          mimeType: 'text/plain',
+        },
+        'knowledge-base-1',
+        'request-1',
+        'external-collaborator',
+        'document-1',
+        undefined,
+        {
+          expectedWorkspaceId: 'workspace-1',
+          processing: {
+            processingOptions: {},
+            billingAttribution: {
+              actorUserId: 'external-collaborator',
+              workspaceId: 'workspace-1',
+              organizationId: null,
+              billedAccountUserId: 'workspace-owner',
+              billingEntity: { type: 'user', id: 'workspace-owner' },
+              billingPeriod: {
+                start: '2026-08-01T00:00:00.000Z',
+                end: '2026-09-01T00:00:00.000Z',
+              },
+              payerSubscription: null,
+            },
+          },
+        }
+      )
+    ).rejects.toBe(failure)
+
+    expect(mockMaybeNotifyStorageLimitForBillingContext).not.toHaveBeenCalled()
+  })
+
+  it.each(['kb', 'knowledge-base'])(
+    'uses server-known %s file metadata size for quota, ledger, and document row',
+    async (keyPrefix) => {
+      const storageKey = `${keyPrefix}/verified-file`
+      const fileUrl = `/api/files/serve/${encodeURIComponent(storageKey)}?context=knowledge-base`
+      mockGetFileMetadataByKeys.mockResolvedValue([
+        {
+          key: storageKey,
+          workspaceId: 'workspace-1',
+          userId: 'external-collaborator',
+          size: 8,
+        },
+      ])
+      mockIncrementStorageUsageForBillingContextInTx.mockResolvedValue(13)
+
+      const result = await createSingleDocument(
+        {
+          filename: 'note.txt',
+          fileUrl,
+          fileSize: 5,
+          mimeType: 'text/plain',
+        },
+        'knowledge-base-1',
+        'request-1',
+        'external-collaborator'
+      )
+
+      expect(mockCheckStorageQuotaForBillingContext).toHaveBeenCalledWith(STORAGE_CONTEXT, 8)
+      expect(mockIncrementStorageUsageForBillingContextInTx).toHaveBeenCalledWith(
+        expect.anything(),
+        STORAGE_CONTEXT,
+        8
+      )
+      expect(result.fileSize).toBe(8)
+      expect(dbChainMockFns.values).toHaveBeenCalledWith(expect.objectContaining({ fileSize: 8 }))
+    }
+  )
 
   it('decrements only exact bytes for document rows actually deleted', async () => {
     dbChainMockFns.where.mockResolvedValueOnce([

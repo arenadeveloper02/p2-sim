@@ -10,11 +10,14 @@ import {
   ChipModalFooter,
   ChipModalHeader,
   cn,
-  Loader,
 } from '@sim/emcn'
+import { Loader, RefreshCw, X } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
-import { RotateCcw, X } from 'lucide-react'
 import { useParams } from 'next/navigation'
+import {
+  assertMultiFileUploadAdmission,
+  MultiFileUploadAdmissionError,
+} from '@/lib/uploads/client/admission'
 import { formatFileSize, validateKnowledgeBaseFile } from '@/lib/uploads/utils/file-utils'
 import { ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { uploadKBDocumentsEvent } from '@/app/arenaMixpanelEvents/mixpanelEvents'
@@ -80,11 +83,11 @@ export function AddDocumentsModal({
   }
 
   const processFiles = (selectedFiles: File[]) => {
-    setFileError(null)
-
     if (!selectedFiles || selectedFiles.length === 0) return
 
     try {
+      assertMultiFileUploadAdmission(selectedFiles, { existingFiles: files })
+      setFileError(null)
       const newFiles: File[] = []
       let hasError = false
 
@@ -103,6 +106,10 @@ export function AddDocumentsModal({
         setFiles((prev) => [...prev, ...newFiles])
       }
     } catch (error) {
+      if (error instanceof MultiFileUploadAdmissionError) {
+        setFileError(error.message)
+        return
+      }
       logger.error('Error processing files:', error)
       setFileError('An error occurred while processing files. Please try again.')
     }
@@ -175,7 +182,7 @@ export function AddDocumentsModal({
           accept={ACCEPT_ATTRIBUTE}
           multiple
           onChange={processFiles}
-          description='PDF, DOC, DOCX, TXT, CSV, XLS, XLSX, MD, PPT, PPTX, HTML, JSONL (max 100MB each)'
+          description='PDF, DOC, DOCX, TXT, CSV, XLS, XLSX, MD, PPT, PPTX, HTML, JSONL (max 20 files, 100MB each, 500MB total)'
           error={fileError}
         />
 
@@ -221,7 +228,7 @@ export function AddDocumentsModal({
                               onClick={() => handleRetryFile(index)}
                               disabled={isUploading}
                             >
-                              <RotateCcw className='size-3' />
+                              <RefreshCw className='size-3' />
                             </Button>
                           )}
                           <Button

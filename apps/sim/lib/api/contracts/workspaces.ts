@@ -163,14 +163,6 @@ export const workspaceMemberSchema = z.object({
 
 export type WorkspaceMember = z.output<typeof workspaceMemberSchema>
 
-export const workspacePreviewBodySchema = z
-  .object({
-    code: z
-      .string({ error: 'code is required' })
-      .refine((code) => code.trim().length > 0, { message: 'code is required' }),
-  })
-  .passthrough()
-
 export const workspaceMetricsExecutionsQuerySchema = z.object({
   startTime: z.string().optional(),
   endTime: z.string().optional(),
@@ -194,6 +186,13 @@ export const listWorkspacesContract = defineRouteContract({
     schema: z.object({
       workspaces: z.array(workspaceSchema),
       lastActiveWorkspaceId: z.string().nullable(),
+      /**
+       * Workspace ids the viewer pinned in the switcher, from `pinned_item`. May
+       * name workspaces absent from `workspaces` (archived, or access since
+       * removed); clients look pins up per rendered workspace, so unmatched ids
+       * are inert and the pin survives if access is restored.
+       */
+      pinnedWorkspaceIds: z.array(z.string()).default([]),
       creationPolicy: workspaceCreationPolicySchema.nullable(),
     }),
   },
@@ -259,6 +258,11 @@ export const workspaceHostContextSchema = z.object({
     isHostOrganizationMember: z.boolean(),
     isHostOrganizationAdmin: z.boolean(),
   }),
+  features: z
+    .object({
+      credentialGroups: z.boolean(),
+    })
+    .optional(),
 })
 
 export type WorkspaceHostContext = z.output<typeof workspaceHostContextSchema>

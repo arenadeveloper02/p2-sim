@@ -54,11 +54,17 @@ import {
   supportsToolUsageControl as supportsToolUsageControlFromDefinitions,
   updateOllamaModels as updateOllamaModelsInDefinitions,
 } from '@/providers/models'
+import {
+  getProviderToolInputProvenance,
+  getProviderToolModelInputRegistry,
+  registerPreparedProviderToolInputProvenance,
+} from '@/providers/tool-input-provenance'
 import type { ProviderId, ProviderToolConfig } from '@/providers/types'
 import { useProvidersStore } from '@/stores/providers/store'
 import { mergeToolParameters } from '@/tools/merge-params'
 import type { SchemaProperty } from '@/tools/params'
 import { SPYFU_DEFAULT_OPERATION_ID } from '@/tools/spyfu/operations'
+import type { WorkflowToolExecutionContext } from '@/tools/types'
 
 const logger = createLogger('ProviderUtils')
 
@@ -85,12 +91,21 @@ function isDefaultWorkflowDescription(
  * Fetches workflow metadata (name and description) from the API
  */
 async function fetchWorkflowMetadata(
-  workflowId: string
+  workflowId: string,
+  executionContext: WorkflowToolExecutionContext | undefined
 ): Promise<{ name: string; description: string | null } | null> {
   try {
-    const { buildAuthHeaders, buildAPIUrl } = await import('@/executor/utils/http')
+    if (!executionContext?.userId) {
+      throw new Error('Workflow metadata enrichment requires a trusted execution subject')
+    }
+    const { buildAPIUrl, buildExecutorDelegationHeaders } = await import('@/executor/utils/http')
+    const { executionScopeForTarget } = await import('@/executor/utils/delegation')
 
-    const headers = await buildAuthHeaders()
+    const headers = await buildExecutorDelegationHeaders({
+      subjectUserId: executionContext.userId,
+      workflowId,
+      ...executionScopeForTarget(executionContext, workflowId),
+    })
     const url = buildAPIUrl(`/api/workflows/${workflowId}`)
 
     const response = await fetch(url.toString(), { headers })
@@ -284,26 +299,34 @@ export function getAllModelProviders(): Record<string, ProviderId> {
   )
 }
 
+/**
+ * The provider that declares `model`, or `null` when none does.
+ *
+ * The non-guessing half of {@link getProviderFromModel}. A caller that *gates*
+ * on the answer needs "unknown" to stay distinct from "ollama": this registry
+ * holds chat models only, so every embedding, speech, image and video model id
+ * would otherwise read as an Ollama model and be judged against an allowlist
+ * that was never about it.
+ */
+export function findProviderFromModel(model: string): ProviderId | null {
+  const normalizedModel = model.toLowerCase()
+
+  const declared = getAllModelProviders()[normalizedModel]
+  if (declared) return declared
+
+  for (const [id, config] of Object.entries(providers)) {
+    for (const pattern of config.modelPatterns ?? []) {
+      if (pattern.test(normalizedModel)) return id as ProviderId
+    }
+  }
+
+  return null
+}
+
 export function getProviderFromModel(model: string): ProviderId {
   const normalizedModel = model.toLowerCase()
 
-  let providerId: ProviderId | null = null
-
-  if (normalizedModel in getAllModelProviders()) {
-    providerId = getAllModelProviders()[normalizedModel]
-  } else {
-    for (const [id, config] of Object.entries(providers)) {
-      if (config.modelPatterns) {
-        for (const pattern of config.modelPatterns) {
-          if (pattern.test(normalizedModel)) {
-            providerId = id as ProviderId
-            break
-          }
-        }
-      }
-      if (providerId) break
-    }
-  }
+  let providerId = findProviderFromModel(model)
 
   if (!providerId) {
     logger.warn(`No provider found for model: ${model}, defaulting to ollama`)
@@ -527,15 +550,16 @@ function mergeOAuthCredentialDefaultsFromSubBlocks(
 }
 /**
  * Resolves canonical pair ids (e.g. `tableId`, `knowledgeBaseId`) from a tool's
- * raw params, filling them in from their basic/advanced selector subblock source
- * values when the canonical key isn't already present.
+ * raw params, preferring the active basic/advanced selector subblock source over
+ * a previously resolved canonical value.
  *
  * Selector subblocks persist their value under the subblock id (e.g.
  * `tableSelector`), not the canonical id, so any lookup that keys off the
  * canonical id — like the unique-tool-id suffix below — must resolve it first.
  * Mode selection mirrors {@link transformBlockTool}'s execution-time
  * `paramsTransform` so the resolved id matches the params the tool actually runs
- * with.
+ * with. When the active selector has no value, the original canonical value is
+ * preserved for direct-id callers and nested tools in advanced mode.
  *
  * @returns The params with canonical resource ids resolved (non-destructive)
  */
@@ -547,8 +571,6 @@ function resolveCanonicalResourceParams(
   if (canonicalGroups.length === 0) return params
   const resolved = { ...params }
   for (const group of canonicalGroups) {
-    const existing = resolved[group.canonicalId]
-    if (existing !== undefined && existing !== null && existing !== '') continue
     // Route through the canonical SOT: an explicit scoped override wins, else the value heuristic -
     // no `?? 'basic'` (which ignored an advanced-only value when basic was empty).
     const explicitMode = scopedCanonicalModes?.[group.canonicalId]
@@ -670,6 +692,7 @@ export async function transformBlockTool(
     getTool: (toolId: string) => any
     getToolAsync?: (toolId: string) => Promise<any>
     canonicalModes?: Record<string, 'basic' | 'advanced'>
+    enrichmentContext?: WorkflowToolExecutionContext
     /**
      * Server-only resolver for a custom (deploy-as-block) tool's binding (bound
      * workflow + input schema), org-scoped to the consumer. Injected as a dependency
@@ -687,8 +710,15 @@ export async function transformBlockTool(
     toolIndex?: number
   }
 ): Promise<ProviderToolConfig | null> {
-  const { selectedOperation, getAllBlocks, getTool, getToolAsync, canonicalModes, toolIndex } =
-    options
+  const {
+    selectedOperation,
+    getAllBlocks,
+    getTool,
+    getToolAsync,
+    canonicalModes,
+    enrichmentContext,
+    toolIndex,
+  } = options
   const scopedCanonicalModes = scopeCanonicalModesForTool(canonicalModes, toolIndex, block.type)
 
   let blockDef = getAllBlocks().find((b: any) => b.type === block.type)
@@ -846,10 +876,21 @@ export async function transformBlockTool(
     }
   }
 
-  const llmResult = await createLLMToolSchema(toolConfig, userProvidedParams)
-  let llmSchema = llmResult.schema
-  const enrichedDescription = llmResult.enrichedDescription
-  const modelBlockedParams = llmResult.modelBlockedParams
+  const canonicalGroups: CanonicalGroup[] = blockDef?.subBlocks
+    ? Object.values(buildCanonicalIndex(blockDef.subBlocks).groupsById).filter(isCanonicalPair)
+    : []
+
+  const resolvedResourceParams = resolveCanonicalResourceParams(
+    userProvidedParams,
+    canonicalGroups,
+    scopedCanonicalModes
+  )
+
+  let {
+    schema: llmSchema,
+    enrichedDescription,
+    modelBlockedParams,
+  } = await createLLMToolSchema(toolConfig, resolvedResourceParams, enrichmentContext)
 
   /**
    * Semrush URL reports (`url_*`) need a page URL. Models often populate `domain` instead because
@@ -905,16 +946,6 @@ export async function transformBlockTool(
     }
   }
 
-  const canonicalGroups: CanonicalGroup[] = blockDef?.subBlocks
-    ? Object.values(buildCanonicalIndex(blockDef.subBlocks).groupsById).filter(isCanonicalPair)
-    : []
-
-  const resolvedResourceParams = resolveCanonicalResourceParams(
-    userProvidedParams,
-    canonicalGroups,
-    scopedCanonicalModes
-  )
-
   let uniqueToolId = toolConfig.id
   let toolName = toolConfig.name
   let toolDescription = enrichedDescription || toolConfig.description
@@ -922,7 +953,10 @@ export async function transformBlockTool(
   if (toolId === 'workflow_executor' && resolvedResourceParams.workflowId) {
     uniqueToolId = `${toolConfig.id}_${resolvedResourceParams.workflowId}`
 
-    const workflowMetadata = await fetchWorkflowMetadata(resolvedResourceParams.workflowId)
+    const workflowMetadata = await fetchWorkflowMetadata(
+      resolvedResourceParams.workflowId,
+      enrichmentContext
+    )
     if (workflowMetadata) {
       toolName = workflowMetadata.name || toolConfig.name
       if (
@@ -940,7 +974,7 @@ export async function transformBlockTool(
     // the executor's paramsTransform parses it later, but this runs before that.
     const mounted = readMountedSecretNames(resolvedResourceParams.mountedSecrets)
     toolDescription = mounted.length
-      ? `${toolDescription}\n\nWorkspace secrets available to this code: ${mounted.join(', ')}. Reference one as {{NAME}} or environmentVariables['NAME']. No other secrets are readable.`
+      ? `${toolDescription}\n\nWorkspace secret names available to this code: ${mounted.join(', ')}. Reference one with the exact {{NAME}} syntax. Its value is bound only while the code executes and is not included in the model request. No other secrets are readable.`
       : `${toolDescription}\n\nThis code has no access to workspace secrets.`
   } else if (toolId.startsWith('knowledge_') && resolvedResourceParams.knowledgeBaseId) {
     uniqueToolId = `${toolConfig.id}_${resolvedResourceParams.knowledgeBaseId}`
@@ -1819,16 +1853,46 @@ export function prepareToolExecution(
   // empty. That is a privilege escalation for `user-only` params: a Function tool
   // scoped to "Selected secrets" with an empty list is an explicit deny, and a
   // model emitting `mountedSecrets: ['STRIPE_KEY']` would otherwise mount it.
-  let toolParams = mergeToolParameters(
-    tool.params || {},
-    stripModelBlockedParams(tool.modelBlockedParams, llmArgs)
-  ) as Record<string, any>
+  const modelParams = stripModelBlockedParams(tool.modelBlockedParams, llmArgs)
+  const modelInputRegistry = getProviderToolModelInputRegistry(tool)
+  const modelReferenceResolution = modelInputRegistry?.resolveModelExposedEnvReferences(modelParams)
+  if (modelReferenceResolution && !modelReferenceResolution.complete) {
+    throw new Error('Agent tool input environment references could not be safely resolved')
+  }
+  const resolvedModelParams = modelReferenceResolution?.value ?? modelParams
+  let toolParams = mergeToolParameters(tool.params || {}, resolvedModelParams)
+  const inputProvenance = getProviderToolInputProvenance(tool)
+  let inputRegistry = inputProvenance?.registry.forkForInputPaths([inputProvenance.sourcePath])
+  if (modelReferenceResolution?.matched) {
+    if (inputRegistry) {
+      inputRegistry.mergeToolCallRegistry(modelReferenceResolution.registry)
+    } else {
+      inputRegistry = modelReferenceResolution.registry
+    }
+  }
+  if (inputRegistry && !inputRegistry.isComplete()) {
+    throw new Error('Agent tool input environment references could not be safely resolved')
+  }
+  let projectedToolParams = inputRegistry
+    ? mergeToolParameters(inputProvenance?.projectedParams ?? tool.params ?? {}, modelParams)
+    : undefined
 
   if (tool.paramsTransform) {
+    let transformed = false
     try {
       toolParams = tool.paramsTransform(toolParams)
+      transformed = true
     } catch (err) {
       logger.warn('paramsTransform failed, using raw params', { error: err })
+    }
+
+    if (transformed && projectedToolParams && inputRegistry) {
+      try {
+        projectedToolParams = tool.paramsTransform(projectedToolParams)
+      } catch {
+        inputRegistry.markIncomplete('tool-params-transform-failed')
+        projectedToolParams = undefined
+      }
     }
   }
 
@@ -1863,6 +1927,20 @@ export function prepareToolExecution(
       ? { blockNameMapping: normalizeStringRecord(request.blockNameMapping) }
       : {}),
     ...(tool.parameters ? { _toolSchema: tool.parameters } : {}),
+  }
+
+  if (inputRegistry) {
+    const inputPaths = [['params']] as const
+    if (projectedToolParams) {
+      inputRegistry.recordTransformedInputProjection(
+        { params: toolParams },
+        { params: projectedToolParams }
+      )
+    }
+    registerPreparedProviderToolInputProvenance(executionParams, {
+      registry: inputRegistry,
+      inputPaths,
+    })
   }
 
   return { toolParams, executionParams }

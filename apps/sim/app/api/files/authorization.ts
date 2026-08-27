@@ -738,69 +738,7 @@ async function verifyRegularFileAccess(
 }
 
 /**
- * Unified authorization function that returns structured result
- */
-async function authorizeFileAccess(
-  key: string,
-  userId: string,
-  context?: StorageContext,
-  storageConfig?: StorageConfig,
-  isLocal?: boolean
-): Promise<AuthorizationResult> {
-  const granted = await verifyFileAccess(key, userId, storageConfig, context, isLocal)
-
-  if (granted) {
-    let workspaceId: string | undefined
-    const inferredContext = context || inferContextFromKey(key)
-
-    if (inferredContext === 'workspace') {
-      const record = await lookupWorkspaceFileByKey(key)
-      workspaceId = record?.workspaceId
-    } else {
-      const extracted = extractWorkspaceIdFromKey(key)
-      if (extracted) {
-        workspaceId = extracted
-      }
-    }
-
-    return {
-      granted: true,
-      reason: 'Access granted',
-      workspaceId,
-    }
-  }
-
-  return {
-    granted: false,
-    reason: 'Access denied - insufficient permissions or file not found',
-  }
-}
-
-/**
- * Get KB storage configuration based on current storage provider
- */
-// async function getKBStorageConfig(): Promise<StorageConfig> {
-//   const { USE_S3_STORAGE, USE_BLOB_STORAGE } = await import('@/lib/uploads/config')
-
-//   if (USE_BLOB_STORAGE) {
-//     return {
-//       containerName: BLOB_KB_CONFIG.containerName,
-//       accountName: BLOB_KB_CONFIG.accountName,
-//       accountKey: BLOB_KB_CONFIG.accountKey,
-//       connectionString: BLOB_KB_CONFIG.connectionString,
-//     }
-//   }
-
-//   if (USE_S3_STORAGE) {
-//     return {
-//       bucket: S3_KB_CONFIG.bucket,
-//       region: S3_KB_CONFIG.region,
-//     }
-//   }
-
-//   return {}
-// }
-/* Guard helper for tool routes that download user files from storage.
+ * Guard helper for tool routes that download user files from storage.
  *
  * Validates that `key` is a non-empty string, that `userId` is present, and
  * that the authenticated user owns the file. Returns a 404 `NextResponse` on

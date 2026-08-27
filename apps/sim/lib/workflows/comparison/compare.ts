@@ -1,4 +1,9 @@
 import { createLogger } from '@sim/logger'
+import {
+  blockRetryEquals,
+  collectErrorSourceBlockIds,
+  resolveEffectiveErrorEnabled,
+} from '@sim/workflow-types/workflow'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 import {
   extractBlockFieldsForComparison,
@@ -131,6 +136,8 @@ export function generateWorkflowDiffSummary(
   const previousBlocks = previousState.blocks || {}
   const currentBlockIds = new Set(Object.keys(currentBlocks))
   const previousBlockIds = new Set(Object.keys(previousBlocks))
+  const currentErrorSources = collectErrorSourceBlockIds(currentState.edges)
+  const previousErrorSources = collectErrorSourceBlockIds(previousState.edges)
 
   for (const id of currentBlockIds) {
     if (!previousBlockIds.has(id)) {
@@ -172,6 +179,25 @@ export function generateWorkflowDiffSummary(
       subBlocks: previousSubBlocks,
     } = extractBlockFieldsForComparison(previousBlock)
 
+    /**
+     * Outside the structural gate below: the flag alone can match while the edges
+     * disagree, and reading it alone pins a block with a stale `errorEnabled: false`
+     * and a live error edge to "needs redeploy" forever.
+     */
+    const currentErrorEnabled = resolveEffectiveErrorEnabled(currentBlock, id, currentErrorSources)
+    const previousErrorEnabled = resolveEffectiveErrorEnabled(
+      previousBlock,
+      id,
+      previousErrorSources
+    )
+    if (currentErrorEnabled !== previousErrorEnabled) {
+      changes.push({
+        field: 'errorEnabled',
+        oldValue: previousErrorEnabled,
+        newValue: currentErrorEnabled,
+      })
+    }
+
     const normalizedCurrentBlock = { ...currentRest, data: currentDataRest, subBlocks: undefined }
     const normalizedPreviousBlock = {
       ...previousRest,
@@ -195,6 +221,7 @@ export function generateWorkflowDiffSummary(
           newValue: currentBlock.enabled,
         })
       }
+      /** `errorEnabled` is compared above, against the edges as well as the flag. */
       const blockFields = ['horizontalHandles', 'advancedMode', 'triggerMode'] as const
       for (const field of blockFields) {
         if (!!currentBlock[field] !== !!previousBlock[field]) {
@@ -204,6 +231,14 @@ export function generateWorkflowDiffSummary(
             newValue: currentBlock[field],
           })
         }
+      }
+      /** Outside `blockFields`, whose `!!` coercion cannot tell two policies apart. */
+      if (!blockRetryEquals(currentBlock.retry, previousBlock.retry)) {
+        changes.push({
+          field: 'retry',
+          oldValue: previousBlock.retry,
+          newValue: currentBlock.retry,
+        })
       }
       if (normalizedStringify(currentDataRest) !== normalizedStringify(previousDataRest)) {
         const allDataKeys = new Set([

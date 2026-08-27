@@ -1,4 +1,4 @@
-import { env } from '@/lib/env'
+import { env } from '@/lib/core/config/env'
 
 export const UPLOAD_DIR = '/uploads'
 

@@ -1,40 +1,47 @@
 import { Buffer, isUtf8 } from 'buffer'
-import { AuditAction, AuditResourceType, recordAudit } from '@sim/audit'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateShortId } from '@sim/utils/id'
+import { isRecordLike } from '@sim/utils/object'
 import JSZip from 'jszip'
 import { type NextRequest, NextResponse } from 'next/server'
 import { fileManageContract } from '@/lib/api/contracts/tools/file'
 import { parseRequest } from '@/lib/api/server'
-import { checkInternalAuth } from '@/lib/auth/hybrid'
+import { AuthType, type AuthTypeValue, checkInternalAuth } from '@/lib/auth/hybrid'
 import { splitWorkspaceFilePath } from '@/lib/copilot/tools/server/files/workspace-file'
 import { acquireLock, releaseLock } from '@/lib/core/config/redis'
+import { OrchestrationError } from '@/lib/core/orchestration/types'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { isPayloadSizeLimitError } from '@/lib/core/utils/stream-limits'
 import { ensureAbsoluteUrl } from '@/lib/core/utils/urls'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { isSupportedFileType, parseBuffer } from '@/lib/file-parsers'
+import { durableSecretProvenanceFromPrivateBundle } from '@/lib/execution/durable-secret-provenance'
 import {
-  getShareForResource,
-  getSharesForResources,
-  ShareValidationError,
-  upsertFileShare,
-} from '@/lib/public-shares/share-manager'
+  inspectPrivateSecretProvenanceRequest,
+  isPrivateSecretProvenanceBundleV1,
+} from '@/lib/execution/model-input-provenance'
+import {
+  PRIVATE_TOOL_METADATA_RESPONSE_HEADER,
+  RESOLVED_SECRET_PROVENANCE_FIELD,
+  RESOLVED_SECRET_PROVENANCE_METADATA_V1,
+  requestsPrivateToolMetadata,
+} from '@/lib/execution/private-tool-metadata'
+import { isSupportedFileType, parseBuffer } from '@/lib/file-parsers'
+import { buildFolderPath } from '@/lib/folders/paths'
+import { getSharesForResources, ShareValidationError } from '@/lib/public-shares/share-manager'
 import {
   ArchiveError,
   type DecompressResult,
   decompressArchiveBufferToWorkspaceFiles,
   MAX_ARCHIVE_BYTES,
 } from '@/lib/uploads/archive'
-import { ensureWorkspaceFileFolderPath } from '@/lib/uploads/contexts/workspace/workspace-file-folder-manager'
+import type { getWorkspaceFile } from '@/lib/uploads/contexts/workspace/workspace-file-manager'
 import {
-  fetchWorkspaceFileBuffer,
-  getWorkspaceFile,
-  resolveWorkspaceFileReference,
-  updateWorkspaceFileContent,
-  uploadWorkspaceFile,
-} from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+  getBoundWorkspaceFileSecretProvenance,
+  mergeWorkspaceFileSecretProvenance,
+  type WorkspaceFileSecretProvenance,
+  type WorkspaceFileSecretProvenanceIdentity,
+} from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import { getFileMetadataByKey } from '@/lib/uploads/server/metadata'
 import { getFileExtension, getMimeTypeFromExtension } from '@/lib/uploads/utils/file-utils'
 import {
@@ -43,22 +50,44 @@ import {
 } from '@/lib/uploads/utils/file-utils.server'
 import { docNotReadyResponse } from '@/lib/uploads/utils/servable-file-response'
 import { buildZipEntryPaths } from '@/lib/uploads/zip-entry-path'
-import { performMoveWorkspaceFileItems } from '@/lib/workspace-files/orchestration'
 import {
-  assertActiveWorkspaceAccess,
-  getUserEntityPermissions,
-  isWorkspaceAccessDeniedError,
-} from '@/lib/workspaces/permissions/utils'
+  admitCreateWorkspaceFile,
+  createWorkspaceFile,
+  createWorkspaceFileFromBuffer,
+} from '@/lib/workspace-files/application/create-workspace-file'
+import { createWorkspaceFileDelegatedPrincipal } from '@/lib/workspace-files/application/delegated-principal'
+import { moveWorkspaceFileItemsOperation } from '@/lib/workspace-files/application/move-workspace-file-items'
+import { fileOperations } from '@/lib/workspace-files/application/operations'
+import { readWorkspaceFileContent } from '@/lib/workspace-files/application/read-workspace-file-content'
+import { readWorkspaceFileMetadata } from '@/lib/workspace-files/application/read-workspace-file-metadata'
+import { downloadWorkspaceFileRecord } from '@/lib/workspace-files/application/read-workspace-file-record'
+import { resolveWorkspaceFileReference } from '@/lib/workspace-files/application/resolve-workspace-file-reference'
+import { updateWorkspaceFileShare } from '@/lib/workspace-files/application/share-workspace-file'
+import { updateWorkspaceFileContent } from '@/lib/workspace-files/application/update-workspace-file-content'
+import { ensureWorkspaceFileFolderPathOperation } from '@/lib/workspace-files/application/workspace-file-folders'
+import { MAX_WORKSPACE_FILE_CONTENT_BYTES } from '@/lib/workspace-files/orchestration'
+import { isWorkspaceAccessDeniedError } from '@/lib/workspaces/permissions/utils'
 import { assertToolFileAccess } from '@/app/api/files/authorization'
-import {
-  PublicFileSharingNotAllowedError,
-  validatePublicFileSharing,
-} from '@/ee/access-control/utils/permission-check'
 import type { UserFile } from '@/executor/types'
+import {
+  ResolvedSecretTraceProvenanceAccumulator,
+  type ResolvedSecretTraceProvenanceV1,
+  type ResolvedSecretTraceScopeV1,
+} from '@/executor/utils/resolved-secret-trace-registry'
 
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('FileManageAPI')
+
+function requireInternalPrincipal(auth: { userId?: string }, workspaceId: string) {
+  if (!auth.userId) throw new Error('Authenticated internal file operation is missing its user ID')
+  return createWorkspaceFileDelegatedPrincipal({
+    serviceId: 'executor',
+    subjectUserId: auth.userId,
+    workspaceId,
+    delegationId: `internal-file-tool:${auth.userId}`,
+  })
+}
 
 const workspaceFileToUserFile = (file: Awaited<ReturnType<typeof getWorkspaceFile>>) => {
   if (!file) return null
@@ -227,6 +256,198 @@ const extractUserFileTextContent = async (
   return `[Binary file: ${userFile.name} (${userFile.type || 'application/octet-stream'}, ${buffer.length} bytes). Cannot extract text content.]`
 }
 
+interface FileContentSource {
+  file: UserFile
+  identity?: WorkspaceFileSecretProvenanceIdentity
+  ownerUserId?: string
+}
+
+async function bindSelectedContentFile(
+  workspaceId: string,
+  file: UserFile
+): Promise<FileContentSource> {
+  if (!file.key) return { file }
+
+  const metadata = await getFileMetadataByKey(file.key, 'workspace')
+  if (!metadata || metadata.workspaceId !== workspaceId || metadata.context !== 'workspace') {
+    return { file }
+  }
+
+  return {
+    file,
+    identity: { fileId: metadata.id, key: metadata.key, context: 'workspace' },
+    ownerUserId: metadata.userId,
+  }
+}
+
+async function getFileContentProvenance(
+  workspaceId: string,
+  sources: readonly FileContentSource[]
+): Promise<ResolvedSecretTraceProvenanceV1> {
+  const ownerIds = new Set(
+    sources
+      .map((source) => source.ownerUserId)
+      .filter((ownerUserId): ownerUserId is string => Boolean(ownerUserId))
+  )
+  const ownerUserId = ownerIds.size === 1 ? ownerIds.values().next().value : undefined
+  const scope: ResolvedSecretTraceScopeV1 | undefined = ownerUserId
+    ? { userId: ownerUserId, workspaceId }
+    : undefined
+  const accumulator = new ResolvedSecretTraceProvenanceAccumulator(scope)
+
+  for (const source of sources) {
+    if (!source.identity || !source.ownerUserId) {
+      accumulator.markIncomplete('file-source-unidentified')
+      continue
+    }
+    const provenance = await getBoundWorkspaceFileSecretProvenance(workspaceId, source.identity)
+    if (provenance.status === 'unknown') {
+      accumulator.markIncomplete('workspace-file-provenance-unknown')
+      continue
+    }
+    accumulator.record({
+      version: 1,
+      complete: true,
+      entries: [...provenance.entries],
+      ...(scope ? { scope } : {}),
+    })
+  }
+
+  return accumulator.exportProvenance()
+}
+
+type FileMutationProvenanceResolution =
+  | {
+      success: true
+      provenanceBySelection?: ReadonlyMap<string, WorkspaceFileSecretProvenance>
+    }
+  | { success: false; error: string }
+
+/** Authenticates exact, causally selected file-mutation provenance from an internal caller. */
+function resolveFileMutationSecretProvenance(options: {
+  headers: Headers
+  payload: unknown
+  authType: AuthTypeValue | undefined
+  userId: string
+  workspaceId: string
+  selectionKeys: readonly string[]
+}): FileMutationProvenanceResolution {
+  const inspection = inspectPrivateSecretProvenanceRequest(options.headers, options.payload)
+  if (inspection.status === 'unsupported') return { success: true }
+  if (
+    inspection.status !== 'verified' ||
+    options.authType !== AuthType.INTERNAL_JWT ||
+    !isPrivateSecretProvenanceBundleV1(inspection.value)
+  ) {
+    return { success: false, error: 'Invalid file secret provenance' }
+  }
+
+  const provenanceBySelection = new Map<string, WorkspaceFileSecretProvenance>()
+  if (!inspection.value.complete) {
+    for (const selectionKey of options.selectionKeys) {
+      provenanceBySelection.set(selectionKey, { status: 'unknown' })
+    }
+    return { success: true, provenanceBySelection }
+  }
+  if (inspection.value.selections.length !== options.selectionKeys.length) {
+    return { success: false, error: 'Invalid file secret provenance' }
+  }
+
+  const destinationScope = { userId: options.userId, workspaceId: options.workspaceId }
+  for (const selectionKey of options.selectionKeys) {
+    const provenance = durableSecretProvenanceFromPrivateBundle(
+      inspection.value,
+      selectionKey,
+      destinationScope
+    )
+    if (!provenance) {
+      return { success: false, error: 'Invalid file secret provenance' }
+    }
+    if (provenance.status === 'unknown') {
+      provenanceBySelection.set(selectionKey, provenance)
+      continue
+    }
+    if (provenance.entries.some((entry) => !entry.name || !entry.sourceUserId)) {
+      return { success: false, error: 'Invalid file secret provenance' }
+    }
+    provenanceBySelection.set(selectionKey, {
+      status: 'exact',
+      entries: provenance.entries.map((entry) => ({
+        name: entry.name as string,
+        encryptedValue: entry.encryptedValue,
+        sourceUserId: entry.sourceUserId as string,
+        ...(entry.sourceWorkspaceId ? { sourceWorkspaceId: entry.sourceWorkspaceId } : {}),
+      })),
+    })
+  }
+  return { success: true, provenanceBySelection }
+}
+
+type FileWriteProvenanceResolution =
+  | { success: true; contentProvenance?: WorkspaceFileSecretProvenance }
+  | { success: false; error: string }
+
+/** Resolves file-content provenance before any folder or file mutation. */
+function resolveFileWriteSecretProvenance(options: {
+  headers: Headers
+  payload: unknown
+  authType: AuthTypeValue | undefined
+  userId: string
+  workspaceId: string
+}): FileWriteProvenanceResolution {
+  const resolution = resolveFileMutationSecretProvenance({
+    ...options,
+    selectionKeys: ['content'],
+  })
+  if (!resolution.success || !resolution.provenanceBySelection) return resolution
+  const content = resolution.provenanceBySelection.get('content')
+  if (!content) {
+    return { success: false, error: 'Invalid file secret provenance' }
+  }
+  return { success: true, contentProvenance: content }
+}
+
+async function deriveWorkspaceFileSecretProvenance(options: {
+  workspaceId: string
+  targetOwnerUserId: string
+  sources: readonly FileContentSource[]
+}): Promise<WorkspaceFileSecretProvenance> {
+  const provenances: WorkspaceFileSecretProvenance[] = []
+  for (const source of options.sources) {
+    if (!source.identity || !source.ownerUserId) return { status: 'unknown' }
+    const provenance = await getBoundWorkspaceFileSecretProvenance(
+      options.workspaceId,
+      source.identity
+    )
+    if (
+      provenance.status === 'exact' &&
+      provenance.entries.length > 0 &&
+      source.ownerUserId !== options.targetOwnerUserId
+    ) {
+      return { status: 'unknown' }
+    }
+    provenances.push(provenance)
+  }
+  return mergeWorkspaceFileSecretProvenance(...provenances)
+}
+
+function fileContentJsonResponse(
+  body: Record<string, unknown>,
+  includePrivateProvenance: boolean,
+  init?: ResponseInit,
+  provenance: ResolvedSecretTraceProvenanceV1 = { version: 1, complete: true, entries: [] }
+): NextResponse {
+  if (!includePrivateProvenance) return NextResponse.json(body, init)
+
+  const headers = new Headers(init?.headers)
+  headers.delete('content-length')
+  headers.set(PRIVATE_TOOL_METADATA_RESPONSE_HEADER, RESOLVED_SECRET_PROVENANCE_METADATA_V1)
+  return NextResponse.json(
+    { ...body, [RESOLVED_SECRET_PROVENANCE_FIELD]: provenance },
+    { ...init, headers }
+  )
+}
+
 export const POST = withRouteHandler(async (request: NextRequest) => {
   const auth = await checkInternalAuth(request, { requireWorkflowId: false })
   if (!auth.success) {
@@ -237,25 +458,30 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
   if (!parsed.success) return parsed.response
 
   const { query, body } = parsed.data
-  const userId = auth.userId || query.userId
-  if (!userId) {
-    return NextResponse.json({ success: false, error: 'userId is required' }, { status: 400 })
-  }
+  if (!auth.userId) throw new Error('Authenticated internal file operation is missing its user ID')
+  const userId = auth.userId
 
   const workspaceId = body.workspaceId || query.workspaceId
   if (!workspaceId) {
     return NextResponse.json({ success: false, error: 'workspaceId is required' }, { status: 400 })
   }
+  const principal = requireInternalPrincipal(auth, workspaceId)
+  const includePrivateContentProvenance =
+    body.operation === 'content' &&
+    requestsPrivateToolMetadata(request.headers, RESOLVED_SECRET_PROVENANCE_METADATA_V1)
+  const contentResponse = (
+    responseBody: Record<string, unknown>,
+    init?: ResponseInit,
+    provenance?: ResolvedSecretTraceProvenanceV1
+  ) => fileContentJsonResponse(responseBody, includePrivateContentProvenance, init, provenance)
 
   try {
-    await assertActiveWorkspaceAccess(workspaceId, userId)
-
     switch (body.operation) {
       case 'get': {
         const { fileId, fileInput } = body
         const selectedFileId =
           fileId ||
-          (fileInput && typeof fileInput === 'object' && !Array.isArray(fileInput)
+          (isRecordLike(fileInput)
             ? (() => {
                 const obj = fileInput as Record<string, unknown>
                 return typeof obj.id === 'string'
@@ -270,12 +496,23 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           return NextResponse.json({ success: false, error: 'File is required' }, { status: 400 })
         }
 
-        const file = await getWorkspaceFile(workspaceId, selectedFileId)
-        if (!file) {
-          return NextResponse.json(
-            { success: false, error: `File not found: "${selectedFileId}"` },
-            { status: 404 }
-          )
+        let file: Awaited<ReturnType<typeof getWorkspaceFile>>
+        try {
+          file = (
+            await readWorkspaceFileMetadata.execute({
+              principal,
+              input: { fileId: selectedFileId, assertedWorkspaceId: workspaceId },
+              request,
+            })
+          ).file
+        } catch (error) {
+          if (error instanceof OrchestrationError && error.code === 'not_found') {
+            return NextResponse.json(
+              { success: false, error: `File not found: "${selectedFileId}"` },
+              { status: 404 }
+            )
+          }
+          throw error
         }
 
         logger.info('File retrieved', {
@@ -304,15 +541,27 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           return NextResponse.json({ success: false, error: 'File is required' }, { status: 400 })
         }
 
-        const files = await Promise.all(
-          selectedFileIds.map((id) => getWorkspaceFile(workspaceId, id))
-        )
-        const missingFileId = selectedFileIds.find((_, index) => !files[index])
-        if (missingFileId) {
-          return NextResponse.json(
-            { success: false, error: `File not found: "${missingFileId}"` },
-            { status: 404 }
-          )
+        const files = [] as Array<NonNullable<Awaited<ReturnType<typeof getWorkspaceFile>>>>
+        for (const id of selectedFileIds) {
+          try {
+            files.push(
+              (
+                await readWorkspaceFileMetadata.execute({
+                  principal,
+                  input: { fileId: id, assertedWorkspaceId: workspaceId },
+                  request,
+                })
+              ).file
+            )
+          } catch (error) {
+            if (error instanceof OrchestrationError && error.code === 'not_found') {
+              return NextResponse.json(
+                { success: false, error: `File not found: "${id}"` },
+                { status: 404 }
+              )
+            }
+            throw error
+          }
         }
 
         const shares = await getSharesForResources('file', selectedFileIds)
@@ -366,37 +615,67 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         const selectedInputFiles = fileId ? [] : extractUserFilesFromInput(fileInput)
 
         if (selectedFileIds.length === 0 && selectedInputFiles.length === 0) {
-          return NextResponse.json({ success: false, error: 'File is required' }, { status: 400 })
+          return contentResponse({ success: false, error: 'File is required' }, { status: 400 })
         }
 
-        const workspaceFiles = await Promise.all(
-          selectedFileIds.map((id) => getWorkspaceFile(workspaceId, id))
+        const workspaceFiles = [] as Array<
+          NonNullable<Awaited<ReturnType<typeof getWorkspaceFile>>>
+        >
+        for (const id of selectedFileIds) {
+          try {
+            workspaceFiles.push(
+              (
+                await readWorkspaceFileMetadata.execute({
+                  principal,
+                  input: { fileId: id, assertedWorkspaceId: workspaceId },
+                  request,
+                })
+              ).file
+            )
+          } catch (error) {
+            if (error instanceof OrchestrationError && error.code === 'not_found') {
+              return contentResponse(
+                { success: false, error: `File not found: "${id}"` },
+                { status: 404 }
+              )
+            }
+            throw error
+          }
+        }
+
+        const canonicalSources: FileContentSource[] = workspaceFiles.flatMap((file) => {
+          const userFile = workspaceFileToUserFile(file)
+          if (!file || !userFile) return []
+          return [
+            {
+              file: userFile,
+              identity: { fileId: file.id, key: file.key, context: 'workspace' },
+              ownerUserId: file.uploadedBy,
+            },
+          ]
+        })
+        const selectedSources = await Promise.all(
+          selectedInputFiles.map((file) => bindSelectedContentFile(workspaceId, file))
         )
-        const missingFileId = selectedFileIds.find((_, index) => !workspaceFiles[index])
-        if (missingFileId) {
-          return NextResponse.json(
-            { success: false, error: `File not found: "${missingFileId}"` },
-            { status: 404 }
-          )
-        }
-
-        const userFiles: UserFile[] = workspaceFiles
-          .map((file) => workspaceFileToUserFile(file))
-          .filter((file): file is NonNullable<ReturnType<typeof workspaceFileToUserFile>> =>
-            Boolean(file)
-          )
-          .concat(selectedInputFiles)
+        const sources = canonicalSources.concat(selectedSources)
 
         const contents: string[] = []
         let totalBytes = 0
-        for (const userFile of userFiles) {
-          const denied = await assertToolFileAccess(userFile.key, userId, requestId, logger)
-          if (denied) return denied
+        for (const source of sources) {
+          const denied = await assertToolFileAccess(source.file.key, userId, requestId, logger)
+          if (denied) {
+            const deniedBody = (await denied.clone().json()) as Record<string, unknown>
+            return contentResponse(deniedBody, {
+              status: denied.status,
+              statusText: denied.statusText,
+              headers: denied.headers,
+            })
+          }
 
-          const content = await extractUserFileTextContent(userFile, requestId)
+          const content = await extractUserFileTextContent(source.file, requestId)
           totalBytes += Buffer.byteLength(content, 'utf8')
           if (totalBytes > MAX_GET_CONTENT_TOTAL_BYTES) {
-            return NextResponse.json(
+            return contentResponse(
               {
                 success: false,
                 error: `Combined file content is too large to return safely. Maximum is ${
@@ -410,34 +689,56 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         }
 
         logger.info('File content extracted', { count: contents.length })
+        const provenance = includePrivateContentProvenance
+          ? await getFileContentProvenance(workspaceId, sources)
+          : undefined
 
-        return NextResponse.json({
-          success: true,
-          data: { contents },
-        })
+        return contentResponse({ success: true, data: { contents } }, undefined, provenance)
       }
 
       case 'write': {
         const { fileName, content, contentType } = body
-        const { folderSegments, leafName } = splitWorkspaceFilePath(fileName)
-        const folderId = await ensureWorkspaceFileFolderPath({
-          workspaceId,
+        const provenanceResolution = resolveFileWriteSecretProvenance({
+          headers: request.headers,
+          payload: body,
+          authType: auth.authType,
           userId,
-          pathSegments: folderSegments,
+          workspaceId,
+        })
+        if (!provenanceResolution.success) {
+          return NextResponse.json(
+            { success: false, error: provenanceResolution.error },
+            { status: 400 }
+          )
+        }
+        const { folderSegments, leafName } = splitWorkspaceFilePath(fileName)
+        await admitCreateWorkspaceFile(principal, workspaceId)
+        const { folderId } = await ensureWorkspaceFileFolderPathOperation.execute({
+          principal,
+          input: { workspaceId, pathSegments: folderSegments },
+          request,
         })
         const mimeType = contentType || getMimeTypeFromExtension(getFileExtension(leafName))
+        const result = await createWorkspaceFile.execute({
+          principal,
+          input: {
+            workspaceId,
+            name: leafName,
+            contentType: mimeType,
+            content: content ?? '',
+            encoding: 'utf-8',
+            folderId,
+            exactName: false,
+            ...(provenanceResolution.contentProvenance
+              ? { secretProvenance: provenanceResolution.contentProvenance }
+              : {}),
+          },
+          request,
+        })
         const fileBuffer = Buffer.from(content ?? '', 'utf-8')
-        const result = await uploadWorkspaceFile(
-          workspaceId,
-          userId,
-          fileBuffer,
-          leafName,
-          mimeType,
-          { folderId }
-        )
 
         logger.info('File created', {
-          fileId: result.id,
+          fileId: result.file.id,
           name: fileName,
           size: fileBuffer.length,
         })
@@ -445,10 +746,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         return NextResponse.json({
           success: true,
           data: {
-            id: result.id,
-            name: result.name,
+            id: result.file.id,
+            name: result.file.name,
             size: fileBuffer.length,
-            url: ensureAbsoluteUrl(result.url),
+            url: ensureAbsoluteUrl(result.file.url ?? result.file.path),
           },
         })
       }
@@ -462,30 +763,21 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
               .map((s) => s.trim())
               .filter(Boolean)
           : []
-        const targetFolderId = await ensureWorkspaceFileFolderPath({
-          workspaceId,
-          userId,
-          pathSegments,
-        })
-        const moveResult = await performMoveWorkspaceFileItems({
-          workspaceId,
-          userId,
-          fileIds: [fileId],
-          targetFolderId,
-        })
-        if (!moveResult.success) {
-          return NextResponse.json(
-            { success: false, error: moveResult.error },
-            {
-              status:
-                moveResult.errorCode === 'conflict'
-                  ? 409
-                  : moveResult.errorCode === 'not_found'
-                    ? 404
-                    : 400,
-            }
-          )
+        let targetFolderPath: string
+        try {
+          targetFolderPath = buildFolderPath(pathSegments)
+        } catch (error) {
+          throw new OrchestrationError('validation', getErrorMessage(error))
         }
+        await moveWorkspaceFileItemsOperation.execute({
+          principal,
+          input: {
+            workspaceId,
+            fileIds: [fileId],
+            targetFolderPath,
+          },
+          request,
+        })
         logger.info('File moved', { fileId, targetFolder: targetFolder || '(root)' })
         return NextResponse.json({
           success: true,
@@ -495,18 +787,6 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
       case 'manage_sharing': {
         const { fileId, fileInput, isActive, authType, password, allowedEmails } = body
-
-        // Check permission before probing file existence so a read-only caller
-        // can't distinguish 404 from 403 as a file-existence side channel.
-        // Publishing is more sensitive than the other mutating ops, so it
-        // requires write/admin (not just workspace access) like the share route.
-        const permission = await getUserEntityPermissions(userId, 'workspace', workspaceId)
-        if (permission !== 'admin' && permission !== 'write') {
-          return NextResponse.json(
-            { success: false, error: 'Insufficient permissions' },
-            { status: 403 }
-          )
-        }
 
         // Resolve the canonical file id. The basic file picker provides an object
         // with a storage `key` but no id, so map the key to the workspace file row.
@@ -531,52 +811,20 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           )
         }
 
-        const file = await getWorkspaceFile(workspaceId, resolvedFileId)
-        if (!file) {
-          return NextResponse.json(
-            { success: false, error: `File not found: "${resolvedFileId}"` },
-            { status: 404 }
-          )
-        }
-
-        // Enabling a share is gated by the org's access-control policy; disabling
-        // is always allowed so users can un-share after the policy is turned on.
-        if (isActive) {
-          // Resolve the auth type the same way upsertFileShare will (falling back
-          // to the existing share's type) so the policy gate can't be bypassed by
-          // re-enabling a pre-existing restricted share without an explicit authType.
-          const existingShare = await getShareForResource('file', resolvedFileId)
-          const resolvedAuthType = authType ?? existingShare?.authType ?? 'public'
-          try {
-            await validatePublicFileSharing(userId, workspaceId, resolvedAuthType)
-          } catch (error) {
-            if (error instanceof PublicFileSharingNotAllowedError) {
-              return NextResponse.json({ success: false, error: error.message }, { status: 403 })
-            }
-            throw error
-          }
-        }
-
-        const share = await upsertFileShare({
-          workspaceId,
-          fileId: resolvedFileId,
-          userId,
-          isActive,
-          authType,
-          password,
-          allowedEmails,
-        })
-
-        recordAudit({
-          workspaceId,
-          actorId: userId,
-          action: isActive ? AuditAction.FILE_SHARED : AuditAction.FILE_SHARE_DISABLED,
-          resourceType: AuditResourceType.FILE,
-          resourceId: resolvedFileId,
-          resourceName: file.name,
-          description: `${isActive ? 'Enabled' : 'Disabled'} public share for "${file.name}"`,
-          request,
-        })
+        const share = (
+          await updateWorkspaceFileShare.execute({
+            principal,
+            input: {
+              fileId: resolvedFileId,
+              assertedWorkspaceId: workspaceId,
+              isActive,
+              authType,
+              password,
+              allowedEmails,
+            },
+            request,
+          })
+        ).share
 
         logger.info('File sharing updated', {
           fileId: resolvedFileId,
@@ -592,13 +840,12 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
       case 'append': {
         const { fileName, content } = body
 
-        const existing = await resolveWorkspaceFileReference(workspaceId, fileName)
-        if (!existing) {
-          return NextResponse.json(
-            { success: false, error: `File not found: "${fileName}"` },
-            { status: 404 }
-          )
-        }
+        const existing = await resolveWorkspaceFileReference({
+          principal,
+          operation: fileOperations.updateContent,
+          workspaceId,
+          reference: fileName,
+        })
 
         const lockKey = `file-append:${workspaceId}:${existing.id}`
         const lockValue = `${Date.now()}-${generateShortId()}`
@@ -611,10 +858,60 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         }
 
         try {
-          const existingBuffer = await fetchWorkspaceFileBuffer(existing)
+          if (!existing.contentUpdatedAt) {
+            throw new Error('File content version is unavailable')
+          }
+          const existingProvenance = await getBoundWorkspaceFileSecretProvenance(workspaceId, {
+            fileId: existing.id,
+            key: existing.key,
+            context: 'workspace',
+          })
+          const appendedResolution = resolveFileMutationSecretProvenance({
+            headers: request.headers,
+            payload: body,
+            authType: auth.authType,
+            userId,
+            workspaceId,
+            selectionKeys: ['content'],
+          })
+          if (!appendedResolution.success) {
+            return NextResponse.json(
+              { success: false, error: appendedResolution.error },
+              { status: 400 }
+            )
+          }
+          const appendedProvenance = appendedResolution.provenanceBySelection?.get('content')
+          const secretProvenance =
+            appendedProvenance?.status === 'exact' &&
+            appendedProvenance.entries.length > 0 &&
+            existing.uploadedBy !== userId
+              ? { status: 'unknown' as const }
+              : appendedProvenance
+                ? mergeWorkspaceFileSecretProvenance(existingProvenance, appendedProvenance)
+                : undefined
+          const { content: existingBuffer } = await readWorkspaceFileContent.execute({
+            principal,
+            input: {
+              fileId: existing.id,
+              assertedWorkspaceId: workspaceId,
+              maxBytes: MAX_WORKSPACE_FILE_CONTENT_BYTES,
+            },
+          })
           const finalContent = existingBuffer.toString('utf-8') + content
           const fileBuffer = Buffer.from(finalContent, 'utf-8')
-          await updateWorkspaceFileContent(workspaceId, existing.id, userId, fileBuffer)
+          await updateWorkspaceFileContent.execute({
+            principal,
+            input: {
+              fileId: existing.id,
+              assertedWorkspaceId: workspaceId,
+              content: finalContent,
+              encoding: 'utf-8',
+              expectedUpdatedAt: existing.contentUpdatedAt ?? undefined,
+              provenanceMode: secretProvenance ? undefined : 'preserve',
+              ...(secretProvenance ? { secretProvenance } : {}),
+            },
+            request,
+          })
 
           logger.info('File appended', {
             fileId: existing.id,
@@ -650,16 +947,31 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         if (selectedFileIds.length === 0 && selectedInputFiles.length === 0) {
           return NextResponse.json({ success: false, error: 'File is required' }, { status: 400 })
         }
+        await admitCreateWorkspaceFile(principal, workspaceId)
 
-        const workspaceFiles = await Promise.all(
-          selectedFileIds.map((id) => getWorkspaceFile(workspaceId, id))
-        )
-        const missingFileId = selectedFileIds.find((_, index) => !workspaceFiles[index])
-        if (missingFileId) {
-          return NextResponse.json(
-            { success: false, error: `File not found: "${missingFileId}"` },
-            { status: 404 }
-          )
+        const workspaceFiles = [] as Array<
+          NonNullable<Awaited<ReturnType<typeof getWorkspaceFile>>>
+        >
+        for (const id of selectedFileIds) {
+          try {
+            workspaceFiles.push(
+              (
+                await downloadWorkspaceFileRecord.execute({
+                  principal,
+                  input: { fileId: id, assertedWorkspaceId: workspaceId },
+                  request,
+                })
+              ).file
+            )
+          } catch (error) {
+            if (error instanceof OrchestrationError && error.code === 'not_found') {
+              return NextResponse.json(
+                { success: false, error: `File not found: "${id}"` },
+                { status: 404 }
+              )
+            }
+            throw error
+          }
         }
 
         const workspaceEntries: ArchiveEntry[] = workspaceFiles.flatMap((file) => {
@@ -672,6 +984,25 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
           selectedInputFiles.map((file) => ({ file, folderPath: null }))
         )
         const userFiles: UserFile[] = archiveEntries.map((entry) => entry.file)
+        const canonicalArchiveSources: FileContentSource[] = workspaceFiles.flatMap((file) => {
+          const userFile = workspaceFileToUserFile(file)
+          if (!file || !userFile) return []
+          return [
+            {
+              file: userFile,
+              identity: { fileId: file.id, key: file.key, context: 'workspace' },
+              ownerUserId: file.uploadedBy,
+            },
+          ]
+        })
+        const selectedArchiveSources = await Promise.all(
+          selectedInputFiles.map((file) => bindSelectedContentFile(workspaceId, file))
+        )
+        const archiveProvenance = await deriveWorkspaceFileSecretProvenance({
+          workspaceId,
+          targetOwnerUserId: userId,
+          sources: canonicalArchiveSources.concat(selectedArchiveSources),
+        })
 
         // Mirror the workspace folder layout, dropping the ancestor chain the whole
         // selection shares so archiving one folder does not nest it under its parents.
@@ -721,29 +1052,29 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             ? stripExtension(toFlatFileName(userFiles[0].name, 'archive'))
             : 'archive'
         const leafName = ensureZipExtension(baseName)
-        const folderId = await ensureWorkspaceFileFolderPath({
-          workspaceId,
-          userId,
-          pathSegments: [],
+        const result = await createWorkspaceFileFromBuffer.execute({
+          principal,
+          input: {
+            workspaceId,
+            name: leafName,
+            contentType: 'application/zip',
+            content: zipBuffer,
+            folderId: null,
+            exactName: false,
+            secretProvenance: archiveProvenance,
+          },
+          request,
         })
-        const result = await uploadWorkspaceFile(
-          workspaceId,
-          userId,
-          zipBuffer,
-          leafName,
-          'application/zip',
-          { folderId }
-        )
 
         const compressedFile: UserFile = {
-          ...result,
-          url: ensureAbsoluteUrl(result.url),
+          ...result.file,
+          url: ensureAbsoluteUrl(result.file.url ?? result.file.path),
           size: zipBuffer.length,
         }
 
         logger.info('Files compressed', {
-          fileId: result.id,
-          name: result.name,
+          fileId: result.file.id,
+          name: result.file.name,
           fileCount: userFiles.length,
           size: zipBuffer.length,
         })
@@ -776,16 +1107,31 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
             { status: 400 }
           )
         }
+        await admitCreateWorkspaceFile(principal, workspaceId)
 
-        const workspaceFiles = await Promise.all(
-          selectedFileIds.map((id) => getWorkspaceFile(workspaceId, id))
-        )
-        const missingFileId = selectedFileIds.find((_, index) => !workspaceFiles[index])
-        if (missingFileId) {
-          return NextResponse.json(
-            { success: false, error: `File not found: "${missingFileId}"` },
-            { status: 404 }
-          )
+        const workspaceFiles = [] as Array<
+          NonNullable<Awaited<ReturnType<typeof getWorkspaceFile>>>
+        >
+        for (const id of selectedFileIds) {
+          try {
+            workspaceFiles.push(
+              (
+                await downloadWorkspaceFileRecord.execute({
+                  principal,
+                  input: { fileId: id, assertedWorkspaceId: workspaceId },
+                  request,
+                })
+              ).file
+            )
+          } catch (error) {
+            if (error instanceof OrchestrationError && error.code === 'not_found') {
+              return NextResponse.json(
+                { success: false, error: `File not found: "${id}"` },
+                { status: 404 }
+              )
+            }
+            throw error
+          }
         }
 
         const archive = workspaceFiles
@@ -802,6 +1148,26 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         const denied = await assertToolFileAccess(archive.key, userId, requestId, logger)
         if (denied) return denied
 
+        const canonicalArchiveSource: FileContentSource[] = workspaceFiles.flatMap((file) => {
+          const userFile = workspaceFileToUserFile(file)
+          if (!file || !userFile) return []
+          return [
+            {
+              file: userFile,
+              identity: { fileId: file.id, key: file.key, context: 'workspace' },
+              ownerUserId: file.uploadedBy,
+            },
+          ]
+        })
+        const selectedArchiveSource = await Promise.all(
+          selectedInputFiles.map((file) => bindSelectedContentFile(workspaceId, file))
+        )
+        const archiveProvenance = await deriveWorkspaceFileSecretProvenance({
+          workspaceId,
+          targetOwnerUserId: userId,
+          sources: canonicalArchiveSource.concat(selectedArchiveSource),
+        })
+
         const archiveBuffer = await downloadFileFromStorage(archive, requestId, logger, {
           maxBytes: MAX_ARCHIVE_BYTES,
         })
@@ -810,7 +1176,8 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
         try {
           result = await decompressArchiveBufferToWorkspaceFiles(archiveBuffer, {
             workspaceId,
-            userId,
+            principal,
+            secretProvenance: archiveProvenance,
           })
         } catch (archiveError) {
           if (archiveError instanceof ArchiveError) {
@@ -862,23 +1229,43 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
     }
   } catch (error) {
     if (isWorkspaceAccessDeniedError(error)) {
-      return NextResponse.json(
-        { success: false, error: 'Workspace access denied' },
-        { status: 403 }
-      )
+      return contentResponse({ success: false, error: 'Workspace access denied' }, { status: 403 })
+    }
+    if (error instanceof OrchestrationError) {
+      const status =
+        error.code === 'forbidden'
+          ? 403
+          : error.code === 'not_found'
+            ? 404
+            : error.code === 'conflict'
+              ? 409
+              : error.code === 'payload_too_large'
+                ? 413
+                : error.code === 'validation'
+                  ? 400
+                  : 500
+      return contentResponse({ success: false, error: error.message }, { status })
     }
     const notReady = docNotReadyResponse(error)
-    if (notReady) return notReady
+    if (notReady) {
+      if (!includePrivateContentProvenance) return notReady
+      const notReadyBody = (await notReady.clone().json()) as Record<string, unknown>
+      return contentResponse(notReadyBody, {
+        status: notReady.status,
+        statusText: notReady.statusText,
+        headers: notReady.headers,
+      })
+    }
     // A file over its per-file cap is a size rejection, not a fault. Rendered
     // documents can cross it even when the stored source was well under.
     if (isPayloadSizeLimitError(error)) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 413 })
+      return contentResponse({ success: false, error: error.message }, { status: 413 })
     }
     if (error instanceof ShareValidationError) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 400 })
+      return contentResponse({ success: false, error: error.message }, { status: 400 })
     }
     const message = getErrorMessage(error, 'Unknown error')
     logger.error('File operation failed', { operation: body.operation, error: message })
-    return NextResponse.json({ success: false, error: message }, { status: 500 })
+    return contentResponse({ success: false, error: message }, { status: 500 })
   }
 })

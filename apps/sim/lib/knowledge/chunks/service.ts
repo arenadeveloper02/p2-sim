@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { sha256Hex } from '@sim/security/hash'
 import { generateId } from '@sim/utils/id'
 import { and, asc, desc, eq, ilike, inArray, isNull, sql } from 'drizzle-orm'
+import type { DurableSecretProvenance } from '@/lib/execution/durable-secret-provenance'
 import type {
   BatchOperationResult,
   ChunkData,
@@ -13,6 +14,7 @@ import type {
 } from '@/lib/knowledge/chunks/types'
 import { getEmbeddingModelInfo } from '@/lib/knowledge/embedding-models'
 import { generateEmbeddings } from '@/lib/knowledge/embeddings'
+import { replaceKnowledgeEmbeddingSecretProvenanceInTx } from '@/lib/knowledge/secret-provenance'
 import { estimateTokenCount } from '@/lib/tokenization/estimators'
 
 const logger = createLogger('ChunksService')
@@ -127,7 +129,8 @@ export async function createChunk(
   docTags: Record<string, string | number | boolean | Date | null>,
   chunkData: CreateChunkData,
   requestId: string,
-  workspaceId?: string | null
+  workspaceId?: string | null,
+  secretProvenance?: DurableSecretProvenance
 ): Promise<ChunkData> {
   logger.info(`[${requestId}] Generating embedding for manual chunk`)
   const kbRow = await db
@@ -196,13 +199,13 @@ export async function createChunk(
       chunkIndex: nextChunkIndex,
       chunkHash: sha256Hex(chunkData.content),
       content: chunkData.content,
+      secretProvenanceVersion: secretProvenance ? 1 : null,
       contentLength: chunkData.content.length,
       tokenCount: tokenCount.count,
       embedding: embeddings[0],
       embeddingModel: kbEmbeddingModel,
       startOffset: 0, // Manual chunks don't have document offsets
       endOffset: chunkData.content.length,
-      // Inherit text tags from parent document
       tag1: docTags.tag1 as string | null,
       tag2: docTags.tag2 as string | null,
       tag3: docTags.tag3 as string | null,
@@ -210,16 +213,13 @@ export async function createChunk(
       tag5: docTags.tag5 as string | null,
       tag6: docTags.tag6 as string | null,
       tag7: docTags.tag7 as string | null,
-      // Inherit number tags from parent document (5 slots)
       number1: docTags.number1 as number | null,
       number2: docTags.number2 as number | null,
       number3: docTags.number3 as number | null,
       number4: docTags.number4 as number | null,
       number5: docTags.number5 as number | null,
-      // Inherit date tags from parent document (2 slots)
       date1: docTags.date1 as Date | null,
       date2: docTags.date2 as Date | null,
-      // Inherit boolean tags from parent document (3 slots)
       boolean1: docTags.boolean1 as boolean | null,
       boolean2: docTags.boolean2 as boolean | null,
       boolean3: docTags.boolean3 as boolean | null,
@@ -229,8 +229,15 @@ export async function createChunk(
     }
 
     await tx.insert(embedding).values(chunkDBData)
+    if (secretProvenance) {
+      await replaceKnowledgeEmbeddingSecretProvenanceInTx(
+        tx,
+        chunkId,
+        chunkData.content,
+        secretProvenance
+      )
+    }
 
-    // Update document statistics
     await tx
       .update(document)
       .set({
@@ -303,12 +310,10 @@ export async function batchChunkOperation(
       const totalTokensToRemove = chunksToDelete.reduce((sum, chunk) => sum + chunk.tokenCount, 0)
       const totalCharsToRemove = chunksToDelete.reduce((sum, chunk) => sum + chunk.contentLength, 0)
 
-      // Delete chunks
       const deleteResult = await tx
         .delete(embedding)
         .where(and(eq(embedding.documentId, documentId), inArray(embedding.id, chunkIds)))
 
-      // Update document statistics
       await tx
         .update(document)
         .set({
@@ -321,7 +326,6 @@ export async function batchChunkOperation(
       successCount = chunksToDelete.length
     })
   } else {
-    // Handle enable/disable operations
     const enabled = operation === 'enable'
 
     await db
@@ -357,7 +361,8 @@ export async function updateChunk(
     enabled?: boolean
   },
   requestId: string,
-  workspaceId?: string | null
+  workspaceId?: string | null,
+  secretProvenance?: DurableSecretProvenance
 ): Promise<ChunkData> {
   // Content updates run in a transaction to keep document statistics
   // consistent. The embedding API call happens BEFORE the transaction opens so
@@ -412,6 +417,7 @@ export async function updateChunk(
             content: embedding.content,
             contentLength: embedding.contentLength,
             tokenCount: embedding.tokenCount,
+            secretProvenanceVersion: embedding.secretProvenanceVersion,
           })
           .from(embedding)
           .where(eq(embedding.id, chunkId))
@@ -439,11 +445,20 @@ export async function updateChunk(
           contentLength: newContentLength,
           chunkHash: sha256Hex(content),
           tokenCount: regenerated ? regenerated.tokenCount : oldTokenCount,
+          secretProvenanceVersion: secretProvenance ? 1 : currentChunk[0].secretProvenanceVersion,
           ...(regenerated ? { embedding: regenerated.embedding } : {}),
           ...(updateData.enabled !== undefined ? { enabled: updateData.enabled } : {}),
         }
 
         await tx.update(embedding).set(chunkUpdate).where(eq(embedding.id, chunkId))
+        if (secretProvenance) {
+          await replaceKnowledgeEmbeddingSecretProvenanceInTx(
+            tx,
+            chunkId,
+            content,
+            secretProvenance
+          )
+        }
 
         const charDiff = newContentLength - oldContentLength
         const tokenDiff = chunkUpdate.tokenCount - oldTokenCount
@@ -506,7 +521,6 @@ export async function updateChunk(
     })
     .where(eq(embedding.id, chunkId))
 
-  // Fetch the updated chunk
   const updatedChunk = await db
     .select({
       id: embedding.id,
@@ -565,10 +579,8 @@ export async function deleteChunk(
 
     const chunk = chunkToDelete[0]
 
-    // Delete the chunk
     await tx.delete(embedding).where(eq(embedding.id, chunkId))
 
-    // Update document statistics
     await tx
       .update(document)
       .set({

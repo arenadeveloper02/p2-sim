@@ -41,10 +41,7 @@ export async function* runParallelSubagents(
 
   const parentDepth = params.parentDepth ?? 0
 
-  yield {
-    type: 'status',
-    message: `Running ${domains.length} specialists in parallel (${domains.join(', ')})…`,
-  }
+  yield { type: 'status', message: 'Working on it…' }
 
   logger.info('Arena Copilot parallel subagents starting', {
     domains,
@@ -94,8 +91,6 @@ export async function* runParallelSubagents(
       .join('\n\n'),
     SPECIALIST_FINDINGS_MAX_CHARS
   )
-
-  yield { type: 'status', message: 'Specialists finished — continuing…' }
 
   logger.info('Arena Copilot parallel subagents complete', {
     domains,

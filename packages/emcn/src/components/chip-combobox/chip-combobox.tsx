@@ -11,10 +11,10 @@ import { Combobox, type ComboboxProps } from '../combobox/combobox'
  * Reuses 100% of `Combobox` — search, editable entry, multi-select, groups,
  * async loading, per-option icons, and `overlayContent` all work unchanged.
  * Only the trigger chrome is overridden (the `className` merges last in
- * `Combobox`, so `rounded-lg` / height / dark surface and the chip typography
- * — normal weight, `--text-body` — win over the heavier combobox defaults).
- * The muted placeholder still applies because the combobox tints the inner
- * label span with `--text-muted` independently of the trigger className.
+ * `Combobox`, so `rounded-lg` / height / dark surface and chip `--text-body`
+ * color win over the combobox defaults). The muted placeholder still
+ * applies because the combobox tints the inner label span with `--text-muted`
+ * independently of the trigger className.
  *
  * Use this in chip-styled surfaces (settings pages, chip forms). For the
  * lightweight no-search case, prefer `ChipDropdown`.

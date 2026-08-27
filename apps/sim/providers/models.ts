@@ -2185,7 +2185,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     fileAttachment: { maxBytes: 20 * 1024 * 1024, strategy: 'remote-url' },
     name: 'xAI',
     description: "xAI's Grok models",
-    defaultModel: 'grok-4.5',
+    defaultModel: 'grok-4.6',
     modelPatterns: [/^grok/],
     icon: xAIIcon,
     color: '#555555',
@@ -2194,18 +2194,39 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
     },
     models: [
       {
-        id: 'grok-4.5',
+        id: 'grok-4.6',
         pricing: {
           input: 2.0,
+          cachedInput: 0.5,
           output: 6.0,
-          updatedAt: '2026-07-08',
+          updatedAt: '2026-08-12',
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
+        },
+        contextWindow: 500000,
+        releaseDate: '2026-08-12',
+        recommended: true,
+      },
+      {
+        id: 'grok-4.5',
+        pricing: {
+          input: 2.0,
+          cachedInput: 0.3,
+          output: 6.0,
+          updatedAt: '2026-08-12',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 2 },
+          reasoningEffort: {
+            values: ['low', 'medium', 'high', 'xhigh'],
+          },
         },
         contextWindow: 500000,
         releaseDate: '2026-07-08',
-        recommended: true,
       },
       {
         id: 'grok-4.3',
@@ -2217,6 +2238,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high', 'xhigh'],
+          },
         },
         contextWindow: 1000000,
         releaseDate: '2026-04-30',
@@ -2364,6 +2388,9 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         capabilities: {
           temperature: { min: 0, max: 2 },
+          reasoningEffort: {
+            values: ['none', 'low', 'medium', 'high', 'xhigh'],
+          },
         },
         contextWindow: 1000000,
         releaseDate: '2026-03-10',
@@ -3651,6 +3678,56 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         recommended: true,
       },
       {
+        id: 'bedrock/anthropic.claude-opus-4-8',
+        pricing: {
+          input: 5.0,
+          cachedInput: 0.5,
+          output: 25.0,
+          updatedAt: '2026-08-20',
+        },
+        capabilities: {
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 4096 },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-05-28',
+      },
+      {
+        id: 'bedrock/anthropic.claude-opus-4-6-v1',
+        pricing: {
+          input: 5.0,
+          cachedInput: 0.5,
+          output: 25.0,
+          updatedAt: '2026-08-20',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 128000,
+          promptCaching: { minimumCacheableTokens: 4096 },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-02-05',
+      },
+      {
+        id: 'bedrock/anthropic.claude-sonnet-4-6',
+        pricing: {
+          input: 3.0,
+          cachedInput: 0.3,
+          output: 15.0,
+          updatedAt: '2026-08-20',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          nativeStructuredOutputs: true,
+          maxOutputTokens: 64000,
+          promptCaching: { minimumCacheableTokens: 1024 },
+        },
+        contextWindow: 1000000,
+        releaseDate: '2026-02-17',
+      },
+      {
         id: 'bedrock/anthropic.claude-opus-4-5-20251101-v1:0',
         pricing: {
           input: 5.0,
@@ -4107,7 +4184,7 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         },
         contextWindow: 200000,
         releaseDate: '2026-02-11',
-      }
+      },
     ],
   },
 }
@@ -4656,6 +4733,21 @@ export const EMBEDDING_MODEL_PRICING: Record<string, ModelPricing> = {
     input: 0.15, // $0.15 per 1M tokens
     output: 0.0,
     updatedAt: '2026-04-29',
+  },
+  'embed-v4.0': {
+    input: 0.12, // $0.12 per 1M tokens
+    output: 0.0,
+    updatedAt: '2026-08-05',
+  },
+  'mistral-embed': {
+    input: 0.1, // $0.1 per 1M tokens
+    output: 0.0,
+    updatedAt: '2026-08-05',
+  },
+  'codestral-embed': {
+    input: 0.15, // $0.15 per 1M tokens
+    output: 0.0,
+    updatedAt: '2026-08-05',
   },
 }
 

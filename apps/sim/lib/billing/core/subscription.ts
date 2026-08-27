@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { db } from '@sim/db'
 import { member, organization, subscription, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
@@ -30,6 +31,7 @@ import {
   isBillingEnabled,
   isHosted,
   isInboxEnabled,
+  isSandboxDeploymentEntitled,
   isSandboxesEnabled,
   isSsoEnabled,
 } from '@/lib/core/config/env-flags'
@@ -428,11 +430,7 @@ export async function isEnterpriseOrgAdminOrOwner(userId: string): Promise<boole
   }
 }
 
-/**
- * Check if an organization has an enterprise plan
- * Used for Access Control (Permission Groups) feature gating
- */
-export async function isOrganizationOnEnterprisePlan(organizationId: string): Promise<boolean> {
+async function resolveOrganizationEnterprisePlan(organizationId: string): Promise<boolean> {
   try {
     if (!isBillingEnabled) {
       return true
@@ -454,6 +452,15 @@ export async function isOrganizationOnEnterprisePlan(organizationId: string): Pr
     return false
   }
 }
+
+/**
+ * Check if an organization has an enterprise plan
+ * Used for Access Control (Permission Groups) feature gating
+ *
+ * Request-memoized: a settings render gates several sections on the same
+ * organization's plan, and it cannot change mid-render.
+ */
+export const isOrganizationOnEnterprisePlan = cache(resolveOrganizationEnterprisePlan)
 
 /**
  * Entitlement for a single org-scoped enterprise feature.
@@ -611,10 +618,15 @@ async function hasWorkspaceTierAccess(
  * Whether the workspace's payer is on a usable Max-or-Enterprise subscription.
  * Shared by the inbox (Sim Mailer), live sync, and custom sandboxes, which all
  * sit on the same entitlement tier.
+ *
+ * Request-memoized: these features are gated side by side on one settings render,
+ * each otherwise repeating the identical workspace and subscription reads. The
+ * per-feature deployment and env short-circuits live in the wrappers and still run
+ * per call.
  */
-async function hasMaxTierWorkspaceAccess(workspaceId: string): Promise<boolean> {
-  return hasWorkspaceTierAccess(workspaceId, isMaxTier)
-}
+const hasMaxTierWorkspaceAccess = cache(
+  (workspaceId: string): Promise<boolean> => hasWorkspaceTierAccess(workspaceId, isMaxTier)
+)
 
 /**
  * Check whether a workspace is entitled to the inbox (Sim Mailer) feature.
@@ -688,22 +700,26 @@ export async function hasWorkspaceLiveSyncAccess(workspaceId: string): Promise<b
 }
 
 /**
- * Checks whether the exact workspace payer can create and edit custom sandboxes.
+ * Checks whether the exact workspace payer can discover, author, or directly
+ * select custom Sim sandboxes through Copilot.
  *
- * Same entitlement as the inbox (Sim Mailer), and the same shape: the
- * `SANDBOXES_ENABLED` self-hosted override wins first, then a deployment
- * without billing is unrestricted, and otherwise the workspace payer must hold
- * a usable Max or Enterprise subscription. Builds cost provider compute and
- * storage, so this deliberately sits above the plain paid tier.
+ * A configured remote Function provider is mandatory. On billing-free
+ * deployments, the Enterprise pair or Sandbox-specific pair grants access. With
+ * billing enabled, an explicit Sandbox deployment override wins; otherwise the
+ * workspace payer must hold a usable Max or Enterprise subscription. Builds cost
+ * provider compute and storage, so this deliberately sits above the plain paid
+ * tier.
  *
- * This gates creating and editing only. Execution deliberately does not consult
- * it (see `resolveWorkspaceSandbox`), so a workspace that downgrades keeps
- * running the sandboxes it already built.
+ * Existing Function execution deliberately does not consult it (see
+ * `resolveWorkspaceSandbox`), so a workspace that downgrades keeps running the
+ * sandboxes it already built. New Copilot discovery, mutations, attachments,
+ * and direct function_execute selections do re-check it.
  */
 export async function hasWorkspaceSandboxAccess(workspaceId: string): Promise<boolean> {
   try {
-    if (isSandboxesEnabled) return true
-    if (!isBillingEnabled) return true
+    if (!isSandboxesEnabled) return false
+    if (isSandboxDeploymentEntitled) return true
+    if (!isBillingEnabled) return false
     return await hasMaxTierWorkspaceAccess(workspaceId)
   } catch (error) {
     logger.error('Error checking workspace sandbox access', { error, workspaceId })
@@ -726,21 +742,24 @@ export async function sendPlanWelcomeEmail(subscription: any): Promise<void> {
         .limit(1)
 
       if (users.length > 0 && users[0].email) {
-        const { getEmailSubject, renderPlanWelcomeEmail } = await import('@/components/emails')
+        const { getPlanWelcomeSubject, renderPlanWelcomeEmail } = await import(
+          '@/components/emails'
+        )
         const { sendEmail } = await import('@/lib/messaging/email/mailer')
 
         const baseUrl = getBaseUrl()
         const { getDisplayPlanName } = await import('@/lib/billing/plan-helpers')
+        const displayName = getDisplayPlanName(subPlan)
+
         const html = await renderPlanWelcomeEmail({
-          planName: getDisplayPlanName(subPlan),
+          planName: displayName,
           userName: users[0].name || undefined,
           loginLink: `${baseUrl}/login`,
         })
 
-        const displayName = getDisplayPlanName(subPlan)
         await sendEmail({
           to: users[0].email,
-          subject: `Your ${displayName} plan is now active on ${(await import('@/ee/whitelabeling')).getBrandConfig().name}`,
+          subject: getPlanWelcomeSubject(displayName),
           html,
           emailType: 'updates',
         })

@@ -1,13 +1,16 @@
 import { Buffer } from 'buffer'
 import type { Readable } from 'stream'
+import type { Principal } from '@sim/auth/principal'
 import JSZip from 'jszip'
 import { readZipCentralDirectoryStats } from '@/lib/file-parsers/zip-guard'
-import { ensureWorkspaceFileFolderPath } from '@/lib/uploads/contexts/workspace/workspace-file-folder-manager'
-import {
-  deleteWorkspaceFile,
-  uploadWorkspaceFile,
-} from '@/lib/uploads/contexts/workspace/workspace-file-manager'
+import type { WorkspaceFileSecretProvenance } from '@/lib/uploads/contexts/workspace/workspace-file-secret-provenance'
 import { getFileExtension, getMimeTypeFromExtension } from '@/lib/uploads/utils/file-utils'
+import { createWorkspaceFileFromBuffer } from '@/lib/workspace-files/application/create-workspace-file'
+import { deleteWorkspaceFileOperation } from '@/lib/workspace-files/application/delete-workspace-file'
+import {
+  deleteWorkspaceFileFolderOperation,
+  ensureWorkspaceFileFolderPathOperation,
+} from '@/lib/workspace-files/application/workspace-file-folders'
 import type { UserFile } from '@/executor/types'
 
 /**
@@ -254,18 +257,31 @@ function throwInflateCapError(reason: 'entry' | 'total', entryName: string): nev
  *
  * Filesystem-noise entries (`__MACOSX/`, `.DS_Store`, `Thumbs.db`) are extracted
  * verbatim unless `skipNoiseEntries` is set — the HTTP decompress route preserves
- * them; the agent-facing extract path drops them.
+ * them; the agent-facing extract path drops them. Decompression is not byte-preserving,
+ * so only an exact-empty archive classification can remain exact on extracted files;
+ * every other classification becomes unknown without changing the extracted bytes.
  */
 export async function decompressArchiveBufferToWorkspaceFiles(
   buffer: Buffer,
   opts: {
     workspaceId: string
-    userId: string
+    principal: Principal
     rootFolderSegments?: string[]
     skipNoiseEntries?: boolean
+    secretProvenance?: WorkspaceFileSecretProvenance
   }
 ): Promise<DecompressResult> {
-  const { workspaceId, userId, rootFolderSegments = [], skipNoiseEntries = false } = opts
+  const {
+    workspaceId,
+    principal,
+    rootFolderSegments = [],
+    skipNoiseEntries = false,
+    secretProvenance = { status: 'unknown' },
+  } = opts
+  const extractedSecretProvenance: WorkspaceFileSecretProvenance =
+    secretProvenance.status === 'exact' && secretProvenance.entries.length === 0
+      ? secretProvenance
+      : { status: 'unknown' }
 
   assertCentralDirWithinCaps(buffer)
 
@@ -332,9 +348,14 @@ export async function decompressArchiveBufferToWorkspaceFiles(
 
   // Pass 2 — extract: the archive is proven within caps; inflate again and upload.
   // Uploads themselves can still fail mid-loop (storage/DB errors, quota crossed
-  // by another writer), so a failure rolls back every file written so far —
-  // callers and their retries must never observe a partial tree.
+  // by another writer), so a failure rolls back every file written so far *and*
+  // every folder this call materialized — callers and their retries must never
+  // observe a partial tree. Leftover folders are not cosmetic: `materialize_file`
+  // refuses to re-extract into a root folder that still has any child, so a
+  // half-extracted tree would make every retry fail until a human deletes it.
   const folderIdCache = new Map<string, string | null>()
+  /** Only folders this call inserted, in creation order — never a reused one. */
+  const createdFolderIds: string[] = []
   const extracted: UserFile[] = []
   let totalBytes = 0
   try {
@@ -349,33 +370,67 @@ export async function decompressArchiveBufferToWorkspaceFiles(
       const folderKey = folderSegments.join('/')
       let folderId = folderIdCache.get(folderKey)
       if (folderId === undefined) {
-        folderId = await ensureWorkspaceFileFolderPath({
-          workspaceId,
-          userId,
-          pathSegments: folderSegments,
+        // Ensure-semantics, not create-semantics: an archive addresses every folder
+        // by its full chain, so intermediates must be materialized and any folder
+        // that already exists (from a sibling entry or an earlier extraction) reused.
+        const ensured = await ensureWorkspaceFileFolderPathOperation.execute({
+          principal,
+          input: { workspaceId, pathSegments: folderSegments },
         })
+        folderId = ensured.folderId
+        createdFolderIds.push(...ensured.createdFolderIds)
         folderIdCache.set(folderKey, folderId)
       }
 
       const mimeType = getMimeTypeFromExtension(getFileExtension(leafName))
-      const uploaded = await uploadWorkspaceFile(
-        workspaceId,
-        userId,
-        entryBuffer,
-        leafName,
-        mimeType,
-        {
-          folderId,
-        }
-      )
-      extracted.push(uploaded)
+      const uploaded = (
+        await createWorkspaceFileFromBuffer.execute({
+          principal,
+          input: {
+            workspaceId,
+            content: entryBuffer,
+            name: leafName,
+            contentType: mimeType,
+            folderId,
+            // Auto-suffix on collision: one leaf name that already exists must not
+            // roll back an otherwise valid extraction.
+            exactName: false,
+            secretProvenance: extractedSecretProvenance,
+          },
+        })
+      ).file
+      extracted.push({
+        id: uploaded.id,
+        name: uploaded.name,
+        url: uploaded.url ?? uploaded.path,
+        size: uploaded.size,
+        type: uploaded.type,
+        key: uploaded.key,
+        context: 'workspace',
+      })
     }
   } catch (error) {
     for (const file of extracted) {
       try {
-        await deleteWorkspaceFile(workspaceId, file.id)
+        await deleteWorkspaceFileOperation.execute({
+          principal,
+          input: { fileId: file.id, assertedWorkspaceId: workspaceId },
+        })
       } catch {
         // Best-effort: a file whose cleanup fails is still soft-deletable by hand;
+        // the original error is what the caller needs to see.
+      }
+    }
+    // Deepest-first (creation order records parents before children), so a parent is
+    // never removed out from under a child that is still being cleaned up.
+    for (let index = createdFolderIds.length - 1; index >= 0; index--) {
+      try {
+        await deleteWorkspaceFileFolderOperation.execute({
+          principal,
+          input: { workspaceId, folderId: createdFolderIds[index], recursive: true },
+        })
+      } catch {
+        // Best-effort: a folder whose cleanup fails is still deletable by hand;
         // the original error is what the caller needs to see.
       }
     }
