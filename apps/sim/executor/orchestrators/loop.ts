@@ -151,7 +151,8 @@ export class LoopOrchestrator {
             resolutionCtx,
             loopConfig.forEachItems,
             this.resolver,
-            buildSentinelStartId(loopId)
+            buildSentinelStartId(loopId),
+            { inputPath: ['forEachItems'] }
           )
         } catch (error) {
           const errorMessage = `ForEach loop resolution failed: ${toError(error).message}`
@@ -182,10 +183,10 @@ export class LoopOrchestrator {
         }
 
         scope.items = items
-        scope.inputResolvedSecretTraceProvenance =
-          resolutionRegistry?.exportCommittedProvenanceForValue(items)
-        if (parentRegistry && resolutionRegistry?.isComplete()) {
-          parentRegistry.mergeToolCallRegistry(resolutionRegistry)
+        if (resolutionRegistry?.isComplete()) {
+          scope.inputResolvedSecretTraceProvenance =
+            resolutionRegistry.exportCommittedProvenanceForValue(items)
+          parentRegistry?.mergeToolCallRegistry(resolutionRegistry)
         }
         scope.maxIterations = items.length
         scope.item = items[0]
