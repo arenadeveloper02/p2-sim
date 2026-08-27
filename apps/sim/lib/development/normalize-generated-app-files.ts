@@ -9,7 +9,7 @@ export interface GeneratedAppFile {
 }
 
 /** Latest stable releases aligned with the Sim monorepo (Next 16 + React 19). Exact pins — no ^/~. */
-export const PINNED_NEXT_VERSION = '15.3.3'
+export const PINNED_NEXT_VERSION = '^15.3.3'
 export const PINNED_REACT_VERSION = '19.0.0'
 
 const PINNED_DEV_DEPENDENCIES: Record<string, string> = {
