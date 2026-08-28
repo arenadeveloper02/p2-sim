@@ -56,6 +56,7 @@ import {
 import {
   assertEditWorkflowLookBeforeWrite,
   assertInvokeLookBeforeWrite,
+  normalizeWorkspaceFileReadPath,
 } from '@/local-copilot/lib/writes/look-before-write'
 import { pinToolArgsToWorkspace } from '@/local-copilot/lib/writes/pin-ids'
 import { assertExpectedRevision } from '@/local-copilot/lib/writes/revision'
@@ -114,6 +115,11 @@ export interface ToolExecutionContext {
   mutationIdempotency?: Map<string, ToolExecutionResult>
   /** Integration tool ids returned by list_integration_tools this turn. */
   listedIntegrationToolIds?: Set<string>
+  /**
+   * Canonical `files/...` paths successfully `read` this turn (without `/content`).
+   * Full-replace HTML/text updates must follow a read of the same file.
+   */
+  readVfsPaths?: Set<string>
   /** Workflow ids created earlier in this turn (membership bypass until refresh). */
   allowedWorkflowIds?: Set<string>
   /** Active tool_use id for idempotency keying. */
@@ -239,6 +245,7 @@ async function executeLocalCopilotToolInner(
   args = pinToolArgsToWorkspace(args, ctx.workspaceId)
   ctx.mutationIdempotency ??= new Map()
   ctx.listedIntegrationToolIds ??= new Set()
+  ctx.readVfsPaths ??= new Set()
   ctx.allowedWorkflowIds ??= new Set()
 
   if (toolSupportsIdempotency(toolName)) {
@@ -281,6 +288,9 @@ async function executeLocalCopilotToolInner(
     const delegated = attachToolBilling(await executeMothershipDelegatedTool(toolName, args, ctx))
     if (toolName === 'list_integration_tools' && delegated.success) {
       rememberListedIntegrationTools(ctx, delegated.result)
+    }
+    if (toolName === 'read' && delegated.success) {
+      rememberReadVfsPath(ctx, args)
     }
     if (toolSupportsIdempotency(toolName) && delegated.success) {
       rememberIdempotentResult(
@@ -1144,6 +1154,15 @@ function rememberListedIntegrationTools(ctx: ToolExecutionContext, result: unkno
     const id = (entry as Record<string, unknown>).id
     if (typeof id === 'string' && id.trim()) ctx.listedIntegrationToolIds.add(id.trim())
   }
+}
+
+function rememberReadVfsPath(ctx: ToolExecutionContext, args: Record<string, unknown>): void {
+  const path = typeof args.path === 'string' ? args.path.trim() : ''
+  if (!path) return
+  const canonical = normalizeWorkspaceFileReadPath(path)
+  if (!canonical) return
+  ctx.readVfsPaths ??= new Set()
+  ctx.readVfsPaths.add(canonical)
 }
 
 /**

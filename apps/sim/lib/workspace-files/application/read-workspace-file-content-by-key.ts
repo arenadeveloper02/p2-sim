@@ -31,23 +31,29 @@ async function executeReadWorkspaceFileContentByKey({
 >): Promise<ReadWorkspaceFileContentByKeyResult> {
   const file = await getWorkspaceFile(context.workspaceId, context.fileId, {
     throwOnError: true,
+    includeMothership: true,
   })
   if (!file || file.key !== input.key) throw new OrchestrationError('not_found', 'File not found')
   return { file, content: await fetchWorkspaceFileBuffer(file) }
 }
 
+const SERVABLE_BY_WORKSPACE_KEY = new Set(['workspace', 'mothership'])
+
 export const readWorkspaceFileContentByKey = defineAuthorizedWorkspaceFileUseCase({
   operation: fileOperations.readContent,
   async resolveContext({ input }) {
-    const metadata = await getFileMetadataByKey(input.key, 'workspace')
+    const metadata = await getFileMetadataByKey(input.key)
     if (
       !metadata?.workspaceId ||
+      !SERVABLE_BY_WORKSPACE_KEY.has(metadata.context) ||
       (input.assertedWorkspaceId !== undefined &&
         input.assertedWorkspaceId !== metadata.workspaceId)
     ) {
       throw new OrchestrationError('not_found', 'File not found')
     }
-    const canonical = await loadActiveWorkspaceFileContext(metadata.id)
+    const canonical = await loadActiveWorkspaceFileContext(metadata.id, {
+      includeMothership: true,
+    })
     if (!canonical || canonical.workspaceId !== metadata.workspaceId) {
       throw new OrchestrationError('not_found', 'File not found')
     }

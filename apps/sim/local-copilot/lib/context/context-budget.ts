@@ -320,6 +320,7 @@ export function buildContextPromptPayload(
   return JSON.stringify(
     sanitizeForLlm({
       workspace: context.workspace,
+      currentUser: context.currentUser,
       connectedIntegrations: context.connectedIntegrations,
       envVariables: slimInventory ? undefined : context.envVariables,
       hostedKeysAvailable: context.hostedKeysAvailable,
