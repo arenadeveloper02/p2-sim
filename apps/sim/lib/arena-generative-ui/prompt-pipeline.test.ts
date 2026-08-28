@@ -31,6 +31,7 @@ describe('buildGeneratorSystemPrompt', () => {
       'GOLD STANDARD REFERENCE LAYOUT (dashboard)',
       'COMPONENT SELECTION RULES',
       'PROFESSIONAL LAYOUT',
+      'VISUAL HIERARCHY',
       'COMPONENT RULES',
       'DATA STATE CONTRACT',
       'ACTION CONTRACT',

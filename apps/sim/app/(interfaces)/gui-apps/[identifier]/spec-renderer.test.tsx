@@ -1540,9 +1540,11 @@ describe('SpecRenderer', () => {
       expect(button.className).toContain('text-white')
     })
 
-    it('renders the destructive variant in red', () => {
+    it('renders the destructive variant as outline danger, not a filled CTA', () => {
       const button = renderButton({ label: 'Delete', actionId: 'del', variant: 'destructive' })
-      expect(button.className).toContain('bg-[var(--gui-danger,#f31a1a)]')
+      expect(button.className).toContain('border-[var(--gui-danger,#f31a1a)]')
+      expect(button.className).toContain('text-[var(--gui-danger,#f31a1a)]')
+      expect(button.className).not.toContain('bg-[var(--gui-danger,#f31a1a)]')
     })
 
     it('asks the host to confirm a destructive action instead of navigating first', () => {

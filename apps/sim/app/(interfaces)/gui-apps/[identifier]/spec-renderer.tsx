@@ -272,7 +272,7 @@ const BUTTON_VARIANT_CLASSES = {
   outline:
     'border border-[var(--gui-brand,#1a73e8)] bg-transparent text-[var(--gui-brand,#1a73e8)] hover:bg-[var(--gui-brand-surface,#f3f8fe)]',
   destructive:
-    'bg-[var(--gui-danger,#f31a1a)] text-white hover:bg-[var(--gui-danger-hover,#c21515)]',
+    'border border-[var(--gui-danger,#f31a1a)] bg-transparent text-[var(--gui-danger,#f31a1a)] hover:bg-[var(--gui-error-surface,#fff3f3)]',
 } as const
 
 const BUTTON_SIZE_CLASSES = {

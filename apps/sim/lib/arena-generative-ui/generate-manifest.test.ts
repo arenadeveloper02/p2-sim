@@ -194,6 +194,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('UNIVERSAL UI/UX CONSTITUTION')
     expect(system).toContain('COMPONENT SELECTION RULES')
     expect(system).toContain('PROFESSIONAL LAYOUT')
+    expect(system).toContain('VISUAL HIERARCHY')
     expect(system).toContain('COMPONENT RULES')
     expect(system).toContain('DATA STATE CONTRACT')
     expect(system).toContain('ACTION CONTRACT')

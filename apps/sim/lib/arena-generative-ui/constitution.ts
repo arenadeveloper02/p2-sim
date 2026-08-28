@@ -46,7 +46,7 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
     id: 'composition',
     title: '1. COMPOSITION',
     principle:
-      'Prefer a content container, readable measure vs wide collections, one primary action, one dominant region, and grouped sections over decorative chrome.',
+      'Prefer a content container, five-level visual hierarchy, readable measure vs wide collections, one primary action, one dominant region, and grouped sections over decorative chrome.',
     clauses: [
       {
         ownership: 'generator',
@@ -55,8 +55,33 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
       },
       {
         ownership: 'generator',
-        text: 'Use visual hierarchy: page title → context → primary action → content.',
-        prompt: 'Use visual hierarchy: page title → context → primary action → content.',
+        text: 'Use five-level visual hierarchy: purpose → primary/result → supporting → secondary/metadata → optional.',
+        prompt:
+          'Use five-level visual hierarchy: purpose (PageHeader / EntityHeader) → primary action or key result → supporting information → secondary actions and metadata → optional details.',
+      },
+      {
+        ownership: 'generator',
+        text: 'Only one primary action dominates a local Section.',
+        prompt:
+          'Only one primary action dominates a local Section. SubmitButton and SearchField already count. Do not add variant "primary" beside them.',
+      },
+      {
+        ownership: 'generator',
+        text: 'Secondary actions use secondary or ghost styling.',
+        prompt:
+          'Ordinary actions are variant "secondary"; Back / Cancel / dismiss are "ghost". Do not paint emphasis with a colour prop.',
+      },
+      {
+        ownership: 'generator',
+        text: 'Destructive actions must never visually compete with the primary action.',
+        prompt:
+          'variant "destructive" for delete / disconnect. It must never visually compete with the primary. Confirm is host.',
+      },
+      {
+        ownership: 'generator',
+        text: 'Metadata should have lower visual prominence than content.',
+        prompt:
+          'Kicker, KeyValue keys, timestamps, and captions stay muted. Do not promote metadata with Heading or Stat.',
       },
       {
         ownership: 'generator',
