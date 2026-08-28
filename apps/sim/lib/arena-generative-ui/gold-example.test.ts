@@ -70,12 +70,29 @@ describe('gold example', () => {
     expect(result.manifest?.entryPath).toBe('home')
   })
 
-  it('is unchanged by normalization, so it models the canonical flat shape', () => {
+  it('stays a flat spec; normalize resolves spacing tokens to host CSS vars', () => {
     const result = validateExample()
-    expect(result.manifest?.pages.home.spec).toEqual(goldExampleManifest.pages.home.spec)
-    expect(result.manifest?.pages.results.spec).toEqual(goldExampleManifest.pages.results.spec)
-    expect(result.manifest?.pages.progress.spec).toEqual(goldExampleManifest.pages.progress.spec)
-    expect(result.manifest?.pages.overview.spec).toEqual(goldExampleManifest.pages.overview.spec)
+    const source = JSON.stringify(goldExampleManifest)
+    expect(source).toContain('"gap":"sm"')
+    expect(source).toContain('"gap":"md"')
+    expect(source).toContain('"gap":"lg"')
+    expect(source).toContain('"padding":"lg"')
+    expect(source).toContain('"variant":"default"')
+    expect(source).not.toMatch(/"gap":"(?:8|12|16|24)px"/)
+    expect(source).not.toMatch(/"padding":"(?:8|12|16|24)px"/)
+
+    for (const path of ['home', 'results', 'progress', 'overview'] as const) {
+      const authored = goldExampleManifest.pages[path].spec
+      const normalized = result.manifest?.pages[path].spec
+      expect(normalized?.root).toBe(authored.root)
+      expect(Object.keys(normalized?.elements ?? {}).sort()).toEqual(
+        Object.keys(authored.elements).sort()
+      )
+    }
+    const resolved = JSON.stringify(result.manifest?.pages.home.spec)
+    expect(resolved).toContain('var(--gui-space-sm')
+    expect(resolved).toContain('var(--gui-space-lg')
+    expect(JSON.stringify(result.manifest?.pages.results.spec)).toContain('var(--gui-space-md')
   })
 
   it('demonstrates the layout primitives the rules ask for', () => {
@@ -132,6 +149,8 @@ describe('gold example', () => {
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain(GOLD_EXAMPLE_API_KEY)
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain(GOLD_EXAMPLE_RUN_API_KEY)
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('"entryPath": "home"')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('spacing tokens')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('Card.variant')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).not.toContain('```')
   })
 })
@@ -141,6 +160,8 @@ describe('per-archetype gold examples', () => {
     expect(goldExamplePromptForArchetype('dashboard')).toContain(
       'GOLD STANDARD REFERENCE LAYOUT (dashboard)'
     )
+    expect(goldExamplePromptForArchetype('dashboard')).toContain('spacing tokens')
+    expect(goldExamplePromptForArchetype('dashboard')).toContain('Card.variant')
     expect(goldExamplePromptForArchetype('dashboard')).not.toContain('Watchtower')
     expect(goldExamplePromptForArchetype('list-detail')).toContain(
       'GOLD STANDARD REFERENCE LAYOUT (list-detail)'
@@ -166,6 +187,9 @@ describe('per-archetype gold examples', () => {
     expect(result.error).toBeUndefined()
     expect(result.success).toBe(true)
     expect(JSON.stringify(goldDashboardManifest)).toContain('"Sparkline"')
+    expect(JSON.stringify(goldDashboardManifest)).toContain('"variant":"muted"')
+    expect(JSON.stringify(goldDashboardManifest)).toContain('"gap":"md"')
+    expect(JSON.stringify(goldDashboardManifest)).not.toMatch(/"gap":"(?:8|12|16|24)px"/)
   })
 
   it('validates the list-detail gold', () => {

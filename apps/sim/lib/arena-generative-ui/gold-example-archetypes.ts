@@ -9,7 +9,7 @@ function goldPrompt(
 ): string {
   return [
     `GOLD STANDARD REFERENCE LAYOUT (${archetype})`,
-    'Match this structure and density, not its subject matter. Note the default Arena theme and result components bound by statePath.',
+    'Match this structure and density, not its subject matter. Note the default Arena theme and result components bound by statePath. gap and padding use spacing tokens (sm, md, lg); Card.variant is default or muted. Do not copy px, hex, or CSS variables.',
     framing,
     JSON.stringify(output, null, 2),
   ].join('\n\n')
@@ -47,7 +47,7 @@ const dashboardHomeSpec: Spec = {
     },
     kpis: {
       type: 'Grid',
-      props: { columns: '4', gap: '16px', minItemWidth: null },
+      props: { columns: '4', gap: 'md', minItemWidth: null },
       children: ['kpi_orders', 'kpi_fill', 'kpi_backlog', 'kpi_exceptions'],
     },
     kpi_orders: {
@@ -109,7 +109,8 @@ const dashboardHomeSpec: Spec = {
         subtitle: 'Last 12 weeks',
         description: null,
         footerText: null,
-        padding: null,
+        padding: 'lg',
+        variant: 'default',
         backgroundColor: null,
       },
       children: ['spark'],
@@ -126,7 +127,8 @@ const dashboardHomeSpec: Spec = {
         subtitle: null,
         description: null,
         footerText: null,
-        padding: null,
+        padding: 'lg',
+        variant: 'muted',
         backgroundColor: null,
       },
       children: ['summary_body'],
@@ -201,7 +203,7 @@ const listHomeSpec: Spec = {
     },
     results_grid: {
       type: 'Grid',
-      props: { columns: '2', gap: '16px', minItemWidth: null },
+      props: { columns: '2', gap: 'md', minItemWidth: null },
       children: ['results_repeat'],
     },
     results_repeat: {
@@ -216,7 +218,8 @@ const listHomeSpec: Spec = {
         subtitle: '{item.status}',
         description: '{item.summary}',
         footerText: '{item.meta}',
-        padding: null,
+        padding: 'lg',
+        variant: 'default',
         backgroundColor: null,
       },
       children: ['order_logo', 'open_order'],
@@ -354,7 +357,7 @@ const wizardStepOneSpec: Spec = {
     },
     fields: {
       type: 'Grid',
-      props: { columns: '2', gap: '16px', minItemWidth: null },
+      props: { columns: '2', gap: 'md', minItemWidth: null },
       children: ['company', 'domain'],
     },
     company: {
@@ -448,7 +451,7 @@ const wizardStepTwoSpec: Spec = {
       type: 'Stack',
       props: {
         direction: 'horizontal',
-        gap: '12px',
+        gap: 'sm',
         align: 'center',
         justify: 'start',
         wrap: true,
@@ -523,7 +526,7 @@ const wizardStepThreeSpec: Spec = {
       type: 'Stack',
       props: {
         direction: 'horizontal',
-        gap: '12px',
+        gap: 'sm',
         align: 'center',
         justify: 'start',
         wrap: true,

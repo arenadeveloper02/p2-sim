@@ -72,7 +72,7 @@ const goldHomeSpec: Spec = {
       type: 'Stack',
       props: {
         direction: 'horizontal',
-        gap: '8px',
+        gap: 'sm',
         align: 'center',
         justify: 'center',
         wrap: true,
@@ -92,7 +92,7 @@ const goldHomeSpec: Spec = {
     },
     features: {
       type: 'Grid',
-      props: { columns: '3', gap: '24px', minItemWidth: null },
+      props: { columns: '3', gap: 'lg', minItemWidth: null },
       children: ['feature_filings', 'feature_signals', 'feature_risk'],
     },
     feature_filings: {
@@ -102,7 +102,8 @@ const goldHomeSpec: Spec = {
         subtitle: null,
         description: 'SEC and registry documents in one place.',
         footerText: null,
-        padding: null,
+        padding: 'lg',
+        variant: 'default',
         backgroundColor: null,
       },
       children: ['icon_filings'],
@@ -119,7 +120,8 @@ const goldHomeSpec: Spec = {
         subtitle: null,
         description: 'Hiring, funding, and product momentum.',
         footerText: null,
-        padding: null,
+        padding: 'lg',
+        variant: 'default',
         backgroundColor: null,
       },
       children: ['icon_signals'],
@@ -136,7 +138,8 @@ const goldHomeSpec: Spec = {
         subtitle: null,
         description: 'Litigation, sanctions, and exposure.',
         footerText: null,
-        padding: null,
+        padding: 'lg',
+        variant: 'default',
         backgroundColor: null,
       },
       children: ['icon_risk'],
@@ -194,7 +197,7 @@ const goldResultsSpec: Spec = {
     },
     results_grid: {
       type: 'Grid',
-      props: { columns: '2', gap: '16px', minItemWidth: null },
+      props: { columns: '2', gap: 'md', minItemWidth: null },
       children: ['results_repeat'],
     },
     results_repeat: {
@@ -209,7 +212,8 @@ const goldResultsSpec: Spec = {
         subtitle: '{item.domain}',
         description: '{item.summary}',
         footerText: '{item.meta}',
-        padding: null,
+        padding: 'lg',
+        variant: 'default',
         backgroundColor: null,
       },
       children: ['company_logo', 'analyze'],
@@ -347,7 +351,7 @@ const goldOverviewSpec: Spec = {
     },
     kpis: {
       type: 'Grid',
-      props: { columns: '4', gap: '16px', minItemWidth: null },
+      props: { columns: '4', gap: 'md', minItemWidth: null },
       children: ['kpi_revenue', 'kpi_employees', 'kpi_funding', 'kpi_risk'],
     },
     kpi_revenue: {
@@ -409,7 +413,8 @@ const goldOverviewSpec: Spec = {
         subtitle: null,
         description: null,
         footerText: null,
-        padding: null,
+        padding: 'lg',
+        variant: 'default',
         backgroundColor: null,
       },
       children: ['summary_body'],
@@ -479,7 +484,7 @@ export const goldExampleOutput = {
  */
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT (form-result)',
-  'Match this structure and density, not its subject matter. Note the default Arena theme, the four screens (centered search hero, entity result cards, analysis destination, entity dashboard), SearchField with nested submit, Icon wells, Avatar on entity Cards, EntityHeader, display Stats, and result components bound by statePath.',
+  'Match this structure and density, not its subject matter. Note the default Arena theme, the four screens (centered search hero, entity result cards, analysis destination, entity dashboard), SearchField with nested submit, Icon wells, Avatar on entity Cards, EntityHeader, display Stats, and result components bound by statePath. gap and padding use spacing tokens (sm, md, lg); Card.variant is default or muted. Do not copy px, hex, or CSS variables.',
   'Note also how data moves: home has no onLoad — SearchField runs the search CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.query and "{query}" — Results echoes the query on a Chip. Results is a Repeat of entity Cards inside a Grid; Card.title uses "{item.name}", Avatar.src uses "{item.logo}", and Analyze sends the item fields. Progress is a WorkingCard (status steps, estimate, Cancel back to results, document skeleton) above DataText bound to content — the host ticks the card while pending. That WorkingCard applies when CAPABILITY includes long-running, multi-step, or cancellable; omit it when no wait capability is selected. Overview declares onLoad and binds each Stat by statePath. emptyText is the zero-result copy when the companies array is empty.',
   `Replace the actions apiKey values ("${GOLD_EXAMPLE_LOAD_API_KEY}", "${GOLD_EXAMPLE_API_KEY}", "${GOLD_EXAMPLE_RUN_API_KEY}") with declared API binding keys, and drop manifest.actions and every onLoad entirely when no bindings were declared.`,
   JSON.stringify(goldExampleOutput, null, 2),
