@@ -15,6 +15,7 @@ export {
   ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
   arenaGenerativeUiCatalog,
 } from '@/lib/arena-generative-ui/catalog'
+export { critiqueArenaGenerativeManifest } from '@/lib/arena-generative-ui/critique-manifest'
 export {
   authorizeDeployedAppRequest,
   findDeployedAppByIdentifier,
@@ -70,13 +71,14 @@ export {
   isJsonRenderSpec,
   isReservedGenerativeAppIdentifier,
 } from '@/lib/arena-generative-ui/types'
-export {
-  compiledPageFromManifest,
-  compileGenerativeUx,
-} from '@/lib/arena-generative-ui/ux-compiler'
+export { hostCriticManifest } from '@/lib/arena-generative-ui/ui-critic'
 export type {
   ArenaGenerativeAsyncKind,
   ArenaGenerativeUxActionPlan,
   ArenaGenerativeUxPlan,
+} from '@/lib/arena-generative-ui/ux-compiler'
+export {
+  compiledPageFromManifest,
+  compileGenerativeUx,
 } from '@/lib/arena-generative-ui/ux-compiler'
 export { validateArenaGenerativeManifest } from '@/lib/arena-generative-ui/validate-manifest'

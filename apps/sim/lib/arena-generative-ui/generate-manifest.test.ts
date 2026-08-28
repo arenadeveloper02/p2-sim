@@ -3,9 +3,10 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCreateAnthropicMessage, mockPlanBrief } = vi.hoisted(() => ({
+const { mockCreateAnthropicMessage, mockPlanBrief, mockCritique } = vi.hoisted(() => ({
   mockCreateAnthropicMessage: vi.fn(),
   mockPlanBrief: vi.fn(),
+  mockCritique: vi.fn(),
 }))
 
 vi.mock('@anthropic-ai/sdk', () => ({
@@ -32,6 +33,21 @@ vi.mock('@/lib/arena-generative-ui/structured-brief', () => ({
   }) => brief.pages.map((page) => ({ path: page.path, title: page.title, purpose: page.purpose })),
 }))
 
+vi.mock('@/lib/arena-generative-ui/critique-manifest', () => ({
+  critiqueArenaGenerativeManifest: mockCritique,
+  mustFixCriticIssues: (critique: { issues?: Array<{ severity: string }> }) =>
+    (critique.issues ?? []).filter((issue) => issue.severity === 'must-fix'),
+  formatCriticRepairError: (
+    issues: Array<{ category: string; page?: string; message: string; fixHint: string }>
+  ) =>
+    issues
+      .map((issue) => {
+        const page = issue.page ? `page "${issue.page}"` : 'app'
+        return `UI critic must-fix (${issue.category}) on ${page}: ${issue.message} ${issue.fixHint}`
+      })
+      .join(' '),
+}))
+
 import {
   EDIT_PRESERVATION_INSTRUCTION,
   generateArenaGenerativeManifest,
@@ -45,7 +61,7 @@ import {
   multiPageApiBindings,
   multiPageManifest,
 } from '@/lib/arena-generative-ui/multi-page-app.fixture'
-import { twoPageManifest } from '@/lib/arena-generative-ui/two-page-app.fixture'
+import { twoPageManifest, twoPageResultsSpec } from '@/lib/arena-generative-ui/two-page-app.fixture'
 import {
   GENERATOR_OMITTED_PAGES_ERROR,
   validateArenaGenerativeManifest,
@@ -59,6 +75,7 @@ describe('generateArenaGenerativeManifest', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockPlanBrief.mockResolvedValue({ brief: null })
+    mockCritique.mockResolvedValue({ pass: true, issues: [] })
   })
 
   it('uses Sonnet with a budget well above a single truncating page', async () => {
@@ -962,10 +979,27 @@ describe('generateArenaGenerativeManifest', () => {
       spec: {
         root: 'page',
         elements: {
-          page: { type: 'Page', props: { title: 'Score' }, children: ['stat'] },
+          page: {
+            type: 'Page',
+            props: { title: 'Score', backgroundColor: null },
+            children: ['tabs', 'section'],
+          },
+          tabs: {
+            type: 'Tabs',
+            props: {
+              items: 'Home|home\nResults|results\nDashboard|dashboard\nSettings|settings',
+              activePath: null,
+            },
+            children: [],
+          },
+          section: {
+            type: 'Section',
+            props: { padding: null, backgroundColor: null, maxWidth: null },
+            children: ['stat'],
+          },
           stat: {
             type: 'Stat',
-            props: { label: 'Score', statePath: 'score' },
+            props: { label: 'Score', value: null, statePath: 'score' },
             children: [],
           },
         },
@@ -1228,6 +1262,113 @@ describe('generateArenaGenerativeManifest', () => {
       expect(result.manifest?.theme?.colorScheme).toBe('dark')
       expect(result.manifest?.theme?.density).toBe('compact')
       expect(JSON.stringify(result.manifest?.pages)).toBe(JSON.stringify(twoPageManifest.pages))
+    })
+  })
+
+  describe('UI critic', () => {
+    const validReply = JSON.stringify({
+      title: 'Lead qualifier',
+      content: 'ok',
+      manifest: twoPageManifest,
+    })
+
+    function manifestMissingResultsBack() {
+      const spec = structuredClone(twoPageResultsSpec)
+      const section = spec.elements.section as { children: string[] }
+      section.children = section.children.filter((id) => id !== 'back')
+      const { back: _back, ...elements } = spec.elements
+      return {
+        ...twoPageManifest,
+        pages: {
+          ...twoPageManifest.pages,
+          results: { ...twoPageManifest.pages.results, spec: { ...spec, elements } },
+        },
+      }
+    }
+
+    it('repairs a host-critic defect through the existing validation loop', async () => {
+      mockCreateAnthropicMessage
+        .mockResolvedValueOnce(
+          textMessage(
+            JSON.stringify({
+              title: 'Lead qualifier',
+              content: 'ok',
+              manifest: manifestMissingResultsBack(),
+            })
+          )
+        )
+        .mockResolvedValueOnce(textMessage(validReply))
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Lead qualifier.',
+        apiBindings: [
+          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
+        ],
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
+      const repairTurn = mockCreateAnthropicMessage.mock.calls[1]?.[1].messages.at(-1) as {
+        role: string
+        content: string
+      }
+      expect(repairTurn.role).toBe('user')
+      expect(repairTurn.content).toContain('failed validation')
+      expect(repairTurn.content).toContain('onSuccess.navigate target')
+      expect(result.content).toContain('UI critic: passed')
+    })
+
+    it('sends one extra spec turn when the LLM critic returns must-fix', async () => {
+      mockCreateAnthropicMessage
+        .mockResolvedValueOnce(textMessage(validReply))
+        .mockResolvedValueOnce(textMessage(validReply))
+      mockCritique.mockResolvedValue({
+        pass: false,
+        issues: [
+          {
+            category: 'ux',
+            severity: 'must-fix',
+            page: 'home',
+            message: 'Primary task is buried.',
+            fixHint: 'Add a PageHeader.',
+          },
+        ],
+      })
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Lead qualifier.',
+        apiBindings: [
+          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
+        ],
+      })
+
+      expect(result.success).toBe(true)
+      expect(mockCritique).toHaveBeenCalledTimes(1)
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(2)
+      const repairTurn = mockCreateAnthropicMessage.mock.calls[1]?.[1].messages.at(-1) as {
+        role: string
+        content: string
+      }
+      expect(repairTurn.content).toContain('UI critic must-fix')
+      expect(repairTurn.content).toContain('Primary task is buried')
+      expect(result.content).toContain('UI critic: repaired')
+    })
+
+    it('still returns a valid manifest when the LLM critic throws', async () => {
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage(validReply))
+      mockCritique.mockRejectedValue(new Error('haiku down'))
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Lead qualifier.',
+        apiBindings: [
+          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
+        ],
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.manifest?.pages.home).toBeTruthy()
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
+      expect(result.content).toContain('UI critic: skipped (unavailable)')
     })
   })
 })

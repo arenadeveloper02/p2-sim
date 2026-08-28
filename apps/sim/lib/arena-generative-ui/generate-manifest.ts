@@ -5,6 +5,12 @@ import { truncate } from '@sim/utils/string'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-prompt'
 import {
+  type ArenaGenerativeCritique,
+  critiqueArenaGenerativeManifest,
+  formatCriticRepairError,
+  mustFixCriticIssues,
+} from '@/lib/arena-generative-ui/critique-manifest'
+import {
   type ArenaGenerativeEditScope,
   planArenaGenerativeEditScope,
   unscopedPageIndex,
@@ -32,6 +38,7 @@ import type {
   ArenaGenerativeGenerateResult,
   ArenaGenerativePageHint,
 } from '@/lib/arena-generative-ui/types'
+import { hostCriticManifest } from '@/lib/arena-generative-ui/ui-critic'
 import {
   GENERATOR_OMITTED_PAGES_ERROR,
   type ManifestValidationResult,
@@ -142,9 +149,62 @@ function formatEditScopeStatus(
   return 'Edit scope: global rewrite.'
 }
 
+function formatCriticStatus(critique: ArenaGenerativeCritique, repaired: boolean): string {
+  if (repaired) return 'UI critic: repaired'
+  if (critique.skipped) return 'UI critic: skipped (unavailable)'
+  return 'UI critic: passed'
+}
+
 function withStatusPrefix(content: string, ...lines: string[]): string {
   const prefix = lines.filter((line) => line.length > 0).join('\n')
   return prefix ? `${prefix}\n\n${content}` : content
+}
+
+interface EvaluateGeneratedCandidateOptions {
+  isScopedEdit: boolean
+  existingManifest?: ArenaGenerativeAppManifest
+  editScope: ArenaGenerativeEditScope | null
+  scopedPaths: string[]
+  validationOptions: {
+    pageHints?: ArenaGenerativePageHint[]
+    apiBindings: ArenaGenerativeApiBinding[]
+    entryPath?: string
+    authoredPagePaths?: string[]
+  }
+}
+
+/**
+ * Catalog validate, then the host UI critic. Either failure is a repair reason.
+ */
+function evaluateGeneratedCandidate(
+  candidate: Record<string, unknown>,
+  options: EvaluateGeneratedCandidateOptions
+): ManifestValidationResult {
+  const merged =
+    options.isScopedEdit && options.existingManifest && options.editScope
+      ? mergeScopedManifestEdit(options.existingManifest, candidate, {
+          pages: options.scopedPaths,
+          touchesActions: options.editScope.touchesActions,
+          touchesTheme: options.editScope.touchesTheme,
+        })
+      : null
+  if (merged && !merged.ok) {
+    return { success: false, error: merged.error }
+  }
+  const validation = validateArenaGenerativeManifest(
+    merged ? merged.candidate : candidate,
+    options.validationOptions
+  )
+  if (!validation.success || !validation.manifest) {
+    return validation
+  }
+  const hostError = hostCriticManifest(validation.manifest, {
+    authoredPagePaths: options.validationOptions.authoredPagePaths,
+  })
+  if (hostError) {
+    return { success: false, error: hostError }
+  }
+  return validation
 }
 
 function structuredBriefSummary(brief: ArenaGenerativeStructuredBrief) {
@@ -454,11 +514,21 @@ export async function generateArenaGenerativeManifest(
       ...(isScopedEdit ? { authoredPagePaths: scopedPaths } : {}),
     }
 
+    const evaluateOptions: EvaluateGeneratedCandidateOptions = {
+      isScopedEdit,
+      existingManifest: params.existingManifest,
+      editScope,
+      scopedPaths,
+      validationOptions,
+    }
+
     const messages: Anthropic.Messages.MessageParam[] = [{ role: 'user', content: userPayload }]
     let parsed: Record<string, unknown> = {}
     let validation: ManifestValidationResult = { success: false }
+    let lastRawText = ''
+    let attempt = 0
 
-    for (let attempt = 0; attempt <= MAX_REPAIR_ATTEMPTS; attempt += 1) {
+    for (; attempt <= MAX_REPAIR_ATTEMPTS; attempt += 1) {
       const message = await createAnthropicMessage(anthropic, { ...messageOptions, messages })
       const rawText = extractMessageText(message)
       if (!rawText) {
@@ -467,6 +537,7 @@ export async function generateArenaGenerativeManifest(
           error: validation.error ?? 'Model returned an empty response',
         }
       }
+      lastRawText = rawText
 
       try {
         parsed = parseLlmJsonObject(rawText)
@@ -481,28 +552,12 @@ export async function generateArenaGenerativeManifest(
         })
         throw error
       }
-      const candidate = extractManifestCandidate(parsed)
       /**
        * The scoped reply is folded into the existing manifest before validation, so
        * every invariant — catalog shape, reachability, action keys — is still checked
        * against the whole app, and untouched pages come through by reference.
        */
-      const merged =
-        isScopedEdit && params.existingManifest && editScope
-          ? mergeScopedManifestEdit(params.existingManifest, candidate, {
-              pages: scopedPaths,
-              touchesActions: editScope.touchesActions,
-              touchesTheme: editScope.touchesTheme,
-            })
-          : null
-      if (merged && !merged.ok) {
-        validation = { success: false, error: merged.error }
-      } else {
-        validation = validateArenaGenerativeManifest(
-          merged ? merged.candidate : candidate,
-          validationOptions
-        )
-      }
+      validation = evaluateGeneratedCandidate(extractManifestCandidate(parsed), evaluateOptions)
       if (validation.success || attempt === MAX_REPAIR_ATTEMPTS) {
         break
       }
@@ -522,6 +577,56 @@ export async function generateArenaGenerativeManifest(
       return { success: false, error: validation.error ?? 'Generated manifest failed validation' }
     }
 
+    let critique: ArenaGenerativeCritique = { pass: true, issues: [] }
+    let criticRepaired = false
+    try {
+      critique = await critiqueArenaGenerativeManifest({
+        manifest: validation.manifest,
+        apiBindings: params.apiBindings,
+        brief: intentBrief,
+        authoredPagePaths: isScopedEdit ? scopedPaths : undefined,
+      })
+    } catch (error) {
+      logger.warn('Arena Generative UI critic threw; skipping', { error: toError(error).message })
+      critique = { pass: true, issues: [], skipped: true }
+    }
+
+    const mustFix = mustFixCriticIssues(critique)
+    if (mustFix.length > 0 && attempt < MAX_REPAIR_ATTEMPTS) {
+      logger.warn('Arena Generative UI critic requested a repair turn', {
+        issues: mustFix.length,
+      })
+      messages.push(
+        { role: 'assistant', content: lastRawText },
+        { role: 'user', content: repairUserMessage(formatCriticRepairError(mustFix), scopedPaths) }
+      )
+      const message = await createAnthropicMessage(anthropic, { ...messageOptions, messages })
+      const rawText = extractMessageText(message)
+      if (!rawText) {
+        return {
+          success: false,
+          error: validation.error ?? 'Model returned an empty response',
+        }
+      }
+      try {
+        parsed = parseLlmJsonObject(rawText)
+      } catch (error) {
+        logger.warn('Arena Generative UI critic repair held no parseable JSON object', {
+          stopReason: message.stop_reason,
+          preview: truncate(rawText, 600),
+        })
+        throw error
+      }
+      validation = evaluateGeneratedCandidate(extractManifestCandidate(parsed), evaluateOptions)
+      if (!validation.success || !validation.manifest) {
+        logger.warn('Arena Generative UI critic repair failed validation', {
+          error: validation.error,
+        })
+        return { success: false, error: validation.error ?? 'Generated manifest failed validation' }
+      }
+      criticRepaired = true
+    }
+
     const title =
       typeof parsed.title === 'string' && parsed.title.trim()
         ? parsed.title.trim()
@@ -530,14 +635,16 @@ export async function generateArenaGenerativeManifest(
       typeof parsed.content === 'string' && parsed.content.trim()
         ? parsed.content.trim()
         : `Generated ${Object.keys(validation.manifest.pages).length} page(s).`
+    const criticStatus = formatCriticStatus(critique, criticRepaired)
     const statusLines = isReplan
       ? [
           formatEditScopeStatus(null, false, true),
           formatPlannerStatus(structuredBrief, plannerError),
+          criticStatus,
         ]
       : isPreserveEdit
-        ? [formatEditScopeStatus(editScope, false)]
-        : [formatPlannerStatus(structuredBrief, plannerError)]
+        ? [formatEditScopeStatus(editScope, false), criticStatus]
+        : [formatPlannerStatus(structuredBrief, plannerError), criticStatus]
 
     return {
       success: true,
