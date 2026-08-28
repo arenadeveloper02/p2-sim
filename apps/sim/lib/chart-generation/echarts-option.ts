@@ -393,8 +393,136 @@ export function formatChartsForChat(charts: EChartsOptionLike[]): string | null 
   }
 }
 
+/** Series types that do not use cartesian x/y + grid layout. */
+const NON_CARTESIAN_SERIES_TYPES = new Set([
+  'pie',
+  'radar',
+  'gauge',
+  'funnel',
+  'sankey',
+  'graph',
+  'treemap',
+  'sunburst',
+  'themeRiver',
+  'map',
+  'lines',
+])
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.filter(isRecord)
+  if (isRecord(value)) return [value]
+  return []
+}
+
+function isCategoryAxis(axis: Record<string, unknown>): boolean {
+  if (axis.type === 'category') return true
+  return axis.type == null && Array.isArray(axis.data)
+}
+
+function categoryLength(axis: Record<string, unknown>): number {
+  return Array.isArray(axis.data) ? axis.data.length : 0
+}
+
+function isCartesianOption(option: EChartsOptionLike): boolean {
+  if (option.radar != null || option.polar != null || option.geo != null) {
+    return false
+  }
+  if (!Array.isArray(option.series) || option.series.length === 0) {
+    return false
+  }
+  return option.series.some(
+    (entry) => isRecord(entry) && !NON_CARTESIAN_SERIES_TYPES.has(String(entry.type ?? ''))
+  )
+}
+
+/** Raise a numeric padding; leave percent strings and other values untouched. */
+function atLeastPadding(current: unknown, min: number): unknown {
+  if (current == null) return min
+  if (typeof current === 'number' && Number.isFinite(current)) {
+    return Math.max(current, min)
+  }
+  return current
+}
+
+function axisLabelRecord(axis: Record<string, unknown>): Record<string, unknown> {
+  return isRecord(axis.axisLabel) ? { ...axis.axisLabel } : {}
+}
+
 /**
- * Returns a defensive copy of the option with oversized series data truncated.
+ * Fix category-axis tick labels so they sit under/beside their bars instead of
+ * drifting (the usual LLM output is rotate without align, plus a too-small grid).
+ * Cartesian charts only — pie/radar/gauge/etc. are left unchanged.
+ */
+function applyCartesianLabelLayout(option: EChartsOptionLike): void {
+  if (!isCartesianOption(option)) return
+
+  const xAxes = asRecordArray(option.xAxis)
+  const yAxes = asRecordArray(option.yAxis)
+
+  for (const axis of xAxes) {
+    if (!isCategoryAxis(axis)) continue
+    const count = categoryLength(axis)
+    const label = axisLabelRecord(axis)
+    const existingRotate = typeof label.rotate === 'number' ? label.rotate : 0
+
+    if (count > 0 && count <= 8) {
+      label.rotate = 0
+      label.interval = label.interval ?? 0
+      label.hideOverlap = false
+      label.align = 'center'
+      label.verticalAlign = 'top'
+    } else if (count > 8) {
+      const rotate = existingRotate !== 0 ? existingRotate : 30
+      label.rotate = rotate
+      label.interval = label.interval ?? 0
+      if (rotate > 0) {
+        label.align = label.align ?? 'right'
+        label.verticalAlign = label.verticalAlign ?? 'middle'
+      } else if (rotate < 0) {
+        label.align = label.align ?? 'left'
+        label.verticalAlign = label.verticalAlign ?? 'middle'
+      }
+    }
+
+    axis.axisLabel = label
+  }
+
+  const hasRotatedCategoryX = xAxes.some((axis) => {
+    if (!isCategoryAxis(axis) || !isRecord(axis.axisLabel)) return false
+    return typeof axis.axisLabel.rotate === 'number' && axis.axisLabel.rotate !== 0
+  })
+  const categoryXCount = xAxes.reduce(
+    (max, axis) => (isCategoryAxis(axis) ? Math.max(max, categoryLength(axis)) : max),
+    0
+  )
+  const dualValueY =
+    yAxes.filter((axis) => axis.type === 'value' || axis.type == null).length >= 2
+  const hasTitle = isRecord(option.title) && Boolean(option.title.text)
+  const hasLegend = option.legend != null
+
+  const grids = asRecordArray(option.grid)
+  const targets = grids.length > 0 ? grids : [{}]
+  for (const grid of targets) {
+    if (grid.containLabel !== false) {
+      grid.containLabel = true
+    }
+    grid.bottom = atLeastPadding(grid.bottom, hasRotatedCategoryX ? 88 : categoryXCount > 0 ? 56 : 48)
+    if (dualValueY) {
+      grid.right = atLeastPadding(grid.right, 64)
+    }
+    if (hasTitle && hasLegend) {
+      grid.top = atLeastPadding(grid.top, 72)
+    }
+  }
+
+  if (option.grid == null || isRecord(option.grid)) {
+    option.grid = targets[0]
+  }
+}
+
+/**
+ * Returns a defensive copy of the option with oversized series data truncated
+ * and cartesian axis/grid layout corrected for chat rendering.
  * Falls back to the original option if cloning fails.
  */
 export function sanitizeEChartsOption(option: EChartsOptionLike): EChartsOptionLike {
@@ -416,6 +544,8 @@ export function sanitizeEChartsOption(option: EChartsOptionLike): EChartsOptionL
       }
     }
   }
+
+  applyCartesianLabelLayout(clone)
 
   return clone
 }

@@ -101,6 +101,14 @@ STEP 3 — IF INTENT GATE PASSES → CHART JSON MODE
 - Alternative: reverse both yAxis.data and series.data so the highest value is last.
 - Vertical bar charts: keep natural left-to-right descending order, no inverse needed.
 
+3.2b AXIS / LABEL ALIGNMENT (strict)
+- Category labels must sit directly under (or beside) their ticks. Never rotate labels when there are 8 or fewer categories — keep "axisLabel.rotate": 0 and "axisLabel.interval": 0 so every label is shown and centered on its bar group.
+- If you must rotate (9+ long labels): set "axisLabel.rotate": 30, "axisLabel.align": "right", "axisLabel.verticalAlign": "middle", and "axisLabel.interval": 0. Do not rotate without align — that shifts labels left of their bars.
+- Always set "grid.containLabel": true so axis names and ticks are not clipped.
+- Dual value y-axes (e.g. Spend vs Conversions): set "grid.right" to at least 64.
+- When both title and legend are present, set "grid.top" to at least 72 so they do not collide with the plot.
+- Do not use a tiny "grid.bottom" (e.g. 48) with rotated or long category labels — use 80+ if labels are rotated, otherwise at least 56.
+
 3.3 DATA MAPPING RULES
 - Identify the correct x/category field and y/value field(s) from the ACTUAL data provided. Never invent field names or fabricate data points not present or derivable from the source.
 - If the user asks for a metric not directly present but derivable (e.g. CTR from clicks/impressions), compute it correctly before charting.
@@ -248,8 +256,8 @@ Bar chart (single chart — bare object):
 {
   "title": { "text": "Compare revenue by month", "left": "center" },
   "tooltip": { "trigger": "axis" },
-  "grid": { "left": 48, "right": 24, "top": 56, "bottom": 48 },
-  "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": true },
+  "grid": { "containLabel": true, "left": 48, "right": 24, "top": 56, "bottom": 56 },
+  "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": true, "axisLabel": { "rotate": 0, "interval": 0 } },
   "yAxis": { "type": "value" },
   "series": [ { "name": "revenue", "type": "bar", "data": [100, 120, 90] } ]
 }
@@ -258,8 +266,8 @@ Line chart (single chart — bare object):
 {
   "title": { "text": "Revenue trend by month", "left": "center" },
   "tooltip": { "trigger": "axis" },
-  "grid": { "left": 48, "right": 24, "top": 56, "bottom": 48 },
-  "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": false },
+  "grid": { "containLabel": true, "left": 48, "right": 24, "top": 56, "bottom": 56 },
+  "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": false, "axisLabel": { "rotate": 0, "interval": 0 } },
   "yAxis": { "type": "value" },
   "series": [ { "name": "revenue", "type": "line", "data": [100, 120, 90] } ]
 }
@@ -268,7 +276,7 @@ Horizontal bar ranking (single chart — top item on top via inverse):
 {
   "title": { "text": "Top ad groups by conversion rate", "left": "center" },
   "tooltip": { "trigger": "axis" },
-  "grid": { "left": 120, "right": 24, "top": 56, "bottom": 48 },
+  "grid": { "containLabel": true, "left": 120, "right": 24, "top": 56, "bottom": 48 },
   "xAxis": { "type": "value" },
   "yAxis": { "type": "category", "inverse": true, "data": ["Group A", "Group B", "Group C"], "boundaryGap": true },
   "series": [ { "name": "Conversion Rate", "type": "bar", "data": [0.40, 0.36, 0.33] } ]
@@ -297,7 +305,7 @@ Heat map chart (single chart — bare object):
 {
   "title": { "text": "Activity by Day and Hour", "left": "center" },
   "tooltip": { "position": "top" },
-  "grid": { "left": 80, "right": 24, "top": 56, "bottom": 48 },
+  "grid": { "containLabel": true, "left": 80, "right": 24, "top": 56, "bottom": 56 },
   "xAxis": {
     "type": "category",
     "data": ["12am", "3am", "6am", "9am", "12pm", "3pm", "6pm", "9pm"],
@@ -333,7 +341,7 @@ Scatter chart (single chart — bare object):
     "trigger": "item",
     "formatter": "{a}<br/>CPC: {c[0]}<br/>Conversion Rate: {c[1]}"
   },
-  "grid": { "left": 60, "right": 24, "top": 56, "bottom": 48 },
+  "grid": { "containLabel": true, "left": 60, "right": 24, "top": 56, "bottom": 48 },
   "xAxis": { "type": "value", "name": "CPC" },
   "yAxis": { "type": "value", "name": "Conversion Rate" },
   "series": [
@@ -359,7 +367,7 @@ Scatter chart with conditional coloring (single chart — bare object, NO callba
     "formatter": "{a}<br/>CPC: {c[0]}<br/>Conversion Rate: {c[1]}"
   },
   "legend": { "top": 24 },
-  "grid": { "left": 60, "right": 24, "top": 80, "bottom": 48 },
+  "grid": { "containLabel": true, "left": 60, "right": 24, "top": 80, "bottom": 48 },
   "xAxis": { "type": "value", "name": "CPC" },
   "yAxis": { "type": "value", "name": "Conversion Rate" },
   "series": [
@@ -392,16 +400,16 @@ MULTIPLE CHARTS (bare array form, no wrapper — Bar Chart + Line Chart requeste
   {
     "title": { "text": "Compare revenue by month", "left": "center" },
     "tooltip": { "trigger": "axis" },
-    "grid": { "left": 48, "right": 24, "top": 56, "bottom": 48 },
-    "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": true },
+    "grid": { "containLabel": true, "left": 48, "right": 24, "top": 56, "bottom": 56 },
+    "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": true, "axisLabel": { "rotate": 0, "interval": 0 } },
     "yAxis": { "type": "value" },
     "series": [ { "name": "revenue", "type": "bar", "data": [100, 120, 90] } ]
   },
   {
     "title": { "text": "Revenue trend by month", "left": "center" },
     "tooltip": { "trigger": "axis" },
-    "grid": { "left": 48, "right": 24, "top": 56, "bottom": 48 },
-    "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": false },
+    "grid": { "containLabel": true, "left": 48, "right": 24, "top": 56, "bottom": 56 },
+    "xAxis": { "type": "category", "data": ["Jan", "Feb", "Mar"], "boundaryGap": false, "axisLabel": { "rotate": 0, "interval": 0 } },
     "yAxis": { "type": "value" },
     "series": [ { "name": "revenue", "type": "line", "data": [100, 120, 90] } ]
   }
