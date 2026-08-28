@@ -133,6 +133,60 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     expect(parsed?.designIntent).toEqual({ density: 'compact' })
   })
 
+  it('keeps a valid informationHierarchy and interactionModel', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        informationHierarchy: { dominant: 'collection', supporting: ['detail', 'filters'] },
+        interactionModel: { navigation: 'list-detail', selection: 'navigate', wait: 'none' },
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.informationHierarchy).toEqual({
+      dominant: 'collection',
+      supporting: ['detail', 'filters'],
+    })
+    expect(parsed?.interactionModel).toEqual({
+      navigation: 'list-detail',
+      selection: 'navigate',
+      wait: 'none',
+    })
+  })
+
+  it('drops unknown hierarchy dominant without failing the brief', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        informationHierarchy: { dominant: 'hero', supporting: ['sidebar'] },
+        interactionModel: { navigation: 'portal', selection: 'same-page', wait: 'working_card' },
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.archetype).toBe('list-detail')
+    expect(parsed?.informationHierarchy).toEqual({ supporting: ['sidebar'] })
+    expect(parsed?.interactionModel).toEqual({ selection: 'same-page', wait: 'working-card' })
+  })
+
+  it('accepts snake_case hierarchy and interaction keys', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        information_hierarchy: { dominant: 'wizard_step', supporting: ['history'] },
+        interaction_model: { navigation: 'search_hero', selection: 'same_page', wait: 'none' },
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.informationHierarchy).toEqual({
+      dominant: 'wizard-step',
+      supporting: ['history'],
+    })
+    expect(parsed?.interactionModel).toEqual({
+      navigation: 'search-hero',
+      selection: 'same-page',
+      wait: 'none',
+    })
+  })
+
   it('keeps form-result processing tags, folds them into capabilities, and drops unknown ones', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       {
@@ -354,6 +408,20 @@ describe('structured brief helpers', () => {
     })
     expect(stored?.designIntent).toEqual({ productType: 'finance', density: 'roomy' })
   })
+
+  it('keeps stored informationHierarchy and interactionModel', () => {
+    const stored = parseStoredStructuredBrief({
+      ...listDetailBrief,
+      informationHierarchy: { dominant: 'metrics', supporting: ['stats'] },
+      interactionModel: { navigation: 'tabs', selection: 'none', wait: 'none' },
+    })
+    expect(stored?.informationHierarchy).toEqual({ dominant: 'metrics', supporting: ['stats'] })
+    expect(stored?.interactionModel).toEqual({
+      navigation: 'tabs',
+      selection: 'none',
+      wait: 'none',
+    })
+  })
 })
 
 describe('planArenaGenerativeStructuredBrief', () => {
@@ -393,6 +461,10 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(system).toContain('Set capabilities to the tags that apply')
     expect(system).toContain('Also emit designIntent')
     expect(system).toContain('spacious means roomy')
+    expect(system).toContain('informationHierarchy')
+    expect(system).toContain('interactionModel')
+    expect(system).toContain('Surfaces are exactly two')
+    expect(system).toContain('do not emit hex, fonts, CSS, catalog component types')
     expect(system).not.toContain('nested ProgressSteps')
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('Do not emit page specs')

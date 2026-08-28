@@ -16,7 +16,7 @@ function headingIndex(prompt: string, heading: string): number {
 }
 
 describe('buildGeneratorSystemPrompt', () => {
-  it('assembles layers in DS → design intent → design guidelines → UX → grammar → recipes → JSON order', () => {
+  it('assembles layers in Design → UX → Archetype column order', () => {
     const prompt = buildGeneratorSystemPrompt({
       archetype: 'dashboard',
       capabilities: ['filter'],
@@ -27,15 +27,18 @@ describe('buildGeneratorSystemPrompt', () => {
 
     const order = [
       'You are an expert principal frontend engineer',
-      'UNIVERSAL UI/UX CONSTITUTION',
+      'DESIGN RULES / TOKENS',
       'ARENA DESIGN SYSTEM',
       'DESIGN INTENT',
       'DESIGN GUIDELINES',
+      'UX RULES / STATES',
+      'UNIVERSAL UI/UX CONSTITUTION',
       'DATA STATE CONTRACT',
       'ACTION CONTRACT',
       'INTERACTION / STATE RULES',
       'ACCESSIBILITY RULES',
       'ANTI-PATTERNS',
+      'ARCHETYPE RECIPE',
       'COMPONENT SELECTION RULES',
       'ARCHETYPE RECIPE: dashboard',
       'CAPABILITY: FILTER',
@@ -51,6 +54,7 @@ describe('buildGeneratorSystemPrompt', () => {
     }
     expect(prompt).not.toContain('PROFESSIONAL LAYOUT')
     expect(prompt).not.toContain('RESPONSIVE RULES')
+    expect(prompt).not.toContain('UI CRITIC')
   })
 
   it('keeps layout and hierarchy as Design Guidelines subsections, not pipeline siblings', () => {
@@ -62,14 +66,17 @@ describe('buildGeneratorSystemPrompt', () => {
     })
     const guidelinesAt = headingIndex(prompt, 'DESIGN GUIDELINES')
     const intentAt = headingIndex(prompt, 'DESIGN INTENT')
+    const designRulesAt = headingIndex(prompt, 'DESIGN RULES / TOKENS')
     const layoutAt = headingIndex(prompt, 'LAYOUT')
     const hierarchyAt = headingIndex(prompt, 'VISUAL HIERARCHY')
     const dataAt = headingIndex(prompt, 'DATA STATE CONTRACT')
+    expect(headingIndex(prompt, 'ARENA DESIGN SYSTEM')).toBeGreaterThan(designRulesAt)
     expect(intentAt).toBeGreaterThan(headingIndex(prompt, 'ARENA DESIGN SYSTEM'))
     expect(guidelinesAt).toBeGreaterThan(intentAt)
     expect(layoutAt).toBeGreaterThan(guidelinesAt)
     expect(hierarchyAt).toBeGreaterThan(layoutAt)
     expect(dataAt).toBeGreaterThan(hierarchyAt)
+    expect(headingIndex(prompt, 'UX RULES / STATES')).toBeGreaterThan(guidelinesAt)
   })
 
   it('places selected capability recipes between the recipe and the gold few-shot', () => {
@@ -111,6 +118,7 @@ describe('buildGeneratorSystemPrompt', () => {
     })
     expect(prompt).toContain('UNIVERSAL UI/UX CONSTITUTION')
     expect(prompt).toContain('DESIGN GUIDELINES')
+    expect(prompt).toContain('ARCHETYPE RECIPE')
     expect(prompt).not.toContain('ARCHETYPE RECIPE:')
     expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (form-result)')
   })

@@ -2,7 +2,7 @@
 
 How generate, compile, and runtime are split for the **Arena Generative UI** block. Authoring and publish flow: [arena-generative-ui.md](./arena-generative-ui.md). How to fill the block: [arena-generative-ui-user-guide.md](./arena-generative-ui-user-guide.md).
 
-Generate-time is Intent → Plan → Recipes → JSON → Critic. That is not one LLM per box. Intent Analyzer and UI Planner are cheap calls. Constitution, design system, design guidelines, archetype recipe, and capability recipes are **prompt modules** on the spec call. The spec LLM is the only full generate. The UI critic inspects JSON after generate (host lint + one-shot Haiku). Patch/repair reuses the spec repair turns.
+Generate-time is Intent → Plan → Recipes → JSON → Critic. That is not one LLM per box. Intent Analyzer and UI Planner are cheap calls. Constitution, design system, design intent, design guidelines, archetype recipe, and capability recipes are **prompt modules** on the spec call. The spec LLM is the only full generate. The UI critic inspects JSON after generate (host lint + one-shot Haiku). Patch/repair reuses the spec repair turns.
 
 The LLM owns sitemap, copy, and wiring. The host owns loading, error, retry, and confirm.
 
@@ -21,7 +21,7 @@ USER BRIEF
 ┌───────────────────────────────────────┐
 │ UI PLANNER                            │  LLM (cheap, Sonnet)
 │    structured-brief.ts                │  archetype, sitemap,
-│    fail-open → spec still runs        │  capabilities[]
+│    fail-open → spec still runs        │  capabilities[], designIntent
 └──────────────────┬────────────────────┘
                    ▼
 ┌───────────────────────────────────────┐
@@ -32,6 +32,12 @@ USER BRIEF
 ┌───────────────────────────────────────┐
 │ DESIGN SYSTEM                         │  Prompt (not an LLM)
 │    catalog.ts ARENA DESIGN SYSTEM     │  Host tokens, theme, two surfaces; gap/padding tokens + Card.variant
+└──────────────────┬────────────────────┘
+                   ▼
+┌───────────────────────────────────────┐
+│ DESIGN INTENT                         │  Prompt (not an LLM)
+│    design-intent.ts                   │  productType, density, tone,
+│                                       │  contentType, emphasis
 └──────────────────┬────────────────────┘
                    ▼
 ┌───────────────────────────────────────┐
@@ -66,7 +72,7 @@ USER BRIEF
 └───────────────────────────────────────┘
 ```
 
-`prompt-pipeline.ts` orders the spec prompt as persona → constitution → **design system** (host-owned tokens; gap/padding tokens and Card.variant are the only visual knobs on elements) → **design guidelines** (visual composition) → UX (data state, action contract, host interaction, a11y) → anti-patterns → **component grammar** → archetype recipe → **capability recipes** → gold → mechanical component rules → JSON envelope. Still one generate call. There is no `UI CRITIC` heading in that prompt. Design System is tokens; Design Guidelines is how to compose them; UX is loading/empty/error/success/forms-behavior/navigation-behavior/accessibility. Layout, visual hierarchy, and responsive collapse live inside Design Guidelines, not as sibling headings.
+`prompt-pipeline.ts` orders the spec prompt as persona → constitution → **design system** (host-owned tokens; gap/padding tokens and Card.variant are the only visual knobs on elements) → **design intent** (productType, density, visualTone, contentType, emphasis) → **design guidelines** (visual composition) → UX (data state, action contract, host interaction, a11y) → anti-patterns → **component grammar** → archetype recipe → **capability recipes** → gold → mechanical component rules → JSON envelope. Still one generate call. There is no `UI CRITIC` heading in that prompt. Design System is tokens; Design Intent is which product/density/tone to apply; Design Guidelines is how to compose them; UX is loading/empty/error/success/forms-behavior/navigation-behavior/accessibility. Layout, visual hierarchy, and responsive collapse live inside Design Guidelines, not as sibling headings.
 
 ## Layers
 
@@ -74,7 +80,7 @@ USER BRIEF
 
 Followed. `analyzeArenaGenerativeIntent` extracts task, audience, entities, data requirements, actions, and workflow complexity. It does not pick an archetype, pages, or catalog types. Unknown `apiKey`s are dropped against declared bindings. Fail-open: `intent: null` and the planner still runs from prose.
 
-`planArenaGenerativeStructuredBrief` consumes that intent (when present) and emits title, purpose, audience, archetype, sitemap, actions, and `capabilities[]`. Legacy stored `processing` wait tags fold into `capabilities` so old drafts still edit. Intent is nested on the same jsonb (`structured_brief.intent`) — no DB migration.
+`planArenaGenerativeStructuredBrief` consumes that intent (when present) and emits title, purpose, audience, archetype, sitemap, actions, `capabilities[]`, and optional `designIntent`. Legacy stored `processing` wait tags fold into `capabilities` so old drafts still edit. Intent is nested on the same jsonb (`structured_brief.intent`) — no DB migration. Unknown designIntent axes are dropped (fail-open); `spacious` density aliases to `roomy`.
 
 Wait tags (`long-running`, `streaming`, `multi-step`, `cancellable`) apply to any archetype. Product tags (`search`, `filter`, `pagination`, `selection`, `editable`) are short when/how recipes, catalog types only. Host inference: workflow binding → `long-running`; `stream: true` → `streaming`; `binding.pagination` → `pagination`. `short` is not a capability (omit wait modules).
 
@@ -98,6 +104,8 @@ Policy lives in `ux-policy.ts` (`HOST UX: the runtime compiles loading, error, r
 ### 3. UI spec
 
 Followed. The spec Claude call emits the stored manifest. Validate against the catalog **and** the layout plan (form names, hostKeys, no Results `onLoad` of a navigate-first CTA). The **host critic** (`ui-critic.ts`) then walks the JSON for proveable quality gaps validation does not cover (duplicate onLoad apiKeys, unbound Stat/Sparkline, Card-in-Card, more than one primary per Section, too many non-Repeat Cards, missing Back on an `onSuccess.navigate` target). Those failures reuse the same two repair turns. After a spec that passes both, a one-shot Haiku critic (`critique-manifest.ts`) asks UX / visual / responsive / accessibility / data questions the host cannot prove. Only `must-fix` may trigger one extra spec repair; the critic is never called again, and a critic outage fails open. This is not a generate-time prompt layer. Compiled widgets are **not** written back to the draft.
+
+`DESIGN INTENT` (`design-intent.ts`) is the classification card: productType, density, visualTone, contentType, and emphasis. The planner may emit it on the structured brief; the spec prompt still includes the mapping table. These are not component props. Density maps to `manifest.theme.density` (`spacious` → `roomy`).
 
 `DESIGN GUIDELINES` (`design-guidelines.ts`) is the global visual-composition contract: visual language, layout (Page → Section → PageHeader, measure vs wide collections, two columns, Toolbar, one dominant region), visual hierarchy (L1–L5, one primary per Section, muted metadata), typography, color roles, spacing tokens (`gap "lg"`), cards (`variant` default / muted), buttons, forms (visual), tables, visualization, icons, responsive (Grid/Columns collapse), content, density, consistency, and professionalism. Host caps Form width with `--gui-measure`. The spec must not dump Table/Form on Page, wrap every Section in a Card, or run a form the full 1280px.
 

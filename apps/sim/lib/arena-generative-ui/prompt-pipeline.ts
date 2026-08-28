@@ -44,11 +44,16 @@ function headedRules(heading: string, rules: readonly string[]): string {
   return [heading, ...rules].join('\n')
 }
 
+function wrapColumn(heading: string, sections: readonly string[]): string {
+  const body = sections.filter((section) => section.length > 0)
+  if (body.length === 0) return ''
+  return [heading, ...body].join('\n\n')
+}
+
 /**
- * Spec-LLM system prompt in pipeline order: constitution → design system →
- * design intent → design guidelines → UX (data / action / host / a11y) → anti-patterns →
- * component grammar → archetype recipe → capability recipes → gold →
- * mechanical component rules → JSON envelope. Still one generate call.
+ * Spec-LLM system prompt in three columns: Design rules/tokens, UX rules/states,
+ * then archetype recipe. Serial order is Design → UX → Archetype so tokens still
+ * constrain recipes. Persona stays first. Still one generate call.
  */
 export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOptions): string {
   const recipe = options.archetype ? archetypeRecipe(options.archetype) : ''
@@ -72,24 +77,30 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
 
   return [
     ARENA_GENERATIVE_UI_PERSONA,
-    ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT,
-    ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
-    ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT,
-    ARENA_GENERATIVE_UI_COMPOSITION_PROMPT,
-    ARENA_GENERATIVE_UI_DATA_STATE_PROMPT,
-    ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT,
-    headedRules('INTERACTION / STATE RULES', [
-      ARENA_GENERATIVE_UI_HOST_UX_PROMPT,
-      ...ARENA_GENERATIVE_UI_INTERACTION_RULES,
+    wrapColumn('DESIGN RULES / TOKENS', [
+      ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
+      ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT,
+      ARENA_GENERATIVE_UI_COMPOSITION_PROMPT,
     ]),
-    headedRules('ACCESSIBILITY RULES', ARENA_GENERATIVE_UI_ACCESSIBILITY_RULES),
-    ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT,
-    ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT,
-    recipe,
-    capabilities,
-    goldExamplePromptForArchetype(options.archetype),
-    headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
-    catalogAndEnvelope,
+    wrapColumn('UX RULES / STATES', [
+      ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT,
+      ARENA_GENERATIVE_UI_DATA_STATE_PROMPT,
+      ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT,
+      headedRules('INTERACTION / STATE RULES', [
+        ARENA_GENERATIVE_UI_HOST_UX_PROMPT,
+        ...ARENA_GENERATIVE_UI_INTERACTION_RULES,
+      ]),
+      headedRules('ACCESSIBILITY RULES', ARENA_GENERATIVE_UI_ACCESSIBILITY_RULES),
+      ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT,
+    ]),
+    wrapColumn('ARCHETYPE RECIPE', [
+      ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT,
+      recipe,
+      capabilities,
+      goldExamplePromptForArchetype(options.archetype),
+      headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
+      catalogAndEnvelope,
+    ]),
   ]
     .filter((section) => section.length > 0)
     .join('\n\n')

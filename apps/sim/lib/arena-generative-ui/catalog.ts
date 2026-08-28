@@ -694,6 +694,16 @@ export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
   'Every generate reply includes the default theme. Page → Section → PageHeader; Section width follows DESIGN GUIDELINES. Then groups of Grid / Columns / Card with gap "lg". Surfaces are exactly two — the page canvas and the Card/Stat surface — both supplied by the host. Content avatars and company logos are allowed; do not add an app wordmark.',
 ].join('\n')
 
+/**
+ * Compact Design System context for the UI planner. Classification only — not
+ * the spec Design Guidelines and not a catalog dump.
+ */
+export const ARENA_GENERATIVE_UI_PLANNER_DS_CONTEXT = [
+  'Design system context (host-owned — do not emit hex, fonts, CSS, catalog component types, or a manifest).',
+  'Surfaces are exactly two: the page canvas and the Card/Stat surface, both supplied by the host.',
+  'Color, type, and radius are host CSS. density is compact | comfortable | roomy. gap and padding may use spacing tokens none xs sm md lg xl 2xl. Do not pick a wordmark.',
+].join('\n')
+
 /** Added to the generator prompt only when a declared binding has `stream: true`. */
 export const ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE =
   'If a declared API binding has stream: true, still infer a multi-page sitemap from the brief. For prose streams, put DataText with statePath "content" in the section or page that shows that API body (often a results page). If the binding has outputHint, treat it as an example of the streamed body — match that shape in DataText and page copy; do not invent Table columns from it. If the binding also declares outputSchema, bind those fields as Table, Stat, or KeyValue instead of dumping content — an array field such as companies becomes Table statePath="companies". If the result is not on the form page, set onSuccess.navigate to that page and add a Back NavLink to the form. When the brief names status steps for that wait, emit WorkingCard on that page; otherwise the host shows pending chrome.'

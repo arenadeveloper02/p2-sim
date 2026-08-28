@@ -11,6 +11,7 @@ import {
   type ArenaGenerativeCapability,
   isCapability,
 } from '@/lib/arena-generative-ui/capabilities'
+import { ARENA_GENERATIVE_UI_PLANNER_DS_CONTEXT } from '@/lib/arena-generative-ui/catalog'
 import {
   type ArenaGenerativeDesignIntent,
   parseArenaGenerativeDesignIntent,
@@ -110,26 +111,147 @@ const structuredBriefSchema = z.object({
   errorCopy: briefProse(200).optional(),
   intent: arenaGenerativeIntentSchema.optional(),
   designIntent: z.unknown().optional(),
+  informationHierarchy: z.unknown().optional(),
+  interactionModel: z.unknown().optional(),
 })
+
+export const ARENA_GENERATIVE_HIERARCHY_DOMINANTS = [
+  'form',
+  'collection',
+  'metrics',
+  'prose',
+  'wizard-step',
+] as const
+
+export const ARENA_GENERATIVE_HIERARCHY_SUPPORTING = [
+  'filters',
+  'history',
+  'sidebar',
+  'detail',
+  'stats',
+] as const
+
+export const ARENA_GENERATIVE_NAVIGATION_PATTERNS = [
+  'search-hero',
+  'tabs',
+  'list-detail',
+  'wizard',
+  'single-page',
+] as const
+
+export const ARENA_GENERATIVE_SELECTION_PATTERNS = ['none', 'same-page', 'navigate'] as const
+
+export const ARENA_GENERATIVE_WAIT_PATTERNS = ['none', 'working-card'] as const
+
+export type ArenaGenerativeHierarchyDominant =
+  (typeof ARENA_GENERATIVE_HIERARCHY_DOMINANTS)[number]
+export type ArenaGenerativeHierarchySupporting =
+  (typeof ARENA_GENERATIVE_HIERARCHY_SUPPORTING)[number]
+export type ArenaGenerativeNavigationPattern =
+  (typeof ARENA_GENERATIVE_NAVIGATION_PATTERNS)[number]
+export type ArenaGenerativeSelectionPattern = (typeof ARENA_GENERATIVE_SELECTION_PATTERNS)[number]
+export type ArenaGenerativeWaitPattern = (typeof ARENA_GENERATIVE_WAIT_PATTERNS)[number]
+
+export interface ArenaGenerativeInformationHierarchy {
+  dominant?: ArenaGenerativeHierarchyDominant
+  supporting?: ArenaGenerativeHierarchySupporting[]
+}
+
+export interface ArenaGenerativeInteractionModel {
+  navigation?: ArenaGenerativeNavigationPattern
+  selection?: ArenaGenerativeSelectionPattern
+  wait?: ArenaGenerativeWaitPattern
+}
+
+function asClosedEnum<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
+  if (typeof value !== 'string') return undefined
+  if ((allowed as readonly string[]).includes(value)) return value as T
+  const kebab = value.replace(/_/g, '-')
+  return (allowed as readonly string[]).includes(kebab) ? (kebab as T) : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function liftSnakeCasePlanFields(value: unknown): unknown {
+  if (!isRecord(value)) return value
+  const next: Record<string, unknown> = { ...value }
+  if (next.informationHierarchy == null && next.information_hierarchy != null) {
+    next.informationHierarchy = next.information_hierarchy
+  }
+  if (next.interactionModel == null && next.interaction_model != null) {
+    next.interactionModel = next.interaction_model
+  }
+  return next
+}
+
+/** Fail-open parse for the planner information-hierarchy card. */
+export function parseArenaGenerativeInformationHierarchy(
+  value: unknown
+): ArenaGenerativeInformationHierarchy | undefined {
+  if (!isRecord(value)) return undefined
+  const hierarchy: ArenaGenerativeInformationHierarchy = {}
+  const dominant = asClosedEnum(value.dominant, ARENA_GENERATIVE_HIERARCHY_DOMINANTS)
+  if (dominant) hierarchy.dominant = dominant
+  const rawSupporting = value.supporting
+  if (Array.isArray(rawSupporting)) {
+    const supporting: ArenaGenerativeHierarchySupporting[] = []
+    const seen = new Set<ArenaGenerativeHierarchySupporting>()
+    for (const item of rawSupporting) {
+      const next = asClosedEnum(item, ARENA_GENERATIVE_HIERARCHY_SUPPORTING)
+      if (next && !seen.has(next)) {
+        seen.add(next)
+        supporting.push(next)
+      }
+    }
+    if (supporting.length > 0) hierarchy.supporting = supporting
+  }
+  return Object.keys(hierarchy).length > 0 ? hierarchy : undefined
+}
+
+/** Fail-open parse for the planner interaction-model card. */
+export function parseArenaGenerativeInteractionModel(
+  value: unknown
+): ArenaGenerativeInteractionModel | undefined {
+  if (!isRecord(value)) return undefined
+  const model: ArenaGenerativeInteractionModel = {}
+  const navigation = asClosedEnum(value.navigation, ARENA_GENERATIVE_NAVIGATION_PATTERNS)
+  if (navigation) model.navigation = navigation
+  const selection = asClosedEnum(value.selection, ARENA_GENERATIVE_SELECTION_PATTERNS)
+  if (selection) model.selection = selection
+  const wait = asClosedEnum(value.wait, ARENA_GENERATIVE_WAIT_PATTERNS)
+  if (wait) model.wait = wait
+  return Object.keys(model).length > 0 ? model : undefined
+}
 
 export type ArenaGenerativeStructuredBrief = Omit<
   z.output<typeof structuredBriefSchema>,
-  'designIntent'
+  'designIntent' | 'informationHierarchy' | 'interactionModel'
 > & {
   designIntent?: ArenaGenerativeDesignIntent
+  informationHierarchy?: ArenaGenerativeInformationHierarchy
+  interactionModel?: ArenaGenerativeInteractionModel
 }
 
-function withParsedDesignIntent(
+function withParsedPlanClassifiers(
   brief: z.output<typeof structuredBriefSchema>
 ): ArenaGenerativeStructuredBrief {
   const designIntent = parseArenaGenerativeDesignIntent(brief.designIntent)
-  return designIntent ? { ...brief, designIntent } : omit(brief, ['designIntent'])
+  const informationHierarchy = parseArenaGenerativeInformationHierarchy(brief.informationHierarchy)
+  const interactionModel = parseArenaGenerativeInteractionModel(brief.interactionModel)
+  return {
+    ...omit(brief, ['designIntent', 'informationHierarchy', 'interactionModel']),
+    ...(designIntent ? { designIntent } : {}),
+    ...(informationHierarchy ? { informationHierarchy } : {}),
+    ...(interactionModel ? { interactionModel } : {}),
+  }
 }
 
 const PLANNER_SYSTEM_PROMPT = [
   'You plan the sitemap for a multi-page Arena app. Output one JSON object. No markdown fences, no explanation.',
-  'When Analyzed intent is present, honour its task, entities, actions, and complexity — do not rewrite the job. Pick the archetype, pages, capabilities, and designIntent that implement that intent.',
-  'When intent is absent, read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write. Infer only sitemap, archetype, capabilities, and designIntent.',
+  'When Analyzed intent is present, honour its task, entities, actions, and complexity — do not rewrite the job. Pick the archetype, pages, capabilities, designIntent, informationHierarchy, and interactionModel that implement that intent.',
+  'When intent is absent, read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write. Infer only sitemap, archetype, capabilities, designIntent, informationHierarchy, and interactionModel.',
   'Pick exactly one archetype:',
   '- dashboard: data on arrival via onLoad; EntityHeader, Grid of display Stat, little or no form.',
   '- form-result: form → processing → result. A form submits a CTA, processing happens, then onSuccess.navigate to a results page. A single query field is a centered SearchField hero. Empty copy lives on results.',
@@ -138,7 +260,8 @@ const PLANNER_SYSTEM_PROMPT = [
   'Archetype from the primary verb (or intent.workflowComplexity), not from how complete the brief is. A form or search that calls an API then shows an answer is form-result even if they never said "results page". A collection on arrival that opens one record is list-detail even if they only named the list. Metrics/overview on arrival is dashboard. Three or more sequential steps with submit at the end is wizard. Mixed briefs ("dashboard plus generate"): pick the verb they led with; extra destinations are extra pages, not a second archetype. History or past runs plus a generate form is form-result with a history page that onLoads the list binding — Generate still navigates to results. One prominent query (search, lookup, ask) is a SearchField hero, not a labelled Grid of one field.',
   'Set capabilities to the tags that apply (zero or more): long-running, streaming, multi-step, cancellable, search, filter, pagination, selection, editable. Combine them. A workflow binding is long-running; stream: true is streaming; a named step checklist is multi-step; Cancel in the brief is cancellable; a single prominent query is search; Toolbar narrowing is filter; binding.pagination is pagination; opening a row that already has prose is selection; edit-in-place is editable. Omit tags the job does not need. Do not emit "short".',
   'Also emit designIntent { productType, density, visualTone, contentType, emphasis } — pick one of each. Honour Design Notes first. Else derive from archetype plus brief nouns: dashboard → analytics / compact / data-heavy / data; form-result → workflow / comfortable / task; list-detail → crm / comfortable / discovery; wizard → workflow / comfortable / task. Override productType from domain words (invoices → finance, campaigns → marketing). density is compact | comfortable | roomy (spacious means roomy). visualTone is professional | friendly | premium | technical | editorial. contentType is data-heavy | workflow | narrative | transactional. emphasis is task | data | content | discovery. Classification only — not component props.',
-  'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "capabilities"?: ("long-running"|"streaming"|"multi-step"|"cancellable"|"search"|"filter"|"pagination"|"selection"|"editable")[], "designIntent"?: { "productType", "density", "visualTone", "contentType", "emphasis" }, "emptyCopy"?, "errorCopy"? }',
+  'Also emit informationHierarchy { dominant, supporting? } and interactionModel { navigation, selection, wait }. Honour Design Notes first. Else derive from archetype plus capabilities: dashboard → metrics / tabs / none; form-result → form / search-hero or single-page / working-card if a wait capability is set; list-detail → collection / list-detail / navigate or same-page; wizard → wizard-step / wizard / none. dominant is form | collection | metrics | prose | wizard-step. supporting is zero or more of filters, history, sidebar, detail, stats. navigation is search-hero | tabs | list-detail | wizard | single-page. selection is none | same-page | navigate. wait is none | working-card — working-card only when a wait capability is set. Classification only — not component props.',
+  'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "capabilities"?: ("long-running"|"streaming"|"multi-step"|"cancellable"|"search"|"filter"|"pagination"|"selection"|"editable")[], "designIntent"?: { "productType", "density", "visualTone", "contentType", "emphasis" }, "informationHierarchy"?: { "dominant", "supporting"? }, "interactionModel"?: { "navigation", "selection", "wait" }, "emptyCopy"?, "errorCopy"? }',
   'title is the product name. purpose is the job in one sentence (copy intent.task when present). audience is a real role — never "users".',
   'pages[].path, entryPath, and actions[].fromPage are bare kebab-case keys — "home", "select-company" — never URL routes: no leading slash, no "/" for the entry page, no nested segments. Call the entry page "home" unless the brief names it.',
   '1–6 pages. Infer the smallest sitemap that completes the job: form-result always has a destination for the answer plus Back; list-detail always has a way to open a record (detail page, or same-page Open when the row already carries prose); a second binding that is a list/history is a collection page with onLoad, not a second submit. Do not invent login, settings, profile, marketing, or extra tools the job does not need.',
@@ -149,6 +272,7 @@ const PLANNER_SYSTEM_PROMPT = [
   'emptyCopy is the zero-result sentence for that page\'s collection (becomes emptyText) — name the collection in the domain, not generic "No results". errorCopy is the failure sentence for this job.',
   'Give an onLoad action no onSuccessNavigate.',
   'Plan sitemap, data, actions, and capabilities — not loading widgets. Do not mention ProgressBar, ProgressSteps, Skeleton, or an error Alert in pages[].purpose or data; the host compiles those.',
+  ARENA_GENERATIVE_UI_PLANNER_DS_CONTEXT,
 ].join('\n')
 
 const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
@@ -261,8 +385,10 @@ function foldProcessingIntoCapabilities(
  * partial rows still edit. Legacy `processing` folds into `capabilities`.
  */
 export function parseStoredStructuredBrief(value: unknown): ArenaGenerativeStructuredBrief | null {
-  const parsed = structuredBriefSchema.safeParse(value)
-  return parsed.success ? foldProcessingIntoCapabilities(withParsedDesignIntent(parsed.data)) : null
+  const parsed = structuredBriefSchema.safeParse(liftSnakeCasePlanFields(value))
+  return parsed.success
+    ? foldProcessingIntoCapabilities(withParsedPlanClassifiers(parsed.data))
+    : null
 }
 
 /** Page key used when a planner names the entry page "/" or leaves it empty. */
@@ -305,26 +431,23 @@ function normalizeNavTarget(value: unknown): unknown {
   return typeof normalized === 'string' ? `${normalized}${query}` : value
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
 /** Rewrites every path-shaped field of a raw planner reply before validation. */
 function normalizeBriefPaths(value: unknown): unknown {
-  if (!isRecord(value)) {
-    return value
+  const lifted = liftSnakeCasePlanFields(value)
+  if (!isRecord(lifted)) {
+    return lifted
   }
-  const normalized: Record<string, unknown> = { ...value }
-  if ('entryPath' in value) {
-    normalized.entryPath = normalizePagePath(value.entryPath)
+  const normalized: Record<string, unknown> = { ...lifted }
+  if ('entryPath' in lifted) {
+    normalized.entryPath = normalizePagePath(lifted.entryPath)
   }
-  if (Array.isArray(value.pages)) {
-    normalized.pages = value.pages.map((page) =>
+  if (Array.isArray(lifted.pages)) {
+    normalized.pages = lifted.pages.map((page) =>
       isRecord(page) && 'path' in page ? { ...page, path: normalizePagePath(page.path) } : page
     )
   }
-  if (Array.isArray(value.actions)) {
-    normalized.actions = value.actions.map((action) => {
+  if (Array.isArray(lifted.actions)) {
+    normalized.actions = lifted.actions.map((action) => {
       if (!isRecord(action)) {
         return action
       }
@@ -376,7 +499,7 @@ export function parseArenaGenerativeStructuredBrief(
     if (!first) return null
     brief = { ...brief, entryPath: first.path }
   }
-  return foldProcessingIntoCapabilities(omit(withParsedDesignIntent(brief), ['intent']))
+  return foldProcessingIntoCapabilities(omit(withParsedPlanClassifiers(brief), ['intent']))
 }
 
 function reconcileBriefWithPageHints(
@@ -451,7 +574,7 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
 }
 
 const BRIEF_REPAIR_USER_MESSAGE =
-  'That was not a valid structured brief. Return one JSON object in the planner shape (title, purpose, audience, archetype, entryPath, pages[], actions[], capabilities?, designIntent?). Do not emit a manifest.'
+  'That was not a valid structured brief. Return one JSON object in the planner shape (title, purpose, audience, archetype, entryPath, pages[], actions[], capabilities?, designIntent?, informationHierarchy?, interactionModel?). Do not emit a manifest.'
 
 export type PlanStructuredBriefOutcome = {
   brief: ArenaGenerativeStructuredBrief | null
@@ -459,9 +582,10 @@ export type PlanStructuredBriefOutcome = {
 }
 
 /**
- * Cheap UI planner: sitemap, archetype, per-page data/actions, capabilities, and
- * designIntent. Consumes analyzed intent when present. Returns `{ brief: null, error }` on
- * failure so generate can fall back to prose.
+ * Cheap UI planner: sitemap, archetype, per-page data/actions, capabilities,
+ * designIntent, informationHierarchy, and interactionModel. Consumes analyzed
+ * intent when present. Returns `{ brief: null, error }` on failure so generate
+ * can fall back to prose.
  */
 export async function planArenaGenerativeStructuredBrief(
   params: PlanStructuredBriefParams
