@@ -1,5 +1,5 @@
-import type { ToolResponse } from '@/tools/types'
 import type { GenerativeUiMode } from '@/lib/generative-ui/types'
+import type { ToolResponse } from '@/tools/types'
 
 export interface GenerativeUiGenerateHtmlParams {
   userInput: string

@@ -15,6 +15,10 @@ export function toCopilotServerToolContext(
     messageId: ctx.messageId,
     abortSignal: ctx.abortSignal,
     copilotToolExecution: true,
+    ...(ctx.activeToolCallId?.trim() ? { toolCallId: ctx.activeToolCallId.trim() } : {}),
+    ...(ctx.fileIntentChannelId?.trim()
+      ? { parentToolCallId: ctx.fileIntentChannelId.trim() }
+      : {}),
     ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
   }
 }

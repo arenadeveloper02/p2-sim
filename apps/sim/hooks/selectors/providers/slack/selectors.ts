@@ -12,6 +12,7 @@ export const slackSelectors = {
       'selectors',
       'slack.channels',
       context.oauthCredential ?? 'none',
+      context.useUserToken ? 'user' : 'bot',
     ],
     enabled: ({ context }) => Boolean(context.oauthCredential),
     fetchList: async ({ context, signal }: SelectorQueryArgs) => {
@@ -20,6 +21,7 @@ export const slackSelectors = {
         body: {
           credential: credentialId,
           workflowId: context.workflowId,
+          useUserToken: context.useUserToken || undefined,
         },
         signal,
       })
@@ -37,6 +39,7 @@ export const slackSelectors = {
       'selectors',
       'slack.users',
       context.oauthCredential ?? 'none',
+      context.useUserToken ? 'user' : 'bot',
     ],
     enabled: ({ context }) => Boolean(context.oauthCredential),
     fetchList: async ({ context, signal }: SelectorQueryArgs) => {
@@ -45,6 +48,7 @@ export const slackSelectors = {
         body: {
           credential: credentialId,
           workflowId: context.workflowId,
+          useUserToken: context.useUserToken || undefined,
         },
         signal,
       })

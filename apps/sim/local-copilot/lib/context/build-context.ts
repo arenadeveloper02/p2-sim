@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { workflow, workspace } from '@sim/db/schema'
+import { workflow, workflowExecutionLogs, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
@@ -7,7 +7,6 @@ import { and, desc, eq, isNull } from 'drizzle-orm'
 import { generateWorkspaceSnapshot } from '@/lib/copilot/chat/workspace-context'
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { loadUserMemoriesForContext } from '@/lib/copilot/tools/server/other/user-memory'
-import { listLogs } from '@/lib/logs/list-logs'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { getAllBlocks } from '@/blocks/registry'
 import type { BlockConfig } from '@/blocks/types'
@@ -211,35 +210,7 @@ export async function buildLocalCopilotContext(
         lastRunAt: row.lastRunAt?.toISOString() ?? null,
       }))
 
-  const guidanceParts: string[] = []
-  if (workspaceWorkflows.length > 0) {
-    guidanceParts.push(
-      'REUSE FIRST: existing workflows are listed in workspaceWorkflows. Inspect/run/edit them — never create_workflow when an entry fits. Only create_workflow when the user explicitly asks for a brand-new workflow with a distinct purpose and name (confirmNewWorkflow: true).'
-    )
-  }
-  if (resources.tables.length > 0) {
-    guidanceParts.push(
-      'REUSE FIRST: existing tables are listed in tables. Call user_table get / get_schema / query_rows and reuse — do not create unless the user explicitly wants a new table (confirmCreateNew: true).'
-    )
-  }
-  if (resources.knowledgeBases.length > 0) {
-    guidanceParts.push(
-      'REUSE FIRST: existing knowledge bases are listed in knowledgeBases. Call knowledge_base get / list / query and reuse — do not create unless the user explicitly wants a new knowledge base (confirmCreateNew: true).'
-    )
-  }
-  if (resources.workspaceFiles.length > 0) {
-    guidanceParts.push(
-      'REUSE FIRST: existing files are listed in workspaceFiles. Call glob then read, then update with workspace_file + edit_content — do not create_file duplicates (confirmCreateNew: true only for a distinctly new path).'
-    )
-  }
-
-  const workspaceWorkflowsContext =
-    workspaceWorkflows.length > 0 || guidanceParts.length > 0
-      ? {
-          workspaceWorkflows,
-          ...(guidanceParts.length > 0 ? { guidance: guidanceParts.join(' ') } : {}),
-        }
-      : { workspaceWorkflows }
+  const workspaceWorkflowsContext = { workspaceWorkflows }
 
   if (!workflowId) {
     const context: LocalCopilotStructuredContext = {
@@ -302,8 +273,6 @@ export async function buildLocalCopilotContext(
   const variables = (workflowMeta?.variables ?? {}) as WorkflowState['variables']
 
   const execution = await loadExecutionContext({
-    userId,
-    workspaceId,
     workflowId,
     executionId,
   })
@@ -359,27 +328,31 @@ export function contextToPromptJson(
 }
 
 async function loadExecutionContext(params: {
-  userId: string
-  workspaceId: string
   workflowId: string
   executionId?: string
 }): Promise<LocalCopilotStructuredContext['execution']> {
-  const { userId, workspaceId, workflowId, executionId } = params
+  const { workflowId, executionId } = params
 
   try {
-    const logsResult = await listLogs(
-      {
-        workspaceId,
-        workflowIds: workflowId,
-        limit: executionId ? 1 : 5,
-        executionId,
-        sortBy: 'date',
-        sortOrder: 'desc',
-      },
-      userId
-    )
+    const logColumns = {
+      status: workflowExecutionLogs.status,
+      executionId: workflowExecutionLogs.executionId,
+      startedAt: workflowExecutionLogs.startedAt,
+    } as const
 
-    const latest = logsResult.data[0]
+    const [latest] = executionId
+      ? await db
+          .select(logColumns)
+          .from(workflowExecutionLogs)
+          .where(eq(workflowExecutionLogs.executionId, executionId))
+          .limit(1)
+      : await db
+          .select(logColumns)
+          .from(workflowExecutionLogs)
+          .where(eq(workflowExecutionLogs.workflowId, workflowId))
+          .orderBy(desc(workflowExecutionLogs.startedAt))
+          .limit(1)
+
     if (!latest) {
       return {
         lastRunStatus: 'unknown',
@@ -406,8 +379,11 @@ async function loadExecutionContext(params: {
       logs: [
         {
           level: status === 'failed' ? 'error' : 'info',
-          message: `Last run ${latest.status ?? latest.level}`,
-          timestamp: latest.createdAt,
+          message: `Last run ${latest.status}`,
+          timestamp:
+            latest.startedAt instanceof Date
+              ? latest.startedAt.toISOString()
+              : String(latest.startedAt),
         },
       ],
     }

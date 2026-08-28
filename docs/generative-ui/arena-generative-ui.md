@@ -26,7 +26,7 @@ Published apps are gated for authenticated Arena users by default, like deployed
 6. Set identifier / title / category / access, then **Launch GUI App**.
 7. Share `{base}/gui-apps/{identifier}`. Arena embeds add `?emailId=`, which the default gate requires.
 
-Generate itself is two calls: a cheap structured brief (sitemap, archetype, per-page data) then the full manifest. You still type prose in User Input; the structured brief is not a field you fill in. Edit also makes two calls, but the first is a **scope** call rather than a plan — see **Requested Changes** below. An explicit re-plan phrase skips scope and runs the generate planner instead.
+Generate itself is two cheap calls then one full spec: intent analyzer (task, entities, actions) → UI planner (archetype, sitemap, capabilities) → json-render manifest. You still type prose in User Input; those objects are not fields you fill in. Edit also makes two calls, but the first is a **scope** call rather than a plan — see **Requested Changes** below. An explicit re-plan phrase skips scope and runs analyzer + planner again.
 
 Preview and the published URL both compile the same way: `compileGenerativeUx` relocates navigate-first loaders, injects pending chrome, and fills missing same-page Open chrome (`showWhen` on the list and detail, a `clearItem` Back). Preview compiles the full draft on the client. Published apps compile on the page API so a single-page fetch still gets the relocated spec. User Input describes the app, not that chrome.
 
@@ -63,9 +63,9 @@ From **Deploy → GUI App**, pick a draft and open **Preview**. That loads `{bas
 
 Describe the app in **plain language**. This field is prose, not JSON. Only **Pages** and **API Bindings** are JSON — leave them empty unless you are pinning a sitemap or wiring CTAs.
 
-The model uses this brief to invent pages, copy, forms, and navigation. Do not describe loaders, toasts, or confirm dialogs — the host compiles those.
+The model uses this brief to invent pages, copy, forms, and navigation. Do not describe loaders, toasts, or confirm dialogs — the host compiles those. Every generate run also applies the **Universal UI/UX Constitution** (hierarchy, one primary action, density, empty copy, Back) so those quality rules are not left to the archetype recipe.
 
-Generation is two-stage: a short planning call first produces a structured brief (purpose, audience, archetype, pages, actions, empty copy). A second call renders that into the json-render manifest. The planner picks an archetype — dashboard, form→result, list→detail, or wizard — and the generator is shown **only that archetype's gold layout**, so a dashboard is not taught as a search hero. If planning fails, generate still runs from the prose you typed, and the block's `content` / `plannerError` outputs say so instead of failing silently. Edit runs its own two stages instead (scope, then rewrite the pages in scope), except **theme-only** Requested Changes (`dark mode`, `density compact`, a brand hex) which patch `manifest.theme` without an LLM call, and **re-plan** phrases (`rebuild the app`, `turn this into a dashboard`) which run the generate planner again on this draft. The block `content` line starts with `Edit scope: pages [results].`, `Edit scope: theme only`, or `Edit scope: replan` so you can see what the run will rewrite.
+Generation is Intent → Plan → spec: a cheap analyzer extracts task and entities, a cheap planner picks an archetype and sitemap (dashboard, form→result, list→detail, or wizard) plus capability tags, then the spec call renders the json-render manifest with **only that archetype's gold layout**, so a dashboard is not taught as a search hero. Analyzer and planner both fail open — generate still runs from the prose you typed, and the block's `content` / `plannerError` outputs say so instead of failing silently. Edit runs its own two stages instead (scope, then rewrite the pages in scope), except **theme-only** Requested Changes (`dark mode`, `density compact`, a brand hex) which patch `manifest.theme` without an LLM call, and **re-plan** phrases (`rebuild the app`, `turn this into a dashboard`) which run analyzer and planner again on this draft. The block `content` line starts with `Intent:`, `Planner:`, `Edit scope: pages [results].`, `Edit scope: theme only`, or `Edit scope: replan` so you can see what the run will rewrite.
 
 Include:
 
@@ -458,11 +458,11 @@ Load more is the **same action**, not a second binding. Put a Button with that `
 
 Layout: `Page`, `Section` (`width`: `narrow` / `wide` default / `full`, plus `showWhen`), `Stack` (`direction`, `justify`, `wrap`), `Card` (`showWhen`), `Grid` (`columns` 2–4, collapses to one column when narrow), `Columns` (`equal` / `sidebar-left` / `sidebar-right`), `Repeat` (children render once per element of a `statePath` array)
 
-Chrome: `PageHeader` (title, subtitle, trailing action), `Toolbar`, `Tabs` (`items` as newline-separated `Label|path`, `activePath`)
+Chrome: `PageHeader` (title, subtitle, trailing action), `Toolbar`, `Filter` (narrow an already-loaded collection; children are Select / TextInput / DateInput / Chip), `Tabs` (`items` as newline-separated `Label|path`, `activePath`), `Drawer` (list-detail overlay, `showWhen`), `Modal` (focused secondary action, `showWhen`; not delete confirm)
 
-Copy: `Heading`, `Text`, `DataText`, `Alert`, `List`, `ListItem`, `Divider`, `Image`
+Copy: `Heading`, `Text`, `DataText`, `Alert`, `Toast` (transient in-content feedback the brief asked for; not save success), `List`, `ListItem`, `Divider`, `Image`
 
-Data display: `Table` (static `columns` + `rows`, or `statePath` bound to an array of objects), `Repeat` (per-item Card / action / link; bind fields with `statePath` `item.field` and put values into labels and hrefs with `{item.field}`), `Stat` (`label` + `value` or `statePath`, plus an optional `delta` / `deltaTone` change indicator), `KeyValue` (`key: value` rows or a `statePath` object), `Badge`
+Data display: `Table` (static `columns` + `rows`, or `statePath` bound to an array of objects), `Repeat` (per-item Card / action / link; bind fields with `statePath` `item.field` and put values into labels and hrefs with `{item.field}`), `Stat` (`label` + `value` or `statePath`, plus an optional `delta` / `deltaTone` change indicator), `KeyValue` (`key: value` rows or a `statePath` object), `Badge`, `EmptyState` (title, optional body/icon; child is the next useful action)
 
 Input: `Form`, `TextInput`, `TextArea`, `NumberInput`, `DateInput`, `Select`, `RadioGroup`, `MultiSelect`, `Checkbox`, `Switch`, `SubmitButton`
 
@@ -504,6 +504,10 @@ A successful call that returned zero rows used to make the region vanish. Bound 
 | `DataText` | (none) | `fallback` — already empty-state copy, not loading copy |
 
 The message is skipped while an action is pending (the skeleton still wins) and is skipped for static `Table`/`KeyValue` that never bound a `statePath`. Inside a Grid, the empty message spans the full row so it does not shrink to a single card cell.
+
+When the page itself has no collection yet, emit catalog `EmptyState` with a child SearchField, Button, or NavLink as the next useful action. Bound `emptyText` stays a sentence.
+
+Host **Refresh** (not a spec Button) re-runs the page `onLoad` without blanking regions that already have data.
 
 ### Form controls
 
@@ -550,6 +554,10 @@ Models often reach for names from other design systems. Those are rewritten to t
 | `Loader`, `Loading` | `Skeleton` |
 | `ForEach`, `Collection` | `Repeat` |
 | `StatusCard`, `LoadingCard`, `JobStatus`, `GenerationStatus` | `WorkingCard` |
+| `Dialog` | `Modal` |
+| `FilterBar` | `Filter` |
+| `Notification` | `Toast` |
+| `Sheet` | `Drawer` |
 
 The same pass repairs shape as well as names: a nested `children` tree of objects is flattened into the `{ root, elements }` map, a non-`Page` root is wrapped in `Page` (and `Section`), `Form.submitLabel` becomes a `SubmitButton` child, `Grid.cols: { default: 1, md: 3 }` becomes `columns: "3"`, spacing words such as `md` and `lg` become real lengths, and list props supplied as arrays (`Select.options`, `Table.rows`, `Tabs.items`) are joined into the string encodings the catalog expects. An unknown component type is left alone so validation still reports it instead of silently dropping content.
 

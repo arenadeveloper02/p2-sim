@@ -116,6 +116,10 @@ export const imageTool: ToolConfig = {
   },
 
   request: {
+    modelInput: {
+      mode: 'project',
+      select: (params) => ({ prompt: params.prompt }),
+    },
     url: 'https://api.openai.com/v1/images/generations',
     method: 'POST',
     timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,

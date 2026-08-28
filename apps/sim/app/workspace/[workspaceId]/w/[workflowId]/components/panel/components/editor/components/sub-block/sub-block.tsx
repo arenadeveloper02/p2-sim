@@ -1,15 +1,14 @@
 import { type JSX, type MouseEvent, memo, useCallback, useMemo, useRef, useState } from 'react'
 import { Button, cn, Input, Label, Tooltip } from '@sim/emcn'
-import { isEqual } from 'es-toolkit'
 import {
-  AlertTriangle,
   ArrowLeftRight,
   ArrowUp,
   Check,
   Clipboard,
-  ExternalLink,
-  Info,
-} from 'lucide-react'
+  SquareArrowUpRight,
+  TriangleAlert,
+} from '@sim/emcn/icons'
+import { isEqual } from 'es-toolkit'
 import { useParams } from 'next/navigation'
 import type { FilterRule, SortRule } from '@/lib/table/query-builder/constants'
 import {
@@ -74,14 +73,21 @@ import { SlackClientSelector } from './components/slack-client-selector'
 
 const SLACK_OVERRIDES: SelectorOverrides = {
   transformContext: (context, deps) => {
-    // v1 gates on authMethod (raw bot token vs OAuth); v2 has one merged
-    // credential field for actions and customBotCredential for triggers.
+    // v1 gates on authMethod; v2 drops it and uses one credential picker.
+    // Custom Bot (bot_token) still stores the OAuth / custom-bot credential id
+    // in `credential` — only legacy paste / webhook setup writes `botToken`.
+    // Fall back so channel/user selectors fetch for Custom Bot, not only Sim Bot.
     const authMethod = deps.authMethod as string
     const oauthCredential =
       authMethod === 'bot_token'
-        ? String(deps.botToken ?? '')
+        ? String(deps.botToken || deps.credential || deps.customBotCredential || '')
         : String(deps.credential ?? deps.customBotCredential ?? '')
-    return { ...context, oauthCredential }
+    // Custom Bot on a connected Slack account lists with the user token
+    // (`xoxp-`). Pasted `xoxb-` and reusable custom-bot credentials have no
+    // user token — the selector route ignores the flag for those.
+    const useUserToken =
+      authMethod === 'bot_token' && Boolean(oauthCredential) && !oauthCredential.startsWith('xoxb-')
+    return { ...context, oauthCredential, useUserToken }
   },
 }
 
@@ -124,7 +130,6 @@ interface SubBlockProps {
   labelSuffix?: React.ReactNode
   /** Provides sibling values for dependency resolution in non-preview contexts (e.g. tool-input) */
   dependencyContext?: Record<string, unknown>
-  isSearchHighlighted?: boolean
 }
 
 /**
@@ -282,7 +287,6 @@ const renderLabel = (
     onCopy: () => void
   },
   labelSuffix?: React.ReactNode,
-  _isSearchHighlighted?: boolean,
   externalLink?: {
     show: boolean
     onClick: () => void
@@ -328,7 +332,7 @@ const renderLabel = (
             <Tooltip.Root>
               <Tooltip.Trigger asChild>
                 <span className='inline-flex'>
-                  <AlertTriangle className='size-3 flex-shrink-0 cursor-pointer text-destructive' />
+                  <TriangleAlert className='size-3 flex-shrink-0 cursor-pointer text-destructive' />
                 </span>
               </Tooltip.Trigger>
               <Tooltip.Content side='top'>
@@ -429,7 +433,7 @@ const renderLabel = (
                 onClick={externalLink?.onClick}
                 aria-label={externalLink?.tooltip}
               >
-                <ExternalLink className='!h-[12px] !w-[12px] text-[var(--text-secondary)]' />
+                <SquareArrowUpRight className='!h-[12px] !w-[12px] text-[var(--text-secondary)]' />
               </button>
             </Tooltip.Trigger>
             <Tooltip.Content side='top'>
@@ -506,7 +510,6 @@ const arePropsEqual = (prevProps: SubBlockProps, nextProps: SubBlockProps): bool
     prevProps.allowExpandInPreview === nextProps.allowExpandInPreview &&
     canonicalToggleEqual &&
     prevProps.labelSuffix === nextProps.labelSuffix &&
-    prevProps.isSearchHighlighted === nextProps.isSearchHighlighted &&
     prevProps.dependencyContext === nextProps.dependencyContext
   )
 }
@@ -523,7 +526,6 @@ const arePropsEqual = (prevProps: SubBlockProps, nextProps: SubBlockProps): bool
  * @param canonicalToggle - Metadata and handlers for the basic/advanced mode toggle
  * @param labelSuffix - Additional content rendered after the label text
  * @param dependencyContext - Sibling values for dependency resolution in non-preview contexts (e.g. tool-input)
- * @param isSearchHighlighted - Whether workflow search should highlight this field
  */
 function SubBlockComponent({
   blockId,
@@ -535,7 +537,6 @@ function SubBlockComponent({
   canonicalToggle,
   labelSuffix,
   dependencyContext,
-  isSearchHighlighted,
 }: SubBlockProps): JSX.Element {
   const params = useParams()
   const workspaceId = params.workspaceId as string
@@ -719,7 +720,6 @@ function SubBlockComponent({
             disabled={isDisabled}
             wandControlRef={wandControlRef}
             hideInternalWand={true}
-            isSearchHighlighted={isSearchHighlighted}
           />
         )
 
@@ -746,6 +746,7 @@ function SubBlockComponent({
             blockId={blockId}
             subBlockId={config.id}
             placeholder={config.placeholder}
+            password={config.password}
             rows={config.rows}
             config={config}
             isPreview={isPreview}
@@ -874,6 +875,7 @@ function SubBlockComponent({
             blockId={blockId}
             subBlockId={config.id}
             columns={config.columns ?? []}
+            password={config.password}
             isPreview={isPreview}
             previewValue={previewValue as any}
             disabled={isDisabled}
@@ -886,6 +888,7 @@ function SubBlockComponent({
             blockId={blockId}
             subBlockId={config.id}
             placeholder={config.placeholder}
+            password={config.password}
             language={config.language}
             generationType={config.generationType}
             value={

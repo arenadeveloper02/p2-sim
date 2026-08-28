@@ -298,8 +298,8 @@ export function GenerativeAppDeploy({
             Require Arena emailId
           </Label>
           <p className='mt-1 text-[var(--text-secondary)] text-xs'>
-            Off: open as a Sim page like /chat. On: Arena embeds must pass ?emailId=. Direct
-            visits still use Access control (allowed emails / password).
+            Off: open as a Sim page like /chat. On: Arena embeds must pass ?emailId=. Direct visits
+            still use Access control (allowed emails / password).
           </p>
         </div>
         <Switch checked={requireArenaEmailId} onCheckedChange={setRequireArenaEmailId} />

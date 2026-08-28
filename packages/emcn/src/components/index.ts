@@ -19,16 +19,21 @@ export {
 export { ChipChevronDown } from './chip/chip-chevron'
 export {
   cellIconNodeClass,
+  chipActiveSurfaceClass,
   chipBorderShadowRing,
   chipContentGap,
   chipContentIconClass,
   chipContentLabelClass,
+  chipDropTargetSurfaceClass,
   chipFieldSurfaceClass,
   chipFieldTextClass,
   chipFilledFillTokens,
   chipFilledSurfaceTokens,
   chipGeometryClass,
+  chipHoverSurfaceClass,
+  chipIconSlotClass,
   chipPrimaryFillTokens,
+  disclosureChevronClass,
 } from './chip/chip-chrome'
 export { ChipCombobox } from './chip-combobox/chip-combobox'
 export {
@@ -151,6 +156,7 @@ export {
   ModalTrigger,
   NATIVE_SURFACE_OCCLUSION_PREPARE_EVENT,
   type NativeSurfaceOcclusionPrepareDetail,
+  useModalDismissDisabled,
   useNativeSurfaceOcclusionReady,
 } from './modal/modal'
 export {
@@ -179,7 +185,9 @@ export {
   TabStrip,
   type TabStripItem,
   type TabStripProps,
+  type TabStripSelectionSource,
   tabDropIndex,
+  tabStripWheelPosition,
 } from './tab-strip/tab-strip'
 export {
   Table,
@@ -203,6 +211,7 @@ export {
   isFocusVisible,
   isTextClipped,
   Tooltip,
+  type UseFloatingTooltipOptions,
   useFloatingTooltip,
   useIsOverflowing,
 } from './tooltip/tooltip'

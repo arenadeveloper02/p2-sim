@@ -31,13 +31,18 @@ export const BOUNDARY_POLICY_BASELINE = {
   clientHookLocalSchemaConstructors: 0,
   clientHookRawFetches: 0,
   clientSameOriginApiFetches: 0,
-  doubleCasts: 9,
+  doubleCasts: 6,
   rawJsonReads: 5,
   untypedResponses: 0,
   annotationsMissingReason: 0,
 } as const
 
 const INDIRECT_ZOD_ROUTES = new Set([
+  // Catch-all JSON 404 for unknown /api/v2 paths. It has no contract by
+  // construction: it exists precisely for requests that match no operation, so
+  // there is no input to validate and its only response is the fixed v2 error
+  // envelope.
+  'apps/sim/app/api/v2/[[...segments]]/route.ts',
   'apps/sim/app/api/demo-requests/route.ts',
   // Input-less session-bound GET: nothing to validate; response is
   // contract-typed via `satisfies InvitationDetails` in the route.
@@ -149,11 +154,14 @@ const RAW_JSON_BASELINE_ROUTES = new Set([
   'apps/sim/app/api/tools/file/manage/route.ts',
   'apps/sim/app/api/workspaces/invitations/batch/route.ts',
   'apps/sim/app/api/workspaces/[id]/route.ts',
-  'apps/sim/app/api/workspaces/[id]/files/[fileId]/route.ts',
   'apps/sim/app/api/workspaces/[id]/files/[fileId]/content/route.ts',
 ])
 
 const CONTRACT_IMPORT_PATTERN = /\bfrom\s+['"]@\/lib\/api\/contracts(?:\/[^'"]*)?['"]/
+const DECLARATIVE_ROUTE_BUILDER_IMPORT_PATTERN =
+  /\bimport\s*\{[^}]*(?:\bdefineInternalJsonRoute\b|\bdefineV2JsonRoute\b|\bdefineInternalBinaryRoute\b|\bdefineV2BinaryRoute\b)[^}]*\}\s*from\s*['"]@\/lib\/api\/server\/routes['"]/
+const DECLARATIVE_ROUTE_BUILDER_USAGE_PATTERN =
+  /\b(?:defineInternalJsonRoute|defineV2JsonRoute|defineInternalBinaryRoute|defineV2BinaryRoute)\s*\(/
 const SERVER_VALIDATION_IMPORT_PATTERN = /\bfrom\s+['"]@\/lib\/api\/server(?:\/validation)?['"]/
 const SCHEMA_PARSE_PATTERN = /\b\w+Schema\.(?:safeParse|parse)\(/
 const CONTRACT_SERVER_HELPER_PATTERN = /\bparseToolRequest\(/
@@ -721,6 +729,13 @@ function hasZodUsage(relativePath: string, content: string): boolean {
     /\bparseRequest\(/.test(content) &&
     /\bfrom\s+['"]@\/lib\/api\/server['"]/.test(content) &&
     CONTRACT_IMPORT_PATTERN.test(content)
+  ) {
+    return true
+  }
+  if (
+    CONTRACT_IMPORT_PATTERN.test(content) &&
+    DECLARATIVE_ROUTE_BUILDER_IMPORT_PATTERN.test(content) &&
+    DECLARATIVE_ROUTE_BUILDER_USAGE_PATTERN.test(content)
   ) {
     return true
   }

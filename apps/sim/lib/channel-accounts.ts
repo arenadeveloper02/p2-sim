@@ -210,3 +210,31 @@ export async function getFacebookAdsAccounts(): Promise<Record<string, ChannelAc
     return {}
   }
 }
+
+/**
+ * Fetches Bing Ads accounts from the dedicated `bing_accounts` table.
+ *
+ * Unlike Google, Bing has no per-workspace account mapping: the full catalog is
+ * exposed to analytics (Position2) workspaces only, and every other workspace
+ * receives none.
+ */
+export async function getBingAdsAccounts(
+  workspaceId?: string
+): Promise<Record<string, ChannelAccount>> {
+  if (!isAnalyticsWorkspace(workspaceId)) {
+    return {}
+  }
+
+  try {
+    const result = await db.execute(sql`
+      SELECT account_id, account_name
+      FROM bing_accounts
+      ORDER BY account_name
+    `)
+
+    return mapRowsToAccounts(result as unknown as ChannelAccountRow[])
+  } catch (error) {
+    logger.error('Error fetching bing accounts from database', { error, workspaceId })
+    return {}
+  }
+}

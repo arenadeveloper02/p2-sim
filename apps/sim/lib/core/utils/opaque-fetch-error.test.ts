@@ -30,8 +30,8 @@ describe('formatInternalToolFetchError', () => {
 
 describe('formatProviderNetworkError', () => {
   it('rewrites a bare fetch failed without a cause', () => {
-    expect(formatProviderNetworkError(new TypeError('fetch failed'), 'Failed to generate app')).toBe(
-      'Model request failed (connection closed or timed out). Retry the run.'
-    )
+    expect(
+      formatProviderNetworkError(new TypeError('fetch failed'), 'Failed to generate app')
+    ).toBe('Model request failed (connection closed or timed out). Retry the run.')
   })
 })

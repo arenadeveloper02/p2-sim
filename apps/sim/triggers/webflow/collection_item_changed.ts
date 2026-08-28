@@ -5,6 +5,7 @@ import {
   webflowCollectionsSelectorContract,
   webflowSitesSelectorContract,
 } from '@/lib/api/contracts/selectors/webflow'
+import { readSubBlockValue } from '@/triggers/editor-state'
 import type { TriggerConfig } from '../types'
 
 const logger = createLogger('webflow-collection-item-changed-trigger')
@@ -47,8 +48,7 @@ export const webflowCollectionItemChangedTrigger: TriggerConfig = {
         value: 'webflow_collection_item_changed',
       },
       fetchOptions: async (blockId: string) => {
-        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-        const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
+        const credentialId = (await readSubBlockValue(blockId, 'triggerCredentials')) as
           | string
           | null
         if (!credentialId) {
@@ -68,8 +68,7 @@ export const webflowCollectionItemChangedTrigger: TriggerConfig = {
         }
       },
       fetchOptionById: async (blockId: string, optionId: string) => {
-        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-        const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
+        const credentialId = (await readSubBlockValue(blockId, 'triggerCredentials')) as
           | string
           | null
         if (!credentialId) return null
@@ -102,13 +101,10 @@ export const webflowCollectionItemChangedTrigger: TriggerConfig = {
         value: 'webflow_collection_item_changed',
       },
       fetchOptions: async (blockId: string) => {
-        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-        const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
+        const credentialId = (await readSubBlockValue(blockId, 'triggerCredentials')) as
           | string
           | null
-        const siteId = useSubBlockStore.getState().getValue(blockId, 'triggerSiteId') as
-          | string
-          | null
+        const siteId = (await readSubBlockValue(blockId, 'triggerSiteId')) as string | null
         if (!credentialId || !siteId) {
           return []
         }
@@ -126,13 +122,10 @@ export const webflowCollectionItemChangedTrigger: TriggerConfig = {
         }
       },
       fetchOptionById: async (blockId: string, optionId: string) => {
-        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-        const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
+        const credentialId = (await readSubBlockValue(blockId, 'triggerCredentials')) as
           | string
           | null
-        const siteId = useSubBlockStore.getState().getValue(blockId, 'triggerSiteId') as
-          | string
-          | null
+        const siteId = (await readSubBlockValue(blockId, 'triggerSiteId')) as string | null
         if (!credentialId || !siteId) return null
         try {
           const data = await requestJson(webflowCollectionsSelectorContract, {

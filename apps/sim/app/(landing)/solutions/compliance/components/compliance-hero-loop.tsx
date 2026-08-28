@@ -1,6 +1,7 @@
 'use client'
 
-import { AgentIcon, ConditionalIcon, ScheduleIcon, SlackIcon, TableIcon } from '@/components/icons'
+import { Table as TableIcon } from '@sim/emcn/icons'
+import { AgentIcon, ConditionalIcon, ScheduleIcon, SlackIcon } from '@/components/icons'
 import { EnterprisePlatformLoop } from '@/app/(landing)/enterprise/components/enterprise-platform-loop'
 import type { EnterpriseLoopContent } from '@/app/(landing)/enterprise/components/enterprise-platform-loop/stage-data'
 
@@ -54,7 +55,8 @@ const COMPLIANCE_LOOP_CONTENT: EnterpriseLoopContent = {
       id: 'collect',
       name: 'Collect evidence',
       icon: AgentIcon,
-      bgColor: 'var(--text-primary)',
+      bgColor: '#FFFFFF',
+      tileBorder: true,
       rows: [
         { title: 'Messages', value: '-' },
         { title: 'Model', value: '-' },

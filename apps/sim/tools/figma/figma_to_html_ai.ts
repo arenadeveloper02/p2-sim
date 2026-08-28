@@ -1,4 +1,5 @@
-import { buildToolLlmCostFields } from '@/lib/billing/core/tool-llm-cost'
+import { createLogger } from '@sim/logger'
+import { getErrorMessage } from '@sim/utils/errors'
 import type { ToolConfig, WorkflowToolExecutionContext } from '@/tools/types'
 
 // Parameters for the tool
@@ -48,6 +49,8 @@ export interface FigmaToHTMLAIResponse {
  * All server-side work (Figma API access, asset rehosting to Sim file storage,
  * and the Anthropic call) happens in the route so this module stays client-safe.
  */
+const logger = createLogger('FigmaToHTMLAI')
+
 export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIResponse> = {
   id: 'figma_to_html_ai',
   name: 'Convert Figma to HTML with AI',
@@ -109,59 +112,17 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
     }),
   },
   transformResponse: async (response, params) => {
-    const startTime = Date.now()
-
     if (!params) {
       throw new Error('Missing required parameters')
     }
 
     try {
-      // Extract data from Figma API response
-      const data = await response.json()
-      console.log('Figma data:', data)
-      const figmaData = data
-
-      // Generate AI prompt
-      const prompt = generateAIPrompt(figmaData, params)
-
-      // Call AI service
-      const aiResult = await callAIService(prompt, params)
-
-      const processingTime = Date.now() - startTime
-
-      // Final cleanup of combined HTML
-      let cleanedHtml = aiResult.combinedHtml
-      cleanedHtml = cleanedHtml.replace(/```html\n?/g, '') // remove ```html
-      cleanedHtml = cleanedHtml.replace(/```\n?/g, '')
-      cleanedHtml = cleanedHtml.replace(/\r?\n|\r/g, '') // remove newlines first
-      cleanedHtml = cleanedHtml.replace(/\\/g, '') // then remove backslashes
-      cleanedHtml = cleanedHtml.replace(/\s\s+/g, ' ') // collapse extra spaces
-      cleanedHtml = cleanedHtml.trim() // trim ends
-
-      const billing = buildToolLlmCostFields(
-        aiResult.model,
-        aiResult.inputTokens,
-        aiResult.outputTokens
+      await response.json()
+      throw new Error(
+        'Figma to HTML AI conversion is not implemented in this build. Use the Figma design generator instead.'
       )
-
-      return {
-        success: true,
-        output: {
-          metadata: {
-            fileKey: params.fileKey,
-            nodeId: params.nodeId,
-            processingTime,
-            aiModel: aiResult.model,
-            tokensUsed: aiResult.inputTokens + aiResult.outputTokens,
-            inputTokens: aiResult.inputTokens,
-            outputTokens: aiResult.outputTokens,
-            combinedHtml: cleanedHtml,
-          },
-          ...(billing ?? {}),
-        },
-      }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
+      const errorMessage = getErrorMessage(error)
 
       logger.error('Figma to HTML conversion failed', {
         error: errorMessage,
@@ -169,21 +130,12 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
         nodeId: params.nodeId,
       })
 
-      // Final cleanup of fallback HTML
-      let cleanedHtml = generateFallbackCombinedHTML()
-      cleanedHtml = cleanedHtml.replace(/```html\n?/g, '') // remove ```html
-      cleanedHtml = cleanedHtml.replace(/```\n?/g, '')
-      cleanedHtml = cleanedHtml.replace(/\r?\n|\r/g, '') // remove newlines first
-      cleanedHtml = cleanedHtml.replace(/\\/g, '') // then remove backslashes
-      cleanedHtml = cleanedHtml.replace(/\s\s+/g, ' ') // collapse extra spaces
-      cleanedHtml = cleanedHtml.trim() // trim ends
-
       return {
         success: false,
         output: {
           metadata: {
-            fileKey: params?.fileKey ?? '',
-            nodeId: params?.nodeId,
+            fileKey: params.fileKey ?? '',
+            nodeId: params.nodeId,
             processingTime: 0,
             aiModel: 'fallback',
             tokensUsed: 0,
@@ -195,13 +147,6 @@ export const figmaToHTMLAITool: ToolConfig<FigmaToHTMLAIParams, FigmaToHTMLAIRes
         error: errorMessage || 'Figma to HTML conversion failed',
       }
     }
-
-    // return {
-    //   success: true,
-    //   output: {
-    //     metadata: data.metadata,
-    //   },
-    // }
   },
 
   outputs: {

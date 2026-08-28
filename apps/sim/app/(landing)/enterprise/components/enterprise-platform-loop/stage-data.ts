@@ -1,4 +1,5 @@
-import { AgentIcon, ConditionalIcon, MailIcon, StartIcon, TableIcon } from '@/components/icons'
+import { Table as TableIcon } from '@sim/emcn/icons'
+import { AgentIcon, ConditionalIcon, MailIcon, StartIcon } from '@/components/icons'
 import type { BlockDef } from '@/app/(landing)/components/hero/components/hero-visual/workflow-data'
 
 /**
@@ -87,7 +88,8 @@ export const ENTERPRISE_STAGE_BLOCKS: BlockDef[] = [
     id: 'match',
     name: 'Match PO',
     icon: AgentIcon,
-    bgColor: 'var(--text-primary)',
+    bgColor: '#FFFFFF',
+    tileBorder: true,
     rows: [
       { title: 'Messages', value: '-' },
       { title: 'Model', value: '-' },

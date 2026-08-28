@@ -51,7 +51,10 @@ export const GenerativeUiBlock: BlockConfig<GenerativeUiGenerateHtmlResponse> = 
   },
   inputs: {
     mode: { type: 'string', description: 'email or webpage' },
-    userInput: { type: 'string', description: 'Natural language description of the UI to generate' },
+    userInput: {
+      type: 'string',
+      description: 'Natural language description of the UI to generate',
+    },
   },
   outputs: {
     html: { type: 'string', description: 'Generated HTML' },

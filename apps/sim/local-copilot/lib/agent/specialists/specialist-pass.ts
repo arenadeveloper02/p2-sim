@@ -32,7 +32,13 @@ import {
 import { classifyLocalToolConfirmation } from '@/local-copilot/lib/security/tool-confirmation-policy'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
+  bindLocalFileIntentChannel,
+  buildFollowUpContinuationMessage,
+  clearLocalFileIntentChannel,
+  detectMandatoryFollowUp,
   formatToolResultForLlm,
+  type MandatoryFollowUp,
+  resolveMandatoryFollowUps,
   sortToolCallsForExecution,
 } from '@/local-copilot/lib/tools/format-tool-result'
 import type { LocalCopilotStreamEvent, LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
@@ -47,7 +53,12 @@ import type {
 
 const logger = createLogger('LocalCopilotSpecialistPass')
 
-export const SPECIALIST_PASS_MAX_ROUNDS = 3
+/**
+ * File writes are sequential (`create_file` → `workspace_file` → `edit_content`)
+ * plus discovery. Two office files in one pass need more than a handful of rounds.
+ */
+export const SPECIALIST_PASS_MAX_ROUNDS = 10
+const MAX_SPECIALIST_FORCED_FOLLOW_UP_ROUNDS = 4
 export const SPECIALIST_FINDINGS_MAX_CHARS = 12_000
 
 export interface RunSpecialistPassParams {
@@ -70,6 +81,11 @@ export interface RunSpecialistPassParams {
   getToolExecutor: () => Promise<typeof import('@/local-copilot/lib/tools/executor')>
   budget: SpecialistBudget
   parentDepth?: number
+  /**
+   * Outer specialist tool-call id (`file`, `workflow`, …). File Agent passes
+   * bind Redis intents and live preview to this id so they match the subagent span.
+   */
+  parentDispatchToolCallId?: string
   /** Durable run id for authenticated confirmation gating. */
   runId?: string
   /**
@@ -201,11 +217,7 @@ export async function executeSpecialistLoop(
       }
     }
 
-    await emitSpecialistEvent(
-      events,
-      { type: 'status', message: `Consulting ${params.domain} specialist…` },
-      params.onEvent
-    )
+    await emitSpecialistEvent(events, { type: 'status', message: 'Working on it…' }, params.onEvent)
 
     const messages: ChatMessage[] = [
       {
@@ -236,8 +248,16 @@ export async function executeSpecialistLoop(
     const verifications: VerificationRecord[] = []
     const errors: string[] = []
     let toolRoundCount = 0
+    let pendingFollowUps: MandatoryFollowUp[] = []
+    let forcedFollowUpRounds = 0
+    const persistFileIntentChannel =
+      params.domain === 'file' && Boolean(params.parentDispatchToolCallId)
+    let fileIntentChannelId = persistFileIntentChannel
+      ? params.parentDispatchToolCallId
+      : params.toolCtx.fileIntentChannelId
 
-    for (let round = 0; round < SPECIALIST_PASS_MAX_ROUNDS; round++) {
+    const maxRounds = SPECIALIST_PASS_MAX_ROUNDS + MAX_SPECIALIST_FORCED_FOLLOW_UP_ROUNDS
+    for (let round = 0; round < maxRounds; round++) {
       if (signal.aborted) break
 
       const pendingToolCalls: Array<{ id: string; name: string; arguments: string }> = []
@@ -288,6 +308,23 @@ export async function executeSpecialistLoop(
       })
 
       if (pendingToolCalls.length === 0) {
+        const canForceFollowUp =
+          pendingFollowUps.length > 0 &&
+          forcedFollowUpRounds < MAX_SPECIALIST_FORCED_FOLLOW_UP_ROUNDS
+        if (canForceFollowUp) {
+          forcedFollowUpRounds += 1
+          messages.push({
+            role: 'user',
+            content: buildFollowUpContinuationMessage(pendingFollowUps),
+          })
+          logger.info('Arena Copilot specialist forcing mandatory follow-up', {
+            domain: params.domain,
+            round,
+            forcedFollowUpRounds,
+            pendingFollowUpIds: pendingFollowUps.map((item) => item.id),
+          })
+          continue
+        }
         if (assistantText.trim()) findings.push(assistantText.trim())
         break
       }
@@ -324,6 +361,7 @@ export async function executeSpecialistLoop(
             signal,
             parentDepth: entered.depth,
             onEvent: params.onEvent,
+            parentDispatchToolCallId: call.id,
           })
           for (const event of nested.events) events.push(event)
 
@@ -413,6 +451,7 @@ export async function executeSpecialistLoop(
 
         const { executeLocalCopilotTool, refreshToolContext } = await params.getToolExecutor()
         if (!toolResult) {
+          fileIntentChannelId = bindLocalFileIntentChannel(call.name, call.id, fileIntentChannelId)
           const toolStatus = runToolWithStatus({
             toolCallId: call.id,
             toolName: call.name,
@@ -422,6 +461,7 @@ export async function executeSpecialistLoop(
             execute: (onProgress) =>
               executeLocalCopilotTool(call.name, parsedArgs, {
                 ...params.toolCtx,
+                fileIntentChannelId,
                 onProgress,
                 activeToolCallId: call.id,
               }),
@@ -433,6 +473,10 @@ export async function executeSpecialistLoop(
             next = await toolStatus.next()
           }
           toolResult = next.value
+        }
+
+        if (!persistFileIntentChannel) {
+          fileIntentChannelId = clearLocalFileIntentChannel(call.name, fileIntentChannelId)
         }
 
         if (toolResult.createdWorkflowId) {
@@ -463,6 +507,19 @@ export async function executeSpecialistLoop(
           {
             artifactStore: params.toolCtx.artifactStore,
           }
+        )
+        const mandatoryFollowUp = detectMandatoryFollowUp(call.name, llmPayload)
+        if (mandatoryFollowUp) {
+          pendingFollowUps = [
+            ...pendingFollowUps.filter((item) => item.id !== mandatoryFollowUp.id),
+            mandatoryFollowUp,
+          ]
+        }
+        pendingFollowUps = resolveMandatoryFollowUps(
+          pendingFollowUps,
+          call.name,
+          toolResult.success,
+          toolResult.result
         )
         findings.push(truncate(`[${call.name}] ${llmPayload}`, 4_000))
         if (!toolResult.success && toolResult.error) {

@@ -56,9 +56,7 @@ function parseSpecJson(text: string): unknown {
     return JSON.parse(jsonText)
   } catch (error) {
     const preview = text.trim().slice(0, 120).replace(/\s+/g, ' ')
-    throw new Error(
-      `Model returned invalid JSON (${getErrorMessage(error)}). Preview: ${preview}…`
-    )
+    throw new Error(`Model returned invalid JSON (${getErrorMessage(error)}). Preview: ${preview}…`)
   }
 }
 
@@ -76,11 +74,13 @@ export async function generateGenerativeUiHtml(
     return { success: false, error: 'userInput is required', mode }
   }
 
-  const [{ emailCatalog, GENERATIVE_UI_OUTPUT_RULES, webpageCatalog }, { renderGenerativeUiSpecToHtml }] =
-    await Promise.all([
-      import('@/lib/generative-ui/catalogs'),
-      import('@/lib/generative-ui/render-spec'),
-    ])
+  const [
+    { emailCatalog, GENERATIVE_UI_OUTPUT_RULES, webpageCatalog },
+    { renderGenerativeUiSpecToHtml },
+  ] = await Promise.all([
+    import('@/lib/generative-ui/catalogs'),
+    import('@/lib/generative-ui/render-spec'),
+  ])
 
   const catalog = mode === 'email' ? emailCatalog : webpageCatalog
   const systemPrompt = catalog.prompt({

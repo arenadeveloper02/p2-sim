@@ -11,6 +11,7 @@ import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { and, asc, eq, isNull } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { createFolder } from '@/lib/folders/orchestration'
 import {
   type ChatOutputConfigInput,
   DEFAULT_CHAT_AUTH_TYPE,
@@ -23,7 +24,6 @@ import {
   populatePostgresBlocks,
 } from '@/lib/workflows/default-user-workflows/postgres'
 import { performChatDeploy, performFullDeploy } from '@/lib/workflows/orchestration'
-import { performCreateFolder } from '@/lib/workflows/orchestration/folder-lifecycle'
 import {
   loadWorkflowFromNormalizedTables,
   saveWorkflowToNormalizedTables,
@@ -66,7 +66,8 @@ async function getOrCreateSystemDefaultWorkflowFolder(params: {
     return existing.id
   }
 
-  const created = await performCreateFolder({
+  const created = await createFolder({
+    resourceType: 'workflow',
     userId: params.userId,
     workspaceId: params.workspaceId,
     name: SYSTEM_DEFAULT_WORKFLOWS_FOLDER_NAME,

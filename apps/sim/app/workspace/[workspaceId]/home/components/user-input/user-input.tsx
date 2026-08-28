@@ -32,6 +32,7 @@ import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getMothershipAttachmentPreviewUrl } from '@/lib/copilot/chat/attachment-preview'
 import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
+import { isDesktopApp } from '@/lib/desktop'
 import { MOTHERSHIP_ADD_CONTEXT_EVENT } from '@/lib/mothership/events'
 import { MOTHERSHIP_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
@@ -54,7 +55,7 @@ import { useFileAttachments } from '@/app/workspace/[workspaceId]/w/[workflowId]
 import type { AttachedFile } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/panel/components/copilot/components/user-input/hooks/use-file-attachments'
 import { mentionifyIntegrations } from '@/blocks/integration-matcher'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
-import { useSpeechToText } from '@/hooks/use-speech-to-text'
+import { type SpeechToTextError, useSpeechToText } from '@/hooks/use-speech-to-text'
 import { SessionMemoryInspector } from '@/local-copilot/components/session-memory-inspector'
 import {
   getLocalCopilotCatalogEntriesForGroup,
@@ -124,6 +125,16 @@ function LocalCopilotModelPicker({ catalogId, onCatalogIdChange }: LocalCopilotM
       </DropdownMenuContent>
     </DropdownMenu>
   )
+}
+
+/**
+ * Whether the element is somewhere the user could be typing. Focusing the composer on mount
+ * must not steal focus from another field, but may take it from a link or button — opening a
+ * chat leaves the sidebar link focused, and the composer should win.
+ */
+function isTextEntry(element: HTMLElement): boolean {
+  const tag = element.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || element.isContentEditable
 }
 
 interface UserInputProps {
@@ -387,6 +398,22 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     )
   }
 
+  function handleSpeechError(error: SpeechToTextError) {
+    if (error === 'microphone-blocked') {
+      toast.error(
+        isDesktopApp()
+          ? 'Microphone access is blocked. Allow Sim to use the microphone in your system privacy settings.'
+          : 'Microphone access is blocked. Allow it for this site and try again.'
+      )
+      return
+    }
+    if (error === 'microphone-unavailable') {
+      toast.error('No microphone found. Connect one and try again.')
+      return
+    }
+    toast.error('Could not start voice input. Try again.')
+  }
+
   const {
     isListening,
     isSupported: isSttSupported,
@@ -395,6 +422,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   } = useSpeechToText({
     onTranscript: handleTranscript,
     onUsageLimitExceeded: handleUsageLimitExceeded,
+    onError: handleSpeechError,
     workspaceId,
   })
 
@@ -412,6 +440,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   const isSendingRef = useRef(isSending)
   isSendingRef.current = isSending
   const wasSendingRef = useRef(false)
+  const composerOwnsFocusRef = useRef(false)
 
   useImperativeHandle(
     ref,
@@ -520,25 +549,23 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   }, [])
 
   useEffect(() => {
-    if (wasSendingRef.current && !isSending) {
-      const active = document.activeElement
-      const isEditingElsewhere =
-        active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement
-      if (!isEditingElsewhere) {
-        textareaRef.current?.focus()
-      }
+    if (
+      wasSendingRef.current &&
+      !isSending &&
+      composerOwnsFocusRef.current &&
+      document.hasFocus()
+    ) {
+      textareaRef.current?.focus()
     }
     wasSendingRef.current = isSending
   }, [isSending, textareaRef])
 
   useEffect(() => {
     const raf = window.requestAnimationFrame(() => {
+      if (!document.hasFocus()) return
       const active = document.activeElement
-      const isEditingElsewhere =
-        active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement
-      if (!isEditingElsewhere) {
-        textareaRef.current?.focus()
-      }
+      if (active instanceof HTMLElement && isTextEntry(active)) return
+      textareaRef.current?.focus()
     })
     return () => window.cancelAnimationFrame(raf)
   }, [textareaRef])
@@ -628,9 +655,17 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   return (
     <div
       onClick={handleContainerClick}
+      onFocusCapture={() => {
+        composerOwnsFocusRef.current = true
+      }}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          composerOwnsFocusRef.current = false
+        }
+      }}
       className={cn(
-        'relative z-10 mx-auto w-full max-w-[48rem] cursor-text rounded-2xl border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-2 dark:bg-[var(--surface-4)]',
-        isInitialView && 'shadow-sm'
+        'relative z-10 mx-auto w-full max-w-chat cursor-text rounded-2xl border border-[var(--border-1)] bg-[var(--white)] px-2.5 py-2 dark:bg-[var(--surface-4)]',
+        isInitialView && 'shadow-ambient'
       )}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -654,7 +689,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         placeholder='Ask Arena to '
         onSubmit={handleEnterSubmit}
         onArrowUpOnEmpty={handleArrowUpOnEmpty}
-        className={isInitialView ? 'max-h-[30vh]' : 'max-h-[200px]'}
+        className={cn('max-h-[200px]', isInitialView && 'min-h-[56px]')}
       />
 
       <div className='flex items-center justify-between'>

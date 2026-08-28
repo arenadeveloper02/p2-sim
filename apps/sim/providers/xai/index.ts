@@ -14,6 +14,7 @@ import { createStreamingExecution } from '@/providers/streaming-execution'
 import { isAbortError, parseToolArguments } from '@/providers/streaming-tool-loop-shared'
 import { adaptOpenAIChatToolSchema } from '@/providers/tool-schema-adapter'
 import { enrichLastModelSegmentFromChatCompletions } from '@/providers/trace-enrichment'
+import { openAICompatTransport } from '@/providers/transport'
 import type {
   Message,
   ProviderConfig,
@@ -37,6 +38,20 @@ import {
 
 const logger = createLogger('XAIProvider')
 
+/**
+ * xAI's Grok models via an OpenAI-compatible chat-completions API
+ * (`api.x.ai/v1`), with these documented deviations:
+ * - `reasoning_effort` maps from `request.reasoningEffort`. Sim's `auto`
+ *   sentinel means "let the model pick its own default" and is never
+ *   forwarded — xAI rejects it outright with `Invalid reasoning effort`.
+ * - Only some Grok models accept the parameter at all; the rest reject it with
+ *   `does not support parameter reasoningEffort`. Which values each model takes
+ *   is declared per-model in `capabilities.reasoningEffort`, which is also what
+ *   gates the Agent block's effort dropdown.
+ * - Output length is capped via `max_completion_tokens`.
+ * - `tools` and `response_format` cannot be sent in the same request, so tools
+ *   run first and the schema is applied on a follow-up pass.
+ */
 export const xAIProvider: ProviderConfig = {
   id: 'xai',
   name: 'xAI',
@@ -53,6 +68,7 @@ export const xAIProvider: ProviderConfig = {
     }
 
     const xai = new OpenAI({
+      ...openAICompatTransport(),
       apiKey: request.apiKey,
       baseURL: 'https://api.x.ai/v1',
     })
@@ -100,6 +116,11 @@ export const xAIProvider: ProviderConfig = {
 
     if (request.temperature !== undefined) basePayload.temperature = request.temperature
     if (request.maxTokens != null) basePayload.max_completion_tokens = request.maxTokens
+
+    if (request.reasoningEffort !== undefined && request.reasoningEffort !== 'auto') {
+      basePayload.reasoning_effort = request.reasoningEffort
+    }
+
     let preparedTools: ReturnType<typeof prepareToolsWithUsageControl> | null = null
 
     if (tools?.length) {
@@ -164,7 +185,6 @@ export const xAIProvider: ProviderConfig = {
     try {
       const initialCallTime = Date.now()
 
-      // xAI cannot use tools and response_format together in the same request
       const initialPayload = { ...basePayload }
 
       let originalToolChoice: any
@@ -273,16 +293,21 @@ export const xAIProvider: ProviderConfig = {
               }
 
               const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-              const result = await executeProviderTool(toolName, executionParams, {
-                signal: request.abortSignal,
-              })
+              const { rawResponse, modelResponse } = await executeProviderTool(
+                toolName,
+                executionParams,
+                {
+                  signal: request.abortSignal,
+                }
+              )
               const toolCallEndTime = Date.now()
 
               return {
                 toolCall,
                 toolName,
                 toolParams,
-                result,
+                result: rawResponse,
+                modelResult: modelResponse,
                 startTime: toolCallStartTime,
                 endTime: toolCallEndTime,
                 duration: toolCallEndTime - toolCallStartTime,
@@ -328,6 +353,8 @@ export const xAIProvider: ProviderConfig = {
           for (const executionResult of executionResults) {
             const { toolCall, toolName, toolParams, result, startTime, endTime, duration } =
               executionResult
+            const modelResult =
+              'modelResult' in executionResult ? (executionResult.modelResult ?? result) : result
 
             timeSegments.push({
               type: 'tool',
@@ -354,6 +381,13 @@ export const xAIProvider: ProviderConfig = {
                 error: result.error,
               })
             }
+            const modelResultContent = modelResult.success
+              ? (modelResult.output ?? null)
+              : {
+                  error: true,
+                  message: modelResult.error || 'Tool execution failed',
+                  tool: toolName,
+                }
 
             toolCalls.push({
               name: toolName,
@@ -367,7 +401,7 @@ export const xAIProvider: ProviderConfig = {
             currentMessages.push({
               role: 'tool',
               tool_call_id: toolCall.id,
-              content: JSON.stringify(resultContent),
+              content: JSON.stringify(modelResultContent),
             })
           }
 

@@ -11,7 +11,10 @@ import { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-dra
 import { refreshWorkflowBindingOutputSchemas } from '@/lib/arena-generative-ui/refresh-binding-schemas'
 import { plannerInputForReplan } from '@/lib/arena-generative-ui/replan-from-edit'
 import { parseStoredStructuredBrief } from '@/lib/arena-generative-ui/structured-brief'
-import type { ArenaGenerativeAppManifest, ArenaGenerativeGenerateResult } from '@/lib/arena-generative-ui/types'
+import type {
+  ArenaGenerativeAppManifest,
+  ArenaGenerativeGenerateResult,
+} from '@/lib/arena-generative-ui/types'
 
 const logger = createLogger('ArenaGenerativeUiRun')
 

@@ -59,7 +59,9 @@ describe('persistGenerativeAppDraft', () => {
       audience: 'Ops',
       archetype: 'dashboard' as const,
       entryPath: 'home',
-      pages: [{ path: 'home', title: 'Operations', purpose: 'KPIs', data: 'onLoad load_dashboard' }],
+      pages: [
+        { path: 'home', title: 'Operations', purpose: 'KPIs', data: 'onLoad load_dashboard' },
+      ],
       actions: [],
     }
 

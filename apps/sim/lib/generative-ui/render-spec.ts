@@ -29,7 +29,9 @@ function escapeAttr(value: string): string {
 
 function styleAttr(styles: Record<string, string | undefined>): string {
   const css = Object.entries(styles)
-    .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0)
+    .filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0
+    )
     .map(([key, value]) => {
       const cssKey = key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`)
       return `${cssKey}:${value}`
@@ -57,7 +59,9 @@ function renderWebpageNode(spec: Spec, key: string): string {
   }
 
   const props = element.props ?? {}
-  const childrenHtml = (element.children ?? []).map((childKey) => renderWebpageNode(spec, childKey)).join('')
+  const childrenHtml = (element.children ?? [])
+    .map((childKey) => renderWebpageNode(spec, childKey))
+    .join('')
 
   switch (element.type) {
     case 'Page': {
@@ -111,9 +115,9 @@ function renderWebpageNode(spec: Spec, key: string): string {
       })}>${titleHtml}${childrenHtml}</div>`
     }
     case 'Heading': {
-      const level = (['h1', 'h2', 'h3', 'h4'].includes(asString(props.level))
-        ? asString(props.level)
-        : 'h2') as 'h1' | 'h2' | 'h3' | 'h4'
+      const level = (
+        ['h1', 'h2', 'h3', 'h4'].includes(asString(props.level)) ? asString(props.level) : 'h2'
+      ) as 'h1' | 'h2' | 'h3' | 'h4'
       const sizes = { h1: '36px', h2: '28px', h3: '22px', h4: '18px' } as const
       return `<${level}${styleAttr({
         margin: '0',
@@ -160,11 +164,13 @@ function renderWebpageNode(spec: Spec, key: string): string {
       const width = asNullableString(props.width)
       const height = asNullableString(props.height)
       const sizeAttrs = `${width ? ` width="${escapeAttr(width)}"` : ''}${height ? ` height="${escapeAttr(height)}"` : ''}`
-      return `<img src="${escapeAttr(asString(props.src))}" alt="${escapeAttr(asString(props.alt, ''))}"${sizeAttrs}${styleAttr({
-        maxWidth: '100%',
-        height: 'auto',
-        display: 'block',
-      })} />`
+      return `<img src="${escapeAttr(asString(props.src))}" alt="${escapeAttr(asString(props.alt, ''))}"${sizeAttrs}${styleAttr(
+        {
+          maxWidth: '100%',
+          height: 'auto',
+          display: 'block',
+        }
+      )} />`
     }
     case 'Divider': {
       return `<hr${styleAttr({

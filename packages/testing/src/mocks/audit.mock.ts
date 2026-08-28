@@ -28,6 +28,12 @@ export const auditMockFns = {
 export const auditMock = {
   recordAudit: auditMockFns.mockRecordAudit,
   recordAuditBatch: auditMockFns.mockRecordAuditBatch,
+  /**
+   * Real implementation, not a stub: callers under test derive their audit
+   * metadata through it, so stubbing it would erase what the test asserts.
+   */
+  auditUpdatedFields: (updateValues: object): string[] =>
+    Object.keys(updateValues).filter((key) => key !== 'updatedAt'),
   AuditAction: {
     API_KEY_CREATED: 'api_key.created',
     API_KEY_UPDATED: 'api_key.updated',
@@ -52,6 +58,7 @@ export const auditMock = {
     CREDENTIAL_MEMBER_ADDED: 'credential_member.added',
     CREDENTIAL_MEMBER_REMOVED: 'credential_member.removed',
     CREDENTIAL_MEMBER_ROLE_CHANGED: 'credential_member.role_changed',
+    CREDENTIAL_GROUP_UPDATED: 'credential_group.updated',
     CREDIT_PURCHASED: 'credit.purchased',
     CUSTOM_BLOCK_PUBLISHED: 'custom_block.published',
     CUSTOM_BLOCK_UPDATED: 'custom_block.updated',
@@ -148,6 +155,7 @@ export const auditMock = {
     WEBHOOK_CREATED: 'webhook.created',
     WEBHOOK_DELETED: 'webhook.deleted',
     WORKFLOW_CREATED: 'workflow.created',
+    WORKFLOW_UPDATED: 'workflow.updated',
     WORKFLOW_DELETED: 'workflow.deleted',
     WORKFLOW_RESTORED: 'workflow.restored',
     WORKFLOW_DEPLOYED: 'workflow.deployed',
@@ -193,6 +201,7 @@ export const auditMock = {
     CHAT: 'chat',
     CONNECTOR: 'connector',
     CREDENTIAL: 'credential',
+    CREDENTIAL_GROUP: 'credential_group',
     CUSTOM_BLOCK: 'custom_block',
     CUSTOM_TOOL: 'custom_tool',
     DATA_DRAIN: 'data_drain',

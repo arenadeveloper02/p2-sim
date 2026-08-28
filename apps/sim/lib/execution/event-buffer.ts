@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { randomInt } from '@sim/utils/random'
-import { env } from '@/lib/core/config/env'
+import { getConfiguredCacheProvider } from '@/lib/core/config/env-capabilities.server'
 import { getRedisClient } from '@/lib/core/config/redis'
 import { LARGE_VALUE_THRESHOLD_BYTES } from '@/lib/execution/payloads/large-value-ref'
 import { compactExecutionPayload } from '@/lib/execution/payloads/serializer'
@@ -364,7 +364,7 @@ async function compactEventForBuffer(
 const memoryExecutionStreams = new Map<string, MemoryExecutionStream>()
 
 function canUseMemoryEventBuffer(): boolean {
-  return typeof window === 'undefined' && !env.REDIS_URL
+  return typeof window === 'undefined' && getConfiguredCacheProvider() === 'database'
 }
 
 function pruneExpiredMemoryStreams(now = Date.now()): void {
@@ -628,7 +628,7 @@ export async function readExecutionMetaState(
     if (canUseMemoryEventBuffer()) {
       return readMemoryMeta(executionId)
     }
-    logger.warn('getExecutionMeta: Redis client unavailable', { executionId })
+    logger.warn('readExecutionMetaState: Redis client unavailable', { executionId })
     return { status: 'unavailable', error: 'Redis client unavailable' }
   }
   try {
@@ -657,23 +657,6 @@ export async function readExecutionMetaState(
     })
     return { status: 'unavailable', error: message }
   }
-}
-
-export async function getExecutionMeta(executionId: string): Promise<ExecutionStreamMeta | null> {
-  const result = await readExecutionMetaState(executionId)
-  if (result.status === 'found') return result.meta
-  if (result.status === 'unavailable') {
-    return null
-  }
-  return null
-}
-
-export async function readExecutionEvents(
-  executionId: string,
-  afterEventId: number
-): Promise<ExecutionEventEntry[]> {
-  const result = await readExecutionEventsState(executionId, afterEventId)
-  return result.status === 'ok' ? result.events : []
 }
 
 export async function readExecutionEventsState(

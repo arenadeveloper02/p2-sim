@@ -61,6 +61,10 @@ export const lumaVideoTool: ToolConfig<VideoParams, VideoResponse> = {
   },
 
   request: {
+    modelInput: {
+      mode: 'project',
+      select: (params) => ({ prompt: params.prompt }),
+    },
     url: '/api/tools/video',
     method: 'POST',
     headers: () => ({

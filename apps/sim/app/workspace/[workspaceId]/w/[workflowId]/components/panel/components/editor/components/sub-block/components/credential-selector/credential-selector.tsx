@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { Button, Combobox, type ComboboxOptionGroup } from '@sim/emcn'
-import { ExternalLink, KeyRound } from 'lucide-react'
+import { Key, SquareArrowUpRight } from '@sim/emcn/icons'
 import { useParams } from 'next/navigation'
 import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import {
@@ -353,7 +353,7 @@ export function CredentialSelector({
     const baseProviderConfig = OAUTH_PROVIDERS[baseProvider]
 
     if (!baseProviderConfig) {
-      return <ExternalLink className='size-3' />
+      return <SquareArrowUpRight className='size-3' />
     }
     const Icon: StyleableIcon = baseProviderConfig.icon
     return <Icon className='size-3 text-[var(--text-icon)]' style={getBareIconStyle(Icon)} />
@@ -389,7 +389,7 @@ export function CredentialSelector({
         return {
           label: option.label,
           value: `__connect_account__:${option.serviceId}`,
-          iconElement: <ExternalLink className='size-3' />,
+          iconElement: <SquareArrowUpRight className='size-3' />,
           serviceId: option.serviceId,
           provider: optionProvider,
           credentialCount,
@@ -400,7 +400,9 @@ export function CredentialSelector({
 
   const comboboxOptions = useMemo(() => {
     if (isAllCredentials) {
-      const oauthCredentials = allWorkspaceCredentials.filter((c) => c.type === 'oauth')
+      const oauthCredentials = allWorkspaceCredentials.filter(
+        (credential) => credential.type === 'oauth'
+      )
       return oauthCredentials.map((cred) => ({ label: cred.displayName, value: cred.id }))
     }
     if (isMergedKinds) return []
@@ -420,7 +422,7 @@ export function CredentialSelector({
         label:
           personalAccountCount > 0 ? 'Connect another HubSpot account' : 'Connect HubSpot account',
         value: '__connect_account__',
-        iconElement: <ExternalLink className='size-3' />,
+        iconElement: <SquareArrowUpRight className='size-3' />,
       })
       options.push(...additionalConnectItems)
 
@@ -444,7 +446,7 @@ export function CredentialSelector({
             ? 'Connect another LinkedIn account'
             : 'Connect LinkedIn account',
         value: '__connect_account__',
-        iconElement: <ExternalLink className='size-3' />,
+        iconElement: <SquareArrowUpRight className='size-3' />,
       })
 
       for (const option of unipileAccountOptions) {
@@ -452,7 +454,7 @@ export function CredentialSelector({
         options.push({
           label: `Reconnect ${option.label}`,
           value: `${UNIPILE_RECONNECT_PREFIX}${option.credentialId}`,
-          iconElement: <ExternalLink className='size-3' />,
+          iconElement: <SquareArrowUpRight className='size-3' />,
         })
       }
 
@@ -481,7 +483,7 @@ export function CredentialSelector({
               ? `Connect another ${getProviderName(provider)} account`
               : `Connect ${getProviderName(provider)} account`,
         value: '__connect_account__',
-        iconElement: <ExternalLink className='size-3' />,
+        iconElement: <SquareArrowUpRight className='size-3' />,
       })
     }
     options.push(...additionalConnectItems)
@@ -524,7 +526,7 @@ export function CredentialSelector({
           {
             label: labels?.oauthConnect ?? `Connect ${getProviderName(provider)} account`,
             value: '__connect_account__',
-            iconElement: <ExternalLink className='size-3' />,
+            iconElement: <SquareArrowUpRight className='size-3' />,
           },
         ],
       },
@@ -542,7 +544,7 @@ export function CredentialSelector({
                     serviceAccountTarget?.label ??
                     `Add ${getProviderName(provider)} key`,
                   value: '__connect_service_account__',
-                  iconElement: <ExternalLink className='size-3' />,
+                  iconElement: <SquareArrowUpRight className='size-3' />,
                 },
               ]),
         ],
@@ -579,7 +581,7 @@ export function CredentialSelector({
       return (
         <div className='flex w-full items-center truncate'>
           <div className='mr-2 flex-shrink-0 opacity-90'>
-            <KeyRound className='size-3' />
+            <Key className='size-3' />
           </div>
           <span className='truncate'>
             {formatDisplayText(displayValue, { workflowSearchHighlight })}
@@ -671,7 +673,9 @@ export function CredentialSelector({
       }
 
       const matchedCred = (
-        isAllCredentials ? allWorkspaceCredentials.filter((c) => c.type === 'oauth') : credentials
+        isAllCredentials
+          ? allWorkspaceCredentials.filter((credential) => credential.type === 'oauth')
+          : credentials
       ).find((c) => c.id === value)
       if (matchedCred) {
         handleSelect(value)
@@ -725,7 +729,7 @@ export function CredentialSelector({
 
       {needsUpdate && (
         <div className='mt-2 flex flex-col gap-1 rounded-sm border bg-[var(--surface-2)] px-2 py-1.5'>
-          <div className='flex items-center font-medium text-caption'>
+          <div className='flex items-center text-caption'>
             <span className='mr-1.5 inline-block size-[6px] rounded-xs bg-amber-500' />
             Additional permissions required
           </div>
@@ -741,11 +745,12 @@ export function CredentialSelector({
                 // inflate the count used to detect a newly-connected account.
                 preCount: credentials.filter((c) => c.type !== 'service_account').length,
                 workspaceId,
+                reconnect: true,
                 requestedAt: Date.now(),
               })
               setShowOAuthModal(true)
             }}
-            className='w-full px-2 py-1 font-medium text-caption'
+            className='w-full px-2 py-1 text-caption'
           >
             Update access
           </Button>
@@ -787,6 +792,10 @@ export function CredentialSelector({
           requiredScopes={reauthorizeRequiredScopes}
           newScopes={missingRequiredScopes}
           serviceId={reauthorizeServiceId}
+          // A reauthorize must return to the authorization server that issued
+          // the credential — deriving it from the service id would send a
+          // sandbox user to production, where they cannot sign in at all.
+          providerId={selectedCredential?.provider ?? effectiveProviderId}
         />
       )}
 

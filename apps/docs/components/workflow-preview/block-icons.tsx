@@ -1,6 +1,7 @@
 import type { ComponentType, SVGProps } from 'react'
-import { Clock, Database, Layers, Repeat, Table } from 'lucide-react'
+import { Clock, Database, Repeat, Split, Table } from '@sim/emcn/icons'
 import {
+  AgentIcon,
   ApiIcon,
   ChartBarIcon,
   CodeIcon,
@@ -21,7 +22,7 @@ import { blockTypeToIconMap } from '@/components/ui/icon-mapping'
 /**
  * The two Sim-specific block glyphs we need, ported verbatim from
  * `apps/sim/components/icons.tsx` so the preview matches the real builder.
- * Other block types fall back to lucide-react stand-ins for now.
+ * Other block types fall back to `@sim/emcn/icons` stand-ins for now.
  */
 export function StartIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -41,42 +42,7 @@ export function StartIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-export function AgentIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      width='21'
-      height='24'
-      viewBox='0 0 21 24'
-      fill='none'
-      xmlns='http://www.w3.org/2000/svg'
-    >
-      <path
-        d='M15.67 9.25H4.67C2.64 9.25 1 10.89 1 12.92V18.42C1 20.44 2.64 22.08 4.67 22.08H15.67C17.69 22.08 19.33 20.44 19.33 18.42V12.92C19.33 10.89 17.69 9.25 15.67 9.25Z'
-        stroke='currentColor'
-        strokeWidth='2'
-        strokeLinecap='round'
-        strokeLinejoin='round'
-      />
-      <path
-        d='M10.17 5.58C11.18 5.58 12 4.76 12 3.75C12 2.74 11.18 1.92 10.17 1.92C9.15 1.92 8.33 2.74 8.33 3.75C8.33 4.76 9.15 5.58 10.17 5.58Z'
-        stroke='currentColor'
-        strokeWidth='2'
-        strokeLinecap='round'
-        strokeLinejoin='round'
-      />
-      <path
-        d='M10.17 5.59V9.25M7.42 16.59V14.75M12.92 14.75V16.59'
-        stroke='currentColor'
-        strokeWidth='2'
-        strokeLinecap='round'
-        strokeLinejoin='round'
-      />
-    </svg>
-  )
-}
-
-/** Block type → glyph. Brand glyphs from the app for core blocks; lucide stand-ins for the rest. */
+/** Block type → glyph. Brand glyphs from the app for core blocks; `@sim/emcn/icons` stand-ins for the rest. */
 export const BLOCK_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   starter: StartIcon,
   start_trigger: StartIcon,
@@ -97,7 +63,7 @@ export const BLOCK_ICONS: Record<string, React.ComponentType<{ className?: strin
   schedule: ScheduleIcon,
   rss: RssIcon,
   loop: Repeat,
-  parallel: Layers,
+  parallel: Split,
   knowledge_base: Database,
   knowledge: Database,
   table: Table,

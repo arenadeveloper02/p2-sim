@@ -11,6 +11,34 @@ import {
 
 const EMAIL = 'user@contoso.com'
 
+describe('mapMicrosoftProfileToUser', () => {
+  it('marks the email verified when Entra asserts domain ownership', () => {
+    expect(mapMicrosoftProfileToUser({ email: EMAIL, xms_edov: true })).toEqual({
+      emailVerified: true,
+    })
+  })
+
+  it('accepts the string and numeric encodings Entra uses for xms_edov', () => {
+    for (const edov of ['true', '1', 1]) {
+      expect(mapMicrosoftProfileToUser({ email: EMAIL, xms_edov: edov })).toEqual({
+        emailVerified: true,
+      })
+    }
+  })
+
+  /** nOAuth: a hostile tenant can set `email` but cannot verify the domain. */
+  it('does not vouch for an email the tenant has not verified', () => {
+    expect(mapMicrosoftProfileToUser({ email: 'victim@target.com' })).toEqual({})
+    expect(mapMicrosoftProfileToUser({ email: 'victim@target.com', xms_edov: false })).toEqual({})
+    expect(mapMicrosoftProfileToUser({ email: 'victim@target.com', xms_edov: '0' })).toEqual({})
+  })
+
+  /** The spread must leave `emailVerified` alone, not force it to `false`. */
+  it('returns no key at all when unverified, so it can never downgrade', () => {
+    expect('emailVerified' in mapMicrosoftProfileToUser({ email: EMAIL })).toBe(false)
+  })
+})
+
 describe('deriveMicrosoftEmailVerified', () => {
   it('honors an explicit email_verified=true claim', () => {
     expect(deriveMicrosoftEmailVerified({ email_verified: true }, EMAIL)).toBe(true)

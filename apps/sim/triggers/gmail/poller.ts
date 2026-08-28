@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { GmailIcon } from '@/components/icons'
 import { requestJson } from '@/lib/api/client/request'
 import { gmailLabelsSelectorContract } from '@/lib/api/contracts/selectors/google'
+import { readSubBlockValue } from '@/triggers/editor-state'
 import type { TriggerConfig } from '@/triggers/types'
 
 const logger = createLogger('GmailPollingTrigger')
@@ -29,6 +30,7 @@ export const gmailPollingTrigger: TriggerConfig = {
     {
       id: 'labelIds',
       title: 'Gmail Labels to Monitor',
+      canvasNoun: 'a label',
       type: 'dropdown',
       multiSelect: true,
       placeholder: 'Select Gmail labels to monitor for new emails',
@@ -36,8 +38,7 @@ export const gmailPollingTrigger: TriggerConfig = {
       required: false,
       options: [], // Will be populated dynamically from user's Gmail labels
       fetchOptions: async (blockId: string) => {
-        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-        const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
+        const credentialId = (await readSubBlockValue(blockId, 'triggerCredentials')) as
           | string
           | null
         if (!credentialId) {

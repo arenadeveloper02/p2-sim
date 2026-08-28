@@ -1,7 +1,7 @@
 import { defineCatalog } from '@json-render/core'
 import { schema as reactSchema } from '@json-render/react/schema'
-import { schema as emailSchema } from '@json-render/react-email/server'
 import { standardComponentDefinitions } from '@json-render/react-email/catalog'
+import { schema as emailSchema } from '@json-render/react-email/server'
 import { z } from 'zod'
 
 /**

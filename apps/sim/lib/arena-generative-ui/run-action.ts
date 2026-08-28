@@ -14,7 +14,10 @@ import {
 } from '@/lib/arena-generative-ui/binding-layout-plan'
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
 import { isHttpUrlAllowlisted } from '@/lib/arena-generative-ui/http-allowlist'
-import { applyBindingInputSources, constrainBindingInput } from '@/lib/arena-generative-ui/input-schema'
+import {
+  applyBindingInputSources,
+  constrainBindingInput,
+} from '@/lib/arena-generative-ui/input-schema'
 import { outputSchemaWarning } from '@/lib/arena-generative-ui/output-schema'
 import {
   applyPaginationToInput,
@@ -835,11 +838,7 @@ export async function runGenerativeAppAction(
     binding.pagination,
     withHostInputs(
       mapActionInput(
-        constrainBindingInput(
-          withHostInputs(options.values),
-          binding,
-          action.inputMapping
-        ),
+        constrainBindingInput(withHostInputs(options.values), binding, action.inputMapping),
         action.inputMapping
       )
     )

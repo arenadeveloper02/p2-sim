@@ -43,8 +43,8 @@ describe('plannerInputForReplan', () => {
   })
 
   it('is just the request when the draft has no stored brief', () => {
-    expect(
-      plannerInputForReplan({ editInstructions: 'Start over as a wizard.' })
-    ).toBe('Start over as a wizard.')
+    expect(plannerInputForReplan({ editInstructions: 'Start over as a wizard.' })).toBe(
+      'Start over as a wizard.'
+    )
   })
 })

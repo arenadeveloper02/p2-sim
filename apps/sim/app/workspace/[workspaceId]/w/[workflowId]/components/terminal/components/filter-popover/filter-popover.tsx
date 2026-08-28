@@ -11,13 +11,13 @@ import {
   PopoverSection,
   PopoverTrigger,
 } from '@sim/emcn'
+import { ListFilter } from '@sim/emcn/icons'
 import clsx from 'clsx'
-import { Filter } from 'lucide-react'
+import { EntryBlockTile } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/terminal/components/entry-block-tile'
 import type {
   BlockInfo,
   TerminalFilters,
 } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/terminal/types'
-import { getBlockIcon } from '@/app/workspace/[workspaceId]/w/[workflowId]/components/terminal/utils'
 
 /**
  * Props for the FilterPopover component
@@ -53,7 +53,9 @@ export const FilterPopover = memo(function FilterPopover({
           onClick={(e) => e.stopPropagation()}
           aria-label='Filters'
         >
-          <Filter className={clsx('size-3', hasActiveFilters && 'text-[var(--brand-secondary)]')} />
+          <ListFilter
+            className={clsx('size-3', hasActiveFilters && 'text-[var(--brand-secondary)]')}
+          />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -92,7 +94,6 @@ export const FilterPopover = memo(function FilterPopover({
             <PopoverSection className='!mt-0'>Blocks</PopoverSection>
             <PopoverScrollArea className='max-h-[100px]'>
               {uniqueBlocks.map((block) => {
-                const BlockIcon = getBlockIcon(block.blockType)
                 const isSelected = filters.blockIds.has(block.blockId)
 
                 return (
@@ -102,7 +103,7 @@ export const FilterPopover = memo(function FilterPopover({
                     showCheck={isSelected}
                     onClick={() => toggleBlock(block.blockId)}
                   >
-                    {BlockIcon && <BlockIcon className='size-3' />}
+                    <EntryBlockTile blockType={block.blockType} />
                     <span className='flex-1'>{block.blockName}</span>
                   </PopoverItem>
                 )

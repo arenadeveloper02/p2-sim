@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { SearchOnline } from '@/lib/copilot/generated/tool-catalog-v1'
+import { projectToolErrorMessageForCopilot } from '@/lib/copilot/request/tools/resolved-secret-result'
 import type { BaseServerTool, ServerToolContext } from '@/lib/copilot/tools/server/base-tool'
 import { env } from '@/lib/core/config/env'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
@@ -93,11 +94,14 @@ export const searchOnlineServerTool: BaseServerTool<OnlineSearchParams, SearchRe
         query,
         numResults: num,
         type: 'auto',
+        highlights: true,
         ...(exaApiKey ? { apiKey: exaApiKey } : {}),
         ...(toolContext ? { _context: toolContext } : {}),
       }
 
-      const exaResult = await executeTool('exa_search', exaParams)
+      const exaResult = await executeTool('exa_search', exaParams, {
+        resolvedSecretTraceRegistry: context?.resolvedSecretTraceRegistry,
+      })
 
       const output = exaResult.output as
         | {
@@ -106,6 +110,7 @@ export const searchOnlineServerTool: BaseServerTool<OnlineSearchParams, SearchRe
               url?: string
               text?: string
               summary?: string
+              highlights?: string[]
               publishedDate?: string
             }>
           }
@@ -116,7 +121,7 @@ export const searchOnlineServerTool: BaseServerTool<OnlineSearchParams, SearchRe
         const transformedResults: SearchResult[] = exaResults.map((result, index) => ({
           title: result.title ?? '',
           link: result.url ?? '',
-          snippet: result.text ?? result.summary ?? '',
+          snippet: result.highlights?.join(' ') || result.text || result.summary || '',
           date: result.publishedDate,
           position: index + 1,
         }))
@@ -132,8 +137,12 @@ export const searchOnlineServerTool: BaseServerTool<OnlineSearchParams, SearchRe
 
       logger.debug('exa_search returned no results, falling back to Serper')
     } catch (exaError) {
+      const errorMessage = toError(exaError).message
       logger.warn('exa_search failed, falling back to Serper', {
-        error: toError(exaError).message,
+        error: projectToolErrorMessageForCopilot(
+          errorMessage,
+          context?.resolvedSecretTraceRegistry
+        ),
       })
     }
 
@@ -152,7 +161,9 @@ export const searchOnlineServerTool: BaseServerTool<OnlineSearchParams, SearchRe
       apiKey: env.SERPER_API_KEY ?? '',
     }
 
-    const result = await executeTool('serper_search', toolParams)
+    const result = await executeTool('serper_search', toolParams, {
+      resolvedSecretTraceRegistry: context?.resolvedSecretTraceRegistry,
+    })
     const output = result.output as { searchResults?: SearchResult[] } | undefined
     const results = output?.searchResults ?? []
 

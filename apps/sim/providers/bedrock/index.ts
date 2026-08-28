@@ -78,10 +78,7 @@ function enrichLastModelSegmentFromBedrockResponse(
       return {
         id: b.toolUse.toolUseId ?? '',
         name: b.toolUse.name ?? '',
-        arguments:
-          input && typeof input === 'object' && !Array.isArray(input)
-            ? (input as Record<string, unknown>)
-            : {},
+        arguments: isRecordLike(input) ? (input as Record<string, unknown>) : {},
       }
     })
 
@@ -635,10 +632,9 @@ export const bedrockProvider: ProviderConfig = {
         const toolExecutionPromises = currentToolUses.map(async (toolUse: ToolUseBlock) => {
           const toolCallStartTime = Date.now()
           const toolName = toolUse.name || ''
-          const toolArgs =
-            toolUse.input && typeof toolUse.input === 'object' && !Array.isArray(toolUse.input)
-              ? (toolUse.input as Record<string, unknown>)
-              : undefined
+          const toolArgs = isRecordLike(toolUse.input)
+            ? (toolUse.input as Record<string, unknown>)
+            : undefined
           const toolUseId = toolUse.toolUseId || generateToolUseId(toolName)
 
           try {
@@ -666,9 +662,13 @@ export const bedrockProvider: ProviderConfig = {
             }
 
             const { toolParams, executionParams } = prepareToolExecution(tool, toolArgs, request)
-            const result = await executeProviderTool(toolName, executionParams, {
-              signal: request.abortSignal,
-            })
+            const { rawResponse, modelResponse } = await executeProviderTool(
+              toolName,
+              executionParams,
+              {
+                signal: request.abortSignal,
+              }
+            )
             const toolCallEndTime = Date.now()
 
             return {
@@ -676,7 +676,8 @@ export const bedrockProvider: ProviderConfig = {
               toolName,
               toolArgs: toolArgs ?? {},
               toolParams,
-              result,
+              result: rawResponse,
+              modelResult: modelResponse,
               startTime: toolCallStartTime,
               endTime: toolCallEndTime,
               duration: toolCallEndTime - toolCallStartTime,
@@ -730,6 +731,10 @@ export const bedrockProvider: ProviderConfig = {
             endTime,
             duration,
           } = executionResult
+          const modelResult =
+            'modelResult' in executionResult && executionResult.modelResult
+              ? executionResult.modelResult
+              : result
 
           timeSegments.push({
             type: 'tool',
@@ -752,6 +757,13 @@ export const bedrockProvider: ProviderConfig = {
               tool: toolName,
             }
           }
+          const modelResultContent = modelResult.success
+            ? (modelResult.output ?? null)
+            : {
+                error: true,
+                message: modelResult.error || 'Tool execution failed',
+                tool: toolName,
+              }
 
           toolCalls.push({
             name: toolName,
@@ -765,9 +777,9 @@ export const bedrockProvider: ProviderConfig = {
 
           const toolResultBlock: ToolResultBlock = {
             toolUseId,
-            content: [{ text: JSON.stringify(resultContent) }],
+            content: [{ text: JSON.stringify(modelResultContent) }],
             ...(supportsToolResultStatus(bedrockModelId)
-              ? { status: result.success ? 'success' : 'error' }
+              ? { status: modelResult.success ? 'success' : 'error' }
               : {}),
           }
           toolResultContent.push({ toolResult: toolResultBlock })

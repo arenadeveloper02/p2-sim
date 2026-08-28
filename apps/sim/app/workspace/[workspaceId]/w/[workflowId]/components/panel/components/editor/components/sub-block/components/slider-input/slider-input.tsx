@@ -71,7 +71,7 @@ export function SliderInput({
         disabled={isDisabled}
       />
       <div
-        className='absolute top-6 font-medium text-[var(--text-primary)] text-sm'
+        className='absolute top-6 text-[var(--text-primary)] text-sm'
         style={{
           left: `${percentage}%`,
           transform: `translateX(-${percentage}%)`,

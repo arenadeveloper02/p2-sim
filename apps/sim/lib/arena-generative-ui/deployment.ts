@@ -2,7 +2,10 @@ import { db } from '@sim/db'
 import { deployedApp } from '@sim/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest, NextResponse } from 'next/server'
-import { actionHiddenInputsFrom, actionHostKeysFrom } from '@/lib/arena-generative-ui/binding-layout-plan'
+import {
+  actionHiddenInputsFrom,
+  actionHostKeysFrom,
+} from '@/lib/arena-generative-ui/binding-layout-plan'
 import {
   ARENA_ACCESS_DENIED_MESSAGE,
   resolveArenaEmailIdFromRequest,

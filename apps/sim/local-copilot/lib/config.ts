@@ -14,6 +14,17 @@ const DEFAULT_MODEL = 'claude-sonnet-4-6'
  * and `COPILOT_SPECIALIST_MODEL` is unset. Cheaper than Sonnet for leaf tool work.
  */
 const DEFAULT_ANTHROPIC_SPECIALIST_MODEL = 'claude-haiku-4-5'
+/**
+ * Default specialist / parallel-subagent model for Gemini parents. Faster than
+ * Pro for leaf tool rounds; same API key as the catalog Gemini models.
+ */
+const DEFAULT_GEMINI_SPECIALIST_MODEL = 'gemini-3.6-flash'
+/**
+ * Default specialist / parallel-subagent model for Bedrock parents. Haiku 4.5
+ * is the fast Claude on Bedrock; Converse uses the same AWS credentials as
+ * Opus/Sonnet/GLM catalog entries.
+ */
+const DEFAULT_BEDROCK_SPECIALIST_MODEL = 'anthropic.claude-haiku-4-5-20251001-v1:0'
 const DEFAULT_PROVIDER: LocalCopilotProviderId = 'anthropic'
 const DEFAULT_BEDROCK_REGION = 'us-east-1'
 
@@ -37,9 +48,30 @@ function resolveProvider(value: string | undefined): LocalCopilotProviderId {
     : DEFAULT_PROVIDER
 }
 
+function isBedrockModelId(modelId: string): boolean {
+  return /^(?:(?:us|eu|apac|global|us-gov)\.)?(anthropic|amazon|meta|mistral|nvidia|zai|cohere)\./.test(
+    modelId
+  )
+}
+
+/**
+ * Honors `COPILOT_SPECIALIST_MODEL` only when it matches the active provider
+ * family, so a Haiku override cannot leak onto Gemini catalog traffic (and
+ * vice versa). Other providers keep the raw override.
+ */
+function specialistEnvOverride(provider: LocalCopilotProviderId): string | undefined {
+  const override = process.env.COPILOT_SPECIALIST_MODEL?.trim()
+  if (!override) return undefined
+  const isGeminiModel = override.startsWith('gemini')
+  if (provider === 'gemini') return isGeminiModel ? override : undefined
+  if (provider === 'anthropic') return isGeminiModel ? undefined : override
+  if (provider === 'bedrock') return isBedrockModelId(override) ? override : undefined
+  return override
+}
+
 /**
  * Resolves the specialist model: explicit override, else Haiku for Anthropic,
- * else the main agent model.
+ * Flash for Gemini, Haiku 4.5 for Bedrock, else the main agent model.
  */
 export function resolveSpecialistModel(
   provider: LocalCopilotProviderId,
@@ -48,7 +80,10 @@ export function resolveSpecialistModel(
 ): string {
   const override = specialistOverride?.trim()
   if (override) return override
-  return provider === 'anthropic' ? DEFAULT_ANTHROPIC_SPECIALIST_MODEL : mainModel
+  if (provider === 'anthropic') return DEFAULT_ANTHROPIC_SPECIALIST_MODEL
+  if (provider === 'gemini') return DEFAULT_GEMINI_SPECIALIST_MODEL
+  if (provider === 'bedrock') return DEFAULT_BEDROCK_SPECIALIST_MODEL
+  return mainModel
 }
 
 /**
@@ -113,11 +148,7 @@ function hasBedrockCredentials(): boolean {
 export function getLocalCopilotConfig(): LocalCopilotConfig {
   const provider = resolveProvider(process.env.COPILOT_PROVIDER)
   const model = process.env.COPILOT_MODEL?.trim() || DEFAULT_MODEL
-  const specialistModel = resolveSpecialistModel(
-    provider,
-    model,
-    process.env.COPILOT_SPECIALIST_MODEL
-  )
+  const specialistModel = resolveSpecialistModel(provider, model, specialistEnvOverride(provider))
 
   return {
     enabled: parseBoolean(process.env.COPILOT_ENABLED, true),
@@ -145,7 +176,7 @@ export function buildLocalCopilotConfigForCatalog(
   const specialistModel = resolveSpecialistModel(
     entry.provider,
     model,
-    entry.provider === 'anthropic' ? process.env.COPILOT_SPECIALIST_MODEL : undefined
+    specialistEnvOverride(entry.provider)
   )
 
   return {

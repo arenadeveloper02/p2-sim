@@ -14,25 +14,37 @@ const slackUserSchema = z
   .object({ id: z.string(), name: z.string(), real_name: z.string() })
   .passthrough()
 
-export const slackUsersBodySchema = credentialWorkflowBodySchema.extend({
+/**
+ * Slack selector auth. `useUserToken` lists with the OAuth user token (`xoxp-`)
+ * instead of the bot token — Custom Bot on a connected Slack account. Ignored
+ * for pasted `xoxb-` tokens and reusable custom-bot credentials, which have no
+ * user token.
+ */
+export const slackSelectorAuthBodySchema = credentialWorkflowBodySchema.extend({
+  useUserToken: z.boolean().optional(),
+})
+
+export type SlackSelectorAuthBody = z.input<typeof slackSelectorAuthBodySchema>
+
+export const slackUsersBodySchema = slackSelectorAuthBodySchema.extend({
   userId: z.string().optional(),
 })
 
 export const slackChannelsSelectorContract = definePostSelector(
   '/api/tools/slack/channels',
-  credentialWorkflowBodySchema,
+  slackSelectorAuthBodySchema,
   z.object({ channels: z.array(slackChannelSchema) })
 )
 
 export const slackUsersSelectorContract = definePostSelector(
   '/api/tools/slack/users',
-  credentialWorkflowBodySchema,
+  slackSelectorAuthBodySchema,
   z.object({ users: z.array(slackUserSchema) })
 )
 
 export const slackUserSelectorContract = definePostSelector(
   '/api/tools/slack/users',
-  credentialWorkflowBodySchema.extend({ userId: z.string().min(1) }),
+  slackSelectorAuthBodySchema.extend({ userId: z.string().min(1) }),
   z.object({ user: slackUserSchema })
 )
 

@@ -3,6 +3,27 @@ import { Code } from '@sim/emcn'
 import { Check, Copy } from 'lucide-react'
 import { Streamdown } from 'streamdown'
 import 'streamdown/styles.css'
+import { Tooltip } from '@sim/emcn'
+
+function LinkWithPreview({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Tooltip.Root delayDuration={300}>
+      <Tooltip.Trigger asChild>
+        <a
+          href={href}
+          className='text-[var(--text-primary)] underline decoration-dashed underline-offset-4'
+          target='_blank'
+          rel='noopener noreferrer'
+        >
+          {children}
+        </a>
+      </Tooltip.Trigger>
+      <Tooltip.Content side='top' align='center' sideOffset={5} className='max-w-sm'>
+        <span className='truncate text-xs'>{href}</span>
+      </Tooltip.Content>
+    </Tooltip.Root>
+  )
+}
 
 const COMPONENTS = {
   p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => (
@@ -124,10 +145,10 @@ const COMPONENTS = {
     }
 
     return (
-      <div className='my-6 w-0 min-w-full overflow-hidden rounded-md border border-[var(--border-strong)] bg-[var(--surface-2)] text-sm dark:bg-[#1F1F1F]'>
-        <div className='flex items-center justify-between border-[var(--border-strong)] border-b px-4 py-1.5'>
-          <span className='font-sans text-[#A3A3A3] text-xs'>
-            {languageLabel === 'code' ? viewerLanguage : languageLabel}
+      <div className='my-6 overflow-hidden rounded-lg border border-[var(--border)] text-sm'>
+        <div className='flex items-center justify-between border-[var(--border)] border-b bg-[var(--surface-4)] px-4 py-1.5'>
+          <span className='font-sans text-[var(--text-tertiary)] text-xs'>
+            {codeProps.className?.replace('language-', '') || 'code'}
           </span>
           <button
             type='button'
@@ -163,12 +184,12 @@ const COMPONENTS = {
   ),
 
   blockquote: ({ children }: React.HTMLAttributes<HTMLQuoteElement>) => (
-    <blockquote className='my-4 break-words border-[var(--divider)] border-l-2 pl-4 font-sans text-[var(--text-primary)] italic [&>p:first-child]:mt-0 [&>p:last-child]:mb-0 [&>p]:my-2'>
+    <blockquote className='my-4 break-words border-[var(--border)] border-l-2 pl-4 font-sans text-[var(--text-primary)] italic [&>p:first-child]:mt-0 [&>p:last-child]:mb-0 [&>p]:my-2'>
       {children}
     </blockquote>
   ),
 
-  hr: () => <hr className='my-8 border-[var(--divider)] border-t' />,
+  hr: () => <hr className='my-8 border-[var(--border)] border-t' />,
 
   a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
     <a
@@ -193,10 +214,10 @@ const COMPONENTS = {
     <thead className='bg-[var(--surface-3)] text-left'>{children}</thead>
   ),
   tbody: ({ children }: React.HTMLAttributes<HTMLTableSectionElement>) => (
-    <tbody className='divide-y divide-[var(--divider)] bg-[var(--surface-2)]'>{children}</tbody>
+    <tbody className='divide-y divide-[var(--border)] bg-[var(--surface-2)]'>{children}</tbody>
   ),
   tr: ({ children }: React.HTMLAttributes<HTMLTableRowElement>) => (
-    <tr className='border-[var(--divider)] border-b transition-colors hover-hover:bg-[var(--surface-hover)]'>
+    <tr className='border-[var(--border)] border-b transition-colors hover-hover:bg-[var(--surface-hover)]'>
       {children}
     </tr>
   ),

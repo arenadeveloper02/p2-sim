@@ -7,6 +7,17 @@ import type { ToolParameterConfig } from '@/tools/params'
 /** Agent tools whose LLM-facing params should not be locked by block UI defaults on add. */
 const AGENT_TOOLS_SKIP_LLM_DEFAULT_SEEDING = new Set(['image_generator_v2'])
 
+const CORE_AGENT_TOOL_TYPES = new Set([
+  'api',
+  'webhook_request',
+  'workflow',
+  'workflow_input',
+  'knowledge',
+  'function',
+  'table',
+  'file_v5',
+])
+
 /**
  * Builds initial StoredTool.params when a block is added to the Agent tool picker.
  * User-or-llm params on image generator skip block defaults so the agent can set them
@@ -52,6 +63,20 @@ export function isAgentToolPickerBlock(block: BlockConfig): boolean {
     block.type !== 'evaluator' &&
     block.type !== 'mcp' &&
     block.type !== 'file'
+  )
+}
+
+/**
+ * Checks whether a registered block should appear in the agent tool picker.
+ */
+export function isAgentToolBlock(
+  block: Pick<BlockConfig, 'category' | 'hideFromToolbar' | 'type'>
+): boolean {
+  return (
+    !block.hideFromToolbar &&
+    (block.category === 'tools' ||
+      CORE_AGENT_TOOL_TYPES.has(block.type) ||
+      AGENT_TOOL_BLOCK_TYPES.has(block.type))
   )
 }
 

@@ -1,5 +1,5 @@
 /**
- * High-impact edit_workflow preview / dry-run helpers.
+ * Optional edit_workflow dry-run helpers.
  */
 
 export const HIGH_IMPACT_EDIT_OP_THRESHOLD = 5
@@ -38,12 +38,11 @@ export function isHighImpactEdit(operations: unknown[]): boolean {
 
 /**
  * Whether the executor should return a dry-run preview instead of mutating.
+ * Only when the caller explicitly requested a preview — user-requested
+ * replacements (including deleting a block) apply immediately.
  */
 export function shouldPreviewEditWorkflow(args: Record<string, unknown>): boolean {
-  if (args.dryRun === true) return true
-  if (args.confirmed === true) return false
-  const operations = Array.isArray(args.operations) ? args.operations : []
-  return isHighImpactEdit(operations)
+  return args.dryRun === true
 }
 
 /**
@@ -52,24 +51,14 @@ export function shouldPreviewEditWorkflow(args: Record<string, unknown>): boolea
 export function buildEditWorkflowDryRunResult(params: {
   operations: unknown[]
   workflowId: string
-  forcedByPolicy: boolean
 }): Record<string, unknown> {
-  const { operations, workflowId, forcedByPolicy } = params
+  const { operations, workflowId } = params
   return {
     success: true,
     dryRun: true,
     workflowId,
     operationCount: operations.length,
     operations,
-    ...(forcedByPolicy
-      ? {
-          dryRunRequired: true,
-          needsFollowUpEdit: true,
-          message:
-            'High-impact edit previewed only. Re-call edit_workflow with confirmed:true to apply, or use propose_workflow_patch for user review.',
-        }
-      : {
-          message: 'Dry-run preview only — no workflow changes were applied.',
-        }),
+    message: 'Dry-run preview only — no workflow changes were applied.',
   }
 }

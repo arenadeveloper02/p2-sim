@@ -16,7 +16,7 @@ const logger = createLogger('AutoLoginSessionMigrationProvider')
  *
  * Bump the localStorage key when a new clear pass is required in production.
  */
-const AUTO_LOGIN_MIGRATION_KEY = 'sim_auth_session_cookie_scope_migration_v2'
+const AUTO_LOGIN_MIGRATION_KEY = 'sim_auth_session_cookie_scope_migration_v3'
 
 interface AutoLoginSessionMigrationProviderProps {
   children: ReactNode
@@ -30,8 +30,8 @@ export function AutoLoginSessionMigrationProvider({
   children,
 }: AutoLoginSessionMigrationProviderProps) {
   const [ready, setReady] = useState(() => {
-    if (typeof localStorage === 'undefined') return false
-    return localStorage.getItem(AUTO_LOGIN_MIGRATION_KEY) === '1'
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem(AUTO_LOGIN_MIGRATION_KEY) === '1'
   })
 
   useEffect(() => {
@@ -46,8 +46,8 @@ export function AutoLoginSessionMigrationProvider({
         })
         if (!res.ok) {
           logger.error('Session cookie scope migration clear failed', { status: res.status })
-        } else if (typeof localStorage !== 'undefined') {
-          localStorage.setItem(AUTO_LOGIN_MIGRATION_KEY, '1')
+        } else if (typeof window !== 'undefined') {
+          window.localStorage.setItem(AUTO_LOGIN_MIGRATION_KEY, '1')
         }
       } catch (error) {
         logger.error('Session cookie scope migration clear failed', { error })

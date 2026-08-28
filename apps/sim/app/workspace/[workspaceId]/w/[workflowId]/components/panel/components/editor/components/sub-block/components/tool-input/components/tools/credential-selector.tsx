@@ -2,7 +2,7 @@
 
 import { createElement, useCallback, useMemo, useRef, useState } from 'react'
 import { Button, Combobox } from '@sim/emcn'
-import { ExternalLink } from 'lucide-react'
+import { SquareArrowUpRight } from '@sim/emcn/icons'
 import { useParams } from 'next/navigation'
 import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import {
@@ -30,7 +30,7 @@ const getProviderIcon = (providerName: OAuthProvider) => {
   const baseProviderConfig = OAUTH_PROVIDERS[baseProvider]
 
   if (!baseProviderConfig) {
-    return <ExternalLink className='size-3' />
+    return <SquareArrowUpRight className='size-3' />
   }
   return createElement(baseProviderConfig.icon, { className: 'size-3' })
 }
@@ -246,7 +246,7 @@ export function ToolCredentialSelector({
 
       {needsUpdate && (
         <div className='mt-2 flex flex-col gap-1 rounded-sm border bg-[var(--surface-2)] px-2 py-1.5'>
-          <div className='flex items-center font-medium text-caption'>
+          <div className='flex items-center text-caption'>
             <span className='mr-1.5 inline-block size-[6px] rounded-xs bg-amber-500' />
             Additional permissions required
           </div>
@@ -260,11 +260,12 @@ export function ToolCredentialSelector({
                 providerId: reauthorizeProvider,
                 preCount: credentials.length,
                 workspaceId,
+                reconnect: true,
                 requestedAt: Date.now(),
               })
               setShowOAuthModal(true)
             }}
-            className='w-full px-2 py-1 font-medium text-caption'
+            className='w-full px-2 py-1 text-caption'
           >
             Update access
           </Button>
@@ -301,6 +302,10 @@ export function ToolCredentialSelector({
           requiredScopes={reauthorizeRequiredScopes}
           newScopes={missingRequiredScopes}
           serviceId={reauthorizeServiceId}
+          // A reauthorize must return to the authorization server that issued
+          // the credential — deriving it from the service id would send a
+          // sandbox user to production, where they cannot sign in at all.
+          providerId={selectedCredential?.provider ?? effectiveProviderId}
         />
       )}
     </div>

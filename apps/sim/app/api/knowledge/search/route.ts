@@ -1,672 +1,89 @@
-import { db } from '@sim/db'
-import { knowledgeBase } from '@sim/db/schema'
-import { createLogger } from '@sim/logger'
-import { authorizeWorkflowByWorkspacePermission } from '@sim/platform-authz/workflow'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
-import { type NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
-import { getValidationErrorMessage, parseJsonBody } from '@/lib/api/server'
-import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-// import { checkActorUsageLimits } from '@/lib/billing/calculations/usage-monitor'
-// import {
-//   checkAttributedUsageLimits,
-//   requireBillingAttributionHeader,
-//   resolveBillingAttribution,
-//   // toBillingContext, // applied inside recordSearchEmbeddingUsage
-// } from '@/lib/billing/core/billing-attribution'
-// Threshold billing runs inside recordSearchEmbeddingUsage, so the route no
-// longer calls it directly.
-// import {
-//   checkAndBillOverageThreshold,
-//   checkAndBillPayerOverageThreshold,
-// } from '@/lib/billing/threshold-billing'
-import { PlatformEvents } from '@/lib/core/telemetry'
-import { generateRequestId } from '@/lib/core/utils/request'
-import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
-import { ALL_TAG_SLOTS } from '@/lib/knowledge/constants'
-import { recordSearchEmbeddingUsage, recordSearchRerankUsage } from '@/lib/knowledge/embeddings'
-import { getDocumentTagDefinitions } from '@/lib/knowledge/tags/service'
-import { buildUndefinedTagsError, validateTagValue } from '@/lib/knowledge/tags/utils'
-import type { StructuredFilter } from '@/lib/knowledge/types'
-import { estimateTokenCount } from '@/lib/tokenization/estimators'
+import { internalKnowledgeSearchContract } from '@/lib/api/contracts/knowledge'
+import { defineInternalJsonRoute, internalRateLimits } from '@/lib/api/server/routes'
+import { OrchestrationError } from '@/lib/core/orchestration/types'
 import {
-  generateSearchEmbedding,
-  getDocumentMetadataByIds,
-  getQueryStrategy,
-  handleTagAndVectorSearch,
-  handleTagOnlySearch,
-  handleVectorOnlySearch,
-  type RerankConfig,
-  rerankSearchResults,
-  type SearchResult,
-} from '@/app/api/knowledge/search/utils'
-import { checkKnowledgeBaseAccess } from '@/app/api/knowledge/utils'
-import { getRerankModelPricing } from '@/providers/models'
-import { calculateCost } from '@/providers/utils'
+  internalKnowledgeAuthType,
+  resolveInternalKnowledgeBillingAttribution,
+} from '@/lib/knowledge/api/internal-route'
+import {
+  internalKnowledgeErrorPolicies,
+  internalKnowledgeSessionOrExecutorAuth,
+} from '@/lib/knowledge/api/route-policies'
+import { knowledgeOperations } from '@/lib/knowledge/application/operations'
+import { searchKnowledge } from '@/lib/knowledge/application/search'
+import { prepareKnowledgeModelInputProvenance } from '@/lib/knowledge/model-input-provenance'
+import { finalizeKnowledgeRegistryResponse } from '@/app/api/knowledge/secret-provenance'
 
-const logger = createLogger('VectorSearchAPI')
-
-/**
- * UUID regex pattern to check if a string is a UUID
- */
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-/**
- * Resolve knowledge base identifier (name or ID) to ID
- * If the identifier is already a UUID, returns it as-is
- * Otherwise, searches for a knowledge base by name and returns its ID
- */
-async function resolveKnowledgeBaseId(identifier: string): Promise<string | null> {
-  // Check if it's already a UUID
-  if (UUID_REGEX.test(identifier)) {
-    return identifier
-  }
-
-  // Search by name
-  const result = await db
-    .select({ id: knowledgeBase.id })
-    .from(knowledgeBase)
-    .where(and(eq(knowledgeBase.name, identifier), isNull(knowledgeBase.deletedAt)))
-    .limit(1)
-
-  return result.length > 0 ? result[0].id : null
-}
-
-/** Structured tag filter with operator support */
-const StructuredTagFilterSchema = z.object({
-  tagName: z.string(),
-  tagSlot: z.string().optional(),
-  fieldType: z.enum(['text', 'number', 'date', 'boolean']).optional(),
-  operator: z.string().default('eq'),
-  value: z.union([z.string(), z.number(), z.boolean()]),
-  valueTo: z.union([z.string(), z.number()]).optional(),
-})
-
-const VectorSearchSchema = z
-  .object({
-    knowledgeBaseIds: z.union([
-      z.string().min(1, 'Knowledge base ID is required'),
-      z.array(z.string().min(1)).min(1, 'At least one knowledge base ID is required'),
-    ]),
-    query: z
-      .string()
-      .optional()
-      .nullable()
-      .transform((val) => val || undefined),
-    topK: z
-      .number()
-      .min(1)
-      .max(100)
-      .optional()
-      .nullable()
-      .default(10)
-      .transform((val) => val ?? 10),
-    tagFilters: z
-      .array(StructuredTagFilterSchema)
-      .optional()
-      .nullable()
-      .transform((val) => val || undefined),
-    rerank: z
-      .object({
-        enabled: z.boolean().optional().default(true),
-        model: z.string().optional(),
-        topN: z.number().min(1).max(50).optional(),
-      })
-      .optional(),
-    advancedMode: z.boolean().optional(),
-  })
-  .refine(
-    (data) => {
-      const hasQuery = data.query && data.query.trim().length > 0
-      const hasTagFilters = data.tagFilters && data.tagFilters.length > 0
-      return hasQuery || hasTagFilters
-    },
-    {
-      message: 'Please provide either a search query or tag filters to search your knowledge base',
-    }
-  )
-
-export const POST = withRouteHandler(async (request: NextRequest) => {
-  const requestId = generateRequestId()
-
-  try {
-    const parsedBody = await parseJsonBody(request)
-    if (!parsedBody.success) return parsedBody.response
-    const body = parsedBody.data as Record<string, unknown>
-    const { workflowId, skipUsageBilling, ...searchParams } = body
-
-    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
-    if (!auth.success || !auth.userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    const userId = auth.userId
-
-    // Only the internal workflow tool may suppress route metering (it rolls the
-    // cost into the executor's usage instead). Session/API-key callers cannot set
-    // skipUsageBilling to dodge their own embedding/reranker charge.
-    const shouldMeter = !(skipUsageBilling === true && auth.authType === AuthType.INTERNAL_JWT)
-
-    if (workflowId) {
-      const authorization = await authorizeWorkflowByWorkspacePermission({
-        workflowId: workflowId as string,
+export const POST = defineInternalJsonRoute({
+  contract: internalKnowledgeSearchContract,
+  auth: internalKnowledgeSessionOrExecutorAuth,
+  operation: knowledgeOperations.search,
+  rateLimit: internalRateLimits.none({
+    reason: 'Preserve existing internal Knowledge-search behavior',
+  }),
+  errorPolicy: internalKnowledgeErrorPolicies.search,
+  parseOptions: { maxBodyBytes: 2 * 1024 * 1024 },
+  mapInput: ({ body }, { principal, request }) => ({
+    knowledgeBaseIds: Array.isArray(body.knowledgeBaseIds)
+      ? body.knowledgeBaseIds
+      : [body.knowledgeBaseIds],
+    query: body.query,
+    topK: body.topK,
+    tagFilters: body.tagFilters,
+    searchMode: body.searchMode,
+    rerankerEnabled: body.rerankerEnabled,
+    rerankerModel: body.rerankerModel,
+    rerankerInputCount: body.rerankerInputCount,
+    rerankerApiKey: body.rerankerApiKey,
+    skipUsageBilling: body.skipUsageBilling,
+    resolveBillingAttribution: (workspaceId: string) =>
+      resolveInternalKnowledgeBillingAttribution(request, principal, workspaceId),
+    prepareModelInputProvenance: async ({
+      userId,
+      workspaceId,
+    }: {
+      userId: string
+      workspaceId: string
+    }) => {
+      const prepared = await prepareKnowledgeModelInputProvenance({
+        headers: request.headers,
+        payload: body,
+        isInternalRequest: principal.kind === 'delegated',
         userId,
-        action: 'read',
-      })
-      if (!authorization.allowed) {
-        return NextResponse.json(
-          { error: authorization.message || 'Access denied' },
-          { status: authorization.status }
-        )
-      }
-    }
-
-    let knowledgeBaseIds: string[] = []
-    try {
-      const validatedData = VectorSearchSchema.parse(searchParams)
-
-      // advanced mode is selected
-      if (validatedData.advancedMode === true) {
-        const rawKnowledgeBaseIds = Array.isArray(validatedData.knowledgeBaseIds)
-          ? validatedData.knowledgeBaseIds
-          : [validatedData.knowledgeBaseIds]
-
-        // Resolve names to IDs for logging
-        const resolvedIds = await Promise.all(
-          rawKnowledgeBaseIds.map((id) => resolveKnowledgeBaseId(id))
-        )
-        knowledgeBaseIds = resolvedIds.filter((id): id is string => id !== null)
-
-        logger.info(`[${requestId}] Knowledge base search executed in advanced mode`, {
-          knowledgeBaseIds,
-          hasQuery: !!validatedData.query,
-          hasTagFilters: !!(validatedData.tagFilters && validatedData.tagFilters.length > 0),
-        })
-      } else {
-        knowledgeBaseIds = Array.isArray(validatedData.knowledgeBaseIds)
-          ? validatedData.knowledgeBaseIds
-          : [validatedData.knowledgeBaseIds]
-      }
-
-      // Check access permissions in parallel for performance
-      const accessChecks = await Promise.all(
-        knowledgeBaseIds.map((kbId) => checkKnowledgeBaseAccess(kbId, userId))
-      )
-      const accessibleKbIds: string[] = knowledgeBaseIds
-      // .filter(
-      //   (_, idx) => accessChecks[idx]?.hasAccess
-      // )
-
-      // Map display names to tag slots for filtering
-      let structuredFilters: StructuredFilter[] = []
-
-      // Handle tag filters
-      if (validatedData.tagFilters && accessibleKbIds.length > 0) {
-        const kbTagDefs = await Promise.all(
-          accessibleKbIds.map(async (kbId) => ({
-            kbId,
-            tagDefs: await getDocumentTagDefinitions(kbId),
-          }))
-        )
-
-        const displayNameToTagDef: Record<string, { tagSlot: string; fieldType: string }> = {}
-        for (const { kbId, tagDefs } of kbTagDefs) {
-          const perKbMap = new Map(
-            tagDefs.map((def) => [
-              def.displayName,
-              { tagSlot: def.tagSlot, fieldType: def.fieldType },
-            ])
-          )
-
-          for (const filter of validatedData.tagFilters) {
-            const current = perKbMap.get(filter.tagName)
-            if (!current) {
-              if (accessibleKbIds.length > 1) {
-                return NextResponse.json(
-                  {
-                    error: `Tag "${filter.tagName}" does not exist in all selected knowledge bases. Search those knowledge bases separately.`,
-                  },
-                  { status: 400 }
-                )
-              }
-              continue
-            }
-
-            const existing = displayNameToTagDef[filter.tagName]
-            if (
-              existing &&
-              (existing.tagSlot !== current.tagSlot || existing.fieldType !== current.fieldType)
-            ) {
-              return NextResponse.json(
-                {
-                  error: `Tag "${filter.tagName}" is not mapped consistently across the selected knowledge bases. Search those knowledge bases separately.`,
-                },
-                { status: 400 }
-              )
-            }
-
-            displayNameToTagDef[filter.tagName] = current
-          }
-
-          logger.debug(`[${requestId}] Loaded tag definitions for KB ${kbId}`, {
-            tagCount: tagDefs.length,
-          })
-        }
-
-        // Validate all tag filters first
-        const undefinedTags: string[] = []
-        const typeErrors: string[] = []
-
-        for (const filter of validatedData.tagFilters) {
-          const tagDef = displayNameToTagDef[filter.tagName]
-
-          // Check if tag exists
-          if (!tagDef) {
-            undefinedTags.push(filter.tagName)
-            continue
-          }
-
-          // Validate value type using shared validation
-          const validationError = validateTagValue(
-            filter.tagName,
-            String(filter.value),
-            tagDef.fieldType
-          )
-          if (validationError) {
-            typeErrors.push(validationError)
-          }
-        }
-
-        // Throw combined error if there are any validation issues
-        if (undefinedTags.length > 0 || typeErrors.length > 0) {
-          const errorParts: string[] = []
-
-          if (undefinedTags.length > 0) {
-            errorParts.push(buildUndefinedTagsError(undefinedTags))
-          }
-
-          if (typeErrors.length > 0) {
-            errorParts.push(...typeErrors)
-          }
-
-          return NextResponse.json({ error: errorParts.join('\n') }, { status: 400 })
-        }
-
-        // Build structured filters with validated data
-        structuredFilters = validatedData.tagFilters.map((filter) => {
-          const tagDef = displayNameToTagDef[filter.tagName]!
-          const tagSlot = tagDef.tagSlot
-          const fieldType = tagDef.fieldType
-
-          logger.debug(
-            `[${requestId}] Structured filter: ${filter.tagName} -> ${tagSlot} (${fieldType}) ${filter.operator} ${filter.value}`
-          )
-
-          return {
-            tagSlot,
-            fieldType,
-            operator: filter.operator,
-            value: filter.value,
-            valueTo: filter.valueTo,
-          }
-        })
-      }
-
-      if (accessibleKbIds.length === 0) {
-        return NextResponse.json(
-          { error: 'Knowledge base not found or access denied' },
-          { status: 404 }
-        )
-      }
-
-      const accessibleKbs = accessChecks
-        .filter((ac): ac is NonNullable<typeof ac> & { hasAccess: true } => ac?.hasAccess === true)
-        .map((ac) => ac.knowledgeBase)
-      const workspaceId = accessChecks.find((ac) => ac?.hasAccess)?.knowledgeBase?.workspaceId
-
-      // Upstream drives the reranker from flat `rerankerEnabled` / `rerankerModel`
-      // body fields. This fork drives it from the nested `rerank` object instead,
-      // via `rerankConfig` further down, so these two lines stay disabled.
-      // const useReranker = validatedData.rerankerEnabled && Boolean(validatedData.query?.trim())
-      // const rerankerModel = useReranker ? validatedData.rerankerModel : null
-
-      const hasQuery = validatedData.query && validatedData.query.trim().length > 0
-
-      const workspaceIds = new Set(accessibleKbs.map((kb) => kb.workspaceId ?? null))
-      if (hasQuery && workspaceIds.size > 1) {
-        return NextResponse.json(
-          { error: 'Selected knowledge bases must belong to the same workspace' },
-          { status: 400 }
-        )
-      }
-
-      const embeddingModels = Array.from(new Set(accessibleKbs.map((kb) => kb.embeddingModel)))
-      if (hasQuery && embeddingModels.length > 1) {
-        return NextResponse.json(
-          {
-            error:
-              'Selected knowledge bases use different embedding models and cannot be searched together. Search them separately.',
-          },
-          { status: 400 }
-        )
-      }
-      const queryEmbeddingModel = embeddingModels[0] ?? 'text-embedding-3-small'
-
-      // Check if any requested knowledge bases were not accessible
-      const inaccessibleKbIds = knowledgeBaseIds.filter((id) => !accessibleKbIds.includes(id))
-
-      if (inaccessibleKbIds.length > 0) {
-        return NextResponse.json(
-          { error: `Knowledge bases not found or access denied: ${inaccessibleKbIds.join(', ')}` },
-          { status: 404 }
-        )
-      }
-
-      // Billing attribution is disabled for Arena — the header/scope check fails when a
-      // workflow searches a KB outside its own workspace. Keep the upstream path here
-      // so it can be restored without reconstructing it.
-      // const billingAttribution =
-      //   hasQuery && workspaceId
-      //     ? auth.authType === AuthType.INTERNAL_JWT
-      //       ? requireBillingAttributionHeader(request.headers, {
-      //           actorUserId: userId,
-      //           workspaceId,
-      //         })
-      //       : shouldMeter
-      //         ? await resolveBillingAttribution({
-      //             actorUserId: userId,
-      //             workspaceId,
-      //           })
-      //         : undefined
-      //     : undefined
-      //
-      // if (shouldMeter && hasQuery) {
-      //   const usage = billingAttribution
-      //     ? await checkAttributedUsageLimits(billingAttribution)
-      //     : await checkActorUsageLimits(userId)
-      //   if (usage.isExceeded) {
-      //     return NextResponse.json(
-      //       {
-      //         error: usage.message || 'Usage limit exceeded. Please upgrade your plan to continue.',
-      //       },
-      //       { status: 402 }
-      //     )
-      //   }
-      // }
-
-      // if (workflowId) {
-      // const authorization = await authorizeWorkflowByWorkspacePermission({
-      //   workflowId,
-      //   userId,
-      //   action: 'read',
-      // })
-      // const workflowWorkspaceId = authorization.workflow?.workspaceId ?? null
-      // if (
-      //   workflowWorkspaceId &&
-      //   accessChecks.some(
-      //     (accessCheck) =>
-      //       accessCheck?.hasAccess &&
-      //       accessCheck.knowledgeBase?.workspaceId !== workflowWorkspaceId
-      //   )
-      // ) {
-      //   return NextResponse.json(
-      //     { error: 'Knowledge base does not belong to the workflow workspace' },
-      //     { status: 400 }
-      //   )
-      // }
-      // }
-
-      let results: SearchResult[]
-      let queryEmbeddingIsBYOK: boolean | null = null
-
-      const hasFilters = structuredFilters && structuredFilters.length > 0
-
-      if (!hasQuery && hasFilters) {
-        // Tag-only search without vector similarity
-        results = await handleTagOnlySearch({
-          knowledgeBaseIds: accessibleKbIds,
-          topK: validatedData.topK,
-          structuredFilters,
-        })
-      } else if (hasQuery && hasFilters) {
-        // Tag + Vector search
-        logger.debug(
-          `[${requestId}] Executing tag + vector search with filters:`,
-          structuredFilters
-        )
-        const strategy = getQueryStrategy(accessibleKbIds.length, validatedData.topK)
-        const queryEmbeddingResult = await generateSearchEmbedding(
-          validatedData.query!,
-          queryEmbeddingModel,
-          workspaceId
-        )
-        queryEmbeddingIsBYOK = queryEmbeddingResult.isBYOK
-        const queryVector = JSON.stringify(queryEmbeddingResult.embedding)
-
-        results = await handleTagAndVectorSearch({
-          knowledgeBaseIds: accessibleKbIds,
-          topK: validatedData.topK,
-          structuredFilters,
-          queryVector,
-          distanceThreshold: strategy.distanceThreshold,
-        })
-      } else if (hasQuery && !hasFilters) {
-        // Vector-only search
-        const strategy = getQueryStrategy(accessibleKbIds.length, validatedData.topK)
-        const queryEmbeddingResult = await generateSearchEmbedding(
-          validatedData.query!,
-          queryEmbeddingModel,
-          workspaceId
-        )
-        queryEmbeddingIsBYOK = queryEmbeddingResult.isBYOK
-        const queryVector = JSON.stringify(queryEmbeddingResult.embedding)
-
-        results = await handleVectorOnlySearch({
-          knowledgeBaseIds: accessibleKbIds,
-          topK: validatedData.topK,
-          queryVector,
-          distanceThreshold: strategy.distanceThreshold,
-        })
-      } else {
-        // This should never happen due to schema validation, but just in case
-        return NextResponse.json(
-          {
-            error:
-              'Please provide either a search query or tag filters to search your knowledge base',
-          },
-          { status: 400 }
-        )
-      }
-
-      // Calculate cost for the embedding (with fallback if calculation fails)
-      let cost = null
-      let tokenCount = null
-      if (hasQuery) {
-        try {
-          tokenCount = estimateTokenCount(validatedData.query!, 'openai')
-          cost = calculateCost(queryEmbeddingModel, tokenCount.count, 0, false)
-        } catch (error) {
-          logger.warn(`[${requestId}] Failed to calculate cost for search query`, {
-            error: error instanceof Error ? error.message : 'Unknown error',
-          })
-          // Continue without cost information rather than failing the search
-        }
-
-        if (shouldMeter && queryEmbeddingIsBYOK !== null && workspaceId) {
-          await recordSearchEmbeddingUsage({
-            userId,
-            workspaceId,
-            embeddingModel: queryEmbeddingModel,
-            query: validatedData.query!,
-            isBYOK: queryEmbeddingIsBYOK,
-            sourceReference: `kb-search:${requestId}`,
-            // billingAttribution,
-          })
-        }
-      }
-
-      // Fetch tag definitions for display name mapping (reuse the same fetch from filtering)
-      const tagDefsResults = await Promise.all(
-        accessibleKbIds.map(async (kbId) => {
-          try {
-            const tagDefs = await getDocumentTagDefinitions(kbId)
-            const map: Record<string, string> = {}
-            tagDefs.forEach((def) => {
-              map[def.tagSlot] = def.displayName
-            })
-            return { kbId, map }
-          } catch (error) {
-            logger.warn(
-              `[${requestId}] Failed to fetch tag definitions for display mapping:`,
-              error
-            )
-            return { kbId, map: {} as Record<string, string> }
-          }
-        })
-      )
-      const tagDefinitionsMap: Record<string, Record<string, string>> = {}
-      tagDefsResults.forEach(({ kbId, map }) => {
-        tagDefinitionsMap[kbId] = map
-      })
-
-      // Fetch document names for the results
-      const documentIds = results.map((result) => result.documentId)
-      const documentMetadataMap = await getDocumentMetadataByIds(documentIds)
-
-      // Fetch workspaceId per knowledge base for "View in Knowledge Base" links (only for users with workspace access)
-      const kbIds = [...new Set(results.map((r) => r.knowledgeBaseId))]
-      const kbWorkspaceRows = await db
-        .select({ id: knowledgeBase.id, workspaceId: knowledgeBase.workspaceId })
-        .from(knowledgeBase)
-        .where(and(inArray(knowledgeBase.id, kbIds), isNull(knowledgeBase.deletedAt)))
-      const kbToWorkspace: Record<string, string | null> = {}
-      kbWorkspaceRows.forEach((row) => {
-        kbToWorkspace[row.id] = row.workspaceId
-      })
-
-      let rerankerCost: number | undefined
-      let rerankerModel: string | undefined
-      let rerankerSearchUnits = 0
-
-      const rerankConfig: RerankConfig = {
-        ...(validatedData.rerank || {}),
-        requestId,
         workspaceId,
-      }
-      if (hasQuery && (rerankConfig.enabled ?? true)) {
-        const rerankResult = await rerankSearchResults(validatedData.query!, results, rerankConfig)
-        results = rerankResult.results
-        rerankerModel = rerankResult.model
-        rerankerSearchUnits = rerankResult.searchUnits
-
-        if (rerankResult.searchUnits > 0) {
-          const pricing = getRerankModelPricing(rerankResult.model)
-          rerankerCost = pricing ? pricing.perSearchUnit * rerankResult.searchUnits : undefined
-
-          if (shouldMeter && workspaceId) {
-            await recordSearchRerankUsage({
-              userId,
-              workspaceId,
-              model: rerankResult.model,
-              isBYOK: rerankResult.isBYOK,
-              sourceReference: `kb-search:${requestId}`,
-              searchUnits: rerankResult.searchUnits,
-            })
-          }
-        }
-      }
-      try {
-        PlatformEvents.knowledgeBaseSearched({
-          knowledgeBaseId: accessibleKbIds[0],
-          resultsCount: results.length,
-          workspaceId: workspaceId || undefined,
-        })
-      } catch {
-        // Telemetry should not fail the operation
-      }
-
-      return NextResponse.json({
-        success: true,
-        data: {
-          results: results.map((result) => {
-            const kbTagMap = tagDefinitionsMap[result.knowledgeBaseId] || {}
-            logger.debug(
-              `[${requestId}] Result KB: ${result.knowledgeBaseId}, available mappings:`,
-              kbTagMap
-            )
-
-            // Create tags object with display names
-            const tags: Record<string, any> = {}
-
-            ALL_TAG_SLOTS.forEach((slot) => {
-              const tagValue = (result as any)[slot]
-              if (tagValue !== null && tagValue !== undefined) {
-                const displayName = kbTagMap[slot] || slot
-                logger.debug(
-                  `[${requestId}] Mapping ${slot}="${tagValue}" -> "${displayName}"="${tagValue}"`
-                )
-                tags[displayName] = tagValue
-              }
-            })
-
-            const docMeta = documentMetadataMap[result.documentId]
-            return {
-              documentId: result.documentId,
-              documentName: docMeta?.filename || undefined,
-              sourceUrl: docMeta?.sourceUrl ?? null,
-              content: result.content,
-              chunkIndex: result.chunkIndex,
-              metadata: tags, // Clean display name mapped tags
-              similarity: hasQuery ? 1 - result.distance : 1, // Perfect similarity for tag-only searches
-              chunkId: result.id,
-              knowledgeBaseId: result.knowledgeBaseId,
-              workspaceId: kbToWorkspace[result.knowledgeBaseId] ?? undefined,
-            }
-          }),
-          query: validatedData.query || '',
-          knowledgeBaseIds: accessibleKbIds,
-          knowledgeBaseId: accessibleKbIds[0],
-          topK: validatedData.topK,
-          totalResults: results.length,
-          ...(cost && tokenCount
-            ? {
-                cost: {
-                  input: cost.input,
-                  output: cost.output,
-                  total: cost.total + (rerankerCost ?? 0),
-                  tokens: {
-                    prompt: tokenCount.count,
-                    completion: 0,
-                    total: tokenCount.count,
-                  },
-                  model: queryEmbeddingModel,
-                  pricing: cost.pricing,
-                  ...(rerankerCost !== undefined && { rerankerCost }),
-                  ...(rerankerModel && { rerankerModel }),
-                  ...(rerankerSearchUnits > 0 && { rerankerSearchUnits }),
-                },
-              }
-            : {}),
-        },
+        modelInput: body.query,
       })
-    } catch (validationError) {
-      if (validationError instanceof z.ZodError) {
-        return NextResponse.json(
-          {
-            error: getValidationErrorMessage(validationError),
-            details: validationError.issues,
-          },
-          { status: 400 }
-        )
-      }
-      throw validationError
+      if (!prepared.success) throw new OrchestrationError('validation', prepared.error)
+      return prepared.registry
+    },
+  }),
+  useCase: searchKnowledge,
+  present: (result) => ({
+    success: true as const,
+    data: {
+      results: result.results.map(({ embeddingId, ...item }) => ({
+        ...item,
+        knowledgeBaseId: item.knowledgeBaseId ?? result.knowledgeBaseId,
+        chunkId: embeddingId,
+        ...(result.workspaceId ? { workspaceId: result.workspaceId } : {}),
+      })),
+      query: result.query,
+      knowledgeBaseIds: result.knowledgeBaseIds,
+      knowledgeBaseId: result.knowledgeBaseId,
+      topK: result.topK,
+      totalResults: result.totalResults,
+      ...(result.cost ? { cost: result.cost } : {}),
+    },
+  }),
+  finalizeResponse: ({ request, principal, result, body }) => {
+    if (!result.resultSecretRegistry) {
+      throw new Error('Internal Knowledge search did not produce a provenance registry')
     }
-  } catch (error) {
-    return NextResponse.json(
-      {
-        error: 'Failed to perform vector search',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    )
-  }
+    return finalizeKnowledgeRegistryResponse({
+      request,
+      authType: internalKnowledgeAuthType(principal),
+      body,
+      registry: result.resultSecretRegistry,
+    })
+  },
 })

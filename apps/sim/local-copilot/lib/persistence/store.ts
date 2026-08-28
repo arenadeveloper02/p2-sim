@@ -9,6 +9,7 @@ import {
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import { desc, eq, max } from 'drizzle-orm'
+import { LOCAL_COPILOT_MAX_HISTORY_MESSAGES } from '@/local-copilot/lib/context/context-budget'
 import type { LocalCopilotMessageContent, WorkflowPatch } from '@/local-copilot/lib/types'
 
 const logger = createLogger('LocalCopilotPersistence')
@@ -85,11 +86,13 @@ export async function appendMessage(params: {
 }
 
 export async function getMessages(conversationId: string) {
-  return db
+  const rows = await db
     .select()
     .from(localCopilotMessages)
     .where(eq(localCopilotMessages.conversationId, conversationId))
-    .orderBy(localCopilotMessages.seq)
+    .orderBy(desc(localCopilotMessages.seq))
+    .limit(LOCAL_COPILOT_MAX_HISTORY_MESSAGES)
+  return [...rows].reverse()
 }
 
 export async function savePatch(params: {

@@ -12,6 +12,7 @@ import {
   MothershipStreamV1ToolOutcome,
   type MothershipStreamV1ToolResultPayload,
 } from '@/lib/copilot/generated/mothership-stream-v1'
+import { BrowserRequestTakeover } from '@/lib/copilot/generated/tool-catalog-v1'
 import { TraceAttr } from '@/lib/copilot/generated/trace-attributes-v1'
 import { TraceSpan } from '@/lib/copilot/generated/trace-spans-v1'
 import { withCopilotSpan } from '@/lib/copilot/request/otel'
@@ -232,9 +233,10 @@ export async function prePersistClientExecutableToolCall(
         runId: context.runId,
         userId: execContext.userId,
         registry: execContext.resolvedSecretTraceRegistry,
+        toolInput: data.arguments,
       })
     } catch (error) {
-      execContext.resolvedSecretTraceRegistry.markIncomplete()
+      execContext.resolvedSecretTraceRegistry.markIncomplete('client-tool-seal-failed')
       logger.warn('Failed to seal client tool provenance', {
         toolCallId: data.toolCallId,
         error: getErrorMessage(error),
@@ -285,6 +287,7 @@ export async function handleToolEvent(
 ): Promise<void> {
   const isSubagent = scope === 'subagent'
   const parentToolCallId = isSubagent ? getScopedParentToolCallId(event, context) : undefined
+  const agentId = event.scope?.agentId ?? 'main'
 
   if (isSubagent && !parentToolCallId) return
 
@@ -332,6 +335,7 @@ export async function handleToolEvent(
     options,
     parentToolCallId,
     scope,
+    agentId,
     getScopedSpanIdentity(event)
   )
 }
@@ -409,6 +413,7 @@ async function handleCallPhase(
   options: OrchestratorOptions,
   parentToolCallId: string | undefined,
   scope: ToolScope,
+  agentId: string,
   spanIdentity: { spanId?: string; parentSpanId?: string }
 ): Promise<void> {
   const { toolCallId, toolName } = data
@@ -416,6 +421,7 @@ async function handleCallPhase(
   const isGenerating = data.status === TOOL_CALL_STATUS.generating
   const isPartial = data.partial === true || isGenerating
   const existing = context.toolCalls.get(toolCallId)
+  if (existing) existing.agentId ??= agentId
   const isSubagent = scope === 'subagent'
   const ui = getToolCallUI(data)
 
@@ -459,12 +465,13 @@ async function handleCallPhase(
       toolName,
       args,
       parentToolCallId!,
+      agentId,
       ui,
       spanIdentity,
       !isPartial
     )
   } else {
-    registerMainToolCall(context, toolCallId, toolName, args, existing, ui, !isPartial)
+    registerMainToolCall(context, toolCallId, toolName, args, existing, agentId, ui, !isPartial)
   }
 
   if (isPartial) return
@@ -554,6 +561,7 @@ function registerSubagentToolCall(
   toolName: string,
   args: Record<string, unknown> | undefined,
   parentToolCallId: string,
+  agentId: string,
   ui: { title?: string; phaseLabel?: string; hidden?: boolean },
   spanIdentity: { spanId?: string; parentSpanId?: string },
   finalized: boolean
@@ -574,6 +582,7 @@ function registerSubagentToolCall(
       id: toolCallId,
       name: toolName,
       status: 'pending',
+      agentId,
       params: args,
       startTime: Date.now(),
     }
@@ -594,6 +603,7 @@ function registerSubagentToolCall(
   const subagentToolCalls = context.subAgentToolCalls[parentToolCallId]
   const existingSubagentToolCall = subagentToolCalls.find((tc) => tc.id === toolCallId)
   if (existingSubagentToolCall) {
+    existingSubagentToolCall.agentId ??= agentId
     if (!rebindResolvedIntegrationCall(existingSubagentToolCall, toolName, args)) {
       updateToolCallFromFrame(existingSubagentToolCall, toolName, args, finalized)
     }
@@ -609,6 +619,7 @@ function registerMainToolCall(
   toolName: string,
   args: Record<string, unknown> | undefined,
   existing: ToolCallState | undefined,
+  agentId: string,
   ui: { title?: string; phaseLabel?: string; hidden?: boolean },
   finalized: boolean
 ): void {
@@ -638,6 +649,7 @@ function registerMainToolCall(
       id: toolCallId,
       name: toolName,
       status: 'pending',
+      agentId,
       params: args,
       startTime: Date.now(),
     }
@@ -740,12 +752,14 @@ async function dispatchToolExecution(
    */
   function waitForClientExecution(): Promise<AsyncCompletionSignal> {
     toolCall.status = 'executing'
+    const waitsForHuman = toolName === BrowserRequestTakeover.id
+    const timeoutMs = waitsForHuman ? null : options.timeout || STREAM_TIMEOUT_MS
     return withCopilotSpan(
       TraceSpan.CopilotToolWaitForClientResult,
       {
         [TraceAttr.ToolName]: toolName,
         [TraceAttr.ToolCallId]: toolCallId,
-        [TraceAttr.ToolTimeoutMs]: options.timeout || STREAM_TIMEOUT_MS,
+        ...(timeoutMs !== null ? { [TraceAttr.ToolTimeoutMs]: timeoutMs } : {}),
         ...(context.runId ? { [TraceAttr.RunId]: context.runId } : {}),
       },
       async (span) => {
@@ -753,7 +767,7 @@ async function dispatchToolExecution(
           ? await waitForWorkflowToolCompletion({
               toolCallId,
               workflowId: resolveWorkflowToolTargetId(args, execContext.workflowId),
-              timeoutMs: options.timeout || STREAM_TIMEOUT_MS,
+              timeoutMs: timeoutMs ?? STREAM_TIMEOUT_MS,
               abortSignal: options.abortSignal,
               registry: execContext.resolvedSecretTraceRegistry,
             })
@@ -761,7 +775,7 @@ async function dispatchToolExecution(
               toolCallId,
               runId: context.runId,
               userId: execContext.userId,
-              timeoutMs: options.timeout || STREAM_TIMEOUT_MS,
+              timeoutMs,
               abortSignal: options.abortSignal,
               registry: execContext.resolvedSecretTraceRegistry,
             })
@@ -769,8 +783,15 @@ async function dispatchToolExecution(
         if (completion) {
           span.setAttribute(TraceAttr.ToolOutcome, completion.status)
         }
-        handleClientCompletion(toolCall, toolCallId, completion)
-        await emitSyntheticToolResult(toolCallId, toolCall.name, completion, options)
+        const backgroundIsSuccess = toolName === 'run_workflow' && args?.async === true
+        handleClientCompletion(toolCall, toolCallId, completion, backgroundIsSuccess)
+        await emitSyntheticToolResult(
+          toolCallId,
+          toolCall.name,
+          completion,
+          options,
+          backgroundIsSuccess
+        )
         return (
           completion ?? {
             status: MothershipStreamV1ToolOutcome.error,

@@ -8,6 +8,7 @@ import {
   hubspotPropertiesSelectorContract,
 } from '@/lib/api/contracts/selectors/hubspot'
 import { getScopesForService } from '@/lib/oauth/utils'
+import { readSubBlockValue } from '@/triggers/editor-state'
 import type { TriggerConfig } from '@/triggers/types'
 
 const logger = createLogger('HubSpotPollingTrigger')
@@ -19,11 +20,8 @@ const logger = createLogger('HubSpotPollingTrigger')
  * first render even when the dropdown visibly shows "contact".
  */
 async function resolveSelectedObjectType(blockId: string): Promise<string | null> {
-  const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-  const objectType = useSubBlockStore.getState().getValue(blockId, 'objectType') as string | null
-  const customId = useSubBlockStore.getState().getValue(blockId, 'customObjectTypeId') as
-    | string
-    | null
+  const objectType = (await readSubBlockValue(blockId, 'objectType')) as string | null
+  const customId = (await readSubBlockValue(blockId, 'customObjectTypeId')) as string | null
   const selected = objectType ?? 'contact'
   if (selected === 'custom') {
     const trimmed = customId?.trim()
@@ -33,10 +31,7 @@ async function resolveSelectedObjectType(blockId: string): Promise<string | null
 }
 
 async function fetchHubSpotProperties(blockId: string, objectType: string) {
-  const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-  const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
-    | string
-    | null
+  const credentialId = (await readSubBlockValue(blockId, 'triggerCredentials')) as string | null
   if (!credentialId) throw new Error('No HubSpot credential selected')
   const data = await requestJson(hubspotPropertiesSelectorContract, {
     query: { credentialId, objectType },
@@ -102,8 +97,7 @@ export const hubspotPollingTrigger: TriggerConfig = {
       placeholder: 'Select a list',
       options: [],
       fetchOptions: async (blockId: string) => {
-        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-        const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
+        const credentialId = (await readSubBlockValue(blockId, 'triggerCredentials')) as
           | string
           | null
         if (!credentialId) throw new Error('No HubSpot credential selected')
@@ -125,6 +119,7 @@ export const hubspotPollingTrigger: TriggerConfig = {
     {
       id: 'eventType',
       title: 'Event',
+      canvasNoun: 'change',
       type: 'dropdown',
       description:
         'Created fires once per new record. Updated fires on any modification. Property Changed fires only when the chosen property changes value.',
@@ -196,8 +191,7 @@ export const hubspotPollingTrigger: TriggerConfig = {
       placeholder: 'All pipelines',
       options: [],
       fetchOptions: async (blockId: string) => {
-        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-        const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
+        const credentialId = (await readSubBlockValue(blockId, 'triggerCredentials')) as
           | string
           | null
         const objectType = (await resolveSelectedObjectType(blockId)) ?? 'contact'
@@ -225,14 +219,11 @@ export const hubspotPollingTrigger: TriggerConfig = {
       placeholder: 'All stages',
       options: [],
       fetchOptions: async (blockId: string) => {
-        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-        const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
+        const credentialId = (await readSubBlockValue(blockId, 'triggerCredentials')) as
           | string
           | null
         const objectType = (await resolveSelectedObjectType(blockId)) ?? 'contact'
-        const pipelineId = useSubBlockStore.getState().getValue(blockId, 'pipelineId') as
-          | string
-          | null
+        const pipelineId = (await readSubBlockValue(blockId, 'pipelineId')) as string | null
         if (!credentialId) throw new Error('No HubSpot credential selected')
         if (!pipelineId) return []
         try {
@@ -259,8 +250,7 @@ export const hubspotPollingTrigger: TriggerConfig = {
       placeholder: 'Any owner',
       options: [],
       fetchOptions: async (blockId: string) => {
-        const { useSubBlockStore } = await import('@/stores/workflows/subblock/store')
-        const credentialId = useSubBlockStore.getState().getValue(blockId, 'triggerCredentials') as
+        const credentialId = (await readSubBlockValue(blockId, 'triggerCredentials')) as
           | string
           | null
         if (!credentialId) throw new Error('No HubSpot credential selected')

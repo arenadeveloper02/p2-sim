@@ -22,15 +22,15 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   glob: 'Finds workspace files by glob pattern (e.g. files/**/*.csv).',
   grep: 'Searches file contents under a workspace path pattern.',
   create_file:
-    'Creates a workspace file ONLY when no suitable workspaceFiles entry exists. Prefer fileName with a VFS path (e.g. "files/Deck.pptx"). For markdown/text/json/csv/html, ALWAYS pass content with the full body. Office formats (pptx/docx/pdf): empty shell only — no content — then workspace_file update + edit_content in later rounds. If a matching file exists, update it instead. Pass confirmCreateNew: true only for an explicitly brand-new path.',
+    'Creates a workspace file. Prefer fileName with a VFS path (e.g. "files/Deck.pptx"). For markdown/text/json/csv/html, ALWAYS pass content with the full body — markdown must be finished GFM (# title, ## sections, lists, blank lines), not a wall of prose or a file wrapped in one code fence. Do not also print that body in chat. Office formats (pptx/docx/pdf): empty shell only — no content — then workspace_file update + edit_content in later rounds.',
   create_file_folder: 'Creates a folder under the workspace files tree.',
   workspace_file:
-    'Declares a content edit on an existing workspace file (append/update/patch). REQUIRED: operation, target={kind:"path", path:"files/..."}, title (short UI label). Example: {"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"SambaNova deck"}. Does not write the body — call edit_content in the NEXT tool round with content. Never pass target as a bare string path.',
+    'Declares a content edit on an existing workspace file (append/update/patch). REQUIRED: operation, target={kind:"path", path:"files/..." }, title. Never operation=create or target.kind=new_file — create_file already created the row; create/new_file inserts a duplicate. Example: {"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"SambaNova deck"}. Does not write the body — call edit_content in the NEXT tool round with content.',
   download_to_workspace_file: 'Downloads a URL into a workspace file.',
   user_table:
-    'Creates, reads, and updates workspace tables — operations include create, get, get_schema, insert_row, batch_insert_rows, query_rows, update_row, add_column, import_file, create_from_file. REUSE FIRST: if `tables` is non-empty, call get / get_schema / query_rows and reuse. Pass confirmCreateNew: true only when the user explicitly wants a brand-new table.',
+    'Creates, reads, and updates workspace tables — operations include create, get, get_schema, insert_row, batch_insert_rows, query_rows, update_row, add_column, import_file, create_from_file.',
   knowledge_base:
-    'Manages knowledge bases — operations include create, get, list, query (semantic search), add_file (ingest document), update, delete, add_connector, sync_connector. REUSE FIRST: if `knowledgeBases` is non-empty, call get / list / query and reuse. Pass confirmCreateNew: true only when the user explicitly wants a brand-new knowledge base.',
+    'Manages knowledge bases — operations include create, get, list, query (semantic search), add_file (ingest document), update, delete, add_connector, sync_connector.',
   open_resource: 'Opens a workspace resource (workflow, file, table, knowledge base) in the UI.',
   materialize_file:
     'Saves chat uploads (`uploads/...`) into workspace `files/...` (or imports). Required before function_execute can open uploaded spreadsheets/docs — uploads/ paths are not sandbox-mounted.',
@@ -42,7 +42,7 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   function_execute:
     'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools.',
   edit_content:
-    'Writes the body after a successful workspace_file in a prior round. REQUIRED: content (string). For pptx/docx/pdf put JavaScript using pre-initialized globals (pptx / docx / pdf) — e.g. pptx.addSlide(); slide.addText("Title", { x: 0.5, y: 0.5, w: 9, h: 1 }). Never emit in the same batch as workspace_file.',
+    'Writes the body after a successful workspace_file in a prior round. REQUIRED: content (string). For pptx/docx/pdf put JavaScript using pre-initialized globals (pptx / docx / pdf) — never require/import. PPTX: SLIDE_W/MARGIN/CONTENT_W, title + bullets, one idea per slide. DOCX: __docxDocOptions + HeadingLevel + addSection (never docx.addSection). PDF: LETTER pages, margins, wrapped text. Markdown: finished GFM. Never a single unstyled dump. Never emit in the same batch as workspace_file.',
   deploy_chat:
     'Deploys or undeploys a workflow as a shareable chat interface. Performs the full workflow deploy plus chat surface setup. REQUIRED on deploy: workflowId, identifier (URL slug), title, versionName, versionDescription. Call get_block_outputs for outputConfigs (agent content path). Call diff_workflows(ref1: "live", ref2: "draft") when unsure what changed. Returns chatUrl on success — share that with the user.',
   get_block_outputs:

@@ -1,6 +1,6 @@
 'use client'
 
-import { type RefObject, useCallback, useMemo, useRef, useState } from 'react'
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { generateId } from '@sim/utils/id'
 import Cookies from 'js-cookie'

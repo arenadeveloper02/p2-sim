@@ -90,7 +90,6 @@ export function DestructiveConfirmDialog({ onCancel, onConfirm }: DestructiveCon
         <div className='mt-4 flex justify-end gap-2'>
           <button
             type='button'
-            autoFocus
             data-testid='destructive-confirm-cancel'
             onClick={onCancel}
             className={cn(

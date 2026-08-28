@@ -262,6 +262,8 @@ describe('runArenaGenerativeUi', () => {
     expect(mockGenerateManifest).toHaveBeenCalledWith(
       expect.objectContaining({ apiBindings: refreshed })
     )
-    expect(mockPersistDraft).toHaveBeenCalledWith(expect.objectContaining({ apiBindings: refreshed }))
+    expect(mockPersistDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ apiBindings: refreshed })
+    )
   })
 })

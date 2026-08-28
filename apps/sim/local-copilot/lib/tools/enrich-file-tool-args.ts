@@ -1,4 +1,5 @@
 import { truncate } from '@sim/utils/string'
+import { FILE_BODY_ARG_KEYS, firstFileBodyString } from '@/local-copilot/lib/tools/file-body-args'
 
 const OFFICE_FILE_EXTENSION = /\.(pptx|docx|pdf)$/i
 
@@ -17,6 +18,12 @@ function tryParseJsonObject(value: string): Record<string, unknown> | null {
     return null
   }
   return null
+}
+
+function toWorkspaceVfsPath(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return trimmed
+  return trimmed.startsWith('files/') ? trimmed : `files/${trimmed}`
 }
 
 function basenameWithoutExtension(path: string): string {
@@ -84,10 +91,29 @@ export function enrichCreateFileArgs(args: Record<string, unknown>): void {
     }
   }
 
-  // Office shells reject inline content — drop it so create_file can succeed.
   const createPath = resolveCreateFilePath(args)
-  if (createPath && OFFICE_FILE_EXTENSION.test(createPath) && 'content' in args) {
-    args.content = undefined
+  const nested =
+    args.args && typeof args.args === 'object' && !Array.isArray(args.args)
+      ? (args.args as Record<string, unknown>)
+      : undefined
+
+  // Office shells reject inline content — drop every body alias so create_file
+  // can succeed as an empty file, then workspace_file + edit_content write JS.
+  if (createPath && OFFICE_FILE_EXTENSION.test(createPath)) {
+    for (const key of FILE_BODY_ARG_KEYS) {
+      if (key in args) args[key] = undefined
+    }
+    if (nested) {
+      for (const key of FILE_BODY_ARG_KEYS) {
+        if (key in nested) nested[key] = undefined
+      }
+    }
+    return
+  }
+
+  if (typeof args.content !== 'string' || args.content.length === 0) {
+    const body = firstFileBodyString(args) ?? (nested ? firstFileBodyString(nested) : undefined)
+    if (body) args.content = body
   }
 }
 
@@ -114,9 +140,22 @@ export function enrichWorkspaceFileArgs(args: Record<string, unknown>): void {
     if (!target.kind && typeof target.path === 'string' && target.path) {
       target.kind = 'path'
     }
-    // Schema currently only allows kind=path; prefer path when both are present.
     if (target.kind === 'file_id' && typeof target.path === 'string' && target.path) {
       target.kind = 'path'
+    }
+    // create_file already inserted the row. kind=new_file / operation=create
+    // would insert a second uniquely-named file (Deck (1).pptx).
+    if (target.kind === 'new_file') {
+      const fileName = typeof target.fileName === 'string' ? target.fileName.trim() : ''
+      const path = typeof target.path === 'string' ? target.path.trim() : ''
+      const resolved = path || fileName
+      if (resolved) {
+        target.kind = 'path'
+        target.path = toWorkspaceVfsPath(resolved)
+      }
+    }
+    if (target.kind === 'path' && typeof target.path === 'string' && target.path) {
+      target.path = toWorkspaceVfsPath(target.path)
     }
   }
 
@@ -129,6 +168,8 @@ export function enrichWorkspaceFileArgs(args: Record<string, unknown>): void {
   }
 
   if (typeof args.operation !== 'string' || !args.operation.trim()) {
+    args.operation = 'update'
+  } else if (args.operation === 'create') {
     args.operation = 'update'
   }
 
@@ -151,12 +192,6 @@ export function enrichWorkspaceFileArgs(args: Record<string, unknown>): void {
  */
 export function enrichEditContentArgs(args: Record<string, unknown>): void {
   if (typeof args.content === 'string' && args.content.length > 0) return
-
-  for (const key of ['code', 'body', 'text', 'script', 'js', 'javascript'] as const) {
-    const value = args[key]
-    if (typeof value === 'string' && value.length > 0) {
-      args.content = value
-      return
-    }
-  }
+  const body = firstFileBodyString(args)
+  if (body) args.content = body
 }

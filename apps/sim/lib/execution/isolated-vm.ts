@@ -7,12 +7,15 @@ import { getErrorMessage, toError } from '@sim/utils/errors'
 import { filterUndefined } from '@sim/utils/object'
 import { randomFloat } from '@sim/utils/random'
 import { env } from '@/lib/core/config/env'
+import { getConfiguredCacheProvider } from '@/lib/core/config/env-capabilities.server'
 import { getRedisClient } from '@/lib/core/config/redis'
 import {
   type SecureFetchOptions,
   secureFetchWithValidation,
 } from '@/lib/core/security/input-validation.server'
-import { sanitizeUrlForLog } from '@/lib/core/utils/logging'
+import type { CodePlaceholderRuntimeBinding } from '@/lib/execution/code-placeholders'
+import { buildJavaScriptRuntimeBindingsSource } from '@/lib/execution/code-placeholders/javascript-runtime'
+import { MAX_ISOLATED_VM_BROKER_RESULT_JSON_CHARS } from '@/lib/execution/isolated-vm-limits'
 
 const logger = createLogger('IsolatedVMExecution')
 
@@ -94,6 +97,7 @@ export interface IsolatedVMExecutionRequest {
   params: Record<string, unknown>
   envVars: Record<string, string>
   contextVariables: Record<string, unknown>
+  runtimeBindings?: CodePlaceholderRuntimeBinding[]
   timeoutMs: number
   requestId: string
   ownerKey?: string
@@ -132,6 +136,8 @@ export interface IsolatedVMExecutionResult {
   result: unknown
   stdout: string
   error?: IsolatedVMError
+  /** Host-owned outcome for enforced termination; user code cannot set this field. */
+  termination?: 'timeout' | 'cancelled'
   /** Populated in task mode: the `finalize` result as base64-encoded bytes. */
   bytesBase64?: string
   /**
@@ -173,6 +179,7 @@ interface IsolatedVMError {
 }
 
 const POOL_SIZE = Number.parseInt(env.IVM_POOL_SIZE) || 4
+const MIN_WORKERS = 1
 const MAX_CONCURRENT = Number.parseInt(env.IVM_MAX_CONCURRENT) || 10000
 const MAX_PER_WORKER = Number.parseInt(env.IVM_MAX_PER_WORKER) || 2500
 const WORKER_IDLE_TIMEOUT_MS = Number.parseInt(env.IVM_WORKER_IDLE_TIMEOUT_MS) || 60000
@@ -192,8 +199,6 @@ const DISTRIBUTED_MAX_INFLIGHT_PER_OWNER =
 const DISTRIBUTED_LEASE_MIN_TTL_MS = Number.parseInt(env.IVM_DISTRIBUTED_LEASE_MIN_TTL_MS) || 120000
 const MAX_EXECUTIONS_PER_WORKER = Number.parseInt(env.IVM_MAX_EXECUTIONS_PER_WORKER) || 200
 const MAX_BROKER_ARGS_JSON_CHARS = Number.parseInt(env.IVM_MAX_BROKER_ARGS_JSON_CHARS) || 262_144
-const MAX_BROKER_RESULT_JSON_CHARS =
-  Number.parseInt(env.IVM_MAX_BROKER_RESULT_JSON_CHARS) || 16_777_216
 const MAX_BROKERS_PER_EXECUTION = Number.parseInt(env.IVM_MAX_BROKERS_PER_EXECUTION) || 1000
 const DISTRIBUTED_KEY_PREFIX = 'ivm:fair:v1:owner'
 const LEASE_REDIS_DEADLINE_MS = 200
@@ -380,9 +385,9 @@ async function secureFetch(
       headers,
     })
   } catch (error: unknown) {
+    const normalizedError = toError(error)
     logger.warn(`[${requestId}] Isolated fetch failed`, {
-      url: sanitizeUrlForLog(url),
-      error: toError(error).message,
+      errorName: normalizedError.name,
     })
     return JSON.stringify({ error: getErrorMessage(error, 'Unknown fetch error') })
   }
@@ -410,8 +415,7 @@ async function tryAcquireDistributedLease(
   leaseId: string,
   timeoutMs: number
 ): Promise<LeaseAcquireResult> {
-  // Redis not configured: explicit local-mode fallback is allowed.
-  if (!env.REDIS_URL) return 'acquired'
+  if (getConfiguredCacheProvider() === 'database') return 'acquired'
 
   const redis = getRedisClient()
   if (!redis) {
@@ -771,10 +775,10 @@ function handleBrokerMessage(
         sendResponse({ error: 'Broker result is not JSON-serializable' })
         return
       }
-      if (resultJson.length > MAX_BROKER_RESULT_JSON_CHARS) {
+      if (resultJson.length > MAX_ISOLATED_VM_BROKER_RESULT_JSON_CHARS) {
         logReject('result_too_large', { resultJsonLength: resultJson.length })
         sendResponse({
-          error: `Broker result exceeds maximum size (${MAX_BROKER_RESULT_JSON_CHARS} chars)`,
+          error: `Broker result exceeds maximum size (${MAX_ISOLATED_VM_BROKER_RESULT_JSON_CHARS} chars)`,
         })
         return
       }
@@ -1234,6 +1238,7 @@ function dispatchToWorker(
       result: null,
       stdout: '',
       error: { message: 'Execution cancelled', name: 'AbortError' },
+      termination: 'cancelled',
     })
     drainQueue()
     return
@@ -1266,6 +1271,7 @@ function dispatchToWorker(
       result: null,
       stdout: '',
       error: { message: `Execution timed out after ${req.timeoutMs}ms`, name: 'TimeoutError' },
+      termination: 'timeout',
     })
     if (workerInfo.retiring && workerInfo.activeExecutions === 0) {
       cleanupWorker(workerInfo.id)
@@ -1288,7 +1294,15 @@ function dispatchToWorker(
   ownerState.activeExecutions++
 
   try {
-    workerInfo.process.send({ type: 'execute', executionId: execId, request: req })
+    const { runtimeBindings, ...wireRequest } = req
+    workerInfo.process.send({
+      type: 'execute',
+      executionId: execId,
+      request: {
+        ...wireRequest,
+        runtimeBindingSource: buildJavaScriptRuntimeBindingsSource(runtimeBindings ?? []),
+      },
+    })
   } catch {
     clearTimeout(timeout)
     workerInfo.pendingExecutions.delete(execId)
@@ -1443,6 +1457,22 @@ function drainQueue() {
 }
 
 /**
+ * Spawn the minimum worker pool at server start so the first sandbox compile
+ * does not wait on process spawn and isolated-vm native load.
+ */
+export async function ensureWarmIsolatedVmWorkers(): Promise<void> {
+  const target = Math.min(MIN_WORKERS, POOL_SIZE)
+  while (workers.size < target) {
+    try {
+      await spawnWorker()
+    } catch (error) {
+      logger.warn('Isolated-vm worker prewarm failed', { error: getErrorMessage(error) })
+      break
+    }
+  }
+}
+
+/**
  * Execute JavaScript code in an isolated V8 isolate via Node.js subprocess.
  */
 export async function executeInIsolatedVM(
@@ -1461,6 +1491,7 @@ export async function executeInIsolatedVM(
       result: null,
       stdout: '',
       error: { message: 'Execution cancelled', name: 'AbortError' },
+      termination: 'cancelled',
     }
   }
 
@@ -1561,6 +1592,7 @@ export async function executeInIsolatedVM(
           result: null,
           stdout: '',
           error: { message: 'Execution cancelled', name: 'AbortError' },
+          termination: 'cancelled',
         })
       }
       signal.addEventListener('abort', abortListener, { once: true })
