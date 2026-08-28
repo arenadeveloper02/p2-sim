@@ -1,4 +1,8 @@
 import type { Spec } from '@json-render/core'
+import {
+  isArenaGenerativeSpacingToken,
+  resolveArenaGenerativeSpacing,
+} from '@/lib/arena-generative-ui/theme'
 
 /**
  * Element shape as it arrives from the model: `children` may be a nested array
@@ -72,21 +76,8 @@ const TYPE_ALIASES: Record<string, string> = {
   ToggleSwitch: 'Switch',
 }
 
-/**
- * Spacing tokens type-check as `z.string()` but land in inline styles, where an
- * unresolved token silently collapses the gap. Resolve them to real lengths.
- */
-const SPACING_TOKENS: Record<string, string> = {
-  none: '0px',
-  xs: '4px',
-  sm: '8px',
-  md: '16px',
-  lg: '24px',
-  xl: '32px',
-  '2xl': '48px',
-}
-
 const SPACING_PROPS = ['gap', 'padding'] as const
+const CARD_VARIANTS = new Set(['default', 'muted'])
 
 /**
  * CSS flexbox spellings the model reaches for. The renderer only maps the catalog enum, so an
@@ -375,14 +366,21 @@ function normalizeLayoutValues(props: Record<string, unknown>): void {
 function normalizeSpacing(props: Record<string, unknown>): void {
   for (const key of SPACING_PROPS) {
     const token = asString(props[key])
-    if (token && SPACING_TOKENS[token]) {
-      props[key] = SPACING_TOKENS[token]
+    if (token && isArenaGenerativeSpacingToken(token)) {
+      props[key] = resolveArenaGenerativeSpacing(token)
     }
   }
 }
 
 function normalizeTypeProps(type: string, props: Record<string, unknown>): void {
   switch (type) {
+    case 'Card': {
+      const variant = asString(props.variant)
+      if (variant && !CARD_VARIANTS.has(variant)) {
+        clearProp(props, 'variant')
+      }
+      break
+    }
     case 'Grid':
       normalizeGridColumns(props)
       break

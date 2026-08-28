@@ -422,7 +422,7 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
       {
         ownership: 'generator',
         text: 'Use whitespace to establish grouping.',
-        prompt: 'Use whitespace to establish grouping (24px gaps between groups).',
+        prompt: 'Use whitespace to establish grouping (gap "lg" between groups).',
       },
     ],
   },

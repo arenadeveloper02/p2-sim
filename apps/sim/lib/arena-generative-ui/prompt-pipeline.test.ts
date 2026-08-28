@@ -113,6 +113,8 @@ describe('buildGeneratorSystemPrompt', () => {
 
   it('keeps archetype layouts off the always-on design tokens', () => {
     expect(ARENA_GENERATIVE_UI_DESIGN_GUIDELINES).toContain('ARENA DESIGN SYSTEM')
+    expect(ARENA_GENERATIVE_UI_DESIGN_GUIDELINES).toContain('DESIGN TOKENS')
+    expect(ARENA_GENERATIVE_UI_DESIGN_GUIDELINES).toContain('"padding":"lg"')
     expect(ARENA_GENERATIVE_UI_DESIGN_GUIDELINES).not.toContain('one-field search')
     expect(ARENA_GENERATIVE_UI_DESIGN_GUIDELINES).not.toContain('centered PageHeader')
     expect(ARENA_GENERATIVE_UI_DESIGN_GUIDELINES).not.toContain('WorkingCard')

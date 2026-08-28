@@ -36,9 +36,15 @@
   --gui-radius: var(--radius-ds-lg, 12px);
   --gui-radius-sm: var(--radius-ds-md, 8px);
   --gui-radius-pill: var(--radius-ds-pill, 9999px);
-  --gui-gap: var(--spacing-ds-component-md, 16px);
-  --gui-pad: var(--spacing-ds-layout-sm, 24px);
-  --gui-section-gap: var(--spacing-ds-layout-md, 32px);
+  --gui-space-xs: 4px;
+  --gui-space-sm: 8px;
+  --gui-space-md: 16px;
+  --gui-space-lg: 24px;
+  --gui-space-xl: 32px;
+  --gui-space-2xl: 48px;
+  --gui-gap: var(--gui-space-md);
+  --gui-pad: var(--gui-space-md);
+  --gui-section-gap: var(--gui-space-lg);
   --gui-control-height: 40px;
   --gui-control-px: 16px;
   --gui-shadow-card: var(--shadow-ds-md, 0px 2px 8px rgba(44, 45, 51, 0.1));

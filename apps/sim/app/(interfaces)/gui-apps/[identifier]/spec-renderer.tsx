@@ -55,6 +55,7 @@ import {
   valuesFromFormElement,
 } from '@/lib/arena-generative-ui/form-fields'
 import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
+import { resolveArenaGenerativeSpacing } from '@/lib/arena-generative-ui/theme'
 import {
   ARENA_GENERATIVE_SELECTED_ID_KEY,
   collectionFromBoundValue,
@@ -312,6 +313,13 @@ function deltaToneClass(value: unknown): string {
 
 const SURFACE_CARD =
   'rounded-[var(--gui-radius,12px)] bg-[var(--gui-surface,#ffffff)] p-6 shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]'
+
+const SURFACE_CARD_MUTED =
+  'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-6'
+
+function cardSurfaceClass(variant: unknown): string {
+  return asString(variant) === 'muted' ? SURFACE_CARD_MUTED : SURFACE_CARD
+}
 
 const SURFACE_STAT =
   'rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)] p-6'
@@ -1047,9 +1055,9 @@ function styleFromProps(props: Record<string, unknown>): CSSProperties {
   const size = asString(props.size)
   if (backgroundColor) style.backgroundColor = backgroundColor
   if (color) style.color = color
-  if (padding) style.padding = padding
+  if (padding) style.padding = resolveArenaGenerativeSpacing(padding)
   if (maxWidth) style.maxWidth = maxWidth
-  if (gap) style.gap = gap
+  if (gap) style.gap = resolveArenaGenerativeSpacing(gap)
   if (size && isCssLength(size)) style.fontSize = size
   return style
 }
@@ -1506,7 +1514,10 @@ export function SpecRenderer({
               justify === 'end' && 'justify-end',
               asBoolean(props.wrap) && 'flex-wrap'
             )}
-            style={{ gap: asString(props.gap, 'var(--gui-gap, 16px)'), ...styleFromProps(props) }}
+            style={{
+              gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
+              ...styleFromProps(props),
+            }}
           >
             {children}
           </div>
@@ -1519,7 +1530,7 @@ export function SpecRenderer({
             className='grid w-full'
             style={{
               gridTemplateColumns: gridTemplateColumns(props),
-              gap: asString(props.gap, 'var(--gui-gap, 16px)'),
+              gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
               ...styleFromProps(props),
             }}
           >
@@ -1578,7 +1589,10 @@ export function SpecRenderer({
               layout === 'sidebar-right' && 'md:grid-cols-[1fr_280px]',
               layout === 'equal' && 'md:grid-cols-2'
             )}
-            style={{ gap: asString(props.gap, 'var(--gui-gap, 16px)'), ...styleFromProps(props) }}
+            style={{
+              gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
+              ...styleFromProps(props),
+            }}
           >
             {children}
           </div>
@@ -2069,7 +2083,12 @@ export function SpecRenderer({
             </div>
           ) : null
         return (
-          <div className={cn('flex flex-col gap-4', SURFACE_CARD)} style={styleFromProps(props)}>
+          <div
+            data-testid='card'
+            data-variant={asString(props.variant, 'default')}
+            className={cn('flex flex-col gap-4', cardSurfaceClass(props.variant))}
+            style={styleFromProps(props)}
+          >
             {mediaBesideTitle ? (
               <div className='flex items-start gap-3'>
                 {mediaIds.map((childId) => (

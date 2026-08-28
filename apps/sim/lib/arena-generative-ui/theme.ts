@@ -3,9 +3,48 @@ import type { CSSProperties } from 'react'
 const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
 /** Arena DS radius: sm 8 · component 12 · lg 16. */
 const RADIUS_PX = { sm: '8px', md: '12px', lg: '16px' } as const
-const DENSITY_GAP = { compact: '12px', comfortable: '16px', roomy: '24px' } as const
-const DENSITY_PAD = { compact: '12px', comfortable: '16px', roomy: '24px' } as const
-const DENSITY_SECTION_GAP = { compact: '16px', comfortable: '24px', roomy: '32px' } as const
+
+/** Comfortable defaults; compact / roomy overlay `--gui-space-*` on the themed root. */
+const DENSITY_SPACE = {
+  compact: { md: '12px', lg: '16px', xl: '24px', '2xl': '32px' },
+  comfortable: { md: '16px', lg: '24px', xl: '32px', '2xl': '48px' },
+  roomy: { md: '24px', lg: '32px', xl: '40px', '2xl': '56px' },
+} as const
+
+export const ARENA_GENERATIVE_SPACING_TOKENS = [
+  'none',
+  'xs',
+  'sm',
+  'md',
+  'lg',
+  'xl',
+  '2xl',
+] as const
+
+export type ArenaGenerativeSpacingToken = (typeof ARENA_GENERATIVE_SPACING_TOKENS)[number]
+
+/**
+ * Catalog `gap` / `padding` tokens. Resolved to density-aware `--gui-space-*` so a
+ * later theme density change still applies. CSS lengths pass through.
+ */
+const SPACING_TOKEN_CSS: Record<ArenaGenerativeSpacingToken, string> = {
+  none: '0px',
+  xs: 'var(--gui-space-xs, 4px)',
+  sm: 'var(--gui-space-sm, 8px)',
+  md: 'var(--gui-space-md, 16px)',
+  lg: 'var(--gui-space-lg, 24px)',
+  xl: 'var(--gui-space-xl, 32px)',
+  '2xl': 'var(--gui-space-2xl, 48px)',
+}
+
+export function isArenaGenerativeSpacingToken(value: string): value is ArenaGenerativeSpacingToken {
+  return (ARENA_GENERATIVE_SPACING_TOKENS as readonly string[]).includes(value)
+}
+
+/** Maps `lg` → `var(--gui-space-lg, 24px)`; leaves `"18px"` and CSS vars unchanged. */
+export function resolveArenaGenerativeSpacing(value: string): string {
+  return isArenaGenerativeSpacingToken(value) ? SPACING_TOKEN_CSS[value] : value
+}
 
 /** Arena brand blue — always the generate default unless Design Notes override. */
 export const ARENA_GENERATIVE_BRAND_COLOR = '#1A73E8' as const
@@ -81,9 +120,14 @@ export function arenaGenerativeThemeStyle(theme?: ArenaGenerativeTheme): CSSProp
     style['--gui-radius'] = RADIUS_PX[theme.radius]
   }
   if (theme.density) {
-    style['--gui-gap'] = DENSITY_GAP[theme.density]
-    style['--gui-pad'] = DENSITY_PAD[theme.density]
-    style['--gui-section-gap'] = DENSITY_SECTION_GAP[theme.density]
+    const space = DENSITY_SPACE[theme.density]
+    style['--gui-space-md'] = space.md
+    style['--gui-space-lg'] = space.lg
+    style['--gui-space-xl'] = space.xl
+    style['--gui-space-2xl'] = space['2xl']
+    style['--gui-gap'] = space.md
+    style['--gui-pad'] = space.md
+    style['--gui-section-gap'] = space.lg
   }
   if (theme.font === 'serif') {
     style.fontFamily = 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif'

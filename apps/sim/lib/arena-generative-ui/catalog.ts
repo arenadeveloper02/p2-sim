@@ -125,12 +125,13 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         description: z.string().nullable(),
         footerText: z.string().nullable(),
         padding: z.string().nullable(),
+        variant: z.enum(['default', 'muted']).nullable(),
         backgroundColor: z.string().nullable(),
         showWhen: z.string().nullable(),
       }),
       slots: ['default'],
       description:
-        "Card with optional title, subtitle, and description. The first Icon or Avatar child is media (feature well or entity logo). Button, Chip, NavLink, Link, and Toolbar children render in a footer under a divider with optional footerText. Use this for entity result cards (logo, title, subtitle, truncated body, footer meta + Analyze) and for feature cards with an Icon well. showWhen uses the same clause syntax as form fields (for example selectedId={item.id} to reveal a selected row's markdown).",
+        "Card with optional title, subtitle, and description. variant is default (raised host surface) or muted (bordered, no shadow) — not a Button variant. padding takes a spacing token (xs–2xl) or a CSS length. The first Icon or Avatar child is media (feature well or entity logo). Button, Chip, NavLink, Link, and Toolbar children render in a footer under a divider with optional footerText. Use this for entity result cards (logo, title, subtitle, truncated body, footer meta + Analyze) and for feature cards with an Icon well. showWhen uses the same clause syntax as form fields (for example selectedId={item.id} to reveal a selected row's markdown).",
     },
     Heading: {
       props: z.object({
@@ -683,8 +684,14 @@ export const ARENA_GENERATIVE_UI_THEME_RULE = [
 export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
   'ARENA DESIGN SYSTEM',
   'The host already paints Poppins, brand blue #1A73E8, grey text hierarchy, 12px radius, 40px controls, display titles, and shadow-first cards. You compose catalog components; you do not invent hex, fonts, or CSS.',
+  'DESIGN TOKENS (host-owned). Color, type, radius, and density are painted by the host. Do not set backgroundColor, color, fontFamily, or radius on elements. You may set gap and padding to a spacing token, and Card.variant to default or muted.',
+  'color: background, surface, surfaceMuted, text, textMuted, border, primary, success, warning, danger — host CSS; not element props.',
+  'spacing: none xs sm md lg xl 2xl — use on gap and padding only. Prefer gap "lg" between groups. Example: {"type":"Card","props":{"variant":"default","padding":"lg"}}.',
+  'radius: sm md lg — manifest.theme.radius only.',
+  'typography: display h1 h2 h3 body bodySmall caption — host maps PageHeader and Heading.level; do not set fontSize.',
+  'density: compact comfortable roomy — manifest.theme.density only. Tokens scale with density.',
   'Viewport: full page up to 1280px; the same layout stacks in a narrow Arena iframe because Grid and Columns collapse. Do not author a permanently narrow centre column.',
-  'Every generate reply includes the default theme. Page → Section → PageHeader; Section width follows DESIGN GUIDELINES. Then groups of Grid / Columns / Card with gap "24px". Surfaces are exactly two — the page canvas and the Card/Stat surface — both supplied by the host. Content avatars and company logos are allowed; do not add an app wordmark.',
+  'Every generate reply includes the default theme. Page → Section → PageHeader; Section width follows DESIGN GUIDELINES. Then groups of Grid / Columns / Card with gap "lg". Surfaces are exactly two — the page canvas and the Card/Stat surface — both supplied by the host. Content avatars and company logos are allowed; do not add an app wordmark.',
 ].join('\n')
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */

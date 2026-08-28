@@ -78,6 +78,10 @@ describe('ARENA_GENERATIVE_UI_COMPOSITION_PROMPT', () => {
     expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).toContain(
       'Never generate a decorative Sparkline'
     )
+    expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).toContain(
+      'variant "default" is the raised host surface'
+    )
+    expect(ARENA_GENERATIVE_UI_LAYOUT_PROMPT).toContain('gap "lg"')
   })
 
   it('teaches Grid collapse without host loading chrome', () => {

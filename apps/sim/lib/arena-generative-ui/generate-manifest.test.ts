@@ -263,7 +263,7 @@ describe('generateArenaGenerativeManifest', () => {
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
     expect(system).toContain('there are exactly two')
-    expect(system).toContain('never size words like "md" or "lg"')
+    expect(system).toContain('spacing tokens')
     expect(system).toContain('Never let prose run the full 1280px')
     expect(system).toContain('nest levels sequentially')
     expect(system).toContain('every interactive field carries an explicit label')

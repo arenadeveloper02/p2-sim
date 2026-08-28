@@ -201,7 +201,7 @@ describe('normalizeGeneratedSpec', () => {
     expect(elements(spec).chart.type).toBe('Sparkline')
   })
 
-  it('resolves spacing tokens to CSS lengths and passes raw lengths through', () => {
+  it('resolves spacing tokens to density-aware CSS variables and passes raw lengths through', () => {
     const spec = normalizeGeneratedSpec({
       root: 'page',
       elements: {
@@ -211,9 +211,21 @@ describe('normalizeGeneratedSpec', () => {
         c: { type: 'Stack', props: { gap: '18px' }, children: [] },
       },
     })
-    expect(elements(spec).a.props.gap).toBe('24px')
-    expect(elements(spec).b.props.padding).toBe('16px')
+    expect(elements(spec).a.props.gap).toBe('var(--gui-space-lg, 24px)')
+    expect(elements(spec).b.props.padding).toBe('var(--gui-space-md, 16px)')
     expect(elements(spec).c.props.gap).toBe('18px')
+  })
+
+  it('drops an unknown Card variant so validation still succeeds', () => {
+    const spec = normalizeGeneratedSpec({
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['card'] },
+        card: { type: 'Card', props: { variant: 'outlined', title: 'Item' }, children: [] },
+      },
+    })
+    expect(elements(spec).card.props.variant).toBeUndefined()
+    expect(elements(spec).card.props.title).toBe('Item')
   })
 
   it('maps column and row directions onto the catalog vocabulary', () => {

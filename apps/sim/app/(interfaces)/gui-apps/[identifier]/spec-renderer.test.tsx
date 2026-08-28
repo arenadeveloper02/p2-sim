@@ -2042,6 +2042,39 @@ describe('SpecRenderer', () => {
     expect(footer?.textContent).toContain('Analyze')
   })
 
+  it('renders Card variant muted without a shadow and resolves padding tokens', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['card'] },
+        card: {
+          type: 'Card',
+          props: { title: 'Quiet', variant: 'muted', padding: 'lg' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const card = container.querySelector('[data-testid="card"]') as HTMLElement
+    expect(card.getAttribute('data-variant')).toBe('muted')
+    expect(card.className).toContain('border-[var(--gui-border,#e2e3e5)]')
+    expect(card.className).not.toContain('shadow-[var(--gui-shadow-card')
+    expect(card.style.padding).toBe('var(--gui-space-lg, 24px)')
+  })
+
+  it('resolves Stack gap tokens to density-aware CSS variables', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['stack'] },
+        stack: { type: 'Stack', props: { gap: 'lg' }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    const stack = container.querySelector('div.flex') as HTMLElement
+    expect(stack.style.gap).toBe('var(--gui-space-lg, 24px)')
+  })
+
   it('resolves host binding tokens on Text and Chip', () => {
     const spec: Spec = {
       root: 'page',
