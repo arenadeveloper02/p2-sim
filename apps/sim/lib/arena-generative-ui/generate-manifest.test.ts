@@ -191,6 +191,11 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('#1A73E8')
     expect(system).toContain('always emit manifest.theme')
     expect(system).toContain('ARENA DESIGN SYSTEM')
+    expect(system).toContain('UNIVERSAL UI/UX CONSTITUTION')
+    expect(system).toContain('COMPONENT RULES')
+    expect(system).toContain('INTERACTION / STATE RULES')
+    expect(system).toContain('HOST UX')
+    expect(system).toContain('WorkingCard')
   })
 
   it('opens with the engineer persona and a no-markdown instruction', async () => {

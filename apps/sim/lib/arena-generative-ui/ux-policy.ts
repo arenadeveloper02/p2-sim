@@ -1,14 +1,12 @@
 /**
  * Default UX policy for Arena Generative UI. The compiler and host enforce
- * this. The generator sees `ARENA_GENERATIVE_UI_HOST_UX_PROMPT` only.
+ * this. The generator sees `ARENA_GENERATIVE_UI_HOST_UX_PROMPT` plus the
+ * constitution; principles and nevers are derived from constitution.ts.
  */
-export const ARENA_GENERATIVE_UI_UX_PRINCIPLES = [
-  'Generate interfaces that feel production-ready.',
-  'Prefer clear visual hierarchy, obvious primary actions, predictable navigation, responsive layouts, accessible controls, progressive disclosure, contextual feedback, concise error messages, useful empty states, and skeleton loading for content.',
-  'Optimistic updates only when safe (navigate-first). Never invent API data. Never create fake progress.',
-  'Confirmation before destructive actions.',
-  'For every async operation the platform provides loading, error, retry, disabled, and success behavior.',
-].join('\n')
+export {
+  ARENA_GENERATIVE_UI_UX_NEVERS,
+  ARENA_GENERATIVE_UI_UX_PRINCIPLES,
+} from '@/lib/arena-generative-ui/constitution'
 
 /**
  * One notification channel per event. Host chrome owns these; the LLM must not
@@ -24,29 +22,9 @@ export const ARENA_GENERATIVE_UI_NOTIFICATION_POLICY = {
 } as const
 
 /**
- * Author preview keeps runner error copy (HTTP 422, missing secrets). No GUI
- * sanitizer this pass.
- */
-export const ARENA_GENERATIVE_UI_UX_NEVERS = [
-  'silently discard user input',
-  'silently fail an action',
-  'overwrite newer data with stale responses',
-  'show stale data as current without indication',
-  'create inaccessible interactive elements',
-  'create navigation that cannot be reached with keyboard',
-  'expose secrets/API keys beyond existing missing-secret diagnostics',
-  'submit the same mutation twice',
-  'destroy user data without confirmation',
-  'lose partial streaming results on failure',
-  'block the entire page for a background refresh',
-  'invent API data',
-  'create fake progress',
-  'trap the user in a page without recovery/navigation',
-] as const
-
-/**
  * Short generator summary. Enforcement stays in the compiler and host; this
- * only stops the model from emitting a second copy of that chrome.
+ * only stops the model from emitting a second copy of that chrome. Cited from
+ * the constitution STATES and ACTIONS sections rather than rewritten ad hoc.
  */
 export const ARENA_GENERATIVE_UI_HOST_UX_PROMPT = [
   'HOST UX: the runtime compiles loading, error, retry, save confirmation, and destructive confirm. Describe pages, copy, forms, which API, navigation, and empty-state copy.',

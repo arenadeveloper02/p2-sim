@@ -1,0 +1,72 @@
+/**
+ * Catalog generator rules grouped for the spec prompt pipeline.
+ * `ARENA_GENERATIVE_UI_OUTPUT_RULES` is the concatenation for existing imports.
+ */
+
+/** Mechanical JSON envelope — numbered RULES after the catalog reference. */
+export const ARENA_GENERATIVE_UI_ENVELOPE_RULES = [
+  'Output a single complete JSON object. Do NOT wrap it in markdown fences. Do NOT output JSONL patches.',
+  'Shape: { "title": string, "content": string, "manifest": { "entryPath": string, "theme?", "pages": { [path]: { "title", "path", "spec", "onLoad?" } }, "actions": { [actionId]: { "apiKey", "inputMapping?", "append?", "onSuccess?", "onError?" } } } } }',
+  'manifest.pages MUST be an object keyed by kebab-case path, never an array. Example: { "home": { "path": "home", "title": "People", "spec": { ... } }, "person": { "path": "person", "title": "Profile", "spec": { ... } } }.',
+  'Return one JSON object only. Do not emit a short summary object before the manifest.',
+  'Each page spec is a json-render Spec: { "root": string, "elements": { [key]: { type, props, children } } }.',
+  'Every page Spec root element must be type Page.',
+  'Every element must include a children array (use [] for leaves).',
+  'Every element needs type, props, and children, under a unique descriptive key in its page elements map ("home-header", "stat-revenue").',
+  'Before finishing a page, walk its tree from root: every key in every children array must exist as its own entry in that page elements map. Add any element you referenced but did not define.',
+  'Only use component types from the catalog.',
+  'Use NavLink.to or Button.navigateTo for in-app navigation. Never use href for another page in this app.',
+  'CTA forms that call APIs must set Form.actionId or SubmitButton.actionId to a key in manifest.actions.',
+  'Every manifest.actions[actionId].apiKey MUST be one of the declared API binding keys. Do not invent API keys.',
+  'If no API bindings were declared, omit manifest.actions or leave it empty and use navigation only.',
+  'onSuccess.navigate and NavLink.to / Button.navigateTo / navigate action `to` must be existing page paths, optionally followed by a query string such as "report?range=30d".',
+  'Every page must be reachable from entryPath via NavLink, navigateTo, navigate, or onSuccess.navigate.',
+  'DataText, Text, Alert, and ListItem render markdown. Put a prose API body on a single DataText; do not split markdown into Heading/List elements.',
+  'emailId is optional. Do not invent a login form or an app wordmark.',
+] as const
+
+/**
+ * Type-choice rules. A later pass can replace this heading with a decision tree;
+ * the strings stay the current catalog contract.
+ */
+export const ARENA_GENERATIVE_UI_COMPONENT_RULES = [
+  'Spacing: group related elements into a Card or Stack so data reads as chunks, and leave real space between groups. gap and padding take CSS lengths such as "16px" or "24px", never size words like "md" or "lg".',
+  'Surfaces: there are exactly two — the page canvas and the Card/Stat surface, both supplied by the host from the Arena Design System (manifest.theme or host defaults). Do not set backgroundColor unless the brief names a specific colour. Build hierarchy from PageHeader, Card grouping, heading level, and 24px gaps between groups — never coloured fills or borders.',
+  'Collections: when each item is the same scalar fields with no per-row action, use Table. When items have a name, description, and action, use Repeat inside a Grid (columns 2) of entity Cards — Avatar, title, subtitle, truncated description, footerText plus a footer Button. When each item needs its own Card, Badge, button, or link more generally, put a Repeat inside a Grid (columns 2 or 3) or Stack, bound to the array statePath; Repeat\'s children are the per-item template and render once per element. Never unroll a live array into one static Card per item, and never wrap Grid in Repeat (that produces N grids). Bind per-item fields with statePath "item.field". Put per-item values into navigation and hrefs with "{item.id}" — NavLink.to "order?id={item.id}" opens the detail page so its onLoad receives that id. A Button.selectItem inside Repeat copies the row into host state without an API call; a Button.actionId sends the item fields as the action input. Never bind a long prose field (output, content, body) inside Repeat — not item.output, not Card.description, not a Table column.',
+  'Loaded row selection: when list items already include a prose field (history[].output, items[].content), Open is Button selectItem true with no actionId. It copies prose to content plus selected/selectedId — it does not restamp inputs. If the brief opens a separate results/detail page, add navigateTo that page (no onLoad there) so DataText statePath "content" shows the row. If the brief stays on the list page, omit navigateTo: hide the Repeat (or its Grid/Stack/Section) with showWhen "!selectedId", put the markdown in a sibling Section showWhen "selectedId" with a ghost Back Button clearItem true (no navigateTo). Do not append DataText below an always-visible Repeat. Do not invent a second fetch for a field already on the row. When the list API only returns an id, keep the fetch-one detail onLoad instead. History cards bind item.keyword / item.client only inside Repeat. Results after Generate still echo the home form names ({targetKeyword}, {clientBrand}), not those history keys ({keyword}, {client}).',
+  'Tabular data goes in Table, metrics go in Stat inside a Grid (size "display" for dashboard KPIs), record details go in KeyValue or EntityHeader, short statuses go in Badge or Chip.',
+  'Forms: every interactive field carries an explicit label. Pair short related fields (TextInput, NumberInput, DateInput, Select) side by side in a Grid (columns 2) and keep long free-text, RadioGroup, MultiSelect, Checkbox, and Switch full width. Multi-field forms have one SubmitButton and an optional Back NavLink, and default to left-aligned. A one-field search is SearchField (placeholder is enough; optional label) — never a labelled Grid of one TextInput.',
+  'Form controls: SearchField (pill query with nested submit and optional suggestion chips), TextInput (one line), TextArea (prose), NumberInput (counts and amounts; min/max/step as decimal strings), DateInput (YYYY-MM-DD), Select (one of a comma-separated options list), RadioGroup (a short visible exclusive list — use Select when there are more than five options), MultiSelect (several of that list, submitted as an array), Checkbox (must-tick boolean), Switch (on/off preference). Every field needs name; labelled fields also need label. defaultValue seeds the control (comma-separated for MultiSelect); Checkbox/Switch also accept defaultChecked. statePath reads a host-state key instead when set. showWhen hides a field until a sibling matches: "notify" means that field is truthy, "!selectedId" means it is unset, "channel=email" means equality, "channel!=sms" inequality, and comma-separated clauses are AND. Hidden fields are not submitted and are not validated. required plus optional errorText run on submit — do not add a second Text for the error. There is no file-upload field.',
+  'Hero: a one-field search page uses PageHeader align "center" with a kicker plus SearchField — that is the default for that page, not an exception. Multi-field forms stay left-aligned. Collections, dashboards, and tables stay wide. A search field beside its button is SearchField, not a centred Stack of TextInput and SubmitButton. justify accepts exactly start, center, between, end (never "space-between" or a CSS value).',
+  'Chrome: start a page with PageHeader (kicker, title, subtitle, trailing action as its child) instead of a bare Heading. Use EntityHeader for a company or record identity row. Use Toolbar for a row of filters or secondary buttons, and Columns for a main area beside a supporting sidebar.',
+  'Emphasis: at most one Button with variant "primary" per page, and none on a page whose main action is a SubmitButton or SearchField (those are already primary). Ordinary actions are "secondary", outline + shape "pill" is the brand-bordered secondary such as "View analysis history", Back / Cancel / dismiss are "ghost", and delete or disconnect is "destructive". Never express emphasis with a colour — there is no colour prop on Button.',
+  'Navigation: when the app has three or more top-level destinations, put a Tabs element with one "Label|path" line per top-level page on those destination pages and set activePath to the current path. A search hero omits Tabs. Detail and progress pages are reached with NavLink/navigateTo and offer a Back NavLink.',
+  'Avatars: content logos and initials belong on Avatar or EntityHeader (src, initials, or statePath including "{item.logo}"). Do not add a decorative app wordmark or branding Image — the host already provides the outer shell.',
+] as const
+
+export const ARENA_GENERATIVE_UI_INTERACTION_RULES = [
+  'Loading: bind every CTA or onLoad result region to a statePath. Table, Repeat, Stat, KeyValue and DataText then show a placeholder automatically while pending and empty. When the brief names rotating status lines, a step checklist, elapsed/estimate, or Cancel during generate, emit WorkingCard on the waiting page (destination of onSuccess.navigate, or below SubmitButton if the brief stays on the form). The host ticks steps and the bar together — do not also emit ProgressBar, ProgressSteps, or Spinner. A Stat with a literal value or a Table with literal rows never shows a skeleton. For a static-children region you may add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]}.',
+  'Empty results: when a bound Table, Repeat, or KeyValue has loaded and the value is empty, the host shows emptyText (defaults: "No results" for Table and Repeat, "No details" for KeyValue). Do not add a second Text or Alert for that. A DataText fallback is the empty copy for prose. Customise emptyText when the brief names the collection ("No matching articles").',
+  'Result pages: when onSuccess.navigate sends the user to another page, the host navigates there immediately and the action stays pending, so bind the destination Table/Repeat/Stat/KeyValue/DataText — not loaders on the form page the user has already left. The host supplies pending chrome.',
+] as const
+
+export const ARENA_GENERATIVE_UI_RESPONSIVE_RULES = [
+  'Layout: compose for a full page up to 1280px (Section width wide). Grid and Columns collapse to one column in a narrow Arena iframe — do not design as a permanently narrow single column, and do not assume the iframe is 1280px. Do not set maxWidth unless the brief demands an exact cap.',
+  'Measure: dashboards, collections and tables stay wide, but a narrative block — a report body, an analysis, a long DataText — goes in its own Section with width "narrow" or in the main column of Columns. A PageHeader subtitle and a search-hero subtitle keep a readable measure (the host caps them) even on a wide Section. Never let prose run the full 1280px.',
+  'This app renders as a full page up to 1280px and also embeds in a narrow Arena iframe (Grid and Columns collapse).',
+] as const
+
+export const ARENA_GENERATIVE_UI_ACCESSIBILITY_RULES = [
+  'Typography: one h1-level page title per page (PageHeader.title counts), then a short supporting subtitle. Never title a page "Page 1" or use lorem ipsum.',
+  'Heading order: nest levels sequentially and never skip or invert them. PageHeader.title is the page h1 and Card.title renders an h2, so a Heading inside a Card starts at h3.',
+  'Every interactive field carries an explicit label. Do not use color as the only state indicator.',
+] as const
+
+/** Full catalog contract. Generate uses the grouped exports via the prompt pipeline. */
+export const ARENA_GENERATIVE_UI_OUTPUT_RULES = [
+  ...ARENA_GENERATIVE_UI_ENVELOPE_RULES,
+  ...ARENA_GENERATIVE_UI_COMPONENT_RULES,
+  ...ARENA_GENERATIVE_UI_INTERACTION_RULES,
+  ...ARENA_GENERATIVE_UI_RESPONSIVE_RULES,
+  ...ARENA_GENERATIVE_UI_ACCESSIBILITY_RULES,
+] as const

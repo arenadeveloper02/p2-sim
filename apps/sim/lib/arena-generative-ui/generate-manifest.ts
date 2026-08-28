@@ -5,33 +5,19 @@ import { truncate } from '@sim/utils/string'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-prompt'
 import {
-  ARENA_GENERATIVE_UI_ACTION_INPUT_RULE,
-  ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
-  ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
-  ARENA_GENERATIVE_UI_ON_LOAD_RULE,
-  ARENA_GENERATIVE_UI_OUTPUT_RULES,
-  ARENA_GENERATIVE_UI_PAGINATION_RULE,
-  ARENA_GENERATIVE_UI_PERSONA,
-  ARENA_GENERATIVE_UI_SCOPED_EDIT_RULES,
-  ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE,
-  ARENA_GENERATIVE_UI_THEME_RULE,
-  buildArenaGenerativeUiPrompt,
-} from '@/lib/arena-generative-ui/catalog'
-import {
   type ArenaGenerativeEditScope,
   planArenaGenerativeEditScope,
   unscopedPageIndex,
 } from '@/lib/arena-generative-ui/edit-scope'
-import { goldExamplePromptForArchetype } from '@/lib/arena-generative-ui/gold-example'
 import { mergeScopedManifestEdit } from '@/lib/arena-generative-ui/merge-scoped-edit'
 import {
   extractManifestCandidate,
   parseLlmJsonObject,
 } from '@/lib/arena-generative-ui/parse-inputs'
+import { buildGeneratorSystemPrompt } from '@/lib/arena-generative-ui/prompt-pipeline'
 import { isReplanEdit, plannerInputForReplan } from '@/lib/arena-generative-ui/replan-from-edit'
 import {
   type ArenaGenerativeStructuredBrief,
-  archetypeRecipe,
   formatStructuredBriefForEdit,
   formatStructuredBriefForGenerator,
   pageHintsFromStructuredBrief,
@@ -45,7 +31,6 @@ import type {
   ArenaGenerativeGenerateResult,
   ArenaGenerativePageHint,
 } from '@/lib/arena-generative-ui/types'
-import { ARENA_GENERATIVE_UI_HOST_UX_PROMPT } from '@/lib/arena-generative-ui/ux-policy'
 import {
   GENERATOR_OMITTED_PAGES_ERROR,
   type ManifestValidationResult,
@@ -346,33 +331,12 @@ export async function generateArenaGenerativeManifest(
     })
   }
 
-  const catalogPrompt = buildArenaGenerativeUiPrompt({
-    customRules: [
-      ...ARENA_GENERATIVE_UI_OUTPUT_RULES,
-      ARENA_GENERATIVE_UI_THEME_RULE,
-      ARENA_GENERATIVE_UI_HOST_UX_PROMPT,
-      'This app renders as a full page up to 1280px and also embeds in a narrow Arena iframe (Grid and Columns collapse). emailId is optional. Do not invent a login form or an app wordmark.',
-      ...(params.apiBindings.length > 0
-        ? [
-            ARENA_GENERATIVE_UI_ACTION_INPUT_RULE,
-            ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
-            ARENA_GENERATIVE_UI_ON_LOAD_RULE,
-            ARENA_GENERATIVE_UI_PAGINATION_RULE,
-          ]
-        : []),
-      ...(hasStreamingBinding ? [ARENA_GENERATIVE_UI_STREAMING_OUTPUT_RULE] : []),
-      ...(isScopedEdit ? ARENA_GENERATIVE_UI_SCOPED_EDIT_RULES : []),
-    ],
+  const systemPrompt = buildGeneratorSystemPrompt({
+    archetype: intentBrief?.archetype,
+    hasBindings: params.apiBindings.length > 0,
+    hasStreamingBinding,
+    isScopedEdit,
   })
-  const systemPrompt = [
-    ARENA_GENERATIVE_UI_PERSONA,
-    ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
-    catalogPrompt,
-    goldExamplePromptForArchetype(intentBrief?.archetype),
-    intentBrief ? archetypeRecipe(intentBrief.archetype) : '',
-  ]
-    .filter((section) => section.length > 0)
-    .join('\n\n')
 
   /**
    * An unscoped edit is otherwise free to drop a page: with no hints, the extra and
