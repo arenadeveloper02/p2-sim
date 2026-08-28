@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { ARENA_GENERATIVE_UI_DESIGN_GUIDELINES } from '@/lib/arena-generative-ui/catalog'
+import { ARENA_GENERATIVE_UI_COMPOSITION_PROMPT } from '@/lib/arena-generative-ui/design-guidelines'
 import { buildGeneratorSystemPrompt } from '@/lib/arena-generative-ui/prompt-pipeline'
 
 /** Index of a prompt heading on its own line, not a mention inside another sentence. */
@@ -15,7 +16,7 @@ function headingIndex(prompt: string, heading: string): number {
 }
 
 describe('buildGeneratorSystemPrompt', () => {
-  it('assembles layers in constitution → recipe → component/state/responsive/a11y → JSON order', () => {
+  it('assembles layers in DS → design guidelines → UX → grammar → recipes → JSON order', () => {
     const prompt = buildGeneratorSystemPrompt({
       archetype: 'dashboard',
       capabilities: ['filter'],
@@ -28,19 +29,17 @@ describe('buildGeneratorSystemPrompt', () => {
       'You are an expert principal frontend engineer',
       'UNIVERSAL UI/UX CONSTITUTION',
       'ARENA DESIGN SYSTEM',
-      'ARCHETYPE RECIPE: dashboard',
-      'CAPABILITY: FILTER',
-      'GOLD STANDARD REFERENCE LAYOUT (dashboard)',
-      'COMPONENT SELECTION RULES',
-      'PROFESSIONAL LAYOUT',
-      'VISUAL HIERARCHY',
-      'ANTI-PATTERNS',
-      'COMPONENT RULES',
+      'DESIGN GUIDELINES',
       'DATA STATE CONTRACT',
       'ACTION CONTRACT',
       'INTERACTION / STATE RULES',
-      'RESPONSIVE RULES',
       'ACCESSIBILITY RULES',
+      'ANTI-PATTERNS',
+      'COMPONENT SELECTION RULES',
+      'ARCHETYPE RECIPE: dashboard',
+      'CAPABILITY: FILTER',
+      'GOLD STANDARD REFERENCE LAYOUT (dashboard)',
+      'COMPONENT RULES',
       'AVAILABLE COMPONENTS',
       'RULES:',
     ]
@@ -49,6 +48,24 @@ describe('buildGeneratorSystemPrompt', () => {
     for (let i = 1; i < indexes.length; i += 1) {
       expect(indexes[i]).toBeGreaterThan(indexes[i - 1] ?? 0)
     }
+    expect(prompt).not.toContain('PROFESSIONAL LAYOUT')
+    expect(prompt).not.toContain('RESPONSIVE RULES')
+  })
+
+  it('keeps layout and hierarchy as Design Guidelines subsections, not pipeline siblings', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'dashboard',
+      hasBindings: false,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    const guidelinesAt = headingIndex(prompt, 'DESIGN GUIDELINES')
+    const layoutAt = headingIndex(prompt, 'LAYOUT')
+    const hierarchyAt = headingIndex(prompt, 'VISUAL HIERARCHY')
+    const dataAt = headingIndex(prompt, 'DATA STATE CONTRACT')
+    expect(layoutAt).toBeGreaterThan(guidelinesAt)
+    expect(hierarchyAt).toBeGreaterThan(layoutAt)
+    expect(dataAt).toBeGreaterThan(hierarchyAt)
   })
 
   it('places selected capability recipes between the recipe and the gold few-shot', () => {
@@ -89,6 +106,7 @@ describe('buildGeneratorSystemPrompt', () => {
       isScopedEdit: false,
     })
     expect(prompt).toContain('UNIVERSAL UI/UX CONSTITUTION')
+    expect(prompt).toContain('DESIGN GUIDELINES')
     expect(prompt).not.toContain('ARCHETYPE RECIPE:')
     expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (form-result)')
   })
@@ -99,5 +117,6 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(ARENA_GENERATIVE_UI_DESIGN_GUIDELINES).not.toContain('centered PageHeader')
     expect(ARENA_GENERATIVE_UI_DESIGN_GUIDELINES).not.toContain('WorkingCard')
     expect(ARENA_GENERATIVE_UI_DESIGN_GUIDELINES).not.toContain('SearchField')
+    expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).toContain('DESIGN GUIDELINES')
   })
 })

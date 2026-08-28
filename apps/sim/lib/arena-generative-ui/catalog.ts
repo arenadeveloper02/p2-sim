@@ -684,7 +684,7 @@ export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
   'ARENA DESIGN SYSTEM',
   'The host already paints Poppins, brand blue #1A73E8, grey text hierarchy, 12px radius, 40px controls, display titles, and shadow-first cards. You compose catalog components; you do not invent hex, fonts, or CSS.',
   'Viewport: full page up to 1280px; the same layout stacks in a narrow Arena iframe because Grid and Columns collapse. Do not author a permanently narrow centre column.',
-  'Every generate reply includes the default theme. Page → Section → PageHeader; Section width follows PROFESSIONAL LAYOUT. Then groups of Grid / Columns / Card with gap "24px". Surfaces are exactly two — the page canvas and the Card/Stat surface — both supplied by the host. Content avatars and company logos are allowed; do not add an app wordmark.',
+  'Every generate reply includes the default theme. Page → Section → PageHeader; Section width follows DESIGN GUIDELINES. Then groups of Grid / Columns / Card with gap "24px". Surfaces are exactly two — the page canvas and the Card/Stat surface — both supplied by the host. Content avatars and company logos are allowed; do not add an app wordmark.',
 ].join('\n')
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */

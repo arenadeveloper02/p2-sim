@@ -180,6 +180,9 @@ const nextConfig: NextConfig = {
     '@daytona/sdk',
     '@earendil-works/pi-ai',
     '@earendil-works/pi-coding-agent',
+    // htmlparser2@12 (sanitize-html) imports `entities/decode`. Externalize so Turbopack
+    // does not bundle Tokenizer.js against a hoisted entities resolution.
+    'sanitize-html',
     // Keep json-render out of the Turbopack RSC graph (react-email render pulls react-dom/server).
     '@json-render/core',
     '@json-render/react',
