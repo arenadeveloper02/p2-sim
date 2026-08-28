@@ -149,11 +149,6 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const normalizedSection: SettingsSection =
     (section as string) === 'subscription' ? 'billing' : section
 
-  const isBillingSection = normalizedSection === 'billing' || normalizedSection === 'arena-billing'
-  const canManageBilling = canManageWorkspaceBilling(hostContext, session?.user?.id)
-  const billingRedirectToUsage =
-    isBillingEnabled && isBillingSection && !sessionLoading && !canManageBilling
-
   const effectiveSection =
     !isBillingEnabled && (normalizedSection === 'billing' || normalizedSection === 'organization')
       ? 'general'
