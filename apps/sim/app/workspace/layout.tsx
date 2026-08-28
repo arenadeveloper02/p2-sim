@@ -1,26 +1,18 @@
-'use client'
-
-import { useSession } from '@/lib/auth/auth-client'
-import { SocketProvider } from '@/app/workspace/providers/socket-provider'
+import { WorkspaceSocketShell } from '@/app/workspace/providers/workspace-socket-shell'
 
 interface WorkspaceRootLayoutProps {
   children: React.ReactNode
 }
 
+/**
+ * Server layout for `/workspace`. The wrapping `div` must live here — a Client
+ * Component layout that wraps `{children}` in extra DOM mismatches React 19
+ * streaming `<script>` tags on hydrate.
+ */
 export default function WorkspaceRootLayout({ children }: WorkspaceRootLayoutProps) {
-  const session = useSession()
-
-  const user = session.data?.user
-    ? {
-        id: session.data.user.id,
-        name: session.data.user.name ?? undefined,
-        email: session.data.user.email,
-      }
-    : undefined
-
   return (
-    <SocketProvider user={user}>
-      <div className='workspace-root'>{children}</div>
-    </SocketProvider>
+    <div className='workspace-root'>
+      <WorkspaceSocketShell>{children}</WorkspaceSocketShell>
+    </div>
   )
 }
