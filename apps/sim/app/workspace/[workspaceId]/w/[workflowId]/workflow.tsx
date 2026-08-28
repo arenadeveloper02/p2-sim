@@ -223,6 +223,16 @@ function calculatePasteOffset(
   }
 }
 
+/**
+ * React Flow 11 can invoke node-drag callbacks with no node when the node is
+ * removed during the gesture (e.g. the connection picker unmounts on select).
+ */
+function isWorkflowNodeDragTarget(
+  node: { id?: string } | null | undefined
+): node is { id: string } {
+  return Boolean(node?.id) && node.id !== CONNECTION_BLOCK_SELECTOR_NODE_ID
+}
+
 function mapEdgesByNode(edges: Edge[], nodeIds: Set<string>): Map<string, Edge[]> {
   const result = new Map<string, Edge[]>()
   edges.forEach((edge) => {
@@ -3492,7 +3502,7 @@ const WorkflowContent = React.memo(
     /** Handles node drag to detect container intersections and update highlighting. */
     const onNodeDrag = useCallback(
       (_event: React.MouseEvent, node: any) => {
-        if (node.id === CONNECTION_BLOCK_SELECTOR_NODE_ID) return
+        if (!isWorkflowNodeDragTarget(node)) return
 
         // Note: We don't emit position updates during drag to avoid flooding socket events.
         // The final position is sent in onNodeDragStop for collaborative updates.
@@ -3650,7 +3660,7 @@ const WorkflowContent = React.memo(
     /** Captures initial parent ID and position when drag starts. */
     const onNodeDragStart = useCallback(
       (_event: React.MouseEvent, node: any) => {
-        if (node.id === CONNECTION_BLOCK_SELECTOR_NODE_ID) return
+        if (!isWorkflowNodeDragTarget(node)) return
 
         // Note: Protected blocks are already non-draggable via the `draggable` node property
 
@@ -3718,7 +3728,7 @@ const WorkflowContent = React.memo(
     /** Handles node drag stop to establish parent-child relationships. */
     const onNodeDragStop = useCallback(
       (_event: React.MouseEvent, node: any) => {
-        if (node.id === CONNECTION_BLOCK_SELECTOR_NODE_ID) return
+        if (!isWorkflowNodeDragTarget(node)) return
 
         clearDragHighlights()
 

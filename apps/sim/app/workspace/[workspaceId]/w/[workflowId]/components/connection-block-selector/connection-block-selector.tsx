@@ -404,7 +404,7 @@ export function ConnectionBlockSelector({ id, data }: NodeProps<ConnectionBlockS
         shouldFilter={false}
         value={resolvedSelectedValue}
         onValueChange={setSelectedValue}
-        className='relative z-20 flex h-full flex-col overflow-hidden rounded-2xl [clip-path:inset(0_round_16px)]'
+        className='nodrag nopan relative z-20 flex h-full flex-col overflow-hidden rounded-2xl [clip-path:inset(0_round_16px)]'
       >
         <div className='relative min-h-0 flex-1'>
           <CommandFadedList
