@@ -32,7 +32,7 @@ import { createLogger } from '@sim/logger'
 import { useParams } from 'next/navigation'
 import { getMothershipAttachmentPreviewUrl } from '@/lib/copilot/chat/attachment-preview'
 import { SIM_RESOURCE_DRAG_TYPE, SIM_RESOURCES_DRAG_TYPE } from '@/lib/copilot/resource-types'
-import { isDesktopApp } from '@/lib/desktop'
+import { getDesktopBridge } from '@/lib/desktop'
 import { MOTHERSHIP_ADD_CONTEXT_EVENT } from '@/lib/mothership/events'
 import { MOTHERSHIP_ACCEPT_ATTRIBUTE } from '@/lib/uploads/utils/validation'
 import { useChatSurface } from '@/app/workspace/[workspaceId]/home/components/chat-surface-context'
@@ -41,6 +41,7 @@ import {
   AttachedFilesList,
   DropOverlay,
   MicButton,
+  MicrophonePermissionHelp,
   PromptEditor,
   SendButton,
   usePromptEditor,
@@ -64,7 +65,7 @@ import {
   LOCAL_COPILOT_PROVIDER_GROUPS,
   type LocalCopilotCatalogId,
 } from '@/local-copilot/lib/model-catalog'
-import { useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
+import { type DraftPayload, useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
 import type { ChatContext } from '@/stores/panel'
 
 export type { FileAttachmentForApi } from '@/app/workspace/[workspaceId]/home/types'
@@ -201,6 +202,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     setLocalCopilotCatalogId !== undefined
 
   const showSessionMemoryInspector = copilotBackend === 'local' && Boolean(chatId)
+  const [microphonePermissionHelpOpen, setMicrophonePermissionHelpOpen] = useState(false)
 
   const [initialValue] = useState(() => {
     if (defaultValue) return defaultValue
@@ -300,6 +302,8 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- intentional mount-only restore
 
   const isFirstSaveRef = useRef(true)
+  const draftSaveTimerRef = useRef<number | null>(null)
+  const pendingDraftRef = useRef<{ key: string; payload: DraftPayload } | null>(null)
   useEffect(() => {
     if (isFirstSaveRef.current) {
       isFirstSaveRef.current = false
@@ -316,12 +320,31 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
         size: f.size,
         ...(f.path ? { path: f.path } : {}),
       }))
-    useMothershipDraftsStore.getState().setDraft(draftScopeKeyRef.current, {
-      text: editor.value,
-      fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
-      contexts: editor.contexts.length > 0 ? editor.contexts : undefined,
-    })
+    pendingDraftRef.current = {
+      key: draftScopeKeyRef.current,
+      payload: {
+        text: editor.value,
+        fileAttachments: fileAttachments.length > 0 ? fileAttachments : undefined,
+        contexts: editor.contexts.length > 0 ? editor.contexts : undefined,
+      },
+    }
+    if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current)
+    draftSaveTimerRef.current = window.setTimeout(() => {
+      const pending = pendingDraftRef.current
+      if (pending) useMothershipDraftsStore.getState().setDraft(pending.key, pending.payload)
+      pendingDraftRef.current = null
+      draftSaveTimerRef.current = null
+    }, 200)
   }, [editor.value, files.attachedFiles, editor.contexts])
+
+  useEffect(
+    () => () => {
+      if (draftSaveTimerRef.current !== null) window.clearTimeout(draftSaveTimerRef.current)
+      const pending = pendingDraftRef.current
+      if (pending) useMothershipDraftsStore.getState().setDraft(pending.key, pending.payload)
+    },
+    []
+  )
 
   const onContextRemoveRef = useRef(onContextRemove)
   onContextRemoveRef.current = onContextRemove
@@ -400,11 +423,28 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
 
   function handleSpeechError(error: SpeechToTextError) {
     if (error === 'microphone-blocked') {
-      toast.error(
-        isDesktopApp()
-          ? 'Microphone access is blocked. Allow Sim to use the microphone in your system privacy settings.'
-          : 'Microphone access is blocked. Allow it for this site and try again.'
-      )
+      const desktopBridge = getDesktopBridge()
+      if (desktopBridge) {
+        const { openMicrophoneSettings } = desktopBridge
+        toast.error(
+          'Microphone access is blocked. Allow Sim to use the microphone in your system privacy settings.',
+          openMicrophoneSettings
+            ? {
+                action: {
+                  label: 'Open Settings',
+                  onClick: () => void openMicrophoneSettings(),
+                },
+              }
+            : undefined
+        )
+      } else {
+        toast.error('Microphone access is blocked. Allow it for this site and try again.', {
+          action: {
+            label: 'Show steps',
+            onClick: () => setMicrophonePermissionHelpOpen(true),
+          },
+        })
+      }
       return
     }
     if (error === 'microphone-unavailable') {
@@ -415,6 +455,7 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
   }
 
   const {
+    audioLevelsRef,
     isListening,
     isSupported: isSttSupported,
     toggleListening: rawToggle,
@@ -570,13 +611,10 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     return () => window.cancelAnimationFrame(raf)
   }, [textareaRef])
 
-  const handleContainerClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if ((e.target as HTMLElement).closest('button')) return
-      textareaRef.current?.focus()
-    },
-    [textareaRef]
-  )
+  const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button, [role="dialog"]')) return
+    textareaRef.current?.focus()
+  }
 
   const handleSubmit = useCallback(() => {
     const currentFiles = filesRef.current
@@ -604,6 +642,11 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
     )
     currentEditor.clear()
     sttPrefixRef.current = ''
+    if (draftSaveTimerRef.current !== null) {
+      window.clearTimeout(draftSaveTimerRef.current)
+      draftSaveTimerRef.current = null
+    }
+    pendingDraftRef.current = null
     if (draftScopeKeyRef.current) {
       useMothershipDraftsStore.getState().clearDraft(draftScopeKeyRef.current)
     }
@@ -765,7 +808,13 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
           {showSessionMemoryInspector ? <SessionMemoryInspector chatId={chatId} /> : null}
         </div>
         <div className='flex items-center gap-1.5'>
-          {isSttSupported && <MicButton isListening={isListening} onToggle={toggleListening} />}
+          {isSttSupported && (
+            <MicButton
+              audioLevelsRef={audioLevelsRef}
+              isListening={isListening}
+              onToggle={toggleListening}
+            />
+          )}
           <SendButton
             isSending={isSending}
             canSubmit={canSubmit}
@@ -785,6 +834,11 @@ const UserInputImpl = forwardRef<UserInputHandle, UserInputProps>(function UserI
       />
 
       {files.isDragging && <DropOverlay />}
+
+      <MicrophonePermissionHelp
+        open={microphonePermissionHelpOpen}
+        onOpenChange={setMicrophonePermissionHelpOpen}
+      />
     </div>
   )
 })

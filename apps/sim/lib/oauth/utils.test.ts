@@ -9,6 +9,7 @@ import {
   getMissingRequiredScopes,
   getProviderIdFromServiceId,
   getRequiredScopesForCredential,
+  getScopeDescription,
   getScopesForService,
   getServiceByProviderAndId,
   getServiceConfigByProviderId,
@@ -400,6 +401,21 @@ describe('getCanonicalScopesForProvider', () => {
   })
 })
 
+describe('getScopeDescription', () => {
+  it.concurrent('uses provider-specific labels for Bitbucket scope names', () => {
+    expect(getScopeDescription('account', 'bitbucket')).toBe(
+      'View your Bitbucket account and workspace memberships'
+    )
+    expect(getScopeDescription('pipeline:write', 'bitbucket')).toBe('Run and stop pipelines')
+    expect(getScopeDescription('webhook', 'bitbucket')).toBe('Manage repository webhooks')
+  })
+
+  it.concurrent('preserves the existing Reddit meaning of the account scope', () => {
+    expect(getScopeDescription('account', 'reddit')).toBe('Update account preferences and settings')
+    expect(getScopeDescription('account')).toBe('Update account preferences and settings')
+  })
+})
+
 describe('parseProvider', () => {
   it.concurrent('should parse simple provider without hyphen', () => {
     const config = parseProvider('slack' as OAuthProvider)
@@ -670,6 +686,19 @@ describe('getScopesForService', () => {
     expect(scopes).toContain('Mail.ReadWrite')
     expect(scopes).toContain('Calendars.ReadWrite')
     expect(scopes).not.toContain('Calendars.ReadWrite.Shared')
+  })
+
+  it.concurrent('should include webhook management in Bitbucket consent scopes', () => {
+    expect(getScopesForService('bitbucket')).toEqual([
+      'account',
+      'repository',
+      'repository:write',
+      'pullrequest',
+      'pullrequest:write',
+      'pipeline',
+      'pipeline:write',
+      'webhook',
+    ])
   })
 
   it.concurrent('should return empty array for empty string', () => {

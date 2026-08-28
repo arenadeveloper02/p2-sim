@@ -334,7 +334,7 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
           affectedCount: rows.length,
           workspaceId: context.workspaceId,
         })
-        provenanceSnapshot = { imported: false, documentMetadata: {} }
+        provenanceSnapshot = { imported: false, unrecordedCount: 0, documentMetadata: {} }
       }
     }
 
@@ -511,7 +511,9 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
         ...(rerankerScore !== undefined ? { rerankerScore } : {}),
       }
     })
-    if (registry && provenanceSnapshot?.imported) {
+    if (registry && provenanceSnapshot) {
+      const knowledgeEnforced = isDurableSecretProvenanceEnforced('knowledge')
+      let unrecordedCount = provenanceSnapshot.unrecordedCount
       for (const [documentId, document] of Object.entries(provenanceSnapshot.documentMetadata)) {
         const renderedMetadata = results
           .filter((result) => result.documentId === documentId)
@@ -521,27 +523,32 @@ export const searchKnowledge = defineAuthorizedKnowledgeUseCase({
             metadata: result.metadata,
           }))
         if (renderedMetadata.length === 0) continue
-        const stagingRegistry = new ResolvedSecretTraceRegistry([], {
-          userId,
-          workspaceId: context.workspaceId,
-        })
-        const imported = await importDurableSecretProvenance(
-          stagingRegistry,
-          document.provenance,
-          renderedMetadata,
-          'knowledge'
-        )
-        if (imported && !stagingRegistry.isPermanentlyIncomplete()) {
-          registry.mergeToolCallRegistry(stagingRegistry)
-        } else if (isDurableSecretProvenanceEnforced('knowledge')) {
+        if (document.provenance.status === 'unknown' && !knowledgeEnforced) unrecordedCount += 1
+        if (
+          !(await importDurableSecretProvenance(
+            registry,
+            document.provenance,
+            renderedMetadata,
+            'knowledge',
+            { reportUnrecorded: false }
+          ))
+        ) {
           registry.markIncomplete('knowledge-result-provenance-unavailable')
-        } else {
-          reportUnrecordedDurableProvenance({
-            surface: 'knowledge',
-            cause: 'row-sidecar-not-exact',
-            workspaceId: context.workspaceId,
-          })
         }
+      }
+      /**
+       * One entry for the whole search — chunks and rendered metadata are one read. Skipped when
+       * the registry latched: a latched read never reaches a model, and this entry exists to say a
+       * fail-open read went ahead unvouched.
+       */
+      if (unrecordedCount > 0 && !registry.isPermanentlyIncomplete()) {
+        reportUnrecordedDurableProvenance({
+          surface: 'knowledge',
+          cause: 'durable-provenance-unknown',
+          affectedCount: unrecordedCount,
+          workspaceId: context.workspaceId,
+          actorUserId: userId,
+        })
       }
     }
     const cost = baseCost

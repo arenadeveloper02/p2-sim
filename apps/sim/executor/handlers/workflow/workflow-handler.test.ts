@@ -10,6 +10,7 @@ import { createTimeoutAbortController, getExecutionDeadlineAt } from '@/lib/core
 import { getBlock } from '@/blocks/registry'
 import { BlockType } from '@/executor/constants'
 import { BoundarySafeError } from '@/executor/errors/boundary'
+import { ChildWorkflowError } from '@/executor/errors/child-workflow-error'
 import {
   findMissingRequiredCustomBlockInputs,
   remapCustomBlockInputKeys,
@@ -44,6 +45,8 @@ const {
   mockSetTraceLargeValueAccess,
   mockDispose,
   mockBuildExecutorDelegationHeaders,
+  mockCheckWorkspaceAccess,
+  mockProjectTraceSpansForLiveDisplay,
   executorOptions,
   loggingSessionArgs,
 } = vi.hoisted(() => ({
@@ -51,6 +54,8 @@ const {
   mockCreateSnapshot: vi.fn(),
   mockResolveBillingAttribution: vi.fn(),
   mockGetCustomBlockAuthority: vi.fn(),
+  mockCheckWorkspaceAccess: vi.fn(),
+  mockProjectTraceSpansForLiveDisplay: vi.fn(),
   mockGetUserEmailById: vi.fn(),
   mockAdmitCustomBlockChildExecution: vi.fn(),
   mockTrackChildRun: vi.fn(),
@@ -80,6 +85,7 @@ vi.mock('@/lib/logs/execution/logging-session', () => ({
     setExecutionDeadlineAt = mockSetExecutionDeadlineAt
     setResolvedSecretTraceRegistry = mockSetResolvedSecretTraceRegistry
     setTraceLargeValueAccess = mockSetTraceLargeValueAccess
+    projectTraceSpansForLiveDisplay = mockProjectTraceSpansForLiveDisplay
     onBlockStart = vi.fn()
     onBlockComplete = vi.fn()
   },
@@ -124,6 +130,10 @@ const mockGetPersonalAndWorkspaceEnv = environmentUtilsMockFns.mockGetPersonalAn
 
 vi.mock('@/lib/workflows/custom-blocks/operations', () => ({
   getCustomBlockAuthority: mockGetCustomBlockAuthority,
+}))
+
+vi.mock('@/lib/workspaces/permissions/utils', () => ({
+  checkWorkspaceAccess: mockCheckWorkspaceAccess,
 }))
 
 vi.mock('@/lib/users/queries', () => ({
@@ -229,9 +239,13 @@ describe('WorkflowBlockHandler', () => {
     mockContext = {
       workflowId: 'parent-workflow-id',
       userId: 'user-1',
+      principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
       blockStates: new Map(),
       blockLogs: [],
-      metadata: { duration: 0 },
+      metadata: {
+        duration: 0,
+        principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+      },
       environmentVariables: {},
       decisions: { router: new Map(), condition: new Map() },
       loopExecutions: new Map(),
@@ -376,6 +390,7 @@ describe('WorkflowBlockHandler', () => {
         subjectUserId: 'user-1',
         workflowId: 'parent-workflow-id',
         executionId: 'parent-execution-id',
+        principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
       })
     })
 
@@ -393,7 +408,13 @@ describe('WorkflowBlockHandler', () => {
             json: () =>
               Promise.resolve({
                 data: {
-                  deployedState: { blocks: {}, edges: [], loops: {}, parallels: {} },
+                  deployedState: {
+                    blocks: {},
+                    edges: [],
+                    loops: {},
+                    parallels: {},
+                    deploymentVersionId: 'deployment-version-1',
+                  },
                 },
               }),
           }
@@ -585,7 +606,13 @@ describe('WorkflowBlockHandler', () => {
             json: () =>
               Promise.resolve({
                 data: {
-                  deployedState: { blocks: {}, edges: [], loops: {}, parallels: {} },
+                  deployedState: {
+                    blocks: {},
+                    edges: [],
+                    loops: {},
+                    parallels: {},
+                    deploymentVersionId: 'deployment-version-1',
+                  },
                 },
               }),
           }
@@ -620,9 +647,19 @@ describe('WorkflowBlockHandler', () => {
       expect(executorOptions[0].contextExtensions.userId).toBe('owner-9')
       expect(executorOptions[0].contextExtensions.workspaceId).toBe('workspace-source')
       expect(executorOptions[0].contextExtensions.executorDelegationOrigin).toEqual({
-        subjectUserId: 'owner-9',
         workflowId: 'source-workflow-id',
         executionId: loggingSessionArgs[0][1],
+        currentWorkflow: {
+          workflowId: 'source-workflow-id',
+          mode: 'deployment',
+          deploymentVersionId: 'deployment-version-1',
+        },
+        principal: {
+          kind: 'system',
+          serviceId: 'internal',
+          workspaceId: 'workspace-source',
+          workflowId: 'source-workflow-id',
+        },
       })
     })
 
@@ -680,6 +717,7 @@ describe('WorkflowBlockHandler', () => {
                     edges: [],
                     loops: {},
                     parallels: {},
+                    deploymentVersionId: 'deployment-version-1',
                   },
                 },
               }),
@@ -778,6 +816,7 @@ describe('WorkflowBlockHandler', () => {
                     edges: [],
                     loops: {},
                     parallels: {},
+                    deploymentVersionId: 'deployment-version-1',
                   },
                 },
               }),
@@ -1163,6 +1202,9 @@ describe('WorkflowBlockHandler', () => {
         ownerUserId: 'owner-9',
         exposedOutputs: [{ blockId: 'b1', path: 'content', name: 'answer' }],
         requiredInputIds: [],
+        // Publisher opted this block's runs into consumer traces; the tests that
+        // exercise the closed path override it.
+        traceChildRuns: true,
       })
       mockGetPersonalAndWorkspaceEnv.mockResolvedValue({
         personalDecrypted: {},
@@ -1180,7 +1222,15 @@ describe('WorkflowBlockHandler', () => {
             ok: true,
             json: () =>
               Promise.resolve({
-                data: { deployedState: { blocks: {}, edges: [], loops: {}, parallels: {} } },
+                data: {
+                  deployedState: {
+                    blocks: {},
+                    edges: [],
+                    loops: {},
+                    parallels: {},
+                    deploymentVersionId: 'deployment-version-1',
+                  },
+                },
               }),
           }
         }
@@ -1194,6 +1244,300 @@ describe('WorkflowBlockHandler', () => {
       })
       mockCreateSnapshot.mockResolvedValue({ snapshot: { id: 'snapshot-1' } })
       mockExecutorExecute.mockResolvedValue({ success: true, output: { data: 'ok' } })
+    })
+
+    describe('live child spans for the terminal reconcile', () => {
+      const rawSpan = { id: 's1', name: 'Agent 1', type: 'agent', blockId: 'b1' }
+      const projectedSpan = { ...rawSpan, input: { key: '{{PUBLISHER_SECRET}}' } }
+
+      beforeEach(() => {
+        mockBuildTraceSpans.mockReturnValue({ traceSpans: [rawSpan], totalDuration: 5 })
+        mockProjectTraceSpansForLiveDisplay.mockResolvedValue([projectedSpan])
+      })
+
+      it('emits NOTHING when there is no identified live consumer', async () => {
+        const output: any = await handler.execute(customBlockContext(), customBlock(), {})
+
+        expect(output.childTraceSpans).toBeUndefined()
+        expect(mockProjectTraceSpansForLiveDisplay).not.toHaveBeenCalled()
+      })
+
+      it('emits nothing when the publisher has not opted the block in', async () => {
+        // The viewer's own access is deliberately not consulted; this is the only
+        // thing that closes the stream for an identified consumer.
+        mockGetCustomBlockAuthority.mockResolvedValue({
+          workflowId: 'source-workflow-id',
+          organizationId: 'org-1',
+          ownerUserId: 'owner-9',
+          exposedOutputs: [{ blockId: 'b1', path: 'content', name: 'answer' }],
+          requiredInputIds: [],
+          traceChildRuns: false,
+        })
+
+        const output: any = await handler.execute(
+          customBlockContext({ liveTraceViewerUserId: 'consumer-1' }),
+          customBlock(),
+          {}
+        )
+
+        expect(output.childTraceSpans).toBeUndefined()
+        expect(mockProjectTraceSpansForLiveDisplay).not.toHaveBeenCalled()
+      })
+
+      it('projects through the CHILD session before handing spans to a live consumer', async () => {
+        // The invoking run's registry knows nothing about the publisher's secrets, so
+        // projecting there would leave a source-owner credential unmasked in the consumer's
+        // stream. Only the child's own session can mask them.
+
+        const output: any = await handler.execute(
+          customBlockContext({ liveTraceViewerUserId: 'viewer-1' }),
+          customBlock(),
+          {}
+        )
+
+        expect(mockProjectTraceSpansForLiveDisplay).toHaveBeenCalledTimes(1)
+        expect(output.childTraceSpans).toEqual([projectedSpan])
+        // The raw, unprojected span must never be what crosses the boundary.
+        expect(output.childTraceSpans).not.toEqual([rawSpan])
+        // Correlation for the reconcile: without this the terminal cannot match the rows.
+        expect(output._childWorkflowInstanceId).toBeTruthy()
+      })
+
+      it("streams via the emit-only sink, never the parent run's persisting callbacks", async () => {
+        // `ctx.onBlockStart/onBlockComplete` on the invoking run are persist-then-emit
+        // composites: they write block names and I/O into the PARENT's LoggingSession.
+        // Those markers are keyed by the parent execution and readable by anyone with
+        // parent-workspace access, long after the per-viewer gate this stream passed — so
+        // the source workflow's blocks must reach the emit half only.
+        const persistingStart = vi.fn()
+        const persistingComplete = vi.fn()
+        const emitOnlyStart = vi.fn()
+        const emitOnlyComplete = vi.fn()
+
+        await handler.execute(
+          customBlockContext({
+            liveTraceViewerUserId: 'viewer-1',
+            onBlockStart: persistingStart,
+            onBlockComplete: persistingComplete,
+            liveStreamCallbacks: { onBlockStart: emitOnlyStart, onBlockComplete: emitOnlyComplete },
+          }),
+          customBlock(),
+          {}
+        )
+
+        const forwarded = executorOptions[0].contextExtensions
+        await forwarded.onBlockStart?.('b1', 'Publisher Agent', 'agent', 1)
+        await forwarded.onBlockComplete?.('b1', 'Publisher Agent', 'agent', {})
+
+        expect(emitOnlyStart).toHaveBeenCalledTimes(1)
+        expect(emitOnlyComplete).toHaveBeenCalledTimes(1)
+        expect(persistingStart).not.toHaveBeenCalled()
+        expect(persistingComplete).not.toHaveBeenCalled()
+      })
+
+      it('forwards the emit-only sink to the child, so nested hops still stream', async () => {
+        // The viewer id alone is not enough: a nested custom block re-derives its own
+        // stream permission and then needs a sink to stream through. Without this the
+        // live trace stops at the first sub-executor.
+        const emitOnly = { onBlockStart: vi.fn(), onBlockComplete: vi.fn() }
+
+        await handler.execute(
+          customBlockContext({ liveTraceViewerUserId: 'viewer-1', liveStreamCallbacks: emitOnly }),
+          customBlock(),
+          {}
+        )
+
+        const forwarded = executorOptions[0].contextExtensions
+        expect(forwarded.liveTraceViewerUserId).toBe('viewer-1')
+        expect(forwarded.liveStreamCallbacks).toBe(emitOnly)
+      })
+
+      it('withholds both the viewer id and the sink when streaming is not permitted', async () => {
+        mockGetCustomBlockAuthority.mockResolvedValue({
+          workflowId: 'source-workflow-id',
+          organizationId: 'org-1',
+          ownerUserId: 'owner-9',
+          exposedOutputs: [{ blockId: 'b1', path: 'content', name: 'answer' }],
+          requiredInputIds: [],
+          traceChildRuns: false,
+        })
+        const emitOnly = { onBlockStart: vi.fn(), onBlockComplete: vi.fn() }
+
+        await handler.execute(
+          customBlockContext({
+            liveTraceViewerUserId: 'consumer-1',
+            liveStreamCallbacks: emitOnly,
+          }),
+          customBlock(),
+          {}
+        )
+
+        const forwarded = executorOptions[0].contextExtensions
+        expect(forwarded.liveTraceViewerUserId).toBeUndefined()
+        expect(forwarded.liveStreamCallbacks).toBeUndefined()
+      })
+
+      it('keeps the boundary shut when the surface offers no emit-only sink', async () => {
+        const persistingStart = vi.fn()
+
+        await handler.execute(
+          customBlockContext({ liveTraceViewerUserId: 'viewer-1', onBlockStart: persistingStart }),
+          customBlock(),
+          {}
+        )
+
+        const forwarded = executorOptions[0].contextExtensions
+        await forwarded.onBlockStart?.('b1', 'Publisher Agent', 'agent', 1)
+
+        expect(persistingStart).not.toHaveBeenCalled()
+      })
+
+      it('still exposes only curated outputs alongside the spans', async () => {
+        const output: any = await handler.execute(
+          customBlockContext({ liveTraceViewerUserId: 'viewer-1' }),
+          customBlock(),
+          {}
+        )
+
+        expect(output.childWorkflowId).toBeUndefined()
+        expect(output.childWorkflowName).toBeUndefined()
+        expect(output.cost).toBeUndefined()
+      })
+    })
+
+    describe("the publisher's trace policy", () => {
+      /** Republish the block with tracing closed, the shipped default. */
+      function closeTracePolicy() {
+        mockGetCustomBlockAuthority.mockResolvedValue({
+          workflowId: 'source-workflow-id',
+          organizationId: 'org-1',
+          ownerUserId: 'owner-9',
+          exposedOutputs: [{ blockId: 'b1', path: 'content', name: 'answer' }],
+          requiredInputIds: [],
+          traceChildRuns: false,
+        })
+      }
+
+      it('publishes the child run handle when the publisher opted in', async () => {
+        const output = (await handler.execute(customBlockContext(), customBlock(), {})) as Record<
+          string,
+          unknown
+        >
+
+        expect(typeof output._childExecutionId).toBe('string')
+        expect(output._childExecutionId).not.toBe('parent-execution-id')
+        expect(output._childTraceDisabled).toBeUndefined()
+      })
+
+      it('withholds the handle outright when the publisher has not', async () => {
+        // Withheld rather than persisted behind a flag: with no handle there is
+        // nothing for a reader to join, so the decision cannot be undone downstream.
+        closeTracePolicy()
+
+        const output = (await handler.execute(customBlockContext(), customBlock(), {})) as Record<
+          string,
+          unknown
+        >
+
+        expect(output._childExecutionId).toBeUndefined()
+        expect(output._childTraceDisabled).toBe(true)
+      })
+
+      it('ignores a consumer input trying to assert the policy', async () => {
+        // The policy belongs to the publisher and is read from the DB. A caller's
+        // workflow must not be able to open its own view of another team's internals
+        // by placing a param the executor happens to read.
+        closeTracePolicy()
+
+        const output = (await handler.execute(customBlockContext(), customBlock(), {
+          traceChildRun: true,
+          traceChildRuns: true,
+        })) as Record<string, unknown>
+
+        expect(output._childExecutionId).toBeUndefined()
+        expect(output._childTraceDisabled).toBe(true)
+      })
+
+      it('does not stream to a live viewer when the publisher has not opted in', async () => {
+        closeTracePolicy()
+        const emitOnly = { onBlockStart: vi.fn(), onBlockComplete: vi.fn() }
+
+        const output = (await handler.execute(
+          customBlockContext({ liveTraceViewerUserId: 'viewer-1', liveStreamCallbacks: emitOnly }),
+          customBlock(),
+          {}
+        )) as Record<string, unknown>
+
+        expect(output.childTraceSpans).toBeUndefined()
+        expect(output._childWorkflowInstanceId).toBeUndefined()
+        const forwarded = executorOptions[0].contextExtensions
+        expect(forwarded.liveTraceViewerUserId).toBeUndefined()
+        expect(forwarded.liveStreamCallbacks).toBeUndefined()
+      })
+
+      it('streams to an opted-in block without checking the viewer at all', async () => {
+        // The publisher's decision is the whole policy — no workspace-access query
+        // stands between an opted-in block and the run's live trace.
+        const emitOnly = { onBlockStart: vi.fn(), onBlockComplete: vi.fn() }
+
+        await handler.execute(
+          customBlockContext({ liveTraceViewerUserId: 'viewer-1', liveStreamCallbacks: emitOnly }),
+          customBlock(),
+          {}
+        )
+
+        expect(mockCheckWorkspaceAccess).not.toHaveBeenCalled()
+        const forwarded = executorOptions[0].contextExtensions
+        expect(forwarded.liveTraceViewerUserId).toBe('viewer-1')
+        expect(forwarded.liveStreamCallbacks).toBe(emitOnly)
+      })
+
+      it('keeps the boundary shut for a surface with no identified consumer', async () => {
+        // Chat deployments and the public API leave `liveTraceViewerUserId` unset —
+        // their consumer may be an anonymous visitor. Opting into org-wide tracing is
+        // not consent to stream a publisher's raw agent tokens to the internet.
+        const output = (await handler.execute(customBlockContext(), customBlock(), {})) as Record<
+          string,
+          unknown
+        >
+
+        expect(output.childTraceSpans).toBeUndefined()
+        expect(output._childWorkflowInstanceId).toBeUndefined()
+        // The persisted handle still rides along: reading a log is not the same
+        // surface as streaming one, and that is the publisher's opt-in working.
+        expect(typeof output._childExecutionId).toBe('string')
+      })
+
+      it('keeps the failure ref while withholding the trace handle', async () => {
+        // The ref is the one thing that makes an untraced failure reportable — the
+        // consumer quotes it and the publisher finds the run. Only the trace join goes.
+        closeTracePolicy()
+        mockExecutorExecute.mockRejectedValue(new Error('child blew up'))
+
+        const thrown = await handler
+          .execute(customBlockContext(), customBlock(), {})
+          .catch((e: unknown) => e)
+
+        expect(ChildWorkflowError.isChildWorkflowError(thrown)).toBe(true)
+        const error = thrown as ChildWorkflowError
+        expect(error.consumerFacing?.ref).toBeTruthy()
+        expect(error.message).toContain(error.consumerFacing?.ref as string)
+        expect(error.childExecutionId).toBeUndefined()
+        expect(error.childTraceDisabled).toBe(true)
+      })
+
+      it('carries the handle on a failure from an opted-in block', async () => {
+        mockExecutorExecute.mockRejectedValue(new Error('child blew up'))
+
+        const thrown = await handler
+          .execute(customBlockContext(), customBlock(), {})
+          .catch((e: unknown) => e)
+
+        expect(ChildWorkflowError.isChildWorkflowError(thrown)).toBe(true)
+        const error = thrown as ChildWorkflowError
+        expect(typeof error.childExecutionId).toBe('string')
+        expect(error.childTraceDisabled).toBeUndefined()
+      })
     })
 
     it('opens a session on the source workflow with a fresh id and no base charge', async () => {
@@ -1216,6 +1560,7 @@ describe('WorkflowBlockHandler', () => {
       expect(mockSafeStart).toHaveBeenCalledTimes(1)
       const params = mockSafeStart.mock.calls[0][0]
       expect(params.workspaceId).toBe('workspace-source')
+      expect(params.deploymentVersionId).toBe('deployment-version-1')
       expect(params.actorUserId).toBe('owner-9')
       expect(params.billingAttribution).toEqual({
         actorUserId: 'owner-9',
@@ -1298,9 +1643,19 @@ describe('WorkflowBlockHandler', () => {
       await handler.execute(ctx, customBlock(), {})
 
       expect(executorOptions[0].contextExtensions.executorDelegationOrigin).toEqual({
-        subjectUserId: 'owner-9',
         workflowId: 'source-workflow-id',
         executionId: executorOptions[0].contextExtensions.executionId,
+        currentWorkflow: {
+          workflowId: 'source-workflow-id',
+          mode: 'deployment',
+          deploymentVersionId: 'deployment-version-1',
+        },
+        principal: {
+          kind: 'system',
+          serviceId: 'internal',
+          workspaceId: 'workspace-source',
+          workflowId: 'source-workflow-id',
+        },
       })
     })
 
@@ -1621,6 +1976,7 @@ describe('WorkflowBlockHandler', () => {
                     edges: [],
                     loops: {},
                     parallels: {},
+                    deploymentVersionId: 'deployment-version-1',
                   },
                 },
               }),
@@ -1677,10 +2033,15 @@ describe('WorkflowBlockHandler', () => {
         subjectUserId: 'user-1',
         workflowId: 'parent-workflow-id',
         executionId: 'parent-execution-id',
+        currentWorkflow: { workflowId: 'child-workflow-id', mode: 'draft' },
+        principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
       })
-      expect(mockBuildExecutorDelegationHeaders).toHaveBeenCalledWith(
-        extensions.executorDelegationOrigin
-      )
+      expect(mockBuildExecutorDelegationHeaders).toHaveBeenCalledWith({
+        subjectUserId: 'user-1',
+        workflowId: 'parent-workflow-id',
+        executionId: 'parent-execution-id',
+        principal: { kind: 'session', userId: 'user-1', sessionId: 'session-1' },
+      })
       expect(extensions.onStream).toBe(ctx.onStream)
       expect(extensions.childWorkflowContext).toBeDefined()
     })
@@ -1712,9 +2073,10 @@ describe('WorkflowBlockHandler', () => {
       await handler.execute(ctx, mockBlock, { workflowId: 'grandchild-workflow-id' })
 
       expect(mockBuildExecutorDelegationHeaders).toHaveBeenCalledWith(ctx.executorDelegationOrigin)
-      expect(executorOptions[0].contextExtensions.executorDelegationOrigin).toBe(
-        ctx.executorDelegationOrigin
-      )
+      expect(executorOptions[0].contextExtensions.executorDelegationOrigin).toEqual({
+        ...ctx.executorDelegationOrigin,
+        currentWorkflow: { workflowId: 'grandchild-workflow-id', mode: 'draft' },
+      })
     })
   })
 

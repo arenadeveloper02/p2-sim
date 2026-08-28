@@ -1,3 +1,4 @@
+import type { WorkflowExecutionPrincipal } from '@sim/auth/principal'
 import { createLogger } from '@sim/logger'
 import type { NextRequest } from 'next/server'
 import { authenticateApiKeyFromHeader, updateApiKeyLastUsed } from '@/lib/api-key/service'
@@ -36,9 +37,26 @@ export interface AuthResult {
   userEmail?: string | null
   authType?: AuthTypeValue
   apiKeyType?: 'personal' | 'workspace'
-  apiKeyId?: string
   sandboxProfile?: InternalSandboxProfile
+  principal?: WorkflowExecutionPrincipal
   error?: string
+}
+
+/**
+ * Usage and billing attribution for an API-key principal.
+ * `keyId` on the principal is the same identity previously carried as `apiKeyId`.
+ */
+export function apiKeyAttributionFromPrincipal(principal: WorkflowExecutionPrincipal | undefined): {
+  apiKeyId?: string
+  apiKeyType?: 'personal' | 'workspace'
+} {
+  if (principal?.kind === 'personal_api_key') {
+    return { apiKeyId: principal.keyId, apiKeyType: 'personal' }
+  }
+  if (principal?.kind === 'workspace_api_key') {
+    return { apiKeyId: principal.keyId, apiKeyType: 'workspace' }
+  }
+  return {}
 }
 
 /**
@@ -154,12 +172,18 @@ export async function checkSessionOrInternalAuth(
     // 3. Try session auth (for web UI)
     const session = await getSession()
     if (session?.user?.id) {
+      if (!session.session?.id) throw new Error('Authenticated session is missing its session ID')
       return {
         success: true,
         userId: session.user.id,
         userName: session.user.name,
         userEmail: session.user.email,
         authType: AuthType.SESSION,
+        principal: {
+          kind: 'session',
+          userId: session.user.id,
+          sessionId: session.session.id,
+        },
       }
     }
 
@@ -203,14 +227,30 @@ export async function checkHybridAuth(
       const apiKeyHeader = request.headers.get(API_KEY_HEADER) ?? ''
       const result = await authenticateApiKeyFromHeader(apiKeyHeader)
       if (result.success) {
-        await updateApiKeyLastUsed(result.keyId!)
+        if (!result.keyId || !result.keyType || !result.userId) {
+          throw new Error('API key authentication returned incomplete identity')
+        }
+        let principal: WorkflowExecutionPrincipal
+        if (result.keyType === 'personal') {
+          principal = { kind: 'personal_api_key', userId: result.userId, keyId: result.keyId }
+        } else {
+          if (!result.workspaceId) {
+            throw new Error('Workspace API key authentication returned no workspace scope')
+          }
+          principal = {
+            kind: 'workspace_api_key',
+            workspaceId: result.workspaceId,
+            keyId: result.keyId,
+          }
+        }
+        await updateApiKeyLastUsed(result.keyId)
         return {
           success: true,
-          userId: result.userId!,
+          userId: result.userId,
           workspaceId: result.workspaceId,
           authType: AuthType.API_KEY,
           apiKeyType: result.keyType,
-          apiKeyId: result.keyId,
+          principal,
         }
       }
 
@@ -222,12 +262,18 @@ export async function checkHybridAuth(
 
     const session = await getSession()
     if (session?.user?.id) {
+      if (!session.session?.id) throw new Error('Authenticated session is missing its session ID')
       return {
         success: true,
         userId: session.user.id,
         userName: session.user.name,
         userEmail: session.user.email,
         authType: AuthType.SESSION,
+        principal: {
+          kind: 'session',
+          userId: session.user.id,
+          sessionId: session.session.id,
+        },
       }
     }
 

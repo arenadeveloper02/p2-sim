@@ -1,6 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { semrushHosting } from '@/tools/semrush/hosting'
-import type { SemrushParams, SemrushResponse } from '@/tools/semrush/types'
+import type { SemrushParams, SemrushQueryResponse } from '@/tools/semrush/types'
 import type { ToolConfig } from '@/tools/types'
 import { parseCsvResponse } from '../utils'
 
@@ -124,7 +124,7 @@ function resolveSemrushApiType(params: SemrushParams): string {
   return 'domain_organic'
 }
 
-export const semrushQueryTool: ToolConfig<SemrushParams, SemrushResponse> = {
+export const semrushQueryTool: ToolConfig<SemrushParams, SemrushQueryResponse> = {
   id: 'semrush_query',
   name: 'Semrush Query',
   description:

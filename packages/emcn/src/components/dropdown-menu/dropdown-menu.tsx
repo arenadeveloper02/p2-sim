@@ -24,8 +24,9 @@ import * as React from 'react'
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
 import { Check, ChevronRight, Circle, Search } from '../../icons'
 import { cn } from '../../lib/cn'
-import { chipFieldSurfaceClass } from '../chip/chip-chrome'
+import { chipContentGap, chipFieldSurfaceClass } from '../chip/chip-chrome'
 import { InsideModalContext } from '../modal/modal'
+import { OverflowText } from '../overflow-text/overflow-text'
 
 const ANIMATION_CLASSES =
   'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=open]:animate-in motion-reduce:animate-none'
@@ -36,6 +37,12 @@ const ANIMATION_CLASSES =
  * the surface note below). Every row (item, checkbox, radio, submenu trigger,
  * search field) composes these, so the rhythm cannot drift the way it did when
  * each row hardcoded its own height and radius.
+ *
+ * The icon↔label gap is {@link chipContentGap}, not a local literal. It was `gap-2`
+ * (8px) against the platform's 6px, and on the menu's 14px icons — narrower than the
+ * chip's 16px — the extra 2px read as the row's content drifting apart rather than as
+ * one icon/label pair. Importing the token is also what keeps a menu row and the
+ * sidebar chip it opens over from spacing their content differently.
  */
 const MENU_ROW_HEIGHT_CLASS = 'h-[28px]'
 const MENU_ROW_RADIUS_CLASS = 'rounded-lg'
@@ -70,30 +77,32 @@ const MENU_ROW_SELECTED_CLASS =
 /**
  * Rows are a fixed height, so a label that wraps overflows its row and paints
  * over its neighbours instead of growing the row. Every row is therefore held
- * to one line, and its label ellipsizes — see {@link withEllipsizedLabel}.
+ * to one line, and its label uses the shared overflow treatment — see
+ * {@link withOverflowLabel}.
  */
-const MENU_ROW_SINGLE_LINE_CLASS = 'whitespace-nowrap [&>span]:min-w-0 [&>span]:truncate'
+const MENU_ROW_SINGLE_LINE_CLASS =
+  'whitespace-nowrap [&>span]:min-w-0 [&>span:not([data-overflow-text])]:truncate'
 
 /**
  * Wraps a row's bare text children in a truncating box so a label wider than
- * the menu ends in an ellipsis rather than being cut mid-word at the surface
- * edge. Consumers that already wrap their label in a `<span>` are unaffected —
- * the row's `[&>span]` rule truncates those in place.
+ * the menu uses the platform overflow treatment rather than being cut mid-word
+ * at the surface edge. Consumer-provided direct `<span>` labels retain an
+ * ellipsis fallback; a canonical {@link OverflowText} owns its fade and tooltip.
  *
  * Adjacent text is coalesced into a single box: a row is a flex container, so
  * wrapping `Insert row {n}` as two boxes would make them two flex items and
  * open the row's `gap` between the words. `React.Children.toArray` keys the
  * element children it returns, so the rebuilt array needs no keys of its own.
  */
-function withEllipsizedLabel(children: React.ReactNode): React.ReactNode {
+function withOverflowLabel(children: React.ReactNode): React.ReactNode {
   const rebuilt: React.ReactNode[] = []
-  let text: React.ReactNode[] = []
+  let text: Array<string | number> = []
   const flushText = () => {
     if (text.length === 0) return
     rebuilt.push(
-      <span key={`label-${rebuilt.length}`} className='min-w-0 truncate'>
+      <OverflowText key={`label-${rebuilt.length}`} label={text.join('')}>
         {text}
-      </span>
+      </OverflowText>
     )
     text = []
   }
@@ -110,6 +119,23 @@ function withEllipsizedLabel(children: React.ReactNode): React.ReactNode {
 }
 
 /**
+ * A menu is capped so a long data-driven list — every workflow, every folder —
+ * scrolls instead of running the height of the screen. The cap has to clear the
+ * tallest hand-authored action menu though, or an ordinary right-click menu
+ * scrolls for the sake of a few pixels: the knowledge-base row menu is 231px
+ * (7 rows x 28px + 3 separators x 9px + 8px padding), which a flat 240px cap
+ * once clipped while the shorter Files row menu next to it did not. 420px clears
+ * every action menu in the app with room for a couple more rows.
+ *
+ * `min()` with Radix's measured space then keeps the menu inside the viewport
+ * when it opens near an edge. The popper var (rather than the
+ * `--radix-dropdown-menu-content-*` alias) because submenu content portals
+ * outside the root menu and only inherits the popper one; the fallback covers
+ * the case where collision detection is off and no space is measured at all.
+ */
+const MENU_MAX_HEIGHT_CLASS = 'max-h-[min(420px,var(--radix-popper-available-height,420px))]'
+
+/**
  * Surface corner, shared by the root menu and submenus — they previously
  * disagreed, at 12px and 8px.
  *
@@ -120,9 +146,14 @@ function withEllipsizedLabel(children: React.ReactNode): React.ReactNode {
  * {@link Tooltip}). A menu that picks its own pair reads as a different family of
  * object next to the surfaces it opens over, so match the convention rather than
  * making the two corners strictly concentric.
+ *
+ * The 4px surface padding then makes them concentric anyway — 8px row + 4px pad is
+ * exactly the 12px surface corner, so a first or last row's rounding now tracks the
+ * corner it sits in instead of cutting across it. It was 6px, which both broke that
+ * and gave the menu a wider gutter than its own 8px row padding; two consumers had
+ * already overridden it back down to 4px by hand.
  */
-const CONTENT_BASE_CLASSES =
-  'z-[var(--z-popover)] max-h-[240px] min-w-[8rem] origin-[--radix-dropdown-menu-content-transform-origin] overflow-y-auto overflow-x-hidden overscroll-none rounded-xl border border-[var(--border)] bg-[var(--bg)] p-1.5 text-[var(--text-body)] shadow-sm'
+const CONTENT_BASE_CLASSES = `z-[var(--z-popover)] ${MENU_MAX_HEIGHT_CLASS} min-w-[8rem] origin-[--radix-dropdown-menu-content-transform-origin] overflow-y-auto overflow-x-hidden overscroll-none rounded-xl border border-[var(--border)] bg-[var(--bg)] p-1 text-[var(--text-body)] shadow-sm`
 
 /**
  * Menu root. Inside a `ModalContent` (Radix modal dialog) the menu is forced
@@ -147,11 +178,7 @@ const DropdownMenuGroup = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Group>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Group>
 >(({ className, ...props }, ref) => (
-  <DropdownMenuPrimitive.Group
-    ref={ref}
-    className={cn('flex flex-col gap-0.5', className)}
-    {...props}
-  />
+  <DropdownMenuPrimitive.Group ref={ref} className={cn('flex flex-col', className)} {...props} />
 ))
 DropdownMenuGroup.displayName = DropdownMenuPrimitive.Group.displayName
 
@@ -182,13 +209,13 @@ const DropdownMenuSubTrigger = React.forwardRef<
         /* An open submenu keeps its trigger on the selected surface — including while
            the pointer is on it, so walking into the submenu doesn't drop the trigger
            back to the hover fill. */
-        `flex ${MENU_ROW_HEIGHT_CLASS} min-w-0 cursor-default select-none items-center gap-2 ${MENU_ROW_RADIUS_CLASS} px-2 text-[var(--text-body)] text-small outline-none ${MENU_ROW_TRANSITION_CLASS} ${MENU_ROW_HIGHLIGHT_CLASS} data-[state=open]:bg-[var(--surface-active)] data-[state=open]:focus:bg-[var(--surface-active)] ${MENU_ROW_SINGLE_LINE_CLASS} [&_svg]:pointer-events-none [&_svg]:size-[14px] [&_svg]:shrink-0 [&_svg]:text-[var(--text-icon)]`,
+        `flex ${MENU_ROW_HEIGHT_CLASS} min-w-0 cursor-default select-none items-center ${chipContentGap} ${MENU_ROW_RADIUS_CLASS} px-2 text-[var(--text-body)] text-small outline-none ${MENU_ROW_TRANSITION_CLASS} ${MENU_ROW_HIGHLIGHT_CLASS} data-[state=open]:bg-[var(--surface-active)] data-[state=open]:focus:bg-[var(--surface-active)] ${MENU_ROW_SINGLE_LINE_CLASS} [&_svg]:pointer-events-none [&_svg]:size-[14px] [&_svg]:shrink-0 [&_svg]:text-[var(--text-icon)]`,
         inset && 'pl-7',
         className
       )}
       {...props}
     >
-      {withEllipsizedLabel(children)}
+      {withOverflowLabel(children)}
       <ChevronRight className='ml-auto size-[14px] shrink-0' />
     </DropdownMenuPrimitive.SubTrigger>
   )
@@ -244,7 +271,18 @@ const DropdownMenuContent = React.forwardRef<
 ))
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName
 
-const DROPDOWN_MENU_ITEM_BASE_CLASSES = `relative flex ${MENU_ROW_HEIGHT_CLASS} min-w-0 cursor-pointer select-none items-center gap-2 ${MENU_ROW_RADIUS_CLASS} px-2 text-[var(--text-body)] text-small outline-none ${MENU_ROW_TRANSITION_CLASS} data-[disabled]:pointer-events-none data-[disabled]:opacity-50 ${MENU_ROW_SINGLE_LINE_CLASS} [&_svg]:pointer-events-none [&_svg]:size-[14px] [&_svg]:shrink-0 [&_svg]:text-[var(--text-icon)]`
+/**
+ * The canonical menu-row chrome, exported for the rare consumer that cannot use
+ * {@link DropdownMenuItem} itself.
+ *
+ * Radix tracks every `DropdownMenuItem` in a focus Collection, so a list that
+ * mounts and unmounts rows as a query narrows makes its FocusScope restore focus
+ * to the content root mid-keystroke. Such a list renders plain `<button role="menuitem">`
+ * elements instead — but it must still LOOK like a menu row, and hand-rolling that
+ * is how the `@`-mention list drifted to its own gap, radius, height and text size.
+ * Compose this instead of restating the literals.
+ */
+export const dropdownMenuRowClass = `relative flex ${MENU_ROW_HEIGHT_CLASS} min-w-0 cursor-pointer select-none items-center ${chipContentGap} ${MENU_ROW_RADIUS_CLASS} px-2 text-[var(--text-body)] text-small outline-none ${MENU_ROW_TRANSITION_CLASS} data-[disabled]:pointer-events-none data-[disabled]:opacity-50 ${MENU_ROW_SINGLE_LINE_CLASS} [&_svg]:pointer-events-none [&_svg]:size-[14px] [&_svg]:shrink-0 [&_svg]:text-[var(--text-icon)]`
 
 const DropdownMenuItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Item>,
@@ -268,7 +306,7 @@ const DropdownMenuItem = React.forwardRef<
     action?: React.ReactNode
   }
 >(({ className, inset, active, action, asChild, children, ...props }, ref) => {
-  const content = asChild ? children : withEllipsizedLabel(children)
+  const content = asChild ? children : withOverflowLabel(children)
   const stateClasses = active ? MENU_ROW_SELECTED_CLASS : MENU_ROW_HIGHLIGHT_CLASS
   if (action) {
     return (
@@ -276,7 +314,7 @@ const DropdownMenuItem = React.forwardRef<
         <DropdownMenuPrimitive.Item
           ref={ref}
           className={cn(
-            DROPDOWN_MENU_ITEM_BASE_CLASSES,
+            dropdownMenuRowClass,
             stateClasses,
             'pr-[28px]',
             inset && 'pl-7',
@@ -296,7 +334,7 @@ const DropdownMenuItem = React.forwardRef<
   return (
     <DropdownMenuPrimitive.Item
       ref={ref}
-      className={cn(DROPDOWN_MENU_ITEM_BASE_CLASSES, stateClasses, inset && 'pl-7', className)}
+      className={cn(dropdownMenuRowClass, stateClasses, inset && 'pl-7', className)}
       asChild={asChild}
       {...props}
     >
@@ -354,7 +392,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
         <Check className='size-[14px]' />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
-    {withEllipsizedLabel(children)}
+    {withOverflowLabel(children)}
   </DropdownMenuPrimitive.CheckboxItem>
 ))
 DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displayName
@@ -376,11 +414,27 @@ const DropdownMenuRadioItem = React.forwardRef<
         <Circle className='size-[6px] fill-current' />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
-    {withEllipsizedLabel(children)}
+    {withOverflowLabel(children)}
   </DropdownMenuPrimitive.RadioItem>
 ))
 DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName
 
+/**
+ * Section heading above a group of rows.
+ *
+ * Composes {@link MENU_ROW_HEIGHT_CLASS} rather than padding to a height. It was
+ * `py-1.5` over `text-xs`, and nothing in the app sets a `line-height`, so its box
+ * resolved through the browser's default leading — roughly 25px, font-dependent,
+ * and the only child of the menu not on the 28px row grid. Every row beneath it
+ * therefore sat ~3px off that grid too.
+ *
+ * `text-caption` and `--text-muted` come from the platform's two other list
+ * headings — the command palette's group heading and the sidebar's section header
+ * — which both set a heading one step below their own rows in `--text-muted`. The
+ * menu's rows are `text-small`, so one step down is `text-caption`; `text-xs` was
+ * two. `--text-tertiary` was also darker than `--text-muted`, so the heading
+ * out-weighed the rows it introduces.
+ */
 const DropdownMenuLabel = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Label>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Label> & {
@@ -389,7 +443,11 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn('px-2 py-1.5 text-[var(--text-tertiary)] text-xs', inset && 'pl-7', className)}
+    className={cn(
+      `flex ${MENU_ROW_HEIGHT_CLASS} items-center px-2 text-[var(--text-muted)] text-caption`,
+      inset && 'pl-7',
+      className
+    )}
     {...props}
   />
 ))
@@ -401,7 +459,7 @@ const DropdownMenuSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Separator
     ref={ref}
-    className={cn('my-1.5 h-px bg-[var(--border-1)]', className)}
+    className={cn('my-1 h-px bg-[var(--border-1)]', className)}
     {...props}
   />
 ))
@@ -428,7 +486,7 @@ const DropdownMenuSearchInput = React.forwardRef<
 
   /*
    * No horizontal margin: the field spans the same width as the rows beneath it,
-   * both inset only by the surface's `p-1.5`. It carried `mx-0.5` and so sat 2px
+   * both inset only by the surface's `p-1`. It carried `mx-0.5` and so sat 2px
    * narrower on each side. The vertical margins stay — the search field is a
    * sibling of the item groups, not a member of one, so no container gap
    * separates it from the first row.
@@ -436,7 +494,7 @@ const DropdownMenuSearchInput = React.forwardRef<
   return (
     <div
       className={cn(
-        `mt-0.5 mb-0.5 flex ${MENU_ROW_HEIGHT_CLASS} shrink-0 items-center gap-2 px-2`,
+        `mt-0.5 mb-0.5 flex ${MENU_ROW_HEIGHT_CLASS} shrink-0 items-center ${chipContentGap} px-2`,
         chipFieldSurfaceClass
       )}
     >

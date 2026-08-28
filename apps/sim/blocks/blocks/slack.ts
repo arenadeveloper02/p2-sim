@@ -295,9 +295,9 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       },
     },
   },
-  // Superseded by slack_v2, but stays discoverable until v2 GAs — hiding both
-  // would leave no Slack block in the toolbar while v2 is preview-gated. At v2
-  // GA this becomes `hideFromToolbar: true` (superseded-version paradigm).
+  /** Existing workflows keep resolving v1 while discovery uses the released successor. */
+  hideFromToolbar: true,
+  sunset: { status: 'legacy', replacedBy: 'slack_v2' },
   subBlocks: [
     {
       id: 'operation',
@@ -3472,9 +3472,7 @@ Return ONLY the integer Unix timestamp - no explanations, no quotes, no extra te
       },
     },
   },
-  // Trigger capabilities moved to slack_v2 so the trigger surfaces once.
-  // Legacy webhook trigger stays available while slack_v2 (which hosts the
-  // redesigned slack_oauth trigger) is preview-gated; drops at v2 GA.
+  /** Keeps saved v1 webhook-trigger workflows executable after slack_v2 is released. */
   triggers: {
     enabled: true,
     available: ['slack_webhook'],
@@ -3634,6 +3632,11 @@ export const SlackBlockMeta = {
   ],
 } as const satisfies BlockMeta
 
+export const SlackV2BlockMeta = {
+  tags: ['messaging', 'webhooks', 'automation'],
+  url: 'https://slack.com',
+} as const satisfies BlockMeta
+
 const SLACK_WEBHOOK_TRIGGER_SUBBLOCK_IDS = new Set(
   getTrigger('slack_webhook').subBlocks.map((sb) => sb.id)
 )
@@ -3666,7 +3669,32 @@ function adaptSubBlockForV2(sb: SubBlockConfig): SubBlockConfig {
   return sb
 }
 
-const { authMethod: _authMethod, useUserToken: _useUserToken, ...slackV2Inputs } = SlackBlock.inputs
+export function getSlackV2ActionSubBlocks(): SubBlockConfig[] {
+  return SlackBlock.subBlocks.flatMap((sb) => {
+    if (SLACK_WEBHOOK_TRIGGER_SUBBLOCK_IDS.has(sb.id)) return []
+    if (sb.id === 'authMethod') return []
+    return [adaptSubBlockForV2(sb)]
+  })
+}
+
+export function getSlackV2ToolAccess(): string[] {
+  return [...SlackBlock.tools.access]
+}
+
+export function getSlackV2OperationSentences() {
+  const operationSentences = SlackBlock.canvasPresentation?.sentences?.byOperation
+  if (!operationSentences) {
+    throw new Error('Slack action sentences must be defined before building slack_v2')
+  }
+  return { ...operationSentences }
+}
+
+const {
+  authMethod: _authMethod,
+  botToken: _botToken,
+  botCredential: _botCredential,
+  ...slackV2Inputs
+} = SlackBlock.inputs
 
 /**
  * slack_v2 — the go-forward Slack action block. Identical operations, tools, and
@@ -3679,14 +3707,14 @@ export const SlackV2Block: BlockConfig<SlackResponse> = {
   ...SlackBlock,
   type: 'slack_v2',
   hideFromToolbar: false,
-  // Preview-gated: hidden from every discovery surface until revealed via the
-  // block-visibility AppConfig (hosted) or PREVIEW_BLOCKS=slack_v2 (dev /
-  // self-host). At GA: drop this flag, add SlackV2BlockMeta + docs, and set
-  // hideFromToolbar on v1.
-  preview: true,
+  sunset: undefined,
   canvasPresentation: {
     ...SlackBlock.canvasPresentation,
     defaultTitle: 'Slack',
+    sentences: {
+      ...SlackBlock.canvasPresentation?.sentences,
+      byOperation: getSlackV2OperationSentences(),
+    },
     /*
      * Unlike v1, this trigger picks one event and scopes it, so the card names
      * both. Each filter clause is gated on the events that expose it —
@@ -3706,18 +3734,11 @@ export const SlackV2Block: BlockConfig<SlackResponse> = {
       ],
     },
   },
-  subBlocks: [
-    ...SlackBlock.subBlocks.flatMap((sb) => {
-      // Drop the legacy paste-secret trigger config, including its 'botToken'
-      // field (v1 hosts slack_webhook). The authMethod dropdown is gone too:
-      // the merged credential picker covers both auth kinds, and the token type
-      // is resolved server-side from the selected credential.
-      if (SLACK_WEBHOOK_TRIGGER_SUBBLOCK_IDS.has(sb.id)) return []
-      if (sb.id === 'authMethod') return []
-      return [adaptSubBlockForV2(sb)]
-    }),
-    ...getTrigger('slack_oauth').subBlocks,
-  ],
+  subBlocks: [...getSlackV2ActionSubBlocks(), ...getTrigger('slack_oauth').subBlocks],
+  tools: {
+    ...SlackBlock.tools,
+    access: getSlackV2ToolAccess(),
+  },
   inputs: {
     ...slackV2Inputs,
     oauthCredential: { type: 'string', description: 'Slack credential (OAuth account or bot)' },

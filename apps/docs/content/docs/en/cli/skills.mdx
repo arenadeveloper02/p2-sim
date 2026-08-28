@@ -15,6 +15,8 @@ Every command below also accepts the [global options](/cli/commands#global-optio
 sim skills create [options]
 ```
 
+Create Skill (personal API key required)
+
 **Options**
 
 <CommandTable>
@@ -30,8 +32,10 @@ sim skills create [options]
 ## Delete skill
 
 ```bash
-sim skills delete <id> [options]
+sim skills delete <skillId> [options]
 ```
+
+Delete Skill (personal API key required)
 
 **Arguments**
 
@@ -39,7 +43,7 @@ sim skills delete <id> [options]
 
 | Argument | Required | Description |
 | --- | --- | --- |
-| `id` | Yes | Unique skill identifier. A built-in skill is `builtin-` followed by its name, for example `builtin-research`. |
+| `skillId` | Yes | Unique skill identifier. A built-in skill is `builtin-` followed by its name, for example `builtin-research`. |
 
 </CommandTable>
 
@@ -49,14 +53,14 @@ sim skills delete <id> [options]
 
 | Option | Required | Description |
 | --- | --- | --- |
-| `-y, --yes` | No | Skip the confirmation. |
+| `-y, --yes` | Yes | Confirm this operation. |
 
 </CommandTable>
 
 ## Get skill
 
 ```bash
-sim skills get <id>
+sim skills get <skillId>
 ```
 
 **Arguments**
@@ -65,7 +69,92 @@ sim skills get <id>
 
 | Argument | Required | Description |
 | --- | --- | --- |
-| `id` | Yes | Unique skill identifier. A built-in skill is `builtin-` followed by its name, for example `builtin-research`. |
+| `skillId` | Yes | Unique skill identifier. A built-in skill is `builtin-` followed by its name, for example `builtin-research`. |
+
+</CommandTable>
+
+## Grant skill editor
+
+```bash
+sim skills editors create <skillId> [options]
+```
+
+Grant Skill Editor (personal API key required)
+
+**Arguments**
+
+<CommandTable>
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `skillId` | Yes | Unique skill identifier. A built-in skill is `builtin-` followed by its name, for example `builtin-research`. |
+
+</CommandTable>
+
+**Options**
+
+<CommandTable>
+
+| Option | Required | Description |
+| --- | --- | --- |
+| `--email <value>` | Yes | Email address of a current workspace member. |
+
+</CommandTable>
+
+## List skill editors
+
+```bash
+sim skills editors list <skillId> [options]
+```
+
+**Arguments**
+
+<CommandTable>
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `skillId` | Yes | Unique skill identifier. A built-in skill is `builtin-` followed by its name, for example `builtin-research`. |
+
+</CommandTable>
+
+**Options**
+
+<CommandTable>
+
+| Option | Required | Description |
+| --- | --- | --- |
+| `--sort-by <value>` | No | Field used to sort the result. Sorting by `name` is case-sensitive and follows the storage collation, so do not rely on a case-insensitive order. Accepted values: `email`, `name`. |
+| `--sort-order <value>` | No | Sort direction. Accepted values: `asc`, `desc`. |
+| `--limit <n>` | No | Maximum items to return (0 for everything). Defaults to `100`. |
+
+</CommandTable>
+
+## Revoke skill editor
+
+```bash
+sim skills editors delete <skillId> [options]
+```
+
+Revoke Skill Editor (personal API key required)
+
+**Arguments**
+
+<CommandTable>
+
+| Argument | Required | Description |
+| --- | --- | --- |
+| `skillId` | Yes | Unique skill identifier. A built-in skill is `builtin-` followed by its name, for example `builtin-research`. |
+
+</CommandTable>
+
+**Options**
+
+<CommandTable>
+
+| Option | Required | Description |
+| --- | --- | --- |
+| `--email <value>` | Yes | Email address of a current workspace member. |
+| `-y, --yes` | Yes | Confirm this operation. |
 
 </CommandTable>
 
@@ -91,8 +180,10 @@ sim skills list [options]
 ## Update skill
 
 ```bash
-sim skills update <id> [options]
+sim skills update <skillId> [options]
 ```
+
+Update Skill (personal API key required)
 
 **Arguments**
 
@@ -100,7 +191,7 @@ sim skills update <id> [options]
 
 | Argument | Required | Description |
 | --- | --- | --- |
-| `id` | Yes | Unique skill identifier. A built-in skill is `builtin-` followed by its name, for example `builtin-research`. |
+| `skillId` | Yes | Unique skill identifier. A built-in skill is `builtin-` followed by its name, for example `builtin-research`. |
 
 </CommandTable>
 

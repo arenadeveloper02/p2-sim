@@ -34,6 +34,7 @@ import {
   createResumeAttemptTimeoutController,
   extractResumeBillingAttributionFromSnapshot,
   PauseResumeManager,
+  requireResumeDeploymentVersion,
   updateResumeOutputInAggregationBuffers,
 } from '@/lib/workflows/executor/human-in-the-loop-manager'
 import { getAutomaticResumeWaitingMetadata } from '@/lib/workflows/executor/paused-execution-metadata'
@@ -1026,17 +1027,17 @@ describe('PauseResumeManager paused cancellation after pause release', () => {
     const casConditions = flattenMockConditions(dbChainMockFns.where.mock.calls.at(-1)?.[0])
     expect(casConditions).toContainEqual({
       type: 'eq',
-      left: 'executionId',
+      left: 'workflowExecutionLogs.executionId',
       right: 'execution-1',
     })
     expect(casConditions).toContainEqual({
       type: 'eq',
-      left: 'workflowId',
+      left: 'workflowExecutionLogs.workflowId',
       right: 'workflow-1',
     })
     expect(casConditions).toContainEqual({
       type: 'inArray',
-      column: 'status',
+      column: 'workflowExecutionLogs.status',
       values: ['running', 'pending', 'cancelled'],
     })
   })
@@ -1131,17 +1132,17 @@ describe('PauseResumeManager paused cancellation after pause release', () => {
     const conditions = flattenMockConditions(dbChainMockFns.where.mock.calls[0]?.[0])
     expect(conditions).toContainEqual({
       type: 'eq',
-      left: 'parentExecutionId',
+      left: 'resumeQueue.parentExecutionId',
       right: 'execution-1',
     })
     expect(conditions).toContainEqual({
       type: 'eq',
-      left: 'workflowId',
+      left: 'pausedExecutions.workflowId',
       right: 'workflow-1',
     })
     expect(conditions).toContainEqual({
       type: 'eq',
-      left: 'status',
+      left: 'resumeQueue.status',
       right: 'claimed',
     })
   })
@@ -1305,7 +1306,7 @@ describe('PauseResumeManager paused cancellation after pause release', () => {
       )
       expect(queueRestoreConditions).toContainEqual({
         type: 'eq',
-        left: 'failureReason',
+        left: 'resumeQueue.failureReason',
         right: 'Paused execution cancellation requested',
       })
       expect(processQueuedResumesSpy).toHaveBeenCalledWith('execution-1', 'workflow-1')
@@ -1781,28 +1782,33 @@ describe('PauseResumeManager resume log claims', () => {
     parentExecutionId: string
     workflowId: string
     executionDeadlineAt?: Date
-  }) => Promise<void>
+  }) => Promise<{ deploymentVersionId: string | null }>
 
   it('atomically stamps the active attempt deadline while claiming a paused log', async () => {
     const executionDeadlineAt = new Date('2026-08-04T12:00:00.000Z')
-    dbChainMockFns.returning.mockResolvedValueOnce([{ id: 'log-1' }])
+    dbChainMockFns.returning.mockResolvedValueOnce([
+      { id: 'log-1', deploymentVersionId: 'deployment-version-old' },
+    ])
 
-    await claimResumeExecutionLog({
-      parentExecutionId: 'execution-1',
-      workflowId: 'workflow-1',
-      executionDeadlineAt,
-    })
+    await expect(
+      claimResumeExecutionLog({
+        parentExecutionId: 'execution-1',
+        workflowId: 'workflow-1',
+        executionDeadlineAt,
+      })
+    ).resolves.toEqual({ deploymentVersionId: 'deployment-version-old' })
 
     expect(dbChainMockFns.set).toHaveBeenCalledWith({
       status: 'running',
       executionDeadlineAt,
     })
     const statusGuard = flattenMockConditions(dbChainMockFns.where.mock.calls.at(-1)?.[0]).find(
-      (condition) => condition.type === 'inArray' && condition.column === 'status'
+      (condition) =>
+        condition.type === 'inArray' && condition.column === 'workflowExecutionLogs.status'
     )
     expect(statusGuard).toEqual({
       type: 'inArray',
-      column: 'status',
+      column: 'workflowExecutionLogs.status',
       values: ['pending', 'paused'],
     })
   })
@@ -1823,6 +1829,29 @@ describe('PauseResumeManager resume log claims', () => {
       retryable: false,
     })
   })
+
+  it('reuses the exact historical version claimed from a deployed run log', () => {
+    expect(requireResumeDeploymentVersion(false, 'deployment-version-old')).toBe(
+      'deployment-version-old'
+    )
+  })
+
+  it('keeps draft resumes version-free', () => {
+    expect(requireResumeDeploymentVersion(true, null)).toBeUndefined()
+  })
+
+  it.each([
+    { useDraftState: true, deploymentVersionId: 'deployment-version-1' },
+    { useDraftState: false, deploymentVersionId: null },
+    { useDraftState: undefined, deploymentVersionId: null },
+  ])(
+    'rejects an inconsistent paused mode/version binding',
+    ({ useDraftState, deploymentVersionId }) => {
+      expect(() => requireResumeDeploymentVersion(useDraftState, deploymentVersionId)).toThrowError(
+        expect.objectContaining({ name: 'ResumeAdmissionError', statusCode: 409, retryable: false })
+      )
+    }
+  )
 })
 
 /**

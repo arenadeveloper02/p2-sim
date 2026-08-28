@@ -19,11 +19,8 @@ import {
   type UsageLogSource,
 } from '@/lib/billing/core/usage-log'
 import { apportionCredits, dollarsToCredits } from '@/lib/billing/credits/conversion'
-import {
-  computeDailyRefreshConsumed,
-  getOrgMemberRefreshBounds,
-} from '@/lib/billing/credits/daily-refresh'
-import { getPlanTierDollars, isPaid } from '@/lib/billing/plan-helpers'
+import { computeWeeklyRefreshConsumed } from '@/lib/billing/credits/weekly-refresh'
+import { getPlanWeeklyRefreshDollars, isPaid } from '@/lib/billing/plan-helpers'
 import { isOrgScopedSubscription } from '@/lib/billing/subscriptions/utils'
 import type { DbClient } from '@/lib/db/types'
 
@@ -163,32 +160,23 @@ function toCreditBreakdown(
 
 async function getRefreshDeductionForOrg(
   organizationId: string,
-  memberIds: string[],
   subscription: NonNullable<Awaited<ReturnType<typeof getOrganizationSubscription>>>,
   executor: DbClient
 ): Promise<number> {
-  if (!isPaid(subscription.plan) || !subscription.periodStart || memberIds.length === 0) {
+  if (!isPaid(subscription.plan) || !subscription.periodStart) {
     return 0
   }
 
-  const planDollars = getPlanTierDollars(subscription.plan)
-  if (planDollars <= 0) return 0
+  const weeklyRefreshDollars = getPlanWeeklyRefreshDollars(subscription.plan)
+  if (weeklyRefreshDollars <= 0) return 0
 
-  const userBounds = await getOrgMemberRefreshBounds(
-    organizationId,
-    subscription.periodStart,
-    executor
-  )
-
-  return computeDailyRefreshConsumed(
+  return computeWeeklyRefreshConsumed(
     {
-      userIds: memberIds,
+      billingEntity: { type: 'organization', id: organizationId },
       periodStart: subscription.periodStart,
       periodEnd: subscription.periodEnd ?? null,
-      planDollars,
+      weeklyRefreshDollars,
       seats: subscription.seats || 1,
-      userBounds: Object.keys(userBounds).length > 0 ? userBounds : undefined,
-      billingEntity: { type: 'organization', id: organizationId },
     },
     executor
   )
@@ -308,22 +296,19 @@ async function getPersonalCreditUsageSummary(
   })
 
   let refreshDeduction = 0
-  if (
-    subscription &&
-    isPaid(subscription.plan) &&
-    usageData.billingPeriodStart &&
-    getPlanTierDollars(subscription.plan) > 0
-  ) {
-    refreshDeduction = await computeDailyRefreshConsumed(
-      {
-        userIds: [userId],
-        periodStart: usageData.billingPeriodStart,
-        periodEnd: usageData.billingPeriodEnd,
-        planDollars: getPlanTierDollars(subscription.plan),
-        billingEntity: { type: 'user', id: userId },
-      },
-      executor
-    )
+  if (subscription && isPaid(subscription.plan) && usageData.billingPeriodStart) {
+    const weeklyRefreshDollars = getPlanWeeklyRefreshDollars(subscription.plan)
+    if (weeklyRefreshDollars > 0) {
+      refreshDeduction = await computeWeeklyRefreshConsumed(
+        {
+          billingEntity: { type: 'user', id: userId },
+          periodStart: usageData.billingPeriodStart,
+          periodEnd: usageData.billingPeriodEnd,
+          weeklyRefreshDollars,
+        },
+        executor
+      )
+    }
   }
 
   return {
@@ -441,13 +426,7 @@ async function getOrganizationCreditUsageSummary(
     workflowLedger: orgWorkflowLedger,
   })
 
-  const memberIds = membersWithStats.map((m) => m.userId)
-  const refreshDeduction = await getRefreshDeductionForOrg(
-    organizationId,
-    memberIds,
-    subscription,
-    executor
-  )
+  const refreshDeduction = await getRefreshDeductionForOrg(organizationId, subscription, executor)
 
   const summary = applyRefreshAndConvertToCredits(orgDollarBreakdown, refreshDeduction)
 

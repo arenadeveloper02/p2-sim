@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   booleanQueryFlagSchema,
   folderIdSchema,
+  MAX_ID_LENGTH,
   privateSecretProvenanceBundleSchema,
   requiredFieldSchema,
   workspaceIdSchema,
@@ -351,6 +352,25 @@ export const tableDefinitionSchema = domainObjectSchema<TableDefinition>()
 export const tableRowSchema = domainObjectSchema<TableRow>()
 
 /**
+ * One row as the single-row routes actually emit it: the stored cells plus
+ * position, with timestamps already serialized.
+ *
+ * Deliberately not {@link tableRowSchema}. That one describes a `TableRow`,
+ * which carries the per-cell `executions` sidecar and `Date` objects — accurate
+ * for the list and query routes, which return exactly that, and wrong for the
+ * single-row routes, which have always projected a narrower object with ISO
+ * strings. Two shapes on the wire need two schemas; collapsing them would make
+ * one of the two lie to its clients.
+ */
+export const tableRowWireSchema = z.object({
+  id: z.string(),
+  data: rowDataSchema,
+  position: z.number(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
+/**
  * Plain-object base for the single-row insert body. Kept un-refined so callers
  * (e.g. the v1 public contract) can `.omit()` fields before applying
  * {@link rowAnchorMutexRefine} — Zod forbids `.omit()` on a refined schema.
@@ -647,9 +667,17 @@ const predicateGroupsJsonSchema = (selfRef: string) =>
  * false and the negation true — the same include-nulls behaviour as every other
  * negation. Pinned by `__tests__/sql.test.ts`.
  */
+const PREDICATE_LIMITS_DESCRIPTION = `At most ${MAX_PREDICATE_GROUP_SIZE} members per group, ${MAX_PREDICATE_DEPTH} levels of nesting, and ${MAX_PREDICATE_NODES} nodes in total.`
+const PREDICATE_NEGATION_DESCRIPTION =
+  'The negating operators include nulls: `ne`, `nin`, `ncontains`, `nlike`, and `nilike` match rows whose column is null or absent, so "not X" is not the complement of "X" over a nullable column. That holds for every column type, multi-select included. To exclude nulls, `all`-combine the negation with `isNotEmpty` (multi-select) or `isNotNull`.'
 const PREDICATE_TREE_DESCRIPTION = [
-  `Recursive predicate tree. Each group node is exactly one non-empty \`all\` or \`any\` array whose members are further groups or \`{ field, op, value }\` conditions; the root must be a group, not a bare condition. At most ${MAX_PREDICATE_GROUP_SIZE} members per group, ${MAX_PREDICATE_DEPTH} levels of nesting, and ${MAX_PREDICATE_NODES} nodes in total.`,
-  'The negating operators include nulls: `ne`, `nin`, `ncontains`, `nlike`, and `nilike` match rows whose column is null or absent, so "not X" is not the complement of "X" over a nullable column. That holds for every column type, multi-select included. To exclude nulls, `all`-combine the negation with `isNotEmpty` (multi-select) or `isNotNull`.',
+  `Recursive predicate tree. Each group node is exactly one non-empty \`all\` or \`any\` array whose members are further groups or \`{ field, op, value }\` conditions; the root must be a group, not a bare condition. ${PREDICATE_LIMITS_DESCRIPTION}`,
+  PREDICATE_NEGATION_DESCRIPTION,
+  PREDICATE_OPERATOR_GRAMMAR,
+].join(' ')
+const PREDICATE_INPUT_DESCRIPTION = [
+  `A single \`{ field, op, value }\` condition or a recursive \`all\`/\`any\` group; either form is normalized to a grouped predicate after validation. ${PREDICATE_LIMITS_DESCRIPTION}`,
+  PREDICATE_NEGATION_DESCRIPTION,
   PREDICATE_OPERATOR_GRAMMAR,
 ].join(' ')
 
@@ -681,8 +709,7 @@ export const predicateInputSchema = predicateBoundarySchema
   .meta({
     id: 'TablePredicateInput',
     title: 'Table predicate input',
-    description:
-      'A single `{ field, op, value }` condition or a group, normalized to a grouped predicate after validation. Same grammar and limits as `TablePredicate`.',
+    description: PREDICATE_INPUT_DESCRIPTION,
     oneOf: [
       ...predicateGroupsJsonSchema('#/$defs/TablePredicateInput'),
       PREDICATE_LEAF_JSON_SCHEMA,
@@ -1071,6 +1098,21 @@ export const rowQueryBodySchema = z.object({
   workspaceId: z.string().min(1, 'Workspace ID is required'),
   predicate: predicateInputSchema.optional(),
   sort: sortSpecSchema.optional(),
+  columns: z
+    .array(
+      requiredFieldSchema('Column reference must not be empty').max(
+        MAX_ID_LENGTH,
+        'Column reference is too long'
+      )
+    )
+    .max(
+      TABLE_LIMITS.MAX_COLUMNS_PER_TABLE,
+      `Cannot select more than ${TABLE_LIMITS.MAX_COLUMNS_PER_TABLE} columns`
+    )
+    .optional()
+    .describe(
+      'Stable column identifiers or column names to include. Omit or pass an empty array for all columns; a reference that matches no column is ignored.'
+    ),
   // Omitted limit returns the ENTIRE matching result, failing fast (400) when
   // it exceeds the response byte budget. An explicit limit caps the page row
   // count; the byte budget may still end a page early with nextCursor set.
@@ -1425,11 +1467,27 @@ export const upsertTableRowContract = defineRouteContract({
     mode: 'json',
     schema: successResponseSchema(
       z.object({
-        row: tableRowSchema,
+        row: tableRowWireSchema,
         operation: z.enum(['insert', 'update']),
         message: z.string(),
       })
     ),
+  },
+})
+
+/**
+ * Reads one row. The sibling of {@link updateTableRowContract} and
+ * {@link deleteTableRowContract}, which take their workspace scope from a body;
+ * a GET has none, so it is asserted on the query string instead.
+ */
+export const getTableRowContract = defineRouteContract({
+  method: 'GET',
+  path: '/api/table/[tableId]/rows/[rowId]',
+  params: tableRowParamsSchema,
+  query: getTableQuerySchema,
+  response: {
+    mode: 'json',
+    schema: successResponseSchema(z.object({ row: tableRowWireSchema })),
   },
 })
 
@@ -1442,7 +1500,7 @@ export const updateTableRowContract = defineRouteContract({
     mode: 'json',
     schema: successResponseSchema(
       z.object({
-        row: tableRowSchema,
+        row: tableRowWireSchema,
         message: z.string(),
       })
     ),
@@ -2154,7 +2212,7 @@ export const updateTableViewBodySchema = z
       .min(1, 'Workspace ID is required')
       .describe('Workspace that owns the table.'),
     name: viewNameSchema.optional().describe('Replacement saved-view display name.'),
-    /** Full replace. Use for an explicit Save, where dropping a removed filter is the point. */
+    /** Full replacement for callers that own the complete configuration snapshot. */
     config: tableViewConfigSchema
       .optional()
       .describe('Complete replacement saved-view configuration.'),

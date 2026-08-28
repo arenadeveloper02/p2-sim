@@ -1,4 +1,6 @@
+export { principalAuditSource } from '@/lib/core/application/audit-source'
 export {
+  type AuthorizedWorkspaceResourceUseCaseContext,
   type AuthorizedWorkspaceUseCaseContext,
   type AuthorizedWorkspaceUseCaseDefinition,
   type AuthorizedWorkspaceUseCaseResultContext,
@@ -13,9 +15,13 @@ export {
   ForbiddenOperationError,
   forbiddenErrorDetails,
 } from '@/lib/core/application/forbidden'
-export type {
-  ApplicationOperation,
-  OperationUseCase,
+export {
+  type ApplicationOperation,
+  assertOperationPrincipal,
+  defineOperation,
+  type OperationUseCase,
+  type PrincipalScopedOperation,
+  type UndelegatedPrincipalKind,
 } from '@/lib/core/application/operation'
 export type {
   WorkspaceAuthorizationContext,

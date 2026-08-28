@@ -12,6 +12,10 @@ import { isZodError, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { checkMothershipUsageLimits } from '@/lib/billing/calculations/usage-monitor'
 import { resolveBillingAttribution } from '@/lib/billing/core/billing-attribution'
+import {
+  DESKTOP_TERMINAL_HINT_ID_MAX_LENGTH,
+  DESKTOP_TERMINAL_HINT_TEXT_MAX_LENGTH,
+} from '@/lib/copilot/chat/desktop-capabilities'
 import { type ChatLoadResult, resolveOrCreateChat } from '@/lib/copilot/chat/lifecycle'
 import { appendCopilotChatMessages } from '@/lib/copilot/chat/messages-store'
 import { buildCopilotRequestPayload } from '@/lib/copilot/chat/payload'
@@ -324,9 +328,9 @@ const ChatMessageSchema = z.object({
       terminals: z
         .array(
           z.object({
-            id: z.string().max(64),
-            cwd: z.string().max(1024).optional(),
-            running: z.string().max(1024).optional(),
+            id: z.string().max(DESKTOP_TERMINAL_HINT_ID_MAX_LENGTH),
+            cwd: z.string().max(DESKTOP_TERMINAL_HINT_TEXT_MAX_LENGTH).optional(),
+            running: z.string().max(DESKTOP_TERMINAL_HINT_TEXT_MAX_LENGTH).optional(),
             interactive: z.boolean().optional(),
             active: z.boolean().optional(),
           })
@@ -496,9 +500,19 @@ async function resolveAgentContexts(params: {
   message: string
   workspaceId?: string
   chatId?: string
+  resolvedSecretTraceRegistry?: ExecutionContext['resolvedSecretTraceRegistry']
   requestId: string
 }): Promise<Array<{ type: string; content: string; tag?: string; path?: string }>> {
-  const { contexts, resourceAttachments, userId, message, workspaceId, chatId, requestId } = params
+  const {
+    contexts,
+    resourceAttachments,
+    userId,
+    message,
+    workspaceId,
+    chatId,
+    resolvedSecretTraceRegistry,
+    requestId,
+  } = params
 
   let agentContexts: Array<{ type: string; content: string; tag?: string; path?: string }> = []
 
@@ -509,7 +523,8 @@ async function resolveAgentContexts(params: {
         userId,
         message,
         workspaceId,
-        chatId
+        chatId,
+        resolvedSecretTraceRegistry
       )
     } catch (error) {
       logger.error(`[${requestId}] Failed to process contexts`, error)
@@ -1429,7 +1444,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           }),
         activeOtelRoot.context
       )
-      const agentContextsPromise = executionContextPromise.then(() => {
+      const agentContextsPromise = executionContextPromise.then((executionContext) => {
         return withCopilotSpan(
           TraceSpan.CopilotChatResolveAgentContexts,
           {
@@ -1444,6 +1459,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
               message: body.message,
               workspaceId,
               chatId: actualChatId,
+              resolvedSecretTraceRegistry: executionContext.resolvedSecretTraceRegistry,
               requestId,
             }),
           activeOtelRoot.context

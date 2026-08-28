@@ -130,26 +130,24 @@ async function WorkspaceLayoutInner({
           viewerIsHostOrganizationMember={hostContext.viewer.isHostOrganizationMember}
           initialOrgSettings={initialOrgSettings}
         >
-          <ToastProvider>
-            <DesktopOAuthConnectListener />
-            <SettingsLoader />
-            <ProviderModelsLoader />
-            <CustomBlocksLoader />
-            <BlockVisibilityLoader />
-            <GlobalCommandsProvider>
-              <div className='flex h-screen w-full flex-col overflow-hidden bg-[var(--surface-1)]'>
-                <AppBanner />
-                <ImpersonationBanner />
-                <SessionExpired />
-                <WorkspacePermissionsProvider>
-                  <WorkspaceScopeSync />
-                  <WorkspaceChrome initialSidebarCollapsed={initialSidebarCollapsed}>
-                    {children}
-                  </WorkspaceChrome>
-                </WorkspacePermissionsProvider>
-              </div>
-            </GlobalCommandsProvider>
-          </ToastProvider>
+          <DesktopOAuthConnectListener />
+          <SettingsLoader />
+          <ProviderModelsLoader />
+          <CustomBlocksLoader />
+          <BlockVisibilityLoader />
+          <GlobalCommandsProvider>
+            <div className='flex h-screen w-full flex-col overflow-hidden bg-[var(--surface-1)]'>
+              <AppBanner />
+              <ImpersonationBanner />
+              <SessionExpired />
+              <WorkspacePermissionsProvider>
+                <WorkspaceScopeSync />
+                <WorkspaceChrome initialSidebarCollapsed={initialSidebarCollapsed}>
+                  {children}
+                </WorkspaceChrome>
+              </WorkspacePermissionsProvider>
+            </div>
+          </GlobalCommandsProvider>
         </BrandingProvider>
       </WorkspaceHostProvider>
     </HydrationBoundary>

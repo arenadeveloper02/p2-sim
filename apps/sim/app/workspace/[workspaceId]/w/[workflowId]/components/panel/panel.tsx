@@ -10,6 +10,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Duplicate,
   Layout,
@@ -96,6 +97,7 @@ import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
 import { useLocalCopilotCatalogSelection } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import { WorkflowCopilotShell } from '@/local-copilot/integration/workflow-copilot-shell'
 import { useChatStore } from '@/stores/chat/store'
+import { useMothershipDraftsStore } from '@/stores/mothership-drafts/store'
 import type { ChatContext, PanelTab } from '@/stores/panel'
 import { usePanelStore } from '@/stores/panel'
 import { useVariablesModalStore } from '@/stores/variables/modal'
@@ -186,6 +188,22 @@ const RunAgentExternalChat = ({
 }
 
 const EMPTY_COPILOT_CHATS: readonly CopilotChatListItem[] = []
+
+/**
+ * Builds the persisted draft key for a workflow-copilot chat.
+ *
+ * Scoped per chat, not per workflow: a draft is cleared only on submit, so a
+ * workflow-wide key carries one chat's typed text, contexts, and attachments
+ * into the next chat selected. The workflow segment stays so each workflow
+ * keeps its own unselected-chat (`new`) draft.
+ */
+function copilotDraftKey(
+  workspaceId: string,
+  workflowId: string | undefined,
+  chatId: string | undefined
+): string | undefined {
+  return workflowId ? `${workspaceId}:workflow-copilot:${workflowId}:${chatId ?? 'new'}` : undefined
+}
 /**
  * Panel component with resizable width and tab navigation that persists across page refreshes.
  *
@@ -208,6 +226,7 @@ export const Panel = memo(function Panel() {
   const params = useParams()
   const workspaceId = params.workspaceId as string
   const workflowIdFromUrl = typeof params.workflowId === 'string' ? params.workflowId : undefined
+  const routeWorkflowId = params.workflowId as string | undefined
 
   const posthog = usePostHog()
   const posthogRef = useRef(posthog)
@@ -261,7 +280,7 @@ export const Panel = memo(function Panel() {
   // API returns { workspace: { name, ... } }, and hook returns { settings, permissions }
   const workspaceName = workspaceData?.settings?.workspace?.name || 'Unknown Workspace'
   const activeWorkflowId = useWorkflowRegistry((state) => state.activeWorkflowId)
-  const editorWorkflowId = activeWorkflowId || workflowIdFromUrl
+  const editorWorkflowId = activeWorkflowId || routeWorkflowId
   const { handleAutoLayout: autoLayoutWithFitView } = useAutoLayout(activeWorkflowId || null)
 
   // Check for locked blocks (disables auto-layout)
@@ -370,6 +389,9 @@ export const Panel = memo(function Panel() {
   const { chatId: copilotChatId, setChatId: setCopilotChatId } =
     useCopilotChatSelection(editorWorkflowId)
 
+  const copilotDraftWorkflowId = activeWorkflowId ?? routeWorkflowId
+  const copilotDraftScopeKey = copilotDraftKey(workspaceId, copilotDraftWorkflowId, copilotChatId)
+
   const { data: copilotChatList = EMPTY_COPILOT_CHATS } = useCopilotChats(
     isCopilotTabAvailable ? editorWorkflowId : undefined
   )
@@ -428,13 +450,16 @@ export const Panel = memo(function Panel() {
           if (copilotChatId === chatId) {
             setCopilotChatId(undefined)
           }
+          // The draft store is persisted, so an unpruned key survives forever.
+          const draftKey = copilotDraftKey(workspaceId, copilotDraftWorkflowId, chatId)
+          if (draftKey) useMothershipDraftsStore.getState().clearDraft(draftKey)
           loadCopilotChats()
         })
         .catch((err) => {
           logger.error('Failed to delete copilot chat', { error: toError(err).message, chatId })
         })
     },
-    [copilotChatId, loadCopilotChats, setCopilotChatId]
+    [copilotChatId, loadCopilotChats, setCopilotChatId, workspaceId, copilotDraftWorkflowId]
   )
 
   const handleCopilotToolResult = useCallback(
@@ -760,13 +785,10 @@ export const Panel = memo(function Panel() {
     setIsMenuOpen(false)
   }, [collaborativeBatchToggleLocked])
 
-  // Compute run button state
-  const canRun = userPermissions.canRead // Running only requires read permissions
+  const canRun = userPermissions.canRead
   const isLoadingPermissions = userPermissions.isLoading
-  const hasValidationErrors = false // TODO: Add validation logic if needed
-  const isWorkflowBlocked = isExecuting || hasValidationErrors
   const isButtonDisabled =
-    !isExecuting && (isUsageGateLoading || isWorkflowBlocked || (!canRun && !isLoadingPermissions))
+    !isExecuting && (isUsageGateLoading || (!canRun && !isLoadingPermissions))
 
   /**
    * Register global keyboard shortcuts using the central commands registry.
@@ -870,6 +892,7 @@ export const Panel = memo(function Panel() {
                     <Duplicate />
                     Duplicate workflow
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onSelect={() => {
                       setIsDeleteModalOpen(true)
@@ -1070,6 +1093,7 @@ export const Panel = memo(function Panel() {
                   mothershipChat={
                     <MothershipChat
                       className='min-h-0 flex-1'
+                      workspaceId={workspaceId}
                       messages={copilotMessages}
                       isSending={copilotIsSending}
                       isReconnecting={copilotIsReconnecting}
@@ -1084,6 +1108,7 @@ export const Panel = memo(function Panel() {
                       onCancelQueueEdit={copilotCancelQueueEdit}
                       userId={session?.user?.id}
                       chatId={copilotResolvedChatId}
+                      draftScopeKey={copilotDraftScopeKey}
                       layout='copilot-view'
                       canSwitchCopilotBackend={canSwitchBackend}
                       copilotBackend={copilotBackend}
@@ -1138,6 +1163,7 @@ export const Panel = memo(function Panel() {
         onOpenChange={setIsDeleteModalOpen}
         srTitle='Delete Workflow'
         title='Delete Workflow'
+        defaultAction='dismiss'
         text={[
           'Are you sure you want to delete ',
           { text: currentWorkflow?.name ?? 'this workflow', bold: true },

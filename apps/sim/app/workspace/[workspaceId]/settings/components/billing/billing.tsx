@@ -8,6 +8,7 @@ import {
   chipVariants,
   cn,
   Label,
+  OverflowText,
   Switch,
   Tooltip,
   toast,
@@ -19,7 +20,7 @@ import { formatDate } from '@sim/utils/formatting'
 import { useRouter } from 'next/navigation'
 import { useSession, useSubscription } from '@/lib/auth/auth-client'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
-import { CREDIT_MULTIPLIER } from '@/lib/billing/credits/conversion'
+import { CREDIT_MULTIPLIER, formatCreditCost } from '@/lib/billing/credits/conversion'
 import {
   getCoveredUsage,
   getIsOnDemandActive,
@@ -30,6 +31,7 @@ import {
   getDisplayPlanName,
   getPlanTierCredits,
   getPlanTierDollars,
+  getPlanWeeklyRefreshDollars,
   isEnterprise,
   isFree,
   isPaid,
@@ -46,6 +48,7 @@ import { getBaseUrl } from '@/lib/core/utils/urls'
 import { CreditUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing/components/credit-usage-section/credit-usage-section'
 import { UsageLimitField } from '@/app/workspace/[workspaceId]/settings/components/billing/components/usage-limit-field/usage-limit-field'
 import { getSubscriptionPermissions } from '@/app/workspace/[workspaceId]/settings/components/billing/subscription-permissions'
+import { SettingsEmptyState } from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
 import { RESOURCE_ROW_ARROW_CLASSES } from '@/app/workspace/[workspaceId]/settings/components/settings-resource-row'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
@@ -120,6 +123,7 @@ export function Billing({
 
   const {
     data: subscriptionData,
+    error: subscriptionError,
     isLoading: isSubscriptionLoading,
     refetch: refetchSubscription,
   } = useSubscriptionData({
@@ -130,6 +134,7 @@ export function Billing({
 
   const {
     data: organizationBillingData,
+    error: organizationBillingError,
     isLoading: isOrgBillingLoading,
     refetch: refetchOrganizationBilling,
   } = useOrganizationBilling(billingOrganizationId || '', { enabled: isOrganizationScope })
@@ -160,6 +165,7 @@ export function Billing({
     ? (organizationBilling?.subscriptionStatus ?? 'inactive')
     : (subscriptionData?.data?.status ?? 'inactive')
   const isLoading = isOrganizationScope ? isOrgBillingLoading : isSubscriptionLoading
+  const billingError = isOrganizationScope ? organizationBillingError : subscriptionError
 
   const subscription = {
     isFree: isFree(plan),
@@ -202,12 +208,16 @@ export function Billing({
   const isTeamAdmin = isOrgAdminRole(userRole)
   const shouldUseOrganizationBillingContext = isOrganizationScope
 
+  /**
+   * Invoice lookup is safe to start with the payer query: the endpoint returns an empty list
+   * when the payer has no Stripe customer. Waiting to derive `isFree` serialized two independent
+   * requests for every paid account and organization.
+   */
   const { data: invoicesData } = useInvoices({
     context: shouldUseOrganizationBillingContext ? 'organization' : 'user',
     organizationId: shouldUseOrganizationBillingContext
       ? (billingOrganizationId ?? undefined)
       : undefined,
-    enabled: !subscription.isFree,
   })
 
   const planIncludedAmount =
@@ -402,7 +412,15 @@ export function Billing({
   }
 
   if (isLoading) return null
-  if (isOrganizationScope ? !organizationBilling : !subscriptionData?.data) return null
+  if (isOrganizationScope ? !organizationBilling : !subscriptionData?.data) {
+    return (
+      <SettingsPanel>
+        <SettingsEmptyState tone='error'>
+          {getErrorMessage(billingError, 'Failed to load billing information')}
+        </SettingsEmptyState>
+      </SettingsPanel>
+    )
+  }
 
   const planName = getDisplayPlanName(subscription.plan)
   const billingInterval = isOrganizationScope
@@ -431,6 +449,10 @@ export function Billing({
     ? organizationBilling?.cancelAtPeriodEnd === true
     : subscriptionData?.data?.cancelAtPeriodEnd === true
 
+  const weeklyRefreshDollars =
+    getPlanWeeklyRefreshDollars(subscription.plan) *
+    (isOrganizationScope ? subscription.seats || 1 : 1)
+
   const invoices = (invoicesData?.invoices ?? []).map((invoice) => ({
     id: invoice.id,
     date: formatDate(new Date(invoice.created * 1000)),
@@ -457,16 +479,9 @@ export function Billing({
   const explorePlansLabel = isOrganizationScope
     ? 'Explore organization plans'
     : 'Explore personal plans'
-  const subscriptionOwner = isOrganizationScope
-    ? `${organizationBilling?.organizationName ?? 'The organization'}’s subscription`
-    : 'Your personal subscription'
-  const settingsDescription =
-    governingWorkspaceName && subscription.isPaid
-      ? `${subscriptionOwner} governs ${governingWorkspaceName}.`
-      : undefined
 
   return (
-    <SettingsPanel description={settingsDescription}>
+    <SettingsPanel>
       <div className='flex items-center justify-between gap-3'>
         <div className='flex items-center gap-2.5'>
           <div className='size-9 flex-shrink-0'>
@@ -475,8 +490,8 @@ export function Billing({
             </div>
           </div>
           <div className='flex min-w-0 flex-col'>
-            <span className='truncate text-[var(--text-body)] text-sm'>{planTitle}</span>
-            <span className='truncate text-[var(--text-muted)] text-caption'>{priceText}</span>
+            <OverflowText label={planTitle} className='text-[var(--text-body)] text-sm' />
+            <OverflowText label={priceText} className='text-[var(--text-muted)] text-caption' />
           </div>
         </div>
         {!subscription.isEnterprise &&
@@ -575,6 +590,15 @@ export function Billing({
                 </span>
                 <span className='text-[var(--text-muted)] text-small'>
                   {new Date(periodEnd).toLocaleDateString()}
+                </span>
+              </div>
+            )}
+
+            {subscription.isPaid && weeklyRefreshDollars > 0 && (
+              <div className='flex items-center justify-between'>
+                <span className='text-[var(--text-body)] text-small'>Weekly refresh</span>
+                <span className='text-[var(--text-muted)] text-small'>
+                  +{formatCreditCost(weeklyRefreshDollars)}
                 </span>
               </div>
             )}

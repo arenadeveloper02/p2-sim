@@ -18,6 +18,7 @@ import {
   type ComboboxOption,
   cn,
   handleKeyboardActivation,
+  OverflowText,
   Search,
 } from '@sim/emcn'
 import { ArrowLeft, Plus } from '@sim/emcn/icons'
@@ -36,6 +37,7 @@ import { MaxBadge } from '@/app/workspace/[workspaceId]/knowledge/[id]/component
 import { useConnectorConfigFields } from '@/app/workspace/[workspaceId]/knowledge/[id]/hooks/use-connector-config-fields'
 import { useWorkspaceHostContext } from '@/app/workspace/[workspaceId]/providers/workspace-host-provider'
 import { getBlock } from '@/blocks'
+import { withBrandIcon } from '@/blocks/brand-icon'
 import { getTileIconColorClass } from '@/blocks/icon-color'
 import { CONNECTOR_META_REGISTRY } from '@/connectors/registry'
 import type { ConnectorMeta } from '@/connectors/types'
@@ -332,7 +334,7 @@ export function AddConnectorModal({
                         (cred): ComboboxOption => ({
                           label: cred.name || cred.provider,
                           value: cred.id,
-                          icon: connectorConfig.icon,
+                          icon: withBrandIcon(connectorConfig.icon),
                         })
                       ),
                       {
@@ -507,8 +509,11 @@ function ConnectorTypeCard({ type, config, onClick }: ConnectorTypeCardProps) {
         </div>
       </div>
       <div className='flex min-w-0 flex-1 flex-col'>
-        <span className='truncate text-[var(--text-body)] text-sm'>{config.name}</span>
-        <span className='truncate text-[var(--text-muted)] text-caption'>{config.description}</span>
+        <OverflowText label={config.name} className='text-[var(--text-body)] text-sm' />
+        <OverflowText
+          label={config.description}
+          className='text-[var(--text-muted)] text-caption'
+        />
       </div>
       <ArrowRight className='size-4 flex-shrink-0 text-[var(--text-icon)]' />
     </button>

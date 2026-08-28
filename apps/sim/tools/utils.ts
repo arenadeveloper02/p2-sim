@@ -1,4 +1,3 @@
-import { createLogger } from '@sim/logger'
 import { stripVersionSuffix } from '@sim/utils/string'
 import * as Papa from 'papaparse'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
@@ -14,8 +13,6 @@ import type { CustomToolDefinition } from '@/hooks/queries/custom-tools'
 import { environmentKeys } from '@/hooks/queries/environment'
 import { tools } from '@/tools/registry'
 import type { ToolConfig } from '@/tools/types'
-
-const logger = createLogger('ToolsUtils')
 
 /**
  * Strips version suffix (_v2, _v3, etc.) from a tool ID or name.

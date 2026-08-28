@@ -129,12 +129,10 @@ const Terminal = dynamic(() =>
     (m) => m.Terminal
   )
 )
-const WhitelabelingSettings = dynamic(
-  () =>
-    import('@/ee/whitelabeling/components/whitelabeling-settings').then(
-      (m) => m.WhitelabelingSettings
-    ),
-  { ssr: false }
+const WhitelabelingSettings = dynamic(() =>
+  import('@/ee/whitelabeling/components/whitelabeling-settings').then(
+    (m) => m.WhitelabelingSettings
+  )
 )
 
 interface SettingsPageProps {
@@ -203,7 +201,6 @@ export function SettingsPage({ section }: SettingsPageProps) {
         <Billing
           scope={organizationId ? 'organization' : 'account'}
           organizationId={organizationId ?? undefined}
-          governingWorkspaceName={hostContext.workspace.name}
           creditUsageHref={`/workspace/${hostContext.workspace.id}/settings/billing/credit-usage`}
         />
       )}

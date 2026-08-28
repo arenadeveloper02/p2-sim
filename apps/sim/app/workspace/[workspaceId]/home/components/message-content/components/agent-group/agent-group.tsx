@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, cn, Expandable, ExpandableContent } from '@sim/emcn'
 import { ShimmerText } from '@/components/ui'
 import { isBrowserAgentAvailable } from '@/lib/browser-agent/transport'
 import { resolveAssistantDisplayLabel } from '@/lib/chat/assistant-display-name'
-import { BrowserRequestTakeover } from '@/lib/copilot/generated/tool-catalog-v1'
+import { RETIRED_BROWSER_REQUEST_TAKEOVER_ID } from '@/lib/copilot/tools/retired-tools'
 import { useSmoothText } from '@/hooks/use-smooth-text'
 import { type ToolCallData, ToolCallStatus } from '../../../../types'
 import { getAgentIcon, isToolDone } from '../../utils'
@@ -44,6 +44,27 @@ interface AgentGroupProps {
   isLaneOpen?: boolean
 }
 
+function toolStatusTitle(tool: ToolCallData): string {
+  return tool.displayTitle || String(tool.toolName ?? '')
+}
+
+/**
+ * Every tool in a group, in stream order, including those run by nested
+ * agents. A parent's status line speaks for the whole subtree it delegated,
+ * so a grandchild's work is what surfaces while the parent itself waits.
+ */
+function collectGroupTools(items: AgentGroupItem[]): ToolCallData[] {
+  const tools: ToolCallData[] = []
+  const walk = (list: AgentGroupItem[]) => {
+    for (const item of list) {
+      if (item.type === 'tool') tools.push(item.data)
+      else if (item.type === 'agent_group') walk(item.group.items)
+    }
+  }
+  walk(items)
+  return tools
+}
+
 /** True when any row in this group (or a nested one) is waiting on a permission decision. */
 function hasAwaitingApproval(items: AgentGroupItem[]): boolean {
   return items.some((item) => {
@@ -64,7 +85,7 @@ function getActiveBrowserTakeover(items: AgentGroupItem[]): ActiveBrowserTakeove
     const item = items[index]
     if (item.type !== 'tool') continue
     if (
-      item.data.toolName === BrowserRequestTakeover.id &&
+      item.data.toolName === RETIRED_BROWSER_REQUEST_TAKEOVER_ID &&
       item.data.status === ToolCallStatus.executing
     ) {
       const reason = item.data.params?.reason
@@ -116,6 +137,30 @@ export function AgentGroup({
 }: AgentGroupProps) {
   const resolvedAgentLabel = resolveAssistantDisplayLabel(agentLabel)
   const AgentIcon = getAgentIcon(agentName)
+  const isMainAgent = agentName === 'mothership'
+  // Collapsed status line: the latest tool call, always in its RUNNING
+  // phrasing — it never flips to the completed rewrite (that lives in the
+  // expanded log). Work delegated further down bubbles up, so a group whose
+  // own turn is idle still narrates what its nested agent is doing rather
+  // than freezing on its last own tool. With several tools running at any
+  // depth, the most recently started wins and the rest become "+ n"; between
+  // rounds the last tool's title stays frozen; a closed lane shows the bare
+  // name.
+  const status = useMemo(() => {
+    if (isMainAgent || !isLaneOpen) return undefined
+    const tools = collectGroupTools(items)
+    const running = tools.filter((tool) => tool.status === ToolCallStatus.executing)
+    if (running.length > 0) {
+      const latest = running.reduce((newest, tool) =>
+        (tool.startedAt ?? 0) >= (newest.startedAt ?? 0) ? tool : newest
+      )
+      const title = toolStatusTitle(latest)
+      return running.length > 1 ? `${title} + ${running.length - 1}` : title
+    }
+    const last = tools.at(-1)
+    return last ? toolStatusTitle(last) : undefined
+  }, [isLaneOpen, isMainAgent, items])
+  const headerText = status ? `${agentLabel} — ${status}` : agentLabel
   const hasItems = items.length > 0
   const resolved = isAgentGroupResolved(items)
   const browserAgentAvailable = isBrowserAgentAvailable()
@@ -125,17 +170,13 @@ export function AgentGroup({
   const isWorking =
     !activeBrowserTakeover && ((isDelegating && !resolved) || (isStreaming && isLaneOpen))
 
-  // Expand while this is the latest section, the lane is open, or work is still
-  // unresolved. Keeping `isCurrentSection` open after the turn settles is what
-  // leaves the tool trail visible — otherwise Arena Copilot settles looking like
-  // only a one-line caption ("Let me retry…") with the real flow collapsed.
-  // Keying "still running" off the lane-open signal (not `resolved` alone) avoids
-  // a collapse/reopen flicker on parallel siblings: a subagent's tools all
-  // momentarily read "done" in the gap between its last search and its `respond`
-  // ("Gathering thoughts") tool, transiently flipping `resolved` true; the open
-  // lane bridges that gap so the row never collapses mid-run. A manual toggle
-  // pins the choice.
-  const autoExpanded = isCurrentSection || (isStreaming && (isLaneOpen || !resolved))
+  // SUBAGENT groups never auto-expand: the collapsed row IS the live view —
+  // label plus latest running tool title. Expanding is a deliberate user
+  // action; only a pending permission prompt or a browser hand-back forces
+  // one open. The MAIN lane ("Sim") is not a delegation card: its narration
+  // and tool calls are the turn itself, so it keeps the original live-expand
+  // behavior (open while streaming/current, settles when superseded).
+  const autoExpanded = isMainAgent && isStreaming && (isCurrentSection || isLaneOpen || !resolved)
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null)
   const [expandedTakeoverId, setExpandedTakeoverId] = useState<string | null>(null)
   // An outstanding permission prompt overrides a manual collapse: the turn
@@ -162,7 +203,7 @@ export function AgentGroup({
         <button
           type='button'
           onClick={toggleExpanded}
-          className='group/agent flex cursor-pointer items-center gap-2'
+          className='group/agent flex w-full min-w-0 cursor-pointer items-center gap-2 text-left'
         >
           <div className='flex size-[16px] flex-shrink-0 items-center justify-center'>
             <AgentIcon className='size-[16px] text-[var(--text-icon)]' />
@@ -174,13 +215,13 @@ export function AgentGroup({
           )}
           <ChevronDown
             className={cn(
-              'size-[14px] text-[var(--text-icon)] opacity-0 transition-[transform,opacity] duration-150 group-hover/agent:opacity-100 group-focus-visible/agent:opacity-100',
+              'size-[14px] flex-shrink-0 text-[var(--text-icon)] opacity-0 transition-[transform,opacity] duration-150 group-hover/agent:opacity-100 group-focus-visible/agent:opacity-100',
               !expanded && '-rotate-90'
             )}
           />
         </button>
       ) : (
-        <div className='flex items-center gap-2'>
+        <div className='flex min-w-0 items-center gap-2'>
           <div className='flex size-[16px] flex-shrink-0 items-center justify-center'>
             <AgentIcon className='size-[16px] text-[var(--text-icon)]' />
           </div>

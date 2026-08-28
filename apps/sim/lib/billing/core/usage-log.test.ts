@@ -659,7 +659,7 @@ describe('usage-log query scopes', () => {
 
     expect(latestWhereCondition()).toMatchObject({
       type: 'and',
-      conditions: [{ type: 'eq', left: 'workspaceId', right: 'workspace-1' }],
+      conditions: [{ type: 'eq', left: 'usageLog.workspaceId', right: 'workspace-1' }],
     })
     expect(dbChainMockFns.limit).toHaveBeenCalledWith(26)
   })
@@ -705,7 +705,7 @@ describe('usage-log query scopes', () => {
 
     expect(latestWhereCondition()).toMatchObject({
       type: 'and',
-      conditions: [{ type: 'eq', left: 'userId', right: 'user-1' }, { type: 'or' }],
+      conditions: [{ type: 'eq', left: 'usageLog.userId', right: 'user-1' }, { type: 'or' }],
     })
   })
 
@@ -719,7 +719,7 @@ describe('usage-log query scopes', () => {
 
     expect(latestWhereCondition()).toMatchObject({
       type: 'and',
-      conditions: [{ type: 'eq', left: 'userId', right: 'user-1' }, { type: 'or' }],
+      conditions: [{ type: 'eq', left: 'usageLog.userId', right: 'user-1' }, { type: 'or' }],
     })
     expect(dbChainMockFns.limit).toHaveBeenCalledTimes(1)
     expect(dbChainMockFns.limit).toHaveBeenCalledWith(26)
@@ -735,8 +735,8 @@ describe('usage-log query scopes', () => {
     expect(latestWhereCondition()).toMatchObject({
       type: 'and',
       conditions: [
-        { type: 'eq', left: 'userId', right: 'user-1' },
-        { type: 'eq', left: 'workspaceId', right: 'workspace-1' },
+        { type: 'eq', left: 'usageLog.userId', right: 'user-1' },
+        { type: 'eq', left: 'usageLog.workspaceId', right: 'workspace-1' },
       ],
     })
   })

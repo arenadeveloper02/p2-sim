@@ -89,6 +89,13 @@ interface ChatDeployProps {
 
 export type ExistingChat = ChatDetail
 
+function isMatchingDeployment(
+  existingChat: ExistingChat | null | undefined,
+  mode: 'chat' | 'app'
+): existingChat is ExistingChat {
+  return Boolean(existingChat && (existingChat.deploymentType ?? 'chat') === mode)
+}
+
 interface FormErrors {
   identifier?: string
   title?: string
@@ -306,7 +313,7 @@ export function ChatDeploy({
   }, [workflowId])
 
   useEffect(() => {
-    if (existingChat && !hasInitializedFormRef.current) {
+    if (isMatchingDeployment(existingChat, mode) && !hasInitializedFormRef.current) {
       const allowedEmails = Array.isArray(existingChat.allowedEmails)
         ? existingChat.allowedEmails
         : []
@@ -342,7 +349,11 @@ export function ChatDeploy({
       }
 
       hasInitializedFormRef.current = true
-    } else if (!existingChat && !isLoadingChat && !hasInitializedFormRef.current) {
+    } else if (
+      !isMatchingDeployment(existingChat, mode) &&
+      !isLoadingChat &&
+      !hasInitializedFormRef.current
+    ) {
       setFormData(createInitialFormData(mode, sessionEmail))
       setImageUrl(null)
       hasInitializedFormRef.current = true
@@ -416,7 +427,7 @@ export function ChatDeploy({
 
     setChatSubmitting(true)
 
-    const isNewChat = !existingChat?.id
+    const isNewChat = !isMatchingDeployment(existingChat, mode)
 
     try {
       if (!validateForm()) {
@@ -445,7 +456,7 @@ export function ChatDeploy({
         selectedOutputBlocks: isAppMode ? [] : formData.selectedOutputBlocks,
       }
 
-      if (existingChat?.id) {
+      if (isMatchingDeployment(existingChat, mode)) {
         const result = await updateChatMutation.mutateAsync({
           chatId: existingChat.id,
           workflowId,
@@ -528,12 +539,7 @@ export function ChatDeploy({
 
   return (
     <>
-      <form
-        id='chat-deploy-form'
-        ref={formRef}
-        onSubmit={handleSubmit}
-        className='-mx-1 space-y-4 px-1'
-      >
+      <form id={formId} ref={formRef} onSubmit={handleSubmit} className='-mx-1 space-y-4 px-1'>
         {errors.general && (
           <div className='flex items-center gap-2 rounded-md border border-[color-mix(in_srgb,var(--text-error)_20%,transparent)] bg-[color-mix(in_srgb,var(--text-error)_10%,transparent)] px-3 py-2 text-[var(--text-error)] text-small'>
             <TriangleAlert className='size-4 flex-shrink-0' />

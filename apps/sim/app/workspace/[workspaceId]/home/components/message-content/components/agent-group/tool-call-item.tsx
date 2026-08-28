@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { cn } from '@sim/emcn'
 import { isPlainRecord } from '@sim/utils/object'
 import { ShimmerText } from '@/components/ui'
 import {
-  BrowserRequestTakeover,
   CallIntegrationTool,
+  PrepareFileEdit,
   Read as ReadTool,
   Terminal as TerminalTool,
   Wait as WaitTool,
-  WorkspaceFile,
 } from '@/lib/copilot/generated/tool-catalog-v1'
 import { getReadTargetBlock } from '@/lib/copilot/tools/client/read-block'
+import { RETIRED_BROWSER_REQUEST_TAKEOVER_ID } from '@/lib/copilot/tools/retired-tools'
 import { extractStreamingStringArgument } from '@/lib/copilot/tools/streaming-args'
 import { getToolStatusDisplayTitle, getWaitCountdownTitle } from '@/lib/copilot/tools/tool-display'
-import { getBareIconStyle } from '@/blocks/brand-icon-style'
+import { BrandIcon } from '@/blocks/brand-icon'
+import { useCustomBlockOverlayVersion } from '@/blocks/custom/client-overlay'
 import { getBlockByToolName } from '@/blocks/registry'
 import type { ToolCallData, ToolCallStatus } from '../../../../types'
 import { resolveToolDisplayState } from '../../utils'
@@ -123,11 +123,12 @@ export function ToolCallItem({
   toolCallId,
   startedAt,
 }: ToolCallItemProps) {
-  const readBlock = useMemo(() => {
-    if (toolName !== ReadTool.id) return undefined
-    const path = params?.path
-    return typeof path === 'string' ? getReadTargetBlock(path) : undefined
-  }, [toolName, params])
+  useCustomBlockOverlayVersion()
+  const readPath = params?.path
+  const readBlock =
+    toolName === ReadTool.id && typeof readPath === 'string'
+      ? getReadTargetBlock(readPath)
+      : undefined
 
   // Like read's VFS-target resolution above, the gateway uses its exact
   // discovered toolId only as a deterministic registry lookup. This renders
@@ -139,7 +140,7 @@ export function ToolCallItem({
   }, [toolName, params, streamingArgs])
 
   const liveWorkspaceFileTitle = useMemo(() => {
-    if (toolName !== WorkspaceFile.id || !streamingArgs) return null
+    if (toolName !== PrepareFileEdit.id || !streamingArgs) return null
     const titleMatch = streamingArgs.match(/"title"\s*:\s*"([^"]+)"/)
     if (!titleMatch?.[1]) return null
     const opMatch = streamingArgs.match(/"operation"\s*:\s*"(\w+)"/)
@@ -169,7 +170,7 @@ export function ToolCallItem({
 
   const displayState = resolveToolDisplayState(status)
   const isExecuting = displayState === 'spinner'
-  const isBrowserTakeover = toolName === BrowserRequestTakeover.id
+  const isBrowserTakeover = toolName === RETIRED_BROWSER_REQUEST_TAKEOVER_ID
 
   const isCountingDown = toolName === WaitTool.id && isExecuting
   const elapsedMs = useElapsedMs(isCountingDown, startedAt)
@@ -238,19 +239,14 @@ export function ToolCallItem({
   }
 
   return (
-    <div className={cn('flex gap-[6px] pl-6', isMultilineTitle ? 'items-start' : 'items-center')}>
-      {BlockIcon && (
-        <BlockIcon
-          className='size-[14px] flex-shrink-0 text-[var(--text-icon)]'
-          style={getBareIconStyle(BlockIcon)}
-        />
-      )}
+    <div className='flex min-w-0 items-center gap-[6px] pl-6'>
+      {BlockIcon && <BrandIcon icon={BlockIcon} className='size-[14px] flex-shrink-0' />}
       {isExecuting ? (
-        <ShimmerText className='whitespace-pre-line font-base text-[13px] [--shimmer-rest:var(--text-secondary)]'>
+        <ShimmerText className='min-w-0 truncate text-[13px] leading-[18px] [--shimmer-rest:var(--text-secondary)]'>
           {title}
         </ShimmerText>
       ) : (
-        <span className='whitespace-pre-line font-base text-[13px] text-[var(--text-secondary)]'>
+        <span className='min-w-0 truncate text-[13px] text-[var(--text-secondary)] leading-[18px]'>
           {title}
         </span>
       )}

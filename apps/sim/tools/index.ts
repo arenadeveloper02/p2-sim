@@ -1,3 +1,4 @@
+import type { DelegatedPrincipal } from '@sim/auth/principal'
 import { createLogger } from '@sim/logger'
 import { describeError, findCause, getErrorMessage, toError } from '@sim/utils/errors'
 import { sleep } from '@sim/utils/helpers'
@@ -5,6 +6,7 @@ import { isValidUuid } from '@sim/utils/id'
 import { isPlainRecord, isRecordLike } from '@sim/utils/object'
 import { backoffWithJitter, parseRetryAfter } from '@sim/utils/retry'
 import { DrizzleQueryError } from 'drizzle-orm/errors'
+import type { FunctionExecuteBody } from '@/lib/api/contracts'
 import { MANAGED_OAUTH_DELEGATION_HEADER } from '@/lib/api/contracts/oauth-connections'
 import { getBYOKKey } from '@/lib/api-key/byok'
 import {
@@ -61,6 +63,7 @@ import {
   RESOLVED_SECRET_PROVENANCE_FIELD,
   RESOLVED_SECRET_PROVENANCE_METADATA_V1,
 } from '@/lib/execution/private-tool-metadata'
+import { FUNCTION_EXECUTION_DELEGATION_AUDIENCE } from '@/lib/function-execution/application/authorization'
 import {
   sanitizeImageGenerationWrapperParams,
   stripInlinePayloadFromFileReference,
@@ -85,7 +88,7 @@ import {
   type ResolvedSecretTraceRegistry,
 } from '@/executor/utils/resolved-secret-trace-registry'
 import type { ErrorInfo } from '@/tools/error-extractors'
-import { extractErrorMessage } from '@/tools/error-extractors'
+import { extractErrorMessage, redactErrorData } from '@/tools/error-extractors'
 import { HostedKeyRateLimitedError, HostedKeyUnavailableError } from '@/tools/errors'
 import { getImageGenerationWrapperBaseToolId } from '@/tools/image_generation/wrapper-ids'
 import { normalizeToolId } from '@/tools/normalize'
@@ -435,25 +438,28 @@ function resolveInternalExecutorDelegation(
 ): GenerateInternalDelegationTokenInput | undefined {
   if (tool.request.internalAuth !== 'executor_delegation') return undefined
   if (supplied) {
-    if (!supplied.subjectUserId || !supplied.workflowId) {
-      throw new Error('Executor delegation requires an authenticated user and workflow')
+    if (!supplied.workflowId) {
+      throw new Error('Executor delegation requires a workflow')
     }
     return supplied
   }
-  if (!executionContext?.userId || !executionContext.workflowId) {
+  if (!executionContext?.workflowId) {
     throw new Error('Executor delegation requires a trusted workflow execution context')
   }
   if (executionContext.executorDelegationOrigin) {
     const origin = executionContext.executorDelegationOrigin
-    if (!origin.subjectUserId || !origin.workflowId) {
-      throw new Error('Executor delegation origin requires an authenticated user and workflow')
+    if (!origin.workflowId) {
+      throw new Error('Executor delegation origin requires a workflow')
     }
     return origin
   }
+  if (!executionContext.principal) {
+    throw new Error('Executor delegation requires a workflow principal')
+  }
   return {
-    subjectUserId: executionContext.userId,
     workflowId: executionContext.workflowId,
     ...(executionContext.executionId ? { executionId: executionContext.executionId } : {}),
+    principal: executionContext.principal,
   }
 }
 
@@ -581,12 +587,26 @@ async function resolveCopilotEnvReferences(
     return
   }
 
-  const pending: Array<{ paramId: string; value: string }> = []
+  // Models improvise reference syntax: after `{{NAME}}`, the bare variable
+  // name is the common fallback — it previously went upstream as the literal
+  // credential and failed with an undiagnosable 401. `{{NAME}}` is the one
+  // explicit reference form, so a missing variable is a hard error. A bare
+  // name is a reference only when a variable by that exact name exists
+  // (`soft`): plenty of real API keys match the identifier pattern, and
+  // those must pass through verbatim. `$NAME` is deliberately NOT a
+  // reference — real credentials can start with `$`, and a secret must never
+  // be reinterpreted as a lookup.
+  const pending: Array<{ paramId: string; value: string; soft?: boolean }> = []
   for (const [paramId, paramDef] of Object.entries(tool.params || {})) {
     if (paramDef?.visibility !== 'user-only') continue
     const value = params[paramId]
-    if (typeof value === 'string' && value.startsWith('{{') && value.endsWith('}}')) {
+    if (typeof value !== 'string') continue
+    if (value.startsWith('{{') && value.endsWith('}}')) {
       pending.push({ paramId, value })
+      continue
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+      pending.push({ paramId, value: `{{${value}}}`, soft: true })
     }
   }
 
@@ -605,7 +625,7 @@ async function resolveCopilotEnvReferences(
     const { getEffectiveDecryptedEnv } = await import('@/lib/environment/utils')
     const envVars = await getEffectiveDecryptedEnv(scope.userId, scope.workspaceId)
 
-    for (const { paramId, value } of pending) {
+    for (const { paramId, value, soft } of pending) {
       const missingKeys: string[] = []
       const resolved = resolveEnvVarReferences(value, envVars, {
         allowEmbedded: false,
@@ -617,6 +637,9 @@ async function resolveCopilotEnvReferences(
         },
       })
       if (missingKeys.length > 0) {
+        // A bare name that matches no variable is treated as the literal
+        // credential it probably is; only explicit reference forms error.
+        if (soft) continue
         const scopeHint = scope.workspaceId
           ? ''
           : ' (no workspace context — only personal variables are available here)'
@@ -1122,8 +1145,14 @@ interface HostedKeyCostResult {
 }
 
 /**
- * Calculate and log hosted key cost for a tool execution.
- * Logs to usageLog for audit trail and returns cost + metadata for output.
+ * Calculate hosted-key cost for a tool execution.
+ *
+ * Returns the cost and its metadata for the caller to attach to the tool
+ * output. It does NOT write a usage-ledger row: the only `usageLog` insert is
+ * `recordUsage` in `lib/billing/core/usage-log.ts`, which nothing on this path
+ * calls. Cost reaches the ledger only through the `_serviceCost` field
+ * `applyHostedKeyCostToResult` emits under `copilotToolExecution`, so any new
+ * caller of `executeTool` that is not Copilot must arrange its own metering.
  */
 async function processHostedKeyCost(
   tool: ToolConfig,
@@ -1139,10 +1168,6 @@ async function processHostedKeyCost(
   const { cost, metadata } = calculateToolCost(tool.hosting.pricing, params, response, tool.id)
 
   if (cost <= 0) return { cost: 0 }
-
-  const { userId } = resolveToolScope(params, executionContext)
-
-  if (!userId) return { cost, metadata }
 
   logger.debug(
     `[${requestId}] Hosted key cost for ${tool.id}: $${cost}`,
@@ -1298,6 +1323,24 @@ async function applyHostedKeyCostToResult(
 const INTERNAL_ROUTE_MAX_REQUEST_BODY_SIZE_BYTES = 9.5 * 1024 * 1024
 const MAX_REQUEST_BODY_SIZE_BYTES = 100 * 1024 * 1024 // 10MB
 const MAX_TOOL_RESPONSE_BODY_BYTES = 10 * 1024 * 1024 // 10MB
+
+/**
+ * Headroom added to an internal route's requested timeout before it becomes the
+ * transport deadline.
+ *
+ * A `timeout` param bounds the work the route was asked to do — the code a
+ * sandbox runs, the upstream call a proxy route makes. The fetch around it also
+ * pays authentication, body parsing, workspace authorization, worker
+ * acquisition, and response serialization, none of which that budget was sized
+ * for. Arming the client with the bare number makes the caller give up at the
+ * same instant the route's own deadline fires, so the route can never win the
+ * race and report which part actually ran long; the caller sees an
+ * unattributable `Request timed out` instead.
+ *
+ * Sized above the isolated-vm worker's own 10s startup budget so a cold worker
+ * spawn stays inside the transport deadline rather than aborting it.
+ */
+const INTERNAL_ROUTE_TRANSPORT_OVERHEAD_MS = 30_000
 
 /**
  * User-friendly error message for body size limit exceeded
@@ -1494,7 +1537,7 @@ function createTransformedErrorFromErrorInfo(errorInfo?: ErrorInfo, extractorId?
   Object.assign(transformed, {
     status: errorInfo?.status,
     statusText: errorInfo?.statusText,
-    data: errorInfo?.data,
+    data: redactErrorData(errorInfo, extractorId),
   })
   return transformed
 }
@@ -1944,7 +1987,7 @@ async function executeToolImplementation(
   try {
     let tool: ToolConfig | undefined
 
-    // Normalize tool ID to strip resource suffixes (e.g., workflow_executor_<uuid> -> workflow_executor)
+    // Preserve direct-call compatibility with legacy resource-suffixed tool ids.
     const normalizedToolId = normalizeToolId(toolId)
     if (internalSandboxProfile && normalizedToolId !== 'function_execute') {
       throw new Error('An internal sandbox profile may only be used with function_execute')
@@ -2098,9 +2141,7 @@ async function executeToolImplementation(
       contextParams.credential = contextParams.oauthCredential
     }
     if (contextParams.credential) {
-      logger.info(
-        `[${requestId}] Tool ${toolId} needs access token for credential: ${contextParams.credential}`
-      )
+      logger.info(`[${requestId}] Resolving tool access token`, { toolId: normalizedToolId })
       try {
         const workflowId = scope.workflowId
         const userId = scope.userId
@@ -2161,21 +2202,16 @@ async function executeToolImplementation(
          */
         const tokenHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
         if (typeof window === 'undefined') {
+          const managedCredentialDelegation = executionContext?.executorDelegationOrigin
+          if (managedCredentialDelegation && !managedCredentialDelegation.currentWorkflow) {
+            throw new Error('Managed credential delegation is missing current workflow authority')
+          }
           try {
             const internalToken = await generateInternalToken(userId)
             tokenHeaders.Authorization = `Bearer ${internalToken}`
           } catch (_e) {
             // Swallow token generation errors; the request will fail and be reported upstream
           }
-          const managedCredentialDelegation =
-            executionContext?.executorDelegationOrigin ??
-            (workflowId && userId
-              ? {
-                  subjectUserId: userId,
-                  workflowId,
-                  ...(scope.executionId ? { executionId: scope.executionId } : {}),
-                }
-              : undefined)
           if (managedCredentialDelegation) {
             const delegationHeaders = await buildExecutorDelegationHeaders(
               managedCredentialDelegation
@@ -2309,6 +2345,7 @@ async function executeToolImplementation(
           abortSignal: effectiveSignal,
           resolvedSecretTraceRegistry,
           executorDelegationOrigin: executionContext?.executorDelegationOrigin,
+          principal: executionContext?.principal,
           // Trusted `executionContext`, never `_context` — that bag spreads
           // model-reachable `contextParams._context` first, so a model could otherwise
           // inject its own env map or disable redaction.
@@ -2360,6 +2397,7 @@ async function executeToolImplementation(
         {
           abortSignal: effectiveSignal,
           resolvedSecretTraceRegistry,
+          principal: executionContext?.principal,
         }
       )
       const endTime = new Date()
@@ -2698,10 +2736,14 @@ async function executeToolImplementation(
     const endTime = new Date()
     const endTimeISO = endTime.toISOString()
     const duration = endTime.getTime() - startTime.getTime()
+    const rawResponseData =
+      error instanceof Error && 'data' in error ? (error as { data?: unknown }).data : undefined
+    const responseData = isRecordLike(rawResponseData) ? rawResponseData : undefined
     return {
       success: false,
       output: errorDetails,
       error: errorMessage,
+      ...(responseData?.retryable === false ? { retryable: false } : {}),
       // Sim's own status (hosted-key 429/503) survives the flattening from a
       // thrown error into a result object; an upstream provider's status stays
       // on `output` where it cannot be mistaken for ours.
@@ -2892,7 +2934,17 @@ async function executeToolRequest(
     const requestParams = prepareToolRequest(tool, params, resolvedSecretTraceRegistry)
     const endpointUrl = requestParams.url
     const { headers, isInternalRoute } = requestParams
-    const baseUrl = isInternalRoute ? getInternalApiBaseUrl() : getBaseUrl()
+    const runFunctionInProcess =
+      isInternalRoute &&
+      normalizeToolId(toolId) === 'function_execute' &&
+      typeof params._context?.userId === 'string' &&
+      typeof params._context?.workspaceId === 'string'
+    const baseUrl = runFunctionInProcess
+      ? 'http://sim.internal'
+      : isInternalRoute
+        ? getInternalApiBaseUrl()
+        : getBaseUrl()
+
     const fullUrlObj = new URL(endpointUrl, baseUrl)
 
     if (isInternalRoute) {
@@ -2943,15 +2995,17 @@ async function executeToolRequest(
         }
       }
     }
-    await addInternalAuthIfNeeded(
-      headers,
-      isInternalRoute,
-      requestId,
-      toolId,
-      params._context?.userId,
-      internalSandboxProfile ? { sandboxProfile: internalSandboxProfile } : undefined,
-      internalExecutorDelegation
-    )
+    if (!runFunctionInProcess) {
+      await addInternalAuthIfNeeded(
+        headers,
+        isInternalRoute,
+        requestId,
+        toolId,
+        params._context?.userId,
+        internalSandboxProfile ? { sandboxProfile: internalSandboxProfile } : undefined,
+        internalExecutorDelegation
+      )
+    }
     if (isInternalRoute && params._context?.billingAttribution) {
       headers.set(
         BILLING_ATTRIBUTION_HEADER,
@@ -2990,10 +3044,51 @@ async function executeToolRequest(
       headersRecord[key] = value
     })
 
-    const retryConfig = getRetryConfig(tool.request.retry, params, requestParams.method)
-    const maxAttempts = retryConfig ? 1 + retryConfig.maxRetries : 1
+    const retryConfig = runFunctionInProcess
+      ? null
+      : getRetryConfig(tool.request.retry, params, requestParams.method)
+    const maxAttempts = runFunctionInProcess ? 0 : retryConfig ? 1 + retryConfig.maxRetries : 1
 
     let response: Response | undefined
+    if (runFunctionInProcess) {
+      if (!requestParams.body) {
+        throw new Error('Function execution requires a request body')
+      }
+      const body = JSON.parse(requestParams.body) as FunctionExecuteBody
+      const issuedAt = new Date()
+      const serializedDeadline = serializeExecutionDeadlineHeader(signal)
+      const requestedTimeout =
+        typeof body.timeout === 'number' ? body.timeout : DEFAULT_EXECUTION_TIMEOUT_MS
+      const expiresAt = serializedDeadline
+        ? new Date(Number(serializedDeadline))
+        : new Date(issuedAt.getTime() + requestedTimeout)
+      const serviceId = params._context?.copilotToolExecution === true ? 'copilot' : 'executor'
+      const principal: DelegatedPrincipal = {
+        kind: 'delegated',
+        serviceId,
+        subjectUserId: params._context.userId,
+        workspaceId: params._context.workspaceId,
+        delegationId: `function-execute:${requestId}`,
+        audience: FUNCTION_EXECUTION_DELEGATION_AUDIENCE,
+        issuedAt,
+        expiresAt,
+        ...(body.executionId ? { resourceScope: { executionId: body.executionId } } : {}),
+      }
+      const { executeFunction } = await import(
+        '@/lib/function-execution/application/execute-function'
+      )
+      response = await executeFunction.execute({
+        principal,
+        input: {
+          workspaceId: params._context.workspaceId,
+          body,
+          headers,
+          ...(signal ? { signal } : {}),
+          ...(internalSandboxProfile ? { sandboxProfile: internalSandboxProfile } : {}),
+        },
+      })
+    }
+
     let lastError: unknown
     const nullBodyStatuses = new Set([101, 204, 205, 304])
 
@@ -3006,9 +3101,11 @@ async function executeToolRequest(
           let didTimeout = false
           // With a caller/execution abort signal present, the plan-based timeout bounds the call and
           // this only acts as a ceiling; without one, keep the tighter default as the hang safety net.
-          const timeout =
-            requestParams.timeout ||
-            (signal ? getMaxExecutionTimeout() : DEFAULT_EXECUTION_TIMEOUT_MS)
+          const timeout = requestParams.timeout
+            ? requestParams.timeout + INTERNAL_ROUTE_TRANSPORT_OVERHEAD_MS
+            : signal
+              ? getMaxExecutionTimeout()
+              : DEFAULT_EXECUTION_TIMEOUT_MS
           const timeoutId = setTimeout(() => {
             didTimeout = true
             controller.abort(new DOMException('timeout', 'AbortError'))
@@ -3028,8 +3125,9 @@ async function executeToolRequest(
           try {
             /*
              * `controller` above is armed with `timeout`, so the plan deadline is
-             * already enforced in-process; the transport timer is disarmed so its
-             * 300s default cannot undercut it.
+             * already enforced in-process; the transport timers (Bun's idle timer,
+             * undici's header/body timers in the Node workers) are disarmed so
+             * their 300s defaults cannot undercut it.
              */
             const internalResponse = await fetch(
               fullUrl,
@@ -3134,6 +3232,7 @@ async function executeToolRequest(
             proxyUrl: proxyOption,
             allowHttp,
             stripAuthOnRedirect: requestParams.stripAuthOnRedirect,
+            redirectPolicy: requestParams.redirectPolicy,
           })
 
           const responseHeaders = new Headers(secureResponse.headers.toRecord())

@@ -4,6 +4,7 @@ import {
 } from '@sim/workflow-types/workflow'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import type { LoopType, ParallelType } from '@/lib/workflows/types'
+import { isCustomBlockType } from '@/blocks/custom/build-config'
 
 /**
  * Runtime-injected keys for trigger blocks that should be hidden from logs/display.
@@ -318,6 +319,44 @@ export function isMetadataOnlyBlockType(blockType: string | undefined): boolean 
 
 export function isWorkflowBlockType(blockType: string | undefined): boolean {
   return blockType === BlockType.WORKFLOW || blockType === BlockType.WORKFLOW_INPUT
+}
+
+/**
+ * Internal marker carrying a custom block's child execution id from the workflow
+ * handler out to the block executor, which lifts it onto the block log and strips
+ * it before the output reaches workflow state. Underscore-prefixed so
+ * `filterOutputForLog` drops it from every display and log projection.
+ */
+export const CHILD_EXECUTION_ID_OUTPUT_KEY = '_childExecutionId'
+
+/**
+ * Internal marker saying a custom block ran a child whose trace it deliberately
+ * did not publish. Carried instead of {@link CHILD_EXECUTION_ID_OUTPUT_KEY}, never
+ * beside it: withholding the handle is what makes tracing-off fail closed, and a
+ * marker that travelled with the handle would be one dropped field away from
+ * joining a run the caller opted out of. Underscore-prefixed for the same reason.
+ *
+ * Recorded because a boundary span with no children renders exactly like a leaf
+ * block, so an untraced invocation would otherwise read as one that did nothing.
+ *
+ * Neither key may become a globally hidden output key: on the Agent-tool path the
+ * block log's nested `toolCalls[].result` is the only carrier from the tool
+ * response to the tool span, so hiding them there would silently stop custom
+ * blocks invoked as tools from joining their child runs at all.
+ */
+export const CHILD_TRACE_DISABLED_OUTPUT_KEY = '_childTraceDisabled'
+
+/**
+ * Whether a block runs another workflow underneath it, and therefore owns a
+ * nested subtree in the trace/terminal — a workflow block, or a custom block
+ * whose publisher opted its runs into consumer traces.
+ *
+ * Deliberately wider than {@link isWorkflowBlockType}, which stays narrow because
+ * it also gates whether the child workflow's NAME may be attached to an error —
+ * something a custom block's consumer must never receive.
+ */
+export function isSubExecutionBlockType(blockType: string | undefined): boolean {
+  return isWorkflowBlockType(blockType) || isCustomBlockType(blockType)
 }
 
 export function isSentinelBlockType(blockType: string | undefined): boolean {

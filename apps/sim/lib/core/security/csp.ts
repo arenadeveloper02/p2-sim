@@ -1,3 +1,4 @@
+import { CONSENT_BACKEND_URL } from '../../consent/constants'
 import { env, getEnv } from '../config/env'
 import { isDev, isHosted, isReactGrabEnabled } from '../config/env-flags'
 
@@ -29,7 +30,8 @@ const LOCAL_DEV_FRAME_ANCESTORS = ['http://localhost:3001'] as const
  *
  * NOTE: This file is loaded by next.config.ts at build time, before @/ path
  * aliases are resolved. Do NOT import from ../utils/urls (which uses @/ imports).
- * Keep all URL constants local to this file.
+ * Keep URL constants local to this file, or in a leaf module reachable by a
+ * relative import that itself pulls in no `@/` paths (../../consent/constants).
  */
 
 const DEFAULT_SOCKET_URL = 'http://localhost:3002'
@@ -137,6 +139,7 @@ const STATIC_CONNECT_SRC = [
   'https://*.supabase.co',
   'https://api.github.com',
   'https://github.com/*',
+  'https://status.sim.ai',
   'https://challenges.cloudflare.com',
   'https://quickchart.io',
   // Cal.com booking embed (landing /demo) — embed XHR/availability calls
@@ -146,6 +149,9 @@ const STATIC_CONNECT_SRC = [
   ...(isDev ? ['ws://localhost:4722'] : []),
   ...(isHosted
     ? [
+        // Blocked here, the consent runtime silently falls back to an offline
+        // policy and the banner shows to every visitor worldwide.
+        CONSENT_BACKEND_URL,
         'https://www.googletagmanager.com',
         'https://*.google-analytics.com',
         'https://*.analytics.google.com',
@@ -196,7 +202,6 @@ const STATIC_FRAME_SRC = [
   'https://www.mixcloud.com',
   'https://tenor.com',
   'https://giphy.com',
-  ...(isHosted ? ['https://www.googletagmanager.com'] : []),
 ] as const
 
 // Build-time CSP directives (for next.config.ts)
