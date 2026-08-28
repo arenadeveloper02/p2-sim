@@ -168,11 +168,13 @@ import {
   buildWorkflowBuildCompleteSystemMessage,
   createAssistantRoundTextStreamer,
   editResultNeedsFollowUp,
+  emptyAssistantTurnFallback,
   isBridgingAssistantNarration,
   isUnfulfilledMutationIntentNarration,
   type PostBuildToolMode,
   pendingFollowUpsAreOauthOnly,
   resolvePostBuildRoundTools,
+  shouldEmitEmptyAssistantFallback,
   shouldSynthesizeAssistantSummary,
   stripIdsFromUserFacingText,
 } from '@/local-copilot/lib/user-facing-text'
@@ -944,6 +946,7 @@ export async function* runLocalCopilotAgent(
    * Used to detect the stuck "Let me run it." → Running workflow → no result case.
    */
   let streamedCharsAtLastRunTool: number | null = null
+  let lastFinishReason: string | undefined
   const turnToolRecords: ToolTurnRecord[] = []
   const turnMutationOutcomes: MutationOutcome[] = []
   const turnVerifications: VerificationRecord[] = []
@@ -1058,11 +1061,14 @@ export async function* runLocalCopilotAgent(
         textStreamer.markToolCall()
         pendingToolCalls.push(chunk.toolCall)
       }
-      if (chunk.type === 'done' && chunk.usage) {
-        roundInputTokens = chunk.usage.inputTokens
-        roundOutputTokens = chunk.usage.outputTokens
-        roundCacheReadTokens = chunk.usage.cacheReadTokens
-        roundCacheCreationTokens = chunk.usage.cacheCreationTokens
+      if (chunk.type === 'done') {
+        if (chunk.finishReason) lastFinishReason = chunk.finishReason
+        if (chunk.usage) {
+          roundInputTokens = chunk.usage.inputTokens
+          roundOutputTokens = chunk.usage.outputTokens
+          roundCacheReadTokens = chunk.usage.cacheReadTokens
+          roundCacheCreationTokens = chunk.usage.cacheCreationTokens
+        }
       }
     }
 
@@ -1927,16 +1933,19 @@ export async function* runLocalCopilotAgent(
         streamedUserFacingText += cleaned
         yield { type: 'text_delta', content: cleaned }
       }
-      if (chunk.type === 'done' && chunk.usage) {
-        turnCost.addModelUsage({
-          model: config.model,
-          inputTokens: chunk.usage.inputTokens,
-          outputTokens: chunk.usage.outputTokens,
-          cacheReadTokens: chunk.usage.cacheReadTokens,
-          provider: config.provider,
-        })
-        turnInputTokens += chunk.usage.inputTokens
-        turnOutputTokens += chunk.usage.outputTokens
+      if (chunk.type === 'done') {
+        if (chunk.finishReason) lastFinishReason = chunk.finishReason
+        if (chunk.usage) {
+          turnCost.addModelUsage({
+            model: config.model,
+            inputTokens: chunk.usage.inputTokens,
+            outputTokens: chunk.usage.outputTokens,
+            cacheReadTokens: chunk.usage.cacheReadTokens,
+            provider: config.provider,
+          })
+          turnInputTokens += chunk.usage.inputTokens
+          turnOutputTokens += chunk.usage.outputTokens
+        }
       }
     }
     if (assistantText.length === priorAssistantChars) {
@@ -1999,6 +2008,21 @@ export async function* runLocalCopilotAgent(
       streamedUserFacingText += chunk
       yield { type: 'text_delta', content: chunk }
     }
+  }
+
+  if (
+    !params.signal?.aborted &&
+    shouldEmitEmptyAssistantFallback({
+      streamedUserFacingText,
+      toolRecordCount: turnToolRecords.length,
+    })
+  ) {
+    const safe = stripIdsFromUserFacingText(
+      emptyAssistantTurnFallback({ finishReason: lastFinishReason })
+    )
+    assistantText = safe
+    streamedUserFacingText = safe
+    yield { type: 'text_delta', content: safe }
   }
 
   // Emit at most one follow-up block for the whole turn (never after each tool round).
