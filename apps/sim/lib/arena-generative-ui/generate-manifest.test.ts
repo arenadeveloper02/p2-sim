@@ -218,6 +218,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('ARENA DESIGN SYSTEM')
     expect(system).toContain('UNIVERSAL UI/UX CONSTITUTION')
     expect(system).toContain('DESIGN GUIDELINES')
+    expect(system).toContain('DESIGN INTENT')
     expect(system).toContain('COMPONENT SELECTION RULES')
     expect(system).not.toContain('PROFESSIONAL LAYOUT')
     expect(system).toContain('ANTI-PATTERNS')

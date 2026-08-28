@@ -673,7 +673,7 @@ export const ARENA_GENERATIVE_UI_ON_LOAD_RULE = [
  * is never left on a generic Tailwind palette.
  */
 export const ARENA_GENERATIVE_UI_THEME_RULE = [
-  'Theme: always emit manifest.theme { brandColor: "#1A73E8", radius: "md", density: "comfortable", font: "sans", colorScheme: "light" }. Override brandColor, radius, density, font, or colorScheme only when Design Notes name them. Do not set backgroundColor on Page or Card for branding — the host applies theme as CSS variables.',
+  'Theme: always emit manifest.theme { brandColor: "#1A73E8", radius: "md", density: "comfortable", font: "sans", colorScheme: "light" }. Override brandColor, radius, font, or colorScheme only when Design Notes name them. Override density when Design Notes name it, or when DESIGN INTENT density is compact or roomy. Do not set backgroundColor on Page or Card for branding — the host applies theme as CSS variables.',
 ].join(' ')
 
 /**

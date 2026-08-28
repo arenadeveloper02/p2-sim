@@ -24,6 +24,7 @@ import { ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT } from '@/lib/arena-gene
 import { ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT } from '@/lib/arena-generative-ui/constitution'
 import { ARENA_GENERATIVE_UI_DATA_STATE_PROMPT } from '@/lib/arena-generative-ui/data-state-contract'
 import { ARENA_GENERATIVE_UI_COMPOSITION_PROMPT } from '@/lib/arena-generative-ui/design-guidelines'
+import { ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT } from '@/lib/arena-generative-ui/design-intent'
 import { goldExamplePromptForArchetype } from '@/lib/arena-generative-ui/gold-example'
 import {
   type ArenaGenerativeArchetype,
@@ -45,7 +46,7 @@ function headedRules(heading: string, rules: readonly string[]): string {
 
 /**
  * Spec-LLM system prompt in pipeline order: constitution → design system →
- * design guidelines → UX (data / action / host / a11y) → anti-patterns →
+ * design intent → design guidelines → UX (data / action / host / a11y) → anti-patterns →
  * component grammar → archetype recipe → capability recipes → gold →
  * mechanical component rules → JSON envelope. Still one generate call.
  */
@@ -73,6 +74,7 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
     ARENA_GENERATIVE_UI_PERSONA,
     ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT,
     ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
+    ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT,
     ARENA_GENERATIVE_UI_COMPOSITION_PROMPT,
     ARENA_GENERATIVE_UI_DATA_STATE_PROMPT,
     ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT,

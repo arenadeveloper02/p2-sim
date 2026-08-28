@@ -255,7 +255,7 @@ The generator is held to a few constraints you do not need to restate:
 - **Readable measure** — dashboards and tables stay wide, but narrative prose drops into a `narrow` Section so a report body never runs the full 1280px.
 - **Sequential headings** — `PageHeader.title` is the page `h1` and `Card.title` renders an `h2`, so levels never skip or invert.
 - **Labeled, left-aligned fields** — short related fields pair up in a `Grid`, long free-text stays full width.
-- **Real spacing** — `gap` and `padding` are CSS lengths (`16px`), and size words are converted rather than silently dropped.
+- **Real spacing** — `gap` and `padding` take spacing tokens (`lg`, `md`) that the host maps to density-aware CSS variables. Raw CSS lengths still work.
 
 The system prompt also carries **one** validated gold-standard layout for the planned archetype ([gold-example.ts](../../apps/sim/lib/arena-generative-ui/gold-example.ts) for form-result, plus dashboard / list-detail / wizard in [gold-example-archetypes.ts](../../apps/sim/lib/arena-generative-ui/gold-example-archetypes.ts)). Tests assert each example against `validateArenaGenerativeManifest` so the few-shot never teaches an invalid shape.
 
@@ -456,7 +456,7 @@ Load more is the **same action**, not a second binding. Put a Button with that `
 
 ## UI catalog (what the model may emit)
 
-Layout: `Page`, `Section` (`width`: `narrow` / `wide` default / `full`, plus `showWhen`), `Stack` (`direction`, `justify`, `wrap`), `Card` (`showWhen`), `Grid` (`columns` 2–4, collapses to one column when narrow), `Columns` (`equal` / `sidebar-left` / `sidebar-right`), `Repeat` (children render once per element of a `statePath` array)
+Layout: `Page`, `Section` (`width`: `narrow` / `wide` default / `full`, plus `showWhen`), `Stack` (`direction`, `justify`, `wrap`), `Card` (`variant` `default` / `muted`, `padding` token or CSS length, `showWhen`), `Grid` (`columns` 2–4, collapses to one column when narrow), `Columns` (`equal` / `sidebar-left` / `sidebar-right`), `Repeat` (children render once per element of a `statePath` array)
 
 Chrome: `PageHeader` (title, subtitle, trailing action), `Toolbar`, `Filter` (narrow an already-loaded collection; children are Select / TextInput / DateInput / Chip), `Tabs` (`items` as newline-separated `Label|path`, `activePath`), `Drawer` (list-detail overlay, `showWhen`), `Modal` (focused secondary action, `showWhen`; not delete confirm)
 

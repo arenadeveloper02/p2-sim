@@ -1,6 +1,7 @@
 /**
  * Global visual-composition contract for every generated app. Catalog types
- * only; tokens stay on ARENA DESIGN SYSTEM; loading/error/retry stay on UX.
+ * only; tokens stay on ARENA DESIGN SYSTEM; design intent picks density/tone;
+ * loading/error/retry stay on UX.
  */
 
 /** Catalog-grounded page composition. Absorbed from professional-layout.ts. */
@@ -67,7 +68,7 @@ export const ARENA_GENERATIVE_UI_COMPOSITION_PROMPT = [
   'CONTENT',
   'Design for realistic content lengths, not only short placeholder text. Handle long titles, descriptions, names, and numbers gracefully. Avoid awkward truncation of important information. Use meaningful labels rather than generic Submit, Click, or View.',
   'DENSITY',
-  'Choose density from the task. Dashboards and operational tools may be denser (compact). Forms and workflows use more breathing room (comfortable). Reading-heavy content uses comfortable line length (Section "narrow") and spacing. Avoid unnecessarily dense interfaces.',
+  'Choose density from DESIGN INTENT / manifest.theme, not a second guess. Dashboards and operational tools may be denser (compact). Forms and workflows use more breathing room (comfortable). Reading-heavy content uses comfortable line length (Section "narrow") and spacing. Avoid unnecessarily dense interfaces.',
   'CONSISTENCY',
   'The same semantic concept must use the same visual treatment. Reuse existing catalog types instead of inventing visually similar variants. Maintain consistent spacing, typography, button hierarchy, and interaction patterns. Do not introduce a new visual pattern when an existing component can express the same concept.',
   'PROFESSIONALISM',

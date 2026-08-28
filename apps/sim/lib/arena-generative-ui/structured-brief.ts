@@ -12,6 +12,10 @@ import {
   isCapability,
 } from '@/lib/arena-generative-ui/capabilities'
 import {
+  type ArenaGenerativeDesignIntent,
+  parseArenaGenerativeDesignIntent,
+} from '@/lib/arena-generative-ui/design-intent'
+import {
   type ArenaGenerativeIntent,
   arenaGenerativeIntentSchema,
 } from '@/lib/arena-generative-ui/intent-analyzer'
@@ -105,14 +109,27 @@ const structuredBriefSchema = z.object({
   emptyCopy: briefProse(200).optional(),
   errorCopy: briefProse(200).optional(),
   intent: arenaGenerativeIntentSchema.optional(),
+  designIntent: z.unknown().optional(),
 })
 
-export type ArenaGenerativeStructuredBrief = z.output<typeof structuredBriefSchema>
+export type ArenaGenerativeStructuredBrief = Omit<
+  z.output<typeof structuredBriefSchema>,
+  'designIntent'
+> & {
+  designIntent?: ArenaGenerativeDesignIntent
+}
+
+function withParsedDesignIntent(
+  brief: z.output<typeof structuredBriefSchema>
+): ArenaGenerativeStructuredBrief {
+  const designIntent = parseArenaGenerativeDesignIntent(brief.designIntent)
+  return designIntent ? { ...brief, designIntent } : omit(brief, ['designIntent'])
+}
 
 const PLANNER_SYSTEM_PROMPT = [
   'You plan the sitemap for a multi-page Arena app. Output one JSON object. No markdown fences, no explanation.',
-  'When Analyzed intent is present, honour its task, entities, actions, and complexity — do not rewrite the job. Pick the archetype, pages, and capabilities that implement that intent.',
-  'When intent is absent, read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write. Infer only sitemap, archetype, and capabilities.',
+  'When Analyzed intent is present, honour its task, entities, actions, and complexity — do not rewrite the job. Pick the archetype, pages, capabilities, and designIntent that implement that intent.',
+  'When intent is absent, read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write. Infer only sitemap, archetype, capabilities, and designIntent.',
   'Pick exactly one archetype:',
   '- dashboard: data on arrival via onLoad; EntityHeader, Grid of display Stat, little or no form.',
   '- form-result: form → processing → result. A form submits a CTA, processing happens, then onSuccess.navigate to a results page. A single query field is a centered SearchField hero. Empty copy lives on results.',
@@ -120,7 +137,8 @@ const PLANNER_SYSTEM_PROMPT = [
   '- wizard: three or more sequential steps with Next/Back; submit only on the last step.',
   'Archetype from the primary verb (or intent.workflowComplexity), not from how complete the brief is. A form or search that calls an API then shows an answer is form-result even if they never said "results page". A collection on arrival that opens one record is list-detail even if they only named the list. Metrics/overview on arrival is dashboard. Three or more sequential steps with submit at the end is wizard. Mixed briefs ("dashboard plus generate"): pick the verb they led with; extra destinations are extra pages, not a second archetype. History or past runs plus a generate form is form-result with a history page that onLoads the list binding — Generate still navigates to results. One prominent query (search, lookup, ask) is a SearchField hero, not a labelled Grid of one field.',
   'Set capabilities to the tags that apply (zero or more): long-running, streaming, multi-step, cancellable, search, filter, pagination, selection, editable. Combine them. A workflow binding is long-running; stream: true is streaming; a named step checklist is multi-step; Cancel in the brief is cancellable; a single prominent query is search; Toolbar narrowing is filter; binding.pagination is pagination; opening a row that already has prose is selection; edit-in-place is editable. Omit tags the job does not need. Do not emit "short".',
-  'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "capabilities"?: ("long-running"|"streaming"|"multi-step"|"cancellable"|"search"|"filter"|"pagination"|"selection"|"editable")[], "emptyCopy"?, "errorCopy"? }',
+  'Also emit designIntent { productType, density, visualTone, contentType, emphasis } — pick one of each. Honour Design Notes first. Else derive from archetype plus brief nouns: dashboard → analytics / compact / data-heavy / data; form-result → workflow / comfortable / task; list-detail → crm / comfortable / discovery; wizard → workflow / comfortable / task. Override productType from domain words (invoices → finance, campaigns → marketing). density is compact | comfortable | roomy (spacious means roomy). visualTone is professional | friendly | premium | technical | editorial. contentType is data-heavy | workflow | narrative | transactional. emphasis is task | data | content | discovery. Classification only — not component props.',
+  'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "capabilities"?: ("long-running"|"streaming"|"multi-step"|"cancellable"|"search"|"filter"|"pagination"|"selection"|"editable")[], "designIntent"?: { "productType", "density", "visualTone", "contentType", "emphasis" }, "emptyCopy"?, "errorCopy"? }',
   'title is the product name. purpose is the job in one sentence (copy intent.task when present). audience is a real role — never "users".',
   'pages[].path, entryPath, and actions[].fromPage are bare kebab-case keys — "home", "select-company" — never URL routes: no leading slash, no "/" for the entry page, no nested segments. Call the entry page "home" unless the brief names it.',
   '1–6 pages. Infer the smallest sitemap that completes the job: form-result always has a destination for the answer plus Back; list-detail always has a way to open a record (detail page, or same-page Open when the row already carries prose); a second binding that is a list/history is a collection page with onLoad, not a second submit. Do not invent login, settings, profile, marketing, or extra tools the job does not need.',
@@ -244,7 +262,7 @@ function foldProcessingIntoCapabilities(
  */
 export function parseStoredStructuredBrief(value: unknown): ArenaGenerativeStructuredBrief | null {
   const parsed = structuredBriefSchema.safeParse(value)
-  return parsed.success ? foldProcessingIntoCapabilities(parsed.data) : null
+  return parsed.success ? foldProcessingIntoCapabilities(withParsedDesignIntent(parsed.data)) : null
 }
 
 /** Page key used when a planner names the entry page "/" or leaves it empty. */
@@ -358,7 +376,7 @@ export function parseArenaGenerativeStructuredBrief(
     if (!first) return null
     brief = { ...brief, entryPath: first.path }
   }
-  return foldProcessingIntoCapabilities(omit(brief, ['intent']))
+  return foldProcessingIntoCapabilities(omit(withParsedDesignIntent(brief), ['intent']))
 }
 
 function reconcileBriefWithPageHints(
@@ -433,7 +451,7 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
 }
 
 const BRIEF_REPAIR_USER_MESSAGE =
-  'That was not a valid structured brief. Return one JSON object in the planner shape (title, purpose, audience, archetype, entryPath, pages[], actions[], capabilities?). Do not emit a manifest.'
+  'That was not a valid structured brief. Return one JSON object in the planner shape (title, purpose, audience, archetype, entryPath, pages[], actions[], capabilities?, designIntent?). Do not emit a manifest.'
 
 export type PlanStructuredBriefOutcome = {
   brief: ArenaGenerativeStructuredBrief | null
@@ -441,8 +459,8 @@ export type PlanStructuredBriefOutcome = {
 }
 
 /**
- * Cheap UI planner: sitemap, archetype, per-page data/actions, and capabilities.
- * Consumes analyzed intent when present. Returns `{ brief: null, error }` on
+ * Cheap UI planner: sitemap, archetype, per-page data/actions, capabilities, and
+ * designIntent. Consumes analyzed intent when present. Returns `{ brief: null, error }` on
  * failure so generate can fall back to prose.
  */
 export async function planArenaGenerativeStructuredBrief(

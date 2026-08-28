@@ -16,7 +16,7 @@ function headingIndex(prompt: string, heading: string): number {
 }
 
 describe('buildGeneratorSystemPrompt', () => {
-  it('assembles layers in DS → design guidelines → UX → grammar → recipes → JSON order', () => {
+  it('assembles layers in DS → design intent → design guidelines → UX → grammar → recipes → JSON order', () => {
     const prompt = buildGeneratorSystemPrompt({
       archetype: 'dashboard',
       capabilities: ['filter'],
@@ -29,6 +29,7 @@ describe('buildGeneratorSystemPrompt', () => {
       'You are an expert principal frontend engineer',
       'UNIVERSAL UI/UX CONSTITUTION',
       'ARENA DESIGN SYSTEM',
+      'DESIGN INTENT',
       'DESIGN GUIDELINES',
       'DATA STATE CONTRACT',
       'ACTION CONTRACT',
@@ -60,9 +61,12 @@ describe('buildGeneratorSystemPrompt', () => {
       isScopedEdit: false,
     })
     const guidelinesAt = headingIndex(prompt, 'DESIGN GUIDELINES')
+    const intentAt = headingIndex(prompt, 'DESIGN INTENT')
     const layoutAt = headingIndex(prompt, 'LAYOUT')
     const hierarchyAt = headingIndex(prompt, 'VISUAL HIERARCHY')
     const dataAt = headingIndex(prompt, 'DATA STATE CONTRACT')
+    expect(intentAt).toBeGreaterThan(headingIndex(prompt, 'ARENA DESIGN SYSTEM'))
+    expect(guidelinesAt).toBeGreaterThan(intentAt)
     expect(layoutAt).toBeGreaterThan(guidelinesAt)
     expect(hierarchyAt).toBeGreaterThan(layoutAt)
     expect(dataAt).toBeGreaterThan(hierarchyAt)
@@ -120,5 +124,8 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(ARENA_GENERATIVE_UI_DESIGN_GUIDELINES).not.toContain('WorkingCard')
     expect(ARENA_GENERATIVE_UI_DESIGN_GUIDELINES).not.toContain('SearchField')
     expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).toContain('DESIGN GUIDELINES')
+    expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).toContain(
+      'Choose density from DESIGN INTENT / manifest.theme'
+    )
   })
 })

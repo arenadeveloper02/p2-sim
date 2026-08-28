@@ -2,7 +2,7 @@
 
 How generate, compile, and runtime are split for the **Arena Generative UI** block. Authoring and publish flow: [arena-generative-ui.md](./arena-generative-ui.md). How to fill the block: [arena-generative-ui-user-guide.md](./arena-generative-ui-user-guide.md).
 
-Generate-time is Intent → Plan → Recipes → JSON → Critic. That is not one LLM per box. Intent Analyzer and UI Planner are cheap calls. Constitution, archetype recipe, and capability recipes are **prompt modules** on the spec call. The spec LLM is the only full generate. The UI critic inspects JSON after generate (host lint + one-shot Haiku). Patch/repair reuses the spec repair turns.
+Generate-time is Intent → Plan → Recipes → JSON → Critic. That is not one LLM per box. Intent Analyzer and UI Planner are cheap calls. Constitution, design system, design guidelines, archetype recipe, and capability recipes are **prompt modules** on the spec call. The spec LLM is the only full generate. The UI critic inspects JSON after generate (host lint + one-shot Haiku). Patch/repair reuses the spec repair turns.
 
 The LLM owns sitemap, copy, and wiring. The host owns loading, error, retry, and confirm.
 
@@ -27,6 +27,16 @@ USER BRIEF
 ┌───────────────────────────────────────┐
 │ CONSTITUTION                          │  Prompt (not an LLM)
 │    constitution.ts                    │  Generator-owned clauses
+└──────────────────┬────────────────────┘
+                   ▼
+┌───────────────────────────────────────┐
+│ DESIGN SYSTEM                         │  Prompt (not an LLM)
+│    catalog.ts ARENA DESIGN SYSTEM     │  Host tokens, theme, two surfaces; gap/padding tokens + Card.variant
+└──────────────────┬────────────────────┘
+                   ▼
+┌───────────────────────────────────────┐
+│ DESIGN GUIDELINES                     │  Prompt (not an LLM)
+│    design-guidelines.ts               │  Layout, hierarchy, density
 └──────────────────┬────────────────────┘
                    ▼
 ┌───────────────────────────────────────┐
@@ -56,7 +66,7 @@ USER BRIEF
 └───────────────────────────────────────┘
 ```
 
-`prompt-pipeline.ts` orders the spec prompt as persona → constitution → design guidelines → archetype recipe → **capability recipes** → gold → component selection → professional layout → visual hierarchy → anti-patterns → mechanical component rules → data state contract → action contract → interaction / responsive / a11y → JSON envelope. Still one generate call. There is no `UI CRITIC` heading in that prompt.
+`prompt-pipeline.ts` orders the spec prompt as persona → constitution → **design system** (host-owned tokens; gap/padding tokens and Card.variant are the only visual knobs on elements) → **design guidelines** (visual composition) → UX (data state, action contract, host interaction, a11y) → anti-patterns → **component grammar** → archetype recipe → **capability recipes** → gold → mechanical component rules → JSON envelope. Still one generate call. There is no `UI CRITIC` heading in that prompt. Design System is tokens; Design Guidelines is how to compose them; UX is loading/empty/error/success/forms-behavior/navigation-behavior/accessibility. Layout, visual hierarchy, and responsive collapse live inside Design Guidelines, not as sibling headings.
 
 ## Layers
 
@@ -89,13 +99,11 @@ Policy lives in `ux-policy.ts` (`HOST UX: the runtime compiles loading, error, r
 
 Followed. The spec Claude call emits the stored manifest. Validate against the catalog **and** the layout plan (form names, hostKeys, no Results `onLoad` of a navigate-first CTA). The **host critic** (`ui-critic.ts`) then walks the JSON for proveable quality gaps validation does not cover (duplicate onLoad apiKeys, unbound Stat/Sparkline, Card-in-Card, more than one primary per Section, too many non-Repeat Cards, missing Back on an `onSuccess.navigate` target). Those failures reuse the same two repair turns. After a spec that passes both, a one-shot Haiku critic (`critique-manifest.ts`) asks UX / visual / responsive / accessibility / data questions the host cannot prove. Only `must-fix` may trigger one extra spec repair; the critic is never called again, and a critic outage fails open. This is not a generate-time prompt layer. Compiled widgets are **not** written back to the draft.
 
-`COMPONENT SELECTION RULES` (`component-decisions.ts`) sit immediately before **professional layout**. They teach when to pick a catalog type (Table vs Repeat, Tabs vs wizard pages, Drawer vs a new onLoad). Filter, Drawer, Modal, and Toast are catalog types for **in-content** jobs the brief asked for. Host still owns save success (`ActionSuccessToast`) and destructive confirm (`DestructiveConfirmDialog`); the spec must not emit Modal or Toast for those.
+`DESIGN GUIDELINES` (`design-guidelines.ts`) is the global visual-composition contract: visual language, layout (Page → Section → PageHeader, measure vs wide collections, two columns, Toolbar, one dominant region), visual hierarchy (L1–L5, one primary per Section, muted metadata), typography, color roles, spacing tokens (`gap "lg"`), cards (`variant` default / muted), buttons, forms (visual), tables, visualization, icons, responsive (Grid/Columns collapse), content, density, consistency, and professionalism. Host caps Form width with `--gui-measure`. The spec must not dump Table/Form on Page, wrap every Section in a Card, or run a form the full 1280px.
 
-`PROFESSIONAL LAYOUT` (`professional-layout.ts`) sits immediately before **visual hierarchy**. It teaches Page → Section → PageHeader, readable measure vs wide collections, at most two primary columns, Toolbar grouping, and one dominant region. Host caps Form width with `--gui-measure`. The spec must not dump Table/Form on Page or run a form the full 1280px.
+`COMPONENT SELECTION RULES` (`component-decisions.ts`) sit immediately before the archetype recipe. They teach when to pick a catalog type (Table vs Repeat, Tabs vs wizard pages, Drawer vs a new onLoad). Filter, Drawer, Modal, and Toast are catalog types for **in-content** jobs the brief asked for. Host still owns save success (`ActionSuccessToast`) and destructive confirm (`DestructiveConfirmDialog`); the spec must not emit Modal or Toast for those.
 
-`VISUAL HIERARCHY` (`visual-hierarchy.ts`) sits immediately before **anti-patterns**. It teaches five prominence levels (purpose → primary/result → supporting → secondary/metadata → optional), one primary per local Section, secondary/ghost for quieter actions, and muted metadata. Host paints `destructive` as outline danger so it never matches primary fill. The spec must not add a second filled CTA beside SubmitButton or promote captions with Heading.
-
-`ANTI-PATTERNS` (`anti-patterns.ts`) sits immediately before mechanical `COMPONENT RULES`. It is the explicit Never list (hard-coded data, fake Stat, decorative Sparkline, Table for narrative, Form without input, dead Button, unused Filter/SearchField). Host rejects a Button with no verb. Selection / layout / hierarchy stay the positive how.
+`ANTI-PATTERNS` (`anti-patterns.ts`) sits immediately before component grammar. It is the explicit Never list (hard-coded data, fake Stat, decorative Sparkline, Table for narrative, Form without input, dead Button, unused Filter/SearchField). Host rejects a Button with no verb. Design Guidelines stay the positive how.
 
 `DATA STATE CONTRACT` (`data-state-contract.ts`) sits immediately before `ACTION CONTRACT`. It teaches loading / empty / error / partial / success / stale. The host skeletons bound regions, sanitizes API errors, shows Retry when the action is not destructive, keeps existing data while refetching (`aria-busy`), and offers **Refresh** on pages that have already attempted `onLoad`. EmptyState’s child is the next useful action. The spec must not emit a page-level Skeleton, a second error Alert, or a Refresh Button.
 

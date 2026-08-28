@@ -98,6 +98,41 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     expect(parsed?.capabilities).toEqual([])
   })
 
+  it('keeps a valid designIntent and aliases spacious to roomy', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        designIntent: {
+          productType: 'crm',
+          density: 'spacious',
+          visualTone: 'professional',
+          contentType: 'workflow',
+          emphasis: 'discovery',
+        },
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.designIntent).toEqual({
+      productType: 'crm',
+      density: 'roomy',
+      visualTone: 'professional',
+      contentType: 'workflow',
+      emphasis: 'discovery',
+    })
+  })
+
+  it('drops unknown designIntent axes without failing the brief', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        designIntent: { productType: 'erp', density: 'compact', mood: 'loud' },
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.archetype).toBe('list-detail')
+    expect(parsed?.designIntent).toEqual({ density: 'compact' })
+  })
+
   it('keeps form-result processing tags, folds them into capabilities, and drops unknown ones', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       {
@@ -311,6 +346,14 @@ describe('structured brief helpers', () => {
     expect(stored?.capabilities).toEqual(['long-running', 'cancellable'])
     expect(stored?.intent?.task).toBe('Browse orders')
   })
+
+  it('keeps stored designIntent', () => {
+    const stored = parseStoredStructuredBrief({
+      ...listDetailBrief,
+      designIntent: { productType: 'finance', density: 'spacious' },
+    })
+    expect(stored?.designIntent).toEqual({ productType: 'finance', density: 'roomy' })
+  })
 })
 
 describe('planArenaGenerativeStructuredBrief', () => {
@@ -348,6 +391,8 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(system).toContain('must not onLoad that same action')
     expect(system).toContain('form → processing → result')
     expect(system).toContain('Set capabilities to the tags that apply')
+    expect(system).toContain('Also emit designIntent')
+    expect(system).toContain('spacious means roomy')
     expect(system).not.toContain('nested ProgressSteps')
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('Do not emit page specs')
