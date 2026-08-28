@@ -12,31 +12,31 @@ describe('processingPatternPrompt', () => {
     expect(processingPatternPrompt([])).toBe('')
   })
 
-  it('composes form-result wait kinds in canonical order', () => {
-    const prompt = processingPatternPrompt(['cancellable', 'long-running'])
-    expect(prompt).toContain('PROCESSING PATTERN: LONG-RUNNING OPERATION')
-    expect(prompt).toContain('PROCESSING PATTERN: CANCELLABLE')
+  it('maps wait kinds onto capability recipes', () => {
+    const prompt = processingPatternPrompt(['cancellable', 'long-running', 'short'])
+    expect(prompt).toContain('CAPABILITY: LONG-RUNNING')
+    expect(prompt).toContain('CAPABILITY: CANCELLABLE')
     expect(prompt.indexOf('LONG-RUNNING')).toBeLessThan(prompt.indexOf('CANCELLABLE'))
-    expect(prompt).not.toContain('SHORT OPERATION')
+    expect(prompt).not.toContain('SHORT')
   })
 })
 
 describe('resolveProcessingPatterns', () => {
-  it('defaults form-result to a short operation', () => {
-    expect(resolveProcessingPatterns({ archetype: 'form-result', bindings: [] })).toEqual(['short'])
+  it('emits no wait modules when nothing was planned', () => {
+    expect(resolveProcessingPatterns({ archetype: 'form-result', bindings: [] })).toEqual([])
   })
 
-  it('keeps list-detail off processing modules', () => {
+  it('keeps wait tags on list-detail', () => {
     expect(
       resolveProcessingPatterns({
         archetype: 'list-detail',
         planned: ['long-running'],
         bindings: [{ kind: 'workflow' }],
       })
-    ).toEqual([])
+    ).toEqual(['long-running'])
   })
 
-  it('selects FORM_RESULT + LONG_RUNNING + CANCELLABLE', () => {
+  it('selects long-running and cancellable', () => {
     expect(
       resolveProcessingPatterns({
         archetype: 'form-result',
@@ -46,7 +46,7 @@ describe('resolveProcessingPatterns', () => {
     ).toEqual(['long-running', 'cancellable'])
   })
 
-  it('infers streaming from a stream binding and drops short', () => {
+  it('infers streaming from a stream binding', () => {
     expect(
       resolveProcessingPatterns({
         archetype: 'form-result',

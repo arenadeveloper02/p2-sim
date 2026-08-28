@@ -1,0 +1,69 @@
+/**
+ * @vitest-environment node
+ */
+import { describe, expect, it } from 'vitest'
+import {
+  capabilityRecipePrompt,
+  isCapability,
+  resolveCapabilities,
+} from '@/lib/arena-generative-ui/capabilities'
+
+describe('capabilityRecipePrompt', () => {
+  it('is empty when no capabilities are selected', () => {
+    expect(capabilityRecipePrompt([])).toBe('')
+  })
+
+  it('composes wait and product capabilities in canonical order', () => {
+    const prompt = capabilityRecipePrompt(['search', 'cancellable', 'long-running'])
+    expect(prompt).toContain('CAPABILITY: LONG-RUNNING')
+    expect(prompt).toContain('CAPABILITY: CANCELLABLE')
+    expect(prompt).toContain('CAPABILITY: SEARCH')
+    expect(prompt.indexOf('LONG-RUNNING')).toBeLessThan(prompt.indexOf('CANCELLABLE'))
+    expect(prompt.indexOf('CANCELLABLE')).toBeLessThan(prompt.indexOf('SEARCH'))
+    expect(prompt).not.toContain('FILTER')
+  })
+})
+
+describe('isCapability', () => {
+  it('strips unknown tags', () => {
+    expect(isCapability('search')).toBe(true)
+    expect(isCapability('short')).toBe(false)
+    expect(isCapability('nope')).toBe(false)
+  })
+})
+
+describe('resolveCapabilities', () => {
+  it('is empty when nothing was planned and bindings add no signals', () => {
+    expect(resolveCapabilities({ bindings: [] })).toEqual([])
+  })
+
+  it('keeps planned tags on any archetype and drops unknown ones', () => {
+    expect(
+      resolveCapabilities({
+        planned: ['selection', 'nope', 'filter'],
+        bindings: [],
+      })
+    ).toEqual(['filter', 'selection'])
+  })
+
+  it('infers streaming from a stream binding', () => {
+    expect(
+      resolveCapabilities({
+        planned: ['search'],
+        bindings: [{ kind: 'http', stream: true }],
+      })
+    ).toEqual(['streaming', 'search'])
+  })
+
+  it('infers long-running from a workflow binding', () => {
+    expect(resolveCapabilities({ bindings: [{ kind: 'workflow' }] })).toEqual(['long-running'])
+  })
+
+  it('infers pagination from a binding pagination config', () => {
+    expect(
+      resolveCapabilities({
+        bindings: [{ kind: 'http', pagination: { mode: 'cursor', items: 'rows' } }],
+      })
+    ).toEqual(['pagination'])
+  })
+})

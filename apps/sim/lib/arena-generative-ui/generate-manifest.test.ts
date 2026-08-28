@@ -3,11 +3,14 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockCreateAnthropicMessage, mockPlanBrief, mockCritique } = vi.hoisted(() => ({
-  mockCreateAnthropicMessage: vi.fn(),
-  mockPlanBrief: vi.fn(),
-  mockCritique: vi.fn(),
-}))
+const { mockCreateAnthropicMessage, mockPlanBrief, mockAnalyzeIntent, mockCritique } = vi.hoisted(
+  () => ({
+    mockCreateAnthropicMessage: vi.fn(),
+    mockPlanBrief: vi.fn(),
+    mockAnalyzeIntent: vi.fn(),
+    mockCritique: vi.fn(),
+  })
+)
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class Anthropic {},
@@ -31,6 +34,10 @@ vi.mock('@/lib/arena-generative-ui/structured-brief', () => ({
   pageHintsFromStructuredBrief: (brief: {
     pages: Array<{ path: string; title: string; purpose: string }>
   }) => brief.pages.map((page) => ({ path: page.path, title: page.title, purpose: page.purpose })),
+}))
+
+vi.mock('@/lib/arena-generative-ui/intent-analyzer', () => ({
+  analyzeArenaGenerativeIntent: mockAnalyzeIntent,
 }))
 
 vi.mock('@/lib/arena-generative-ui/critique-manifest', () => ({
@@ -75,6 +82,7 @@ describe('generateArenaGenerativeManifest', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockPlanBrief.mockResolvedValue({ brief: null })
+    mockAnalyzeIntent.mockResolvedValue({ intent: null })
     mockCritique.mockResolvedValue({ pass: true, issues: [] })
   })
 
@@ -219,7 +227,8 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('INTERACTION / STATE RULES')
     expect(system).toContain('HOST UX')
     expect(system).toContain('WorkingCard')
-    expect(system).toContain('PROCESSING PATTERN: SHORT OPERATION')
+    expect(system).not.toContain('PROCESSING PATTERN')
+    expect(system).not.toContain('CAPABILITY: LONG-RUNNING')
   })
 
   it('opens with the engineer persona and a no-markdown instruction', async () => {
@@ -642,7 +651,7 @@ describe('generateArenaGenerativeManifest', () => {
     })
   })
 
-  describe('two-stage generation', () => {
+  describe('intent, planner, and spec', () => {
     const plannedBrief = {
       title: 'Orders',
       purpose: 'Browse orders and open one record.',
@@ -669,7 +678,17 @@ describe('generateArenaGenerativeManifest', () => {
       actions: [],
     }
 
-    it('plans a structured brief before asking for the manifest', async () => {
+    const sampleIntent = {
+      task: 'Browse orders and open one record.',
+      audience: 'Ops coordinators',
+      entities: [{ name: 'orders', kind: 'collection' as const }],
+      dataRequirements: [{ apiKey: 'list_orders', usedFor: 'Fill the list' }],
+      actions: [{ id: 'load_orders', apiKey: 'list_orders', purpose: 'Fetch the list' }],
+      workflowComplexity: 'short' as const,
+    }
+
+    it('analyzes intent then plans a structured brief before asking for the manifest', async () => {
+      mockAnalyzeIntent.mockResolvedValue({ intent: sampleIntent })
       mockPlanBrief.mockResolvedValue({ brief: plannedBrief })
       mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
 
@@ -678,17 +697,26 @@ describe('generateArenaGenerativeManifest', () => {
         apiBindings: [{ key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' }],
       })
 
-      expect(mockPlanBrief).toHaveBeenCalledWith(
+      expect(mockAnalyzeIntent).toHaveBeenCalledWith(
         expect.objectContaining({
           userInput: 'Order inbox with a detail page.',
         })
+      )
+      expect(mockPlanBrief).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userInput: 'Order inbox with a detail page.',
+          intent: sampleIntent,
+        })
+      )
+      expect(mockAnalyzeIntent.mock.invocationCallOrder[0]).toBeLessThan(
+        mockPlanBrief.mock.invocationCallOrder[0]
       )
       expect(mockPlanBrief.mock.invocationCallOrder[0]).toBeLessThan(
         mockCreateAnthropicMessage.mock.invocationCallOrder[0]
       )
     })
 
-    it('skips planning when editing an existing manifest', async () => {
+    it('skips analyzer and planner when editing an existing manifest', async () => {
       mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
 
       await generateArenaGenerativeManifest({
@@ -697,6 +725,7 @@ describe('generateArenaGenerativeManifest', () => {
         existingManifest: twoPageManifest,
       })
 
+      expect(mockAnalyzeIntent).not.toHaveBeenCalled()
       expect(mockPlanBrief).not.toHaveBeenCalled()
     })
 
@@ -732,6 +761,10 @@ describe('generateArenaGenerativeManifest', () => {
           userInput: expect.stringContaining('Turn this into a dashboard'),
         })
       )
+      expect(mockAnalyzeIntent).toHaveBeenCalled()
+      expect(mockAnalyzeIntent.mock.invocationCallOrder[0]).toBeLessThan(
+        mockPlanBrief.mock.invocationCallOrder[0]
+      )
       const plannerInput = mockPlanBrief.mock.calls[0]?.[0].userInput as string
       expect(plannerInput).toContain('Re-plan request')
       expect(plannerInput).toContain('Lead qualifier')
@@ -760,6 +793,7 @@ describe('generateArenaGenerativeManifest', () => {
       })
 
       expect(mockPlanBrief).not.toHaveBeenCalled()
+      expect(mockAnalyzeIntent).not.toHaveBeenCalled()
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
       expect(system).toContain('ARCHETYPE RECIPE: list-detail')
@@ -794,7 +828,7 @@ describe('generateArenaGenerativeManifest', () => {
       expect(payload).not.toContain('Infer a small coherent sitemap')
     })
 
-    it('composes form-result with long-running and cancellable processing patterns', async () => {
+    it('composes form-result with long-running and cancellable capabilities', async () => {
       mockPlanBrief.mockResolvedValue({
         brief: {
           title: 'Analyze',
@@ -831,9 +865,9 @@ describe('generateArenaGenerativeManifest', () => {
 
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
       expect(system).toContain('ARCHETYPE RECIPE: form-result')
-      expect(system).toContain('PROCESSING PATTERN: LONG-RUNNING OPERATION')
-      expect(system).toContain('PROCESSING PATTERN: CANCELLABLE')
-      expect(system).not.toContain('PROCESSING PATTERN: SHORT OPERATION')
+      expect(system).toContain('CAPABILITY: LONG-RUNNING')
+      expect(system).toContain('CAPABILITY: CANCELLABLE')
+      expect(system).not.toContain('PROCESSING PATTERN')
     })
 
     it('uses the planned page count for the manifest output budget', async () => {
@@ -889,6 +923,7 @@ describe('generateArenaGenerativeManifest', () => {
     })
 
     it('surfaces the planned sitemap on a successful generate', async () => {
+      mockAnalyzeIntent.mockResolvedValue({ intent: sampleIntent })
       mockPlanBrief.mockResolvedValue({
         brief: {
           ...plannedBrief,
@@ -928,6 +963,7 @@ describe('generateArenaGenerativeManifest', () => {
       })
 
       expect(result.success).toBe(true)
+      expect(result.content).toContain('Intent: Browse orders and open one record.')
       expect(result.content).toContain('Planner: list-detail · home, results.')
       expect(result.structuredBrief).toEqual({
         title: 'Orders',
@@ -1222,7 +1258,7 @@ describe('generateArenaGenerativeManifest', () => {
       })
 
       expect(mockPlanBrief).toHaveBeenCalled()
-      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(1)
+      expect(mockAnalyzeIntent).toHaveBeenCalled()
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
       expect(payload).toContain(REPLAN_GENERATE_INSTRUCTION)
       expect(payload).not.toContain(SCOPED_EDIT_INSTRUCTION)
@@ -1256,6 +1292,7 @@ describe('generateArenaGenerativeManifest', () => {
 
       expect(mockCreateAnthropicMessage).not.toHaveBeenCalled()
       expect(mockPlanBrief).not.toHaveBeenCalled()
+      expect(mockAnalyzeIntent).not.toHaveBeenCalled()
       expect(result.success).toBe(true)
       expect(result.editScope).toEqual({ mode: 'theme', pages: [] })
       expect(result.content).toContain('Edit scope: theme only (pages unchanged).')

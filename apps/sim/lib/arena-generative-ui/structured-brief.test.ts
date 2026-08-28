@@ -75,6 +75,8 @@ const listDetailBrief: ArenaGenerativeStructuredBrief = {
       onSuccessNavigate: null,
     },
   ],
+  capabilities: [],
+  processing: [],
   emptyCopy: 'No orders yet.',
 }
 
@@ -93,9 +95,10 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     expect(parsed?.archetype).toBe('list-detail')
     expect(parsed?.pages.map((page) => page.path)).toEqual(['home', 'detail'])
     expect(parsed?.processing).toEqual([])
+    expect(parsed?.capabilities).toEqual([])
   })
 
-  it('keeps form-result processing tags and drops unknown ones', () => {
+  it('keeps form-result processing tags, folds them into capabilities, and drops unknown ones', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       {
         title: 'Search',
@@ -118,6 +121,25 @@ describe('parseArenaGenerativeStructuredBrief', () => {
       { apiBindings: [] }
     )
     expect(parsed?.processing).toEqual(['long-running', 'cancellable'])
+    expect(parsed?.capabilities).toEqual(['long-running', 'cancellable'])
+  })
+
+  it('strips LLM-emitted intent so only the analyzer result is nested later', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        intent: {
+          task: 'Invented',
+          audience: 'Users',
+          entities: [],
+          dataRequirements: [],
+          actions: [],
+          workflowComplexity: 'short',
+        },
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.intent).toBeUndefined()
   })
 
   it('returns null for a manifest-shaped payload', () => {
@@ -232,7 +254,7 @@ describe('structured brief helpers', () => {
     }
     expect(archetypeRecipe('form-result')).toContain('form → processing → result')
     expect(archetypeRecipe('form-result')).toContain('SearchField')
-    expect(archetypeRecipe('form-result')).toContain('PROCESSING PATTERN')
+    expect(archetypeRecipe('form-result')).toContain('CAPABILITY')
     expect(archetypeRecipe('form-result')).toContain('inputs.targetKeyword')
     expect(archetypeRecipe('form-result')).toContain('{targetKeyword}')
     expect(archetypeRecipe('form-result')).toContain('never "field.content"')
@@ -270,10 +292,24 @@ describe('structured brief helpers', () => {
     expect(formatted).not.toContain('emit exactly these page paths')
   })
 
-  it('accepts a stored structured brief and ignores junk', () => {
+  it('accepts a stored structured brief and maps legacy processing onto capabilities', () => {
     expect(parseStoredStructuredBrief(listDetailBrief)?.archetype).toBe('list-detail')
     expect(parseStoredStructuredBrief({ title: 'nope' })).toBeNull()
     expect(parseStoredStructuredBrief(null)).toBeNull()
+    const stored = parseStoredStructuredBrief({
+      ...listDetailBrief,
+      processing: ['long-running', 'cancellable'],
+      intent: {
+        task: 'Browse orders',
+        audience: 'Ops coordinators',
+        entities: [{ name: 'orders', kind: 'collection' }],
+        dataRequirements: [],
+        actions: [],
+        workflowComplexity: 'short',
+      },
+    })
+    expect(stored?.capabilities).toEqual(['long-running', 'cancellable'])
+    expect(stored?.intent?.task).toBe('Browse orders')
   })
 })
 
@@ -303,22 +339,47 @@ describe('planArenaGenerativeStructuredBrief', () => {
       })
     )
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
-    expect(system).toContain('Plan sitemap, data, and actions')
+    expect(system).toContain('Plan sitemap, data, actions, and capabilities')
     expect(system).toContain('the host compiles those')
-    expect(system).toContain('principal product engineer')
-    expect(system).toContain('often a job, not a spec')
-    expect(system).toContain('Infer only what they assumed')
+    expect(system).toContain('When Analyzed intent is present')
     expect(system).toContain('primary verb')
     expect(system).toContain('never "users"')
     expect(system).toContain('Bindings are the data contract')
     expect(system).toContain('must not onLoad that same action')
     expect(system).toContain('form → processing → result')
-    expect(system).toContain('form-result + long-running + cancellable')
+    expect(system).toContain('Set capabilities to the tags that apply')
     expect(system).not.toContain('nested ProgressSteps')
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('Do not emit page specs')
-    expect(userMessage).toContain('Treat User request as product intent')
+    expect(userMessage).toContain('No analyzed intent')
     expect(userMessage).toContain('Order inbox with a detail page.')
+  })
+
+  it('passes analyzed intent JSON to the planner payload', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage(JSON.stringify(listDetailBrief)))
+    const intent = {
+      task: 'Browse orders and open one record.',
+      audience: 'Ops coordinators',
+      entities: [{ name: 'orders' as const, kind: 'collection' as const }],
+      dataRequirements: [{ apiKey: 'list_orders', usedFor: 'Fill the list' }],
+      actions: [{ id: 'load_orders', apiKey: 'list_orders', purpose: 'Fetch the list' }],
+      workflowComplexity: 'short' as const,
+    }
+
+    const planned = await planArenaGenerativeStructuredBrief({
+      userInput: 'Order inbox with a detail page.',
+      apiBindings: [
+        { key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' },
+        { key: 'get_order', label: 'Get', kind: 'workflow', workflowId: 'wf-2' },
+      ],
+      intent,
+    })
+
+    expect(planned.brief?.intent).toEqual(intent)
+    const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+    expect(userMessage).toContain('Analyzed intent')
+    expect(userMessage).toContain('"task":"Browse orders and open one record."')
+    expect(userMessage).not.toContain('No analyzed intent')
   })
 
   it('retries once when the first reply is not a brief', async () => {

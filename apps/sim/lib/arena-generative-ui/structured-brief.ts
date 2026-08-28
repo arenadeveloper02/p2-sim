@@ -1,10 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { omit } from '@sim/utils/object'
 import { truncate } from '@sim/utils/string'
 import { z } from 'zod'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-prompt'
+import {
+  ARENA_GENERATIVE_CAPABILITIES,
+  type ArenaGenerativeCapability,
+  isCapability,
+} from '@/lib/arena-generative-ui/capabilities'
+import {
+  type ArenaGenerativeIntent,
+  arenaGenerativeIntentSchema,
+} from '@/lib/arena-generative-ui/intent-analyzer'
 import { parseLlmJsonObject } from '@/lib/arena-generative-ui/parse-inputs'
 import { isProcessingPattern } from '@/lib/arena-generative-ui/processing-patterns'
 import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
@@ -82,6 +92,11 @@ const structuredBriefSchema = z.object({
   entryPath: pagePathSchema,
   pages: z.array(structuredBriefPageSchema).min(1).max(8),
   actions: z.array(structuredBriefActionSchema).max(16).default([]),
+  capabilities: z
+    .array(z.string())
+    .max(12)
+    .default([])
+    .transform((values) => values.filter(isCapability)),
   processing: z
     .array(z.string())
     .max(5)
@@ -89,22 +104,24 @@ const structuredBriefSchema = z.object({
     .transform((values) => values.filter(isProcessingPattern)),
   emptyCopy: briefProse(200).optional(),
   errorCopy: briefProse(200).optional(),
+  intent: arenaGenerativeIntentSchema.optional(),
 })
 
 export type ArenaGenerativeStructuredBrief = z.output<typeof structuredBriefSchema>
 
 const PLANNER_SYSTEM_PROMPT = [
-  'You are a principal product engineer planning a multi-page Arena app. The User request is often a job, not a spec — operators name the outcome ("qualify this lead", "search companies", "show my pipeline") and skip scaffolding. Reconstruct the product a senior engineer would ship for that job, then output one JSON object. No markdown fences, no explanation.',
-  'Read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write — do not rename or "improve" those. Infer only what they assumed: missing destination pages, Back, which binding is submit vs onLoad, form fields from inputSchema, result shape from outputSchema/layoutPlan, audience, and empty copy.',
+  'You plan the sitemap for a multi-page Arena app. Output one JSON object. No markdown fences, no explanation.',
+  'When Analyzed intent is present, honour its task, entities, actions, and complexity — do not rewrite the job. Pick the archetype, pages, and capabilities that implement that intent.',
+  'When intent is absent, read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write. Infer only sitemap, archetype, and capabilities.',
   'Pick exactly one archetype:',
   '- dashboard: data on arrival via onLoad; EntityHeader, Grid of display Stat, little or no form.',
   '- form-result: form → processing → result. A form submits a CTA, processing happens, then onSuccess.navigate to a results page. A single query field is a centered SearchField hero. Empty copy lives on results.',
   '- list-detail: a collection of entity Cards (Repeat inside Grid) and a detail page opened with to "detail?id={item.id}" whose onLoad fetches that record.',
   '- wizard: three or more sequential steps with Next/Back; submit only on the last step.',
-  'Archetype from the primary verb, not from how complete the brief is. A form or search that calls an API then shows an answer is form-result even if they never said "results page". A collection on arrival that opens one record is list-detail even if they only named the list. Metrics/overview on arrival is dashboard. Three or more sequential steps with submit at the end is wizard. Mixed briefs ("dashboard plus generate"): pick the verb they led with; extra destinations are extra pages, not a second archetype. History or past runs plus a generate form is form-result with a history page that onLoads the list binding — Generate still navigates to results. One prominent query (search, lookup, ask) is a SearchField hero, not a labelled Grid of one field.',
-  'When archetype is form-result, also set processing to the wait kinds that apply (zero or more): short, long-running, streaming, multi-step, cancellable. Combine them — form-result + long-running + cancellable is valid. Omit short when any longer wait applies. A workflow binding is long-running; stream: true is streaming; a named step checklist is multi-step; Cancel in the brief is cancellable; a typical search/submit is short. Other archetypes omit processing or send [].',
-  'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "processing"?: ("short"|"long-running"|"streaming"|"multi-step"|"cancellable")[], "emptyCopy"?, "errorCopy"? }',
-  'title is the product name. purpose is the job in one sentence. audience is a real role inferred from domain language (sales ops, analysts, writers) — never "users".',
+  'Archetype from the primary verb (or intent.workflowComplexity), not from how complete the brief is. A form or search that calls an API then shows an answer is form-result even if they never said "results page". A collection on arrival that opens one record is list-detail even if they only named the list. Metrics/overview on arrival is dashboard. Three or more sequential steps with submit at the end is wizard. Mixed briefs ("dashboard plus generate"): pick the verb they led with; extra destinations are extra pages, not a second archetype. History or past runs plus a generate form is form-result with a history page that onLoads the list binding — Generate still navigates to results. One prominent query (search, lookup, ask) is a SearchField hero, not a labelled Grid of one field.',
+  'Set capabilities to the tags that apply (zero or more): long-running, streaming, multi-step, cancellable, search, filter, pagination, selection, editable. Combine them. A workflow binding is long-running; stream: true is streaming; a named step checklist is multi-step; Cancel in the brief is cancellable; a single prominent query is search; Toolbar narrowing is filter; binding.pagination is pagination; opening a row that already has prose is selection; edit-in-place is editable. Omit tags the job does not need. Do not emit "short".',
+  'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "capabilities"?: ("long-running"|"streaming"|"multi-step"|"cancellable"|"search"|"filter"|"pagination"|"selection"|"editable")[], "emptyCopy"?, "errorCopy"? }',
+  'title is the product name. purpose is the job in one sentence (copy intent.task when present). audience is a real role — never "users".',
   'pages[].path, entryPath, and actions[].fromPage are bare kebab-case keys — "home", "select-company" — never URL routes: no leading slash, no "/" for the entry page, no nested segments. Call the entry page "home" unless the brief names it.',
   '1–6 pages. Infer the smallest sitemap that completes the job: form-result always has a destination for the answer plus Back; list-detail always has a way to open a record (detail page, or same-page Open when the row already carries prose); a second binding that is a list/history is a collection page with onLoad, not a second submit. Do not invent login, settings, profile, marketing, or extra tools the job does not need.',
   'data is one sentence (onLoad which action into which state keys, or CTA then navigate, or static).',
@@ -113,7 +130,7 @@ const PLANNER_SYSTEM_PROMPT = [
   'When a binding has no outputSchema, do not plan Table or Stat columns; results are prose (DataText content) unless the brief names exact keys. When layoutPlan or outputSchema names a collection, plan Repeat/Table/Stat against those host keys, not invented ones.',
   'emptyCopy is the zero-result sentence for that page\'s collection (becomes emptyText) — name the collection in the domain, not generic "No results". errorCopy is the failure sentence for this job.',
   'Give an onLoad action no onSuccessNavigate.',
-  'Plan sitemap, data, and actions — not loading widgets. Do not mention ProgressBar, ProgressSteps, Skeleton, or an error Alert in pages[].purpose or data; the host compiles those.',
+  'Plan sitemap, data, actions, and capabilities — not loading widgets. Do not mention ProgressBar, ProgressSteps, Skeleton, or an error Alert in pages[].purpose or data; the host compiles those.',
 ].join('\n')
 
 const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
@@ -125,9 +142,9 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
   ].join('\n'),
   'form-result': [
     'ARCHETYPE RECIPE: form-result',
-    'form → processing → result. The wait itself is PROCESSING PATTERN (short, long-running, streaming, multi-step, cancellable) — compose those modules; do not invent a second wait.',
+    'form → processing → result. The wait itself is CAPABILITY (long-running, streaming, multi-step, cancellable) — compose those modules; do not invent a second wait.',
     'form — If the form is a single prominent query field, home is a centered PageHeader (kicker, display title, measure subtitle) plus SearchField with suggestion Chips and a Grid of three Icon Cards. Do not use a labelled Grid for that query. Multi-field forms stay a left-aligned PageHeader plus fields in a 2-column Grid, one SubmitButton. No onLoad. The form stays fields plus submit until click.',
-    'processing — The submit action sets onSuccess.navigate to the results path. Waiting chrome lives on the destination, never on the form. Which wait is PROCESSING PATTERN.',
+    'processing — The submit action sets onSuccess.navigate to the results path. Waiting chrome lives on the destination, never on the form. Which wait is CAPABILITY.',
     'result — Results has no onLoad of that CTA. Bind a markdown string on DataText "content" (or the string field name), never "field.content". Repeat entity Cards, Stat, or KeyValue bind structured keys. Echo submitted fields from the form name ({targetKeyword}, inputs.targetKeyword), not a history list key ({keyword}). emptyText lives here. Offer a Back NavLink.',
   ].join('\n'),
   'list-detail': [
@@ -151,6 +168,8 @@ export interface PlanStructuredBriefParams {
   entryPath?: string
   apiBindings: ArenaGenerativeApiBinding[]
   designNotes?: string
+  /** Output of the intent analyzer. Absent when analysis failed open. */
+  intent?: ArenaGenerativeIntent | null
 }
 
 /**
@@ -198,12 +217,34 @@ export function formatStructuredBriefForEdit(brief: ArenaGenerativeStructuredBri
 }
 
 /**
+ * Legacy `processing` wait tags become `capabilities` so old drafts still edit.
+ */
+function foldProcessingIntoCapabilities(
+  brief: ArenaGenerativeStructuredBrief
+): ArenaGenerativeStructuredBrief {
+  const selected = new Set<ArenaGenerativeCapability>(brief.capabilities)
+  for (const raw of brief.processing) {
+    if (isCapability(raw)) selected.add(raw)
+  }
+  const capabilities = ARENA_GENERATIVE_CAPABILITIES.filter((capability) =>
+    selected.has(capability)
+  )
+  if (
+    capabilities.length === brief.capabilities.length &&
+    capabilities.every((capability, index) => capability === brief.capabilities[index])
+  ) {
+    return brief
+  }
+  return { ...brief, capabilities }
+}
+
+/**
  * Reads a draft-stored structured brief. Invalid JSON is ignored so old or
- * partial rows still edit.
+ * partial rows still edit. Legacy `processing` folds into `capabilities`.
  */
 export function parseStoredStructuredBrief(value: unknown): ArenaGenerativeStructuredBrief | null {
   const parsed = structuredBriefSchema.safeParse(value)
-  return parsed.success ? parsed.data : null
+  return parsed.success ? foldProcessingIntoCapabilities(parsed.data) : null
 }
 
 /** Page key used when a planner names the entry page "/" or leaves it empty. */
@@ -317,7 +358,7 @@ export function parseArenaGenerativeStructuredBrief(
     if (!first) return null
     brief = { ...brief, entryPath: first.path }
   }
-  return brief
+  return foldProcessingIntoCapabilities(omit(brief, ['intent']))
 }
 
 function reconcileBriefWithPageHints(
@@ -371,9 +412,12 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
   const pageHints = params.pages?.filter((page) => page.path.trim().length > 0) ?? []
   const bindingKeys = params.apiBindings.map((binding) => binding.key).filter(Boolean)
   const bindingsSummary = bindingsSummaryForPrompt(params.apiBindings)
+  const intentSection = params.intent
+    ? `Analyzed intent (honour this; pick sitemap and capabilities, do not rewrite the job):\n${JSON.stringify(params.intent)}`
+    : 'No analyzed intent. Infer the job, audience, sitemap, and capabilities from User request. Bindings are the data contract. Never invent API keys.'
   return [
     'Mode: plan a new multi-page app. Do not emit page specs or a manifest.',
-    'Treat User request as product intent. Infer the unsaid job, audience, sitemap, and wiring a principal engineer would ship. Bindings are the data contract for fields and result shape. Never invent API keys.',
+    intentSection,
     params.entryPath ? `Requested entryPath: ${params.entryPath}` : '',
     pageHints.length > 0
       ? `Requested pages (use exactly these paths):\n${JSON.stringify(pageHints, null, 2)}`
@@ -389,7 +433,7 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
 }
 
 const BRIEF_REPAIR_USER_MESSAGE =
-  'That was not a valid structured brief. Return one JSON object in the planner shape (title, purpose, audience, archetype, entryPath, pages[], actions[], processing?). Do not emit a manifest.'
+  'That was not a valid structured brief. Return one JSON object in the planner shape (title, purpose, audience, archetype, entryPath, pages[], actions[], capabilities?). Do not emit a manifest.'
 
 export type PlanStructuredBriefOutcome = {
   brief: ArenaGenerativeStructuredBrief | null
@@ -397,10 +441,9 @@ export type PlanStructuredBriefOutcome = {
 }
 
 /**
- * Cheap first-stage call: invents sitemap, archetype, and per-page data/actions
- * so the manifest call spends its budget on JSON rather than IA. Returns
- * `{ brief: null, error }` on failure so generate can fall back to prose and
- * still tell the user planning did not land.
+ * Cheap UI planner: sitemap, archetype, per-page data/actions, and capabilities.
+ * Consumes analyzed intent when present. Returns `{ brief: null, error }` on
+ * failure so generate can fall back to prose.
  */
 export async function planArenaGenerativeStructuredBrief(
   params: PlanStructuredBriefParams
@@ -446,7 +489,9 @@ export async function planArenaGenerativeStructuredBrief(
         brief = null
       }
       if (brief) {
-        return { brief }
+        return {
+          brief: params.intent ? { ...brief, intent: params.intent } : brief,
+        }
       }
       if (attempt + 1 < MAX_BRIEF_ATTEMPTS) {
         messages.push(

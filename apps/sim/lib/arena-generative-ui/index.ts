@@ -39,6 +39,11 @@ export {
   inspectHttpBindingUrl,
   isHttpUrlAllowlisted,
 } from '@/lib/arena-generative-ui/http-allowlist'
+export type { ArenaGenerativeIntent } from '@/lib/arena-generative-ui/intent-analyzer'
+export {
+  analyzeArenaGenerativeIntent,
+  parseArenaGenerativeIntent,
+} from '@/lib/arena-generative-ui/intent-analyzer'
 export type { ScopedEditTarget } from '@/lib/arena-generative-ui/merge-scoped-edit'
 export { mergeScopedManifestEdit } from '@/lib/arena-generative-ui/merge-scoped-edit'
 export {

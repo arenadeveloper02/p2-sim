@@ -18,6 +18,7 @@ describe('buildGeneratorSystemPrompt', () => {
   it('assembles layers in constitution → recipe → component/state/responsive/a11y → JSON order', () => {
     const prompt = buildGeneratorSystemPrompt({
       archetype: 'dashboard',
+      capabilities: ['filter'],
       hasBindings: true,
       hasStreamingBinding: false,
       isScopedEdit: false,
@@ -28,6 +29,7 @@ describe('buildGeneratorSystemPrompt', () => {
       'UNIVERSAL UI/UX CONSTITUTION',
       'ARENA DESIGN SYSTEM',
       'ARCHETYPE RECIPE: dashboard',
+      'CAPABILITY: FILTER',
       'GOLD STANDARD REFERENCE LAYOUT (dashboard)',
       'COMPONENT SELECTION RULES',
       'PROFESSIONAL LAYOUT',
@@ -49,33 +51,35 @@ describe('buildGeneratorSystemPrompt', () => {
     }
   })
 
-  it('places selected processing patterns between the recipe and the gold few-shot', () => {
+  it('places selected capability recipes between the recipe and the gold few-shot', () => {
     const prompt = buildGeneratorSystemPrompt({
       archetype: 'form-result',
-      processingPatterns: ['long-running', 'cancellable'],
+      capabilities: ['long-running', 'cancellable'],
       hasBindings: true,
       hasStreamingBinding: false,
       isScopedEdit: false,
     })
     const recipeAt = headingIndex(prompt, 'ARCHETYPE RECIPE: form-result')
-    const longAt = headingIndex(prompt, 'PROCESSING PATTERN: LONG-RUNNING OPERATION')
-    const cancelAt = headingIndex(prompt, 'PROCESSING PATTERN: CANCELLABLE')
+    const longAt = headingIndex(prompt, 'CAPABILITY: LONG-RUNNING')
+    const cancelAt = headingIndex(prompt, 'CAPABILITY: CANCELLABLE')
     const goldAt = headingIndex(prompt, 'GOLD STANDARD REFERENCE LAYOUT (form-result)')
     expect(longAt).toBeGreaterThan(recipeAt)
     expect(cancelAt).toBeGreaterThan(longAt)
     expect(goldAt).toBeGreaterThan(cancelAt)
-    expect(prompt).not.toContain('PROCESSING PATTERN: SHORT OPERATION')
+    expect(prompt).not.toContain('CAPABILITY: SEARCH')
+    expect(prompt).not.toContain('PROCESSING PATTERN')
   })
 
-  it('omits processing modules when none were selected', () => {
+  it('omits capability modules when none were selected', () => {
     const prompt = buildGeneratorSystemPrompt({
       archetype: 'form-result',
       hasBindings: false,
       hasStreamingBinding: false,
       isScopedEdit: false,
     })
-    expect(prompt).not.toContain('PROCESSING PATTERN: SHORT OPERATION')
-    expect(prompt).not.toContain('PROCESSING PATTERN: LONG-RUNNING OPERATION')
+    expect(prompt).not.toContain('CAPABILITY: LONG-RUNNING')
+    expect(prompt).not.toContain('CAPABILITY: SEARCH')
+    expect(prompt).not.toContain('PROCESSING PATTERN')
   })
 
   it('omits the recipe when no archetype was planned and still includes the constitution', () => {

@@ -1,6 +1,10 @@
 import { ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT } from '@/lib/arena-generative-ui/action-contract'
 import { ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT } from '@/lib/arena-generative-ui/anti-patterns'
 import {
+  type ArenaGenerativeCapability,
+  capabilityRecipePrompt,
+} from '@/lib/arena-generative-ui/capabilities'
+import {
   ARENA_GENERATIVE_UI_ACCESSIBILITY_RULES,
   ARENA_GENERATIVE_UI_ACTION_INPUT_RULE,
   ARENA_GENERATIVE_UI_ACTION_RESULT_RULE,
@@ -21,10 +25,6 @@ import { ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT } from '@/lib/arena-gene
 import { ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT } from '@/lib/arena-generative-ui/constitution'
 import { ARENA_GENERATIVE_UI_DATA_STATE_PROMPT } from '@/lib/arena-generative-ui/data-state-contract'
 import { goldExamplePromptForArchetype } from '@/lib/arena-generative-ui/gold-example'
-import {
-  type ArenaGenerativeProcessingPattern,
-  processingPatternPrompt,
-} from '@/lib/arena-generative-ui/processing-patterns'
 import { ARENA_GENERATIVE_UI_LAYOUT_PROMPT } from '@/lib/arena-generative-ui/professional-layout'
 import {
   type ArenaGenerativeArchetype,
@@ -35,7 +35,7 @@ import { ARENA_GENERATIVE_UI_HIERARCHY_PROMPT } from '@/lib/arena-generative-ui/
 
 export interface BuildGeneratorSystemPromptOptions {
   archetype?: ArenaGenerativeArchetype
-  processingPatterns?: readonly ArenaGenerativeProcessingPattern[]
+  capabilities?: readonly ArenaGenerativeCapability[]
   hasBindings: boolean
   hasStreamingBinding: boolean
   isScopedEdit: boolean
@@ -46,15 +46,15 @@ function headedRules(heading: string, rules: readonly string[]): string {
 }
 
 /**
- * Spec-LLM system prompt in pipeline order: constitution → recipe → processing
- * patterns → gold → component selection → professional layout → visual
- * hierarchy → anti-patterns → mechanical component rules → data state
+ * Spec-LLM system prompt in pipeline order: constitution → archetype recipe →
+ * capability recipes → gold → component selection → professional layout →
+ * visual hierarchy → anti-patterns → mechanical component rules → data state
  * contract → action contract → interaction / responsive / a11y → JSON
  * envelope. Still one generate call.
  */
 export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOptions): string {
   const recipe = options.archetype ? archetypeRecipe(options.archetype) : ''
-  const processing = processingPatternPrompt(options.processingPatterns ?? [])
+  const capabilities = capabilityRecipePrompt(options.capabilities ?? [])
   const catalogAndEnvelope = buildArenaGenerativeUiPrompt({
     customRules: [
       ...ARENA_GENERATIVE_UI_ENVELOPE_RULES,
@@ -77,7 +77,7 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
     ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT,
     ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
     recipe,
-    processing,
+    capabilities,
     goldExamplePromptForArchetype(options.archetype),
     ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT,
     ARENA_GENERATIVE_UI_LAYOUT_PROMPT,

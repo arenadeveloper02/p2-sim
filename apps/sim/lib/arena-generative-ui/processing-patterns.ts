@@ -1,7 +1,14 @@
 /**
- * Composable wait kinds for form-result. The archetype is the three-beat
- * sitemap; these modules say how the processing beat looks. Catalog types only.
+ * Wait-kind aliases kept so stored briefs with `processing` still parse.
+ * New recipes live in capabilities.ts.
  */
+
+import {
+  type ArenaGenerativeCapability,
+  capabilityRecipePrompt,
+  isCapability,
+  resolveCapabilities,
+} from '@/lib/arena-generative-ui/capabilities'
 
 export const ARENA_GENERATIVE_PROCESSING_PATTERNS = [
   'short',
@@ -13,85 +20,40 @@ export const ARENA_GENERATIVE_PROCESSING_PATTERNS = [
 
 export type ArenaGenerativeProcessingPattern = (typeof ARENA_GENERATIVE_PROCESSING_PATTERNS)[number]
 
-const PATTERN_SET = new Set<string>(ARENA_GENERATIVE_PROCESSING_PATTERNS)
+const PROCESSING_SET = new Set<string>(ARENA_GENERATIVE_PROCESSING_PATTERNS)
 
-const LONG_WAIT_PATTERNS = new Set<ArenaGenerativeProcessingPattern>([
+const WAIT_CAPABILITIES = [
   'long-running',
   'streaming',
   'multi-step',
   'cancellable',
-])
+] as const satisfies readonly ArenaGenerativeCapability[]
 
-const PROCESSING_PATTERN_PROMPTS: Record<ArenaGenerativeProcessingPattern, string> = {
-  short: [
-    'PROCESSING PATTERN: SHORT OPERATION',
-    'Submit, navigate, bind the result. The host skeletons the bound region. Do not emit WorkingCard, ProgressBar, Spinner, or Cancel.',
-  ].join('\n'),
-  'long-running': [
-    'PROCESSING PATTERN: LONG-RUNNING OPERATION',
-    'The wait is a named job (workflow, generate, analysis). Put WorkingCard on the destination (title interpolating form names, estimate, skeleton true) above the bound result. The host ticks the card. Do not emit ProgressSteps, ProgressBar, or Spinner. Do not leave waiting chrome on the form.',
-  ].join('\n'),
-  streaming: [
-    'PROCESSING PATTERN: STREAMING OPERATION',
-    'Bind DataText statePath "content" (or layoutPlan hostKeys). The host streams chunks into that region. Do not invent Table columns from unstructured output. WorkingCard only when LONG-RUNNING or MULTI-STEP is also selected.',
-  ].join('\n'),
-  'multi-step': [
-    'PROCESSING PATTERN: MULTI-STEP OPERATION',
-    'WorkingCard.steps are the brief’s checklist (one line per step). The host ticks steps and the bar together. Do not emit ProgressSteps as a sibling.',
-  ].join('\n'),
-  cancellable: [
-    'PROCESSING PATTERN: CANCELLABLE',
-    'WorkingCard.cancelTo is the form path. Do not emit a second Cancel Button.',
-  ].join('\n'),
+export function isProcessingPattern(value: string): value is ArenaGenerativeProcessingPattern {
+  return PROCESSING_SET.has(value)
 }
 
 /**
- * Prompt fragment for the selected wait kinds, in canonical order. Empty when
- * the archetype is not form-result (or the gold form-result fallback).
+ * Wait-capability prompt fragment. `short` is not a recipe (omit wait modules).
  */
 export function processingPatternPrompt(
   patterns: readonly ArenaGenerativeProcessingPattern[]
 ): string {
-  return ARENA_GENERATIVE_PROCESSING_PATTERNS.filter((pattern) => patterns.includes(pattern))
-    .map((pattern) => PROCESSING_PATTERN_PROMPTS[pattern])
-    .join('\n\n')
-}
-
-function asProcessingPattern(value: string): ArenaGenerativeProcessingPattern | null {
-  return PATTERN_SET.has(value) ? (value as ArenaGenerativeProcessingPattern) : null
-}
-
-export function isProcessingPattern(value: string): value is ArenaGenerativeProcessingPattern {
-  return PATTERN_SET.has(value)
+  return capabilityRecipePrompt(patterns.filter(isCapability))
 }
 
 /**
- * Combine planner tags with binding signals. Workflow → long-running; stream →
- * streaming. `short` drops when any longer wait is present. Non-form-result
- * archetypes get no processing modules.
+ * Wait subset of {@link resolveCapabilities}. No longer form-result-only; `short`
+ * is not emitted.
  */
 export function resolveProcessingPatterns(options: {
   archetype?: string
   planned?: readonly string[]
-  bindings: ReadonlyArray<{ kind?: string; stream?: boolean }>
+  bindings: ReadonlyArray<{ kind?: string; stream?: boolean; pagination?: unknown }>
 }): ArenaGenerativeProcessingPattern[] {
-  const isFormResult = !options.archetype || options.archetype === 'form-result'
-  if (!isFormResult) return []
-
-  const selected = new Set<ArenaGenerativeProcessingPattern>()
-  for (const raw of options.planned ?? []) {
-    const pattern = asProcessingPattern(raw)
-    if (pattern) selected.add(pattern)
-  }
-  if (options.bindings.some((binding) => binding.stream === true)) {
-    selected.add('streaming')
-  }
-  if (options.bindings.some((binding) => binding.kind === 'workflow')) {
-    selected.add('long-running')
-  }
-  if ([...selected].some((pattern) => LONG_WAIT_PATTERNS.has(pattern))) {
-    selected.delete('short')
-  }
-  if (selected.size === 0) selected.add('short')
-  return ARENA_GENERATIVE_PROCESSING_PATTERNS.filter((pattern) => selected.has(pattern))
+  const resolved = resolveCapabilities({
+    planned: options.planned,
+    bindings: options.bindings,
+  })
+  return WAIT_CAPABILITIES.filter((capability) => resolved.includes(capability))
 }

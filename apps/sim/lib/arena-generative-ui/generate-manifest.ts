@@ -4,6 +4,7 @@ import { toError } from '@sim/utils/errors'
 import { truncate } from '@sim/utils/string'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-prompt'
+import { resolveCapabilities } from '@/lib/arena-generative-ui/capabilities'
 import {
   type ArenaGenerativeCritique,
   critiqueArenaGenerativeManifest,
@@ -15,12 +16,15 @@ import {
   planArenaGenerativeEditScope,
   unscopedPageIndex,
 } from '@/lib/arena-generative-ui/edit-scope'
+import {
+  type ArenaGenerativeIntent,
+  analyzeArenaGenerativeIntent,
+} from '@/lib/arena-generative-ui/intent-analyzer'
 import { mergeScopedManifestEdit } from '@/lib/arena-generative-ui/merge-scoped-edit'
 import {
   extractManifestCandidate,
   parseLlmJsonObject,
 } from '@/lib/arena-generative-ui/parse-inputs'
-import { resolveProcessingPatterns } from '@/lib/arena-generative-ui/processing-patterns'
 import { buildGeneratorSystemPrompt } from '@/lib/arena-generative-ui/prompt-pipeline'
 import { isReplanEdit, plannerInputForReplan } from '@/lib/arena-generative-ui/replan-from-edit'
 import {
@@ -119,6 +123,16 @@ function estimatePageCount(options: {
 function outputTokenBudget(modelId: string, pageCount: number): number {
   const requested = BASE_OUTPUT_TOKENS + Math.max(pageCount, 1) * OUTPUT_TOKENS_PER_PAGE
   return Math.min(getMaxOutputTokensForModel(modelId), MAX_OUTPUT_TOKENS, requested)
+}
+
+function formatIntentStatus(intent: ArenaGenerativeIntent | null, intentError?: string): string {
+  if (intent) {
+    return `Intent: ${intent.task}`
+  }
+  if (intentError) {
+    return `Intent skipped (${intentError}); planner inferred from prose.`
+  }
+  return ''
 }
 
 function formatPlannerStatus(
@@ -342,6 +356,28 @@ export async function generateArenaGenerativeManifest(
         existingBrief: params.existingBrief,
       })
     : userInput
+
+  let analyzedIntent: ArenaGenerativeIntent | null = isPreserveEdit
+    ? (params.existingStructuredBrief?.intent ?? null)
+    : null
+  let intentError: string | undefined
+  if (!isPreserveEdit) {
+    const analyzed = await analyzeArenaGenerativeIntent({
+      userInput: plannerUserInput,
+      apiBindings: params.apiBindings,
+      designNotes: params.designNotes,
+    })
+    analyzedIntent = analyzed.intent
+    intentError = analyzed.error
+    if (analyzedIntent) {
+      logger.info('Analyzed Arena Generative UI intent', {
+        task: analyzedIntent.task,
+        workflowComplexity: analyzedIntent.workflowComplexity,
+        replan: isReplan,
+      })
+    }
+  }
+
   const planned = isPreserveEdit
     ? { brief: null as ArenaGenerativeStructuredBrief | null }
     : await planArenaGenerativeStructuredBrief({
@@ -350,6 +386,7 @@ export async function generateArenaGenerativeManifest(
         entryPath: params.entryPath,
         apiBindings: params.apiBindings,
         designNotes: params.designNotes,
+        intent: analyzedIntent,
       })
   const structuredBrief = planned.brief
   const intentBrief = isPreserveEdit ? (params.existingStructuredBrief ?? null) : structuredBrief
@@ -394,9 +431,8 @@ export async function generateArenaGenerativeManifest(
 
   const systemPrompt = buildGeneratorSystemPrompt({
     archetype: intentBrief?.archetype,
-    processingPatterns: resolveProcessingPatterns({
-      archetype: intentBrief?.archetype,
-      planned: intentBrief?.processing,
+    capabilities: resolveCapabilities({
+      planned: [...(intentBrief?.capabilities ?? []), ...(intentBrief?.processing ?? [])],
       bindings: params.apiBindings,
     }),
     hasBindings: params.apiBindings.length > 0,
@@ -636,15 +672,13 @@ export async function generateArenaGenerativeManifest(
         ? parsed.content.trim()
         : `Generated ${Object.keys(validation.manifest.pages).length} page(s).`
     const criticStatus = formatCriticStatus(critique, criticRepaired)
+    const intentStatus = formatIntentStatus(analyzedIntent, intentError)
+    const plannerStatus = formatPlannerStatus(structuredBrief, plannerError)
     const statusLines = isReplan
-      ? [
-          formatEditScopeStatus(null, false, true),
-          formatPlannerStatus(structuredBrief, plannerError),
-          criticStatus,
-        ]
+      ? [formatEditScopeStatus(null, false, true), intentStatus, plannerStatus, criticStatus]
       : isPreserveEdit
         ? [formatEditScopeStatus(editScope, false), criticStatus]
-        : [formatPlannerStatus(structuredBrief, plannerError), criticStatus]
+        : [intentStatus, plannerStatus, criticStatus]
 
     return {
       success: true,
