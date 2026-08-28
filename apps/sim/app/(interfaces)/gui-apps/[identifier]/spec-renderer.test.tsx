@@ -2193,6 +2193,8 @@ describe('SpecRenderer', () => {
     const { container } = render()
     const submit = container.querySelector('button[type="submit"]')
     expect(submit?.className).toContain('w-full')
+    const form = container.querySelector('form')
+    expect(form?.className).toContain('max-w-[var(--gui-measure')
     const input = container.querySelector('input[name="name"]')
     expect(input?.className).toContain('focus-visible:bg-[var(--gui-brand-surface,#f3f8fe)]')
   })

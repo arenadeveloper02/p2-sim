@@ -20,6 +20,7 @@ import { ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT } from '@/lib/arena-gene
 import { ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT } from '@/lib/arena-generative-ui/constitution'
 import { ARENA_GENERATIVE_UI_DATA_STATE_PROMPT } from '@/lib/arena-generative-ui/data-state-contract'
 import { goldExamplePromptForArchetype } from '@/lib/arena-generative-ui/gold-example'
+import { ARENA_GENERATIVE_UI_LAYOUT_PROMPT } from '@/lib/arena-generative-ui/professional-layout'
 import {
   type ArenaGenerativeArchetype,
   archetypeRecipe,
@@ -39,9 +40,9 @@ function headedRules(heading: string, rules: readonly string[]): string {
 
 /**
  * Spec-LLM system prompt in pipeline order: constitution → recipe → component
- * selection → mechanical component rules → data state contract → action
- * contract → interaction / responsive / a11y → JSON envelope. Still one
- * generate call.
+ * selection → professional layout → mechanical component rules → data state
+ * contract → action contract → interaction / responsive / a11y → JSON
+ * envelope. Still one generate call.
  */
 export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOptions): string {
   const recipe = options.archetype ? archetypeRecipe(options.archetype) : ''
@@ -69,6 +70,7 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
     recipe,
     goldExamplePromptForArchetype(options.archetype),
     ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT,
+    ARENA_GENERATIVE_UI_LAYOUT_PROMPT,
     headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
     ARENA_GENERATIVE_UI_DATA_STATE_PROMPT,
     ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT,

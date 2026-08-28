@@ -2304,7 +2304,7 @@ export function SpecRenderer({
         return (
           <form
             className={cn(
-              'flex flex-col gap-[var(--gui-gap,16px)]',
+              'flex w-full max-w-[var(--gui-measure,40rem)] flex-col gap-[var(--gui-gap,16px)]',
               alignItemsClass(props.align, 'stretch')
             )}
             onSubmit={handleSubmit}

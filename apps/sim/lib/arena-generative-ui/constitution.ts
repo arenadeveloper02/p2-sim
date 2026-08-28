@@ -46,7 +46,7 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
     id: 'composition',
     title: '1. COMPOSITION',
     principle:
-      'Prefer clear visual hierarchy, one primary action, progressive disclosure, and grouped sections over decorative chrome.',
+      'Prefer a content container, readable measure vs wide collections, one primary action, one dominant region, and grouped sections over decorative chrome.',
     clauses: [
       {
         ownership: 'generator',
@@ -57,6 +57,42 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
         ownership: 'generator',
         text: 'Use visual hierarchy: page title → context → primary action → content.',
         prompt: 'Use visual hierarchy: page title → context → primary action → content.',
+      },
+      {
+        ownership: 'generator',
+        text: 'Every page has a content container: Page → Section → PageHeader, then the task.',
+        prompt:
+          'Every page is Page → Section → PageHeader, then the task. Do not put Table, Form, or Repeat as a direct child of Page.',
+      },
+      {
+        ownership: 'generator',
+        text: 'Forms and prose use a readable measure; dashboards, tables, and collections stay wide.',
+        prompt:
+          'Multi-field forms and long DataText use Section width "narrow". Dashboards, Table, Repeat collections, and Sparkline use width "wide". Do not run a form the full 1280px.',
+      },
+      {
+        ownership: 'generator',
+        text: 'Avoid more than two primary content columns unless the task requires it.',
+        prompt:
+          'At most two primary content columns (Columns main+sidebar, or Grid columns 2). Grid columns 3 only for a Repeat card collection.',
+      },
+      {
+        ownership: 'generator',
+        text: 'Related controls share a toolbar.',
+        prompt:
+          'Related filters and secondary actions share one Toolbar above Table/Repeat. Do not scatter Filter, Chip, or Select through the page.',
+      },
+      {
+        ownership: 'generator',
+        text: 'Do not stack multiple visually prominent elements above the primary task.',
+        prompt:
+          'PageHeader then the task. Do not stack extra display titles, Stat rows, or Alerts above the primary task.',
+      },
+      {
+        ownership: 'generator',
+        text: 'Prefer one dominant content region per viewport.',
+        prompt:
+          'One dominant content region per viewport (the Form, the Table/Repeat, or the DataText). A Columns sidebar is supporting, not a second main.',
       },
       {
         ownership: 'generator',

@@ -5,7 +5,12 @@ import { describe, expect, it } from 'vitest'
 import { ARENA_GENERATIVE_UI_DESIGN_GUIDELINES } from '@/lib/arena-generative-ui/catalog'
 import { buildGeneratorSystemPrompt } from '@/lib/arena-generative-ui/prompt-pipeline'
 
+/** Index of a prompt heading on its own line, not a mention inside another sentence. */
 function headingIndex(prompt: string, heading: string): number {
+  const asOwnLine = `\n${heading}\n`
+  const at = prompt.indexOf(asOwnLine)
+  if (at >= 0) return at + 1
+  if (prompt.startsWith(`${heading}\n`) || prompt === heading) return 0
   return prompt.indexOf(heading)
 }
 
@@ -25,6 +30,7 @@ describe('buildGeneratorSystemPrompt', () => {
       'ARCHETYPE RECIPE: dashboard',
       'GOLD STANDARD REFERENCE LAYOUT (dashboard)',
       'COMPONENT SELECTION RULES',
+      'PROFESSIONAL LAYOUT',
       'COMPONENT RULES',
       'DATA STATE CONTRACT',
       'ACTION CONTRACT',
