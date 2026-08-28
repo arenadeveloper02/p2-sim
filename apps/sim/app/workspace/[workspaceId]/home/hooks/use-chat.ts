@@ -1124,6 +1124,19 @@ export function getReplayCompletedWorkflowToolCallIds(events: StreamBatchEvent[]
 }
 
 /**
+ * Hosted Copilot recovers in-flight client-routed workflow tools after reload.
+ * Arena Copilot already runs those tools server-side and never persists a
+ * binding, so recovering them POSTs `/execute` with a `copilotToolCallId` that
+ * 403s. Skip recovery while a stream is live and whenever the chat is on Local.
+ */
+export function shouldRecoverClientWorkflowTools(params: {
+  isSending: boolean
+  copilotBackend?: 'local' | 'external'
+}): boolean {
+  return !params.isSending && params.copilotBackend !== 'local'
+}
+
+/**
  * Which live panel the transcript is mid-action on, or null for neither.
  *
  * Used on reconnect to restore that panel, the way workflow-run recovery
@@ -2100,6 +2113,15 @@ export function useChat(
 
   const recoverPendingClientWorkflowTools = useCallback(
     async (nextMessages: ChatMessage[]) => {
+      if (
+        !shouldRecoverClientWorkflowTools({
+          isSending: sendingRef.current,
+          copilotBackend: getCopilotBackendRef.current?.(),
+        })
+      ) {
+        return
+      }
+
       const pending: ToolCallInfo[] = []
 
       for (const message of nextMessages) {

@@ -119,8 +119,9 @@ export interface ToolExecutionContext {
   /** Active tool_use id for idempotency keying. */
   activeToolCallId?: string
   /**
-   * Scopes workspace_file → edit_content intents when Local has no file-subagent
-   * span. Set to the workspace_file call id; reused by the matching edit_content.
+   * Scopes workspace_file → edit_content Redis intents. File Agent passes seed
+   * this with the specialist tool-call id (same id as the subagent span);
+   * parent-lane writes fall back to the `workspace_file` call id.
    */
   fileIntentChannelId?: string
   /** Turn-scoped store for oversized tool-result artifacts. */

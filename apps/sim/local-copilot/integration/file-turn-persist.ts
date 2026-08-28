@@ -1,15 +1,23 @@
 import { isPlainRecord, omit, toRecord } from '@sim/utils/object'
 import { extractResourcesFromToolResult } from '@/lib/copilot/resources/extraction'
 import type { MothershipResource } from '@/lib/copilot/resources/types'
+import { FILE_BODY_ARG_KEYS, firstFileBodyString } from '@/local-copilot/lib/tools/file-body-args'
 
 const FILE_BODY_TOOL_NAMES = new Set(['create_file', 'edit_content'])
 
 function omitFileBodyContent(params: Record<string, unknown>): Record<string, unknown> {
-  if (typeof params.content !== 'string') return params
+  const keysToDrop = FILE_BODY_ARG_KEYS.filter(
+    (key) => typeof params[key] === 'string' && (params[key] as string).length > 0
+  )
+  if (keysToDrop.length === 0) return params
+  let contentChars = 0
+  for (const key of keysToDrop) {
+    contentChars = Math.max(contentChars, (params[key] as string).length)
+  }
   return {
-    ...omit(params, ['content']),
+    ...omit(params, keysToDrop),
     contentOmitted: true,
-    contentChars: params.content.length,
+    contentChars,
   }
 }
 
@@ -25,14 +33,12 @@ export function stripLocalFileBodyToolParams(
   if (!FILE_BODY_TOOL_NAMES.has(toolName)) return params
   const stripped = omitFileBodyContent(params)
   const nested = isPlainRecord(stripped.args) ? stripped.args : undefined
-  if (!nested || typeof nested.content !== 'string') return stripped
+  if (!nested) return stripped
+  const nestedStripped = omitFileBodyContent(nested)
+  if (nestedStripped === nested) return stripped
   return {
     ...stripped,
-    args: {
-      ...omit(nested, ['content']),
-      contentOmitted: true,
-      contentChars: nested.content.length,
-    },
+    args: nestedStripped,
   }
 }
 
@@ -40,9 +46,10 @@ export function localFileBodyContent(
   args: Record<string, unknown> | undefined
 ): string | undefined {
   if (!args) return undefined
-  if (typeof args.content === 'string') return args.content
+  const top = firstFileBodyString(args)
+  if (top) return top
   const nested = isPlainRecord(args.args) ? args.args : undefined
-  return typeof nested?.content === 'string' ? nested.content : undefined
+  return nested ? firstFileBodyString(nested) : undefined
 }
 
 /**

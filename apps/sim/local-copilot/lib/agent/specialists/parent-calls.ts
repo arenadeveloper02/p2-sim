@@ -119,6 +119,7 @@ export async function* runParentSpecialistToolCalls(
           userMessage: resolveSpecialistBrief(call.name, parsedArgs, params.lastUserMessage),
           parentDepth,
           onEvent: enqueue,
+          parentDispatchToolCallId: call.id,
         })
         remaining -= 1
         wake?.()

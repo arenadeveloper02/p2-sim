@@ -332,7 +332,7 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'media':
       return 'Focus on image/audio/video generation and ffmpeg.'
     case 'file':
-      return `Read, create, and update workspace files. Write path is create_file → workspace_file (operation + target.path + title) → edit_content in the next round — there is no prepare_file_edit, edit_file, or run_function tool. Use function_execute only for sandbox data processing (mount via inputs, save with outputs.files), not office docs. Chat uploads/ need materialize_file into files/ before the sandbox can open them.\n\n${DOCUMENT_FORMAT_GUIDANCE}`
+      return `Read, create, and update workspace files. Write path is create_file (once) → workspace_file operation=update with target.kind=path (never kind=new_file / operation=create — that duplicates the file) → edit_content in the next round — there is no prepare_file_edit, edit_file, or run_function tool. Use function_execute only for sandbox data processing (mount via inputs, save with outputs.files), not office docs. Chat uploads/ need materialize_file into files/ before the sandbox can open them. CRITICAL: never print HTML/CSS/JS or other file source in chat or findings (no \`\`\`html fences, no raw markup). Put the body only in create_file/edit_content. Findings: 1–2 sentences naming the file and outcome.\n\n${DOCUMENT_FORMAT_GUIDANCE}`
     case 'superagent':
       return 'Focus on third-party integration actions. Authenticate if needed, then invoke the right integration tool.'
     default:
