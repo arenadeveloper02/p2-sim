@@ -32,6 +32,7 @@ describe('buildGeneratorSystemPrompt', () => {
       'COMPONENT SELECTION RULES',
       'PROFESSIONAL LAYOUT',
       'VISUAL HIERARCHY',
+      'ANTI-PATTERNS',
       'COMPONENT RULES',
       'DATA STATE CONTRACT',
       'ACTION CONTRACT',

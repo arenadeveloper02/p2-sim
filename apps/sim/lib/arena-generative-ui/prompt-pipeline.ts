@@ -1,4 +1,5 @@
 import { ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT } from '@/lib/arena-generative-ui/action-contract'
+import { ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT } from '@/lib/arena-generative-ui/anti-patterns'
 import {
   ARENA_GENERATIVE_UI_ACCESSIBILITY_RULES,
   ARENA_GENERATIVE_UI_ACTION_INPUT_RULE,
@@ -47,9 +48,9 @@ function headedRules(heading: string, rules: readonly string[]): string {
 /**
  * Spec-LLM system prompt in pipeline order: constitution → recipe → processing
  * patterns → gold → component selection → professional layout → visual
- * hierarchy → mechanical component rules → data state contract → action
- * contract → interaction / responsive / a11y → JSON envelope. Still one
- * generate call.
+ * hierarchy → anti-patterns → mechanical component rules → data state
+ * contract → action contract → interaction / responsive / a11y → JSON
+ * envelope. Still one generate call.
  */
 export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOptions): string {
   const recipe = options.archetype ? archetypeRecipe(options.archetype) : ''
@@ -81,6 +82,7 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
     ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT,
     ARENA_GENERATIVE_UI_LAYOUT_PROMPT,
     ARENA_GENERATIVE_UI_HIERARCHY_PROMPT,
+    ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT,
     headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
     ARENA_GENERATIVE_UI_DATA_STATE_PROMPT,
     ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT,

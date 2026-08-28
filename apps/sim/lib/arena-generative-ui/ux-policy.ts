@@ -30,5 +30,5 @@ export const ARENA_GENERATIVE_UI_HOST_UX_PROMPT = [
   'HOST UX: the runtime compiles loading, error, retry, save confirmation, and destructive confirm. Describe pages, copy, forms, which API, navigation, and empty-state copy. Follow DATA STATE CONTRACT and ACTION CONTRACT — do not emit a second copy of that chrome.',
   'Alert, Toast, and Modal are allowed only for in-content jobs in COMPONENT SELECTION RULES (a disclaimer, brief-asked transient copy, a focused secondary action).',
   'The host sanitizes API errors, treats EmptyState children as the next useful action, and offers Refresh on loaded pages — do not emit a Refresh Button or a second error Alert.',
-  'Never invent API rows, never create fake timed progress, and never leave a results or detail page without a Back NavLink.',
+  'Follow ANTI-PATTERNS. Never leave a results or detail page without a Back NavLink.',
 ].join(' ')

@@ -136,6 +136,10 @@ function collectActionIdsFromSpec(spec: Spec): string[] {
   return ids
 }
 
+function asTruthyFlag(value: unknown): boolean {
+  return value === true || value === 'true'
+}
+
 /**
  * Ids of every `SubmitButton` that is neither inside a `Form` nor carries its own
  * `actionId`. Those submit nothing and run nothing, so they render as a dead
@@ -162,6 +166,27 @@ function deadSubmitButtonIds(spec: Spec): string[] {
       ([id, element]) =>
         element.type === 'SubmitButton' && !insideForm.has(id) && !asString(element.props?.actionId)
     )
+    .map(([id]) => id)
+}
+
+/**
+ * Ids of every `Button` with no verb — no `actionId`, `navigateTo`, `href`,
+ * `selectItem`, or `clearItem`. Chip without `actionId` is display chrome.
+ */
+function deadButtonIds(spec: Spec): string[] {
+  const elements = (spec.elements ?? {}) as Record<string, FlatElement>
+  return Object.entries(elements)
+    .filter(([, element]) => {
+      if (element.type !== 'Button') return false
+      const props = element.props ?? {}
+      return !(
+        asString(props.actionId) ||
+        asString(props.navigateTo) ||
+        asString(props.href) ||
+        asTruthyFlag(props.selectItem) ||
+        asTruthyFlag(props.clearItem)
+      )
+    })
     .map(([id]) => id)
 }
 
@@ -324,6 +349,13 @@ export function validateArenaGenerativeManifest(
       return {
         success: false,
         error: `Page "${key}" has a SubmitButton (${deadSubmits.join(', ')}) that is not inside a Form and has no actionId, so it would do nothing. Put it inside the Form it submits, or give it an actionId.`,
+      }
+    }
+    const deadButtons = authored && !authored.has(key) ? [] : deadButtonIds(validation.data)
+    if (deadButtons.length > 0) {
+      return {
+        success: false,
+        error: `Page "${key}" has a Button (${deadButtons.join(', ')}) with no actionId, navigateTo, href, selectItem, or clearItem, so it would do nothing. Give it a verb.`,
       }
     }
     const selectItemIssue =

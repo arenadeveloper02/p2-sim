@@ -703,6 +703,80 @@ describe('validateArenaGenerativeManifest', () => {
     })
   })
 
+  describe('dead Button', () => {
+    function buttonPage(buttonProps: Record<string, unknown>): Spec {
+      return {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Home', backgroundColor: null },
+            children: ['stack'],
+          },
+          stack: {
+            type: 'Stack',
+            props: { direction: 'vertical', gap: '12px', align: null },
+            children: ['nav', 'action'],
+          },
+          nav: { type: 'NavLink', props: { label: 'Results', to: 'results' }, children: [] },
+          action: { type: 'Button', props: buttonProps, children: [] },
+        },
+      }
+    }
+
+    function manifestWith(spec: Spec) {
+      return {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: { submit_lead: { apiKey: 'qualify_lead' } },
+      }
+    }
+
+    it('rejects one with no verb', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWith(buttonPage({ label: 'Do something' })),
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('no actionId, navigateTo, href, selectItem, or clearItem')
+      expect(result.error).toContain('action')
+    })
+
+    it('accepts one with navigateTo', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWith(buttonPage({ label: 'Results', navigateTo: 'results' })),
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts one with actionId', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWith(buttonPage({ label: 'Run', actionId: 'submit_lead' })),
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
+    it('ignores the defect on a page a scoped edit did not author', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWith(buttonPage({ label: 'Do something' })),
+        { apiBindings: bindings, entryPath: 'home', authoredPagePaths: ['results'] }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+  })
+
   describe('selectItem', () => {
     function homeSpec(): Spec {
       return {

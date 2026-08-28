@@ -447,6 +447,12 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
         text: 'Keep spacing, typography and interaction patterns consistent.',
         prompt: 'Keep spacing, typography, and interaction patterns consistent.',
       },
+      {
+        ownership: 'generator',
+        text: 'Do not emit the ANTI-PATTERNS list.',
+        prompt:
+          'Do not emit the ANTI-PATTERNS list (hard-coded data, fake Stat, dead Button, unused Filter).',
+      },
     ],
   },
 ]
