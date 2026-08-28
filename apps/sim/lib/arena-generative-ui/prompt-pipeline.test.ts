@@ -48,18 +48,33 @@ describe('buildGeneratorSystemPrompt', () => {
     }
   })
 
-  it('places the recipe immediately before the gold few-shot', () => {
+  it('places selected processing patterns between the recipe and the gold few-shot', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'form-result',
+      processingPatterns: ['long-running', 'cancellable'],
+      hasBindings: true,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    const recipeAt = headingIndex(prompt, 'ARCHETYPE RECIPE: form-result')
+    const longAt = headingIndex(prompt, 'PROCESSING PATTERN: LONG-RUNNING OPERATION')
+    const cancelAt = headingIndex(prompt, 'PROCESSING PATTERN: CANCELLABLE')
+    const goldAt = headingIndex(prompt, 'GOLD STANDARD REFERENCE LAYOUT (form-result)')
+    expect(longAt).toBeGreaterThan(recipeAt)
+    expect(cancelAt).toBeGreaterThan(longAt)
+    expect(goldAt).toBeGreaterThan(cancelAt)
+    expect(prompt).not.toContain('PROCESSING PATTERN: SHORT OPERATION')
+  })
+
+  it('omits processing modules when none were selected', () => {
     const prompt = buildGeneratorSystemPrompt({
       archetype: 'form-result',
       hasBindings: false,
       hasStreamingBinding: false,
       isScopedEdit: false,
     })
-    const recipeAt = headingIndex(prompt, 'ARCHETYPE RECIPE: form-result')
-    const goldAt = headingIndex(prompt, 'GOLD STANDARD REFERENCE LAYOUT (form-result)')
-    expect(recipeAt).toBeGreaterThan(-1)
-    expect(goldAt).toBeGreaterThan(recipeAt)
-    expect(prompt.slice(recipeAt, goldAt)).not.toContain('COMPONENT RULES')
+    expect(prompt).not.toContain('PROCESSING PATTERN: SHORT OPERATION')
+    expect(prompt).not.toContain('PROCESSING PATTERN: LONG-RUNNING OPERATION')
   })
 
   it('omits the recipe when no archetype was planned and still includes the constitution', () => {

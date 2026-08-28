@@ -92,6 +92,32 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     })
     expect(parsed?.archetype).toBe('list-detail')
     expect(parsed?.pages.map((page) => page.path)).toEqual(['home', 'detail'])
+    expect(parsed?.processing).toEqual([])
+  })
+
+  it('keeps form-result processing tags and drops unknown ones', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Search',
+        purpose: 'Find a company.',
+        audience: 'Analysts',
+        archetype: 'form-result',
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Search',
+            purpose: 'Query',
+            data: 'CTA then navigate',
+            actions: ['search'],
+          },
+        ],
+        actions: [],
+        processing: ['long-running', 'cancellable', 'nope'],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.processing).toEqual(['long-running', 'cancellable'])
   })
 
   it('returns null for a manifest-shaped payload', () => {
@@ -204,14 +230,14 @@ describe('structured brief helpers', () => {
       expect(recipe).toContain(`ARCHETYPE RECIPE: ${archetype}`)
       expect(recipe).not.toContain('one Card')
     }
+    expect(archetypeRecipe('form-result')).toContain('form → processing → result')
     expect(archetypeRecipe('form-result')).toContain('SearchField')
-    expect(archetypeRecipe('form-result')).toContain('WorkingCard')
-    expect(archetypeRecipe('form-result')).toContain('not ProgressSteps')
-    expect(archetypeRecipe('form-result')).toContain('destination page')
+    expect(archetypeRecipe('form-result')).toContain('PROCESSING PATTERN')
     expect(archetypeRecipe('form-result')).toContain('inputs.targetKeyword')
     expect(archetypeRecipe('form-result')).toContain('{targetKeyword}')
     expect(archetypeRecipe('form-result')).toContain('never "field.content"')
     expect(archetypeRecipe('form-result')).toContain('Results has no onLoad')
+    expect(archetypeRecipe('form-result')).not.toContain('WorkingCard')
     expect(archetypeRecipe('form-result')).not.toContain('nested ProgressSteps')
     expect(archetypeRecipe('list-detail')).toContain('entity Cards')
     expect(archetypeRecipe('list-detail')).toContain('selectItem')
@@ -286,6 +312,8 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(system).toContain('never "users"')
     expect(system).toContain('Bindings are the data contract')
     expect(system).toContain('must not onLoad that same action')
+    expect(system).toContain('form → processing → result')
+    expect(system).toContain('form-result + long-running + cancellable')
     expect(system).not.toContain('nested ProgressSteps')
     const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
     expect(userMessage).toContain('Do not emit page specs')

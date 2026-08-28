@@ -201,6 +201,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('INTERACTION / STATE RULES')
     expect(system).toContain('HOST UX')
     expect(system).toContain('WorkingCard')
+    expect(system).toContain('PROCESSING PATTERN: SHORT OPERATION')
   })
 
   it('opens with the engineer persona and a no-markdown instruction', async () => {
@@ -772,6 +773,48 @@ describe('generateArenaGenerativeManifest', () => {
       expect(payload).toContain('"path": "detail"')
       expect(payload).toContain('Requested entryPath: home')
       expect(payload).not.toContain('Infer a small coherent sitemap')
+    })
+
+    it('composes form-result with long-running and cancellable processing patterns', async () => {
+      mockPlanBrief.mockResolvedValue({
+        brief: {
+          title: 'Analyze',
+          purpose: 'Run analysis and read the result.',
+          audience: 'Analysts',
+          archetype: 'form-result' as const,
+          entryPath: 'home',
+          pages: [
+            {
+              path: 'home',
+              title: 'Analyze',
+              purpose: 'Form',
+              data: 'CTA then navigate',
+              actions: ['run'],
+            },
+            {
+              path: 'results',
+              title: 'Result',
+              purpose: 'Answer',
+              data: 'CTA destination',
+              actions: [],
+            },
+          ],
+          actions: [],
+          processing: ['long-running', 'cancellable'],
+        },
+      })
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+
+      await generateArenaGenerativeManifest({
+        userInput: 'Analyze a company.',
+        apiBindings: [{ key: 'run', label: 'Run', kind: 'workflow', workflowId: 'wf-1' }],
+      })
+
+      const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
+      expect(system).toContain('ARCHETYPE RECIPE: form-result')
+      expect(system).toContain('PROCESSING PATTERN: LONG-RUNNING OPERATION')
+      expect(system).toContain('PROCESSING PATTERN: CANCELLABLE')
+      expect(system).not.toContain('PROCESSING PATTERN: SHORT OPERATION')
     })
 
     it('uses the planned page count for the manifest output budget', async () => {

@@ -14,6 +14,7 @@ import {
   extractManifestCandidate,
   parseLlmJsonObject,
 } from '@/lib/arena-generative-ui/parse-inputs'
+import { resolveProcessingPatterns } from '@/lib/arena-generative-ui/processing-patterns'
 import { buildGeneratorSystemPrompt } from '@/lib/arena-generative-ui/prompt-pipeline'
 import { isReplanEdit, plannerInputForReplan } from '@/lib/arena-generative-ui/replan-from-edit'
 import {
@@ -333,6 +334,11 @@ export async function generateArenaGenerativeManifest(
 
   const systemPrompt = buildGeneratorSystemPrompt({
     archetype: intentBrief?.archetype,
+    processingPatterns: resolveProcessingPatterns({
+      archetype: intentBrief?.archetype,
+      planned: intentBrief?.processing,
+      bindings: params.apiBindings,
+    }),
     hasBindings: params.apiBindings.length > 0,
     hasStreamingBinding,
     isScopedEdit,

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-prompt'
 import { parseLlmJsonObject } from '@/lib/arena-generative-ui/parse-inputs'
+import { isProcessingPattern } from '@/lib/arena-generative-ui/processing-patterns'
 import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
 import {
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
@@ -81,6 +82,11 @@ const structuredBriefSchema = z.object({
   entryPath: pagePathSchema,
   pages: z.array(structuredBriefPageSchema).min(1).max(8),
   actions: z.array(structuredBriefActionSchema).max(16).default([]),
+  processing: z
+    .array(z.string())
+    .max(5)
+    .default([])
+    .transform((values) => values.filter(isProcessingPattern)),
   emptyCopy: briefProse(200).optional(),
   errorCopy: briefProse(200).optional(),
 })
@@ -92,11 +98,12 @@ const PLANNER_SYSTEM_PROMPT = [
   'Read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write — do not rename or "improve" those. Infer only what they assumed: missing destination pages, Back, which binding is submit vs onLoad, form fields from inputSchema, result shape from outputSchema/layoutPlan, audience, and empty copy.',
   'Pick exactly one archetype:',
   '- dashboard: data on arrival via onLoad; EntityHeader, Grid of display Stat, little or no form.',
-  '- form-result: a form submits a CTA, then onSuccess.navigate to a results page. A single query field is a centered SearchField hero. Loading and empty copy live on results.',
+  '- form-result: form → processing → result. A form submits a CTA, processing happens, then onSuccess.navigate to a results page. A single query field is a centered SearchField hero. Empty copy lives on results.',
   '- list-detail: a collection of entity Cards (Repeat inside Grid) and a detail page opened with to "detail?id={item.id}" whose onLoad fetches that record.',
   '- wizard: three or more sequential steps with Next/Back; submit only on the last step.',
   'Archetype from the primary verb, not from how complete the brief is. A form or search that calls an API then shows an answer is form-result even if they never said "results page". A collection on arrival that opens one record is list-detail even if they only named the list. Metrics/overview on arrival is dashboard. Three or more sequential steps with submit at the end is wizard. Mixed briefs ("dashboard plus generate"): pick the verb they led with; extra destinations are extra pages, not a second archetype. History or past runs plus a generate form is form-result with a history page that onLoads the list binding — Generate still navigates to results. One prominent query (search, lookup, ask) is a SearchField hero, not a labelled Grid of one field.',
-  'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "emptyCopy"?, "errorCopy"? }',
+  'When archetype is form-result, also set processing to the wait kinds that apply (zero or more): short, long-running, streaming, multi-step, cancellable. Combine them — form-result + long-running + cancellable is valid. Omit short when any longer wait applies. A workflow binding is long-running; stream: true is streaming; a named step checklist is multi-step; Cancel in the brief is cancellable; a typical search/submit is short. Other archetypes omit processing or send [].',
+  'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "processing"?: ("short"|"long-running"|"streaming"|"multi-step"|"cancellable")[], "emptyCopy"?, "errorCopy"? }',
   'title is the product name. purpose is the job in one sentence. audience is a real role inferred from domain language (sales ops, analysts, writers) — never "users".',
   'pages[].path, entryPath, and actions[].fromPage are bare kebab-case keys — "home", "select-company" — never URL routes: no leading slash, no "/" for the entry page, no nested segments. Call the entry page "home" unless the brief names it.',
   '1–6 pages. Infer the smallest sitemap that completes the job: form-result always has a destination for the answer plus Back; list-detail always has a way to open a record (detail page, or same-page Open when the row already carries prose); a second binding that is a list/history is a collection page with onLoad, not a second submit. Do not invent login, settings, profile, marketing, or extra tools the job does not need.',
@@ -104,7 +111,7 @@ const PLANNER_SYSTEM_PROMPT = [
   'A dashboard, list, report, or detail page names onLoad in data. A form page does not. A results page that a CTA already navigates to must not onLoad that same action.',
   'Bindings are the data contract. Form fields come from each binding inputSchema (source form or omitted); source visitorEmail or constant are host-stamped — do not plan a visible field for them. Wire each CTA to the binding whose key the brief named, or the one whose inputs/outputs match the job when the brief only described it in words. actions[].apiKey must be a declared binding key. When no bindings were declared, actions must be [].',
   'When a binding has no outputSchema, do not plan Table or Stat columns; results are prose (DataText content) unless the brief names exact keys. When layoutPlan or outputSchema names a collection, plan Repeat/Table/Stat against those host keys, not invented ones.',
-  "emptyCopy is the zero-result sentence for that page's collection (becomes emptyText) — name the collection in the domain, not generic \"No results\". errorCopy is the failure sentence for this job.",
+  'emptyCopy is the zero-result sentence for that page\'s collection (becomes emptyText) — name the collection in the domain, not generic "No results". errorCopy is the failure sentence for this job.',
   'Give an onLoad action no onSuccessNavigate.',
   'Plan sitemap, data, and actions — not loading widgets. Do not mention ProgressBar, ProgressSteps, Skeleton, or an error Alert in pages[].purpose or data; the host compiles those.',
 ].join('\n')
@@ -118,10 +125,10 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
   ].join('\n'),
   'form-result': [
     'ARCHETYPE RECIPE: form-result',
-    'If the form is a single prominent query field, home is a centered PageHeader (kicker, display title, measure subtitle) plus SearchField with suggestion Chips and a Grid of three Icon Cards. Do not use a labelled Grid for that query.',
-    'Multi-field forms stay a left-aligned PageHeader plus fields in a 2-column Grid, one SubmitButton, no onLoad.',
-    'The submit action sets onSuccess.navigate to the results path. Results has no onLoad. Bind a markdown string on DataText "content" (or the string field name), never "field.content". Repeat entity Cards, Stat, or KeyValue bind structured keys. Offer a Back NavLink.',
-    'If the brief asks for a progress checklist or bar on the form, put that waiting chrome on the destination page instead. The form stays fields plus submit until click. Loading and emptyText live on the results page — bind Repeat, Stat, KeyValue, or DataText to the response. Echo submitted fields from the form name ({targetKeyword}, inputs.targetKeyword), not a history list key ({keyword}). When the brief names rotating status lines, a step checklist, elapsed/estimate, or Cancel, the waiting page is WorkingCard (steps from the brief, title interpolating {targetKeyword} / {clientBrand}, estimate, tip, cancelTo the form, skeleton true) above the bound result. The host ticks steps and the bar — not ProgressSteps, not a separate ProgressBar. Otherwise bind DataText and let the host skeleton.',
+    'form → processing → result. The wait itself is PROCESSING PATTERN (short, long-running, streaming, multi-step, cancellable) — compose those modules; do not invent a second wait.',
+    'form — If the form is a single prominent query field, home is a centered PageHeader (kicker, display title, measure subtitle) plus SearchField with suggestion Chips and a Grid of three Icon Cards. Do not use a labelled Grid for that query. Multi-field forms stay a left-aligned PageHeader plus fields in a 2-column Grid, one SubmitButton. No onLoad. The form stays fields plus submit until click.',
+    'processing — The submit action sets onSuccess.navigate to the results path. Waiting chrome lives on the destination, never on the form. Which wait is PROCESSING PATTERN.',
+    'result — Results has no onLoad of that CTA. Bind a markdown string on DataText "content" (or the string field name), never "field.content". Repeat entity Cards, Stat, or KeyValue bind structured keys. Echo submitted fields from the form name ({targetKeyword}, inputs.targetKeyword), not a history list key ({keyword}). emptyText lives here. Offer a Back NavLink.',
   ].join('\n'),
   'list-detail': [
     'ARCHETYPE RECIPE: list-detail',
@@ -382,7 +389,7 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
 }
 
 const BRIEF_REPAIR_USER_MESSAGE =
-  'That was not a valid structured brief. Return one JSON object in the planner shape (title, purpose, audience, archetype, entryPath, pages[], actions[]). Do not emit a manifest.'
+  'That was not a valid structured brief. Return one JSON object in the planner shape (title, purpose, audience, archetype, entryPath, pages[], actions[], processing?). Do not emit a manifest.'
 
 export type PlanStructuredBriefOutcome = {
   brief: ArenaGenerativeStructuredBrief | null
