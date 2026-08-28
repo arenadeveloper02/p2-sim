@@ -7,6 +7,7 @@ import {
   hostStatePatchFromResult,
   setStatePreservingStreamContent,
   shouldShowSaveToast,
+  visitorFacingActionError,
 } from '@/lib/arena-generative-ui/action-runtime'
 
 describe('createActionGenerationClock', () => {
@@ -43,19 +44,15 @@ describe('setStatePreservingStreamContent', () => {
 
 describe('shouldShowSaveToast', () => {
   it('shows a toast for a same-page save with no visible result patch', () => {
-    expect(
-      shouldShowSaveToast({ ok: true, streaming: false, setState: undefined })
-    ).toBe(true)
+    expect(shouldShowSaveToast({ ok: true, streaming: false, setState: undefined })).toBe(true)
   })
 
   it('skips navigate-first, streaming, and bound output', () => {
-    expect(
-      shouldShowSaveToast({ ok: true, streaming: false, navigateTo: 'results' })
-    ).toBe(false)
+    expect(shouldShowSaveToast({ ok: true, streaming: false, navigateTo: 'results' })).toBe(false)
     expect(shouldShowSaveToast({ ok: true, streaming: true })).toBe(false)
-    expect(
-      shouldShowSaveToast({ ok: true, streaming: false, setState: { content: 'Hi' } })
-    ).toBe(false)
+    expect(shouldShowSaveToast({ ok: true, streaming: false, setState: { content: 'Hi' } })).toBe(
+      false
+    )
   })
 })
 
@@ -67,6 +64,34 @@ describe('hostStatePatchFromResult', () => {
       setState: { content: '' },
     })
     expect(applied.patch.content).toBeUndefined()
-    expect(applied.patch.error).toBe('HTTP 502: upstream')
+    expect(applied.patch.error).toBe('upstream')
+  })
+})
+
+describe('visitorFacingActionError', () => {
+  it('keeps a human detail after an HTTP status', () => {
+    expect(visitorFacingActionError('HTTP 422: company is required')).toBe('company is required')
+  })
+
+  it('hides status-only failures, timeouts, and implementation detail', () => {
+    expect(visitorFacingActionError('HTTP 503')).toBe("This didn't go through. Try again.")
+    expect(visitorFacingActionError('HTTP request timed out after 5s')).toBe(
+      'This is taking too long. Try again.'
+    )
+    expect(visitorFacingActionError('Host "api.internal" is not allowlisted')).toBe(
+      "This action isn't available right now."
+    )
+    expect(visitorFacingActionError('Host "api.internal" is not allowed')).toBe(
+      "This action isn't available right now."
+    )
+    expect(visitorFacingActionError('Response exceeded 1 MB')).toBe(
+      "This didn't go through. Try again."
+    )
+    expect(visitorFacingActionError('ENCRYPTION_KEY must be set')).toBe(
+      "This action isn't available right now."
+    )
+    expect(visitorFacingActionError('Bound workflow is not deployed')).toBe(
+      "This action isn't available right now."
+    )
   })
 })

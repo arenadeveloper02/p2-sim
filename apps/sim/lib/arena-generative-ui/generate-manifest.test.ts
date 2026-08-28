@@ -192,7 +192,10 @@ describe('generateArenaGenerativeManifest', () => {
     expect(system).toContain('always emit manifest.theme')
     expect(system).toContain('ARENA DESIGN SYSTEM')
     expect(system).toContain('UNIVERSAL UI/UX CONSTITUTION')
+    expect(system).toContain('COMPONENT SELECTION RULES')
     expect(system).toContain('COMPONENT RULES')
+    expect(system).toContain('DATA STATE CONTRACT')
+    expect(system).toContain('ACTION CONTRACT')
     expect(system).toContain('INTERACTION / STATE RULES')
     expect(system).toContain('HOST UX')
     expect(system).toContain('WorkingCard')
@@ -244,6 +247,7 @@ describe('generateArenaGenerativeManifest', () => {
 
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
     expect(system).toContain('HOST UX')
+    expect(system).toContain('ACTION CONTRACT')
     expect(system).toContain('Do not emit ProgressSteps')
     expect(system).toContain('Never invent API rows')
     expect(system).not.toContain('only when the user asked')

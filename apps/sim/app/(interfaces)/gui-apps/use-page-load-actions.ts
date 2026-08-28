@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toError } from '@sim/utils/errors'
+import { visitorFacingActionError } from '@/lib/arena-generative-ui/action-runtime'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import { clearedActionErrorState } from '@/lib/arena-generative-ui/types'
 
@@ -23,6 +24,13 @@ interface UsePageLoadActionsOptions {
   setLoadPending: (actionId: string, pending: boolean) => void
 }
 
+export interface UsePageLoadActionsResult {
+  /** Re-run current page onLoad without blanking existing data. */
+  reload: () => void
+  /** True after this page's onLoad has been attempted (or skipped for a CTA). */
+  canRefresh: boolean
+}
+
 /**
  * Runs a page's `onLoad` actions once on arrival so the page can show data before
  * the user interacts with anything.
@@ -33,9 +41,9 @@ interface UsePageLoadActionsOptions {
  *
  * Each load action is pending independently so a stats Stat does not stay
  * skeletoned after its response arrived just because a sibling list is still
- * in flight.
+ * in flight. `reload` re-runs the same actions without `resetState`.
  */
-export function usePageLoadActions(options: UsePageLoadActionsOptions): void {
+export function usePageLoadActions(options: UsePageLoadActionsOptions): UsePageLoadActionsResult {
   const optionsRef = useRef(options)
   useEffect(() => {
     optionsRef.current = options
@@ -46,12 +54,57 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): void {
       ? `${options.pagePath}|${options.actionIds.join(',')}|${JSON.stringify(options.values)}`
       : ''
   const startedKeyRef = useRef('')
+  const generationRef = useRef(0)
+  const [canRefresh, setCanRefresh] = useState(false)
+
+  const runLoads = useCallback(async (reset: boolean) => {
+    const generation = (generationRef.current += 1)
+    const { actionIds, values, runAction, mergeState, resetState, setLoadPending } =
+      optionsRef.current
+    if (actionIds.length === 0) return
+
+    if (reset) resetState()
+    else mergeState(clearedActionErrorState())
+
+    for (const actionId of actionIds) {
+      setLoadPending(actionId, true)
+    }
+
+    const results = await Promise.allSettled(
+      actionIds.map(async (actionId) => {
+        try {
+          const result = await runAction(actionId, values)
+          if (generation === generationRef.current && result.setState) {
+            mergeState(result.setState, result.appendKeys)
+          }
+          return result
+        } finally {
+          if (generation === generationRef.current) setLoadPending(actionId, false)
+        }
+      })
+    )
+    if (generation !== generationRef.current) return
+
+    let failure = ''
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'rejected') {
+        failure = failure || toError(result.reason).message || 'Failed to load this page'
+        continue
+      }
+      if (!result.value.ok) {
+        failure = failure || result.value.error || `Action "${actionIds[index]}" failed`
+      }
+    }
+    if (failure) {
+      mergeState({ error: visitorFacingActionError(failure) })
+    }
+  }, [])
 
   useEffect(() => {
     if (!loadKey) {
-      // Visiting a page without onLoad must not leave the previous page's key in
-      // place, or coming back to that page would be treated as already loaded.
       startedKeyRef.current = ''
+      generationRef.current += 1
+      setCanRefresh(false)
       return
     }
     if (startedKeyRef.current === loadKey) {
@@ -59,56 +112,29 @@ export function usePageLoadActions(options: UsePageLoadActionsOptions): void {
     }
     startedKeyRef.current = loadKey
 
-    let cancelled = false
-    const { actionIds, values, actionPending, runAction, mergeState, resetState, setLoadPending } =
-      optionsRef.current
+    const { actionIds, actionPending, setLoadPending } = optionsRef.current
+    setCanRefresh(true)
 
     if (actionPending) {
-      mergeState(clearedActionErrorState())
+      optionsRef.current.mergeState(clearedActionErrorState())
       return
     }
 
-    resetState()
-    for (const actionId of actionIds) {
-      setLoadPending(actionId, true)
-    }
-
-    void (async () => {
-      const results = await Promise.allSettled(
-        actionIds.map(async (actionId) => {
-          try {
-            const result = await runAction(actionId, values)
-            if (!cancelled && result.setState) {
-              mergeState(result.setState, result.appendKeys)
-            }
-            return result
-          } finally {
-            if (!cancelled) setLoadPending(actionId, false)
-          }
-        })
-      )
-      if (cancelled) return
-
-      let failure = ''
-      for (const [index, result] of results.entries()) {
-        if (result.status === 'rejected') {
-          failure = failure || toError(result.reason).message || 'Failed to load this page'
-          continue
-        }
-        if (!result.value.ok) {
-          failure = failure || result.value.error || `Action "${actionIds[index]}" failed`
-        }
-      }
-      if (failure) {
-        mergeState({ error: failure })
-      }
-    })()
+    void runLoads(true)
 
     return () => {
-      cancelled = true
+      generationRef.current += 1
+      startedKeyRef.current = ''
       for (const actionId of actionIds) {
         setLoadPending(actionId, false)
       }
     }
-  }, [loadKey])
+  }, [loadKey, runLoads])
+
+  const reload = useCallback(() => {
+    if (!startedKeyRef.current) return
+    void runLoads(false)
+  }, [runLoads])
+
+  return { reload, canRefresh }
 }

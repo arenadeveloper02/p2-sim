@@ -3,12 +3,12 @@
  */
 import type { Spec } from '@json-render/core'
 import { describe, expect, it } from 'vitest'
+import { goldListDetailManifest } from '@/lib/arena-generative-ui/gold-example-archetypes'
 import {
   twoPageApiBindings,
   twoPageHomeSpec,
   twoPageManifest,
 } from '@/lib/arena-generative-ui/two-page-app.fixture'
-import { goldListDetailManifest } from '@/lib/arena-generative-ui/gold-example-archetypes'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 import {
   compiledPageFromManifest,
@@ -114,7 +114,7 @@ describe('compileGenerativeUx', () => {
     expect(compiled.uxPlan.actions.delete_item).toEqual({
       kind: 'mutation',
       confirm: true,
-      retry: true,
+      retry: false,
     })
   })
 
@@ -492,9 +492,9 @@ describe('injectSamePageSelectChrome', () => {
     )
     expect(types).not.toContain('DataText')
     expect(compiled.elements?.[UX_COMPILER_SELECT_BACK_KEY]).toBeTruthy()
-    expect(
-      (compiled.elements?.repeat as { props?: Record<string, unknown> }).props?.showWhen
-    ).toBe('!selectedId')
+    expect((compiled.elements?.repeat as { props?: Record<string, unknown> }).props?.showWhen).toBe(
+      '!selectedId'
+    )
   })
 
   it('does not inject Back when a clearItem button already exists', () => {

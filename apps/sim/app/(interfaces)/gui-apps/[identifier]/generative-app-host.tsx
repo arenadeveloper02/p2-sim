@@ -22,6 +22,7 @@ import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-rend
 import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import {
+  ActionRefreshButton,
   ActionSuccessToast,
   DestructiveConfirmDialog,
 } from '@/app/(interfaces)/gui-apps/generative-app-overlays'
@@ -116,7 +117,7 @@ export function GenerativeAppHost({
     uxPlan: config?.uxPlan,
   })
 
-  usePageLoadActions({
+  const { reload, canRefresh } = usePageLoadActions({
     pagePath,
     actionIds: config?.pageOnLoad?.[pagePath] ?? [],
     values: pageParams,
@@ -183,6 +184,7 @@ export function GenerativeAppHost({
           onRetry={actionError && runtime.canRetry ? runtime.retry : undefined}
         />
       ) : null}
+      {canRefresh ? <ActionRefreshButton onRefresh={reload} /> : null}
       <SpecRenderErrorBoundary key={pagePath} fallbackTitle='This page failed to render'>
         <SpecRenderer
           spec={pageSpec}

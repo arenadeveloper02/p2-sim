@@ -374,8 +374,11 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
 
     expect(container.textContent).toContain('Partial answer')
     expect(container.querySelector('[data-testid="action-error-banner"]')?.textContent).toContain(
-      'HTTP 502: upstream'
+      'upstream'
     )
+    expect(
+      container.querySelector('[data-testid="action-error-banner"]')?.textContent
+    ).not.toContain('HTTP 502')
   })
 
   it('surfaces unresolved statePath as copyable edit instructions', () => {
@@ -476,12 +479,14 @@ describe('GenerativeAppPreviewHost page onLoad', () => {
       values: { id: 'lead_7' },
     })
     expect(container.textContent).toContain('91')
+    expect(container.querySelector('[data-testid="action-refresh"]')).toBeTruthy()
   })
 
   it('leaves the form page alone, since only results declares onLoad', async () => {
     await renderAt('home')
 
     expect(mockMutateAsync).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="action-refresh"]')).toBeNull()
   })
 
   it('does not run onLoad while a CTA is still writing this page', async () => {

@@ -495,7 +495,7 @@ function planActions(
         binding: byKey.get(action.apiKey),
       }),
       confirm: confirmIds.has(actionId),
-      retry: true,
+      retry: !confirmIds.has(actionId),
     }
   }
   return plan
@@ -566,8 +566,7 @@ export function injectSamePageSelectChrome(spec: Spec, pagePath: string): Spec {
     const insertParentId =
       detailIds
         .map((id) => (elements[id]?.type === 'Section' ? id : parents.get(id)))
-        .find((id): id is string => Boolean(id && elements[id])) ??
-      findInsertParentId(cloned)
+        .find((id): id is string => Boolean(id && elements[id])) ?? findInsertParentId(cloned)
     if (!insertParentId) return { ...cloned, elements }
     const parent = elements[insertParentId]
     if (!parent) return { ...cloned, elements }

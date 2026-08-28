@@ -7,6 +7,56 @@ import {
 
 export const GENERATIVE_APP_SUCCESS_TOAST_MS = 4000
 
+const VISITOR_ERROR_FAILED = "This didn't go through. Try again."
+const VISITOR_ERROR_TIMEOUT = 'This is taking too long. Try again.'
+const VISITOR_ERROR_UNAVAILABLE = "This action isn't available right now."
+
+const IMPLEMENTATION_DETAIL =
+  /ENCRYPTION_KEY|allowlist|not allowlisted|https?:\/\/|ECONNREFUSED|workflowId|secret name|stack trace|\bat [\w$.]+\s*\(/i
+
+/**
+ * Strip HTTP status, URLs, and implementation detail so the visitor banner
+ * explains the problem without leaking internals.
+ */
+export function visitorFacingActionError(raw: string): string {
+  const text = raw.trim()
+  if (!text) return VISITOR_ERROR_FAILED
+
+  if (/timed out/i.test(text) || /\btimeout\b/i.test(text)) return VISITOR_ERROR_TIMEOUT
+  if (/exceeded 1 MB/i.test(text) || /too large/i.test(text)) return VISITOR_ERROR_FAILED
+  if (
+    /allowlist/i.test(text) ||
+    /not allowlisted/i.test(text) ||
+    /Host "[^"]+" is not allowed/i.test(text) ||
+    /ENCRYPTION_KEY/i.test(text) ||
+    /not deployed/i.test(text) ||
+    /Bound workflow/i.test(text) ||
+    /missing workflowId/i.test(text)
+  ) {
+    return VISITOR_ERROR_UNAVAILABLE
+  }
+
+  const http = text.match(/^HTTP\s+(\d+)\s*(?::\s*(.*))?$/i)
+  if (http) {
+    const detail = http[2]?.trim() ?? ''
+    if (detail && !IMPLEMENTATION_DETAIL.test(detail)) {
+      return stripVisitorErrorNoise(detail)
+    }
+    return VISITOR_ERROR_FAILED
+  }
+
+  if (IMPLEMENTATION_DETAIL.test(text)) return VISITOR_ERROR_UNAVAILABLE
+  return stripVisitorErrorNoise(text)
+}
+
+function stripVisitorErrorNoise(value: string): string {
+  return value
+    .replace(/^HTTP\s+\d+\s*:\s*/i, '')
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export interface GenerativeAppLastAction {
   actionId: string
   values: Record<string, unknown>
@@ -81,13 +131,14 @@ export function shouldShowSaveToast(options: {
 /**
  * Host state patch for a settled action. Does not navigate — caller owns that.
  */
-export function hostStatePatchFromResult(
-  result: RunDeployedAppActionResult
-): { patch: Record<string, unknown>; appendKeys?: string[] } {
+export function hostStatePatchFromResult(result: RunDeployedAppActionResult): {
+  patch: Record<string, unknown>
+  appendKeys?: string[]
+} {
   const preserved = setStatePreservingStreamContent(result.setState, result.ok)
   const patch: Record<string, unknown> = preserved ? { ...preserved } : {}
   if (!result.ok) {
-    patch[ARENA_GENERATIVE_ERROR_KEY] = result.error ?? 'Action failed'
+    patch[ARENA_GENERATIVE_ERROR_KEY] = visitorFacingActionError(result.error ?? 'Action failed')
   }
   return {
     patch,

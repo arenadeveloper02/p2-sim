@@ -5,7 +5,10 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
 import { flushSync } from 'react-dom'
-import { actionHiddenInputsFrom, actionHostKeysFrom } from '@/lib/arena-generative-ui/binding-layout-plan'
+import {
+  actionHiddenInputsFrom,
+  actionHostKeysFrom,
+} from '@/lib/arena-generative-ui/binding-layout-plan'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import {
   collectRenderDiagnostics,
@@ -31,6 +34,7 @@ import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-rend
 import { ActionErrorBanner } from '@/app/(interfaces)/gui-apps/action-error-banner'
 import { useGenerativeAppHostState } from '@/app/(interfaces)/gui-apps/generative-app-host-state'
 import {
+  ActionRefreshButton,
   ActionSuccessToast,
   DestructiveConfirmDialog,
 } from '@/app/(interfaces)/gui-apps/generative-app-overlays'
@@ -130,7 +134,7 @@ export function GenerativeAppPreviewHost({
     uxPlan,
   })
 
-  usePageLoadActions({
+  const { reload, canRefresh } = usePageLoadActions({
     pagePath,
     actionIds: manifest?.pages[pagePath]?.onLoad ?? [],
     values: pageParams,
@@ -207,6 +211,7 @@ export function GenerativeAppPreviewHost({
             onRetry={actionError && runtime.canRetry ? runtime.retry : undefined}
           />
         ) : null}
+        {canRefresh ? <ActionRefreshButton onRefresh={reload} /> : null}
         <PreviewDiagnosticsBanner instructions={editInstructions} />
         <SpecRenderErrorBoundary
           key={renderKey}

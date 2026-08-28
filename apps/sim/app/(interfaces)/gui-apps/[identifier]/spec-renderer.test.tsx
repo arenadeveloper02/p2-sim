@@ -14,11 +14,11 @@ vi.mock('streamdown/styles.css', () => ({}))
 
 vi.mock('@/app/(interfaces)/gui-apps/generative-app-theme.css', () => ({}))
 
-import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 import {
   type ArenaGenerativeUxPlan,
   injectSamePageSelectChrome,
 } from '@/lib/arena-generative-ui/ux-compiler'
+import { SpecRenderer } from '@/app/(interfaces)/gui-apps/[identifier]/spec-renderer'
 
 const homeSpec: Spec = {
   root: 'page',
@@ -269,10 +269,7 @@ describe('SpecRenderer', () => {
           .querySelector('form')
           ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
       })
-      expect(onRunAction).toHaveBeenCalledWith(
-        'save',
-        expect.objectContaining({ company: 'Acme' })
-      )
+      expect(onRunAction).toHaveBeenCalledWith('save', expect.objectContaining({ company: 'Acme' }))
       expect(onRunAction.mock.calls[0]?.[1]).not.toHaveProperty('userEmail')
     })
 
@@ -636,10 +633,12 @@ describe('SpecRenderer', () => {
       },
     }
 
-    it('renders one Card per array item as a direct Grid child', () => {
+    it('renders one Card per array item as a Grid item', () => {
       const { container } = render({ spec: repeatSpec, state: { articles } })
       const grid = container.querySelector('.grid') as HTMLElement
-      const cards = Array.from(grid.children)
+      const wrapper = grid.firstElementChild as HTMLElement
+      expect(wrapper.className).toContain('contents')
+      const cards = Array.from(wrapper.children)
       expect(cards).toHaveLength(2)
       expect(cards[0]?.querySelector('h2')?.textContent).toBe('First')
       expect(cards[1]?.querySelector('h2')?.textContent).toBe('Second')
@@ -1214,6 +1213,29 @@ describe('SpecRenderer', () => {
     expect(container.textContent).toContain('New orders will show up here.')
   })
 
+  it('renders EmptyState children as the next useful action', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['empty'] },
+        empty: {
+          type: 'EmptyState',
+          props: { title: 'No companies yet', body: 'Search to add the first one.' },
+          children: ['go'],
+        },
+        go: { type: 'Button', props: { label: 'Search companies' }, children: [] },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('[data-testid="empty-state"]')?.textContent).toContain(
+      'Search companies'
+    )
+    const action = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Search companies'
+    )
+    expect(action).toBeTruthy()
+  })
+
   describe('skeletons', () => {
     const skeletonSpec = (type: string, props: Record<string, unknown>): Spec => ({
       root: 'page',
@@ -1278,6 +1300,17 @@ describe('SpecRenderer', () => {
     ])('drops the %s skeleton once data arrives', (type, props, state) => {
       const { container } = render({ spec: skeletonSpec(type, props), pending: true, state })
       expect(skeletonCount(container)).toBe(0)
+    })
+
+    it('keeps a populated Table visible and busy while it refetches', () => {
+      const { container } = render({
+        spec: skeletonSpec('Table', { statePath: 'articles', columns: 'title' }),
+        pending: true,
+        state: { articles: [{ title: 'Kept row' }] },
+      })
+      expect(skeletonCount(container)).toBe(0)
+      expect(container.textContent).toContain('Kept row')
+      expect(container.querySelector('[aria-busy="true"]')).toBeTruthy()
     })
 
     it('leaves an unbound Table alone while pending', () => {
@@ -1700,7 +1733,7 @@ describe('SpecRenderer', () => {
             props: {
               title: "Working on '{targetKeyword}' for {clientBrand}...",
               steps:
-                'Connecting to the recommendation agent…\nResearching the client\'s market & competitors…\nAnalyzing keyword demand & search intent…\nScoring topic opportunities…\nDrafting article recommendations…',
+                "Connecting to the recommendation agent…\nResearching the client's market & competitors…\nAnalyzing keyword demand & search intent…\nScoring topic opportunities…\nDrafting article recommendations…",
               estimate: 'Usually takes 90–150s',
               intervalMs: 2000,
               tip: "Tip: Articles targeting '{targetKeyword}' perform best when every H2 maps to one distinct search intent.",
@@ -1729,9 +1762,9 @@ describe('SpecRenderer', () => {
         vi.advanceTimersByTime(2000)
       })
 
-      expect(container.querySelector('[data-testid="working-card-bar"]')?.getAttribute('aria-valuenow')).toBe(
-        '40'
-      )
+      expect(
+        container.querySelector('[data-testid="working-card-bar"]')?.getAttribute('aria-valuenow')
+      ).toBe('40')
       expect(container.querySelectorAll('li')[0]?.className).toContain('line-through')
 
       act(() => {
@@ -2182,6 +2215,43 @@ describe('SpecRenderer', () => {
     expect(submit?.querySelector('[data-testid="action-busy"]')).toBeTruthy()
   })
 
+  it('shows busy chrome on a pending Chip with actionId', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['run', 'hint'] },
+        run: {
+          type: 'Chip',
+          props: { text: 'Analyze', actionId: 'analyze' },
+          children: [],
+        },
+        hint: { type: 'Chip', props: { text: 'Hint', setValue: 'query=x' }, children: [] },
+      },
+    }
+    const { container } = render({ spec, pending: true })
+    const run = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Analyze')
+    )
+    const hint = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Hint')
+    )
+    expect(run?.disabled).toBe(true)
+    expect(run?.getAttribute('aria-busy')).toBe('true')
+    expect(run?.querySelector('[data-testid="action-busy"]')).toBeTruthy()
+    expect(hint?.disabled).toBe(false)
+    expect(hint?.querySelector('[data-testid="action-busy"]')).toBeNull()
+  })
+
+  it('leaves a form TextInput enabled while the submit control is pending', () => {
+    const { container } = render({ pending: true })
+    const input = container.querySelector('input[name="name"]') as HTMLInputElement
+    expect(input.disabled).toBe(false)
+    const submit = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Submit')
+    )
+    expect(submit?.disabled).toBe(true)
+  })
+
   it('uses the current path for Tabs when it matches an item, otherwise activePath', () => {
     const spec: Spec = {
       root: 'page',
@@ -2279,5 +2349,151 @@ describe('SpecRenderer', () => {
     })
     expect(container.querySelector('[data-testid="image-fallback"]')?.textContent).toBe('Logo')
     expect(container.querySelector('img')).toBeNull()
+  })
+
+  describe('catalog Filter, Drawer, Modal, Toast', () => {
+    it('renders Filter children in a toolbar', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['filters'] },
+          filters: {
+            type: 'Filter',
+            props: {},
+            children: ['status'],
+          },
+          status: { type: 'Chip', props: { text: 'Active' }, children: [] },
+        },
+      }
+      const { container } = render({ spec })
+      const filter = container.querySelector('[data-testid="filter"]')
+      expect(filter).toBeTruthy()
+      expect(filter?.textContent).toContain('Active')
+    })
+
+    it('hides Drawer until showWhen matches', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['list', 'drawer'] },
+          list: { type: 'Text', props: { text: 'Company list' }, children: [] },
+          drawer: {
+            type: 'Drawer',
+            props: { title: 'Detail', showWhen: 'selectedId' },
+            children: ['body'],
+          },
+          body: { type: 'Text', props: { text: 'Row detail' }, children: [] },
+        },
+      }
+      const { container } = render({ spec, state: {} })
+      expect(container.querySelector('[data-testid="drawer"]')).toBeNull()
+      expect(container.textContent).toContain('Company list')
+    })
+
+    it('shows Drawer when showWhen matches, keeps the list visible, and close clears the item', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['list', 'drawer'] },
+          list: { type: 'Text', props: { text: 'Company list' }, children: [] },
+          drawer: {
+            type: 'Drawer',
+            props: { title: 'Detail', showWhen: 'selectedId' },
+            children: ['body'],
+          },
+          body: { type: 'Text', props: { text: 'Row detail' }, children: [] },
+        },
+      }
+      const { container, onClearItem } = render({ spec, state: { selectedId: 'co_1' } })
+      const drawer = container.querySelector('[data-testid="drawer"]')
+      expect(drawer).toBeTruthy()
+      expect(container.textContent).toContain('Company list')
+      expect(drawer?.textContent).toContain('Row detail')
+      act(() => {
+        container
+          .querySelector('[data-testid="drawer-close"]')
+          ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onClearItem).toHaveBeenCalled()
+      expect(container.querySelector('[data-testid="drawer"]')).toBeNull()
+    })
+
+    it('hides Modal until showWhen matches', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['modal'] },
+          modal: {
+            type: 'Modal',
+            props: { title: 'Rename', showWhen: 'selectedId' },
+            children: ['copy'],
+          },
+          copy: { type: 'Text', props: { text: 'Rename this record' }, children: [] },
+        },
+      }
+      const { container } = render({ spec, state: {} })
+      expect(container.querySelector('[data-testid="modal"]')).toBeNull()
+    })
+
+    it('shows Modal when showWhen matches and close clears the item', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['modal'] },
+          modal: {
+            type: 'Modal',
+            props: { title: 'Rename', showWhen: 'selectedId' },
+            children: ['copy'],
+          },
+          copy: { type: 'Text', props: { text: 'Rename this record' }, children: [] },
+        },
+      }
+      const { container, onClearItem } = render({ spec, state: { selectedId: 'rec_1' } })
+      const modal = container.querySelector('[data-testid="modal"]')
+      expect(modal).toBeTruthy()
+      expect(modal?.textContent).toContain('Rename this record')
+      act(() => {
+        container
+          .querySelector('[data-testid="modal-close"]')
+          ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onClearItem).toHaveBeenCalled()
+      expect(container.querySelector('[data-testid="modal"]')).toBeNull()
+    })
+
+    it('hides Toast until showWhen is true', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['toast'] },
+          toast: {
+            type: 'Toast',
+            props: { text: 'Link copied', tone: 'success', showWhen: 'selectedId' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({ spec, state: {} })
+      expect(container.querySelector('[data-testid="catalog-toast"]')).toBeNull()
+    })
+
+    it('shows Toast when showWhen is true without using the host save toast', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Home' }, children: ['toast'] },
+          toast: {
+            type: 'Toast',
+            props: { text: 'Link copied', tone: 'success', showWhen: 'selectedId' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({ spec, state: { selectedId: 'row_1' } })
+      expect(container.querySelector('[data-testid="catalog-toast"]')?.textContent).toBe(
+        'Link copied'
+      )
+      expect(container.querySelector('[data-testid="action-success-toast"]')).toBeNull()
+    })
   })
 })

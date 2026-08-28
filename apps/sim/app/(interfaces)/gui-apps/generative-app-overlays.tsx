@@ -116,3 +116,26 @@ export function DestructiveConfirmDialog({ onCancel, onConfirm }: DestructiveCon
     </div>
   )
 }
+
+interface ActionRefreshButtonProps {
+  onRefresh: () => void
+}
+
+/**
+ * Host refresh for a page that has already attempted onLoad. Does not blank
+ * bound regions; SpecRenderer keeps existing data while pending.
+ */
+export function ActionRefreshButton({ onRefresh }: ActionRefreshButtonProps) {
+  return (
+    <div className='flex justify-end px-6 py-2'>
+      <button
+        type='button'
+        data-testid='action-refresh'
+        onClick={onRefresh}
+        className='rounded-[var(--gui-radius,12px)] px-3 py-1 font-medium text-[var(--gui-text,#2c2d33)] text-sm hover:bg-[var(--gui-canvas,#f7f8f9)] focus-visible:outline-2 focus-visible:outline-[var(--gui-brand,#1a73e8)] focus-visible:outline-offset-2'
+      >
+        Refresh
+      </button>
+    </div>
+  )
+}

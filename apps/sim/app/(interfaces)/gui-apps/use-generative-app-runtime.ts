@@ -9,6 +9,7 @@ import {
   hostStatePatchFromResult,
   type RunGenerativeAppActionMeta,
   shouldShowSaveToast,
+  visitorFacingActionError,
 } from '@/lib/arena-generative-ui/action-runtime'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
@@ -151,7 +152,9 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       } catch (error) {
         if (!clockRef.current.isCurrent(actionId, generation)) return
         current.logger.error('App action failed', { error: toError(error).message })
-        current.mergeState({ error: toError(error).message || 'Action failed' })
+        current.mergeState({
+          error: visitorFacingActionError(toError(error).message || 'Action failed'),
+        })
       } finally {
         endFlight(actionId)
         if (clockRef.current.isCurrent(actionId, generation)) {
@@ -177,7 +180,9 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       } catch (error) {
         if (!clockRef.current.isCurrent(actionId, generation)) return
         current.logger.error('App action failed', { error: toError(error).message })
-        current.mergeState({ error: toError(error).message || 'Action failed' })
+        current.mergeState({
+          error: visitorFacingActionError(toError(error).message || 'Action failed'),
+        })
       } finally {
         endFlight(actionId)
         if (clockRef.current.isCurrent(actionId, generation)) {

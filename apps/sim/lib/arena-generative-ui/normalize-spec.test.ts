@@ -151,6 +151,10 @@ describe('normalizeGeneratedSpec', () => {
     ['HeroHeader', 'PageHeader'],
     ['StatusCard', 'WorkingCard'],
     ['LoadingCard', 'WorkingCard'],
+    ['Dialog', 'Modal'],
+    ['FilterBar', 'Filter'],
+    ['Notification', 'Toast'],
+    ['Sheet', 'Drawer'],
   ])('aliases %s to %s', (alias, canonical) => {
     const spec = normalizeGeneratedSpec({
       root: 'page',

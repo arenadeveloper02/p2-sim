@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
+  useRef,
   useState,
 } from 'react'
 import type { Spec } from '@json-render/core'
@@ -30,7 +31,10 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react'
-import type { RunGenerativeAppActionMeta } from '@/lib/arena-generative-ui/action-runtime'
+import {
+  GENERATIVE_APP_SUCCESS_TOAST_MS,
+  type RunGenerativeAppActionMeta,
+} from '@/lib/arena-generative-ui/action-runtime'
 import {
   isActionControlPending,
   isBoundPathPending,
@@ -586,7 +590,12 @@ function WorkingCardView({
               <button
                 type='button'
                 data-testid='working-card-cancel'
-                className={cn(BUTTON_BASE_CLASS, BUTTON_VARIANT_CLASSES.outline, BUTTON_SIZE_CLASSES.sm, 'w-fit')}
+                className={cn(
+                  BUTTON_BASE_CLASS,
+                  BUTTON_VARIANT_CLASSES.outline,
+                  BUTTON_SIZE_CLASSES.sm,
+                  'w-fit'
+                )}
                 onClick={onCancel}
               >
                 {cancelLabel}
@@ -725,10 +734,12 @@ function StateTable({
   value,
   columns,
   style,
+  busy,
 }: {
   value: unknown
   columns?: string
   style?: CSSProperties
+  busy?: boolean
 }) {
   const declaredHeaders = (columns ?? '')
     .split(',')
@@ -739,6 +750,7 @@ function StateTable({
   if (headers.length === 0 && rows.length === 0) return null
   return (
     <div
+      aria-busy={busy || undefined}
       className='w-full overflow-x-auto rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)]'
       style={style}
     >
@@ -779,10 +791,13 @@ function StateTable({
   )
 }
 
-function StateKeyValue({ pairs }: { pairs: Array<[string, string]> }) {
+function StateKeyValue({ pairs, busy }: { pairs: Array<[string, string]>; busy?: boolean }) {
   if (pairs.length === 0) return null
   return (
-    <dl className='grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-6 gap-y-3 text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]'>
+    <dl
+      aria-busy={busy || undefined}
+      className='grid w-full grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-6 gap-y-3 text-[length:var(--gui-body-size,16px)] leading-[var(--gui-body-leading,24px)]'
+    >
       {pairs.map(([key, value]) => (
         <Fragment key={key}>
           <dt className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'>
@@ -1135,6 +1150,182 @@ function CatalogImage({
 }
 
 /**
+ * Local overlay chrome for catalog Modal / Drawer. Uses `--gui-*` tokens, not editor ChipModal.
+ */
+function CatalogOverlayShell({
+  testId,
+  title,
+  placement,
+  onClose,
+  children,
+}: {
+  testId: string
+  title: string
+  placement: 'modal' | 'drawer-left' | 'drawer-right'
+  onClose: () => void
+  children: ReactNode
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  const titleId = `${testId}-title`
+
+  useEffect(() => {
+    const previous = document.activeElement
+    const focusable = dialogRef.current?.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    focusable?.focus()
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCloseRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      if (previous instanceof HTMLElement) previous.focus()
+    }
+  }, [])
+
+  const isDrawer = placement !== 'modal'
+  const drawerSide = placement === 'drawer-left' ? 'left-0' : 'right-0'
+
+  return (
+    <div
+      className={
+        isDrawer
+          ? 'pointer-events-none fixed inset-0 z-30'
+          : 'fixed inset-0 z-30 flex items-center justify-center bg-[color-mix(in_srgb,var(--gui-text,#2c2d33)_40%,transparent)] p-4'
+      }
+    >
+      <button
+        type='button'
+        aria-label='Close'
+        className={cn(
+          'absolute inset-0 cursor-default bg-transparent',
+          isDrawer ? 'pointer-events-auto' : null
+        )}
+        onClick={() => onCloseRef.current()}
+      />
+      <div
+        ref={dialogRef}
+        role='dialog'
+        aria-modal='true'
+        aria-labelledby={titleId}
+        data-testid={testId}
+        className={cn(
+          'pointer-events-auto flex max-h-[min(90vh,720px)] flex-col overflow-hidden border border-[var(--gui-border,#e8e8ed)] bg-[var(--gui-surface,#fff)] shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]',
+          isDrawer
+            ? cn('absolute top-0 bottom-0 w-[min(100%,24rem)]', drawerSide)
+            : 'relative z-10 w-full max-w-lg rounded-[var(--gui-radius,12px)]'
+        )}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key !== 'Tab') return
+          const nodes = dialogRef.current?.querySelectorAll<HTMLElement>(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          )
+          if (!nodes?.length) return
+          const first = nodes[0]
+          const last = nodes[nodes.length - 1]
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault()
+            last.focus()
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault()
+            first.focus()
+          }
+        }}
+      >
+        <div className='flex items-center justify-between gap-3 border-[var(--gui-border,#e8e8ed)] border-b px-4 py-3'>
+          <h2 id={titleId} className='font-semibold text-[var(--gui-text,#2c2d33)] text-base'>
+            {title}
+          </h2>
+          <button
+            type='button'
+            data-testid={`${testId}-close`}
+            className='rounded-[var(--gui-radius,12px)] px-2 py-1 text-[var(--gui-text-muted,#6b7280)] text-sm hover:bg-[var(--gui-surface-muted,#f7f7f8)]'
+            onClick={() => onCloseRef.current()}
+          >
+            Close
+          </button>
+        </div>
+        <div className='min-h-0 flex-1 overflow-auto p-4'>{children}</div>
+      </div>
+    </div>
+  )
+}
+
+function DismissibleCatalogOverlay({
+  open,
+  title,
+  testId,
+  placement,
+  onClearItem,
+  children,
+}: {
+  open: boolean
+  title: string
+  testId: string
+  placement: 'modal' | 'drawer-left' | 'drawer-right'
+  onClearItem?: () => void
+  children: ReactNode
+}) {
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    if (!open) setDismissed(false)
+  }, [open])
+
+  if (!open || dismissed) return null
+
+  return (
+    <CatalogOverlayShell
+      testId={testId}
+      title={title}
+      placement={placement}
+      onClose={() => {
+        setDismissed(true)
+        onClearItem?.()
+      }}
+    >
+      {children}
+    </CatalogOverlayShell>
+  )
+}
+
+function CatalogToastView({ text, tone }: { text: string; tone: unknown }) {
+  const [hidden, setHidden] = useState(false)
+
+  useEffect(() => {
+    setHidden(false)
+    const timer = window.setTimeout(() => setHidden(true), GENERATIVE_APP_SUCCESS_TOAST_MS)
+    return () => window.clearTimeout(timer)
+  }, [text])
+
+  if (hidden) return null
+
+  return (
+    <div
+      role='status'
+      data-testid='catalog-toast'
+      className='pointer-events-none fixed inset-x-0 bottom-6 z-20 flex justify-center px-4'
+    >
+      <p
+        className={cn(
+          'rounded-[var(--gui-radius,12px)] px-4 py-2 text-sm shadow-[var(--gui-shadow-card,0px_2px_8px_rgba(44,45,51,0.1))]',
+          toneClass(tone, 'info')
+        )}
+      >
+        {text}
+      </p>
+    </div>
+  )
+}
+
+/**
  * Walks a json-render Spec and renders Arena Generative UI catalog components.
  */
 export function SpecRenderer({
@@ -1364,8 +1555,9 @@ export function SpecRenderer({
           return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
         }
         const visibleItems = items.slice(0, MAX_REPEAT_ITEMS)
+        const refetching = Boolean(statePath && boundPending(statePath))
         return (
-          <>
+          <div className='contents' aria-busy={refetching || undefined}>
             {visibleItems.map((item, index) => (
               <Fragment key={repeatItemKey(item, index)}>
                 {childIds.map((childId) => (
@@ -1373,7 +1565,7 @@ export function SpecRenderer({
                 ))}
               </Fragment>
             ))}
-          </>
+          </div>
         )
       }
       case 'Columns': {
@@ -1470,6 +1662,24 @@ export function SpecRenderer({
           </div>
         )
       }
+      case 'Filter': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        const justify = asString(props.justify, 'start')
+        return (
+          <div
+            data-testid='filter'
+            className={cn(
+              'flex w-full flex-wrap items-center gap-2',
+              justify === 'center' && 'justify-center',
+              justify === 'between' && 'justify-between',
+              justify === 'end' && 'justify-end'
+            )}
+            style={styleFromProps(props)}
+          >
+            {children}
+          </div>
+        )
+      }
       case 'Tabs': {
         const items = parseTabItems(props.items)
         if (items.length === 0) return null
@@ -1506,6 +1716,7 @@ export function SpecRenderer({
               value={collection}
               columns={asString(props.columns)}
               style={styleFromProps(props)}
+              busy={Boolean(statePath && boundPending(statePath))}
             />
           )
         }
@@ -1566,6 +1777,7 @@ export function SpecRenderer({
             value={stateValue}
             columns={asString(props.columns)}
             style={styleFromProps(props)}
+            busy={Boolean(statePath && boundPending(statePath))}
           />
         )
       }
@@ -1586,8 +1798,14 @@ export function SpecRenderer({
             : displayFromStateValue(stateValue, asString(props.value))
         const delta = asString(props.delta)
         const isDisplay = asString(props.size) === 'display'
+        const refetching =
+          Boolean(statePath) && boundPending(statePath) && !isEmptyStateValue(stateValue)
         return (
-          <div className={cn('flex flex-col gap-2', SURFACE_STAT)} style={styleFromProps(props)}>
+          <div
+            aria-busy={refetching || undefined}
+            className={cn('flex flex-col gap-2', SURFACE_STAT)}
+            style={styleFromProps(props)}
+          >
             <span className='font-medium text-[length:var(--gui-label-size,12px)] text-[var(--gui-text-muted,#575a66)] uppercase tracking-[0.25px]'>
               {asString(props.label)}
             </span>
@@ -1676,6 +1894,7 @@ export function SpecRenderer({
                 {asString(props.body)}
               </p>
             ) : null}
+            {hasChildren ? <div className='mt-1'>{children}</div> : null}
           </div>
         )
       case 'Badge':
@@ -1713,6 +1932,7 @@ export function SpecRenderer({
           if (navigateTo) requestNavigate(navigateTo)
           if (actionId) void dispatchAction(actionId, actionValues)
         }
+        const chipBusy = Boolean(actionId) && controlPending(actionId)
         if (!interactive) {
           return (
             <span className={className} style={styleFromProps(props)}>
@@ -1723,10 +1943,13 @@ export function SpecRenderer({
         return (
           <button
             type='button'
-            className={className}
+            disabled={chipBusy}
+            aria-busy={chipBusy || undefined}
+            className={cn(className, chipBusy && 'gap-2')}
             style={styleFromProps(props)}
             onClick={runChip}
           >
+            <ActionBusyMark show={chipBusy} />
             {text}
           </button>
         )
@@ -1802,7 +2025,7 @@ export function SpecRenderer({
         if (pairs.length === 0 && statePath && !boundPending(statePath)) {
           return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.details)} />
         }
-        return <StateKeyValue pairs={pairs} />
+        return <StateKeyValue pairs={pairs} busy={Boolean(statePath && boundPending(statePath))} />
       }
       case 'Card': {
         if (!fieldIsVisible(props, visibilityValues)) return null
@@ -1933,6 +2156,36 @@ export function SpecRenderer({
             <MarkdownText content={asString(props.text)} />
           </div>
         )
+      case 'Toast': {
+        if (!fieldIsVisible(props, visibilityValues)) return null
+        return <CatalogToastView text={asString(props.text)} tone={props.tone} />
+      }
+      case 'Modal':
+        return (
+          <DismissibleCatalogOverlay
+            open={fieldIsVisible(props, visibilityValues)}
+            title={asString(props.title)}
+            testId='modal'
+            placement='modal'
+            onClearItem={onClearItem}
+          >
+            {children}
+          </DismissibleCatalogOverlay>
+        )
+      case 'Drawer': {
+        const side = asString(props.side, 'right')
+        return (
+          <DismissibleCatalogOverlay
+            open={fieldIsVisible(props, visibilityValues)}
+            title={asString(props.title)}
+            testId='drawer'
+            placement={side === 'left' ? 'drawer-left' : 'drawer-right'}
+            onClearItem={onClearItem}
+          >
+            {children}
+          </DismissibleCatalogOverlay>
+        )
+      }
       case 'Spinner':
         return pending ? (
           <p className='text-[length:var(--gui-body-size,16px)] text-[var(--gui-text-muted,#575a66)]'>

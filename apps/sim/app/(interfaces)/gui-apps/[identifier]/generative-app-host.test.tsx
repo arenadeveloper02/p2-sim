@@ -183,7 +183,8 @@ describe('GenerativeAppHost non-streaming JSON', () => {
 
     const banner = container.querySelector('[data-testid="action-error-banner"]')
     expect(banner).toBeTruthy()
-    expect(banner?.textContent).toContain('HTTP 422: company is required')
+    expect(banner?.textContent).toContain('company is required')
+    expect(banner?.textContent).not.toContain('HTTP 422')
   })
 
   it('shows a banner when the request itself throws', async () => {
@@ -412,6 +413,20 @@ describe('GenerativeAppHost page onLoad', () => {
     expect(container.textContent).toContain('412')
     expect(container.textContent).toContain('Steady week')
     expect(container.textContent).not.toContain('No summary yet')
+    expect(container.querySelector('[data-testid="action-refresh"]')).toBeTruthy()
+  })
+
+  it('reloads onLoad from host Refresh without blanking the page', async () => {
+    await act(async () => {
+      render()
+    })
+    expect(container.textContent).toContain('412')
+    const refresh = container.querySelector('[data-testid="action-refresh"]') as HTMLButtonElement
+    await act(async () => {
+      refresh.click()
+    })
+    expect(mockMutateAsync).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('412')
   })
 
   it('passes the page query params as the load action input', async () => {
@@ -482,6 +497,7 @@ describe('GenerativeAppHost page onLoad', () => {
 
     expect(mockMutateAsync).not.toHaveBeenCalled()
     expect(container.textContent).toContain('No summary yet')
+    expect(container.querySelector('[data-testid="action-refresh"]')).toBeNull()
   })
 
   it('reloads on return after a detour through a page that has no onLoad', async () => {
@@ -528,8 +544,11 @@ describe('GenerativeAppHost page onLoad', () => {
     })
 
     expect(container.querySelector('[data-testid="action-error-banner"]')?.textContent).toContain(
-      'HTTP 503: upstream unavailable'
+      'upstream unavailable'
     )
+    expect(
+      container.querySelector('[data-testid="action-error-banner"]')?.textContent
+    ).not.toContain('HTTP 503')
   })
 
   it('surfaces a load that throws', async () => {

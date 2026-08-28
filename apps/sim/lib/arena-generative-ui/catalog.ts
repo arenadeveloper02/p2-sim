@@ -101,6 +101,15 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       slots: ['default'],
       description: 'Horizontal row of controls (filters, buttons, badges) that wraps when narrow.',
     },
+    Filter: {
+      props: z.object({
+        justify: z.enum(['start', 'center', 'between', 'end']).nullable(),
+        showWhen: z.string().nullable(),
+      }),
+      slots: ['default'],
+      description:
+        'Toolbar of controls that narrow an already-loaded collection. Children are Select, TextInput, DateInput, or Chip. Place above Table or Repeat. Not a SearchField hero. Fields submit or drive onLoad query params the same way Toolbar children do.',
+    },
     Tabs: {
       props: z.object({
         items: z.string(),
@@ -206,8 +215,9 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
           ])
           .nullable(),
       }),
+      slots: ['default'],
       description:
-        'Designed empty region: title, optional body, optional catalog icon. Use when a page has no collection yet and emptyText on Table/Repeat is not enough. Do not use as a loading state.',
+        'Designed empty region: title, optional body, optional catalog icon. The default slot is one primary next action (SearchField, Button, or NavLink). Use when a page has no collection yet and emptyText on Table/Repeat is not enough. Do not use as a loading state.',
     },
     Badge: {
       props: z.object({
@@ -232,6 +242,34 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       description:
         'In-content status the brief asked for (a disclaimer or legal note). Markdown is rendered. Do not use for field errors, API failures, save success, or confirm — the host shows those.',
+    },
+    Toast: {
+      props: z.object({
+        text: z.string(),
+        tone: z.enum(['info', 'success', 'warning', 'error']).nullable(),
+        showWhen: z.string().nullable(),
+      }),
+      description:
+        'Transient in-content feedback the brief asked for. Auto-dismisses. showWhen uses the same clause syntax as form fields. Do not use for save success or API failure — the host shows those.',
+    },
+    Modal: {
+      props: z.object({
+        title: z.string().nullable(),
+        showWhen: z.string().nullable(),
+      }),
+      slots: ['default'],
+      description:
+        'Focused secondary action (rename, add a note). showWhen uses the same clause syntax as form fields. Close with a ghost Button clearItem true. Not a multi-step workflow and not delete confirm — the host owns destructive confirm.',
+    },
+    Drawer: {
+      props: z.object({
+        title: z.string().nullable(),
+        showWhen: z.string().nullable(),
+        side: z.enum(['left', 'right']).nullable(),
+      }),
+      slots: ['default'],
+      description:
+        'Contextual detail that keeps the list visible. showWhen is typically "selectedId". Close with a ghost Button clearItem true or Escape. Prefer this over navigating away when the row already has prose. Not a full record page that needs its own onLoad.',
     },
     Spinner: {
       props: z.object({

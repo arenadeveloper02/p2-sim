@@ -66,9 +66,7 @@ describe('Universal UI/UX Constitution', () => {
   })
 
   it('does not tell the model to emit Alert or Toast for API failure', () => {
-    expect(ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT).toContain(
-      'do not emit Alert or Toast for that'
-    )
+    expect(ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT).toContain('do not emit Alert or Toast for that')
     expect(ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT).not.toMatch(
       /emit Alert or Toast for API failure/i
     )

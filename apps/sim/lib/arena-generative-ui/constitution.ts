@@ -84,7 +84,7 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
     id: 'actions',
     title: '2. ACTIONS',
     principle:
-      'Every control has a purpose; the primary action is visually dominant; the platform owns disable, confirm, and mutation feedback.',
+      'Every control has a purpose; the primary action is visually dominant; every CTA follows before, during, success, and error.',
     clauses: [
       {
         ownership: 'generator',
@@ -98,17 +98,17 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
       },
       {
         ownership: 'host',
-        text: 'Disable actions while their operation is running unless repeated execution is safe.',
+        text: 'Before run, the control is enabled. Destructive actions require confirmation.',
         prompt:
-          'The runtime disables in-flight actions and prevents double submit — do not emit a second disabled overlay.',
-        never: 'submit the same mutation twice',
+          'The control is enabled until it runs. The runtime confirms destructive actions — do not emit Modal or Alert for delete confirm.',
+        never: 'destroy user data without confirmation',
       },
       {
         ownership: 'host',
-        text: 'Destructive actions require confirmation.',
+        text: 'During run, disable that control, show a spinner on it, and keep the form and page visible.',
         prompt:
-          'The runtime confirms destructive actions — do not emit Modal or Alert for delete confirm.',
-        never: 'destroy user data without confirmation',
+          'The runtime disables the in-flight control, shows a spinner on it, and keeps inputs and page context — do not emit Spinner, ProgressBar, ProgressSteps, or a second disabled overlay, and do not clear the form.',
+        never: 'submit the same mutation twice',
       },
       {
         ownership: 'shared',
@@ -119,14 +119,15 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
       },
       {
         ownership: 'host',
-        text: 'Successful mutations provide confirmation.',
-        prompt: 'The runtime toasts successful saves — do not emit Toast or Alert for save success.',
+        text: 'On success, bind the result; same-page save with no visible result is a toast.',
+        prompt:
+          'Bind the result as Table, Repeat, Stat, or DataText. The runtime toasts a same-page save with no visible result — do not emit Toast or Alert for save success. Optional navigate is onSuccess.navigate.',
       },
       {
         ownership: 'host',
-        text: 'Failed mutations provide actionable error feedback.',
+        text: 'On error, keep entered values and show an actionable banner with Retry when meaningful.',
         prompt:
-          'The runtime shows an actionable banner for API failure — do not emit Alert or Toast for that. Alert is only for in-content status the brief asked for (a disclaimer).',
+          'The runtime keeps entered values and shows an actionable banner for API failure with Retry when retry is meaningful — do not emit Alert or Toast for that. Alert is only for in-content status the brief asked for (a disclaimer).',
         never: 'silently fail an action',
       },
     ],
@@ -135,32 +136,39 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
     id: 'states',
     title: '3. STATES',
     principle:
-      'For every async operation the platform provides loading, success, empty, error, retry, and disabled behavior.',
+      'For every async operation the platform provides loading, success, empty, error, retry, partial, stale, and disabled behavior.',
     clauses: [
       {
         ownership: 'shared',
         text: 'Every data-driven region accounts for loading, success, empty, and error.',
         prompt:
-          'Bind every CTA or onLoad result region to a statePath. Set domain emptyText or a DataText fallback. The runtime skeletons pending regions and shows empty or error chrome — do not emit Spinner, Skeleton-as-the-page, or Alert for those host events.',
+          'Bind every CTA or onLoad result region to a statePath. Set domain emptyText or EmptyState title/body; EmptyState’s child is the next useful action. The runtime skeletons pending regions and shows empty or error chrome — do not emit Spinner, Skeleton-as-the-page, or Alert for those host events.',
       },
       {
         ownership: 'host',
-        text: 'Partial and unavailable data are host chrome, not extra widgets this pass.',
+        text: 'Error copy is visitor-facing; Retry when the action can be retried.',
         prompt:
-          'Do not invent placeholder rows, fake metrics, or a second copy of error chrome for partial or unavailable data.',
+          'The runtime shows a plain-language banner with Retry when retry is meaningful — do not emit Alert, Toast, or Modal for API failure, and do not mention HTTP status, URLs, or secrets.',
+      },
+      {
+        ownership: 'host',
+        text: 'Partial data stays on screen; incomplete regions are marked busy.',
+        prompt:
+          'The runtime leaves regions that already have data visible and marks them busy — do not invent placeholder rows, fake metrics, or a second ProgressBar for partial data.',
         never: 'invent API data',
       },
       {
         ownership: 'host',
-        text: 'Do not show stale data as current without indication, or overwrite newer data with a stale response.',
-        prompt: 'The runtime owns stale-vs-current merging — never invent API rows.',
-        never: 'overwrite newer data with stale responses',
+        text: 'Stale refetch keeps existing data and offers Refresh instead of blanking.',
+        prompt:
+          'The runtime keeps the previous result and offers Refresh — do not blank a bound region that already has data, and do not emit a Refresh Button.',
+        never: 'show stale data as current without indication',
       },
       {
         ownership: 'host',
-        text: 'Do not show stale data as current without indication.',
-        prompt: 'Do not hard-code values the API should fill; leave bound regions empty for the skeleton.',
-        never: 'show stale data as current without indication',
+        text: 'Do not overwrite newer data with a stale response.',
+        prompt: 'The runtime owns stale-vs-current merging — never invent API rows.',
+        never: 'overwrite newer data with stale responses',
       },
       {
         ownership: 'host',
@@ -205,7 +213,8 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
   {
     id: 'navigation',
     title: '5. NAVIGATION',
-    principle: 'Preserve context, offer Back where users need it, and keep navigable state in the URL.',
+    principle:
+      'Preserve context, offer Back where users need it, and keep navigable state in the URL.',
     clauses: [
       {
         ownership: 'generator',
@@ -257,7 +266,8 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
       {
         ownership: 'generator',
         text: 'Actions must remain reachable on mobile.',
-        prompt: 'Actions must remain reachable on a stacked layout. Never rely on hover for essential functionality.',
+        prompt:
+          'Actions must remain reachable on a stacked layout. Never rely on hover for essential functionality.',
       },
     ],
   },
@@ -275,7 +285,8 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
       {
         ownership: 'generator',
         text: 'Do not use color as the only state indicator.',
-        prompt: 'Do not use color as the only state indicator. Never express Button emphasis with a colour prop.',
+        prompt:
+          'Do not use color as the only state indicator. Never express Button emphasis with a colour prop.',
       },
       {
         ownership: 'shared',
@@ -287,7 +298,8 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
       {
         ownership: 'host',
         text: 'Loading and error states must be announced where appropriate.',
-        prompt: 'The runtime announces loading and error chrome — do not emit a second live-region Alert for that.',
+        prompt:
+          'The runtime announces loading and error chrome — do not emit a second live-region Alert for that.',
         never: 'create inaccessible interactive elements',
       },
       {
@@ -301,7 +313,8 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
   {
     id: 'content',
     title: '8. CONTENT',
-    principle: 'Specific product copy, inspectable truncation, sensible empty states, no placeholder UI.',
+    principle:
+      'Specific product copy, inspectable truncation, sensible empty states, no placeholder UI.',
     clauses: [
       {
         ownership: 'generator',
@@ -312,7 +325,8 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
       {
         ownership: 'generator',
         text: 'Use sensible empty-state copy.',
-        prompt: 'Use sensible empty-state copy that names the collection. Never generic "No results" when the brief named the domain.',
+        prompt:
+          'Use sensible empty-state copy that names the collection. Never generic "No results" when the brief named the domain.',
       },
       {
         ownership: 'generator',
@@ -331,7 +345,8 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
   {
     id: 'density',
     title: '9. DENSITY',
-    principle: 'Comfortable density, at most 2–3 levels of visual nesting, whitespace for grouping.',
+    principle:
+      'Comfortable density, at most 2–3 levels of visual nesting, whitespace for grouping.',
     clauses: [
       {
         ownership: 'generator',
@@ -400,6 +415,6 @@ export const ARENA_GENERATIVE_UI_UX_PRINCIPLES = [
 /**
  * Host never-do list derived from tagged constitution clauses.
  */
-export const ARENA_GENERATIVE_UI_UX_NEVERS = ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS.flatMap((section) =>
-  section.clauses.flatMap((clause) => (clause.never ? [clause.never] : []))
+export const ARENA_GENERATIVE_UI_UX_NEVERS = ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS.flatMap(
+  (section) => section.clauses.flatMap((clause) => (clause.never ? [clause.never] : []))
 ) as readonly string[]

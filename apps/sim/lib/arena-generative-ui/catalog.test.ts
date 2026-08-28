@@ -27,6 +27,10 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'Card',
       'Sparkline',
       'EmptyState',
+      'Filter',
+      'Drawer',
+      'Modal',
+      'Toast',
     ]) {
       expect(prompt).toContain(`- ${component}: {`)
     }
@@ -70,5 +74,9 @@ describe('buildArenaGenerativeUiPrompt', () => {
     expect(prompt).toContain('clearItem')
     expect(prompt).toContain('form field names')
     expect(prompt).not.toContain('scalar fields under inputs')
+  })
+
+  it('describes EmptyState’s default slot as the next useful action', () => {
+    expect(prompt).toContain('The default slot is one primary next action')
   })
 })

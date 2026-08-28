@@ -1,3 +1,4 @@
+import { ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT } from '@/lib/arena-generative-ui/action-contract'
 import {
   ARENA_GENERATIVE_UI_ACCESSIBILITY_RULES,
   ARENA_GENERATIVE_UI_ACTION_INPUT_RULE,
@@ -15,7 +16,9 @@ import {
   ARENA_GENERATIVE_UI_THEME_RULE,
   buildArenaGenerativeUiPrompt,
 } from '@/lib/arena-generative-ui/catalog'
+import { ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT } from '@/lib/arena-generative-ui/component-decisions'
 import { ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT } from '@/lib/arena-generative-ui/constitution'
+import { ARENA_GENERATIVE_UI_DATA_STATE_PROMPT } from '@/lib/arena-generative-ui/data-state-contract'
 import { goldExamplePromptForArchetype } from '@/lib/arena-generative-ui/gold-example'
 import {
   type ArenaGenerativeArchetype,
@@ -35,8 +38,10 @@ function headedRules(heading: string, rules: readonly string[]): string {
 }
 
 /**
- * Spec-LLM system prompt in pipeline order: constitution → recipe → component /
- * interaction / responsive / a11y → JSON envelope. Still one generate call.
+ * Spec-LLM system prompt in pipeline order: constitution → recipe → component
+ * selection → mechanical component rules → data state contract → action
+ * contract → interaction / responsive / a11y → JSON envelope. Still one
+ * generate call.
  */
 export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOptions): string {
   const recipe = options.archetype ? archetypeRecipe(options.archetype) : ''
@@ -63,7 +68,10 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
     ARENA_GENERATIVE_UI_DESIGN_GUIDELINES,
     recipe,
     goldExamplePromptForArchetype(options.archetype),
+    ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT,
     headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
+    ARENA_GENERATIVE_UI_DATA_STATE_PROMPT,
+    ARENA_GENERATIVE_UI_ACTION_CONTRACT_PROMPT,
     headedRules('INTERACTION / STATE RULES', [
       ARENA_GENERATIVE_UI_HOST_UX_PROMPT,
       ...ARENA_GENERATIVE_UI_INTERACTION_RULES,

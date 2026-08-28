@@ -27,9 +27,8 @@ export const ARENA_GENERATIVE_UI_NOTIFICATION_POLICY = {
  * the constitution STATES and ACTIONS sections rather than rewritten ad hoc.
  */
 export const ARENA_GENERATIVE_UI_HOST_UX_PROMPT = [
-  'HOST UX: the runtime compiles loading, error, retry, save confirmation, and destructive confirm. Describe pages, copy, forms, which API, navigation, and empty-state copy.',
-  'Bind every CTA or onLoad result region to a statePath so the host can skeleton it.',
-  'Do not emit ProgressSteps, a filling 0–100 ProgressBar, or Spinner as the only wait for a long run. When the brief names status steps, elapsed, or Cancel, emit WorkingCard on the waiting page — the host ticks steps and progress together.',
-  'Do not emit Alert, Toast, or Modal for field errors, API failures, save success, or delete confirm — the host owns those. Alert is only for in-content status the brief asked for (a disclaimer).',
+  'HOST UX: the runtime compiles loading, error, retry, save confirmation, and destructive confirm. Describe pages, copy, forms, which API, navigation, and empty-state copy. Follow DATA STATE CONTRACT and ACTION CONTRACT — do not emit a second copy of that chrome.',
+  'Alert, Toast, and Modal are allowed only for in-content jobs in COMPONENT SELECTION RULES (a disclaimer, brief-asked transient copy, a focused secondary action).',
+  'The host sanitizes API errors, treats EmptyState children as the next useful action, and offers Refresh on loaded pages — do not emit a Refresh Button or a second error Alert.',
   'Never invent API rows, never create fake timed progress, and never leave a results or detail page without a Back NavLink.',
 ].join(' ')
