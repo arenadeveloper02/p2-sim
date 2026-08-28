@@ -4,6 +4,7 @@ import {
   ArrowLeftRight,
   ArrowUp,
   Check,
+  CircleInfo,
   Clipboard,
   SquareArrowUpRight,
   TriangleAlert,
@@ -316,7 +317,7 @@ const renderLabel = (
           <Tooltip.Root>
             <Tooltip.Trigger asChild>
               <span className='inline-flex'>
-                <Info className='size-[14px] flex-shrink-0 cursor-default text-[var(--text-icon)]' />
+                <CircleInfo className='size-[14px] flex-shrink-0 cursor-default text-[var(--text-icon)]' />
               </span>
             </Tooltip.Trigger>
             <Tooltip.Content side='top' className='max-w-sm'>

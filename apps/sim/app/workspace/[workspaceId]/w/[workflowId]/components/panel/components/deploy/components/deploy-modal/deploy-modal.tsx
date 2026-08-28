@@ -880,9 +880,8 @@ export function DeployModal({
             <ModalFooter className='items-center justify-between'>
               <div />
               <div className='flex items-center gap-2'>
-                <Button
+                <Chip
                   type='button'
-                  variant='tertiary'
                   disabled={!selectedGenerativeAppDraftId}
                   onClick={() => {
                     window.open(
@@ -893,10 +892,10 @@ export function DeployModal({
                   }}
                 >
                   Preview
-                </Button>
-                <Button
+                </Chip>
+                <Chip
                   type='button'
-                  variant='tertiary'
+                  variant='primary'
                   onClick={() => {
                     const form = document.getElementById(
                       'generative-app-deploy-form'
@@ -916,7 +915,7 @@ export function DeployModal({
                       : isExistingGenerativeAppDeployment
                         ? 'Update GUI App'
                         : 'Launch GUI App'}
-                </Button>
+                </Chip>
               </div>
             </ModalFooter>
           )}
