@@ -18,6 +18,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { formatDate } from '@sim/utils/formatting'
 import { useRouter } from 'next/navigation'
 import { useSession, useSubscription } from '@/lib/auth/auth-client'
+import { ARENA_MAX_CREDIT_TIER, ARENA_MAX_PRICE_USD_PER_YEAR } from '@/lib/billing/arena-max'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
 import { CREDIT_MULTIPLIER } from '@/lib/billing/credits/conversion'
 import {
@@ -102,18 +103,26 @@ function formatInvoiceAmount(amountMinor: number, currency: string): string {
 interface BillingProps {
   scope: 'account' | 'organization'
   organizationId?: string
+  workspaceId?: string
   creditUsageHref?: string
   governingWorkspaceName?: string
-  /** When true, skip the compact credit-usage glance (Arena shell renders BillingCreditUsagePanel instead). */
+  /** When true, keep the compact credit-usage glance off this billing surface. */
   hideCreditUsageSection?: boolean
+  /** When true, show subscription controls without usage-limit settings. */
+  hideUsageControls?: boolean
+  /** When true, format the Arena annual Team Max SKU as its sold price. */
+  showArenaPricing?: boolean
 }
 
 export function Billing({
   scope,
   organizationId,
+  workspaceId,
   creditUsageHref,
   governingWorkspaceName,
   hideCreditUsageSection = false,
+  hideUsageControls = false,
+  showArenaPricing = false,
 }: BillingProps) {
   const router = useRouter()
   const isOrganizationScope = scope === 'organization'
@@ -146,7 +155,7 @@ export function Billing({
 
   const organizationBilling = organizationBillingData?.data
   const upgradeWorkspaceId = isOrganizationScope
-    ? organizationBilling?.upgradeWorkspaceId
+    ? (workspaceId ?? organizationBilling?.upgradeWorkspaceId)
     : subscriptionData?.data?.upgradeWorkspaceId
   const upgradeHref = upgradeWorkspaceId ? buildUpgradeHref(upgradeWorkspaceId) : null
   const prefetchUpgrade = () => {
@@ -404,11 +413,16 @@ export function Billing({
   if (isLoading) return null
   if (isOrganizationScope ? !organizationBilling : !subscriptionData?.data) return null
 
-  const planName = getDisplayPlanName(subscription.plan)
   const billingInterval = isOrganizationScope
     ? organizationBilling?.billingInterval
     : subscriptionData?.data?.billingInterval
   const billingPeriod = billingInterval === 'year' ? 'billed annually' : 'billed monthly'
+  const isArenaAnnualTeamMax =
+    showArenaPricing &&
+    subscription.isTeam &&
+    getPlanTierCredits(subscription.plan) >= ARENA_MAX_CREDIT_TIER &&
+    billingInterval === 'year'
+  const planName = getDisplayPlanName(subscription.plan)
   const organizationSubscriptionState = organizationBilling?.subscriptionState
   const planTitle = isOrganizationScope
     ? organizationSubscriptionState === 'lapsed'
@@ -420,9 +434,11 @@ export function Billing({
       ? 'No active organization subscription'
       : organizationSubscriptionState === 'lapsed'
         ? 'Choose a new plan for this organization'
-        : subscription.isEnterprise
-          ? 'Custom pricing'
-          : `$${getPlanTierDollars(subscription.plan)} per user/month, ${billingPeriod}`
+        : isArenaAnnualTeamMax
+          ? `$${ARENA_MAX_PRICE_USD_PER_YEAR.toLocaleString('en-US')} per year`
+          : subscription.isEnterprise
+            ? 'Custom pricing'
+            : `$${getPlanTierDollars(subscription.plan)} per user/month, ${billingPeriod}`
 
   const periodEnd = isOrganizationScope
     ? (organizationBilling?.billingPeriodEnd ?? null)
@@ -441,8 +457,8 @@ export function Billing({
   }))
 
   const canManageBilling = permissions.canEditUsageLimit
-  const showUsageLimit = subscription.isPaid && !subscription.isEnterprise
-  const showOnDemand = hasUsablePaidAccess && !subscription.isEnterprise
+  const showUsageLimit = !hideUsageControls && subscription.isPaid && !subscription.isEnterprise
+  const showOnDemand = !hideUsageControls && hasUsablePaidAccess && !subscription.isEnterprise
 
   const usageLimitCurrent =
     subscription.isOrgScoped && organizationBilling
@@ -480,32 +496,16 @@ export function Billing({
           <ChipLink
             href={upgradeHref}
             variant='border-shadow'
-            flush
             onMouseEnter={prefetchUpgrade}
             onFocus={prefetchUpgrade}
           >
             {explorePlansLabel}
           </ChipLink>
         ) : (
-          <Chip variant='border-shadow' flush disabled>
+          <Chip variant='border-shadow' disabled>
             {explorePlansLabel}
           </Chip>
         )}
-        {!subscription.isEnterprise &&
-          (canExplorePlans && upgradeHref ? (
-            <ChipLink
-              href={upgradeHref}
-              variant='border-shadow'
-              onMouseEnter={prefetchUpgrade}
-              onFocus={prefetchUpgrade}
-            >
-              {explorePlansLabel}
-            </ChipLink>
-          ) : (
-            <Chip variant='border-shadow' disabled>
-              {explorePlansLabel}
-            </Chip>
-          ))}
       </div>
 
       {showUsageLimit && (
@@ -556,26 +556,29 @@ export function Billing({
         </SettingsSection>
       )}
 
-      {!isOrganizationScope && !subscription.isFree && !subscription.isEnterprise && (
-        <SettingsSection label='Usage notifications'>
-          <div className='flex items-center justify-between'>
-            <Label htmlFor='usage-notifications'>Email me when I reach 80% usage</Label>
-            <Switch
-              id='usage-notifications'
-              checked={!!billingUsageNotificationsEnabled}
-              disabled={updateGeneralSetting.isPending}
-              onCheckedChange={(value: boolean) => {
-                if (value !== billingUsageNotificationsEnabled) {
-                  updateGeneralSetting.mutate({
-                    key: 'billingUsageNotificationsEnabled',
-                    value,
-                  })
-                }
-              }}
-            />
-          </div>
-        </SettingsSection>
-      )}
+      {!hideUsageControls &&
+        !isOrganizationScope &&
+        !subscription.isFree &&
+        !subscription.isEnterprise && (
+          <SettingsSection label='Usage notifications'>
+            <div className='flex items-center justify-between'>
+              <Label htmlFor='usage-notifications'>Email me when I reach 80% usage</Label>
+              <Switch
+                id='usage-notifications'
+                checked={!!billingUsageNotificationsEnabled}
+                disabled={updateGeneralSetting.isPending}
+                onCheckedChange={(value: boolean) => {
+                  if (value !== billingUsageNotificationsEnabled) {
+                    updateGeneralSetting.mutate({
+                      key: 'billingUsageNotificationsEnabled',
+                      value,
+                    })
+                  }
+                }}
+              />
+            </div>
+          </SettingsSection>
+        )}
 
       {(subscription.isPaid || subscription.isEnterprise) && (
         <SettingsSection label='Subscription'>

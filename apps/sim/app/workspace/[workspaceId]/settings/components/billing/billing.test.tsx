@@ -13,6 +13,7 @@ const {
   mockUseOrganizationBilling,
   mockUseSubscriptionData,
   mockUseUsageLimitData,
+  mockInvoices,
 } = vi.hoisted(() => ({
   mockOrganizationQuery: { current: null as unknown },
   mockPersonalQuery: { current: null as unknown },
@@ -21,6 +22,12 @@ const {
   mockUseOrganizationBilling: vi.fn(),
   mockUseSubscriptionData: vi.fn(),
   mockUseUsageLimitData: vi.fn(),
+  mockInvoices: {
+    current: {
+      invoices: [] as Array<Record<string, unknown>>,
+      hasMore: false,
+    },
+  },
 }))
 
 vi.mock('@sim/emcn', () => ({
@@ -106,7 +113,7 @@ vi.mock('@/hooks/queries/organization', () => ({
 }))
 
 vi.mock('@/hooks/queries/subscription', () => ({
-  useInvoices: () => ({ data: { invoices: [], hasMore: false } }),
+  useInvoices: () => ({ data: mockInvoices.current }),
   useOpenBillingPortal: () => ({ isPending: false, mutate: vi.fn() }),
   useSubscriptionData: (...args: unknown[]) => {
     mockUseSubscriptionData(...args)
@@ -254,6 +261,7 @@ describe('Billing payer scope', () => {
     }
     mockUpdateOrganizationLimit.mockResolvedValue(undefined)
     mockUpdateUserLimit.mockResolvedValue(undefined)
+    mockInvoices.current = { invoices: [], hasMore: false }
   })
 
   afterEach(() => {
@@ -317,6 +325,50 @@ describe('Billing payer scope', () => {
     expect(container.textContent).toContain(
       'Your personal subscription governs Personal workspace.'
     )
+  })
+
+  it('keeps Stripe details while hiding usage controls for Arena billing', async () => {
+    mockInvoices.current = {
+      invoices: [
+        {
+          id: 'invoice-1',
+          created: 1754006400,
+          total: 2500,
+          currency: 'usd',
+          status: 'paid',
+          description: 'Team subscription',
+          hostedInvoiceUrl: 'https://stripe.example/invoice-1',
+          invoicePdf: null,
+        },
+      ],
+      hasMore: false,
+    }
+
+    await act(async () => {
+      root.render(
+        <Billing
+          scope='organization'
+          organizationId='org-target'
+          workspaceId='workspace-current'
+          governingWorkspaceName='Production'
+          hideUsageControls
+          showArenaPricing
+        />
+      )
+    })
+
+    expect(container.textContent).toContain('Subscription')
+    expect(container.textContent).toContain('Subscription canceled')
+    expect(container.textContent).toContain('Restore')
+    expect(container.querySelector('[aria-label="Invoices"]')).toBeInTheDocument()
+    expect(container.textContent).toContain('Team subscription')
+    expect(container.textContent).toContain('$1,000 per year')
+    expect(container.textContent).not.toContain('$100 per user/month')
+    expect(
+      container.querySelector('a[href="/workspace/workspace-current/upgrade"]')
+    ).toBeInTheDocument()
+    expect(container.querySelector('[data-testid="usage-limit"]')).not.toBeInTheDocument()
+    expect(container.querySelector('[role="switch"]')).not.toBeInTheDocument()
   })
 
   it('does not show a governing subscription description for a free personal workspace', async () => {

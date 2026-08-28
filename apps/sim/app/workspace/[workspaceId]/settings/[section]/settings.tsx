@@ -202,6 +202,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
       {effectiveSection === 'arena-billing' && (
         <ArenaBilling
           scope={organizationId ? 'organization' : 'account'}
+          workspaceId={hostContext.workspace.id}
           organizationId={organizationId ?? undefined}
           governingWorkspaceName={hostContext.workspace.name}
           creditUsageHref={`/workspace/${hostContext.workspace.id}/settings/billing/credit-usage`}

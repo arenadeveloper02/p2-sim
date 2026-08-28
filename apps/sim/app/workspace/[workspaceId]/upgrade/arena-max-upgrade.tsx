@@ -31,7 +31,6 @@ import {
   upgradeReasonParam,
   upgradeUrlKeys,
 } from '@/app/workspace/[workspaceId]/upgrade/search-params'
-import { useSubscriptionData } from '@/hooks/queries/subscription'
 import { useFullscreenOriginStore } from '@/stores/fullscreen-origin'
 
 export interface ArenaMaxUpgradeProps {
@@ -49,14 +48,13 @@ export function ArenaMaxUpgrade({ workspaceId, freeCreditsLabel }: ArenaMaxUpgra
   const origin = useFullscreenOriginStore((s) => s.origin)
   const hostContext = useWorkspaceHostContext()
   const { handleUpgrade } = useSubscriptionUpgrade()
-  const { data: subscriptionData, isLoading } = useSubscriptionData({ includeOrg: true })
   const [reason] = useQueryState(upgradeReasonParam.key, {
     ...upgradeReasonParam.parser,
     ...upgradeUrlKeys,
   })
 
   const header = reason ? UPGRADE_REASON_COPY[reason].header : DEFAULT_UPGRADE_HEADER
-  const plan = subscriptionData?.data?.plan
+  const plan = hostContext.ownerBilling.plan
   const maxCard = getArenaMaxUpgradeCardState(plan)
   const freeCard = getArenaFreeUpgradeCardState(plan)
   const organizationId = hostContext.hostOrganizationId
@@ -81,7 +79,7 @@ export function ArenaMaxUpgrade({ workspaceId, freeCreditsLabel }: ArenaMaxUpgra
     })
   }, [maxCard.onPaidPlan, organizationId, handleUpgrade])
 
-  if (!isBillingEnabled || isLoading) return null
+  if (!isBillingEnabled) return null
 
   return (
     <div className='flex h-full flex-col bg-[var(--bg)]'>
