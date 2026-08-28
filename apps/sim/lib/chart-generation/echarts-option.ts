@@ -155,22 +155,77 @@ function tryParseEmbeddedEChartsFences(value: string): EChartsOptionLike[] | nul
 const BARE_JSON_LINE_START_REGEX = /^[ \t]*[[{]/gm
 
 /**
- * Detects un-fenced chart JSON appended after prose (the chart generator's
- * mixed "answer text + bare option JSON" responses use no code fences). Returns
- * the parsed charts plus the index where the JSON starts so prose can be split.
+ * Finds the end index (exclusive) of a balanced JSON object/array starting at
+ * `start` (which must point at `{` or `[`), respecting string literals and
+ * escapes. Returns null when the brackets never balance.
  */
-function findTrailingBareEChartsJson(
-  value: string
-): { charts: EChartsOptionLike[]; jsonStart: number } | null {
-  for (const match of value.matchAll(BARE_JSON_LINE_START_REGEX)) {
-    const index = match.index ?? 0
-    if (index === 0) continue // whole-string JSON is handled separately
-    const charts = tryParseEChartsJsonCandidate(value.slice(index))
-    if (charts) {
-      return { charts, jsonStart: index }
+function findBalancedJsonEnd(value: string, start: number): number | null {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < value.length; i++) {
+    const ch = value[i]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (ch === '\\') {
+        escaped = true
+      } else if (ch === '"') {
+        inString = false
+      }
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+    } else if (ch === '{' || ch === '[') {
+      depth++
+    } else if (ch === '}' || ch === ']') {
+      depth--
+      if (depth === 0) return i + 1
     }
   }
   return null
+}
+
+interface BareEChartsJsonSegment {
+  charts: EChartsOptionLike[]
+  start: number
+  end: number
+}
+
+/**
+ * Detects un-fenced chart JSON embedded anywhere in mixed prose (the chart
+ * generator's "answer text + bare option JSON" responses use no code fences).
+ * Unlike a trailing-only scan, this finds each balanced JSON segment even when
+ * more text (e.g. a markdown table) follows it, so prose before AND after the
+ * JSON can be preserved.
+ */
+function findBareEChartsJsonSegments(value: string): BareEChartsJsonSegment[] {
+  const segments: BareEChartsJsonSegment[] = []
+  let scanFrom = 0
+  for (const match of value.matchAll(BARE_JSON_LINE_START_REGEX)) {
+    const lineStart = match.index ?? 0
+    if (lineStart < scanFrom) continue
+    const jsonStart = lineStart + match[0].length - 1 // index of the `{` or `[`
+    const end = findBalancedJsonEnd(value, jsonStart)
+    if (end === null) continue
+    const charts = tryParseEChartsJsonCandidate(value.slice(jsonStart, end))
+    if (charts) {
+      segments.push({ charts, start: lineStart, end })
+      scanFrom = end
+    }
+  }
+  return segments
+}
+
+/**
+ * Backwards-compatible helper: returns all charts found in bare JSON segments,
+ * or null when none are present.
+ */
+function findBareEChartsJson(value: string): { charts: EChartsOptionLike[] } | null {
+  const segments = findBareEChartsJsonSegments(value)
+  if (segments.length === 0) return null
+  return { charts: segments.flatMap((segment) => segment.charts) }
 }
 
 /**
@@ -188,7 +243,7 @@ export function parseEChartsOptionsFromString(value: string): EChartsOptionLike[
   return (
     tryParseWholeEChartsString(trimmed) ??
     tryParseEmbeddedEChartsFences(trimmed) ??
-    findTrailingBareEChartsJson(trimmed)?.charts ??
+    findBareEChartsJson(trimmed)?.charts ??
     null
   )
 }
@@ -209,9 +264,13 @@ export function stripEChartsJsonFromContent(content: string): string {
     return ''
   }
 
-  const trailing = findTrailingBareEChartsJson(out)
-  if (trailing) {
-    out = out.slice(0, trailing.jsonStart)
+  // Remove each bare JSON chart segment while keeping prose on both sides, so
+  // text/tables that follow a chart still render (iterate back-to-front so
+  // earlier segment indices stay valid).
+  const segments = findBareEChartsJsonSegments(out)
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const { start, end } = segments[i]
+    out = `${out.slice(0, start)}\n\n${out.slice(end)}`
   }
 
   return out.replace(/\n{3,}/g, '\n\n').trim()
