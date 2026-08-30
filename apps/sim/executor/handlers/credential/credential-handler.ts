@@ -26,15 +26,16 @@ export class CredentialBlockHandler implements BlockHandler {
 
     const operation = typeof inputs.operation === 'string' ? inputs.operation : 'select'
 
-    if (operation === 'get_mine') {
-      return resolveMyCredential(ctx, inputs)
+    switch (operation) {
+      case 'get_mine':
+        return resolveMyCredential(ctx, inputs)
+      case 'select':
+        return this.selectCredential(ctx.workspaceId, inputs)
+      case 'list':
+        return this.listCredentials(ctx.workspaceId, inputs)
+      default:
+        throw new Error(`Unsupported Credential operation: ${operation}`)
     }
-
-    if (operation === 'list') {
-      return this.listCredentials(ctx.workspaceId, inputs)
-    }
-
-    return this.selectCredential(ctx.workspaceId, inputs)
   }
 
   private async selectCredential(

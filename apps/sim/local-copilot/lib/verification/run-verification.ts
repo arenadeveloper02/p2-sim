@@ -15,10 +15,7 @@ export interface RunPostMutationVerificationParams {
   mutationSuccess: boolean
   mutationResult: unknown
   workflowId?: string
-  executeVerifier: (
-    toolName: string,
-    args: Record<string, unknown>
-  ) => Promise<ToolExecutionLike>
+  executeVerifier: (toolName: string, args: Record<string, unknown>) => Promise<ToolExecutionLike>
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -27,10 +24,7 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {}
 }
 
-function resolveWorkflowId(
-  mutationResult: unknown,
-  workflowId?: string
-): string | undefined {
+function resolveWorkflowId(mutationResult: unknown, workflowId?: string): string | undefined {
   if (workflowId?.trim()) return workflowId.trim()
   const record = asRecord(mutationResult)
   for (const key of ['workflowId', 'createdWorkflowId', 'id']) {

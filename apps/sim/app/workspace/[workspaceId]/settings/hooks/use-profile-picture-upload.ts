@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
-import { uploadViaApiFallback } from '@/lib/uploads/client/api-fallback'
-import { DirectUploadError, runUploadStrategy } from '@/lib/uploads/client/direct-upload'
+import { uploadInternalFileSession } from '@/lib/uploads/client/session-upload'
 
 const logger = createLogger('ProfilePictureUpload')
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
@@ -68,30 +67,38 @@ export function useProfilePictureUpload({
 
   const uploadFileToServer = useCallback(
     async (file: File): Promise<string> => {
-      const presignedEndpoint =
-        context === 'org-logos' && organizationId
-          ? `/api/files/presigned?type=org-logos&organizationId=${encodeURIComponent(organizationId)}`
-          : context === 'workspace-logos' && workspaceId
-            ? `/api/files/presigned?type=workspace-logos&workspaceId=${encodeURIComponent(workspaceId)}`
-            : `/api/files/presigned?type=${context}`
-
-      try {
-        const result = await runUploadStrategy({
+      if (context === 'org-logos') {
+        if (!organizationId) {
+          throw new Error('organizationId is required for organization logo upload')
+        }
+        const result = await uploadInternalFileSession({
+          purpose: 'org_logo',
+          organizationId,
           file,
-          workspaceId: workspaceId ?? '',
-          context,
-          presignedEndpoint,
         })
         logger.info(`${context} uploaded successfully: ${result.path}`)
         return result.path
-      } catch (error) {
-        if (error instanceof DirectUploadError && error.code === 'FALLBACK_REQUIRED') {
-          const { path } = await uploadViaApiFallback(file, context, workspaceId, organizationId)
-          logger.info(`${context} uploaded successfully via API fallback: ${path}`)
-          return path
-        }
-        throw error
       }
+
+      if (context === 'workspace-logos') {
+        if (!workspaceId) {
+          throw new Error('workspaceId is required for workspace logo upload')
+        }
+        const result = await uploadInternalFileSession({
+          purpose: 'workspace_logo',
+          workspaceId,
+          file,
+        })
+        logger.info(`${context} uploaded successfully: ${result.path}`)
+        return result.path
+      }
+
+      const result = await uploadInternalFileSession({
+        purpose: 'profile_picture',
+        file,
+      })
+      logger.info(`${context} uploaded successfully: ${result.path}`)
+      return result.path
     },
     [context, workspaceId, organizationId]
   )

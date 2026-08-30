@@ -169,6 +169,7 @@ async function handleSuccess(
 ): Promise<void> {
   if (!publisher.sawComplete) {
     const usage = result?.usage
+    const cost = result?.cost
     await publisher.publish({
       type: MothershipStreamV1EventType.complete,
       payload: {
@@ -179,6 +180,15 @@ async function handleSuccess(
                 input_tokens: usage.prompt,
                 output_tokens: usage.completion,
                 total_tokens: usage.prompt + usage.completion,
+              },
+            }
+          : {}),
+        ...(cost && cost.total > 0
+          ? {
+              cost: {
+                input: cost.input,
+                output: cost.output,
+                total: cost.total,
               },
             }
           : {}),

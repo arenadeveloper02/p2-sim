@@ -1,12 +1,7 @@
 /**
  * Coarse Local Copilot UX phases for live status.
  */
-export const LOCAL_UX_PHASES = [
-  'proposing',
-  'executing',
-  'waiting_approval',
-  'verifying',
-] as const
+export const LOCAL_UX_PHASES = ['proposing', 'executing', 'waiting_approval', 'verifying'] as const
 
 export type LocalUxPhase = (typeof LOCAL_UX_PHASES)[number]
 

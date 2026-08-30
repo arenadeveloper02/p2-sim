@@ -22,13 +22,13 @@ export function WorkflowBlockContent({ block }: WorkflowBlockContentProps) {
       >
         <div
           className={cn(
-            'flex size-[24px] flex-shrink-0 items-center justify-center rounded-md',
+            'flex size-[24px] flex-shrink-0 items-center justify-center overflow-hidden rounded-md [&_img]:size-full',
             block.tileBorder && 'border border-[var(--border-1)]'
           )}
           style={{ background: block.bgColor }}
         >
           {block.tileBorder ? (
-            <block.icon className='size-[16px]' />
+            <block.icon className='size-full' />
           ) : (
             <block.icon className='size-[16px] text-white' />
           )}

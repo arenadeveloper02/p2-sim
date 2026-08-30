@@ -1,5 +1,6 @@
 import { truncate } from '@sim/utils/string'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
+import { documentLayoutFollowUpHint } from '@/lib/copilot/chat/document-format-guidance'
 import { REDACTED_MARKER } from '@/lib/core/security/redaction'
 import { sanitizeForCopilot } from '@/lib/workflows/sanitization/json-sanitizer'
 import { getBlock } from '@/blocks/registry'
@@ -51,20 +52,91 @@ const TOOL_EXECUTION_ORDER: Record<string, number> = {
   run_workflow_until_block: 3,
   run_block: 3,
   run_from_block: 3,
-  // Office docs: shell → intent → body. edit_content needs a prior workspace_file intent.
   create_file_folder: 10,
   create_file: 11,
   workspace_file: 12,
   edit_content: 13,
 }
 
+const FILE_PIPELINE_TOOLS = [
+  'create_file_folder',
+  'create_file',
+  'workspace_file',
+  'edit_content',
+] as const
+const FILE_PIPELINE_TOOL_SET = new Set<string>(FILE_PIPELINE_TOOLS)
+const WORKFLOW_TOOLS_BEFORE_FILES = 10
+
+function interleaveFilePipelines<T extends { name: string }>(fileCalls: T[]): T[] {
+  const queues = new Map<string, T[]>()
+  for (const name of FILE_PIPELINE_TOOLS) {
+    queues.set(name, [])
+  }
+  for (const call of fileCalls) {
+    queues.get(call.name)?.push(call)
+  }
+
+  const ordered: T[] = []
+  const hasRemaining = () => FILE_PIPELINE_TOOLS.some((name) => (queues.get(name)?.length ?? 0) > 0)
+  while (hasRemaining()) {
+    for (const name of FILE_PIPELINE_TOOLS) {
+      const next = queues.get(name)?.shift()
+      if (next) ordered.push(next)
+    }
+  }
+  return ordered
+}
+
 /**
- * Ensures create_workflow runs before edit_workflow when both appear in one assistant turn.
+ * Orders a tool batch so workflow mutations stay first, then each office file
+ * runs as create → workspace_file → edit_content. A plain numeric sort would
+ * run every workspace_file before any edit_content, and the later intent would
+ * steal the first file's body (empty DOCX preview).
  */
 export function sortToolCallsForExecution<T extends { name: string }>(calls: T[]): T[] {
-  return [...calls].sort(
-    (a, b) => (TOOL_EXECUTION_ORDER[a.name] ?? 99) - (TOOL_EXECUTION_ORDER[b.name] ?? 99)
-  )
+  const early: T[] = []
+  const fileCalls: T[] = []
+  const late: T[] = []
+
+  for (const call of calls) {
+    if (FILE_PIPELINE_TOOL_SET.has(call.name)) {
+      fileCalls.push(call)
+      continue
+    }
+    const order = TOOL_EXECUTION_ORDER[call.name]
+    if (order !== undefined && order < WORKFLOW_TOOLS_BEFORE_FILES) {
+      early.push(call)
+    } else {
+      late.push(call)
+    }
+  }
+
+  early.sort((a, b) => (TOOL_EXECUTION_ORDER[a.name] ?? 0) - (TOOL_EXECUTION_ORDER[b.name] ?? 0))
+  late.sort((a, b) => (TOOL_EXECUTION_ORDER[a.name] ?? 99) - (TOOL_EXECUTION_ORDER[b.name] ?? 99))
+  return [...early, ...interleaveFilePipelines(fileCalls), ...late]
+}
+
+/**
+ * Binds `workspace_file` → `edit_content` Redis intents to one channel.
+ * When a File Agent pass already seeded `previousChannelId` (the specialist
+ * tool-call id), keep it so preview, span, and consume all share that id.
+ * Otherwise fall back to this `workspace_file` call id (parent-lane writes).
+ */
+export function bindLocalFileIntentChannel(
+  toolName: string,
+  toolCallId: string,
+  previousChannelId: string | undefined
+): string | undefined {
+  if (toolName === 'workspace_file') return previousChannelId ?? toolCallId
+  return previousChannelId
+}
+
+/** Drop the channel after `edit_content` so the next file starts a new intent. */
+export function clearLocalFileIntentChannel(
+  toolName: string,
+  channelId: string | undefined
+): string | undefined {
+  return toolName === 'edit_content' ? undefined : channelId
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -342,14 +414,14 @@ export function formatToolResultForLlm(
           ...record,
           needsFollowUpWorkspaceFile: true,
           followUpHint:
-            'Office file shell is empty. Call workspace_file operation=update on data.vfsPath (with title), then edit_content in a later round with pptx/docx/pdf script content. Do not call edit_content yet.',
+            'Office file shell is empty. Do not create another file. Call workspace_file operation=update with target.kind=path and data.vfsPath (plus title), then edit_content in a later round.',
         }
       } else {
         formatted = {
           ...record,
           needsFollowUpWrite: true,
           followUpHint:
-            'File is empty. For markdown/text, call create_file again with `content`, or call workspace_file operation=update on data.vfsPath then edit_content with the full body in the next step.',
+            'File is empty. Do not create another file. Call workspace_file operation=update with target.kind=path and data.vfsPath, then edit_content with the full body.',
         }
       }
     } else {
@@ -367,13 +439,14 @@ export function formatToolResultForLlm(
         (typeof data.name === 'string' && data.name) ||
         (typeof data.vfsPath === 'string' && data.vfsPath) ||
         'the file'
+      const baseHint =
+        typeof record.message === 'string' && record.message.trim()
+          ? record.message.trim()
+          : `Call edit_content in the next step with the content to write to "${fileName}". Do not call edit_content in parallel with workspace_file.`
       formatted = {
         ...record,
         needsFollowUpEditContent: true,
-        followUpHint:
-          typeof record.message === 'string' && record.message.trim()
-            ? record.message.trim()
-            : `Call edit_content in the next step with the content to write to "${fileName}". Do not call edit_content in parallel with workspace_file.`,
+        followUpHint: documentLayoutFollowUpHint(fileName, baseHint),
       }
     } else {
       formatted = record
@@ -470,7 +543,7 @@ export function detectMandatoryFollowUp(
       hint:
         hint ??
         'File shell is empty. Write content via create_file with content or workspace_file then edit_content.',
-      resolveWith: ['edit_content', 'create_file', 'workspace_file'],
+      resolveWith: ['workspace_file', 'edit_content'],
     }
   }
 

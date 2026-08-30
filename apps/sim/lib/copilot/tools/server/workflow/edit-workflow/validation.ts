@@ -3,6 +3,7 @@ import { toError } from '@sim/utils/errors'
 import { omit } from '@sim/utils/object'
 import { validateSelectorIds } from '@/lib/copilot/validation/selector-validator'
 import { isHosted as isHostedDeployment } from '@/lib/core/config/env-flags'
+import { isIntegrationDeploymentAvailableForVisibility } from '@/lib/integrations/availability.server'
 import { isBlockTypeAccessControlExempt } from '@/lib/permission-groups/block-access'
 import type { PermissionGroupConfig } from '@/lib/permission-groups/types'
 import { getCustomToolById } from '@/lib/workflows/custom-tools/operations'
@@ -15,9 +16,15 @@ import {
 } from '@/lib/workflows/subblocks/visibility'
 import { getBlock } from '@/blocks/registry'
 import type { SubBlockConfig } from '@/blocks/types'
-import { getModelOptions } from '@/blocks/utils'
+import { getAgentModelOptions, getModelOptions, getPiModelOptions } from '@/blocks/utils'
+import { overlayVisibility } from '@/blocks/visibility/context'
 import { BlockType, EDGE, normalizeName } from '@/executor/constants'
-import { isAutoModel, isKnownModelId, suggestModelIdsForUnknownModel } from '@/providers/models'
+import {
+  getModelSunsetStatus,
+  isAutoModel,
+  isKnownModelId,
+  suggestModelIdsForUnknownModel,
+} from '@/providers/models'
 import { isPiByokOnlyMode } from '@/providers/pi-providers'
 import { getTool } from '@/tools/utils'
 import { TRIGGER_RUNTIME_SUBBLOCK_IDS, TRIGGER_WEBHOOK_URL_FIELD } from '@/triggers/constants'
@@ -184,9 +191,8 @@ export function validateInputsForBlock(
       : inputs
 
   if (!blockConfig) {
-    // Unknown block type - return inputs as-is (let it fail later if invalid)
     validationLogger.warn(`Unknown block type: ${blockType}, skipping validation`)
-    return { validInputs: normalizedInputs, errors: [] }
+    return { validInputs: normalizedInputs, errors }
   }
 
   const validatedInputs: Record<string, any> = {}
@@ -350,6 +356,37 @@ function validateAgentToolEntry(item: any, index: number): string | null {
     }
     if (!Array.isArray(block.tools?.access) || block.tools.access.length === 0) {
       return `${where} block type "${type}" cannot be attached as an agent tool (it exposes no callable tools)`
+    }
+    if (!isIntegrationDeploymentAvailableForVisibility(type, overlayVisibility())) {
+      return `${where} block type "${type}" is unavailable in this deployment`
+    }
+
+    const operationConfig = block.subBlocks?.find((subBlock) => subBlock.id === 'operation')
+    if (operationConfig?.options) {
+      let validOperations: string[]
+      try {
+        const options =
+          typeof operationConfig.options === 'function'
+            ? operationConfig.options()
+            : operationConfig.options
+        validOperations = options.map((option) => option.id)
+      } catch (error) {
+        return `${where} could not validate operations for block type "${type}": ${toError(error).message}`
+      }
+
+      const operation = item.operation
+      if (
+        validOperations.length > 1 &&
+        (typeof operation !== 'string' || operation.trim() === '')
+      ) {
+        return `${where} block type "${type}" requires an operation. Valid operations: ${validOperations.join(', ')}`
+      }
+      if (
+        operation !== undefined &&
+        (typeof operation !== 'string' || !validOperations.includes(operation))
+      ) {
+        return `${where} block type "${type}" has invalid operation "${String(operation)}". Valid operations: ${validOperations.join(', ')}. Use one of the block operation ids above; it may differ from the underlying tool id.`
+      }
     }
   }
 
@@ -723,7 +760,10 @@ export function validateValueForSubBlockType(
     case 'long-input':
     case 'combobox': {
       const usesProviderCatalog =
-        fieldName === 'model' && subBlockConfig.options === getModelOptions
+        fieldName === 'model' &&
+        (subBlockConfig.options === getModelOptions ||
+          subBlockConfig.options === getAgentModelOptions ||
+          subBlockConfig.options === getPiModelOptions)
 
       if (usesProviderCatalog) {
         const stringValue = typeof value === 'string' ? value : String(value)
@@ -746,6 +786,24 @@ export function validateValueForSubBlockType(
               field: fieldName,
               value,
               error: `Unknown model id "${trimmed}" for block "${blockType}". Read components/blocks/${blockType}.json (the model.options array) for valid ids; prefer entries with recommended: true and avoid deprecated: true. For user-configured models (Ollama, Ollama Cloud, vLLM, LiteLLM, OpenRouter, Fireworks, Together AI, Baseten), prefix the id with the provider slash, e.g. "ollama/llama3.1:8b" or "ollama-cloud/gpt-oss:120b".${suggestionText}`,
+            },
+          }
+        }
+        const sunset = getModelSunsetStatus(trimmed)
+        if (sunset === 'legacy' || sunset === 'deprecated') {
+          const suggestions = suggestModelIdsForUnknownModel(trimmed)
+          const suggestionText =
+            suggestions.length > 0
+              ? ` Use a current recommended model instead: ${suggestions.join(', ')}.`
+              : ''
+          return {
+            valid: false,
+            error: {
+              blockId,
+              blockType,
+              field: fieldName,
+              value,
+              error: `"${trimmed}" is a ${sunset} model and must not be written on new or updated blocks.${suggestionText}`,
             },
           }
         }
@@ -1082,6 +1140,7 @@ export function isBlockTypeAllowed(
   blockType: string,
   permissionConfig: PermissionGroupConfig | null
 ): boolean {
+  if (!isIntegrationDeploymentAvailableForVisibility(blockType, overlayVisibility())) return false
   if (isBlockTypeAccessControlExempt(blockType)) {
     return true
   }

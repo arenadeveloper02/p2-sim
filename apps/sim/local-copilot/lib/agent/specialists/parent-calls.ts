@@ -67,10 +67,7 @@ export async function* runParentSpecialistToolCalls(
 
   for (const batch of batches) {
     if (batch.length > 1) {
-      yield {
-        type: 'status',
-        message: `Running ${batch.length} specialists in parallel (${batch.map((c) => c.name).join(', ')})…`,
-      }
+      yield { type: 'status', message: 'Working on it…' }
     }
 
     logger.info('Arena Copilot specialist batch starting', {
@@ -107,9 +104,7 @@ export async function* runParentSpecialistToolCalls(
             domain: 'workflow' as const,
             findings: '',
             toolRoundCount: 0,
-            events: [
-              { type: 'status' as const, message: `Unknown specialist tool: ${call.name}` },
-            ],
+            events: [{ type: 'status' as const, message: `Unknown specialist tool: ${call.name}` }],
             success: false,
             error: `Unknown specialist tool: ${call.name}`,
           } satisfies SpecialistPassResult,
@@ -124,6 +119,7 @@ export async function* runParentSpecialistToolCalls(
           userMessage: resolveSpecialistBrief(call.name, parsedArgs, params.lastUserMessage),
           parentDepth,
           onEvent: enqueue,
+          parentDispatchToolCallId: call.id,
         })
         remaining -= 1
         wake?.()

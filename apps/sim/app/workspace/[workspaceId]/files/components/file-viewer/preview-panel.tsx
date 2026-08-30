@@ -4,6 +4,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import '@sim/emcn/components/code/code.css'
 import { CSV_PREVIEW_MAX_ROWS } from '@/lib/api/contracts/workspace-file-table'
 import { getFileExtension } from '@/lib/uploads/utils/file-utils'
+import { useHorizontalWheelScroll } from '@/app/workspace/[workspaceId]/files/components/file-viewer/use-horizontal-wheel-scroll'
 import { type CsvImportFileDescriptor, useCsvTruncationImport } from './csv-import'
 import { DataTable } from './data-table'
 import { MermaidDiagram } from './mermaid-diagram'
@@ -43,6 +44,7 @@ interface PreviewPanelProps {
   mimeType: string | null
   filename: string
   workspaceId: string
+  fileId: string
   fileKey: string
   isStreaming?: boolean
   /**
@@ -58,6 +60,7 @@ export const PreviewPanel = memo(function PreviewPanel({
   mimeType,
   filename,
   workspaceId,
+  fileId,
   fileKey,
   isStreaming,
   readOnly,
@@ -70,7 +73,7 @@ export const PreviewPanel = memo(function PreviewPanel({
       <CsvPreview
         content={content}
         workspaceId={workspaceId}
-        file={{ key: fileKey, name: filename }}
+        file={{ id: fileId, key: fileKey, name: filename }}
         readOnly={readOnly}
       />
     )
@@ -201,7 +204,7 @@ const HtmlPreview = memo(function HtmlPreview({ content }: { content: string }) 
   }, [])
 
   return (
-    <div ref={containerRef} className='h-full overflow-hidden'>
+    <div ref={containerRef} className='flex min-h-0 flex-1 overflow-hidden'>
       {isRenderable && (
         <iframe
           key={resumeNonce}
@@ -259,7 +262,7 @@ function SvgPreview({ content }: { content: string }) {
 
 function MermaidFilePreview({ content, isStreaming }: { content: string; isStreaming?: boolean }) {
   return (
-    <div className='h-full overflow-auto p-6'>
+    <div className='min-h-0 flex-1 overflow-auto p-6'>
       <MermaidDiagram
         definition={content}
         isStreaming={isStreaming}
@@ -281,19 +284,20 @@ const CsvPreview = memo(function CsvPreview({
   file: CsvImportFileDescriptor
   readOnly?: boolean
 }) {
+  const scrollRef = useHorizontalWheelScroll()
   const { headers, rows, truncated } = useMemo(() => parseCsv(content), [content])
   useCsvTruncationImport(workspaceId, file, truncated, readOnly)
 
   if (headers.length === 0) {
     return (
-      <div className='flex h-full items-center justify-center p-6'>
+      <div className='flex min-h-0 flex-1 items-center justify-center p-6'>
         <p className='text-[13px] text-[var(--text-muted)]'>No data to display</p>
       </div>
     )
   }
 
   return (
-    <div className='h-full overflow-auto p-6'>
+    <div ref={scrollRef} className='min-h-0 flex-1 overflow-auto p-6'>
       <DataTable headers={headers} rows={rows} />
     </div>
   )

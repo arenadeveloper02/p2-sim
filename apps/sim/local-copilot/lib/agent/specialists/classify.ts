@@ -53,7 +53,7 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
     domain: 'file',
     weight: 3,
     patterns: [
-      /\b(file|folder|vfs|markdown|csv|docx?|pptx?|pdf|slides?|deck|presentation|powerpoint|read\s+file|write\s+file|glob|grep)\b/i,
+      /\b(file|folder|vfs|markdown|html|htm|csv|docx?|pptx?|pdf|slides?|deck|presentation|powerpoint|read\s+file|write\s+file|glob|grep)\b/i,
       /\b(create|make|generate|build|write)\s+(an?\s+)?(ppt|pptx|powerpoint|presentation|slides?|deck|docx?|pdf|document)\b/i,
     ],
   },
@@ -183,6 +183,30 @@ export const PARALLEL_SUBAGENT_PRIORITY: LocalCopilotCloudSpecialistDomain[] = [
   'scheduled_task',
 ]
 
+/**
+ * Workflow inspect/edit, deploy, and run must stay sequential — run depends on
+ * the current graph. Auto-fanning them at turn start always showed
+ * "Running 2 specialists in parallel (workflow, run)…" on ordinary workflow asks.
+ */
+const SEQUENTIAL_WORKFLOW_DOMAINS = new Set<LocalCopilotCloudSpecialistDomain>([
+  'workflow',
+  'deploy',
+  'run',
+])
+
+function collapseSequentialWorkflowDomains(
+  domains: LocalCopilotCloudSpecialistDomain[],
+  primary: LocalCopilotIntent['primary']
+): LocalCopilotCloudSpecialistDomain[] {
+  const family = domains.filter((domain) => SEQUENTIAL_WORKFLOW_DOMAINS.has(domain))
+  if (family.length <= 1) return domains
+  const keep =
+    primary === 'workflow' || primary === 'deploy' || primary === 'run'
+      ? primary
+      : (PARALLEL_SUBAGENT_PRIORITY.find((domain) => family.includes(domain)) ?? family[0])
+  return domains.filter((domain) => !SEQUENTIAL_WORKFLOW_DOMAINS.has(domain) || domain === keep)
+}
+
 export function selectParallelSubagentDomains(
   intent: LocalCopilotIntent
 ): LocalCopilotCloudSpecialistDomain[] {
@@ -195,8 +219,11 @@ export function selectParallelSubagentDomains(
   }
   if (candidates.size < 2) return []
 
-  return PARALLEL_SUBAGENT_PRIORITY.filter((domain) => candidates.has(domain)).slice(
-    0,
-    MAX_PARALLEL_SUBAGENTS
+  const selected = collapseSequentialWorkflowDomains(
+    PARALLEL_SUBAGENT_PRIORITY.filter((domain) => candidates.has(domain)),
+    intent.primary
   )
+  if (selected.length < 2) return []
+
+  return selected.slice(0, MAX_PARALLEL_SUBAGENTS)
 }

@@ -346,6 +346,10 @@ export const imageGenerateTool: ToolConfig<ImageGenerationParams, ImageGeneratio
       (params as ImageGenerationRuntimeParams).__skipSmartWrapper
         ? '/api/tools/image'
         : '/api/tools/image-generation',
+    modelInput: {
+      mode: 'project',
+      select: (params) => ({ prompt: params.prompt }),
+    },
     method: 'POST',
     timeout: IMAGE_GENERATION_PROVIDER_TIMEOUT_MS,
     headers: () => ({

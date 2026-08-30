@@ -1,8 +1,8 @@
-import { LOCAL_OPS_COUNTERS, recordLocalOpsEvent } from '@/local-copilot/lib/ops/metrics'
 import {
   formatOAuthConnectCredentialTag,
   type OAuthConnectControl,
 } from '@/local-copilot/lib/oauth-connect-text'
+import { LOCAL_OPS_COUNTERS, recordLocalOpsEvent } from '@/local-copilot/lib/ops/metrics'
 
 const PRIVILEGED_TAG_NAMES = [
   'credential',

@@ -20,7 +20,14 @@ const CONDITION_TIMEOUT_MS = 5000
 
 /**
  * Evaluates a single condition expression.
- * Variable resolution is handled consistently with the function block via the function_execute tool.
+ * The resolver preserves legacy Condition expression substitution before this function executes the
+ * resulting JavaScript through the shared function execution boundary.
+ *
+ * `blockData` is deliberately empty: the resolver already inlines every `<block.field>` reference
+ * into the expression before this runs, so shipping the run's accumulated block outputs would only
+ * inflate the request body. Sending them blew the 10MB body cap on wide subflows, where a single
+ * flat `blockStates` map holds every branch's outputs.
+ *
  * Returns true if condition is met, false otherwise.
  */
 async function evaluateConditionExpression(
@@ -35,7 +42,7 @@ async function evaluateConditionExpression(
     const contextSetup = `const context = ${JSON.stringify(evalContext)};`
     const code = `${contextSetup}\nreturn Boolean(${conditionExpression})`
 
-    const { blockData, blockNameMapping, blockOutputSchemas } = collectBlockData(ctx, currentNodeId)
+    const { blockNameMapping, blockOutputSchemas } = collectBlockData(ctx, currentNodeId)
 
     const result = await executeTool(
       'function_execute',
@@ -44,7 +51,7 @@ async function evaluateConditionExpression(
         timeout: CONDITION_TIMEOUT_MS,
         envVars: normalizeStringRecord(ctx.environmentVariables),
         workflowVariables: normalizeWorkflowVariables(ctx.workflowVariables),
-        blockData,
+        blockData: {},
         blockNameMapping,
         blockOutputSchemas,
         _context: {
@@ -59,20 +66,16 @@ async function evaluateConditionExpression(
     )
 
     if (!result.success) {
-      logger.error(`Failed to evaluate condition: ${result.error}`, {
-        originalCondition: conditionExpression,
-        evalContext,
-        error: result.error,
+      logger.error('Failed to evaluate condition', {
+        hasRuntimeError: Boolean(result.error),
       })
       throw new Error(`Evaluation error in condition: ${result.error}`)
     }
 
     return Boolean(result.output?.result)
   } catch (evalError: any) {
-    logger.error(`Failed to evaluate condition: ${evalError.message}`, {
-      originalCondition: conditionExpression,
-      evalContext,
-      evalError,
+    logger.error('Failed to evaluate condition', {
+      errorName: evalError?.name,
     })
     throw new Error(`Evaluation error in condition: ${evalError.message}`)
   }
@@ -177,7 +180,11 @@ export class ConditionBlockHandler implements BlockHandler {
       const conditions = Array.isArray(input) ? input : JSON.parse(input || '[]')
       return conditions
     } catch (error: any) {
-      logger.error('Failed to parse conditions:', { input, error })
+      logger.error('Failed to parse conditions', {
+        errorName: error?.name,
+        inputType: Array.isArray(input) ? 'array' : typeof input,
+        inputLength: typeof input === 'string' ? input.length : undefined,
+      })
       throw new Error(`Invalid conditions format: ${error.message}`)
     }
   }
@@ -234,7 +241,10 @@ export class ConditionBlockHandler implements BlockHandler {
           return { selectedConnection: null, selectedCondition: condition }
         }
       } catch (error: any) {
-        logger.error(`Failed to evaluate condition "${condition.title}": ${error.message}`)
+        logger.error('Failed to evaluate condition', {
+          errorName: error?.name,
+          hasTitle: typeof condition.title === 'string' && condition.title.length > 0,
+        })
         throw new Error(`Evaluation error in condition "${condition.title}": ${error.message}`)
       }
     }

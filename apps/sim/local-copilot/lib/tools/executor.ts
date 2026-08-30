@@ -11,8 +11,8 @@ import {
   loadArtifactFromRecord,
   loadArtifacts,
 } from '@/local-copilot/lib/context/artifacts'
-import { buildLocalCopilotContext } from '@/local-copilot/lib/context/build-context'
 import { buildGetWorkflowContextResult } from '@/local-copilot/lib/context/context-budget'
+import { reloadLocalCopilotWorkflowContext } from '@/local-copilot/lib/context/reload-workflow-context'
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { generateWorkflowPatchFromRequest } from '@/local-copilot/lib/patches/generate'
 import { validateWorkflowPatch, validateWorkflowState } from '@/local-copilot/lib/patches/validate'
@@ -56,6 +56,7 @@ import {
 import {
   assertEditWorkflowLookBeforeWrite,
   assertInvokeLookBeforeWrite,
+  normalizeWorkspaceFileReadPath,
 } from '@/local-copilot/lib/writes/look-before-write'
 import { pinToolArgsToWorkspace } from '@/local-copilot/lib/writes/pin-ids'
 import { assertExpectedRevision } from '@/local-copilot/lib/writes/revision'
@@ -114,10 +115,21 @@ export interface ToolExecutionContext {
   mutationIdempotency?: Map<string, ToolExecutionResult>
   /** Integration tool ids returned by list_integration_tools this turn. */
   listedIntegrationToolIds?: Set<string>
+  /**
+   * Canonical `files/...` paths successfully `read` this turn (without `/content`).
+   * Full-replace HTML/text updates must follow a read of the same file.
+   */
+  readVfsPaths?: Set<string>
   /** Workflow ids created earlier in this turn (membership bypass until refresh). */
   allowedWorkflowIds?: Set<string>
   /** Active tool_use id for idempotency keying. */
   activeToolCallId?: string
+  /**
+   * Scopes workspace_file → edit_content Redis intents. File Agent passes seed
+   * this with the specialist tool-call id (same id as the subagent span);
+   * parent-lane writes fall back to the `workspace_file` call id.
+   */
+  fileIntentChannelId?: string
   /** Turn-scoped store for oversized tool-result artifacts. */
   artifactStore?: import('@/local-copilot/lib/context/artifacts').ArtifactStore
   /** First successful create_workflow this turn — later creates must reuse it. */
@@ -233,6 +245,7 @@ async function executeLocalCopilotToolInner(
   args = pinToolArgsToWorkspace(args, ctx.workspaceId)
   ctx.mutationIdempotency ??= new Map()
   ctx.listedIntegrationToolIds ??= new Set()
+  ctx.readVfsPaths ??= new Set()
   ctx.allowedWorkflowIds ??= new Set()
 
   if (toolSupportsIdempotency(toolName)) {
@@ -276,6 +289,9 @@ async function executeLocalCopilotToolInner(
     if (toolName === 'list_integration_tools' && delegated.success) {
       rememberListedIntegrationTools(ctx, delegated.result)
     }
+    if (toolName === 'read' && delegated.success) {
+      rememberReadVfsPath(ctx, args)
+    }
     if (toolSupportsIdempotency(toolName) && delegated.success) {
       rememberIdempotentResult(
         ctx.mutationIdempotency,
@@ -312,6 +328,7 @@ async function executeLocalCopilotToolInner(
         workflowId: ctx.workflowId,
         chatId: ctx.chatId,
         abortSignal: ctx.abortSignal,
+        activeToolCallId: ctx.activeToolCallId,
       })
       const output = mutation.output as Record<string, unknown> | undefined
       const createdWorkflowId =
@@ -448,6 +465,7 @@ async function executeLocalCopilotToolInner(
         workflowId: ctx.workflowId,
         chatId: ctx.chatId,
         abortSignal: ctx.abortSignal,
+        activeToolCallId: ctx.activeToolCallId,
       })
 
       if (mutation.success) {
@@ -799,6 +817,7 @@ async function executeLocalCopilotToolInner(
         abortSignal: ctx.abortSignal,
         copilotToolExecution: true,
         userPermission: ctx.userPermission,
+        ...(ctx.activeToolCallId?.trim() ? { toolCallId: ctx.activeToolCallId.trim() } : {}),
       }
 
       const separateRecipients = params[SEPARATE_DRAFT_RECIPIENTS_KEY]
@@ -1137,6 +1156,15 @@ function rememberListedIntegrationTools(ctx: ToolExecutionContext, result: unkno
   }
 }
 
+function rememberReadVfsPath(ctx: ToolExecutionContext, args: Record<string, unknown>): void {
+  const path = typeof args.path === 'string' ? args.path.trim() : ''
+  if (!path) return
+  const canonical = normalizeWorkspaceFileReadPath(path)
+  if (!canonical) return
+  ctx.readVfsPaths ??= new Set()
+  ctx.readVfsPaths.add(canonical)
+}
+
 /**
  * Fills workflowId for home-chat edits when the model omits it but the workspace
  * has an obvious target (open workflow, single workflow, or name match).
@@ -1177,12 +1205,11 @@ function enrichEditWorkflowArgs(
 }
 
 export async function refreshToolContext(
-  params: Omit<ToolExecutionContext, 'structuredContext'> & { selectedBlockId?: string }
+  params: ToolExecutionContext & { selectedBlockId?: string }
 ): Promise<ToolExecutionContext> {
-  const structuredContext = await buildLocalCopilotContext({
-    userId: params.userId,
-    workspaceId: params.workspaceId,
-    ...(params.workflowId ? { workflowId: params.workflowId } : {}),
+  const structuredContext = await reloadLocalCopilotWorkflowContext({
+    previous: params.structuredContext,
+    workflowId: params.workflowId,
     selectedBlockId: params.selectedBlockId,
   })
   let workflowRevision = params.workflowRevision

@@ -1,3 +1,5 @@
+import { isPlainTextWorkspaceFileName } from '@/lib/copilot/chat/document-format-guidance'
+
 const BOOTSTRAP_BLOCK_TYPES = new Set(['start_trigger', 'starter', 'start'])
 
 export interface LookBeforeWriteOk {
@@ -70,5 +72,47 @@ export function assertInvokeLookBeforeWrite(params: {
   return {
     ok: false,
     error: `Call list_integration_tools before invoke_integration_tool for "${toolId}".`,
+  }
+}
+
+/**
+ * Canonical workspace file leaf used to match `read` paths with `workspace_file` targets.
+ */
+export function normalizeWorkspaceFileReadPath(path: string): string {
+  const trimmed = path.trim().replace(/\\/g, '/')
+  if (!trimmed) return ''
+  const withFiles = trimmed.startsWith('files/') ? trimmed : `files/${trimmed}`
+  return withFiles.replace(/\/content$/i, '')
+}
+
+function workspaceFileTargetPath(args: Record<string, unknown>): string {
+  const target = args.target
+  if (!target || typeof target !== 'object' || Array.isArray(target)) return ''
+  const path = (target as Record<string, unknown>).path
+  return typeof path === 'string' ? path.trim() : ''
+}
+
+/**
+ * Full-replace (`update`) of an existing HTML/text file must follow a `read` of
+ * that file this turn. Otherwise the model regenerates from the filename and
+ * overwrites the page. Targeted `patch` applies against on-disk content.
+ */
+export function assertWorkspaceFileLookBeforeWrite(params: {
+  args: Record<string, unknown>
+  readVfsPaths?: Set<string>
+}): LookBeforeWriteOk | LookBeforeWriteDenied {
+  const operation =
+    typeof params.args.operation === 'string' ? params.args.operation.trim().toLowerCase() : ''
+  if (operation !== 'update') return { ok: true }
+
+  const path = workspaceFileTargetPath(params.args)
+  const canonical = normalizeWorkspaceFileReadPath(path)
+  if (!canonical || !isPlainTextWorkspaceFileName(canonical)) return { ok: true }
+
+  if (params.readVfsPaths?.has(canonical)) return { ok: true }
+
+  return {
+    ok: false,
+    error: `Call read("${canonical}/content") first so the edit starts from the current file. For a small change (title, heading, one string) use operation=patch with search_replace instead of update — update replaces the entire file.`,
   }
 }

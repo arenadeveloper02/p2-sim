@@ -48,6 +48,8 @@ export function MentionInput({
 
   // Reactive upstream fields (block editor: credential lives on store; tool-input uses dependencyContext)
   const [connectedCredential] = useSubBlockValue(blockId, 'credential')
+  const [authMethod] = useSubBlockValue(blockId, 'authMethod')
+  const [botToken] = useSubBlockValue(blockId, 'botToken')
   const [currentValue, setCurrentValue] = useState<string>('')
 
   // Get provider-specific values
@@ -70,10 +72,17 @@ export function MentionInput({
       )
     : ''
   const credentialFromStore = coerceOAuthCredentialId(connectedCredential)
-  const credential: string = credentialFromContext || credentialFromStore
+  const pastedBotToken =
+    (authMethod as string) === 'bot_token' ? coerceOAuthCredentialId(botToken) : ''
+  const credential: string = pastedBotToken || credentialFromContext || credentialFromStore
+  const authMethodFromContext =
+    typeof dependencyContext?.authMethod === 'string' ? dependencyContext.authMethod : undefined
+  const effectiveAuthMethod = authMethodFromContext || (authMethod as string) || undefined
+  const useUserToken =
+    effectiveAuthMethod === 'bot_token' && Boolean(credential) && !credential.startsWith('xoxb-')
 
   // Determine if connected OAuth credential is foreign
-  const { isForeignCredential } = useForeignCredential('slack', credential)
+  const { isForeignCredential } = useForeignCredential('slack', pastedBotToken ? '' : credential)
 
   // Get the current value from the store or prop value if in preview mode
   useEffect(() => {
@@ -121,6 +130,7 @@ export function MentionInput({
                 isForeignCredential={isForeignCredential}
                 placeholder={subBlock.placeholder || 'Type your message...'}
                 blockId={blockId}
+                useUserToken={useUserToken}
               />
             </div>
           </Tooltip.Trigger>

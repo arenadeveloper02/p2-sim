@@ -1,15 +1,14 @@
 import { db } from '@sim/db'
-import {
-  account,
-  accountTokens,
-  credential,
-  credentialMember,
-  workflow as workflowTable,
-} from '@sim/db/schema'
-import { and, eq } from 'drizzle-orm'
+import { account, accountTokens, credential, workflow as workflowTable } from '@sim/db/schema'
+import { and, asc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
-import { AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
-import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
+import { type AuthResult, AuthType, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import {
+  type CredentialActorContext,
+  canUseCredential,
+  getCredentialActorContext,
+  resolveCredentialTokenIdentity,
+} from '@/lib/credentials/access'
 
 export interface CredentialAccessResult {
   ok: boolean
@@ -19,14 +18,61 @@ export interface CredentialAccessResult {
   credentialOwnerUserId?: string
   workspaceId?: string
   resolvedCredentialId?: string
-  credentialType?: 'oauth' | 'service_account'
+  credentialType?: 'oauth' | 'managed_oauth' | 'service_account'
+}
+
+const NO_CREDENTIAL_ACCESS =
+  'You do not have access to this credential. Ask the credential admin to add you as a member.'
+const NO_WORKSPACE_ACCESS = 'You do not have access to this workspace.'
+
+/**
+ * Maps the canonical use rule (`canUseCredential`) onto the actionable message each
+ * denial deserves, so every surface authorizing a credential applies one predicate
+ * and only the wording is local to this module.
+ */
+function credentialAccessError(access: CredentialActorContext): string | null {
+  if (!access.credential) return 'Credential not found'
+  if (!access.hasWorkspaceAccess) return NO_WORKSPACE_ACCESS
+  if (!canUseCredential(access)) return NO_CREDENTIAL_ACCESS
+  return null
+}
+
+/**
+ * Shared HubSpot portals are addressed by alias (`northstar_anesthesia`, …) and live in
+ * `account_tokens`, not the workspace `credential` table.
+ */
+async function lookupHubSpotSharedAccountAlias(credentialId: string): Promise<{
+  userId: string | null
+  providerId: string
+  alias: string | null
+} | null> {
+  const [tokenRow] = await db
+    .select({
+      userId: accountTokens.userId,
+      providerId: accountTokens.providerId,
+      alias: accountTokens.alias,
+    })
+    .from(accountTokens)
+    .where(and(eq(accountTokens.alias, credentialId), eq(accountTokens.providerId, 'hubspot')))
+    .limit(1)
+  return tokenRow ?? null
 }
 
 /**
  * Centralizes auth + credential membership checks for OAuth usage.
- * - Workspace-scoped credential IDs enforce active credential_member access.
- * - Legacy account IDs are resolved to workspace-scoped credentials when workflowId is provided.
- * - Direct legacy account-ID access without workflowId is restricted to account owners only.
+ *
+ * Every workspace-scoped credential — whether addressed by its `credential.id` or
+ * by the legacy `account.id` it wraps — resolves to the same rule: active credential
+ * membership, or derived credential admin. A `workflowId`, when supplied, only pins
+ * which workspace a legacy account id is resolved through; it never grants access on
+ * its own, so surfaces without a workflow (knowledge base connectors, credential
+ * management) authorize identically to workflow surfaces.
+ *
+ * Raw account ids that belong to no workspace credential at all remain private to
+ * their owner.
+ *
+ * HubSpot shared portal aliases are an exception: they are not workspace credential
+ * rows, so they resolve via `account_tokens` even when a workflow pins a workspace.
  */
 export async function authorizeCredentialUse(
   request: NextRequest,
@@ -37,22 +83,30 @@ export async function authorizeCredentialUse(
     callerUserId?: string
   }
 ): Promise<CredentialAccessResult> {
-  const { credentialId, workflowId, requireWorkflowIdForInternal = true, callerUserId } = params
-
   const auth = await checkSessionOrInternalAuth(request, {
-    requireWorkflowId: requireWorkflowIdForInternal,
+    requireWorkflowId: params.requireWorkflowIdForInternal ?? true,
   })
+  return authorizeCredentialUseForAuth(auth, params)
+}
+
+/**
+ * Credential authorization for an already-authenticated caller.
+ * {@link authorizeCredentialUse} is the HTTP wrapper; in-process callers build the same
+ * {@link AuthResult} directly, so both paths run one identical rule.
+ */
+export async function authorizeCredentialUseForAuth(
+  auth: AuthResult,
+  params: {
+    credentialId: string
+    workflowId?: string
+    callerUserId?: string
+  }
+): Promise<CredentialAccessResult> {
+  const { credentialId, workflowId, callerUserId } = params
+
   if (!auth.success || !auth.userId) {
     return { ok: false, error: auth.error || 'Authentication required' }
   }
-
-  // Lookup credential owner and provider
-  // Support both UUID id and alias for HubSpot
-  let [credRow] = await db
-    .select({ userId: account.userId, providerId: account.providerId })
-    .from(account)
-    .where(eq(account.id, credentialId))
-    .limit(1)
 
   if (
     auth.authType === AuthType.INTERNAL_JWT &&
@@ -63,69 +117,48 @@ export async function authorizeCredentialUse(
   }
 
   const actingUserId = auth.userId
+  const authType = auth.authType as CredentialAccessResult['authType']
 
-  const [workflowContext] = workflowId
-    ? await db
-        .select({ workspaceId: workflowTable.workspaceId })
-        .from(workflowTable)
-        .where(eq(workflowTable.id, workflowId))
-        .limit(1)
-    : [null]
+  const [workflowRows, platformAccess] = await Promise.all([
+    workflowId
+      ? db
+          .select({ workspaceId: workflowTable.workspaceId })
+          .from(workflowTable)
+          .where(eq(workflowTable.id, workflowId))
+          .limit(1)
+      : Promise.resolve([]),
+    getCredentialActorContext(credentialId, actingUserId),
+  ])
 
-  if (workflowId && (!workflowContext || !workflowContext.workspaceId)) {
+  const workflowContext = workflowRows[0] ?? null
+
+  if (workflowId && !workflowContext?.workspaceId) {
     return { ok: false, error: 'Workflow not found' }
   }
 
-  const [platformCredential] = await db
-    .select({
-      id: credential.id,
-      workspaceId: credential.workspaceId,
-      type: credential.type,
-      accountId: credential.accountId,
-    })
-    .from(credential)
-    .where(eq(credential.id, credentialId))
-    .limit(1)
+  const scopeWorkspaceId = workflowContext?.workspaceId ?? null
+  const platformCredential = platformAccess.credential
 
   if (platformCredential) {
+    if (scopeWorkspaceId && scopeWorkspaceId !== platformCredential.workspaceId) {
+      return { ok: false, error: 'Credential is not accessible from this workflow workspace' }
+    }
+
+    const accessError = credentialAccessError(platformAccess)
+    if (accessError) return { ok: false, error: accessError }
+
+    if (platformCredential.type === 'managed_oauth') {
+      return {
+        ok: false,
+        error: 'Managed credential access requires scoped workflow delegation',
+      }
+    }
+
     if (platformCredential.type === 'service_account') {
-      if (workflowContext && workflowContext.workspaceId !== platformCredential.workspaceId) {
-        return { ok: false, error: 'Credential is not accessible from this workflow workspace' }
-      }
-
-      const requesterPerm = await getUserEntityPermissions(
-        actingUserId,
-        'workspace',
-        platformCredential.workspaceId
-      )
-
-      const [membership] = await db
-        .select({ id: credentialMember.id })
-        .from(credentialMember)
-        .where(
-          and(
-            eq(credentialMember.credentialId, platformCredential.id),
-            eq(credentialMember.userId, actingUserId),
-            eq(credentialMember.status, 'active')
-          )
-        )
-        .limit(1)
-
-      if (requesterPerm === null) {
-        return { ok: false, error: 'You do not have access to this workspace.' }
-      }
-      if (!membership && requesterPerm !== 'admin') {
-        return {
-          ok: false,
-          error:
-            'You do not have access to this credential. Ask the credential admin to add you as a member.',
-        }
-      }
-
       return {
         ok: true,
-        authType: auth.authType as CredentialAccessResult['authType'],
-        requesterUserId: auth.userId,
+        authType,
+        requesterUserId: actingUserId,
         credentialOwnerUserId: actingUserId,
         workspaceId: platformCredential.workspaceId,
         resolvedCredentialId: platformCredential.id,
@@ -137,152 +170,95 @@ export async function authorizeCredentialUse(
       return { ok: false, error: 'Unsupported credential type for OAuth access' }
     }
 
-    if (workflowContext && workflowContext.workspaceId !== platformCredential.workspaceId) {
-      return { ok: false, error: 'Credential is not accessible from this workflow workspace' }
-    }
-
-    const [accountRow] = await db
-      .select({ userId: account.userId })
-      .from(account)
-      .where(eq(account.id, platformCredential.accountId))
-      .limit(1)
-
-    if (!accountRow) {
-      return { ok: false, error: 'Credential account not found' }
-    }
-
-    const requesterPerm = await getUserEntityPermissions(
-      actingUserId,
-      'workspace',
+    const identity = await resolveCredentialTokenIdentity(
+      platformCredential.id,
       platformCredential.workspaceId
     )
-
-    const [membership] = await db
-      .select({ id: credentialMember.id })
-      .from(credentialMember)
-      .where(
-        and(
-          eq(credentialMember.credentialId, platformCredential.id),
-          eq(credentialMember.userId, actingUserId),
-          eq(credentialMember.status, 'active')
-        )
-      )
-      .limit(1)
-
-    if (requesterPerm === null) {
-      return {
-        ok: false,
-        error: 'You do not have access to this workspace.',
-      }
-    }
-    if (!membership && requesterPerm !== 'admin') {
-      return {
-        ok: false,
-        error: `You do not have access to this credential. Ask the credential admin to add you as a member.`,
-      }
-    }
-
-    const ownerPerm = await getUserEntityPermissions(
-      accountRow.userId,
-      'workspace',
-      platformCredential.workspaceId
-    )
-    if (ownerPerm === null) {
-      return { ok: false, error: 'Unauthorized' }
-    }
+    if (identity?.kind !== 'oauth') return { ok: false, error: 'Unauthorized' }
 
     return {
       ok: true,
-      authType: auth.authType as CredentialAccessResult['authType'],
-      requesterUserId: auth.userId,
-      credentialOwnerUserId: accountRow.userId,
+      authType,
+      requesterUserId: actingUserId,
+      credentialOwnerUserId: identity.userId,
       workspaceId: platformCredential.workspaceId,
       resolvedCredentialId: platformCredential.accountId,
       credentialType: 'oauth',
     }
   }
 
-  if (workflowContext?.workspaceId) {
-    const [workspaceCredential] = await db
-      .select({
-        id: credential.id,
-        workspaceId: credential.workspaceId,
-        accountId: credential.accountId,
-      })
-      .from(credential)
-      .where(
-        and(
-          eq(credential.type, 'oauth'),
-          eq(credential.workspaceId, workflowContext.workspaceId),
-          eq(credential.accountId, credentialId)
-        )
+  /**
+   * Credentials predating the workspace-scoped `credential` table are addressed by
+   * raw account id. Each workspace that shares the account has its own credential
+   * row wrapping it, so authorization runs against the rows the caller can reach —
+   * pinned to the workflow's workspace when one was supplied.
+   */
+  const workspaceCredentials = await db
+    .select({ id: credential.id, workspaceId: credential.workspaceId })
+    .from(credential)
+    .where(
+      and(
+        eq(credential.type, 'oauth'),
+        eq(credential.accountId, credentialId),
+        scopeWorkspaceId ? eq(credential.workspaceId, scopeWorkspaceId) : undefined
       )
-      .limit(1)
+    )
+    .orderBy(asc(credential.createdAt))
 
-    /**
-     * Only treat `credentialId` as a workspace `account.id` when a row exists.
-     * HubSpot shared tenants use string aliases (e.g. `northstar_anesthesia`) — they never match
-     * `credential.accountId`; those must fall through to legacy / `accountTokens` handling below.
-     */
-    if (workspaceCredential?.accountId) {
-      const [accountRow] = await db
-        .select({ userId: account.userId })
-        .from(account)
-        .where(eq(account.id, workspaceCredential.accountId))
-        .limit(1)
-
-      if (!accountRow) {
-        return { ok: false, error: 'Credential account not found' }
-      }
-
-      const [membership] = await db
-        .select({ id: credentialMember.id })
-        .from(credentialMember)
-        .where(
-          and(
-            eq(credentialMember.credentialId, workspaceCredential.id),
-            eq(credentialMember.userId, actingUserId),
-            eq(credentialMember.status, 'active')
-          )
-        )
-        .limit(1)
-
-      const requesterPerm = await getUserEntityPermissions(
-        actingUserId,
-        'workspace',
-        workflowContext.workspaceId
-      )
-
-      if (requesterPerm === null) {
-        return { ok: false, error: 'You do not have access to this workspace.' }
-      }
-      if (!membership && requesterPerm !== 'admin') {
-        return {
-          ok: false,
-          error:
-            'You do not have access to this credential. Ask the credential admin to add you as a member.',
-        }
-      }
-
-      const ownerPerm = await getUserEntityPermissions(
-        accountRow.userId,
-        'workspace',
-        workflowContext.workspaceId
-      )
-      if (ownerPerm === null) {
-        return { ok: false, error: 'Unauthorized' }
-      }
-
-      return {
-        ok: true,
-        authType: auth.authType as CredentialAccessResult['authType'],
-        requesterUserId: auth.userId,
-        credentialOwnerUserId: accountRow.userId,
-        workspaceId: workflowContext.workspaceId,
-        resolvedCredentialId: workspaceCredential.accountId,
-        credentialType: 'oauth',
-      }
+  let firstRejection: string | null = null
+  for (const workspaceCredential of workspaceCredentials) {
+    const accessError = credentialAccessError(
+      await getCredentialActorContext(workspaceCredential.id, actingUserId)
+    )
+    if (accessError) {
+      firstRejection ??= accessError
+      continue
     }
+
+    const identity = await resolveCredentialTokenIdentity(
+      credentialId,
+      workspaceCredential.workspaceId
+    )
+    if (identity?.kind !== 'oauth') {
+      firstRejection ??= 'Unauthorized'
+      continue
+    }
+
+    return {
+      ok: true,
+      authType,
+      requesterUserId: actingUserId,
+      credentialOwnerUserId: identity.userId,
+      workspaceId: workspaceCredential.workspaceId,
+      resolvedCredentialId: credentialId,
+      credentialType: 'oauth',
+    }
+  }
+
+  /**
+   * Shared HubSpot portals are alias keys in `account_tokens`, not workspace
+   * `credential` rows. Resolve them before the scoped early-return so workflow
+   * runs (which always supply `workflowId`) can still use public portal aliases.
+   */
+  const sharedHubSpot = await lookupHubSpotSharedAccountAlias(credentialId)
+  if (sharedHubSpot?.alias) {
+    return {
+      ok: true,
+      authType,
+      requesterUserId: actingUserId,
+      credentialOwnerUserId: sharedHubSpot.userId ?? actingUserId,
+      resolvedCredentialId: credentialId,
+      credentialType: 'oauth',
+    }
+  }
+
+  /**
+   * A workflow pins the credential to that workflow's workspace, so an account that
+   * resolves to no reachable credential row there is out of scope — it must not fall
+   * through to the owner-only path and cross the workspace boundary.
+   */
+  if (scopeWorkspaceId) {
+    return { ok: false, error: firstRejection ?? 'Credential not found' }
   }
 
   const [legacyAccount] = await db
@@ -290,42 +266,6 @@ export async function authorizeCredentialUse(
     .from(account)
     .where(eq(account.id, credentialId))
     .limit(1)
-
-  if (!credRow) {
-    // If not found by ID, check if it's a HubSpot alias in the new accountTokens table first
-    const [tokenRow] = await db
-      .select({
-        userId: accountTokens.userId,
-        providerId: accountTokens.providerId,
-        alias: accountTokens.alias,
-      })
-      .from(accountTokens)
-      .where(eq(accountTokens.alias, credentialId))
-      .limit(1)
-
-    if (tokenRow && tokenRow.providerId === 'hubspot') {
-      credRow = tokenRow as any // Compatible enough for these fields
-    }
-  }
-
-  if (!credRow) {
-    return { ok: false, error: 'Credential not found' }
-  }
-
-  const credentialOwnerUserId = credRow.userId
-
-  // HubSpot specific check for shared admin accounts via alias
-  const isSharedHubSpotAccount =
-    credRow.providerId === 'hubspot' && 'alias' in credRow && !!(credRow as any).alias
-
-  if (isSharedHubSpotAccount) {
-    return {
-      ok: true,
-      authType: auth.authType as CredentialAccessResult['authType'],
-      requesterUserId: auth.userId,
-      credentialOwnerUserId,
-    }
-  }
 
   if (!legacyAccount) {
     return { ok: false, error: 'Credential not found' }
@@ -335,14 +275,14 @@ export async function authorizeCredentialUse(
     return { ok: false, error: 'workflowId is required' }
   }
 
-  if (auth.userId !== legacyAccount.userId) {
-    return { ok: false, error: 'Unauthorized' }
+  if (actingUserId !== legacyAccount.userId) {
+    return { ok: false, error: firstRejection ?? 'Unauthorized' }
   }
 
   return {
     ok: true,
-    authType: auth.authType as CredentialAccessResult['authType'],
-    requesterUserId: auth.userId,
+    authType,
+    requesterUserId: actingUserId,
     credentialOwnerUserId: legacyAccount.userId,
     resolvedCredentialId: credentialId,
     credentialType: 'oauth',

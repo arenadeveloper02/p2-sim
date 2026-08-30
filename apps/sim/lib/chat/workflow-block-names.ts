@@ -23,7 +23,10 @@ export function uniqueBlockNamesByWorkflowId(
 
   const result = new Map<string, string[]>()
   for (const [workflowId, names] of namesByWorkflow) {
-    result.set(workflowId, [...names].sort((a, b) => a.localeCompare(b)))
+    result.set(
+      workflowId,
+      [...names].sort((a, b) => a.localeCompare(b))
+    )
   }
   return result
 }

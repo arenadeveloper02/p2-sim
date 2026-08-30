@@ -18,6 +18,10 @@ import { Tooltip } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { formatRelativeTime } from '@sim/utils/formatting'
 import { Check, RefreshCw } from 'lucide-react'
+import {
+  AgentStreamThinkingChrome,
+  AgentStreamToolCallsChrome,
+} from '@/components/agent-stream/agent-stream-chrome'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   resolveEChartsOptionsFromContent,
@@ -39,6 +43,7 @@ import { StreamingIndicator } from '@/app/(interfaces)/chat/components/message/c
 import { WelcomeMessageWithCtas } from '@/app/(interfaces)/chat/components/message/components/welcome-message-with-ctas'
 import type {
   ChatAttachment,
+  ChatToolCall,
   KnowledgeRef,
   KnowledgeResultChunk,
 } from '@/app/(interfaces)/chat/components/message/message'
@@ -80,6 +85,14 @@ export interface ChatMessage {
   /** User bubble summarizing Start Block form values (not a typed chat query) */
   isStartBlockInputsSummary?: boolean
   isStreaming?: boolean
+  /** Model thinking text (agent-events-v1). Chrome only when non-empty. */
+  thinking?: string
+  /** True while thinking deltas are still arriving (before first answer chunk / final). */
+  isThinkingStreaming?: boolean
+  /** Tool lifecycle chips (name + status only). Chrome only when non-empty. */
+  toolCalls?: ChatToolCall[]
+  /** True while any tool chip is still `running`. */
+  isToolStreaming?: boolean
   executionId?: string
   liked?: boolean | null
   attachments?: ChatAttachment[]
@@ -996,28 +1009,38 @@ export const ArenaClientChatMessage = memo(
     }
 
     // For assistant messages (on the left)
+    const hasThinking = typeof message.thinking === 'string' && message.thinking.length > 0
+    const hasToolCalls = Array.isArray(message.toolCalls) && message.toolCalls.length > 0
+    const showStreamPlaceholder =
+      message.isStreaming && !hasThinking && !hasToolCalls && !hasRenderableText
+
     return (
       <div className='py-[5px]' data-message-id={message.id}>
         <div className='w-full'>
           <div className='flex flex-col space-y-3'>
-            <div className='py-1'>
-              <div
-                className='break-words font-normal font-poppins text-[14px] leading-[1.6]'
-                style={{ color: '#2C2D33' }}
-              >
-                {renderContent(cleanTextContent)}
-                {/* {isJsonObject ? (
-                  <pre className='text-gray-800 dark:text-gray-100'>
-                    {JSON.stringify(cleanTextContent, null, 2)}
-                  </pre>
-                ) : (
-                  <EnhancedMarkdownRenderer content={cleanTextContent as string} />
-                )} */}
-              </div>
-            </div>
-            {message.type === 'assistant' && message.isStreaming && (
-              <DeployedInlineLoader label='Fetching references...' />
+            {hasThinking && (
+              <AgentStreamThinkingChrome
+                thinking={message.thinking!}
+                isStreaming={message.isThinkingStreaming}
+              />
             )}
+            {hasToolCalls && (
+              <AgentStreamToolCallsChrome
+                toolCalls={message.toolCalls!}
+                isStreaming={message.isToolStreaming}
+              />
+            )}
+            {(hasRenderableText || isJsonObject || containsBase64Images || hasImageUrl) && (
+              <div className='py-1'>
+                <div
+                  className='break-words font-normal font-poppins text-[14px] leading-[1.6]'
+                  style={{ color: '#2C2D33' }}
+                >
+                  {renderContent(cleanTextContent)}
+                </div>
+              </div>
+            )}
+            {showStreamPlaceholder && <DeployedInlineLoader label='Working…' />}
             {showReferencesSection && (
               <div className='mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm'>
                 <span className='text-gray-500 dark:text-gray-400'>References:</span>
@@ -1082,7 +1105,12 @@ export const ArenaClientChatMessage = memo(
             {message.type === 'assistant' &&
               !message.isStreaming &&
               !message.isInitialMessage &&
-              (hasRenderableText || isErrorResponse) && (
+              (hasRenderableText ||
+                isErrorResponse ||
+                isJsonObject ||
+                containsBase64Images ||
+                hasImageUrl ||
+                (message.generatedImages?.length ?? 0) > 0) && (
                 <div className='flex flex-col gap-1'>
                   <p className='text-[var(--text-muted)] text-xs'>{timestampLabel}</p>
                   {isErrorResponse && onRegenerateMessage && (
@@ -1139,17 +1167,17 @@ export const ArenaClientChatMessage = memo(
                         </Tooltip.Root>
                       </Tooltip.Provider>
                     )}
-                    {cleanTextContent && message?.executionId && (
+                    {Boolean(message?.executionId) && (
                       <>
                         {isFeedbackPending ? (
                           <StreamingIndicator />
                         ) : (
                           <>
-                            {(message?.liked === true || message?.liked === null) && (
+                            {message?.liked !== false && (
                               <Tooltip.Provider>
                                 <Tooltip.Root>
                                   <Popover
-                                    open={isLikeFeedbackOpen && message?.liked === null}
+                                    open={isLikeFeedbackOpen && message?.liked == null}
                                     onOpenChange={setIsLikeFeedbackOpen}
                                   >
                                     <PopoverTrigger asChild>
@@ -1196,7 +1224,7 @@ export const ArenaClientChatMessage = memo(
                               </Tooltip.Provider>
                             )}
 
-                            {(message?.liked === false || message?.liked === null) && (
+                            {message?.liked !== true && (
                               <Tooltip.Provider>
                                 <Tooltip.Root>
                                   <Popover
@@ -1265,6 +1293,10 @@ export const ArenaClientChatMessage = memo(
       prevProps.message.id === nextProps.message.id &&
       prevProps.message.content === nextProps.message.content &&
       prevProps.message.isStreaming === nextProps.message.isStreaming &&
+      prevProps.message.thinking === nextProps.message.thinking &&
+      prevProps.message.isThinkingStreaming === nextProps.message.isThinkingStreaming &&
+      prevProps.message.isToolStreaming === nextProps.message.isToolStreaming &&
+      prevProps.message.toolCalls === nextProps.message.toolCalls &&
       prevProps.message.isInitialMessage === nextProps.message.isInitialMessage &&
       prevProps.message.executionId === nextProps.message.executionId &&
       prevProps.message.liked === nextProps.message.liked &&

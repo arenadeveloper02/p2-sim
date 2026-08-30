@@ -477,8 +477,7 @@ export async function mergeFollowUpDirectivesIntoSessionMemory(params: {
   if (!params.chatId) return params.previous
   if (params.constraints.length === 0 && !params.activeDirective) return params.previous
 
-  const base: SessionMemory =
-    params.previous ?? createEmptySessionMemory('directive-bootstrap')
+  const base: SessionMemory = params.previous ?? createEmptySessionMemory('directive-bootstrap')
 
   const next = clampSessionMemory({
     ...base,

@@ -1,8 +1,10 @@
 import { outboxEvent } from '@sim/db/schema'
+import { isRecordLike } from '@sim/utils/object'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import type Stripe from 'stripe'
 import { z } from 'zod'
 import { MAX_BILLING_CONCURRENCY_LIMIT } from '@/lib/billing/concurrency-defaults'
+import { MAX_WORKFLOW_EXECUTION_TIMEOUT_SECONDS } from '@/lib/billing/execution-timeout-defaults'
 import type { DbOrTx } from '@/lib/db/types'
 
 export const ENTERPRISE_PROVISION_EVENT_TYPE = 'stripe.provision-enterprise'
@@ -20,6 +22,12 @@ export const enterpriseProvisionRequestSchema = z.object({
   usageLimitCredits: nonnegativeInteger,
   seats: z.number().int().positive(),
   concurrencyLimit: z.number().int().positive().max(MAX_BILLING_CONCURRENCY_LIMIT).optional(),
+  workflowExecutionTimeoutSeconds: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_WORKFLOW_EXECUTION_TIMEOUT_SECONDS)
+    .optional(),
   pausePaymentCollection: z.boolean().default(false),
 })
 
@@ -129,6 +137,9 @@ export function enterpriseOperationMatchesStripeSubscription(
     stripeMetadataInteger(metadata, 'seats') === request.seats &&
     (request.concurrencyLimit === undefined ||
       stripeMetadataInteger(metadata, 'concurrencyLimit') === request.concurrencyLimit) &&
+    (request.workflowExecutionTimeoutSeconds === undefined ||
+      stripeMetadataInteger(metadata, 'workflowExecutionTimeoutSeconds') ===
+        request.workflowExecutionTimeoutSeconds) &&
     paymentCollectionMatches
   )
 }
@@ -191,9 +202,7 @@ export async function assertNoCompetingEnterpriseIssuance(
 }
 
 function metadataRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
+  return isRecordLike(value) ? (value as Record<string, unknown>) : {}
 }
 
 function positiveInteger(value: unknown): number | null {

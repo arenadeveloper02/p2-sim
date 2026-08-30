@@ -2,8 +2,21 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { agentTool } from '@/tools/firecrawl/agent'
 import { crawlTool } from '@/tools/firecrawl/crawl'
+import { extractTool } from '@/tools/firecrawl/extract'
+import { mapTool } from '@/tools/firecrawl/map'
 import { scrapeTool } from '@/tools/firecrawl/scrape'
+import { searchTool } from '@/tools/firecrawl/search'
+
+const TOOLS_USING_HOSTED_API_KEY = [
+  scrapeTool,
+  crawlTool,
+  searchTool,
+  mapTool,
+  extractTool,
+  agentTool,
+] as const
 
 describe('Firecrawl crawl hosted key config', () => {
   it('matches scrape hosting provider and credit rate', () => {
@@ -13,11 +26,17 @@ describe('Firecrawl crawl hosted key config', () => {
     expect(scrapeTool.hosting?.byokProviderId).toBe('firecrawl')
   })
 
-  it('uses params.apiKey in request headers', () => {
-    const headers = crawlTool.request.headers as (params: {
-      apiKey: string
-    }) => Record<string, string>
-    expect(headers({ apiKey: 'fc-key' }).Authorization).toBe('Bearer fc-key')
+  it('uses params.apiKey in request headers for every Firecrawl operation', () => {
+    for (const tool of TOOLS_USING_HOSTED_API_KEY) {
+      const headers = tool.request.headers as (params: { apiKey: string }) => Record<string, string>
+      expect(headers({ apiKey: 'fc-key' }).Authorization).toBe('Bearer fc-key')
+    }
+  })
+
+  it('wires agent through the shared Firecrawl hosting config', () => {
+    expect(agentTool.hosting?.envKeyPrefix).toBe('FIRECRAWL_API_KEY')
+    expect(agentTool.hosting?.apiKeyParam).toBe('apiKey')
+    expect(agentTool.hosting?.byokProviderId).toBe('firecrawl')
   })
 
   it('prices from metadata.creditsUsed at $0.001/credit', () => {

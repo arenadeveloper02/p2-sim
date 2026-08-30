@@ -12,10 +12,10 @@ import {
   SecretInput,
   Wizard,
 } from '@sim/emcn'
+import { Loader } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
-import { Loader2 } from 'lucide-react'
 import { SlackIcon } from '@/components/icons'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { SLACK_CUSTOM_BOT_PROVIDER_ID } from '@/lib/oauth/types'
@@ -23,7 +23,12 @@ import {
   useCreateWorkspaceCredential,
   useUpdateWorkspaceCredential,
 } from '@/hooks/queries/credentials'
-import { buildSlackManifest, SLACK_CAPABILITIES } from '@/triggers/slack/capabilities'
+import {
+  buildSlackManifest,
+  getSlackManagedUserAuthorizationManifestConfig,
+  SLACK_CAPABILITIES,
+  SLACK_MANAGED_USER_AUTHORIZATION_CAPABILITY,
+} from '@/triggers/slack/capabilities'
 
 const logger = createLogger('ConnectSlackBotModal')
 
@@ -31,11 +36,16 @@ const DEFAULT_APP_NAME = 'Sim Bot'
 const DONE_STEP = 4
 
 /** Every capability is granted by default; trimming is an opt-in dropdown. */
-const ALL_CAPABILITIES = new Set(SLACK_CAPABILITIES.map((c) => c.id))
+const CUSTOM_BOT_CAPABILITIES = [
+  ...SLACK_CAPABILITIES,
+  SLACK_MANAGED_USER_AUTHORIZATION_CAPABILITY,
+] as const
 
-const CAPABILITY_OPTIONS: ChipDropdownOption[] = SLACK_CAPABILITIES.map((c) => ({
-  value: c.id,
-  label: c.label,
+const ALL_CAPABILITIES = new Set(CUSTOM_BOT_CAPABILITIES.map((capability) => capability.id))
+
+const CAPABILITY_OPTIONS: ChipDropdownOption[] = CUSTOM_BOT_CAPABILITIES.map((capability) => ({
+  value: capability.id,
+  label: capability.label,
 }))
 
 interface ConnectSlackBotModalProps {
@@ -118,10 +128,14 @@ export function ConnectSlackBotModal({
   )
 
   const manifestJson = useMemo(() => {
+    const managedUserAuthorization = selected.has(SLACK_MANAGED_USER_AUTHORIZATION_CAPABILITY.id)
+      ? getSlackManagedUserAuthorizationManifestConfig(getBaseUrl())
+      : undefined
     const manifest = buildSlackManifest(selected, {
       appName: appName.trim() || DEFAULT_APP_NAME,
       webhookUrl: requestUrl,
       description: appDescription,
+      ...(managedUserAuthorization ? { managedUserAuthorization } : {}),
     })
     return JSON.stringify(manifest, null, 2)
   }, [selected, appName, appDescription, requestUrl])
@@ -243,7 +257,7 @@ interface SubStepProps {
 function SubStep({ n, children }: SubStepProps) {
   return (
     <li className='flex gap-2.5'>
-      <span className='mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-5)] font-medium text-[var(--text-secondary)] text-xs tabular-nums'>
+      <span className='mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-5)] text-[var(--text-secondary)] text-xs tabular-nums'>
         {n}
       </span>
       <div className='min-w-0 flex-1 text-[var(--text-secondary)] text-sm leading-relaxed'>
@@ -269,7 +283,7 @@ function StepConfigure({
   capabilityIds,
   onCapabilityIdsChange,
 }: StepConfigureProps) {
-  const allSelected = capabilityIds.length === SLACK_CAPABILITIES.length
+  const allSelected = capabilityIds.length === CUSTOM_BOT_CAPABILITIES.length
 
   return (
     <div className='space-y-4'>
@@ -310,7 +324,7 @@ function StepConfigure({
         {allSelected && (
           <p className='text-[var(--text-muted)] text-caption'>
             Full access — the bot can read and send messages, react, upload files, and chat as an AI
-            assistant.
+            assistant, and people can authorize it through Credential Groups.
           </p>
         )}
       </div>
@@ -431,7 +445,7 @@ function StepDone({ pending, created, error, onRetry }: StepDoneProps) {
   if (pending) {
     return (
       <div className='flex flex-col items-center gap-3 py-10 text-center'>
-        <Loader2 className='size-6 animate-spin text-[var(--text-muted)]' />
+        <Loader className='size-6 animate-spin text-[var(--text-muted)]' />
         <p className='text-[var(--text-secondary)] text-sm'>Verifying your bot and connecting…</p>
       </div>
     )
@@ -450,7 +464,7 @@ function StepDone({ pending, created, error, onRetry }: StepDoneProps) {
     return (
       <div className='flex flex-col items-center gap-4 py-10 text-center'>
         <div className='space-y-1'>
-          <p className='font-medium text-[var(--text-primary)] text-base'>Bot connected</p>
+          <p className='text-[var(--text-primary)] text-base'>Bot connected</p>
           <p className='max-w-sm text-[var(--text-secondary)] text-sm leading-relaxed'>
             It's now selectable in Slack triggers and actions across this workspace. Click Done to
             finish.

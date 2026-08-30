@@ -6,7 +6,7 @@
 
 export { resolveAIProvider } from './ai-provider'
 export * from './constants'
-export { GAQL_SYSTEM_PROMPT } from './prompt'
+export { getGaqlSystemPrompt } from './prompt'
 export { generateGAQLQuery } from './query-generation'
 export { processResults } from './result-processing'
 export * from './types'

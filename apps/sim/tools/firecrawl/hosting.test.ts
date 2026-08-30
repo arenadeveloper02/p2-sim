@@ -2,6 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
+import { agentTool } from '@/tools/firecrawl/agent'
 import { batchScrapeTool } from '@/tools/firecrawl/batch-scrape'
 import { crawlTool } from '@/tools/firecrawl/crawl'
 import { extractTool } from '@/tools/firecrawl/extract'
@@ -36,6 +37,7 @@ const HOSTED_TOOLS: Array<[string, HostedTool]> = [
   ['crawl', crawlTool],
   ['map', mapTool],
   ['extract', extractTool],
+  ['agent', agentTool],
   ['parse', parseTool],
   ['batchScrape', batchScrapeTool],
 ]

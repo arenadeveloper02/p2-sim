@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, cn, Input, toast } from '@sim/emcn'
-import { ChevronDown, ChevronRight, ChevronUp, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, ChevronUp, X } from '@sim/emcn/icons'
 import { useParams } from 'next/navigation'
 import { useShallow } from 'zustand/react/shallow'
 import { getWorkflowSearchDependentClears } from '@/lib/workflows/search-replace/dependencies'
@@ -565,7 +565,7 @@ export function WorkflowSearchReplace() {
         onMouseDown={handleMouseDown}
       >
         <div className='flex min-w-0 items-center'>
-          <span className='truncate font-medium text-[13px] text-[var(--text-primary)]'>
+          <span className='truncate text-[13px] text-[var(--text-primary)]'>
             Search and replace
           </span>
         </div>

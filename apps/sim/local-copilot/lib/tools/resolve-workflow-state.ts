@@ -1,4 +1,4 @@
-import { buildLocalCopilotContext } from '@/local-copilot/lib/context/build-context'
+import { reloadLocalCopilotWorkflowContext } from '@/local-copilot/lib/context/reload-workflow-context'
 import type { ToolExecutionContext } from '@/local-copilot/lib/tools/executor'
 import { resolveWorkflowIdForDelegatedTool } from '@/local-copilot/lib/tools/mothership-delegated-tools'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
@@ -34,9 +34,8 @@ export async function resolveWorkflowStateForLocalTool(
     return { ok: false, error: missingHomeWorkflowError(ctx) }
   }
 
-  const loaded = await buildLocalCopilotContext({
-    userId: ctx.userId,
-    workspaceId: ctx.workspaceId,
+  const loaded = await reloadLocalCopilotWorkflowContext({
+    previous: ctx.structuredContext,
     workflowId,
   })
   if (!loaded.workflow) {
@@ -44,7 +43,7 @@ export async function resolveWorkflowStateForLocalTool(
   }
 
   ctx.workflowId = loaded.workflow.id
-  ctx.structuredContext.workflow = loaded.workflow
+  ctx.structuredContext = loaded
 
   return { ok: true, workflow: loaded.workflow }
 }

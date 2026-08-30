@@ -56,10 +56,13 @@ import { buildUsageUpgradeContent } from '@/lib/copilot/request/tools/usage-upgr
 import type { ExecutionContext, OrchestratorResult } from '@/lib/copilot/request/types'
 import { persistChatResources } from '@/lib/copilot/resources/persistence'
 import {
-  canonicalizeDesktopSessionResources,
+  hasAddressableId,
   isEphemeralResource,
+  sanitizeChatResources,
 } from '@/lib/copilot/resources/types'
 import { prepareExecutionContext } from '@/lib/copilot/tools/handlers/context'
+import type { AtomicClaimResult } from '@/lib/core/idempotency'
+import { chatSendIdempotency } from '@/lib/core/idempotency'
 import { captureServerEvent } from '@/lib/posthog/server'
 import { resolveWorkflowIdForUser } from '@/lib/workflows/utils'
 import {
@@ -71,10 +74,7 @@ import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
 import { extractWorkflowIdFromResources } from '@/local-copilot/lib/context/open-workflow'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
-import {
-  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
-  isLocalCopilotCatalogId,
-} from '@/local-copilot/lib/model-catalog'
+import { resolveLocalCopilotRequestCatalogId } from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 
 export const maxDuration = 3600
@@ -105,7 +105,6 @@ const ResourceAttachmentSchema = z.object({
     'filefolder',
     'task',
     'log',
-    'scheduledtask',
     'generic',
     'browser',
     // Filtered out client-side rather than sent, but accepted here so a stray
@@ -139,7 +138,6 @@ const GENERIC_RESOURCE_TITLE: Record<z.infer<typeof ResourceAttachmentSchema>['t
   filefolder: 'File Folder',
   task: 'Task',
   log: 'Log',
-  scheduledtask: 'Scheduled Task',
   generic: 'Resource',
   browser: 'Browser',
   terminal: 'Terminal',
@@ -155,6 +153,20 @@ function isPersistableAttachment(resource: z.infer<typeof ResourceAttachmentSche
     type: resource.type,
     id: resource.id,
     title: resource.title ?? '',
+  })
+}
+
+/**
+ * Drops open tabs the client cannot address, so one unusable tab does not fail
+ * the whole message — clients on a stale bundle still send them. A non-string
+ * id is left in place for the schema to reject, since that is a malformed
+ * request rather than a resource we merely cannot open.
+ */
+function dropUnaddressableAttachments(value: unknown): unknown {
+  if (!Array.isArray(value)) return value
+  return value.filter((resource) => {
+    const id = (resource as { id?: unknown } | null)?.id
+    return typeof id !== 'string' || hasAddressableId(id)
   })
 }
 
@@ -233,7 +245,6 @@ const ChatContextSchema = z
       'file_selection',
       'folder',
       'filefolder',
-      'scheduledtask',
       'integration',
       'skill',
       'mcp',
@@ -282,7 +293,10 @@ const ChatContextSchema = z
 
 const ChatMessageSchema = z.object({
   message: z.string().min(1, 'Message is required'),
-  userMessageId: z.string().optional(),
+  /* Bounded because it becomes part of a Postgres key in `chatSendIdempotency`;
+     a client-supplied id longer than the btree entry limit would throw there.
+     A generated id is 36 chars. */
+  userMessageId: z.string().max(128).optional(),
   chatId: z.string().optional(),
   workflowId: z.string().optional(),
   workspaceId: z.string().optional(),
@@ -293,7 +307,9 @@ const ChatMessageSchema = z.object({
   createNewChat: z.boolean().optional().default(false),
   implicitFeedback: z.string().optional(),
   fileAttachments: z.array(FileAttachmentSchema).optional(),
-  resourceAttachments: z.array(ResourceAttachmentSchema).optional(),
+  resourceAttachments: z
+    .preprocess(dropUnaddressableAttachments, z.array(ResourceAttachmentSchema))
+    .optional(),
   provider: z.string().optional(),
   contexts: z.array(ChatContextSchema).optional(),
   commands: z.array(z.string()).optional(),
@@ -929,7 +945,7 @@ async function resolveBranch(params: {
     workspacePermission,
     effectiveModel: localCatalogId || DEFAULT_MODEL,
     goRoute: '/api/mothership',
-    titleModel: localCatalogId || DEFAULT_MODEL,
+    titleModel: DEFAULT_MODEL,
     notifyWorkspaceStatus: true,
     buildPayload: async (payloadParams) =>
       buildCopilotRequestPayload(
@@ -970,10 +986,68 @@ async function resolveBranch(params: {
   }
 }
 
+/** Names what the key identifies: `chat-send:user-message:<id>:userId=<id>`. */
+const CHAT_SEND_IDEMPOTENCY_PROVIDER = 'user-message'
+
+/**
+ * Claims this send so a retry of it can be recognised.
+ *
+ * Fails open: a missed deduplication costs a duplicate chat and turn, but
+ * refusing the send loses the user's message. Returns `undefined` when the
+ * store is unreachable, which sends normally with no claim to finalize.
+ *
+ * The key is scoped to the caller — `userMessageId` is client-supplied, so an
+ * unscoped one would let a user probe another's sends for their chat id.
+ */
+async function claimChatSend(
+  userMessageId: string,
+  userId: string
+): Promise<AtomicClaimResult | undefined> {
+  try {
+    return await chatSendIdempotency.atomicallyClaim(
+      CHAT_SEND_IDEMPOTENCY_PROVIDER,
+      userMessageId,
+      { userId }
+    )
+  } catch (error) {
+    logger.warn('Could not claim chat send; proceeding without deduplication', {
+      userMessageId,
+      error: getErrorMessage(error, 'Unknown error'),
+    })
+    return undefined
+  }
+}
+
+/**
+ * Answers a send whose `userMessageId` was already claimed.
+ *
+ * Deliberately the same 409 shape the pending-stream lock returns, because the
+ * client's conflict handler already knows how to reattach to `activeStreamId`
+ * instead of starting a turn — a duplicate send and a send that collided with
+ * an in-flight one want exactly the same thing. `chatId` rides along when the
+ * first attempt got far enough to resolve one, letting a chatless client adopt
+ * it without a stream-to-chat lookup.
+ */
+function duplicateChatSendResponse(claim: AtomicClaimResult, userMessageId: string): NextResponse {
+  const claimed = claim.existingResult?.result?.chatId
+  const chatId = typeof claimed === 'string' && claimed ? claimed : undefined
+  logger.info('Deduplicated a repeated chat send', { userMessageId, chatId })
+  return NextResponse.json(
+    {
+      error: 'This message was already sent.',
+      activeStreamId: userMessageId,
+      ...(chatId ? { chatId } : {}),
+    },
+    { status: 409 }
+  )
+}
+
 export async function handleUnifiedChatPost(req: NextRequest) {
   let actualChatId: string | undefined
   let userMessageId = ''
   let chatStreamLockAcquired = false
+  /** Cleared once the chat is recorded against it, which makes it permanent. */
+  let sendClaim: AtomicClaimResult | undefined
   // Started once we've parsed the body (need userMessageId to stamp as
   // streamId). Every subsequent span (persistUserMessage,
   // createRunSegment, the whole SSE stream, etc.) nests under this
@@ -1001,7 +1075,8 @@ export async function handleUnifiedChatPost(req: NextRequest) {
 
     const body = ChatMessageSchema.parse(await req.json())
     const requestedCopilotBackend = parseCopilotBackendPreference(body.copilotBackend)
-    const { hasAccess, localOnly } = await getLocalCopilotUserAccess(authenticatedUserId)
+    const { hasAccess, localOnly, defaultModel } =
+      await getLocalCopilotUserAccess(authenticatedUserId)
     const userAllowedForLocal = hasAccess || localOnly
     // Local-only users are pinned to Local regardless of any stored or forged
     // `external` preference, mirroring the server-side routing guard so chat
@@ -1018,14 +1093,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
 
     let localCatalogId: string | undefined
     if (copilotBackend === 'local') {
-      const requestedModel = body.model?.trim()
-      if (!requestedModel || requestedModel === DEFAULT_MODEL) {
-        localCatalogId = DEFAULT_LOCAL_COPILOT_CATALOG_ID
-      } else if (isLocalCopilotCatalogId(requestedModel)) {
-        localCatalogId = requestedModel
-      } else {
-        return createBadRequestResponse(`Unknown local copilot model: ${requestedModel}`)
-      }
+      localCatalogId = resolveLocalCopilotRequestCatalogId(body.model?.trim(), defaultModel)
     }
 
     const userMetadata = {
@@ -1035,6 +1103,11 @@ export async function handleUnifiedChatPost(req: NextRequest) {
     }
     const normalizedContexts = normalizeContexts(body.contexts) ?? []
     userMessageId = body.userMessageId || generateId()
+
+    sendClaim = await claimChatSend(userMessageId, authenticatedUserId)
+    if (sendClaim?.claimed === false) {
+      return duplicateChatSendResponse(sendClaim, userMessageId)
+    }
 
     otelRoot = startCopilotOtelRoot({
       streamId: userMessageId,
@@ -1122,20 +1195,6 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           ? chatResult.conversationHistory
           : []
 
-        if (
-          localCatalogId &&
-          actualChatId &&
-          !chatIsNew &&
-          currentChat &&
-          'model' in currentChat &&
-          currentChat.model !== localCatalogId
-        ) {
-          await db
-            .update(copilotChats)
-            .set({ model: localCatalogId, updatedAt: new Date() })
-            .where(eq(copilotChats.id, actualChatId))
-        }
-
         if (body.chatId && !currentChat) {
           activeOtelRoot.span.setAttribute(TraceAttr.HttpStatusCode, 404)
           activeOtelRoot.finish('error')
@@ -1143,8 +1202,32 @@ export async function handleUnifiedChatPost(req: NextRequest) {
         }
       }
 
+      /* Record the chat as soon as it is known — the earliest a retry can be
+         answered with somewhere to go. This does not make the claim permanent:
+         several exits below still return without starting a turn, and a retry
+         of those must be free to start one. Failing to record only costs a
+         retry the chat-id shortcut, so it must not fail the send. */
+      if (sendClaim?.claimToken && actualChatId) {
+        await chatSendIdempotency
+          .storeResult(
+            sendClaim.normalizedKey,
+            { success: true, status: 'completed', result: { chatId: actualChatId } },
+            sendClaim.storageMethod,
+            sendClaim.claimToken
+          )
+          .catch((error) => {
+            logger.warn(`[${requestId}] Could not record the chat for this send`, {
+              userMessageId,
+              error: getErrorMessage(error, 'Unknown error'),
+            })
+          })
+      }
+
       if (chatIsNew && actualChatId && body.resourceAttachments?.length) {
-        const persistable = canonicalizeDesktopSessionResources(
+        // Canonicalizes here, not just inside `persistChatResources`: several
+        // browser tabs collapse onto the one Browser panel before they are
+        // stored, so the chat reopens with a single tab rather than one per page.
+        const persistable = sanitizeChatResources(
           body.resourceAttachments.filter(isPersistableAttachment).map((resource) => ({
             type: resource.type,
             id: resource.id,
@@ -1334,34 +1417,6 @@ export async function handleUnifiedChatPost(req: NextRequest) {
             activeOtelRoot.context
           )
         : Promise.resolve(undefined)
-      const agentContextsPromise = withCopilotSpan(
-        TraceSpan.CopilotChatResolveAgentContexts,
-        {
-          [TraceAttr.CopilotContextsCount]: normalizedContexts.length,
-          [TraceAttr.CopilotResourceAttachmentsCount]: body.resourceAttachments?.length ?? 0,
-        },
-        () =>
-          resolveAgentContexts({
-            contexts: normalizedContexts,
-            resourceAttachments: body.resourceAttachments,
-            userId: authenticatedUserId,
-            message: body.message,
-            workspaceId,
-            chatId: actualChatId,
-            requestId,
-          }),
-        activeOtelRoot.context
-      )
-      const persistUserMessagePromise = persistUserMessage({
-        chatId: actualChatId,
-        userMessageId,
-        message: body.message,
-        fileAttachments: body.fileAttachments,
-        contexts: normalizedContexts,
-        workspaceId,
-        notifyWorkspaceStatus: branch.notifyWorkspaceStatus,
-        parentOtelContext: activeOtelRoot.context,
-      })
       const executionContextPromise = withCopilotSpan(
         TraceSpan.CopilotChatBuildExecutionContext,
         { [TraceAttr.CopilotBranchKind]: branch.kind },
@@ -1374,7 +1429,36 @@ export async function handleUnifiedChatPost(req: NextRequest) {
           }),
         activeOtelRoot.context
       )
-
+      const agentContextsPromise = executionContextPromise.then(() => {
+        return withCopilotSpan(
+          TraceSpan.CopilotChatResolveAgentContexts,
+          {
+            [TraceAttr.CopilotContextsCount]: normalizedContexts.length,
+            [TraceAttr.CopilotResourceAttachmentsCount]: body.resourceAttachments?.length ?? 0,
+          },
+          () =>
+            resolveAgentContexts({
+              contexts: normalizedContexts,
+              resourceAttachments: body.resourceAttachments,
+              userId: authenticatedUserId,
+              message: body.message,
+              workspaceId,
+              chatId: actualChatId,
+              requestId,
+            }),
+          activeOtelRoot.context
+        )
+      })
+      const persistUserMessagePromise = persistUserMessage({
+        chatId: actualChatId,
+        userMessageId,
+        message: body.message,
+        fileAttachments: body.fileAttachments,
+        contexts: normalizedContexts,
+        workspaceId,
+        notifyWorkspaceStatus: branch.notifyWorkspaceStatus,
+        parentOtelContext: activeOtelRoot.context,
+      })
       const [agentContexts, userPermission, entitlements, workspaceSnapshot, , executionContext] =
         await Promise.all([
           agentContextsPromise,
@@ -1557,6 +1641,11 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       const rootTraceparent = `00-${rootCtx.traceId}-${rootCtx.spanId}-${
         (rootCtx.traceFlags & 0x1) === 0x1 ? '01' : '00'
       }`
+      /* A turn is running. Only now is the claim permanent, so the `finally`
+         below leaves it in place and a retry of this send resolves to this
+         chat instead of opening another. Every earlier exit returns without a
+         turn, and releases. */
+      sendClaim = undefined
       return new Response(stream, {
         headers: {
           ...SSE_RESPONSE_HEADERS,
@@ -1571,6 +1660,14 @@ export async function handleUnifiedChatPost(req: NextRequest) {
     otelRoot?.finish('error', error)
 
     if (isZodError(error)) {
+      // A rejected body otherwise leaves no trace: the client sees a 400 and
+      // its stream reconnect 404s, which reads as the stream dying for no reason.
+      logger.warn(`[${requestId}] Rejected chat request as invalid`, {
+        issues: error.issues.map((issue) => ({
+          path: issue.path.join('.'),
+          message: issue.message,
+        })),
+      })
       return validationErrorResponse(error, 'Invalid request data')
     }
 
@@ -1589,5 +1686,21 @@ export async function handleUnifiedChatPost(req: NextRequest) {
       },
       { status: 500 }
     )
+  } finally {
+    /* A claim still held here never started a turn — the send threw, or
+       returned early on a rejected branch, a missing chat, or a chat that
+       already has a stream running. Release it so a retry may start one rather
+       than deduplicating against a turn that never happened. Must be
+       `finally`: those early returns skip `catch`. */
+    if (sendClaim?.claimToken) {
+      await chatSendIdempotency
+        .release(sendClaim.normalizedKey, sendClaim.storageMethod, sendClaim.claimToken)
+        .catch((releaseError) => {
+          logger.warn('Could not release the claim for an unfinished send', {
+            userMessageId,
+            error: getErrorMessage(releaseError, 'Unknown error'),
+          })
+        })
+    }
   }
 }

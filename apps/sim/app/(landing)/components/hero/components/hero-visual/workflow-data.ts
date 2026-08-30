@@ -84,7 +84,8 @@ export const BLOCKS: BlockDef[] = [
     id: 'agent',
     name: 'Agent',
     icon: AgentIcon,
-    bgColor: 'var(--brand-accent)',
+    bgColor: '#FFFFFF',
+    tileBorder: true,
     rows: [
       { title: 'Model', value: 'Claude', valueIcon: AnthropicIcon },
       { title: 'Task', value: 'Review PR' },

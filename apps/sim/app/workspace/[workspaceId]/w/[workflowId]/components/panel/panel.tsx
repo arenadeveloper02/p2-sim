@@ -5,6 +5,7 @@ import {
   BubbleChatClose,
   BubbleChatPreview,
   Button,
+  Chip,
   ChipConfirmModal,
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +14,6 @@ import {
   Duplicate,
   Layout,
   MoreHorizontal,
-  Play,
   Popover,
   PopoverContent,
   PopoverItem,
@@ -23,16 +23,17 @@ import {
   Trash,
   toast,
 } from '@sim/emcn'
-import { Download, Lock, Unlock } from '@sim/emcn/icons'
+import { BubbleChatDelay, Download, Lock, Unlock } from '@sim/emcn/icons'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { useQueryClient } from '@tanstack/react-query'
-import { History, Plus, Square, Zap } from 'lucide-react'
+import { Plus, Zap } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { usePostHog } from 'posthog-js/react'
 import { useShallow } from 'zustand/react/shallow'
 import { VariableIcon } from '@/components/icons'
+import { ThinkingLoader } from '@/components/ui'
 import { requestJson } from '@/lib/api/client/request'
 import {
   createWorkflowCopilotChatContract,
@@ -86,23 +87,14 @@ import {
 } from '@/hooks/queries/copilot-chats'
 import { useDeploymentInfo } from '@/hooks/queries/deployments'
 import { useFolderMap } from '@/hooks/queries/folders'
-import {
-  useMothershipChatHistory,
-  useUpdateMothershipChatModel,
-} from '@/hooks/queries/mothership-chats'
 import { isWorkflowEffectivelyLocked } from '@/hooks/queries/utils/folder-tree'
 import { useDuplicateWorkflowMutation, useWorkflowMap } from '@/hooks/queries/workflows'
 import { useWorkspaceSettings } from '@/hooks/queries/workspace'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
 import { usePermissionConfig } from '@/hooks/use-permission-config'
 import { useSettingsNavigation } from '@/hooks/use-settings-navigation'
-import { useCopilotBackendPreference } from '@/local-copilot/hooks/use-copilot-backend-preference'
+import { useLocalCopilotCatalogSelection } from '@/local-copilot/hooks/use-copilot-backend-preference'
 import { WorkflowCopilotShell } from '@/local-copilot/integration/workflow-copilot-shell'
-import {
-  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
-  isLocalCopilotCatalogId,
-  type LocalCopilotCatalogId,
-} from '@/local-copilot/lib/model-catalog'
 import { useChatStore } from '@/stores/chat/store'
 import type { ChatContext, PanelTab } from '@/stores/panel'
 import { usePanelStore } from '@/stores/panel'
@@ -471,28 +463,13 @@ export const Panel = memo(function Panel() {
     [activeWorkflowId]
   )
 
-  const { canSwitchBackend, copilotBackend, setCopilotBackend } = useCopilotBackendPreference()
-  const { data: copilotChatHistory } = useMothershipChatHistory(copilotChatId)
-  const { mutate: updateChatModel } = useUpdateMothershipChatModel(workspaceId)
-  const [localCopilotCatalogId, setLocalCopilotCatalogIdState] = useState<LocalCopilotCatalogId>(
-    DEFAULT_LOCAL_COPILOT_CATALOG_ID
-  )
-  const hydratedLocalCatalogChatIdRef = useRef<string | undefined>(undefined)
-
-  useEffect(() => {
-    if (!copilotChatId) {
-      hydratedLocalCatalogChatIdRef.current = undefined
-      setLocalCopilotCatalogIdState(DEFAULT_LOCAL_COPILOT_CATALOG_ID)
-      return
-    }
-    if (!copilotChatHistory || copilotChatHistory.id !== copilotChatId) return
-    if (hydratedLocalCatalogChatIdRef.current === copilotChatId) return
-    hydratedLocalCatalogChatIdRef.current = copilotChatId
-    const model = copilotChatHistory.model
-    setLocalCopilotCatalogIdState(
-      model && isLocalCopilotCatalogId(model) ? model : DEFAULT_LOCAL_COPILOT_CATALOG_ID
-    )
-  }, [copilotChatId, copilotChatHistory])
+  const {
+    canSwitchBackend,
+    copilotBackend,
+    setCopilotBackend,
+    localCopilotCatalogId,
+    setLocalCopilotCatalogId,
+  } = useLocalCopilotCatalogSelection()
 
   const {
     messages: copilotMessages,
@@ -526,17 +503,6 @@ export const Panel = memo(function Panel() {
         })
       },
     })
-  )
-
-  const setLocalCopilotCatalogId = useCallback(
-    (id: LocalCopilotCatalogId) => {
-      setLocalCopilotCatalogIdState(id)
-      const targetChatId = copilotResolvedChatId ?? copilotChatId
-      if (targetChatId) {
-        updateChatModel({ chatId: targetChatId, model: id })
-      }
-    },
-    [copilotResolvedChatId, copilotChatId, updateChatModel]
   )
 
   const handleCopilotNewChat = useCallback(() => {
@@ -632,7 +598,9 @@ export const Panel = memo(function Panel() {
       if (!detail?.message) return
       e.preventDefault()
       setActiveTab('copilot')
-      copilotSendMessage(detail.message, undefined, detail.contexts)
+      copilotSendMessage(detail.message, detail.fileAttachments, detail.contexts, {
+        ...(detail.resumeUserMessageId ? { resumeUserMessageId: detail.resumeUserMessageId } : {}),
+      })
     }
     window.addEventListener(MOTHERSHIP_SEND_MESSAGE_EVENT, handler)
     return () => window.removeEventListener(MOTHERSHIP_SEND_MESSAGE_EVENT, handler)
@@ -849,7 +817,7 @@ export const Panel = memo(function Panel() {
               <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button className='size-[30px] rounded-[5px]'>
-                    <MoreHorizontal />
+                    <MoreHorizontal className='size-[14px]' />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align='start' side='bottom' sideOffset={8}>
@@ -938,19 +906,30 @@ export const Panel = memo(function Panel() {
                 userPermissions={userPermissions}
                 disabled={workflowLocked}
               />
-              <Button
-                className='h-[30px] gap-2 px-2.5'
-                variant={isExecuting ? 'active' : 'tertiary'}
+              <Chip
+                variant={isExecuting ? undefined : 'primary'}
+                active={isExecuting}
                 onClick={isExecuting ? cancelWorkflow : () => runWorkflow()}
                 disabled={!isExecuting && isButtonDisabled}
+                aria-label={isExecuting ? 'Stop' : 'Run'}
+                leftAdornment={
+                  <span
+                    aria-hidden='true'
+                    className='inline-flex size-5 flex-shrink-0 items-center justify-center overflow-visible'
+                  >
+                    <ThinkingLoader
+                      variant={isExecuting ? undefined : 'play'}
+                      startVariant='play'
+                      startHoldMs={140}
+                      size={20}
+                      morphDurationMs={isExecuting ? 650 : 180}
+                      tone='inherit'
+                    />
+                  </span>
+                }
               >
-                {isExecuting ? (
-                  <Square className='h-[11.5px] w-[11.5px] fill-current' />
-                ) : (
-                  <Play className='h-[11.5px] w-[11.5px]' />
-                )}
                 {isExecuting ? 'Stop' : 'Test'}
-              </Button>
+              </Chip>
               <RunAgentExternalChat
                 workflowId={activeWorkflowId || ''}
                 workspaceId={workspaceId}
@@ -1018,7 +997,7 @@ export const Panel = memo(function Panel() {
               >
                 {/* Copilot Header */}
                 <div className='mx-[-1px] flex flex-shrink-0 items-center justify-between gap-2 border border-[var(--border)] bg-[var(--surface-4)] px-3 py-1.5'>
-                  <h2 className='min-w-0 flex-1 truncate font-medium text-[14px] text-[var(--text-primary)]'>
+                  <h2 className='min-w-0 flex-1 truncate text-[var(--text-primary)] text-sm'>
                     {copilotChatTitle || 'New Chat'}
                   </h2>
                   <div className='flex items-center gap-2'>
@@ -1034,12 +1013,12 @@ export const Panel = memo(function Panel() {
                     >
                       <PopoverTrigger asChild>
                         <Button variant='ghost' className='p-0'>
-                          <History className='size-[14px]' />
+                          <BubbleChatDelay className='size-[14px]' />
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent align='end' side='bottom' sideOffset={8} maxHeight={280}>
                         {copilotChatList.length === 0 ? (
-                          <div className='px-1.5 py-4 text-center text-[12px] text-muted-foreground'>
+                          <div className='px-1.5 py-4 text-center text-caption text-muted-foreground'>
                             No chats yet
                           </div>
                         ) : (
@@ -1055,7 +1034,7 @@ export const Panel = memo(function Panel() {
                                     <ConversationListItem
                                       title={chat.title || 'New Chat'}
                                       isActive={Boolean(chat.activeStreamId)}
-                                      titleClassName='text-[13px]'
+                                      titleClassName='text-small'
                                       actions={
                                         <div
                                           className={`flex flex-shrink-0 items-center gap-1 ${copilotChatId !== chat.id ? 'opacity-0 transition-opacity group-hover:opacity-100' : ''}`}

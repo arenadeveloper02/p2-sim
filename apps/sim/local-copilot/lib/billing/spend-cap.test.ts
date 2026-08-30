@@ -2,10 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import {
-  assertSpendCapAllows,
-  remainingSpendBudget,
-} from '@/local-copilot/lib/billing/spend-cap'
+import { assertSpendCapAllows, remainingSpendBudget } from '@/local-copilot/lib/billing/spend-cap'
 
 describe('spend cap', () => {
   it('computes remaining budget', () => {

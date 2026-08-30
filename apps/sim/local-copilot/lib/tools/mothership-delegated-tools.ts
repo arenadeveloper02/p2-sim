@@ -10,6 +10,7 @@ import {
   enrichEditContentArgs,
   enrichWorkspaceFileArgs,
 } from '@/local-copilot/lib/tools/enrich-file-tool-args'
+import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
   buildMothershipDelegatedToolDefinitions,
   isMothershipDelegatedTool,
@@ -19,6 +20,7 @@ import {
   WORKFLOW_SCOPED_DELEGATED_TOOLS,
 } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
 import type { LocalCopilotStructuredContext } from '@/local-copilot/lib/types'
+import { assertWorkspaceFileLookBeforeWrite } from '@/local-copilot/lib/writes/look-before-write'
 
 export {
   MOTHERSHIP_DELEGATED_TOOL_NAMES,
@@ -318,6 +320,18 @@ export async function executeMothershipDelegatedTool(
 
   if (toolName === 'workspace_file') {
     enrichWorkspaceFileArgs(enrichedArgs)
+    const lookBefore = assertWorkspaceFileLookBeforeWrite({
+      args: enrichedArgs,
+      readVfsPaths: ctx.readVfsPaths,
+    })
+    if (!lookBefore.ok) {
+      return {
+        toolName,
+        success: false,
+        error: lookBefore.error,
+        result: { success: false, message: lookBefore.error },
+      }
+    }
   }
 
   if (toolName === 'edit_content') {
@@ -363,6 +377,7 @@ export async function executeMothershipDelegatedTool(
     abortSignal: ctx.abortSignal,
     copilotToolExecution: true,
     userPermission: ctx.userPermission,
+    ...(ctx.activeToolCallId?.trim() ? { toolCallId: ctx.activeToolCallId.trim() } : {}),
     ...(ctx.billingAttribution ? { billingAttribution: ctx.billingAttribution } : {}),
   })
 

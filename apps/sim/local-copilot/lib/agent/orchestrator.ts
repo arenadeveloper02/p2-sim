@@ -7,6 +7,7 @@ import {
   type BillingAttributionSnapshot,
   resolveBillingAttribution,
 } from '@/lib/billing/core/billing-attribution'
+import { DOCUMENT_FORMAT_GUIDANCE } from '@/lib/copilot/chat/document-format-guidance'
 import type { VfsSnapshotV1 } from '@/lib/copilot/generated/vfs-snapshot-v1'
 import { generateEngagementStatusMessages } from '@/local-copilot/lib/agent/engagement-status'
 import { iterateWithIdleStatus } from '@/local-copilot/lib/agent/iterate-with-idle-status'
@@ -150,7 +151,9 @@ import {
 } from '@/local-copilot/lib/tools/definitions'
 import type { ToolExecutionContext, ToolExecutionResult } from '@/local-copilot/lib/tools/executor'
 import {
+  bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
+  clearLocalFileIntentChannel,
   detectMandatoryFollowUp,
   formatToolResultForLlm,
   type MandatoryFollowUp,
@@ -165,11 +168,13 @@ import {
   buildWorkflowBuildCompleteSystemMessage,
   createAssistantRoundTextStreamer,
   editResultNeedsFollowUp,
+  emptyAssistantTurnFallback,
   isBridgingAssistantNarration,
   isUnfulfilledMutationIntentNarration,
   type PostBuildToolMode,
   pendingFollowUpsAreOauthOnly,
   resolvePostBuildRoundTools,
+  shouldEmitEmptyAssistantFallback,
   shouldSynthesizeAssistantSummary,
   stripIdsFromUserFacingText,
 } from '@/local-copilot/lib/user-facing-text'
@@ -211,6 +216,7 @@ Response format:
   - Do not narrate planned work ("Let me check…", "Now I'll grab metadata…", "I'm about to…"). Call the tool; speak only after outcomes that the user needs.
   - Never tell the user about truncated context, bloated payloads, metadata fetches, or which scope a block landed in. Those are internal.
   - While tools are still running, keep user-visible text to a short status line or silence — save the full summary for the final reply.
+  - File source in chat (CRITICAL): never print HTML, CSS, JS, or other file source in the chat panel — not in a fence, not as raw markup, not while creating the file, and not after. Put the full body only in \`create_file\` / \`edit_content\` \`content\`. The editor/preview shows the file. Chat may name the file and say what it does in one or two sentences.
   - If a tool fails, explain the blocker in plain language without dumping IDs or raw JSON.
 - Open canvas (CRITICAL — survives page refresh):
   - When Current context includes a \`workflow\` object, that canvas is already open. Do not recreate it and do not say it is missing.
@@ -264,6 +270,8 @@ Rules:
   - Never add edges as separate operations or with type "edge". Connections live on the SOURCE (upstream) block: \`params.connections: { source: "<target-block-id>" }\`. To wire Start → Agent, edit the Start block (startBlockId from create_workflow) with connections pointing to the agent block_id — use that id only in the tool args, never in user-visible text.
   - Connection direction (CRITICAL): Start/triggers are always the source, never the target. Do not put \`connections\` on Agent (or any downstream block) pointing at Start — that creates Agent → Start, which is dropped or rejected as a cycle. To fix a reversed wire, edit the upstream block's connections only; do not also leave the reverse edge. Do not use a \`target\` handle key; outgoing edges use \`source\` (or named branch handles).
   - Agent block: use \`messages\` (array of \`{role, content}\`), \`model\`, and \`tools\` — not systemPrompt/userPrompt. If you only have a system prompt string, still pass it via \`messages: [{role:"system",content:"..."},{role:"user",content:"..."}]\` (legacy systemPrompt is auto-mapped, but \`messages\` is preferred). Exa web search tool entry: \`{ type: "exa", title: "Exa Search", toolId: "exa_search", usageControl: "auto" }\`.
+  - Models (CRITICAL): never set Agent/Router/Evaluator \`model\` to a sunset/legacy catalog id (gpt-4o, gpt-4.1-nano, older Claude 3.x, etc.). Use the field default (Agent: gpt-5) or a current recommended id from get_blocks_metadata. Omit \`model\` rather than inventing an old id.
+  - Block types: only add types returned by get_blocks_metadata. Never add sunset/legacy types (gmail, router, starter, file, chat_trigger, …) — use the current successors (gmail_v2, router_v2, start_trigger, file_v5).
   - Prefer one edit_workflow for small graphs. For multi-agent graphs, you may use up to ${MAX_POPULATE_EDITS} sequential edit_workflow calls (add and wire one agent or human_in_the_loop per call) rather than stalling on a single oversized tool call.
   - If workflowLintMessage reports orphan blocks, fix connections on the Start (or upstream) block before run_workflow.
   - Always issue the \`edit_workflow\` tool call to apply changes. Never end a turn by only describing the intended edit.
@@ -288,9 +296,12 @@ Rules:
   - Never burn tool rounds re-doing work that constraints already forbade. If stuck after a failed retry, stop and ask — do not loop the same tool with the same args.
   - When a tool result includes \`artifactId\` + \`truncated: true\`, call \`load_copilot_artifact\` only if you need the full body.
 - Credentials and API keys:
-  - Context includes \`connectedIntegrations\` (OAuth) and \`envVariables\` (configured env key names only). If an integration or its env key (e.g. \`FIRECRAWL_API_KEY\`, \`FALAI_API_KEY\`) appears there, credentials are already available — NEVER ask the user for an API key.
+  - Context includes \`currentUser\` (the signed-in person's email), \`connectedIntegrations\` (OAuth), and \`envVariables\` (configured env key names only).
+  - For "my email", "my account", "my inbox", "my Gmail", and other first-person account questions, use \`currentUser.email\` and OAuth credentials with \`isOwn: true\`. Workspace Members are teammates — never treat a teammate as the user unless they named that person.
+  - \`connectedIntegrations\` may include teammates' accounts (workspace admins see all). Prefer \`isOwn: true\`. If the user names a different account (email or displayName), use that credentialId instead.
+  - If an integration or its env key (e.g. \`FIRECRAWL_API_KEY\`, \`FALAI_API_KEY\`) appears there, credentials are already available — NEVER ask the user for an API key.
   - When \`hostedKeysAvailable\` is true, many api_key blocks also receive platform-hosted keys at runtime — do not prompt for keys unless a tool returns an explicit missing-credential error.
-  - For OAuth blocks, pass the \`credentialId\` from \`connectedIntegrations\`. For api_key blocks backed by env vars, omit api-key subblock values — execution reads workspace env automatically.
+  - For OAuth blocks, pass the \`credentialId\` from \`connectedIntegrations\`. Prefer the row with \`isOwn: true\` for that provider. For api_key blocks backed by env vars, omit api-key subblock values — execution reads workspace env automatically.
   - Only ask the user to configure a key when it is missing from both \`connectedIntegrations\` and \`envVariables\` and hosted keys do not apply.
 - Direct one-off actions (no workflow required):
   - For simple requests — generate an image, search the live web, scrape a site, call an API — use direct tools when keys are already configured. Do NOT create a workflow first.
@@ -302,7 +313,7 @@ Rules:
     - Broader web result lists: \`invoke_integration_tool({ toolId: "exa_search", params: { query: "<search>" } })\`.
     - Do NOT invent live facts from memory. Do NOT skip search because you "already know" the answer. Do NOT claim "no search API key" until an Exa/search tool actually returns a missing-credential error — workspace \`EXA_API_KEY\`, BYOK, and hosted keys are applied automatically when available.
   - Other integrations: \`list_integration_tools({ integration: "gmail" })\` (underscores, not hyphens) then \`invoke_integration_tool({ toolId: "gmail_draft_v2", params: { ... } })\`. Never call \`load_integration_tool\` — that is Cloud-only; Arena Copilot uses \`invoke_integration_tool\`.
-  - For OAuth integrations (Google Sheets, Gmail, Slack, etc.), \`params\` MUST include \`credentialId\` from \`connectedIntegrations\` for that provider (e.g. providerId \`google-email\` for Gmail, \`google-sheets\` for Sheets). If only one connected credential matches, Arena Copilot injects it automatically. Google Docs/Drive/Sheets credentials are interchangeable for Drive search + Docs/Sheets tools.
+  - For OAuth integrations (Google Sheets, Gmail, Slack, etc.), \`params\` MUST include \`credentialId\` from \`connectedIntegrations\` for that provider (e.g. providerId \`google-email\` for Gmail, \`google-sheets\` for Sheets). Prefer \`isOwn: true\`. If the signed-in user has exactly one matching own credential — or only one connected credential exists — Arena Copilot injects it automatically. Google Docs/Drive/Sheets credentials are interchangeable for Drive search + Docs/Sheets tools.
   - Google Docs by name (not ID): first \`google_drive_list\` with \`query\` set to the document title (or \`google_drive_search\` with \`prompt\` describing the doc), pick the matching file id (\`mimeType\` \`application/vnd.google-apps.document\`), then \`google_docs_read\` / \`google_docs_write\` with that \`documentId\`. Never pass the title as \`documentId\`.
   - Google Sheets write/update/append: pass \`spreadsheetId\`, \`sheetName\` (tab name), \`values\` as a 2D array (e.g. \`[["Name","Age"],["Alice",30]]\`). Optional \`cellRange\` like \`A1\`. Legacy \`range\` like \`Sheet1!A1\` is also accepted.
   - Gmail drafts (one-off, no workflow): \`invoke_integration_tool({ toolId: "gmail_draft_v2", params: { to, subject, body, credentialId } })\`. \`to\` and \`body\` are required strings. For separate drafts to multiple people, call once per recipient with a single email in \`to\` (Arena also fans out if \`to\` is an array). Do not put everyone on one draft unless the user asked for a single email.
@@ -343,9 +354,9 @@ Rules:
   - When the user asks to create a new table, knowledge base, or file, call the matching create operation.
   - Chat uploads under \`uploads/\` are not sandbox-mounted — call \`materialize_file\` into \`files/...\` (or reuse an existing \`files/...\` path) before \`function_execute\`.
   - Find files: \`glob\` with a pattern like \`files/**/*.csv\`, then \`read\` using the exact path from results.
-  - Create files: \`create_file_folder\` when needed, then \`create_file\` with \`content\` for markdown/text/json/csv (one step). Never call \`create_file\` without \`content\` for .md files unless you will immediately follow with \`workspace_file\` update + \`edit_content\`.
+  - Create files: \`create_file_folder\` when needed, then \`create_file\` once with \`content\` for markdown/text/json/csv/html. Never call \`create_file\` twice for the same path, and never follow it with \`workspace_file\` kind=new_file or operation=create. Never echo that body in chat.
   - Rename/move/delete files: \`rename_file\`, \`move_file\`, \`delete_file\` (paths arrays). Folders: \`list_file_folders\`, \`rename_file_folder\`, \`move_file_folder\`, \`delete_file_folder\`. Delete only when the user explicitly asked.
-  - Read or update existing files: \`workspace_file\` (update/append/patch) then \`edit_content\` in the **next** step with the body — never parallel.
+  - Read or update existing files: \`read\` the exact \`files/.../content\` path first. Targeted edits (title, heading, one string): \`workspace_file\` operation=patch with search_replace, then \`edit_content\` with only the replacement. Full rewrite: \`workspace_file\` update then \`edit_content\` starting from the read result — never parallel with workspace_file.
   - Restore archived items with \`restore_resource\` (type + id). Disable a block with \`set_block_enabled\`; edit workflow globals with \`set_global_workflow_variables\`.
 - Workspace skills and custom tools:
   - Context may include \`skills\` (name + description). Descriptions only say when a skill applies — they are NOT the instructions.
@@ -359,14 +370,12 @@ Rules:
   - Code execution results include \`capturedOutput\` (preferred), plus \`stdout\` (prints) and \`result\` (return values). Read \`capturedOutput\` first — empty stdout with a return value is normal, not a failure.
   - Do **not** use \`function_execute\` or Daytona integration tools for workflow building, deployment, or questions you can answer without running code.
   - Do **not** tell the user about sandbox names (E2B, Daytona), empty payloads, internal retries, or "result variables" unless they explicitly asked to debug code execution. Give the answer directly.
-  - Creating PPTX / DOCX / PDF (CRITICAL — always available, do not refuse). Exact arg shapes:
-    1. \`create_file\` empty shell — prefer \`{"fileName":"files/Deck.pptx"}\` (no \`content\`).
-    2. \`workspace_file\` — \`{"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"Deck"}\`. \`target\` MUST be an object, never a string path.
-    3. Later round only: \`edit_content\` with pre-initialized globals (do **not** \`require\` / \`import\` libraries):
-       - PPTX: \`pptx.addSlide(); slide.addText("Title", { x: 0.5, y: 0.5, w: 9, h: 1 });\`
-       - DOCX: \`addSection({ children: [new docx.Paragraph({ children: [new docx.TextRun("Hello")] })] });\` (chunked) OR \`globalThis.doc = new docx.Document({ sections: [{ children: [...] }] });\` (single write). Prefer \`addSection\`. Never \`docx.addSection\`.
-       - PDF: use \`pdf\` / pdf-lib globals similarly.
-       Never same batch as \`workspace_file\`.
+  - Creating PPTX / DOCX / PDF / Markdown (CRITICAL — always available, do not refuse). Exact arg shapes:
+    1. Markdown/text/html: \`create_file\` with the full body in \`content\` (one step). Do not also print that source in chat.
+    2. Office: \`create_file\` empty shell — prefer \`{"fileName":"files/Deck.pptx"}\` (no \`content\`).
+    3. Then \`workspace_file\` — \`{"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"Deck"}\`. \`target\` MUST be an object, never a string path.
+    4. Later round only: \`edit_content\` with pre-initialized globals (do **not** \`require\` / \`import\` libraries). Prefer \`addSection\` for DOCX — never \`docx.addSection\`. Never same batch as \`workspace_file\`.
+    ${DOCUMENT_FORMAT_GUIDANCE}
     - These formats compile via the built-in JS sandbox (isolated-vm) even when \`e2b.docSandboxEnabled\` is false. Never refuse because E2B is off.
     - If \`edit_content\` fails with a system/sandbox crash (e.g. "Code execution failed unexpectedly" / isolated-vm / Node version), that is a host Node/isolated-vm issue — not missing deck code and not \`docSandboxEnabled\`. Tell the user to use Node 20–22 and rebuild isolated-vm; do not loop minimal PPTX/DOCX probes.
     - Do **not** use \`function_execute\` / Python \`python-pptx\` / \`python-docx\` / matplotlib for workspace office files unless the user explicitly asks to run sandbox code.
@@ -792,6 +801,7 @@ export async function* runLocalCopilotAgent(
     lastUserMessage: userTurnText,
     mutationIdempotency: new Map(),
     listedIntegrationToolIds: new Set(),
+    readVfsPaths: new Set(),
     allowedWorkflowIds: new Set(),
     blocksMetadataByType: new Map(),
     artifactStore: createArtifactStore(),
@@ -936,6 +946,7 @@ export async function* runLocalCopilotAgent(
    * Used to detect the stuck "Let me run it." → Running workflow → no result case.
    */
   let streamedCharsAtLastRunTool: number | null = null
+  let lastFinishReason: string | undefined
   const turnToolRecords: ToolTurnRecord[] = []
   const turnMutationOutcomes: MutationOutcome[] = []
   const turnVerifications: VerificationRecord[] = []
@@ -1050,11 +1061,14 @@ export async function* runLocalCopilotAgent(
         textStreamer.markToolCall()
         pendingToolCalls.push(chunk.toolCall)
       }
-      if (chunk.type === 'done' && chunk.usage) {
-        roundInputTokens = chunk.usage.inputTokens
-        roundOutputTokens = chunk.usage.outputTokens
-        roundCacheReadTokens = chunk.usage.cacheReadTokens
-        roundCacheCreationTokens = chunk.usage.cacheCreationTokens
+      if (chunk.type === 'done') {
+        if (chunk.finishReason) lastFinishReason = chunk.finishReason
+        if (chunk.usage) {
+          roundInputTokens = chunk.usage.inputTokens
+          roundOutputTokens = chunk.usage.outputTokens
+          roundCacheReadTokens = chunk.usage.cacheReadTokens
+          roundCacheCreationTokens = chunk.usage.cacheCreationTokens
+        }
       }
     }
 
@@ -1477,6 +1491,11 @@ export async function* runLocalCopilotAgent(
       if (!toolResult) {
         yield { type: 'ux_phase', phase: 'executing' }
         yield { type: 'status', message: formatUxPhaseStatus('executing') }
+        toolCtx.fileIntentChannelId = bindLocalFileIntentChannel(
+          call.name,
+          call.id,
+          toolCtx.fileIntentChannelId
+        )
         const toolStatus = runToolWithStatus({
           toolCallId: call.id,
           toolName: call.name,
@@ -1496,6 +1515,10 @@ export async function* runLocalCopilotAgent(
         }
         toolResult = result.value
       }
+      toolCtx.fileIntentChannelId = clearLocalFileIntentChannel(
+        call.name,
+        toolCtx.fileIntentChannelId
+      )
       logger.info('Arena Copilot tool finished', {
         toolName: call.name,
         toolCallId: call.id,
@@ -1910,16 +1933,19 @@ export async function* runLocalCopilotAgent(
         streamedUserFacingText += cleaned
         yield { type: 'text_delta', content: cleaned }
       }
-      if (chunk.type === 'done' && chunk.usage) {
-        turnCost.addModelUsage({
-          model: config.model,
-          inputTokens: chunk.usage.inputTokens,
-          outputTokens: chunk.usage.outputTokens,
-          cacheReadTokens: chunk.usage.cacheReadTokens,
-          provider: config.provider,
-        })
-        turnInputTokens += chunk.usage.inputTokens
-        turnOutputTokens += chunk.usage.outputTokens
+      if (chunk.type === 'done') {
+        if (chunk.finishReason) lastFinishReason = chunk.finishReason
+        if (chunk.usage) {
+          turnCost.addModelUsage({
+            model: config.model,
+            inputTokens: chunk.usage.inputTokens,
+            outputTokens: chunk.usage.outputTokens,
+            cacheReadTokens: chunk.usage.cacheReadTokens,
+            provider: config.provider,
+          })
+          turnInputTokens += chunk.usage.inputTokens
+          turnOutputTokens += chunk.usage.outputTokens
+        }
       }
     }
     if (assistantText.length === priorAssistantChars) {
@@ -1982,6 +2008,21 @@ export async function* runLocalCopilotAgent(
       streamedUserFacingText += chunk
       yield { type: 'text_delta', content: chunk }
     }
+  }
+
+  if (
+    !params.signal?.aborted &&
+    shouldEmitEmptyAssistantFallback({
+      streamedUserFacingText,
+      toolRecordCount: turnToolRecords.length,
+    })
+  ) {
+    const safe = stripIdsFromUserFacingText(
+      emptyAssistantTurnFallback({ finishReason: lastFinishReason })
+    )
+    assistantText = safe
+    streamedUserFacingText = safe
+    yield { type: 'text_delta', content: safe }
   }
 
   // Emit at most one follow-up block for the whole turn (never after each tool round).

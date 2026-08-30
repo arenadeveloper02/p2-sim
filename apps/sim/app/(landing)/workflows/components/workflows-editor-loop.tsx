@@ -1,13 +1,7 @@
 'use client'
 
-import {
-  AgentIcon,
-  ConditionalIcon,
-  JiraIcon,
-  SlackIcon,
-  StartIcon,
-  TableIcon,
-} from '@/components/icons'
+import { Table as TableIcon } from '@sim/emcn/icons'
+import { AgentIcon, ConditionalIcon, JiraIcon, SlackIcon, StartIcon } from '@/components/icons'
 import { EditorLoop, type EditorLoopContent } from '@/app/(landing)/components/shared/editor-loop'
 
 /**
@@ -50,7 +44,8 @@ const WORKFLOWS_EDITOR_CONTENT: EditorLoopContent = {
       id: 'agent',
       name: 'Support agent',
       icon: AgentIcon,
-      bgColor: 'var(--text-primary)',
+      bgColor: '#FFFFFF',
+      tileBorder: true,
       rows: [
         { title: 'Messages', value: '-' },
         { title: 'Model', value: '-' },

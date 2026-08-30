@@ -7,31 +7,33 @@ import {
   user,
   userTableDefinitions,
   workflow,
-  workflowSchedule,
 } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
-import { truncate } from '@sim/utils/string'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { hasWorkspaceSandboxAccess } from '@/lib/billing/core/subscription'
+import { createCopilotWorkspaceContextFilePrincipal } from '@/lib/copilot/auth/file-delegation'
+import { DOCUMENT_FORMAT_GUIDANCE } from '@/lib/copilot/chat/document-format-guidance'
 import {
   getHubSpotSharedAccountOptionIds,
   mergeOAuthIntegrationPresence,
 } from '@/lib/copilot/chat/env-integration-presence'
-import type {
-  VfsSnapshotV1,
-  VfsSnapshotV1Job,
-  VfsSnapshotV1Workflow,
-} from '@/lib/copilot/generated/vfs-snapshot-v1'
+import type { VfsSnapshotV1, VfsSnapshotV1Workflow } from '@/lib/copilot/generated/vfs-snapshot-v1'
+import {
+  filterSecretNamesByMountPolicy,
+  type SecretMountPolicy,
+} from '@/lib/copilot/secret-mount-policy'
 import { normalizeVfsSegment } from '@/lib/copilot/vfs/normalize-segment'
 import { canonicalWorkflowVfsDir, canonicalWorkspaceFilePath } from '@/lib/copilot/vfs/path-utils'
 import {
   getAccessibleEnvCredentials,
   getAccessibleOAuthCredentials,
 } from '@/lib/credentials/environment'
-import { listWorkspaceFiles } from '@/lib/uploads/contexts/workspace'
+import { listWorkspaceSandboxes } from '@/lib/execution/remote-sandbox/workspace-sandboxes'
 import { listCustomBlockSummariesForWorkspace } from '@/lib/workflows/custom-blocks/operations'
 import { listCustomTools } from '@/lib/workflows/custom-tools/operations'
 import { listSkillsForUser } from '@/lib/workflows/skills/operations'
+import { listAllWorkspaceFiles } from '@/lib/workspace-files/application/list-workspace-files'
 import {
   assertActiveWorkspaceAccess,
   getUsersWithPermissions,
@@ -58,6 +60,8 @@ const PROVIDER_SERVICES: Record<string, string[]> = {
 export interface WorkspaceMdData {
   workspace: { id: string; name: string; ownerId: string } | null
   members: Array<{ name: string; email: string; permissionType: string }>
+  /** Signed-in user for this Copilot turn — used to resolve "my account" questions. */
+  currentUser?: { name?: string | null; email: string }
   workflows: Array<{
     id: string
     name: string
@@ -82,20 +86,20 @@ export interface WorkspaceMdData {
     providerId: string
     displayName?: string | null
     role?: string | null
+    isOwn?: boolean
   }>
   envVariables: string[]
   customTools?: Array<{ id: string; name: string }>
   customBlocks?: Array<{ type: string; name: string; description?: string }>
   mcpServers?: Array<{ id: string; name: string; url?: string | null; enabled: boolean }>
   skills?: Array<{ id: string; name: string; description: string }>
-  jobs?: Array<{
+  sandboxes?: Array<{
     id: string
-    title: string | null
-    prompt: string
-    cronExpression: string | null
-    status: string
-    lifecycle: string
-    sourceTaskName: string | null
+    name: string
+    language: string
+    dependencies: string[]
+    cliTools: string[]
+    systemPackages: string[]
   }>
   /**
    * When set, HubSpot uses shared `accounts` subblock ids (see HubSpot block config), not only OAuth rows.
@@ -134,6 +138,15 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
   if (data.workspace) {
     sections.push(
       `## Workspace\n- **Name**: ${data.workspace.name}\n- **ID**: ${data.workspace.id}\n- **Owner**: ${data.workspace.ownerId}`
+    )
+  }
+
+  if (data.currentUser?.email) {
+    const display = data.currentUser.name
+      ? `${data.currentUser.name} (${data.currentUser.email})`
+      : data.currentUser.email
+    sections.push(
+      `## Current user\n- **You are** ${display}. For "my email", "my account", "my inbox", and similar, use this identity and Connected Integrations marked current user — not other workspace members.`
     )
   }
 
@@ -262,7 +275,8 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
         const svc = services ? ` (${services.join(', ')})` : ''
         const who = c.displayName ? ` — ${c.displayName}` : ''
         const role = c.role ? `, ${c.role}` : ''
-        return `- ${c.providerId}${svc}${who}${role} — credentialId: \`${c.id}\``
+        const own = c.isOwn ? ' — current user' : ''
+        return `- ${c.providerId}${svc}${who}${role}${own} — credentialId: \`${c.id}\``
       })
     sections.push(
       `## Connected Integrations\nPass these credentialId values directly on OAuth tool calls — no need to read environment/credentials.json for them.\n${lines.join('\n')}`
@@ -317,51 +331,42 @@ export function buildWorkspaceMd(data: WorkspaceMdData): string {
     )
   }
 
-  if (data.jobs && data.jobs.length > 0) {
-    const lines = [...data.jobs]
-      .sort((a, b) => stableCompare(a.title || a.id, b.title || b.id) || stableCompare(a.id, b.id))
-      .map((j) => {
-        const displayName = j.title || j.id
-        let line = `- **${displayName}** (${j.id}) — ${j.status}`
-        if (j.lifecycle !== 'persistent') line += ` [${j.lifecycle}]`
-        if (j.cronExpression) line += `, cron: ${j.cronExpression}`
-        if (j.sourceTaskName) line += `, task: ${j.sourceTaskName}`
-        const promptPreview = j.prompt.length > 80 ? truncate(j.prompt, 77) : j.prompt
-        line += `\n  ${promptPreview}`
-        return line
+  if (data.sandboxes) {
+    if (data.sandboxes.length > 0) {
+      const lines = [...data.sandboxes].sort(byNameThenId).map((sandbox) => {
+        const path = `agent/sandboxes/${normalizeVfsSegment(sandbox.name)}.json`
+        return `- **${sandbox.name}** (${sandbox.id}) — ${sandbox.language}; ${sandbox.dependencies.length} dependencies, ${sandbox.systemPackages.length} system packages, ${sandbox.cliTools.length} managed CLIs — \`${path}\``
       })
-    sections.push(`## Jobs (${data.jobs.length})\n${lines.join('\n')}`)
+      sections.push(`## Sim Sandboxes (${data.sandboxes.length})\n${lines.join('\n')}`)
+    } else {
+      sections.push('## Sim Sandboxes (0)\n(none)')
+    }
   }
 
   return sections.join('\n\n')
 }
 
 export function buildWorkspaceContextMd(data: WorkspaceMdData): string {
-  return ['# Workspace Context', '', buildWorkspaceMd(data)].join('\n\n')
+  return ['# Workspace Context', '', buildWorkspaceMd(data), WORKSPACE_DOCUMENT_FILE_GUIDANCE].join(
+    '\n\n'
+  )
 }
 
 /**
  * Injected into mothership workspace context so the agent uses built-in file tools
  * for DOCX/PPTX/PDF instead of function_execute (Python docx/matplotlib, etc.).
  */
-const WORKSPACE_DOCUMENT_FILE_GUIDANCE = `## Workspace documents (DOCX, PPTX, PDF)
+const WORKSPACE_DOCUMENT_FILE_GUIDANCE = `## Workspace documents (DOCX, PPTX, PDF, Markdown, HTML)
 
 Do **not** use \`function_execute\` to create or edit Word, PowerPoint, or PDF workspace files (no Python \`python-docx\` / \`matplotlib\`, no shell, no \`require\` hacks) unless the user explicitly asks to run code in a sandbox.
 
 Use the built-in file tools instead:
 
-1. **create_file** — create the file (e.g. \`Report.docx\`, \`Deck.pptx\`, \`Brief.pdf\`).
-2. **workspace_file** — \`append\`, \`update\`, or \`patch\` with \`target.kind=file_id\`, the file id, and a short \`title\`. Wait for success before the next step.
-3. **edit_content** — write the body in the **next** turn only (never in parallel with workspace_file).
+1. **create_file** — create the file (e.g. \`Report.docx\`, \`Deck.pptx\`, \`Brief.pdf\`, \`Notes.md\`, \`Page.html\`). Pass \`content\` for markdown/text/html; empty shell for office formats.
+2. **workspace_file** — \`append\`, \`update\`, or \`patch\` with \`target.kind=file_id\` or \`target.kind=path\`, and a short \`title\`. Wait for success before the next step. For existing HTML/text, \`read\` \`files/<path>/content\` first. Targeted edits (title, heading, one string) must use \`operation=patch\` with \`search_replace\` — \`update\` replaces the entire file.
+3. **edit_content** — write the body in the **next** turn only (never in parallel with workspace_file). For office files this is **docxjs / pptxgenjs / pdflibjs JavaScript** (not Python). Never \`require\` / \`import\`. Never \`docx.addSection\` — use global \`addSection\`. For HTML patches, pass only the replacement substring.
 
-For **.docx** / **.pptx** / **.pdf**, \`edit_content\` must be **docxjs / pptxgenjs / pdflibjs JavaScript** (not Python).
-
-DOCX patterns (globals already initialized — never \`require('docx')\`):
-- Preferred chunked: \`addSection({ children: [new docx.Paragraph({ children: [new docx.TextRun("Hello")] })] });\`
-- Single write: \`globalThis.doc = new docx.Document({ sections: [{ children: [...] }] });\`
-- Do **not** call \`docx.addSection\` — use the global \`addSection\` helper.
-
-For plain \`.md\`, \`.txt\`, \`.json\`, \`.csv\`, \`.html\`, use the same three tools; \`edit_content\` is the raw text.
+${DOCUMENT_FORMAT_GUIDANCE}
 
 Reserve **function_execute** for data processing, API calls, and tabular/JSON outputs — not for generating office documents in the workspace.`
 
@@ -379,7 +384,7 @@ Reserve **function_execute** for data processing, API calls, and tabular/JSON ou
 async function buildWorkspaceMdData(
   workspaceId: string,
   userId: string,
-  options?: { workspaceAccess?: WorkspaceAccess }
+  options?: { workspaceAccess?: WorkspaceAccess; chatId?: string; executionId?: string }
 ): Promise<WorkspaceMdData | null> {
   try {
     // Reuse the caller's already-asserted access when provided (hot chat path);
@@ -405,8 +410,8 @@ async function buildWorkspaceMdData(
       customTools,
       mcpServerRows,
       skillRows,
-      jobRows,
       customBlockSummaries,
+      sandboxResult,
     ] = await Promise.all([
       getUsersWithPermissions(workspaceId),
 
@@ -459,7 +464,17 @@ async function buildWorkspaceMdData(
           )
         ),
 
-      listWorkspaceFiles(workspaceId),
+      listAllWorkspaceFiles
+        .execute({
+          principal: createCopilotWorkspaceContextFilePrincipal({
+            userId,
+            workspaceId,
+            chatId: options?.chatId,
+            executionId: options?.executionId,
+          }),
+          input: { workspaceId, scope: 'active' },
+        })
+        .then(({ files }) => files),
 
       getAccessibleOAuthCredentials(workspaceId, userId),
 
@@ -479,26 +494,12 @@ async function buildWorkspaceMdData(
 
       listSkillsForUser({ workspaceId, userId, includeBuiltins: false, workspaceAccess }),
 
-      db
-        .select({
-          id: workflowSchedule.id,
-          jobTitle: workflowSchedule.jobTitle,
-          prompt: workflowSchedule.prompt,
-          cronExpression: workflowSchedule.cronExpression,
-          status: workflowSchedule.status,
-          lifecycle: workflowSchedule.lifecycle,
-          sourceTaskName: workflowSchedule.sourceTaskName,
-        })
-        .from(workflowSchedule)
-        .where(
-          and(
-            eq(workflowSchedule.sourceWorkspaceId, workspaceId),
-            eq(workflowSchedule.sourceType, 'job'),
-            isNull(workflowSchedule.archivedAt)
-          )
-        ),
-
       listCustomBlockSummariesForWorkspace(workspaceId),
+
+      hasWorkspaceSandboxAccess(workspaceId).then(async (entitled) => ({
+        entitled,
+        rows: entitled ? await listWorkspaceSandboxes(workspaceId) : [],
+      })),
     ])
 
     const kbIds = kbs.map((kb) => kb.id)
@@ -542,10 +543,14 @@ async function buildWorkspaceMdData(
     }
 
     const hubspotSharedAccounts = getHubSpotSharedAccountOptionIds()
+    const currentMember = members.find((member) => member.userId === userId)
 
     return {
       workspace: wsRow,
       members,
+      currentUser: currentMember?.email
+        ? { name: currentMember.name, email: currentMember.email }
+        : undefined,
       workflows: workflows.map((wf) => ({
         ...wf,
         folderPath: wf.folderId ? resolveFolderPath(wf.folderId) : null,
@@ -572,6 +577,7 @@ async function buildWorkspaceMdData(
           providerId: c.providerId,
           displayName: c.displayName,
           role: c.role,
+          isOwn: c.ownerUserId === userId,
         })),
         envCredentials.map((credential) => credential.envKey),
         hubspotSharedAccounts
@@ -588,17 +594,18 @@ async function buildWorkspaceMdData(
       customBlocks: customBlockSummaries,
       mcpServers: mcpServerRows,
       skills: skillRows.map((s) => ({ id: s.id, name: s.name, description: s.description })),
-      jobs: jobRows
-        .filter((j) => j.status !== 'completed')
-        .map((j) => ({
-          id: j.id,
-          title: j.jobTitle,
-          prompt: j.prompt || '',
-          cronExpression: j.cronExpression,
-          status: j.status,
-          lifecycle: j.lifecycle,
-          sourceTaskName: j.sourceTaskName,
-        })),
+      ...(sandboxResult.entitled
+        ? {
+            sandboxes: sandboxResult.rows.map((sandbox) => ({
+              id: sandbox.id,
+              name: sandbox.name,
+              language: sandbox.language,
+              dependencies: sandbox.dependencies,
+              cliTools: sandbox.cliTools,
+              systemPackages: sandbox.systemPackages,
+            })),
+          }
+        : {}),
     }
   } catch (err) {
     logger.error('Failed to build workspace data', {
@@ -642,12 +649,20 @@ async function appendPosition2SlackNote(markdown: string, userId: string): Promi
 export async function generateWorkspaceContext(
   workspaceId: string,
   userId: string,
-  options?: { workspaceAccess?: WorkspaceAccess }
+  options?: {
+    workspaceAccess?: WorkspaceAccess
+    secretMountPolicy?: SecretMountPolicy
+    chatId?: string
+    executionId?: string
+  }
 ): Promise<string> {
   const data = await buildWorkspaceMdData(workspaceId, userId, options)
-  return data
-    ? appendPosition2SlackNote(buildWorkspaceMd(data), userId)
-    : WORKSPACE_CONTEXT_UNAVAILABLE_MD
+  if (!data) return WORKSPACE_CONTEXT_UNAVAILABLE_MD
+
+  return buildWorkspaceMd({
+    ...data,
+    envVariables: filterSecretNamesByMountPolicy(data.envVariables, options?.secretMountPolicy),
+  })
 }
 
 /**
@@ -682,19 +697,6 @@ export function buildVfsSnapshot(data: WorkspaceMdData): VfsSnapshotV1 {
     ...(wf.isDeployed ? { isDeployed: true } : {}),
     ...(wf.folderPath ? { folderPath: wf.folderPath } : {}),
   }))
-  const jobs: VfsSnapshotV1Job[] = (data.jobs ?? [])
-    .filter((j) => j.status !== 'completed')
-    .map((j) => ({
-      id: j.id,
-      ...(j.title ? { title: j.title } : {}),
-      // Match WORKSPACE.md's preview truncation — full prompts are large,
-      // volatile-ish, and readable on demand at jobs/{title}/meta.json.
-      ...(j.prompt ? { prompt: j.prompt.length > 80 ? truncate(j.prompt, 77) : j.prompt } : {}),
-      ...(j.cronExpression ? { cronExpression: j.cronExpression } : {}),
-      ...(j.status ? { status: j.status } : {}),
-      ...(j.lifecycle ? { lifecycle: j.lifecycle } : {}),
-      ...(j.sourceTaskName ? { sourceTaskName: j.sourceTaskName } : {}),
-    }))
   return {
     ...(data.workspace
       ? {
@@ -756,7 +758,18 @@ export function buildVfsSnapshot(data: WorkspaceMdData): VfsSnapshotV1 {
       name: s.name,
       ...(s.description ? { description: s.description } : {}),
     })),
-    jobs,
+    ...(data.sandboxes
+      ? {
+          sandboxes: data.sandboxes.map((sandbox) => ({
+            id: sandbox.id,
+            name: sandbox.name,
+            language: sandbox.language,
+            dependencies: sandbox.dependencies,
+            systemPackages: sandbox.systemPackages,
+            cliTools: sandbox.cliTools,
+          })),
+        }
+      : {}),
   }
 }
 

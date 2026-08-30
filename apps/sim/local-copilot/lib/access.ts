@@ -5,6 +5,11 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { assertLocalCopilotEnabled, getLocalCopilotConfig } from '@/local-copilot/lib/config'
+import {
+  DEFAULT_LOCAL_COPILOT_CATALOG_ID,
+  type LocalCopilotCatalogId,
+  resolveLocalCopilotCatalogId,
+} from '@/local-copilot/lib/model-catalog'
 
 const logger = createLogger('LocalCopilotAccess')
 
@@ -14,13 +19,19 @@ const logger = createLogger('LocalCopilotAccess')
  * - `hasAccess` — user may use Local and switch to Cloud (both options shown).
  * - `localOnly` — user is restricted to Local; the switch is hidden and the
  *   backend is forced to `local`. Takes precedence over `hasAccess`.
+ * - `defaultModel` — Local catalog id from `local_copilot_user_access.default_model`.
  */
 export interface LocalCopilotUserAccess {
   hasAccess: boolean
   localOnly: boolean
+  defaultModel: LocalCopilotCatalogId
 }
 
-const DENIED_ACCESS: LocalCopilotUserAccess = { hasAccess: false, localOnly: false }
+const DENIED_ACCESS: LocalCopilotUserAccess = {
+  hasAccess: false,
+  localOnly: false,
+  defaultModel: DEFAULT_LOCAL_COPILOT_CATALOG_ID,
+}
 
 /**
  * Reads the user's Arena Copilot allowlist row. Deployment disabled, missing
@@ -38,19 +49,62 @@ export async function getLocalCopilotUserAccess(
       .select({
         hasAccess: localCopilotUserAccess.hasAccess,
         localOnly: localCopilotUserAccess.localOnly,
+        defaultModel: localCopilotUserAccess.defaultModel,
       })
       .from(localCopilotUserAccess)
       .where(eq(localCopilotUserAccess.userId, userId))
       .limit(1)
 
     if (!row) return DENIED_ACCESS
-    return { hasAccess: Boolean(row.hasAccess), localOnly: Boolean(row.localOnly) }
+    return {
+      hasAccess: Boolean(row.hasAccess),
+      localOnly: Boolean(row.localOnly),
+      defaultModel: resolveLocalCopilotCatalogId(row.defaultModel),
+    }
   } catch (error) {
     logger.error('Failed to check Arena Copilot user access; denying', {
       userId,
       error: getErrorMessage(error),
     })
     return DENIED_ACCESS
+  }
+}
+
+/**
+ * Persists the user's Local picker selection onto `default_model`. Cloud
+ * mothership `chat.model` is left alone so switching backends does not mix ids.
+ */
+export async function updateLocalCopilotDefaultModel(
+  userId: string,
+  defaultModel: LocalCopilotCatalogId
+): Promise<LocalCopilotUserAccess | null> {
+  const access = await getLocalCopilotUserAccess(userId)
+  if (!access.hasAccess && !access.localOnly) return null
+
+  try {
+    const [row] = await db
+      .update(localCopilotUserAccess)
+      .set({ defaultModel, updatedAt: new Date() })
+      .where(eq(localCopilotUserAccess.userId, userId))
+      .returning({
+        hasAccess: localCopilotUserAccess.hasAccess,
+        localOnly: localCopilotUserAccess.localOnly,
+        defaultModel: localCopilotUserAccess.defaultModel,
+      })
+
+    if (!row) return null
+    return {
+      hasAccess: Boolean(row.hasAccess),
+      localOnly: Boolean(row.localOnly),
+      defaultModel: resolveLocalCopilotCatalogId(row.defaultModel),
+    }
+  } catch (error) {
+    logger.error('Failed to update Arena Copilot default model', {
+      userId,
+      defaultModel,
+      error: getErrorMessage(error),
+    })
+    return null
   }
 }
 

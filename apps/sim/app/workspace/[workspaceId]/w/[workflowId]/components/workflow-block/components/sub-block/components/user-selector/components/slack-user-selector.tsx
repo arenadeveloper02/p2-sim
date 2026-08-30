@@ -30,6 +30,8 @@ interface SlackUserSelectorProps {
   workflowId?: string
   isForeignCredential?: boolean
   multiple?: boolean
+  /** When true, list with the OAuth user token (`xoxp-`) instead of the bot token. */
+  useUserToken?: boolean
 }
 
 export function SlackUserSelector({
@@ -41,6 +43,7 @@ export function SlackUserSelector({
   workflowId,
   isForeignCredential = false,
   multiple = false,
+  useUserToken = false,
 }: SlackUserSelectorProps) {
   const [open, setOpen] = useState(false)
   const [users, setUsers] = useState<SlackUserInfo[]>([])
@@ -66,6 +69,7 @@ export function SlackUserSelector({
         body: JSON.stringify({
           credential,
           workflowId,
+          useUserToken: useUserToken || undefined,
         }),
       })
 
@@ -85,10 +89,14 @@ export function SlackUserSelector({
   }
 
   useEffect(() => {
+    setUsers([])
+  }, [credential, workflowId, useUserToken])
+
+  useEffect(() => {
     if (open && users.length === 0 && !loading) {
       fetchUsers()
     }
-  }, [open, credential, workflowId])
+  }, [open, credential, workflowId, useUserToken])
 
   const handleSelect = (userId: string) => {
     if (multiple) {
@@ -126,7 +134,7 @@ export function SlackUserSelector({
 
   return (
     <div className='space-y-2'>
-      <Label className='font-medium text-foreground text-sm'>{label}</Label>
+      <Label className='text-sm'>{label}</Label>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -221,9 +229,7 @@ export function SlackUserSelector({
                         <div className='flex items-center gap-2'>
                           <User className='h-4 w-4' />
                           <div className='flex flex-col'>
-                            <span className='font-medium'>
-                              {user.displayName || user.realName || user.name}
-                            </span>
+                            <span>{user.displayName || user.realName || user.name}</span>
                             <span className='text-muted-foreground text-xs'>
                               @{user.name} • {user.id}
                             </span>
