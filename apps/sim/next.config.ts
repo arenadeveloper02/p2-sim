@@ -46,8 +46,24 @@ function resolveHtmlparser2EntitiesSubpath(subpath: 'decode' | 'escape'): string
   return require.resolve(`entities/${subpath}`, { paths: [htmlparser2Dir] })
 }
 
-const entitiesDecodeAlias = resolveHtmlparser2EntitiesSubpath('decode')
-const entitiesEscapeAlias = resolveHtmlparser2EntitiesSubpath('escape')
+/**
+ * Turbopack `resolveAlias` treats a leading `/` as a server-relative URL
+ * (`./app/node_modules/...` when the file lives at `/app/node_modules/...` in
+ * Docker) and then fails with "server relative imports are not implemented".
+ * Values must be `./`-prefixed paths from `turbopack.root`.
+ */
+function toTurbopackAlias(absolutePath: string): string {
+  const relative = path.relative(monorepoRoot, absolutePath).split(path.sep).join('/')
+  if (relative.startsWith('../') || path.isAbsolute(relative)) {
+    throw new Error(`entities alias ${absolutePath} is outside turbopack root ${monorepoRoot}`)
+  }
+  return `./${relative}`
+}
+
+const entitiesDecodeAbsolute = resolveHtmlparser2EntitiesSubpath('decode')
+const entitiesEscapeAbsolute = resolveHtmlparser2EntitiesSubpath('escape')
+const entitiesDecodeAlias = toTurbopackAlias(entitiesDecodeAbsolute)
+const entitiesEscapeAlias = toTurbopackAlias(entitiesEscapeAbsolute)
 
 /**
  * Marketing routes (`app/(landing)/**`, plus the root) exempted from COEP.
@@ -117,8 +133,8 @@ const nextConfig: NextConfig = {
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,
-      'entities/decode$': entitiesDecodeAlias,
-      'entities/escape$': entitiesEscapeAlias,
+      'entities/decode$': entitiesDecodeAbsolute,
+      'entities/escape$': entitiesEscapeAbsolute,
       ...(useMinimalRegistry
         ? {
             '@/tools/registry$': path.resolve(import.meta.dirname, 'tools/registry.minimal.ts'),
