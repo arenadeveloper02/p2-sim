@@ -87,7 +87,7 @@ export async function runArenaGenerativeUi(options: {
     existingStructuredBrief = parseStoredStructuredBrief(draft.structuredBrief)
     existingRevision = draft.revision
     if (apiBindings.length === 0 && Array.isArray(draft.apiBindings)) {
-      apiBindings = draft.apiBindings as typeof apiBindings
+      apiBindings = parseApiBindings(draft.apiBindings)
     }
   }
 

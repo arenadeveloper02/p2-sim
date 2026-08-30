@@ -24,12 +24,14 @@ interface LastAction extends GenerativeAppLastAction {
 interface UseGenerativeAppRuntimeOptions {
   runJson: (
     actionId: string,
-    values: Record<string, unknown>
+    values: Record<string, unknown>,
+    surface?: RunGenerativeAppActionMeta['surface']
   ) => Promise<RunDeployedAppActionResult>
   runStream: (
     actionId: string,
     values: Record<string, unknown>,
-    onChunk: (accumulated: string) => void
+    onChunk: (accumulated: string) => void,
+    surface?: RunGenerativeAppActionMeta['surface']
   ) => Promise<RunDeployedAppActionResult>
   isStreaming: (actionId: string) => boolean
   actionNavigate: Record<string, string>
@@ -63,9 +65,10 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
   const recordLastAction = (
     actionId: string,
     values: Record<string, unknown>,
-    kind: LastAction['kind']
+    kind: LastAction['kind'],
+    surface?: RunGenerativeAppActionMeta['surface']
   ) => {
-    lastActionRef.current = { actionId, values, kind }
+    lastActionRef.current = { actionId, values, kind, surface }
     const plan = optionsRef.current.uxPlan?.actions[actionId]
     setCanRetry(plan ? plan.retry : true)
   }
@@ -88,15 +91,25 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
   }
 
   const execute = useCallback(
-    async (actionId: string, values: Record<string, unknown>, generation: number) => {
+    async (
+      actionId: string,
+      values: Record<string, unknown>,
+      generation: number,
+      surface?: RunGenerativeAppActionMeta['surface']
+    ) => {
       const current = optionsRef.current
       if (current.isStreaming(actionId)) {
-        return current.runStream(actionId, values, (accumulated) => {
-          if (!clockRef.current.isCurrent(actionId, generation)) return
-          current.mergeState(streamingContentState(accumulated))
-        })
+        return current.runStream(
+          actionId,
+          values,
+          (accumulated) => {
+            if (!clockRef.current.isCurrent(actionId, generation)) return
+            current.mergeState(streamingContentState(accumulated))
+          },
+          surface
+        )
       }
-      return current.runJson(actionId, values)
+      return current.runJson(actionId, values, surface)
     },
     []
   )
@@ -118,11 +131,15 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
   }, [])
 
   const runCta = useCallback(
-    async (actionId: string, values: Record<string, unknown>) => {
+    async (
+      actionId: string,
+      values: Record<string, unknown>,
+      surface?: RunGenerativeAppActionMeta['surface']
+    ) => {
       if (!beginFlight(actionId)) return
       const current = optionsRef.current
       const generation = clockRef.current.begin(actionId)
-      recordLastAction(actionId, values, 'cta')
+      recordLastAction(actionId, values, 'cta', surface)
       const navigateTo = current.actionNavigate[actionId]
       const streaming = current.isStreaming(actionId)
       flushSync(() => {
@@ -135,7 +152,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       setToast(null)
       try {
         if (navigateTo) current.navigate(navigateTo)
-        const result = await execute(actionId, values, generation)
+        const result = await execute(actionId, values, generation, surface)
         if (!clockRef.current.isCurrent(actionId, generation)) return
         applyResult(result, Boolean(navigateTo))
         if (
@@ -207,10 +224,10 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       if (shouldConfirm(actionId, meta)) {
         triggerRef.current =
           document.activeElement instanceof HTMLElement ? document.activeElement : null
-        setConfirm({ actionId, values })
+        setConfirm({ actionId, values, surface: meta.surface })
         return
       }
-      await runCta(actionId, values)
+      await runCta(actionId, values, meta?.surface)
     },
     [runCta]
   )
@@ -226,7 +243,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       void runLoad(last.actionId, last.values)
       return
     }
-    void runCta(last.actionId, last.values)
+    void runCta(last.actionId, last.values, last.surface)
   }, [runCta, runLoad])
 
   const dismissError = useCallback(() => {
@@ -237,7 +254,7 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
     const pending = confirm
     setConfirm(null)
     restoreTrigger()
-    if (pending) void runCta(pending.actionId, pending.values)
+    if (pending) void runCta(pending.actionId, pending.values, pending.surface)
   }, [confirm, restoreTrigger, runCta])
 
   const cancelDestructive = useCallback(() => {

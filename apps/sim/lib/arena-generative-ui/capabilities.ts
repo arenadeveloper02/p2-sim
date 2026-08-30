@@ -30,6 +30,7 @@ export const ARENA_GENERATIVE_CAPABILITIES = [
   'back',
   'skip',
   'review',
+  'chat',
 ] as const
 
 export type ArenaGenerativeCapability = (typeof ARENA_GENERATIVE_CAPABILITIES)[number]
@@ -140,6 +141,10 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
     'CAPABILITY: SKIP',
     'An optional workflow stage can be skipped. A ghost Skip Button.navigateTo the next stage (or the review/submit stage). Do not skip a required stage the brief named.',
   ].join('\n'),
+  chat: [
+    'CAPABILITY: CHAT',
+    'The binding has chatProtocol.input. Put a Chat composer (actionId) where the brief places conversation — typically the results page, often the right column. Do not emit TextInput/TextArea/SearchField named input, conversationId, or files. Declared inputSchema fields stay on the Form. Chat-only bindings (no form fields) must emit Chat, not an empty Form. Transcript is DataText or Repeat bound to output.',
+  ].join('\n'),
   review: [
     'CAPABILITY: REVIEW',
     'A review stage before the final CTA. Echo submitted fields (inputs.* / form names) as KeyValue or DataText. The last stage is the only SubmitButton. Earlier stages use Next, not submit.',
@@ -192,7 +197,12 @@ export function plannedCapabilities(values: readonly string[]): ArenaGenerativeC
  */
 export function resolveCapabilities(options: {
   planned?: readonly string[]
-  bindings: ReadonlyArray<{ kind?: string; stream?: boolean; pagination?: unknown }>
+  bindings: ReadonlyArray<{
+    kind?: string
+    stream?: boolean
+    pagination?: unknown
+    chatProtocol?: { input?: boolean }
+  }>
 }): ArenaGenerativeCapability[] {
   const selected = new Set<ArenaGenerativeCapability>(plannedCapabilities(options.planned ?? []))
   if (options.bindings.some((binding) => binding.stream === true)) {
@@ -203,6 +213,9 @@ export function resolveCapabilities(options: {
   }
   if (options.bindings.some((binding) => Boolean(binding.pagination))) {
     selected.add('pagination')
+  }
+  if (options.bindings.some((binding) => binding.chatProtocol?.input === true)) {
+    selected.add('chat')
   }
   return ARENA_GENERATIVE_CAPABILITIES.filter((capability) => selected.has(capability))
 }

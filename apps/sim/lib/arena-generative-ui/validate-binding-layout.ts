@@ -5,7 +5,9 @@ import {
   HOST_RESERVED_STATE_ROOTS,
   planHasStructuredSchema,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
+import { hasChatProtocolInput } from '@/lib/arena-generative-ui/chat-protocol'
 import { isFormFieldType } from '@/lib/arena-generative-ui/form-fields'
+import { isReservedStartInputName } from '@/lib/arena-generative-ui/input-schema'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 import { splitNavTarget } from '@/lib/arena-generative-ui/types'
 
@@ -19,7 +21,7 @@ const BOUND_RESULT_TYPES = new Set([
   'ProgressBar',
 ])
 
-const ACTION_WIRE_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip'])
+const ACTION_WIRE_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip', 'Chat'])
 
 const COLLECTION_TYPES = new Set(['Table', 'Repeat'])
 
@@ -69,6 +71,9 @@ export function validateManifestBindingLayout(
       if (formError) return formError
     }
 
+    const chatError = chatElementsError(path, elements, manifest, planByKey)
+    if (chatError) return chatError
+
     for (const [id, element] of Object.entries(elements)) {
       const type = element.type ?? ''
       const statePath = asString(element.props?.statePath)
@@ -86,6 +91,9 @@ export function validateManifestBindingLayout(
       }
     }
   }
+
+  const chatOnlyError = chatOnlyBindingError(manifest, plans)
+  if (chatOnlyError) return chatOnlyError
 
   return unboundHostKeysError(manifest, plans)
 }
@@ -111,8 +119,12 @@ function formFieldsError(
   elements: Record<string, SpecElement>,
   plan: BindingLayoutPlan
 ): string | undefined {
-  if (plan.formFields.length === 0 && plan.hiddenInputFields.length === 0) return undefined
   const names = formFieldNamesForAction(elements, actionId)
+  const reserved = names.find((name) => isReservedStartInputName(name))
+  if (reserved) {
+    return `Page "${pagePath}" form for action "${actionId}" includes reserved start field "${reserved}". Use Chat for input, files, and conversationId.`
+  }
+  if (plan.formFields.length === 0 && plan.hiddenInputFields.length === 0) return undefined
   const hidden = names.find((name) => plan.hiddenInputFields.includes(name))
   if (hidden) {
     return `Page "${pagePath}" form for action "${actionId}" renders "${hidden}", which the host sends itself. Do not add a field for visitorEmail or constant inputs.`
@@ -128,6 +140,57 @@ function formFieldsError(
     return `Page "${pagePath}" form for action "${actionId}" includes field "${extra}", which is not in inputSchema.`
   }
   return undefined
+}
+
+function chatElementsError(
+  pagePath: string,
+  elements: Record<string, SpecElement>,
+  manifest: ArenaGenerativeAppManifest,
+  planByKey: Map<string, BindingLayoutPlan>
+): string | undefined {
+  for (const [id, element] of Object.entries(elements)) {
+    if (element.type !== 'Chat') continue
+    const actionId = asString(element.props?.actionId)
+    if (!actionId) {
+      return `Page "${pagePath}" Chat "${id}" is missing actionId.`
+    }
+    const action = manifest.actions[actionId]
+    if (!action) {
+      return `Page "${pagePath}" Chat "${id}" action "${actionId}" is not in manifest.actions.`
+    }
+    const plan = planByKey.get(action.apiKey)
+    if (!hasChatProtocolInput(plan?.chatProtocol)) {
+      return `Page "${pagePath}" Chat "${id}" action "${actionId}" has no chat protocol. Bind a workflow Start that includes input.`
+    }
+  }
+  return undefined
+}
+
+function chatOnlyBindingError(
+  manifest: ArenaGenerativeAppManifest,
+  plans: BindingLayoutPlan[]
+): string | undefined {
+  const chatActionIds = chatActionIdsFrom(manifest)
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    const plan = plans.find((item) => item.key === action.apiKey)
+    if (!plan || !hasChatProtocolInput(plan.chatProtocol)) continue
+    if (plan.formFields.length > 0) continue
+    if (chatActionIds.has(actionId)) continue
+    return `Binding "${plan.key}" has chat protocol input and no form fields. Add a Chat with an action that uses that binding.`
+  }
+  return undefined
+}
+
+function chatActionIdsFrom(manifest: ArenaGenerativeAppManifest): Set<string> {
+  const ids = new Set<string>()
+  for (const page of Object.values(manifest.pages)) {
+    for (const element of Object.values(specElements(page.spec))) {
+      if (element.type !== 'Chat') continue
+      const actionId = asString(element.props?.actionId)
+      if (actionId) ids.add(actionId)
+    }
+  }
+  return ids
 }
 
 function boundPathError(

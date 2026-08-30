@@ -1,3 +1,4 @@
+import type { ArenaGenerativeActionSurface } from '@/lib/arena-generative-ui/chat-protocol'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import {
   ARENA_GENERATIVE_ERROR_KEY,
@@ -60,10 +61,12 @@ function stripVisitorErrorNoise(value: string): string {
 export interface GenerativeAppLastAction {
   actionId: string
   values: Record<string, unknown>
+  surface?: ArenaGenerativeActionSurface
 }
 
 export interface RunGenerativeAppActionMeta {
   destructive?: boolean
+  surface?: ArenaGenerativeActionSurface
 }
 
 export interface ActionGenerationClock {

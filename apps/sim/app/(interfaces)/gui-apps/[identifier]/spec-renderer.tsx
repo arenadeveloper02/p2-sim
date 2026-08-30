@@ -39,6 +39,7 @@ import {
   isActionControlPending,
   isBoundPathPending,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
+import type { ArenaGenerativeChatProtocol } from '@/lib/arena-generative-ui/chat-protocol'
 import {
   type ArenaGenerativeFormField,
   asFieldString,
@@ -72,6 +73,7 @@ import {
 } from '@/lib/arena-generative-ui/types'
 import type { ArenaGenerativeUxPlan } from '@/lib/arena-generative-ui/ux-compiler'
 import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
+import { ChatComposer } from '@/app/(interfaces)/gui-apps/[identifier]/chat-composer'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
 
 interface SpecElement {
@@ -92,6 +94,10 @@ interface SpecRendererProps {
   actionHostKeys?: Record<string, readonly string[]>
   /** visitorEmail / constant input names the host stamps; those fields never render. */
   actionHiddenInputs?: Record<string, readonly string[]>
+  /** Reserved Start protocol each action may bind through Chat. */
+  actionChatProtocol?: Record<string, ArenaGenerativeChatProtocol>
+  /** localStorage key for the Chat conversationId. */
+  conversationStorageKey?: string
   /** Compiler action plan. When omitted, confirm falls back to destructive variant. */
   uxPlan?: ArenaGenerativeUxPlan
   /** Current page path; Tabs use this when it matches an item, otherwise `activePath`. */
@@ -1109,10 +1115,7 @@ function CatalogStepper({
   const resolvedActive = itemPaths.includes(routePath) ? routePath : splitNavTarget(activePath).path
 
   return (
-    <ol
-      className='flex w-full flex-wrap items-center gap-2'
-      style={style}
-    >
+    <ol className='flex w-full flex-wrap items-center gap-2' style={style}>
       {items.map((item, index) => {
         const path = splitNavTarget(item.path).path
         const isActive = path === resolvedActive
@@ -1439,6 +1442,8 @@ export function SpecRenderer({
   pendingActionIds,
   actionHostKeys,
   actionHiddenInputs,
+  actionChatProtocol,
+  conversationStorageKey,
   uxPlan,
   currentPath,
   onNavigate,
@@ -2419,6 +2424,21 @@ export function SpecRenderer({
               />
             </div>
           </div>
+        )
+      }
+      case 'Chat': {
+        const actionId = asString(props.actionId)
+        if (!actionId) return null
+        return (
+          <ChatComposer
+            actionId={actionId}
+            placeholder={asString(props.placeholder, 'Message')}
+            protocol={actionChatProtocol?.[actionId]}
+            conversationStorageKey={conversationStorageKey}
+            hostState={state}
+            pending={controlPending(actionId)}
+            onSubmit={(id, values) => dispatchAction(id, values, { surface: 'chat' })}
+          />
         )
       }
       case 'Form': {

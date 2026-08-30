@@ -52,7 +52,14 @@ const RELOCATABLE_LOADING_TYPES = new Set([
   'WorkingCard',
 ])
 const BOUND_LOADING_TYPES = new Set(['Table', 'Repeat', 'Stat', 'KeyValue', 'DataText'])
-const ACTION_ID_PROP_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip'])
+const ACTION_ID_PROP_TYPES = new Set([
+  'Form',
+  'SubmitButton',
+  'Button',
+  'SearchField',
+  'Chip',
+  'Chat',
+])
 const LIST_WRAPPER_TYPES = new Set(['Grid', 'Stack', 'Section'])
 
 /** Element key for compiler-injected pending status. Must not collide with model keys. */

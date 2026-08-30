@@ -1,4 +1,5 @@
 import { truncate } from '@sim/utils/string'
+import { parseChatProtocol } from '@/lib/arena-generative-ui/chat-protocol'
 import { isOmittedGenerativeInputField } from '@/lib/arena-generative-ui/input-schema'
 import { OUTPUT_HINT_MAX_LENGTH } from '@/lib/arena-generative-ui/output-schema'
 import {
@@ -469,6 +470,12 @@ export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
     const inputSchema = schemaFields(record.inputSchema, { input: true })
     if (inputSchema) {
       binding.inputSchema = inputSchema
+    }
+    if (kind === 'workflow') {
+      const chatProtocol = parseChatProtocol(record.chatProtocol)
+      if (chatProtocol) {
+        binding.chatProtocol = chatProtocol
+      }
     }
     const outputSchema = schemaFields(record.outputSchema)
     if (outputSchema) {

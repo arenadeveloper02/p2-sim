@@ -48,6 +48,29 @@ describe('inputSchemaFromWorkflowFields', () => {
     ])
   })
 
+  it('records reserved Start fields as chatProtocol and keeps declared form fields', () => {
+    const binding = workflowBindingFromSelection({
+      key: 'recommend',
+      workflowId: 'wf-1',
+      inputFields: [
+        { name: 'input', type: 'string' },
+        { name: 'conversationId', type: 'string' },
+        { name: 'files', type: 'file[]' },
+        { name: 'companyName', type: 'string' },
+        { name: 'brand', type: 'string' },
+      ],
+    })
+    expect(binding.inputSchema).toEqual([
+      { name: 'companyName', type: 'string' },
+      { name: 'brand', type: 'string' },
+    ])
+    expect(binding.chatProtocol).toEqual({
+      input: true,
+      conversationId: true,
+      files: true,
+    })
+  })
+
   it('drops chat protocol fields, execute flags, and file[] uploads', () => {
     expect(
       inputSchemaFromWorkflowFields([

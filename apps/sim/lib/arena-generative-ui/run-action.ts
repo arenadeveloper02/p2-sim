@@ -12,6 +12,11 @@ import {
   layoutPlanForBinding,
   shouldBindActionContent,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
+import {
+  type ArenaGenerativeActionSurface,
+  applyChatProtocolToActionValues,
+  chatProtocolReservedKeys,
+} from '@/lib/arena-generative-ui/chat-protocol'
 import type { DeployedAppRecord } from '@/lib/arena-generative-ui/deployment'
 import { isHttpUrlAllowlisted } from '@/lib/arena-generative-ui/http-allowlist'
 import {
@@ -41,6 +46,7 @@ import {
   type EnvironmentResolutionSnapshot,
   getEffectiveEnvironmentSnapshot,
 } from '@/lib/environment/utils'
+import { processExecutionFiles } from '@/lib/execution/files'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import type { StreamingExecution } from '@/executor/types'
@@ -315,6 +321,51 @@ function mapActionInput(
   return mapped
 }
 
+/**
+ * `inputMapping` is an allowlist. Chat protocol keys are host-stamped like
+ * `arenaEmailId` and must survive it.
+ */
+function withChatProtocolKeys(
+  mapped: Record<string, unknown>,
+  constrained: Record<string, unknown>,
+  binding: Pick<ArenaGenerativeApiBinding, 'chatProtocol'>
+): Record<string, unknown> {
+  const keys = chatProtocolReservedKeys(binding.chatProtocol)
+  if (keys.length === 0) return mapped
+  const next = { ...mapped }
+  for (const key of keys) {
+    if (constrained[key] !== undefined) {
+      next[key] = constrained[key]
+    }
+  }
+  return next
+}
+
+async function withProcessedChatFiles(options: {
+  binding: ArenaGenerativeApiBinding
+  mappedInput: Record<string, unknown>
+  workspaceId: string
+  workflowId: string
+  executionId: string
+  requestId: string
+  userId: string
+}): Promise<Record<string, unknown>> {
+  if (!options.binding.chatProtocol?.files || options.mappedInput.files === undefined) {
+    return options.mappedInput
+  }
+  const uploaded = await processExecutionFiles(
+    options.mappedInput.files,
+    {
+      workspaceId: options.workspaceId,
+      workflowId: options.workflowId,
+      executionId: options.executionId,
+    },
+    options.requestId,
+    options.userId
+  )
+  return { ...options.mappedInput, files: uploaded }
+}
+
 async function runWorkflowBinding(options: {
   binding: ArenaGenerativeApiBinding
   mappedInput: Record<string, unknown>
@@ -383,6 +434,16 @@ async function runWorkflowBinding(options: {
       executionActor: preprocessResult.executionActor,
     })
 
+    const mappedInput = await withProcessedChatFiles({
+      binding: options.binding,
+      mappedInput: options.mappedInput,
+      workspaceId: workflowRecord.workspaceId,
+      workflowId,
+      executionId,
+      requestId: options.requestId,
+      userId: resolvedActorUserId,
+    })
+
     const { executeWorkflow } = await import('@/lib/workflows/executor/execute-workflow')
     const result = await executeWorkflow(
       {
@@ -393,7 +454,7 @@ async function runWorkflowBinding(options: {
         variables: (workflowRecord.variables as Record<string, unknown>) ?? undefined,
       },
       options.requestId,
-      options.mappedInput,
+      mappedInput,
       resolvedActorUserId,
       {
         enabled: true,
@@ -791,6 +852,11 @@ export interface RunGenerativeAppActionOptions {
   actorUserId: string
   /** Visitor's Arena emailId. Unverified — see `ARENA_GENERATIVE_ACTOR_EMAIL_KEY`. */
   arenaEmailId?: string
+  /**
+   * `chat` keeps reserved Start keys the binding's chatProtocol declared.
+   * Omitted / `form` strips `input`, `conversationId`, and `files`.
+   */
+  surface?: ArenaGenerativeActionSurface
   onChunk?: (content: string) => void | Promise<void>
 }
 
@@ -822,11 +888,12 @@ export async function runGenerativeAppAction(
   }
 
   /**
-   * Host-owned keys (`visitorEmail`, `constant`, `arenaEmailId`) are applied on
-   * both sides of `mapActionInput`. Before, so an `inputMapping` can rename them
-   * (`{ "email": "arenaEmailId" }`); after, because `inputMapping` is an
-   * allowlist and would otherwise drop keys the binding declared that the form
-   * never collected — which is most generated CTAs with an empty payload.
+   * Host-owned keys (`visitorEmail`, `constant`, `arenaEmailId`, chat protocol)
+   * are applied on both sides of `mapActionInput`. Before, so an `inputMapping`
+   * can rename them (`{ "email": "arenaEmailId" }`); after, because
+   * `inputMapping` is an allowlist and would otherwise drop keys the binding
+   * declared that the form never collected — which is most generated CTAs with
+   * an empty payload, plus reserved Start keys on Chat submits.
    */
   const withHostInputs = (values: Record<string, unknown>) =>
     withActorEmail(
@@ -834,13 +901,16 @@ export async function runGenerativeAppAction(
       binding,
       options.arenaEmailId
     )
+  const surfaceValues = applyChatProtocolToActionValues(options.values, binding, options.surface)
+  const constrained = constrainBindingInput(
+    withHostInputs(surfaceValues),
+    binding,
+    action.inputMapping
+  )
   const mappedInput = applyPaginationToInput(
     binding.pagination,
     withHostInputs(
-      mapActionInput(
-        constrainBindingInput(withHostInputs(options.values), binding, action.inputMapping),
-        action.inputMapping
-      )
+      withChatProtocolKeys(mapActionInput(constrained, action.inputMapping), constrained, binding)
     )
   )
 
@@ -967,6 +1037,7 @@ export async function runDeployedAppAction(options: {
   values: Record<string, unknown>
   requestId: string
   arenaEmailId?: string
+  surface?: ArenaGenerativeActionSurface
 }): Promise<RunDeployedAppActionResult> {
   return runGenerativeAppAction(deployedRunnerOptions(options))
 }
@@ -977,6 +1048,7 @@ export function createDeployedAppActionSseResponse(options: {
   values: Record<string, unknown>
   requestId: string
   arenaEmailId?: string
+  surface?: ArenaGenerativeActionSurface
 }): Response {
   return createGenerativeAppActionSseResponse(deployedRunnerOptions(options))
 }
@@ -987,6 +1059,7 @@ function deployedRunnerOptions(options: {
   values: Record<string, unknown>
   requestId: string
   arenaEmailId?: string
+  surface?: ArenaGenerativeActionSurface
 }): RunGenerativeAppActionOptions {
   return {
     manifest: options.deployment.manifest,
@@ -999,5 +1072,6 @@ function deployedRunnerOptions(options: {
     requestId: options.requestId,
     actorUserId: options.deployment.userId,
     arenaEmailId: options.arenaEmailId,
+    surface: options.surface,
   }
 }

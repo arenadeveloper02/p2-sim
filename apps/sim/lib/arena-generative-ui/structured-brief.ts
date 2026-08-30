@@ -84,7 +84,8 @@ const ARCHETYPE_SET = new Set<string>(ARENA_GENERATIVE_ARCHETYPES)
 export function canonicalizeArchetype(value: unknown): ArenaGenerativeArchetype | undefined {
   if (typeof value !== 'string') return undefined
   if (ARCHETYPE_SET.has(value)) return value as ArenaGenerativeArchetype
-  const aliased = ARENA_GENERATIVE_ARCHETYPE_ALIASES[value as keyof typeof ARENA_GENERATIVE_ARCHETYPE_ALIASES]
+  const aliased =
+    ARENA_GENERATIVE_ARCHETYPE_ALIASES[value as keyof typeof ARENA_GENERATIVE_ARCHETYPE_ALIASES]
   return aliased
 }
 
@@ -210,12 +211,10 @@ export const ARENA_GENERATIVE_SELECTION_PATTERNS = ['none', 'same-page', 'naviga
 
 export const ARENA_GENERATIVE_WAIT_PATTERNS = ['none', 'working-card'] as const
 
-export type ArenaGenerativeHierarchyDominant =
-  (typeof ARENA_GENERATIVE_HIERARCHY_DOMINANTS)[number]
+export type ArenaGenerativeHierarchyDominant = (typeof ARENA_GENERATIVE_HIERARCHY_DOMINANTS)[number]
 export type ArenaGenerativeHierarchySupporting =
   (typeof ARENA_GENERATIVE_HIERARCHY_SUPPORTING)[number]
-export type ArenaGenerativeNavigationPattern =
-  (typeof ARENA_GENERATIVE_NAVIGATION_PATTERNS)[number]
+export type ArenaGenerativeNavigationPattern = (typeof ARENA_GENERATIVE_NAVIGATION_PATTERNS)[number]
 export type ArenaGenerativeSelectionPattern = (typeof ARENA_GENERATIVE_SELECTION_PATTERNS)[number]
 export type ArenaGenerativeWaitPattern = (typeof ARENA_GENERATIVE_WAIT_PATTERNS)[number]
 
@@ -355,28 +354,29 @@ function liftSnakeCasePlanFields(value: unknown): unknown {
   }
   if (appArchetype) next.archetype = appArchetype
   const shell = liftShell(next.shell, storedWorkspace)
-  if (shell) next.shell = shell
-  else delete next.shell
-  const appRepresentation = liftRepresentation(next.representation)
-  if (appRepresentation) next.representation = appRepresentation
-  else delete next.representation
-  if (Array.isArray(next.pages) && appArchetype) {
-    next.pages = next.pages.map((page) => {
-      if (!isRecord(page)) return page
-      const pageArchetype = inferPageArchetype(page, rawAppArchetype, appArchetype)
-      const lifted: Record<string, unknown> = { ...page, archetype: pageArchetype }
-      const pageRepresentation = liftRepresentation(page.representation)
-      if (pageRepresentation) lifted.representation = pageRepresentation
-      else delete lifted.representation
-      const modules = modulesFromLegacyComposition(page)
-      if (modules) lifted.modules = modules
-      else delete lifted.modules
-      delete lifted.regions
-      delete lifted.secondary
-      return lifted
-    })
+  let liftedPlan = shell ? { ...next, shell } : omit(next, ['shell'])
+  const appRepresentation = liftRepresentation(liftedPlan.representation)
+  liftedPlan = appRepresentation
+    ? { ...liftedPlan, representation: appRepresentation }
+    : omit(liftedPlan, ['representation'])
+  if (Array.isArray(liftedPlan.pages) && appArchetype) {
+    liftedPlan = {
+      ...liftedPlan,
+      pages: liftedPlan.pages.map((page) => {
+        if (!isRecord(page)) return page
+        const pageArchetype = inferPageArchetype(page, rawAppArchetype, appArchetype)
+        let lifted: Record<string, unknown> = { ...page, archetype: pageArchetype }
+        const pageRepresentation = liftRepresentation(page.representation)
+        lifted = pageRepresentation
+          ? { ...lifted, representation: pageRepresentation }
+          : omit(lifted, ['representation'])
+        const modules = modulesFromLegacyComposition(page)
+        lifted = modules ? { ...lifted, modules } : omit(lifted, ['modules'])
+        return omit(lifted, ['regions', 'secondary'])
+      }),
+    }
   }
-  return next
+  return liftedPlan
 }
 
 /** Fail-open parse for the planner information-hierarchy card. */
@@ -459,7 +459,7 @@ const PLANNER_SYSTEM_PROMPT = [
   'Modules are domain sections on that page (firmographics, marketing, competitors, ai-analysis, activity) — kebab or short nouns, at most eight. Bind them to brief nouns and layoutPlan hostKeys. Do not invent modules the schema cannot fill. Do not treat a module as a second page archetype.',
   'Representation is how a collection body is shown — not an archetype and not a capability. Emit representation (app default) and optional pages[].representation: auto | table | cards | list | kanban | timeline. auto lets BindingLayoutPlan decide. Do not emit kanban or timeline as capabilities. There is no Kanban, Timeline, or List catalog type.',
   'Optional entity is the domain noun (competitor, order). purpose stays one prose sentence.',
-  'Set capabilities to at most five tags that apply: long-running, streaming, multi-step, cancellable, progress, search, filter, sort, pagination, grouping, date-range, refresh, drill-down, selection, detail, detail-drawer, analyze, drawer, modal, create, edit, delete, back, skip, review. Combine them. A workflow binding is long-running; stream: true is streaming; binding.pagination is pagination; a single prominent query is search; Toolbar narrowing is filter; a date window is date-range; opening one entity is detail (Drawer when the list must stay visible — also set detail-drawer); an analyze/generate CTA is analyze (destination is a results page, or a module named for the analysis). Destination pages stay pages[].archetype. Omit tags the job does not need. Do not emit "short", "editable", "export", "generate", "table", "chart", "kanban", "share", or "comments".',
+  'Set capabilities to at most five tags that apply: long-running, streaming, multi-step, cancellable, progress, search, filter, sort, pagination, grouping, date-range, refresh, drill-down, selection, detail, detail-drawer, analyze, drawer, modal, create, edit, delete, back, skip, review, chat. Combine them. A workflow binding is long-running; stream: true is streaming; binding.pagination is pagination; binding.chatProtocol.input is chat; a single prominent query is search; Toolbar narrowing is filter; a date window is date-range; opening one entity is detail (Drawer when the list must stay visible — also set detail-drawer); an analyze/generate CTA is analyze (destination is a results page, or a module named for the analysis). Destination pages stay pages[].archetype. Omit tags the job does not need. Do not emit "short", "editable", "export", "generate", "table", "chart", "kanban", "share", or "comments".',
   'Also emit designIntent { productType, density, visualTone, contentType, emphasis } — pick one of each. Honour Design Notes first. Else derive from archetype plus brief nouns: dashboard → analytics / compact / data-heavy / data; task or results → workflow / comfortable / task; collection → crm / comfortable / discovery; workflow → workflow / comfortable / task; content → content / comfortable / narrative / content; shell.sidebar → saas / comfortable / discovery. Override productType from domain words (invoices → finance, campaigns → marketing). density is compact | comfortable | roomy (spacious means roomy). visualTone is professional | friendly | premium | technical | editorial. contentType is data-heavy | workflow | narrative | transactional. emphasis is task | data | content | discovery. Classification only — not component props.',
   'Also emit informationHierarchy { dominant, supporting? } and interactionModel { navigation, selection, wait }. Honour Design Notes first. Else derive from page shapes: dashboard → metrics; collection → collection; task → form; results or content → prose; workflow → wizard-step; shell.sidebar → collection with supporting navigator/inspector. dominant is form | collection | metrics | prose | document | wizard-step. supporting is zero or more of filters, history, sidebar, detail, stats, navigator, inspector. navigation is search-hero | tabs | list-detail | wizard | workspace | single-page. selection is none | same-page | navigate. wait is none | working-card — working-card only when a wait capability is set. Classification only — not component props. interactionModel.navigation workspace does not set shell.',
   'Shape: { "title", "purpose", "audience", "archetype", "entity"?, "representation"?, "shell"?, "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"?, "archetype"?, "representation"?, "modules"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "capabilities"?: string[], "designIntent"?: { "productType", "density", "visualTone", "contentType", "emphasis" }, "informationHierarchy"?: { "dominant", "supporting"? }, "interactionModel"?: { "navigation", "selection", "wait" }, "emptyCopy"?, "errorCopy"? }',
@@ -468,7 +468,7 @@ const PLANNER_SYSTEM_PROMPT = [
   '1–6 pages. Infer the smallest sitemap that completes the job: task that produces an answer has a results page plus Back; collection that opens a record has a detail page, or same-page Open / detail / detail-drawer when the row already carries prose; a second binding that is a list/history is a collection page with onLoad, not a second submit. A sidebar shell is usually one page with modules, not a second archetype. Do not invent login, settings, profile, marketing, or extra tools the job does not need.',
   'data is one sentence (onLoad which action into which state keys, or CTA then navigate, or static).',
   'A dashboard, collection, report, detail, or content page names onLoad in data when it fetches on arrival. A task form page does not. A results page that a CTA already navigates to must not onLoad that same action.',
-  'Bindings are the data contract. Form fields come from each binding inputSchema (source form or omitted); source visitorEmail or constant are host-stamped — do not plan a visible field for them. Wire each CTA to the binding whose key the brief named, or the one whose inputs/outputs match the job when the brief only described it in words. actions[].apiKey must be a declared binding key. When no bindings were declared, actions must be [].',
+  'Bindings are the data contract. Form fields come from each binding inputSchema (source form or omitted); source visitorEmail or constant are host-stamped — do not plan a visible field for them. chatProtocol (input, conversationId, files) is Chat, never a form field. Wire each CTA to the binding whose key the brief named, or the one whose inputs/outputs match the job when the brief only described it in words. actions[].apiKey must be a declared binding key. When no bindings were declared, actions must be [].',
   'When a binding has no outputSchema, do not plan Table or Stat columns; results are prose (DataText content) unless the brief names exact keys. When layoutPlan or outputSchema names a collection, plan Repeat/Table/Stat against those host keys, not invented ones.',
   'emptyCopy is the zero-result sentence for that page\'s collection (becomes emptyText) — name the collection in the domain, not generic "No results". errorCopy is the failure sentence for this job.',
   'Give an onLoad action no onSuccessNavigate.',

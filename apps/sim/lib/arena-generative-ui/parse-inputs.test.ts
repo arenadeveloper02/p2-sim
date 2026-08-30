@@ -229,6 +229,31 @@ describe('parseApiBindings', () => {
     expect(binding.inputSchema).toEqual([{ name: 'keyword', type: 'string' }])
   })
 
+  it('round-trips chatProtocol on workflow bindings only', () => {
+    const [workflow] = parseApiBindings([
+      {
+        key: 'chat',
+        kind: 'workflow',
+        workflowId: 'wf-1',
+        chatProtocol: { input: true, conversationId: true, files: true, extra: true },
+      },
+    ])
+    expect(workflow.chatProtocol).toEqual({
+      input: true,
+      conversationId: true,
+      files: true,
+    })
+    const [http] = parseApiBindings([
+      {
+        key: 'lookup',
+        kind: 'http',
+        http: { method: 'POST', url: 'https://api.example.com/lookup' },
+        chatProtocol: { input: true },
+      },
+    ])
+    expect(http.chatProtocol).toBeUndefined()
+  })
+
   it('defaults a missing schema field type to string and drops nameless entries', () => {
     const [binding] = parseApiBindings([
       {

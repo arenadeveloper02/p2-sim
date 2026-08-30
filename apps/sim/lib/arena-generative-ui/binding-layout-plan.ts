@@ -1,3 +1,4 @@
+import type { ArenaGenerativeChatProtocol } from '@/lib/arena-generative-ui/chat-protocol'
 import { isOmittedGenerativeInputField } from '@/lib/arena-generative-ui/input-schema'
 import { outputSchemaRootName } from '@/lib/arena-generative-ui/output-schema'
 import {
@@ -65,6 +66,8 @@ export interface BindingLayoutPlan {
   /** String field names that must not be bound as `field.content`. */
   stringFieldNames: string[]
   stream: boolean
+  /** Workflow Start reserved fields; Chat binds these, never the form. */
+  chatProtocol?: ArenaGenerativeChatProtocol
 }
 
 /**
@@ -128,6 +131,7 @@ export function layoutPlanForBinding(binding: ArenaGenerativeApiBinding): Bindin
     prosePaths,
     stringFieldNames,
     stream,
+    ...(binding.chatProtocol ? { chatProtocol: binding.chatProtocol } : {}),
   }
 }
 
@@ -414,6 +418,23 @@ export function actionHostKeysFrom(
     }
     const plan = layoutPlanForBinding(binding)
     result[actionId] = uniqueStrings([...plan.hostKeys, ...plan.aliasKeys])
+  }
+  return result
+}
+
+/**
+ * Chat protocol flags each action owns. SpecRenderer shows attach when `files`
+ * is set; the runner stamps reserved keys only on Chat submits.
+ */
+export function actionChatProtocolFrom(
+  manifest: Pick<ArenaGenerativeAppManifest, 'actions'>,
+  bindings: ArenaGenerativeApiBinding[]
+): Record<string, NonNullable<ArenaGenerativeApiBinding['chatProtocol']>> {
+  const byKey = new Map(bindings.map((binding) => [binding.key, binding]))
+  const result: Record<string, NonNullable<ArenaGenerativeApiBinding['chatProtocol']>> = {}
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    const protocol = byKey.get(action.apiKey)?.chatProtocol
+    if (protocol) result[actionId] = protocol
   }
   return result
 }

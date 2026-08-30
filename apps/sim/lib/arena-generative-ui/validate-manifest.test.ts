@@ -1462,5 +1462,127 @@ describe('validateArenaGenerativeManifest', () => {
       expect(result.success).toBe(false)
       expect(result.error).toContain('data.articles')
     })
+
+    it('rejects a form control named for a reserved Start field', () => {
+      const spec = pageSpec({
+        extra: {
+          input: {
+            type: 'TextArea',
+            props: { name: 'input', label: 'Message', required: true, placeholder: '' },
+            children: [],
+          },
+          form: {
+            type: 'Form',
+            props: { actionId: 'submit_lead' },
+            children: ['input', 'submit'],
+          },
+        },
+      })
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec },
+            results: { title: 'Results', path: 'results', spec: resultsSpec() },
+          },
+          actions: {
+            submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          },
+        },
+        {
+          apiBindings: [
+            {
+              ...bindings[0],
+              chatProtocol: { input: true },
+            },
+          ],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('reserved start field')
+    })
+
+    it('rejects a chat-only binding that never emits Chat', () => {
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: { title: 'Results', path: 'results', spec: resultsSpec() },
+          },
+          actions: {
+            submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          },
+        },
+        {
+          apiBindings: [
+            {
+              ...bindings[0],
+              chatProtocol: { input: true, conversationId: true },
+            },
+          ],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('Add a Chat')
+    })
+
+    it('accepts Chat on results for a chat-only binding', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Results', backgroundColor: null },
+            children: ['back', 'chat'],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              href: null,
+              navigateTo: 'home',
+              actionId: null,
+              backgroundColor: null,
+              color: null,
+            },
+            children: [],
+          },
+          chat: {
+            type: 'Chat',
+            props: { actionId: 'submit_lead', placeholder: 'Ask a follow-up' },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: { title: 'Results', path: 'results', spec },
+          },
+          actions: {
+            submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          },
+        },
+        {
+          apiBindings: [
+            {
+              ...bindings[0],
+              chatProtocol: { input: true, conversationId: true },
+            },
+          ],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
   })
 })

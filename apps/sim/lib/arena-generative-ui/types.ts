@@ -115,6 +115,15 @@ export interface ArenaGenerativeApiBinding {
    * the same workspace.
    */
   forwardEmailId?: boolean
+  /**
+   * Workflow Start reserved fields (`input`, `conversationId`, `files`). Never
+   * form controls — the Chat composer and host stamp them. HTTP bindings omit this.
+   */
+  chatProtocol?: {
+    input?: boolean
+    conversationId?: boolean
+    files?: boolean
+  }
 }
 
 export interface ArenaGenerativePagination {
@@ -223,6 +232,9 @@ const RESERVED_SUBMITTED_INPUT_KEYS = new Set([
   'hasMore',
   'nextCursor',
   'offset',
+  'input',
+  'conversationId',
+  'files',
 ])
 
 /**
@@ -910,6 +922,7 @@ export const ARENA_GENERATIVE_ACTOR_EMAIL_KEY = 'arenaEmailId'
 export const ARENA_GENERATIVE_RESERVED_QUERY_KEYS = [
   'emailId',
   ARENA_GENERATIVE_ACTOR_EMAIL_KEY,
+  'conversationId',
 ] as const
 
 /**

@@ -98,6 +98,14 @@ describe('resolveCapabilities', () => {
     ).toEqual(['long-running', 'search', 'filter', 'sort', 'pagination', 'grouping'])
   })
 
+  it('infers chat from a binding chatProtocol', () => {
+    expect(
+      resolveCapabilities({
+        bindings: [{ kind: 'workflow', chatProtocol: { input: true } }],
+      })
+    ).toEqual(['long-running', 'chat'])
+  })
+
   it('infers pagination from a binding pagination config', () => {
     expect(
       resolveCapabilities({

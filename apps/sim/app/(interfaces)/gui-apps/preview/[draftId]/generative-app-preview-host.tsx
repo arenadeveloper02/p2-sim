@@ -6,6 +6,7 @@ import { toError } from '@sim/utils/errors'
 import { useRouter } from 'next/navigation'
 import { flushSync } from 'react-dom'
 import {
+  actionChatProtocolFrom,
   actionHiddenInputsFrom,
   actionHostKeysFrom,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
@@ -98,6 +99,7 @@ export function GenerativeAppPreviewHost({
   const actionNavigate = manifest ? actionNavigateFrom(manifest) : {}
   const actionHostKeys = manifest ? actionHostKeysFrom(manifest, apiBindings ?? []) : {}
   const actionHiddenInputs = manifest ? actionHiddenInputsFrom(manifest, apiBindings ?? []) : {}
+  const actionChatProtocol = manifest ? actionChatProtocolFrom(manifest, apiBindings ?? []) : {}
 
   const executeAction = async (actionId: string, values: Record<string, unknown>) =>
     streamingIds.has(actionId)
@@ -117,12 +119,13 @@ export function GenerativeAppPreviewHost({
   }
 
   const runtime = useGenerativeAppRuntime({
-    runJson: (actionId, values) => runAction.mutateAsync({ actionId, values }),
-    runStream: (actionId, values, onChunk) =>
+    runJson: (actionId, values, surface) => runAction.mutateAsync({ actionId, values, surface }),
+    runStream: (actionId, values, onChunk, surface) =>
       runGenerativeAppDraftActionStream({
         draftId,
         actionId,
         values,
+        surface,
         onChunk,
       }),
     isStreaming: (actionId) => streamingIds.has(actionId),
@@ -227,6 +230,8 @@ export function GenerativeAppPreviewHost({
             pendingActionIds={pendingActionIds}
             actionHostKeys={actionHostKeys}
             actionHiddenInputs={actionHiddenInputs}
+            actionChatProtocol={actionChatProtocol}
+            conversationStorageKey={`preview:${draftId}`}
             uxPlan={uxPlan}
             currentPath={pagePath}
             onNavigate={navigate}

@@ -1,3 +1,4 @@
+import { chatProtocolReservedKeys } from '@/lib/arena-generative-ui/chat-protocol'
 import { PAGINATION_ACTION_VALUE_KEYS } from '@/lib/arena-generative-ui/pagination'
 import {
   ARENA_GENERATIVE_ACTOR_EMAIL_KEY,
@@ -17,8 +18,7 @@ const EXECUTE_PROTOCOL_INPUT_NAMES = new Set(['stream', 'includethinking', 'incl
 
 /**
  * Chat start-block protocol fields (`input`, `conversationId`, `files`). They are
- * not generative-app form controls — there is no FileInput, and the host does
- * not collect a chat message or thread id.
+ * not generative-app form controls. Chat composer and the host stamp them.
  */
 export function isReservedStartInputName(name: string): boolean {
   return RESERVED_START_INPUT_NAMES.has(name.trim().toLowerCase())
@@ -233,18 +233,20 @@ export function applyBindingInputSources(
  */
 export function constrainBindingInput(
   values: Record<string, unknown>,
-  binding: Pick<ArenaGenerativeApiBinding, 'inputSchema' | 'pagination'>,
+  binding: Pick<ArenaGenerativeApiBinding, 'inputSchema' | 'pagination' | 'chatProtocol'>,
   inputMapping?: Record<string, string>
 ): Record<string, unknown> {
   const fields = binding.inputSchema
-  if (!fields || fields.length === 0) {
+  const chatKeys = chatProtocolReservedKeys(binding.chatProtocol)
+  if ((!fields || fields.length === 0) && chatKeys.length === 0) {
     return values
   }
   const allowed = new Set<string>([
     ARENA_GENERATIVE_ACTOR_EMAIL_KEY,
     ...PAGINATION_ACTION_VALUE_KEYS,
+    ...chatKeys,
   ])
-  for (const field of fields) {
+  for (const field of fields ?? []) {
     const name = field.name.trim()
     if (name) allowed.add(name)
   }

@@ -98,14 +98,15 @@ export function GenerativeAppHost({
   }
 
   const runtime = useGenerativeAppRuntime({
-    runJson: (actionId, values) =>
-      runAction.mutateAsync({ actionId, values, emailId: emailId || undefined }),
-    runStream: (actionId, values, onChunk) =>
+    runJson: (actionId, values, surface) =>
+      runAction.mutateAsync({ actionId, values, emailId: emailId || undefined, surface }),
+    runStream: (actionId, values, onChunk, surface) =>
       runDeployedAppActionStream({
         identifier,
         actionId,
         values,
         emailId: emailId || undefined,
+        surface,
         onChunk,
       }),
     isStreaming: (actionId) => streamingIds.has(actionId),
@@ -193,6 +194,8 @@ export function GenerativeAppHost({
           pendingActionIds={pendingActionIds}
           actionHostKeys={config?.actionHostKeys ?? {}}
           actionHiddenInputs={config?.actionHiddenInputs ?? {}}
+          actionChatProtocol={config?.actionChatProtocol ?? {}}
+          conversationStorageKey={config?.id ? `deployed:${config.id}` : undefined}
           uxPlan={config?.uxPlan}
           currentPath={pagePath}
           onNavigate={navigate}

@@ -454,6 +454,17 @@ export const deployedAppConfigSchema = z.object({
   pageOnLoad: z.record(z.string(), z.array(z.string())).optional().default({}),
   actionHostKeys: z.record(z.string(), z.array(z.string())).optional().default({}),
   actionHiddenInputs: z.record(z.string(), z.array(z.string())).optional().default({}),
+  actionChatProtocol: z
+    .record(
+      z.string(),
+      z.object({
+        input: z.boolean().optional(),
+        conversationId: z.boolean().optional(),
+        files: z.boolean().optional(),
+      })
+    )
+    .optional()
+    .default({}),
   theme: arenaGenerativeThemeSchema.optional(),
   uxPlan: z
     .object({
@@ -529,6 +540,7 @@ export const deployedAppActionParamsSchema = z.object({
 export const runDeployedAppActionBodySchema = z.object({
   values: unknownRecordSchema.optional().default({}),
   emailId: z.string().max(320).optional(),
+  surface: z.enum(['form', 'chat']).optional(),
 })
 
 export const runDeployedAppActionResponseSchema = z.object({
@@ -567,6 +579,7 @@ export const generativeAppDraftActionParamsSchema = z.object({
 
 export const runGenerativeAppDraftActionBodySchema = z.object({
   values: unknownRecordSchema.optional().default({}),
+  surface: z.enum(['form', 'chat']).optional(),
 })
 
 export const runGenerativeAppDraftActionContract = defineRouteContract({

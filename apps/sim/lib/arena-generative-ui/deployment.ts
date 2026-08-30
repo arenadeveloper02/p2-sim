@@ -3,6 +3,7 @@ import { deployedApp } from '@sim/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { NextRequest, NextResponse } from 'next/server'
 import {
+  actionChatProtocolFrom,
   actionHiddenInputsFrom,
   actionHostKeysFrom,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
@@ -71,6 +72,7 @@ export function toDeployedAppConfig(deployment: DeployedAppRecord) {
     pageOnLoad: pageOnLoadFrom(deployment.manifest),
     actionHostKeys: actionHostKeysFrom(deployment.manifest, deployment.apiBindings),
     actionHiddenInputs: actionHiddenInputsFrom(deployment.manifest, deployment.apiBindings),
+    actionChatProtocol: actionChatProtocolFrom(deployment.manifest, deployment.apiBindings),
     theme: parseArenaGenerativeTheme(deployment.manifest.theme),
     uxPlan,
   }

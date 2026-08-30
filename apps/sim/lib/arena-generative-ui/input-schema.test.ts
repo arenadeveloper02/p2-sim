@@ -172,6 +172,18 @@ describe('constrainBindingInput', () => {
     ).toEqual({ company: 'Acme' })
   })
 
+  it('allows reserved chat keys when the binding declares chatProtocol', () => {
+    expect(
+      constrainBindingInput(
+        { company: 'Acme', input: 'hello', conversationId: 'c1', files: [], extra: 1 },
+        {
+          inputSchema: [{ name: 'company', type: 'string' }],
+          chatProtocol: { input: true, conversationId: true, files: true },
+        }
+      )
+    ).toEqual({ company: 'Acme', input: 'hello', conversationId: 'c1', files: [] })
+  })
+
   it('keeps pagination params and mapping sources', () => {
     expect(
       constrainBindingInput(

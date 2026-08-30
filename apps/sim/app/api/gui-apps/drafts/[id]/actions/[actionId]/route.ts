@@ -61,6 +61,7 @@ export const POST = withRouteHandler(
       const manifest = draft.manifest as ArenaGenerativeAppManifest
       const actionId = parsed.data.params.actionId
       const values = (parsed.data.body.values ?? {}) as Record<string, unknown>
+      const surface = parsed.data.body.surface
       const requestId = generateRequestId()
       const arenaEmailId =
         typeof session.user.email === 'string' && session.user.email.trim()
@@ -77,6 +78,7 @@ export const POST = withRouteHandler(
         requestId,
         actorUserId: session.user.id,
         arenaEmailId,
+        surface,
       }
 
       if (isStreamingAction(manifest, apiBindings, actionId)) {

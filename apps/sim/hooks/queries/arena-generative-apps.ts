@@ -190,24 +190,34 @@ export function useRunDeployedAppAction(identifier: string) {
       actionId,
       values,
       emailId,
+      surface,
     }: {
       actionId: string
       values: Record<string, unknown>
       emailId?: string
+      surface?: 'form' | 'chat'
     }) =>
       requestJson(runDeployedAppActionContract, {
         params: { identifier, actionId },
-        body: { values, emailId },
+        body: { values, emailId, surface },
       }),
   })
 }
 
 export function useRunGenerativeAppDraftAction(draftId: string) {
   return useMutation({
-    mutationFn: ({ actionId, values }: { actionId: string; values: Record<string, unknown> }) =>
+    mutationFn: ({
+      actionId,
+      values,
+      surface,
+    }: {
+      actionId: string
+      values: Record<string, unknown>
+      surface?: 'form' | 'chat'
+    }) =>
       requestJson(runGenerativeAppDraftActionContract, {
         params: { id: draftId, actionId },
-        body: { values },
+        body: { values, surface },
       }),
   })
 }
@@ -220,6 +230,7 @@ export async function runDeployedAppActionStream(options: {
   actionId: string
   values: Record<string, unknown>
   emailId?: string
+  surface?: 'form' | 'chat'
   onChunk: (accumulated: string) => void
   signal?: AbortSignal
 }): Promise<RunDeployedAppActionResult> {
@@ -227,7 +238,7 @@ export async function runDeployedAppActionStream(options: {
     runDeployedAppActionStreamContract,
     {
       params: { identifier: options.identifier, actionId: options.actionId },
-      body: { values: options.values, emailId: options.emailId },
+      body: { values: options.values, emailId: options.emailId, surface: options.surface },
       signal: options.signal,
     },
     { headers: { Accept: 'text/event-stream' } }
@@ -245,6 +256,7 @@ export async function runGenerativeAppDraftActionStream(options: {
   draftId: string
   actionId: string
   values: Record<string, unknown>
+  surface?: 'form' | 'chat'
   onChunk: (accumulated: string) => void
   signal?: AbortSignal
 }): Promise<RunDeployedAppActionResult> {
@@ -252,7 +264,7 @@ export async function runGenerativeAppDraftActionStream(options: {
     runGenerativeAppDraftActionStreamContract,
     {
       params: { id: options.draftId, actionId: options.actionId },
-      body: { values: options.values },
+      body: { values: options.values, surface: options.surface },
       signal: options.signal,
     },
     { headers: { Accept: 'text/event-stream' } }

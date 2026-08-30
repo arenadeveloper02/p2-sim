@@ -1,3 +1,4 @@
+import { chatProtocolFromWorkflowFields } from '@/lib/arena-generative-ui/chat-protocol'
 import {
   compactInputSchemaField,
   inferInputFieldSource,
@@ -46,7 +47,8 @@ export interface WorkflowBindingSelection {
  * Actor-specific names (`userEmail`, `loggedInEmail`, …) default to
  * `visitorEmail` so the host sends the signed-in address without a form field.
  * A field named `email` stays a form control — that is the lead/contact address.
- * Chat protocol fields, Sim execute flags, and `file[]` uploads are omitted.
+ * Chat protocol fields, Sim execute flags, and `file[]` uploads are omitted
+ * from the form schema. Reserved Start names are recorded on `chatProtocol`.
  */
 export function inputSchemaFromWorkflowFields(
   fields: WorkflowInputField[] | undefined
@@ -94,6 +96,7 @@ export function workflowBindingFromSelection(
   }
 
   const inputSchema = inputSchemaFromWorkflowFields(selection.inputFields)
+  const chatProtocol = chatProtocolFromWorkflowFields(selection.inputFields)
   const layout = outputLayoutFromSample(selection.outputSample, {
     stream: selection.stream === true,
   })
@@ -107,6 +110,7 @@ export function workflowBindingFromSelection(
     kind: 'workflow',
     workflowId,
     ...(inputSchema.length > 0 ? { inputSchema } : {}),
+    ...(chatProtocol ? { chatProtocol } : {}),
     ...(outputSchema && outputSchema.length > 0 ? { outputSchema } : {}),
     ...(fromSample ? { outputSchemaSource: 'sample' as const } : {}),
     ...(!fromSample && (selection.outputSchemaWarnings?.length ?? 0) > 0

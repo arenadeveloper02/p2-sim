@@ -46,6 +46,7 @@ export const POST = withRouteHandler(
 
     const actionId = parsed.data.params.actionId
     const values = (parsed.data.body.values ?? {}) as Record<string, unknown>
+    const surface = parsed.data.body.surface
 
     if (isStreamingAction(deployment.manifest, deployment.apiBindings, actionId)) {
       return createDeployedAppActionSseResponse({
@@ -54,6 +55,7 @@ export const POST = withRouteHandler(
         values,
         requestId: authorized.requestId,
         arenaEmailId: authorized.arenaEmailId,
+        surface,
       })
     }
 
@@ -64,6 +66,7 @@ export const POST = withRouteHandler(
         values,
         requestId: authorized.requestId,
         arenaEmailId: authorized.arenaEmailId,
+        surface,
       })
       return createSuccessResponse(result)
     } catch (error) {

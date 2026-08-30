@@ -20,6 +20,7 @@ export function bindingsSummaryForPrompt(bindings: ArenaGenerativeApiBinding[]) 
       label: binding.label,
       kind: binding.kind,
       inputSchema: binding.inputSchema ?? [],
+      ...(binding.chatProtocol ? { chatProtocol: binding.chatProtocol } : {}),
       outputSchema,
       ...(outputExample ? { outputExample } : {}),
       ...(binding.outputSchemaWarnings && binding.outputSchemaWarnings.length > 0

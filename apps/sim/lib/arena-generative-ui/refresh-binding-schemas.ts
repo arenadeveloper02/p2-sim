@@ -1,5 +1,6 @@
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
+import { chatProtocolFromWorkflowFields } from '@/lib/arena-generative-ui/chat-protocol'
 import {
   declaredOutputSchemaNeedsLastRunFallback,
   extractOutputSchemaFromBlocks,
@@ -8,6 +9,7 @@ import {
 import { loadLastSuccessfulRunOutputSchema } from '@/lib/arena-generative-ui/last-run-output-schema'
 import type { ArenaGenerativeSchemaField } from '@/lib/arena-generative-ui/output-schema'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
+import { extractInputFieldsFromBlocks } from '@/lib/workflows/input-format'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 
 const logger = createLogger('ArenaBindingSchemaRefresh')
@@ -15,6 +17,7 @@ const logger = createLogger('ArenaBindingSchemaRefresh')
 interface ResolvedWorkflowOutputSchema {
   fields: ArenaGenerativeSchemaField[]
   warnings: string[]
+  chatProtocol?: ArenaGenerativeApiBinding['chatProtocol']
 }
 
 /**
@@ -22,6 +25,7 @@ interface ResolvedWorkflowOutputSchema {
  * Agent fields when those exist. A stub or empty declaration falls back to the
  * last successful run. HTTP bindings, workflows with no schema at all, and
  * bindings whose schema came from Sample response keep the stored schema.
+ * `chatProtocol` is always refreshed from the deployed Start reserved fields.
  */
 export async function refreshWorkflowBindingOutputSchemas(
   bindings: ArenaGenerativeApiBinding[]
@@ -53,14 +57,20 @@ export async function refreshWorkflowBindingOutputSchemas(
   )
 
   return bindings.map((binding) => {
-    if (binding.kind !== 'workflow' || !binding.workflowId || hasSampleOutputSchema(binding)) {
+    if (binding.kind !== 'workflow' || !binding.workflowId) {
       return binding
     }
     const resolved = deployedSchemas.get(binding.workflowId)
     if (!resolved) {
       return binding
     }
-    const { outputSchemaWarnings: _dropped, ...rest } = binding
+    const withProtocol = resolved.chatProtocol
+      ? { ...binding, chatProtocol: resolved.chatProtocol }
+      : binding
+    if (hasSampleOutputSchema(withProtocol) || resolved.fields.length === 0) {
+      return withProtocol
+    }
+    const { outputSchemaWarnings: _dropped, ...rest } = withProtocol
     return {
       ...rest,
       outputSchema: resolved.fields,
@@ -78,12 +88,25 @@ async function loadOutputSchema(
 ): Promise<ResolvedWorkflowOutputSchema | undefined> {
   try {
     const deployed = await loadDeployedWorkflowState(workflowId)
+    const chatProtocol = chatProtocolFromWorkflowFields(
+      extractInputFieldsFromBlocks(deployed.blocks)
+    )
     const declared =
       outputSchemaFromWorkflowFields(extractOutputSchemaFromBlocks(deployed.blocks)) ?? []
     if (!declaredOutputSchemaNeedsLastRunFallback(declared)) {
-      return { fields: declared, warnings: [] }
+      return { fields: declared, warnings: [], ...(chatProtocol ? { chatProtocol } : {}) }
     }
-    return mergeDeclaredWithLastRun(workflowId, declared, deployed.deploymentVersionId)
+    const merged = await mergeDeclaredWithLastRun(
+      workflowId,
+      declared,
+      deployed.deploymentVersionId
+    )
+    if (!merged && !chatProtocol) return undefined
+    return {
+      fields: merged?.fields ?? [],
+      warnings: merged?.warnings ?? [],
+      ...(chatProtocol ? { chatProtocol } : {}),
+    }
   } catch (error) {
     logger.warn('Could not refresh outputSchema from deployed workflow', {
       workflowId,
