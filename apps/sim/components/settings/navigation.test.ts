@@ -11,6 +11,7 @@ import {
   buildUnifiedSettingsNavigation,
   canMutateWorkspaceSettingsSection,
   getAccountSettingsHref,
+  getOrganizationSettingsFeatures,
   getOrganizationSettingsHref,
   getWorkspaceSettingsHref,
   isOrganizationSettingsSectionAvailable,
@@ -251,6 +252,17 @@ describe('settings navigation boundaries', () => {
     expect(organizationMembers?.label).toBe('Members')
     expect(organizationMembers?.description).toBe('Manage organization members, roles, and seats.')
     expect(unifiedOrganization?.label).toBe('Members')
+  })
+
+  it('keeps Members available without a paid organization plan', () => {
+    const unifiedOrganization = buildUnifiedSettingsNavigation().find(
+      ({ id }) => id === 'organization'
+    )
+
+    expect(unifiedOrganization?.requiresTeam).toBeUndefined()
+    expect(
+      isOrganizationSettingsSectionAvailable('members', getOrganizationSettingsFeatures(false))
+    ).toBe(true)
   })
 
   it('keeps self-host settings on their standalone account projection', () => {

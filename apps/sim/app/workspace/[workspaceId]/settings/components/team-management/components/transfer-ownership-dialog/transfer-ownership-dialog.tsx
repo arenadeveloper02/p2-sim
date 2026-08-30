@@ -86,8 +86,8 @@ export function TransferOwnershipDialog({
     <ChipConfirmModal
       open={open}
       onOpenChange={handleClose}
-      srTitle='Leave organization'
-      title='Leave organization'
+      srTitle='Transfer ownership'
+      title='Transfer ownership'
       confirm={{
         label: 'Transfer & leave',
         onClick: handleConfirm,

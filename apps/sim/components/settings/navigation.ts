@@ -562,7 +562,6 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       order: 0,
       hideWhenBillingDisabled: true,
       requiresHosted: true,
-      requiresTeam: true,
     },
     planes: {
       organization: {

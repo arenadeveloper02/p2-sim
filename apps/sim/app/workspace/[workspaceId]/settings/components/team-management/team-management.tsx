@@ -5,6 +5,7 @@ import { Plus } from '@sim/emcn'
 import { createLogger } from '@sim/logger'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionAccessState } from '@/lib/billing/client/utils'
+import { isFree } from '@/lib/billing/plan-helpers'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { generateSlug, isAdminOrOwner, type Member } from '@/lib/workspaces/organization'
 import { InviteModal } from '@/app/workspace/[workspaceId]/components/invite-modal'
@@ -108,14 +109,26 @@ export function TeamManagement({
    * subscriptions.
    */
   const orgBilling = organizationBillingData?.data ?? null
-  const orgSubscription = orgBilling
-    ? {
-        id: orgBilling.organizationId,
-        plan: orgBilling.subscriptionPlan,
-        status: orgBilling.subscriptionStatus ?? 'active',
-        referenceId: orgBilling.organizationId,
-      }
-    : null
+  const hasActiveOrganizationSubscription =
+    orgBilling?.subscriptionState === 'active' &&
+    orgBilling.hasSubscription &&
+    !isFree(orgBilling.subscriptionPlan)
+  const inviteDisabledReason = isInvitationsDisabled
+    ? 'Invitations are disabled'
+    : isOrgBillingLoading
+      ? 'Checking organization subscription'
+      : hasActiveOrganizationSubscription
+        ? undefined
+        : 'Upgrade to a Team or Enterprise plan to invite members'
+  const orgSubscription =
+    hasActiveOrganizationSubscription && orgBilling
+      ? {
+          id: orgBilling.organizationId,
+          plan: orgBilling.subscriptionPlan,
+          status: orgBilling.subscriptionStatus ?? 'active',
+          referenceId: orgBilling.organizationId,
+        }
+      : null
 
   useEffect(() => {
     if ((hasTeamPlan || hasEnterprisePlan) && session?.user?.name && !orgName) {
@@ -314,8 +327,8 @@ export function TeamManagement({
                   icon: Plus,
                   variant: 'primary',
                   onSelect: () => setInviteModalOpen(true),
-                  disabled: isInvitationsDisabled,
-                  tooltip: isInvitationsDisabled ? 'Invitations are disabled' : undefined,
+                  disabled: Boolean(inviteDisabledReason),
+                  tooltip: inviteDisabledReason,
                 },
               ]
             : []
@@ -349,7 +362,8 @@ export function TeamManagement({
           open={inviteModalOpen}
           onOpenChange={setInviteModalOpen}
           organizationId={displayOrganization.id}
-          canInvite={adminOrOwner}
+          canInvite={adminOrOwner && hasActiveOrganizationSubscription}
+          inviteDisabledReason={inviteDisabledReason}
         />
       )}
 
