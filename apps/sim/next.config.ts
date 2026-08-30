@@ -1,16 +1,53 @@
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import type { NextConfig } from 'next'
 import { env, isTruthy } from './lib/core/config/env'
-
-/** Monorepo root — required so Turbopack doesn't pick a stray ~/yarn.lock as the workspace root. */
-const monorepoRoot = path.resolve(__dirname, '../..')
-
 import { isDev } from './lib/core/config/env-flags'
 import {
   getChatEmbedCSPPolicy,
   getMainCSPPolicy,
   getWorkflowExecutionCSPPolicy,
 } from './lib/core/security/csp'
+
+const require = createRequire(import.meta.url)
+
+/** Monorepo root — required so Turbopack doesn't pick a stray ~/yarn.lock as the workspace root. */
+const monorepoRoot = path.resolve(__dirname, '../..')
+
+/**
+ * Walk from a resolved package entry to the directory that contains its package.json.
+ * `htmlparser2` does not export `./package.json`, so `require.resolve('htmlparser2/package.json')`
+ * throws.
+ */
+function packageRootFromEntry(entry: string, packageName: string): string {
+  let dir = path.dirname(entry)
+  while (dir !== path.dirname(dir)) {
+    const packageJsonPath = path.join(dir, 'package.json')
+    try {
+      const pkg = require(packageJsonPath) as { name?: string }
+      if (pkg.name === packageName) {
+        return dir
+      }
+    } catch {}
+    dir = path.dirname(dir)
+  }
+  throw new Error(`Could not find package root for ${packageName} from ${entry}`)
+}
+
+/**
+ * htmlparser2@10+/12 and parse5 import `entities/decode` and `entities/escape`.
+ * Docker installs with `--linker=hoisted`, so those subpaths resolve to root
+ * `entities@4` (rss-parser / html-to-text), which only exports `./lib/decode.js`
+ * and `./lib/escape.js`. Point the bundler at the entities@7 copy nested under
+ * htmlparser2.
+ */
+function resolveHtmlparser2EntitiesSubpath(subpath: 'decode' | 'escape'): string {
+  const htmlparser2Dir = packageRootFromEntry(require.resolve('htmlparser2'), 'htmlparser2')
+  return require.resolve(`entities/${subpath}`, { paths: [htmlparser2Dir] })
+}
+
+const entitiesDecodeAlias = resolveHtmlparser2EntitiesSubpath('decode')
+const entitiesEscapeAlias = resolveHtmlparser2EntitiesSubpath('escape')
 
 /**
  * Marketing routes (`app/(landing)/**`, plus the root) exempted from COEP.
@@ -71,18 +108,26 @@ const nextConfig: NextConfig = {
   productionBrowserSourceMaps: true,
   turbopack: {
     root: monorepoRoot,
-    resolveAlias: minimalRegistryAlias,
+    resolveAlias: {
+      ...minimalRegistryAlias,
+      'entities/decode': entitiesDecodeAlias,
+      'entities/escape': entitiesEscapeAlias,
+    },
   },
   webpack: (config) => {
-    if (useMinimalRegistry) {
-      config.resolve.alias = {
-        ...config.resolve.alias,
-        '@/tools/registry$': path.resolve(import.meta.dirname, 'tools/registry.minimal.ts'),
-        '@/blocks/registry-maps$': path.resolve(
-          import.meta.dirname,
-          'blocks/registry-maps.minimal.ts'
-        ),
-      }
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'entities/decode$': entitiesDecodeAlias,
+      'entities/escape$': entitiesEscapeAlias,
+      ...(useMinimalRegistry
+        ? {
+            '@/tools/registry$': path.resolve(import.meta.dirname, 'tools/registry.minimal.ts'),
+            '@/blocks/registry-maps$': path.resolve(
+              import.meta.dirname,
+              'blocks/registry-maps.minimal.ts'
+            ),
+          }
+        : {}),
     }
     return config
   },
@@ -180,9 +225,6 @@ const nextConfig: NextConfig = {
     '@daytona/sdk',
     '@earendil-works/pi-ai',
     '@earendil-works/pi-coding-agent',
-    // htmlparser2@12 (sanitize-html) imports `entities/decode`. Externalize so Turbopack
-    // does not bundle Tokenizer.js against a hoisted entities resolution.
-    'sanitize-html',
     // Keep json-render out of the Turbopack RSC graph (react-email render pulls react-dom/server).
     '@json-render/core',
     '@json-render/react',
