@@ -27,23 +27,22 @@ vi.mock('@/lib/core/config/api-keys', () => ({
 vi.mock('@/lib/arena-generative-ui/structured-brief', () => ({
   planArenaGenerativeStructuredBrief: mockPlanBrief,
   archetypeRecipe: (archetype: string) => `ARCHETYPE RECIPE: ${archetype}`,
+  shellRecipe: (shell?: { navigation?: string }) =>
+    shell?.navigation && shell.navigation !== 'none' ? 'SHELL RECIPE' : '',
   archetypeRecipesForBrief: (brief: {
     archetype: string
-    pages?: Array<{
-      archetype?: string
-      regions?: { navigator?: { archetype: string }; primary: { archetype: string }; inspector?: { archetype: string } }
-    }>
+    pages?: Array<{ archetype?: string }>
+    shell?: { navigation?: string }
   }) => {
     const shapes = new Set<string>([brief.archetype])
     for (const page of brief.pages ?? []) {
       if (page.archetype) shapes.add(page.archetype)
-      if (page.regions) {
-        if (page.regions.navigator) shapes.add(page.regions.navigator.archetype)
-        shapes.add(page.regions.primary.archetype)
-        if (page.regions.inspector) shapes.add(page.regions.inspector.archetype)
-      }
     }
-    return [...shapes].map((shape) => `ARCHETYPE RECIPE: ${shape}`).join('\n\n')
+    const recipes = [...shapes].map((shape) => `ARCHETYPE RECIPE: ${shape}`)
+    if (brief.shell?.navigation && brief.shell.navigation !== 'none') {
+      recipes.push('SHELL RECIPE')
+    }
+    return recipes.join('\n\n')
   },
   formatStructuredBriefForGenerator: (brief: { title: string }) =>
     `Structured brief (implement this information architecture; emit exactly these page paths as object keys):\n${JSON.stringify(brief, null, 2)}`,

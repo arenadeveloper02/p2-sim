@@ -110,7 +110,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   analyze: [
     'CAPABILITY: ANALYZE',
-    'The primary CTA produces analysis or generated output. Wire that binding. Destination is a results page (onSuccess.navigate) or pages[].secondary with archetype results. Wait chrome is LONG-RUNNING / STREAMING — compose those modules; do not invent a second wait or a new catalog type.',
+    'The primary CTA produces analysis or generated output. Wire that binding. Destination is a results page (onSuccess.navigate) or a page module named for the analysis. Wait chrome is LONG-RUNNING / STREAMING — compose those modules; do not invent a second wait or a new catalog type.',
   ].join('\n'),
   drawer: [
     'CAPABILITY: DRAWER',

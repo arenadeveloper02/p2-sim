@@ -433,6 +433,7 @@ export async function generateArenaGenerativeManifest(
   const systemPrompt = buildGeneratorSystemPrompt({
     archetype: intentBrief?.archetype,
     recipes: intentBrief ? archetypeRecipesForBrief(intentBrief) : undefined,
+    shell: intentBrief?.shell,
     capabilities: resolveCapabilities({
       planned: [...(intentBrief?.capabilities ?? []), ...(intentBrief?.processing ?? [])],
       bindings: params.apiBindings,

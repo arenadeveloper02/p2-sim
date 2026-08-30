@@ -778,8 +778,8 @@ export const goldWorkspaceManifest: ArenaGenerativeAppManifest = {
 }
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE = goldPrompt(
-  'workspace',
-  'One page. Workspace children are navigator (collection Repeat), primary (EntityHeader + KeyValue), inspector (DataText). Sync with selectItem and inspectorWhen "selectedId". No Tabs for the three regions.',
+  'sidebar-shell',
+  'App chrome is catalog Workspace when shell.navigation is sidebar. Children are navigator (collection Repeat), primary (EntityHeader + KeyValue), inspector (DataText). Sync with selectItem and inspectorWhen "selectedId". No Tabs for the three regions. The page job is still collection or detail — Workspace is the shell, not a page archetype.',
   {
     title: 'Accounts',
     content: 'Keep the list, record, and notes visible together.',

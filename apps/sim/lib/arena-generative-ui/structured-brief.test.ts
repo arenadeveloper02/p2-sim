@@ -144,6 +144,19 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     expect(parsed?.designIntent).toEqual({ density: 'compact' })
   })
 
+  it('does not set shell from interactionModel.navigation workspace', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        interactionModel: { navigation: 'workspace', selection: 'same-page', wait: 'none' },
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.shell).toBeUndefined()
+    expect(parsed?.interactionModel?.navigation).toBe('workspace')
+    expect(parsed?.archetype).toBe('collection')
+  })
+
   it('keeps a valid informationHierarchy and interactionModel', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       {
@@ -245,7 +258,7 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     expect(parsed?.pages[0]?.archetype).toBe('workflow')
   })
 
-  it('keeps workspace regions and drops a nested workspace region shape', () => {
+  it('aliases stored workspace onto the primary region plus sidebar shell and folds regions into modules', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       {
         title: 'CRM',
@@ -271,30 +284,26 @@ describe('parseArenaGenerativeStructuredBrief', () => {
       },
       { apiBindings: [] }
     )
-    expect(parsed?.archetype).toBe('workspace')
-    expect(parsed?.pages[0]?.archetype).toBe('workspace')
-    expect(parsed?.pages[0]?.regions).toEqual({
-      primary: { archetype: 'detail', purpose: 'Record', data: 'selected account', capabilities: [] },
-      inspector: {
-        archetype: 'results',
-        purpose: 'Notes',
-        data: 'selected notes',
-        capabilities: [],
-      },
-    })
+    expect(parsed?.archetype).toBe('detail')
+    expect(parsed?.shell).toEqual({ navigation: 'sidebar' })
+    expect(parsed?.pages[0]?.archetype).toBe('detail')
+    expect(parsed?.pages[0]?.modules).toEqual(['navigator', 'inspector'])
+    expect(parsed?.pages[0]?.regions).toBeUndefined()
+    expect(parsed?.pages[0]?.secondary).toBeUndefined()
   })
 
-  it('keeps entity, representation, and a non-workspace secondary pane', () => {
+  it('keeps entity, representation, modules, and a declared sidebar shell', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       {
         ...listDetailBrief,
         entity: 'order',
         representation: 'table',
+        shell: { navigation: 'sidebar', header: true, breadcrumbs: true },
         pages: [
           {
             ...listDetailBrief.pages[0],
             representation: 'cards',
-            secondary: { role: 'detail', archetype: 'detail' },
+            modules: ['activity', 'ai-analysis', 'Activity', '???'],
           },
           listDetailBrief.pages[1],
         ],
@@ -303,20 +312,26 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     )
     expect(parsed?.entity).toBe('order')
     expect(parsed?.representation).toBe('table')
+    expect(parsed?.shell).toEqual({
+      navigation: 'sidebar',
+      header: true,
+      breadcrumbs: true,
+    })
     expect(parsed?.pages[0]?.representation).toBe('cards')
-    expect(parsed?.pages[0]?.secondary).toEqual({ role: 'detail', archetype: 'detail' })
+    expect(parsed?.pages[0]?.modules).toEqual(['activity', 'ai-analysis'])
   })
 
-  it('fails an unknown representation open to auto and drops an invalid secondary', () => {
+  it('fails an unknown representation open to auto, drops unknown shell, and maps secondary role to a module', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       {
         ...listDetailBrief,
         representation: 'kanban_board',
+        shell: { navigation: 'drawer', header: 'yes' },
         pages: [
           {
             ...listDetailBrief.pages[0],
             representation: 'nope',
-            secondary: { role: 'sidebar', archetype: 'workspace' },
+            secondary: { role: 'detail', archetype: 'detail' },
           },
           listDetailBrief.pages[1],
         ],
@@ -324,7 +339,9 @@ describe('parseArenaGenerativeStructuredBrief', () => {
       { apiBindings: [] }
     )
     expect(parsed?.representation).toBe('auto')
+    expect(parsed?.shell).toBeUndefined()
     expect(parsed?.pages[0]?.representation).toBe('auto')
+    expect(parsed?.pages[0]?.modules).toEqual(['detail'])
     expect(parsed?.pages[0]?.secondary).toBeUndefined()
   })
 
@@ -470,7 +487,7 @@ describe('structured brief helpers', () => {
     expect(archetypeRecipe('workflow')).toContain('Stepper')
     expect(archetypeRecipe('workflow')).not.toContain('One page per step')
     expect(archetypeRecipe('content')).toContain('DataText markdown')
-    expect(archetypeRecipe('workspace')).toContain('navigator')
+    expect(ARENA_GENERATIVE_ARCHETYPES).not.toContain('workspace')
   })
 
   it('composes recipes and page-shape lines for mixed sitemaps', () => {
@@ -478,8 +495,29 @@ describe('structured brief helpers', () => {
     expect(recipes).toContain('ARCHETYPE RECIPE: collection')
     expect(recipes).toContain('ARCHETYPE RECIPE: detail')
     expect(recipes).not.toContain('ARCHETYPE RECIPE: workspace')
+    expect(recipes).not.toContain('SHELL RECIPE')
     expect(formatPageShapesForGenerator(listDetailBrief)).toContain('home: collection representation=auto')
     expect(formatPageShapesForGenerator(listDetailBrief)).toContain('detail: detail representation=auto')
+    expect(formatPageShapesForGenerator(listDetailBrief)).toContain('Shell: navigation=none')
+    expect(formatPageShapesForGenerator(listDetailBrief)).toContain(
+      'one primary archetype + capabilities + modules'
+    )
+  })
+
+  it('appends the shell recipe and modules line when chrome is a sidebar', () => {
+    const brief: ArenaGenerativeStructuredBrief = {
+      ...listDetailBrief,
+      shell: { navigation: 'sidebar' },
+      pages: [
+        { ...listDetailBrief.pages[0], modules: ['navigator', 'activity'] },
+        listDetailBrief.pages[1],
+      ],
+    }
+    const recipes = archetypeRecipesForBrief(brief)
+    expect(recipes).toContain('SHELL RECIPE')
+    expect(recipes).toContain('catalog Workspace')
+    expect(formatPageShapesForGenerator(brief)).toContain('Shell: navigation=sidebar')
+    expect(formatPageShapesForGenerator(brief)).toContain('modules: navigator, activity')
   })
 
   it('turns planned pages into generator page hints', () => {
@@ -582,6 +620,8 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(system).toContain('must not onLoad that same action')
     expect(system).toContain('How do I monitor many important signals')
     expect(system).toContain('PRIMARY ARCHETYPE')
+    expect(system).toContain('MODULES')
+    expect(system).toContain('workspace is not a page archetype')
     expect(system).toContain('representation')
     expect(system).toContain('Set capabilities to at most five tags that apply')
     expect(system).toContain('Also emit designIntent')

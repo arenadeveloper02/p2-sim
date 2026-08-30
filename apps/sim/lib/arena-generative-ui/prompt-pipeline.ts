@@ -29,14 +29,17 @@ import { ARENA_GENERATIVE_UI_DESIGN_INTENT_PROMPT } from '@/lib/arena-generative
 import { goldExamplePromptForArchetype } from '@/lib/arena-generative-ui/gold-example'
 import {
   type ArenaGenerativeArchetype,
+  type ArenaGenerativeShell,
   archetypeRecipe,
+  shellRecipe,
 } from '@/lib/arena-generative-ui/structured-brief'
 import { ARENA_GENERATIVE_UI_HOST_UX_PROMPT } from '@/lib/arena-generative-ui/ux-policy'
 
 export interface BuildGeneratorSystemPromptOptions {
   archetype?: ArenaGenerativeArchetype
-  /** Precomposed recipes for every page/region shape. Falls back to the app archetype. */
+  /** Precomposed recipes for every page job plus shell. Falls back to the app archetype. */
   recipes?: string
+  shell?: ArenaGenerativeShell
   capabilities?: readonly ArenaGenerativeCapability[]
   hasBindings: boolean
   hasStreamingBinding: boolean
@@ -59,8 +62,13 @@ function wrapColumn(heading: string, sections: readonly string[]): string {
  * constrain recipes. Persona stays first. Still one generate call.
  */
 export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOptions): string {
-  const recipe =
+  const baseRecipe =
     options.recipes || (options.archetype ? archetypeRecipe(options.archetype) : '')
+  const chrome = shellRecipe(options.shell)
+  const recipe =
+    chrome && !baseRecipe.includes('SHELL RECIPE')
+      ? [baseRecipe, chrome].filter((section) => section.length > 0).join('\n\n')
+      : baseRecipe
   const capabilities = capabilityRecipePrompt(options.capabilities ?? [])
   const catalogAndEnvelope = buildArenaGenerativeUiPrompt({
     customRules: [
@@ -102,7 +110,7 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
       recipe,
       ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT,
       capabilities,
-      goldExamplePromptForArchetype(options.archetype),
+      goldExamplePromptForArchetype(options.archetype, { shell: options.shell }),
       headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
       catalogAndEnvelope,
     ]),

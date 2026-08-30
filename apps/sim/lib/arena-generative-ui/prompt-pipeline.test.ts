@@ -101,6 +101,23 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(prompt).not.toContain('PROCESSING PATTERN')
   })
 
+  it('appends the shell recipe and sidebar-shell gold when navigation is sidebar', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'collection',
+      shell: { navigation: 'sidebar' },
+      hasBindings: true,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('ARCHETYPE RECIPE: collection')
+    expect(prompt).toContain('SHELL RECIPE')
+    expect(headingIndex(prompt, 'SHELL RECIPE')).toBeGreaterThan(
+      headingIndex(prompt, 'ARCHETYPE RECIPE: collection')
+    )
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (collection)')
+  })
+
   it('injects precomposed page-shape recipes when provided', () => {
     const prompt = buildGeneratorSystemPrompt({
       archetype: 'task',

@@ -6,7 +6,10 @@ import {
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
 } from '@/lib/arena-generative-ui/gold-example-archetypes'
-import type { ArenaGenerativeArchetype } from '@/lib/arena-generative-ui/structured-brief'
+import type {
+  ArenaGenerativeArchetype,
+  ArenaGenerativeShell,
+} from '@/lib/arena-generative-ui/structured-brief'
 import { DEFAULT_ARENA_GENERATIVE_THEME } from '@/lib/arena-generative-ui/theme'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 
@@ -493,17 +496,24 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
 ].join('\n\n')
 
 /**
- * Few-shot for the generator: the matching archetype only. A single Watchtower
- * example taught every app to become a search hero; injecting all four at once
- * would just restore that bias toward the longest one.
+ * Few-shot for the generator: sidebar shell wins over page job so chrome is
+ * taught by the Workspace catalog, not by a workspace page archetype. Otherwise
+ * the matching page job only. A single Watchtower example taught every app to
+ * become a search hero; injecting all four at once would just restore that bias
+ * toward the longest one.
  */
-export function goldExamplePromptForArchetype(archetype?: ArenaGenerativeArchetype): string {
+export function goldExamplePromptForArchetype(
+  archetype?: ArenaGenerativeArchetype,
+  options?: { shell?: ArenaGenerativeShell }
+): string {
+  if (options?.shell?.navigation === 'sidebar') {
+    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE
+  }
   if (archetype === 'dashboard') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD
   if (archetype === 'collection' || archetype === 'detail') {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL
   }
   if (archetype === 'workflow') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD
   if (archetype === 'content') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT
-  if (archetype === 'workspace') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE
   return ARENA_GENERATIVE_UI_GOLD_EXAMPLE
 }

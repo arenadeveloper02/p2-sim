@@ -17,6 +17,7 @@ import {
   GOLD_LIST_DETAIL_LIST_API_KEY,
   GOLD_LIST_DETAIL_RECORD_API_KEY,
   GOLD_WIZARD_SUBMIT_API_KEY,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
   GOLD_WORKSPACE_LOAD_API_KEY,
   goldContentManifest,
   goldDashboardManifest,
@@ -176,9 +177,9 @@ describe('per-archetype gold examples', () => {
     expect(goldExamplePromptForArchetype('content')).toContain(
       'GOLD STANDARD REFERENCE LAYOUT (content)'
     )
-    expect(goldExamplePromptForArchetype('workspace')).toContain(
-      'GOLD STANDARD REFERENCE LAYOUT (workspace)'
-    )
+    expect(
+      goldExamplePromptForArchetype('collection', { shell: { navigation: 'sidebar' } })
+    ).toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
     expect(goldExamplePromptForArchetype('task')).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
     expect(goldExamplePromptForArchetype()).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
   })
@@ -267,5 +268,9 @@ describe('per-archetype gold examples', () => {
     expect(result.error).toBeUndefined()
     expect(result.success).toBe(true)
     expect(JSON.stringify(goldWorkspaceManifest)).toContain('"Workspace"')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)'
+    )
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE).toContain('not a page archetype')
   })
 })
