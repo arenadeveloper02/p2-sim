@@ -3,6 +3,7 @@ import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import { isTruncatedGeneratedFileContent } from '@/lib/development/assert-generated-app-completeness'
 import type { GeneratedAppFile } from '@/lib/development/nextjs-app-generator'
 import { sanitizeRelativeFilePath } from '@/lib/development/nextjs-app-generator'
 
@@ -183,4 +184,101 @@ export async function readGeneratedAppFiles(outputDir: string): Promise<Generate
   }
 
   return files
+}
+
+async function walkGeneratedAppSourcePaths(
+  rootDir: string,
+  currentDir: string,
+  paths: string[]
+): Promise<void> {
+  const entries = await readdir(currentDir, { withFileTypes: true })
+
+  for (const entry of entries) {
+    const absolutePath = join(currentDir, entry.name)
+    const relativePath = absolutePath.slice(rootDir.length + 1).replace(/\\/g, '/')
+
+    if (entry.isDirectory()) {
+      if (SKIP_DIR_NAMES.has(entry.name)) {
+        continue
+      }
+      await walkGeneratedAppSourcePaths(rootDir, absolutePath, paths)
+      continue
+    }
+
+    if (!entry.isFile() || !shouldIncludeFile(relativePath)) {
+      continue
+    }
+
+    const safePath = sanitizeRelativeFilePath(relativePath)
+    if (safePath) {
+      paths.push(safePath.replace(/\\/g, '/'))
+    }
+  }
+}
+
+/** Lists every source path on disk without the LLM char budget. */
+export async function listGeneratedAppSourcePaths(outputDir: string): Promise<string[]> {
+  if (!existsSync(outputDir)) {
+    throw new Error(`Generated app directory does not exist: ${outputDir}`)
+  }
+
+  const paths: string[] = []
+  await walkGeneratedAppSourcePaths(outputDir, outputDir, paths)
+  return [...new Set(paths)].sort()
+}
+
+async function readUntruncatedGeneratedAppFile(
+  outputDir: string,
+  relativePath: string
+): Promise<GeneratedAppFile | null> {
+  const safePath = sanitizeRelativeFilePath(relativePath)
+  if (!safePath) {
+    return null
+  }
+
+  const absolutePath = join(outputDir, safePath)
+  if (!existsSync(absolutePath)) {
+    return null
+  }
+
+  const content = await readFile(absolutePath, 'utf-8')
+  return { path: safePath.replace(/\\/g, '/'), content }
+}
+
+/**
+ * Puts omitted or budget-truncated files back from disk so an edit cannot
+ * silently rewrite two-thirds of the app.
+ */
+export async function restoreOmittedGeneratedAppFiles(
+  outputDir: string,
+  files: GeneratedAppFile[],
+  baselinePaths?: string[]
+): Promise<GeneratedAppFile[]> {
+  const diskPaths = baselinePaths ?? (await listGeneratedAppSourcePaths(outputDir))
+  const byPath = new Map<string, GeneratedAppFile>()
+
+  for (const file of files) {
+    const path = file.path.replace(/\\/g, '/')
+    if (isTruncatedGeneratedFileContent(file.content)) {
+      const restored = await readUntruncatedGeneratedAppFile(outputDir, path)
+      if (!restored) {
+        throw new Error(`Generated file ${path} is truncated and has no complete copy on disk`)
+      }
+      byPath.set(path, restored)
+      continue
+    }
+    byPath.set(path, { ...file, path })
+  }
+
+  for (const path of diskPaths) {
+    if (byPath.has(path)) {
+      continue
+    }
+    const restored = await readUntruncatedGeneratedAppFile(outputDir, path)
+    if (restored) {
+      byPath.set(path, restored)
+    }
+  }
+
+  return [...byPath.values()]
 }

@@ -64,6 +64,7 @@ import {
   validateGeneratedAppPreDeploy,
   validateGeneratedAppProductionBuild,
 } from '@/lib/development/validate-generated-app-build'
+import { assertGeneratedAppReadyToPush } from '@/lib/development/assert-generated-app-completeness'
 import {
   collectReferencedAliasPathsInFiles,
   formatStructureValidationIssues,
@@ -1040,6 +1041,11 @@ async function requestBatchedAppSpecFromLlm(
     allFiles.push(...batchFiles)
   }
 
+  assertGeneratedAppReadyToPush({
+    files: allFiles,
+    expectedPaths: manifest.filePaths,
+  })
+
   return normalizeAppSpec(
     {
       appName: manifest.appName,
@@ -1876,6 +1882,7 @@ async function generateNextjsAppInner(
             vercelDeployError = dbSyncResult.blockingError
             databaseProvisionError = dbSyncResult.blockingError
           } else {
+            assertGeneratedAppReadyToPush({ files: spec.files })
             logger.info('Pushing generated app to GitHub', { repoName })
             const pushResult = await pushGeneratedAppToGitHub({
               outputDir,
@@ -2528,6 +2535,10 @@ async function editNextjsAppInner(
     const outputPath = relative(monorepoRoot, outputDir)
 
     const existingFiles = await readGeneratedAppFiles(outputDir)
+    const { listGeneratedAppSourcePaths, restoreOmittedGeneratedAppFiles } = await import(
+      '@/lib/development/read-generated-app-files'
+    )
+    const baselinePaths = await listGeneratedAppSourcePaths(outputDir)
     const originalPrismaSchema = existingFiles.find(
       (file) => file.path.replace(/\\/g, '/') === 'prisma/schema.prisma'
     )?.content
@@ -2538,6 +2549,10 @@ async function editNextjsAppInner(
       existingFiles,
       input.referenceImage
     )
+    spec = {
+      ...spec,
+      files: await restoreOmittedGeneratedAppFiles(outputDir, spec.files, baselinePaths),
+    }
     logger.info('LLM app edit finished', {
       durationMs: Date.now() - generationStartedAt,
       changedFiles: spec.files.length,
@@ -2567,6 +2582,7 @@ async function editNextjsAppInner(
     })
     spec = buildRepair.spec
     spec.requiresDatabase = DEVELOPMENT_REQUIRES_DATABASE
+    spec.files = await restoreOmittedGeneratedAppFiles(outputDir, spec.files, baselinePaths)
     buildValidated = buildRepair.buildValidated
     buildOutput = buildRepair.buildOutput
 
@@ -2676,6 +2692,16 @@ async function editNextjsAppInner(
             vercelDeployError = dbSyncResult.blockingError
             databaseProvisionError = dbSyncResult.blockingError
           } else {
+            spec.files = await restoreOmittedGeneratedAppFiles(
+              outputDir,
+              spec.files,
+              baselinePaths
+            )
+            assertGeneratedAppReadyToPush({
+              files: spec.files,
+              baselinePaths,
+            })
+            await writeAppFiles(outputDir, spec.files)
             logger.info('Pushing edited app to GitHub', { repoName })
             const pushResult = await pushRepoChangesToGitHub({
               outputDir,

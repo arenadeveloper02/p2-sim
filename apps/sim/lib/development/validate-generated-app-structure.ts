@@ -1,4 +1,5 @@
 import { createLogger } from '@sim/logger'
+import { findTruncatedGeneratedAppFiles } from '@/lib/development/assert-generated-app-completeness'
 import type { GeneratedAppFile } from '@/lib/development/normalize-generated-app-files'
 import {
   collectJsxPropNamesForComponent,
@@ -709,6 +710,12 @@ function checkBuildScript(files: GeneratedAppFile[]): string[] {
   return []
 }
 
+function checkTruncatedGeneratedFiles(files: GeneratedAppFile[]): string[] {
+  return findTruncatedGeneratedAppFiles(files).map(
+    (path) => `${path}: file content is truncated (budget/token ceiling). Return the complete file.`
+  )
+}
+
 /**
  * Validates generated app structure after normalization.
  */
@@ -731,6 +738,7 @@ export function validateGeneratedAppStructure(
     ...checkTailwindConfig(files),
     ...checkBuildScript(files),
     ...checkPrismaSchemaMigrationSafety(files, options.originalPrismaSchema),
+    ...checkTruncatedGeneratedFiles(files),
   ]
 
   if (issues.length > 0) {

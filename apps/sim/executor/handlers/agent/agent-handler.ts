@@ -442,6 +442,8 @@ export class AgentBlockHandler implements BlockHandler {
         return streamingResult
       }
 
+      this.assertForcedToolsWereCalled(filteredInputs.tools, result)
+
       if (filteredInputs.memoryType && filteredInputs.memoryType !== 'none') {
         await this.persistResponseToMemory(ctx, filteredInputs, result as BlockOutput)
       }
@@ -2737,6 +2739,35 @@ export class AgentBlockHandler implements BlockHandler {
         )
       )
     }
+  }
+
+  private collectForcedToolLabels(tools: ToolInput[] | undefined): string[] {
+    return (tools ?? [])
+      .filter((tool) => tool.usageControl === 'force')
+      .map((tool) => tool.operation || tool.type || tool.title || tool.customToolId || 'tool')
+  }
+
+  private assertForcedToolsWereCalled(
+    tools: ToolInput[] | undefined,
+    output: BlockOutput | StreamingExecution
+  ): void {
+    const forcedLabels = this.collectForcedToolLabels(tools)
+    if (forcedLabels.length === 0) {
+      return
+    }
+    if (this.isStreamingExecution(output)) {
+      return
+    }
+
+    const toolCalls = (output as { toolCalls?: { list?: unknown[]; count?: number } }).toolCalls
+    const callCount = toolCalls?.count ?? (Array.isArray(toolCalls?.list) ? toolCalls.list.length : 0)
+    if (callCount > 0) {
+      return
+    }
+
+    throw new Error(
+      `Forced tool call produced zero tool calls (${forcedLabels.join(', ')}). A tool with usageControl "force" must be invoked; the block failed instead of returning success.`
+    )
   }
 
   private processProviderResponse(

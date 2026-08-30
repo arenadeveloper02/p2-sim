@@ -305,6 +305,42 @@ describe('AgentBlockHandler', () => {
       expect(result).toEqual(expectedOutput)
     })
 
+    it('should fail the block when a forced tool produces zero tool calls', async () => {
+      const inputs = {
+        model: 'gpt-4o',
+        userPrompt: 'Plan a storyboard',
+        apiKey: 'test-api-key',
+        tools: [
+          {
+            type: 'storyboard',
+            operation: 'storyboard_generate',
+            usageControl: 'force' as const,
+          },
+        ],
+      }
+
+      mockGetProviderFromModel.mockReturnValue('openai')
+      mockTransformBlockTool.mockReturnValue({
+        id: 'storyboard_generate',
+        name: 'storyboard_generate',
+        description: 'Generate storyboard',
+        parameters: { type: 'object', properties: {} },
+        usageControl: 'force',
+      })
+      mockExecuteProviderRequest.mockResolvedValue({
+        content: 'Storyboard tool is unavailable; no tool call was made',
+        model: 'mock-model',
+        tokens: { input: 10, output: 20, total: 30 },
+        toolCalls: [],
+        cost: 0.001,
+        timing: { total: 100 },
+      })
+
+      await expect(handler.execute(mockContext, mockBlock, inputs)).rejects.toThrow(
+        /Forced tool call produced zero tool calls \(storyboard_generate\)/
+      )
+    })
+
     it('fails fast when a configured tool schema cannot be enriched', async () => {
       const error = new ToolSchemaEnrichmentError(
         'table_query_rows',
@@ -925,6 +961,14 @@ describe('AgentBlockHandler', () => {
       }
 
       mockGetProviderFromModel.mockReturnValue('openai')
+      mockExecuteProviderRequest.mockResolvedValue({
+        content: 'Mocked response content',
+        model: 'mock-model',
+        tokens: { input: 10, output: 20, total: 30 },
+        toolCalls: [{ name: 'force_tool', result: {} }],
+        cost: 0.001,
+        timing: { total: 100 },
+      })
 
       await handler.execute(mockContext, mockBlock, inputs)
 
@@ -982,6 +1026,14 @@ describe('AgentBlockHandler', () => {
       }
 
       mockGetProviderFromModel.mockReturnValue('openai')
+      mockExecuteProviderRequest.mockResolvedValue({
+        content: 'Mocked response content',
+        model: 'mock-model',
+        tokens: { input: 10, output: 20, total: 30 },
+        toolCalls: [{ name: 'operation3', result: {} }],
+        cost: 0.001,
+        timing: { total: 100 },
+      })
 
       await handler.execute(mockContext, mockBlock, inputs)
 
@@ -1029,6 +1081,14 @@ describe('AgentBlockHandler', () => {
       }))
 
       mockGetProviderFromModel.mockReturnValue('openai')
+      mockExecuteProviderRequest.mockResolvedValue({
+        content: 'Mocked response content',
+        model: 'mock-model',
+        tokens: { input: 10, output: 20, total: 30 },
+        toolCalls: [{ name: 'operation2', result: {} }],
+        cost: 0.001,
+        timing: { total: 100 },
+      })
 
       await handler.execute(mockContext, mockBlock, inputs)
 
@@ -1094,6 +1154,14 @@ describe('AgentBlockHandler', () => {
       }
 
       mockGetProviderFromModel.mockReturnValue('openai')
+      mockExecuteProviderRequest.mockResolvedValue({
+        content: 'Mocked response content',
+        model: 'mock-model',
+        tokens: { input: 10, output: 20, total: 30 },
+        toolCalls: [{ name: 'custom_tool_force', result: {} }],
+        cost: 0.001,
+        timing: { total: 100 },
+      })
 
       await handler.execute(mockContext, mockBlock, inputs)
 
@@ -3174,7 +3242,7 @@ describe('AgentBlockHandler', () => {
         content: 'Used MCP tools successfully',
         model: 'gpt-4o',
         tokens: { input: 20, output: 30, total: 50 },
-        toolCalls: [],
+        toolCalls: [{ name: 'mcp-web-search', result: {} }],
         timing: { total: 200 },
       })
 

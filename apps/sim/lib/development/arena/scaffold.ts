@@ -25,7 +25,8 @@ function projectUsesSrcAppDir(files: GeneratedAppFile[]): boolean {
 function arenaPaths(useSrcDir: boolean) {
   const prefix = useSrcDir ? 'src/' : ''
   return {
-    middleware: useSrcDir ? 'src/middleware.ts' : 'middleware.ts',
+    proxy: useSrcDir ? 'src/proxy.ts' : 'proxy.ts',
+    legacyMiddleware: useSrcDir ? 'src/middleware.ts' : 'middleware.ts',
     arenaEmailConstants: `${prefix}lib/arena-email-constants.ts`,
     arenaEmail: `${prefix}lib/arena-email.ts`,
     provider: `${prefix}components/arena-email-provider.tsx`,
@@ -36,11 +37,11 @@ function arenaPaths(useSrcDir: boolean) {
   } as const
 }
 
-function buildMiddlewareContent(): string {
+function buildProxyContent(): string {
   return `import { type NextRequest, NextResponse } from 'next/server'
 import { ARENA_EMAIL_COOKIE_NAME } from '@/lib/arena-email-constants'
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const frameHeaders = {
     'Content-Security-Policy': 'frame-ancestors *',
@@ -188,7 +189,7 @@ export {
 } from '@/lib/arena-email-constants'
 
 /**
- * Reads the Arena email id from the httpOnly cookie (set by middleware from ?emailId=).
+ * Reads the Arena email id from the httpOnly cookie (set by proxy.ts from ?emailId=).
  */
 export async function getArenaEmailId(): Promise<string | null> {
   const jar = await cookies()
@@ -332,14 +333,15 @@ function upsertFile(files: GeneratedAppFile[], path: string, content: string): G
 }
 
 /**
- * Injects Arena iframe emailId middleware, helpers, provider, layout wiring, and DS tokens.
+ * Injects Arena iframe emailId proxy, helpers, provider, layout wiring, and DS tokens.
+ * Next.js 16 deprecates middleware.ts in favor of proxy.ts.
  */
 export function ensureArenaScaffoldFiles(files: GeneratedAppFile[]): GeneratedAppFile[] {
   const useSrcDir = projectUsesSrcAppDir(files)
   const paths = arenaPaths(useSrcDir)
 
-  let result = files
-  result = upsertFile(result, paths.middleware, buildMiddlewareContent())
+  let result = files.filter((file) => normalizePath(file.path) !== paths.legacyMiddleware)
+  result = upsertFile(result, paths.proxy, buildProxyContent())
   result = upsertFile(result, paths.arenaEmailConstants, buildArenaEmailConstantsContent())
   result = upsertFile(result, paths.arenaEmail, buildArenaEmailLibContent())
   result = upsertFile(result, paths.provider, buildArenaEmailProviderContent())

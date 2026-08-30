@@ -1858,7 +1858,13 @@ function getPrivateToolMetadataPolicy(toolId: string): PrivateToolMetadataPolicy
   if (normalizedToolId === 'function_execute' || isCustomTool(normalizedToolId)) {
     return { type: RESOLVED_SECRET_NAMES_DURABLE_FILES_METADATA_V2, incomplete: 'reject' }
   }
-  const configured = getTool(normalizedToolId)?.request.secretProvenance?.response
+  const registered = getTool(normalizedToolId)
+  if (registered && !registered.request) {
+    throw new Error(
+      `Tool "${normalizedToolId}" is registered but has no request config (secret-provenance lookup)`
+    )
+  }
+  const configured = registered?.request?.secretProvenance?.response
   if (configured) {
     return { type: RESOLVED_SECRET_PROVENANCE_METADATA_V1, incomplete: configured.incomplete }
   }
@@ -2092,6 +2098,11 @@ async function executeToolImplementation(
     // After validation, we know tool exists
     if (!tool) {
       throw new Error(`Tool not found: ${toolId}`)
+    }
+    if (!tool.request) {
+      throw new Error(
+        `Tool "${toolId}" is registered but has no request config (secret-provenance lookup)`
+      )
     }
 
     const internalExecutorDelegation = resolveInternalExecutorDelegation(
