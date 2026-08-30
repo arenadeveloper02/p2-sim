@@ -49,6 +49,16 @@ export const storyboardRenderTool: ToolConfig<StoryboardRenderParams, Storyboard
     'Turn a previously generated storyboard into a final video: applies the scene order the user chose (e.g. "3,1,2"), converts each scene image to a video clip, and stitches the clips into one video.',
   version: '1.0.0',
 
+  // Never fetched: execution is intercepted in tools/index.ts
+  // (executeStoryboardRenderDirect). Present because ToolConfig requires
+  // `request` and the secret-provenance layer reads tool.request on every call.
+  request: {
+    url: '/api/tools/storyboard/render',
+    method: 'POST',
+    headers: () => ({ 'Content-Type': 'application/json' }),
+    body: (params) => params,
+  },
+
   params: {
     conversationId: {
       type: 'string',

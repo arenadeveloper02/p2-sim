@@ -51,6 +51,16 @@ export const storyboardGenerateTool: ToolConfig<
     'Break a video idea into ordered scenes and generate a Fal.ai preview image for each one, so the user can review and reorder them before the video is made. Returns the scene images for display in chat.',
   version: '1.0.0',
 
+  // Never fetched: execution is intercepted in tools/index.ts
+  // (executeStoryboardGenerateDirect). Present because ToolConfig requires
+  // `request` and the secret-provenance layer reads tool.request on every call.
+  request: {
+    url: '/api/tools/storyboard/generate',
+    method: 'POST',
+    headers: () => ({ 'Content-Type': 'application/json' }),
+    body: (params) => params,
+  },
+
   params: {
     topic: {
       type: 'string',
