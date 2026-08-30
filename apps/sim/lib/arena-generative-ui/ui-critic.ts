@@ -32,6 +32,8 @@ export const CRITIC_ELEMENT_PROP_KEYS = [
 /** Sibling Cards that are not Repeat items before the host flags density. */
 export const MAX_NON_REPEAT_CARDS_PER_PAGE = 8
 
+const INVENTED_REPRESENTATION_TYPES = new Set(['Kanban', 'Timeline', 'List'])
+
 export interface HostCriticOptions {
   authoredPagePaths?: string[]
 }
@@ -243,6 +245,16 @@ function tooManyCardsError(pagePath: string, spec: Spec): string | undefined {
   return undefined
 }
 
+function inventedRepresentationTypeError(pagePath: string, spec: Spec): string | undefined {
+  const elements = elementsOf(spec)
+  for (const [id, element] of Object.entries(elements)) {
+    const type = element.type
+    if (!type || !INVENTED_REPRESENTATION_TYPES.has(type)) continue
+    return `Page "${pagePath}" uses "${type}" on "${id}" which is not a catalog type. Represent kanban or timeline with grouped or dated Repeat or Table.`
+  }
+  return undefined
+}
+
 function workspaceShellError(pagePath: string, spec: Spec): string | undefined {
   const elements = elementsOf(spec)
   for (const [id, element] of Object.entries(elements)) {
@@ -310,6 +322,9 @@ export function hostCriticManifest(
 
     const missingBack = missingReturnNavError(path, page.spec, manifest.entryPath, navigateTargets)
     if (missingBack) return missingBack
+
+    const invented = inventedRepresentationTypeError(path, page.spec)
+    if (invented) return invented
 
     const workspace = workspaceShellError(path, page.spec)
     if (workspace) return workspace

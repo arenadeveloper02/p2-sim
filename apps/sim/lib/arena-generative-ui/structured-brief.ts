@@ -22,6 +22,11 @@ import {
 } from '@/lib/arena-generative-ui/intent-analyzer'
 import { parseLlmJsonObject } from '@/lib/arena-generative-ui/parse-inputs'
 import { isProcessingPattern } from '@/lib/arena-generative-ui/processing-patterns'
+import {
+  ARENA_GENERATIVE_REPRESENTATIONS,
+  type ArenaGenerativeRepresentation,
+  parseArenaGenerativeRepresentation,
+} from '@/lib/arena-generative-ui/representation'
 import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
 import {
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
@@ -97,6 +102,29 @@ function briefProse(maxLength: number) {
 
 const pageShapeSchema = z.enum(ARENA_GENERATIVE_ARCHETYPES)
 
+const representationSchema = z.enum(ARENA_GENERATIVE_REPRESENTATIONS)
+
+const NESTED_PAGE_SHAPES = [
+  'collection',
+  'detail',
+  'task',
+  'results',
+  'dashboard',
+  'workflow',
+  'content',
+] as const
+
+const nestedPageShapeSchema = z.enum(NESTED_PAGE_SHAPES)
+
+export const ARENA_GENERATIVE_SECONDARY_ROLES = ['context', 'detail', 'results'] as const
+
+export type ArenaGenerativeSecondaryRole = (typeof ARENA_GENERATIVE_SECONDARY_ROLES)[number]
+
+const structuredBriefSecondarySchema = z.object({
+  role: z.enum(ARENA_GENERATIVE_SECONDARY_ROLES),
+  archetype: nestedPageShapeSchema,
+})
+
 const structuredBriefRegionSchema = z.object({
   archetype: pageShapeSchema,
   purpose: briefProse(400),
@@ -124,6 +152,10 @@ const structuredBriefPageSchema = z.object({
   emptyCopy: briefProse(200).optional(),
   /** Structural shape of this page. Defaults to the app archetype. */
   archetype: pageShapeSchema.optional(),
+  /** Collection-body representation. Defaults to the app representation or auto. */
+  representation: representationSchema.optional(),
+  /** Supporting pane on a non-workspace page. Ignored on workspace. */
+  secondary: structuredBriefSecondarySchema.optional(),
   /** Workspace shell regions. Ignored unless this page is workspace. */
   regions: structuredBriefRegionsSchema.optional(),
 })
@@ -141,6 +173,10 @@ const structuredBriefSchema = z.object({
   purpose: briefProse(400),
   audience: briefProse(200),
   archetype: pageShapeSchema,
+  /** Domain noun the collection or record is about (competitor, order). */
+  entity: briefProse(80).optional(),
+  /** App-default collection representation. Pages may override. */
+  representation: representationSchema.optional(),
   entryPath: pagePathSchema,
   pages: z.array(structuredBriefPageSchema).min(1).max(8),
   actions: z.array(structuredBriefActionSchema).max(16).default([]),
@@ -263,6 +299,19 @@ function sanitizeRegions(value: unknown): unknown {
   }
 }
 
+function sanitizeSecondary(value: unknown): unknown {
+  if (!isRecord(value)) return undefined
+  const role = asClosedEnum(value.role, ARENA_GENERATIVE_SECONDARY_ROLES)
+  const archetype = canonicalizeArchetype(value.archetype)
+  if (!role || !archetype || archetype === 'workspace') return undefined
+  return { role, archetype }
+}
+
+function liftRepresentation(value: unknown): ArenaGenerativeRepresentation | undefined {
+  if (value == null || value === '') return undefined
+  return parseArenaGenerativeRepresentation(value)
+}
+
 function liftSnakeCasePlanFields(value: unknown): unknown {
   if (!isRecord(value)) return value
   const next: Record<string, unknown> = { ...value }
@@ -275,17 +324,27 @@ function liftSnakeCasePlanFields(value: unknown): unknown {
   const rawAppArchetype = next.archetype
   const appArchetype = canonicalizeArchetype(rawAppArchetype)
   if (appArchetype) next.archetype = appArchetype
+  const appRepresentation = liftRepresentation(next.representation)
+  if (appRepresentation) next.representation = appRepresentation
+  else delete next.representation
   if (Array.isArray(next.pages) && appArchetype) {
     next.pages = next.pages.map((page) => {
       if (!isRecord(page)) return page
       const pageArchetype = inferPageArchetype(page, rawAppArchetype, appArchetype)
       const lifted: Record<string, unknown> = { ...page, archetype: pageArchetype }
+      const pageRepresentation = liftRepresentation(page.representation)
+      if (pageRepresentation) lifted.representation = pageRepresentation
+      else delete lifted.representation
       if (pageArchetype === 'workspace') {
         const regions = sanitizeRegions(page.regions)
         if (regions) lifted.regions = regions
         else delete lifted.regions
+        delete lifted.secondary
       } else {
         delete lifted.regions
+        const secondary = sanitizeSecondary(page.secondary)
+        if (secondary) lifted.secondary = secondary
+        else delete lifted.secondary
       }
       return lifted
     })
@@ -357,25 +416,29 @@ function withParsedPlanClassifiers(
 
 const PLANNER_SYSTEM_PROMPT = [
   'You plan the sitemap for a multi-page Arena app. Output one JSON object. No markdown fences, no explanation.',
-  'When Analyzed intent is present, honour its task, entities, actions, and complexity — do not rewrite the job. Pick the app archetype, per-page shapes, capabilities, designIntent, informationHierarchy, and interactionModel that implement that intent.',
-  'When intent is absent, read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write. Infer only sitemap, archetype, page shapes, capabilities, designIntent, informationHierarchy, and interactionModel.',
-  'Pick exactly one app-level archetype (the entry job). Each page also declares pages[].archetype (the shape of that page). Mixed sitemaps are normal.',
-  '- collection: find, inspect, or act on many entities. PageHeader, Toolbar, then a collection body. Table vs Repeat/Cards comes from the data — do not assume Cards.',
-  '- detail: one entity record. EntityHeader, primary facts, sections from the data model, related data, actions. Not a collection.',
-  '- task: the user supplies input to accomplish an action. PageHeader, context, Form or SearchField, one primary action. Results are optional — only add a results page when the CTA produces an answer to show.',
-  '- results: analysis or job output. Context, summary, primary result, supporting, actions. Wait chrome is a capability, not this shape.',
-  '- dashboard: scan several high-level modules on arrival (onLoad). Header, optional filters, KPI/summary, a primary visualization or module, supporting modules, optional activity. Module count and types come from layoutPlan / outputSchema — never a fixed four Stats. A single Table is collection, not dashboard.',
-  '- workflow: sequential stages toward one outcome. Progress, current step (inputs + actions), navigation. Representation from complexity: 2–3 short stages can be one page of sections; a named review/launch can be pages. Not “one page per step” by default. Tabs are not sequential stages (use Stepper). A one-shot form with no stages is task.',
-  '- content: a document the user reads or lightly edits (article, proposal, brand guidelines, knowledge). Header, metadata, main markdown body, optional related, actions. An AI report that is the product is content. A one-shot analysis after Generate is results. An entity record is detail.',
-  '- workspace: keep several related regions visible at once. One page with regions.navigator, regions.primary (required), regions.inspector?. Each region has its own nested shape (not workspace). Sync via selectedId. Do not use Tabs when simultaneous visibility matters. A single collection, form, analysis, document, or metrics page is not workspace.',
+  'When Analyzed intent is present, honour its task, entities, actions, and complexity — do not rewrite the job. Pick the app archetype, per-page shapes, representation, capabilities, designIntent, informationHierarchy, and interactionModel that implement that intent.',
+  'When intent is absent, read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write. Infer only sitemap, archetype, page shapes, representation, capabilities, designIntent, informationHierarchy, and interactionModel.',
+  'Archetype is the job, not the visual layout. Composition is PRIMARY ARCHETYPE + optional SECONDARY REGION + 0–5 CAPABILITIES. Extra pages are extra shapes, not a second app-level archetype.',
+  'Pick exactly one app-level archetype (the entry job). Each page also declares pages[].archetype. Mixed sitemaps are normal.',
+  '- collection: How do I browse/manage many things?',
+  '- detail: How do I understand one thing?',
+  '- task: How do I provide information to accomplish something?',
+  '- results: How do I consume/analyze generated output?',
+  '- dashboard: How do I monitor many important signals?',
+  '- workflow: How do I complete a multi-stage task?',
+  '- content: How do I read/create/edit substantial content?',
+  '- workspace: Where do I work across several related things at once?',
   'Disambiguate from the job, not from how complete the brief is. Scan many modules on arrival → dashboard. Find/act on a list → collection. One entity → detail. Provide input to do a thing → task. Sequential stages → workflow. Output of generate/analyze → results. Read/edit a document as the product → content. Keep several of those visible at once → workspace. Mixed briefs: pick the entry verb; extra destinations are extra pages with their own shape.',
-  'Set capabilities to at most five tags that apply: long-running, streaming, multi-step, cancellable, progress, search, filter, sort, pagination, grouping, date-range, refresh, drill-down, selection, detail-drawer, drawer, modal, create, edit, delete, back, skip, review. Combine them. A workflow binding is long-running; stream: true is streaming; binding.pagination is pagination; a single prominent query is search; Toolbar narrowing is filter; a date window is date-range; opening a row that already has prose is selection; keep-the-list-visible is detail-drawer; edit-in-place is edit. Destination shapes are pages[].archetype, not capabilities. Omit tags the job does not need. Do not emit "short", "editable", "export", "generate", or "analyze".',
+  'Representation is how a collection body is shown — not an archetype and not a capability. Emit representation (app default) and optional pages[].representation: auto | table | cards | list | kanban | timeline. auto lets BindingLayoutPlan decide. Do not emit kanban or timeline as capabilities. There is no Kanban, Timeline, or List catalog type.',
+  'Secondary region: a non-workspace page may set pages[].secondary { role: context | detail | results, archetype } for a supporting pane (Columns, or Drawer when capability detail / detail-drawer). Do not invent a product archetype (no project-workspace). Workspace is only when the product is working across several related things with simultaneous regions (pages[].regions navigator / primary / inspector, selectedId sync). A single collection, form, analysis, document, or metrics page is not workspace.',
+  'Optional entity is the domain noun (competitor, order). purpose stays one prose sentence.',
+  'Set capabilities to at most five tags that apply: long-running, streaming, multi-step, cancellable, progress, search, filter, sort, pagination, grouping, date-range, refresh, drill-down, selection, detail, detail-drawer, analyze, drawer, modal, create, edit, delete, back, skip, review. Combine them. A workflow binding is long-running; stream: true is streaming; binding.pagination is pagination; a single prominent query is search; Toolbar narrowing is filter; a date window is date-range; opening one entity is detail (Drawer when the list must stay visible — also set detail-drawer); an analyze/generate CTA is analyze (destination is a results page or secondary results). Destination pages stay pages[].archetype. Omit tags the job does not need. Do not emit "short", "editable", "export", "generate", "table", "chart", or "kanban".',
   'Also emit designIntent { productType, density, visualTone, contentType, emphasis } — pick one of each. Honour Design Notes first. Else derive from archetype plus brief nouns: dashboard → analytics / compact / data-heavy / data; task or results → workflow / comfortable / task; collection → crm / comfortable / discovery; workflow → workflow / comfortable / task; content → content / comfortable / narrative / content; workspace → saas / comfortable / discovery. Override productType from domain words (invoices → finance, campaigns → marketing). density is compact | comfortable | roomy (spacious means roomy). visualTone is professional | friendly | premium | technical | editorial. contentType is data-heavy | workflow | narrative | transactional. emphasis is task | data | content | discovery. Classification only — not component props.',
   'Also emit informationHierarchy { dominant, supporting? } and interactionModel { navigation, selection, wait }. Honour Design Notes first. Else derive from page shapes: dashboard → metrics; collection → collection; task → form; results or content → prose; workflow → wizard-step; workspace → collection with supporting navigator/inspector. dominant is form | collection | metrics | prose | document | wizard-step. supporting is zero or more of filters, history, sidebar, detail, stats, navigator, inspector. navigation is search-hero | tabs | list-detail | wizard | workspace | single-page. selection is none | same-page | navigate. wait is none | working-card — working-card only when a wait capability is set. Classification only — not component props.',
-  'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"?, "archetype"?, "regions"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "capabilities"?: string[], "designIntent"?: { "productType", "density", "visualTone", "contentType", "emphasis" }, "informationHierarchy"?: { "dominant", "supporting"? }, "interactionModel"?: { "navigation", "selection", "wait" }, "emptyCopy"?, "errorCopy"? }',
+  'Shape: { "title", "purpose", "audience", "archetype", "entity"?, "representation"?, "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"?, "archetype"?, "representation"?, "secondary"?, "regions"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "capabilities"?: string[], "designIntent"?: { "productType", "density", "visualTone", "contentType", "emphasis" }, "informationHierarchy"?: { "dominant", "supporting"? }, "interactionModel"?: { "navigation", "selection", "wait" }, "emptyCopy"?, "errorCopy"? }',
   'title is the product name. purpose is the job in one sentence (copy intent.task when present). audience is a real role — never "users".',
   'pages[].path, entryPath, and actions[].fromPage are bare kebab-case keys — "home", "select-company" — never URL routes: no leading slash, no "/" for the entry page, no nested segments. Call the entry page "home" unless the brief names it.',
-  '1–6 pages. Infer the smallest sitemap that completes the job: task that produces an answer has a results page plus Back; collection that opens a record has a detail page, or same-page Open / detail-drawer when the row already carries prose; a second binding that is a list/history is a collection page with onLoad, not a second submit. Workspace is usually one page with regions. Do not invent login, settings, profile, marketing, or extra tools the job does not need.',
+  '1–6 pages. Infer the smallest sitemap that completes the job: task that produces an answer has a results page plus Back; collection that opens a record has a detail page, or same-page Open / detail / detail-drawer when the row already carries prose; a second binding that is a list/history is a collection page with onLoad, not a second submit. Workspace is usually one page with regions. Do not invent login, settings, profile, marketing, or extra tools the job does not need.',
   'data is one sentence (onLoad which action into which state keys, or CTA then navigate, or static).',
   'A dashboard, collection, report, detail, or content page names onLoad in data when it fetches on arrival. A task form page does not. A results page that a CTA already navigates to must not onLoad that same action.',
   'Bindings are the data contract. Form fields come from each binding inputSchema (source form or omitted); source visitorEmail or constant are host-stamped — do not plan a visible field for them. Wire each CTA to the binding whose key the brief named, or the one whose inputs/outputs match the job when the brief only described it in words. actions[].apiKey must be a declared binding key. When no bindings were declared, actions must be [].',
@@ -389,51 +452,51 @@ const PLANNER_SYSTEM_PROMPT = [
 const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
   collection: [
     'ARCHETYPE RECIPE: collection',
-    'Slots: PageHeader → Toolbar (search / filters / actions when those capabilities are set) → collection body.',
-    'Body is data-driven: Table when every row is the same scalars with no per-row visual identity; Repeat inside Grid of entity Cards when items have a name, description, or per-row action. Never unroll an array into static Cards.',
-    'Page onLoad fills the collection. Open a record with navigateTo "detail?id={item.id}" when a Detail page exists, or Button selectItem / Drawer when CAPABILITY includes selection or detail-drawer. Give onLoad actions no onSuccess.navigate.',
+    'Purpose: Display and operate on a collection of entities.',
+    'Structure: Header → Toolbar → Collection → optional secondary context.',
+    'Rules: Choose the collection representation from data shape and user task (see REPRESENTATION). Bind collection data; never hard-code records. Search/filter/sort belong in the Toolbar. Entity actions stay on the entity. Use selection/bulk only when the task needs them. Opening a record is CAPABILITY detail (navigate, drawer, modal, or inline). Loading, empty, and error are host — set emptyText.',
   ].join('\n'),
   detail: [
     'ARCHETYPE RECIPE: detail',
-    'Slots: EntityHeader → primary facts → sections → related data → actions.',
-    'Section content comes from layoutPlan / outputSchema / brief nouns — do not invent a fixed firmographics template. KeyValue or display Stats for scalars; DataText for prose; Repeat/Table for related collections.',
-    'When this page is opened with ?id=, onLoad fetches that record (inputMapping id from the query) unless selectItem already copied the row. Back NavLink to the collection. emptyText names the entity.',
+    'Purpose: Understand one entity.',
+    'Structure: Header → primary facts → sections → related → actions.',
+    'Rules: Sections come from the data model and layoutPlan, not a fixed template. Bind the record; never hard-code fields. Related collections use REPRESENTATION. When opened with ?id=, onLoad that record unless selectItem already copied it. Back to the collection. emptyText names the entity.',
   ].join('\n'),
   task: [
     'ARCHETYPE RECIPE: task',
-    'Slots: PageHeader → optional context → Input/Form → one primary action.',
-    'A single prominent query is a centered PageHeader plus SearchField (suggestion Chips optional). Multi-field forms stay a left-aligned PageHeader plus fields in a 2-column Grid, one SubmitButton. No onLoad on the form page.',
-    'Results are optional. When the CTA produces an answer, onSuccess.navigate to a results page and put wait chrome there (CAPABILITY). Same-page saves stay on the form — the host toasts. Do not invent a results page for create/configure that has nothing to show.',
+    'Purpose: Collect input to accomplish something.',
+    'Structure: Header → optional context → Form or SearchField → one primary action.',
+    'Rules: A single prominent query is SearchField. Multi-field input is a Form. No onLoad on the form page. Results are optional — add a results page or secondary results only when the CTA produces an answer (CAPABILITY analyze). Same-page saves stay here; the host toasts.',
   ].join('\n'),
   results: [
     'ARCHETYPE RECIPE: results',
-    'Slots: context/header → summary → primary result → supporting results → actions.',
-    'No onLoad of the CTA that already navigated here. Bind markdown on DataText "content" (or the string field name), never "field.content". Repeat, Stat, or KeyValue bind structured hostKeys. Echo submitted fields from the form name ({targetKeyword}, inputs.targetKeyword). emptyText lives here. Offer a Back NavLink.',
-    'Wait chrome is CAPABILITY (long-running, streaming, progress) — compose those modules; do not invent a second wait.',
+    'Purpose: Consume or analyze generated output.',
+    'Structure: Context → summary → primary result → supporting → actions.',
+    'Rules: No onLoad of the CTA that already navigated here. Bind markdown on DataText "content" (or the string field name), never "field.content". Structured hostKeys use Repeat, Stat, or KeyValue. Echo form names ({targetKeyword}, inputs.targetKeyword). emptyText lives here. Wait chrome is CAPABILITY.',
   ].join('\n'),
   dashboard: [
     'ARCHETYPE RECIPE: dashboard',
-    'Slots: Header → optional Filters → KPI / summary → primary visualization or module → supporting modules → optional detail / activity.',
-    'Module count and types come from layoutPlan / outputSchema / brief nouns. Bind every metric and collection by statePath; do not hard-code values. Do not emit a fixed Grid of four Stat. A single Table with no other modules is collection, not dashboard.',
-    'Set page onLoad to the fetch action. Filters and date-range belong in a Toolbar when those capabilities are set. No parameters form beside the modules unless the brief asked for one.',
+    'Purpose: Monitor many important signals on arrival.',
+    'Structure: Header → Filters → KPI/summary → primary module → supporting → activity.',
+    'Rules: Module count and types follow layoutPlan / outputSchema — never a fixed widget set. Bind every metric and collection. A single collection with no other modules is collection, not dashboard. onLoad fetches the scan. Filters and date-range belong in the Toolbar.',
   ].join('\n'),
   workflow: [
     'ARCHETYPE RECIPE: workflow',
-    'Slots: Progress → current step (inputs + actions) → navigation.',
-    'A task composed of sequential stages — not automatically one page per step. Two or three short stages can be one page of Sections (progressive disclosure) with a Stepper. Named review / launch stages can be separate pages. Early stages use Next; the last stage is the only SubmitButton. Back and Skip are CAPABILITY.',
-    'Progress is a Stepper (items Label|path or Label|section), not Tabs and not ProgressSteps. Tabs are for non-sequential peer views.',
+    'Purpose: Complete a multi-stage task.',
+    'Structure: Progress → current step (inputs + actions) → navigation.',
+    'Rules: Not automatically one page per step. Two or three short stages can be one page of Sections. Named review/launch can be pages. Progress is a Stepper, not Tabs. Early stages use Next; the last is the only SubmitButton. Back, skip, and review are CAPABILITY.',
   ].join('\n'),
   content: [
     'ARCHETYPE RECIPE: content',
-    'Slots: Header → metadata → main content → optional related content → actions.',
-    'Main body is DataText markdown (statePath "content" or the prose hostKey). Metadata is muted Chips or KeyValue from named fields. Related is Repeat/Table only when layoutPlan has a sibling collection.',
-    'Not results: do not put WorkingCard here unless a wait capability is also set. Not detail: do not build entity firmographics when the job is a document.',
+    'Purpose: Read or lightly edit substantial content.',
+    'Structure: Header → metadata → main body → optional related → actions.',
+    'Rules: Main body is DataText markdown. Metadata stays muted. Related collections only when layoutPlan has one. Not results (no WorkingCard unless a wait capability is set). Not detail (no entity firmographics when the job is a document).',
   ].join('\n'),
   workspace: [
     'ARCHETYPE RECIPE: workspace',
-    'One page. Root content is a Workspace with slots navigator, primary, inspector. Exactly one primary region. Navigator is usually a collection; inspector is contextual (detail, results, or content).',
-    'Regions sync through selectedId / selectItem. Prefer split-view; do not use Tabs for the three regions. Inspector may use showWhen "selectedId". Region archetypes cannot be workspace.',
-    'A single collection, form, analysis, document, or metrics page is not this recipe.',
+    'Purpose: Work across several related things at once.',
+    'Structure: Workspace slots navigator → primary → optional inspector.',
+    'Rules: Exactly one primary. Regions nest other shapes (not workspace) and sync via selectedId. No Tabs for these regions. Inspector may use showWhen "selectedId". A single collection, form, analysis, document, or metrics page is not this recipe. A two-pane list+detail can be collection + secondary instead.',
   ].join('\n'),
 }
 
@@ -463,6 +526,7 @@ export function archetypeRecipesForBrief(brief: ArenaGenerativeStructuredBrief):
   const shapes = new Set<ArenaGenerativeArchetype>([brief.archetype])
   for (const page of brief.pages) {
     if (page.archetype) shapes.add(page.archetype)
+    if (page.secondary) shapes.add(page.secondary.archetype)
     if (page.regions) {
       if (page.regions.navigator) shapes.add(page.regions.navigator.archetype)
       shapes.add(page.regions.primary.archetype)
@@ -493,16 +557,26 @@ export function pageHintsFromStructuredBrief(
  * app-level archetype recipe.
  */
 export function formatPageShapesForGenerator(brief: ArenaGenerativeStructuredBrief): string {
+  const appRepresentation = brief.representation ?? 'auto'
+  const entity = brief.entity ? `Entity: ${brief.entity}` : ''
   const lines = brief.pages.map((page) => {
     const shape = page.archetype ?? brief.archetype
+    const representation = page.representation ?? appRepresentation
+    const secondary = page.secondary
+      ? ` secondary: ${page.secondary.role}/${page.secondary.archetype}`
+      : ''
     const regions = page.regions
       ? ` regions: navigator=${page.regions.navigator?.archetype ?? '—'} primary=${page.regions.primary.archetype} inspector=${page.regions.inspector?.archetype ?? '—'}`
       : ''
-    return `- ${page.path}: ${shape}${regions}`
+    return `- ${page.path}: ${shape} representation=${representation}${secondary}${regions}`
   })
-  return ['Page shapes (emit each page using that recipe; do not treat every page as the app archetype):', ...lines].join(
-    '\n'
-  )
+  return [
+    'Page shapes (emit each page using that recipe; do not treat every page as the app archetype):',
+    entity,
+    ...lines,
+  ]
+    .filter((line) => line.length > 0)
+    .join('\n')
 }
 
 /**

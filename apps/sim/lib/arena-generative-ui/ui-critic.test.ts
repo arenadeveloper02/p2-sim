@@ -213,6 +213,21 @@ describe('hostCriticManifest', () => {
     expect(error).toContain(`${MAX_NON_REPEAT_CARDS_PER_PAGE + 1} Cards outside Repeat`)
   })
 
+  it('rejects invented Kanban, Timeline, or List catalog types', () => {
+    const spec = pageSpec(
+      {
+        board: {
+          type: 'Kanban',
+          props: { statePath: 'projects' },
+          children: [],
+        },
+      },
+      ['board']
+    )
+    expect(hostCriticManifest(manifestWithHome(spec))).toContain('not a catalog type')
+    expect(hostCriticManifest(manifestWithHome(spec))).toContain('Kanban')
+  })
+
   it('rejects a Workspace that is missing navigator or primary', () => {
     const spec = pageSpec(
       {

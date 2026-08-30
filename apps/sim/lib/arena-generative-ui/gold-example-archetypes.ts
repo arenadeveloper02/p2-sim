@@ -295,7 +295,7 @@ export const goldListDetailManifest: ArenaGenerativeAppManifest = {
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL = goldPrompt(
   'collection',
-  'Collection page onLoad fills Repeat inside a 2-column Grid of entity Cards. Open uses navigateTo "detail?id={item.id}". A sibling Detail page onLoad fetches that record and shows EntityHeader plus KeyValue. Table vs Cards is data-driven; this collection has per-row identity so it is Cards. No search hero.',
+  'Collection page onLoad fills Repeat inside a 2-column Grid of entity Cards. Open uses navigateTo "detail?id={item.id}". A sibling Detail page onLoad fetches that record and shows EntityHeader plus KeyValue. Cards is one valid representation because rows have per-item identity; Table is equally valid when rows are comparable scalars. Match REPRESENTATION, not this body, when the brief picked table or list. No search hero.',
   {
     title: 'Orders',
     content: 'Browse orders and open one record.',

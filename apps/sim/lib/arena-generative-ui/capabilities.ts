@@ -19,7 +19,9 @@ export const ARENA_GENERATIVE_CAPABILITIES = [
   'refresh',
   'drill-down',
   'selection',
+  'detail',
   'detail-drawer',
+  'analyze',
   'drawer',
   'modal',
   'create',
@@ -98,9 +100,17 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
     'CAPABILITY: SELECTION',
     'Opening a row that already has prose is Button selectItem true with no actionId. Stay on the list (showWhen selectedId / clearItem Back) or navigateTo a results page with no onLoad of that row. Do not fetch the same item twice.',
   ].join('\n'),
+  detail: [
+    'CAPABILITY: DETAIL',
+    'Open one entity. Choose from context: keep-the-list-visible → Drawer (prefer this when DETAIL-DRAWER is also set); a record that needs its own onLoad → navigateTo a detail page with ?id=; a small focused view → Modal; a row that already has prose → selectItem inline. Do not fetch the same record twice.',
+  ].join('\n'),
   'detail-drawer': [
     'CAPABILITY: DETAIL-DRAWER',
     'Keep the collection visible. Open is Button selectItem true; show the record in Drawer showWhen "selectedId". Close with a ghost Button clearItem true. Do not navigate away and do not onLoad the same row.',
+  ].join('\n'),
+  analyze: [
+    'CAPABILITY: ANALYZE',
+    'The primary CTA produces analysis or generated output. Wire that binding. Destination is a results page (onSuccess.navigate) or pages[].secondary with archetype results. Wait chrome is LONG-RUNNING / STREAMING — compose those modules; do not invent a second wait or a new catalog type.',
   ].join('\n'),
   drawer: [
     'CAPABILITY: DRAWER',

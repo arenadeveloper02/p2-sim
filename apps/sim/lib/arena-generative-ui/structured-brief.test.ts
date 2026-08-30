@@ -284,6 +284,50 @@ describe('parseArenaGenerativeStructuredBrief', () => {
     })
   })
 
+  it('keeps entity, representation, and a non-workspace secondary pane', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        entity: 'order',
+        representation: 'table',
+        pages: [
+          {
+            ...listDetailBrief.pages[0],
+            representation: 'cards',
+            secondary: { role: 'detail', archetype: 'detail' },
+          },
+          listDetailBrief.pages[1],
+        ],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.entity).toBe('order')
+    expect(parsed?.representation).toBe('table')
+    expect(parsed?.pages[0]?.representation).toBe('cards')
+    expect(parsed?.pages[0]?.secondary).toEqual({ role: 'detail', archetype: 'detail' })
+  })
+
+  it('fails an unknown representation open to auto and drops an invalid secondary', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        representation: 'kanban_board',
+        pages: [
+          {
+            ...listDetailBrief.pages[0],
+            representation: 'nope',
+            secondary: { role: 'sidebar', archetype: 'workspace' },
+          },
+          listDetailBrief.pages[1],
+        ],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.representation).toBe('auto')
+    expect(parsed?.pages[0]?.representation).toBe('auto')
+    expect(parsed?.pages[0]?.secondary).toBeUndefined()
+  })
+
   it('strips LLM-emitted intent so only the analyzer result is nested later', () => {
     const parsed = parseArenaGenerativeStructuredBrief(
       {
@@ -417,11 +461,11 @@ describe('structured brief helpers', () => {
     expect(archetypeRecipe('results')).toContain('never "field.content"')
     expect(archetypeRecipe('results')).toContain('No onLoad of the CTA')
     expect(archetypeRecipe('results')).toContain('inputs.targetKeyword')
-    expect(archetypeRecipe('collection')).toContain('data-driven')
-    expect(archetypeRecipe('collection')).toContain('detail-drawer')
-    expect(archetypeRecipe('detail')).toContain('EntityHeader')
+    expect(archetypeRecipe('collection')).toContain('REPRESENTATION')
+    expect(archetypeRecipe('collection')).toContain('CAPABILITY detail')
+    expect(archetypeRecipe('collection')).not.toContain('Table when every row')
+    expect(archetypeRecipe('detail')).toContain('Understand one entity')
     expect(archetypeRecipe('dashboard')).toContain('Module count')
-    expect(archetypeRecipe('dashboard')).toContain('Do not emit a fixed Grid of four Stat')
     expect(archetypeRecipe('dashboard')).not.toContain('Grid of four Stat size display')
     expect(archetypeRecipe('workflow')).toContain('Stepper')
     expect(archetypeRecipe('workflow')).not.toContain('One page per step')
@@ -434,8 +478,8 @@ describe('structured brief helpers', () => {
     expect(recipes).toContain('ARCHETYPE RECIPE: collection')
     expect(recipes).toContain('ARCHETYPE RECIPE: detail')
     expect(recipes).not.toContain('ARCHETYPE RECIPE: workspace')
-    expect(formatPageShapesForGenerator(listDetailBrief)).toContain('home: collection')
-    expect(formatPageShapesForGenerator(listDetailBrief)).toContain('detail: detail')
+    expect(formatPageShapesForGenerator(listDetailBrief)).toContain('home: collection representation=auto')
+    expect(formatPageShapesForGenerator(listDetailBrief)).toContain('detail: detail representation=auto')
   })
 
   it('turns planned pages into generator page hints', () => {
@@ -536,7 +580,9 @@ describe('planArenaGenerativeStructuredBrief', () => {
     expect(system).toContain('never "users"')
     expect(system).toContain('Bindings are the data contract')
     expect(system).toContain('must not onLoad that same action')
-    expect(system).toContain('scan several high-level modules')
+    expect(system).toContain('How do I monitor many important signals')
+    expect(system).toContain('PRIMARY ARCHETYPE')
+    expect(system).toContain('representation')
     expect(system).toContain('Set capabilities to at most five tags that apply')
     expect(system).toContain('Also emit designIntent')
     expect(system).toContain('spacious means roomy')

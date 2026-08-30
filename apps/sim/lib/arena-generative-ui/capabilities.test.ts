@@ -23,6 +23,13 @@ describe('capabilityRecipePrompt', () => {
     expect(prompt.indexOf('CANCELLABLE')).toBeLessThan(prompt.indexOf('SEARCH'))
     expect(prompt).not.toContain('FILTER')
   })
+
+  it('composes detail and analyze recipes', () => {
+    const prompt = capabilityRecipePrompt(['detail', 'analyze'])
+    expect(prompt).toContain('CAPABILITY: DETAIL')
+    expect(prompt).toContain('CAPABILITY: ANALYZE')
+    expect(prompt.indexOf('DETAIL')).toBeLessThan(prompt.indexOf('ANALYZE'))
+  })
 })
 
 describe('isCapability', () => {
@@ -31,6 +38,8 @@ describe('isCapability', () => {
     expect(isCapability('edit')).toBe(true)
     expect(isCapability('editable')).toBe(true)
     expect(isCapability('date-range')).toBe(true)
+    expect(isCapability('detail')).toBe(true)
+    expect(isCapability('analyze')).toBe(true)
     expect(isCapability('short')).toBe(false)
     expect(isCapability('nope')).toBe(false)
   })

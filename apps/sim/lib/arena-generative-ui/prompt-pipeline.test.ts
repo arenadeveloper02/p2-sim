@@ -41,6 +41,7 @@ describe('buildGeneratorSystemPrompt', () => {
       'ARCHETYPE RECIPE',
       'COMPONENT SELECTION RULES',
       'ARCHETYPE RECIPE: dashboard',
+      'REPRESENTATION',
       'CAPABILITY: FILTER',
       'GOLD STANDARD REFERENCE LAYOUT (dashboard)',
       'COMPONENT RULES',
@@ -88,10 +89,12 @@ describe('buildGeneratorSystemPrompt', () => {
       isScopedEdit: false,
     })
     const recipeAt = headingIndex(prompt, 'ARCHETYPE RECIPE: task')
+    const representationAt = headingIndex(prompt, 'REPRESENTATION')
     const longAt = headingIndex(prompt, 'CAPABILITY: LONG-RUNNING')
     const cancelAt = headingIndex(prompt, 'CAPABILITY: CANCELLABLE')
     const goldAt = headingIndex(prompt, 'GOLD STANDARD REFERENCE LAYOUT (task)')
-    expect(longAt).toBeGreaterThan(recipeAt)
+    expect(representationAt).toBeGreaterThan(recipeAt)
+    expect(longAt).toBeGreaterThan(representationAt)
     expect(cancelAt).toBeGreaterThan(longAt)
     expect(goldAt).toBeGreaterThan(cancelAt)
     expect(prompt).not.toContain('CAPABILITY: SEARCH')

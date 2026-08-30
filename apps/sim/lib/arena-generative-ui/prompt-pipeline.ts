@@ -21,6 +21,7 @@ import {
   buildArenaGenerativeUiPrompt,
 } from '@/lib/arena-generative-ui/catalog'
 import { ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT } from '@/lib/arena-generative-ui/component-decisions'
+import { ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT } from '@/lib/arena-generative-ui/representation'
 import { ARENA_GENERATIVE_UI_CONSTITUTION_PROMPT } from '@/lib/arena-generative-ui/constitution'
 import { ARENA_GENERATIVE_UI_DATA_STATE_PROMPT } from '@/lib/arena-generative-ui/data-state-contract'
 import { ARENA_GENERATIVE_UI_COMPOSITION_PROMPT } from '@/lib/arena-generative-ui/design-guidelines'
@@ -99,6 +100,7 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
     wrapColumn('ARCHETYPE RECIPE', [
       ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT,
       recipe,
+      ARENA_GENERATIVE_UI_REPRESENTATION_PROMPT,
       capabilities,
       goldExamplePromptForArchetype(options.archetype),
       headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
