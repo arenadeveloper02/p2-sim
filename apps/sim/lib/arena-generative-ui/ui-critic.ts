@@ -243,6 +243,26 @@ function tooManyCardsError(pagePath: string, spec: Spec): string | undefined {
   return undefined
 }
 
+function workspaceShellError(pagePath: string, spec: Spec): string | undefined {
+  const elements = elementsOf(spec)
+  for (const [id, element] of Object.entries(elements)) {
+    if (element.type !== 'Workspace') continue
+    const childIds = element.children ?? []
+    if (childIds.length < 2) {
+      return `Page "${pagePath}" Workspace "${id}" needs navigator and primary children. Add both regions.`
+    }
+    for (const childId of childIds) {
+      if (elements[childId]?.type === 'Workspace') {
+        return `Page "${pagePath}" Workspace "${id}" nests another Workspace. Regions use collection, detail, task, results, or content — not a second shell.`
+      }
+      if (elements[childId]?.type === 'Tabs') {
+        return `Page "${pagePath}" Workspace "${id}" uses Tabs for a region. Keep navigator, primary, and inspector visible together.`
+      }
+    }
+  }
+  return undefined
+}
+
 function missingReturnNavError(
   pagePath: string,
   spec: Spec,
@@ -290,6 +310,9 @@ export function hostCriticManifest(
 
     const missingBack = missingReturnNavError(path, page.spec, manifest.entryPath, navigateTargets)
     if (missingBack) return missingBack
+
+    const workspace = workspaceShellError(path, page.spec)
+    if (workspace) return workspace
   }
 
   return undefined

@@ -81,7 +81,25 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Two-column layout for asymmetric content: equal halves, or a 280px sidebar beside the main column. Stacks vertically on narrow screens.',
+        'Two-column layout for asymmetric content: equal halves, or a 280px sidebar beside the main column. Stacks vertically on narrow screens. Not a three-region workspace — that is Workspace.',
+    },
+    Workspace: {
+      props: z.object({
+        inspectorWhen: z.string().nullable(),
+        gap: z.string().nullable(),
+        showWhen: z.string().nullable(),
+      }),
+      slots: ['navigator', 'primary', 'inspector'],
+      description:
+        'Multi-region application shell. Children in order: navigator, primary, optional inspector. Exactly one primary. Regions stay visible together — do not use Tabs for these three. inspectorWhen uses the same clause syntax as form fields (typically "selectedId") to hide the inspector. The host stacks regions on narrow screens. Region bodies use other catalog types; do not nest Workspace.',
+    },
+    Stepper: {
+      props: z.object({
+        items: z.string(),
+        activePath: z.string().nullable(),
+      }),
+      description:
+        'Sequential workflow progress. items is newline-separated "Label|path" or "Label|section". activePath marks the current stage. Not Tabs (those are peer views) and not ProgressSteps (legacy wait chrome).',
     },
     PageHeader: {
       props: z.object({

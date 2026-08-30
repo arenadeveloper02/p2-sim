@@ -1062,6 +1062,102 @@ function styleFromProps(props: Record<string, unknown>): CSSProperties {
   return style
 }
 
+function WorkspaceView({
+  children,
+  showInspector,
+  style,
+}: {
+  children: ReactNode
+  showInspector: boolean
+  style?: CSSProperties
+}) {
+  const panes = Array.isArray(children) ? children : [children]
+  const navigator = panes[0] ?? null
+  const primary = panes[1] ?? null
+  const inspector = panes[2] ?? null
+  return (
+    <div
+      className={cn(
+        'grid w-full grid-cols-1',
+        'md:grid-cols-[240px_minmax(0,1fr)]',
+        showInspector && inspector ? 'xl:grid-cols-[240px_minmax(0,1fr)_minmax(220px,320px)]' : null
+      )}
+      style={style}
+    >
+      {navigator ? <div className='min-w-0'>{navigator}</div> : null}
+      <div className='min-w-0'>{primary}</div>
+      {showInspector && inspector ? <div className='min-w-0'>{inspector}</div> : null}
+    </div>
+  )
+}
+
+function CatalogStepper({
+  items,
+  activePath,
+  currentPath,
+  onNavigate,
+  style,
+}: {
+  items: Array<{ label: string; path: string }>
+  activePath: string
+  currentPath?: string
+  onNavigate: (path: string) => void
+  style?: CSSProperties
+}) {
+  const itemPaths = items.map((item) => splitNavTarget(item.path).path)
+  const routePath = currentPath ? splitNavTarget(currentPath).path : ''
+  const resolvedActive = itemPaths.includes(routePath) ? routePath : splitNavTarget(activePath).path
+
+  return (
+    <ol
+      className='flex w-full flex-wrap items-center gap-2'
+      style={style}
+    >
+      {items.map((item, index) => {
+        const path = splitNavTarget(item.path).path
+        const isActive = path === resolvedActive
+        const isLink = path.length > 0 && path !== item.label
+        return (
+          <li key={`${item.label}-${path}-${index}`} className='flex items-center gap-2'>
+            {index > 0 ? (
+              <span className='text-[var(--gui-text-muted,#575a66)]' aria-hidden>
+                /
+              </span>
+            ) : null}
+            {isLink ? (
+              <button
+                type='button'
+                onClick={() => onNavigate(item.path)}
+                aria-current={isActive ? 'step' : undefined}
+                className={cn(
+                  'text-[length:var(--gui-label-size,12px)]',
+                  isActive
+                    ? 'font-medium text-[var(--gui-brand,#1a73e8)]'
+                    : 'text-[var(--gui-text-muted,#575a66)] hover:text-[var(--gui-text,#2c2d33)]'
+                )}
+              >
+                {index + 1}. {item.label}
+              </button>
+            ) : (
+              <span
+                aria-current={isActive ? 'step' : undefined}
+                className={cn(
+                  'text-[length:var(--gui-label-size,12px)]',
+                  isActive
+                    ? 'font-medium text-[var(--gui-text,#2c2d33)]'
+                    : 'text-[var(--gui-text-muted,#575a66)]'
+                )}
+              >
+                {index + 1}. {item.label}
+              </span>
+            )}
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
 function CatalogTabs({
   items,
   activePath,
@@ -1598,6 +1694,22 @@ export function SpecRenderer({
           </div>
         )
       }
+      case 'Workspace': {
+        const inspectorWhen = asString(props.inspectorWhen)
+        const showInspector =
+          !inspectorWhen || fieldIsVisible({ showWhen: inspectorWhen }, visibilityValues)
+        return (
+          <WorkspaceView
+            showInspector={showInspector}
+            style={{
+              gap: resolveArenaGenerativeSpacing(asString(props.gap, 'var(--gui-gap, 16px)')),
+              ...styleFromProps(props),
+            }}
+          >
+            {children}
+          </WorkspaceView>
+        )
+      }
       case 'PageHeader': {
         const align = asString(props.align, 'start')
         const kicker = asString(props.kicker)
@@ -1699,6 +1811,19 @@ export function SpecRenderer({
         if (items.length === 0) return null
         return (
           <CatalogTabs
+            items={items}
+            activePath={asString(props.activePath)}
+            currentPath={currentPath}
+            onNavigate={requestNavigate}
+            style={styleFromProps(props)}
+          />
+        )
+      }
+      case 'Stepper': {
+        const items = parseTabItems(props.items)
+        if (items.length === 0) return null
+        return (
+          <CatalogStepper
             items={items}
             activePath={asString(props.activePath)}
             currentPath={currentPath}

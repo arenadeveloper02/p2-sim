@@ -26,6 +26,8 @@ const CATALOG_TYPES = [
   'EmptyState',
   'Columns',
   'Toolbar',
+  'Stepper',
+  'Workspace',
 ] as const
 
 describe('ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT', () => {

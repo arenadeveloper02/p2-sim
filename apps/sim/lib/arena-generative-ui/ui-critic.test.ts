@@ -5,9 +5,11 @@ import type { Spec } from '@json-render/core'
 import { describe, expect, it } from 'vitest'
 import { goldExampleManifest } from '@/lib/arena-generative-ui/gold-example'
 import {
+  goldContentManifest,
   goldDashboardManifest,
   goldListDetailManifest,
   goldWizardManifest,
+  goldWorkspaceManifest,
 } from '@/lib/arena-generative-ui/gold-example-archetypes'
 import { multiPageManifest } from '@/lib/arena-generative-ui/multi-page-app.fixture'
 import { twoPageManifest } from '@/lib/arena-generative-ui/two-page-app.fixture'
@@ -67,6 +69,8 @@ describe('hostCriticManifest', () => {
     expect(hostCriticManifest(goldDashboardManifest)).toBeUndefined()
     expect(hostCriticManifest(goldListDetailManifest)).toBeUndefined()
     expect(hostCriticManifest(goldWizardManifest)).toBeUndefined()
+    expect(hostCriticManifest(goldContentManifest)).toBeUndefined()
+    expect(hostCriticManifest(goldWorkspaceManifest)).toBeUndefined()
     expect(hostCriticManifest(twoPageManifest)).toBeUndefined()
     expect(hostCriticManifest(multiPageManifest)).toBeUndefined()
   })
@@ -207,6 +211,73 @@ describe('hostCriticManifest', () => {
     )
     const error = hostCriticManifest(manifestWithHome(spec))
     expect(error).toContain(`${MAX_NON_REPEAT_CARDS_PER_PAGE + 1} Cards outside Repeat`)
+  })
+
+  it('rejects a Workspace that is missing navigator or primary', () => {
+    const spec = pageSpec(
+      {
+        shell: {
+          type: 'Workspace',
+          props: { inspectorWhen: null, gap: 'lg', showWhen: null },
+          children: ['only'],
+        },
+        only: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: 'Empty', color: null, size: null },
+          children: [],
+        },
+      },
+      ['shell']
+    )
+    expect(hostCriticManifest(manifestWithHome(spec))).toContain('needs navigator and primary')
+  })
+
+  it('rejects a nested Workspace region', () => {
+    const spec = pageSpec(
+      {
+        shell: {
+          type: 'Workspace',
+          props: { inspectorWhen: null, gap: 'lg', showWhen: null },
+          children: ['nav', 'main'],
+        },
+        nav: {
+          type: 'Workspace',
+          props: { inspectorWhen: null, gap: 'lg', showWhen: null },
+          children: [],
+        },
+        main: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: 'Empty', color: null, size: null },
+          children: [],
+        },
+      },
+      ['shell']
+    )
+    expect(hostCriticManifest(manifestWithHome(spec))).toContain('nests another Workspace')
+  })
+
+  it('rejects Tabs used as a Workspace region', () => {
+    const spec = pageSpec(
+      {
+        shell: {
+          type: 'Workspace',
+          props: { inspectorWhen: null, gap: 'lg', showWhen: null },
+          children: ['nav', 'main'],
+        },
+        nav: {
+          type: 'Tabs',
+          props: { items: 'A|a\nB|b', activePath: 'a' },
+          children: [],
+        },
+        main: {
+          type: 'DataText',
+          props: { statePath: 'content', fallback: 'Empty', color: null, size: null },
+          children: [],
+        },
+      },
+      ['shell']
+    )
+    expect(hostCriticManifest(manifestWithHome(spec))).toContain('uses Tabs for a region')
   })
 
   it('rejects an onSuccess.navigate target with no way back', () => {

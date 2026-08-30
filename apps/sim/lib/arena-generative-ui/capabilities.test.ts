@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   capabilityRecipePrompt,
   isCapability,
+  plannedCapabilities,
   resolveCapabilities,
 } from '@/lib/arena-generative-ui/capabilities'
 
@@ -25,10 +26,34 @@ describe('capabilityRecipePrompt', () => {
 })
 
 describe('isCapability', () => {
-  it('strips unknown tags', () => {
+  it('strips unknown tags and aliases editable to edit', () => {
     expect(isCapability('search')).toBe(true)
+    expect(isCapability('edit')).toBe(true)
+    expect(isCapability('editable')).toBe(true)
+    expect(isCapability('date-range')).toBe(true)
     expect(isCapability('short')).toBe(false)
     expect(isCapability('nope')).toBe(false)
+  })
+})
+
+describe('plannedCapabilities', () => {
+  it('aliases editable, drops unknown tags, and caps at five', () => {
+    expect(plannedCapabilities(['editable', 'nope', 'filter', 'search'])).toEqual([
+      'search',
+      'filter',
+      'edit',
+    ])
+    expect(
+      plannedCapabilities([
+        'search',
+        'filter',
+        'sort',
+        'pagination',
+        'grouping',
+        'selection',
+        'edit',
+      ])
+    ).toEqual(['search', 'filter', 'sort', 'pagination', 'grouping'])
   })
 })
 
@@ -55,8 +80,13 @@ describe('resolveCapabilities', () => {
     ).toEqual(['streaming', 'search'])
   })
 
-  it('infers long-running from a workflow binding', () => {
-    expect(resolveCapabilities({ bindings: [{ kind: 'workflow' }] })).toEqual(['long-running'])
+  it('infers long-running from a workflow binding beyond the planned cap', () => {
+    expect(
+      resolveCapabilities({
+        planned: ['search', 'filter', 'sort', 'pagination', 'grouping'],
+        bindings: [{ kind: 'workflow' }],
+      })
+    ).toEqual(['long-running', 'search', 'filter', 'sort', 'pagination', 'grouping'])
   })
 
   it('infers pagination from a binding pagination config', () => {

@@ -75,7 +75,7 @@ describe('runArenaGenerativeUi', () => {
       title: 'Orders',
       purpose: 'Browse orders',
       audience: 'Ops',
-      archetype: 'list-detail' as const,
+      archetype: 'collection' as const,
       entryPath: 'home',
       pages: [{ path: 'home', title: 'Orders', purpose: 'List' }],
       actions: [],
@@ -126,7 +126,7 @@ describe('runArenaGenerativeUi', () => {
       title: 'Orders',
       purpose: 'Browse orders',
       audience: 'Ops',
-      archetype: 'list-detail',
+      archetype: 'collection',
       entryPath: 'home',
       pages: [
         { path: 'home', title: 'Orders', purpose: 'List', data: 'onLoad load_orders into orders' },
@@ -148,7 +148,7 @@ describe('runArenaGenerativeUi', () => {
 
     expect(mockGenerateManifest).toHaveBeenCalledWith(
       expect.objectContaining({
-        existingStructuredBrief: expect.objectContaining({ archetype: 'list-detail' }),
+        existingStructuredBrief: expect.objectContaining({ archetype: 'collection' }),
       })
     )
   })

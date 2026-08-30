@@ -1,8 +1,10 @@
 import type { Spec } from '@json-render/core'
 import {
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
 } from '@/lib/arena-generative-ui/gold-example-archetypes'
 import type { ArenaGenerativeArchetype } from '@/lib/arena-generative-ui/structured-brief'
 import { DEFAULT_ARENA_GENERATIVE_THEME } from '@/lib/arena-generative-ui/theme'
@@ -483,7 +485,7 @@ export const goldExampleOutput = {
  * spec and teaches an invalid shape.
  */
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
-  'GOLD STANDARD REFERENCE LAYOUT (form-result)',
+  'GOLD STANDARD REFERENCE LAYOUT (task)',
   'Match this structure and density, not its subject matter. Note the default Arena theme, the four screens (centered search hero, entity result cards, analysis destination, entity dashboard), SearchField with nested submit, Icon wells, Avatar on entity Cards, EntityHeader, display Stats, and result components bound by statePath. gap and padding use spacing tokens (sm, md, lg); Card.variant is default or muted. Do not copy px, hex, or CSS variables.',
   'Note also how data moves: home has no onLoad — SearchField runs the search CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.query and "{query}" — Results echoes the query on a Chip. Results is a Repeat of entity Cards inside a Grid; Card.title uses "{item.name}", Avatar.src uses "{item.logo}", and Analyze sends the item fields. Progress is a WorkingCard (status steps, estimate, Cancel back to results, document skeleton) above DataText bound to content — the host ticks the card while pending. That WorkingCard applies when CAPABILITY includes long-running, multi-step, or cancellable; omit it when no wait capability is selected. Overview declares onLoad and binds each Stat by statePath. emptyText is the zero-result copy when the companies array is empty.',
   `Replace the actions apiKey values ("${GOLD_EXAMPLE_LOAD_API_KEY}", "${GOLD_EXAMPLE_API_KEY}", "${GOLD_EXAMPLE_RUN_API_KEY}") with declared API binding keys, and drop manifest.actions and every onLoad entirely when no bindings were declared.`,
@@ -497,7 +499,11 @@ export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
  */
 export function goldExamplePromptForArchetype(archetype?: ArenaGenerativeArchetype): string {
   if (archetype === 'dashboard') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD
-  if (archetype === 'list-detail') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL
-  if (archetype === 'wizard') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD
+  if (archetype === 'collection' || archetype === 'detail') {
+    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL
+  }
+  if (archetype === 'workflow') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD
+  if (archetype === 'content') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT
+  if (archetype === 'workspace') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE
   return ARENA_GENERATIVE_UI_GOLD_EXAMPLE
 }

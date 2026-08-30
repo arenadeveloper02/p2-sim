@@ -28,6 +28,8 @@ import {
   ARENA_GENERATIVE_ARCHETYPES,
   type ArenaGenerativeStructuredBrief,
   archetypeRecipe,
+  archetypeRecipesForBrief,
+  formatPageShapesForGenerator,
   formatStructuredBriefForEdit,
   formatStructuredBriefForGenerator,
   pageHintsFromStructuredBrief,
@@ -40,7 +42,7 @@ const listDetailBrief: ArenaGenerativeStructuredBrief = {
   title: 'Orders',
   purpose: 'Browse orders and open one record.',
   audience: 'Ops coordinators',
-  archetype: 'list-detail',
+  archetype: 'collection',
   entryPath: 'home',
   pages: [
     {
@@ -50,6 +52,7 @@ const listDetailBrief: ArenaGenerativeStructuredBrief = {
       data: 'onLoad load_orders into orders',
       actions: ['load_orders'],
       emptyCopy: 'No orders yet.',
+      archetype: 'collection',
     },
     {
       path: 'detail',
@@ -57,6 +60,7 @@ const listDetailBrief: ArenaGenerativeStructuredBrief = {
       purpose: 'One order',
       data: 'onLoad load_order into the record from ?id',
       actions: ['load_order'],
+      archetype: 'detail',
     },
   ],
   actions: [
@@ -85,15 +89,22 @@ function textMessage(text: string) {
 }
 
 describe('parseArenaGenerativeStructuredBrief', () => {
-  it('accepts a valid list-detail brief', () => {
-    const parsed = parseArenaGenerativeStructuredBrief(listDetailBrief, {
+  it('aliases a stored list-detail brief onto collection + detail pages', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        ...listDetailBrief,
+        archetype: 'list-detail',
+        pages: listDetailBrief.pages.map(({ archetype: _shape, ...page }) => page),
+      },
+      {
       apiBindings: [
         { key: 'list_orders', label: 'List', kind: 'workflow', workflowId: 'wf-1' },
         { key: 'get_order', label: 'Get', kind: 'workflow', workflowId: 'wf-2' },
       ],
     })
-    expect(parsed?.archetype).toBe('list-detail')
+    expect(parsed?.archetype).toBe('collection')
     expect(parsed?.pages.map((page) => page.path)).toEqual(['home', 'detail'])
+    expect(parsed?.pages.map((page) => page.archetype)).toEqual(['collection', 'detail'])
     expect(parsed?.processing).toEqual([])
     expect(parsed?.capabilities).toEqual([])
   })
@@ -129,7 +140,7 @@ describe('parseArenaGenerativeStructuredBrief', () => {
       },
       { apiBindings: [] }
     )
-    expect(parsed?.archetype).toBe('list-detail')
+    expect(parsed?.archetype).toBe('collection')
     expect(parsed?.designIntent).toEqual({ density: 'compact' })
   })
 
@@ -162,7 +173,7 @@ describe('parseArenaGenerativeStructuredBrief', () => {
       },
       { apiBindings: [] }
     )
-    expect(parsed?.archetype).toBe('list-detail')
+    expect(parsed?.archetype).toBe('collection')
     expect(parsed?.informationHierarchy).toEqual({ supporting: ['sidebar'] })
     expect(parsed?.interactionModel).toEqual({ selection: 'same-page', wait: 'working-card' })
   })
@@ -209,8 +220,68 @@ describe('parseArenaGenerativeStructuredBrief', () => {
       },
       { apiBindings: [] }
     )
+    expect(parsed?.archetype).toBe('task')
+    expect(parsed?.pages[0]?.archetype).toBe('task')
     expect(parsed?.processing).toEqual(['long-running', 'cancellable'])
     expect(parsed?.capabilities).toEqual(['long-running', 'cancellable'])
+  })
+
+  it('aliases wizard onto workflow pages', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'Onboard',
+        purpose: 'Walk through setup.',
+        audience: 'Admins',
+        archetype: 'wizard',
+        entryPath: 'home',
+        pages: [
+          { path: 'home', title: 'Setup', purpose: 'Steps', data: 'static', actions: [] },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.archetype).toBe('workflow')
+    expect(parsed?.pages[0]?.archetype).toBe('workflow')
+  })
+
+  it('keeps workspace regions and drops a nested workspace region shape', () => {
+    const parsed = parseArenaGenerativeStructuredBrief(
+      {
+        title: 'CRM',
+        purpose: 'Accounts and notes together.',
+        audience: 'Reps',
+        archetype: 'workspace',
+        entryPath: 'home',
+        pages: [
+          {
+            path: 'home',
+            title: 'Accounts',
+            purpose: 'Shell',
+            data: 'onLoad load_accounts into accounts',
+            actions: ['load_accounts'],
+            regions: {
+              navigator: { archetype: 'workspace', purpose: 'Nested shell', data: 'static' },
+              primary: { archetype: 'detail', purpose: 'Record', data: 'selected account' },
+              inspector: { archetype: 'results', purpose: 'Notes', data: 'selected notes' },
+            },
+          },
+        ],
+        actions: [],
+      },
+      { apiBindings: [] }
+    )
+    expect(parsed?.archetype).toBe('workspace')
+    expect(parsed?.pages[0]?.archetype).toBe('workspace')
+    expect(parsed?.pages[0]?.regions).toEqual({
+      primary: { archetype: 'detail', purpose: 'Record', data: 'selected account', capabilities: [] },
+      inspector: {
+        archetype: 'results',
+        purpose: 'Notes',
+        data: 'selected notes',
+        capabilities: [],
+      },
+    })
   })
 
   it('strips LLM-emitted intent so only the analyzer result is nested later', () => {
@@ -341,22 +412,30 @@ describe('structured brief helpers', () => {
       expect(recipe).toContain(`ARCHETYPE RECIPE: ${archetype}`)
       expect(recipe).not.toContain('one Card')
     }
-    expect(archetypeRecipe('form-result')).toContain('form → processing → result')
-    expect(archetypeRecipe('form-result')).toContain('SearchField')
-    expect(archetypeRecipe('form-result')).toContain('CAPABILITY')
-    expect(archetypeRecipe('form-result')).toContain('inputs.targetKeyword')
-    expect(archetypeRecipe('form-result')).toContain('{targetKeyword}')
-    expect(archetypeRecipe('form-result')).toContain('never "field.content"')
-    expect(archetypeRecipe('form-result')).toContain('Results has no onLoad')
-    expect(archetypeRecipe('form-result')).not.toContain('WorkingCard')
-    expect(archetypeRecipe('form-result')).not.toContain('nested ProgressSteps')
-    expect(archetypeRecipe('list-detail')).toContain('entity Cards')
-    expect(archetypeRecipe('list-detail')).toContain('selectItem')
-    expect(archetypeRecipe('list-detail')).toContain('clearItem')
-    expect(archetypeRecipe('list-detail')).toContain('!selectedId')
-    expect(archetypeRecipe('dashboard')).toContain('EntityHeader')
-    expect(archetypeRecipe('dashboard')).toContain('display')
-    expect(archetypeRecipe('dashboard')).toContain('Sparkline')
+    expect(archetypeRecipe('task')).toContain('SearchField')
+    expect(archetypeRecipe('task')).toContain('Results are optional')
+    expect(archetypeRecipe('results')).toContain('never "field.content"')
+    expect(archetypeRecipe('results')).toContain('No onLoad of the CTA')
+    expect(archetypeRecipe('results')).toContain('inputs.targetKeyword')
+    expect(archetypeRecipe('collection')).toContain('data-driven')
+    expect(archetypeRecipe('collection')).toContain('detail-drawer')
+    expect(archetypeRecipe('detail')).toContain('EntityHeader')
+    expect(archetypeRecipe('dashboard')).toContain('Module count')
+    expect(archetypeRecipe('dashboard')).toContain('Do not emit a fixed Grid of four Stat')
+    expect(archetypeRecipe('dashboard')).not.toContain('Grid of four Stat size display')
+    expect(archetypeRecipe('workflow')).toContain('Stepper')
+    expect(archetypeRecipe('workflow')).not.toContain('One page per step')
+    expect(archetypeRecipe('content')).toContain('DataText markdown')
+    expect(archetypeRecipe('workspace')).toContain('navigator')
+  })
+
+  it('composes recipes and page-shape lines for mixed sitemaps', () => {
+    const recipes = archetypeRecipesForBrief(listDetailBrief)
+    expect(recipes).toContain('ARCHETYPE RECIPE: collection')
+    expect(recipes).toContain('ARCHETYPE RECIPE: detail')
+    expect(recipes).not.toContain('ARCHETYPE RECIPE: workspace')
+    expect(formatPageShapesForGenerator(listDetailBrief)).toContain('home: collection')
+    expect(formatPageShapesForGenerator(listDetailBrief)).toContain('detail: detail')
   })
 
   it('turns planned pages into generator page hints', () => {
@@ -369,7 +448,7 @@ describe('structured brief helpers', () => {
   it('serialises the brief as the generator contract', () => {
     const formatted = formatStructuredBriefForGenerator(listDetailBrief)
     expect(formatted).toContain('Structured brief')
-    expect(formatted).toContain('"archetype": "list-detail"')
+    expect(formatted).toContain('"archetype": "collection"')
     expect(formatted).toContain('emptyCopy as emptyText')
     expect(formatted).toContain('senior engineer would not skip')
   })
@@ -377,12 +456,12 @@ describe('structured brief helpers', () => {
   it('serialises the stored brief as edit context without pinning the sitemap', () => {
     const formatted = formatStructuredBriefForEdit(listDetailBrief)
     expect(formatted).toContain('Original structured brief (context only')
-    expect(formatted).toContain('"archetype": "list-detail"')
+    expect(formatted).toContain('"archetype": "collection"')
     expect(formatted).not.toContain('emit exactly these page paths')
   })
 
   it('accepts a stored structured brief and maps legacy processing onto capabilities', () => {
-    expect(parseStoredStructuredBrief(listDetailBrief)?.archetype).toBe('list-detail')
+    expect(parseStoredStructuredBrief(listDetailBrief)?.archetype).toBe('collection')
     expect(parseStoredStructuredBrief({ title: 'nope' })).toBeNull()
     expect(parseStoredStructuredBrief(null)).toBeNull()
     const stored = parseStoredStructuredBrief({
@@ -440,25 +519,25 @@ describe('planArenaGenerativeStructuredBrief', () => {
       ],
     })
 
-    expect(planned.brief?.archetype).toBe('list-detail')
+    expect(planned.brief?.archetype).toBe('collection')
     expect(mockCreateAnthropicMessage).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         model: 'claude-sonnet-4-6',
         max_tokens: 4_096,
-        system: expect.stringContaining('Pick exactly one archetype'),
+        system: expect.stringContaining('Pick exactly one app-level archetype'),
       })
     )
     const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
     expect(system).toContain('Plan sitemap, data, actions, and capabilities')
     expect(system).toContain('the host compiles those')
     expect(system).toContain('When Analyzed intent is present')
-    expect(system).toContain('primary verb')
+    expect(system).toContain('entry verb')
     expect(system).toContain('never "users"')
     expect(system).toContain('Bindings are the data contract')
     expect(system).toContain('must not onLoad that same action')
-    expect(system).toContain('form → processing → result')
-    expect(system).toContain('Set capabilities to the tags that apply')
+    expect(system).toContain('scan several high-level modules')
+    expect(system).toContain('Set capabilities to at most five tags that apply')
     expect(system).toContain('Also emit designIntent')
     expect(system).toContain('spacious means roomy')
     expect(system).toContain('informationHierarchy')

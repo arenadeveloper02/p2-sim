@@ -27,6 +27,24 @@ vi.mock('@/lib/core/config/api-keys', () => ({
 vi.mock('@/lib/arena-generative-ui/structured-brief', () => ({
   planArenaGenerativeStructuredBrief: mockPlanBrief,
   archetypeRecipe: (archetype: string) => `ARCHETYPE RECIPE: ${archetype}`,
+  archetypeRecipesForBrief: (brief: {
+    archetype: string
+    pages?: Array<{
+      archetype?: string
+      regions?: { navigator?: { archetype: string }; primary: { archetype: string }; inspector?: { archetype: string } }
+    }>
+  }) => {
+    const shapes = new Set<string>([brief.archetype])
+    for (const page of brief.pages ?? []) {
+      if (page.archetype) shapes.add(page.archetype)
+      if (page.regions) {
+        if (page.regions.navigator) shapes.add(page.regions.navigator.archetype)
+        shapes.add(page.regions.primary.archetype)
+        if (page.regions.inspector) shapes.add(page.regions.inspector.archetype)
+      }
+    }
+    return [...shapes].map((shape) => `ARCHETYPE RECIPE: ${shape}`).join('\n\n')
+  },
   formatStructuredBriefForGenerator: (brief: { title: string }) =>
     `Structured brief (implement this information architecture; emit exactly these page paths as object keys):\n${JSON.stringify(brief, null, 2)}`,
   formatStructuredBriefForEdit: (brief: { title: string; archetype: string }) =>
@@ -660,7 +678,7 @@ describe('generateArenaGenerativeManifest', () => {
       title: 'Orders',
       purpose: 'Browse orders and open one record.',
       audience: 'Ops',
-      archetype: 'list-detail' as const,
+      archetype: 'collection' as const,
       entryPath: 'home',
       pages: [
         {
@@ -670,6 +688,7 @@ describe('generateArenaGenerativeManifest', () => {
           data: 'onLoad load_orders into orders',
           actions: ['load_orders'],
           emptyCopy: 'No orders yet.',
+          archetype: 'collection' as const,
         },
         {
           path: 'detail',
@@ -677,6 +696,7 @@ describe('generateArenaGenerativeManifest', () => {
           purpose: 'Record',
           data: 'onLoad load_order from ?id',
           actions: ['load_order'],
+          archetype: 'detail' as const,
         },
       ],
       actions: [],
@@ -777,7 +797,7 @@ describe('generateArenaGenerativeManifest', () => {
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
       expect(system).toContain('ARCHETYPE RECIPE: dashboard')
       expect(system).toContain('GOLD STANDARD REFERENCE LAYOUT (dashboard)')
-      expect(system).not.toContain('GOLD STANDARD REFERENCE LAYOUT (list-detail)')
+      expect(system).not.toContain('GOLD STANDARD REFERENCE LAYOUT (collection)')
       expect(payload).toContain(REPLAN_GENERATE_INSTRUCTION)
       expect(payload).not.toContain(EDIT_PRESERVATION_INSTRUCTION)
       expect(payload).not.toContain('Existing manifest:')
@@ -800,10 +820,11 @@ describe('generateArenaGenerativeManifest', () => {
       expect(mockAnalyzeIntent).not.toHaveBeenCalled()
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
-      expect(system).toContain('ARCHETYPE RECIPE: list-detail')
+      expect(system).toContain('ARCHETYPE RECIPE: collection')
+      expect(system).toContain('ARCHETYPE RECIPE: detail')
       expect(system).toContain(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL)
       expect(payload).toContain('Original structured brief (context only')
-      expect(payload).toContain('"archetype": "list-detail"')
+      expect(payload).toContain('"archetype": "collection"')
       expect(payload).not.toContain('emit exactly these page paths')
       expect(payload).not.toContain('Requested pages')
       expect(payload).not.toContain('Requested entryPath:')
@@ -820,12 +841,13 @@ describe('generateArenaGenerativeManifest', () => {
 
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
       const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
-      expect(system).toContain('ARCHETYPE RECIPE: list-detail')
+      expect(system).toContain('ARCHETYPE RECIPE: collection')
+      expect(system).toContain('ARCHETYPE RECIPE: detail')
       expect(system).toContain(ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL)
       expect(system).not.toContain('Watchtower')
-      expect(system).not.toContain('GOLD STANDARD REFERENCE LAYOUT (form-result)')
+      expect(system).not.toContain('GOLD STANDARD REFERENCE LAYOUT (task)')
       expect(payload).toContain('Structured brief')
-      expect(payload).toContain('"archetype": "list-detail"')
+      expect(payload).toContain('"archetype": "collection"')
       expect(payload).toContain('Requested pages')
       expect(payload).toContain('"path": "detail"')
       expect(payload).toContain('Requested entryPath: home')
@@ -838,7 +860,7 @@ describe('generateArenaGenerativeManifest', () => {
           title: 'Analyze',
           purpose: 'Run analysis and read the result.',
           audience: 'Analysts',
-          archetype: 'form-result' as const,
+          archetype: 'task' as const,
           entryPath: 'home',
           pages: [
             {
@@ -854,6 +876,7 @@ describe('generateArenaGenerativeManifest', () => {
               purpose: 'Answer',
               data: 'CTA destination',
               actions: [],
+              archetype: 'results' as const,
             },
           ],
           actions: [],
@@ -868,7 +891,8 @@ describe('generateArenaGenerativeManifest', () => {
       })
 
       const system = mockCreateAnthropicMessage.mock.calls[0]?.[1].system as string
-      expect(system).toContain('ARCHETYPE RECIPE: form-result')
+      expect(system).toContain('ARCHETYPE RECIPE: task')
+      expect(system).toContain('ARCHETYPE RECIPE: results')
       expect(system).toContain('CAPABILITY: LONG-RUNNING')
       expect(system).toContain('CAPABILITY: CANCELLABLE')
       expect(system).not.toContain('PROCESSING PATTERN')
@@ -968,10 +992,10 @@ describe('generateArenaGenerativeManifest', () => {
 
       expect(result.success).toBe(true)
       expect(result.content).toContain('Intent: Browse orders and open one record.')
-      expect(result.content).toContain('Planner: list-detail · home, results.')
+      expect(result.content).toContain('Planner: collection · home, results.')
       expect(result.structuredBrief).toEqual({
         title: 'Orders',
-        archetype: 'list-detail',
+        archetype: 'collection',
         entryPath: 'home',
         pages: [
           { path: 'home', title: 'Home' },
@@ -1279,7 +1303,7 @@ describe('generateArenaGenerativeManifest', () => {
           title: 'Orders',
           purpose: 'Browse orders',
           audience: 'Ops',
-          archetype: 'list-detail' as const,
+          archetype: 'collection' as const,
           entryPath: 'home',
           pages: [
             {

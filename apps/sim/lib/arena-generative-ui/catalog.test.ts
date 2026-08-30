@@ -31,6 +31,8 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'Drawer',
       'Modal',
       'Toast',
+      'Workspace',
+      'Stepper',
     ]) {
       expect(prompt).toContain(`- ${component}: {`)
     }

@@ -29,7 +29,7 @@ const dashboardHomeSpec: Spec = {
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['entity', 'kpis', 'trend', 'summary'],
+      children: ['entity', 'filters', 'kpis', 'trend', 'activity'],
     },
     entity: {
       type: 'EntityHeader',
@@ -45,10 +45,28 @@ const dashboardHomeSpec: Spec = {
       },
       children: [],
     },
+    filters: {
+      type: 'Filter',
+      props: { justify: 'start', showWhen: null },
+      children: ['range'],
+    },
+    range: {
+      type: 'DateInput',
+      props: {
+        name: 'from',
+        label: 'From',
+        required: false,
+        defaultValue: null,
+        statePath: null,
+        errorText: null,
+        showWhen: null,
+      },
+      children: [],
+    },
     kpis: {
       type: 'Grid',
-      props: { columns: '4', gap: 'md', minItemWidth: null },
-      children: ['kpi_orders', 'kpi_fill', 'kpi_backlog', 'kpi_exceptions'],
+      props: { columns: '2', gap: 'md', minItemWidth: null },
+      children: ['kpi_orders', 'kpi_fill'],
     },
     kpi_orders: {
       type: 'Stat',
@@ -76,32 +94,6 @@ const dashboardHomeSpec: Spec = {
       },
       children: [],
     },
-    kpi_backlog: {
-      type: 'Stat',
-      props: {
-        label: 'Backlog',
-        value: null,
-        statePath: 'backlog',
-        hint: null,
-        delta: null,
-        deltaTone: null,
-        size: 'display',
-      },
-      children: [],
-    },
-    kpi_exceptions: {
-      type: 'Stat',
-      props: {
-        label: 'Exceptions',
-        value: null,
-        statePath: 'exceptions',
-        hint: null,
-        delta: 'Low',
-        deltaTone: 'positive',
-        size: 'display',
-      },
-      children: [],
-    },
     trend: {
       type: 'Card',
       props: {
@@ -120,26 +112,13 @@ const dashboardHomeSpec: Spec = {
       props: { values: null, statePath: 'orderVolume', label: 'Weekly orders' },
       children: [],
     },
-    summary: {
-      type: 'Card',
+    activity: {
+      type: 'Table',
       props: {
-        title: 'Week in review',
-        subtitle: null,
-        description: null,
-        footerText: null,
-        padding: 'lg',
-        variant: 'muted',
-        backgroundColor: null,
-      },
-      children: ['summary_body'],
-    },
-    summary_body: {
-      type: 'DataText',
-      props: {
-        statePath: 'summary',
-        fallback: 'Metrics load when the page opens.',
-        color: null,
-        size: null,
+        statePath: 'exceptions',
+        columns: 'Order, Status, Age',
+        rows: null,
+        emptyText: 'No open exceptions.',
       },
       children: [],
     },
@@ -164,7 +143,7 @@ export const goldDashboardManifest: ArenaGenerativeAppManifest = {
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD = goldPrompt(
   'dashboard',
-  'Home is EntityHeader plus a Grid of four display Stats, a Sparkline trend Card, and a summary Card. Page onLoad fetches the metrics; every Stat and the Sparkline bind by statePath. There is no search hero and no form.',
+  'Slots: Header, Filters, KPI/summary, primary visualization, supporting activity. Module count follows the bound hostKeys — this example uses two Stats, a Sparkline, and a Table, not a fixed four-Stat grid. Page onLoad fetches the metrics; every Stat, Sparkline, and Table bind by statePath. There is no search hero.',
   {
     title: 'Operations',
     content: 'Dashboard of weekly operations metrics on arrival.',
@@ -315,8 +294,8 @@ export const goldListDetailManifest: ArenaGenerativeAppManifest = {
 }
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL = goldPrompt(
-  'list-detail',
-  'List page onLoad fills Repeat inside a 2-column Grid of entity Cards. Open uses navigateTo "detail?id={item.id}". Detail onLoad fetches that record and shows EntityHeader plus KeyValue. No search hero.',
+  'collection',
+  'Collection page onLoad fills Repeat inside a 2-column Grid of entity Cards. Open uses navigateTo "detail?id={item.id}". A sibling Detail page onLoad fetches that record and shows EntityHeader plus KeyValue. Table vs Cards is data-driven; this collection has per-row identity so it is Cards. No search hero.',
   {
     title: 'Orders',
     content: 'Browse orders and open one record.',
@@ -338,7 +317,15 @@ const wizardStepOneSpec: Spec = {
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['header', 'form'],
+      children: ['stepper', 'header', 'form'],
+    },
+    stepper: {
+      type: 'Stepper',
+      props: {
+        items: 'Company|home\nRole|role\nConfirm|confirm',
+        activePath: 'home',
+      },
+      children: [],
     },
     header: {
       type: 'PageHeader',
@@ -560,11 +547,242 @@ export const goldWizardManifest: ArenaGenerativeAppManifest = {
 }
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD = goldPrompt(
-  'wizard',
-  'One page per step. Early steps use Next Button.navigateTo; the last step is the only SubmitButton. Steps after the first have a Back NavLink. There is no search hero and no dashboard Stats.',
+  'workflow',
+  'Sequential stages with a Stepper for Progress. This example uses one page per named stage; two or three short stages may instead be one page of Sections. Early stages use Next Button.navigateTo; the last step is the only SubmitButton. Steps after the first have a Back NavLink. Not Tabs. There is no search hero and no dashboard Stats.',
   {
     title: 'Onboarding',
     content: 'Three-step onboarding that submits on the last page.',
     manifest: goldWizardManifest,
+  }
+)
+
+/** Binding key the content page `onLoad` points at. */
+export const GOLD_CONTENT_LOAD_API_KEY = 'fetch_article'
+
+const contentHomeSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Brand guidelines', backgroundColor: null },
+      children: ['section'],
+    },
+    section: {
+      type: 'Section',
+      props: { width: 'narrow', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['header', 'meta', 'body'],
+    },
+    header: {
+      type: 'PageHeader',
+      props: {
+        title: 'Voice and tone',
+        subtitle: 'How we write for customers and partners.',
+        kicker: 'Brand guidelines',
+        align: 'start',
+      },
+      children: [],
+    },
+    meta: {
+      type: 'Stack',
+      props: {
+        direction: 'horizontal',
+        gap: 'sm',
+        align: 'center',
+        justify: 'start',
+        wrap: true,
+      },
+      children: ['updated', 'owner'],
+    },
+    updated: {
+      type: 'Chip',
+      props: { text: 'Updated {updatedAt}', tone: 'muted', actionId: null, navigateTo: null, setValue: null },
+      children: [],
+    },
+    owner: {
+      type: 'Chip',
+      props: { text: '{owner}', tone: 'info', actionId: null, navigateTo: null, setValue: null },
+      children: [],
+    },
+    body: {
+      type: 'DataText',
+      props: {
+        statePath: 'content',
+        fallback: 'The article loads when the page opens.',
+        color: null,
+        size: null,
+      },
+      children: [],
+    },
+  },
+}
+
+export const goldContentManifest: ArenaGenerativeAppManifest = {
+  entryPath: 'home',
+  theme: DEFAULT_ARENA_GENERATIVE_THEME,
+  pages: {
+    home: {
+      path: 'home',
+      title: 'Brand guidelines',
+      spec: contentHomeSpec,
+      onLoad: ['load_article'],
+    },
+  },
+  actions: {
+    load_article: { apiKey: GOLD_CONTENT_LOAD_API_KEY },
+  },
+}
+
+export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT = goldPrompt(
+  'content',
+  'A document: Header, muted metadata chips, and a DataText markdown body. Not Results (no WorkingCard) and not Detail (no EntityHeader firmographics). Related collections only when layoutPlan has one.',
+  {
+    title: 'Brand guidelines',
+    content: 'Read the voice and tone guide.',
+    manifest: goldContentManifest,
+  }
+)
+
+/** Binding key the workspace navigator `onLoad` points at. */
+export const GOLD_WORKSPACE_LOAD_API_KEY = 'list_accounts'
+
+const workspaceHomeSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Accounts', backgroundColor: null },
+      children: ['section'],
+    },
+    section: {
+      type: 'Section',
+      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['shell'],
+    },
+    shell: {
+      type: 'Workspace',
+      props: { inspectorWhen: 'selectedId', gap: 'lg', showWhen: null },
+      children: ['navigator', 'primary', 'inspector'],
+    },
+    navigator: {
+      type: 'Stack',
+      props: {
+        direction: 'vertical',
+        gap: 'md',
+        align: 'stretch',
+        justify: 'start',
+        wrap: false,
+      },
+      children: ['nav_header', 'accounts'],
+    },
+    nav_header: {
+      type: 'PageHeader',
+      props: {
+        title: 'Accounts',
+        subtitle: 'Select a company.',
+        kicker: null,
+        align: 'start',
+      },
+      children: [],
+    },
+    accounts: {
+      type: 'Repeat',
+      props: { statePath: 'accounts', emptyText: 'No accounts yet.' },
+      children: ['account_card'],
+    },
+    account_card: {
+      type: 'Card',
+      props: {
+        title: '{item.name}',
+        subtitle: '{item.industry}',
+        description: null,
+        footerText: null,
+        padding: 'md',
+        variant: 'default',
+        backgroundColor: null,
+      },
+      children: ['open_account'],
+    },
+    open_account: {
+      type: 'Button',
+      props: {
+        label: 'Open',
+        actionId: null,
+        selectItem: true,
+        clearItem: null,
+        navigateTo: null,
+        href: null,
+        variant: 'ghost',
+        size: 'sm',
+        shape: null,
+        showWhen: null,
+      },
+      children: [],
+    },
+    primary: {
+      type: 'Stack',
+      props: {
+        direction: 'vertical',
+        gap: 'md',
+        align: 'stretch',
+        justify: 'start',
+        wrap: false,
+      },
+      children: ['entity', 'details'],
+    },
+    entity: {
+      type: 'EntityHeader',
+      props: {
+        title: '{selected.name}',
+        description: '{selected.industry}',
+        badge: null,
+        badgeTone: null,
+        logoSrc: null,
+        initials: '{selected.initials}',
+        statePath: 'selected.logo',
+        meta: '{selected.meta}',
+      },
+      children: [],
+    },
+    details: {
+      type: 'KeyValue',
+      props: { items: null, statePath: 'selected', emptyText: 'Select an account.' },
+      children: [],
+    },
+    inspector: {
+      type: 'DataText',
+      props: {
+        statePath: 'content',
+        fallback: 'Notes appear when an account is selected.',
+        color: null,
+        size: null,
+      },
+      children: [],
+    },
+  },
+}
+
+export const goldWorkspaceManifest: ArenaGenerativeAppManifest = {
+  entryPath: 'home',
+  theme: DEFAULT_ARENA_GENERATIVE_THEME,
+  pages: {
+    home: {
+      path: 'home',
+      title: 'Accounts',
+      spec: workspaceHomeSpec,
+      onLoad: ['load_accounts'],
+    },
+  },
+  actions: {
+    load_accounts: { apiKey: GOLD_WORKSPACE_LOAD_API_KEY },
+  },
+}
+
+export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE = goldPrompt(
+  'workspace',
+  'One page. Workspace children are navigator (collection Repeat), primary (EntityHeader + KeyValue), inspector (DataText). Sync with selectItem and inspectorWhen "selectedId". No Tabs for the three regions.',
+  {
+    title: 'Accounts',
+    content: 'Keep the list, record, and notes visible together.',
+    manifest: goldWorkspaceManifest,
   }
 )

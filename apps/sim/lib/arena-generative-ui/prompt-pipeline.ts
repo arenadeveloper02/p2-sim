@@ -34,6 +34,8 @@ import { ARENA_GENERATIVE_UI_HOST_UX_PROMPT } from '@/lib/arena-generative-ui/ux
 
 export interface BuildGeneratorSystemPromptOptions {
   archetype?: ArenaGenerativeArchetype
+  /** Precomposed recipes for every page/region shape. Falls back to the app archetype. */
+  recipes?: string
   capabilities?: readonly ArenaGenerativeCapability[]
   hasBindings: boolean
   hasStreamingBinding: boolean
@@ -56,7 +58,8 @@ function wrapColumn(heading: string, sections: readonly string[]): string {
  * constrain recipes. Persona stays first. Still one generate call.
  */
 export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOptions): string {
-  const recipe = options.archetype ? archetypeRecipe(options.archetype) : ''
+  const recipe =
+    options.recipes || (options.archetype ? archetypeRecipe(options.archetype) : '')
   const capabilities = capabilityRecipePrompt(options.capabilities ?? [])
   const catalogAndEnvelope = buildArenaGenerativeUiPrompt({
     customRules: [

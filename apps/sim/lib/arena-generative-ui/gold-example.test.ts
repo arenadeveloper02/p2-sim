@@ -12,13 +12,17 @@ import {
   goldExamplePromptForArchetype,
 } from '@/lib/arena-generative-ui/gold-example'
 import {
+  GOLD_CONTENT_LOAD_API_KEY,
   GOLD_DASHBOARD_LOAD_API_KEY,
   GOLD_LIST_DETAIL_LIST_API_KEY,
   GOLD_LIST_DETAIL_RECORD_API_KEY,
   GOLD_WIZARD_SUBMIT_API_KEY,
+  GOLD_WORKSPACE_LOAD_API_KEY,
+  goldContentManifest,
   goldDashboardManifest,
   goldListDetailManifest,
   goldWizardManifest,
+  goldWorkspaceManifest,
 } from '@/lib/arena-generative-ui/gold-example-archetypes'
 import { extractManifestCandidate } from '@/lib/arena-generative-ui/parse-inputs'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
@@ -163,13 +167,19 @@ describe('per-archetype gold examples', () => {
     expect(goldExamplePromptForArchetype('dashboard')).toContain('spacing tokens')
     expect(goldExamplePromptForArchetype('dashboard')).toContain('Card.variant')
     expect(goldExamplePromptForArchetype('dashboard')).not.toContain('Watchtower')
-    expect(goldExamplePromptForArchetype('list-detail')).toContain(
-      'GOLD STANDARD REFERENCE LAYOUT (list-detail)'
+    expect(goldExamplePromptForArchetype('collection')).toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (collection)'
     )
-    expect(goldExamplePromptForArchetype('wizard')).toContain(
-      'GOLD STANDARD REFERENCE LAYOUT (wizard)'
+    expect(goldExamplePromptForArchetype('workflow')).toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (workflow)'
     )
-    expect(goldExamplePromptForArchetype('form-result')).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
+    expect(goldExamplePromptForArchetype('content')).toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (content)'
+    )
+    expect(goldExamplePromptForArchetype('workspace')).toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (workspace)'
+    )
+    expect(goldExamplePromptForArchetype('task')).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
     expect(goldExamplePromptForArchetype()).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
   })
 
@@ -187,7 +197,8 @@ describe('per-archetype gold examples', () => {
     expect(result.error).toBeUndefined()
     expect(result.success).toBe(true)
     expect(JSON.stringify(goldDashboardManifest)).toContain('"Sparkline"')
-    expect(JSON.stringify(goldDashboardManifest)).toContain('"variant":"muted"')
+    expect(JSON.stringify(goldDashboardManifest)).toContain('"Filter"')
+    expect(JSON.stringify(goldDashboardManifest)).toContain('"Table"')
     expect(JSON.stringify(goldDashboardManifest)).toContain('"gap":"md"')
     expect(JSON.stringify(goldDashboardManifest)).not.toMatch(/"gap":"(?:8|12|16|24)px"/)
   })
@@ -224,5 +235,37 @@ describe('per-archetype gold examples', () => {
       ],
     })
     expect(result.success).toBe(true)
+    expect(JSON.stringify(goldWizardManifest)).toContain('"Stepper"')
+  })
+
+  it('validates the content gold', () => {
+    const result = validateArenaGenerativeManifest(goldContentManifest, {
+      apiBindings: [
+        {
+          key: GOLD_CONTENT_LOAD_API_KEY,
+          label: 'Article',
+          kind: 'workflow',
+          workflowId: 'wf_article',
+        },
+      ],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.success).toBe(true)
+  })
+
+  it('validates the workspace gold', () => {
+    const result = validateArenaGenerativeManifest(goldWorkspaceManifest, {
+      apiBindings: [
+        {
+          key: GOLD_WORKSPACE_LOAD_API_KEY,
+          label: 'Accounts',
+          kind: 'workflow',
+          workflowId: 'wf_accounts',
+        },
+      ],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.success).toBe(true)
+    expect(JSON.stringify(goldWorkspaceManifest)).toContain('"Workspace"')
   })
 })

@@ -29,6 +29,7 @@ import { buildGeneratorSystemPrompt } from '@/lib/arena-generative-ui/prompt-pip
 import { isReplanEdit, plannerInputForReplan } from '@/lib/arena-generative-ui/replan-from-edit'
 import {
   type ArenaGenerativeStructuredBrief,
+  archetypeRecipesForBrief,
   formatStructuredBriefForEdit,
   formatStructuredBriefForGenerator,
   pageHintsFromStructuredBrief,
@@ -431,6 +432,7 @@ export async function generateArenaGenerativeManifest(
 
   const systemPrompt = buildGeneratorSystemPrompt({
     archetype: intentBrief?.archetype,
+    recipes: intentBrief ? archetypeRecipesForBrief(intentBrief) : undefined,
     capabilities: resolveCapabilities({
       planned: [...(intentBrief?.capabilities ?? []), ...(intentBrief?.processing ?? [])],
       bindings: params.apiBindings,

@@ -7,9 +7,9 @@ import { z } from 'zod'
 import { createAnthropicMessage } from '@/lib/anthropic/create-message'
 import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-prompt'
 import {
-  ARENA_GENERATIVE_CAPABILITIES,
   type ArenaGenerativeCapability,
   isCapability,
+  plannedCapabilities,
 } from '@/lib/arena-generative-ui/capabilities'
 import { ARENA_GENERATIVE_UI_PLANNER_DS_CONTEXT } from '@/lib/arena-generative-ui/catalog'
 import {
@@ -39,13 +39,37 @@ const BRIEF_OUTPUT_TOKENS = 4_096
 const MAX_BRIEF_ATTEMPTS = 2
 
 export const ARENA_GENERATIVE_ARCHETYPES = [
+  'workspace',
+  'collection',
+  'detail',
+  'task',
+  'results',
   'dashboard',
-  'form-result',
-  'list-detail',
-  'wizard',
+  'workflow',
+  'content',
 ] as const
 
 export type ArenaGenerativeArchetype = (typeof ARENA_GENERATIVE_ARCHETYPES)[number]
+
+/** Stored / planner aliases so old drafts still parse. */
+export const ARENA_GENERATIVE_ARCHETYPE_ALIASES = {
+  'list-detail': 'collection',
+  'form-result': 'task',
+  wizard: 'workflow',
+} as const
+
+const ARCHETYPE_SET = new Set<string>(ARENA_GENERATIVE_ARCHETYPES)
+
+/**
+ * Maps a raw planner/stored archetype onto the closed enum. Compound product
+ * names become the entry page shape.
+ */
+export function canonicalizeArchetype(value: unknown): ArenaGenerativeArchetype | undefined {
+  if (typeof value !== 'string') return undefined
+  if (ARCHETYPE_SET.has(value)) return value as ArenaGenerativeArchetype
+  const aliased = ARENA_GENERATIVE_ARCHETYPE_ALIASES[value as keyof typeof ARENA_GENERATIVE_ARCHETYPE_ALIASES]
+  return aliased
+}
 
 const pagePathSchema = z
   .string()
@@ -71,6 +95,25 @@ function briefProse(maxLength: number) {
     )
 }
 
+const pageShapeSchema = z.enum(ARENA_GENERATIVE_ARCHETYPES)
+
+const structuredBriefRegionSchema = z.object({
+  archetype: pageShapeSchema,
+  purpose: briefProse(400),
+  data: briefProse(400),
+  capabilities: z
+    .array(z.string())
+    .max(8)
+    .default([])
+    .transform((values) => plannedCapabilities(values)),
+})
+
+const structuredBriefRegionsSchema = z.object({
+  navigator: structuredBriefRegionSchema.optional(),
+  primary: structuredBriefRegionSchema,
+  inspector: structuredBriefRegionSchema.optional(),
+})
+
 const structuredBriefPageSchema = z.object({
   path: pagePathSchema,
   title: briefProse(80),
@@ -79,6 +122,10 @@ const structuredBriefPageSchema = z.object({
   data: briefProse(400),
   actions: z.array(z.string().min(1).max(64)).max(8).default([]),
   emptyCopy: briefProse(200).optional(),
+  /** Structural shape of this page. Defaults to the app archetype. */
+  archetype: pageShapeSchema.optional(),
+  /** Workspace shell regions. Ignored unless this page is workspace. */
+  regions: structuredBriefRegionsSchema.optional(),
 })
 
 const structuredBriefActionSchema = z.object({
@@ -93,7 +140,7 @@ const structuredBriefSchema = z.object({
   title: briefProse(80),
   purpose: briefProse(400),
   audience: briefProse(200),
-  archetype: z.enum(ARENA_GENERATIVE_ARCHETYPES),
+  archetype: pageShapeSchema,
   entryPath: pagePathSchema,
   pages: z.array(structuredBriefPageSchema).min(1).max(8),
   actions: z.array(structuredBriefActionSchema).max(16).default([]),
@@ -101,7 +148,7 @@ const structuredBriefSchema = z.object({
     .array(z.string())
     .max(12)
     .default([])
-    .transform((values) => values.filter(isCapability)),
+    .transform((values) => plannedCapabilities(values)),
   processing: z
     .array(z.string())
     .max(5)
@@ -120,6 +167,7 @@ export const ARENA_GENERATIVE_HIERARCHY_DOMINANTS = [
   'collection',
   'metrics',
   'prose',
+  'document',
   'wizard-step',
 ] as const
 
@@ -129,6 +177,8 @@ export const ARENA_GENERATIVE_HIERARCHY_SUPPORTING = [
   'sidebar',
   'detail',
   'stats',
+  'navigator',
+  'inspector',
 ] as const
 
 export const ARENA_GENERATIVE_NAVIGATION_PATTERNS = [
@@ -136,6 +186,7 @@ export const ARENA_GENERATIVE_NAVIGATION_PATTERNS = [
   'tabs',
   'list-detail',
   'wizard',
+  'workspace',
   'single-page',
 ] as const
 
@@ -174,6 +225,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+function inferPageArchetype(
+  page: Record<string, unknown>,
+  rawAppArchetype: unknown,
+  appArchetype: ArenaGenerativeArchetype
+): ArenaGenerativeArchetype {
+  const declared = canonicalizeArchetype(page.archetype)
+  if (declared) return declared
+  const path = typeof page.path === 'string' ? page.path : ''
+  if (rawAppArchetype === 'list-detail') {
+    return path === 'detail' || path.endsWith('-detail') ? 'detail' : 'collection'
+  }
+  if (rawAppArchetype === 'form-result') {
+    return path === 'results' || path === 'result' ? 'results' : 'task'
+  }
+  if (rawAppArchetype === 'wizard') return 'workflow'
+  return appArchetype
+}
+
+function sanitizeRegion(value: unknown): unknown {
+  if (!isRecord(value)) return value
+  const archetype = canonicalizeArchetype(value.archetype)
+  if (!archetype || archetype === 'workspace') return undefined
+  return { ...value, archetype }
+}
+
+function sanitizeRegions(value: unknown): unknown {
+  if (!isRecord(value) || !isRecord(value.primary)) return undefined
+  const primary = sanitizeRegion(value.primary)
+  if (!isRecord(primary)) return undefined
+  const navigator = sanitizeRegion(value.navigator)
+  const inspector = sanitizeRegion(value.inspector)
+  return {
+    primary,
+    ...(isRecord(navigator) ? { navigator } : {}),
+    ...(isRecord(inspector) ? { inspector } : {}),
+  }
+}
+
 function liftSnakeCasePlanFields(value: unknown): unknown {
   if (!isRecord(value)) return value
   const next: Record<string, unknown> = { ...value }
@@ -182,6 +271,24 @@ function liftSnakeCasePlanFields(value: unknown): unknown {
   }
   if (next.interactionModel == null && next.interaction_model != null) {
     next.interactionModel = next.interaction_model
+  }
+  const rawAppArchetype = next.archetype
+  const appArchetype = canonicalizeArchetype(rawAppArchetype)
+  if (appArchetype) next.archetype = appArchetype
+  if (Array.isArray(next.pages) && appArchetype) {
+    next.pages = next.pages.map((page) => {
+      if (!isRecord(page)) return page
+      const pageArchetype = inferPageArchetype(page, rawAppArchetype, appArchetype)
+      const lifted: Record<string, unknown> = { ...page, archetype: pageArchetype }
+      if (pageArchetype === 'workspace') {
+        const regions = sanitizeRegions(page.regions)
+        if (regions) lifted.regions = regions
+        else delete lifted.regions
+      } else {
+        delete lifted.regions
+      }
+      return lifted
+    })
   }
   return next
 }
@@ -250,23 +357,27 @@ function withParsedPlanClassifiers(
 
 const PLANNER_SYSTEM_PROMPT = [
   'You plan the sitemap for a multi-page Arena app. Output one JSON object. No markdown fences, no explanation.',
-  'When Analyzed intent is present, honour its task, entities, actions, and complexity — do not rewrite the job. Pick the archetype, pages, capabilities, designIntent, informationHierarchy, and interactionModel that implement that intent.',
-  'When intent is absent, read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write. Infer only sitemap, archetype, capabilities, designIntent, informationHierarchy, and interactionModel.',
-  'Pick exactly one archetype:',
-  '- dashboard: data on arrival via onLoad; EntityHeader, Grid of display Stat, little or no form.',
-  '- form-result: form → processing → result. A form submits a CTA, processing happens, then onSuccess.navigate to a results page. A single query field is a centered SearchField hero. Empty copy lives on results.',
-  '- list-detail: a collection of entity Cards (Repeat inside Grid) and a detail page opened with to "detail?id={item.id}" whose onLoad fetches that record.',
-  '- wizard: three or more sequential steps with Next/Back; submit only on the last step.',
-  'Archetype from the primary verb (or intent.workflowComplexity), not from how complete the brief is. A form or search that calls an API then shows an answer is form-result even if they never said "results page". A collection on arrival that opens one record is list-detail even if they only named the list. Metrics/overview on arrival is dashboard. Three or more sequential steps with submit at the end is wizard. Mixed briefs ("dashboard plus generate"): pick the verb they led with; extra destinations are extra pages, not a second archetype. History or past runs plus a generate form is form-result with a history page that onLoads the list binding — Generate still navigates to results. One prominent query (search, lookup, ask) is a SearchField hero, not a labelled Grid of one field.',
-  'Set capabilities to the tags that apply (zero or more): long-running, streaming, multi-step, cancellable, search, filter, pagination, selection, editable. Combine them. A workflow binding is long-running; stream: true is streaming; a named step checklist is multi-step; Cancel in the brief is cancellable; a single prominent query is search; Toolbar narrowing is filter; binding.pagination is pagination; opening a row that already has prose is selection; edit-in-place is editable. Omit tags the job does not need. Do not emit "short".',
-  'Also emit designIntent { productType, density, visualTone, contentType, emphasis } — pick one of each. Honour Design Notes first. Else derive from archetype plus brief nouns: dashboard → analytics / compact / data-heavy / data; form-result → workflow / comfortable / task; list-detail → crm / comfortable / discovery; wizard → workflow / comfortable / task. Override productType from domain words (invoices → finance, campaigns → marketing). density is compact | comfortable | roomy (spacious means roomy). visualTone is professional | friendly | premium | technical | editorial. contentType is data-heavy | workflow | narrative | transactional. emphasis is task | data | content | discovery. Classification only — not component props.',
-  'Also emit informationHierarchy { dominant, supporting? } and interactionModel { navigation, selection, wait }. Honour Design Notes first. Else derive from archetype plus capabilities: dashboard → metrics / tabs / none; form-result → form / search-hero or single-page / working-card if a wait capability is set; list-detail → collection / list-detail / navigate or same-page; wizard → wizard-step / wizard / none. dominant is form | collection | metrics | prose | wizard-step. supporting is zero or more of filters, history, sidebar, detail, stats. navigation is search-hero | tabs | list-detail | wizard | single-page. selection is none | same-page | navigate. wait is none | working-card — working-card only when a wait capability is set. Classification only — not component props.',
-  'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "capabilities"?: ("long-running"|"streaming"|"multi-step"|"cancellable"|"search"|"filter"|"pagination"|"selection"|"editable")[], "designIntent"?: { "productType", "density", "visualTone", "contentType", "emphasis" }, "informationHierarchy"?: { "dominant", "supporting"? }, "interactionModel"?: { "navigation", "selection", "wait" }, "emptyCopy"?, "errorCopy"? }',
+  'When Analyzed intent is present, honour its task, entities, actions, and complexity — do not rewrite the job. Pick the app archetype, per-page shapes, capabilities, designIntent, informationHierarchy, and interactionModel that implement that intent.',
+  'When intent is absent, read User request, declared bindings, Design notes, and any pinned pages together. Honour every name, label, CTA key, field, and navigation the user DID write. Infer only sitemap, archetype, page shapes, capabilities, designIntent, informationHierarchy, and interactionModel.',
+  'Pick exactly one app-level archetype (the entry job). Each page also declares pages[].archetype (the shape of that page). Mixed sitemaps are normal.',
+  '- collection: find, inspect, or act on many entities. PageHeader, Toolbar, then a collection body. Table vs Repeat/Cards comes from the data — do not assume Cards.',
+  '- detail: one entity record. EntityHeader, primary facts, sections from the data model, related data, actions. Not a collection.',
+  '- task: the user supplies input to accomplish an action. PageHeader, context, Form or SearchField, one primary action. Results are optional — only add a results page when the CTA produces an answer to show.',
+  '- results: analysis or job output. Context, summary, primary result, supporting, actions. Wait chrome is a capability, not this shape.',
+  '- dashboard: scan several high-level modules on arrival (onLoad). Header, optional filters, KPI/summary, a primary visualization or module, supporting modules, optional activity. Module count and types come from layoutPlan / outputSchema — never a fixed four Stats. A single Table is collection, not dashboard.',
+  '- workflow: sequential stages toward one outcome. Progress, current step (inputs + actions), navigation. Representation from complexity: 2–3 short stages can be one page of sections; a named review/launch can be pages. Not “one page per step” by default. Tabs are not sequential stages (use Stepper). A one-shot form with no stages is task.',
+  '- content: a document the user reads or lightly edits (article, proposal, brand guidelines, knowledge). Header, metadata, main markdown body, optional related, actions. An AI report that is the product is content. A one-shot analysis after Generate is results. An entity record is detail.',
+  '- workspace: keep several related regions visible at once. One page with regions.navigator, regions.primary (required), regions.inspector?. Each region has its own nested shape (not workspace). Sync via selectedId. Do not use Tabs when simultaneous visibility matters. A single collection, form, analysis, document, or metrics page is not workspace.',
+  'Disambiguate from the job, not from how complete the brief is. Scan many modules on arrival → dashboard. Find/act on a list → collection. One entity → detail. Provide input to do a thing → task. Sequential stages → workflow. Output of generate/analyze → results. Read/edit a document as the product → content. Keep several of those visible at once → workspace. Mixed briefs: pick the entry verb; extra destinations are extra pages with their own shape.',
+  'Set capabilities to at most five tags that apply: long-running, streaming, multi-step, cancellable, progress, search, filter, sort, pagination, grouping, date-range, refresh, drill-down, selection, detail-drawer, drawer, modal, create, edit, delete, back, skip, review. Combine them. A workflow binding is long-running; stream: true is streaming; binding.pagination is pagination; a single prominent query is search; Toolbar narrowing is filter; a date window is date-range; opening a row that already has prose is selection; keep-the-list-visible is detail-drawer; edit-in-place is edit. Destination shapes are pages[].archetype, not capabilities. Omit tags the job does not need. Do not emit "short", "editable", "export", "generate", or "analyze".',
+  'Also emit designIntent { productType, density, visualTone, contentType, emphasis } — pick one of each. Honour Design Notes first. Else derive from archetype plus brief nouns: dashboard → analytics / compact / data-heavy / data; task or results → workflow / comfortable / task; collection → crm / comfortable / discovery; workflow → workflow / comfortable / task; content → content / comfortable / narrative / content; workspace → saas / comfortable / discovery. Override productType from domain words (invoices → finance, campaigns → marketing). density is compact | comfortable | roomy (spacious means roomy). visualTone is professional | friendly | premium | technical | editorial. contentType is data-heavy | workflow | narrative | transactional. emphasis is task | data | content | discovery. Classification only — not component props.',
+  'Also emit informationHierarchy { dominant, supporting? } and interactionModel { navigation, selection, wait }. Honour Design Notes first. Else derive from page shapes: dashboard → metrics; collection → collection; task → form; results or content → prose; workflow → wizard-step; workspace → collection with supporting navigator/inspector. dominant is form | collection | metrics | prose | document | wizard-step. supporting is zero or more of filters, history, sidebar, detail, stats, navigator, inspector. navigation is search-hero | tabs | list-detail | wizard | workspace | single-page. selection is none | same-page | navigate. wait is none | working-card — working-card only when a wait capability is set. Classification only — not component props.',
+  'Shape: { "title", "purpose", "audience", "archetype", "entryPath", "pages": [{ "path", "title", "purpose", "data", "actions", "emptyCopy"?, "archetype"?, "regions"? }], "actions": [{ "id", "apiKey", "fromPage", "purpose", "onSuccessNavigate" }], "capabilities"?: string[], "designIntent"?: { "productType", "density", "visualTone", "contentType", "emphasis" }, "informationHierarchy"?: { "dominant", "supporting"? }, "interactionModel"?: { "navigation", "selection", "wait" }, "emptyCopy"?, "errorCopy"? }',
   'title is the product name. purpose is the job in one sentence (copy intent.task when present). audience is a real role — never "users".',
   'pages[].path, entryPath, and actions[].fromPage are bare kebab-case keys — "home", "select-company" — never URL routes: no leading slash, no "/" for the entry page, no nested segments. Call the entry page "home" unless the brief names it.',
-  '1–6 pages. Infer the smallest sitemap that completes the job: form-result always has a destination for the answer plus Back; list-detail always has a way to open a record (detail page, or same-page Open when the row already carries prose); a second binding that is a list/history is a collection page with onLoad, not a second submit. Do not invent login, settings, profile, marketing, or extra tools the job does not need.',
+  '1–6 pages. Infer the smallest sitemap that completes the job: task that produces an answer has a results page plus Back; collection that opens a record has a detail page, or same-page Open / detail-drawer when the row already carries prose; a second binding that is a list/history is a collection page with onLoad, not a second submit. Workspace is usually one page with regions. Do not invent login, settings, profile, marketing, or extra tools the job does not need.',
   'data is one sentence (onLoad which action into which state keys, or CTA then navigate, or static).',
-  'A dashboard, list, report, or detail page names onLoad in data. A form page does not. A results page that a CTA already navigates to must not onLoad that same action.',
+  'A dashboard, collection, report, detail, or content page names onLoad in data when it fetches on arrival. A task form page does not. A results page that a CTA already navigates to must not onLoad that same action.',
   'Bindings are the data contract. Form fields come from each binding inputSchema (source form or omitted); source visitorEmail or constant are host-stamped — do not plan a visible field for them. Wire each CTA to the binding whose key the brief named, or the one whose inputs/outputs match the job when the brief only described it in words. actions[].apiKey must be a declared binding key. When no bindings were declared, actions must be [].',
   'When a binding has no outputSchema, do not plan Table or Stat columns; results are prose (DataText content) unless the brief names exact keys. When layoutPlan or outputSchema names a collection, plan Repeat/Table/Stat against those host keys, not invented ones.',
   'emptyCopy is the zero-result sentence for that page\'s collection (becomes emptyText) — name the collection in the domain, not generic "No results". errorCopy is the failure sentence for this job.',
@@ -276,31 +387,53 @@ const PLANNER_SYSTEM_PROMPT = [
 ].join('\n')
 
 const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
+  collection: [
+    'ARCHETYPE RECIPE: collection',
+    'Slots: PageHeader → Toolbar (search / filters / actions when those capabilities are set) → collection body.',
+    'Body is data-driven: Table when every row is the same scalars with no per-row visual identity; Repeat inside Grid of entity Cards when items have a name, description, or per-row action. Never unroll an array into static Cards.',
+    'Page onLoad fills the collection. Open a record with navigateTo "detail?id={item.id}" when a Detail page exists, or Button selectItem / Drawer when CAPABILITY includes selection or detail-drawer. Give onLoad actions no onSuccess.navigate.',
+  ].join('\n'),
+  detail: [
+    'ARCHETYPE RECIPE: detail',
+    'Slots: EntityHeader → primary facts → sections → related data → actions.',
+    'Section content comes from layoutPlan / outputSchema / brief nouns — do not invent a fixed firmographics template. KeyValue or display Stats for scalars; DataText for prose; Repeat/Table for related collections.',
+    'When this page is opened with ?id=, onLoad fetches that record (inputMapping id from the query) unless selectItem already copied the row. Back NavLink to the collection. emptyText names the entity.',
+  ].join('\n'),
+  task: [
+    'ARCHETYPE RECIPE: task',
+    'Slots: PageHeader → optional context → Input/Form → one primary action.',
+    'A single prominent query is a centered PageHeader plus SearchField (suggestion Chips optional). Multi-field forms stay a left-aligned PageHeader plus fields in a 2-column Grid, one SubmitButton. No onLoad on the form page.',
+    'Results are optional. When the CTA produces an answer, onSuccess.navigate to a results page and put wait chrome there (CAPABILITY). Same-page saves stay on the form — the host toasts. Do not invent a results page for create/configure that has nothing to show.',
+  ].join('\n'),
+  results: [
+    'ARCHETYPE RECIPE: results',
+    'Slots: context/header → summary → primary result → supporting results → actions.',
+    'No onLoad of the CTA that already navigated here. Bind markdown on DataText "content" (or the string field name), never "field.content". Repeat, Stat, or KeyValue bind structured hostKeys. Echo submitted fields from the form name ({targetKeyword}, inputs.targetKeyword). emptyText lives here. Offer a Back NavLink.',
+    'Wait chrome is CAPABILITY (long-running, streaming, progress) — compose those modules; do not invent a second wait.',
+  ].join('\n'),
   dashboard: [
     'ARCHETYPE RECIPE: dashboard',
-    'Home is EntityHeader (logo, title, badge, description, meta chips) plus Tabs, then a Grid of four Stat with size "display", an optional Sparkline trend, then a summary Card. Bind metrics by statePath.',
-    'Set page onLoad to the fetch action and bind every metric and collection; do not hard-code those values. Do not put a parameters form beside the metrics unless the brief asked for one.',
-    'Filters belong in a Toolbar. Extra top-level pages use Tabs. No form unless the brief asked for one.',
+    'Slots: Header → optional Filters → KPI / summary → primary visualization or module → supporting modules → optional detail / activity.',
+    'Module count and types come from layoutPlan / outputSchema / brief nouns. Bind every metric and collection by statePath; do not hard-code values. Do not emit a fixed Grid of four Stat. A single Table with no other modules is collection, not dashboard.',
+    'Set page onLoad to the fetch action. Filters and date-range belong in a Toolbar when those capabilities are set. No parameters form beside the modules unless the brief asked for one.',
   ].join('\n'),
-  'form-result': [
-    'ARCHETYPE RECIPE: form-result',
-    'form → processing → result. The wait itself is CAPABILITY (long-running, streaming, multi-step, cancellable) — compose those modules; do not invent a second wait.',
-    'form — If the form is a single prominent query field, home is a centered PageHeader (kicker, display title, measure subtitle) plus SearchField with suggestion Chips and a Grid of three Icon Cards. Do not use a labelled Grid for that query. Multi-field forms stay a left-aligned PageHeader plus fields in a 2-column Grid, one SubmitButton. No onLoad. The form stays fields plus submit until click.',
-    'processing — The submit action sets onSuccess.navigate to the results path. Waiting chrome lives on the destination, never on the form. Which wait is CAPABILITY.',
-    'result — Results has no onLoad of that CTA. Bind a markdown string on DataText "content" (or the string field name), never "field.content". Repeat entity Cards, Stat, or KeyValue bind structured keys. Echo submitted fields from the form name ({targetKeyword}, inputs.targetKeyword), not a history list key ({keyword}). emptyText lives here. Offer a Back NavLink.',
+  workflow: [
+    'ARCHETYPE RECIPE: workflow',
+    'Slots: Progress → current step (inputs + actions) → navigation.',
+    'A task composed of sequential stages — not automatically one page per step. Two or three short stages can be one page of Sections (progressive disclosure) with a Stepper. Named review / launch stages can be separate pages. Early stages use Next; the last stage is the only SubmitButton. Back and Skip are CAPABILITY.',
+    'Progress is a Stepper (items Label|path or Label|section), not Tabs and not ProgressSteps. Tabs are for non-sequential peer views.',
   ].join('\n'),
-  'list-detail': [
-    'ARCHETYPE RECIPE: list-detail',
-    'List page onLoad fills Repeat inside a 2-column Grid of entity Cards (Avatar, title, subtitle, truncated description, footerText, footer Analyze Button) — not a Table — when items have a name, description, and action. Use Table only when every row is the same scalars with no per-row action. Each Card uses NavLink.to or Button.navigateTo "detail?id={item.id}" — never unroll the array into static Cards.',
-    'When list items already include the detail/prose field (output, content, body), Open is Button selectItem true with no actionId. It copies prose to content, not inputs. Stay on the list page: omit navigateTo, hide Repeat with showWhen "!selectedId", show markdown in a sibling Section showWhen "selectedId" with a ghost Back clearItem true. Or navigateTo a separate results page that has no onLoad — do not bind that field inside Repeat, do not invent a second fetch. Results after a form Generate still echo the form names, not item.keyword.',
-    'Detail page onLoad fetches the record (inputMapping id from the query), shows EntityHeader plus KeyValue or display Stats, and a Back NavLink. emptyText names the collection. Skip that onLoad when selectItem already copied the row.',
-    'Give those onLoad actions no onSuccess.navigate.',
+  content: [
+    'ARCHETYPE RECIPE: content',
+    'Slots: Header → metadata → main content → optional related content → actions.',
+    'Main body is DataText markdown (statePath "content" or the prose hostKey). Metadata is muted Chips or KeyValue from named fields. Related is Repeat/Table only when layoutPlan has a sibling collection.',
+    'Not results: do not put WorkingCard here unless a wait capability is also set. Not detail: do not build entity firmographics when the job is a document.',
   ].join('\n'),
-  wizard: [
-    'ARCHETYPE RECIPE: wizard',
-    'One page per step. Each step except the last is a Form fragment with a Next Button.navigateTo the following path; the last step has the SubmitButton.',
-    'Steps after the first have a Back NavLink. Do not dump every field onto a single page when the brief described steps.',
-    'Tabs are fine when there are three or more top-level steps.',
+  workspace: [
+    'ARCHETYPE RECIPE: workspace',
+    'One page. Root content is a Workspace with slots navigator, primary, inspector. Exactly one primary region. Navigator is usually a collection; inspector is contextual (detail, results, or content).',
+    'Regions sync through selectedId / selectItem. Prefer split-view; do not use Tabs for the three regions. Inspector may use showWhen "selectedId". Region archetypes cannot be workspace.',
+    'A single collection, form, analysis, document, or metrics page is not this recipe.',
   ].join('\n'),
 }
 
@@ -323,6 +456,25 @@ export function archetypeRecipe(archetype: ArenaGenerativeArchetype): string {
 }
 
 /**
+ * Recipes for the app archetype plus every page and workspace-region shape so
+ * a mixed sitemap is not generated as if every page were the entry shape.
+ */
+export function archetypeRecipesForBrief(brief: ArenaGenerativeStructuredBrief): string {
+  const shapes = new Set<ArenaGenerativeArchetype>([brief.archetype])
+  for (const page of brief.pages) {
+    if (page.archetype) shapes.add(page.archetype)
+    if (page.regions) {
+      if (page.regions.navigator) shapes.add(page.regions.navigator.archetype)
+      shapes.add(page.regions.primary.archetype)
+      if (page.regions.inspector) shapes.add(page.regions.inspector.archetype)
+    }
+  }
+  return ARENA_GENERATIVE_ARCHETYPES.filter((shape) => shapes.has(shape))
+    .map((shape) => ARCHETYPE_RECIPES[shape])
+    .join('\n\n')
+}
+
+/**
  * Sitemap hints taken from a planned brief, used as the generator contract
  * when the user did not pin Pages.
  */
@@ -337,12 +489,30 @@ export function pageHintsFromStructuredBrief(
 }
 
 /**
+ * Page shapes and workspace regions the spec LLM must honour in addition to the
+ * app-level archetype recipe.
+ */
+export function formatPageShapesForGenerator(brief: ArenaGenerativeStructuredBrief): string {
+  const lines = brief.pages.map((page) => {
+    const shape = page.archetype ?? brief.archetype
+    const regions = page.regions
+      ? ` regions: navigator=${page.regions.navigator?.archetype ?? '—'} primary=${page.regions.primary.archetype} inspector=${page.regions.inspector?.archetype ?? '—'}`
+      : ''
+    return `- ${page.path}: ${shape}${regions}`
+  })
+  return ['Page shapes (emit each page using that recipe; do not treat every page as the app archetype):', ...lines].join(
+    '\n'
+  )
+}
+
+/**
  * Serialises the planned IA for the manifest-generation user payload.
  */
 export function formatStructuredBriefForGenerator(brief: ArenaGenerativeStructuredBrief): string {
   return [
     'Structured brief (implement this information architecture; emit exactly these page paths as object keys):',
     JSON.stringify(brief, null, 2),
+    formatPageShapesForGenerator(brief),
     "Honour onLoad vs CTA as each page's data field describes. Use that page's emptyCopy as emptyText on its collection. Keep this sitemap and wiring; fill in labels, grouping, and Back links a senior engineer would not skip.",
   ].join('\n')
 }
@@ -368,9 +538,7 @@ function foldProcessingIntoCapabilities(
   for (const raw of brief.processing) {
     if (isCapability(raw)) selected.add(raw)
   }
-  const capabilities = ARENA_GENERATIVE_CAPABILITIES.filter((capability) =>
-    selected.has(capability)
-  )
+  const capabilities = plannedCapabilities([...selected])
   if (
     capabilities.length === brief.capabilities.length &&
     capabilities.every((capability, index) => capability === brief.capabilities[index])
@@ -523,6 +691,7 @@ function reconcileBriefWithPageHints(
       purpose: hint.purpose?.trim() || `Show ${hint.title.trim() || hint.path}`,
       data: 'static',
       actions: [] as string[],
+      archetype: brief.archetype,
     }
   })
   const allowed = new Set(pages.map((page) => page.path))

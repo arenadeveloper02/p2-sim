@@ -12,12 +12,12 @@ export const ARENA_GENERATIVE_UI_LAYOUT_PROMPT = [
   'measure — Readable content uses Section width "narrow" (host max-w-2xl). Do not set maxWidth unless the brief names an exact cap. Never let prose run the full 1280px. Constrain forms and reading-heavy content to a comfortable width.',
   'wide — Dashboards, Table, Repeat collections, Sparkline: Section width "wide" (up to 1280px). width "full" only when the brief spans the viewport. Not for forms or long DataText. Use full-width layouts only when the content benefits from them.',
   'forms — Multi-field Form: Section "narrow", left-aligned. SearchField hero may sit on a wide Section. Do not run a form the full 1280px.',
-  'columns — At most two primary content columns (Columns main+sidebar, or Grid columns 2 for form fields). Grid columns 3 only for a Repeat card collection. Do not use three peer chrome columns.',
+  'columns — At most two primary content columns (Columns main+sidebar, or Grid columns 2 for form fields). Grid columns 3 only for a Repeat card collection. Do not use three peer chrome columns except Workspace (navigator + primary + inspector; navigator and inspector are supporting, not second mains).',
   'toolbar — Related filters and secondary actions share one Toolbar above Table/Repeat. Do not scatter Filter, Chip, or Select through the page.',
   'primary — One primary action: PageHeader trailing child, or SubmitButton / SearchField at the end of its task group. Do not put a second prominent Button above the task.',
   'rhythm — gap "lg" between groups on Stack / Grid / Columns. Align related content to shared edges. Use whitespace to separate conceptual groups. Prefer spacing tokens over arbitrary px.',
   'chrome — PageHeader then the task. Do not stack extra display titles, Stat rows, or Alerts above the primary task.',
-  'region — One dominant content region per viewport (the Form, the Table/Repeat, or the DataText). A Columns sidebar is supporting, not a second main.',
+  'region — One dominant content region per viewport (the Form, the Table/Repeat, the DataText, or Workspace primary). A Columns sidebar and Workspace navigator/inspector are supporting, not a second main.',
 ].join('\n')
 
 /** Catalog-grounded visual weight. Absorbed from visual-hierarchy.ts. */

@@ -81,16 +81,16 @@ describe('buildGeneratorSystemPrompt', () => {
 
   it('places selected capability recipes between the recipe and the gold few-shot', () => {
     const prompt = buildGeneratorSystemPrompt({
-      archetype: 'form-result',
+      archetype: 'task',
       capabilities: ['long-running', 'cancellable'],
       hasBindings: true,
       hasStreamingBinding: false,
       isScopedEdit: false,
     })
-    const recipeAt = headingIndex(prompt, 'ARCHETYPE RECIPE: form-result')
+    const recipeAt = headingIndex(prompt, 'ARCHETYPE RECIPE: task')
     const longAt = headingIndex(prompt, 'CAPABILITY: LONG-RUNNING')
     const cancelAt = headingIndex(prompt, 'CAPABILITY: CANCELLABLE')
-    const goldAt = headingIndex(prompt, 'GOLD STANDARD REFERENCE LAYOUT (form-result)')
+    const goldAt = headingIndex(prompt, 'GOLD STANDARD REFERENCE LAYOUT (task)')
     expect(longAt).toBeGreaterThan(recipeAt)
     expect(cancelAt).toBeGreaterThan(longAt)
     expect(goldAt).toBeGreaterThan(cancelAt)
@@ -98,9 +98,25 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(prompt).not.toContain('PROCESSING PATTERN')
   })
 
+  it('injects precomposed page-shape recipes when provided', () => {
+    const prompt = buildGeneratorSystemPrompt({
+      archetype: 'task',
+      recipes: 'ARCHETYPE RECIPE: task\n\nARCHETYPE RECIPE: results',
+      capabilities: ['long-running'],
+      hasBindings: true,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('ARCHETYPE RECIPE: task')
+    expect(prompt).toContain('ARCHETYPE RECIPE: results')
+    expect(headingIndex(prompt, 'ARCHETYPE RECIPE: results')).toBeGreaterThan(
+      headingIndex(prompt, 'ARCHETYPE RECIPE: task')
+    )
+  })
+
   it('omits capability modules when none were selected', () => {
     const prompt = buildGeneratorSystemPrompt({
-      archetype: 'form-result',
+      archetype: 'task',
       hasBindings: false,
       hasStreamingBinding: false,
       isScopedEdit: false,
@@ -120,7 +136,7 @@ describe('buildGeneratorSystemPrompt', () => {
     expect(prompt).toContain('DESIGN GUIDELINES')
     expect(prompt).toContain('ARCHETYPE RECIPE')
     expect(prompt).not.toContain('ARCHETYPE RECIPE:')
-    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (form-result)')
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (task)')
   })
 
   it('keeps archetype layouts off the always-on design tokens', () => {

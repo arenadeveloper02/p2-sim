@@ -85,7 +85,7 @@ describe('persistGenerativeAppDraft', () => {
       title: 'Orders',
       purpose: 'Browse orders',
       audience: 'Ops',
-      archetype: 'list-detail' as const,
+      archetype: 'collection' as const,
       entryPath: 'home',
       pages: [{ path: 'home', title: 'Orders', purpose: 'List', data: 'onLoad load_orders' }],
       actions: [],
