@@ -155,22 +155,77 @@ function tryParseEmbeddedEChartsFences(value: string): EChartsOptionLike[] | nul
 const BARE_JSON_LINE_START_REGEX = /^[ \t]*[[{]/gm
 
 /**
- * Detects un-fenced chart JSON appended after prose (the chart generator's
- * mixed "answer text + bare option JSON" responses use no code fences). Returns
- * the parsed charts plus the index where the JSON starts so prose can be split.
+ * Finds the end index (exclusive) of a balanced JSON object/array starting at
+ * `start` (which must point at `{` or `[`), respecting string literals and
+ * escapes. Returns null when the brackets never balance.
  */
-function findTrailingBareEChartsJson(
-  value: string
-): { charts: EChartsOptionLike[]; jsonStart: number } | null {
-  for (const match of value.matchAll(BARE_JSON_LINE_START_REGEX)) {
-    const index = match.index ?? 0
-    if (index === 0) continue // whole-string JSON is handled separately
-    const charts = tryParseEChartsJsonCandidate(value.slice(index))
-    if (charts) {
-      return { charts, jsonStart: index }
+function findBalancedJsonEnd(value: string, start: number): number | null {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < value.length; i++) {
+    const ch = value[i]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (ch === '\\') {
+        escaped = true
+      } else if (ch === '"') {
+        inString = false
+      }
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+    } else if (ch === '{' || ch === '[') {
+      depth++
+    } else if (ch === '}' || ch === ']') {
+      depth--
+      if (depth === 0) return i + 1
     }
   }
   return null
+}
+
+interface BareEChartsJsonSegment {
+  charts: EChartsOptionLike[]
+  start: number
+  end: number
+}
+
+/**
+ * Detects un-fenced chart JSON embedded anywhere in mixed prose (the chart
+ * generator's "answer text + bare option JSON" responses use no code fences).
+ * Unlike a trailing-only scan, this finds each balanced JSON segment even when
+ * more text (e.g. a markdown table) follows it, so prose before AND after the
+ * JSON can be preserved.
+ */
+function findBareEChartsJsonSegments(value: string): BareEChartsJsonSegment[] {
+  const segments: BareEChartsJsonSegment[] = []
+  let scanFrom = 0
+  for (const match of value.matchAll(BARE_JSON_LINE_START_REGEX)) {
+    const lineStart = match.index ?? 0
+    if (lineStart < scanFrom) continue
+    const jsonStart = lineStart + match[0].length - 1 // index of the `{` or `[`
+    const end = findBalancedJsonEnd(value, jsonStart)
+    if (end === null) continue
+    const charts = tryParseEChartsJsonCandidate(value.slice(jsonStart, end))
+    if (charts) {
+      segments.push({ charts, start: lineStart, end })
+      scanFrom = end
+    }
+  }
+  return segments
+}
+
+/**
+ * Backwards-compatible helper: returns all charts found in bare JSON segments,
+ * or null when none are present.
+ */
+function findBareEChartsJson(value: string): { charts: EChartsOptionLike[] } | null {
+  const segments = findBareEChartsJsonSegments(value)
+  if (segments.length === 0) return null
+  return { charts: segments.flatMap((segment) => segment.charts) }
 }
 
 /**
@@ -188,7 +243,7 @@ export function parseEChartsOptionsFromString(value: string): EChartsOptionLike[
   return (
     tryParseWholeEChartsString(trimmed) ??
     tryParseEmbeddedEChartsFences(trimmed) ??
-    findTrailingBareEChartsJson(trimmed)?.charts ??
+    findBareEChartsJson(trimmed)?.charts ??
     null
   )
 }
@@ -209,9 +264,13 @@ export function stripEChartsJsonFromContent(content: string): string {
     return ''
   }
 
-  const trailing = findTrailingBareEChartsJson(out)
-  if (trailing) {
-    out = out.slice(0, trailing.jsonStart)
+  // Remove each bare JSON chart segment while keeping prose on both sides, so
+  // text/tables that follow a chart still render (iterate back-to-front so
+  // earlier segment indices stay valid).
+  const segments = findBareEChartsJsonSegments(out)
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const { start, end } = segments[i]
+    out = `${out.slice(0, start)}\n\n${out.slice(end)}`
   }
 
   return out.replace(/\n{3,}/g, '\n\n').trim()
@@ -334,8 +393,136 @@ export function formatChartsForChat(charts: EChartsOptionLike[]): string | null 
   }
 }
 
+/** Series types that do not use cartesian x/y + grid layout. */
+const NON_CARTESIAN_SERIES_TYPES = new Set([
+  'pie',
+  'radar',
+  'gauge',
+  'funnel',
+  'sankey',
+  'graph',
+  'treemap',
+  'sunburst',
+  'themeRiver',
+  'map',
+  'lines',
+])
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.filter(isRecord)
+  if (isRecord(value)) return [value]
+  return []
+}
+
+function isCategoryAxis(axis: Record<string, unknown>): boolean {
+  if (axis.type === 'category') return true
+  return axis.type == null && Array.isArray(axis.data)
+}
+
+function categoryLength(axis: Record<string, unknown>): number {
+  return Array.isArray(axis.data) ? axis.data.length : 0
+}
+
+function isCartesianOption(option: EChartsOptionLike): boolean {
+  if (option.radar != null || option.polar != null || option.geo != null) {
+    return false
+  }
+  if (!Array.isArray(option.series) || option.series.length === 0) {
+    return false
+  }
+  return option.series.some(
+    (entry) => isRecord(entry) && !NON_CARTESIAN_SERIES_TYPES.has(String(entry.type ?? ''))
+  )
+}
+
+/** Raise a numeric padding; leave percent strings and other values untouched. */
+function atLeastPadding(current: unknown, min: number): unknown {
+  if (current == null) return min
+  if (typeof current === 'number' && Number.isFinite(current)) {
+    return Math.max(current, min)
+  }
+  return current
+}
+
+function axisLabelRecord(axis: Record<string, unknown>): Record<string, unknown> {
+  return isRecord(axis.axisLabel) ? { ...axis.axisLabel } : {}
+}
+
 /**
- * Returns a defensive copy of the option with oversized series data truncated.
+ * Fix category-axis tick labels so they sit under/beside their bars instead of
+ * drifting (the usual LLM output is rotate without align, plus a too-small grid).
+ * Cartesian charts only — pie/radar/gauge/etc. are left unchanged.
+ */
+function applyCartesianLabelLayout(option: EChartsOptionLike): void {
+  if (!isCartesianOption(option)) return
+
+  const xAxes = asRecordArray(option.xAxis)
+  const yAxes = asRecordArray(option.yAxis)
+
+  for (const axis of xAxes) {
+    if (!isCategoryAxis(axis)) continue
+    const count = categoryLength(axis)
+    const label = axisLabelRecord(axis)
+    const existingRotate = typeof label.rotate === 'number' ? label.rotate : 0
+
+    if (count > 0 && count <= 8) {
+      label.rotate = 0
+      label.interval = label.interval ?? 0
+      label.hideOverlap = false
+      label.align = 'center'
+      label.verticalAlign = 'top'
+    } else if (count > 8) {
+      const rotate = existingRotate !== 0 ? existingRotate : 30
+      label.rotate = rotate
+      label.interval = label.interval ?? 0
+      if (rotate > 0) {
+        label.align = label.align ?? 'right'
+        label.verticalAlign = label.verticalAlign ?? 'middle'
+      } else if (rotate < 0) {
+        label.align = label.align ?? 'left'
+        label.verticalAlign = label.verticalAlign ?? 'middle'
+      }
+    }
+
+    axis.axisLabel = label
+  }
+
+  const hasRotatedCategoryX = xAxes.some((axis) => {
+    if (!isCategoryAxis(axis) || !isRecord(axis.axisLabel)) return false
+    return typeof axis.axisLabel.rotate === 'number' && axis.axisLabel.rotate !== 0
+  })
+  const categoryXCount = xAxes.reduce(
+    (max, axis) => (isCategoryAxis(axis) ? Math.max(max, categoryLength(axis)) : max),
+    0
+  )
+  const dualValueY =
+    yAxes.filter((axis) => axis.type === 'value' || axis.type == null).length >= 2
+  const hasTitle = isRecord(option.title) && Boolean(option.title.text)
+  const hasLegend = option.legend != null
+
+  const grids = asRecordArray(option.grid)
+  const targets = grids.length > 0 ? grids : [{}]
+  for (const grid of targets) {
+    if (grid.containLabel !== false) {
+      grid.containLabel = true
+    }
+    grid.bottom = atLeastPadding(grid.bottom, hasRotatedCategoryX ? 88 : categoryXCount > 0 ? 56 : 48)
+    if (dualValueY) {
+      grid.right = atLeastPadding(grid.right, 64)
+    }
+    if (hasTitle && hasLegend) {
+      grid.top = atLeastPadding(grid.top, 72)
+    }
+  }
+
+  if (option.grid == null || isRecord(option.grid)) {
+    option.grid = targets[0]
+  }
+}
+
+/**
+ * Returns a defensive copy of the option with oversized series data truncated
+ * and cartesian axis/grid layout corrected for chat rendering.
  * Falls back to the original option if cloning fails.
  */
 export function sanitizeEChartsOption(option: EChartsOptionLike): EChartsOptionLike {
@@ -357,6 +544,8 @@ export function sanitizeEChartsOption(option: EChartsOptionLike): EChartsOptionL
       }
     }
   }
+
+  applyCartesianLabelLayout(clone)
 
   return clone
 }
