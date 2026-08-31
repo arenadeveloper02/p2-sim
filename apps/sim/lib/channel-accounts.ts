@@ -85,6 +85,38 @@ function mapRowsToAccounts(rows: ChannelAccountRow[]): Record<string, ChannelAcc
 }
 
 /**
+ * Returns account IDs explicitly mapped to the workspace in
+ * `client_analytics_account_mapping` for the given channel type.
+ *
+ * When a workspace has mapping rows, they take precedence over the
+ * analytics/admin full-catalog behavior, so client workspaces (e.g.
+ * Eventgroove) can be restricted to their own accounts per channel.
+ */
+async function getMappedAccountIds(
+  workspaceId: string,
+  type: 'facebook' | 'bing' | 'google'
+): Promise<string[]> {
+  const result = await db.execute(sql`
+    SELECT sub_account_id
+    FROM client_analytics_account_mapping
+    WHERE workspace_id_ref = ${workspaceId}
+      AND sub_account_type = ${type}
+  `)
+
+  return (result as unknown as Array<{ sub_account_id: string }>)
+    .map((row) => String(row.sub_account_id))
+    .filter(Boolean)
+}
+
+/** Builds a text ARRAY[...] SQL expression from a non-empty list of IDs. */
+function idArrayExpression(ids: string[]) {
+  return sql`ARRAY[${sql.join(
+    ids.map((id) => sql`${id}`),
+    sql`, `
+  )}]::text[]`
+}
+
+/**
  * Fetches channel accounts from database by type.
  * Analytics workspaces receive the full shared catalog; other workspaces receive none.
  *
@@ -101,6 +133,22 @@ export async function getChannelAccounts(
   try {
     if (!workspaceId) {
       return {}
+    }
+
+    // Mapping-first: explicit workspace mappings win over the analytics
+    // full-catalog path, so a workspace can be in ANALYTICS_WORKSPACE_IDS
+    // (needed for Bing/Facebook env gates) while still seeing only its
+    // mapped accounts for this channel.
+    const mappedIds = await getMappedAccountIds(workspaceId, type)
+    if (mappedIds.length > 0) {
+      const mappedResult = await db.execute(sql`
+        SELECT account_id, account_name
+        FROM channel_accounts
+        WHERE account_type = ${type}
+          AND account_id = ANY(${idArrayExpression(mappedIds)})
+        ORDER BY account_name
+      `)
+      return mapRowsToAccounts(mappedResult as unknown as ChannelAccountRow[])
     }
 
     if (isAnalyticsWorkspace(workspaceId)) {
@@ -178,10 +226,29 @@ export async function getGoogleAdsAccounts(
 }
 
 /**
- * Fetches Facebook Ads accounts from database (facebook_accounts table)
+ * Fetches Facebook Ads accounts from database (facebook_accounts table).
+ *
+ * When the workspace has rows in `client_analytics_account_mapping` with
+ * sub_account_type = 'facebook', only those accounts are returned; otherwise
+ * the full catalog is returned (legacy behavior for admin workspaces).
  */
-export async function getFacebookAdsAccounts(): Promise<Record<string, ChannelAccount>> {
+export async function getFacebookAdsAccounts(
+  workspaceId?: string
+): Promise<Record<string, ChannelAccount>> {
   try {
+    if (workspaceId) {
+      const mappedIds = await getMappedAccountIds(workspaceId, 'facebook')
+      if (mappedIds.length > 0) {
+        const mappedResult = await db.execute(sql`
+          SELECT account_id, account_name
+          FROM facebook_accounts
+          WHERE account_id = ANY(${idArrayExpression(mappedIds)})
+          ORDER BY account_name
+        `)
+        return mapRowsToAccounts(mappedResult as unknown as ChannelAccountRow[])
+      }
+    }
+
     const result = await db.execute(sql`
       SELECT account_id, account_name 
       FROM facebook_accounts 
@@ -214,18 +281,32 @@ export async function getFacebookAdsAccounts(): Promise<Record<string, ChannelAc
 /**
  * Fetches Bing Ads accounts from the dedicated `bing_accounts` table.
  *
- * Unlike Google, Bing has no per-workspace account mapping: the full catalog is
- * exposed to analytics (Position2) workspaces only, and every other workspace
- * receives none.
+ * Workspaces with rows in `client_analytics_account_mapping`
+ * (sub_account_type = 'bing') see only their mapped accounts. Workspaces
+ * without mappings keep the legacy behavior: the full catalog for analytics
+ * (Position2) workspaces, nothing for everyone else.
  */
 export async function getBingAdsAccounts(
   workspaceId?: string
 ): Promise<Record<string, ChannelAccount>> {
-  if (!isAnalyticsWorkspace(workspaceId)) {
-    return {}
-  }
-
   try {
+    if (workspaceId) {
+      const mappedIds = await getMappedAccountIds(workspaceId, 'bing')
+      if (mappedIds.length > 0) {
+        const mappedResult = await db.execute(sql`
+          SELECT account_id, account_name
+          FROM bing_accounts
+          WHERE account_id = ANY(${idArrayExpression(mappedIds)})
+          ORDER BY account_name
+        `)
+        return mapRowsToAccounts(mappedResult as unknown as ChannelAccountRow[])
+      }
+    }
+
+    if (!isAnalyticsWorkspace(workspaceId)) {
+      return {}
+    }
+
     const result = await db.execute(sql`
       SELECT account_id, account_name
       FROM bing_accounts

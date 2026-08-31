@@ -80,7 +80,10 @@ export const FacebookAdsBlock: BlockConfig<FacebookAdsQueryResponse> = {
       options: [],
       fetchOptions: async () => {
         try {
-          const response = await fetch('/api/facebook-ads/accounts')
+          const { useWorkflowRegistry } = await import('@/stores/workflows/registry/store')
+          const workspaceId = useWorkflowRegistry.getState().hydration.workspaceId
+          const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ''
+          const response = await fetch(`/api/facebook-ads/accounts${query}`)
           const data = await response.json()
 
           if (data?.success && data.accounts && typeof data.accounts === 'object') {

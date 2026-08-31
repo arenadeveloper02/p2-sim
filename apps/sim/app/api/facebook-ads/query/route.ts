@@ -49,7 +49,7 @@ async function resolveAccountForRequest(
       throw new Error('Facebook ad account is required for admin workspace queries')
     }
 
-    const facebookAccounts = await getFacebookAdsAccounts()
+    const facebookAccounts = await getFacebookAdsAccounts(body.workspaceId)
     const normalizedAccountId = normalizeFacebookAccountId(accountKey)
     const accountData =
       facebookAccounts[accountKey] ??
