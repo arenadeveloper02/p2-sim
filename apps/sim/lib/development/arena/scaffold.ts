@@ -9,6 +9,24 @@ const logger = createLogger('ArenaDevelopmentScaffold')
 export const ARENA_EMAIL_COOKIE_NAME = 'arena_email_id'
 export const ARENA_ACCESS_DENIED_MESSAGE = 'Do not have access'
 
+/**
+ * middleware.ts paths written by pre-proxy scaffolds. Next.js 16 hard-errors
+ * when both middleware.ts and proxy.ts exist, so these must be removed from
+ * the emitted file set and from disk whenever the proxy ships.
+ */
+export const ARENA_LEGACY_MIDDLEWARE_PATHS = ['middleware.ts', 'src/middleware.ts'] as const
+
+/** Returns whether the file set ships the Arena emailId gate as proxy.ts. */
+export function shipsArenaProxyFile(files: Array<{ path: string; content: string }>): boolean {
+  return files.some((file) => {
+    const path = normalizePath(file.path)
+    return (
+      (path === 'proxy.ts' || path === 'src/proxy.ts') &&
+      file.content.includes('ARENA_EMAIL_COOKIE_NAME')
+    )
+  })
+}
+
 interface GeneratedAppFile {
   path: string
   content: string
@@ -340,7 +358,10 @@ export function ensureArenaScaffoldFiles(files: GeneratedAppFile[]): GeneratedAp
   const useSrcDir = projectUsesSrcAppDir(files)
   const paths = arenaPaths(useSrcDir)
 
-  let result = files.filter((file) => normalizePath(file.path) !== paths.legacyMiddleware)
+  let result = files.filter(
+    (file) =>
+      !(ARENA_LEGACY_MIDDLEWARE_PATHS as readonly string[]).includes(normalizePath(file.path))
+  )
   result = upsertFile(result, paths.proxy, buildProxyContent())
   result = upsertFile(result, paths.arenaEmailConstants, buildArenaEmailConstantsContent())
   result = upsertFile(result, paths.arenaEmail, buildArenaEmailLibContent())

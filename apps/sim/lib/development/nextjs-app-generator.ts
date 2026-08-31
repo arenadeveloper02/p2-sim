@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync } from 'fs'
-import { mkdir, rm, writeFile } from 'fs/promises'
+import { mkdir, rm, unlink, writeFile } from 'fs/promises'
 import { dirname, join, normalize, relative } from 'path'
 import Anthropic from '@anthropic-ai/sdk'
 import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema'
@@ -12,6 +12,10 @@ import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { env } from '@/lib/core/config/env'
 import { prepareGeneratedAppForDatabaseDeploy } from '@/lib/development/apply-generated-app-database'
 import { appendArenaSystemPrompt } from '@/lib/development/arena/prompts'
+import {
+  ARENA_LEGACY_MIDDLEWARE_PATHS,
+  shipsArenaProxyFile,
+} from '@/lib/development/arena/scaffold'
 import {
   deployPreparedVercelProject,
   prepareVercelProjectForDeploy,
@@ -1418,6 +1422,20 @@ async function writeAppFiles(outputDir: string, files: GeneratedAppFile[]): Prom
     await mkdir(dirname(fullPath), { recursive: true })
     await writeFile(fullPath, file.content, 'utf-8')
     written++
+  }
+
+  // Next.js 16 hard-errors when middleware.ts and proxy.ts coexist. Apps
+  // generated before the proxy migration still have middleware.ts on disk
+  // (and in their GitHub repo), so delete it whenever the proxy ships — the
+  // subsequent git push then records the deletion.
+  if (shipsArenaProxyFile(files)) {
+    for (const legacyPath of ARENA_LEGACY_MIDDLEWARE_PATHS) {
+      const legacyFullPath = join(/* turbopackIgnore: true */ outputDir, legacyPath)
+      if (existsSync(legacyFullPath)) {
+        await unlink(legacyFullPath)
+        logger.info('Removed legacy middleware.ts replaced by proxy.ts', { path: legacyPath })
+      }
+    }
   }
 
   return written

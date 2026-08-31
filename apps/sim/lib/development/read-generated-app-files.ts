@@ -3,6 +3,10 @@ import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
+import {
+  ARENA_LEGACY_MIDDLEWARE_PATHS,
+  shipsArenaProxyFile,
+} from '@/lib/development/arena/scaffold'
 import { isTruncatedGeneratedFileContent } from '@/lib/development/assert-generated-app-completeness'
 import type { GeneratedAppFile } from '@/lib/development/nextjs-app-generator'
 import { sanitizeRelativeFilePath } from '@/lib/development/nextjs-app-generator'
@@ -257,8 +261,17 @@ export async function restoreOmittedGeneratedAppFiles(
   const diskPaths = baselinePaths ?? (await listGeneratedAppSourcePaths(outputDir))
   const byPath = new Map<string, GeneratedAppFile>()
 
+  // Next.js 16 hard-errors when middleware.ts and proxy.ts coexist, so a
+  // pre-proxy middleware.ts left on disk must never be restored alongside the
+  // Arena proxy scaffold.
+  const dropLegacyMiddleware = shipsArenaProxyFile(files)
+  const legacyMiddlewarePaths = new Set<string>(ARENA_LEGACY_MIDDLEWARE_PATHS)
+
   for (const file of files) {
     const path = file.path.replace(/\\/g, '/')
+    if (dropLegacyMiddleware && legacyMiddlewarePaths.has(path)) {
+      continue
+    }
     if (isTruncatedGeneratedFileContent(file.content)) {
       const restored = await readUntruncatedGeneratedAppFile(outputDir, path)
       if (!restored) {
@@ -272,6 +285,9 @@ export async function restoreOmittedGeneratedAppFiles(
 
   for (const path of diskPaths) {
     if (byPath.has(path)) {
+      continue
+    }
+    if (dropLegacyMiddleware && legacyMiddlewarePaths.has(path)) {
       continue
     }
     const restored = await readUntruncatedGeneratedAppFile(outputDir, path)
