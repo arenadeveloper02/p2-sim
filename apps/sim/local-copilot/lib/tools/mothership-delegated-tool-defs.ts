@@ -18,14 +18,14 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Loads workflow structure and metadata by workflowId (useful on home chat when no workflow is open).',
   list_integration_tools:
     'Lists available operations for a connected integration service (e.g. gmail, google_sheets, slack). Then call invoke_integration_tool with the exact tool id — do not call load_integration_tool.',
-  read: 'Reads a workspace file by canonical VFS path (from glob or workspaceFiles in context).',
+  read: 'Reads a workspace file by canonical VFS path. For file bytes/text use files/<name>/content (e.g. files/page.html/content). Required before workspace_file operation=update on existing HTML/text so the edit starts from the current file.',
   glob: 'Finds workspace files by glob pattern (e.g. files/**/*.csv).',
   grep: 'Searches file contents under a workspace path pattern.',
   create_file:
     'Creates a workspace file. Prefer fileName with a VFS path (e.g. "files/Deck.pptx"). For markdown/text/json/csv/html, ALWAYS pass content with the full body — markdown must be finished GFM (# title, ## sections, lists, blank lines), not a wall of prose or a file wrapped in one code fence. Do not also print that body in chat. Office formats (pptx/docx/pdf): empty shell only — no content — then workspace_file update + edit_content in later rounds.',
   create_file_folder: 'Creates a folder under the workspace files tree.',
   workspace_file:
-    'Declares a content edit on an existing workspace file (append/update/patch). REQUIRED: operation, target={kind:"path", path:"files/..." }, title. Never operation=create or target.kind=new_file — create_file already created the row; create/new_file inserts a duplicate. Example: {"operation":"update","target":{"kind":"path","path":"files/Deck.pptx"},"title":"SambaNova deck"}. Does not write the body — call edit_content in the NEXT tool round with content.',
+    'Declares a content edit on an existing workspace file (append/update/patch). REQUIRED: operation, target={kind:"path", path:"files/..." }, title. For HTML/text, targeted changes (title, heading, one string) MUST use operation=patch with strategy=search_replace — update replaces the ENTIRE file. Always read files/<path>/content first before update. Never operation=create or target.kind=new_file. Example patch: {"operation":"patch","target":{"kind":"path","path":"files/page.html"},"title":"Title","edit":{"strategy":"search_replace","search":"<title>Old</title>"}}. Does not write the body — call edit_content in the NEXT tool round with content.',
   download_to_workspace_file: 'Downloads a URL into a workspace file.',
   user_table:
     'Creates, reads, and updates workspace tables — operations include create, get, get_schema, insert_row, batch_insert_rows, query_rows, update_row, add_column, import_file, create_from_file.',

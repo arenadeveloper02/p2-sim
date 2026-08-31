@@ -9,7 +9,7 @@ export interface GeneratedAppFile {
 }
 
 /** Latest stable releases aligned with the Sim monorepo (Next 16 + React 19). Exact pins — no ^/~. */
-export const PINNED_NEXT_VERSION = '^15.3.3'
+export const PINNED_NEXT_VERSION = '16.2.12'
 export const PINNED_REACT_VERSION = '19.0.0'
 
 const PINNED_DEV_DEPENDENCIES: Record<string, string> = {
@@ -77,7 +77,7 @@ export const GENERATED_APP_DEPENDENCY_GUIDANCE = `package.json MUST pin these ex
 - "react": "${PINNED_REACT_VERSION}"
 - "react-dom": "${PINNED_REACT_VERSION}"
 - devDependencies: typescript 5.8.3, @types/node 22.13.10, @types/react 19.0.0, @types/react-dom 19.0.0, tailwindcss 3.4.17, postcss 8.5.3, autoprefixer 10.4.21, eslint 9.28.0, eslint-config-next ${PINNED_NEXT_VERSION}
-- NEVER write "^15.3.3", "~19.0.0", or any other range — every dependency version must be an exact semver (e.g. "15.3.3")
+- NEVER write "^16.2.12", "~19.0.0", or any other range — every dependency version must be an exact semver (e.g. "16.2.12")
 - If ANY file imports a third-party package (e.g. lucide-react, recharts, date-fns, zod, bcryptjs, jsonwebtoken), package.json dependencies MUST include that exact package — a missing dependency causes TS2307 "Cannot find module" at typecheck
 - Add matching @types/* devDependencies for packages that ship no bundled types (e.g. @types/jsonwebtoken, @types/bcryptjs)
 - When using lucide-react, pin "lucide-react": "0.479.0" (React 19 compatible) — never 0.395.x

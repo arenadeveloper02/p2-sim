@@ -58,6 +58,8 @@ export interface LocalCopilotConnectedIntegration {
   providerId: string
   displayName?: string | null
   role?: string | null
+  /** True when this OAuth connection belongs to the signed-in user. */
+  isOwn?: boolean
 }
 
 export interface LocalCopilotExecutionContext {
@@ -78,6 +80,11 @@ export interface LocalCopilotLogEntry {
 
 export interface LocalCopilotStructuredContext {
   workspace: LocalCopilotWorkspaceContext
+  /** Signed-in user talking to Copilot — use for "my email" / "my account". */
+  currentUser?: {
+    email: string
+    name?: string
+  }
   connectedIntegrations: LocalCopilotConnectedIntegration[]
   /** Configured workspace/personal env key names (values never included). */
   envVariables: string[]

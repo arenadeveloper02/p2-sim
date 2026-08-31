@@ -234,6 +234,15 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
         (typeof payload.workflowName === 'string' && payload.workflowName.trim()) ||
         (typeof payload.name === 'string' && payload.name.trim()) ||
         null
+      const populated = records.some((item) => item.name === 'edit_workflow' && item.success)
+      if (!populated) {
+        parts.push(
+          name
+            ? `Created "${name}" as an empty workflow. The requested blocks still need to be added.`
+            : 'Created an empty workflow. The requested blocks still need to be added.'
+        )
+        continue
+      }
       parts.push(
         name
           ? `Created the workflow "${name}" and opened it in the panel.`

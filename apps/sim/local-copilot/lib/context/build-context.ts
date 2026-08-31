@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { workflow, workflowExecutionLogs, workspace } from '@sim/db/schema'
+import { user, workflow, workflowExecutionLogs, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { getErrorMessage } from '@sim/utils/errors'
 import type { WorkflowState } from '@sim/workflow-types/workflow'
@@ -135,7 +135,22 @@ export async function buildLocalCopilotContext(
   const snapshot = snapshotBundle?.snapshot ?? null
   const inventoryMarkdown = snapshotBundle?.markdown
 
-  const integrations = await loadWorkspaceIntegrations(workspaceId, userId)
+  const [integrations, currentUserRow] = await Promise.all([
+    loadWorkspaceIntegrations(workspaceId, userId),
+    db
+      .select({ email: user.email, name: user.name })
+      .from(user)
+      .where(eq(user.id, userId))
+      .limit(1)
+      .then((rows) => rows[0]),
+  ])
+  const currentUser =
+    currentUserRow?.email?.trim()
+      ? {
+          email: currentUserRow.email.trim(),
+          ...(currentUserRow.name?.trim() ? { name: currentUserRow.name.trim() } : {}),
+        }
+      : undefined
   const credentials = oauthIntegrationsToCredentialMetadata(integrations.connectedIntegrations)
   // Prefer the unified snapshot as the single inventory source; fall back to the
   // legacy per-resource loaders only when the snapshot is unavailable.
@@ -154,6 +169,7 @@ export async function buildLocalCopilotContext(
   const availableIntegrations = [...new Set(availableBlocks.map((block) => block.category))].sort()
 
   const integrationContext = {
+    ...(currentUser ? { currentUser } : {}),
     connectedIntegrations: integrations.connectedIntegrations,
     envVariables: integrations.envVariables,
     hostedKeysAvailable: integrations.hostedKeysAvailable,

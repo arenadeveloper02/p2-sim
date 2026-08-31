@@ -35,7 +35,7 @@ import {
   bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
   clearLocalFileIntentChannel,
-  detectMandatoryFollowUp,
+  detectMandatoryFollowUpFromExecution,
   formatToolResultForLlm,
   type MandatoryFollowUp,
   resolveMandatoryFollowUps,
@@ -107,6 +107,7 @@ export interface SpecialistPassResult {
   structured?: SpecialistStructuredResult
   verifications?: VerificationRecord[]
   mutationOutcomes?: MutationOutcome[]
+  pendingFollowUps?: MandatoryFollowUp[]
 }
 
 function mergeAbortSignals(signals: AbortSignal[]): AbortSignal {
@@ -508,7 +509,12 @@ export async function executeSpecialistLoop(
             artifactStore: params.toolCtx.artifactStore,
           }
         )
-        const mandatoryFollowUp = detectMandatoryFollowUp(call.name, llmPayload)
+        const mandatoryFollowUp = detectMandatoryFollowUpFromExecution(
+          call.name,
+          toolResult.success,
+          toolResult.result,
+          llmPayload
+        )
         if (mandatoryFollowUp) {
           pendingFollowUps = [
             ...pendingFollowUps.filter((item) => item.id !== mandatoryFollowUp.id),
@@ -628,6 +634,7 @@ export async function executeSpecialistLoop(
       structured,
       verifications,
       mutationOutcomes,
+      ...(pendingFollowUps.length > 0 ? { pendingFollowUps } : {}),
     }
   } catch (error) {
     const message = getErrorMessage(error, 'specialist failed')

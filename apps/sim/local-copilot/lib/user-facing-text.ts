@@ -451,6 +451,34 @@ export function shouldSynthesizeAssistantSummary(options: {
   return isBridgingAssistantNarration(streamed)
 }
 
+const EMPTY_ASSISTANT_TURN_FALLBACK =
+  'I finished that step but had nothing to show. Please try again.'
+const MALFORMED_FUNCTION_CALL_FALLBACK =
+  'I tried to take an action, but the model returned an invalid tool call. Please try again.'
+
+/**
+ * True when the turn produced neither user-facing prose nor tools, so the chat
+ * would otherwise persist a blank assistant row.
+ */
+export function shouldEmitEmptyAssistantFallback(options: {
+  streamedUserFacingText: string
+  toolRecordCount: number
+}): boolean {
+  return (
+    options.toolRecordCount <= 0 &&
+    stripOptionsTagsForDisplay(options.streamedUserFacingText, false).trim().length === 0
+  )
+}
+
+/**
+ * User-visible copy when a Local Copilot turn would otherwise settle empty.
+ */
+export function emptyAssistantTurnFallback(options?: { finishReason?: string }): string {
+  return options?.finishReason === 'MALFORMED_FUNCTION_CALL'
+    ? MALFORMED_FUNCTION_CALL_FALLBACK
+    : EMPTY_ASSISTANT_TURN_FALLBACK
+}
+
 /**
  * True when every pending mandatory follow-up is OAuth connect (not an edit repair).
  */
