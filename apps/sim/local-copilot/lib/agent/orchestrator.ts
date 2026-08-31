@@ -154,7 +154,7 @@ import {
   bindLocalFileIntentChannel,
   buildFollowUpContinuationMessage,
   clearLocalFileIntentChannel,
-  detectMandatoryFollowUp,
+  detectMandatoryFollowUpFromExecution,
   formatToolResultForLlm,
   type MandatoryFollowUp,
   resolveMandatoryFollowUps,
@@ -1331,6 +1331,12 @@ export async function* runLocalCopilotAgent(
         const formattedToolResult = formatToolResultForLlm(call.name, outcome.output, {
           artifactStore: toolCtx.artifactStore,
         })
+        for (const followUp of outcome.result?.pendingFollowUps ?? []) {
+          pendingFollowUps = [
+            ...pendingFollowUps.filter((item) => item.id !== followUp.id),
+            followUp,
+          ]
+        }
         pendingFollowUps = resolveMandatoryFollowUps(
           pendingFollowUps,
           call.name,
@@ -1698,7 +1704,12 @@ export async function* runLocalCopilotAgent(
       const formattedToolResult = formatToolResultForLlm(call.name, toolResult.result, {
         artifactStore: toolCtx.artifactStore,
       })
-      const mandatoryFollowUp = detectMandatoryFollowUp(call.name, formattedToolResult)
+      const mandatoryFollowUp = detectMandatoryFollowUpFromExecution(
+        call.name,
+        toolResult.success,
+        toolResult.result,
+        formattedToolResult
+      )
       if (mandatoryFollowUp) {
         pendingFollowUps = [
           ...pendingFollowUps.filter((item) => item.id !== mandatoryFollowUp.id),
