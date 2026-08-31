@@ -241,10 +241,11 @@ describe('formatChartsForChat', () => {
 })
 
 describe('sanitizeEChartsOption', () => {
-  it('returns a defensive copy', () => {
+  it('returns a defensive copy without mutating the original', () => {
     const result = sanitizeEChartsOption(validOption)
-    expect(result).toEqual(validOption)
     expect(result).not.toBe(validOption)
+    expect(validOption.xAxis).toEqual({ type: 'category', data: ['A', 'B'] })
+    expect(validOption).not.toHaveProperty('grid')
   })
 
   it('truncates oversized series data', () => {
@@ -254,5 +255,65 @@ describe('sanitizeEChartsOption', () => {
     const result = sanitizeEChartsOption(big)
     expect((result.series[0].data as number[]).length).toBe(5000)
     expect((big.series[0].data as number[]).length).toBe(6000)
+  })
+
+  it('centers labels and disables rotate for 8 or fewer categories', () => {
+    const option = {
+      title: { text: 'Spend vs Conversions by Campaign' },
+      legend: {},
+      grid: { left: 48, right: 24, top: 56, bottom: 48 },
+      xAxis: {
+        type: 'category',
+        data: ['Brand Search', 'Generic Search', 'Retargeting', 'Prospecting', 'Competitor Search'],
+        axisLabel: { rotate: 30 },
+      },
+      yAxis: [
+        { type: 'value', name: 'Spend ($)' },
+        { type: 'value', name: 'Conversions' },
+      ],
+      series: [
+        { type: 'bar', name: 'Spend', data: [1, 2, 3, 4, 5] },
+        { type: 'bar', name: 'Conversions', yAxisIndex: 1, data: [1, 2, 3, 4, 5] },
+      ],
+    }
+    const result = sanitizeEChartsOption(option)
+    const xAxis = result.xAxis as Record<string, unknown>
+    const axisLabel = xAxis.axisLabel as Record<string, unknown>
+    const grid = result.grid as Record<string, unknown>
+    expect(axisLabel.rotate).toBe(0)
+    expect(axisLabel.interval).toBe(0)
+    expect(axisLabel.align).toBe('center')
+    expect(grid.containLabel).toBe(true)
+    expect(grid.right).toBe(64)
+    expect(grid.top).toBe(72)
+    expect(grid.bottom).toBe(56)
+  })
+
+  it('anchors rotated labels when there are many categories', () => {
+    const option = {
+      xAxis: {
+        type: 'category',
+        data: Array.from({ length: 12 }, (_, i) => `Campaign ${i}`),
+        axisLabel: { rotate: 30 },
+      },
+      yAxis: { type: 'value' },
+      series: [{ type: 'bar', data: Array.from({ length: 12 }, () => 1) }],
+    }
+    const result = sanitizeEChartsOption(option)
+    const axisLabel = (result.xAxis as Record<string, unknown>).axisLabel as Record<string, unknown>
+    const grid = result.grid as Record<string, unknown>
+    expect(axisLabel.rotate).toBe(30)
+    expect(axisLabel.align).toBe('right')
+    expect(axisLabel.verticalAlign).toBe('middle')
+    expect(grid.bottom).toBe(88)
+  })
+
+  it('does not add cartesian grid layout to pie charts', () => {
+    const pie = {
+      series: [{ type: 'pie', data: [{ value: 1, name: 'A' }] }],
+    }
+    const result = sanitizeEChartsOption(pie)
+    expect(result.grid).toBeUndefined()
+    expect(result.series).toEqual(pie.series)
   })
 })
