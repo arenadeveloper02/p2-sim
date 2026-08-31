@@ -2,6 +2,7 @@ import { chatProtocolFromWorkflowFields } from '@/lib/arena-generative-ui/chat-p
 import {
   compactInputSchemaField,
   inferInputFieldSource,
+  isChatInputPrefixName,
   isOmittedGenerativeInputField,
 } from '@/lib/arena-generative-ui/input-schema'
 import {
@@ -47,8 +48,9 @@ export interface WorkflowBindingSelection {
  * Actor-specific names (`userEmail`, `loggedInEmail`, …) default to
  * `visitorEmail` so the host sends the signed-in address without a form field.
  * A field named `email` stays a form control — that is the lead/contact address.
- * Chat protocol fields, Sim execute flags, and `file[]` uploads are omitted
- * from the form schema. Reserved Start names are recorded on `chatProtocol`.
+ * Chat protocol fields other than `input`, Sim execute flags, and `file[]`
+ * uploads are omitted from the form schema. Start `input` is kept as an
+ * optional constant prefix. Reserved Start names are recorded on `chatProtocol`.
  */
 export function inputSchemaFromWorkflowFields(
   fields: WorkflowInputField[] | undefined
@@ -58,7 +60,23 @@ export function inputSchemaFromWorkflowFields(
   const schema: ArenaGenerativeInputSchemaField[] = []
   for (const field of fields) {
     const name = field.name?.trim()
-    if (!name || seen.has(name) || isOmittedGenerativeInputField({ name, type: field.type })) {
+    if (!name || seen.has(name)) {
+      continue
+    }
+    if (isChatInputPrefixName(name)) {
+      seen.add(name)
+      const description = field.description?.trim()
+      schema.push(
+        compactInputSchemaField({
+          name,
+          type: field.type?.trim() || DEFAULT_INPUT_TYPE,
+          ...(description ? { description: description.slice(0, 200) } : {}),
+          source: 'constant',
+        })
+      )
+      continue
+    }
+    if (isOmittedGenerativeInputField({ name, type: field.type })) {
       continue
     }
     seen.add(name)

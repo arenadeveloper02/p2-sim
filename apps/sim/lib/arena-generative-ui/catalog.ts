@@ -421,7 +421,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         placeholder: z.string().nullable(),
       }),
       description:
-        'Chat composer for a workflow Start that declares reserved input (and optional files / conversationId). actionId must be a manifest action whose binding has chatProtocol.input. The host binds the message to input, attachments to files, and stamps conversationId. Never put those names on Form controls. Transcript is DataText or Repeat, not this component.',
+        'Chat composer for a workflow Start that declares reserved input (and optional files / conversationId). actionId must be a manifest action whose binding has chatProtocol.input. Follow-up messages bind to input as typed. The first form CTA composes input from the Add-an-API prefix plus name: value for declared fields. The host stamps conversationId on form and Chat. Never put those names on Form controls. Transcript is DataText or Repeat, not this component.',
     },
     TextInput: {
       props: formFieldProps({
@@ -670,7 +670,7 @@ export const ARENA_GENERATIVE_UI_SCOPED_EDIT_RULES = [
 /** Added to the generator prompt only when at least one API binding is declared. */
 export const ARENA_GENERATIVE_UI_ACTION_INPUT_RULE = [
   'CTA inputs: every inputSchema field whose source is "form" (or omitted) must be a form control whose name matches that field — including a field named "email", which is a typed lead/contact address, not the signed-in user. Fields with source "visitorEmail" or "constant" are sent by the host — do not render a visible field for them, and do not invent a placeholder the user has to type.',
-  'Reserved Start fields input, conversationId, and files are chat protocol, not form fields. When the binding lists chatProtocol, emit Chat (actionId) — typically on results, often the right column. Never name a TextInput, TextArea, or SearchField input, conversationId, or files. Chat-only bindings (chatProtocol.input and no form fields) must include Chat, not an empty Form. The host sends the composer text as input, attachments as files, and stamps conversationId.',
+  'Reserved Start fields input, conversationId, and files are chat protocol, not form fields. input may appear on the binding as an optional constant prefix — do not render it. When the binding lists chatProtocol, emit Chat (actionId) — typically on results, often the right column. Never name a TextInput, TextArea, or SearchField input, conversationId, or files. Chat-only bindings (chatProtocol.input and no form fields) must include Chat, not an empty Form. The first form CTA composes input from that prefix plus name: value for declared fields; later Chat sends the composer text as input. The host stamps conversationId on both, and attachments as files.',
   'visitorEmail is the signed-in user only (typical names: userEmail, loggedInEmail, visitorEmail). Set inputMapping { "<name>": "arenaEmailId" } so that start input receives the logged-in address. Do not map a form "email" field to arenaEmailId. Constant fields need no form name and no inputMapping; the host stamps their value on every call.',
 ].join(' ')
 

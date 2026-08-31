@@ -40,6 +40,7 @@ import {
   briefHasEmailFormField,
   inputFieldRowNeedsValue,
   inputSourceOverridesForSave,
+  isChatInputPrefixName,
   isEmailLikeApiInputName,
   resolveInputFieldEditorRow,
 } from '@/lib/arena-generative-ui/input-schema'
@@ -171,31 +172,47 @@ function InputSourceFields({
     <>
       {rows.map((row) => (
         <Fragment key={row.name}>
-          <ChipModalField
-            type='dropdown'
-            title={row.name}
-            hint={
-              row.description
-                ? `${row.type} · ${row.description}`
-                : `${row.type}. Form field is typed in the app (including a lead's email). Logged-in email sends the signed-in user's address and is not a form field. Constant always sends the value you type.`
-            }
-            value={row.source}
-            onChange={(value) => onSourceChange(row.name, value as ArenaGenerativeInputSource)}
-            options={INPUT_SOURCE_OPTIONS}
-          />
-          {row.source === 'constant' ? (
+          {isChatInputPrefixName(row.name) ? (
             <ChipModalField
               type='input'
-              title={`${row.name} value`}
+              title='input prefix'
               value={row.value}
               onChange={(value) => onConstantValueChange(row.name, value)}
-              required
-              placeholder='history'
-              hint='Sent on every CTA. The generated app will not show a field for this.'
-              error={inputFieldRowNeedsValue(row) ? 'Enter a value for this constant.' : undefined}
+              placeholder='Do a comprehensive research on '
+              hint='Optional first-message prefix. The generated app will not show a field for this. Empty means the first form submit sends only name: value for the other inputs. Chat follow-ups use the composer text as-is.'
               mono
             />
-          ) : null}
+          ) : (
+            <>
+              <ChipModalField
+                type='dropdown'
+                title={row.name}
+                hint={
+                  row.description
+                    ? `${row.type} · ${row.description}`
+                    : `${row.type}. Form field is typed in the app (including a lead's email). Logged-in email sends the signed-in user's address and is not a form field. Constant always sends the value you type.`
+                }
+                value={row.source}
+                onChange={(value) => onSourceChange(row.name, value as ArenaGenerativeInputSource)}
+                options={INPUT_SOURCE_OPTIONS}
+              />
+              {row.source === 'constant' ? (
+                <ChipModalField
+                  type='input'
+                  title={`${row.name} value`}
+                  value={row.value}
+                  onChange={(value) => onConstantValueChange(row.name, value)}
+                  required
+                  placeholder='history'
+                  hint='Sent on every CTA. The generated app will not show a field for this.'
+                  error={
+                    inputFieldRowNeedsValue(row) ? 'Enter a value for this constant.' : undefined
+                  }
+                  mono
+                />
+              ) : null}
+            </>
+          )}
         </Fragment>
       ))}
     </>
@@ -397,6 +414,7 @@ export function ArenaApiBindingImportHelper({
   }
 
   function handleInputSourceChange(name: string, nextSource: ArenaGenerativeInputSource) {
+    if (isChatInputPrefixName(name)) return
     setInputSourceOverrides((previous) => ({
       ...previous,
       [name]: {

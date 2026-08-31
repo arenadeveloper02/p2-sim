@@ -1895,7 +1895,7 @@ describe('arenaEmailId forwarding', () => {
     })
   })
 
-  it('strips reserved Start keys from form submits even when chatProtocol is set', async () => {
+  it('composes input and keeps conversationId on form submits when chatProtocol is set', async () => {
     const deployment = baseDeployment()
     deployment.apiBindings = [
       {
@@ -1903,7 +1903,10 @@ describe('arenaEmailId forwarding', () => {
         label: 'Qualify',
         kind: 'workflow',
         workflowId: 'wf-bound',
-        inputSchema: [{ name: 'name', type: 'string' }],
+        inputSchema: [
+          { name: 'input', type: 'string', source: 'constant', value: 'Do a comprehensive research on ' },
+          { name: 'name', type: 'string' },
+        ],
         chatProtocol: { input: true, conversationId: true, files: true },
       },
     ]
@@ -1918,6 +1921,41 @@ describe('arenaEmailId forwarding', () => {
 
     expect(workflowInput()).toEqual({
       name: 'Ada',
+      input: 'Do a comprehensive research on name: Ada',
+      conversationId: 'c1',
+      arenaEmailId: 'ada@example.com',
+    })
+  })
+
+  it('composes input from declared fields only when the prefix is empty', async () => {
+    const deployment = baseDeployment()
+    deployment.apiBindings = [
+      {
+        key: 'qualify_lead',
+        label: 'Qualify',
+        kind: 'workflow',
+        workflowId: 'wf-bound',
+        inputSchema: [
+          { name: 'input', type: 'string', source: 'constant' },
+          { name: 'company_name', type: 'string' },
+        ],
+        chatProtocol: { input: true, conversationId: true },
+      },
+    ]
+    deployment.manifest.actions.submit_lead.inputMapping = { company_name: 'company_name' }
+
+    await runDeployedAppAction({
+      deployment,
+      actionId: 'submit_lead',
+      values: { company_name: 'Open AI', conversationId: 'c1' },
+      requestId: 'req-1',
+      arenaEmailId: 'ada@example.com',
+    })
+
+    expect(workflowInput()).toEqual({
+      company_name: 'Open AI',
+      input: 'company_name: Open AI',
+      conversationId: 'c1',
       arenaEmailId: 'ada@example.com',
     })
   })

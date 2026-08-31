@@ -208,14 +208,14 @@ describe('parseApiBindings', () => {
     expect(binding.outputSchemaWarnings).toEqual(['Schema is from a run of an older deployment.'])
   })
 
-  it('drops protocol fields, execute flags, and file[] uploads from inputSchema', () => {
+  it('keeps input as a constant prefix and drops other protocol fields from inputSchema', () => {
     const [binding] = parseApiBindings([
       {
         key: 'recommend_articles',
         kind: 'workflow',
         workflowId: 'wf-1',
         inputSchema: [
-          { name: 'input', type: 'string' },
+          { name: 'input', type: 'string', source: 'constant', value: 'Do research on ' },
           { name: 'conversationId', type: 'string' },
           { name: 'files', type: 'array' },
           { name: 'stream', type: 'boolean' },
@@ -226,7 +226,10 @@ describe('parseApiBindings', () => {
         ],
       },
     ])
-    expect(binding.inputSchema).toEqual([{ name: 'keyword', type: 'string' }])
+    expect(binding.inputSchema).toEqual([
+      { name: 'input', type: 'string', source: 'constant', value: 'Do research on ' },
+      { name: 'keyword', type: 'string' },
+    ])
   })
 
   it('round-trips chatProtocol on workflow bindings only', () => {

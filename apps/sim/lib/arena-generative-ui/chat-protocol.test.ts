@@ -6,6 +6,7 @@ import {
   applyChatProtocolToActionValues,
   chatActionValues,
   chatProtocolFromWorkflowFields,
+  composeFormChatInput,
   omitReservedStartInputValues,
   parseChatProtocol,
 } from '@/lib/arena-generative-ui/chat-protocol'
@@ -25,6 +26,13 @@ describe('chatProtocolFromWorkflowFields', () => {
   it('is undefined when the start block has no reserved fields', () => {
     expect(chatProtocolFromWorkflowFields([{ name: 'companyName' }])).toBeUndefined()
   })
+
+  it('always records conversationId when input is present', () => {
+    expect(chatProtocolFromWorkflowFields([{ name: 'input' }])).toEqual({
+      input: true,
+      conversationId: true,
+    })
+  })
 })
 
 describe('parseChatProtocol', () => {
@@ -33,31 +41,95 @@ describe('parseChatProtocol', () => {
   })
 })
 
+describe('composeFormChatInput', () => {
+  it('joins prefix and name: value parts', () => {
+    expect(
+      composeFormChatInput(
+        { company_name: 'Open AI' },
+        {
+          inputSchema: [
+            { name: 'input', type: 'string', source: 'constant', value: 'Do a comprehensive research on ' },
+            { name: 'company_name', type: 'string' },
+          ],
+        }
+      )
+    ).toBe('Do a comprehensive research on company_name: Open AI')
+  })
+
+  it('uses only name: value when the prefix is empty', () => {
+    expect(
+      composeFormChatInput(
+        { company_name: 'Open AI' },
+        {
+          inputSchema: [
+            { name: 'input', type: 'string', source: 'constant' },
+            { name: 'company_name', type: 'string' },
+          ],
+        }
+      )
+    ).toBe('company_name: Open AI')
+  })
+
+  it('skips empty extras and returns the prefix alone', () => {
+    expect(
+      composeFormChatInput(
+        { company_name: '  ' },
+        {
+          inputSchema: [
+            { name: 'input', type: 'string', source: 'constant', value: 'Look up ' },
+            { name: 'company_name', type: 'string' },
+          ],
+        }
+      )
+    ).toBe('Look up ')
+  })
+})
+
 describe('applyChatProtocolToActionValues', () => {
   const binding = {
     chatProtocol: { input: true, conversationId: true, files: true },
+    inputSchema: [
+      { name: 'input', type: 'string', source: 'constant', value: 'Research ' },
+      { name: 'companyName', type: 'string' },
+    ],
   }
 
-  it('strips reserved keys on form submits', () => {
+  it('composes input on form submits and keeps conversationId', () => {
     expect(
       applyChatProtocolToActionValues(
         { companyName: 'Acme', input: 'hi', conversationId: 'c1', files: [] },
         binding,
         'form'
       )
-    ).toEqual({ companyName: 'Acme' })
+    ).toEqual({
+      companyName: 'Acme',
+      input: 'Research companyName: Acme',
+      conversationId: 'c1',
+    })
   })
 
-  it('strips reserved keys when surface is omitted so existing forms stay reserved-free', () => {
+  it('composes input when surface is omitted', () => {
+    expect(
+      applyChatProtocolToActionValues(
+        { brand: 'X', conversationId: 'c1' },
+        {
+          chatProtocol: { input: true, conversationId: true },
+          inputSchema: [{ name: 'brand', type: 'string' }],
+        }
+      )
+    ).toEqual({ brand: 'X', input: 'brand: X', conversationId: 'c1' })
+  })
+
+  it('strips reserved keys when the binding has no chat protocol', () => {
     expect(
       applyChatProtocolToActionValues(
         { brand: 'X', input: 'should-drop', conversationId: 'c1' },
-        binding
+        {}
       )
     ).toEqual({ brand: 'X' })
   })
 
-  it('keeps protocol keys on chat submits and declared form values', () => {
+  it('keeps composer input on chat submits and does not re-compose', () => {
     expect(
       applyChatProtocolToActionValues(
         { companyName: 'Acme', input: 'hi', conversationId: 'c1', files: [{ type: 'file' }] },

@@ -18,10 +18,18 @@ const EXECUTE_PROTOCOL_INPUT_NAMES = new Set(['stream', 'includethinking', 'incl
 
 /**
  * Chat start-block protocol fields (`input`, `conversationId`, `files`). They are
- * not generative-app form controls. Chat composer and the host stamp them.
+ * not generative-app form controls. `input` may appear on the binding as an
+ * optional first-message prefix; Chat and the host stamp the rest.
  */
 export function isReservedStartInputName(name: string): boolean {
   return RESERVED_START_INPUT_NAMES.has(name.trim().toLowerCase())
+}
+
+/**
+ * Start field `input` — optional prefix in Add-an-API, never a visitor control.
+ */
+export function isChatInputPrefixName(name: string): boolean {
+  return name.trim().toLowerCase() === 'input'
 }
 
 /**
@@ -145,6 +153,9 @@ export interface ArenaGenerativeInputFieldEditorRow {
  * is a typed value (lead, contact, prospect) unless the author overrides it.
  */
 export function inferInputFieldSource(name: string): ArenaGenerativeInputSource {
+  if (isChatInputPrefixName(name)) {
+    return 'constant'
+  }
   if (LOGGED_IN_EMAIL_FIELD_NAME.test(name.trim())) {
     return 'visitorEmail'
   }
@@ -178,11 +189,32 @@ export function compactInputSchemaField(
 /**
  * Applies Add-an-API source/value overrides on top of inferred schema fields.
  */
+/**
+ * Workflow Start `input` is always an optional constant prefix, never form.
+ */
+export function lockChatInputPrefixSources(
+  fields: ArenaGenerativeInputSchemaField[]
+): ArenaGenerativeInputSchemaField[] {
+  return fields.map((field) =>
+    isChatInputPrefixName(field.name)
+      ? compactInputSchemaField({ ...field, source: 'constant' })
+      : compactInputSchemaField(field)
+  )
+}
+
 export function applyInputSourceOverrides(
   fields: ArenaGenerativeInputSchemaField[],
   overrides: Record<string, ArenaGenerativeInputSourceOverride>
 ): ArenaGenerativeInputSchemaField[] {
   return fields.map((field) => {
+    if (isChatInputPrefixName(field.name)) {
+      const override = overrides[field.name]
+      return compactInputSchemaField({
+        ...field,
+        source: 'constant',
+        value: override?.source === 'constant' ? override.value : field.value,
+      })
+    }
     const override = overrides[field.name]
     if (!override) {
       return compactInputSchemaField(field)
@@ -213,6 +245,9 @@ export function applyBindingInputSources(
   const next = { ...values }
   const email = arenaEmailId?.trim()
   for (const field of fields) {
+    if (isChatInputPrefixName(field.name)) {
+      continue
+    }
     if (field.source === 'visitorEmail') {
       if (email) {
         next[field.name] = email
@@ -276,6 +311,15 @@ export function resolveInputFieldEditorRow(
   field: ArenaGenerativeInputSchemaField,
   override?: ArenaGenerativeInputSourceOverride
 ): ArenaGenerativeInputFieldEditorRow {
+  if (isChatInputPrefixName(field.name)) {
+    return {
+      name: field.name,
+      type: field.type,
+      ...(field.description ? { description: field.description } : {}),
+      source: 'constant',
+      value: override?.value ?? field.value ?? '',
+    }
+  }
   const source = override?.source ?? field.source ?? 'form'
   const value = source === 'constant' ? (override?.value ?? field.value ?? '') : (field.value ?? '')
   return {
@@ -289,5 +333,6 @@ export function resolveInputFieldEditorRow(
 
 /** True when a constant input is selected but has no value yet. */
 export function inputFieldRowNeedsValue(row: ArenaGenerativeInputFieldEditorRow): boolean {
+  if (isChatInputPrefixName(row.name)) return false
   return row.source === 'constant' && row.value.trim().length === 0
 }

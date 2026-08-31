@@ -61,6 +61,7 @@ describe('inputSchemaFromWorkflowFields', () => {
       ],
     })
     expect(binding.inputSchema).toEqual([
+      { name: 'input', type: 'string', source: 'constant' },
       { name: 'companyName', type: 'string' },
       { name: 'brand', type: 'string' },
     ])
@@ -71,7 +72,7 @@ describe('inputSchemaFromWorkflowFields', () => {
     })
   })
 
-  it('drops chat protocol fields, execute flags, and file[] uploads', () => {
+  it('keeps input as an optional constant prefix and drops other protocol fields', () => {
     expect(
       inputSchemaFromWorkflowFields([
         { name: 'input', type: 'string' },
@@ -83,7 +84,10 @@ describe('inputSchemaFromWorkflowFields', () => {
         { name: 'keyword', type: 'string' },
         { name: 'Files', type: 'array' },
       ])
-    ).toEqual([{ name: 'keyword', type: 'string' }])
+    ).toEqual([
+      { name: 'input', type: 'string', source: 'constant' },
+      { name: 'keyword', type: 'string' },
+    ])
   })
 
   it('drops unnamed fields and de-duplicates repeats', () => {
@@ -254,6 +258,7 @@ describe('workflowBindingFromSelection', () => {
       workflowId: 'wf-1',
       label: 'Qualify',
       inputFields: [
+        { name: 'input', type: 'string' },
         { name: 'company', type: 'string' },
         { name: 'seats', type: 'number' },
         { name: 'email', type: 'string' },

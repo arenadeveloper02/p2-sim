@@ -68,10 +68,11 @@ export interface ArenaGenerativeInputSchemaField {
   /**
    * Where the host gets this value. Omitted/`form` collects a named form field
    * (including a lead/contact `email`). `visitorEmail` copies the signed-in
-   * user's address. `constant` uses `value`.
+   * user's address. `constant` uses `value`. Start `input` is always `constant`
+   * (optional first-message prefix; empty is allowed).
    */
   source?: ArenaGenerativeInputSource
-  /** Required when `source` is `constant`. */
+  /** Used when `source` is `constant`. Optional for the chat `input` prefix. */
   value?: string
 }
 
@@ -117,7 +118,9 @@ export interface ArenaGenerativeApiBinding {
   forwardEmailId?: boolean
   /**
    * Workflow Start reserved fields (`input`, `conversationId`, `files`). Never
-   * form controls — the Chat composer and host stamp them. HTTP bindings omit this.
+   * visitor form controls. The first form CTA composes `input`; Chat later
+   * sends the composer text. The host stamps `conversationId` on both. HTTP
+   * bindings omit this.
    */
   chatProtocol?: {
     input?: boolean

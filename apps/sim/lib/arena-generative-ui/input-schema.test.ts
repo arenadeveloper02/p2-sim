@@ -10,6 +10,7 @@ import {
   inferInputFieldSource,
   inputFieldRowNeedsValue,
   inputSourceOverridesForSave,
+  isChatInputPrefixName,
   isEmailLikeApiInputName,
   isOmittedGenerativeInputField,
   isReservedStartInputName,
@@ -24,6 +25,12 @@ describe('isReservedStartInputName', () => {
     expect(isReservedStartInputName('Files')).toBe(true)
     expect(isReservedStartInputName('keyword')).toBe(false)
     expect(isReservedStartInputName('email')).toBe(false)
+  })
+
+  it('identifies the chat input prefix name', () => {
+    expect(isChatInputPrefixName('input')).toBe(true)
+    expect(isChatInputPrefixName('INPUT')).toBe(true)
+    expect(isChatInputPrefixName('company_name')).toBe(false)
   })
 })
 
@@ -72,6 +79,11 @@ describe('inferInputFieldSource', () => {
     expect(inferInputFieldSource('company')).toBe('form')
     expect(inferInputFieldSource('actor')).toBe('form')
   })
+
+  it('locks Start input to a constant prefix', () => {
+    expect(inferInputFieldSource('input')).toBe('constant')
+    expect(inferInputFieldSource('INPUT')).toBe('constant')
+  })
 })
 
 describe('applyInputSourceOverrides', () => {
@@ -88,6 +100,14 @@ describe('applyInputSourceOverrides', () => {
       { name: 'type', type: 'string' },
       { name: 'email', type: 'string', source: 'visitorEmail' },
     ])
+  })
+
+  it('keeps Start input as a constant prefix even if the override says form', () => {
+    expect(
+      applyInputSourceOverrides([{ name: 'input', type: 'string', source: 'constant' }], {
+        input: { source: 'form' },
+      })
+    ).toEqual([{ name: 'input', type: 'string', source: 'constant' }])
   })
 
   it('stores a constant value and can revert email to a form field', () => {
@@ -140,6 +160,20 @@ describe('applyBindingInputSources', () => {
         { company: 'Acme' },
         { inputSchema: [{ name: 'company', type: 'string' }] },
         'ada@example.com'
+      )
+    ).toEqual({ company: 'Acme' })
+  })
+
+  it('does not stamp the input prefix constant onto the payload', () => {
+    expect(
+      applyBindingInputSources(
+        { company: 'Acme' },
+        {
+          inputSchema: [
+            { name: 'input', type: 'string', source: 'constant', value: 'Research ' },
+            { name: 'company', type: 'string' },
+          ],
+        }
       )
     ).toEqual({ company: 'Acme' })
   })
@@ -224,6 +258,15 @@ describe('resolveInputFieldEditorRow', () => {
         value: 'history',
       })
     ).toBe(false)
+    expect(
+      inputFieldRowNeedsValue({ name: 'input', type: 'string', source: 'constant', value: '' })
+    ).toBe(false)
+  })
+
+  it('locks the input prefix row to constant', () => {
+    expect(
+      resolveInputFieldEditorRow({ name: 'input', type: 'string' }, { source: 'form' })
+    ).toEqual({ name: 'input', type: 'string', source: 'constant', value: '' })
   })
 })
 

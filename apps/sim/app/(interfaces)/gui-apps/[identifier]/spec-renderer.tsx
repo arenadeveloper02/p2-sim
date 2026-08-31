@@ -39,7 +39,10 @@ import {
   isActionControlPending,
   isBoundPathPending,
 } from '@/lib/arena-generative-ui/binding-layout-plan'
-import type { ArenaGenerativeChatProtocol } from '@/lib/arena-generative-ui/chat-protocol'
+import {
+  type ArenaGenerativeChatProtocol,
+  getGenerativeAppConversationId,
+} from '@/lib/arena-generative-ui/chat-protocol'
 import {
   type ArenaGenerativeFormField,
   asFieldString,
@@ -1503,7 +1506,14 @@ export function SpecRenderer({
     values: Record<string, unknown>,
     meta?: RunGenerativeAppActionMeta
   ) => {
-    const next = omitHiddenInputs(actionId, values)
+    let next = omitHiddenInputs(actionId, values)
+    const protocol = actionChatProtocol?.[actionId]
+    if (protocol?.input || protocol?.conversationId) {
+      next = {
+        ...next,
+        conversationId: getGenerativeAppConversationId(conversationStorageKey ?? ''),
+      }
+    }
     if (meta) return onRunAction(actionId, next, meta)
     return onRunAction(actionId, next)
   }

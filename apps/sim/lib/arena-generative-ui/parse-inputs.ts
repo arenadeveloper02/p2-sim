@@ -1,6 +1,10 @@
 import { truncate } from '@sim/utils/string'
 import { parseChatProtocol } from '@/lib/arena-generative-ui/chat-protocol'
-import { isOmittedGenerativeInputField } from '@/lib/arena-generative-ui/input-schema'
+import {
+  isChatInputPrefixName,
+  isOmittedGenerativeInputField,
+  lockChatInputPrefixSources,
+} from '@/lib/arena-generative-ui/input-schema'
 import { OUTPUT_HINT_MAX_LENGTH } from '@/lib/arena-generative-ui/output-schema'
 import {
   ARENA_GENERATIVE_APP_PAGE_PATH_PATTERN,
@@ -274,9 +278,9 @@ export function parsePageHints(raw: unknown): ArenaGenerativePageHint[] {
 /**
  * Normalizes a binding's `inputSchema` / `outputSchema` list, dropping entries
  * without a string `name` and defaulting a missing `type` to `string`.
- * Input schemas also drop chat protocol fields, Sim execute flags, and
- * `file[]` uploads. Returns undefined when the value is not an array so the
- * key stays absent.
+ * Input schemas also drop chat protocol fields other than `input`, Sim
+ * execute flags, and `file[]` uploads. Start `input` is kept as a prefix row.
+ * Returns undefined when the value is not an array so the key stays absent.
  */
 function schemaFields(
   raw: unknown,
@@ -294,15 +298,17 @@ function schemaFields(
       ) {
         return false
       }
+      const name = (field as { name: string }).name
       if (
         options?.input &&
         isOmittedGenerativeInputField({
-          name: (field as { name: string }).name,
+          name,
           type:
             typeof (field as { type?: unknown }).type === 'string'
               ? (field as { type: string }).type
               : undefined,
-        })
+        }) &&
+        !isChatInputPrefixName(name)
       ) {
         return false
       }
@@ -469,7 +475,8 @@ export function parseApiBindings(raw: unknown): ArenaGenerativeApiBinding[] {
     }
     const inputSchema = schemaFields(record.inputSchema, { input: true })
     if (inputSchema) {
-      binding.inputSchema = inputSchema
+      binding.inputSchema =
+        kind === 'workflow' ? lockChatInputPrefixSources(inputSchema) : inputSchema
     }
     if (kind === 'workflow') {
       const chatProtocol = parseChatProtocol(record.chatProtocol)

@@ -424,7 +424,7 @@ export function actionHostKeysFrom(
 
 /**
  * Chat protocol flags each action owns. SpecRenderer shows attach when `files`
- * is set; the runner stamps reserved keys only on Chat submits.
+ * is set; the host stamps conversationId on form and Chat submits.
  */
 export function actionChatProtocolFrom(
   manifest: Pick<ArenaGenerativeAppManifest, 'actions'>,

@@ -1,5 +1,8 @@
 import { generateId } from '@sim/utils/id'
-import { isReservedStartInputName } from '@/lib/arena-generative-ui/input-schema'
+import {
+  isChatInputPrefixName,
+  isReservedStartInputName,
+} from '@/lib/arena-generative-ui/input-schema'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
 import { START_BLOCK_RESERVED_FIELDS } from '@/lib/workflows/types'
 
@@ -34,6 +37,7 @@ export function chatProtocolFromWorkflowFields(
     if (name === 'conversationid') protocol.conversationId = true
     if (name === 'files') protocol.files = true
   }
+  if (protocol.input) protocol.conversationId = true
   return Object.keys(protocol).length > 0 ? protocol : undefined
 }
 
@@ -69,29 +73,63 @@ export function omitReservedStartInputValues(
 }
 
 /**
- * Form CTAs drop reserved keys. Chat CTAs keep only the protocol flags the
- * binding declared, then overlay declared form values already in the payload.
+ * First form CTA: optional Add-an-API prefix plus `name: value` for each
+ * filled declared field. Chat later uses the composer text as-is.
+ */
+export function composeFormChatInput(
+  values: Record<string, unknown>,
+  binding: Pick<ArenaGenerativeApiBinding, 'inputSchema'>
+): string | undefined {
+  const prefixField = binding.inputSchema?.find((field) => isChatInputPrefixName(field.name))
+  const prefix = typeof prefixField?.value === 'string' ? prefixField.value : ''
+  const parts: string[] = []
+  for (const field of binding.inputSchema ?? []) {
+    const name = field.name.trim()
+    if (!name || isReservedStartInputName(name)) continue
+    const raw = values[name]
+    if (raw === undefined || raw === null) continue
+    const text = typeof raw === 'string' ? raw.trim() : String(raw)
+    if (!text) continue
+    parts.push(`${name}: ${text}`)
+  }
+  if (!prefix && parts.length === 0) return undefined
+  if (!prefix) return parts.join(' ')
+  if (parts.length === 0) return prefix
+  const joiner = /\s$/.test(prefix) ? '' : ' '
+  return `${prefix}${joiner}${parts.join(' ')}`
+}
+
+/**
+ * Form / omitted + chatProtocol.input composes `input` and keeps a host
+ * `conversationId`. Chat keeps composer `input` and does not re-compose.
+ * `files` stay Chat-only.
  */
 export function applyChatProtocolToActionValues(
   values: Record<string, unknown>,
-  binding: Pick<ArenaGenerativeApiBinding, 'chatProtocol'>,
+  binding: Pick<ArenaGenerativeApiBinding, 'chatProtocol' | 'inputSchema'>,
   surface?: ArenaGenerativeActionSurface
 ): Record<string, unknown> {
   const protocol = binding.chatProtocol
-  const isChat = surface === 'chat' && hasChatProtocolInput(protocol)
-  if (!isChat) {
+  if (!hasChatProtocolInput(protocol)) {
     return omitReservedStartInputValues(values)
   }
 
   const next = omitReservedStartInputValues(values)
-  if (protocol?.input && values.input !== undefined) {
-    next.input = values.input
+  if (surface === 'chat') {
+    if (values.input !== undefined) {
+      next.input = values.input
+    }
+  } else {
+    const composed = composeFormChatInput(values, binding)
+    if (composed !== undefined) {
+      next.input = composed
+    }
   }
-  if (protocol?.conversationId) {
-    const conversationId = conversationIdFrom(values)
-    if (conversationId) next.conversationId = conversationId
+  const conversationId = conversationIdFrom(values)
+  if (conversationId) {
+    next.conversationId = conversationId
   }
-  if (protocol?.files && values.files !== undefined) {
+  if (surface === 'chat' && protocol?.files && values.files !== undefined) {
     next.files = values.files
   }
   return next
@@ -110,7 +148,9 @@ export function chatProtocolReservedKeys(
   if (!protocol) return []
   return START_BLOCK_RESERVED_FIELDS.filter((name) => {
     if (name === 'input') return protocol.input === true
-    if (name === 'conversationId') return protocol.conversationId === true
+    if (name === 'conversationId') {
+      return protocol.conversationId === true || protocol.input === true
+    }
     if (name === 'files') return protocol.files === true
     return false
   })

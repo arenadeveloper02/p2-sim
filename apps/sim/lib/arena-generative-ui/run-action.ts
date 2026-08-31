@@ -889,11 +889,10 @@ export async function runGenerativeAppAction(
 
   /**
    * Host-owned keys (`visitorEmail`, `constant`, `arenaEmailId`, chat protocol)
-   * are applied on both sides of `mapActionInput`. Before, so an `inputMapping`
-   * can rename them (`{ "email": "arenaEmailId" }`); after, because
-   * `inputMapping` is an allowlist and would otherwise drop keys the binding
-   * declared that the form never collected — which is most generated CTAs with
-   * an empty payload, plus reserved Start keys on Chat submits.
+   * are applied on both sides of `mapActionInput`. Constants and visitorEmail
+   * are stamped first so form composition can include them. After mapping,
+   * because `inputMapping` is an allowlist and would otherwise drop keys the
+   * binding declared that the form never collected — plus reserved Start keys.
    */
   const withHostInputs = (values: Record<string, unknown>) =>
     withActorEmail(
@@ -901,12 +900,9 @@ export async function runGenerativeAppAction(
       binding,
       options.arenaEmailId
     )
-  const surfaceValues = applyChatProtocolToActionValues(options.values, binding, options.surface)
-  const constrained = constrainBindingInput(
-    withHostInputs(surfaceValues),
-    binding,
-    action.inputMapping
-  )
+  const hostedValues = withHostInputs(options.values)
+  const surfaceValues = applyChatProtocolToActionValues(hostedValues, binding, options.surface)
+  const constrained = constrainBindingInput(surfaceValues, binding, action.inputMapping)
   const mappedInput = applyPaginationToInput(
     binding.pagination,
     withHostInputs(
