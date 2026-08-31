@@ -507,6 +507,44 @@ describe('extractManifestCandidate', () => {
     expect(candidate.pages).toEqual({ home: { path: 'home', title: 'People' } })
   })
 
+  it('recovers wrapper-level actions when nested manifest already has pages', () => {
+    const candidate = extractManifestCandidate({
+      title: 'Company research',
+      content: 'ok',
+      manifest: {
+        entryPath: 'home',
+        pages: { home: { path: 'home', title: 'Search' } },
+      },
+      actions: {
+        company_search: { apiKey: 'search_companies', onSuccess: { navigate: 'results' } },
+      },
+    })
+    expect(candidate.pages).toEqual({ home: { path: 'home', title: 'Search' } })
+    expect(candidate.actions).toEqual({
+      company_search: { apiKey: 'search_companies', onSuccess: { navigate: 'results' } },
+    })
+  })
+
+  it('keeps nested actions and fills missing keys from the wrapper', () => {
+    const candidate = extractManifestCandidate({
+      title: 'Company research',
+      manifest: {
+        pages: { home: { path: 'home', title: 'Search' } },
+        actions: {
+          search_companies: { apiKey: 'search_companies' },
+        },
+      },
+      actions: {
+        company_search: { apiKey: 'search_companies' },
+        search_companies: { apiKey: 'wrapper_should_lose' },
+      },
+    })
+    expect(candidate.actions).toEqual({
+      company_search: { apiKey: 'search_companies' },
+      search_companies: { apiKey: 'search_companies' },
+    })
+  })
+
   it('recovers wrapper-level pages onto a stub nested manifest', () => {
     const candidate = extractManifestCandidate({
       title: 'People',

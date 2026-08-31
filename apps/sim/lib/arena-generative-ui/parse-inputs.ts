@@ -145,14 +145,45 @@ function payloadHasPages(value: unknown): boolean {
 
 const MANIFEST_FIELD_KEYS = ['entryPath', 'pages', 'actions'] as const
 
+function recordKeyCount(value: unknown): number {
+  return isRecord(value) ? Object.keys(value).length : 0
+}
+
+/**
+ * Models often put `actions` next to `title`/`content` while `pages` live under
+ * `manifest`. Nested pages used to win and drop those wrapper actions, so a
+ * SearchField actionId had no matching `manifest.actions` key.
+ */
+function mergeWrapperManifestFields(
+  nested: Record<string, unknown>,
+  parsed: Record<string, unknown>
+): Record<string, unknown> {
+  const candidate: Record<string, unknown> = { ...nested }
+  if (parsed.entryPath !== undefined && !asString(candidate.entryPath)) {
+    candidate.entryPath = parsed.entryPath
+  }
+  const wrapperActions = isRecord(parsed.actions) ? parsed.actions : undefined
+  if (wrapperActions && recordKeyCount(wrapperActions) > 0) {
+    const nestedActions = isRecord(nested.actions) ? nested.actions : {}
+    candidate.actions =
+      recordKeyCount(nestedActions) > 0 ? { ...wrapperActions, ...nestedActions } : wrapperActions
+  }
+  return candidate
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
 /**
  * Picks the object to validate: nested `manifest` only when it has pages,
  * otherwise wrapper-level `pages` merged onto a stub nested manifest.
+ * Wrapper-level `actions` / `entryPath` still fill gaps on a nested manifest.
  */
 export function extractManifestCandidate(parsed: Record<string, unknown>): Record<string, unknown> {
   const nested = isRecord(parsed.manifest) ? parsed.manifest : undefined
   if (nested && hasUsablePages(nested.pages)) {
-    return nested
+    return mergeWrapperManifestFields(nested, parsed)
   }
   if (hasUsablePages(parsed.pages)) {
     const candidate: Record<string, unknown> = nested ? { ...nested } : {}

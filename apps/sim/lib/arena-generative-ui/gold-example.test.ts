@@ -152,6 +152,7 @@ describe('gold example', () => {
   it('embeds the framing and the serialized manifest in the prompt section', () => {
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('GOLD STANDARD REFERENCE LAYOUT')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain(GOLD_EXAMPLE_API_KEY)
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('company_search')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain(GOLD_EXAMPLE_RUN_API_KEY)
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('"entryPath": "home"')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('spacing tokens')

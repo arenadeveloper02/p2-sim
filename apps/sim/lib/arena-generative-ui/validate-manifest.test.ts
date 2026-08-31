@@ -287,6 +287,26 @@ describe('validateArenaGenerativeManifest', () => {
     )
     expect(result.success).toBe(false)
     expect(result.error).toContain('onLoad references unknown action "load_metrics"')
+    expect(result.error).toContain('submit_lead')
+  })
+
+  it('names declared action keys when a page actionId is missing from actions', () => {
+    const result = validateArenaGenerativeManifest(
+      {
+        entryPath: 'home',
+        pages: {
+          home: { title: 'Home', path: 'home', spec: pageSpec() },
+          results: { title: 'Results', path: 'results', spec: resultsSpec() },
+        },
+        actions: {
+          search_companies: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+        },
+      },
+      { apiBindings: bindings, entryPath: 'home' }
+    )
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('references unknown action "submit_lead"')
+    expect(result.error).toContain('search_companies')
   })
 
   it('drops onLoad from a navigation-only app, which has no APIs to call', () => {

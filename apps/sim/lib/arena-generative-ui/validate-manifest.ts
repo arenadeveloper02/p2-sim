@@ -136,6 +136,28 @@ function collectActionIdsFromSpec(spec: Spec): string[] {
   return ids
 }
 
+/**
+ * SearchField actionId must equal a `manifest.actions` key. The gold example
+ * uses `search_companies`; models often emit `company_search` without renaming
+ * the actions map. Listing declared keys makes the repair turn explicit.
+ */
+function unknownActionError(
+  path: string,
+  actionId: string,
+  actions: ArenaGenerativeAppManifest['actions'],
+  source: 'page' | 'onLoad'
+): string {
+  const where =
+    source === 'onLoad'
+      ? `Page "${path}" onLoad references unknown action "${actionId}"`
+      : `Page "${path}" references unknown action "${actionId}"`
+  const declared = Object.keys(actions)
+  if (declared.length === 0) {
+    return `${where}. Add it to manifest.actions with a declared API binding key as apiKey.`
+  }
+  return `${where}. actionId must match a manifest.actions key exactly (${declared.join(', ')}).`
+}
+
 function asTruthyFlag(value: unknown): boolean {
   return value === true || value === 'true'
 }
@@ -492,7 +514,7 @@ export function validateArenaGenerativeManifest(
       if (!actions[actionId]) {
         return {
           success: false,
-          error: `Page "${path}" references unknown action "${actionId}"`,
+          error: unknownActionError(path, actionId, actions, 'page'),
         }
       }
     }
@@ -504,7 +526,7 @@ export function validateArenaGenerativeManifest(
       if (!actions[actionId]) {
         return {
           success: false,
-          error: `Page "${path}" onLoad references unknown action "${actionId}"`,
+          error: unknownActionError(path, actionId, actions, 'onLoad'),
         }
       }
     }

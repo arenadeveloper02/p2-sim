@@ -85,7 +85,11 @@ import {
   multiPageApiBindings,
   multiPageManifest,
 } from '@/lib/arena-generative-ui/multi-page-app.fixture'
-import { twoPageManifest, twoPageResultsSpec } from '@/lib/arena-generative-ui/two-page-app.fixture'
+import {
+  twoPageApiBindings,
+  twoPageManifest,
+  twoPageResultsSpec,
+} from '@/lib/arena-generative-ui/two-page-app.fixture'
 import {
   GENERATOR_OMITTED_PAGES_ERROR,
   validateArenaGenerativeManifest,
@@ -450,6 +454,31 @@ describe('generateArenaGenerativeManifest', () => {
     expect(result.manifest?.entryPath).toBe('home')
     expect(result.manifest?.pages.home).toBeTruthy()
     expect(result.manifest?.pages.results).toBeTruthy()
+  })
+
+  it('recovers wrapper-level actions when nested manifest already has pages', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(
+      textMessage(
+        JSON.stringify({
+          title: 'Lead qualifier',
+          content: 'ok',
+          manifest: {
+            entryPath: 'home',
+            pages: twoPageManifest.pages,
+          },
+          actions: twoPageManifest.actions,
+        })
+      )
+    )
+
+    const result = await generateArenaGenerativeManifest({
+      userInput: 'Lead qualifier. Home is a form; Results shows the score.',
+      apiBindings: twoPageApiBindings,
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.error).toBeUndefined()
+    expect(result.manifest?.actions.submit_lead).toBeTruthy()
   })
 
   it('retries once when the first reply omits pages', async () => {
