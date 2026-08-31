@@ -143,6 +143,30 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
+const FOLLOW_UP_FIELD_KEYS = [
+  'needsFollowUpPopulate',
+  'needsFollowUpEdit',
+  'needsFollowUpWrite',
+  'needsFollowUpWorkspaceFile',
+  'needsFollowUpEditContent',
+  'needsFollowUpRun',
+  'needsOAuthConnect',
+  'followUpHint',
+] as const
+
+/**
+ * Copies mandatory-follow-up flags onto an artifact stub so offload cannot
+ * drop `create_workflow` populate (or other required next tools).
+ */
+function copyFollowUpFields(source: unknown, stub: Record<string, unknown>): Record<string, unknown> {
+  const record = asRecord(source)
+  const next = { ...stub }
+  for (const key of FOLLOW_UP_FIELD_KEYS) {
+    if (record[key] !== undefined) next[key] = record[key]
+  }
+  return next
+}
+
 export interface MandatoryFollowUp {
   id: string
   hint: string
@@ -484,12 +508,22 @@ export function formatToolResultForLlm(
       typeof record.workflowId === 'string' &&
       record.workflowId.trim()
     ) {
+      // Keep the create payload small so populate flags are not lost to artifact
+      // offload. The model already has workflowId + startBlockId.
+      delete next.copilotSanitizedWorkflowState
       next.needsFollowUpPopulate = true
       next.followUpHint =
         'New workflow created. Do NOT create_workflow or get_workflow_context again. Call get_blocks_metadata once with every type you will add (e.g. { blockIds: ["agent","human_in_the_loop"] }), then edit_workflow using startBlockId. Up to 5 sequential edit_workflow calls are OK. Human review uses type human_in_the_loop.'
     }
 
     formatted = next
+  } else if (toolName === 'get_blocks_metadata') {
+    const record = asRecord(result)
+    formatted = {
+      ...record,
+      followUpHint:
+        'If you just created a workflow, call edit_workflow now to add blocks. Do not load_copilot_artifact unless a specific field id is missing from this result.',
+    }
   }
 
   if (toolName === 'generate_api_key') {
@@ -507,7 +541,7 @@ export function formatToolResultForLlm(
   if (options?.artifactStore && toolName !== LOAD_COPILOT_ARTIFACT_TOOL_NAME) {
     const offload = maybeOffloadToolResult(toolName, sanitized, options.artifactStore)
     if (offload.offloaded) {
-      return compactStringifyForLlm(offload.stub)
+      return compactStringifyForLlm(copyFollowUpFields(sanitized, offload.stub))
     }
   }
 
@@ -531,6 +565,30 @@ export function detectMandatoryFollowUp(
   } catch {
     return null
   }
+
+  return detectMandatoryFollowUpFromRecord(toolName, parsed)
+}
+
+/**
+ * Same as {@link detectMandatoryFollowUp}, but also inspects the raw tool result
+ * so artifact stubs / truncated JSON cannot drop `create_workflow` populate.
+ */
+export function detectMandatoryFollowUpFromExecution(
+  toolName: string,
+  success: boolean,
+  result: unknown,
+  llmFormattedJson: string
+): MandatoryFollowUp | null {
+  const fromFormatted = detectMandatoryFollowUp(toolName, llmFormattedJson)
+  if (fromFormatted) return fromFormatted
+  if (!success) return null
+  return detectMandatoryFollowUpFromRecord(toolName, asRecord(result))
+}
+
+function detectMandatoryFollowUpFromRecord(
+  toolName: string,
+  parsed: Record<string, unknown>
+): MandatoryFollowUp | null {
 
   const hint =
     typeof parsed.followUpHint === 'string' && parsed.followUpHint.trim()
@@ -586,6 +644,19 @@ export function detectMandatoryFollowUp(
   }
 
   if (parsed.needsFollowUpPopulate === true) {
+    return {
+      id: 'create_workflow:populate',
+      hint: hint ?? 'New workflow created. Call edit_workflow with add operations to populate it.',
+      resolveWith: ['edit_workflow'],
+    }
+  }
+
+  if (
+    toolName === 'create_workflow' &&
+    parsed.success !== false &&
+    typeof parsed.workflowId === 'string' &&
+    parsed.workflowId.trim()
+  ) {
     return {
       id: 'create_workflow:populate',
       hint: hint ?? 'New workflow created. Call edit_workflow with add operations to populate it.',

@@ -14,6 +14,7 @@ import {
   // Send,
   Server,
   Settings,
+  Share,
   ShieldCheck,
   Sprout,
   TerminalWindow,
@@ -41,7 +42,20 @@ import {
 
 export type SettingsPlane = 'account' | 'organization' | 'selfhost' | 'workspace'
 
-export type AccountSettingsSection = 'general' | 'billing' | 'api-keys' | 'admin' | 'mothership'
+export type AccountSettingsSection =
+  | 'general'
+  | 'billing'
+  | 'api-keys'
+  | 'admin'
+  | 'mothership'
+  | 'skill-share'
+
+/**
+ * Settings pages only platform admins (`user.role === 'admin'`) may open.
+ */
+export function isPlatformAdminSettingsSection(section: string): boolean {
+  return section === 'admin' || section === 'mothership' || section === 'skill-share'
+}
 
 /**
  * Settings a self-hoster needs from the managed service: their profile, what
@@ -120,6 +134,7 @@ export type UnifiedSettingsSection =
   | 'inbox'
   | 'sandboxes'
   | 'admin'
+  | 'skill-share'
   | 'sessions'
   | 'data-retention'
   | 'data-drains'
@@ -915,6 +930,20 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
     },
     planes: {
       account: { id: 'admin', group: 'platform', order: 4 },
+    },
+  },
+  {
+    label: 'Skill share',
+    icon: Share,
+    unified: {
+      id: 'skill-share',
+      description: 'Publish skills and copy them into workspaces.',
+      group: 'platform',
+      order: 1,
+      requiresAdminRole: true,
+    },
+    planes: {
+      account: { id: 'skill-share', group: 'platform', order: 5 },
     },
   },
   // {

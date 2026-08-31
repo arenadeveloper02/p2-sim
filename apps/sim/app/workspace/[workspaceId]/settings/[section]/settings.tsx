@@ -12,11 +12,17 @@ import { SettingsSectionProvider } from '@/app/workspace/[workspaceId]/settings/
 import {
   getSettingsSectionMeta,
   isBillingEnabled,
+  isPlatformAdminSettingsSection,
   type SettingsSection,
 } from '@/app/workspace/[workspaceId]/settings/navigation'
 
 const Admin = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/admin/admin').then((m) => m.Admin)
+)
+const SkillShare = dynamic(() =>
+  import('@/app/workspace/[workspaceId]/settings/components/skill-share/skill-share').then(
+    (m) => m.SkillShare
+  )
 )
 const ApiKeys = dynamic(() =>
   import('@/app/workspace/[workspaceId]/settings/components/api-keys/api-keys').then(
@@ -160,11 +166,9 @@ export function SettingsPage({ section }: SettingsPageProps) {
       ? 'general'
       : billingRedirectToUsage
         ? 'usage'
-        : normalizedSection === 'admin' && !sessionLoading && !isAdminRole
+        : isPlatformAdminSettingsSection(normalizedSection) && !sessionLoading && !isAdminRole
           ? 'general'
-          : normalizedSection === 'mothership' && !sessionLoading && !isAdminRole
-            ? 'general'
-            : normalizedSection
+          : normalizedSection
   const organizationId = hostContext.hostOrganizationId
   const meta = getSettingsSectionMeta(effectiveSection)
 
@@ -245,6 +249,7 @@ export function SettingsPage({ section }: SettingsPageProps) {
       {effectiveSection === 'recently-deleted' && <RecentlyDeleted />}
       {effectiveSection === 'self-host' && <SelfHost />}
       {effectiveSection === 'admin' && <Admin />}
+      {effectiveSection === 'skill-share' && <SkillShare />}
       {effectiveSection === 'mothership' && <Mothership />}
     </SettingsSectionProvider>
   )

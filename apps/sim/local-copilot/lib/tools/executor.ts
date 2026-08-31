@@ -18,6 +18,7 @@ import { generateWorkflowPatchFromRequest } from '@/local-copilot/lib/patches/ge
 import { validateWorkflowPatch, validateWorkflowState } from '@/local-copilot/lib/patches/validate'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
 import { getToolDefinition } from '@/local-copilot/lib/tools/definitions'
+import { canonicalCreateFilePath } from '@/local-copilot/lib/tools/enrich-file-tool-args'
 import {
   enrichLocalIntegrationToolParams,
   SEPARATE_DRAFT_RECIPIENTS_KEY,
@@ -60,6 +61,15 @@ import {
 } from '@/local-copilot/lib/writes/look-before-write'
 import { pinToolArgsToWorkspace } from '@/local-copilot/lib/writes/pin-ids'
 import { assertExpectedRevision } from '@/local-copilot/lib/writes/revision'
+import {
+  createTurnMutations,
+  rememberCreatedFile,
+  rememberCreatedWorkflow,
+  reuseCreatedFile,
+  reuseCreatedWorkflow,
+  type CreatedWorkflowThisTurn,
+  type LocalCopilotTurnMutations,
+} from '@/local-copilot/lib/writes/turn-mutations'
 import {
   assertWorkflowWritableInWorkspace,
   loadWorkflowRevision,
@@ -132,6 +142,16 @@ export interface ToolExecutionContext {
   fileIntentChannelId?: string
   /** Turn-scoped store for oversized tool-result artifacts. */
   artifactStore?: import('@/local-copilot/lib/context/artifacts').ArtifactStore
+  /**
+   * Nested so `{ ...toolCtx }` copies still share create reuse across parent
+   * and parallel specialists.
+   */
+  turnMutations?: LocalCopilotTurnMutations
+  /**
+   * Loaded workspace skill bodies for this turn. Specialists inject this as a
+   * system message so they follow the same playbook as the parent.
+   */
+  relevantSkillGuidance?: string
   /** First successful create_workflow this turn — later creates must reuse it. */
   createdWorkflowThisTurn?: {
     workflowId: string
@@ -207,6 +227,71 @@ async function runLoadUserSkill(
   }
 }
 
+function reusedWorkflowResult(existing: CreatedWorkflowThisTurn): ToolExecutionResult {
+  return {
+    toolName: 'create_workflow',
+    success: true,
+    createdWorkflowId: existing.workflowId,
+    result: {
+      success: true,
+      alreadyCreatedThisTurn: true,
+      workflowId: existing.workflowId,
+      startBlockId: existing.startBlockId,
+      workflowName: existing.workflowName,
+      message:
+        'Workflow already created this turn. Do not create another. Call get_blocks_metadata once if needed, then edit_workflow to add blocks.',
+    },
+  }
+}
+
+async function runCreateWorkflowOnce(
+  args: Record<string, unknown>,
+  ctx: ToolExecutionContext
+): Promise<ToolExecutionResult> {
+  const mutation = await runCreateWorkflowTool(args, {
+    userId: ctx.userId,
+    workspaceId: ctx.workspaceId,
+    workflowId: ctx.workflowId,
+    chatId: ctx.chatId,
+    abortSignal: ctx.abortSignal,
+    activeToolCallId: ctx.activeToolCallId,
+  })
+  const output = mutation.output as Record<string, unknown> | undefined
+  const createdWorkflowId = typeof output?.workflowId === 'string' ? output.workflowId : undefined
+  if (createdWorkflowId) {
+    ctx.allowedWorkflowIds?.add(createdWorkflowId)
+    ctx.workflowId = createdWorkflowId
+    const created = {
+      workflowId: createdWorkflowId,
+      ...(typeof output?.startBlockId === 'string' && output.startBlockId.trim()
+        ? { startBlockId: output.startBlockId.trim() }
+        : {}),
+      ...(typeof output?.workflowName === 'string' && output.workflowName.trim()
+        ? { workflowName: output.workflowName.trim() }
+        : {}),
+    }
+    ctx.createdWorkflowThisTurn = created
+    const turnMutations = ctx.turnMutations ?? createTurnMutations()
+    ctx.turnMutations = turnMutations
+    rememberCreatedWorkflow(turnMutations, created)
+  }
+  const created: ToolExecutionResult = {
+    toolName: 'create_workflow',
+    success: mutation.success,
+    result: mutation.output ?? { error: mutation.error },
+    error: mutation.error,
+    ...(createdWorkflowId ? { createdWorkflowId } : {}),
+  }
+  if (created.success) {
+    rememberIdempotentResult(
+      ctx.mutationIdempotency ?? new Map(),
+      buildIdempotencyKey('create_workflow', args, ctx.activeToolCallId),
+      created
+    )
+  }
+  return created
+}
+
 export async function executeLocalCopilotTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -247,6 +332,7 @@ async function executeLocalCopilotToolInner(
   ctx.listedIntegrationToolIds ??= new Set()
   ctx.readVfsPaths ??= new Set()
   ctx.allowedWorkflowIds ??= new Set()
+  ctx.turnMutations ??= createTurnMutations()
 
   if (toolSupportsIdempotency(toolName)) {
     const key = buildIdempotencyKey(toolName, args, ctx.activeToolCallId)
@@ -285,12 +371,37 @@ async function executeLocalCopilotToolInner(
   logger.info('Executing Arena Copilot tool', { toolName, workflowId: ctx.workflowId })
 
   if (isMothershipDelegatedTool(toolName)) {
+    if (toolName === 'create_file') {
+      const existingFile = reuseCreatedFile<ToolExecutionResult>(
+        ctx.turnMutations,
+        canonicalCreateFilePath(args)
+      )
+      if (existingFile) {
+        return {
+          ...existingFile,
+          result:
+            existingFile.result && typeof existingFile.result === 'object'
+              ? {
+                  ...(existingFile.result as Record<string, unknown>),
+                  alreadyCreatedThisTurn: true,
+                  message:
+                    'File already created this turn at this path. Do not create_file again — edit the existing file instead.',
+                }
+              : existingFile.result,
+        }
+      }
+    }
     const delegated = attachToolBilling(await executeMothershipDelegatedTool(toolName, args, ctx))
     if (toolName === 'list_integration_tools' && delegated.success) {
       rememberListedIntegrationTools(ctx, delegated.result)
     }
     if (toolName === 'read' && delegated.success) {
       rememberReadVfsPath(ctx, args)
+    }
+    if (toolName === 'create_file' && delegated.success && ctx.turnMutations) {
+      rememberCreatedFile(ctx.turnMutations, canonicalCreateFilePath(args), {
+        ...delegated,
+      })
     }
     if (toolSupportsIdempotency(toolName) && delegated.success) {
       rememberIdempotentResult(
@@ -304,63 +415,31 @@ async function executeLocalCopilotToolInner(
 
   switch (toolName) {
     case 'create_workflow': {
-      if (ctx.createdWorkflowThisTurn) {
-        const existing = ctx.createdWorkflowThisTurn
-        return {
-          toolName,
-          success: true,
-          createdWorkflowId: existing.workflowId,
-          result: {
-            success: true,
-            alreadyCreatedThisTurn: true,
-            workflowId: existing.workflowId,
-            startBlockId: existing.startBlockId,
-            workflowName: existing.workflowName,
-            message:
-              'Workflow already created this turn. Do not create another. Call get_blocks_metadata once if needed, then edit_workflow to add blocks.',
-          },
-        }
+      const existing = reuseCreatedWorkflow(ctx.turnMutations) ?? ctx.createdWorkflowThisTurn
+      if (existing) {
+        return reusedWorkflowResult(existing)
       }
 
-      const mutation = await runCreateWorkflowTool(args, {
-        userId: ctx.userId,
-        workspaceId: ctx.workspaceId,
-        workflowId: ctx.workflowId,
-        chatId: ctx.chatId,
-        abortSignal: ctx.abortSignal,
-        activeToolCallId: ctx.activeToolCallId,
-      })
-      const output = mutation.output as Record<string, unknown> | undefined
-      const createdWorkflowId =
-        typeof output?.workflowId === 'string' ? output.workflowId : undefined
-      if (createdWorkflowId) {
-        ctx.allowedWorkflowIds?.add(createdWorkflowId)
-        ctx.workflowId = createdWorkflowId
-        ctx.createdWorkflowThisTurn = {
-          workflowId: createdWorkflowId,
-          ...(typeof output?.startBlockId === 'string' && output.startBlockId.trim()
-            ? { startBlockId: output.startBlockId.trim() }
-            : {}),
-          ...(typeof output?.workflowName === 'string' && output.workflowName.trim()
-            ? { workflowName: output.workflowName.trim() }
-            : {}),
+      const inFlight = ctx.turnMutations?.createWorkflowInFlight as
+        | Promise<ToolExecutionResult>
+        | undefined
+      if (inFlight) {
+        const raced = await inFlight
+        const after = reuseCreatedWorkflow(ctx.turnMutations) ?? ctx.createdWorkflowThisTurn
+        return after ? reusedWorkflowResult(after) : raced
+      }
+
+      const pending = runCreateWorkflowOnce(args, ctx)
+      if (ctx.turnMutations) {
+        ctx.turnMutations.createWorkflowInFlight = pending
+      }
+      try {
+        return await pending
+      } finally {
+        if (ctx.turnMutations?.createWorkflowInFlight === pending) {
+          ctx.turnMutations.createWorkflowInFlight = undefined
         }
       }
-      const created = {
-        toolName,
-        success: mutation.success,
-        result: mutation.output ?? { error: mutation.error },
-        error: mutation.error,
-        ...(createdWorkflowId ? { createdWorkflowId } : {}),
-      }
-      if (created.success) {
-        rememberIdempotentResult(
-          ctx.mutationIdempotency,
-          buildIdempotencyKey(toolName, args, ctx.activeToolCallId),
-          created
-        )
-      }
-      return created
     }
 
     case 'edit_workflow': {
