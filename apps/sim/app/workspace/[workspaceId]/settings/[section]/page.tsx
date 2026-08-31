@@ -5,6 +5,7 @@ import { notFound, redirect } from 'next/navigation'
 import {
   getOrganizationSettingsFeatures,
   isOrganizationSettingsSectionAvailable,
+  isPlatformAdminSettingsSection,
   type OrganizationSettingsSection,
   resolveWorkspaceNavigation,
   type WorkspaceSettingsSection,
@@ -117,7 +118,7 @@ export default async function WorkspaceSettingsSectionPage({
   const hostContext = await getWorkspaceHostContextForViewer(workspaceId, session.user.id)
   if (!hostContext) notFound()
 
-  if (parsed === 'admin' || parsed === 'mothership') {
+  if (isPlatformAdminSettingsSection(parsed)) {
     if (!(await isPlatformAdmin(session.user.id))) notFound()
   }
 

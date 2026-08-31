@@ -1288,6 +1288,103 @@ export const skillMember = pgTable(
   })
 )
 
+export const skillShareTypeEnum = pgEnum('skill_share_type', ['general', 'service'])
+
+/**
+ * Admin-managed service labels used to tag catalog skills (PPC, Ads, …).
+ * Independent of workspace `skill` rows so existing skill CRUD is unchanged.
+ */
+export const skillService = pgTable(
+  'skill_service',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    nameUnique: uniqueIndex('skill_service_name_unique').on(table.name),
+    slugUnique: uniqueIndex('skill_service_slug_unique').on(table.slug),
+  })
+)
+
+/**
+ * A workspace skill published by a platform admin for copying into other
+ * workspaces. Origin tracking and type live here, not on `skill`.
+ */
+export const skillShareCatalog = pgTable(
+  'skill_share_catalog',
+  {
+    id: text('id').primaryKey(),
+    originSkillId: text('origin_skill_id')
+      .notNull()
+      .references(() => skill.id, { onDelete: 'cascade' }),
+    originWorkspaceId: text('origin_workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    type: skillShareTypeEnum('type').notNull(),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    originSkillUnique: uniqueIndex('skill_share_catalog_origin_skill_unique').on(
+      table.originSkillId
+    ),
+    typeIdx: index('skill_share_catalog_type_idx').on(table.type),
+  })
+)
+
+export const skillShareCatalogService = pgTable(
+  'skill_share_catalog_service',
+  {
+    catalogId: text('catalog_id')
+      .notNull()
+      .references(() => skillShareCatalog.id, { onDelete: 'cascade' }),
+    serviceId: text('service_id')
+      .notNull()
+      .references(() => skillService.id, { onDelete: 'restrict' }),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.catalogId, table.serviceId] }),
+    serviceIdx: index('skill_share_catalog_service_service_idx').on(table.serviceId),
+  })
+)
+
+/**
+ * Where a catalog skill was installed. `syncedContentHash` is the hash of
+ * name+description+content at the last successful share; a local edit that
+ * changes that payload skips the next overwrite.
+ */
+export const skillShareCopy = pgTable(
+  'skill_share_copy',
+  {
+    id: text('id').primaryKey(),
+    catalogId: text('catalog_id')
+      .notNull()
+      .references(() => skillShareCatalog.id, { onDelete: 'cascade' }),
+    copySkillId: text('copy_skill_id')
+      .notNull()
+      .references(() => skill.id, { onDelete: 'cascade' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    syncedContentHash: text('synced_content_hash').notNull(),
+    syncedAt: timestamp('synced_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    catalogWorkspaceUnique: uniqueIndex('skill_share_copy_catalog_workspace_unique').on(
+      table.catalogId,
+      table.workspaceId
+    ),
+    copySkillUnique: uniqueIndex('skill_share_copy_skill_unique').on(table.copySkillId),
+    workspaceIdx: index('skill_share_copy_workspace_idx').on(table.workspaceId),
+  })
+)
+
 export const mothershipSettings = pgTable(
   'mothership_settings',
   {
