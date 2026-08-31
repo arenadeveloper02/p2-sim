@@ -223,7 +223,13 @@ export interface LocalCopilotIntent {
 
 export function toolNamesForDomain(domain: LocalCopilotSpecialistDomain): Set<string> {
   if (domain === 'general') return new Set()
-  return new Set([...ALWAYS_ON_TOOL_NAMES, ...DOMAIN_TOOL_NAMES[domain]])
+  const names = new Set([...ALWAYS_ON_TOOL_NAMES, ...DOMAIN_TOOL_NAMES[domain]])
+  // Always-on create_workflow is for the parent / workflow specialist. Other
+  // specialists seeing the same user prompt would otherwise create a second workflow.
+  if (domain !== 'workflow') {
+    names.delete('create_workflow')
+  }
+  return names
 }
 
 export function toolNamesForIntent(intent: LocalCopilotIntent): Set<string> | null {

@@ -188,6 +188,7 @@ import { resolveTurnCompletion } from '@/local-copilot/lib/verification/completi
 import { mutationRequiresVerification } from '@/local-copilot/lib/verification/policy'
 import { runPostMutationVerification } from '@/local-copilot/lib/verification/run-verification'
 import type { MutationOutcome, VerificationRecord } from '@/local-copilot/lib/verification/types'
+import { createTurnMutations } from '@/local-copilot/lib/writes/turn-mutations'
 import { MAX_TOOL_ITERATIONS } from '@/providers'
 
 const logger = createLogger('LocalCopilotAgent')
@@ -805,6 +806,7 @@ export async function* runLocalCopilotAgent(
     allowedWorkflowIds: new Set(),
     blocksMetadataByType: new Map(),
     artifactStore: createArtifactStore(),
+    turnMutations: createTurnMutations(),
   }
 
   if (resolvedWorkflowId) {
@@ -870,7 +872,7 @@ export async function* runLocalCopilotAgent(
     if (findings.trim()) {
       messages.splice(specialistHintInsertAt, 0, {
         role: 'system',
-        content: `Parallel specialist findings — synthesize these; avoid re-running the same research unless needed:\n${findings}`,
+        content: `Parallel specialist findings — these writes already happened. Do NOT call create_workflow or create_file again unless a specialist failed. Synthesize the outcome for the user using the ids below:\n${findings}`,
       })
     }
     logger.info('Arena Copilot parallel subagents injected', {
