@@ -5889,3 +5889,27 @@ export const sandboxImage = pgTable(
     lastUsedIdx: index('sandbox_image_last_used_idx').on(table.lastUsedAt),
   })
 )
+
+/**
+ * Maps an external client id (from Arena / partner systems) to a Sim organization.
+ * One client → one org; used by the admin ensure-member provisioning API.
+ */
+export const clientOrganization = pgTable(
+  'client_organization',
+  {
+    id: text('id').primaryKey(),
+    clientId: text('client_id').notNull(),
+    clientName: text('client_name').notNull(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    clientIdUnique: uniqueIndex('client_organization_client_id_unique').on(table.clientId),
+    organizationIdUnique: uniqueIndex('client_organization_organization_id_unique').on(
+      table.organizationId
+    ),
+  })
+)
