@@ -51,7 +51,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   streaming: [
     'CAPABILITY: STREAMING',
-    'Bind DataText statePath "content" (or layoutPlan hostKeys). The host streams chunks into that region. Do not invent Table columns from unstructured output. WorkingCard only when LONG-RUNNING or MULTI-STEP is also selected.',
+    'Bind DataText statePath "content" (or layoutPlan hostKeys). The host streams chunks into that region. Chat on the same page also paints content when DataText is omitted. Do not invent Table columns from unstructured output. WorkingCard only when LONG-RUNNING or MULTI-STEP is also selected.',
   ].join('\n'),
   'multi-step': [
     'CAPABILITY: MULTI-STEP',
@@ -143,7 +143,7 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   chat: [
     'CAPABILITY: CHAT',
-    'The binding has chatProtocol.input. Put a Chat composer (actionId) where the brief places conversation — typically the results page, often the right column. Do not emit TextInput/TextArea/SearchField named input, conversationId, or files. Declared inputSchema fields other than the input prefix stay on the Form. The first form CTA composes input; Chat follow-ups send the composer text. Chat-only bindings (no form fields) must emit Chat, not an empty Form. Transcript is DataText or Repeat bound to output.',
+    'The binding has chatProtocol.input. Put a Chat composer (actionId) where the brief places conversation — typically the results page, often the right column. Do not emit TextInput/TextArea/SearchField named input, conversationId, or files. Declared inputSchema fields other than the input prefix stay on the Form. The first form CTA composes input; Chat follow-ups send the composer text. Chat-only bindings (no form fields) must emit Chat, not an empty Form. Streamed tokens land in host state content; Chat paints that when the page has no DataText statePath "content".',
   ].join('\n'),
   review: [
     'CAPABILITY: REVIEW',

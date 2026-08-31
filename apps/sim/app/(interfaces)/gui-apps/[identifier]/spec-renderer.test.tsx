@@ -14,6 +14,7 @@ vi.mock('streamdown/styles.css', () => ({}))
 
 vi.mock('@/app/(interfaces)/gui-apps/generative-app-theme.css', () => ({}))
 
+import type { ArenaGenerativeChatProtocol } from '@/lib/arena-generative-ui/chat-protocol'
 import {
   type ArenaGenerativeUxPlan,
   injectSamePageSelectChrome,
@@ -101,6 +102,7 @@ describe('SpecRenderer', () => {
     pendingActionIds?: ReadonlySet<string>
     actionHostKeys?: Record<string, readonly string[]>
     actionHiddenInputs?: Record<string, readonly string[]>
+    actionChatProtocol?: Record<string, ArenaGenerativeChatProtocol>
     uxPlan?: ArenaGenerativeUxPlan
     currentPath?: string
     onNavigate?: ReturnType<typeof vi.fn>
@@ -127,6 +129,7 @@ describe('SpecRenderer', () => {
           pendingActionIds={options?.pendingActionIds}
           actionHostKeys={options?.actionHostKeys}
           actionHiddenInputs={options?.actionHiddenInputs}
+          actionChatProtocol={options?.actionChatProtocol}
           uxPlan={options?.uxPlan}
           currentPath={options?.currentPath}
           onNavigate={onNavigate}
@@ -390,6 +393,116 @@ describe('SpecRenderer', () => {
     const { container } = render({ spec: replySpec, state: {} })
     expect(container.textContent).toContain('Waiting for a reply…')
     expect(container.querySelector('strong')).toBeNull()
+  })
+
+  describe('Chat live content', () => {
+    const chatSpec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: { title: 'Results' }, children: ['chat'] },
+        chat: {
+          type: 'Chat',
+          props: { actionId: 'submit_lead', placeholder: 'Ask a follow-up' },
+          children: [],
+        },
+      },
+    }
+    const protocol = { submit_lead: { input: true } }
+
+    it('paints streamed content above the composer when the page has no DataText content', () => {
+      const { container } = render({
+        spec: chatSpec,
+        state: { content: '## Hello stream' },
+        actionChatProtocol: protocol,
+      })
+
+      expect(container.querySelector('[data-testid="generative-chat-transcript"]')).toBeTruthy()
+      expect(container.querySelector('h2')?.textContent).toBe('Hello stream')
+      expect(container.querySelector('[data-testid="generative-chat"]')).toBeTruthy()
+    })
+
+    it('shows the DataText skeleton above Chat while content is pending and empty', () => {
+      const { container } = render({
+        spec: chatSpec,
+        state: {},
+        pending: true,
+        pendingActionIds: new Set(['submit_lead']),
+        actionHostKeys: { submit_lead: ['content'] },
+        actionChatProtocol: protocol,
+      })
+
+      const transcript = container.querySelector('[data-testid="generative-chat-transcript"]')
+      expect(transcript).toBeTruthy()
+      expect(transcript?.querySelector('[data-testid="skeleton"]')).toBeTruthy()
+      expect(transcript?.querySelector('[aria-live="polite"][aria-busy="true"]')).toBeTruthy()
+    })
+
+    it('does not duplicate content when DataText already binds statePath content', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Results' }, children: ['body', 'chat'] },
+          body: {
+            type: 'DataText',
+            props: { statePath: 'content', fallback: '' },
+            children: [],
+          },
+          chat: {
+            type: 'Chat',
+            props: { actionId: 'submit_lead', placeholder: 'Ask a follow-up' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        state: { content: '## Hello stream' },
+        actionChatProtocol: protocol,
+      })
+
+      expect(container.querySelector('[data-testid="generative-chat-transcript"]')).toBeNull()
+      expect(container.querySelector('h2')?.textContent).toBe('Hello stream')
+      expect(container.querySelector('[data-testid="generative-chat"]')).toBeTruthy()
+    })
+
+    it('hides the transcript when idle and content is empty', () => {
+      const { container } = render({
+        spec: chatSpec,
+        state: {},
+        actionChatProtocol: protocol,
+      })
+
+      expect(container.querySelector('[data-testid="generative-chat-transcript"]')).toBeNull()
+      expect(container.querySelector('[data-testid="generative-chat"]')).toBeTruthy()
+    })
+
+    it('submits follow-ups as surface chat', () => {
+      const { container, onRunAction } = render({
+        spec: chatSpec,
+        state: { content: '## Hello stream' },
+        actionChatProtocol: protocol,
+      })
+      const textarea = container.querySelector(
+        '[data-testid="generative-chat"] textarea'
+      ) as HTMLTextAreaElement
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+
+      act(() => {
+        setter?.call(textarea, 'Follow up')
+        textarea.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      act(() => {
+        container
+          .querySelector('[data-testid="generative-chat"]')
+          ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      })
+
+      expect(onRunAction).toHaveBeenCalledWith(
+        'submit_lead',
+        expect.objectContaining({ input: 'Follow up' }),
+        { surface: 'chat' }
+      )
+    })
   })
 
   it('renders a markdown string when DataText is bound to field.content', () => {

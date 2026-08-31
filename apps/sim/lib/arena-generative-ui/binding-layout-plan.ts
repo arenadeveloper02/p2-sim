@@ -231,7 +231,7 @@ export function resultLayoutFromPlan(plan: BindingLayoutPlan): string {
     plan.collections.length === 0 &&
     plan.stringFieldNames.length === 0
   ) {
-    return 'prose DataText matching outputHint'
+    return 'prose DataText matching outputHint, or Chat on that page which paints streamed content'
   }
   const hostKeys = plan.hostKeys.filter((key) => key !== 'content').join(', ')
   return `bind layoutPlan.hostKeys as statePath (${hostKeys || 'content'}); nested arrays (run_data.history) also land as "${plan.collections[0]?.hostKey ?? 'history'}"; a string markdown field binds as that name or "content", never "field.content"`

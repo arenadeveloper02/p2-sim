@@ -8,8 +8,11 @@ import {
 import { hasChatProtocolInput } from '@/lib/arena-generative-ui/chat-protocol'
 import { isFormFieldType } from '@/lib/arena-generative-ui/form-fields'
 import { isReservedStartInputName } from '@/lib/arena-generative-ui/input-schema'
-import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
-import { splitNavTarget } from '@/lib/arena-generative-ui/types'
+import {
+  ARENA_GENERATIVE_STREAM_CONTENT_KEY,
+  type ArenaGenerativeAppManifest,
+  splitNavTarget,
+} from '@/lib/arena-generative-ui/types'
 
 const BOUND_RESULT_TYPES = new Set([
   'Table',
@@ -94,6 +97,9 @@ export function validateManifestBindingLayout(
 
   const chatOnlyError = chatOnlyBindingError(manifest, plans)
   if (chatOnlyError) return chatOnlyError
+
+  const streamChatError = streamChatSurfaceError(manifest, plans)
+  if (streamChatError) return streamChatError
 
   return unboundHostKeysError(manifest, plans)
 }
@@ -191,6 +197,60 @@ function chatActionIdsFrom(manifest: ArenaGenerativeAppManifest): Set<string> {
     }
   }
   return ids
+}
+
+/**
+ * Stream + chat protocol needs a live content surface on the destination:
+ * DataText statePath "content", or Chat (the host paints streamed content above it).
+ */
+function streamChatSurfaceError(
+  manifest: ArenaGenerativeAppManifest,
+  plans: BindingLayoutPlan[]
+): string | undefined {
+  for (const [actionId, action] of Object.entries(manifest.actions)) {
+    const plan = plans.find((item) => item.key === action.apiKey)
+    if (!plan?.stream || !hasChatProtocolInput(plan.chatProtocol)) continue
+    const destPath = splitNavTarget(action.onSuccess?.navigate).path
+    const destPages = destPath ? [destPath] : pagesThatWireAction(manifest, actionId)
+    for (const pagePath of destPages) {
+      const page = manifest.pages[pagePath]
+      if (!page) continue
+      if (pageHasStreamChatSurface(specElements(page.spec), actionId)) continue
+      return `Binding "${plan.key}" streams with chat protocol. Put Chat or DataText statePath "content" on page "${pagePath}".`
+    }
+  }
+  return undefined
+}
+
+function pageHasStreamChatSurface(
+  elements: Record<string, SpecElement>,
+  actionId: string
+): boolean {
+  for (const element of Object.values(elements)) {
+    if (element.type === 'Chat' && asString(element.props?.actionId) === actionId) {
+      return true
+    }
+    if (
+      element.type === 'DataText' &&
+      asString(element.props?.statePath) === ARENA_GENERATIVE_STREAM_CONTENT_KEY
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+function pagesThatWireAction(manifest: ArenaGenerativeAppManifest, actionId: string): string[] {
+  const paths: string[] = []
+  for (const [path, page] of Object.entries(manifest.pages)) {
+    for (const element of Object.values(specElements(page.spec))) {
+      if (!ACTION_WIRE_TYPES.has(element.type ?? '')) continue
+      if (asString(element.props?.actionId) !== actionId) continue
+      paths.push(path)
+      break
+    }
+  }
+  return paths
 }
 
 function boundPathError(
@@ -337,12 +397,15 @@ function collectBoundDisplayKeys(manifest: ArenaGenerativeAppManifest): Set<stri
   const bound = new Set<string>()
   for (const page of Object.values(manifest.pages)) {
     for (const element of Object.values(specElements(page.spec))) {
+      if (element.type === 'Chat') {
+        bound.add(ARENA_GENERATIVE_STREAM_CONTENT_KEY)
+      }
       if (!BOUND_RESULT_TYPES.has(element.type ?? '')) continue
       const statePath = asString(element.props?.statePath)
       if (!statePath || statePath === 'item' || statePath.startsWith('item.')) continue
       const root = statePath.split('.')[0] ?? ''
       if (root === 'selected' || root === 'selectedId') {
-        bound.add('content')
+        bound.add(ARENA_GENERATIVE_STREAM_CONTENT_KEY)
         continue
       }
       bound.add(statePath)

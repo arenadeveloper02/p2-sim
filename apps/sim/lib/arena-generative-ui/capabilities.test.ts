@@ -24,6 +24,12 @@ describe('capabilityRecipePrompt', () => {
     expect(prompt).not.toContain('FILTER')
   })
 
+  it('tells streaming recipes that Chat can paint content', () => {
+    expect(capabilityRecipePrompt(['streaming'])).toContain(
+      'Chat on the same page also paints content'
+    )
+  })
+
   it('composes detail and analyze recipes', () => {
     const prompt = capabilityRecipePrompt(['detail', 'analyze'])
     expect(prompt).toContain('CAPABILITY: DETAIL')

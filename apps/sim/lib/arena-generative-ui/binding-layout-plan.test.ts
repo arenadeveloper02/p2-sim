@@ -39,6 +39,7 @@ describe('layoutPlanForBinding', () => {
     expect(plan.kind).toBe('stream')
     expect(plan.hostKeys).toEqual(['content'])
     expect(plan.stream).toBe(true)
+    expect(resultLayoutFromPlan(plan)).toContain('Chat')
   })
 
   it('lifts run_data.history to hostKey history and marks selectItem when items include prose', () => {

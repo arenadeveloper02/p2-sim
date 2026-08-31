@@ -62,6 +62,7 @@ import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
 import { resolveArenaGenerativeSpacing } from '@/lib/arena-generative-ui/theme'
 import {
   ARENA_GENERATIVE_SELECTED_ID_KEY,
+  ARENA_GENERATIVE_STREAM_CONTENT_KEY,
   collectionFromBoundValue,
   displayTextFromActionData,
   interpolateElementProps,
@@ -730,6 +731,14 @@ function isEmptyStateValue(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0
   if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length === 0
   return false
+}
+
+function specHasDataTextContent(elements: Record<string, SpecElement>): boolean {
+  return Object.values(elements).some(
+    (element) =>
+      element.type === 'DataText' &&
+      asString(element.props?.statePath) === ARENA_GENERATIVE_STREAM_CONTENT_KEY
+  )
 }
 
 function readStatePath(
@@ -2439,16 +2448,37 @@ export function SpecRenderer({
       case 'Chat': {
         const actionId = asString(props.actionId)
         if (!actionId) return null
-        return (
+        const protocol = actionChatProtocol?.[actionId]
+        const contentValue = state[ARENA_GENERATIVE_STREAM_CONTENT_KEY]
+        const contentPending = boundPending(ARENA_GENERATIVE_STREAM_CONTENT_KEY)
+        const showTranscript =
+          Boolean(protocol) &&
+          !specHasDataTextContent(elements) &&
+          (contentPending || !isEmptyStateValue(contentValue))
+        const composer = (
           <ChatComposer
             actionId={actionId}
             placeholder={asString(props.placeholder, 'Message')}
-            protocol={actionChatProtocol?.[actionId]}
+            protocol={protocol}
             conversationStorageKey={conversationStorageKey}
             hostState={state}
             pending={controlPending(actionId)}
             onSubmit={(id, values) => dispatchAction(id, values, { surface: 'chat' })}
           />
+        )
+        if (!showTranscript) return composer
+        return (
+          <div className='flex w-full flex-col gap-3'>
+            <div data-testid='generative-chat-transcript'>
+              <DataTextView
+                value={contentValue}
+                fallback=''
+                pending={contentPending}
+                style={styleFromProps(props)}
+              />
+            </div>
+            {composer}
+          </div>
         )
       }
       case 'Form': {

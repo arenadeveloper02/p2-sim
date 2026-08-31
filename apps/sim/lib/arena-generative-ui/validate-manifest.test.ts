@@ -1584,5 +1584,240 @@ describe('validateArenaGenerativeManifest', () => {
       expect(result.error).toBeUndefined()
       expect(result.success).toBe(true)
     })
+
+    it('rejects stream plus chat protocol when the destination has neither Chat nor DataText content', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Home', backgroundColor: null },
+            children: ['nav', 'form', 'chat'],
+          },
+          nav: { type: 'NavLink', props: { label: 'Results', to: 'results' }, children: [] },
+          form: { type: 'Form', props: { actionId: 'submit_lead' }, children: ['submit'] },
+          submit: {
+            type: 'SubmitButton',
+            props: { label: 'Submit', actionId: null },
+            children: [],
+          },
+          chat: {
+            type: 'Chat',
+            props: { actionId: 'submit_lead', placeholder: 'Ask a follow-up' },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec },
+            results: { title: 'Results', path: 'results', spec: resultsSpec() },
+          },
+          actions: {
+            submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          },
+        },
+        {
+          apiBindings: [
+            {
+              ...bindings[0],
+              stream: true,
+              chatProtocol: { input: true, conversationId: true },
+            },
+          ],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('streams with chat protocol')
+      expect(result.error).toContain('results')
+    })
+
+    it('accepts stream plus chat protocol when Chat is on the destination', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Results', backgroundColor: null },
+            children: ['back', 'chat'],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              href: null,
+              navigateTo: 'home',
+              actionId: null,
+              backgroundColor: null,
+              color: null,
+            },
+            children: [],
+          },
+          chat: {
+            type: 'Chat',
+            props: { actionId: 'submit_lead', placeholder: 'Ask a follow-up' },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: { title: 'Results', path: 'results', spec },
+          },
+          actions: {
+            submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          },
+        },
+        {
+          apiBindings: [
+            {
+              ...bindings[0],
+              stream: true,
+              chatProtocol: { input: true, conversationId: true },
+            },
+          ],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts stream plus chat protocol when DataText content is on the destination', () => {
+      const home: Spec = pageSpec({
+        extra: {
+          company: {
+            type: 'TextInput',
+            props: { name: 'company_name', label: 'Company', required: true, placeholder: '' },
+            children: [],
+          },
+          form: {
+            type: 'Form',
+            props: { actionId: 'submit_lead' },
+            children: ['company', 'submit'],
+          },
+        },
+      })
+      const results: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Results', backgroundColor: null },
+            children: ['back', 'body'],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              href: null,
+              navigateTo: 'home',
+              actionId: null,
+              backgroundColor: null,
+              color: null,
+            },
+            children: [],
+          },
+          body: {
+            type: 'DataText',
+            props: { statePath: 'content', fallback: '', color: null, size: null },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: home },
+            results: { title: 'Results', path: 'results', spec: results },
+          },
+          actions: {
+            submit_lead: { apiKey: 'qualify_lead', onSuccess: { navigate: 'results' } },
+          },
+        },
+        {
+          apiBindings: [
+            {
+              ...bindings[0],
+              stream: true,
+              inputSchema: [{ name: 'company_name', type: 'string' }],
+              chatProtocol: { input: true, conversationId: true },
+            },
+          ],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
+    it('treats Chat as binding streamed content for a structured stream plan', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: {
+            type: 'Page',
+            props: { title: 'Results', backgroundColor: null },
+            children: ['back', 'chat'],
+          },
+          back: {
+            type: 'Button',
+            props: {
+              label: 'Back',
+              href: null,
+              navigateTo: 'home',
+              actionId: null,
+              backgroundColor: null,
+              color: null,
+            },
+            children: [],
+          },
+          chat: {
+            type: 'Chat',
+            props: { actionId: 'submit_lead', placeholder: 'Ask a follow-up' },
+            children: [],
+          },
+        },
+      }
+      const result = validateArenaGenerativeManifest(
+        {
+          entryPath: 'home',
+          pages: {
+            home: { title: 'Home', path: 'home', spec: pageSpec() },
+            results: { title: 'Results', path: 'results', spec },
+          },
+          actions: {
+            submit_lead: { apiKey: 'recommend_articles', onSuccess: { navigate: 'results' } },
+          },
+        },
+        {
+          apiBindings: [
+            {
+              key: 'recommend_articles',
+              label: 'Recommend',
+              kind: 'workflow' as const,
+              workflowId: 'wf-rec',
+              stream: true,
+              chatProtocol: { input: true, conversationId: true },
+              outputSchema: [{ name: 'artical_data', type: 'string' }],
+            },
+          ],
+          entryPath: 'home',
+        }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
   })
 })
