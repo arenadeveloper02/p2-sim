@@ -77,7 +77,7 @@ export const PATCH = withRouteHandler(
       if (!entitled) {
         return forbiddenResponse(
           isBillingEnabled
-            ? 'Session policies are available on Enterprise plans only'
+            ? 'Session policies are not available on this deployment'
             : 'Session policies are disabled. Set ENTERPRISE_ENABLED or SESSION_POLICIES_ENABLED to enable them.'
         )
       }

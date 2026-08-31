@@ -9,7 +9,6 @@ import {
   MIN_IDLE_TIMEOUT_HOURS,
   MIN_SESSION_LIFETIME_HOURS,
 } from '@/lib/api/contracts/organization'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { SettingsEmptyState } from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
 import { useSettingsUnsavedGuard } from '@/app/workspace/[workspaceId]/settings/hooks/use-settings-unsaved-guard'
@@ -91,16 +90,6 @@ export function SessionPolicySettings({ organizationId }: SessionPolicySettingsP
     return (
       <SettingsPanel>
         <SettingsEmptyState>Loading session policy...</SettingsEmptyState>
-      </SettingsPanel>
-    )
-  }
-
-  if (isBillingEnabled && data && !data.isEnterprise) {
-    return (
-      <SettingsPanel>
-        <SettingsEmptyState>
-          Session policies are available on Enterprise plans only.
-        </SettingsEmptyState>
       </SettingsPanel>
     )
   }

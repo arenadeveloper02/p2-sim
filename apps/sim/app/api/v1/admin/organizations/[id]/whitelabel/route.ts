@@ -74,7 +74,7 @@ export const PATCH = withRouteHandler(
       if (!entitled) {
         return forbiddenResponse(
           isBillingEnabled
-            ? 'Whitelabeling is available on Enterprise plans only'
+            ? 'Whitelabeling is not available on this deployment'
             : 'Whitelabeling is disabled. Set ENTERPRISE_ENABLED or WHITELABELING_ENABLED to enable it.'
         )
       }

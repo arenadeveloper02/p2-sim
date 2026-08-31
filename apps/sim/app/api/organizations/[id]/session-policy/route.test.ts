@@ -13,8 +13,7 @@ import {
 } from '@sim/testing'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockIsEnterprise, mockEagerClamp, mockRecordAudit } = vi.hoisted(() => ({
-  mockIsEnterprise: vi.fn(),
+const { mockEagerClamp, mockRecordAudit } = vi.hoisted(() => ({
   mockEagerClamp: vi.fn(),
   mockRecordAudit: vi.fn(),
 }))
@@ -26,16 +25,6 @@ vi.mock('@/lib/auth/session-policy', () => ({
 
 vi.mock('@/lib/auth/security-policy', () => ({
   invalidateSecurityPolicyVersionCache: vi.fn(),
-}))
-
-/**
- * These tests run with billing enabled, where `isOrganizationFeatureEntitled`
- * delegates straight to the plan check — so both names resolve to the same
- * mock and `mockIsEnterprise` keeps steering the gate.
- */
-vi.mock('@/lib/billing/core/subscription', () => ({
-  isOrganizationOnEnterprisePlan: mockIsEnterprise,
-  isOrganizationFeatureEntitled: mockIsEnterprise,
 }))
 
 vi.mock('@sim/audit', () => ({
@@ -67,7 +56,6 @@ describe('session policy route', () => {
       user: { id: 'user-1', name: 'Admin', email: 'admin@acme.dev' },
       session: { token: 'tok-1' },
     })
-    mockIsEnterprise.mockResolvedValue(true)
   })
 
   describe('GET', () => {
@@ -121,14 +109,15 @@ describe('session policy route', () => {
       expect(response.status).toBe(400)
     })
 
-    it('rejects non-enterprise organizations', async () => {
+    it('allows owner updates regardless of organization plan', async () => {
       queueTableRows(member, [{ role: 'owner' }])
-      mockIsEnterprise.mockResolvedValue(false)
+      queueTableRows(organization, [{ name: 'Acme' }])
+      dbChainMockFns.returning.mockResolvedValueOnce([{ id: ORG_ID }])
       const response = await PUT(
         putRequest({ maxSessionHours: 72, idleTimeoutHours: null }),
         routeContext
       )
-      expect(response.status).toBe(403)
+      expect(response.status).toBe(200)
     })
 
     it('saves the policy, eagerly clamps sessions, and bumps the version', async () => {

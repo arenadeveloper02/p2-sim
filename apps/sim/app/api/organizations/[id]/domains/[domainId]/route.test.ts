@@ -11,21 +11,14 @@ import {
 } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGetSession, mockIsEnterprise, mockRecordAudit } = vi.hoisted(() => ({
+const { mockGetSession, mockRecordAudit } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
-  mockIsEnterprise: vi.fn(),
   mockRecordAudit: vi.fn(),
 }))
 
 vi.mock('@sim/db', () => dbChainMock)
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
-
-vi.mock('@/lib/billing/core/subscription', () => ({
-  isOrganizationOnEnterprisePlan: mockIsEnterprise,
-}))
-
-vi.mock('@/lib/core/config/env-flags', () => ({ isBillingEnabled: true }))
 
 vi.mock('@sim/audit', () => ({
   recordAudit: mockRecordAudit,
@@ -44,7 +37,6 @@ describe('remove org domain route', () => {
     mockGetSession.mockResolvedValue({
       user: { id: 'user-1', name: 'Admin', email: 'admin@acme.dev' },
     })
-    mockIsEnterprise.mockResolvedValue(true)
   })
 
   it('401s when unauthenticated', async () => {
@@ -59,11 +51,11 @@ describe('remove org domain route', () => {
     expect(res.status).toBe(403)
   })
 
-  it('403s for non-Enterprise orgs', async () => {
+  it('allows owners regardless of organization plan', async () => {
     queueTableRows(member, [{ role: 'owner' }])
-    mockIsEnterprise.mockResolvedValue(false)
+    dbChainMockFns.returning.mockResolvedValueOnce([])
     const res = await DELETE(createMockRequest('DELETE'), routeContext)
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(404)
     expect(mockRecordAudit).not.toHaveBeenCalled()
   })
 

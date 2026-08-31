@@ -10,7 +10,6 @@ import {
   type WorkspaceSettingsSection,
 } from '@/components/settings/navigation'
 import { getSession } from '@/lib/auth'
-import { isOrganizationOnEnterprisePlan } from '@/lib/billing'
 import { hasWorkspaceInboxAccess, hasWorkspaceSandboxAccess } from '@/lib/billing/core/subscription'
 import { canAccessArenaBillingSettings } from '@/lib/billing/workspace-permissions'
 import { getEnv, isTruthy } from '@/lib/core/config/env'
@@ -185,14 +184,10 @@ export default async function WorkspaceSettingsSectionPage({
       ) {
         redirectToGeneralSettings(workspaceId)
       }
-      const hasEnterprisePlan =
-        organizationSection !== 'members' &&
-        organizationSection !== 'billing' &&
-        (await isOrganizationOnEnterprisePlan(hostContext.hostOrganizationId))
       if (
         !isOrganizationSettingsSectionAvailable(
           organizationSection,
-          getOrganizationSettingsFeatures(hasEnterprisePlan)
+          getOrganizationSettingsFeatures()
         )
       ) {
         redirectToGeneralSettings(workspaceId)

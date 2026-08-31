@@ -88,7 +88,10 @@ export const POST = withRouteHandler(async (request: NextRequest) => {
 
     const hasAccess = await hasSSOAccess(session.user.id)
     if (!hasAccess) {
-      return NextResponse.json({ error: 'SSO requires an Enterprise plan' }, { status: 403 })
+      return NextResponse.json(
+        { error: 'SSO requires organization owner or admin access' },
+        { status: 403 }
+      )
     }
 
     const parsed = await parseRequest(

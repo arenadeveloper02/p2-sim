@@ -12,46 +12,37 @@ import {
 import { afterAll, beforeAll, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import { getBlock } from '@/blocks/registry'
 
-const {
-  DEFAULT_PERMISSION_GROUP_CONFIG,
-  mockIsOrganizationOnEnterprisePlan,
-  mockGetWorkspaceWithOwner,
-  mockGetProviderFromModel,
-} = vi.hoisted(() => ({
-  DEFAULT_PERMISSION_GROUP_CONFIG: {
-    allowedIntegrations: null,
-    allowedModelProviders: null,
-    deniedModels: [],
-    deniedTools: [],
-    hideTraceSpans: false,
-    hideKnowledgeBaseTab: false,
-    hideTablesTab: false,
-    hideCopilot: false,
-    hideIntegrationsTab: false,
-    hideSecretsTab: false,
-    hideApiKeysTab: false,
-    hideInboxTab: false,
-    hideFilesTab: false,
-    disableMcpTools: false,
-    disableCustomTools: false,
-    disableSkills: false,
-    disableInvitations: false,
-    disablePublicApi: false,
-    disablePublicFileSharing: false,
-    allowedFileShareAuthTypes: null,
-    hideDeployApi: false,
-    hideDeployMcp: false,
-    hideDeployChatbot: false,
-    allowedChatDeployAuthTypes: null,
-  },
-  mockIsOrganizationOnEnterprisePlan: vi.fn<() => Promise<boolean>>(),
-  mockGetWorkspaceWithOwner: vi.fn<() => Promise<{ organizationId: string | null } | null>>(),
-  mockGetProviderFromModel: vi.fn<(model: string) => string>(),
-}))
-
-vi.mock('@/lib/billing', () => ({
-  isOrganizationOnEnterprisePlan: mockIsOrganizationOnEnterprisePlan,
-}))
+const { DEFAULT_PERMISSION_GROUP_CONFIG, mockGetWorkspaceWithOwner, mockGetProviderFromModel } =
+  vi.hoisted(() => ({
+    DEFAULT_PERMISSION_GROUP_CONFIG: {
+      allowedIntegrations: null,
+      allowedModelProviders: null,
+      deniedModels: [],
+      deniedTools: [],
+      hideTraceSpans: false,
+      hideKnowledgeBaseTab: false,
+      hideTablesTab: false,
+      hideCopilot: false,
+      hideIntegrationsTab: false,
+      hideSecretsTab: false,
+      hideApiKeysTab: false,
+      hideInboxTab: false,
+      hideFilesTab: false,
+      disableMcpTools: false,
+      disableCustomTools: false,
+      disableSkills: false,
+      disableInvitations: false,
+      disablePublicApi: false,
+      disablePublicFileSharing: false,
+      allowedFileShareAuthTypes: null,
+      hideDeployApi: false,
+      hideDeployMcp: false,
+      hideDeployChatbot: false,
+      allowedChatDeployAuthTypes: null,
+    },
+    mockGetWorkspaceWithOwner: vi.fn<() => Promise<{ organizationId: string | null } | null>>(),
+    mockGetProviderFromModel: vi.fn<(model: string) => string>(),
+  }))
 
 vi.mock('@/lib/workspaces/permissions/utils', () => ({
   getWorkspaceWithOwner: mockGetWorkspaceWithOwner,
@@ -93,10 +84,9 @@ import {
   validatePublicFileSharing,
 } from './permission-check'
 
-/** Default an org-backed, enterprise-entitled workspace so resolution reaches the group queries. */
+/** Default an org-backed workspace so resolution reaches the group queries. */
 function setEnterpriseOrgWorkspace() {
   mockGetWorkspaceWithOwner.mockResolvedValue({ organizationId: 'org-1' })
-  mockIsOrganizationOnEnterprisePlan.mockResolvedValue(true)
 }
 
 interface WorkspaceGroupRow {
@@ -182,7 +172,6 @@ describe('getUserPermissionConfig (org + entitlement gating)', () => {
     const config = await getUserPermissionConfig('user-123', 'workspace-1')
 
     expect(config).toBeNull()
-    expect(mockIsOrganizationOnEnterprisePlan).not.toHaveBeenCalled()
   })
 
   it('still applies the env allowlist on a no-org workspace', async () => {
@@ -194,13 +183,13 @@ describe('getUserPermissionConfig (org + entitlement gating)', () => {
     expect(config?.allowedIntegrations).toEqual(['slack'])
   })
 
-  it('returns null when the organization is not on an enterprise plan', async () => {
-    mockGetWorkspaceWithOwner.mockResolvedValue({ organizationId: 'org-1' })
-    mockIsOrganizationOnEnterprisePlan.mockResolvedValue(false)
+  it('resolves organization groups without a plan gate', async () => {
+    setEnterpriseOrgWorkspace()
+    queueGroupResolution([], [{ config: { disableSkills: true } }])
 
     const config = await getUserPermissionConfig('user-123', 'workspace-1')
 
-    expect(config).toBeNull()
+    expect(config?.disableSkills).toBe(true)
   })
 
   it('falls back to the org default group when no workspace group governs the user', async () => {
@@ -550,9 +539,10 @@ describe('validateChatDeployAuth', () => {
     await validateChatDeployAuth('user-123', 'workspace-1', 'email')
   })
 
-  it('no-ops when access control does not apply (non-enterprise)', async () => {
-    mockIsOrganizationOnEnterprisePlan.mockResolvedValue(false)
+  it('no-ops when access control does not apply', async () => {
+    setEnvFlags({ isHosted: false, isAccessControlEnabled: false })
     await validateChatDeployAuth('user-123', 'workspace-1', 'public')
+    setEnvFlags({ isHosted: true, isAccessControlEnabled: true })
   })
 })
 
@@ -561,6 +551,7 @@ describe('assertPermissionsAllowed', () => {
     vi.clearAllMocks()
     resetDbChainMock()
     mockGetAllowedIntegrationsFromEnv.mockReturnValue(null)
+    setEnvFlags({ isHosted: true, isAccessControlEnabled: true })
     setEnterpriseOrgWorkspace()
   })
 

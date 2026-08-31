@@ -24,7 +24,6 @@ import { saveDiscardActions } from '@/components/settings/save-discard-actions'
 import type { SettingsAction } from '@/components/settings/settings-header'
 import type { UpdateOrganizationDataRetentionBody } from '@/lib/api/contracts/organization'
 import type { RetentionOverride } from '@/lib/api/contracts/primitives'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import {
   type CustomPiiPattern,
   emptyPiiStages,
@@ -959,12 +958,6 @@ export function DataRetentionSettings({ organizationId: orgId }: DataRetentionSe
 
   if (!data) {
     return <SettingsEmptyState>Failed to load data retention settings.</SettingsEmptyState>
-  }
-
-  if (isBillingEnabled && !data.isEnterprise) {
-    return (
-      <SettingsEmptyState>Data retention is available on Enterprise plans only.</SettingsEmptyState>
-    )
   }
 
   return (

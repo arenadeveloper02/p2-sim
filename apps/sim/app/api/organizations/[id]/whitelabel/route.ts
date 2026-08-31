@@ -67,7 +67,7 @@ export const GET = withRouteHandler(
 /**
  * PUT /api/organizations/[id]/whitelabel
  * Updates the organization's whitelabel settings.
- * Requires enterprise plan and owner/admin role.
+ * Requires owner/admin role.
  */
 export const PUT = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
@@ -114,7 +114,7 @@ export const PUT = withRouteHandler(
         return NextResponse.json(
           {
             error: isBillingEnabled
-              ? 'Whitelabeling is available on Enterprise plans only'
+              ? 'Whitelabeling is not available on this deployment'
               : 'Whitelabeling is disabled. Set ENTERPRISE_ENABLED or WHITELABELING_ENABLED to enable it.',
           },
           { status: 403 }

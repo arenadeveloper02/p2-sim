@@ -7,14 +7,11 @@ import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import Image from 'next/image'
 import { saveDiscardActions } from '@/components/settings/save-discard-actions'
-import { isEnterprise } from '@/lib/billing/plan-helpers'
 import { HEX_COLOR_REGEX } from '@/lib/branding'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import {
   CHIP_FIELD_INPUT,
   CHIP_FIELD_SHELL,
 } from '@/app/workspace/[workspaceId]/components/credential-detail'
-import { SettingsEmptyState } from '@/app/workspace/[workspaceId]/settings/components/settings-empty-state'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
 import { SettingsSection } from '@/app/workspace/[workspaceId]/settings/components/settings-section/settings-section'
 import { useProfilePictureUpload } from '@/app/workspace/[workspaceId]/settings/hooks/use-profile-picture-upload'
@@ -25,7 +22,6 @@ import {
   useWhitelabelSettings,
   type WhitelabelSettingsPayload,
 } from '@/ee/whitelabeling/hooks/whitelabel'
-import { useOrganizationBilling } from '@/hooks/queries/organization'
 
 const logger = createLogger('WhitelabelingSettings')
 
@@ -117,11 +113,8 @@ interface WhitelabelingSettingsProps {
 }
 
 export function WhitelabelingSettings({ organizationId: orgId }: WhitelabelingSettingsProps) {
-  const { data: organizationBillingData } = useOrganizationBilling(orgId)
   const { data: savedSettings, isLoading } = useWhitelabelSettings(orgId)
   const updateSettings = useUpdateWhitelabelSettings()
-
-  const hasEnterprisePlan = isEnterprise(organizationBillingData?.data?.subscriptionPlan)
 
   const [brandName, setBrandName] = useState('')
   const [primaryColor, setPrimaryColor] = useState('')
@@ -299,16 +292,6 @@ export function WhitelabelingSettings({ organizationId: orgId }: WhitelabelingSe
     setLogoUrl(savedLogoUrl)
     setWordmarkUrl(savedWordmarkUrl)
     setFaviconUrl(savedFaviconUrl)
-  }
-
-  if (isBillingEnabled) {
-    if (!hasEnterprisePlan) {
-      return (
-        <SettingsEmptyState>
-          Whitelabeling is available on Enterprise plans only.
-        </SettingsEmptyState>
-      )
-    }
   }
 
   if (isLoading) {

@@ -44,7 +44,6 @@ interface SelfHostSettingsShellProps extends StandaloneSettingsShellBaseProps {
 interface OrganizationSettingsShellProps extends StandaloneSettingsShellBaseProps {
   plane: 'organization'
   organizationId: string
-  hasEnterprisePlan: boolean
   isOrganizationAdmin: boolean
 }
 
@@ -57,11 +56,10 @@ export function StandaloneSettingsShell(props: StandaloneSettingsShellProps) {
   const { children, plane } = props
   useSettingsBeforeUnload()
   const pathname = usePathname()
-  const hasEnterprisePlan = plane === 'organization' ? props.hasEnterprisePlan : false
   const isOrganizationAdmin = plane === 'organization' ? props.isOrganizationAdmin : false
   const isSuperUser = plane === 'account' ? (props.isSuperUser ?? false) : false
 
-  const organizationFeatures = getOrganizationSettingsFeatures(hasEnterprisePlan)
+  const organizationFeatures = getOrganizationSettingsFeatures()
   const accountItems = ACCOUNT_SETTINGS_ITEMS.filter((item) => {
     if (item.id === 'billing' && !isBillingEnabled) return false
     if ((item.id === 'admin' || item.id === 'mothership') && !isSuperUser) return false

@@ -16,8 +16,7 @@ const logger = createLogger('OrganizationWorkspaces')
  *
  * Lists the workspaces belonging to an organization, used to populate the
  * workspace multi-select when scoping a permission group. Gated to organization
- * owners/admins on an Enterprise-entitled organization (same gate as the
- * permission-group management routes).
+ * owners/admins.
  */
 export const GET = withRouteHandler(
   async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {

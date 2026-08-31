@@ -8,8 +8,6 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { removeOrganizationDomainContract } from '@/lib/api/contracts/organization'
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
-import { isOrganizationOnEnterprisePlan } from '@/lib/billing/core/subscription'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('OrgDomainDeleteAPI')
@@ -52,15 +50,6 @@ export const DELETE = withRouteHandler(
         { status: 403 }
       )
     }
-    // Enterprise-gate removal like add/verify so all domain mutations require the
-    // same entitlement (the UI already hides removal from non-Enterprise orgs).
-    if (isBillingEnabled && !(await isOrganizationOnEnterprisePlan(organizationId))) {
-      return NextResponse.json(
-        { error: 'Domain verification is available on Enterprise plans only' },
-        { status: 403 }
-      )
-    }
-
     // Removing the proof withdraws the trust it granted, in the same transaction
     // so a domain can never be gone while its provider still claims verification.
     const removed = await db.transaction(async (tx) => {

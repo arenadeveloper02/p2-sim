@@ -81,6 +81,7 @@ describe('settings navigation boundaries', () => {
       'billing',
       'access-control',
       'audit-logs',
+      'sso',
       'sessions',
       'data-retention',
       'whitelabeling',
@@ -224,6 +225,7 @@ describe('settings navigation boundaries', () => {
       'billing',
       'data-retention',
       'organization',
+      'sso',
       'sessions',
       'whitelabeling',
     ])
@@ -261,7 +263,7 @@ describe('settings navigation boundaries', () => {
 
     expect(unifiedOrganization?.requiresTeam).toBeUndefined()
     expect(
-      isOrganizationSettingsSectionAvailable('members', getOrganizationSettingsFeatures(false))
+      isOrganizationSettingsSectionAvailable('members', getOrganizationSettingsFeatures())
     ).toBe(true)
   })
 
@@ -397,22 +399,15 @@ describe('settings navigation boundaries', () => {
     ).toBe('manage')
   })
 
-  it('gates organization control-plane sections by the target organization plan', () => {
+  it('shows hosted organization control-plane sections without a plan gate', () => {
     const hostedFree = {
       billingEnabled: true,
-      hasEnterprisePlan: false,
       hosted: true,
       selfHosted: {},
     }
     expect(isOrganizationSettingsSectionAvailable('members', hostedFree)).toBe(true)
     expect(isOrganizationSettingsSectionAvailable('billing', hostedFree)).toBe(true)
-    expect(isOrganizationSettingsSectionAvailable('sso', hostedFree)).toBe(false)
-    expect(
-      isOrganizationSettingsSectionAvailable('sso', {
-        ...hostedFree,
-        hasEnterprisePlan: true,
-      })
-    ).toBe(true)
+    expect(isOrganizationSettingsSectionAvailable('sso', hostedFree)).toBe(true)
   })
 
   it.each([

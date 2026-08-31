@@ -79,7 +79,7 @@ export const GET = withRouteHandler(
  * PUT /api/organizations/[id]/session-policy
  * Updates the organization's session policy and bumps the security-policy
  * version so existing cached session cookies re-validate against the new
- * policy. Requires enterprise plan and owner/admin role.
+ * policy. Requires owner/admin role.
  */
 export const PUT = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
@@ -121,7 +121,7 @@ export const PUT = withRouteHandler(
       return NextResponse.json(
         {
           error: isBillingEnabled
-            ? 'Session policies are available on Enterprise plans only'
+            ? 'Session policies are not available on this deployment'
             : 'Session policies are disabled. Set ENTERPRISE_ENABLED or SESSION_POLICIES_ENABLED to enable them.',
         },
         { status: 403 }

@@ -463,35 +463,32 @@ async function resolveOrganizationEnterprisePlan(organizationId: string): Promis
 export const isOrganizationOnEnterprisePlan = cache(resolveOrganizationEnterprisePlan)
 
 /**
- * Entitlement for a single org-scoped enterprise feature.
+ * Entitlement for a single org-scoped organization feature.
  *
- * When billing runs, the organization's plan decides and every feature moves
- * together. When it does not, there is no plan to read, so deployment
- * configuration decides per feature — which is what lets an operator run, say,
- * audit logs without whitelabeling.
+ * Hosted organization settings are available to organization administrators
+ * regardless of plan. When billing does not run, deployment configuration
+ * decides per feature.
  *
  * Pass the matching flag from `@/lib/core/config/env-flags` as
  * `selfHostEntitlement`; those already resolve the master switch and the
  * feature's legacy default.
  *
- * Prefer this over calling {@link isOrganizationOnEnterprisePlan} directly in a
- * feature gate. That helper is feature-agnostic and answers `true` for
- * everything once billing is off, which is exactly the behavior that made
- * self-hosted flags meaningless.
+ * This keeps self-hosted feature flags independent while avoiding plan gates on
+ * hosted organization settings.
  */
 export async function isOrganizationFeatureEntitled(
-  organizationId: string,
+  _organizationId: string,
   selfHostEntitlement: boolean
 ): Promise<boolean> {
   if (!isBillingEnabled) return selfHostEntitlement
-  return isOrganizationOnEnterprisePlan(organizationId)
+  return true
 }
 
 /**
- * Check if user has access to SSO feature
+ * Check if user has access to SSO configuration.
  * Returns true if:
  * - SSO_ENABLED env var is set (self-hosted override), OR
- * - User is admin/owner of an enterprise organization
+ * - User is an admin/owner of an organization
  *
  * In non-production environments, returns true for convenience.
  */
@@ -501,7 +498,22 @@ export async function hasSSOAccess(userId: string): Promise<boolean> {
       return true
     }
 
-    return isEnterpriseOrgAdminOrOwner(userId)
+    if (!isBillingEnabled) {
+      return true
+    }
+
+    const [memberRecord] = await db
+      .select({ role: member.role })
+      .from(member)
+      .where(eq(member.userId, userId))
+      .limit(1)
+
+    if (!memberRecord || !isOrgAdminRole(memberRecord.role)) {
+      return false
+    }
+
+    const billingStatus = await getEffectiveBillingStatus(userId)
+    return !billingStatus.billingBlocked
   } catch (error) {
     logger.error('Error checking SSO access', { error, userId })
     return false
@@ -515,9 +527,6 @@ export async function hasSSOAccess(userId: string): Promise<boolean> {
  * - billing disabled, OR
  * - the workspace belongs to an enterprise-plan organization (org-mode), OR
  * - the billed user has an individual enterprise subscription (personal workspace).
- *
- * Org-scoped Access Control (Permission Groups) gates on
- * {@link isOrganizationOnEnterprisePlan} instead — it has no workspace to resolve.
  */
 export async function isWorkspaceOnEnterprisePlan(workspaceId: string): Promise<boolean> {
   try {

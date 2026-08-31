@@ -10,8 +10,6 @@ import { verifyOrganizationDomainContract } from '@/lib/api/contracts/organizati
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { checkDomainTxtRecord, toDomainResponse } from '@/lib/auth/sso/domain-verification'
-import { isOrganizationOnEnterprisePlan } from '@/lib/billing/core/subscription'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('OrgDomainVerifyAPI')
@@ -19,8 +17,8 @@ const logger = createLogger('OrgDomainVerifyAPI')
 /**
  * POST /api/organizations/[id]/domains/[domainId]/verify
  * Checks the domain's DNS TXT challenge record; on success flips it to
- * `verified`. Requires enterprise plan and owner/admin role. A domain already
- * verified by another org is refused (the partial unique index also guards it).
+ * `verified`. Requires owner/admin role. A domain already verified by another
+ * org is refused (the partial unique index also guards it).
  */
 export const POST = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string; domainId: string }> }) => {
@@ -51,13 +49,6 @@ export const POST = withRouteHandler(
         { status: 403 }
       )
     }
-    if (isBillingEnabled && !(await isOrganizationOnEnterprisePlan(organizationId))) {
-      return NextResponse.json(
-        { error: 'Domain verification is available on Enterprise plans only' },
-        { status: 403 }
-      )
-    }
-
     const [row] = await db
       .select()
       .from(ssoDomain)

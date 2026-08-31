@@ -9,8 +9,6 @@ import { revokeOrganizationSessionsContract } from '@/lib/api/contracts/organiza
 import { parseRequest } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { invalidateSecurityPolicyVersionCache } from '@/lib/auth/security-policy'
-import { isOrganizationOnEnterprisePlan } from '@/lib/billing/core/subscription'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('OrgSessionsRevokeAPI')
@@ -19,8 +17,8 @@ const logger = createLogger('OrgSessionsRevokeAPI')
  * POST /api/organizations/[id]/sessions/revoke
  * Deletes every member session in the organization except the caller's
  * current one, then bumps the security-policy version so cached session
- * cookies invalidate on their next request. Requires enterprise plan and
- * owner/admin role. Impersonation sessions are platform tooling and spared.
+ * cookies invalidate on their next request. Requires owner/admin role.
+ * Impersonation sessions are platform tooling and spared.
  */
 export const POST = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
@@ -51,16 +49,6 @@ export const POST = withRouteHandler(
         { error: 'Forbidden - Only organization owners and admins can revoke sessions' },
         { status: 403 }
       )
-    }
-
-    if (isBillingEnabled) {
-      const hasEnterprise = await isOrganizationOnEnterprisePlan(organizationId)
-      if (!hasEnterprise) {
-        return NextResponse.json(
-          { error: 'Session management is available on Enterprise plans only' },
-          { status: 403 }
-        )
-      }
     }
 
     const [org] = await db

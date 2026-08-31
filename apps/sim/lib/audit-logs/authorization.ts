@@ -1,9 +1,7 @@
 import { db } from '@sim/db'
-import { member, subscription } from '@sim/db/schema'
+import { member } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, inArray } from 'drizzle-orm'
-import { isOrganizationBillingBlocked } from '@/lib/billing/core/access'
-import { USABLE_SUBSCRIPTION_STATUSES } from '@/lib/billing/subscriptions/utils'
+import { and, eq } from 'drizzle-orm'
 import type { ForbiddenDetailCode } from '@/lib/core/application'
 import { isAuditLogsEnabled, isBillingEnabled } from '@/lib/core/config/env-flags'
 
@@ -16,8 +14,8 @@ export interface EnterpriseAuditContext {
 
 /**
  * A refusal names its cause as well as its wording. This resolver distinguishes
- * four of them — not a member, not an admin, no enterprise plan, audit logging
- * switched off — and each has a different remedy, so collapsing them into one
+ * three of them — not a member, not an admin, or audit logging switched off —
+ * and each has a different remedy, so collapsing them into one
  * status forced callers to match on the message text.
  */
 export type EnterpriseAuditAccessResult =
@@ -59,17 +57,7 @@ export async function resolveEnterpriseAuditAccess(
     }
   }
 
-  if (isBillingEnabled) {
-    const billingBlocked = await isOrganizationBillingBlocked(membership.organizationId)
-    if (billingBlocked) {
-      return {
-        success: false,
-        status: 403,
-        code: 'ENTERPRISE_PLAN_REQUIRED',
-        message: 'Active enterprise subscription required',
-      }
-    }
-  } else if (!isAuditLogsEnabled) {
+  if (!isBillingEnabled && !isAuditLogsEnabled) {
     return {
       success: false,
       status: 403,
@@ -79,37 +67,13 @@ export async function resolveEnterpriseAuditAccess(
     }
   }
 
-  const [orgSub, orgMembers] = await Promise.all([
-    isBillingEnabled
-      ? db
-          .select({ id: subscription.id })
-          .from(subscription)
-          .where(
-            and(
-              eq(subscription.referenceId, membership.organizationId),
-              eq(subscription.plan, 'enterprise'),
-              inArray(subscription.status, USABLE_SUBSCRIPTION_STATUSES)
-            )
-          )
-          .limit(1)
-      : Promise.resolve([]),
-    db
-      .select({ userId: member.userId })
-      .from(member)
-      .where(eq(member.organizationId, membership.organizationId)),
-  ])
-
-  if (isBillingEnabled && orgSub.length === 0) {
-    return {
-      success: false,
-      status: 403,
-      code: 'ENTERPRISE_PLAN_REQUIRED',
-      message: 'Active enterprise subscription required',
-    }
-  }
+  const orgMembers = await db
+    .select({ userId: member.userId })
+    .from(member)
+    .where(eq(member.organizationId, membership.organizationId))
 
   const orgMemberIds = orgMembers.map((organizationMember) => organizationMember.userId)
-  logger.info('Enterprise audit access validated', {
+  logger.info('Organization audit access validated', {
     userId,
     organizationId: membership.organizationId,
     memberCount: orgMemberIds.length,

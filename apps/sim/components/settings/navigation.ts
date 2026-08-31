@@ -458,7 +458,6 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       group: 'organization',
       order: 3,
       requiresHosted: true,
-      requiresEnterprise: true,
       selfHostedOverride: SETTINGS_SELF_HOSTED_OVERRIDES.accessControl,
     },
     planes: {
@@ -475,7 +474,6 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       group: 'organization',
       order: 4,
       requiresHosted: true,
-      requiresEnterprise: true,
       selfHostedOverride: SETTINGS_SELF_HOSTED_OVERRIDES.auditLogs,
     },
     planes: {
@@ -774,11 +772,10 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       group: 'organization',
       order: 6,
       requiresHosted: true,
-      requiresEnterprise: true,
       selfHostedOverride: SETTINGS_SELF_HOSTED_OVERRIDES.sso,
     },
     planes: {
-      workspace: { id: 'self-host', group: 'system', order: 12 },
+      organization: { id: 'sso', group: 'security', order: 4 },
     },
   },
   // {
@@ -808,7 +805,6 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       group: 'organization',
       order: 7,
       requiresHosted: true,
-      requiresEnterprise: true,
       selfHostedOverride: SETTINGS_SELF_HOSTED_OVERRIDES.sessionPolicies,
     },
     planes: {
@@ -826,7 +822,6 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       group: 'organization',
       order: 8,
       requiresHosted: true,
-      requiresEnterprise: true,
       selfHostedOverride: SETTINGS_SELF_HOSTED_OVERRIDES.dataRetention,
     },
     planes: {
@@ -860,7 +855,6 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       group: 'organization',
       order: 9,
       requiresHosted: true,
-      requiresEnterprise: true,
       selfHostedOverride: SETTINGS_SELF_HOSTED_OVERRIDES.dataDrains,
     },
     planes: {
@@ -877,7 +871,6 @@ export const SETTINGS_SECTION_REGISTRY: readonly SettingsSectionRegistryEntry[] 
       group: 'organization',
       order: 5,
       requiresHosted: true,
-      requiresEnterprise: true,
       selfHostedOverride: SETTINGS_SELF_HOSTED_OVERRIDES.whitelabeling,
     },
     planes: {
@@ -1021,17 +1014,13 @@ export function resolveOrganizationSectionAccess({
 
 export interface OrganizationSettingsFeatures {
   billingEnabled: boolean
-  hasEnterprisePlan: boolean
   hosted: boolean
   selfHosted: Partial<Record<OrganizationSettingsSection, boolean>>
 }
 
-export function getOrganizationSettingsFeatures(
-  hasEnterprisePlan: boolean
-): OrganizationSettingsFeatures {
+export function getOrganizationSettingsFeatures(): OrganizationSettingsFeatures {
   return {
     billingEnabled: SETTINGS_NAVIGATION_BILLING_ENABLED,
-    hasEnterprisePlan,
     hosted: isHosted,
     selfHosted: {
       'access-control': SETTINGS_SELF_HOSTED_OVERRIDES.accessControl,
@@ -1046,8 +1035,7 @@ export function getOrganizationSettingsFeatures(
 }
 
 /**
- * Applies deployment and target-organization plan gates without consulting the
- * viewer's active organization.
+ * Applies deployment gates without consulting the viewer's active organization.
  */
 export function isOrganizationSettingsSectionAvailable(
   section: OrganizationSettingsSection,
@@ -1055,7 +1043,7 @@ export function isOrganizationSettingsSectionAvailable(
 ): boolean {
   if (section === 'members') return true
   if (section === 'billing') return features.billingEnabled
-  if (features.hosted) return features.hasEnterprisePlan
+  if (features.hosted) return true
   return features.selfHosted[section] ?? false
 }
 

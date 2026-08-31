@@ -6,13 +6,11 @@ import { resetEnvFlagsMock, setEnvFlags } from '@sim/testing'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockUseConfigureSSO, mockUseOrganizationBilling, mockUseSession, mockUseSSOProviders } =
-  vi.hoisted(() => ({
-    mockUseConfigureSSO: vi.fn(),
-    mockUseOrganizationBilling: vi.fn(),
-    mockUseSession: vi.fn(),
-    mockUseSSOProviders: vi.fn(),
-  }))
+const { mockUseConfigureSSO, mockUseSession, mockUseSSOProviders } = vi.hoisted(() => ({
+  mockUseConfigureSSO: vi.fn(),
+  mockUseSession: vi.fn(),
+  mockUseSSOProviders: vi.fn(),
+}))
 
 vi.mock('@sim/emcn', () => ({
   Button: ({ children, ...props }: { children?: ReactNode }) => (
@@ -111,10 +109,6 @@ vi.mock('@/ee/sso/hooks/sso', () => ({
   useSSOProviders: mockUseSSOProviders,
 }))
 
-vi.mock('@/hooks/queries/organization', () => ({
-  useOrganizationBilling: mockUseOrganizationBilling,
-}))
-
 import { SSO } from '@/ee/sso/components/sso-settings'
 
 function provider(organizationId: string) {
@@ -172,10 +166,6 @@ beforeEach(() => {
   document.body.appendChild(container)
   root = createRoot(container)
   mockUseSession.mockReturnValue({ data: { user: { id: 'user-1' } } })
-  mockUseOrganizationBilling.mockReturnValue({
-    data: { data: { subscriptionPlan: 'enterprise' } },
-    isLoading: false,
-  })
   mockUseConfigureSSO.mockReturnValue({
     isPending: false,
     mutateAsync: vi.fn(),

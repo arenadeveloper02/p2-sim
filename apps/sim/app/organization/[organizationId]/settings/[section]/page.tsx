@@ -11,7 +11,6 @@ import {
 import { OrganizationSettingsRenderer } from '@/components/settings/organization-settings-renderer'
 import { SettingsUnavailable } from '@/components/settings/settings-unavailable'
 import { getSession } from '@/lib/auth'
-import { isOrganizationOnEnterprisePlan } from '@/lib/billing'
 import { canOpenOrganizationSettingsSection } from '@/lib/organizations/settings-access'
 
 interface OrganizationSettingsSectionPageProps {
@@ -49,16 +48,7 @@ export default async function OrganizationSettingsSectionPage({
 
   const canOpen = await canOpenOrganizationSettingsSection(organizationId, session.user.id, parsed)
   if (!canOpen) return <SettingsUnavailable embedded />
-  const hasEnterprisePlan =
-    parsed !== 'members' &&
-    parsed !== 'billing' &&
-    (await isOrganizationOnEnterprisePlan(organizationId))
-  if (
-    !isOrganizationSettingsSectionAvailable(
-      parsed,
-      getOrganizationSettingsFeatures(hasEnterprisePlan)
-    )
-  ) {
+  if (!isOrganizationSettingsSectionAvailable(parsed, getOrganizationSettingsFeatures())) {
     return (
       <SettingsUnavailable
         embedded

@@ -3,7 +3,6 @@ import { dataDrains, member } from '@sim/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { isOrganizationOnEnterprisePlan } from '@/lib/billing/core/subscription'
 import { isBillingEnabled, isDataDrainsEnabled } from '@/lib/core/config/env-flags'
 
 interface DrainAccessSession {
@@ -22,11 +21,10 @@ export type DrainAccessResult =
   | { ok: false; response: NextResponse }
 
 /**
- * Auth + membership + role + enterprise-plan gate shared by every data-drain
- * route. Owner/admin role is required for reads as well as writes since drain
- * configs expose customer bucket names and webhook URLs. On Sim Cloud the
- * gate is the Enterprise plan; on self-hosted it's `DATA_DRAINS_ENABLED`,
- * which 404s when unset so a newer image doesn't silently expose drains.
+ * Auth + membership + role gate shared by every data-drain route. Owner/admin
+ * role is required for reads as well as writes since drain configs expose
+ * customer bucket names and webhook URLs. On self-hosted,
+ * `DATA_DRAINS_ENABLED` remains the deployment-level switch.
  */
 export async function authorizeDrainAccess(
   organizationId: string,
@@ -60,18 +58,6 @@ export async function authorizeDrainAccess(
         { error: 'Data Drains are not enabled on this deployment' },
         { status: 404 }
       ),
-    }
-  }
-  if (isBillingEnabled) {
-    const hasEnterprise = await isOrganizationOnEnterprisePlan(organizationId)
-    if (!hasEnterprise) {
-      return {
-        ok: false,
-        response: NextResponse.json(
-          { error: 'Data Drains are available on Enterprise plans only' },
-          { status: 403 }
-        ),
-      }
     }
   }
   if (memberEntry.role !== 'owner' && memberEntry.role !== 'admin') {

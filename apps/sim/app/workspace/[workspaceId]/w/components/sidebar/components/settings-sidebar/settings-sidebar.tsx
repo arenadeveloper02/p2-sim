@@ -166,6 +166,7 @@ export function SettingsSidebar({
       }
 
       const orgAdminSatisfied = isOrgAdminOrOwner || item.allowNonOrgAdmin
+      const isOrganizationSection = ORGANIZATION_PLANE_UNIFIED_SECTIONS.has(item.id)
 
       if (item.requiresTeam && (!hasTeamPlan || !orgAdminSatisfied)) {
         return false
@@ -173,9 +174,14 @@ export function SettingsSidebar({
 
       if (
         item.requiresEnterprise &&
+        !isOrganizationSection &&
         (!hasEnterprisePlan || !orgAdminSatisfied) &&
         !item.showWhenLocked
       ) {
+        return false
+      }
+
+      if (isOrganizationSection && !isOrgAdminOrOwner && !item.showWhenLocked) {
         return false
       }
 

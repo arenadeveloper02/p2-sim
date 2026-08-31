@@ -22,7 +22,6 @@ import { saveDiscardActions } from '@/components/settings/save-discard-actions'
 import type { SettingsAction } from '@/components/settings/settings-header'
 import type { SsoRegistrationBody } from '@/lib/api/contracts/auth'
 import { useSession } from '@/lib/auth/auth-client'
-import { isEnterprise } from '@/lib/billing/plan-helpers'
 import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { REDACTED_MARKER } from '@/lib/core/security/redaction'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -34,7 +33,6 @@ import { SettingRow } from '@/ee/components/setting-row'
 import { VerifiedDomainsSection } from '@/ee/sso/components/verified-domains-section'
 import { SSO_TRUSTED_PROVIDERS } from '@/ee/sso/constants'
 import { useConfigureSSO, useSSOProviders } from '@/ee/sso/hooks/sso'
-import { useOrganizationBilling } from '@/hooks/queries/organization'
 
 const logger = createLogger('SSO')
 
@@ -227,9 +225,6 @@ export function SSO({ organizationId }: SSOProps) {
 
 function OrganizationSsoSettings({ organizationId }: SSOProps) {
   const { data: session } = useSession()
-  const { data: organizationBillingData, isLoading: isLoadingOrganizationBilling } =
-    useOrganizationBilling(organizationId)
-
   const { data: providersData, isLoading: isLoadingProviders } = useSSOProviders({
     organizationId,
   })
@@ -238,7 +233,6 @@ function OrganizationSsoSettings({ organizationId }: SSOProps) {
   const existingProvider = providers[0] as SSOProvider | undefined
 
   const userId = session?.user?.id
-  const hasEnterprisePlan = isEnterprise(organizationBillingData?.data?.subscriptionPlan)
 
   const isSSOProviderOwner =
     !isBillingEnabled && userId ? providers.some((p) => p.userId === userId) : null
@@ -273,19 +267,11 @@ function OrganizationSsoSettings({ organizationId }: SSOProps) {
 
   useSettingsUnsavedGuard({ isDirty: hasChanges })
 
-  if (isLoadingProviders || (isBillingEnabled && isLoadingOrganizationBilling)) {
+  if (isLoadingProviders) {
     return null
   }
 
-  if (isBillingEnabled) {
-    if (!hasEnterprisePlan) {
-      return (
-        <SettingsEmptyState>
-          Single Sign-On is available on Enterprise plans only.
-        </SettingsEmptyState>
-      )
-    }
-  } else {
+  if (!isBillingEnabled) {
     if (!isLoadingProviders && isSSOProviderOwner === false && providers.length > 0) {
       return (
         <SettingsEmptyState>

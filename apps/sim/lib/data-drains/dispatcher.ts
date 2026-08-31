@@ -3,9 +3,7 @@ import { dataDrainRuns, dataDrains } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { toError } from '@sim/utils/errors'
 import { and, eq, isNull, lt, or } from 'drizzle-orm'
-import { isOrganizationOnEnterprisePlan } from '@/lib/billing/core/subscription'
 import { getJobQueue } from '@/lib/core/async-jobs'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
 
 const logger = createLogger('DataDrainsDispatcher')
 
@@ -58,8 +56,7 @@ export async function reapOrphanedRuns(now: Date = new Date()): Promise<{ reaped
  * fans out one `run-data-drain` job per drain. Each drain is atomically
  * claimed via a conditional UPDATE before being enqueued — two concurrent
  * dispatcher invocations cannot both win the same row, and a manual run that
- * lands between the SELECT and the UPDATE will lose the race cleanly. Drains
- * belonging to orgs that have lapsed off the enterprise plan are skipped.
+ * lands between the SELECT and the UPDATE will lose the race cleanly.
  */
 export async function dispatchDueDrains(now: Date = new Date()): Promise<{
   candidates: number
@@ -94,43 +91,11 @@ export async function dispatchDueDrains(now: Date = new Date()): Promise<{
     return { candidates: 0, dispatched: 0, skipped: 0, reaped }
   }
 
-  // Self-hosted deployments have no subscription infra; `DATA_DRAINS_ENABLED`
-  // is the global on/off there. Cache per-org so a multi-drain org pays one
-  // billing lookup.
-  const enterpriseCache = new Map<string, boolean>()
-  const isEnterprise = async (orgId: string): Promise<boolean> => {
-    if (!isBillingEnabled) return true
-    const cached = enterpriseCache.get(orgId)
-    if (cached !== undefined) return cached
-    const result = await isOrganizationOnEnterprisePlan(orgId)
-    enterpriseCache.set(orgId, result)
-    return result
-  }
-
   const queue = await getJobQueue()
   let dispatched = 0
-  let skipped = 0
+  const skipped = 0
 
   for (const candidate of candidates) {
-    let enterprise: boolean
-    try {
-      enterprise = await isEnterprise(candidate.organizationId)
-    } catch (error) {
-      // A billing-API failure for one org must not abort the whole batch —
-      // skip this drain and let the next cron tick retry it.
-      logger.warn('Enterprise check failed; skipping drain', {
-        drainId: candidate.id,
-        organizationId: candidate.organizationId,
-        error,
-      })
-      skipped++
-      continue
-    }
-    if (!enterprise) {
-      skipped++
-      continue
-    }
-
     // Conditional claim — re-asserts the due predicate to lose to any other
     // dispatcher or manual-run path that's already moved this drain forward.
     const claimed = await db

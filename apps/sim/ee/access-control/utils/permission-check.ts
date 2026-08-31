@@ -3,7 +3,6 @@ import { permissionGroup, permissionGroupMember, permissionGroupWorkspace } from
 import { createLogger } from '@sim/logger'
 import { and, asc, eq, sql } from 'drizzle-orm'
 import type { ShareAuthType } from '@/lib/api/contracts/public-shares'
-import { isOrganizationOnEnterprisePlan } from '@/lib/billing'
 import {
   getAllowedIntegrationsFromEnv,
   isAccessControlEnabled,
@@ -240,8 +239,8 @@ export async function resolveWorkspaceGroup(
  * specific workspace. The workspace is mapped to its organization and the
  * governing group is resolved with specific-over-all precedence.
  *
- * Returns `null` (after env merge) when the workspace has no organization, the
- * organization isn't on an enterprise plan, or no group governs the user.
+ * Returns `null` (after env merge) when the workspace has no organization or no
+ * group governs the user.
  *
  * The env-level integration allowlist is always merged last so self-hosted
  * deployments can constrain integrations without touching the DB.
@@ -259,11 +258,6 @@ export async function getUserPermissionConfig(
     return mergeEnvAllowlist(null)
   }
 
-  const isEnterprise = await isOrganizationOnEnterprisePlan(ws.organizationId)
-  if (!isEnterprise) {
-    return mergeEnvAllowlist(null)
-  }
-
   const resolved = await resolveWorkspaceGroup(userId, ws.organizationId, workspaceId)
   return mergeEnvAllowlist(resolved?.config ?? null)
 }
@@ -272,8 +266,8 @@ export async function getUserPermissionConfig(
  * Throws {@link PublicFileSharingNotAllowedError} if the user's effective permission
  * group for the workspace disables public file sharing, or — when `authType` is
  * given — if that auth mode isn't in the group's `allowedFileShareAuthTypes`
- * allow-list (`null` allows all). No-op when access control doesn't apply
- * (non-enterprise / disabled), so non-governed orgs are unaffected.
+ * allow-list (`null` allows all). No-op when access control is disabled or no
+ * permission group governs the workspace.
  */
 export async function validatePublicFileSharing(
   userId: string,
@@ -305,8 +299,8 @@ export async function validatePublicFileSharing(
  * Throws {@link ChatDeployAuthNotAllowedError} if the user's effective permission
  * group for the workspace doesn't allow the chat deployment's `authType` (i.e. it
  * isn't in the group's `allowedChatDeployAuthTypes` allow-list; `null` allows all).
- * No-op when access control doesn't apply (non-enterprise / disabled), so
- * non-governed orgs are unaffected.
+ * No-op when access control is disabled or no permission group governs the
+ * workspace.
  */
 export async function validateChatDeployAuth(
   userId: string,
@@ -341,11 +335,6 @@ export async function getUserPermissionConfigForOrganization(
   organizationId: string
 ): Promise<PermissionGroupConfig | null> {
   if (!isHosted && !isAccessControlEnabled) {
-    return mergeEnvAllowlist(null)
-  }
-
-  const isEnterprise = await isOrganizationOnEnterprisePlan(organizationId)
-  if (!isEnterprise) {
     return mergeEnvAllowlist(null)
   }
 

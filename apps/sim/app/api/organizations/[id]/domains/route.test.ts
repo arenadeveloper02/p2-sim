@@ -11,21 +11,14 @@ import {
 } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGetSession, mockIsEnterprise, mockRecordAudit } = vi.hoisted(() => ({
+const { mockGetSession, mockRecordAudit } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
-  mockIsEnterprise: vi.fn(),
   mockRecordAudit: vi.fn(),
 }))
 
 vi.mock('@sim/db', () => dbChainMock)
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
-
-vi.mock('@/lib/billing/core/subscription', () => ({
-  isOrganizationOnEnterprisePlan: mockIsEnterprise,
-}))
-
-vi.mock('@/lib/core/config/env-flags', () => ({ isBillingEnabled: true }))
 
 vi.mock('@sim/audit', () => ({
   recordAudit: mockRecordAudit,
@@ -46,7 +39,6 @@ describe('org domains route', () => {
       user: { id: 'user-1', name: 'Admin', email: 'admin@acme.dev' },
       session: { token: 'tok-1' },
     })
-    mockIsEnterprise.mockResolvedValue(true)
   })
 
   describe('GET', () => {
@@ -96,13 +88,13 @@ describe('org domains route', () => {
       })
     })
 
-    it('returns an empty list (no domains/tokens) for non-Enterprise orgs', async () => {
+    it('returns an empty list when an organization has no domains', async () => {
       queueTableRows(member, [{ role: 'admin' }])
-      mockIsEnterprise.mockResolvedValue(false)
+      queueTableRows(ssoDomain, [])
       const res = await GET(createMockRequest('GET'), routeContext)
       expect(res.status).toBe(200)
       const body = await res.json()
-      expect(body.data).toEqual({ isEnterprise: false, domains: [] })
+      expect(body.data).toEqual({ isEnterprise: true, domains: [] })
     })
   })
 

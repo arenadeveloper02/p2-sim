@@ -15,8 +15,6 @@ import {
 import { parseRequest, validationErrorResponse } from '@/lib/api/server'
 import { getSession } from '@/lib/auth'
 import { generateVerificationToken, toDomainResponse } from '@/lib/auth/sso/domain-verification'
-import { isOrganizationOnEnterprisePlan } from '@/lib/billing/core/subscription'
-import { isBillingEnabled } from '@/lib/core/config/env-flags'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 
 const logger = createLogger('OrgDomainsAPI')
@@ -48,13 +46,7 @@ export const GET = withRouteHandler(
       )
     }
 
-    const isEnterprise = !isBillingEnabled || (await isOrganizationOnEnterprisePlan(organizationId))
-    // Domain management is Enterprise-only, so a non-Enterprise org has no
-    // domains to return — surface only the entitlement flag (which drives the
-    // upgrade prompt) and never the list/tokens.
-    if (!isEnterprise) {
-      return NextResponse.json({ success: true, data: { isEnterprise: false, domains: [] } })
-    }
+    const isEnterprise = true
 
     const rows = await db
       .select()
@@ -77,8 +69,8 @@ export const GET = withRouteHandler(
 
 /**
  * POST /api/organizations/[id]/domains
- * Claims a domain and mints a DNS TXT verification token. Requires enterprise
- * plan and owner/admin role. The domain starts `pending`; the org proves
+ * Claims a domain and mints a DNS TXT verification token. Requires owner/admin
+ * role. The domain starts `pending`; the org proves
  * ownership by publishing the token and calling the verify endpoint.
  */
 export const POST = withRouteHandler(
@@ -113,13 +105,6 @@ export const POST = withRouteHandler(
         { status: 403 }
       )
     }
-    if (isBillingEnabled && !(await isOrganizationOnEnterprisePlan(organizationId))) {
-      return NextResponse.json(
-        { error: 'Domain verification is available on Enterprise plans only' },
-        { status: 403 }
-      )
-    }
-
     const domain = normalizeSSODomain(parsed.data.body.domain)
     if (!domain) {
       return NextResponse.json(

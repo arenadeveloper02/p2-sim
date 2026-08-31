@@ -4,18 +4,14 @@
 import { dbChainMockFns, resetDbChainMock, resetEnvFlagsMock, setEnvFlags } from '@sim/testing'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockIsEnterprise, mockEnqueue, mockGetJobQueue } = vi.hoisted(() => {
+const { mockEnqueue, mockGetJobQueue } = vi.hoisted(() => {
   const mockEnqueue = vi.fn(async () => 'job-id')
   return {
-    mockIsEnterprise: vi.fn(),
     mockEnqueue,
     mockGetJobQueue: vi.fn(async () => ({ enqueue: mockEnqueue })),
   }
 })
 
-vi.mock('@/lib/billing/core/subscription', () => ({
-  isOrganizationOnEnterprisePlan: mockIsEnterprise,
-}))
 vi.mock('@/lib/core/async-jobs', () => ({ getJobQueue: mockGetJobQueue }))
 
 import { dispatchDueDrains, reapOrphanedRuns } from '@/lib/data-drains/dispatcher'
@@ -65,14 +61,14 @@ describe('dispatchDueDrains', () => {
     expect(mockGetJobQueue).not.toHaveBeenCalled()
   })
 
-  it('skips drains for orgs not on enterprise plan', async () => {
+  it('dispatches drains regardless of organization plan', async () => {
     dbChainMockFns.returning.mockResolvedValueOnce([]) // reaper
+    dbChainMockFns.returning.mockResolvedValueOnce([{ id: 'd1' }]) // claim succeeds
     mockCandidates([{ id: 'd1', organizationId: 'org-a' }])
-    mockIsEnterprise.mockResolvedValueOnce(false)
 
     const result = await dispatchDueDrains()
-    expect(result).toMatchObject({ candidates: 1, dispatched: 0, skipped: 1 })
-    expect(mockEnqueue).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ candidates: 1, dispatched: 1, skipped: 0 })
+    expect(mockEnqueue).toHaveBeenCalled()
   })
 
   it('claims and enqueues a job per due drain', async () => {
@@ -80,7 +76,6 @@ describe('dispatchDueDrains', () => {
       .mockResolvedValueOnce([]) // reaper
       .mockResolvedValueOnce([{ id: 'd1' }]) // claim succeeds
     mockCandidates([{ id: 'd1', organizationId: 'org-a' }])
-    mockIsEnterprise.mockResolvedValueOnce(true)
 
     const result = await dispatchDueDrains()
     expect(result).toMatchObject({ candidates: 1, dispatched: 1, skipped: 0 })
@@ -96,14 +91,13 @@ describe('dispatchDueDrains', () => {
       .mockResolvedValueOnce([]) // reaper
       .mockResolvedValueOnce([]) // claim returns nothing — lost the race
     mockCandidates([{ id: 'd1', organizationId: 'org-a' }])
-    mockIsEnterprise.mockResolvedValueOnce(true)
 
     const result = await dispatchDueDrains()
     expect(result.dispatched).toBe(0)
     expect(mockEnqueue).not.toHaveBeenCalled()
   })
 
-  it('caches enterprise check across drains in the same org', async () => {
+  it('dispatches multiple drains in the same organization', async () => {
     dbChainMockFns.returning
       .mockResolvedValueOnce([]) // reaper
       .mockResolvedValueOnce([{ id: 'd1' }])
@@ -112,9 +106,8 @@ describe('dispatchDueDrains', () => {
       { id: 'd1', organizationId: 'org-a' },
       { id: 'd2', organizationId: 'org-a' },
     ])
-    mockIsEnterprise.mockResolvedValue(true)
 
     await dispatchDueDrains()
-    expect(mockIsEnterprise).toHaveBeenCalledTimes(1)
+    expect(mockEnqueue).toHaveBeenCalledTimes(2)
   })
 })

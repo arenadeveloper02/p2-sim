@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { userPermissionConfigQuerySchema } from '@/lib/api/contracts/permission-groups'
 import { getSession } from '@/lib/auth'
-import { isOrganizationOnEnterprisePlan } from '@/lib/billing'
+import { isAccessControlEnabled, isHosted } from '@/lib/core/config/env-flags'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import {
   checkWorkspaceAccess,
@@ -50,8 +50,9 @@ export const GET = withRouteHandler(async (req: Request) => {
   // the caller's active org) so management gating is scoped to the org that
   // actually governs this workspace. External members are not org admins here.
   const isOrgAdmin = await isOrganizationAdminOrOwner(session.user.id, organizationId)
+  const entitled = isHosted || isAccessControlEnabled
 
-  if (!(await isOrganizationOnEnterprisePlan(organizationId))) {
+  if (!entitled) {
     return NextResponse.json({
       permissionGroupId: null,
       groupName: null,
@@ -70,7 +71,7 @@ export const GET = withRouteHandler(async (req: Request) => {
     permissionGroupId: resolved?.permissionGroupId ?? null,
     groupName: resolved?.groupName ?? null,
     config: resolved?.config ?? null,
-    entitled: true,
+    entitled,
     organizationId,
     isOrgAdmin,
   })

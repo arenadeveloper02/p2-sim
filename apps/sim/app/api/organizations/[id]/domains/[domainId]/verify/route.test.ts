@@ -11,24 +11,15 @@ import {
 } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGetSession, mockIsEnterprise, mockRecordAudit, mockCheckDomainTxtRecord } = vi.hoisted(
-  () => ({
-    mockGetSession: vi.fn(),
-    mockIsEnterprise: vi.fn(),
-    mockRecordAudit: vi.fn(),
-    mockCheckDomainTxtRecord: vi.fn(),
-  })
-)
+const { mockGetSession, mockRecordAudit, mockCheckDomainTxtRecord } = vi.hoisted(() => ({
+  mockGetSession: vi.fn(),
+  mockRecordAudit: vi.fn(),
+  mockCheckDomainTxtRecord: vi.fn(),
+}))
 
 vi.mock('@sim/db', () => dbChainMock)
 
 vi.mock('@/lib/auth', () => ({ getSession: mockGetSession }))
-
-vi.mock('@/lib/billing/core/subscription', () => ({
-  isOrganizationOnEnterprisePlan: mockIsEnterprise,
-}))
-
-vi.mock('@/lib/core/config/env-flags', () => ({ isBillingEnabled: true }))
 
 vi.mock('@sim/audit', () => ({
   recordAudit: mockRecordAudit,
@@ -67,7 +58,6 @@ describe('verify org domain route', () => {
     mockGetSession.mockResolvedValue({
       user: { id: 'user-1', name: 'Admin', email: 'admin@acme.dev' },
     })
-    mockIsEnterprise.mockResolvedValue(true)
     mockCheckDomainTxtRecord.mockResolvedValue('present')
   })
 

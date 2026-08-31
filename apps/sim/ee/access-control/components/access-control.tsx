@@ -17,8 +17,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { Plus } from 'lucide-react'
 import { useParams } from 'next/navigation'
 import { useQueryState } from 'nuqs'
-import { isEnterprise } from '@/lib/billing/plan-helpers'
-import { isAccessControlEnabled } from '@/lib/core/config/env-flags'
+import { isAccessControlEnabled, isHosted } from '@/lib/core/config/env-flags'
 import {
   groupIdParam,
   groupIdUrlKeys,
@@ -45,7 +44,6 @@ import {
   usePermissionGroups,
   useUserPermissionConfig,
 } from '@/ee/access-control/hooks/permission-groups'
-import { useOrganizationBilling } from '@/hooks/queries/organization'
 
 const logger = createLogger('AccessControl')
 
@@ -66,8 +64,6 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
    */
   const { data: userPermissionConfig, isPending: entitlementLoading } =
     useUserPermissionConfig(workspaceId)
-  const { data: organizationBillingData, isPending: organizationBillingLoading } =
-    useOrganizationBilling(organizationId)
   const currentUserIsOrgAdmin = isOrganizationAdmin
 
   const { data: permissionGroups = [], isPending: groupsLoading } = usePermissionGroups(
@@ -77,21 +73,11 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
   const { data: organizationWorkspaces = [], isPending: workspacesLoading } =
     useOrganizationWorkspaces(organizationId, !!organizationId && currentUserIsOrgAdmin)
 
-  /**
-   * Must be the resolved flag, not the raw `NEXT_PUBLIC_ACCESS_CONTROL_ENABLED`
-   * read. The settings nav decides visibility from the same resolver, so
-   * reading the bare var here let a deployment with only `ENTERPRISE_ENABLED`
-   * set show the section and then refuse to manage it.
-   */
-  const isEntitled =
-    isAccessControlEnabled ||
-    !!userPermissionConfig?.entitled ||
-    isEnterprise(organizationBillingData?.data?.subscriptionPlan)
+  const isEntitled = isHosted || isAccessControlEnabled || !!userPermissionConfig?.entitled
   const canManage = isEntitled && currentUserIsOrgAdmin && !!organizationId
 
   const isLoading =
-    (workspaceId ? entitlementLoading : organizationBillingLoading) ||
-    (!!organizationId && currentUserIsOrgAdmin && groupsLoading)
+    entitlementLoading || (!!organizationId && currentUserIsOrgAdmin && groupsLoading)
 
   const createPermissionGroup = useCreatePermissionGroup()
 
@@ -209,7 +195,7 @@ export function AccessControl({ isOrganizationAdmin, organizationId }: AccessCon
       <SettingsEmptyState>
         {!organizationId
           ? "Access Control applies to organization workspaces. This workspace isn't part of an organization."
-          : 'Only organization admins on Enterprise plans can manage Access Control settings.'}
+          : 'Only organization admins can manage Access Control settings.'}
       </SettingsEmptyState>
     )
   }

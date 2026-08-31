@@ -8,7 +8,6 @@ import {
 } from '@sim/db/schema'
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
-import { isOrganizationOnEnterprisePlan } from '@/lib/billing'
 import type { DbOrTx } from '@/lib/db/types'
 import { isOrganizationAdminOrOwner } from '@/lib/workspaces/permissions/utils'
 
@@ -20,9 +19,8 @@ export interface WorkspaceRef {
 
 /**
  * Authorize an organization-scoped access-control management request. The caller
- * must be an organization owner/admin and the organization must be entitled to
- * the Access Control (Permission Groups) enterprise feature. Returns a
- * `NextResponse` to short-circuit on failure, or `null` when authorized.
+ * must be an organization owner/admin. Returns a `NextResponse` to short-circuit
+ * on failure, or `null` when authorized.
  */
 export async function authorizeOrgAccessControl(
   userId: string,
@@ -31,11 +29,6 @@ export async function authorizeOrgAccessControl(
   const isAdmin = await isOrganizationAdminOrOwner(userId, organizationId)
   if (!isAdmin) {
     return NextResponse.json({ error: 'Admin permissions required' }, { status: 403 })
-  }
-
-  const entitled = await isOrganizationOnEnterprisePlan(organizationId)
-  if (!entitled) {
-    return NextResponse.json({ error: 'Access Control is an Enterprise feature' }, { status: 403 })
   }
 
   return null
