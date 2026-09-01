@@ -75,6 +75,7 @@ vi.mock('@/lib/arena-generative-ui/critique-manifest', () => ({
 import {
   EDIT_PRESERVATION_INSTRUCTION,
   generateArenaGenerativeManifest,
+  MAX_REPAIR_ATTEMPTS,
   MODEL_JSON_PARSE_ERROR,
   REPLAN_GENERATE_INSTRUCTION,
   SCOPED_EDIT_INSTRUCTION,
@@ -528,8 +529,11 @@ describe('generateArenaGenerativeManifest', () => {
     })
 
     expect(result.success).toBe(false)
-    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(3)
-    expect(result.error).toBe(GENERATOR_OMITTED_PAGES_ERROR)
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(MAX_REPAIR_ATTEMPTS + 1)
+    expect(result.error).toContain(GENERATOR_OMITTED_PAGES_ERROR)
+    expect(result.error).toContain('Could not generate a valid app after 3 repair attempts.')
+    expect(result.error).toContain('What you can do:')
+    expect(result.error).toContain('Pin a JSON sitemap')
     expect(result.error).not.toMatch(/keyed by page path/)
   })
 
@@ -578,7 +582,7 @@ describe('generateArenaGenerativeManifest', () => {
     expect(repairTurn.content).toContain('keep every other page')
   })
 
-  it('stops repairing after two attempts and returns the last validation error', async () => {
+  it('stops repairing after three attempts and returns a user-facing validation error', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(
       textMessage(
         JSON.stringify({
@@ -602,7 +606,11 @@ describe('generateArenaGenerativeManifest', () => {
 
     expect(result.success).toBe(false)
     expect(result.error).toContain('invented_key')
-    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(3)
+    expect(result.error).toContain('Could not generate a valid app after 3 repair attempts.')
+    expect(result.error).toContain('What still needs to be fixed:')
+    expect(result.error).toContain('What you can do:')
+    expect(result.error).toContain('API Bindings')
+    expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(MAX_REPAIR_ATTEMPTS + 1)
   })
 
   it('tells the model to use declared binding keys when Pages is empty', async () => {
@@ -1365,6 +1373,42 @@ describe('generateArenaGenerativeManifest', () => {
       manifest: twoPageManifest,
     })
 
+    function hostCriticExhaustionManifest() {
+      const missingBack = manifestMissingResultsBack()
+      const homeSpec = structuredClone(twoPageManifest.pages.home.spec)
+      const homeElements = homeSpec.elements as Record<
+        string,
+        { type?: string; props?: Record<string, unknown>; children?: string[] }
+      >
+      const cardProps = {
+        title: 'Group',
+        subtitle: null,
+        description: null,
+        footerText: null,
+        padding: null,
+        variant: 'default',
+        backgroundColor: null,
+        showWhen: null,
+      }
+      homeElements.outer = { type: 'Card', props: cardProps, children: ['inner'] }
+      homeElements.inner = {
+        type: 'Card',
+        props: { ...cardProps, title: 'Inner' },
+        children: [],
+      }
+      const homeSection = homeElements.section
+      if (homeSection) {
+        homeSection.children = [...(homeSection.children ?? []), 'outer']
+      }
+      return {
+        ...missingBack,
+        pages: {
+          ...missingBack.pages,
+          home: { ...twoPageManifest.pages.home, spec: homeSpec },
+        },
+      }
+    }
+
     function manifestMissingResultsBack() {
       const spec = structuredClone(twoPageResultsSpec)
       const section = spec.elements.section as { children: string[] }
@@ -1378,6 +1422,33 @@ describe('generateArenaGenerativeManifest', () => {
         },
       }
     }
+
+    it('lists every remaining host-critic issue after repair turns are spent', async () => {
+      mockCreateAnthropicMessage.mockResolvedValue(
+        textMessage(
+          JSON.stringify({
+            title: 'Lead qualifier',
+            content: 'ok',
+            manifest: hostCriticExhaustionManifest(),
+          })
+        )
+      )
+
+      const result = await generateArenaGenerativeManifest({
+        userInput: 'Lead qualifier.',
+        apiBindings: [
+          { key: 'qualify_lead', label: 'Qualify', kind: 'workflow', workflowId: 'wf-1' },
+        ],
+      })
+
+      expect(result.success).toBe(false)
+      expect(mockCreateAnthropicMessage).toHaveBeenCalledTimes(MAX_REPAIR_ATTEMPTS + 1)
+      expect(result.error).toContain('Could not generate a valid app after 3 repair attempts.')
+      expect(result.error).toContain('nested inside another Card')
+      expect(result.error).toContain('onSuccess.navigate target')
+      expect(result.error).toContain('What you can do:')
+      expect(result.error).toContain('one primary action')
+    })
 
     it('repairs a host-critic defect through the existing validation loop', async () => {
       mockCreateAnthropicMessage

@@ -280,7 +280,7 @@ Avoid:
 - Outbound `href` links for in-app pages. In-app nav uses `NavLink` / `navigateTo`.
 - CTA keys that are not in API Bindings.
 
-A manifest that fails validation is not thrown away. The generator sends the failing reply back to the model with the exact error and asks for a corrected manifest, up to two repair turns, so a single invented API key or unreachable page usually self-corrects inside one run. Only if all three attempts fail does the block surface the error. If that happens, tighten Pages + API Bindings and rerun. Common failures: invented API keys, unreachable pages, invalid kebab-case paths.
+A manifest that fails validation is not thrown away. The generator sends the failing reply back to the model with the exact error and asks for a corrected manifest, up to three repair turns, so a single invented API key or unreachable page usually self-corrects inside one run. Only if all four attempts fail does the block surface the remaining issues and what to change in User Input, Pages, or API Bindings. Common failures: invented API keys, unreachable pages, invalid kebab-case paths.
 
 The output token budget scales with the number of pages the run has to emit rather than sitting at a flat cap, because a truncated reply surfaces as a JSON parse error rather than a partial app. Pinning Pages makes that estimate exact, and a scoped edit counts only the pages in scope.
 

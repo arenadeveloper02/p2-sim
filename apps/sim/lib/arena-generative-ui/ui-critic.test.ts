@@ -18,6 +18,7 @@ import {
   CRITIC_ELEMENT_PROP_KEYS,
   compactManifestForCritic,
   hostCriticManifest,
+  hostCriticManifestIssues,
   MAX_NON_REPEAT_CARDS_PER_PAGE,
 } from '@/lib/arena-generative-ui/ui-critic'
 
@@ -346,6 +347,35 @@ describe('hostCriticManifest', () => {
     expect(hostCriticManifest(manifest, { authoredPagePaths: ['results'] })).toContain(
       'Page "results"'
     )
+  })
+})
+
+describe('hostCriticManifestIssues', () => {
+  it('returns every remaining issue instead of stopping at the first', () => {
+    const spec = pageSpec(
+      {
+        metric: {
+          type: 'Stat',
+          props: { label: 'Score', value: '42', statePath: null },
+          children: [],
+        },
+        outer: { type: 'Card', props: cardProps, children: ['inner'] },
+        inner: { type: 'Card', props: { ...cardProps, title: 'Inner' }, children: [] },
+      },
+      ['metric', 'outer']
+    )
+    const issues = hostCriticManifestIssues(
+      manifestWithHome(spec, { actions: { load: { apiKey: 'fetch' } } })
+    )
+    expect(issues.some((issue) => issue.includes('Stat "metric"'))).toBe(true)
+    expect(issues.some((issue) => issue.includes('Card "inner"'))).toBe(true)
+    expect(hostCriticManifest(manifestWithHome(spec, { actions: { load: { apiKey: 'fetch' } } }))).toBe(
+      issues[0]
+    )
+  })
+
+  it('returns an empty list when the spec is clean', () => {
+    expect(hostCriticManifestIssues(twoPageManifest)).toEqual([])
   })
 })
 

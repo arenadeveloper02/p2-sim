@@ -175,116 +175,175 @@ function navigateSuccessTargets(manifest: ArenaGenerativeAppManifest): Set<strin
   return targets
 }
 
-function duplicateOnLoadApiKeyError(
+function duplicateOnLoadApiKeyErrors(
   pagePath: string,
   onLoad: string[] | undefined,
   manifest: ArenaGenerativeAppManifest
-): string | undefined {
-  if (!onLoad || onLoad.length < 2) return undefined
+): string[] {
+  if (!onLoad || onLoad.length < 2) return []
+  const issues: string[] = []
   const seen = new Map<string, string>()
   for (const actionId of onLoad) {
     const apiKey = asString(manifest.actions[actionId]?.apiKey)
     if (!apiKey) continue
     const previous = seen.get(apiKey)
     if (previous) {
-      return `Page "${pagePath}" onLoad runs "${previous}" and "${actionId}" which share API key "${apiKey}". One actionId per job.`
+      issues.push(
+        `Page "${pagePath}" onLoad runs "${previous}" and "${actionId}" which share API key "${apiKey}". One actionId per job.`
+      )
+      continue
     }
     seen.set(apiKey, actionId)
   }
-  return undefined
+  return issues
 }
 
-function unboundDynamicError(pagePath: string, spec: Spec): string | undefined {
+function unboundDynamicErrors(pagePath: string, spec: Spec): string[] {
+  const issues: string[] = []
   const elements = elementsOf(spec)
   for (const [id, element] of Object.entries(elements)) {
     const props = element.props ?? {}
     if (asString(props.statePath)) continue
     if (element.type === 'Stat' && isLiteralValue(props.value)) {
-      return `Page "${pagePath}" Stat "${id}" hard-codes value and has no statePath. Bind the metric.`
+      issues.push(
+        `Page "${pagePath}" Stat "${id}" hard-codes value and has no statePath. Bind the metric.`
+      )
     }
     if (element.type === 'Sparkline' && isLiteralValue(props.values)) {
-      return `Page "${pagePath}" Sparkline "${id}" hard-codes values and has no statePath. Bind the series.`
+      issues.push(
+        `Page "${pagePath}" Sparkline "${id}" hard-codes values and has no statePath. Bind the series.`
+      )
     }
   }
-  return undefined
+  return issues
 }
 
-function nestedCardError(pagePath: string, spec: Spec): string | undefined {
+function nestedCardErrors(pagePath: string, spec: Spec): string[] {
+  const issues: string[] = []
   const elements = elementsOf(spec)
   const parent = parentByChildId(elements)
   for (const [id, element] of Object.entries(elements)) {
     if (element.type !== 'Card') continue
     if (ancestorHasType(id, 'Card', parent, elements)) {
-      return `Page "${pagePath}" Card "${id}" is nested inside another Card. Do not wrap a Card in a Card.`
+      issues.push(
+        `Page "${pagePath}" Card "${id}" is nested inside another Card. Do not wrap a Card in a Card.`
+      )
     }
   }
-  return undefined
+  return issues
 }
 
-function extraPrimaryError(pagePath: string, spec: Spec): string | undefined {
+function extraPrimaryErrors(pagePath: string, spec: Spec): string[] {
+  const issues: string[] = []
   const elements = elementsOf(spec)
   for (const [sectionId, element] of Object.entries(elements)) {
     if (element.type !== 'Section') continue
     const primaries = primaryIdsInSection(sectionId, elements)
     if (primaries.length > 1) {
-      return `Page "${pagePath}" Section "${sectionId}" has more than one primary action (${primaries.join(', ')}). Keep one of Button variant "primary", SubmitButton, or SearchField.`
+      issues.push(
+        `Page "${pagePath}" Section "${sectionId}" has more than one primary action (${primaries.join(', ')}). Keep one of Button variant "primary", SubmitButton, or SearchField.`
+      )
     }
   }
-  return undefined
+  return issues
 }
 
-function tooManyCardsError(pagePath: string, spec: Spec): string | undefined {
+function tooManyCardsErrors(pagePath: string, spec: Spec): string[] {
   const elements = elementsOf(spec)
   const insideRepeat = idsInsideType(elements, 'Repeat')
   const extra = Object.entries(elements)
     .filter(([id, element]) => element.type === 'Card' && !insideRepeat.has(id))
     .map(([id]) => id)
   if (extra.length > MAX_NON_REPEAT_CARDS_PER_PAGE) {
-    return `Page "${pagePath}" has ${extra.length} Cards outside Repeat; at most ${MAX_NON_REPEAT_CARDS_PER_PAGE} are allowed. Put repeating items in Repeat.`
+    return [
+      `Page "${pagePath}" has ${extra.length} Cards outside Repeat; at most ${MAX_NON_REPEAT_CARDS_PER_PAGE} are allowed. Put repeating items in Repeat.`,
+    ]
   }
-  return undefined
+  return []
 }
 
-function inventedRepresentationTypeError(pagePath: string, spec: Spec): string | undefined {
+function inventedRepresentationTypeErrors(pagePath: string, spec: Spec): string[] {
+  const issues: string[] = []
   const elements = elementsOf(spec)
   for (const [id, element] of Object.entries(elements)) {
     const type = element.type
     if (!type || !INVENTED_REPRESENTATION_TYPES.has(type)) continue
-    return `Page "${pagePath}" uses "${type}" on "${id}" which is not a catalog type. Represent kanban or timeline with grouped or dated Repeat or Table.`
+    issues.push(
+      `Page "${pagePath}" uses "${type}" on "${id}" which is not a catalog type. Represent kanban or timeline with grouped or dated Repeat or Table.`
+    )
   }
-  return undefined
+  return issues
 }
 
-function workspaceShellError(pagePath: string, spec: Spec): string | undefined {
+function workspaceShellErrors(pagePath: string, spec: Spec): string[] {
+  const issues: string[] = []
   const elements = elementsOf(spec)
   for (const [id, element] of Object.entries(elements)) {
     if (element.type !== 'Workspace') continue
     const childIds = element.children ?? []
     if (childIds.length < 2) {
-      return `Page "${pagePath}" Workspace "${id}" needs navigator and primary children. Add both regions.`
+      issues.push(
+        `Page "${pagePath}" Workspace "${id}" needs navigator and primary children. Add both regions.`
+      )
     }
     for (const childId of childIds) {
       if (elements[childId]?.type === 'Workspace') {
-        return `Page "${pagePath}" Workspace "${id}" nests another Workspace. Regions use collection, detail, task, results, or content — not a second shell.`
+        issues.push(
+          `Page "${pagePath}" Workspace "${id}" nests another Workspace. Regions use collection, detail, task, results, or content — not a second shell.`
+        )
       }
       if (elements[childId]?.type === 'Tabs') {
-        return `Page "${pagePath}" Workspace "${id}" uses Tabs for a region. Keep navigator, primary, and inspector visible together.`
+        issues.push(
+          `Page "${pagePath}" Workspace "${id}" uses Tabs for a region. Keep navigator, primary, and inspector visible together.`
+        )
       }
     }
   }
-  return undefined
+  return issues
 }
 
-function missingReturnNavError(
+function missingReturnNavErrors(
   pagePath: string,
   spec: Spec,
   entryPath: string,
   navigateTargets: Set<string>
-): string | undefined {
-  if (pagePath === entryPath) return undefined
-  if (!navigateTargets.has(pagePath)) return undefined
-  if (pageHasReturnNav(spec, pagePath)) return undefined
-  return `Page "${pagePath}" is an onSuccess.navigate target with no NavLink, Button.navigateTo, clearItem, or Tabs path back. Add a Back control.`
+): string[] {
+  if (pagePath === entryPath) return []
+  if (!navigateTargets.has(pagePath)) return []
+  if (pageHasReturnNav(spec, pagePath)) return []
+  return [
+    `Page "${pagePath}" is an onSuccess.navigate target with no NavLink, Button.navigateTo, clearItem, or Tabs path back. Add a Back control.`,
+  ]
+}
+
+/**
+ * Every blocking host-critic issue on authored pages. Used for the
+ * user-facing generate failure after repair turns are spent.
+ */
+export function hostCriticManifestIssues(
+  manifest: ArenaGenerativeAppManifest,
+  options: HostCriticOptions = {}
+): string[] {
+  const authored = options.authoredPagePaths ? new Set(options.authoredPagePaths) : null
+  const bindingsPresent = hasBindings(manifest)
+  const navigateTargets = navigateSuccessTargets(manifest)
+  const issues: string[] = []
+
+  for (const [path, page] of Object.entries(manifest.pages)) {
+    if (authored && !authored.has(path)) continue
+    issues.push(...duplicateOnLoadApiKeyErrors(path, page.onLoad, manifest))
+    if (bindingsPresent) {
+      issues.push(...unboundDynamicErrors(path, page.spec))
+    }
+    issues.push(...nestedCardErrors(path, page.spec))
+    issues.push(...extraPrimaryErrors(path, page.spec))
+    issues.push(...tooManyCardsErrors(path, page.spec))
+    issues.push(...missingReturnNavErrors(path, page.spec, manifest.entryPath, navigateTargets))
+    issues.push(...inventedRepresentationTypeErrors(path, page.spec))
+    issues.push(...workspaceShellErrors(path, page.spec))
+  }
+
+  return issues
 }
 
 /**
@@ -296,41 +355,7 @@ export function hostCriticManifest(
   manifest: ArenaGenerativeAppManifest,
   options: HostCriticOptions = {}
 ): string | undefined {
-  const authored = options.authoredPagePaths ? new Set(options.authoredPagePaths) : null
-  const bindingsPresent = hasBindings(manifest)
-  const navigateTargets = navigateSuccessTargets(manifest)
-
-  for (const [path, page] of Object.entries(manifest.pages)) {
-    if (authored && !authored.has(path)) continue
-
-    const duplicate = duplicateOnLoadApiKeyError(path, page.onLoad, manifest)
-    if (duplicate) return duplicate
-
-    if (bindingsPresent) {
-      const unbound = unboundDynamicError(path, page.spec)
-      if (unbound) return unbound
-    }
-
-    const nested = nestedCardError(path, page.spec)
-    if (nested) return nested
-
-    const extraPrimary = extraPrimaryError(path, page.spec)
-    if (extraPrimary) return extraPrimary
-
-    const tooManyCards = tooManyCardsError(path, page.spec)
-    if (tooManyCards) return tooManyCards
-
-    const missingBack = missingReturnNavError(path, page.spec, manifest.entryPath, navigateTargets)
-    if (missingBack) return missingBack
-
-    const invented = inventedRepresentationTypeError(path, page.spec)
-    if (invented) return invented
-
-    const workspace = workspaceShellError(path, page.spec)
-    if (workspace) return workspace
-  }
-
-  return undefined
+  return hostCriticManifestIssues(manifest, options)[0]
 }
 
 function compactProps(props: Record<string, unknown> | undefined): Record<string, unknown> {

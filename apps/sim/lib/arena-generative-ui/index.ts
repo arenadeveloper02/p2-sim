@@ -30,6 +30,7 @@ export {
   MIN_PAGES_FOR_SCOPED_EDIT,
   planArenaGenerativeEditScope,
 } from '@/lib/arena-generative-ui/edit-scope'
+export { formatGenerateFailureForUser } from '@/lib/arena-generative-ui/format-generate-failure'
 export {
   inputSchemaFromWorkflowFields,
   workflowBindingFromSelection,
@@ -77,7 +78,7 @@ export {
   isJsonRenderSpec,
   isReservedGenerativeAppIdentifier,
 } from '@/lib/arena-generative-ui/types'
-export { hostCriticManifest } from '@/lib/arena-generative-ui/ui-critic'
+export { hostCriticManifest, hostCriticManifestIssues } from '@/lib/arena-generative-ui/ui-critic'
 export type {
   ArenaGenerativeAsyncKind,
   ArenaGenerativeUxActionPlan,

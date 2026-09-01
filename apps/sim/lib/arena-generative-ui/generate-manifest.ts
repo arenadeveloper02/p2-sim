@@ -16,6 +16,7 @@ import {
   planArenaGenerativeEditScope,
   unscopedPageIndex,
 } from '@/lib/arena-generative-ui/edit-scope'
+import { formatGenerateFailureForUser } from '@/lib/arena-generative-ui/format-generate-failure'
 import {
   type ArenaGenerativeIntent,
   analyzeArenaGenerativeIntent,
@@ -43,7 +44,7 @@ import type {
   ArenaGenerativeGenerateResult,
   ArenaGenerativePageHint,
 } from '@/lib/arena-generative-ui/types'
-import { hostCriticManifest } from '@/lib/arena-generative-ui/ui-critic'
+import { hostCriticManifest, hostCriticManifestIssues } from '@/lib/arena-generative-ui/ui-critic'
 import {
   GENERATOR_OMITTED_PAGES_ERROR,
   type ManifestValidationResult,
@@ -72,7 +73,7 @@ const MAX_OUTPUT_TOKENS = 128_000
 const ASSUMED_PAGE_COUNT = 4
 
 /** Repair turns allowed after the first reply fails validation. */
-const MAX_REPAIR_ATTEMPTS = 2
+export const MAX_REPAIR_ATTEMPTS = 3
 
 /** Shown when the model reply is truncated or is not a JSON object. User Input is prose. */
 export const MODEL_JSON_PARSE_ERROR =
@@ -220,6 +221,53 @@ function evaluateGeneratedCandidate(
     return { success: false, error: hostError }
   }
   return validation
+}
+
+/**
+ * Catalog error, or every remaining host-critic issue when the last reply
+ * already passed catalog validation.
+ */
+function remainingIssuesForUser(
+  candidate: Record<string, unknown>,
+  options: EvaluateGeneratedCandidateOptions,
+  fallback: string
+): string[] {
+  const merged =
+    options.isScopedEdit && options.existingManifest && options.editScope
+      ? mergeScopedManifestEdit(options.existingManifest, candidate, {
+          pages: options.scopedPaths,
+          touchesActions: options.editScope.touchesActions,
+          touchesTheme: options.editScope.touchesTheme,
+        })
+      : null
+  if (merged && !merged.ok) {
+    return [merged.error]
+  }
+  const validation = validateArenaGenerativeManifest(
+    merged ? merged.candidate : candidate,
+    options.validationOptions
+  )
+  if (!validation.success || !validation.manifest) {
+    return [validation.error ?? fallback]
+  }
+  const hostIssues = hostCriticManifestIssues(validation.manifest, {
+    authoredPagePaths: options.validationOptions.authoredPagePaths,
+  })
+  return hostIssues.length > 0 ? hostIssues : [fallback]
+}
+
+function generateFailureForUser(
+  candidate: Record<string, unknown>,
+  options: EvaluateGeneratedCandidateOptions,
+  fallback: string
+): ArenaGenerativeGenerateResult {
+  return {
+    success: false,
+    error: formatGenerateFailureForUser({
+      issues: remainingIssuesForUser(candidate, options, fallback),
+      repairAttempts: MAX_REPAIR_ATTEMPTS,
+    }),
+  }
 }
 
 function structuredBriefSummary(brief: ArenaGenerativeStructuredBrief) {
@@ -613,7 +661,11 @@ export async function generateArenaGenerativeManifest(
 
     if (!validation.success || !validation.manifest) {
       logger.warn('Arena Generative UI manifest validation failed', { error: validation.error })
-      return { success: false, error: validation.error ?? 'Generated manifest failed validation' }
+      return generateFailureForUser(
+        extractManifestCandidate(parsed),
+        evaluateOptions,
+        validation.error ?? 'Generated manifest failed validation'
+      )
     }
 
     let critique: ArenaGenerativeCritique = { pass: true, issues: [] }
@@ -661,7 +713,11 @@ export async function generateArenaGenerativeManifest(
         logger.warn('Arena Generative UI critic repair failed validation', {
           error: validation.error,
         })
-        return { success: false, error: validation.error ?? 'Generated manifest failed validation' }
+        return generateFailureForUser(
+          extractManifestCandidate(parsed),
+          evaluateOptions,
+          validation.error ?? 'Generated manifest failed validation'
+        )
       }
       criticRepaired = true
     }
