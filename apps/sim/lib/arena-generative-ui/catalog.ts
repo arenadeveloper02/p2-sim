@@ -278,7 +278,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Focused secondary action (rename, add a note). showWhen uses the same clause syntax as form fields. Close with a ghost Button clearItem true. Not a multi-step workflow and not delete confirm — the host owns destructive confirm.',
+        'Focused secondary surface (create a record, rename, add a note). showWhen uses the same clause syntax as form fields. Open with a Button setValue that sets that flag (`creating=true`); close with a ghost Button setValue that clears it (`creating=`) or the overlay Close control. Not a multi-step workflow and not delete confirm — the host owns destructive confirm.',
     },
     Drawer: {
       props: z.object({
@@ -506,13 +506,14 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         actionId: z.string().nullable(),
         selectItem: z.boolean().nullable(),
         clearItem: z.boolean().nullable(),
+        setValue: z.string().nullable(),
         variant: z.enum(['primary', 'secondary', 'ghost', 'outline', 'destructive']).nullable(),
         size: z.enum(['sm', 'md']).nullable(),
         shape: z.enum(['default', 'pill']).nullable(),
         showWhen: z.string().nullable(),
       }),
       description:
-        'Button. Prefer navigateTo for in-app pages, actionId for APIs, href only for true outbound links. Inside Repeat, selectItem true copies that row into host state (selected, selectedId, content from output/content) without calling an API — combine with navigateTo a results page that has no onLoad, or stay on the list page with no navigateTo and a sibling detail showWhen "selectedId". It does not restamp inputs; Results chips still use the form field names. clearItem true drops that copied row so Back can restore the list; it must not set selectItem or actionId. variant sets emphasis and defaults to secondary: use primary for the single main action of a page, secondary for ordinary actions, outline for a brand-bordered pill such as "View analysis history", ghost for low-emphasis ones such as Back or Cancel, destructive for delete. shape "pill" fully rounds the control. showWhen hides the button until host state or a form field matches (same syntax as form fields) — use "hasMore" for Load more and "selectedId" for a same-page Back.',
+        'Button. Prefer navigateTo for in-app pages, actionId for APIs, href only for true outbound links. setValue writes a host flag (`creating=true`) so a sibling Modal or Drawer showWhen can open; empty value (`creating=`) clears it — use this for New / Add CTAs instead of a dead button or navigating to the same page. Inside Repeat, selectItem true copies that row into host state (selected, selectedId, content from output/content) without calling an API — combine with navigateTo a results page that has no onLoad, or stay on the list page with no navigateTo and a sibling detail showWhen "selectedId". It does not restamp inputs; Results chips still use the form field names. clearItem true drops that copied row so Back can restore the list; it must not set selectItem or actionId. variant sets emphasis and defaults to secondary: use primary for the single main action of a page, secondary for ordinary actions, outline for a brand-bordered pill such as "View analysis history", ghost for low-emphasis ones such as Back or Cancel, destructive for delete. shape "pill" fully rounds the control. showWhen hides the button until host state or a form field matches (same syntax as form fields) — use "hasMore" for Load more and "selectedId" for a same-page Back.',
     },
     NavLink: {
       props: z.object({

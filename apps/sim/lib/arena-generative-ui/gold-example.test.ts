@@ -10,13 +10,13 @@ import {
   goldExamplePromptForArchetype,
 } from '@/lib/arena-generative-ui/gold-example'
 import {
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
+  GOLD_COLLECTION_LOAD_API_KEY,
   GOLD_CONTENT_LOAD_API_KEY,
   GOLD_DASHBOARD_LOAD_API_KEY,
-  GOLD_COLLECTION_LOAD_API_KEY,
   GOLD_LIST_DETAIL_LIST_API_KEY,
   GOLD_LIST_DETAIL_RECORD_API_KEY,
   GOLD_WIZARD_SUBMIT_API_KEY,
-  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
   GOLD_WORKSPACE_LOAD_API_KEY,
   goldCollectionManifest,
   goldContentManifest,
@@ -163,9 +163,9 @@ describe('per-archetype gold examples', () => {
     expect(goldExamplePromptForArchetype('workspace')).toContain(
       'GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)'
     )
-    expect(
-      goldExamplePromptForArchetype('collection', { hasRegions: true })
-    ).toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
+    expect(goldExamplePromptForArchetype('collection', { hasRegions: true })).toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)'
+    )
     expect(goldExamplePromptForArchetype('task')).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
     expect(goldExamplePromptForArchetype()).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
   })
@@ -203,7 +203,9 @@ describe('per-archetype gold examples', () => {
     })
     expect(result.success).toBe(true)
     expect(Object.keys(goldCollectionManifest.pages)).toEqual(['home'])
-    expect(JSON.stringify(goldCollectionManifest)).not.toContain('navigateTo')
+    expect(JSON.stringify(goldCollectionManifest)).toContain('"Modal"')
+    expect(JSON.stringify(goldCollectionManifest)).toContain('creating=true')
+    expect(JSON.stringify(goldCollectionManifest)).not.toContain('"navigateTo": "')
     expect(JSON.stringify(goldCollectionManifest)).not.toContain('"Workspace"')
   })
 

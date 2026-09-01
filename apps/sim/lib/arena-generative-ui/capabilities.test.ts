@@ -36,6 +36,11 @@ describe('capabilityRecipePrompt', () => {
     )
   })
 
+  it('tells create to open a Modal with Button setValue', () => {
+    expect(capabilityRecipePrompt(['create'])).toContain('setValue "creating=true"')
+    expect(capabilityRecipePrompt(['create'])).toContain('Modal showWhen "creating"')
+  })
+
   it('composes inspect and analyze recipes', () => {
     const prompt = capabilityRecipePrompt(['inspect', 'analyze'])
     expect(prompt).toContain('CAPABILITY: INSPECT')

@@ -29,14 +29,16 @@ describe('suggestionForGenerateFailure', () => {
 
   it('maps kebab-case path errors to Pages', () => {
     expect(
-      suggestionForGenerateFailure('Invalid page path "Home". Use kebab-case segments like home or results.')
+      suggestionForGenerateFailure(
+        'Invalid page path "Home". Use kebab-case segments like home or results.'
+      )
     ).toContain('kebab-case')
   })
 
   it('maps dead controls to saying what they do', () => {
     expect(
       suggestionForGenerateFailure(
-        'Page "home" has a Button (go) with no actionId, navigateTo, href, selectItem, or clearItem, so it would do nothing. Give it a verb.'
+        'Page "home" has a Button (go) with no actionId, navigateTo, href, selectItem, clearItem, or setValue, so it would do nothing. Give it a verb.'
       )
     ).toContain('what each control does')
   })

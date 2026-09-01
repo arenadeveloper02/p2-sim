@@ -196,6 +196,26 @@ describe('hostCriticManifest', () => {
     expect(error).toContain('go')
   })
 
+  it('does not count a Modal SubmitButton against the page primary', () => {
+    const spec = pageSpec(
+      {
+        new_item: {
+          type: 'Button',
+          props: { label: 'New item', variant: 'primary', setValue: 'creating=true' },
+          children: [],
+        },
+        modal: {
+          type: 'Modal',
+          props: { title: 'New item', showWhen: 'creating' },
+          children: ['submit'],
+        },
+        submit: { type: 'SubmitButton', props: { label: 'Create' }, children: [] },
+      },
+      ['new_item', 'modal']
+    )
+    expect(hostCriticManifest(manifestWithHome(spec))).toBeUndefined()
+  })
+
   it(`rejects more than ${MAX_NON_REPEAT_CARDS_PER_PAGE} Cards outside Repeat`, () => {
     const ids = Array.from(
       { length: MAX_NON_REPEAT_CARDS_PER_PAGE + 1 },
@@ -371,9 +391,9 @@ describe('hostCriticManifestIssues', () => {
     )
     expect(issues.some((issue) => issue.includes('Stat "metric"'))).toBe(true)
     expect(issues.some((issue) => issue.includes('Card "inner"'))).toBe(true)
-    expect(hostCriticManifest(manifestWithHome(spec, { actions: { load: { apiKey: 'fetch' } } }))).toBe(
-      issues[0]
-    )
+    expect(
+      hostCriticManifest(manifestWithHome(spec, { actions: { load: { apiKey: 'fetch' } } }))
+    ).toBe(issues[0])
   })
 
   it('returns an empty list when the spec is clean', () => {

@@ -26,6 +26,7 @@ export const CRITIC_ELEMENT_PROP_KEYS = [
   'values',
   'selectItem',
   'clearItem',
+  'setValue',
   'cancelTo',
 ] as const
 
@@ -125,6 +126,7 @@ function primaryIdsInSection(sectionId: string, elements: Record<string, FlatEle
     const element = elements[id]
     if (!element) continue
     if (element.type === 'Section') continue
+    if (element.type === 'Modal' || element.type === 'Drawer') continue
     if (isPrimaryControl(element)) ids.push(id)
     queue.push(...(element.children ?? []))
   }

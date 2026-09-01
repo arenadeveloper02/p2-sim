@@ -257,7 +257,7 @@ The generator is held to a few constraints you do not need to restate:
 - **Labeled, left-aligned fields** — short related fields pair up in a `Grid`, long free-text stays full width.
 - **Real spacing** — `gap` and `padding` take spacing tokens (`lg`, `md`) that the host maps to density-aware CSS variables. Raw CSS lengths still work.
 
-The system prompt also carries **one** validated gold-standard layout for the planned archetype ([gold-example.ts](../../apps/sim/lib/arena-generative-ui/gold-example.ts) for form-result, plus dashboard / list-detail / wizard in [gold-example-archetypes.ts](../../apps/sim/lib/arena-generative-ui/gold-example-archetypes.ts)). Tests assert each example against `validateArenaGenerativeManifest` so the few-shot never teaches an invalid shape.
+The system prompt also carries **one** validated gold-standard layout selected from the planned sitemap ([gold-example.ts](../../apps/sim/lib/arena-generative-ui/gold-example.ts)). Gold teaches catalog wiring, not page count. Tests assert each example against `validateArenaGenerativeManifest` so the few-shot never teaches an invalid shape.
 
 ### Draft (Edit mode)
 
@@ -458,7 +458,7 @@ Load more is the **same action**, not a second binding. Put a Button with that `
 
 Layout: `Page`, `Section` (`width`: `narrow` / `wide` default / `full`, plus `showWhen`), `Stack` (`direction`, `justify`, `wrap`), `Card` (`variant` `default` / `muted`, `padding` token or CSS length, `showWhen`), `Grid` (`columns` 2–4, collapses to one column when narrow), `Columns` (`equal` / `sidebar-left` / `sidebar-right`), `Repeat` (children render once per element of a `statePath` array)
 
-Chrome: `PageHeader` (title, subtitle, trailing action), `Toolbar`, `Filter` (narrow an already-loaded collection; children are Select / TextInput / DateInput / Chip), `Tabs` (`items` as newline-separated `Label|path`, `activePath`), `Drawer` (list-detail overlay, `showWhen`), `Modal` (focused secondary action, `showWhen`; not delete confirm)
+Chrome: `PageHeader` (title, subtitle, trailing action), `Toolbar`, `Filter` (narrow an already-loaded collection; children are Select / TextInput / DateInput / Chip), `Tabs` (`items` as newline-separated `Label|path`, `activePath`), `Drawer` (list-detail overlay, `showWhen`), `Modal` (create / focused secondary action; `showWhen`; open with `Button.setValue`; not delete confirm)
 
 Copy: `Heading`, `Text`, `DataText`, `Alert`, `Toast` (transient in-content feedback the brief asked for; not save success), `List`, `ListItem`, `Divider`, `Image`
 
@@ -468,7 +468,7 @@ Input: `Form`, `TextInput`, `TextArea`, `NumberInput`, `DateInput`, `Select`, `R
 
 Loading: `WorkingCard` (status steps, lockstep bar, elapsed, Cancel, optional document skeleton) when the brief names a generate wait. `Skeleton` (`variant`: `text` / `stat` / `table` / `card` / `form` / `outline`) for static-children regions. `Spinner` and `ProgressSteps` remain for legacy specs.
 
-Nav / CTA: `NavLink` (`to` = page path), `Button` (`navigateTo` / `actionId` / `selectItem` / `clearItem` / outbound `href`, plus `variant`, `size`, and `showWhen`), `Link`
+Nav / CTA: `NavLink` (`to` = page path), `Button` (`navigateTo` / `actionId` / `selectItem` / `clearItem` / `setValue` / outbound `href`, plus `variant`, `size`, and `showWhen`), `Link`
 
 Theme (optional, on the manifest, not a component): `brandColor` (`#RGB` / `#RRGGBB`), `radius` (`sm` / `md` / `lg`), `density` (`compact` / `comfortable` / `roomy`), `font` (`sans` / `serif`), `colorScheme` (`light` / `dark` / `system`). The host applies these as scoped `--gui-*` CSS variables. Omit `theme` unless Design Notes name branding.
 

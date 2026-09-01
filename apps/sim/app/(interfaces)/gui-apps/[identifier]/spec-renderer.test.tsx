@@ -2867,6 +2867,76 @@ describe('SpecRenderer', () => {
       expect(container.querySelector('[data-testid="modal"]')).toBeNull()
     })
 
+    it('opens a create Modal from a Button setValue CTA', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Tasks' }, children: ['new_task', 'modal'] },
+          new_task: {
+            type: 'Button',
+            props: { label: 'New Task', setValue: 'creating=true', variant: 'primary' },
+            children: [],
+          },
+          modal: {
+            type: 'Modal',
+            props: { title: 'New Task', showWhen: 'creating' },
+            children: ['copy'],
+          },
+          copy: { type: 'Text', props: { text: 'Task title' }, children: [] },
+        },
+      }
+      const { container, onRunAction, onNavigate } = render({ spec, state: {} })
+      expect(container.querySelector('[data-testid="modal"]')).toBeNull()
+      const cta = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'New Task'
+      )
+      act(() => {
+        cta?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(container.querySelector('[data-testid="modal"]')?.textContent).toContain('Task title')
+      expect(onRunAction).not.toHaveBeenCalled()
+      expect(onNavigate).not.toHaveBeenCalled()
+    })
+
+    it('opens a closed create Modal instead of running its actionId', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Projects' }, children: ['new_project', 'modal'] },
+          new_project: {
+            type: 'Button',
+            props: { label: 'New Project', actionId: 'create_project', variant: 'primary' },
+            children: [],
+          },
+          modal: {
+            type: 'Modal',
+            props: { title: 'New Project', showWhen: 'creating' },
+            children: ['form'],
+          },
+          form: {
+            type: 'Form',
+            props: { actionId: 'create_project' },
+            children: ['name', 'submit'],
+          },
+          name: {
+            type: 'TextInput',
+            props: { name: 'name', label: 'Name', required: true },
+            children: [],
+          },
+          submit: { type: 'SubmitButton', props: { label: 'Create' }, children: [] },
+        },
+      }
+      const { container, onRunAction } = render({ spec, state: {} })
+      const cta = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'New Project'
+      )
+      act(() => {
+        cta?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(container.querySelector('[data-testid="modal"]')).toBeTruthy()
+      expect(onRunAction).not.toHaveBeenCalled()
+    })
+
     it('hides Toast until showWhen is true', () => {
       const spec: Spec = {
         root: 'page',

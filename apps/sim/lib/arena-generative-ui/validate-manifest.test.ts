@@ -762,7 +762,9 @@ describe('validateArenaGenerativeManifest', () => {
       )
 
       expect(result.success).toBe(false)
-      expect(result.error).toContain('no actionId, navigateTo, href, selectItem, or clearItem')
+      expect(result.error).toContain(
+        'no actionId, navigateTo, href, selectItem, clearItem, or setValue'
+      )
       expect(result.error).toContain('action')
     })
 
@@ -779,6 +781,16 @@ describe('validateArenaGenerativeManifest', () => {
     it('accepts one with actionId', () => {
       const result = validateArenaGenerativeManifest(
         manifestWith(buttonPage({ label: 'Run', actionId: 'submit_lead' })),
+        { apiBindings: bindings, entryPath: 'home' }
+      )
+
+      expect(result.error).toBeUndefined()
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts one with setValue to open a Modal', () => {
+      const result = validateArenaGenerativeManifest(
+        manifestWith(buttonPage({ label: 'New item', setValue: 'creating=true' })),
         { apiBindings: bindings, entryPath: 'home' }
       )
 

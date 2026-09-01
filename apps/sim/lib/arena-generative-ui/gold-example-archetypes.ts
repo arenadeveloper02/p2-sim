@@ -328,7 +328,7 @@ const collectionHomeSpec: Spec = {
     section: {
       type: 'Section',
       props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
-      children: ['header', 'results_grid'],
+      children: ['header', 'results_grid', 'create_modal'],
     },
     header: {
       type: 'PageHeader',
@@ -337,6 +337,23 @@ const collectionHomeSpec: Spec = {
         subtitle: 'Create and complete stay on this page.',
         kicker: 'List',
         align: 'start',
+      },
+      children: ['new_item'],
+    },
+    new_item: {
+      type: 'Button',
+      props: {
+        label: 'New item',
+        actionId: null,
+        selectItem: null,
+        clearItem: null,
+        setValue: 'creating=true',
+        navigateTo: null,
+        href: null,
+        variant: 'primary',
+        size: 'sm',
+        shape: null,
+        showWhen: null,
       },
       children: [],
     },
@@ -368,6 +385,63 @@ const collectionHomeSpec: Spec = {
       props: { src: '{item.logo}', initials: '{item.initials}', statePath: null },
       children: [],
     },
+    create_modal: {
+      type: 'Modal',
+      props: { title: 'New item', showWhen: 'creating' },
+      children: ['create_form'],
+    },
+    create_form: {
+      type: 'Form',
+      props: { actionId: 'create_item', align: 'start' },
+      children: ['item_name', 'create_actions'],
+    },
+    item_name: {
+      type: 'TextInput',
+      props: {
+        name: 'name',
+        label: 'Name',
+        required: true,
+        defaultValue: null,
+        statePath: null,
+        errorText: null,
+        showWhen: null,
+        placeholder: 'Item name',
+      },
+      children: [],
+    },
+    create_actions: {
+      type: 'Stack',
+      props: {
+        direction: 'horizontal',
+        gap: 'sm',
+        align: 'center',
+        justify: 'start',
+        wrap: true,
+      },
+      children: ['cancel_create', 'submit_create'],
+    },
+    cancel_create: {
+      type: 'Button',
+      props: {
+        label: 'Cancel',
+        actionId: null,
+        selectItem: null,
+        clearItem: null,
+        setValue: 'creating=',
+        navigateTo: null,
+        href: null,
+        variant: 'ghost',
+        size: 'sm',
+        shape: null,
+        showWhen: null,
+      },
+      children: [],
+    },
+    submit_create: {
+      type: 'SubmitButton',
+      props: { label: 'Create', actionId: 'create_item', size: null },
+      children: [],
+    },
   },
 }
 
@@ -384,12 +458,13 @@ export const goldCollectionManifest: ArenaGenerativeAppManifest = {
   },
   actions: {
     load_items: { apiKey: GOLD_COLLECTION_LOAD_API_KEY },
+    create_item: {},
   },
 }
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION = goldPrompt(
   'collection',
-  'One collection page. onLoad fills Repeat inside a 2-column Grid of entity Cards. Create and complete are capabilities on this page, not extra pages or regions. Match REPRESENTATION, not this body, when the brief picked table or list. No sibling Detail page. No catalog Workspace.',
+  'One collection page. onLoad fills Repeat inside a 2-column Grid of entity Cards. Create is a PageHeader trailing Button setValue that opens a Modal Form on this page, not an extra page or region. Match REPRESENTATION, not this body, when the brief picked table or list. No sibling Detail page. No catalog Workspace.',
   {
     title: 'Items',
     content: 'Browse a list on one page.',
@@ -689,7 +764,13 @@ const contentHomeSpec: Spec = {
     },
     updated: {
       type: 'Chip',
-      props: { text: 'Updated {updatedAt}', tone: 'muted', actionId: null, navigateTo: null, setValue: null },
+      props: {
+        text: 'Updated {updatedAt}',
+        tone: 'muted',
+        actionId: null,
+        navigateTo: null,
+        setValue: null,
+      },
       children: [],
     },
     owner: {

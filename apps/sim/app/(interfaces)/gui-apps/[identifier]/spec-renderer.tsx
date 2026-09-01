@@ -53,6 +53,9 @@ import {
   isFormFieldType,
   isTruthyFieldValue,
   listFormFields,
+  overlayClosePatch,
+  overlayOpenPatch,
+  overlayShowWhenUsesSelection,
   parseOptionList,
   resolveFieldValue,
   snapshotFormValues,
@@ -246,6 +249,52 @@ function parseChipSetValue(raw: string): { name: string | null; value: string } 
     return { name: raw.slice(0, separator).trim(), value: raw.slice(separator + 1) }
   }
   return { name: null, value: raw }
+}
+
+function subtreeHasActionId(
+  elements: Record<string, SpecElement>,
+  id: string,
+  actionId: string
+): boolean {
+  const element = elements[id]
+  if (!element) return false
+  if (asString(element.props?.actionId) === actionId) return true
+  return (element.children ?? []).some((childId) => subtreeHasActionId(elements, childId, actionId))
+}
+
+/**
+ * Patch that opens a closed Modal/Drawer. When `actionId` is set, only overlays
+ * that contain that action (Form / SubmitButton / Button) are considered, so a
+ * complete/delete CTA does not steal a create dialog.
+ */
+function closedOverlayOpenPatch(
+  elements: Record<string, SpecElement>,
+  visibilityValues: Record<string, unknown>,
+  actionId?: string
+): Record<string, unknown> | null {
+  for (const [id, element] of Object.entries(elements)) {
+    if (element.type !== 'Modal' && element.type !== 'Drawer') continue
+    if (fieldIsVisible(element.props ?? {}, visibilityValues)) continue
+    const patch = overlayOpenPatch(element.props?.showWhen)
+    if (!patch) continue
+    if (actionId && !subtreeHasActionId(elements, id, actionId)) continue
+    return patch
+  }
+  return null
+}
+
+function overlayClosePatchForAction(
+  elements: Record<string, SpecElement>,
+  actionId: string
+): Record<string, unknown> | null {
+  if (!actionId) return null
+  for (const [id, element] of Object.entries(elements)) {
+    if (element.type !== 'Modal' && element.type !== 'Drawer') continue
+    if (!subtreeHasActionId(elements, id, actionId)) continue
+    const patch = overlayClosePatch(element.props?.showWhen)
+    return Object.keys(patch).length > 0 ? patch : null
+  }
+  return null
 }
 
 const DEFAULT_PROGRESS_DURATION_MS = 150_000
@@ -1441,6 +1490,7 @@ function DismissibleCatalogOverlay({
   testId,
   placement,
   onClearItem,
+  onDismiss,
   children,
 }: {
   open: boolean
@@ -1448,6 +1498,7 @@ function DismissibleCatalogOverlay({
   testId: string
   placement: 'modal' | 'drawer-left' | 'drawer-right'
   onClearItem?: () => void
+  onDismiss?: () => void
   children: ReactNode
 }) {
   const [dismissed, setDismissed] = useState(false)
@@ -1465,6 +1516,7 @@ function DismissibleCatalogOverlay({
       placement={placement}
       onClose={() => {
         setDismissed(true)
+        onDismiss?.()
         onClearItem?.()
       }}
     >
@@ -1528,6 +1580,7 @@ export function SpecRenderer({
     return element.props?.skeleton !== false
   })
   const [formValues, setFormValues] = useState<Record<string, unknown>>({})
+  const [overlayFlags, setOverlayFlags] = useState<Record<string, unknown>>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [localPages, setLocalPages] = useState<Record<string, number>>({})
   const knownActionIds = collectKnownActionIds(
@@ -1695,6 +1748,11 @@ export function SpecRenderer({
       ...state,
       ...formValues,
       ...(scope ? repeatItemActionValues(scope.item, scope.index) : {}),
+      ...overlayFlags,
+    }
+
+    const applyOverlayPatch = (patch: Record<string, unknown>) => {
+      setOverlayFlags((current) => ({ ...current, ...patch }))
     }
 
     const setNamedValue = (name: string, value: unknown) => {
@@ -2471,26 +2529,21 @@ export function SpecRenderer({
         return <CatalogToastView text={asString(props.text)} tone={props.tone} />
       }
       case 'Modal':
-        return (
-          <DismissibleCatalogOverlay
-            open={fieldIsVisible(props, visibilityValues)}
-            title={asString(props.title)}
-            testId='modal'
-            placement='modal'
-            onClearItem={onClearItem}
-          >
-            {children}
-          </DismissibleCatalogOverlay>
-        )
       case 'Drawer': {
         const side = asString(props.side, 'right')
+        const closePatch = overlayClosePatch(props.showWhen)
         return (
           <DismissibleCatalogOverlay
             open={fieldIsVisible(props, visibilityValues)}
             title={asString(props.title)}
-            testId='drawer'
-            placement={side === 'left' ? 'drawer-left' : 'drawer-right'}
-            onClearItem={onClearItem}
+            testId={element.type === 'Modal' ? 'modal' : 'drawer'}
+            placement={
+              element.type === 'Modal' ? 'modal' : side === 'left' ? 'drawer-left' : 'drawer-right'
+            }
+            onDismiss={
+              Object.keys(closePatch).length > 0 ? () => applyOverlayPatch(closePatch) : undefined
+            }
+            onClearItem={overlayShowWhenUsesSelection(props.showWhen) ? onClearItem : undefined}
           >
             {children}
           </DismissibleCatalogOverlay>
@@ -2644,6 +2697,8 @@ export function SpecRenderer({
             ...collectVisibleFieldValues(fields, mergedValues, state, scope),
           }
           if (actionId) {
+            const closePatch = overlayClosePatchForAction(elements, actionId)
+            if (closePatch) applyOverlayPatch(closePatch)
             void dispatchAction(actionId, values, confirmMeta(actionId))
           }
         }
@@ -3023,6 +3078,7 @@ export function SpecRenderer({
         const href = asString(props.href)
         const navigateTo = asString(props.navigateTo)
         const actionId = asString(props.actionId)
+        const setValue = asString(props.setValue)
         const className = buttonClass(props, 'secondary')
         if (!fieldIsVisible(props, visibilityValues)) return null
         if (href) {
@@ -3052,6 +3108,23 @@ export function SpecRenderer({
               }
               if (asBoolean(props.selectItem) && scope) {
                 onSelectItem?.(scope.item, scope.index)
+              }
+              if (setValue) {
+                const parsed = parseChipSetValue(setValue)
+                if (parsed.name) applyOverlayPatch({ [parsed.name]: parsed.value })
+              }
+              const navPath = navigateTo ? splitNavTarget(navigateTo).path : ''
+              const samePageNav = Boolean(navigateTo) && (!navPath || navPath === currentPath)
+              const overlayPatch = asBoolean(props.selectItem)
+                ? null
+                : actionId
+                  ? closedOverlayOpenPatch(elements, visibilityValues, actionId)
+                  : samePageNav || (!navigateTo && !setValue)
+                    ? closedOverlayOpenPatch(elements, visibilityValues)
+                    : null
+              if (overlayPatch) {
+                applyOverlayPatch(overlayPatch)
+                return
               }
               if (navigateTo) requestNavigate(navigateTo)
               if (actionId) void dispatchAction(actionId, actionValues)

@@ -123,11 +123,11 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   modal: [
     'CAPABILITY: MODAL',
-    'A focused secondary action (rename, add a note). Modal showWhen uses the same clause language as form fields. Not a multi-step workflow and not delete confirm — the host owns destructive confirm.',
+    'A focused secondary action (rename, add a note) or a collection create. Modal showWhen uses the same clause language as form fields. Open with Button setValue; close with setValue that clears the flag. Not a multi-step workflow and not delete confirm — the host owns destructive confirm.',
   ].join('\n'),
   create: [
     'CAPABILITY: CREATE',
-    'A primary action that adds a record. Use Form + SubmitButton wired to the create action. Dummy/local source appends via onSuccess.setState — do not invent an API key. Stay on this page unless the blueprint named a create page. Not a Modal for a multi-field create unless the brief asked for a small add-in-place.',
+    'A primary action that adds a record. On a collection page put a PageHeader trailing Button setValue "creating=true" and a Modal showWhen "creating" that holds Form + SubmitButton wired to the create action. Close with a ghost Button setValue "creating=". Dummy/local source appends via onSuccess.setState — do not invent an API key. Stay on this page unless the blueprint named a create page. A one-field add may be an inline Form. Not a second create-flow page.',
   ].join('\n'),
   complete: [
     'CAPABILITY: COMPLETE',

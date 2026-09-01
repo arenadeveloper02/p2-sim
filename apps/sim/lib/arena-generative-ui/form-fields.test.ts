@@ -6,6 +6,9 @@ import {
   collectVisibleFieldValues,
   fieldIsVisible,
   listFormFields,
+  overlayClosePatch,
+  overlayOpenPatch,
+  overlayShowWhenUsesSelection,
   parseShowWhen,
   resolveFieldValue,
   validateVisibleFields,
@@ -35,6 +38,27 @@ describe('fieldIsVisible', () => {
     ).toBe(false)
     expect(fieldIsVisible({ showWhen: '!selectedId' }, {})).toBe(true)
     expect(fieldIsVisible({ showWhen: '!selectedId' }, { selectedId: 'run_1' })).toBe(false)
+  })
+})
+
+describe('overlay showWhen patches', () => {
+  it('opens a truthy flag and equality clause', () => {
+    expect(overlayOpenPatch('creating')).toEqual({ creating: true })
+    expect(overlayOpenPatch('mode=create')).toEqual({ mode: 'create' })
+  })
+
+  it('cannot open a falsy clause', () => {
+    expect(overlayOpenPatch('!selectedId')).toBeNull()
+  })
+
+  it('closes truthy and equality clauses with an empty value', () => {
+    expect(overlayClosePatch('creating')).toEqual({ creating: '' })
+    expect(overlayClosePatch('!selectedId')).toEqual({})
+  })
+
+  it('treats selectedId overlays as selection chrome', () => {
+    expect(overlayShowWhenUsesSelection('selectedId')).toBe(true)
+    expect(overlayShowWhenUsesSelection('creating')).toBe(false)
   })
 })
 

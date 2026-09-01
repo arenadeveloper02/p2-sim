@@ -1,4 +1,9 @@
-import { type RepeatItemScope, readScopedStatePath } from '@/lib/arena-generative-ui/types'
+import {
+  ARENA_GENERATIVE_SELECTED_ID_KEY,
+  ARENA_GENERATIVE_SELECTED_KEY,
+  type RepeatItemScope,
+  readScopedStatePath,
+} from '@/lib/arena-generative-ui/types'
 
 export const ARENA_GENERATIVE_FORM_FIELD_TYPES = [
   'TextInput',
@@ -151,6 +156,51 @@ export function fieldIsVisible(
   const clauses = parseShowWhen(props.showWhen)
   if (clauses.length === 0) return true
   return clauses.every((clause) => clauseMatches(clause, values))
+}
+
+/**
+ * Host-state patch that satisfies a Modal/Drawer `showWhen` (truthy or equality
+ * clauses). Returns null when the clause cannot be opened by setting keys
+ * (`!selectedId`, inequality).
+ */
+export function overlayOpenPatch(showWhen: unknown): Record<string, unknown> | null {
+  const clauses = parseShowWhen(showWhen)
+  if (clauses.length === 0) return null
+  const patch: Record<string, unknown> = {}
+  for (const clause of clauses) {
+    if (clause.op === 'truthy') {
+      patch[clause.name] = true
+      continue
+    }
+    if (clause.op === 'eq' && clause.value != null) {
+      patch[clause.name] = clause.value
+      continue
+    }
+    return null
+  }
+  return patch
+}
+
+/**
+ * Host-state patch that hides a Modal/Drawer whose `showWhen` uses truthy or
+ * equality clauses. Falsy clauses are left alone.
+ */
+export function overlayClosePatch(showWhen: unknown): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  for (const clause of parseShowWhen(showWhen)) {
+    if (clause.op === 'falsy') continue
+    patch[clause.name] = ''
+  }
+  return patch
+}
+
+/** True when overlay `showWhen` is tied to the copied Repeat row. */
+export function overlayShowWhenUsesSelection(showWhen: unknown): boolean {
+  return parseShowWhen(showWhen).some(
+    (clause) =>
+      clause.name === ARENA_GENERATIVE_SELECTED_ID_KEY ||
+      clause.name === ARENA_GENERATIVE_SELECTED_KEY
+  )
 }
 
 function parseDefaultChecked(props: Record<string, unknown>): boolean {

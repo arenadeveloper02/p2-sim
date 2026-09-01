@@ -15,7 +15,7 @@ export const ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT = [
   'Tabs — three or more peer top-level views. Not sequential workflow steps (those are Stepper plus pages or sections). Not Workspace regions.',
   'Stepper — sequential workflow progress. Not Tabs and not ProgressSteps.',
   'Workspace — simultaneous navigator + primary + optional inspector. Children in that order. Not Columns twice and not Tabs.',
-  'Modal — a focused secondary action (rename, add a note). Not a multi-step workflow. Not delete confirm — the host owns that.',
+  'Modal — create a record or a focused secondary action (rename, add a note). Open with Button setValue + showWhen. Not a multi-step workflow. Not delete confirm — the host owns that.',
   'Drawer — contextual detail that must keep the list visible. Prefer this over navigating away when the row already has prose (selectItem + showWhen). Not a full record page that needs its own onLoad.',
   'SearchField — the primary task is finding or looking up entities (one query). Not a labelled Grid of one TextInput.',
   'Filter — narrowing an already-loaded collection. Place it in a Toolbar above Table/Repeat. Not a second SearchField hero.',
