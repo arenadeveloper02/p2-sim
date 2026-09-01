@@ -27,14 +27,13 @@ export const ARENA_ENTERPRISE_PLAN_CREDITS: ArenaPlanCredits = {
   credits: 'Custom',
 }
 
-/** Starter includes Max product features for its active month. */
+/** Starter reuses the Pro limit bucket; Max product features remain via access helpers. */
 export const ARENA_STARTER_PLAN_FEATURES: readonly string[] = [
-  `${DEFAULT_BILLING_CONCURRENCY_LIMITS.free.toLocaleString('en-US')} concurrent executions`,
+  `${DEFAULT_BILLING_CONCURRENCY_LIMITS.pro.toLocaleString('en-US')} concurrent executions`,
   'Invite teammates',
-  'Lower rate limits',
-  'Less storage & tables',
-  'Lower run timeouts',
-  'Shorter execution timeout window',
+  'Higher rate limits',
+  'Extended run timeouts',
+  'More storage & tables',
 ]
 
 export const ARENA_PRO_PLAN_FEATURES: readonly string[] = [

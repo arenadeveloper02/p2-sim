@@ -42,11 +42,11 @@ export interface ComparisonRow {
   /** Row label displayed in the left column. */
   label: string
   /**
-   * Values for [Free, Pro, Max, Enterprise].
-   * `true` renders a check icon; `false` renders a muted em-dash.
-   * Strings render as-is with tabular-nums styling.
+   * Values aligned with {@link PlanColumn} order (e.g. Free/Pro/Max/Enterprise
+   * or Arena Starter/Max/Enterprise). `true` renders a check icon; `false`
+   * renders a muted em-dash. Strings render as-is with tabular-nums styling.
    */
-  values: [CellValue, CellValue, CellValue, CellValue]
+  values: readonly CellValue[]
 }
 
 /** A labelled group of comparison rows. */

@@ -20,8 +20,8 @@ describe('getArenaPlanTypeForLimits', () => {
     mockIsArenaBilling.mockReturnValue(true)
   })
 
-  it('maps starter and arena max to the team limits bucket', () => {
-    expect(getArenaPlanTypeForLimits(STARTER_PLAN)).toBe('team')
+  it('maps starter to pro and arena max to team', () => {
+    expect(getArenaPlanTypeForLimits(STARTER_PLAN)).toBe('pro')
     expect(getArenaPlanTypeForLimits(ARENA_MAX_PLAN)).toBe('team')
   })
 

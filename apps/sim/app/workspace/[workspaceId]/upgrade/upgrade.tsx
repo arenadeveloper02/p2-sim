@@ -179,18 +179,20 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
     return { ...cta, onClick }
   }
 
-  const proCtaRaw = resolveCta('pro')
-  // Arena: keep Pro on the bordered chip so it matches Max/Enterprise (no solid primary fill).
-  const proCta =
-    state.isArena && proCtaRaw.variant === 'primary'
-      ? { ...proCtaRaw, variant: 'border-shadow' as const }
-      : proCtaRaw
-  const maxCta = resolveCta('max')
+  const proCta = resolveCta('pro')
+  const maxCtaRaw = resolveCta('max')
+  // Arena hides Pro, so Max is the next self-serve step up from Starter/free.
+  const maxCta =
+    state.isArena && planTier === 'free' && maxCtaRaw.intent === 'upgrade'
+      ? { ...maxCtaRaw, variant: 'primary' as const, highlighted: true }
+      : maxCtaRaw
   const enterpriseCta = resolveCta('enterprise')
 
   // Comparison-table CTAs reuse the card CTAs verbatim so both stay in sync.
   // Free/Starter has no card and intentionally renders no button.
-  const comparisonCtas = { Pro: proCta, Max: maxCta, Enterprise: enterpriseCta }
+  const comparisonCtas = state.isArena
+    ? { Max: maxCta, Enterprise: enterpriseCta }
+    : { Pro: proCta, Max: maxCta, Enterprise: enterpriseCta }
 
   const starterBanner = state.isOnStarter ? 'Your plan' : undefined
   const proBanner = state.isOnPro ? 'Your plan' : undefined
@@ -227,7 +229,7 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
       </div>
 
       <div className='min-h-0 flex-1 overflow-y-auto px-6 [scrollbar-gutter:stable_both-edges]'>
-        <div className='mx-auto flex w-full max-w-screen-xl  flex-col gap-7 pt-8 pb-3'>
+        <div className='mx-auto flex w-full max-w-5xl flex-col gap-7 pt-8 pb-3'>
           <div className='flex flex-col items-center gap-4'>
             <h1 className='text-balance text-center font-season text-[30px] text-[var(--text-primary)]'>
               {header}
@@ -239,13 +241,7 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
 
           {state.showUpgradePlans && (
             <>
-              <div
-                className={
-                  state.isArena
-                    ? 'grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4'
-                    : 'grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3'
-                }
-              >
+              <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3'>
                 {state.isArena && (
                   <UpgradePlanCard
                     name='Starter'
@@ -261,21 +257,23 @@ export function Upgrade({ workspaceId }: UpgradeProps) {
                   />
                 )}
 
-                <UpgradePlanCard
-                  name='Pro'
-                  price={`$${proPrice}`}
-                  discountLabel={state.isAnnual ? `${discountPct}% off` : undefined}
-                  priceSubtext={priceSubtext}
-                  segmentLabel='For growing teams'
-                  credits={proCredits.credits}
-                  refresh={'refresh' in proCredits ? proCredits.refresh : undefined}
-                  features={proFeatures}
-                  buttonText={proCta.label}
-                  onButtonClick={proCta.onClick}
-                  buttonDisabled={proCta.disabled}
-                  highlighted={proCta.variant === 'primary'}
-                  bannerText={proBanner}
-                />
+                {!state.isArena && (
+                  <UpgradePlanCard
+                    name='Pro'
+                    price={`$${proPrice}`}
+                    discountLabel={state.isAnnual ? `${discountPct}% off` : undefined}
+                    priceSubtext={priceSubtext}
+                    segmentLabel='For growing teams'
+                    credits={proCredits.credits}
+                    refresh={'refresh' in proCredits ? proCredits.refresh : undefined}
+                    features={proFeatures}
+                    buttonText={proCta.label}
+                    onButtonClick={proCta.onClick}
+                    buttonDisabled={proCta.disabled}
+                    highlighted={proCta.variant === 'primary'}
+                    bannerText={proBanner}
+                  />
+                )}
 
                 <UpgradePlanCard
                   name='Max'

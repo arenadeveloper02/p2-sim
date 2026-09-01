@@ -149,11 +149,15 @@ export function ComparisonTable({
     Pro: proPrice,
     Max: maxPrice,
   }
+  const planColCount = columns.length
 
   return (
     <div className='w-full overflow-x-auto rounded-xl border border-[var(--border-1)]'>
-      {/* CSS grid: 1 label col + 4 equal plan cols */}
-      <div className='grid min-w-[640px] grid-cols-[1fr_repeat(4,minmax(0,1fr))]'>
+      {/* CSS grid: 1 label col + N equal plan cols */}
+      <div
+        className='grid min-w-[640px]'
+        style={{ gridTemplateColumns: `1fr repeat(${planColCount}, minmax(0, 1fr))` }}
+      >
         {/* ── Column headers ── */}
         {/* Top-left cell: title, subtitle, and billing toggle */}
         <div className='flex h-full flex-col justify-between gap-3 border-[var(--border)] border-r bg-[var(--surface-1)] px-4 py-4'>
@@ -207,9 +211,10 @@ export function ComparisonTable({
             </div>
             <div
               className={cn(
-                'col-span-4 bg-[var(--surface-2)]',
+                'bg-[var(--surface-2)]',
                 sectionIdx > 0 && 'border-[var(--border-1)] border-t'
               )}
+              style={{ gridColumn: `span ${planColCount} / span ${planColCount}` }}
             />
 
             {/* Feature rows */}

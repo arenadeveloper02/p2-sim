@@ -5,12 +5,13 @@ import type { PlanCategory } from '@/lib/billing/plan-helpers'
 
 /**
  * Maps Arena plans onto upstream limit buckets.
- * Starter and Max → `team` (Max limits); Pro → `pro`.
+ * Starter → `pro`; Max → `team`; Arena Pro plan name → `pro`.
  * Returns null when upstream plan-helpers should decide.
  */
 export function getArenaPlanTypeForLimits(plan: string | null | undefined): PlanCategory | null {
   if (!isArenaBilling() || !plan) return null
-  if (isStarterPlan(plan) || isArenaMaxPlan(plan)) return 'team'
+  if (isStarterPlan(plan)) return 'pro'
+  if (isArenaMaxPlan(plan)) return 'team'
   if (isArenaProPlan(plan)) return 'pro'
   return null
 }
