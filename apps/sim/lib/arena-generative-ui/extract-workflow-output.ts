@@ -1,6 +1,8 @@
 import { normalizeWorkflowBlockName } from '@sim/workflow-types/workflow'
 import {
   type ArenaGenerativeSchemaField,
+  hasSchemaFieldName,
+  namedSchemaFields,
   outputSchemaFromSample,
   prefixOutputSchemaFields,
 } from '@/lib/arena-generative-ui/output-schema'
@@ -101,7 +103,7 @@ function schemaFromAgentBlock(
   }
 
   return extractFieldsFromSchema(parsed)
-    .filter((field) => field.name.trim() !== '')
+    .filter(hasSchemaFieldName)
     .map((field) => ({
       name: field.name.trim(),
       type: field.type?.trim() || 'string',
@@ -406,10 +408,11 @@ function isBuilderArrayItems(value: unknown): value is unknown[] {
 }
 
 function isShallowObjectStub(fields: ArenaGenerativeSchemaField[]): boolean {
-  if (fields.length === 0) return false
-  const hasNested = fields.some((field) => field.name.includes('.') || field.name.includes('['))
+  const named = namedSchemaFields(fields)
+  if (named.length === 0) return false
+  const hasNested = named.some((field) => field.name.includes('.') || field.name.includes('['))
   if (hasNested) return false
-  return fields.some((field) => field.type === 'object')
+  return named.some((field) => field.type === 'object')
 }
 
 /**
@@ -420,17 +423,18 @@ function isShallowObjectStub(fields: ArenaGenerativeSchemaField[]): boolean {
 export function declaredOutputSchemaNeedsLastRunFallback(
   fields: ArenaGenerativeSchemaField[]
 ): boolean {
-  if (fields.length === 0) return true
-  const hasNested = fields.some((field) => field.name.includes('.') || field.name.includes('['))
+  const named = namedSchemaFields(fields)
+  if (named.length === 0) return true
+  const hasNested = named.some((field) => field.name.includes('.') || field.name.includes('['))
   if (hasNested) return false
-  return fields.some((field) => field.type === 'object' || field.type === 'array')
+  return named.some((field) => field.type === 'object' || field.type === 'array')
 }
 
 function mergeStubResponseWithAgent(
   responseFields: ArenaGenerativeSchemaField[],
   agentFields: ArenaGenerativeSchemaField[]
 ): ArenaGenerativeSchemaField[] {
-  const objectRoots = responseFields.filter(
+  const objectRoots = namedSchemaFields(responseFields).filter(
     (field) => field.type === 'object' && !field.name.includes('.') && !field.name.includes('[')
   )
   const merged = [...responseFields]

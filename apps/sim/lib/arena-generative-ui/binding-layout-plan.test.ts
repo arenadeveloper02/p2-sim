@@ -6,6 +6,7 @@ import {
   actionHiddenInputsFrom,
   actionHostKeysFrom,
   actionStateFromPlan,
+  hostStateRoot,
   isActionControlPending,
   isBoundPathPending,
   layoutPlanForBinding,
@@ -26,6 +27,51 @@ function workflowBinding(
 }
 
 describe('layoutPlanForBinding', () => {
+  it('ignores nameless outputSchema rows instead of throwing', () => {
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        outputSchema: [
+          { type: 'object' },
+          { name: undefined },
+          { name: '', type: 'string' },
+        ] as Array<{
+          name: string
+          type: string
+        }>,
+      })
+    )
+    expect(plan.kind).toBe('prose')
+    expect(plan.hostKeys).toEqual(['content'])
+    expect(plan.collections).toEqual([])
+  })
+
+  it('treats a chat-only binding with garbage outputSchema as prose or stream', () => {
+    const prose = layoutPlanForBinding(
+      workflowBinding({
+        chatProtocol: { input: true, conversationId: true, files: true },
+        outputSchema: [{ type: 'object' }, { name: undefined }] as Array<{
+          name: string
+          type: string
+        }>,
+      })
+    )
+    expect(prose.kind).toBe('prose')
+    expect(prose.chatProtocol).toEqual({
+      input: true,
+      conversationId: true,
+      files: true,
+    })
+
+    const streamed = layoutPlanForBinding(
+      workflowBinding({
+        stream: true,
+        chatProtocol: { input: true },
+        outputSchema: [{ type: 'object' }] as Array<{ name: string; type: string }>,
+      })
+    )
+    expect(streamed.kind).toBe('stream')
+  })
+
   it('treats a missing outputSchema as prose DataText on content', () => {
     const plan = layoutPlanForBinding(workflowBinding())
     expect(plan.kind).toBe('prose')
@@ -291,6 +337,14 @@ describe('actionHiddenInputsFrom', () => {
     )
     expect(hidden.load_history).toEqual(['type', 'email'])
     expect(hidden.generate).toBeUndefined()
+  })
+})
+
+describe('hostStateRoot', () => {
+  it('returns empty for a non-string or item-scoped path', () => {
+    expect(hostStateRoot('articles[].title')).toBe('articles')
+    expect(hostStateRoot('item.keyword')).toBe('')
+    expect(hostStateRoot(undefined as unknown as string)).toBe('')
   })
 })
 

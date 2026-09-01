@@ -346,4 +346,11 @@ describe('declaredOutputSchemaNeedsLastRunFallback', () => {
       false
     )
   })
+
+  it('stays quiet on nameless stub rows and treats them as needing fallback', () => {
+    expect(declaredOutputSchemaNeedsLastRunFallback([{ type: 'object' }] as never)).toBe(true)
+    expect(
+      declaredOutputSchemaNeedsLastRunFallback([{ name: undefined, type: 'object' }] as never)
+    ).toBe(true)
+  })
 })

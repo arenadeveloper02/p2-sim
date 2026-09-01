@@ -3,13 +3,36 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  namedSchemaFields,
   OUTPUT_HINT_MAX_LENGTH,
   outputLayoutFromSample,
   outputSchemaFromSample,
+  outputSchemaRootName,
   outputSchemaWarning,
   prefixOutputSchemaFields,
   syntheticExampleFromOutputSchema,
 } from '@/lib/arena-generative-ui/output-schema'
+
+describe('namedSchemaFields', () => {
+  it('drops entries without a non-empty string name', () => {
+    expect(
+      namedSchemaFields([
+        { type: 'object' },
+        { name: undefined, type: 'string' },
+        { name: '  ', type: 'number' },
+        { name: 'score', type: 'number' },
+      ])
+    ).toEqual([{ name: 'score', type: 'number' }])
+  })
+})
+
+describe('outputSchemaRootName', () => {
+  it('returns empty for a non-string path instead of throwing', () => {
+    expect(outputSchemaRootName('articles[].title')).toBe('articles')
+    expect(outputSchemaRootName('meta.total')).toBe('meta')
+    expect(outputSchemaRootName(undefined as unknown as string)).toBe('')
+  })
+})
 
 describe('outputSchemaFromSample', () => {
   it('returns nothing for a blank sample', () => {
@@ -263,5 +286,14 @@ describe('syntheticExampleFromOutputSchema', () => {
   it('returns nothing for an empty schema', () => {
     expect(syntheticExampleFromOutputSchema(undefined)).toBeUndefined()
     expect(syntheticExampleFromOutputSchema([])).toBeUndefined()
+  })
+
+  it('ignores nameless rows instead of throwing', () => {
+    expect(
+      syntheticExampleFromOutputSchema([
+        { type: 'object' } as { name: string; type: string },
+        { name: 'score', type: 'number' },
+      ])
+    ).toEqual({ score: 72 })
   })
 })

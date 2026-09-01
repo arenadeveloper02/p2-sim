@@ -7,6 +7,7 @@ import {
   outputSchemaFromWorkflowFields,
   workflowBindingFromSelection,
 } from '@/lib/arena-generative-ui/from-workflow'
+import { bindingWithInputOverrides } from '@/lib/arena-generative-ui/input-schema'
 import { parseApiBindings } from '@/lib/arena-generative-ui/parse-inputs'
 
 describe('inputSchemaFromWorkflowFields', () => {
@@ -61,7 +62,6 @@ describe('inputSchemaFromWorkflowFields', () => {
       ],
     })
     expect(binding.inputSchema).toEqual([
-      { name: 'input', type: 'string', source: 'constant' },
       { name: 'companyName', type: 'string' },
       { name: 'brand', type: 'string' },
     ])
@@ -72,7 +72,7 @@ describe('inputSchemaFromWorkflowFields', () => {
     })
   })
 
-  it('keeps input as an optional constant prefix and drops other protocol fields', () => {
+  it('omits reserved Start fields and drops other protocol fields', () => {
     expect(
       inputSchemaFromWorkflowFields([
         { name: 'input', type: 'string' },
@@ -84,10 +84,43 @@ describe('inputSchemaFromWorkflowFields', () => {
         { name: 'keyword', type: 'string' },
         { name: 'Files', type: 'array' },
       ])
-    ).toEqual([
-      { name: 'input', type: 'string', source: 'constant' },
-      { name: 'keyword', type: 'string' },
-    ])
+    ).toEqual([{ name: 'keyword', type: 'string' }])
+  })
+
+  it('omits inputSchema for a reserved-only Start and still sets chatProtocol', () => {
+    const binding = workflowBindingFromSelection({
+      key: 'chat',
+      workflowId: 'wf-1',
+      inputFields: [
+        { name: 'input', type: 'string' },
+        { name: 'conversationId', type: 'string' },
+        { name: 'files', type: 'file[]' },
+      ],
+    })
+    expect(binding.inputSchema).toBeUndefined()
+    expect(binding.chatProtocol).toEqual({
+      input: true,
+      conversationId: true,
+      files: true,
+    })
+  })
+
+  it('stores a typed input prefix on an otherwise reserved-only Start', () => {
+    const built = workflowBindingFromSelection({
+      key: 'chat',
+      workflowId: 'wf-1',
+      inputFields: [
+        { name: 'input', type: 'string' },
+        { name: 'conversationId', type: 'string' },
+        { name: 'files', type: 'file[]' },
+      ],
+    })
+    expect(
+      bindingWithInputOverrides(built, {
+        input: { source: 'constant', value: 'Do research on ' },
+      }).inputSchema
+    ).toEqual([{ name: 'input', type: 'string', source: 'constant', value: 'Do research on' }])
+    expect(bindingWithInputOverrides(built, {}).inputSchema).toBeUndefined()
   })
 
   it('drops unnamed fields and de-duplicates repeats', () => {
@@ -194,6 +227,16 @@ describe('workflowBindingFromSelection', () => {
         .outputSchema
     ).toBeUndefined()
     expect(outputSchemaFromWorkflowFields(undefined)).toBeUndefined()
+  })
+
+  it('drops nameless declared output fields', () => {
+    expect(
+      outputSchemaFromWorkflowFields([
+        { type: 'object' } as { name: string; type: string },
+        { name: undefined as unknown as string, type: 'string' },
+        { name: 'score', type: 'number' },
+      ])
+    ).toEqual([{ name: 'score', type: 'number' }])
   })
 
   it('derives outputSchema from a sample response', () => {

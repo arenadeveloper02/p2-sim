@@ -5,6 +5,7 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { and, desc, eq } from 'drizzle-orm'
 import {
   type ArenaGenerativeSchemaField,
+  namedSchemaFields,
   outputSchemaFromSample,
 } from '@/lib/arena-generative-ui/output-schema'
 import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
@@ -110,10 +111,11 @@ function isStaleLastRun(
 }
 
 function lastRunHasEmptyArrayWithoutItems(fields: ArenaGenerativeSchemaField[]): boolean {
-  return fields.some((field) => {
+  const named = namedSchemaFields(fields)
+  return named.some((field) => {
     if (field.type !== 'array') return false
     const itemPrefix = `${field.name}[]`
-    return !fields.some((candidate) => candidate.name.startsWith(itemPrefix))
+    return !named.some((candidate) => candidate.name.startsWith(itemPrefix))
   })
 }
 

@@ -768,8 +768,22 @@ export async function generateArenaGenerativeManifest(
     if (isModelJsonParseError(message)) {
       return { success: false, error: MODEL_JSON_PARSE_ERROR }
     }
+    if (isNamelessSchemaTypeError(message)) {
+      return {
+        success: false,
+        error:
+          'A binding output schema was missing field names. Redeploy the workflow or paste a Sample response, then retry.',
+      }
+    }
     return { success: false, error: message }
   }
+}
+
+function isNamelessSchemaTypeError(message: string): boolean {
+  return (
+    /evaluating ['"][^'"]*\.indexOf['"]/i.test(message) ||
+    /cannot read propert(y|ies) of undefined.*indexOf/i.test(message)
+  )
 }
 
 function isModelJsonParseError(message: string): boolean {

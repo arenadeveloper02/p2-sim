@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyBindingInputSources,
   applyInputSourceOverrides,
+  bindingWithInputOverrides,
   briefHasEmailFormField,
   constrainBindingInput,
   inferInputFieldSource,
@@ -12,6 +13,7 @@ import {
   inputSourceOverridesForSave,
   isChatInputPrefixName,
   isEmailLikeApiInputName,
+  isFormFacingInputSchemaField,
   isOmittedGenerativeInputField,
   isReservedStartInputName,
   resolveInputFieldEditorRow,
@@ -31,6 +33,13 @@ describe('isReservedStartInputName', () => {
     expect(isChatInputPrefixName('input')).toBe(true)
     expect(isChatInputPrefixName('INPUT')).toBe(true)
     expect(isChatInputPrefixName('company_name')).toBe(false)
+  })
+
+  it('treats only visitor form fields as Add-an-API tags', () => {
+    expect(isFormFacingInputSchemaField({ name: 'company' })).toBe(true)
+    expect(isFormFacingInputSchemaField({ name: 'input' })).toBe(false)
+    expect(isFormFacingInputSchemaField({ name: 'conversationId' })).toBe(false)
+    expect(isFormFacingInputSchemaField({ name: 'files' })).toBe(false)
   })
 })
 
@@ -102,12 +111,45 @@ describe('applyInputSourceOverrides', () => {
     ])
   })
 
-  it('keeps Start input as a constant prefix even if the override says form', () => {
+  it('drops an empty chat prefix and ignores a form override on input', () => {
     expect(
       applyInputSourceOverrides([{ name: 'input', type: 'string', source: 'constant' }], {
         input: { source: 'form' },
       })
-    ).toEqual([{ name: 'input', type: 'string', source: 'constant' }])
+    ).toEqual([])
+  })
+
+  it('stores a typed chat prefix even when inputSchema is otherwise empty', () => {
+    expect(
+      applyInputSourceOverrides([], {
+        input: { source: 'constant', value: 'Research ' },
+      })
+    ).toEqual([{ name: 'input', type: 'string', source: 'constant', value: 'Research' }])
+  })
+
+  it('keeps an existing prefix value when the user does not override it', () => {
+    expect(
+      applyInputSourceOverrides(
+        [{ name: 'input', type: 'string', source: 'constant', value: 'Hello ' }],
+        {}
+      )
+    ).toEqual([{ name: 'input', type: 'string', source: 'constant', value: 'Hello' }])
+  })
+
+  it('omits inputSchema on a reserved-only binding unless a prefix is typed', () => {
+    const reservedOnly = {
+      key: 'chat',
+      label: 'chat',
+      kind: 'workflow' as const,
+      workflowId: 'wf-1',
+      chatProtocol: { input: true, conversationId: true, files: true },
+    }
+    expect(bindingWithInputOverrides(reservedOnly, {}).inputSchema).toBeUndefined()
+    expect(
+      bindingWithInputOverrides(reservedOnly, {
+        input: { source: 'constant', value: 'Lead with ' },
+      }).inputSchema
+    ).toEqual([{ name: 'input', type: 'string', source: 'constant', value: 'Lead with' }])
   })
 
   it('stores a constant value and can revert email to a form field', () => {

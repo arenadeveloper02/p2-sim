@@ -11,6 +11,23 @@ export interface ArenaGenerativeSchemaField {
 }
 
 /**
+ * True when an outputSchema entry has a usable name. Nameless rows must not
+ * reach `.includes` / `.indexOf` — Bun downlevels those and throws `e.indexOf`.
+ */
+export function hasSchemaFieldName(
+  field: { name?: unknown } | null | undefined
+): field is { name: string } {
+  return typeof field?.name === 'string' && field.name.trim().length > 0
+}
+
+/** Drops entries without a non-empty string `name`. */
+export function namedSchemaFields<T extends { name?: unknown }>(
+  fields: readonly T[] | undefined
+): Array<T & { name: string }> {
+  return (fields ?? []).filter(hasSchemaFieldName)
+}
+
+/**
  * Key a non-object response lands on in host state, matching `runGenerativeAppAction`.
  */
 const NON_OBJECT_ROOT_PATH = 'result'
@@ -213,10 +230,12 @@ function joinSchemaPath(prefix: string, child: string): string {
 export function syntheticExampleFromOutputSchema(
   schema: Array<{ name: string; type: string }> | undefined
 ): Record<string, unknown> | undefined {
-  if (!schema || schema.length === 0) return undefined
+  const named = namedSchemaFields(schema)
+  if (named.length === 0) return undefined
   const example: Record<string, unknown> = {}
-  for (const field of schema) {
-    setExamplePath(example, field.name, field.type.trim() || 'string')
+  for (const field of named) {
+    const type = typeof field.type === 'string' ? field.type.trim() : ''
+    setExamplePath(example, field.name, type || 'string')
   }
   return Object.keys(example).length > 0 ? example : undefined
 }
@@ -303,6 +322,7 @@ function isExampleRecord(value: unknown): value is Record<string, unknown> {
  * Root name of an outputSchema path: `articles` from `articles[].title` or `meta` from `meta.total`.
  */
 export function outputSchemaRootName(fieldName: string): string {
+  if (typeof fieldName !== 'string') return ''
   const trimmed = fieldName.trim()
   if (!trimmed) return ''
   const dot = trimmed.indexOf('.')

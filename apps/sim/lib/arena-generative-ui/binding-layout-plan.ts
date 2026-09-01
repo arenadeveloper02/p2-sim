@@ -1,6 +1,6 @@
 import type { ArenaGenerativeChatProtocol } from '@/lib/arena-generative-ui/chat-protocol'
 import { isOmittedGenerativeInputField } from '@/lib/arena-generative-ui/input-schema'
-import { outputSchemaRootName } from '@/lib/arena-generative-ui/output-schema'
+import { namedSchemaFields, outputSchemaRootName } from '@/lib/arena-generative-ui/output-schema'
 import {
   type ArenaGenerativeApiBinding,
   type ArenaGenerativeAppManifest,
@@ -75,7 +75,7 @@ export interface BindingLayoutPlan {
  * schemas. Generate, the prompt, and validate-manifest share this object.
  */
 export function layoutPlanForBinding(binding: ArenaGenerativeApiBinding): BindingLayoutPlan {
-  const schema = binding.outputSchema ?? []
+  const schema = namedSchemaFields(binding.outputSchema)
   const collections = collectionsFromSchema(schema)
   const stringFieldNames = topLevelStringFieldNames(schema)
   const metricPaths = metricPathsFromSchema(schema)
@@ -384,7 +384,7 @@ function partitionInputFields(binding: ArenaGenerativeApiBinding): {
 } {
   const formFields: string[] = []
   const hiddenInputFields: string[] = []
-  for (const field of binding.inputSchema ?? []) {
+  for (const field of namedSchemaFields(binding.inputSchema ?? [])) {
     const name = field.name.trim()
     if (!name || isOmittedGenerativeInputField(field)) continue
     if (field.source === 'visitorEmail' || field.source === 'constant') {
@@ -463,6 +463,7 @@ export function actionHiddenInputsFrom(
  * Repeat `item.*` paths are scoped rows, not action outputs.
  */
 export function hostStateRoot(statePath: string): string {
+  if (typeof statePath !== 'string') return ''
   const trimmed = statePath.trim()
   if (!trimmed || trimmed === 'item' || trimmed.startsWith('item.')) return ''
   const dot = trimmed.indexOf('.')

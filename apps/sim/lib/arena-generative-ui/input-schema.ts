@@ -33,6 +33,14 @@ export function isChatInputPrefixName(name: string): boolean {
 }
 
 /**
+ * True when a binding input is a visitor or host-stamped field, not reserved
+ * Start / chat prefix chrome. Used for Add-an-API tags.
+ */
+export function isFormFacingInputSchemaField(field: { name: string }): boolean {
+  return !isChatInputPrefixName(field.name) && !isReservedStartInputName(field.name)
+}
+
+/**
  * True when a start-block / curl field must not become a generative-app form
  * control: reserved chat names, Sim execute flags, or a `file[]` upload.
  */
@@ -187,9 +195,6 @@ export function compactInputSchemaField(
 }
 
 /**
- * Applies Add-an-API source/value overrides on top of inferred schema fields.
- */
-/**
  * Workflow Start `input` is always an optional constant prefix, never form.
  */
 export function lockChatInputPrefixSources(
@@ -202,28 +207,67 @@ export function lockChatInputPrefixSources(
   )
 }
 
+/**
+ * Applies Add-an-API source/value overrides. An empty chat `input` prefix is
+ * omitted; a typed prefix is stored as a constant.
+ */
 export function applyInputSourceOverrides(
   fields: ArenaGenerativeInputSchemaField[],
   overrides: Record<string, ArenaGenerativeInputSourceOverride>
 ): ArenaGenerativeInputSchemaField[] {
-  return fields.map((field) => {
-    if (isChatInputPrefixName(field.name)) {
+  const mapped = fields
+    .filter((field) => !isChatInputPrefixName(field.name))
+    .map((field) => {
       const override = overrides[field.name]
+      if (!override) {
+        return compactInputSchemaField(field)
+      }
       return compactInputSchemaField({
         ...field,
-        source: 'constant',
-        value: override?.source === 'constant' ? override.value : field.value,
+        source: override.source,
+        value: override.source === 'constant' ? override.value : undefined,
       })
-    }
-    const override = overrides[field.name]
-    if (!override) {
-      return compactInputSchemaField(field)
-    }
-    return compactInputSchemaField({
-      ...field,
-      source: override.source,
-      value: override.source === 'constant' ? override.value : undefined,
     })
+  const prefix = chatInputPrefixField(fields, overrides)
+  return prefix ? [prefix, ...mapped] : mapped
+}
+
+/**
+ * Applies Add-an-API source overrides onto a binding. A typed chat prefix is
+ * stored even when the Start block had no form fields; reserved-only with no
+ * prefix omits `inputSchema`.
+ */
+export function bindingWithInputOverrides(
+  binding: ArenaGenerativeApiBinding,
+  overrides: Record<string, ArenaGenerativeInputSourceOverride>
+): ArenaGenerativeApiBinding {
+  const inputSchema = applyInputSourceOverrides(binding.inputSchema ?? [], overrides)
+  if (inputSchema.length === 0) {
+    if (!binding.inputSchema) {
+      return binding
+    }
+    const { inputSchema: _dropped, ...rest } = binding
+    return rest
+  }
+  return { ...binding, inputSchema }
+}
+
+function chatInputPrefixField(
+  fields: ArenaGenerativeInputSchemaField[],
+  overrides: Record<string, ArenaGenerativeInputSourceOverride>
+): ArenaGenerativeInputSchemaField | undefined {
+  const existing = fields.find((field) => isChatInputPrefixName(field.name))
+  const overrideEntry = Object.entries(overrides).find(([name]) => isChatInputPrefixName(name))
+  const override = overrideEntry?.[1]
+  const raw =
+    override?.source === 'constant' ? override.value : override ? undefined : existing?.value
+  const value = typeof raw === 'string' ? raw.trim() : ''
+  if (!value) return undefined
+  return compactInputSchemaField({
+    name: existing?.name ?? overrideEntry?.[0] ?? 'input',
+    type: existing?.type ?? 'string',
+    source: 'constant',
+    value,
   })
 }
 

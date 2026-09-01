@@ -23,6 +23,7 @@ import {
   emptyBindingFormState,
   formStateFromBinding,
 } from '@/lib/arena-generative-ui/binding-form'
+import { chatProtocolFromWorkflowFields } from '@/lib/arena-generative-ui/chat-protocol'
 import {
   curlHasAuthHeader,
   curlLooksLikeStream,
@@ -36,12 +37,13 @@ import {
 } from '@/lib/arena-generative-ui/from-workflow'
 import {
   type ArenaGenerativeInputSourceOverride,
-  applyInputSourceOverrides,
+  bindingWithInputOverrides,
   briefHasEmailFormField,
   inputFieldRowNeedsValue,
   inputSourceOverridesForSave,
   isChatInputPrefixName,
   isEmailLikeApiInputName,
+  isFormFacingInputSchemaField,
   resolveInputFieldEditorRow,
 } from '@/lib/arena-generative-ui/input-schema'
 import { outputSchemaFromSample } from '@/lib/arena-generative-ui/output-schema'
@@ -123,19 +125,6 @@ function schemaFromSamplePaste(
       return { fields: [] }
     }
     return { fields: [], error: getErrorMessage(caught, 'Output format must be valid JSON') }
-  }
-}
-
-function bindingWithInputOverrides(
-  binding: ArenaGenerativeApiBinding,
-  overrides: Record<string, ArenaGenerativeInputSourceOverride>
-): ArenaGenerativeApiBinding {
-  if (!binding.inputSchema?.length) {
-    return binding
-  }
-  return {
-    ...binding,
-    inputSchema: applyInputSourceOverrides(binding.inputSchema, overrides),
   }
 }
 
@@ -348,11 +337,29 @@ export function ArenaApiBindingImportHelper({
   }, [source, curl, key])
 
   const editorInputSchema = source === 'workflow' ? inputSchema : curlInputSchema
+  const workflowChatProtocol = useMemo(
+    () => (source === 'workflow' ? chatProtocolFromWorkflowFields(inputFields) : undefined),
+    [source, inputFields]
+  )
+  const taggedInputSchema =
+    source === 'workflow'
+      ? editorInputSchema.filter(isFormFacingInputSchemaField)
+      : editorInputSchema
   const autoBindVisitorEmail = !briefHasEmail
-  const editorRows = editorInputSchema.map((field) =>
+  const editorRows = taggedInputSchema.map((field) =>
     resolveInputFieldEditorRow(field, inputSourceOverrides[field.name])
   )
-  const pickerRows = editorRows.filter((row) => briefHasEmail || !isEmailLikeApiInputName(row.name))
+  const prefixRow =
+    workflowChatProtocol?.input === true
+      ? resolveInputFieldEditorRow(
+          { name: 'input', type: 'string', source: 'constant' },
+          inputSourceOverrides.input ?? inputSourceOverrides.Input
+        )
+      : null
+  const pickerRows = [
+    ...(prefixRow ? [prefixRow] : []),
+    ...editorRows.filter((row) => briefHasEmail || !isEmailLikeApiInputName(row.name)),
+  ]
   const autoBoundEmailFields = editorInputSchema.filter(
     (field) => autoBindVisitorEmail && isEmailLikeApiInputName(field.name)
   )
@@ -628,18 +635,24 @@ export function ArenaApiBindingImportHelper({
                   </p>
                 </ChipModalField>
               ) : null}
-              {showWorkflowInputs && !deployedLoading && inputSchema.length === 0 ? (
+              {showWorkflowInputs && !deployedLoading && taggedInputSchema.length === 0 ? (
                 <ChipModalField
                   type='custom'
                   title='Inputs'
-                  hint='Read from the deployed start block. Form values are still sent as-is.'
+                  hint={
+                    workflowChatProtocol
+                      ? 'Reserved Start fields are optional. Chat fills input, conversationId, and files.'
+                      : 'Read from the deployed start block. Form values are still sent as-is.'
+                  }
                 >
                   <p className='text-[var(--text-secondary)] text-caption'>
-                    This workflow declares no start inputs. Form values are still sent as-is.
+                    {workflowChatProtocol
+                      ? 'This workflow only declares reserved Start fields (input, conversationId, files). They are optional — the Chat composer fills them. Add an optional input prefix below if the first message should start with fixed text.'
+                      : 'This workflow declares no start inputs. Form values are still sent as-is.'}
                   </p>
                 </ChipModalField>
               ) : null}
-              {showWorkflowInputs && !deployedLoading && inputSchema.length > 0 ? (
+              {showWorkflowInputs && !deployedLoading && taggedInputSchema.length > 0 ? (
                 <ChipModalField
                   type='custom'
                   title='Inputs'
@@ -649,7 +662,7 @@ export function ArenaApiBindingImportHelper({
                       : 'Read from the deployed start block. Choose how each param is filled.'
                   }
                 >
-                  <SchemaFieldTags fields={inputSchema} />
+                  <SchemaFieldTags fields={taggedInputSchema} />
                 </ChipModalField>
               ) : null}
               {showWorkflowInputs && !deployedLoading && pickerRows.length > 0 ? (
