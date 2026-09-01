@@ -2,6 +2,17 @@ import type { Spec } from '@json-render/core'
 import { DEFAULT_ARENA_GENERATIVE_THEME } from '@/lib/arena-generative-ui/theme'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
 
+/** Render contract shared by every gold few-shot. Gold does not decide sitemap. */
+export const GOLD_RENDER_CONTRACT = [
+  'Match tokens, catalog types, and wiring (statePath, actionId, selectItem / showWhen).',
+  'Honour pages[], regions, and interaction from the blueprint.',
+  "Do not copy this sample's sitemap, page count, shell, or subject.",
+  'Do not invent pages or regions the blueprint omitted.',
+  'Note the default Arena theme and result components bound by statePath.',
+  'gap and padding use spacing tokens (sm, md, lg); Card.variant is default or muted.',
+  'Do not copy px, hex, or CSS variables.',
+].join(' ')
+
 function goldPrompt(
   archetype: string,
   framing: string,
@@ -9,7 +20,7 @@ function goldPrompt(
 ): string {
   return [
     `GOLD STANDARD REFERENCE LAYOUT (${archetype})`,
-    'Match this structure and density, not its subject matter. Note the default Arena theme and result components bound by statePath. gap and padding use spacing tokens (sm, md, lg); Card.variant is default or muted. Do not copy px, hex, or CSS variables.',
+    GOLD_RENDER_CONTRACT,
     framing,
     JSON.stringify(output, null, 2),
   ].join('\n\n')
@@ -294,12 +305,95 @@ export const goldListDetailManifest: ArenaGenerativeAppManifest = {
 }
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL = goldPrompt(
-  'collection',
-  'Collection page onLoad fills Repeat inside a 2-column Grid of entity Cards. Open uses navigateTo "detail?id={item.id}". A sibling Detail page onLoad fetches that record and shows EntityHeader plus KeyValue. Cards is one valid representation because rows have per-item identity; Table is equally valid when rows are comparable scalars. Match REPRESENTATION, not this body, when the brief picked table or list. No search hero.',
+  'list-detail',
+  'This sample has a Detail page because the blueprint named one. Collection page onLoad fills Repeat inside a 2-column Grid of entity Cards. Open uses navigateTo "detail?id={item.id}". The sibling Detail page onLoad fetches that record and shows EntityHeader plus KeyValue. Cards is one valid representation because rows have per-item identity; Table is equally valid when rows are comparable scalars. Match REPRESENTATION, not this body, when the brief picked table or list. No search hero. Omit the Detail page when pages[] has no detail.',
   {
     title: 'Orders',
     content: 'Browse orders and open one record.',
     manifest: goldListDetailManifest,
+  }
+)
+
+/** Binding key the one-page collection `onLoad` points at. */
+export const GOLD_COLLECTION_LOAD_API_KEY = 'list_items'
+
+const collectionHomeSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: {
+      type: 'Page',
+      props: { title: 'Items', backgroundColor: null },
+      children: ['section'],
+    },
+    section: {
+      type: 'Section',
+      props: { width: 'wide', padding: null, backgroundColor: null, maxWidth: null },
+      children: ['header', 'results_grid'],
+    },
+    header: {
+      type: 'PageHeader',
+      props: {
+        title: 'Items',
+        subtitle: 'Create and complete stay on this page.',
+        kicker: 'List',
+        align: 'start',
+      },
+      children: [],
+    },
+    results_grid: {
+      type: 'Grid',
+      props: { columns: '2', gap: 'md', minItemWidth: null },
+      children: ['results_repeat'],
+    },
+    results_repeat: {
+      type: 'Repeat',
+      props: { statePath: 'items', emptyText: 'No items yet.' },
+      children: ['item_card'],
+    },
+    item_card: {
+      type: 'Card',
+      props: {
+        title: '{item.name}',
+        subtitle: '{item.status}',
+        description: '{item.summary}',
+        footerText: '{item.meta}',
+        padding: 'lg',
+        variant: 'default',
+        backgroundColor: null,
+      },
+      children: ['item_logo'],
+    },
+    item_logo: {
+      type: 'Avatar',
+      props: { src: '{item.logo}', initials: '{item.initials}', statePath: null },
+      children: [],
+    },
+  },
+}
+
+export const goldCollectionManifest: ArenaGenerativeAppManifest = {
+  entryPath: 'home',
+  theme: DEFAULT_ARENA_GENERATIVE_THEME,
+  pages: {
+    home: {
+      path: 'home',
+      title: 'Items',
+      spec: collectionHomeSpec,
+      onLoad: ['load_items'],
+    },
+  },
+  actions: {
+    load_items: { apiKey: GOLD_COLLECTION_LOAD_API_KEY },
+  },
+}
+
+export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION = goldPrompt(
+  'collection',
+  'One collection page. onLoad fills Repeat inside a 2-column Grid of entity Cards. Create and complete are capabilities on this page, not extra pages or regions. Match REPRESENTATION, not this body, when the brief picked table or list. No sibling Detail page. No catalog Workspace.',
+  {
+    title: 'Items',
+    content: 'Browse a list on one page.',
+    manifest: goldCollectionManifest,
   }
 )
 
@@ -779,7 +873,7 @@ export const goldWorkspaceManifest: ArenaGenerativeAppManifest = {
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE = goldPrompt(
   'sidebar-shell',
-  'App chrome is catalog Workspace when shell.navigation is sidebar or workspace, or when the page archetype is workspace. Children are navigator (collection Repeat), primary (EntityHeader + KeyValue), inspector (DataText). Honour pages[].regions when the page job is workspace. Sync with selectItem and inspectorWhen "selectedId". No Tabs for the three regions.',
+  'Catalog Workspace wiring when the blueprint used a Workspace page or pages[].regions. Children are navigator (collection Repeat), primary (EntityHeader + KeyValue), inspector (DataText). Honour pages[].regions; this sample\'s accounts/notes are subject matter. Sync with selectItem and inspectorWhen "selectedId". No Tabs for the three regions. Sidebar chrome is the shell recipe, not this sample.',
   {
     title: 'Accounts',
     content: 'Keep the list, record, and notes visible together.',

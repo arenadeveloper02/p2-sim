@@ -57,6 +57,10 @@ export interface BuildGeneratorSystemPromptOptions {
   needsTables?: boolean
   needsWait?: boolean
   needsWorkspace?: boolean
+  /** Planned page jobs for gold selection. Not region archetypes. */
+  pageArchetypes?: readonly ArenaGenerativeArchetype[]
+  /** True when any planned page declared named regions. */
+  hasRegions?: boolean
 }
 
 const WAIT_CAPABILITIES = new Set<string>([
@@ -85,6 +89,8 @@ export function generatorPromptOptionsFromBrief(
   | 'needsTables'
   | 'needsWait'
   | 'needsWorkspace'
+  | 'pageArchetypes'
+  | 'hasRegions'
 > {
   if (!brief) {
     return {
@@ -93,14 +99,24 @@ export function generatorPromptOptionsFromBrief(
       needsTables: false,
       needsWait: false,
       needsWorkspace: false,
+      pageArchetypes: [],
+      hasRegions: false,
     }
   }
   const shapes = new Set<ArenaGenerativeArchetype>([brief.archetype])
+  const pageArchetypes: ArenaGenerativeArchetype[] = []
   let needsTables = brief.representation === 'table'
+  let hasRegions = false
+  let hasWorkspacePage = brief.archetype === 'workspace'
   for (const page of brief.pages ?? []) {
-    if (page.archetype) shapes.add(page.archetype)
+    if (page.archetype) {
+      shapes.add(page.archetype)
+      pageArchetypes.push(page.archetype)
+      if (page.archetype === 'workspace') hasWorkspacePage = true
+    }
     if (page.representation === 'table') needsTables = true
     if (page.regions) {
+      hasRegions = true
       for (const region of Object.values(page.regions)) {
         if (region?.archetype) shapes.add(region.archetype)
         if (region?.representation === 'table') needsTables = true
@@ -116,10 +132,9 @@ export function generatorPromptOptionsFromBrief(
     needsForms: shapes.has('task') || shapes.has('workflow'),
     needsTables,
     needsWait: capabilities.some((capability) => WAIT_CAPABILITIES.has(capability)),
-    needsWorkspace:
-      shapes.has('workspace') ||
-      brief.shell?.navigation === 'sidebar' ||
-      brief.shell?.navigation === 'workspace',
+    needsWorkspace: hasWorkspacePage || hasRegions,
+    pageArchetypes,
+    hasRegions,
   }
 }
 
@@ -215,7 +230,10 @@ export function buildGeneratorSystemPrompt(options: BuildGeneratorSystemPromptOp
       recipe,
       representation,
       capabilities,
-      goldExamplePromptForArchetype(options.archetype, { shell: options.shell }),
+      goldExamplePromptForArchetype(options.archetype, {
+        pageArchetypes: options.pageArchetypes,
+        hasRegions: options.hasRegions,
+      }),
       headedRules('COMPONENT RULES', ARENA_GENERATIVE_UI_COMPONENT_RULES),
       catalogAndEnvelope,
     ]),

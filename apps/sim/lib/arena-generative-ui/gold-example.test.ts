@@ -12,11 +12,13 @@ import {
 import {
   GOLD_CONTENT_LOAD_API_KEY,
   GOLD_DASHBOARD_LOAD_API_KEY,
+  GOLD_COLLECTION_LOAD_API_KEY,
   GOLD_LIST_DETAIL_LIST_API_KEY,
   GOLD_LIST_DETAIL_RECORD_API_KEY,
   GOLD_WIZARD_SUBMIT_API_KEY,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
   GOLD_WORKSPACE_LOAD_API_KEY,
+  goldCollectionManifest,
   goldContentManifest,
   goldDashboardManifest,
   goldListDetailManifest,
@@ -119,9 +121,8 @@ describe('gold example', () => {
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('two screens')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).not.toContain('four screens')
     expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('"entryPath": "home"')
-    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('spacing tokens')
-    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('Card.variant')
-    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).not.toContain('```')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).toContain('Honour pages[]')
+    expect(ARENA_GENERATIVE_UI_GOLD_EXAMPLE).not.toContain('Match this structure')
   })
 })
 
@@ -144,10 +145,27 @@ describe('per-archetype gold examples', () => {
     )
     expect(
       goldExamplePromptForArchetype('collection', { shell: { navigation: 'sidebar' } })
-    ).toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
+    ).toContain('GOLD STANDARD REFERENCE LAYOUT (collection)')
+    expect(
+      goldExamplePromptForArchetype('collection', { shell: { navigation: 'sidebar' } })
+    ).not.toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
+    expect(
+      goldExamplePromptForArchetype('collection', {
+        pageArchetypes: ['collection', 'detail'],
+      })
+    ).toContain('GOLD STANDARD REFERENCE LAYOUT (list-detail)')
+    expect(goldExamplePromptForArchetype('collection')).toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (collection)'
+    )
+    expect(goldExamplePromptForArchetype('collection')).not.toContain(
+      'GOLD STANDARD REFERENCE LAYOUT (list-detail)'
+    )
     expect(goldExamplePromptForArchetype('workspace')).toContain(
       'GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)'
     )
+    expect(
+      goldExamplePromptForArchetype('collection', { hasRegions: true })
+    ).toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
     expect(goldExamplePromptForArchetype('task')).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
     expect(goldExamplePromptForArchetype()).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
   })
@@ -170,6 +188,23 @@ describe('per-archetype gold examples', () => {
     expect(JSON.stringify(goldDashboardManifest)).toContain('"Table"')
     expect(JSON.stringify(goldDashboardManifest)).toContain('"gap":"md"')
     expect(JSON.stringify(goldDashboardManifest)).not.toMatch(/"gap":"(?:8|12|16|24)px"/)
+  })
+
+  it('validates the one-page collection gold', () => {
+    const result = validateArenaGenerativeManifest(goldCollectionManifest, {
+      apiBindings: [
+        {
+          key: GOLD_COLLECTION_LOAD_API_KEY,
+          label: 'Items',
+          kind: 'workflow',
+          workflowId: 'wf_items',
+        },
+      ],
+    })
+    expect(result.success).toBe(true)
+    expect(Object.keys(goldCollectionManifest.pages)).toEqual(['home'])
+    expect(JSON.stringify(goldCollectionManifest)).not.toContain('navigateTo')
+    expect(JSON.stringify(goldCollectionManifest)).not.toContain('"Workspace"')
   })
 
   it('validates the list-detail gold', () => {

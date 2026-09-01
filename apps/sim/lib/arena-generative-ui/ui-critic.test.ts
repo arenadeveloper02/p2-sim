@@ -5,6 +5,7 @@ import type { Spec } from '@json-render/core'
 import { describe, expect, it } from 'vitest'
 import { goldExampleManifest } from '@/lib/arena-generative-ui/gold-example'
 import {
+  goldCollectionManifest,
   goldContentManifest,
   goldDashboardManifest,
   goldListDetailManifest,
@@ -68,6 +69,7 @@ describe('hostCriticManifest', () => {
   it('accepts gold and fixture manifests', () => {
     expect(hostCriticManifest(goldExampleManifest)).toBeUndefined()
     expect(hostCriticManifest(goldDashboardManifest)).toBeUndefined()
+    expect(hostCriticManifest(goldCollectionManifest)).toBeUndefined()
     expect(hostCriticManifest(goldListDetailManifest)).toBeUndefined()
     expect(hostCriticManifest(goldWizardManifest)).toBeUndefined()
     expect(hostCriticManifest(goldContentManifest)).toBeUndefined()

@@ -847,6 +847,7 @@ describe('target blueprint fixtures', () => {
       isScopedEdit: false,
     })
     expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (collection)')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (list-detail)')
     expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (dashboard)')
     expect(prompt).not.toContain('SWOT')
     expect(prompt).not.toContain('productType')
@@ -918,6 +919,23 @@ describe('target blueprint fixtures', () => {
     expect(recipes).toContain('ARCHETYPE RECIPE: collection')
     expect(recipes).toContain('ARCHETYPE RECIPE: detail')
     expect(recipes).toContain('SHELL RECIPE')
+    const crmOptions = generatorPromptOptionsFromBrief(parsed, {
+      hasBindings: false,
+      hasStreamingBinding: false,
+    })
+    expect(crmOptions.needsWorkspace).toBe(false)
+    expect(crmOptions.hasRegions).toBe(false)
+    const prompt = buildGeneratorSystemPrompt({
+      ...crmOptions,
+      capabilities: parsed!.capabilities,
+      hasBindings: false,
+      hasStreamingBinding: false,
+      isScopedEdit: false,
+    })
+    expect(prompt).toContain('GOLD STANDARD REFERENCE LAYOUT (list-detail)')
+    expect(prompt).toContain('SHELL RECIPE')
+    expect(prompt).not.toContain('GOLD STANDARD REFERENCE LAYOUT (sidebar-shell)')
+    expect(prompt).not.toContain('COMPOSITION SEMANTICS')
   })
 
   it('parses competitor analysis as task plus results with no history page', () => {
@@ -1017,11 +1035,14 @@ describe('target blueprint fixtures', () => {
     expect(recipes).toContain('ARCHETYPE RECIPE: collection')
     expect(recipes).toContain('ARCHETYPE RECIPE: detail')
     expect(recipes).toContain('SHELL RECIPE')
+    const workspaceOptions = generatorPromptOptionsFromBrief(parsed, {
+      hasBindings: false,
+      hasStreamingBinding: false,
+    })
+    expect(workspaceOptions.needsWorkspace).toBe(true)
+    expect(workspaceOptions.hasRegions).toBe(true)
     const prompt = buildGeneratorSystemPrompt({
-      ...generatorPromptOptionsFromBrief(parsed, {
-        hasBindings: false,
-        hasStreamingBinding: false,
-      }),
+      ...workspaceOptions,
       capabilities: parsed!.capabilities,
       hasBindings: false,
       hasStreamingBinding: false,

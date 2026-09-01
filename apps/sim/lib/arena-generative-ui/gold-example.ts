@@ -1,10 +1,12 @@
 import type { Spec } from '@json-render/core'
 import {
+  ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD,
   ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE,
+  GOLD_RENDER_CONTRACT,
 } from '@/lib/arena-generative-ui/gold-example-archetypes'
 import type {
   ArenaGenerativeArchetype,
@@ -170,38 +172,54 @@ export const goldExampleOutput = {
 
 /**
  * Reference layout appended to the generator system prompt. A concrete legal
- * manifest is the strongest signal available, so it is asserted against
+ * manifest is the strongest wiring signal available, so it is asserted against
  * `validateArenaGenerativeManifest` in tests to guarantee it never drifts out of
- * spec and teaches an invalid shape.
+ * spec. Sitemap, page count, and shell come from the blueprint, not this sample.
  */
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT (task)',
-  'Match this structure and density, not its subject matter. Note the default Arena theme, the two screens (centered company input, report destination), SearchField with nested submit, WorkingCard then DataText bound by statePath. gap and padding use spacing tokens (sm, md, lg); Card.variant is default or muted. Do not copy px, hex, or CSS variables.',
-  'Note also how data moves: home has no onLoad — SearchField runs the analyze CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.company and "{company}". Results has no onLoad of that CTA. WorkingCard applies when CAPABILITY includes long-running, multi-step, or cancellable; omit it when no wait capability is selected. Do not add history, SWOT, stats, or extra pages this example omitted.',
+  GOLD_RENDER_CONTRACT,
+  'This sample uses two screens (centered company input, report destination) because a task page then a results page is the blueprint. SearchField with nested submit, WorkingCard then DataText bound by statePath. Home has no onLoad — SearchField runs the analyze CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.company and "{company}". Results has no onLoad of that CTA. WorkingCard applies when CAPABILITY includes long-running, multi-step, or cancellable; omit it when no wait capability is selected. Do not add history, SWOT, stats, or extra pages this example omitted.',
   `Replace the action apiKey ("${GOLD_EXAMPLE_API_KEY}") with a declared API binding key. The SearchField actionId must be that same manifest.actions key — do not paraphrase ${GOLD_EXAMPLE_API_KEY} as company_search. When no bindings were declared, keep the action with no apiKey and use onSuccess.setState / navigate. Do not drop manifest.actions.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')
 
+export interface GoldExamplePickerOptions {
+  /** Planned page archetypes. Shell is ignored — chrome is the shell recipe. */
+  pageArchetypes?: readonly ArenaGenerativeArchetype[]
+  /** True when any page declared named regions. */
+  hasRegions?: boolean
+  /** Ignored. Sidebar chrome is SHELL RECIPE, not gold. */
+  shell?: ArenaGenerativeShell
+}
+
 /**
- * Few-shot for the generator: sidebar or workspace chrome wins so catalog
- * Workspace is taught. Otherwise the matching page job only.
+ * Few-shot for the generator: wiring only. Selected from the planned sitemap,
+ * never from sidebar chrome.
  */
 export function goldExamplePromptForArchetype(
   archetype?: ArenaGenerativeArchetype,
-  options?: { shell?: ArenaGenerativeShell }
+  options?: GoldExamplePickerOptions
 ): string {
-  if (
-    options?.shell?.navigation === 'sidebar' ||
-    options?.shell?.navigation === 'workspace' ||
-    archetype === 'workspace'
-  ) {
+  const shapes = new Set<ArenaGenerativeArchetype>(options?.pageArchetypes ?? [])
+  if (archetype) shapes.add(archetype)
+  const hasRegions = Boolean(options?.hasRegions)
+
+  if (hasRegions || shapes.has('workspace')) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WORKSPACE
   }
-  if (archetype === 'dashboard') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD
-  if (archetype === 'collection' || archetype === 'detail') {
+  if (shapes.has('task') && shapes.has('results')) {
+    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE
+  }
+  if (shapes.has('collection') && shapes.has('detail')) {
     return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL
   }
-  if (archetype === 'workflow') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD
-  if (archetype === 'content') return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT
+  if (shapes.has('collection')) {
+    return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_COLLECTION
+  }
+  if (shapes.has('dashboard')) return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD
+  if (shapes.has('workflow')) return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_WIZARD
+  if (shapes.has('content')) return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_CONTENT
+  if (shapes.has('detail')) return ARENA_GENERATIVE_UI_GOLD_EXAMPLE_LIST_DETAIL
   return ARENA_GENERATIVE_UI_GOLD_EXAMPLE
 }
