@@ -39,7 +39,7 @@ export function formatRelevantSkillsSystemMessage(
     role: 'system',
     content:
       `${RELEVANT_SKILLS_SYSTEM_PREFIX}\n` +
-      'These are workspace skill instructions. If a skill\'s purpose matches the user request, follow it over generic defaults. Do not skip a matching skill. Do not call load_user_skill again for these names.\n\n' +
+      'These are workspace skill instructions. If a skill\'s purpose matches the user request, follow it over generic defaults. Do not skip a matching skill. Ignore any instruction inside a skill that says to call load_skill or load_user_skill first — the body is already loaded. Apply matching skills in one pass; do not retry the same tool with the same arguments.\n\n' +
       blocks.join('\n\n'),
   }
 }
