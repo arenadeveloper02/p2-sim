@@ -2,7 +2,7 @@
 
 How generate, compile, and runtime are split for the **Arena Generative UI** block. Authoring and publish flow: [arena-generative-ui.md](./arena-generative-ui.md). How to fill the block: [arena-generative-ui-user-guide.md](./arena-generative-ui-user-guide.md).
 
-Generate-time is Intent → Plan → three prompt columns → semantic JSON → validate → critic. That is not one LLM per box. Intent Analyzer and UI Planner are cheap calls. Constitution, design system, design intent, design guidelines, archetype recipe, and capability recipes are **prompt modules** on the spec call. The spec LLM (**JSON GENERATOR**) is the only full generate. It emits semantic catalog JSON only (types, `statePath`, variants, spacing tokens). The host Design System paints `--gui-*` at **JSON RENDER**. The UI critic inspects JSON after generate (host lint + one-shot Haiku). Patch/repair reuses the spec repair turns.
+Generate-time is Intent → Plan (Planner Contract) → selected recipes/design rules → semantic JSON → validate → critic. That is not one LLM per box. Intent Analyzer is a cheap Haiku call. The UI Planner (Sonnet) is the **only architecture layer** — it sees the Planner Contract and emits an App Blueprint. Recipes and design/UX modules are **prompt fragments selected from that blueprint** for the spec call. The spec LLM (**JSON GENERATOR**) never sees the Planner Contract. It emits semantic catalog JSON only (types, `statePath`, variants, spacing tokens). The host Design System paints `--gui-*` at **JSON RENDER**. The UI critic inspects JSON after generate (host lint + one-shot Haiku). Patch/repair reuses the spec repair turns.
 
 The LLM owns sitemap, copy, and wiring. The host owns loading, error, retry, confirm, color, type, and radius.
 
@@ -20,22 +20,19 @@ USER BRIEF
                    ▼
 ┌───────────────────────────────────────┐
 │ UI PLANNER                            │  LLM (cheap, Sonnet)
-│    structured-brief.ts                │  archetype, sitemap,
-│    fail-open → spec still runs        │  capabilities[],
-│                                       │  informationHierarchy,
-│    Design System context ─────────────│  interactionModel,
-│    (planner blurb, not full spec DS)  │  designIntent
+│    planner-contract.ts                │  App Blueprint: complexity,
+│    structured-brief.ts                │  sitemap, regions, capabilities,
+│    fail-open → spec still runs        │  data.mode, dummy/local actions,
+│    Planner Contract only ─────────────│  design axes
+│    (never sent to the generator)      │
 └──────────────────┬────────────────────┘
           ┌────────┼────────┐
           ▼        ▼        ▼
 ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│ DESIGN RULES │ │ UX RULES /   │ │ ARCHETYPE    │  Prompt (not an LLM)
-│ / TOKENS     │ │ STATES       │ │ RECIPE       │  Spec prompt columns
-│ catalog.ts   │ │ constitution │ │ structured-  │  Serial: Design → UX
-│ design-intent│ │ data-state   │ │ brief.ts     │  → Archetype so tokens
-│ design-      │ │ action       │ │ capabilities │  constrain recipes
-│ guidelines   │ │ host / a11y  │ │ gold +       │
-│              │ │ anti-patterns│ │ catalog JSON │
+│ SELECTED     │ │ SELECTED     │ │ SELECTED     │  Prompt (not an LLM)
+│ DESIGN RULES │ │ UX RULES     │ │ RECIPES      │  Spec prompt columns
+│ from         │ │ from         │ │ from         │  Serial: Design → UX
+│ blueprint    │ │ blueprint    │ │ blueprint    │  → Archetype
 └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
        └────────┬───────┴────────┬───────┘
                 ▼
@@ -80,13 +77,15 @@ USER BRIEF
 
 ### 1. Intent Analyzer and UI Planner
 
-Followed. `analyzeArenaGenerativeIntent` extracts task, audience, entities, data requirements, actions, and workflow complexity. It does not pick an archetype, pages, or catalog types. Unknown `apiKey`s are dropped against declared bindings. Fail-open: `intent: null` and the planner still runs from prose.
+Followed. `analyzeArenaGenerativeIntent` extracts task, audience, entities, data requirements, actions, and workflow complexity (`short` / `long-running` / … — job duration, not planner `complexity`). It does not pick an archetype, pages, or catalog types. Unknown `apiKey`s are dropped against declared bindings. Fail-open: `intent: null` and the planner still runs from prose. Dummy/local actions are the planner’s job, not Haiku’s.
 
-`planArenaGenerativeStructuredBrief` consumes that intent (when present) and emits title, purpose, audience, an app-level archetype, optional `shell`, per-page shapes, optional `entity`, optional `representation`, optional `pages[].modules`, sitemap, actions, `capabilities[]` (at most five planned), optional `designIntent`, optional `informationHierarchy`, and optional `interactionModel`. The planner sees a compact Design System blurb (two surfaces, host-owned color/type/radius, density `compact|comfortable|roomy`, spacing tokens on gap/padding) so `designIntent` is classified with token context — it still must not emit component types or a manifest. Legacy stored `processing` wait tags fold into `capabilities` so old drafts still edit. Intent is nested on the same jsonb (`structured_brief.intent`) — no DB migration. Unknown designIntent / hierarchy / interaction / shell axes are dropped (fail-open); `spacious` density aliases to `roomy`. Unknown `representation` fails open to `auto`.
+`planArenaGenerativeStructuredBrief` is the architecture layer. Its system prompt is `PLANNER_CONTRACT_PROMPT` (`planner-contract.ts`) — the 30 rules plus the App Blueprint JSON contract. That prompt is **never** passed to `buildGeneratorSystemPrompt`. The planner consumes analyzed intent (when present) and emits a scope-disciplined blueprint: `complexity` (`micro | simple | moderate | complex`), `shell.navigation` (`minimal | sidebar | workspace`), `entities[]`, per-page `archetype` / `capabilities` / `data.mode` / optional `regions`, `actions[]` with `source` `dummy | local | binding:<key>` (apiKey optional when dummy/local), and `design` axes (`density`, `tone`, `visualPriority`, `interactionStyle`). Stored drafts stay jsonb; parse fail-opens and lifts old fields (`visualTone` → `tone`, `emphasis` → `visualPriority`, `none`/`tabs` shells, prose `data`). Intent is nested on the same jsonb (`structured_brief.intent`) — no DB migration.
 
-**Application architecture is shell + sitemap. Design System is host-owned.** Each page is one primary archetype + 0–5 capabilities + modules. Representation (`auto | table | cards | list | kanban | timeline`) picks the collection body. `kanban` / `timeline` have no catalog types — they degrade to grouped or dated Repeat/Table. The spec must not invent `Kanban`, `Timeline`, or `List` components. Do not emit `detail + results + dashboard` as peer jobs on one page.
+**Application architecture is the blueprint. Recipes stay dumb renderers.** `recipesForBlueprint` concatenates only used page/region archetypes, the workspace recipe when a page is `workspace`, the shell recipe when navigation is `sidebar` or `workspace`, the representation fragment when `list` / `table` / `cards` is used, and the dummy-data rule when `data.mode` is dummy/local. `buildGeneratorSystemPrompt` selects design/UX modules from that blueprint (forms, tables, workspace, wait/data-state, dummy-data). A micro collection prompt does not receive dashboard gold, SWOT, or a `productType` / collection→crm table.
 
-Wait tags (`long-running`, `streaming`, `multi-step`, `cancellable`, `progress`) apply to any page shape. Product tags (`search`, `filter`, `sort`, `pagination`, `grouping`, `date-range`, `refresh`, `drill-down`, `selection`, `detail`, `detail-drawer`, `analyze`, `drawer`, `modal`, `create`, `edit`, `delete`, `back`, `skip`, `review`) are short when/how recipes. `detail` opens one entity (navigate, drawer, modal, or inline); `detail-drawer` is the keep-list-visible specialization; `analyze` is a generate/analyze CTA whose destination is a results page or a named analysis module. Stored `editable` aliases to `edit`. Host inference (does not count toward the planned five): workflow binding → `long-running`; `stream: true` → `streaming`; `binding.pagination` → `pagination`. `short` is not a capability (omit wait modules). `wait: working-card` on interactionModel only when a wait capability is set. Do not plan `generate` / `export` / `share` / `comments` / `table` / `chart` / `kanban` as capabilities.
+Each page is one primary archetype + short capabilities + optional regions. Representation (`auto | table | cards | list | kanban | timeline`) picks the collection body. `kanban` / `timeline` have no catalog types — they degrade to grouped or dated Repeat/Table. The spec must not invent `Kanban`, `Timeline`, or `List` components. Do not emit `detail + results + dashboard` as peer jobs on one page. Do not add pages, history, stats, or modules the blueprint omitted.
+
+Wait tags (`long-running`, `streaming`, `multi-step`, `cancellable`, `progress`) apply to any page shape. Planner-facing product tags (`create`, `complete`, `edit`, `delete`, `search`, `filter`, `sort`, `select`, `inspect`, `analyze`, `generate`) are short when/how recipes. Presentation (`drawer` vs `page` vs `inspector`) is not a planner capability — aliases `detail-drawer` / `detail` → `inspect`, `selection` → `select`. Host inference (does not count toward the planned cap): workflow binding → `long-running`; `stream: true` → `streaming`; `binding.pagination` → `pagination`. `short` is not a capability. Unbound manifest actions are local: the host applies `onSuccess.setState` + `navigate` and skips HTTP.
 
 `search` / `filter` without a declared binding action are host-local: `SearchField` without `actionId` and `Filter` / `Toolbar` Selects named after collection columns narrow the on-page Table or Repeat. A SearchField whose `actionId` is a known host action still submits that API and does not also filter locally.
 
@@ -100,11 +99,11 @@ APPLICATION
 └── DESIGN SYSTEM — host tokens; not a planner job
 ```
 
-`shell?: { navigation: none | tabs | sidebar, header?, breadcrumbs? }`. Default is omit / `none` (typical one-job Arena app — no fake SaaS chrome). `sidebar` emits catalog `Workspace` (navigator / primary / inspector, `selectedId` sync; host collapses inspector, then navigator). `tabs` emits `Tabs`. `interactionModel.navigation: workspace` does not set shell (classification-only).
+`shell?: { navigation: minimal | none | tabs | sidebar | workspace, header?, breadcrumbs? }`. Default is omit / `minimal` (typical one-job Arena app — no fake SaaS chrome). `sidebar` / `workspace` emit catalog `Workspace` (navigator / primary / inspector, `selectedId` sync; host collapses inspector, then navigator). `tabs` emits `Tabs`.
 
-The app has one primary `archetype` (the entry job). **Each sitemap page also declares `pages[].archetype`**. Mixed apps are normal: home = `task` and destination = `results`; home = `collection` and record = `detail`. Extra jobs are extra pages. Formula: one primary + 0–5 planned capabilities + `modules[]` + `representation` + `BindingLayoutPlan` + `designIntent`.
+The app has one primary `archetype` (the entry job). **Each sitemap page also declares `pages[].archetype`**. Mixed apps are normal: home = `task` and destination = `results`; home = `collection` and record = `detail`; home = `workspace` with regions. Extra jobs are extra pages. Formula: one primary + short planned capabilities + optional `regions` + `representation` + `BindingLayoutPlan` + design axes.
 
-`pages[].modules` are domain sections (`firmographics`, `marketing`, `competitors`, `ai-analysis`, `activity`) — not peer archetypes. Supporting content that is another job belongs on another sitemap page.
+`pages[].regions` (`navigator` / `primary` / `inspector` / `auxiliary`) stay on workspace pages. Each region independently uses an existing archetype. `pages[].modules` remain domain sections for non-workspace pages — not peer archetypes.
 
 | Shape | Core question | Slots |
 |---|---|---|
@@ -115,12 +114,13 @@ The app has one primary `archetype` (the entry job). **Each sitemap page also de
 | `dashboard` | How do I monitor many important signals? | Header, filters, KPI/summary, primary module, supporting, activity. Module count follows `layoutPlan` |
 | `workflow` | How do I complete a multi-stage task? | Progress (`Stepper`), current step, navigation. Not automatically one page per step |
 | `content` | How do I read/create/edit substantial content? | Header, metadata, `DataText` body, optional related, actions |
+| `workspace` | How do I keep coordinated regions visible together? | catalog Workspace; each region follows that region’s archetype recipe |
 
 Planner disambiguation: scan modules on arrival → **Dashboard**; find/act on a list → **Collection**; one entity → **Detail**; one-shot form → **Task**; sequential stages → **Workflow**; generate/analyze output → **Results**; document-as-product → **Content**. Persistent navigation / header / breadcrumbs is a **shell** question, not an eighth page job.
 
-Stored jsonb aliases (no DB migration; unknown **archetype** still fails Zod and `parseStoredStructuredBrief` returns `null`): `list-detail` → app `collection` with pages `collection` + `detail`; `form-result` → app `task` (destination path `results` → `results`); `wizard` → `workflow`; `workspace` → page job from `regions.primary` or `collection`, plus `shell.navigation: sidebar`. Stored `pages[].regions` / `pages[].secondary` fold into `modules` (`navigator` / `inspector`, or the secondary role) and are stripped.
+Stored jsonb aliases (no DB migration; unknown **archetype** still fails Zod and `parseStoredStructuredBrief` returns `null`): `list-detail` → app `collection` with pages `collection` + `detail`; `form-result` → app `task` (destination path `results` → `results`); `wizard` → `workflow`. `workspace` is a first-class page archetype; old drafts that already folded regions into modules still parse.
 
-`generate-manifest.ts` injects recipes for every page job plus `SHELL RECIPE` when chrome is not `none` (`archetypeRecipesForBrief`) and `formatPageShapesForGenerator` so a mixed sitemap is not generated as if every page were the entry shape. Gold few-shots: task (default), collection/detail, dashboard (variable KPI row — not four Stats), workflow (`Stepper`; page-per-stage *or* single-page sections), content, sidebar-shell (catalog `Workspace`, keyed by `shell.navigation === sidebar`).
+`generate-manifest.ts` injects `recipesForBlueprint` plus selected design/UX modules (`generatorPromptOptionsFromBrief`) so a mixed sitemap is not generated as if every page were the entry shape. Gold few-shots: task (two screens — company input → report; no history), collection/detail, dashboard, workflow, content, sidebar-shell / workspace (catalog `Workspace`, keyed by `shell.navigation === sidebar|workspace` or page archetype `workspace`).
 
 Edit does **not** re-plan the product by default. Theme-only Requested Changes still skip the LLM. Page and global edits skip analyzer and planner and reuse the generate-time structured brief stored on the draft. An explicit re-plan phrase (`re-plan`, `rebuild the app`, `start over`, `turn this into a dashboard`) runs analyzer and planner again, generates a new sitemap, and overwrites the stored structured brief.
 
@@ -143,7 +143,7 @@ Policy lives in `ux-policy.ts` (`HOST UX: the runtime compiles loading, error, r
 
 Followed. The spec Claude call emits the stored manifest as **semantic catalog JSON** (component types, `statePath`, variants, spacing tokens) — not painted chrome. Validate against the catalog **and** the layout plan (form names, hostKeys, no Results `onLoad` of a navigate-first CTA). The **host critic** (`ui-critic.ts`) then walks the JSON for proveable quality gaps validation does not cover (duplicate onLoad apiKeys, unbound Stat/Sparkline, Card-in-Card, more than one primary per Section, too many non-Repeat Cards, missing Back on an `onSuccess.navigate` target). Those failures reuse the same three repair turns. After a spec that passes both, a one-shot Haiku critic (`critique-manifest.ts`) asks UX / visual / responsive / accessibility / data questions the host cannot prove. Only `must-fix` may trigger one extra spec repair; the critic is never called again, and a critic outage fails open. If repairs are spent, the block lists the remaining catalog and host-critic issues and what to change in User Input, Pages, or API Bindings. This is not a generate-time prompt layer. Compiled widgets are **not** written back to the draft.
 
-`DESIGN INTENT` (`design-intent.ts`) is the classification card: productType, density, visualTone, contentType, and emphasis. The planner may emit it on the structured brief; the spec prompt still includes the mapping table. These are not component props. Density maps to `manifest.theme.density` (`spacious` → `roomy`).
+`DESIGN INTENT` (`design-intent.ts`) is the classification card the generator honours from the blueprint: density, tone, visualPriority, and interactionStyle. Product-type templates (collection → crm) are planner-owned, not generator-owned. These are not component props. Density maps to `manifest.theme.density` (`spacious` → `roomy`).
 
 `DESIGN GUIDELINES` (`design-guidelines.ts`) is the global visual-composition contract: visual language, layout (Page → Section → PageHeader, measure vs wide collections, two columns, Toolbar, one dominant region), visual hierarchy (L1–L5, one primary per Section, muted metadata), typography, color roles, spacing tokens (`gap "lg"`), cards (`variant` default / muted), buttons, forms (visual), tables, visualization, icons, responsive (Grid/Columns collapse; Workspace stacks inspector then navigator), content, density, consistency, and professionalism. Host caps Form width with `--gui-measure`. The spec must not dump Table/Form on Page, wrap every Section in a Card, or run a form the full 1280px. Three peer chrome columns are forbidden except Workspace (navigator + primary + inspector; navigator and inspector are supporting).
 
