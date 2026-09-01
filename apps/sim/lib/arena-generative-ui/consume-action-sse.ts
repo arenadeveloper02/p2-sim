@@ -1,3 +1,4 @@
+import { lastAssistantPatch } from '@/lib/arena-generative-ui/chat-turns'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import { ARENA_GENERATIVE_STREAM_CONTENT_KEY } from '@/lib/arena-generative-ui/types'
 import { readSSEEvents } from '@/lib/core/utils/sse'
@@ -21,6 +22,7 @@ export type ArenaGenerativeActionSseEvent =
 export function streamingContentState(accumulated: string): Record<string, unknown> {
   return {
     [ARENA_GENERATIVE_STREAM_CONTENT_KEY]: accumulated,
+    ...lastAssistantPatch(accumulated),
   }
 }
 

@@ -154,6 +154,43 @@ function streamingDraft(resultsPageSpec: Spec) {
   }
 }
 
+const chatHomeSpec: Spec = {
+  root: 'page',
+  elements: {
+    page: { type: 'Page', props: { title: 'Chat' }, children: ['chat'] },
+    chat: {
+      type: 'Chat',
+      props: { actionId: 'submit_lead', placeholder: 'Message' },
+      children: [],
+    },
+  },
+}
+
+function chatProtocolDraft() {
+  return {
+    ...twoPageDraft,
+    apiBindings: [
+      {
+        key: 'qualify_lead',
+        label: 'Qualify',
+        kind: 'workflow' as const,
+        workflowId: 'wf-bound',
+        chatProtocol: { input: true },
+      },
+    ],
+    manifest: {
+      ...twoPageDraft.manifest,
+      pages: {
+        ...twoPageDraft.manifest.pages,
+        home: { title: 'Chat', path: 'home', spec: chatHomeSpec },
+      },
+      actions: {
+        submit_lead: { apiKey: 'qualify_lead' },
+      },
+    },
+  }
+}
+
 describe('GenerativeAppPreviewHost two-page flow', () => {
   let container: HTMLDivElement
   let root: Root
@@ -416,6 +453,54 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     expect(
       container.querySelector('[data-testid="preview-diagnostics-banner"]')?.textContent
     ).toContain('Unresolved statePath "articles"')
+  })
+
+  it('streams a chat-protocol CTA without stream:true and appends turns', async () => {
+    mockUseGenerativeAppDraft.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: chatProtocolDraft(),
+      error: null,
+    })
+    mockRunDraftActionStream.mockImplementation(
+      async (options: { onChunk: (content: string) => void; values: Record<string, unknown> }) => {
+        options.onChunk('Live reply')
+        return { ok: true, setState: { content: 'Live reply' } }
+      }
+    )
+    mockPush.mockImplementation(() => undefined)
+    pagePath = 'home'
+    renderHost()
+
+    const textarea = container.querySelector(
+      '[data-testid="generative-chat"] textarea'
+    ) as HTMLTextAreaElement
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(textarea, 'Hello there')
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      container
+        .querySelector('[data-testid="generative-chat"]')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+
+    expect(mockMutateAsync).not.toHaveBeenCalled()
+    expect(mockRunDraftActionStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionId: 'submit_lead',
+        surface: 'chat',
+        values: expect.objectContaining({
+          input: 'Hello there',
+          conversationId: expect.any(String),
+        }),
+      })
+    )
+    const turns = Array.from(container.querySelectorAll('[data-testid="generative-chat-turn"]'))
+    expect(turns).toHaveLength(2)
+    expect(container.textContent).toContain('Hello there')
+    expect(container.textContent).toContain('Live reply')
   })
 })
 

@@ -51,11 +51,21 @@ export function parseChatProtocol(raw: unknown): ArenaGenerativeChatProtocol | u
   for (const key of CHAT_PROTOCOL_KEYS) {
     if (record[key] === true) protocol[key] = true
   }
+  if (protocol.input) protocol.conversationId = true
   return Object.keys(protocol).length > 0 ? protocol : undefined
 }
 
 export function hasChatProtocolInput(protocol: ArenaGenerativeChatProtocol | undefined): boolean {
   return protocol?.input === true
+}
+
+/**
+ * Form and Chat both stamp a thread id when the binding collects `input`.
+ */
+export function chatProtocolWantsConversationId(
+  protocol: ArenaGenerativeChatProtocol | undefined
+): boolean {
+  return protocol?.input === true || protocol?.conversationId === true
 }
 
 /**
@@ -197,7 +207,7 @@ export function chatActionValues(options: {
   if (options.protocol?.files && options.files !== undefined) {
     next.files = options.files
   }
-  if (options.protocol?.conversationId && options.conversationId) {
+  if (chatProtocolWantsConversationId(options.protocol) && options.conversationId) {
     next.conversationId = options.conversationId
   }
   return next

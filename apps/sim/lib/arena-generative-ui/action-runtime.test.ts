@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  chatResultLastAssistantPatch,
   createActionGenerationClock,
   hostStatePatchFromResult,
   setStatePreservingStreamContent,
@@ -65,6 +66,25 @@ describe('hostStatePatchFromResult', () => {
     })
     expect(applied.patch.content).toBeUndefined()
     expect(applied.patch.error).toBe('upstream')
+  })
+
+  it('strips chatTurns from API setState', () => {
+    const applied = hostStatePatchFromResult({
+      ok: true,
+      setState: { content: 'Hi', chatTurns: [{ role: 'assistant', content: 'nope' }] },
+    })
+    expect(applied.patch.content).toBe('Hi')
+    expect(applied.patch.chatTurns).toBeUndefined()
+  })
+})
+
+describe('chatResultLastAssistantPatch', () => {
+  it('copies content onto the last-assistant sentinel', () => {
+    expect(chatResultLastAssistantPatch({ content: 'Hello', score: 1 })).toEqual({
+      content: 'Hello',
+      score: 1,
+      __chatLastAssistant: 'Hello',
+    })
   })
 })
 

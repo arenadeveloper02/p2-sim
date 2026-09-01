@@ -21,6 +21,7 @@ const PROSE_ITEM_FIELDS = new Set([
 
 export const HOST_RESERVED_STATE_ROOTS = [
   'content',
+  'chatTurns',
   'inputs',
   'selected',
   'selectedId',

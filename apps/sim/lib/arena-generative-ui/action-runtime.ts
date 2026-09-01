@@ -1,6 +1,8 @@
 import type { ArenaGenerativeActionSurface } from '@/lib/arena-generative-ui/chat-protocol'
+import { lastAssistantPatch } from '@/lib/arena-generative-ui/chat-turns'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
 import {
+  ARENA_GENERATIVE_CHAT_TURNS_KEY,
   ARENA_GENERATIVE_ERROR_KEY,
   ARENA_GENERATIVE_SCHEMA_WARNING_KEY,
   ARENA_GENERATIVE_STREAM_CONTENT_KEY,
@@ -140,6 +142,7 @@ export function hostStatePatchFromResult(result: RunDeployedAppActionResult): {
 } {
   const preserved = setStatePreservingStreamContent(result.setState, result.ok)
   const patch: Record<string, unknown> = preserved ? { ...preserved } : {}
+  delete patch[ARENA_GENERATIVE_CHAT_TURNS_KEY]
   if (!result.ok) {
     patch[ARENA_GENERATIVE_ERROR_KEY] = visitorFacingActionError(result.error ?? 'Action failed')
   }
@@ -147,4 +150,15 @@ export function hostStatePatchFromResult(result: RunDeployedAppActionResult): {
     patch,
     appendKeys: result.appendKeys,
   }
+}
+
+/**
+ * After a chat CTA settles, copy display `content` onto the last assistant turn.
+ */
+export function chatResultLastAssistantPatch(
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const text = patch[ARENA_GENERATIVE_STREAM_CONTENT_KEY]
+  if (typeof text !== 'string' || !text) return patch
+  return { ...patch, ...lastAssistantPatch(text) }
 }

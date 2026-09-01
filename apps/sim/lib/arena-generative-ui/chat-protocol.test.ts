@@ -37,7 +37,10 @@ describe('chatProtocolFromWorkflowFields', () => {
 
 describe('parseChatProtocol', () => {
   it('keeps only known true flags', () => {
-    expect(parseChatProtocol({ input: true, files: false, extra: true })).toEqual({ input: true })
+    expect(parseChatProtocol({ input: true, files: false, extra: true })).toEqual({
+      input: true,
+      conversationId: true,
+    })
   })
 })
 
@@ -155,6 +158,17 @@ describe('chatActionValues', () => {
         protocol: { input: true, conversationId: true },
       })
     ).toEqual({ companyName: 'Acme', input: 'new', conversationId: 'thread-1' })
+  })
+
+  it('stamps conversationId when the stored protocol only has input', () => {
+    expect(
+      chatActionValues({
+        hostInputs: {},
+        input: 'hi',
+        conversationId: 'thread-1',
+        protocol: { input: true },
+      })
+    ).toEqual({ input: 'hi', conversationId: 'thread-1' })
   })
 })
 

@@ -43,4 +43,54 @@ describe('mergeHostState', () => {
     expect((merged.articles as unknown[]).length).toBe(MAX_APPENDED_ITEMS)
     expect(merged.hasMore).toBe(false)
   })
+
+  it('appends chatTurns and seeds the first pair from prior content', () => {
+    const first = mergeHostState(
+      { content: 'Earlier reply' },
+      {
+        chatTurns: [
+          { role: 'user', content: 'Hi' },
+          { role: 'assistant', content: '' },
+        ],
+      },
+      ['chatTurns']
+    )
+    expect(first.chatTurns).toEqual([
+      { role: 'assistant', content: 'Earlier reply' },
+      { role: 'user', content: 'Hi' },
+      { role: 'assistant', content: '' },
+    ])
+
+    const second = mergeHostState(
+      first,
+      {
+        chatTurns: [
+          { role: 'user', content: 'Again' },
+          { role: 'assistant', content: '' },
+        ],
+      },
+      ['chatTurns']
+    )
+    expect(second.chatTurns).toHaveLength(5)
+    expect((second.chatTurns as Array<{ content: string }>)[3].content).toBe('Again')
+  })
+
+  it('patches the last assistant turn without replacing earlier turns', () => {
+    const current = {
+      chatTurns: [
+        { role: 'user', content: 'Hi' },
+        { role: 'assistant', content: '' },
+      ],
+    }
+    const merged = mergeHostState(current, {
+      content: 'Hel',
+      __chatLastAssistant: 'Hel',
+    })
+    expect(merged.content).toBe('Hel')
+    expect(merged.__chatLastAssistant).toBeUndefined()
+    expect(merged.chatTurns).toEqual([
+      { role: 'user', content: 'Hi' },
+      { role: 'assistant', content: 'Hel' },
+    ])
+  })
 })

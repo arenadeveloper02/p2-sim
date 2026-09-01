@@ -207,6 +207,15 @@ export interface ArenaGenerativeGenerateResult {
 /** Host state path DataText should bind to while a streaming CTA is in flight. */
 export const ARENA_GENERATIVE_STREAM_CONTENT_KEY = 'content'
 
+/** Host-owned Chat transcript. API `setState` must not write this key. */
+export const ARENA_GENERATIVE_CHAT_TURNS_KEY = 'chatTurns'
+
+/**
+ * Patch-only sentinel: `mergeHostState` copies this onto the last assistant
+ * turn. Never stored as a public host key.
+ */
+export const ARENA_GENERATIVE_CHAT_LAST_ASSISTANT_KEY = '__chatLastAssistant'
+
 /** Host state key a failed CTA writes its message to. */
 export const ARENA_GENERATIVE_ERROR_KEY = 'error'
 
@@ -228,6 +237,7 @@ export const ARENA_GENERATIVE_SELECTED_ID_KEY = 'selectedId'
  */
 const RESERVED_SUBMITTED_INPUT_KEYS = new Set([
   ARENA_GENERATIVE_STREAM_CONTENT_KEY,
+  ARENA_GENERATIVE_CHAT_TURNS_KEY,
   ARENA_GENERATIVE_ERROR_KEY,
   ARENA_GENERATIVE_SCHEMA_WARNING_KEY,
   ARENA_GENERATIVE_INPUTS_KEY,
@@ -681,14 +691,17 @@ function stringifyActionData(data: unknown): string | undefined {
 }
 
 /**
- * Action ids whose API binding has `stream: true`.
+ * Action ids whose API binding has `stream: true` or `chatProtocol.input`.
+ * Chat follow-ups stream without requiring the draft to set `stream`.
  */
 export function streamingActionIdsFrom(
   manifest: Pick<ArenaGenerativeAppManifest, 'actions'>,
-  bindings: Array<Pick<ArenaGenerativeApiBinding, 'key' | 'stream'>>
+  bindings: Array<Pick<ArenaGenerativeApiBinding, 'key' | 'stream' | 'chatProtocol'>>
 ): string[] {
   const streamingKeys = new Set(
-    bindings.filter((binding) => binding.stream === true).map((binding) => binding.key)
+    bindings
+      .filter((binding) => binding.stream === true || binding.chatProtocol?.input === true)
+      .map((binding) => binding.key)
   )
   if (streamingKeys.size === 0) return []
   return Object.entries(manifest.actions)

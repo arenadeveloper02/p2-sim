@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from 'react'
 import { toError } from '@sim/utils/errors'
 import { flushSync } from 'react-dom'
 import {
+  chatResultLastAssistantPatch,
   createActionGenerationClock,
   type GenerativeAppLastAction,
   hostStatePatchFromResult,
@@ -11,9 +12,14 @@ import {
   shouldShowSaveToast,
   visitorFacingActionError,
 } from '@/lib/arena-generative-ui/action-runtime'
+import { chatTurnPair } from '@/lib/arena-generative-ui/chat-turns'
 import { streamingContentState } from '@/lib/arena-generative-ui/consume-action-sse'
 import type { RunDeployedAppActionResult } from '@/lib/arena-generative-ui/run-action'
-import { clearedActionErrorState, submittedInputsState } from '@/lib/arena-generative-ui/types'
+import {
+  ARENA_GENERATIVE_CHAT_TURNS_KEY,
+  clearedActionErrorState,
+  submittedInputsState,
+} from '@/lib/arena-generative-ui/types'
 import type { ArenaGenerativeUxPlan } from '@/lib/arena-generative-ui/ux-compiler'
 import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
 
@@ -114,21 +120,29 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
     []
   )
 
-  const applyResult = useCallback((result: RunDeployedAppActionResult, skipNavigate: boolean) => {
-    const current = optionsRef.current
-    const { patch, appendKeys } = hostStatePatchFromResult(result)
-    if (Object.keys(patch).length > 0 || appendKeys?.length) {
-      flushSync(() => {
-        current.mergeState(patch, appendKeys)
-      })
-    }
-    if (!skipNavigate && result.navigate) {
-      current.navigate(result.navigate)
-    }
-    if (!result.ok) {
-      current.logger.warn('App action returned an error', { error: result.error })
-    }
-  }, [])
+  const applyResult = useCallback(
+    (
+      result: RunDeployedAppActionResult,
+      skipNavigate: boolean,
+      surface?: LastAction['surface']
+    ) => {
+      const current = optionsRef.current
+      const { patch: rawPatch, appendKeys } = hostStatePatchFromResult(result)
+      const patch = surface === 'chat' ? chatResultLastAssistantPatch(rawPatch) : rawPatch
+      if (Object.keys(patch).length > 0 || appendKeys?.length) {
+        flushSync(() => {
+          current.mergeState(patch, appendKeys)
+        })
+      }
+      if (!skipNavigate && result.navigate) {
+        current.navigate(result.navigate)
+      }
+      if (!result.ok) {
+        current.logger.warn('App action returned an error', { error: result.error })
+      }
+    },
+    []
+  )
 
   const runCta = useCallback(
     async (
@@ -144,17 +158,24 @@ export function useGenerativeAppRuntime(options: UseGenerativeAppRuntimeOptions)
       const streaming = current.isStreaming(actionId)
       flushSync(() => {
         current.setActionPending(actionId, true)
-        current.mergeState({
-          ...clearedActionErrorState(),
-          ...submittedInputsState(values),
-        })
+        const chatInput = typeof values.input === 'string' ? values.input.trim() : ''
+        current.mergeState(
+          {
+            ...clearedActionErrorState(),
+            ...submittedInputsState(values),
+            ...(surface === 'chat' && chatInput
+              ? { [ARENA_GENERATIVE_CHAT_TURNS_KEY]: chatTurnPair(chatInput) }
+              : {}),
+          },
+          surface === 'chat' && chatInput ? [ARENA_GENERATIVE_CHAT_TURNS_KEY] : undefined
+        )
       })
       setToast(null)
       try {
         if (navigateTo) current.navigate(navigateTo)
         const result = await execute(actionId, values, generation, surface)
         if (!clockRef.current.isCurrent(actionId, generation)) return
-        applyResult(result, Boolean(navigateTo))
+        applyResult(result, Boolean(navigateTo), surface)
         if (
           shouldShowSaveToast({
             ok: result.ok,

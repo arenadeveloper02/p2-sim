@@ -61,9 +61,10 @@ describe('consumeGenerativeAppActionSse', () => {
 })
 
 describe('streamingContentState', () => {
-  it('writes accumulated tokens to content without replacing output', () => {
+  it('writes accumulated tokens to content and the last-assistant sentinel', () => {
     expect(streamingContentState('Hello')).toEqual({
       content: 'Hello',
+      __chatLastAssistant: 'Hello',
     })
   })
 })

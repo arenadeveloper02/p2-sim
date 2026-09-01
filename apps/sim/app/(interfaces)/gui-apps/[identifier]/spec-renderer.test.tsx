@@ -507,9 +507,73 @@ describe('SpecRenderer', () => {
 
       expect(onRunAction).toHaveBeenCalledWith(
         'submit_lead',
-        expect.objectContaining({ input: 'Follow up' }),
+        expect.objectContaining({ input: 'Follow up', conversationId: expect.any(String) }),
         { surface: 'chat' }
       )
+    })
+
+    it('renders appended chatTurns without dropping earlier messages', () => {
+      const { container } = render({
+        spec: chatSpec,
+        state: {
+          chatTurns: [
+            { role: 'user', content: 'First' },
+            { role: 'assistant', content: 'Reply one' },
+            { role: 'user', content: 'Second' },
+            { role: 'assistant', content: 'Reply two' },
+          ],
+        },
+        actionChatProtocol: protocol,
+      })
+
+      const turns = Array.from(container.querySelectorAll('[data-testid="generative-chat-turn"]'))
+      expect(turns).toHaveLength(4)
+      expect(turns.map((node) => node.getAttribute('data-role'))).toEqual([
+        'user',
+        'assistant',
+        'user',
+        'assistant',
+      ])
+      expect(container.textContent).toContain('First')
+      expect(container.textContent).toContain('Reply one')
+      expect(container.textContent).toContain('Second')
+      expect(container.textContent).toContain('Reply two')
+    })
+
+    it('hides DataText content when chatTurns are present so Chat owns the arena', () => {
+      const spec: Spec = {
+        root: 'page',
+        elements: {
+          page: { type: 'Page', props: { title: 'Results' }, children: ['body', 'chat'] },
+          body: {
+            type: 'DataText',
+            props: { statePath: 'content', fallback: '' },
+            children: [],
+          },
+          chat: {
+            type: 'Chat',
+            props: { actionId: 'submit_lead', placeholder: 'Ask a follow-up' },
+            children: [],
+          },
+        },
+      }
+      const { container } = render({
+        spec,
+        state: {
+          content: 'Latest only',
+          chatTurns: [
+            { role: 'user', content: 'First' },
+            { role: 'assistant', content: 'Reply one' },
+          ],
+        },
+        actionChatProtocol: protocol,
+      })
+
+      expect(container.querySelectorAll('[data-testid="generative-chat-turn"]')).toHaveLength(2)
+      expect(container.textContent).toContain('First')
+      expect(container.textContent).toContain('Reply one')
+      const headings = container.querySelectorAll('h2')
+      expect(headings.length).toBe(0)
     })
   })
 

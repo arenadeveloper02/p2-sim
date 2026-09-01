@@ -861,7 +861,8 @@ export interface RunGenerativeAppActionOptions {
 }
 
 /**
- * True when this action id is bound to an API with `stream: true`.
+ * True when this action id is bound to an API with `stream: true` or
+ * `chatProtocol.input`.
  */
 export function isStreamingAction(
   manifest: ArenaGenerativeAppManifest,

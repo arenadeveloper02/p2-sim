@@ -1801,6 +1801,13 @@ describe('streaming generative app actions', () => {
         'submit_lead'
       )
     ).toBe(true)
+    expect(
+      isStreamingAction(
+        twoPageManifest,
+        [{ ...twoPageApiBindings[0], chatProtocol: { input: true } }],
+        'submit_lead'
+      )
+    ).toBe(true)
   })
 
   it('maps every action to its onSuccess.navigate target, streaming or not', () => {
@@ -1992,6 +1999,36 @@ describe('arenaEmailId forwarding', () => {
     expect(workflowInput()).toEqual({
       company_name: 'Open AI',
       input: 'company_name: Open AI',
+      conversationId: 'c1',
+      arenaEmailId: 'ada@example.com',
+    })
+  })
+
+  it('sends conversationId on a Chat submit when the stored protocol only has input', async () => {
+    const deployment = baseDeployment()
+    deployment.apiBindings = [
+      {
+        key: 'qualify_lead',
+        label: 'Qualify',
+        kind: 'workflow',
+        workflowId: 'wf-bound',
+        inputSchema: [{ name: 'name', type: 'string' }],
+        chatProtocol: { input: true },
+      },
+    ]
+
+    await runDeployedAppAction({
+      deployment,
+      actionId: 'submit_lead',
+      values: { name: 'Ada', input: 'hi', conversationId: 'c1' },
+      requestId: 'req-1',
+      arenaEmailId: 'ada@example.com',
+      surface: 'chat',
+    })
+
+    expect(workflowInput()).toEqual({
+      name: 'Ada',
+      input: 'hi',
       conversationId: 'c1',
       arenaEmailId: 'ada@example.com',
     })

@@ -46,6 +46,7 @@ import {
   type ArenaGenerativeChatProtocol,
   getGenerativeAppConversationId,
 } from '@/lib/arena-generative-ui/chat-protocol'
+import { chatTurnsFromState } from '@/lib/arena-generative-ui/chat-turns'
 import {
   type ArenaGenerativeFormField,
   asFieldString,
@@ -2642,11 +2643,15 @@ export function SpecRenderer({
         )
       case 'DataText': {
         if (!fieldIsVisible(props, visibilityValues)) return null
+        const path = asString(props.statePath)
+        if (path === ARENA_GENERATIVE_STREAM_CONTENT_KEY && chatTurnsFromState(state).length > 0) {
+          return null
+        }
         return (
           <DataTextView
-            value={readStatePath(state, asString(props.statePath), scope)}
+            value={readStatePath(state, path, scope)}
             fallback={asString(props.fallback, '')}
-            pending={boundPending(asString(props.statePath))}
+            pending={boundPending(path)}
             style={styleFromProps(props)}
           />
         )
@@ -2779,9 +2784,12 @@ export function SpecRenderer({
         const actionId = asString(props.actionId)
         if (!actionId) return null
         const protocol = actionChatProtocol?.[actionId]
+        const turns = chatTurnsFromState(state)
         const contentValue = state[ARENA_GENERATIVE_STREAM_CONTENT_KEY]
         const contentPending = boundPending(ARENA_GENERATIVE_STREAM_CONTENT_KEY)
-        const showTranscript =
+        const showTurnList = turns.length > 0
+        const showLegacyTranscript =
+          !showTurnList &&
           Boolean(protocol) &&
           !specHasDataTextContent(elements) &&
           (contentPending || !isEmptyStateValue(contentValue))
@@ -2796,16 +2804,43 @@ export function SpecRenderer({
             onSubmit={(id, values) => dispatchAction(id, values, { surface: 'chat' })}
           />
         )
-        if (!showTranscript) return composer
+        if (!showTurnList && !showLegacyTranscript) return composer
         return (
           <div className='flex w-full flex-col gap-3'>
-            <div data-testid='generative-chat-transcript'>
-              <DataTextView
-                value={contentValue}
-                fallback=''
-                pending={contentPending}
-                style={styleFromProps(props)}
-              />
+            <div data-testid='generative-chat-transcript' className='flex w-full flex-col gap-3'>
+              {showTurnList ? (
+                turns.map((turn, index) => (
+                  <div
+                    key={`${turn.role}-${index}`}
+                    data-testid='generative-chat-turn'
+                    data-role={turn.role}
+                    className={cn(
+                      'max-w-[85%] rounded-[var(--gui-radius,12px)] px-3 py-2',
+                      turn.role === 'user'
+                        ? 'self-end bg-[var(--gui-brand-surface,#f3f8fe)] text-[var(--gui-text,#2c2d33)]'
+                        : 'self-start bg-[var(--gui-surface,#fff)] text-[var(--gui-text,#2c2d33)]'
+                    )}
+                  >
+                    <DataTextView
+                      value={turn.content}
+                      fallback=''
+                      pending={
+                        turn.role === 'assistant' &&
+                        index === turns.length - 1 &&
+                        contentPending &&
+                        !turn.content
+                      }
+                    />
+                  </div>
+                ))
+              ) : (
+                <DataTextView
+                  value={contentValue}
+                  fallback=''
+                  pending={contentPending}
+                  style={styleFromProps(props)}
+                />
+              )}
             </div>
             {composer}
           </div>

@@ -7,6 +7,7 @@ import { Paperclip, Send, X } from 'lucide-react'
 import {
   type ArenaGenerativeChatProtocol,
   chatActionValues,
+  chatProtocolWantsConversationId,
   getGenerativeAppConversationId,
 } from '@/lib/arena-generative-ui/chat-protocol'
 import { ARENA_GENERATIVE_INPUTS_KEY } from '@/lib/arena-generative-ui/types'
@@ -70,7 +71,7 @@ export function ChatComposer({
     event.preventDefault()
     const input = draft.trim()
     if (!input || pending) return
-    const conversationId = protocol?.conversationId
+    const conversationId = chatProtocolWantsConversationId(protocol)
       ? getGenerativeAppConversationId(conversationStorageKey ?? '')
       : undefined
     const values = chatActionValues({
