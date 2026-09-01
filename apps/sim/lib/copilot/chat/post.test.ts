@@ -213,16 +213,16 @@ describe('handleUnifiedChatPost', () => {
     expect(generateWorkspaceSnapshot).toHaveBeenCalledWith('ws-1', 'user-1')
     expect(buildCopilotRequestPayload).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: 'claude-opus-4-8',
+        model: 'claude-sonnet-4-6',
         workspaceContext: 'workspace context',
         // Regression guard: the branch must forward the typed snapshot, not drop it.
         vfs: expect.objectContaining({ workflows: expect.any(Array) }),
       }),
-      { selectedModel: 'claude-opus-4-8' }
+      { selectedModel: 'claude-sonnet-4-6' }
     )
     expect(createSSEStream).toHaveBeenCalledWith(
       expect.objectContaining({
-        titleModel: 'claude-opus-4-8',
+        titleModel: 'claude-sonnet-4-6',
         workspaceId: 'ws-1',
         orchestrateOptions: expect.objectContaining({
           workflowId: 'wf-1',
@@ -264,7 +264,7 @@ describe('handleUnifiedChatPost', () => {
     )
     expect(createSSEStream).toHaveBeenCalledWith(
       expect.objectContaining({
-        titleModel: 'claude-opus-4-8',
+        titleModel: 'claude-sonnet-4-6',
         workspaceId: 'ws-1',
         orchestrateOptions: expect.objectContaining({
           workspaceId: 'ws-1',

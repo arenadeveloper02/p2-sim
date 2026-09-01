@@ -74,13 +74,14 @@ import { getLocalCopilotUserAccess } from '@/local-copilot/lib/access'
 import { extractWorkflowIdFromResources } from '@/local-copilot/lib/context/open-workflow'
 import type { CopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
 import { parseCopilotBackendPreference } from '@/local-copilot/lib/copilot-backend-preference'
+import { DEFAULT_LOCAL_COPILOT_MODEL } from '@/local-copilot/lib/config'
 import { resolveLocalCopilotRequestCatalogId } from '@/local-copilot/lib/model-catalog'
 import type { ChatContext } from '@/stores/panel'
 
 export const maxDuration = 3600
 
 const logger = createLogger('UnifiedChatAPI')
-const DEFAULT_MODEL = 'claude-opus-4-8'
+const DEFAULT_MODEL = DEFAULT_LOCAL_COPILOT_MODEL
 const CHAT_SELECTION_TEXT_MAX_LENGTH = 100_000
 const CHAT_SELECTION_SOURCE_URL_MAX_LENGTH = 8_192
 const CHAT_SELECTION_SOURCE_TITLE_MAX_LENGTH = 512
@@ -945,7 +946,7 @@ async function resolveBranch(params: {
     workspacePermission,
     effectiveModel: localCatalogId || DEFAULT_MODEL,
     goRoute: '/api/mothership',
-    titleModel: DEFAULT_MODEL,
+    titleModel: localCatalogId || DEFAULT_MODEL,
     notifyWorkspaceStatus: true,
     buildPayload: async (payloadParams) =>
       buildCopilotRequestPayload(
@@ -1183,7 +1184,7 @@ export async function handleUnifiedChatPost(req: NextRequest) {
               userId: authenticatedUserId,
               ...(branch.kind === 'workflow' ? { workflowId: branch.workflowId } : {}),
               workspaceId: branch.workspaceId,
-              model: branch.titleModel,
+              model: branch.effectiveModel,
               type: branch.kind === 'workflow' ? 'copilot' : 'mothership',
             }),
           activeOtelRoot.context
