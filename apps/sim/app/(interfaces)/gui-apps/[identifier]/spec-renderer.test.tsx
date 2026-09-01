@@ -22,6 +22,14 @@ vi.mock('echarts', () => ({
   }),
 }))
 
+vi.mock('next/image', () => ({
+  default: ({ alt, ...props }: { alt?: string }) => <img alt={alt} {...props} />,
+}))
+
+vi.mock('@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg', () => ({
+  default: '/arena-logo.svg',
+}))
+
 import type { ArenaGenerativeChatProtocol } from '@/lib/arena-generative-ui/chat-protocol'
 import {
   type ArenaGenerativeUxPlan,
@@ -1547,7 +1555,7 @@ describe('SpecRenderer', () => {
     expect(container.textContent).toContain('Refresh')
   })
 
-  it('renders AppHeader as a sticky full-bleed bar with the mark at the left edge', () => {
+  it('renders AppHeader as a sticky full-bleed bar with the Arena logo and title', () => {
     const spec: Spec = {
       root: 'page',
       elements: {
@@ -1577,7 +1585,8 @@ describe('SpecRenderer', () => {
     expect(header.className).toContain('top-0')
     expect(header.className).toContain('z-20')
     expect(header.className).toContain('bg-[var(--gui-surface,#ffffff)]')
-    expect(header.querySelector('[data-testid="app-header-mark"]')).toBeTruthy()
+    expect(header.querySelector('[data-testid="app-header-logo"]')).toBeTruthy()
+    expect(header.querySelector('[data-testid="app-header-mark"]')).toBeNull()
     const inner = header.firstElementChild as HTMLElement
     expect(inner?.className).toContain('px-4')
     const section = container.querySelector('section')
@@ -1619,6 +1628,7 @@ describe('SpecRenderer', () => {
     expect(header.className).toContain('sticky')
     expect(header.className).toContain('z-20')
     expect(header.textContent).toContain('Company Research AI')
+    expect(header.querySelector('[data-testid="app-header-logo"]')).toBeTruthy()
     const section = container.querySelector('section')
     expect(section?.contains(header)).toBe(false)
     expect(section?.textContent).toContain('Research any company')

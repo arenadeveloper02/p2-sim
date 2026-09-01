@@ -31,6 +31,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react'
+import Image from 'next/image'
 import { ConstrainedChart } from '@/components/charts/constrained-chart'
 import {
   GENERATIVE_APP_SUCCESS_TOAST_MS,
@@ -92,6 +93,7 @@ import {
 } from '@/lib/arena-generative-ui/types'
 import type { ArenaGenerativeUxPlan } from '@/lib/arena-generative-ui/ux-compiler'
 import { UX_DEFAULTS } from '@/lib/arena-generative-ui/ux-defaults'
+import arenaLogo from '@/app/(interfaces)/chat/components/message/components/ArenaLogo.svg'
 import { ChatComposer } from '@/app/(interfaces)/gui-apps/[identifier]/chat-composer'
 import { MarkdownText } from '@/app/(interfaces)/gui-apps/[identifier]/markdown-text'
 
@@ -1128,22 +1130,27 @@ function numbersFromSparklineProps(
 const APP_HEADER_BAR_CLASS =
   'sticky top-0 z-20 w-full border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-surface,#ffffff)]'
 
-function AppHeaderMark({ name }: { name: string }) {
-  const Glyph = ICON_BY_NAME[name] ?? Sparkles
+function ArenaAppHeaderLogo() {
   return (
-    <span
-      data-testid='app-header-mark'
-      className='inline-flex size-8 shrink-0 items-center justify-center rounded-[var(--gui-radius-sm,8px)] bg-[var(--gui-text,#2c2d33)]'
-    >
-      <Glyph aria-hidden className='size-4 text-[var(--gui-surface,#ffffff)]' />
-    </span>
+    <Image
+      src={arenaLogo}
+      alt='Arena'
+      width={30}
+      height={30}
+      data-testid='app-header-logo'
+      className='size-[30px] shrink-0'
+      priority
+    />
   )
 }
 
 function AppHeaderBar({ children }: { children: ReactNode }) {
   return (
     <header data-testid='app-header' className={APP_HEADER_BAR_CLASS}>
-      <div className='flex w-full items-center px-4 py-3'>{children}</div>
+      <div className='flex w-full items-center gap-2.5 px-4 py-3'>
+        <ArenaAppHeaderLogo />
+        {children}
+      </div>
     </header>
   )
 }
@@ -2011,7 +2018,6 @@ export function SpecRenderer({
       }
       case 'AppHeader': {
         const title = asString(props.title)
-        const icon = asString(props.icon, 'spark')
         return (
           <header
             data-testid='app-header'
@@ -2020,7 +2026,7 @@ export function SpecRenderer({
           >
             <div className='flex w-full items-center justify-between gap-3 px-4 py-3'>
               <div className='flex min-w-0 items-center gap-2.5'>
-                <AppHeaderMark name={icon} />
+                <ArenaAppHeaderLogo />
                 {title ? (
                   <p className='truncate font-semibold text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-body-leading,24px)]'>
                     {title}
