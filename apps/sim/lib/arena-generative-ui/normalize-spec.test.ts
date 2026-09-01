@@ -192,7 +192,7 @@ describe('normalizeGeneratedSpec', () => {
     expect(arenaGenerativeUiCatalog.validate(spec).success).toBe(false)
   })
 
-  it('aliases Chart onto Sparkline', () => {
+  it('keeps Chart as Chart and defaults chartType to line', () => {
     const spec = normalizeGeneratedSpec({
       root: 'page',
       elements: {
@@ -200,7 +200,20 @@ describe('normalizeGeneratedSpec', () => {
         chart: { type: 'Chart', props: { values: '1,2,3' }, children: [] },
       },
     })
-    expect(elements(spec).chart.type).toBe('Sparkline')
+    expect(elements(spec).chart.type).toBe('Chart')
+    expect(elements(spec).chart.props.chartType).toBe('line')
+  })
+
+  it('aliases BarChart onto Chart with chartType bar', () => {
+    const spec = normalizeGeneratedSpec({
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['chart'] },
+        chart: { type: 'BarChart', props: { values: '1,2,3' }, children: [] },
+      },
+    })
+    expect(elements(spec).chart.type).toBe('Chart')
+    expect(elements(spec).chart.props.chartType).toBe('bar')
   })
 
   it('resolves spacing tokens to density-aware CSS variables and passes raw lengths through', () => {

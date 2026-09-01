@@ -93,7 +93,7 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
         ownership: 'generator',
         text: 'Forms and prose use a readable measure; dashboards, tables, and collections stay wide.',
         prompt:
-          'Multi-field forms and long DataText use Section width "narrow". Dashboards, Table, Repeat collections, and Sparkline use width "wide". Do not run a form the full 1280px.',
+          'Multi-field forms and long DataText use Section width "narrow". Dashboards, Table, Repeat collections, Chart, and Sparkline use width "wide". Do not run a form the full 1280px.',
       },
       {
         ownership: 'generator',

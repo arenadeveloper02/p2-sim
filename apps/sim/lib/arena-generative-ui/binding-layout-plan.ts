@@ -47,6 +47,8 @@ export interface BindingLayoutCollection {
   /** Object prefixes that wrap the collection (`run_data`). */
   wrapperKeys: string[]
   itemFields: string[]
+  /** Numeric item field keys suitable as Chart series. */
+  numericItemFields: string[]
   proseFields: string[]
   samePageSelect: boolean
 }
@@ -234,7 +236,22 @@ export function resultLayoutFromPlan(plan: BindingLayoutPlan): string {
     return 'prose DataText matching outputHint, or Chat on that page which paints streamed content'
   }
   const hostKeys = plan.hostKeys.filter((key) => key !== 'content').join(', ')
-  return `bind layoutPlan.hostKeys as statePath (${hostKeys || 'content'}); nested arrays (run_data.history) also land as "${plan.collections[0]?.hostKey ?? 'history'}"; a string markdown field binds as that name or "content", never "field.content"`
+  const layout = `bind layoutPlan.hostKeys as statePath (${hostKeys || 'content'}); nested arrays (run_data.history) also land as "${plan.collections[0]?.hostKey ?? 'history'}"; a string markdown field binds as that name or "content", never "field.content"`
+  const chartable = plan.collections
+    .map((collection) => chartableHint(collection))
+    .filter(Boolean)
+  if (chartable.length === 0) return layout
+  return `${layout}; chartable collections: ${chartable.join('; ')} — use Chart with those keys, or Table if the job is compare-rows`
+}
+
+function chartableHint(collection: BindingLayoutCollection): string | undefined {
+  const numeric = collection.numericItemFields.filter((field) => !field.includes('.'))
+  const numericSet = new Set(collection.numericItemFields)
+  const category = collection.itemFields.find(
+    (field) => !field.includes('.') && !numericSet.has(field) && !collection.proseFields.includes(field)
+  )
+  if (numeric.length === 0 || !category) return undefined
+  return `"${collection.hostKey}" categoryField "${category}" series "${numeric.join(',')}"`
 }
 
 function kindFrom(params: {
@@ -280,6 +297,7 @@ function collectionsFromSchema(
     )
     const itemEntries = schema.filter((field) => isItemFieldOf(field.name, schemaPaths, hostKey))
     const itemFields: string[] = []
+    const numericItemFields: string[] = []
     const proseFields: string[] = []
     for (const entry of itemEntries) {
       const itemPath = itemPathFrom(entry.name, schemaPaths, hostKey)
@@ -296,12 +314,19 @@ function collectionsFromSchema(
       if (leaf === 'createdAt') {
         itemFields.push('date')
       }
+      if (entry.type === 'number') {
+        numericItemFields.push(leaf)
+        if (itemPath.startsWith('input.')) {
+          numericItemFields.push(itemPath.slice('input.'.length))
+        }
+      }
     }
     collections.push({
       hostKey,
       schemaPaths,
       wrapperKeys,
       itemFields: uniqueStrings(itemFields),
+      numericItemFields: uniqueStrings(numericItemFields),
       proseFields: uniqueStrings(proseFields),
       samePageSelect: uniqueStrings(proseFields).length > 0,
     })

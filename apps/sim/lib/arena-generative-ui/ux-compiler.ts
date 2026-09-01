@@ -51,7 +51,15 @@ const RELOCATABLE_LOADING_TYPES = new Set([
   'Spinner',
   'WorkingCard',
 ])
-const BOUND_LOADING_TYPES = new Set(['Table', 'Repeat', 'Stat', 'KeyValue', 'DataText'])
+const BOUND_LOADING_TYPES = new Set([
+  'Table',
+  'Repeat',
+  'Stat',
+  'KeyValue',
+  'DataText',
+  'Sparkline',
+  'Chart',
+])
 const ACTION_ID_PROP_TYPES = new Set([
   'Form',
   'SubmitButton',

@@ -45,7 +45,7 @@ export const ARENA_GENERATIVE_UI_COMPONENT_RULES = [
 export const ARENA_GENERATIVE_UI_INTERACTION_RULES = [
   'WorkingCard: the host ticks steps and the bar. Use it when a CAPABILITY selected long-running, multi-step, or cancellable. Do not emit ProgressSteps, a filling ProgressBar, or Spinner as the wait. A Stat with a literal value or a Table with literal rows never shows a skeleton. For a static-children region you may add {"type":"Skeleton","props":{"variant":"card","lines":3},"children":[]}.',
   'Empty copy: bound Table, Repeat, and KeyValue use emptyText (defaults: "No results" for Table and Repeat, "No details" for KeyValue). A DataText fallback is the empty copy for prose. Customise emptyText when the brief names the collection ("No matching articles"). Do not add a second Text or Alert for that.',
-  'Result pages: when onSuccess.navigate is set, bind the destination Table/Repeat/Stat/KeyValue/DataText.',
+  'Result pages: when onSuccess.navigate is set, bind the destination Table/Repeat/Stat/Chart/KeyValue/DataText.',
 ] as const
 
 export const ARENA_GENERATIVE_UI_RESPONSIVE_RULES = [

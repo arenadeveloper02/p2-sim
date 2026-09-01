@@ -31,10 +31,12 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react'
+import { ConstrainedChart } from '@/components/charts/constrained-chart'
 import {
   GENERATIVE_APP_SUCCESS_TOAST_MS,
   type RunGenerativeAppActionMeta,
 } from '@/lib/arena-generative-ui/action-runtime'
+import { bindChartData } from '@/lib/arena-generative-ui/bind-chart-data'
 import {
   collectionUsesApiPagination,
   isActionControlPending,
@@ -2354,6 +2356,21 @@ export function SpecRenderer({
                 />
               ) : null}
             </svg>
+          </div>
+        )
+      }
+      case 'Chart': {
+        const statePath = asString(props.statePath)
+        const bound = bindChartData(props, state, scope)
+        if (statePath && boundPending(statePath) && !bound.dsl) {
+          return <SkeletonBlock variant='card' lines={4} />
+        }
+        if (!bound.dsl) {
+          return <EmptyState text={bound.emptyText} />
+        }
+        return (
+          <div className='w-full' style={styleFromProps(props)}>
+            <ConstrainedChart dsl={bound.dsl} height={bound.height} />
           </div>
         )
       }

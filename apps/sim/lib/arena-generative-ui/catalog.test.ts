@@ -27,6 +27,7 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'ProgressBar',
       'Card',
       'Sparkline',
+      'Chart',
       'EmptyState',
       'Filter',
       'Drawer',

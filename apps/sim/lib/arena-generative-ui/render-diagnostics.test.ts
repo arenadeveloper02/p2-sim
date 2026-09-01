@@ -13,14 +13,14 @@ import {
 const spec: Spec = {
   root: 'page',
   elements: {
-    page: { type: 'Page', props: {}, children: ['table', 'repeat', 'chart'] },
+    page: { type: 'Page', props: {}, children: ['table', 'repeat', 'widget'] },
     table: { type: 'Table', props: { statePath: 'articles', columns: 'title' }, children: [] },
     repeat: {
       type: 'Repeat',
       props: { statePath: 'item.comments' },
       children: [],
     },
-    chart: { type: 'Chart', props: {}, children: [] },
+    widget: { type: 'UnknownWidget', props: {}, children: [] },
   },
 }
 
@@ -46,7 +46,7 @@ describe('collectRenderDiagnostics', () => {
     const diagnostics = collectRenderDiagnostics(spec, {}, false)
     expect(diagnostics.map((item) => item.kind)).toEqual(['unresolved-state-path', 'unknown-type'])
     expect(diagnostics[0]?.statePath).toBe('articles')
-    expect(diagnostics[1]?.message).toContain('Chart')
+    expect(diagnostics[1]?.message).toContain('UnknownWidget')
   })
 
   it('does not treat an empty array as unresolved', () => {
@@ -60,7 +60,7 @@ describe('editInstructionsFromDiagnostics', () => {
     const text = editInstructionsFromDiagnostics(collectRenderDiagnostics(spec, {}, false), 'home')
     expect(text).toContain('Fix these render problems on page "home":')
     expect(text).toContain('Unresolved statePath "articles"')
-    expect(text).toContain('Unknown component type "Chart"')
+    expect(text).toContain('Unknown component type "UnknownWidget"')
   })
 })
 

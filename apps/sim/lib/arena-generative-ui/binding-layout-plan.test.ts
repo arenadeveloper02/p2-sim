@@ -124,6 +124,7 @@ describe('layoutPlanForBinding', () => {
           'createdAt',
           'date',
         ],
+        numericItemFields: [],
         proseFields: ['output'],
         samePageSelect: true,
       },
@@ -149,7 +150,27 @@ describe('layoutPlanForBinding', () => {
     expect(plan.hostKeys).toEqual(['articles', 'score'])
     expect(plan.metricPaths).toEqual(['score'])
     expect(plan.collections[0]?.itemFields).toEqual(['title', 'url'])
+    expect(plan.collections[0]?.numericItemFields).toEqual([])
     expect(plan.collections[0]?.samePageSelect).toBe(false)
+  })
+
+  it('describes a numeric collection as chartable in resultLayout', () => {
+    const plan = layoutPlanForBinding(
+      workflowBinding({
+        key: 'load_daily',
+        outputSchema: [
+          { name: 'daily', type: 'array' },
+          { name: 'daily[].date', type: 'string' },
+          { name: 'daily[].spend', type: 'number' },
+          { name: 'daily[].impressions', type: 'number' },
+        ],
+      })
+    )
+
+    expect(plan.collections[0]?.numericItemFields).toEqual(['spend', 'impressions'])
+    expect(resultLayoutFromPlan(plan)).toContain('chartable collections')
+    expect(resultLayoutFromPlan(plan)).toContain('categoryField "date"')
+    expect(resultLayoutFromPlan(plan)).toContain('series "spend,impressions"')
   })
 
   it('keeps a top-level markdown string as a DataText path, not field.content', () => {

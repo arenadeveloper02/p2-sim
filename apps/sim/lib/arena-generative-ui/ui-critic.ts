@@ -24,6 +24,9 @@ export const CRITIC_ELEMENT_PROP_KEYS = [
   'columns',
   'value',
   'values',
+  'chartType',
+  'series',
+  'categories',
   'selectItem',
   'clearItem',
   'setValue',
@@ -214,6 +217,11 @@ function unboundDynamicErrors(pagePath: string, spec: Spec): string[] {
     if (element.type === 'Sparkline' && isLiteralValue(props.values)) {
       issues.push(
         `Page "${pagePath}" Sparkline "${id}" hard-codes values and has no statePath. Bind the series.`
+      )
+    }
+    if (element.type === 'Chart' && (isLiteralValue(props.values) || isLiteralValue(props.categories))) {
+      issues.push(
+        `Page "${pagePath}" Chart "${id}" hard-codes values and has no statePath. Bind the series.`
       )
     }
   }

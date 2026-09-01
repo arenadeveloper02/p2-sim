@@ -626,7 +626,7 @@ const ARCHETYPE_RECIPES: Record<ArenaGenerativeArchetype, string> = {
     'ARCHETYPE RECIPE: dashboard',
     'Purpose: Monitor many important signals on arrival.',
     'Structure: Header → Filters (only if selected) → KPI/summary → primary module → supporting.',
-    'Rules: Module count and types follow the blueprint and layoutPlan — never a fixed widget set. Bind every metric and collection. A single collection with no other modules is collection, not dashboard.',
+    'Rules: Module count and types follow the blueprint and layoutPlan — never a fixed widget set. Bind every metric and collection. Primary visualization may be Chart when the bound collection is a numeric series; Sparkline only for compact under-Stat trends. A single collection with no other modules is collection, not dashboard.',
   ].join('\n'),
   workflow: [
     'ARCHETYPE RECIPE: workflow',

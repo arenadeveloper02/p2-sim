@@ -6,9 +6,9 @@
 export const ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT = [
   'ANTI-PATTERNS',
   'Never emit these. Catalog types only; the host rejects a Button with no verb.',
-  'data — Never hard-code dynamic data. Bind Stat, Table, Repeat, or DataText with statePath (or page onLoad). Do not put invented numbers in Stat.',
+  'data — Never hard-code dynamic data. Bind Stat, Table, Repeat, Chart, or DataText with statePath (or page onLoad). Do not put invented numbers in Stat or Chart.',
   'stats — Never create fake statistics. Stat only from layoutPlan / outputSchema hostKeys. Do not emit Stat to fill a dashboard.',
-  'charts — Never create a decorative Sparkline. Sparkline needs values or statePath. Do not emit Sparkline as chrome.',
+  'charts — Never create a decorative Sparkline or Chart. Sparkline needs values or statePath. Chart needs statePath (or dummy categories + values when data.mode is dummy/local). Do not emit either as chrome.',
   'table — Never use Table for narrative entities. That is Repeat of Cards. Table is comparable scalars with no per-row identity.',
   'form — Never create a Form or SearchField when no user input is required (onLoad-only dashboard). Do not add a parameters form the brief did not ask for.',
   'tabs — Never use Tabs for unrelated actions. Tabs are three or more peer views. Unrelated CTAs are Button / NavLink.',

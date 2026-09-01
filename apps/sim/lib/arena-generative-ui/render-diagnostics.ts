@@ -8,6 +8,7 @@ const BOUND_TYPES = new Set([
   'DataText',
   'ProgressBar',
   'Sparkline',
+  'Chart',
 ])
 
 export interface RenderDiagnostic {
@@ -77,6 +78,7 @@ export function collectRenderDiagnostics(
 
 const KNOWN_RENDERER_TYPES = new Set([
   'Sparkline',
+  'Chart',
   'EmptyState',
   'Page',
   'Section',

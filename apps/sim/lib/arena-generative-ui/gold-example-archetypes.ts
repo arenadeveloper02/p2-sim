@@ -119,8 +119,20 @@ const dashboardHomeSpec: Spec = {
       children: ['spark'],
     },
     spark: {
-      type: 'Sparkline',
-      props: { values: null, statePath: 'orderVolume', label: 'Weekly orders' },
+      type: 'Chart',
+      props: {
+        title: 'Weekly orders',
+        chartType: 'line',
+        statePath: 'orderVolume',
+        categoryField: null,
+        series: null,
+        categories: null,
+        values: null,
+        height: '320',
+        showLegend: false,
+        stacked: false,
+        emptyText: 'No volume yet.',
+      },
       children: [],
     },
     activity: {
@@ -154,7 +166,7 @@ export const goldDashboardManifest: ArenaGenerativeAppManifest = {
 
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE_DASHBOARD = goldPrompt(
   'dashboard',
-  'Slots: Header, Filters, KPI/summary, primary visualization, supporting activity. Module count follows the bound hostKeys — this example uses two Stats, a Sparkline, and a Table, not a fixed four-Stat grid. Page onLoad fetches the metrics; every Stat, Sparkline, and Table bind by statePath. There is no search hero.',
+  'Slots: Header, Filters, KPI/summary, primary visualization, supporting activity. Module count follows the bound hostKeys — this example uses two Stats, a Chart, and a Table, not a fixed four-Stat grid. Page onLoad fetches the metrics; every Stat, Chart, and Table bind by statePath. There is no search hero.',
   {
     title: 'Operations',
     content: 'Dashboard of weekly operations metrics on arrival.',

@@ -14,6 +14,14 @@ vi.mock('streamdown/styles.css', () => ({}))
 
 vi.mock('@/app/(interfaces)/gui-apps/generative-app-theme.css', () => ({}))
 
+vi.mock('echarts', () => ({
+  init: () => ({
+    setOption: () => undefined,
+    resize: () => undefined,
+    dispose: () => undefined,
+  }),
+}))
+
 import type { ArenaGenerativeChatProtocol } from '@/lib/arena-generative-ui/chat-protocol'
 import {
   type ArenaGenerativeUxPlan,
@@ -1641,6 +1649,48 @@ describe('SpecRenderer', () => {
     expect(container.querySelector('polyline')?.getAttribute('points')).toBeTruthy()
   })
 
+  it('renders a Chart from dummy categories and values', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['chart'] },
+        chart: {
+          type: 'Chart',
+          props: {
+            title: 'Spend',
+            chartType: 'bar',
+            categories: 'Mon, Tue',
+            values: '10, 20',
+          },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    expect(container.querySelector('[data-testid="chart"]')).toBeTruthy()
+    expect(container.querySelector('[aria-label="Spend"]')).toBeTruthy()
+  })
+
+  it('renders Chart empty copy when the bound path has no rows', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['chart'] },
+        chart: {
+          type: 'Chart',
+          props: {
+            chartType: 'line',
+            statePath: 'daily',
+            emptyText: 'No volume yet.',
+          },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec, state: { daily: [] } })
+    expect(container.textContent).toContain('No volume yet.')
+  })
+
   it('renders EmptyState with title and body', () => {
     const spec: Spec = {
       root: 'page',
@@ -1723,6 +1773,7 @@ describe('SpecRenderer', () => {
       ['Stat', { label: 'Articles ranked', statePath: 'count' }],
       ['KeyValue', { statePath: 'meta' }],
       ['DataText', { statePath: 'summary' }],
+      ['Chart', { chartType: 'line', statePath: 'orderVolume' }],
     ])('auto-skeletons a bound %s while pending with no data', (type, props) => {
       const spec =
         type === 'Repeat'

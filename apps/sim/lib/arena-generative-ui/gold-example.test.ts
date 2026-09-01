@@ -178,7 +178,7 @@ describe('per-archetype gold examples', () => {
     expect(goldExamplePromptForArchetype()).toBe(ARENA_GENERATIVE_UI_GOLD_EXAMPLE)
   })
 
-  it('validates the dashboard gold including Sparkline', () => {
+  it('validates the dashboard gold including Chart', () => {
     const result = validateArenaGenerativeManifest(goldDashboardManifest, {
       apiBindings: [
         {
@@ -191,7 +191,7 @@ describe('per-archetype gold examples', () => {
     })
     expect(result.error).toBeUndefined()
     expect(result.success).toBe(true)
-    expect(JSON.stringify(goldDashboardManifest)).toContain('"Sparkline"')
+    expect(JSON.stringify(goldDashboardManifest)).toContain('"Chart"')
     expect(JSON.stringify(goldDashboardManifest)).toContain('"Filter"')
     expect(JSON.stringify(goldDashboardManifest)).toContain('"Table"')
     expect(JSON.stringify(goldDashboardManifest)).toContain('"gap":"md"')

@@ -238,6 +238,23 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       description:
         'Compact numeric series as a line. values is comma-separated numbers, or statePath reads a number array from host state. Use under a Stat or inside a dashboard Card. Not a full chart — do not invent axes, legends, or multiple series.',
     },
+    Chart: {
+      props: z.object({
+        title: z.string().nullable(),
+        chartType: z.enum(['bar', 'line', 'area', 'pie']),
+        statePath: z.string().nullable(),
+        categoryField: z.string().nullable(),
+        series: z.string().nullable(),
+        categories: z.string().nullable(),
+        values: z.string().nullable(),
+        height: z.string().nullable(),
+        showLegend: z.boolean().nullable(),
+        stacked: z.boolean().nullable(),
+        emptyText: z.string().nullable(),
+      }),
+      description:
+        'Full chart with axes or pie slices (bar, line, area, pie). Prefer statePath on an array of records plus categoryField and series field keys (comma-separated, like Table.columns). Dummy/local: categories + values. Sparkline remains the compact trend under a Stat — do not use Chart as chrome. Never invent metrics when source data is provided.',
+    },
     EmptyState: {
       props: z.object({
         title: z.string(),
@@ -331,7 +348,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         lines: z.union([z.number(), z.string()]).nullable().optional(),
       }),
       description:
-        'Optional placeholder for a region built from static children. Table, Repeat, Stat, KeyValue and DataText bound to a statePath already skeleton automatically. Prefer binding statePath over emitting Skeleton.',
+        'Optional placeholder for a region built from static children. Table, Repeat, Stat, Chart, Sparkline, KeyValue and DataText bound to a statePath already skeleton automatically. Prefer binding statePath over emitting Skeleton.',
     },
     ProgressSteps: {
       props: z.object({
@@ -721,7 +738,7 @@ export const ARENA_GENERATIVE_UI_PAGINATION_RULE = [
 export const ARENA_GENERATIVE_UI_ON_LOAD_RULE = [
   'Data on arrival: a page whose content comes from an API the user did not just submit must fetch it itself. Set page "onLoad" to an array of manifest.actions ids and the host runs them once when the page opens, merging the response into state exactly as a CTA does. A dashboard, a report, a list, or a record detail page needs onLoad; a form page does not. A Results page that Generate already navigates to must not onLoad that same action — empty query params would refetch and miss or overwrite the CTA body.',
   'onLoad receives the page query params as its action input, mapped through the action inputMapping. A navigation target may carry those params — NavLink.to "report?range=30d" opens the report page and its onLoad action receives range "30d", and inside Repeat the same target can be "order?id={item.id}" so each row opens its own record — while the part before "?" must still be an existing page path. Give an onLoad action no onSuccess.navigate: the host ignores it rather than bouncing the user off the page they just opened.',
-  'A page with onLoad still needs loading states: bind its Table, Repeat, Stat, KeyValue, and DataText to a statePath so the placeholder shows while the load is in flight.',
+  'A page with onLoad still needs loading states: bind its Table, Repeat, Stat, Chart, KeyValue, and DataText to a statePath so the placeholder shows while the load is in flight.',
 ].join(' ')
 
 /**

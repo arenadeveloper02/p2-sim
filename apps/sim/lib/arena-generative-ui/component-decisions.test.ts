@@ -29,6 +29,8 @@ const CATALOG_TYPES = [
   'Toolbar',
   'Stepper',
   'Workspace',
+  'Chart',
+  'Sparkline',
 ] as const
 
 describe('ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT', () => {

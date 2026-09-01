@@ -78,7 +78,7 @@ describe('ARENA_GENERATIVE_UI_COMPOSITION_PROMPT', () => {
     expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).toContain('no Card-in-Card')
     expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).toContain('Do not wrap every Section in a Card')
     expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).toContain(
-      'Never generate a decorative Sparkline'
+      'Never generate a decorative Chart or Sparkline'
     )
     expect(ARENA_GENERATIVE_UI_COMPOSITION_PROMPT).toContain(
       'variant "default" is the raised host surface'

@@ -28,12 +28,17 @@ type ElementMap = Record<string, FlatElement>
  * these as aliases rather than catalog entries avoids a second way to express
  * the same chrome.
  */
+const CHART_TYPE_ALIASES: Record<string, 'bar' | 'line' | 'area' | 'pie'> = {
+  BarChart: 'bar',
+  LineChart: 'line',
+  AreaChart: 'area',
+  PieChart: 'pie',
+}
+
 const TYPE_ALIASES: Record<string, string> = {
-  BarChart: 'Sparkline',
   Box: 'Stack',
   CheckBox: 'Checkbox',
   CheckboxField: 'Checkbox',
-  Chart: 'Sparkline',
   Collection: 'Repeat',
   Container: 'Stack',
   Date: 'DateInput',
@@ -234,14 +239,20 @@ function normalizeElement(
   elements: ElementMap,
   nextId: () => string
 ): FlatElement {
-  const type = resolveType(asString(raw.type))
-  const props = normalizeProps(type, isRecord(raw.props) ? { ...raw.props } : {}, raw.data)
+  const props = isRecord(raw.props) ? { ...raw.props } : {}
+  const type = resolveType(asString(raw.type), props)
+  normalizeProps(type, props, raw.data)
   const children = normalizeChildren(raw.children, elements, nextId)
   appendSynthesizedChildren(type, props, children, elements, nextId)
   return { type, props, children }
 }
 
-function resolveType(type: string): string {
+function resolveType(type: string, props: Record<string, unknown>): string {
+  const chartType = CHART_TYPE_ALIASES[type]
+  if (chartType) {
+    if (!asString(props.chartType)) props.chartType = chartType
+    return 'Chart'
+  }
   return TYPE_ALIASES[type] ?? type
 }
 
@@ -413,6 +424,29 @@ function normalizeTypeProps(type: string, props: Record<string, unknown>): void 
     case 'Table':
       setProp(props, 'columns', joinColumns(props.columns))
       setProp(props, 'rows', joinRows(props.rows))
+      break
+    case 'Chart':
+      if (!asString(props.chartType)) {
+        props.chartType = 'line'
+      }
+      if (Array.isArray(props.series)) {
+        props.series = props.series
+          .map((item) => (typeof item === 'string' ? item.trim() : ''))
+          .filter(Boolean)
+          .join(', ')
+      }
+      if (Array.isArray(props.categories)) {
+        props.categories = props.categories
+          .map((item) => (typeof item === 'string' ? item.trim() : String(item ?? '')))
+          .filter(Boolean)
+          .join(', ')
+      }
+      if (Array.isArray(props.values)) {
+        props.values = props.values.map((item) => String(item)).join(', ')
+      }
+      if (props.height !== undefined && props.height !== null && typeof props.height !== 'string') {
+        props.height = String(props.height)
+      }
       break
     case 'Tabs':
       setProp(props, 'items', joinTabItems(props.items))

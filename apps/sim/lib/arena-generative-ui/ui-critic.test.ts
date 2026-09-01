@@ -145,6 +145,28 @@ describe('hostCriticManifest', () => {
     expect(error).toContain('Sparkline "spark"')
   })
 
+  it('rejects a Chart with literal values and no statePath when bindings exist', () => {
+    const spec = pageSpec(
+      {
+        chart: {
+          type: 'Chart',
+          props: {
+            chartType: 'bar',
+            values: '1,2,3',
+            categories: 'A, B, C',
+            statePath: null,
+          },
+          children: [],
+        },
+      },
+      ['chart']
+    )
+    const error = hostCriticManifest(
+      manifestWithHome(spec, { actions: { load: { apiKey: 'fetch' } } })
+    )
+    expect(error).toContain('Chart "chart"')
+  })
+
   it('rejects a Card nested inside another Card', () => {
     const spec = pageSpec(
       {

@@ -17,7 +17,7 @@ describe('ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT', () => {
       /stats[^\n]*Never create fake statistics/
     )
     expect(ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT).toMatch(
-      /charts[^\n]*Never create a decorative Sparkline/
+      /charts[^\n]*Never create a decorative Sparkline or Chart/
     )
   })
 

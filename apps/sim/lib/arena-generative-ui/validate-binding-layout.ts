@@ -21,12 +21,13 @@ const BOUND_RESULT_TYPES = new Set([
   'KeyValue',
   'DataText',
   'Sparkline',
+  'Chart',
   'ProgressBar',
 ])
 
 const ACTION_WIRE_TYPES = new Set(['Form', 'SubmitButton', 'Button', 'SearchField', 'Chip', 'Chat'])
 
-const COLLECTION_TYPES = new Set(['Table', 'Repeat'])
+const COLLECTION_TYPES = new Set(['Table', 'Repeat', 'Chart'])
 
 const ENVELOPE_ROOTS = new Set(['data', 'response'])
 
