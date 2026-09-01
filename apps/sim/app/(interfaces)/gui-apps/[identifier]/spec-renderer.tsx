@@ -1122,6 +1122,79 @@ function numbersFromSparklineProps(
     .filter((item) => Number.isFinite(item))
 }
 
+const APP_HEADER_BAR_CLASS =
+  'sticky top-0 z-20 w-full border-[var(--gui-border,#e2e3e5)] border-b bg-[var(--gui-surface,#ffffff)]'
+
+function AppHeaderMark({ name }: { name: string }) {
+  const Glyph = ICON_BY_NAME[name] ?? Sparkles
+  return (
+    <span
+      data-testid='app-header-mark'
+      className='inline-flex size-8 shrink-0 items-center justify-center rounded-[var(--gui-radius-sm,8px)] bg-[var(--gui-text,#2c2d33)]'
+    >
+      <Glyph aria-hidden className='size-4 text-[var(--gui-surface,#ffffff)]' />
+    </span>
+  )
+}
+
+function AppHeaderBar({ children }: { children: ReactNode }) {
+  return (
+    <header data-testid='app-header' className={APP_HEADER_BAR_CLASS}>
+      <div className='flex w-full items-center px-4 py-3'>{children}</div>
+    </header>
+  )
+}
+
+function isBrandMarkType(type: string | undefined): boolean {
+  return type === 'Icon' || type === 'Avatar'
+}
+
+/**
+ * True when `id` is product chrome: AppHeader, or a horizontal brand row the
+ * generator faked with Icon + title inside Section.
+ */
+function isAppChromeElement(elements: Record<string, SpecElement>, id: string): boolean {
+  const element = elements[id]
+  if (!element) return false
+  if (element.type === 'AppHeader') return true
+  if (element.type !== 'Stack' && element.type !== 'Toolbar') return false
+  const direction = asString(
+    element.props?.direction,
+    element.type === 'Toolbar' ? 'horizontal' : 'vertical'
+  )
+  if (element.type === 'Stack' && direction !== 'horizontal') return false
+  const kids = element.children ?? []
+  const first = kids[0] ? elements[kids[0]] : undefined
+  if (isBrandMarkType(first?.type)) return true
+  if (first?.type === 'Stack') {
+    const nestedId = first.children?.[0]
+    const nested = nestedId ? elements[nestedId] : undefined
+    return isBrandMarkType(nested?.type)
+  }
+  return false
+}
+
+function resolvePageChrome(
+  elements: Record<string, SpecElement>,
+  pageChildIds: string[]
+): { id: string | null; nested: boolean } {
+  for (const id of pageChildIds) {
+    if (elements[id]?.type === 'AppHeader') return { id, nested: false }
+  }
+  const firstId = pageChildIds[0]
+  const first = firstId ? elements[firstId] : undefined
+  if (first?.type === 'Section') {
+    const sectionFirstId = first.children?.[0]
+    if (sectionFirstId && isAppChromeElement(elements, sectionFirstId)) {
+      return { id: sectionFirstId, nested: true }
+    }
+  }
+  if (firstId && isAppChromeElement(elements, firstId)) {
+    return { id: firstId, nested: false }
+  }
+  return { id: null, nested: false }
+}
+
 function CatalogIcon({ name, well }: { name: string; well: string }) {
   const Glyph = ICON_BY_NAME[name] ?? Search
   const wellClass =
@@ -1704,6 +1777,12 @@ export function SpecRenderer({
   }
 
   /**
+   * Chrome hoisted out of Section is rendered once at Page, then skipped when
+   * the Section walks the same child id.
+   */
+  const chromeSkipIds = new Set<string>()
+
+  /**
    * `withinForm` tracks whether an ancestor is a `Form`. A `SubmitButton` outside one
    * submits nothing, so it needs its `actionId` wired to a click instead. `formActionId`
    * is the enclosing Form's action so submit and fields pending is per that CTA.
@@ -1714,6 +1793,7 @@ export function SpecRenderer({
     withinForm = false,
     formActionId = ''
   ): ReactNode => {
+    if (chromeSkipIds.has(id)) return null
     const element = elements[id]
     if (!element) return null
     const props = interpolateElementProps(element.props ?? {}, { state, scope, pending })
@@ -1769,13 +1849,26 @@ export function SpecRenderer({
       case 'Page': {
         const hasPageHeader = childIds.some((childId) => elements[childId]?.type === 'PageHeader')
         const title = asString(props.title)
+        const chrome = resolvePageChrome(elements, childIds)
+        let chromeNode: ReactNode = null
+        if (chrome.id) {
+          const node = renderNode(chrome.id)
+          chromeNode =
+            elements[chrome.id]?.type === 'AppHeader' ? node : <AppHeaderBar>{node}</AppHeaderBar>
+        }
+        if (chrome.id && chrome.nested) chromeSkipIds.add(chrome.id)
+        const bodyIds =
+          chrome.id && !chrome.nested ? childIds.filter((id) => id !== chrome.id) : childIds
         return (
           <div
-            className='min-h-full bg-[var(--gui-canvas,#f7f8f9)] text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-body-leading,24px)]'
+            className='relative min-h-full bg-[var(--gui-canvas,#f7f8f9)] text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-body-leading,24px)]'
             style={styleFromProps(props)}
           >
+            {chromeNode}
             {title && !hasPageHeader ? <h1 className='sr-only'>{title}</h1> : null}
-            {children}
+            {bodyIds.map((childId) => (
+              <Fragment key={childId}>{renderNode(childId)}</Fragment>
+            ))}
           </div>
         )
       }
@@ -1911,6 +2004,31 @@ export function SpecRenderer({
           >
             {children}
           </WorkspaceView>
+        )
+      }
+      case 'AppHeader': {
+        const title = asString(props.title)
+        const icon = asString(props.icon, 'spark')
+        return (
+          <header
+            data-testid='app-header'
+            className={APP_HEADER_BAR_CLASS}
+            style={styleFromProps(props)}
+          >
+            <div className='flex w-full items-center justify-between gap-3 px-4 py-3'>
+              <div className='flex min-w-0 items-center gap-2.5'>
+                <AppHeaderMark name={icon} />
+                {title ? (
+                  <p className='truncate font-semibold text-[length:var(--gui-body-size,16px)] text-[var(--gui-text,#2c2d33)] leading-[var(--gui-body-leading,24px)]'>
+                    {title}
+                  </p>
+                ) : null}
+              </div>
+              {hasChildren ? (
+                <div className='flex shrink-0 items-center gap-2'>{children}</div>
+              ) : null}
+            </div>
+          </header>
         )
       }
       case 'PageHeader': {

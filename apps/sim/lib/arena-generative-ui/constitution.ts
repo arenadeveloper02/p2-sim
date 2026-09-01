@@ -85,9 +85,9 @@ export const ARENA_GENERATIVE_UI_CONSTITUTION_SECTIONS: ConstitutionSection[] = 
       },
       {
         ownership: 'generator',
-        text: 'Every page has a content container: Page → Section → PageHeader, then the task.',
+        text: 'Every page has a content container: Page → AppHeader → Section → PageHeader, then the task.',
         prompt:
-          'Every page is Page → Section → PageHeader, then the task. Do not put Table, Form, or Repeat as a direct child of Page.',
+          'Every page is Page → AppHeader → Section → PageHeader, then the task. AppHeader is a direct child of Page. Do not put Table, Form, Repeat, or AppHeader as a child of Section.',
       },
       {
         ownership: 'generator',

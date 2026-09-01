@@ -245,7 +245,7 @@ Derivation walks 3 object levels, describes arrays from their first element, and
 
 ### Design Notes (optional)
 
-Brand, density, tone, or a theme knob (`brandColor`, `density`, `radius`, `colorScheme`). Layout is a **full page up to 1280px**; Grid and Columns collapse to one column in a narrow Arena iframe — do not author a permanently narrow centre column. No logo or wordmark — the host supplies the outer shell. Example: “Calm Arena-like layout. Density compact. Dark mode.”
+Brand, density, tone, or a theme knob (`brandColor`, `density`, `radius`, `colorScheme`). Layout is a **full page up to 1280px**; Grid and Columns collapse to one column in a narrow Arena iframe — do not author a permanently narrow centre column. App identity is `AppHeader` (sticky mark + name at the left edge), not a decorative Image. Example: “Calm Arena-like layout. Density compact. Dark mode.”
 
 Ask for `narrow` explicitly in Design Notes if you want the old focused single-column form look.
 

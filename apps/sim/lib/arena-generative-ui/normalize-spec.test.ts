@@ -149,6 +149,8 @@ describe('normalizeGeneratedSpec', () => {
     ['Logo', 'Avatar'],
     ['Progress', 'ProgressBar'],
     ['HeroHeader', 'PageHeader'],
+    ['AppBar', 'AppHeader'],
+    ['Navbar', 'AppHeader'],
     ['StatusCard', 'WorkingCard'],
     ['LoadingCard', 'WorkingCard'],
     ['Dialog', 'Modal'],

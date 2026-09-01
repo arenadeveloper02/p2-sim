@@ -17,6 +17,7 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'SubmitButton',
       'Tabs',
       'PageHeader',
+      'AppHeader',
       'SearchField',
       'Chip',
       'Icon',

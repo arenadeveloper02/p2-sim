@@ -7,6 +7,7 @@ import { ARENA_GENERATIVE_UI_COMPONENT_SELECTION_PROMPT } from '@/lib/arena-gene
 const CATALOG_TYPES = [
   'EntityHeader',
   'PageHeader',
+  'AppHeader',
   'Card',
   'Table',
   'Repeat',

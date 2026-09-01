@@ -82,7 +82,15 @@ describe('gold example', () => {
 
   it('demonstrates the layout primitives the rules ask for', () => {
     const serialized = JSON.stringify(goldExampleManifest)
-    for (const type of ['PageHeader', 'SearchField', 'Chip', 'Card', 'DataText', 'WorkingCard']) {
+    for (const type of [
+      'AppHeader',
+      'PageHeader',
+      'SearchField',
+      'Chip',
+      'Card',
+      'DataText',
+      'WorkingCard',
+    ]) {
       expect(serialized).toContain(`"${type}"`)
     }
     expect(serialized).toContain('"type":"DataText"')

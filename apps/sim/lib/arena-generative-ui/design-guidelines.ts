@@ -7,8 +7,8 @@
 /** Catalog-grounded page composition. Absorbed from professional-layout.ts. */
 export const ARENA_GENERATIVE_UI_LAYOUT_PROMPT = [
   'LAYOUT',
-  'Use a consistent Page → Section container and alignment. Prefer simple layouts over nested chrome. The host caps PageHeader subtitles and Form width; you choose Section width and grouping.',
-  'container — Every page is Page → Section → PageHeader, then the task. Do not put Table, Form, or Repeat as a direct child of Page.',
+  'Use a consistent Page → AppHeader → Section container and alignment. Prefer simple layouts over nested chrome. The host caps PageHeader subtitles and Form width; you choose Section width and grouping.',
+  'container — Every page is Page → AppHeader → Section → PageHeader, then the task. AppHeader is a direct child of Page. Do not put Table, Form, Repeat, or AppHeader as a child of Section.',
   'measure — Readable content uses Section width "narrow" (host max-w-2xl). Do not set maxWidth unless the brief names an exact cap. Never let prose run the full 1280px. Constrain forms and reading-heavy content to a comfortable width.',
   'wide — Dashboards, Table, Repeat collections, Sparkline: Section width "wide" (up to 1280px). width "full" only when the brief spans the viewport. Not for forms or long DataText. Use full-width layouts only when the content benefits from them.',
   'forms — Multi-field Form: Section "narrow", left-aligned. SearchField hero may sit on a wide Section. Do not run a form the full 1280px.',

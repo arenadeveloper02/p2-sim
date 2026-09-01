@@ -26,7 +26,8 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         backgroundColor: z.string().nullable(),
       }),
       slots: ['default'],
-      description: 'Root page wrapper. Always use as the root element for each page Spec.',
+      description:
+        'Root page wrapper. Always use as the root element for each page Spec. First child is AppHeader (sticky product chrome), then Section.',
     },
     Section: {
       props: z.object({
@@ -101,6 +102,33 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       description:
         'Sequential workflow progress. items is newline-separated "Label|path" or "Label|section". activePath marks the current stage. Not Tabs (those are peer views) and not ProgressSteps (legacy wait chrome).',
     },
+    AppHeader: {
+      props: z.object({
+        title: z.string(),
+        icon: z
+          .enum([
+            'search',
+            'shield',
+            'file',
+            'chart',
+            'building',
+            'check',
+            'spark',
+            'users',
+            'globe',
+            'message',
+            'link',
+            'inbox',
+            'calendar',
+            'star',
+            'trend',
+          ])
+          .nullable(),
+      }),
+      slots: ['default'],
+      description:
+        'Sticky product chrome: mark + title flush to the left viewport edge, optional trailing children on the right. A direct child of Page — never inside Section. Not PageHeader (that is the in-page hero or task title). The host paints it full-bleed so content cannot slide under it. Do not fake this with Icon + Heading in a Stack.',
+    },
     PageHeader: {
       props: z.object({
         title: z.string(),
@@ -110,7 +138,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Page title with optional kicker (small brand-colored label above the title) and subtitle. align "center" stacks kicker/title/subtitle as a hero with a readable measure; children stay top-right (history, secondary). Default align is start. Use once at the top of a page instead of a bare Heading.',
+        'Page title with optional kicker (small brand-colored label above the title) and subtitle. align "center" stacks kicker/title/subtitle as a hero with a readable measure; children stay top-right (history, secondary). Default align is start. Use once at the top of a Section instead of a bare Heading. Not the sticky product bar — that is AppHeader.',
     },
     Toolbar: {
       props: z.object({
@@ -719,7 +747,7 @@ export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
   'typography: display h1 h2 h3 body bodySmall caption — host maps PageHeader and Heading.level; do not set fontSize.',
   'density: compact comfortable roomy — manifest.theme.density only. Tokens scale with density.',
   'Viewport: full page up to 1280px; the same layout stacks in a narrow Arena iframe because Grid and Columns collapse. Do not author a permanently narrow centre column.',
-  'Every generate reply includes the default theme. Page → Section → PageHeader; Section width follows DESIGN GUIDELINES. Then groups of Grid / Columns / Card with gap "lg". Surfaces are exactly two — the page canvas and the Card/Stat surface — both supplied by the host. Content avatars and company logos are allowed; do not add an app wordmark.',
+  'Every generate reply includes the default theme. Page → AppHeader → Section → PageHeader; Section width follows DESIGN GUIDELINES. Then groups of Grid / Columns / Card with gap "lg". Surfaces are exactly two — the page canvas and the Card/Stat surface — both supplied by the host. Content avatars and company logos are allowed; app identity is AppHeader, not Image.',
 ].join('\n')
 
 /**
@@ -729,7 +757,7 @@ export const ARENA_GENERATIVE_UI_DESIGN_GUIDELINES = [
 export const ARENA_GENERATIVE_UI_PLANNER_DS_CONTEXT = [
   'Design system context (host-owned — do not emit hex, fonts, CSS, catalog component types, or a manifest).',
   'Surfaces are exactly two: the page canvas and the Card/Stat surface, both supplied by the host.',
-  'Color, type, and radius are host CSS. density is compact | comfortable | roomy. gap and padding may use spacing tokens none xs sm md lg xl 2xl. Do not pick a wordmark.',
+  'Color, type, and radius are host CSS. density is compact | comfortable | roomy. gap and padding may use spacing tokens none xs sm md lg xl 2xl. App identity is AppHeader, not a decorative wordmark.',
 ].join('\n')
 
 /** Added to the generator prompt only when a declared binding has `stream: true`. */

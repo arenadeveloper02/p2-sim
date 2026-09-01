@@ -85,6 +85,7 @@ const KNOWN_RENDERER_TYPES = new Set([
   'Columns',
   'Repeat',
   'PageHeader',
+  'AppHeader',
   'Toolbar',
   'Filter',
   'Tabs',

@@ -35,9 +35,11 @@ describe('ARENA_GENERATIVE_UI_COMPOSITION_PROMPT', () => {
   })
 
   it('requires a Page → Section container and catalog layout pins', () => {
-    expect(ARENA_GENERATIVE_UI_LAYOUT_PROMPT).toMatch(/container[^\n]*Page → Section → PageHeader/)
     expect(ARENA_GENERATIVE_UI_LAYOUT_PROMPT).toMatch(
-      /container[^\n]*Do not put Table, Form, or Repeat as a direct child of Page/
+      /container[^\n]*Page → AppHeader → Section → PageHeader/
+    )
+    expect(ARENA_GENERATIVE_UI_LAYOUT_PROMPT).toMatch(
+      /container[^\n]*Do not put Table, Form, Repeat, or AppHeader as a child of Section/
     )
     expect(ARENA_GENERATIVE_UI_LAYOUT_PROMPT).toMatch(/forms[^\n]*Section "narrow"/)
     expect(ARENA_GENERATIVE_UI_LAYOUT_PROMPT).toMatch(/wide[^\n]*Table, Repeat collections/)

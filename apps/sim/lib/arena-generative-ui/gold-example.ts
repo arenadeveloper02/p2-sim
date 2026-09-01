@@ -24,7 +24,12 @@ const goldHomeSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'Company research', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
+    },
+    app_header: {
+      type: 'AppHeader',
+      props: { title: 'Company research', icon: 'spark' },
+      children: [],
     },
     section: {
       type: 'Section',
@@ -93,7 +98,12 @@ const goldReportSpec: Spec = {
     page: {
       type: 'Page',
       props: { title: 'Report', backgroundColor: null },
-      children: ['section'],
+      children: ['app_header', 'section'],
+    },
+    app_header: {
+      type: 'AppHeader',
+      props: { title: 'Company research', icon: 'spark' },
+      children: [],
     },
     section: {
       type: 'Section',
@@ -179,7 +189,7 @@ export const goldExampleOutput = {
 export const ARENA_GENERATIVE_UI_GOLD_EXAMPLE = [
   'GOLD STANDARD REFERENCE LAYOUT (task)',
   GOLD_RENDER_CONTRACT,
-  'This sample uses two screens (centered company input, report destination) because a task page then a results page is the blueprint. SearchField with nested submit, WorkingCard then DataText bound by statePath. Home has no onLoad — SearchField runs the analyze CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.company and "{company}". Results has no onLoad of that CTA. WorkingCard applies when CAPABILITY includes long-running, multi-step, or cancellable; omit it when no wait capability is selected. Do not add history, SWOT, stats, or extra pages this example omitted.',
+  'This sample uses two screens (centered company input, report destination) because a task page then a results page is the blueprint. AppHeader is sticky product chrome on Page; Section holds SearchField with nested submit, WorkingCard then DataText bound by statePath. Home has no onLoad — SearchField runs the analyze CTA and onSuccess navigates to results. Submitted fields are available immediately as inputs.company and "{company}". Results has no onLoad of that CTA. WorkingCard applies when CAPABILITY includes long-running, multi-step, or cancellable; omit it when no wait capability is selected. Do not add history, SWOT, stats, or extra pages this example omitted.',
   `Replace the action apiKey ("${GOLD_EXAMPLE_API_KEY}") with a declared API binding key. The SearchField actionId must be that same manifest.actions key — do not paraphrase ${GOLD_EXAMPLE_API_KEY} as company_search. When no bindings were declared, keep the action with no apiKey and use onSuccess.setState / navigate. Do not drop manifest.actions.`,
   JSON.stringify(goldExampleOutput, null, 2),
 ].join('\n\n')

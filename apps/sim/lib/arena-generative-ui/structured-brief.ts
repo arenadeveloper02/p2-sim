@@ -661,7 +661,7 @@ export const SHELL_RECIPE = [
   'workspace: persistent multi-region chrome. Honour pages[].regions. Same catalog Workspace as the workspace page recipe.',
   'tabs: emit Tabs as Label|path. Not sequential steps (those are Stepper).',
   'minimal / none: no app chrome column — do not emit Workspace or a fake SaaS sidebar.',
-  'header / breadcrumbs: emit PageHeader and breadcrumb NavLinks only when those flags are true.',
+  'header: emit AppHeader (icon + product name) as a direct child of Page. breadcrumbs: NavLinks only when that flag is true. PageHeader remains the in-page title inside Section.',
 ].join('\n')
 
 const MINIMAL_SHELL = new Set<ArenaGenerativeShellNavigation>(['minimal', 'none'])

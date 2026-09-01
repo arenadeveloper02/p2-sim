@@ -1475,6 +1475,84 @@ describe('SpecRenderer', () => {
     expect(container.textContent).toContain('Refresh')
   })
 
+  it('renders AppHeader as a sticky full-bleed bar with the mark at the left edge', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['chrome', 'section'] },
+        chrome: {
+          type: 'AppHeader',
+          props: { title: 'Company Research AI', icon: 'spark' },
+          children: [],
+        },
+        section: {
+          type: 'Section',
+          props: { width: 'wide' },
+          children: ['hero'],
+        },
+        hero: {
+          type: 'PageHeader',
+          props: { title: 'Research any company', align: 'center' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const header = container.querySelector('[data-testid="app-header"]') as HTMLElement
+    expect(header).toBeTruthy()
+    expect(header.textContent).toContain('Company Research AI')
+    expect(header.className).toContain('sticky')
+    expect(header.className).toContain('top-0')
+    expect(header.className).toContain('z-20')
+    expect(header.className).toContain('bg-[var(--gui-surface,#ffffff)]')
+    expect(header.querySelector('[data-testid="app-header-mark"]')).toBeTruthy()
+    const inner = header.firstElementChild as HTMLElement
+    expect(inner?.className).toContain('px-4')
+    const section = container.querySelector('section')
+    expect(section?.contains(header)).toBe(false)
+    expect(container.querySelector('h1')?.textContent).toBe('Research any company')
+  })
+
+  it('hoists a brand row out of Section so it cannot sit under scrolling content', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['section'] },
+        section: {
+          type: 'Section',
+          props: { width: 'wide' },
+          children: ['brand', 'hero'],
+        },
+        brand: {
+          type: 'Stack',
+          props: { direction: 'horizontal', align: 'center', justify: 'between', gap: 'sm' },
+          children: ['logo', 'name'],
+        },
+        logo: { type: 'Icon', props: { name: 'spark', well: 'square' }, children: [] },
+        name: {
+          type: 'Heading',
+          props: { text: 'Company Research AI', level: 'h2' },
+          children: [],
+        },
+        hero: {
+          type: 'PageHeader',
+          props: { title: 'Research any company', align: 'center' },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const header = container.querySelector('[data-testid="app-header"]') as HTMLElement
+    expect(header).toBeTruthy()
+    expect(header.className).toContain('sticky')
+    expect(header.className).toContain('z-20')
+    expect(header.textContent).toContain('Company Research AI')
+    const section = container.querySelector('section')
+    expect(section?.contains(header)).toBe(false)
+    expect(section?.textContent).toContain('Research any company')
+    expect(section?.querySelector('h2')).toBeNull()
+  })
+
   it('renders Stat and KeyValue values from host state', () => {
     const spec: Spec = {
       root: 'page',
