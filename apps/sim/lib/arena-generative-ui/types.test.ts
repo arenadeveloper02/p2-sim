@@ -11,9 +11,11 @@ import {
   interpolateBindingTemplate,
   interpolateItemTemplate,
   interpolateRepeatProps,
+  isActionTelemetryRoot,
   MAX_REPEAT_ITEMS,
   navigationHref,
   omitActionTelemetry,
+  omitTelemetrySchemaFields,
   pageOnLoadFrom,
   pageParamsFromQuery,
   parseJsonLiteral,
@@ -99,6 +101,12 @@ describe('actionStateFromData', () => {
     expect(actionStateFromData(['a'])).toEqual({ result: ['a'] })
   })
 
+  it('strips timeSegments with the rest of the execution envelope', () => {
+    expect(omitActionTelemetry({ articles: [], timeSegments: [{ name: 'llm' }] })).toEqual({
+      articles: [],
+    })
+  })
+
   it('unwraps a Response-block envelope so body keys land at the top level', () => {
     const envelope = {
       data: { articles: [{ title: 'One' }], count: 1 },
@@ -167,6 +175,30 @@ describe('actionStateFromData', () => {
       score: 3,
       output: { items: [{ keyword: 'Nested' }], score: 9 },
     })
+  })
+})
+
+describe('isActionTelemetryRoot', () => {
+  it('matches telemetry keys including nested paths and timeSegments', () => {
+    expect(isActionTelemetryRoot('tokens')).toBe(true)
+    expect(isActionTelemetryRoot('tokens.input')).toBe(true)
+    expect(isActionTelemetryRoot('cost.total')).toBe(true)
+    expect(isActionTelemetryRoot('providerTiming.startTime')).toBe(true)
+    expect(isActionTelemetryRoot('timeSegments')).toBe(true)
+    expect(isActionTelemetryRoot('timeSegments[0].name')).toBe(true)
+    expect(isActionTelemetryRoot('articles')).toBe(false)
+    expect(isActionTelemetryRoot('articles[].title')).toBe(false)
+  })
+
+  it('drops telemetry rows from an outputSchema list', () => {
+    expect(
+      omitTelemetrySchemaFields([
+        { name: 'articles', type: 'array' },
+        { name: 'tokens.input', type: 'number' },
+        { name: 'cost', type: 'object' },
+        { name: 'timeSegments', type: 'array' },
+      ])
+    ).toEqual([{ name: 'articles', type: 'array' }])
   })
 })
 

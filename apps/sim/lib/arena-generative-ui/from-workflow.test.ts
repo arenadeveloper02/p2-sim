@@ -239,6 +239,19 @@ describe('workflowBindingFromSelection', () => {
     ).toEqual([{ name: 'score', type: 'number' }])
   })
 
+  it('drops execution telemetry from declared output fields', () => {
+    expect(
+      outputSchemaFromWorkflowFields([
+        { name: 'articles', type: 'array' },
+        { name: 'tokens', type: 'object' },
+        { name: 'tokens.input', type: 'number' },
+        { name: 'cost.total', type: 'number' },
+        { name: 'providerTiming', type: 'object' },
+        { name: 'timeSegments', type: 'array' },
+      ])
+    ).toEqual([{ name: 'articles', type: 'array' }])
+  })
+
   it('derives outputSchema from a sample response', () => {
     const binding = workflowBindingFromSelection({
       key: 'run',

@@ -53,6 +53,52 @@ describe('collectRenderDiagnostics', () => {
     const diagnostics = collectRenderDiagnostics(spec, { articles: [] }, false)
     expect(diagnostics.some((item) => item.kind === 'unresolved-state-path')).toBe(false)
   })
+
+  it('does not report catalog types Chat, Workspace, or Stepper as unknown', () => {
+    const catalogSpec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['chat-composer', 'workspace', 'stepper'] },
+        'chat-composer': { type: 'Chat', props: { actionId: 'ask' }, children: [] },
+        workspace: { type: 'Workspace', props: {}, children: [] },
+        stepper: { type: 'Stepper', props: {}, children: [] },
+      },
+    }
+    const diagnostics = collectRenderDiagnostics(catalogSpec, {}, false)
+    expect(diagnostics.some((item) => item.kind === 'unknown-type')).toBe(false)
+  })
+
+  it('tells the editor to remove telemetry Stats instead of adding onLoad', () => {
+    const telemetrySpec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['cost', 'tokens', 'timing', 'segments'] },
+        cost: { type: 'Stat', props: { label: 'Cost', statePath: 'cost.total' }, children: [] },
+        tokens: {
+          type: 'Stat',
+          props: { label: 'Tokens', statePath: 'tokens.total' },
+          children: [],
+        },
+        timing: {
+          type: 'Stat',
+          props: { label: 'Timing', statePath: 'providerTiming.duration' },
+          children: [],
+        },
+        segments: { type: 'Repeat', props: { statePath: 'timeSegments' }, children: [] },
+      },
+    }
+    const diagnostics = collectRenderDiagnostics(telemetrySpec, {}, false)
+    expect(diagnostics.every((item) => item.kind === 'unresolved-state-path')).toBe(true)
+    for (const item of diagnostics) {
+      expect(item.message).toContain('Remove this; the host strips execution telemetry.')
+      expect(item.message).not.toContain('add onLoad')
+    }
+    const text = editInstructionsFromDiagnostics(diagnostics, 'home')
+    expect(text).toContain('cost.total')
+    expect(text).toContain('tokens.total')
+    expect(text).toContain('providerTiming.duration')
+    expect(text).toContain('timeSegments')
+  })
 })
 
 describe('editInstructionsFromDiagnostics', () => {

@@ -10,9 +10,10 @@ import {
   hasSchemaFieldName,
   outputLayoutFromSample,
 } from '@/lib/arena-generative-ui/output-schema'
-import type {
-  ArenaGenerativeApiBinding,
-  ArenaGenerativeInputSchemaField,
+import {
+  type ArenaGenerativeApiBinding,
+  type ArenaGenerativeInputSchemaField,
+  isActionTelemetryRoot,
 } from '@/lib/arena-generative-ui/types'
 import type { WorkflowInputField } from '@/lib/workflows/input-format'
 
@@ -141,6 +142,7 @@ export function outputSchemaFromWorkflowFields(
   for (const field of fields) {
     if (!hasSchemaFieldName(field)) continue
     const name = field.name.trim()
+    if (isActionTelemetryRoot(name)) continue
     if (seen.has(name)) continue
     seen.add(name)
     schema.push({

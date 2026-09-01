@@ -180,4 +180,28 @@ describe('loadLastSuccessfulRunOutputSchema', () => {
 
     expect(result.warnings).toEqual([LAST_RUN_TRUNCATED_WARNING, LAST_RUN_STALE_WARNING])
   })
+
+  it('drops execution telemetry so regenerate cannot bind Stats to it', async () => {
+    queueCompletedRun()
+    mockMaterializeExecutionData.mockResolvedValueOnce({
+      finalOutput: {
+        articles: [{ title: 'One' }],
+        tokens: { input: 10, output: 20, total: 30 },
+        cost: { total: 0.03 },
+        providerTiming: { duration: 1200 },
+        timeSegments: [{ name: 'llm' }],
+      },
+    })
+
+    const names = (await loadLastSuccessfulRunOutputSchema('wf-history')).fields.map(
+      (field) => field.name
+    )
+
+    expect(names).toContain('articles')
+    expect(names).toContain('articles[].title')
+    expect(names).not.toContain('tokens')
+    expect(names).not.toContain('cost')
+    expect(names).not.toContain('providerTiming')
+    expect(names).not.toContain('timeSegments')
+  })
 })

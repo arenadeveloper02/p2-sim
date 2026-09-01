@@ -669,6 +669,27 @@ function arenaGenerativeUiComponentReference(): string {
   return componentReference
 }
 
+let catalogComponentTypes: Set<string> | null = null
+
+/**
+ * True when `type` is a catalog component key (`Chat`, `Workspace`, `Stepper`, …).
+ * Preview diagnostics must use this instead of a hand-maintained renderer set.
+ */
+export function isArenaGenerativeCatalogType(type: string): boolean {
+  if (!catalogComponentTypes) {
+    const names = (arenaGenerativeUiCatalog as { componentNames?: unknown }).componentNames
+    if (!Array.isArray(names) || names.length === 0) {
+      throw new Error(
+        'The json-render catalog no longer exposes componentNames; arena-generative-ui/catalog.ts must be updated.'
+      )
+    }
+    catalogComponentTypes = new Set(
+      names.filter((name): name is string => typeof name === 'string')
+    )
+  }
+  return catalogComponentTypes.has(type)
+}
+
 /**
  * Generator system prompt section: the component reference, then the numbered rules
  * for this run. Sim owns every rule, so rule 1 is the output envelope.

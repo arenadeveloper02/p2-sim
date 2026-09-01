@@ -1,4 +1,6 @@
 import type { Spec } from '@json-render/core'
+import { isArenaGenerativeCatalogType } from '@/lib/arena-generative-ui/catalog'
+import { isActionTelemetryRoot } from '@/lib/arena-generative-ui/types'
 
 const BOUND_TYPES = new Set([
   'Table',
@@ -56,7 +58,7 @@ export function collectRenderDiagnostics(
   for (const [elementId, element] of Object.entries(elements)) {
     const type = element.type ?? ''
     if (!type) continue
-    if (!isKnownRendererType(type)) {
+    if (!isArenaGenerativeCatalogType(type)) {
       diagnostics.push({
         kind: 'unknown-type',
         elementId,
@@ -70,71 +72,18 @@ export function collectRenderDiagnostics(
       kind: 'unresolved-state-path',
       elementId,
       statePath,
-      message: `Unresolved statePath "${statePath}" on ${type} "${elementId}". Bind a real top-level response field or add onLoad.`,
+      message: unresolvedStatePathMessage(type, elementId, statePath),
     })
   }
   return diagnostics
 }
 
-const KNOWN_RENDERER_TYPES = new Set([
-  'Sparkline',
-  'Chart',
-  'EmptyState',
-  'Page',
-  'Section',
-  'Stack',
-  'Grid',
-  'Columns',
-  'Repeat',
-  'PageHeader',
-  'AppHeader',
-  'Toolbar',
-  'Filter',
-  'Tabs',
-  'Heading',
-  'Text',
-  'DataText',
-  'Alert',
-  'Toast',
-  'Modal',
-  'Drawer',
-  'List',
-  'ListItem',
-  'Divider',
-  'Image',
-  'Table',
-  'Stat',
-  'KeyValue',
-  'Badge',
-  'Form',
-  'TextInput',
-  'TextArea',
-  'NumberInput',
-  'DateInput',
-  'Select',
-  'RadioGroup',
-  'MultiSelect',
-  'Checkbox',
-  'Switch',
-  'SubmitButton',
-  'Skeleton',
-  'Spinner',
-  'ProgressSteps',
-  'WorkingCard',
-  'ProgressBar',
-  'SearchField',
-  'Chip',
-  'Icon',
-  'Avatar',
-  'EntityHeader',
-  'NavLink',
-  'Button',
-  'Link',
-  'Card',
-])
-
-function isKnownRendererType(type: string): boolean {
-  return KNOWN_RENDERER_TYPES.has(type)
+function unresolvedStatePathMessage(type: string, elementId: string, statePath: string): string {
+  const prefix = `Unresolved statePath "${statePath}" on ${type} "${elementId}".`
+  if (isActionTelemetryRoot(statePath)) {
+    return `${prefix} Remove this; the host strips execution telemetry.`
+  }
+  return `${prefix} Bind a real top-level response field or add onLoad.`
 }
 
 export function pageEditPrompt(pagePath: string): string {

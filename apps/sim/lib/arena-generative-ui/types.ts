@@ -390,7 +390,30 @@ export const ACTION_TELEMETRY_KEYS = [
   'query',
   'cost',
   'usage',
+  'timeSegments',
 ] as const
+
+const ACTION_TELEMETRY_ROOTS = new Set<string>(ACTION_TELEMETRY_KEYS)
+
+/**
+ * True when an outputSchema path or statePath is execution telemetry the host
+ * strips (`tokens`, `cost`, `providerTiming`, `timeSegments`, …).
+ */
+export function isActionTelemetryRoot(path: string): boolean {
+  if (typeof path !== 'string') return false
+  const trimmed = path.trim()
+  if (!trimmed) return false
+  const dot = trimmed.indexOf('.')
+  const bracket = trimmed.indexOf('[')
+  const separator = [dot, bracket].filter((index) => index >= 0).sort((a, b) => a - b)[0]
+  const root = separator == null ? trimmed : trimmed.slice(0, separator)
+  return ACTION_TELEMETRY_ROOTS.has(root)
+}
+
+/** Drops outputSchema rows whose top-level key is execution telemetry. */
+export function omitTelemetrySchemaFields<T extends { name: string }>(fields: readonly T[]): T[] {
+  return fields.filter((field) => !isActionTelemetryRoot(field.name))
+}
 
 const PREFERRED_DISPLAY_KEYS = ['content', 'assistantContent', 'output', 'text', 'message'] as const
 

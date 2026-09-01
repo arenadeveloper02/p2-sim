@@ -1,4 +1,5 @@
 import { truncate } from '@sim/utils/string'
+import { isActionTelemetryRoot } from '@/lib/arena-generative-ui/types'
 
 const MAX_DEPTH = 3
 const MAX_FIELDS = 40
@@ -125,6 +126,9 @@ function collectFields(
   depth: number,
   fields: ArenaGenerativeSchemaField[]
 ): void {
+  if (path && isActionTelemetryRoot(path)) {
+    return
+  }
   if (fields.length >= MAX_FIELDS) {
     return
   }
@@ -152,7 +156,9 @@ function collectFields(
     }
     for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
       if (fields.length >= MAX_FIELDS) return
-      collectFields(nested, path ? `${path}.${key}` : key, depth + 1, fields)
+      const nestedPath = path ? `${path}.${key}` : key
+      if (isActionTelemetryRoot(nestedPath)) continue
+      collectFields(nested, nestedPath, depth + 1, fields)
     }
     return
   }
@@ -167,6 +173,9 @@ function recordArraysAtCap(
   path: string,
   fields: ArenaGenerativeSchemaField[]
 ): void {
+  if (path && isActionTelemetryRoot(path)) {
+    return
+  }
   if (fields.length >= MAX_FIELDS) {
     return
   }
@@ -181,8 +190,10 @@ function recordArraysAtCap(
   }
   for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
     if (fields.length >= MAX_FIELDS) return
+    const nestedPath = `${path}.${key}`
+    if (isActionTelemetryRoot(nestedPath)) continue
     if (Array.isArray(nested)) {
-      fields.push({ name: `${path}.${key}`, type: 'array' })
+      fields.push({ name: nestedPath, type: 'array' })
     }
   }
 }

@@ -2,7 +2,10 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest'
-import { buildArenaGenerativeUiPrompt } from '@/lib/arena-generative-ui/catalog'
+import {
+  buildArenaGenerativeUiPrompt,
+  isArenaGenerativeCatalogType,
+} from '@/lib/arena-generative-ui/catalog'
 
 describe('buildArenaGenerativeUiPrompt', () => {
   const prompt = buildArenaGenerativeUiPrompt({ customRules: ['FIRST RULE', 'SECOND RULE'] })
@@ -35,6 +38,7 @@ describe('buildArenaGenerativeUiPrompt', () => {
       'Toast',
       'Workspace',
       'Stepper',
+      'Chat',
     ]) {
       expect(prompt).toContain(`- ${component}: {`)
     }
@@ -84,5 +88,14 @@ describe('buildArenaGenerativeUiPrompt', () => {
     expect(prompt).toContain('the host pages long tables locally')
     expect(prompt).toContain('the host pages long lists locally')
     expect(prompt).toContain('do not emit a Load more Button')
+  })
+})
+
+describe('isArenaGenerativeCatalogType', () => {
+  it('treats Chat, Workspace, and Stepper as catalog types', () => {
+    expect(isArenaGenerativeCatalogType('Chat')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Workspace')).toBe(true)
+    expect(isArenaGenerativeCatalogType('Stepper')).toBe(true)
+    expect(isArenaGenerativeCatalogType('UnknownWidget')).toBe(false)
   })
 })

@@ -158,6 +158,27 @@ describe('outputSchemaFromSample', () => {
     expect(JSON.stringify(fields)).not.toContain('ada@example.com')
     expect(JSON.stringify(fields)).not.toContain('confidential')
   })
+
+  it('drops execution telemetry so the generator cannot bind Stats to it', () => {
+    const names = outputSchemaFromSample(
+      JSON.stringify({
+        articles: [{ title: 'One' }],
+        tokens: { input: 10, output: 20, total: 30 },
+        cost: { input: 0.01, output: 0.02, total: 0.03 },
+        providerTiming: { duration: 1200 },
+        timeSegments: [{ name: 'llm', durationMs: 800 }],
+      })
+    ).map((field) => field.name)
+
+    expect(names).toContain('articles')
+    expect(names).toContain('articles[].title')
+    expect(names).not.toContain('tokens')
+    expect(names).not.toContain('tokens.input')
+    expect(names).not.toContain('cost')
+    expect(names).not.toContain('cost.total')
+    expect(names).not.toContain('providerTiming')
+    expect(names).not.toContain('timeSegments')
+  })
 })
 
 describe('prefixOutputSchemaFields', () => {

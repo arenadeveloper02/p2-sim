@@ -8,6 +8,7 @@ import {
   namedSchemaFields,
   outputSchemaFromSample,
 } from '@/lib/arena-generative-ui/output-schema'
+import { omitTelemetrySchemaFields } from '@/lib/arena-generative-ui/types'
 import { materializeExecutionData } from '@/lib/logs/execution/trace-store'
 
 const logger = createLogger('ArenaLastRunOutputSchema')
@@ -94,7 +95,7 @@ function fieldsFromFinalOutput(finalOutput: unknown): ArenaGenerativeSchemaField
     return []
   }
   try {
-    return outputSchemaFromSample(JSON.stringify(finalOutput))
+    return omitTelemetrySchemaFields(outputSchemaFromSample(JSON.stringify(finalOutput)))
   } catch {
     return []
   }
