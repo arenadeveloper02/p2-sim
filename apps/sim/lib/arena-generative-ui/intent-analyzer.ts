@@ -8,6 +8,11 @@ import { bindingsSummaryForPrompt } from '@/lib/arena-generative-ui/bindings-pro
 import { parseLlmJsonObject } from '@/lib/arena-generative-ui/parse-inputs'
 import { ARENA_GENERATIVE_UI_TOOL_TIMEOUT_MS } from '@/lib/arena-generative-ui/timeout'
 import type { ArenaGenerativeApiBinding } from '@/lib/arena-generative-ui/types'
+import {
+  formatVisualBriefForPlanner,
+  MATCH_SCREENSHOT_USER_INPUT,
+  type ArenaGenerativeVisualBrief,
+} from '@/lib/arena-generative-ui/visual-brief'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
 
@@ -85,6 +90,7 @@ export interface AnalyzeIntentParams {
   userInput: string
   apiBindings: ArenaGenerativeApiBinding[]
   designNotes?: string
+  visualBrief?: ArenaGenerativeVisualBrief | null
 }
 
 export type AnalyzeIntentOutcome = {
@@ -129,7 +135,8 @@ function intentUserPayload(params: AnalyzeIntentParams): string {
       ? `Declared API bindings (dataRequirements and actions may only use these keys):\n${JSON.stringify(bindingsSummary, null, 2)}`
       : 'No API bindings. dataRequirements and actions must be empty arrays.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
-    `User request:\n${params.userInput.trim()}`,
+    params.visualBrief ? formatVisualBriefForPlanner(params.visualBrief) : '',
+    `User request:\n${params.userInput.trim() || MATCH_SCREENSHOT_USER_INPUT}`,
   ]
     .filter((section) => section.length > 0)
     .join('\n\n')
@@ -144,7 +151,7 @@ export async function analyzeArenaGenerativeIntent(
   params: AnalyzeIntentParams
 ): Promise<AnalyzeIntentOutcome> {
   const userInput = params.userInput.trim()
-  if (!userInput) {
+  if (!userInput && !params.visualBrief) {
     return { intent: null, error: 'userInput is required' }
   }
 

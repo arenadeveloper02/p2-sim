@@ -8,6 +8,7 @@ import {
 import { defineRouteContract } from '@/lib/api/contracts/types'
 import { parseArenaGenerativeTheme } from '@/lib/arena-generative-ui/theme'
 import { isReservedGenerativeAppIdentifier } from '@/lib/arena-generative-ui/types'
+import { RawFileInputSchema } from '@/lib/uploads/utils/file-schemas'
 
 export const arenaGenerativePagePathSchema = z
   .string()
@@ -192,8 +193,15 @@ function coerceUserInput(value: unknown): unknown {
   return String(value)
 }
 
-export const arenaGenerativeGenerateBodySchema = z.object({
-  userInput: z.preprocess(coerceUserInput, z.string().min(1, 'userInput is required').max(20_000)),
+function coerceOptionalUserInput(value: unknown): unknown {
+  const coerced = coerceUserInput(value)
+  if (typeof coerced === 'string' && coerced.trim() === '') return undefined
+  return coerced
+}
+
+const arenaGenerativeSharedBodyShape = {
+  userInput: z.preprocess(coerceOptionalUserInput, z.string().max(20_000).optional()),
+  screenshots: z.array(RawFileInputSchema).max(4, 'Upload at most 4 screenshots').optional(),
   pages: z.preprocess(
     omitEmptyOptionalJson,
     z.union([z.array(arenaGenerativePageHintSchema), z.string()]).optional()
@@ -208,7 +216,19 @@ export const arenaGenerativeGenerateBodySchema = z.object({
   workspaceId: z.string().min(1).optional(),
   workflowId: z.string().min(1).optional(),
   executionId: z.string().optional(),
-})
+}
+
+export const arenaGenerativeGenerateBodySchema = z
+  .object(arenaGenerativeSharedBodyShape)
+  .superRefine((data, ctx) => {
+    if (!data.userInput?.trim() && (!data.screenshots || data.screenshots.length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Describe the app or upload a screenshot',
+        path: ['userInput'],
+      })
+    }
+  })
 export type ArenaGenerativeGenerateBody = z.input<typeof arenaGenerativeGenerateBodySchema>
 /** Post-validation shape, as handed to the route by `parseRequest`. */
 export type ParsedArenaGenerativeGenerateBody = z.output<typeof arenaGenerativeGenerateBodySchema>
@@ -256,7 +276,8 @@ export const arenaGenerativeGenerateContract = defineRouteContract({
  * Edit sends only the delta. `editInstructions` replaces `userInput` as the request text so the
  * original brief is never resent — the server reads it from the stored draft as context instead.
  */
-export const arenaGenerativeEditBodySchema = arenaGenerativeGenerateBodySchema.extend({
+export const arenaGenerativeEditBodySchema = z.object({
+  ...arenaGenerativeSharedBodyShape,
   userInput: z.preprocess(omitEmptyOptionalString, z.string().max(20_000).optional()),
   editInstructions: z.preprocess(
     coerceUserInput,
@@ -331,6 +352,8 @@ export const getGenerativeAppDraftContract = defineRouteContract({
       revisionDiff: arenaGenerativeRevisionDiffSchema.nullable(),
       /** Original generate prompt. Null on drafts created before brief was stored. */
       brief: z.string().nullable(),
+      /** Catalog gaps from a screenshot-matched generate. Null when no visual brief was stored. */
+      screenshotMatchNotes: z.string().nullable(),
     }),
   },
 })

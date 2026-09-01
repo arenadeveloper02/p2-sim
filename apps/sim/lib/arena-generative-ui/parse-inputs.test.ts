@@ -413,6 +413,18 @@ describe('arenaGenerativeGenerateBodySchema empty optionals', () => {
       )
     }
   })
+
+  it('accepts screenshots without userInput', () => {
+    const parsed = arenaGenerativeGenerateBodySchema.safeParse({
+      screenshots: [{ name: 'home.png', key: 'uploads/home.png', size: 24 }],
+    })
+    expect(parsed.success).toBe(true)
+  })
+
+  it('rejects generate with neither userInput nor screenshots', () => {
+    const parsed = arenaGenerativeGenerateBodySchema.safeParse({})
+    expect(parsed.success).toBe(false)
+  })
 })
 
 describe('parsePageHints', () => {

@@ -76,7 +76,7 @@ describe('persistGenerativeAppDraft', () => {
     expect(updated).toMatchObject({
       revision: 2,
       brief: 'Turn this into a dashboard.',
-      structuredBrief,
+      structuredBrief: expect.objectContaining({ title: 'Operations', archetype: 'dashboard' }),
     })
   })
 
@@ -93,7 +93,34 @@ describe('persistGenerativeAppDraft', () => {
     await persistGenerativeAppDraft({ ...BASE_INPUT, structuredBrief })
 
     expect(dbChainMockFns.values).toHaveBeenCalledWith(
-      expect.objectContaining({ structuredBrief, revision: 1 })
+      expect.objectContaining({
+        structuredBrief: expect.objectContaining({ title: 'Orders', archetype: 'collection' }),
+        revision: 1,
+      })
+    )
+  })
+
+  it('nests a visual brief on the stored structured-brief jsonb', async () => {
+    const visualBrief = {
+      screens: [
+        {
+          purpose: 'Lead form',
+          visibleCopy: ['Submit'],
+          fields: [],
+          ctas: ['Submit'],
+          regions: [],
+        },
+      ],
+      layout: { density: 'comfortable' as const },
+      catalogMapping: [],
+      unrepresentable: [],
+    }
+    await persistGenerativeAppDraft({ ...BASE_INPUT, visualBrief })
+
+    expect(dbChainMockFns.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        structuredBrief: expect.objectContaining({ visualBrief }),
+      })
     )
   })
 })

@@ -8,6 +8,10 @@ import type {
   ArenaGenerativeApiBinding,
   ArenaGenerativeAppManifest,
 } from '@/lib/arena-generative-ui/types'
+import {
+  type ArenaGenerativeVisualBrief,
+  packStoredStructuredBrief,
+} from '@/lib/arena-generative-ui/visual-brief'
 
 export interface PersistDraftInput {
   draftId?: string
@@ -22,6 +26,8 @@ export interface PersistDraftInput {
   brief?: string
   /** Generate-time structured brief. Ordinary edits omit this. Re-plan overwrites it (including `null` when planning failed). */
   structuredBrief?: ArenaGenerativeStructuredBrief | null
+  /** Screenshot interpretation. Ordinary edits omit this so a prior visual brief is kept. */
+  visualBrief?: ArenaGenerativeVisualBrief | null
 }
 
 export interface PersistedDraft {
@@ -35,6 +41,13 @@ export interface PersistedDraft {
  */
 export async function persistGenerativeAppDraft(input: PersistDraftInput): Promise<PersistedDraft> {
   const now = new Date()
+  const storedBrief =
+    input.structuredBrief === undefined && input.visualBrief === undefined
+      ? undefined
+      : packStoredStructuredBrief(
+          input.structuredBrief ? { ...input.structuredBrief } : null,
+          input.visualBrief ?? null
+        )
 
   if (!input.draftId) {
     const draftId = generateId()
@@ -48,7 +61,7 @@ export async function persistGenerativeAppDraft(input: PersistDraftInput): Promi
       entryPath: input.entryPath,
       revision: 1,
       brief: input.brief ?? null,
-      structuredBrief: input.structuredBrief ?? null,
+      structuredBrief: storedBrief ?? null,
       manifest: input.manifest,
       apiBindings: input.apiBindings,
       createdAt: now,
@@ -93,7 +106,7 @@ export async function persistGenerativeAppDraft(input: PersistDraftInput): Promi
         manifest: input.manifest,
         apiBindings: input.apiBindings,
         brief: input.brief,
-        structuredBrief: input.structuredBrief,
+        structuredBrief: storedBrief,
         updatedAt: now,
       })
     )

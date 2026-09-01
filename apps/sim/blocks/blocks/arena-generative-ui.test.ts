@@ -43,6 +43,7 @@ describe('ArenaGenerativeUiBlock agent tool', () => {
     expect(schema.properties).toHaveProperty('designNotes')
     expect(schema.properties).not.toHaveProperty('existingDraftId')
     expect(schema.properties).not.toHaveProperty('_context')
+    expect(schema.properties).not.toHaveProperty('screenshots')
     expect(schema.required).toEqual(expect.arrayContaining(['userInput']))
   })
 
@@ -72,12 +73,13 @@ describe('ArenaGenerativeUiBlock field tooltips', () => {
     ArenaGenerativeUiBlock.subBlocks.map((subBlock) => [subBlock.id, subBlock.tooltip])
   )
 
-  it('explains User Input, Pages, Entry Path, API Bindings, and Design Notes', () => {
+  it('explains User Input, Pages, Entry Path, API Bindings, Design Notes, and Screenshots', () => {
     expect(tooltips.userInput).toBeTruthy()
     expect(tooltips.pages).toBeTruthy()
     expect(tooltips.entryPath).toBeTruthy()
     expect(tooltips.apiBindings).toBeTruthy()
     expect(tooltips.designNotes).toBeTruthy()
+    expect(tooltips.screenshots).toContain('approximates')
   })
 
   it('pairs the User Input prompt sample with the API Bindings key', () => {

@@ -1,8 +1,10 @@
 import { GenerativeUiIcon } from '@/components/icons'
 import { requestJson } from '@/lib/api/client/request'
 import { listGenerativeAppDraftsContract } from '@/lib/api/contracts/arena-generative-apps'
+import { MATCH_SCREENSHOT_USER_INPUT } from '@/lib/arena-generative-ui/visual-brief'
 import type { BlockConfig } from '@/blocks/types'
 import { IntegrationType } from '@/blocks/types'
+import { normalizeFileInput } from '@/blocks/utils'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import type { ArenaGenerativeUiResponse } from '@/tools/arena-generative-ui/types'
 
@@ -26,6 +28,7 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
   bestPractices: `
   - Use Generate for a new draft. Leave Pages blank so the model chooses the sitemap, or pin paths as JSON [{ "path": "home", "title": "Form" }].
   - User Input describes the app: pages, copy, which API, navigation, empty states. Do not ask for loaders, toasts, or confirm dialogs — the host compiles those.
+  - Or upload Screenshots of the UI to match. Arena approximates layout, copy, and regions with catalog components — it will not clone pixels or custom widgets.
   - Describe navigation in User Input: NavLinks, Back buttons, and "submit then go to results".
   - Add apiBindings JSON only when CTAs should call a deployed workflow or HTTP URL. Leave it blank for navigation-only; the model cannot invent keys. Set "stream": true to stream tokens into DataText on the form page.
   - Use "Add an API" rather than writing bindings by hand: pick a workflow and Sim fills inputSchema from its deployed start block, or paste a curl for an HTTP endpoint.
@@ -56,12 +59,12 @@ export const ArenaGenerativeUiBlock: BlockConfig<ArenaGenerativeUiResponse> = {
       title: 'User Input',
       type: 'long-input',
       rows: 10,
-      required: { field: 'operation', value: 'generate' },
+      required: false,
       condition: { field: 'operation', value: 'generate' },
       placeholder:
-        'Plain language, not JSON. Describe the app. Only Pages and API Bindings are JSON.',
+        'Plain language, not JSON. Describe the app, or upload a screenshot and leave this blank.',
       tooltip:
-        'Plain language, not JSON. Name pages, fields, and navigation. If a form should call an API, use the same key you put in API Bindings (you invent that key).\n\nLead qualifier. Home is a form: company, role, notes. Submit calls qualify_lead, then go to Results. Results shows the score and a Back link.',
+        'Plain language, not JSON. Name pages, fields, and navigation. If a form should call an API, use the same key you put in API Bindings (you invent that key). Upload Screenshots to match a mock instead of describing layout.\n\nLead qualifier. Home is a form: company, role, notes. Submit calls qualify_lead, then go to Results. Results shows the score and a Back link.',
       wandConfig: {
         enabled: true,
         prompt: `You are a principal product engineer writing the User Input brief for an Arena Generative UI app. Apps render as a full page (up to 1280px) and also embed in a narrow Arena iframe — Grid and Columns collapse.
@@ -123,6 +126,28 @@ Return ONLY the specification text.`,
       previewHelper: 'arena-draft-brief',
     },
     {
+      id: 'screenshots',
+      title: 'Screenshots',
+      type: 'file-upload',
+      canonicalParamId: 'screenshots',
+      placeholder: 'Upload UI screenshots to match',
+      mode: 'basic',
+      multiple: true,
+      required: false,
+      acceptedTypes: '.jpg,.jpeg,.png,.gif,.webp,.heic,.heif',
+      tooltip:
+        'Optional. Arena approximates the screenshot with catalog components (lists, tables, forms, workspace regions) and theme knobs. It will not clone pixels, custom widgets, or marketing visuals. Upload one shot per screen (home, results). User Input can stay blank.',
+    },
+    {
+      id: 'screenshotsReference',
+      title: 'Screenshot File Reference',
+      type: 'short-input',
+      canonicalParamId: 'screenshots',
+      placeholder: 'Reference screenshot files from previous blocks',
+      mode: 'advanced',
+      required: false,
+    },
+    {
       id: 'pages',
       title: 'Pages',
       type: 'code',
@@ -172,28 +197,42 @@ Return ONLY the specification text.`,
     config: {
       tool: (params) =>
         params.operation === 'edit' ? 'arena_generative_ui_edit' : 'arena_generative_ui_generate',
-      params: (params) =>
-        params.operation === 'edit'
+      params: (params) => {
+        const screenshots = normalizeFileInput(params.screenshots)
+        const hasScreenshots = Array.isArray(screenshots)
+          ? screenshots.length > 0
+          : Boolean(screenshots)
+        const userInput =
+          typeof params.userInput === 'string' && params.userInput.trim()
+            ? params.userInput
+            : hasScreenshots
+              ? MATCH_SCREENSHOT_USER_INPUT
+              : params.userInput
+        return params.operation === 'edit'
           ? {
               editInstructions: params.editInstructions,
               existingDraftId: params.existingDraftId,
+              screenshots,
               pages: params.pages,
               entryPath: params.entryPath,
               apiBindings: params.apiBindings,
               designNotes: params.designNotes,
             }
           : {
-              userInput: params.userInput,
+              userInput,
+              screenshots,
               pages: params.pages,
               entryPath: params.entryPath,
               apiBindings: params.apiBindings,
               designNotes: params.designNotes,
-            },
+            }
+      },
     },
   },
   inputs: {
     operation: { type: 'string', description: 'generate or edit' },
-    userInput: { type: 'string', description: 'App brief (Generate)' },
+    userInput: { type: 'string', description: 'App brief (Generate). Optional when screenshots are set.' },
+    screenshots: { type: 'json', description: 'UI screenshots to match (UserFile[])' },
     editInstructions: { type: 'string', description: 'Requested changes only (Edit)' },
     existingDraftId: { type: 'string', description: 'Draft to edit' },
     pages: { type: 'json', description: 'Optional page sitemap' },

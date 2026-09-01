@@ -10,12 +10,23 @@ import { pageSummariesFromManifest } from '@/lib/arena-generative-ui/deployment'
 import { summarizeManifestDiff } from '@/lib/arena-generative-ui/manifest-diff'
 import { parseApiBindings } from '@/lib/arena-generative-ui/parse-inputs'
 import type { ArenaGenerativeAppManifest } from '@/lib/arena-generative-ui/types'
+import {
+  formatVisualBriefMatchNotes,
+  parseStoredVisualBrief,
+} from '@/lib/arena-generative-ui/visual-brief'
 import { getSession } from '@/lib/auth'
 import { withRouteHandler } from '@/lib/core/utils/with-route-handler'
 import { checkWorkflowAccessForChatCreation } from '@/app/api/chat/utils'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('GenerativeAppDraftAPI')
+
+function screenshotMatchNotesFromDraft(storedBrief: unknown): string | null {
+  const visualBrief = parseStoredVisualBrief(storedBrief)
+  if (!visualBrief) return null
+  const notes = formatVisualBriefMatchNotes(visualBrief)
+  return notes.trim() ? notes : null
+}
 
 export const GET = withRouteHandler(
   async (request: NextRequest, context: { params: Promise<{ id: string }> }) => {
@@ -94,6 +105,7 @@ export const GET = withRouteHandler(
         manifest,
         revisionDiff,
         brief: draft.brief ?? null,
+        screenshotMatchNotes: screenshotMatchNotesFromDraft(draft.structuredBrief),
       })
     } catch (error) {
       logger.error('Failed to load generative app draft', { error: getErrorMessage(error) })

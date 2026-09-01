@@ -114,6 +114,31 @@ describe('analyzeArenaGenerativeIntent', () => {
     expect(userMessage).toContain('Order inbox.')
   })
 
+  it('includes a visual brief when screenshots were interpreted', async () => {
+    mockCreateAnthropicMessage.mockResolvedValue(textMessage(JSON.stringify(validIntent)))
+    await analyzeArenaGenerativeIntent({
+      userInput: '',
+      apiBindings: [],
+      visualBrief: {
+        screens: [
+          {
+            purpose: 'Inbox',
+            visibleCopy: ['Orders'],
+            fields: [],
+            ctas: [],
+            regions: [],
+          },
+        ],
+        layout: {},
+        catalogMapping: [],
+        unrepresentable: [],
+      },
+    })
+    const userMessage = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+    expect(userMessage).toContain('Visual brief from uploaded screenshot')
+    expect(userMessage).toContain('Inbox')
+  })
+
   it('fails open on empty or invalid JSON', async () => {
     mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
     const analyzed = await analyzeArenaGenerativeIntent({

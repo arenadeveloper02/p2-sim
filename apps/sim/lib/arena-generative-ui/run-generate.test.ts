@@ -5,11 +5,14 @@ import { generativeAppDraft } from '@sim/db/schema'
 import { queueTableRows, resetDbChainMock } from '@sim/testing/mocks'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockGenerateManifest, mockPersistDraft, mockRefreshSchemas } = vi.hoisted(() => ({
-  mockGenerateManifest: vi.fn(),
-  mockPersistDraft: vi.fn(),
-  mockRefreshSchemas: vi.fn(async (bindings: unknown) => bindings),
-}))
+const { mockGenerateManifest, mockPersistDraft, mockRefreshSchemas, mockResolveScreenshots, mockInterpretVisual } =
+  vi.hoisted(() => ({
+    mockGenerateManifest: vi.fn(),
+    mockPersistDraft: vi.fn(),
+    mockRefreshSchemas: vi.fn(async (bindings: unknown) => bindings),
+    mockResolveScreenshots: vi.fn(),
+    mockInterpretVisual: vi.fn(),
+  }))
 
 vi.mock('@/lib/arena-generative-ui/generate-manifest', () => ({
   generateArenaGenerativeManifest: mockGenerateManifest,
@@ -21,6 +24,16 @@ vi.mock('@/lib/arena-generative-ui/persist-draft', () => ({
 
 vi.mock('@/lib/arena-generative-ui/refresh-binding-schemas', () => ({
   refreshWorkflowBindingOutputSchemas: mockRefreshSchemas,
+}))
+
+vi.mock('@/lib/arena-generative-ui/visual-reference', () => ({
+  resolveArenaGenerativeScreenshots: mockResolveScreenshots,
+  screenshotResolveErrorMessage: (error: unknown) =>
+    error instanceof Error ? error.message : 'Failed to read screenshots',
+}))
+
+vi.mock('@/lib/arena-generative-ui/interpret-visual-brief', () => ({
+  interpretArenaGenerativeVisualBrief: mockInterpretVisual,
 }))
 
 import { runArenaGenerativeUi } from '@/lib/arena-generative-ui/run-generate'
@@ -265,5 +278,36 @@ describe('runArenaGenerativeUi', () => {
     expect(mockPersistDraft).toHaveBeenCalledWith(
       expect.objectContaining({ apiBindings: refreshed })
     )
+  })
+
+  it('interprets screenshots and passes the visual brief into generate', async () => {
+    const visualBrief = {
+      screens: [{ purpose: 'Lead form', visibleCopy: ['Submit'], fields: [], ctas: ['Submit'] }],
+      layout: {},
+      catalogMapping: [],
+      unrepresentable: [],
+    }
+    mockResolveScreenshots.mockResolvedValueOnce([
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aa' } },
+    ])
+    mockInterpretVisual.mockResolvedValueOnce({ brief: visualBrief })
+
+    await runArenaGenerativeUi({
+      body: {
+        ...BASE_BODY,
+        screenshots: [{ name: 'home.png', key: 'uploads/home.png', size: 12 }],
+      },
+      userId: 'user-1',
+      requireExistingDraft: false,
+    })
+
+    expect(mockInterpretVisual).toHaveBeenCalled()
+    expect(mockGenerateManifest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        visualBrief,
+        userInput: expect.stringContaining('matches the uploaded screenshot'),
+      })
+    )
+    expect(mockPersistDraft).toHaveBeenCalledWith(expect.objectContaining({ visualBrief }))
   })
 })

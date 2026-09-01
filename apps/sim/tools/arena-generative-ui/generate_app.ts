@@ -19,7 +19,14 @@ export const arenaGenerativeUiGenerateTool: ToolConfig<
       type: 'string',
       required: true,
       visibility: 'user-or-llm',
-      description: 'App brief: pages, flows, CTAs, and copy',
+      description:
+        'App brief: pages, flows, CTAs, and copy. The block fills this in when only screenshots are uploaded.',
+    },
+    screenshots: {
+      type: 'file',
+      required: false,
+      visibility: 'user-only',
+      description: 'UI screenshots to match. Workspace uploads only; do not invent this object.',
     },
     pages: {
       type: 'json',
@@ -53,6 +60,7 @@ export const arenaGenerativeUiGenerateTool: ToolConfig<
     headers: () => ({ 'Content-Type': 'application/json' }),
     body: (params) => ({
       userInput: params.userInput,
+      screenshots: params.screenshots,
       pages: params.pages,
       entryPath: params.entryPath,
       apiBindings: params.apiBindings,

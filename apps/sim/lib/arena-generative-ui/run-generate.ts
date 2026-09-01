@@ -5,6 +5,7 @@ import type {
   ParsedArenaGenerativeGenerateBody,
 } from '@/lib/api/contracts/arena-generative-apps'
 import { generateArenaGenerativeManifest } from '@/lib/arena-generative-ui/generate-manifest'
+import { interpretArenaGenerativeVisualBrief } from '@/lib/arena-generative-ui/interpret-visual-brief'
 import { summarizeManifestDiff } from '@/lib/arena-generative-ui/manifest-diff'
 import { parseApiBindings, parsePageHints } from '@/lib/arena-generative-ui/parse-inputs'
 import { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
@@ -15,6 +16,14 @@ import type {
   ArenaGenerativeAppManifest,
   ArenaGenerativeGenerateResult,
 } from '@/lib/arena-generative-ui/types'
+import {
+  MATCH_SCREENSHOT_USER_INPUT,
+  parseStoredVisualBrief,
+} from '@/lib/arena-generative-ui/visual-brief'
+import {
+  resolveArenaGenerativeScreenshots,
+  screenshotResolveErrorMessage,
+} from '@/lib/arena-generative-ui/visual-reference'
 
 const logger = createLogger('ArenaGenerativeUiRun')
 
@@ -61,6 +70,7 @@ export async function runArenaGenerativeUi(options: {
   let existingManifest: ArenaGenerativeAppManifest | undefined
   let existingBrief: string | undefined
   let existingStructuredBrief: ReturnType<typeof parseStoredStructuredBrief> = null
+  let existingVisualBrief: ReturnType<typeof parseStoredVisualBrief> = null
   let existingRevision = 0
   if (requireExistingDraft || body.existingDraftId) {
     if (!body.existingDraftId) {
@@ -85,17 +95,54 @@ export async function runArenaGenerativeUi(options: {
     existingManifest = draft.manifest as ArenaGenerativeAppManifest
     existingBrief = draft.brief ?? undefined
     existingStructuredBrief = parseStoredStructuredBrief(draft.structuredBrief)
+    existingVisualBrief = parseStoredVisualBrief(draft.structuredBrief)
     existingRevision = draft.revision
     if (apiBindings.length === 0 && Array.isArray(draft.apiBindings)) {
       apiBindings = parseApiBindings(draft.apiBindings)
     }
   }
 
-  const userInput = editInstructions || String(body.userInput ?? '').trim()
+  const screenshots = Array.isArray(body.screenshots) ? body.screenshots : []
+  let newVisualBrief: ReturnType<typeof parseStoredVisualBrief> = null
+  if (screenshots.length > 0) {
+    try {
+      const images = await resolveArenaGenerativeScreenshots({
+        files: screenshots,
+        userId,
+        requestId: body.executionId ?? workflowId,
+      })
+      const interpreted = await interpretArenaGenerativeVisualBrief({
+        images,
+        userInput: String(body.userInput ?? '').trim() || editInstructions,
+        designNotes: body.designNotes,
+      })
+      newVisualBrief = interpreted.brief
+      if (!newVisualBrief && !String(body.userInput ?? '').trim() && !editInstructions) {
+        return {
+          success: false,
+          error: interpreted.error ?? 'Could not interpret the screenshot',
+        }
+      }
+      if (!newVisualBrief && interpreted.error) {
+        logger.warn('Arena Generative UI visual interpretation failed open', {
+          error: interpreted.error,
+        })
+      }
+    } catch (error) {
+      return { success: false, error: screenshotResolveErrorMessage(error) }
+    }
+  }
+
+  const userInput =
+    editInstructions ||
+    String(body.userInput ?? '').trim() ||
+    (newVisualBrief || screenshots.length > 0 ? MATCH_SCREENSHOT_USER_INPUT : '')
   if (!userInput) {
     return {
       success: false,
-      error: requireExistingDraft ? 'editInstructions is required' : 'userInput is required',
+      error: requireExistingDraft
+        ? 'editInstructions is required'
+        : 'Describe the app or upload a screenshot',
     }
   }
 
@@ -111,6 +158,8 @@ export async function runArenaGenerativeUi(options: {
     existingManifest,
     existingBrief,
     ...(existingStructuredBrief ? { existingStructuredBrief } : {}),
+    ...(newVisualBrief ? { visualBrief: newVisualBrief } : {}),
+    ...(existingVisualBrief ? { existingVisualBrief } : {}),
   })
   logger.info('Generated Arena Generative UI manifest', {
     workspaceId,
@@ -148,8 +197,15 @@ export async function runArenaGenerativeUi(options: {
       structuredBrief: body.existingDraftId
         ? replanned
           ? (generated.plannedBrief ?? null)
-          : undefined
+          : screenshots.length > 0
+            ? existingStructuredBrief
+            : undefined
         : (generated.plannedBrief ?? null),
+      visualBrief: body.existingDraftId
+        ? replanned || screenshots.length > 0
+          ? (newVisualBrief ?? existingVisualBrief ?? null)
+          : undefined
+        : (newVisualBrief ?? null),
     })
     logger.info('Persisted Arena Generative UI draft', {
       workspaceId,

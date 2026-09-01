@@ -54,6 +54,12 @@ export {
   parsePageHints,
 } from '@/lib/arena-generative-ui/parse-inputs'
 export { persistGenerativeAppDraft } from '@/lib/arena-generative-ui/persist-draft'
+export type { ArenaGenerativeVisualBrief } from '@/lib/arena-generative-ui/visual-brief'
+export {
+  formatVisualBriefMatchNotes,
+  parseArenaGenerativeVisualBrief,
+  parseStoredVisualBrief,
+} from '@/lib/arena-generative-ui/visual-brief'
 export {
   checkGenerativeAppActionRateLimit,
   GENERATIVE_APP_ACTION_IP_RATE_LIMIT,

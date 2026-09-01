@@ -744,6 +744,43 @@ describe('generateArenaGenerativeManifest', () => {
       expect(payload).toContain('destination and collection pages the job needs')
       expect(payload).not.toContain('Original brief')
     })
+
+    it('includes a visual brief as explicit generate requirements', async () => {
+      mockCreateAnthropicMessage.mockResolvedValue(textMessage('not json'))
+      await generateArenaGenerativeManifest({
+        userInput: 'Match this mock.',
+        apiBindings: [],
+        visualBrief: {
+          screens: [
+            {
+              purpose: 'Lead form',
+              visibleCopy: ['Company', 'Submit'],
+              fields: [],
+              ctas: ['Submit'],
+              regions: [],
+            },
+          ],
+          layout: { brandColor: '#1A73E8', density: 'compact' },
+          catalogMapping: [],
+          unrepresentable: [
+            {
+              observed: 'glass cards',
+              reason: 'No glassmorphism in the catalog',
+            },
+          ],
+        },
+      })
+      const payload = mockCreateAnthropicMessage.mock.calls[0]?.[1].messages[0].content as string
+      expect(payload).toContain('Visual brief from uploaded screenshot')
+      expect(payload).toContain('Lead form')
+      expect(mockAnalyzeIntent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          visualBrief: expect.objectContaining({
+            layout: expect.objectContaining({ brandColor: '#1A73E8' }),
+          }),
+        })
+      )
+    })
   })
 
   describe('intent, planner, and spec', () => {

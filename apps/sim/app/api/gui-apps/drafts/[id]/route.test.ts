@@ -52,6 +52,7 @@ describe('Generative app draft GET (two-page app)', () => {
     expect(body.manifest.actions.submit_lead.onSuccess.navigate).toBe('results')
     expect(body.revisionDiff).toBeNull()
     expect(body.brief).toBeNull()
+    expect(body.screenshotMatchNotes).toBeNull()
   })
 
   it('returns the original generate brief when the draft stored one', async () => {
@@ -63,6 +64,36 @@ describe('Generative app draft GET (two-page app)', () => {
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(body.brief).toBe('Lead qualifier with home and results')
+  })
+
+  it('returns screenshot match notes when a visual brief was stored', async () => {
+    dbChainMockFns.limit
+      .mockResolvedValueOnce([
+        {
+          ...draftRow,
+          structuredBrief: {
+            title: 'Lead qualifier',
+            visualBrief: {
+              screens: [{ purpose: 'Form', visibleCopy: ['Submit'] }],
+              layout: {},
+              catalogMapping: [],
+              unrepresentable: [
+                {
+                  observed: 'glass cards',
+                  closestCatalogType: 'Card',
+                  reason: 'No glassmorphism',
+                },
+              ],
+            },
+          },
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 'rev-1' }])
+    const req = new NextRequest('http://localhost:3000/api/gui-apps/drafts/draft-1')
+    const response = await GET(req, { params: Promise.resolve({ id: 'draft-1' }) })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.screenshotMatchNotes).toContain('glass cards')
   })
 
   it('summarizes what changed since the previous revision', async () => {

@@ -34,6 +34,11 @@ import {
   type ArenaGenerativeApiBinding,
   type ArenaGenerativePageHint,
 } from '@/lib/arena-generative-ui/types'
+import {
+  formatVisualBriefForPlanner,
+  MATCH_SCREENSHOT_USER_INPUT,
+  type ArenaGenerativeVisualBrief,
+} from '@/lib/arena-generative-ui/visual-brief'
 import { getRotatingApiKey } from '@/lib/core/config/api-keys'
 import { getMaxOutputTokensForModel, supportsTemperature } from '@/providers/utils'
 
@@ -685,6 +690,8 @@ export interface PlanStructuredBriefParams {
   designNotes?: string
   /** Output of the intent analyzer. Absent when analysis failed open. */
   intent?: ArenaGenerativeIntent | null
+  /** Screenshot interpretation. Visible structure and copy are explicit. */
+  visualBrief?: ArenaGenerativeVisualBrief | null
 }
 
 /**
@@ -1056,7 +1063,8 @@ function plannerUserPayload(params: PlanStructuredBriefParams): string {
       ? `Declared API bindings (remote actions use source "binding:<key>"; inputSchema is the form, outputSchema/layoutPlan is the result):\n${JSON.stringify(bindingsSummary, null, 2)}`
       : 'No API bindings. Bindings are the remote data contract. When none are declared, data.mode may be dummy or local and actions are still required for requested mutations — use source dummy or local, never invent API keys.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
-    `User request:\n${params.userInput.trim()}`,
+    params.visualBrief ? formatVisualBriefForPlanner(params.visualBrief) : '',
+    `User request:\n${params.userInput.trim() || MATCH_SCREENSHOT_USER_INPUT}`,
   ]
     .filter((section) => section.length > 0)
     .join('\n\n')
@@ -1080,7 +1088,7 @@ export async function planArenaGenerativeStructuredBrief(
   params: PlanStructuredBriefParams
 ): Promise<PlanStructuredBriefOutcome> {
   const userInput = params.userInput.trim()
-  if (!userInput) {
+  if (!userInput && !params.visualBrief) {
     return { brief: null, error: 'userInput is required' }
   }
 

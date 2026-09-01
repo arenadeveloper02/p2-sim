@@ -47,6 +47,12 @@ import type {
   ArenaGenerativeGenerateResult,
   ArenaGenerativePageHint,
 } from '@/lib/arena-generative-ui/types'
+import {
+  formatVisualBriefForGenerator,
+  formatVisualBriefStatus,
+  MATCH_SCREENSHOT_USER_INPUT,
+  type ArenaGenerativeVisualBrief,
+} from '@/lib/arena-generative-ui/visual-brief'
 import { hostCriticManifestIssues } from '@/lib/arena-generative-ui/ui-critic'
 import {
   GENERATOR_OMITTED_PAGES_ERROR,
@@ -333,6 +339,10 @@ export interface GenerateArenaGenerativeManifestParams {
   existingBrief?: string
   /** Generate-time structured brief. Context only — do not re-plan or pin the sitemap from it. */
   existingStructuredBrief?: ArenaGenerativeStructuredBrief
+  /** New screenshot interpretation for this run. */
+  visualBrief?: ArenaGenerativeVisualBrief
+  /** Stored screenshot interpretation. Used on re-plan when no new screenshots were uploaded. */
+  existingVisualBrief?: ArenaGenerativeVisualBrief
 }
 
 /**
@@ -408,7 +418,8 @@ export type GenerateArenaGenerativeManifestResult = ArenaGenerativeGenerateResul
 export async function generateArenaGenerativeManifest(
   params: GenerateArenaGenerativeManifestParams
 ): Promise<GenerateArenaGenerativeManifestResult> {
-  const userInput = params.userInput.trim()
+  const userInput =
+    params.userInput.trim() || (params.visualBrief ? MATCH_SCREENSHOT_USER_INPUT : '')
   if (!userInput) {
     return { success: false, error: 'userInput is required' }
   }
@@ -417,9 +428,16 @@ export async function generateArenaGenerativeManifest(
   const hasExisting = Boolean(params.existingManifest)
   const isReplan = hasExisting && isReplanEdit(userInput)
   const isPreserveEdit = hasExisting && !isReplan
+  const visualBrief =
+    params.visualBrief ?? (!isPreserveEdit ? params.existingVisualBrief : undefined)
   const pinnedPageHints = params.pages?.filter((page) => page.path.trim().length > 0) ?? []
 
-  if (isPreserveEdit && params.existingManifest && isThemeOnlyEdit(userInput, null)) {
+  if (
+    isPreserveEdit &&
+    params.existingManifest &&
+    !visualBrief &&
+    isThemeOnlyEdit(userInput, null)
+  ) {
     const manifest = applyThemeOnlyEdit(params.existingManifest, userInput, params.designNotes)
     return {
       success: true,
@@ -450,6 +468,7 @@ export async function generateArenaGenerativeManifest(
       userInput: plannerUserInput,
       apiBindings: params.apiBindings,
       designNotes: params.designNotes,
+      visualBrief,
     })
     analyzedIntent = analyzed.intent
     intentError = analyzed.error
@@ -471,6 +490,7 @@ export async function generateArenaGenerativeManifest(
         apiBindings: params.apiBindings,
         designNotes: params.designNotes,
         intent: analyzedIntent,
+        visualBrief,
       })
   const structuredBrief = planned.brief
   const intentBrief = isPreserveEdit ? (params.existingStructuredBrief ?? null) : structuredBrief
@@ -559,6 +579,7 @@ export async function generateArenaGenerativeManifest(
         ? 'No API bindings. Dummy/local actions stay in manifest.actions with no apiKey. Seed static collection rows and use onSuccess.setState / navigate. Do not invent API keys.'
         : 'No API bindings. Navigation and static content only unless the structured brief named dummy/local actions.',
     params.designNotes?.trim() ? `Design notes:\n${params.designNotes.trim()}` : '',
+    visualBrief ? formatVisualBriefForGenerator(visualBrief) : '',
     isPreserveEdit && params.existingBrief?.trim()
       ? `Original brief (context only — already implemented, do not re-apply it):\n${params.existingBrief.trim()}`
       : '',
@@ -771,11 +792,18 @@ export async function generateArenaGenerativeManifest(
     const criticStatus = formatCriticStatus(critique, criticRepaired)
     const intentStatus = formatIntentStatus(analyzedIntent, intentError)
     const plannerStatus = formatPlannerStatus(structuredBrief, plannerError)
+    const visualStatus = formatVisualBriefStatus(visualBrief ?? null)
     const statusLines = isReplan
-      ? [formatEditScopeStatus(null, false, true), intentStatus, plannerStatus, criticStatus]
+      ? [
+          formatEditScopeStatus(null, false, true),
+          visualStatus,
+          intentStatus,
+          plannerStatus,
+          criticStatus,
+        ]
       : isPreserveEdit
-        ? [formatEditScopeStatus(editScope, false), criticStatus]
-        : [intentStatus, plannerStatus, criticStatus]
+        ? [formatEditScopeStatus(editScope, false), visualStatus, criticStatus]
+        : [visualStatus, intentStatus, plannerStatus, criticStatus]
 
     return {
       success: true,

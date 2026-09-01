@@ -455,6 +455,24 @@ describe('GenerativeAppPreviewHost two-page flow', () => {
     ).toContain('Unresolved statePath "articles"')
   })
 
+  it('surfaces screenshot catalog gaps in preview', () => {
+    mockUseGenerativeAppDraft.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        ...twoPageDraft,
+        screenshotMatchNotes:
+          'This app approximates the uploaded screenshot using Arena components. Not represented: custom kanban board → Table.',
+      },
+      error: null,
+    })
+    pagePath = 'home'
+    renderHost()
+    expect(
+      container.querySelector('[data-testid="preview-diagnostics-banner"]')?.textContent
+    ).toContain('custom kanban board')
+  })
+
   it('streams a chat-protocol CTA without stream:true and appends turns', async () => {
     mockUseGenerativeAppDraft.mockReturnValue({
       isLoading: false,

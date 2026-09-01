@@ -22,6 +22,12 @@ export const arenaGenerativeUiEditTool: ToolConfig<
       description:
         'Only the requested changes. Anything not mentioned is kept exactly as it is, so do not resend the original brief',
     },
+    screenshots: {
+      type: 'file',
+      required: false,
+      visibility: 'user-only',
+      description: 'Replacement UI screenshots to match. Workspace uploads only.',
+    },
     existingDraftId: {
       type: 'string',
       required: true,
@@ -61,6 +67,7 @@ export const arenaGenerativeUiEditTool: ToolConfig<
     body: (params) => ({
       editInstructions: params.editInstructions,
       existingDraftId: params.existingDraftId,
+      screenshots: params.screenshots,
       pages: params.pages,
       entryPath: params.entryPath,
       apiBindings: params.apiBindings,

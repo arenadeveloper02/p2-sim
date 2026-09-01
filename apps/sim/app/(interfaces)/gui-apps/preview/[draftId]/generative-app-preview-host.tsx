@@ -215,6 +215,9 @@ export function GenerativeAppPreviewHost({
           />
         ) : null}
         {canRefresh ? <ActionRefreshButton onRefresh={reload} /> : null}
+        {draftQuery.data.screenshotMatchNotes ? (
+          <PreviewDiagnosticsBanner instructions={draftQuery.data.screenshotMatchNotes} />
+        ) : null}
         <PreviewDiagnosticsBanner instructions={editInstructions} />
         <SpecRenderErrorBoundary
           key={renderKey}
