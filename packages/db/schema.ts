@@ -3400,6 +3400,7 @@ export const localCopilotDefaultModelEnum = pgEnum('local_copilot_default_model'
   'bedrock-claude-opus-4-6',
   'bedrock-claude-sonnet-4-6',
   'bedrock-zai-glm-5',
+  'bedrock-deepseek-v3.2',
   'bedrock-nemotron-super-3-120b',
   'bedrock-mistral-large-3',
   'bedrock-llama-3.3-70b',

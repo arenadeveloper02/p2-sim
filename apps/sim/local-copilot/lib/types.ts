@@ -141,8 +141,8 @@ export interface LocalCopilotStructuredContext {
   tables?: Array<{ id: string; name: string; description?: string | null }>
   workspaceFiles?: Array<{ id: string; name: string; path: string; type: string; size: number }>
   /**
-   * User-created workspace skills (name + description). Bodies are inlined for
-   * the turn when present; otherwise load via load_user_skill if a skill applies.
+   * User-created workspace skills (name + description). All skill bodies are
+   * inlined for the turn; otherwise load via load_user_skill if a skill applies.
    */
   skills?: Array<{ id: string; name: string; description: string }>
   /**

@@ -75,6 +75,13 @@ export const LOCAL_COPILOT_CATALOG = [
     model: 'zai.glm-5',
   },
   {
+    id: 'bedrock-deepseek-v3.2',
+    providerGroup: 'bedrock',
+    label: 'DeepSeek V3.2',
+    provider: 'bedrock' as LocalCopilotProviderId,
+    model: 'deepseek.v3.2',
+  },
+  {
     id: 'bedrock-nemotron-super-3-120b',
     providerGroup: 'bedrock',
     label: 'Nemotron Super 3',

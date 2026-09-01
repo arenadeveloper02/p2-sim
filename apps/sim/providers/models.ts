@@ -4185,6 +4185,20 @@ export const PROVIDER_DEFINITIONS: Record<string, ProviderDefinition> = {
         contextWindow: 200000,
         releaseDate: '2026-02-11',
       },
+      {
+        id: 'bedrock/deepseek.v3.2',
+        pricing: {
+          input: 0.62,
+          output: 1.85,
+          updatedAt: '2026-09-01',
+        },
+        capabilities: {
+          temperature: { min: 0, max: 1 },
+          maxOutputTokens: 8192,
+        },
+        contextWindow: 164000,
+        releaseDate: '2025-12-01',
+      },
     ],
   },
 }

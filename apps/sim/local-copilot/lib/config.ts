@@ -49,7 +49,7 @@ function resolveProvider(value: string | undefined): LocalCopilotProviderId {
 }
 
 function isBedrockModelId(modelId: string): boolean {
-  return /^(?:(?:us|eu|apac|global|us-gov)\.)?(anthropic|amazon|meta|mistral|nvidia|zai|cohere)\./.test(
+  return /^(?:(?:us|eu|apac|global|us-gov)\.)?(anthropic|amazon|meta|mistral|nvidia|zai|cohere|deepseek)\./.test(
     modelId
   )
 }
