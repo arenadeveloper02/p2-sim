@@ -21,6 +21,6 @@ export const ARENA_GENERATIVE_UI_ANTI_PATTERNS_PROMPT = [
   'destructive — Never place a destructive Button beside the primary without distinction. variant "destructive" (host paints outline danger). Confirm is host.',
   'dead — Never generate dead buttons. Every Button needs actionId, navigateTo, href, selectItem, or clearItem. SubmitButton needs a Form or actionId.',
   'pages — Never create pagination without enough data. Load more only when the binding declares pagination, with showWhen "hasMore". Do not invent a second next-page action.',
-  'filters — Never create a Filter that does not affect data. Filter children must name query fields the collection onLoad / CTA actually sends.',
-  'search — Never create a SearchField that does not modify the collection. SearchField needs actionId; bind the destination Repeat, Table, or DataText.',
+  'filters — Never create a Filter that does not affect data. Name Filter children after collection columns (host filters locally) or query fields the collection onLoad / CTA actually sends.',
+  'search — Never create a SearchField that does not modify the collection. Omit actionId to filter the on-page Table/Repeat; with actionId, bind the destination Repeat, Table, or DataText to that declared action.',
 ].join('\n')

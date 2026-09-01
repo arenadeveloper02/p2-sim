@@ -58,6 +58,12 @@ import {
   validateVisibleFields,
   valuesFromFormElement,
 } from '@/lib/arena-generative-ui/form-fields'
+import {
+  collectKnownActionIds,
+  collectLocalDiscoveryQuery,
+  filterCollectionItems,
+  filterStaticTableRows,
+} from '@/lib/arena-generative-ui/local-discovery'
 import { paginationActionValues } from '@/lib/arena-generative-ui/pagination'
 import { resolveArenaGenerativeSpacing } from '@/lib/arena-generative-ui/theme'
 import {
@@ -1471,6 +1477,17 @@ export function SpecRenderer({
   })
   const [formValues, setFormValues] = useState<Record<string, unknown>>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const knownActionIds = collectKnownActionIds(
+    actionHostKeys,
+    actionHiddenInputs,
+    actionChatProtocol,
+    uxPlan?.actions
+  )
+  const localDiscovery = collectLocalDiscoveryQuery({
+    formValues,
+    elements,
+    knownActionIds,
+  })
   const selectedIdSet = isTruthyFieldValue(state[ARENA_GENERATIVE_SELECTED_ID_KEY])
   const hideListForSelection = selectedIdSet && specHasSamePageSelectItem(spec, currentPath)
 
@@ -1662,12 +1679,13 @@ export function SpecRenderer({
         if (hideListForSelection) return null
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
-        const items = collectionFromBoundValue(stateValue)
+        const rawItems = collectionFromBoundValue(stateValue)
+        const items = filterCollectionItems(rawItems ?? [], localDiscovery)
         if (
           statePath &&
           boundPending(statePath) &&
           isEmptyStateValue(stateValue) &&
-          (!items || items.length === 0)
+          (!rawItems || rawItems.length === 0)
         ) {
           return (
             <>
@@ -1681,8 +1699,11 @@ export function SpecRenderer({
             </>
           )
         }
-        if (!items || items.length === 0) {
+        if (!rawItems || rawItems.length === 0) {
           if (!statePath) return null
+          return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
+        }
+        if (items.length === 0) {
           return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
         }
         const visibleItems = items.slice(0, MAX_REPEAT_ITEMS)
@@ -1859,9 +1880,12 @@ export function SpecRenderer({
       case 'Table': {
         const statePath = asString(props.statePath)
         const stateValue = statePath ? readStatePath(state, statePath, scope) : undefined
-        const collection = collectionFromBoundValue(stateValue)
+        const rawCollection = collectionFromBoundValue(stateValue)
+        const collection = rawCollection
+          ? filterCollectionItems(rawCollection, localDiscovery)
+          : undefined
         const boundEmpty = Boolean(
-          statePath && (collection ? collection.length === 0 : isEmptyStateValue(stateValue))
+          statePath && (rawCollection ? rawCollection.length === 0 : isEmptyStateValue(stateValue))
         )
         if (statePath && boundPending(statePath) && boundEmpty) {
           return <SkeletonBlock variant='table' lines={DEFAULT_SKELETON_LINES.table} />
@@ -1872,6 +1896,9 @@ export function SpecRenderer({
           if (stateValue !== undefined || !hasStatic) {
             return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
           }
+        }
+        if (rawCollection && rawCollection.length > 0 && collection && collection.length === 0) {
+          return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
         }
         if (collection && collection.length > 0) {
           return (
@@ -1888,12 +1915,19 @@ export function SpecRenderer({
             .split(',')
             .map((header) => header.trim())
             .filter(Boolean)
-          const rows = asString(props.rows)
-            .split('\n')
-            .map((row) => row.trim())
-            .filter(Boolean)
-            .map(splitTableRow)
+          const rows = filterStaticTableRows(
+            headers,
+            asString(props.rows)
+              .split('\n')
+              .map((row) => row.trim())
+              .filter(Boolean)
+              .map(splitTableRow),
+            localDiscovery
+          )
           if (headers.length === 0 && rows.length === 0) return null
+          if (rows.length === 0) {
+            return <EmptyState text={asString(props.emptyText, DEFAULT_EMPTY_TEXT.collection)} />
+          }
           return (
             <div
               className='w-full overflow-x-auto rounded-[var(--gui-radius,12px)] border border-[var(--gui-border,#e2e3e5)] bg-[var(--gui-surface,#ffffff)]'

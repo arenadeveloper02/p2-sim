@@ -126,7 +126,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
       }),
       slots: ['default'],
       description:
-        'Toolbar of controls that narrow an already-loaded collection. Children are Select, TextInput, DateInput, or Chip. Place above Table or Repeat. Not a SearchField hero. Fields submit or drive onLoad query params the same way Toolbar children do.',
+        'Toolbar of controls that narrow a collection. Children are Select, TextInput, DateInput, or Chip. Place above Table or Repeat. Name fields after collection columns. When no filter API exists the host filters visible rows locally; otherwise fields submit with onLoad / CTA. Not a SearchField hero.',
     },
     Tabs: {
       props: z.object({
@@ -186,7 +186,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         emptyText: z.string().nullable(),
       }),
       description:
-        'Tabular data. Either static: columns as comma-separated headers plus rows as newline-separated lines with "|" between cells. Or bound: statePath pointing at a host-state array of objects, where columns names the object keys to show. Prefer this over stacked Cards when every item is the same scalar fields. A bound table with no rows shows emptyText (default "No results").',
+        'Tabular data. Either static: columns as comma-separated headers plus rows as newline-separated lines with "|" between cells. Or bound: statePath pointing at a host-state array of objects, where columns names the object keys to show. Prefer this over stacked Cards when every item is the same scalar fields. A SearchField without actionId and Filter Selects named after columns filter these rows locally. A bound table with no rows shows emptyText (default "No results").',
     },
     Stat: {
       props: z.object({
@@ -345,7 +345,7 @@ export const arenaGenerativeUiCatalog = defineCatalog(reactSchema, {
         submitLabel: z.string().nullable(),
       }),
       description:
-        'One-line search with a nested primary submit inside a pill track. name is the query key. actionId runs when this field is not inside a Form; inside a Form the parent submits. suggestions is a comma-separated list of chips that fill the field. Use this for a one-field search hero — do not fake it with Stack + TextInput + SubmitButton.',
+        'One-line search with a nested primary submit inside a pill track. name is the query key. Omit actionId to filter the on-page Table/Repeat locally as the user types. actionId runs a declared API when this field is not inside a Form; inside a Form the parent submits. suggestions is a comma-separated list of chips that fill the field. Use this for a one-field search hero — do not fake it with Stack + TextInput + SubmitButton.',
     },
     Chip: {
       props: z.object({

@@ -67,11 +67,11 @@ const CAPABILITY_PROMPTS: Record<ArenaGenerativeCapability, string> = {
   ].join('\n'),
   search: [
     'CAPABILITY: SEARCH',
-    'The primary task is finding or looking up. Home is a SearchField hero (placeholder, submitLabel, actionId), not a labelled Grid of one TextInput. Bind the destination Repeat, Table, or DataText. Do not add a second SearchField on results.',
+    'The primary task is finding or looking up. Home is a SearchField hero (placeholder, submitLabel, actionId), not a labelled Grid of one TextInput. When a declared binding owns the query, set actionId and bind the destination Repeat, Table, or DataText. When no search API exists, omit actionId — the host filters the on-page Table/Repeat as the user types. Do not add a second SearchField on results.',
   ].join('\n'),
   filter: [
     'CAPABILITY: FILTER',
-    'Narrowing an already-loaded collection. Put Filter children in a Toolbar above Table/Repeat. Filter fields must be query params the collection onLoad / CTA actually sends. Not a SearchField hero.',
+    'Narrowing an already-loaded or static collection. Put Filter children (Select, DateInput, Chip) above Table/Repeat. Name each field after a collection column (status, category). When a declared binding owns those params, they submit with onLoad / CTA. When no filter API exists, omit actionId — the host filters the visible rows locally. "All" / "All Categories" is unconstrained. Not a SearchField hero.',
   ].join('\n'),
   sort: [
     'CAPABILITY: SORT',

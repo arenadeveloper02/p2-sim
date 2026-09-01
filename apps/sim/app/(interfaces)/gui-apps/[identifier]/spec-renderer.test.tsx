@@ -716,6 +716,120 @@ describe('SpecRenderer', () => {
     ])
   })
 
+  it('filters static Table rows locally when SearchField has no actionId', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['search', 'hint', 'table'] },
+        search: {
+          type: 'SearchField',
+          props: { name: 'query', placeholder: 'Search tasks...', submitLabel: 'Search' },
+          children: [],
+        },
+        hint: {
+          type: 'Chip',
+          props: { text: 'pull', setValue: 'query=pull' },
+          children: [],
+        },
+        table: {
+          type: 'Table',
+          props: {
+            columns: 'TASK, STATUS',
+            rows: 'Prepare Q3 budget report | Active\nReview pull requests | Active\nSchedule team standup | Completed',
+            emptyText: 'No matching tasks.',
+          },
+          children: [],
+        },
+      },
+    }
+    const { container, onRunAction } = render({ spec })
+    const chip = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'pull'
+    )
+    act(() => {
+      chip?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const rows = Array.from(container.querySelectorAll('tbody tr')).map((row) =>
+      Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent)
+    )
+    expect(rows).toEqual([['Review pull requests', 'Active']])
+    expect(onRunAction).not.toHaveBeenCalled()
+  })
+
+  it('filters static Table rows locally when a Filter Select changes', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['filters', 'table'] },
+        filters: { type: 'Filter', props: {}, children: ['status'] },
+        status: {
+          type: 'Select',
+          props: { name: 'status', label: 'Status', options: 'All,Active,Completed' },
+          children: [],
+        },
+        table: {
+          type: 'Table',
+          props: {
+            columns: 'TASK, STATUS',
+            rows: 'Prepare Q3 budget report | Active\nSchedule team standup | Completed',
+          },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({ spec })
+    const select = container.querySelector('select[name="status"]') as HTMLSelectElement
+    act(() => {
+      select.value = 'Completed'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const rows = Array.from(container.querySelectorAll('tbody tr')).map((row) =>
+      Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent)
+    )
+    expect(rows).toEqual([['Schedule team standup', 'Completed']])
+  })
+
+  it('does not locally filter when SearchField actionId is a known host action', () => {
+    const spec: Spec = {
+      root: 'page',
+      elements: {
+        page: { type: 'Page', props: {}, children: ['search', 'hint', 'table'] },
+        search: {
+          type: 'SearchField',
+          props: { name: 'query', actionId: 'search_tasks', submitLabel: 'Search' },
+          children: [],
+        },
+        hint: {
+          type: 'Chip',
+          props: { text: 'pull', setValue: 'query=pull' },
+          children: [],
+        },
+        table: {
+          type: 'Table',
+          props: {
+            columns: 'TASK',
+            rows: 'Prepare Q3 budget report\nReview pull requests',
+          },
+          children: [],
+        },
+      },
+    }
+    const { container } = render({
+      spec,
+      actionHostKeys: { search_tasks: ['tasks'] },
+    })
+    const chip = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'pull'
+    )
+    act(() => {
+      chip?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const rows = Array.from(container.querySelectorAll('tbody tr')).map((row) =>
+      Array.from(row.querySelectorAll('td')).map((cell) => cell.textContent)
+    )
+    expect(rows).toEqual([['Prepare Q3 budget report'], ['Review pull requests']])
+  })
+
   describe('Repeat', () => {
     const articles = [
       { id: 'a1', title: 'First', score: 9, url: 'https://example.com/a' },
