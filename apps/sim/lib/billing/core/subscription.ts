@@ -5,6 +5,7 @@ import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/workspace'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { isArenaStarterProductAccess } from '@/lib/billing/arena/access'
+import { isBlockingOrgSubscription } from '@/lib/billing/arena/checkout-policy'
 import { applyArenaOrganizationSubscriptionPolicy } from '@/lib/billing/arena/subscription-resolution'
 import { getEffectiveBillingStatus, isOrganizationBillingBlocked } from '@/lib/billing/core/access'
 import {
@@ -224,6 +225,42 @@ export async function hasPaidSubscription(
     return !!activeSub
   } catch (error) {
     logger.error('Error checking active subscription', { error, referenceId })
+
+    if (onError === 'throw') {
+      throw error
+    }
+
+    return true
+  }
+}
+
+/**
+ * True when the reference has an entitled subscription that should block a new
+ * org Stripe checkout. Arena Starter rows do not block — they are superseded
+ * after paid checkout succeeds.
+ */
+export async function hasBlockingOrgCheckoutSubscription(
+  referenceId: string,
+  options: HasPaidSubscriptionOptions = {}
+): Promise<boolean> {
+  const { onError = 'assume-active' } = options
+
+  try {
+    const [activeSub] = await db
+      .select({ id: subscription.id, plan: subscription.plan })
+      .from(subscription)
+      .where(
+        and(
+          eq(subscription.referenceId, referenceId),
+          inArray(subscription.status, ENTITLED_SUBSCRIPTION_STATUSES)
+        )
+      )
+      .limit(1)
+
+    if (!activeSub) return false
+    return isBlockingOrgSubscription(activeSub)
+  } catch (error) {
+    logger.error('Error checking blocking org checkout subscription', { error, referenceId })
 
     if (onError === 'throw') {
       throw error

@@ -12,6 +12,7 @@ const {
   mockGetPlanTierCredits,
   mockHasUsableSubscriptionAccess,
   mockGetEffectiveBillingStatus,
+  mockIsBlockingOrgSubscription,
 } = vi.hoisted(() => ({
   mockGetHighestPrioritySubscription: vi.fn(),
   mockGetHighestPriorityPersonalSubscription: vi.fn(),
@@ -20,6 +21,7 @@ const {
   mockGetPlanTierCredits: vi.fn(),
   mockHasUsableSubscriptionAccess: vi.fn(),
   mockGetEffectiveBillingStatus: vi.fn(),
+  mockIsBlockingOrgSubscription: vi.fn(),
 }))
 
 vi.mock('@/lib/billing/core/access', () => ({
@@ -44,6 +46,10 @@ vi.mock('@/lib/billing/plan-helpers', () => ({
   sqlIsPaid: vi.fn(() => ({ type: 'sqlIsPaid' })),
 }))
 
+vi.mock('@/lib/billing/arena/checkout-policy', () => ({
+  isBlockingOrgSubscription: mockIsBlockingOrgSubscription,
+}))
+
 /** Mirrors the production sets exactly — a mock that widens them would let a gate regress unnoticed. */
 vi.mock('@/lib/billing/subscriptions/utils', () => ({
   checkEnterprisePlan: mockCheckEnterprisePlan,
@@ -61,6 +67,7 @@ vi.mock('@/lib/workspaces/permissions/utils', () => ({
 import {
   getOrganizationCoverageForMember,
   getOrganizationIdForSubscriptionReference,
+  hasBlockingOrgCheckoutSubscription,
   hasPaidSubscription,
   hasWorkspaceLiveSyncAccess,
   hasWorkspaceSandboxAccess,
@@ -103,6 +110,33 @@ describe('hasPaidSubscription', () => {
     await expect(hasPaidSubscription('org-1', { onError: 'throw' })).rejects.toThrow(
       'db unavailable'
     )
+  })
+})
+
+describe('hasBlockingOrgCheckoutSubscription', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns false when no entitled subscription exists', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([])
+
+    await expect(hasBlockingOrgCheckoutSubscription('org-1')).resolves.toBe(false)
+    expect(mockIsBlockingOrgSubscription).not.toHaveBeenCalled()
+  })
+
+  it('delegates to isBlockingOrgSubscription when an entitled row exists', async () => {
+    dbChainMockFns.limit.mockResolvedValueOnce([{ id: 'sub-1', plan: 'starter' }])
+    mockIsBlockingOrgSubscription.mockReturnValueOnce(false)
+
+    await expect(hasBlockingOrgCheckoutSubscription('org-1')).resolves.toBe(false)
+    expect(mockIsBlockingOrgSubscription).toHaveBeenCalledWith({ id: 'sub-1', plan: 'starter' })
+  })
+
+  it('fails closed by default when the lookup errors', async () => {
+    dbChainMockFns.limit.mockRejectedValueOnce(new Error('db unavailable'))
+
+    await expect(hasBlockingOrgCheckoutSubscription('org-1')).resolves.toBe(true)
   })
 })
 

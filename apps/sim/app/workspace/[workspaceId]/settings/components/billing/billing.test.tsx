@@ -108,6 +108,7 @@ vi.mock('@/hooks/queries/organization', () => ({
 vi.mock('@/hooks/queries/subscription', () => ({
   useInvoices: () => ({ data: { invoices: [], hasMore: false } }),
   useOpenBillingPortal: () => ({ isPending: false, mutate: vi.fn() }),
+  usePurchaseCredits: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useSubscriptionData: (...args: unknown[]) => {
     mockUseSubscriptionData(...args)
     return mockPersonalQuery.current
@@ -135,6 +136,25 @@ vi.mock(
   '@/app/workspace/[workspaceId]/settings/components/billing/components/credit-usage-section/credit-usage-section',
   () => ({
     CreditUsageSection: () => <div>Personal credit usage</div>,
+  })
+)
+
+vi.mock(
+  '@/app/workspace/[workspaceId]/settings/components/billing/components/prepaid-top-up-section/prepaid-top-up-section',
+  () => ({
+    PrepaidTopUpSection: ({
+      creditBalance,
+      canPurchase,
+    }: {
+      creditBalance: number
+      canPurchase: boolean
+    }) => (
+      <div
+        data-testid='prepaid-top-up'
+        data-credit-balance={creditBalance}
+        data-can-purchase={canPurchase}
+      />
+    ),
   })
 )
 
@@ -291,6 +311,14 @@ describe('Billing payer scope', () => {
     expect(container.querySelector('[data-testid="usage-limit"]')).toHaveAttribute(
       'data-organization-id',
       'org-target'
+    )
+    expect(container.querySelector('[data-testid="prepaid-top-up"]')).toHaveAttribute(
+      'data-credit-balance',
+      '5'
+    )
+    expect(container.querySelector('[data-testid="prepaid-top-up"]')).toHaveAttribute(
+      'data-can-purchase',
+      'true'
     )
 
     const onDemandSwitch = container.querySelector<HTMLButtonElement>('[role="switch"]')

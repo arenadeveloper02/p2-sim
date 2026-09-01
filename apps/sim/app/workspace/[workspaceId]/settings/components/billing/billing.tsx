@@ -44,6 +44,7 @@ import {
 import { buildUpgradeHref } from '@/lib/billing/upgrade-reasons'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { CreditUsageSection } from '@/app/workspace/[workspaceId]/settings/components/billing/components/credit-usage-section/credit-usage-section'
+import { PrepaidTopUpSection } from '@/app/workspace/[workspaceId]/settings/components/billing/components/prepaid-top-up-section/prepaid-top-up-section'
 import { UsageLimitField } from '@/app/workspace/[workspaceId]/settings/components/billing/components/usage-limit-field/usage-limit-field'
 import { getSubscriptionPermissions } from '@/app/workspace/[workspaceId]/settings/components/billing/subscription-permissions'
 import { SettingsPanel } from '@/app/workspace/[workspaceId]/settings/components/settings-panel'
@@ -441,6 +442,8 @@ export function Billing({
   const canExplorePlans = permissions.showUpgradePlans
   const showUsageLimit = subscription.isPaid && !subscription.isEnterprise
   const showOnDemand = hasUsablePaidAccess && !subscription.isEnterprise
+  const showPrepaidTopUp =
+    isOrganizationScope && subscription.isPaid && !subscription.isEnterprise && hasUsablePaidAccess
 
   const usageLimitCurrent =
     subscription.isOrgScoped && organizationBilling
@@ -492,6 +495,14 @@ export function Billing({
             </Chip>
           ))}
       </div>
+
+      {showPrepaidTopUp && (
+        <PrepaidTopUpSection
+          creditBalance={creditBalance}
+          canPurchase={canManageBilling}
+          onManagePaymentMethod={handleOpenBillingPortal}
+        />
+      )}
 
       {showUsageLimit && (
         <UsageLimitField
