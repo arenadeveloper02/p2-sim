@@ -266,7 +266,7 @@ describe('billing application use cases', () => {
       input: { workspaceId: 'workspace-1' },
     })
 
-    expect(result.credits).toEqual({ used: 200, limit: 2_000, remaining: 1_800 })
+    expect(result.credits).toEqual({ used: 65, limit: 650, remaining: 585 })
     expect(result.storage).toEqual({
       usedBytes: 5_242_880,
       limitBytes: 1_073_741_824,
@@ -288,7 +288,7 @@ describe('billing application use cases', () => {
 
     const result = await getBillingStatus.execute({ principal: personalPrincipal, input: {} })
 
-    expect(result.credits).toEqual({ used: 200, limit: 2_000, remaining: 1_800 })
+    expect(result.credits).toEqual({ used: 65, limit: 650, remaining: 585 })
     expect(result.storage).not.toBeNull()
   })
 
@@ -359,7 +359,7 @@ describe('billing application use cases', () => {
 
     const result = await getBillingStatus.execute({ principal: personalPrincipal, input: {} })
 
-    expect(result.credits).toEqual({ used: 200, limit: 2_000, remaining: 1_800 })
+    expect(result.credits).toEqual({ used: 65, limit: 650, remaining: 585 })
     expect(result.storage).toEqual({
       usedBytes: 5_242_880,
       limitBytes: 1_073_741_824,
@@ -440,7 +440,7 @@ describe('billing application use cases', () => {
       },
     })
 
-    expect(result.creditsByLogId).toEqual({ 'log-1': 1, 'log-2': 0 })
+    expect(result.creditsByLogId).toEqual({ 'log-1': 0, 'log-2': 0 })
   })
 
   it('propagates workspace-store failures', async () => {

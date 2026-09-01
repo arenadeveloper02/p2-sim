@@ -19,7 +19,7 @@ import { formatDate } from '@sim/utils/formatting'
 import { useRouter } from 'next/navigation'
 import { useSession, useSubscription } from '@/lib/auth/auth-client'
 import { ON_DEMAND_UNLIMITED } from '@/lib/billing/constants'
-import { CREDIT_MULTIPLIER } from '@/lib/billing/credits/conversion'
+import { getCreditsPerDollar } from '@/lib/billing/credits/conversion'
 import {
   getCoveredUsage,
   getIsOnDemandActive,
@@ -213,7 +213,7 @@ export function Billing({
   const planIncludedAmount =
     subscription.isOrgScoped && organizationBilling
       ? organizationBilling.minimumBillingAmount
-      : getPlanTierCredits(subscription.plan) / CREDIT_MULTIPLIER
+      : getPlanTierCredits(subscription.plan) / getCreditsPerDollar()
 
   const effectiveUsageLimit =
     subscription.isOrgScoped && organizationBilling

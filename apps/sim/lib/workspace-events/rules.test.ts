@@ -15,7 +15,7 @@ function makeConfig(overrides: Partial<SimSubscriptionConfig> = {}): SimSubscrip
     windowHours: 24,
     durationThresholdMs: 30000,
     latencySpikePercent: 100,
-    costThresholdCredits: 200,
+    costThresholdCredits: 65,
     errorCountThreshold: 10,
     inactivityHours: 24,
     ...overrides,
@@ -159,11 +159,11 @@ describe('evaluateRule', () => {
 
   describe('cost_threshold', () => {
     it('fires when the run cost exceeds the credit-denominated threshold', async () => {
-      // 200 credits = $1; a $1.50 run exceeds it.
+      // 65 credits = $1; a $1.50 run exceeds it.
       await expect(
         evaluateRule(
           'cost_threshold',
-          makeConfig({ costThresholdCredits: 200 }),
+          makeConfig({ costThresholdCredits: 65 }),
           makeContext({ cost: 1.5 })
         )
       ).resolves.toBe(true)
@@ -173,7 +173,7 @@ describe('evaluateRule', () => {
       await expect(
         evaluateRule(
           'cost_threshold',
-          makeConfig({ costThresholdCredits: 200 }),
+          makeConfig({ costThresholdCredits: 65 }),
           makeContext({ cost: 1 })
         )
       ).resolves.toBe(false)

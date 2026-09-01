@@ -436,6 +436,12 @@ export async function register() {
   await initializeOpenTelemetry()
   await startLocalScheduler()
 
+  const { getCreditsPerDollarFromMasterConfig } = await import(
+    '@/lib/billing/credits/master-config'
+  )
+  const { setCreditsPerDollar } = await import('@/lib/billing/credits/conversion')
+  setCreditsPerDollar(await getCreditsPerDollarFromMasterConfig())
+
   const shutdownPostHog = async () => {
     try {
       const { getPostHogClient } = await import('@/lib/posthog/server')

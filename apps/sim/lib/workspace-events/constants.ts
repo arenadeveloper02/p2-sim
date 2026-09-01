@@ -6,6 +6,8 @@
  * dependencies such as the database client.
  */
 
+import { CREDITS_PER_DOLLAR } from '@/lib/billing/constants'
+
 /** Provider string recorded on webhook rows and execution logs for Sim trigger runs. */
 export const SIM_TRIGGER_PROVIDER = 'sim'
 
@@ -69,8 +71,8 @@ export const SIM_RULE_DEFAULTS = {
   windowHours: 24,
   durationThresholdMs: 30000,
   latencySpikePercent: 100,
-  /** 200 credits = $1 (1 credit = $0.005). */
-  costThresholdCredits: 200,
+  /** Fallback credits corresponding to a $1 cost threshold. */
+  costThresholdCredits: CREDITS_PER_DOLLAR,
   errorCountThreshold: 10,
   inactivityHours: 24,
 } as const

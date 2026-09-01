@@ -17,9 +17,9 @@ describe('deriveEnterpriseCreditLimits', () => {
       })
     ).toEqual({
       configuredUsageLimitCredits: 20000,
-      prepaidCredits: 2000,
-      effectiveUsageLimitCredits: 22000,
-      effectiveUsageLimitDollars: '110',
+      prepaidCredits: 650,
+      effectiveUsageLimitCredits: 20650,
+      effectiveUsageLimitDollars: '317.69230769230769231',
     })
   })
 
@@ -32,7 +32,7 @@ describe('deriveEnterpriseCreditLimits', () => {
         monthlyPriceUsd: 999,
         prepaidBalanceDollars: 10,
       }).effectiveUsageLimitCredits
-    ).toBe(10000)
+    ).toBe(8650)
   })
 
   it('defaults the usage limit to the monthly price when metadata is absent', () => {
@@ -43,9 +43,9 @@ describe('deriveEnterpriseCreditLimits', () => {
         prepaidBalanceDollars: 0,
       })
     ).toEqual({
-      configuredUsageLimitCredits: 10000,
+      configuredUsageLimitCredits: 3250,
       prepaidCredits: 0,
-      effectiveUsageLimitCredits: 10000,
+      effectiveUsageLimitCredits: 3250,
       effectiveUsageLimitDollars: '50',
     })
   })
@@ -62,7 +62,7 @@ describe('deriveEnterpriseCreditLimits', () => {
     ).toMatchObject({
       prepaidCredits: 0,
       effectiveUsageLimitCredits: 20000,
-      effectiveUsageLimitDollars: '100.001',
+      effectiveUsageLimitDollars: '307.69330769230769231',
     })
   })
 })

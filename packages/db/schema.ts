@@ -5053,19 +5053,13 @@ export const permissionGroupMember = pgTable(
   })
 )
 
-export const promptConfig = pgTable(
-  'prompt_config',
-  {
-    id: text('id').primaryKey(),
-    key: varchar('key', { length: 256 }).notNull().unique(),
-    prompt: text('prompt').notNull(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    keyIdx: uniqueIndex('prompt_config_key_idx').on(table.key),
-  })
-)
+export const masterConfig = pgTable('master_config', {
+  id: text('id').primaryKey(),
+  key: varchar('key', { length: 256 }).notNull().unique(),
+  value: text('value').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
 
 /**
  * Async Jobs - Queue for background job processing (Redis/DB backends)

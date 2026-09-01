@@ -1,4 +1,4 @@
-import { CREDIT_MULTIPLIER } from '@/lib/billing/credits/conversion'
+import { getCreditsPerDollar } from '@/lib/billing/credits/conversion'
 import { getPlanTierCredits, getPlanTierDollars, isTeam } from '@/lib/billing/plan-helpers'
 import { Decimal, toDecimal } from '@/lib/billing/utils/decimal'
 
@@ -17,7 +17,7 @@ export function getTeamOrganizationEconomics(
   const seats = Math.max(0, Math.trunc(internalMemberCount))
   return {
     seats,
-    planAllowanceDollars: (getPlanTierCredits(plan) * seats) / CREDIT_MULTIPLIER,
+    planAllowanceDollars: (getPlanTierCredits(plan) * seats) / getCreditsPerDollar(),
     monthlyInvoiceAmountUsd: getPlanTierDollars(plan) * seats,
   }
 }

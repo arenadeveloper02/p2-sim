@@ -62,7 +62,7 @@ function makeConfig(overrides: Partial<SimSubscriptionConfig> = {}): SimSubscrip
     windowHours: 24,
     durationThresholdMs: 30000,
     latencySpikePercent: 100,
-    costThresholdCredits: 200,
+    costThresholdCredits: 65,
     errorCountThreshold: 10,
     inactivityHours: 24,
     ...overrides,
@@ -169,8 +169,8 @@ describe('emitExecutionCompletedEvent', () => {
         workflowName: 'Source Workflow',
         runId: 'exec-1',
         durationMs: 1000,
-        // $0.25 reported as credits (1 credit = $0.005)
-        cost: 50,
+        // $0.25 reported as credits at 65 credits per dollar.
+        cost: 16,
       }),
       expect.any(String)
     )
