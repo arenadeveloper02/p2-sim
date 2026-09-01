@@ -21,10 +21,10 @@ import { getErrorMessage } from '@sim/utils/errors'
 import { generateId } from '@sim/utils/id'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { applySessionPolicyToNewMember } from '@/lib/auth/session-policy'
-import { ARENA_CLIENT_ORG_FREE_CREDITS } from '@/lib/billing/arena-max'
+import { isArenaBilling, provisionClientOrgStarterBilling } from '@/lib/billing/arena'
+import { isStarterActive, isStarterPlan } from '@/lib/billing/arena/starter-plan'
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
 import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
-import { creditsToDollars } from '@/lib/billing/credits/conversion'
 import {
   createOrganizationWithOwnerTx,
   validateOrganizationSlugOrThrow,
@@ -371,8 +371,14 @@ export async function ensureClientOrganizationMember(
           name: organizationName,
           slug,
           metadata: { clientId, clientName },
-          orgUsageLimitDollars: creditsToDollars(ARENA_CLIENT_ORG_FREE_CREDITS),
         })
+
+        if (isBillingEnabled && isArenaBilling()) {
+          await provisionClientOrgStarterBilling(tx, {
+            organizationId: created.organizationId,
+            clientId,
+          })
+        }
 
         const now = new Date()
         const resolvedClientName = clientName || organizationName
@@ -468,7 +474,11 @@ export async function ensureClientOrganizationMember(
       const organizationSubscription = isBillingEnabled
         ? await getOrganizationSubscription(mapping.organizationId, { executor: tx })
         : null
-      const organizationHasFixedSeats = isEnterprise(organizationSubscription?.plan)
+      const organizationHasFixedSeats =
+        isEnterprise(organizationSubscription?.plan) ||
+        (organizationSubscription != null &&
+          isStarterPlan(organizationSubscription.plan) &&
+          isStarterActive(organizationSubscription))
 
       const membership = await ensureUserInOrganizationTx(tx, {
         userId,

@@ -5,7 +5,9 @@ import { BillingPeriodToggle } from '@/app/workspace/[workspaceId]/upgrade/compo
 import {
   type CellValue,
   COMPARISON_SECTIONS,
+  type ComparisonSection,
   PLAN_COLUMNS,
+  type PlanColumn,
   type PlanName,
 } from '@/app/workspace/[workspaceId]/upgrade/components/comparison-table/comparison-data'
 
@@ -49,9 +51,13 @@ export interface ComparisonTableProps {
   onIsAnnualChange: (isAnnual: boolean) => void
   /**
    * Resolved CTA per plan column, mirroring the upgrade-page plan cards. Plans
-   * without an entry (e.g. Free) render no button.
+   * without an entry (e.g. Free / Starter) render no button.
    */
   ctas: Partial<Record<PlanName, ComparisonPlanCta>>
+  /** Optional comparison dataset override (Arena swaps Free→Starter, drops daily refresh). */
+  sections?: ComparisonSection[]
+  /** Optional column metadata override. */
+  columns?: PlanColumn[]
 }
 
 /**
@@ -136,6 +142,8 @@ export function ComparisonTable({
   isAnnual,
   onIsAnnualChange,
   ctas,
+  sections = COMPARISON_SECTIONS,
+  columns = PLAN_COLUMNS,
 }: ComparisonTableProps) {
   const runtimePrices: Partial<Record<PlanName, string>> = {
     Pro: proPrice,
@@ -156,7 +164,7 @@ export function ComparisonTable({
           <BillingPeriodToggle isAnnual={isAnnual} onChange={onIsAnnualChange} />
         </div>
 
-        {PLAN_COLUMNS.map((col) => {
+        {columns.map((col) => {
           const price = runtimePrices[col.name] ?? col.staticPrice ?? ''
           const cta = ctas[col.name]
 
@@ -186,7 +194,7 @@ export function ComparisonTable({
         })}
 
         {/* ── Sections ── */}
-        {COMPARISON_SECTIONS.map((section, sectionIdx) => (
+        {sections.map((section, sectionIdx) => (
           <div key={section.title} className='contents'>
             {/* Section header row — split so the left-column separator stays continuous */}
             <div
@@ -220,7 +228,7 @@ export function ComparisonTable({
                 {/* Plan cells */}
                 {row.values.map((value, colIdx) => (
                   <div
-                    key={PLAN_COLUMNS[colIdx].name}
+                    key={columns[colIdx]?.name ?? colIdx}
                     className={cn(
                       'flex items-center justify-center bg-[var(--surface-2)] px-3 py-2.5',
                       rowIdx < section.rows.length - 1 && 'border-[var(--border-1)] border-b'

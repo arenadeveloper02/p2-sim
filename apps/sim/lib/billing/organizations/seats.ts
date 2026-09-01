@@ -3,6 +3,7 @@ import { db } from '@sim/db'
 import { member, subscription } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, count, eq, inArray } from 'drizzle-orm'
+import { shouldReconcileOrganizationSeats } from '@/lib/billing/arena/org-pricing'
 import { syncSubscriptionUsageLimits } from '@/lib/billing/organization'
 import { isTeam } from '@/lib/billing/plan-helpers'
 import { ENTITLED_SUBSCRIPTION_STATUSES } from '@/lib/billing/subscriptions/utils'
@@ -85,6 +86,9 @@ export async function reconcileOrganizationSeats({
     }
     if (!isTeam(orgSubscription.plan)) {
       return { kind: 'skip', reason: 'Seat changes are only available for Team plans' }
+    }
+    if (!shouldReconcileOrganizationSeats(orgSubscription.plan)) {
+      return { kind: 'skip', reason: 'Arena flat org pricing keeps Stripe quantity at 1' }
     }
     if (!orgSubscription.stripeSubscriptionId) {
       return { kind: 'skip', reason: 'No Stripe subscription found for this organization' }

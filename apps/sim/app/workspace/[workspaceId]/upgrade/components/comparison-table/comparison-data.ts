@@ -34,8 +34,8 @@ export type CellValue = string | boolean | CellIcon
 /** Shared Slack-availability cell. */
 const SLACK: CellIcon = { icon: 'slack' }
 
-/** Names of the four plan columns — used as a discriminated union for type-safe plan selection. */
-export type PlanName = 'Free' | 'Pro' | 'Max' | 'Enterprise'
+/** Names of the plan columns — used as a discriminated union for type-safe plan selection. */
+export type PlanName = 'Free' | 'Starter' | 'Pro' | 'Max' | 'Enterprise'
 
 /** A single feature row inside a section. */
 export interface ComparisonRow {

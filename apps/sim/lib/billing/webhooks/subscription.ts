@@ -3,6 +3,7 @@ import { db } from '@sim/db'
 import { member, subscription } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq, inArray, ne } from 'drizzle-orm'
+import { onlyStarterEntitlementsRemain } from '@/lib/billing/arena/supersede-starter'
 import { calculateSubscriptionOverage, isSubscriptionOrgScoped } from '@/lib/billing/core/billing'
 import { syncUsageLimitsFromSubscription } from '@/lib/billing/core/usage'
 import { restoreUserProSubscription } from '@/lib/billing/organizations/membership'
@@ -182,7 +183,9 @@ export async function handleSubscriptionCreated(
             )
           )
 
-        const wasFreePreviously = otherActiveSubscriptions.length === 0
+        const wasFreePreviously =
+          otherActiveSubscriptions.length === 0 ||
+          onlyStarterEntitlementsRemain(otherActiveSubscriptions)
         const isPaidPlan = isPaid(subscriptionData.plan)
 
         if (wasFreePreviously && isPaidPlan) {

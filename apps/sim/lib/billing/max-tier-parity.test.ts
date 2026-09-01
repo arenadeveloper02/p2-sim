@@ -56,6 +56,11 @@ describe('Max tier parity', () => {
     }
   })
 
+  it('treats Arena Max (team_6500) as Max tier', () => {
+    expect(isMaxTier('team_6500')).toBe(true)
+    expect(isMaxTier('team_1950')).toBe(false)
+  })
+
   it('derives its threshold from the tier table rather than a literal', () => {
     expect(isMaxTier(`pro_${MAX_TIER_CREDITS}`)).toBe(true)
     expect(isMaxTier(`pro_${MAX_TIER_CREDITS - 1}`)).toBe(false)

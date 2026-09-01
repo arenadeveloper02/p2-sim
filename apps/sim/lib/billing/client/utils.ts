@@ -3,8 +3,13 @@
  * These are pure functions that compute values from subscription data
  */
 
+import {
+  hasArenaMaxProductAccess,
+  hasArenaTeamProductAccess,
+  isArenaStarterProductAccess,
+} from '@/lib/billing/arena/access'
 import { DEFAULT_FREE_CREDITS } from '@/lib/billing/constants'
-import { isFree, isMaxTier, isPro } from '@/lib/billing/plan-helpers'
+import { isFree, isPro } from '@/lib/billing/plan-helpers'
 import { hasUsableSubscriptionAccess } from '@/lib/billing/subscriptions/utils'
 import { USAGE_PILL_COLORS } from './consts'
 import type { BillingStatus, SubscriptionData, UsageData } from './types'
@@ -46,17 +51,25 @@ export function getSubscriptionAccessState(
 ) {
   const status = getSubscriptionStatus(subscriptionData)
   const billingBlocked = Boolean(subscriptionData?.billingBlocked)
-  const hasUsablePaidAccess = hasUsableSubscriptionAccess(status.status, billingBlocked)
-  // Team-management features (invitations, seats, roles) are available on
-  // any paid subscription attached to an organization — including `pro_*`
-  // plans that have been transferred to an org. Plan-name gating would
-  // miss those.
-  const hasUsableTeamAccess =
-    hasUsablePaidAccess && (status.isOrgScoped || status.isTeam || status.isEnterprise)
+  const hasUsablePaidAccess =
+    hasUsableSubscriptionAccess(status.status, billingBlocked) ||
+    isArenaStarterProductAccess({
+      plan: status.plan,
+      status: status.status,
+      periodEnd: subscriptionData?.periodEnd ?? null,
+      billingBlocked,
+    })
+  const arenaAccessInput = {
+    plan: status.plan,
+    status: status.status,
+    periodEnd: subscriptionData?.periodEnd ?? null,
+    billingBlocked,
+    isOrgScoped: status.isOrgScoped,
+    hasPaidEntitlement: hasUsableSubscriptionAccess(status.status, billingBlocked),
+  }
+  const hasUsableTeamAccess = hasArenaTeamProductAccess(arenaAccessInput)
   const hasUsableEnterpriseAccess = hasUsablePaidAccess && status.isEnterprise
-  // isMaxTier is the same predicate the server gates use, so a Max-gated surface
-  // can never render unlocked against an API that will refuse it.
-  const hasUsableMaxAccess = hasUsablePaidAccess && isMaxTier(status.plan)
+  const hasUsableMaxAccess = hasArenaMaxProductAccess(arenaAccessInput)
 
   return {
     ...status,

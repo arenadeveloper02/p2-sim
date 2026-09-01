@@ -4,6 +4,8 @@ import { member, organization, subscription, user } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/workspace'
 import { and, eq, inArray, sql } from 'drizzle-orm'
+import { isArenaStarterProductAccess } from '@/lib/billing/arena/access'
+import { applyArenaOrganizationSubscriptionPolicy } from '@/lib/billing/arena/subscription-resolution'
 import { getEffectiveBillingStatus, isOrganizationBillingBlocked } from '@/lib/billing/core/access'
 import {
   getHighestPriorityPersonalSubscription,
@@ -185,7 +187,7 @@ export async function getOrganizationSubscriptionUsable(
       )
       .limit(1)
 
-    return orgSub ?? null
+    return applyArenaOrganizationSubscriptionPolicy(orgSub ?? null)
   } catch (error) {
     logger.error('Error getting usable organization subscription', { error, organizationId })
     if (onError === 'throw') {
@@ -602,7 +604,19 @@ async function hasWorkspaceTierAccess(
     ])
     if (!orgSub) return false
     if (!hasUsableSubscriptionAccess(orgSub.status, billingBlocked)) return false
-    return isTierEntitled(orgSub.plan)
+    if (isTierEntitled(orgSub.plan)) return true
+    if (
+      isTierEntitled === isMaxTier &&
+      isArenaStarterProductAccess({
+        plan: orgSub.plan,
+        status: orgSub.status,
+        periodEnd: orgSub.periodEnd,
+        billingBlocked,
+      })
+    ) {
+      return true
+    }
+    return false
   }
 
   const [billedSub, billingStatus] = await Promise.all([

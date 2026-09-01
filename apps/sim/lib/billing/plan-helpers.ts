@@ -12,6 +12,9 @@
 
 import type { AnyColumn } from 'drizzle-orm'
 import { eq, like, or, type SQL } from 'drizzle-orm'
+import { getArenaPlanTypeForLimits } from '@/lib/billing/arena/plan-limits'
+import { isStarterPlan } from '@/lib/billing/arena/starter-plan'
+import { getArenaPlanTierDollars, isArenaMaxPlan } from '@/lib/billing/arena/tier-config'
 import {
   CREDIT_TIERS,
   DEFAULT_PRO_TIER_COST_LIMIT,
@@ -38,7 +41,7 @@ export function isPro(plan: string | null | undefined): boolean {
  * that will refuse it.
  */
 export function isMaxTier(plan: string | null | undefined): boolean {
-  return getPlanTierCredits(plan) >= MAX_TIER_CREDITS || isEnterprise(plan)
+  return getPlanTierCredits(plan) >= MAX_TIER_CREDITS || isEnterprise(plan) || isArenaMaxPlan(plan)
 }
 
 export function isTeam(plan: string | null | undefined): boolean {
@@ -94,6 +97,8 @@ export function getPlanTierDollars(plan: string | null | undefined): number {
   const credits = getPlanTierCredits(plan)
   const tier = CREDIT_TIERS.find((t) => t.credits === credits)
   if (tier) return tier.dollars
+  const arenaDollars = getArenaPlanTierDollars(plan)
+  if (arenaDollars != null) return arenaDollars
   if (plan === 'pro') return DEFAULT_PRO_TIER_COST_LIMIT
   if (plan === 'team') return DEFAULT_TEAM_TIER_COST_LIMIT
   return 0
@@ -117,6 +122,8 @@ export function getPlanType(plan: string | null | undefined): PlanCategory {
  * categories.
  */
 export function getPlanTypeForLimits(plan: string | null | undefined): PlanCategory {
+  const arenaPlan = getArenaPlanTypeForLimits(plan)
+  if (arenaPlan) return arenaPlan
   if (plan === 'pro' || plan === 'team') return getPlanType(plan)
   if (isPro(plan) || isTeam(plan)) {
     return getPlanTierCredits(plan) >= MAX_TIER_CREDITS ? 'team' : 'pro'
@@ -160,11 +167,15 @@ export function sqlIsPaid(column: AnyColumn): SQL | undefined {
 
 export function getDisplayPlanName(plan: string | null | undefined): string {
   if (!plan || isFree(plan)) return 'Free'
+  if (isStarterPlan(plan)) return 'Starter'
   if (isEnterprise(plan)) return 'Enterprise'
   const credits = getPlanTierCredits(plan)
   const tier = CREDIT_TIERS.find((t) => t.credits === credits)
+  const arenaDollars = getArenaPlanTierDollars(plan)
   const isLegacy = plan === 'pro' || plan === 'team'
-  const tierName = tier?.name ?? (plan === 'team' ? 'Max' : 'Pro')
+  const tierName =
+    tier?.name ??
+    (arenaDollars === 100 ? 'Max' : arenaDollars === 30 ? 'Pro' : plan === 'team' ? 'Max' : 'Pro')
   const prefix = isLegacy ? 'Legacy ' : ''
   const suffix = isTeam(plan) ? ' for Teams' : ''
   return `${prefix}${tierName}${suffix}`

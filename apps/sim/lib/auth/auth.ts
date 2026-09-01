@@ -41,6 +41,7 @@ import { clampExpiryForSession } from '@/lib/auth/session-policy'
 import { getActiveOrganizationId } from '@/lib/auth/session-response'
 import { guardSubscriptionPlanWrites } from '@/lib/auth/stripe-adapter-guard'
 import { sendPlanWelcomeEmail } from '@/lib/billing'
+import { supersedeStarterSubscriptions } from '@/lib/billing/arena/supersede-starter'
 import {
   assertPersonalCheckoutAllowed,
   authorizeSubscriptionReference,
@@ -1425,6 +1426,11 @@ export const auth = betterAuth({
                   : false
 
                 if (!coveredByOrganization) {
+                  await supersedeStarterSubscriptions(
+                    resolvedSubscription.referenceId,
+                    resolvedSubscription.id,
+                    db
+                  )
                   await handleSubscriptionCreated(resolvedSubscription, event.id)
                 }
 

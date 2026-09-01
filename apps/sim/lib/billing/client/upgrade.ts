@@ -8,6 +8,10 @@ import { requestJson } from '@/lib/api/client/request'
 import { listCreatorOrganizationsContract } from '@/lib/api/contracts/organizations'
 import { subscriptionTransferContract } from '@/lib/api/contracts/user'
 import { client, useSession, useSubscription } from '@/lib/auth/auth-client'
+import {
+  isBlockingOrgSubscription,
+  isStripeUpgradeableSubscription,
+} from '@/lib/billing/arena/checkout-policy'
 import { buildPlanName, getDisplayPlanName, isPaid } from '@/lib/billing/plan-helpers'
 import { hasPaidSubscriptionStatus } from '@/lib/billing/subscriptions/utils'
 import { organizationKeys } from '@/hooks/queries/organization'
@@ -52,7 +56,9 @@ export function useSubscriptionUpgrade() {
           targetPlan === 'team' && options?.organizationId ? options.organizationId : userId
         const activeReferenceSub = allSubscriptions.find(
           (sub: any) =>
-            hasPaidSubscriptionStatus(sub.status) && sub.referenceId === initialReferenceId
+            hasPaidSubscriptionStatus(sub.status) &&
+            sub.referenceId === initialReferenceId &&
+            isStripeUpgradeableSubscription(sub)
         )
         currentSubscriptionRowId = activeReferenceSub?.id
         currentStripeSubscriptionId = activeReferenceSub?.stripeSubscriptionId
@@ -100,7 +106,8 @@ export function useSubscriptionUpgrade() {
               (sub: any) =>
                 hasPaidSubscriptionStatus(sub.status) &&
                 sub.referenceId === existingOrg.id &&
-                isPaid(sub.plan)
+                isPaid(sub.plan) &&
+                isBlockingOrgSubscription(sub)
             )
 
             if (existingOrgSub) {

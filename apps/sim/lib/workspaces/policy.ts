@@ -3,6 +3,7 @@ import { member, type WorkspaceMode, workspace } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { isOrgAdminRole } from '@sim/platform-authz/workspace'
 import { and, count, eq, isNull } from 'drizzle-orm'
+import { isArenaMaxWorkspacePlan } from '@/lib/billing/arena/access'
 import { getOrganizationSubscription } from '@/lib/billing/core/billing'
 import { getHighestPrioritySubscription } from '@/lib/billing/core/plan'
 import {
@@ -443,7 +444,7 @@ export async function getWorkspaceCreationPolicy({
    * get the same 10-workspace allowance — the old `isMax` helper required
    * `isPro` and under-capped team/enterprise.
    */
-  const maxWorkspaces = isMaxTier(plan) ? 10 : isPro(plan) ? 3 : 1
+  const maxWorkspaces = isMaxTier(plan) || isArenaMaxWorkspacePlan(plan) ? 10 : isPro(plan) ? 3 : 1
 
   if (currentWorkspaceCount >= maxWorkspaces) {
     return {

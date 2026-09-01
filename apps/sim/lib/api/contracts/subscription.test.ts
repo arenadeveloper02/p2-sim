@@ -115,6 +115,12 @@ describe('subscription billing contracts', () => {
       subscriptionPlan: 'team_25000',
       subscriptionStatus: 'canceled',
     },
+    {
+      subscriptionState: 'starter_expired',
+      hasSubscription: true,
+      subscriptionPlan: 'starter',
+      subscriptionStatus: 'active',
+    },
   ] as const)('represents $subscriptionState organization billing explicitly', (state) => {
     expect(
       organizationBillingDataSchema.safeParse({
