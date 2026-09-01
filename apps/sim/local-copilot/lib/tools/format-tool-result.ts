@@ -53,6 +53,7 @@ const TOOL_EXECUTION_ORDER: Record<string, number> = {
   run_block: 3,
   run_from_block: 3,
   create_file_folder: 10,
+  mkdir: 10,
   create_file: 11,
   workspace_file: 12,
   edit_content: 13,
@@ -60,6 +61,7 @@ const TOOL_EXECUTION_ORDER: Record<string, number> = {
 
 const FILE_PIPELINE_TOOLS = [
   'create_file_folder',
+  'mkdir',
   'create_file',
   'workspace_file',
   'edit_content',
@@ -418,9 +420,9 @@ export function formatToolResultForLlm(
 ): string {
   let formatted: unknown = result
 
-  if (toolName === 'function_execute') {
+  if (toolName === 'function_execute' || toolName === 'run_code') {
     formatted = enrichCodeExecutionResultForLlm(asRecord(result))
-  } else if (toolName === 'invoke_integration_tool') {
+  } else if (toolName === 'invoke_integration_tool' || toolName === 'call_integration_tool') {
     formatted = enrichInvokeIntegrationResultForLlm(asRecord(result))
   } else if (toolName === 'create_file') {
     const record = asRecord(result)
@@ -546,7 +548,7 @@ export function formatToolResultForLlm(
   }
 
   const maxChars =
-    toolName === 'function_execute'
+    toolName === 'function_execute' || toolName === 'run_code'
       ? LOCAL_COPILOT_TOOL_RESULT_MAX_CHARS_FUNCTION_EXECUTE
       : LOCAL_COPILOT_TOOL_RESULT_MAX_CHARS
   return compactStringifyForLlm(sanitized, maxChars)

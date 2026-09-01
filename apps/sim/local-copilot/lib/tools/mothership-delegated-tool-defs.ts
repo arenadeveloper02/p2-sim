@@ -17,13 +17,22 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   get_workflow_data:
     'Loads workflow structure and metadata by workflowId (useful on home chat when no workflow is open).',
   list_integration_tools:
-    'Lists available operations for a connected integration service (e.g. gmail, google_sheets, slack). Then call invoke_integration_tool with the exact tool id — do not call load_integration_tool.',
+    'Lists available operations for a connected integration service (e.g. gmail, google_sheets, slack). Then call invoke_integration_tool or call_integration_tool with the exact tool id. Optional Cloud preload: load_integration_tool({ tool_ids }).',
   read: 'Reads a workspace file by canonical VFS path. For file bytes/text use files/<name>/content (e.g. files/page.html/content). Required before workspace_file operation=update on existing HTML/text so the edit starts from the current file.',
   glob: 'Finds workspace files by glob pattern (e.g. files/**/*.csv).',
   grep: 'Searches file contents under a workspace path pattern.',
   create_file:
     'Creates a workspace file. Prefer fileName with a VFS path (e.g. "files/Deck.pptx"). For markdown/text/json/csv/html, ALWAYS pass content with the full body — markdown must be finished GFM (# title, ## sections, lists, blank lines), not a wall of prose or a file wrapped in one code fence. Do not also print that body in chat. Office formats (pptx/docx/pdf): empty shell only — no content — then workspace_file update + edit_content in later rounds.',
-  create_file_folder: 'Creates a folder under the workspace files tree.',
+  create_file_folder:
+    'Creates a folder under the workspace files tree. Prefer mkdir with canonical VFS paths when creating one or more folders (files/ or workflows/).',
+  mkdir:
+    'Creates folders at canonical VFS paths (mkdir -p). REQUIRED: paths (array, e.g. ["files/Reports/2026"]) and toolTitle. Missing parents are created. Prefer this over create_file_folder.',
+  mv:
+    'Moves or renames files/folders by canonical VFS path. REQUIRED: sources (array), destination, toolTitle. Trailing "/" on destination keeps names and moves into that folder. Prefer this over move_file / move_file_folder — sources may mix files and folders in one category.',
+  rm:
+    'Deletes files or folders by canonical VFS path. REQUIRED: paths (array) and toolTitle. Destructive — only call when the user explicitly asked. Prefer this over delete_file / delete_file_folder; paths from different categories may be mixed.',
+  cp:
+    'Copies files or folders by canonical VFS path. REQUIRED: sources (array), destination, toolTitle. Trailing "/" on destination duplicates sources into that folder keeping names. This is the copy tool — do not reconstruct copies via read + create_file.',
   workspace_file:
     'Declares a content edit on an existing workspace file (append/update/patch). REQUIRED: operation, target={kind:"path", path:"files/..." }, title. For HTML/text, targeted changes (title, heading, one string) MUST use operation=patch with strategy=search_replace — update replaces the ENTIRE file. Always read files/<path>/content first before update. Never operation=create or target.kind=new_file. Example patch: {"operation":"patch","target":{"kind":"path","path":"files/page.html"},"title":"Title","edit":{"strategy":"search_replace","search":"<title>Old</title>"}}. Does not write the body — call edit_content in the NEXT tool round with content.',
   download_to_workspace_file: 'Downloads a URL into a workspace file.',
@@ -40,7 +49,13 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Live web search via Exa (same keys as the Exa block: workspace EXA_API_KEY, BYOK, or hosted). Call this FIRST for real-world factual / current questions (who/what/when/where, news, prices, weather) — do not answer from memory. For citation-heavy Q&A you may use invoke_integration_tool with exa_answer instead. REQUIRED: query and toolTitle.',
   enrichment_run: 'Runs a one-off table enrichment lookup inline (no table/workflow required).',
   function_execute:
-    'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled). Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools.',
+    'Runs JavaScript, Python, or shell in a secure sandbox (E2B when enabled) and MAY write workspace files/tables. Return values appear in `result`; printed output appears in `stdout`. Tool results also include `capturedOutput` — use that for the user-facing answer. Mount workspace files/tables via `inputs`; save files with `outputs.files` or `outputPath`. Python and shell require e2b.enabled in context. Prefer this over Daytona integration tools. Use run_code instead when you only need to compute and report (no workspace writes).',
+  run_code:
+    'Compute-only sandbox exec (same runtime and `inputs` mounting as function_execute). Use for inspection, transforms, and answers you will report in chat. Do NOT pass `outputs` or `outputTable` — those writes are rejected. When you need to save files or overwrite a table, call function_execute instead.',
+  manage_sandbox:
+    'Creates, lists, edits, or deletes named Sim sandboxes (operation: add|edit|list|delete). Use for CLI pins (`cliTools`), npm/PyPI deps (`dependencies` + `language`), and Debian packages (`systemPackages`). list first to get sandboxId before edit/delete. Distinct from function_execute / run_code, which run code in a sandbox.',
+  deploy_custom_block:
+    'Publishes or unpublishes the current workflow as a custom block (action: deploy|undeploy). REQUIRED on first publish: name. Call get_block_outputs first when setting exposedOutputs. Optional iconUrl (workspace files/... path or https image). Ask the user before publishing unless they explicitly requested it.',
   edit_content:
     'Writes the body after a successful workspace_file in a prior round. REQUIRED: content (string). For pptx/docx/pdf put JavaScript using pre-initialized globals (pptx / docx / pdf) — never require/import. PPTX: SLIDE_W/MARGIN/CONTENT_W, title + bullets, one idea per slide. DOCX: __docxDocOptions + HeadingLevel + addSection (never docx.addSection). PDF: LETTER pages, margins, wrapped text. Markdown: finished GFM. Never a single unstyled dump. Never emit in the same batch as workspace_file.',
   deploy_chat:
@@ -101,17 +116,17 @@ const DELEGATED_TOOL_DESCRIPTIONS: Record<string, string> = {
   ffmpeg:
     'Runs FFmpeg operations on workspace media files (trim, concat, convert, overlay_audio, mix_audio, scale_pad, extract_audio, thumbnail, probe, …). Mount inputs via inputs.files with exact VFS paths; save results with outputs.files.',
   delete_file:
-    'Deletes workspace files by canonical VFS paths. REQUIRED: paths (array). Destructive — only call when the user explicitly asked.',
+    'Deletes workspace files by canonical VFS paths. REQUIRED: paths (array). Destructive — only call when the user explicitly asked. Prefer rm when deleting mixed files/folders.',
   rename_file:
-    'Renames a workspace file in place. REQUIRED: path and newName (including extension). Use move_file to change folders.',
+    'Renames a workspace file in place. REQUIRED: path and newName (including extension). Use mv (or move_file) to change folders.',
   move_file:
-    'Moves workspace files into a folder. REQUIRED: paths (array). Omit destinationPath (or pass "files") for root.',
+    'Moves workspace files into a folder. REQUIRED: paths (array). Omit destinationPath (or pass "files") for root. Prefer mv for mixed file/folder moves or a destination that also renames.',
   list_file_folders: 'Lists folders under the workspace files tree.',
   rename_file_folder: 'Renames a files-tree folder. REQUIRED: path and name (new folder name).',
   move_file_folder:
-    'Moves a files-tree folder. REQUIRED: path. Omit destinationPath (or pass "files") for root.',
+    'Moves a files-tree folder. REQUIRED: path. Omit destinationPath (or pass "files") for root. Prefer mv when moving mixed items or renaming in the same call.',
   delete_file_folder:
-    'Deletes files-tree folders by canonical VFS paths. REQUIRED: paths (array). Destructive — only call when the user explicitly asked.',
+    'Deletes files-tree folders by canonical VFS paths. REQUIRED: paths (array). Destructive — only call when the user explicitly asked. Prefer rm when deleting mixed files/folders.',
   set_block_enabled:
     'Enables or disables a block in a workflow. REQUIRED: blockId and enabled (boolean). Pass workflowId on home chat.',
   set_global_workflow_variables:
@@ -152,6 +167,10 @@ export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
   'grep',
   'create_file',
   'create_file_folder',
+  'mkdir',
+  'mv',
+  'rm',
+  'cp',
   'workspace_file',
   'download_to_workspace_file',
   'user_table',
@@ -162,6 +181,9 @@ export const MOTHERSHIP_DELEGATED_TOOL_NAMES = [
   'search_online',
   'enrichment_run',
   'function_execute',
+  'run_code',
+  'manage_sandbox',
+  'deploy_custom_block',
   'edit_content',
   'deploy_chat',
   'get_block_outputs',
@@ -239,6 +261,7 @@ export const WORKFLOW_SCOPED_DELEGATED_TOOLS = new Set<MothershipDelegatedToolNa
   'set_block_enabled',
   'set_global_workflow_variables',
   'get_deployed_workflow_state',
+  'deploy_custom_block',
 ])
 
 export function isWorkflowScopedDelegatedTool(toolName: string): boolean {

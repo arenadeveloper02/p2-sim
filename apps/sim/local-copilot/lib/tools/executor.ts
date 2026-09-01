@@ -16,6 +16,7 @@ import { reloadLocalCopilotWorkflowContext } from '@/local-copilot/lib/context/r
 import { getLocalCopilotMemorySnapshot } from '@/local-copilot/lib/diagnostics'
 import { generateWorkflowPatchFromRequest } from '@/local-copilot/lib/patches/generate'
 import { validateWorkflowPatch, validateWorkflowState } from '@/local-copilot/lib/patches/validate'
+import { adaptListIntegrationToolsForLocal } from '@/local-copilot/lib/tools/adapt-list-integration-tools'
 import { toCopilotServerToolContext } from '@/local-copilot/lib/tools/copilot-server-tool-context'
 import { getToolDefinition } from '@/local-copilot/lib/tools/definitions'
 import { canonicalCreateFilePath } from '@/local-copilot/lib/tools/enrich-file-tool-args'
@@ -24,6 +25,14 @@ import {
   SEPARATE_DRAFT_RECIPIENTS_KEY,
 } from '@/local-copilot/lib/tools/enrich-integration-params'
 import { injectWorkspaceEnvApiKeyIfNeeded } from '@/local-copilot/lib/tools/inject-workspace-env-api-key'
+import {
+  CALL_INTEGRATION_TOOL_NAME,
+  LOAD_INTEGRATION_TOOL_NAME,
+  parseLoadIntegrationToolIds,
+  rankIntegrationTools,
+  remapCallIntegrationToolArgs,
+  SEARCH_INTEGRATION_TOOLS_NAME,
+} from '@/local-copilot/lib/tools/integration-gateway'
 import {
   executeMothershipDelegatedTool,
   isMothershipDelegatedTool,
@@ -326,6 +335,9 @@ async function executeLocalCopilotToolInner(
     }
   }
   const toolName = resolvedName.name
+  if (requestedToolName === CALL_INTEGRATION_TOOL_NAME) {
+    args = remapCallIntegrationToolArgs(args)
+  }
 
   args = pinToolArgsToWorkspace(args, ctx.workspaceId)
   ctx.mutationIdempotency ??= new Map()
@@ -344,18 +356,6 @@ async function executeLocalCopilotToolInner(
   if (toolName === LOAD_USER_SKILL_TOOL_NAME) {
     logger.info('Executing Arena Copilot tool', { toolName, workflowId: ctx.workflowId })
     return runLoadUserSkill(args, ctx)
-  }
-
-  // Cloud agents call load_integration_tool after listing; Arena uses invoke_integration_tool.
-  if (toolName === 'load_integration_tool') {
-    const message =
-      'load_integration_tool is Cloud-only. Call list_integration_tools then invoke_integration_tool({ toolId: "<id>", params: { ... } }) with the listed tool id (e.g. gmail_draft_v2).'
-    return {
-      toolName,
-      success: false,
-      error: message,
-      result: { error: message },
-    }
   }
 
   const definition = getToolDefinition(toolName)
@@ -747,6 +747,87 @@ async function executeLocalCopilotToolInner(
         },
       }
 
+    case SEARCH_INTEGRATION_TOOLS_NAME: {
+      const query = typeof args.query === 'string' ? args.query.trim() : ''
+      if (!query) {
+        return {
+          toolName,
+          success: false,
+          error: 'query is required',
+          result: { error: 'query is required' },
+        }
+      }
+      const { getVisibleExposedIntegrationTools } = await import(
+        '@/lib/copilot/tools/handlers/integration-tools'
+      )
+      const visible = await getVisibleExposedIntegrationTools(toCopilotServerToolContext(ctx))
+      const service =
+        typeof args.service === 'string'
+          ? args.service.trim()
+          : typeof args.integration === 'string'
+            ? args.integration.trim()
+            : ''
+      const ranked = rankIntegrationTools({
+        tools: visible,
+        query,
+        ...(service ? { service } : {}),
+        limit: args.limit,
+      })
+      if (service && ranked.tools.length === 0) {
+        return {
+          toolName,
+          success: false,
+          error: `Unknown integration "${service}". Available integrations: ${ranked.availableServices.join(', ')}`,
+          result: {
+            error: `Unknown integration "${service}". Available integrations: ${ranked.availableServices.join(', ')}`,
+          },
+        }
+      }
+      if (!service && ranked.tools.length === 0) {
+        return {
+          toolName,
+          success: false,
+          error: `No integration operations matched "${query}". Pass service (e.g. gmail) or call list_integration_tools with that service.`,
+          result: { error: `No integration operations matched "${query}".` },
+        }
+      }
+      const adapted = adaptListIntegrationToolsForLocal({
+        query,
+        ...(ranked.service ? { service: ranked.service } : {}),
+        tools: ranked.tools,
+      })
+      rememberListedIntegrationTools(ctx, adapted)
+      return { toolName, success: true, result: adapted }
+    }
+
+    case LOAD_INTEGRATION_TOOL_NAME: {
+      const toolIds = parseLoadIntegrationToolIds(args)
+      if (toolIds.length === 0) {
+        return {
+          toolName,
+          success: false,
+          error: 'tool_ids is required — copy ids from search_integration_tools or list_integration_tools',
+          result: {
+            error: 'tool_ids is required — copy ids from search_integration_tools or list_integration_tools',
+          },
+        }
+      }
+      const loaded = { tools: toolIds.map((id) => ({ id })), loaded: toolIds }
+      const adapted = adaptListIntegrationToolsForLocal(loaded)
+      rememberListedIntegrationTools(ctx, adapted)
+      return {
+        toolName,
+        success: true,
+        result:
+          adapted && typeof adapted === 'object' && !Array.isArray(adapted)
+            ? {
+                ...adapted,
+                note: 'Schemas attached. Call invoke_integration_tool or call_integration_tool with a returned id. Arena does not need a separate load step after this.',
+              }
+            : adapted,
+      }
+    }
+
     case 'invoke_integration_tool': {
       const finishInvoke = (result: ToolExecutionResult): ToolExecutionResult => {
         if (result.success) {
@@ -769,7 +850,7 @@ async function executeLocalCopilotToolInner(
         return {
           toolName,
           success: false,
-          error: 'toolId is required — call list_integration_tools first',
+          error: 'toolId is required — call list_integration_tools or search_integration_tools first',
           result: {},
         }
       }

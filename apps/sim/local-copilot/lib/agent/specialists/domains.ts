@@ -61,6 +61,9 @@ export const ALWAYS_ON_TOOL_NAMES = new Set<string>([
   'edit_workflow',
   'list_integration_tools',
   'invoke_integration_tool',
+  'search_integration_tools',
+  'load_integration_tool',
+  'call_integration_tool',
   'open_resource',
   'get_platform_actions',
   'list_user_workspaces',
@@ -90,6 +93,7 @@ const WORKFLOW_TOOLS = [
   'manage_skill',
   'manage_custom_tool',
   'manage_mcp_tool',
+  'deploy_custom_block',
 ] as const
 
 const RUN_TOOLS = [
@@ -110,6 +114,7 @@ const DEPLOY_TOOLS = [
   'deploy_chat',
   'deploy_api',
   'deploy_mcp',
+  'deploy_custom_block',
   'redeploy',
   'load_deployment',
   'promote_to_live',
@@ -132,6 +137,10 @@ const AUTH_TOOLS = [
   'generate_api_key',
   'get_available_integrations',
   'list_integration_tools',
+  'search_integration_tools',
+  'load_integration_tool',
+  'call_integration_tool',
+  'invoke_integration_tool',
 ] as const
 
 const KNOWLEDGE_TOOLS = ['knowledge_base', 'materialize_file'] as const
@@ -147,11 +156,16 @@ const SCHEDULED_TASK_TOOLS = [
 const AGENT_TOOLS = [
   'list_integration_tools',
   'invoke_integration_tool',
+  'search_integration_tools',
+  'load_integration_tool',
+  'call_integration_tool',
   'manage_mcp_tool',
   'manage_skill',
   'manage_custom_tool',
   'load_user_skill',
   'function_execute',
+  'run_code',
+  'manage_sandbox',
   'get_available_integrations',
   'get_platform_actions',
   'list_workspace_mcp_servers',
@@ -164,9 +178,13 @@ const RESEARCH_TOOLS = [
   'search_online',
   'list_integration_tools',
   'invoke_integration_tool',
+  'search_integration_tools',
+  'load_integration_tool',
+  'call_integration_tool',
   'search_docs',
   'search_documentation',
   'function_execute',
+  'run_code',
   'user_memory',
   'read',
   'glob',
@@ -181,11 +199,16 @@ const FILE_TOOLS = [
   'grep',
   'create_file',
   'create_file_folder',
+  'mkdir',
+  'mv',
+  'rm',
+  'cp',
   'workspace_file',
   'download_to_workspace_file',
   'materialize_file',
   'edit_content',
   'function_execute',
+  'run_code',
   'delete_file',
   'rename_file',
   'move_file',
@@ -322,7 +345,7 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'run':
       return 'Focus on running and debugging workflows (get_workflow_run_options, run_workflow, run_block, run_from_block, query_logs). Prefer existing workspaceWorkflows entries — never create a workflow just to run something.'
     case 'deploy':
-      return 'Focus on deploying workflows (deploy_chat / deploy_api / redeploy / promotion) and verifying deployment status.'
+      return 'Focus on deploying workflows (deploy_chat / deploy_api / redeploy / promotion / deploy_custom_block) and verifying deployment status.'
     case 'auth':
       return 'Focus on credentials, OAuth links, and API keys.'
     case 'knowledge':
@@ -332,13 +355,13 @@ export function domainSystemHint(domain: LocalCopilotSpecialistDomain): string {
     case 'scheduled_task':
       return 'Focus on scheduled tasks (create/list/update/complete/logs).'
     case 'agent':
-      return 'Focus on integration tools, MCP tools, skills, and function_execute.'
+      return 'Focus on integration tools, MCP tools, skills, function_execute / run_code, and manage_sandbox.'
     case 'research':
       return 'Focus on research. For ANY real-world factual or current question, call a live search tool FIRST (exa_answer via invoke_integration_tool, or search_online) before answering — never answer from training memory alone. When the question is about a workspace file, glob/read/grep that exact VFS path — do not open a similarly named file. Use search_documentation only for Sim product questions.'
     case 'media':
       return 'Focus on image/audio/video generation and ffmpeg.'
     case 'file':
-      return `Read, create, and update workspace files. Create NEW html/md/txt/json/csv with create_file once (full body in content). Edit EXISTING text/html: MUST read files/<path>/content first; targeted changes (title, heading, one string) use workspace_file operation=patch with search_replace then edit_content with ONLY the replacement — never regenerate the file. Use operation=update only for empty shells or an explicit full rewrite, and then edit_content must start from the read result. After create_file, workspace_file target.kind=path (never kind=new_file / operation=create — that duplicates the file). There is no prepare_file_edit, edit_file, or run_function tool. Use function_execute only for sandbox data processing (mount via inputs, save with outputs.files), not office docs. Chat uploads/ need materialize_file into files/ before the sandbox can open them. CRITICAL: never dump HTML/CSS/JS in the user-facing reply or findings (no \`\`\`html fences). You MUST still read existing files via the read tool. Put write bodies only in create_file/edit_content. Findings: 1–2 sentences naming the file and outcome.\n\n${DOCUMENT_FORMAT_GUIDANCE}`
+      return `Read, create, and update workspace files. Create NEW html/md/txt/json/csv with create_file once (full body in content). Folders: mkdir (VFS paths). Copy/move/delete: cp, mv, rm — not read+create_file for copies. Edit EXISTING text/html: MUST read files/<path>/content first; targeted changes (title, heading, one string) use workspace_file operation=patch with search_replace then edit_content with ONLY the replacement — never regenerate the file. Use operation=update only for empty shells or an explicit full rewrite, and then edit_content must start from the read result. After create_file, workspace_file target.kind=path (never kind=new_file / operation=create — that duplicates the file). There is no prepare_file_edit, edit_file, or run_function tool. Use function_execute to write sandbox outputs (mount via inputs, save with outputs.files); use run_code for compute-only inspection with no workspace writes. Not for office docs. Chat uploads/ need materialize_file into files/ before the sandbox can open them. CRITICAL: never dump HTML/CSS/JS in the user-facing reply or findings (no \`\`\`html fences). You MUST still read existing files via the read tool. Put write bodies only in create_file/edit_content. Findings: 1–2 sentences naming the file and outcome.\n\n${DOCUMENT_FORMAT_GUIDANCE}`
     case 'superagent':
       return 'Focus on third-party integration actions. Authenticate if needed, then invoke the right integration tool.'
     default:

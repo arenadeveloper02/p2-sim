@@ -330,7 +330,12 @@ export function synthesizeAssistantSummaryFromTools(records: ToolTurnRecord[]): 
       continue
     }
 
-    if (record.name === 'function_execute' || record.name === 'invoke_integration_tool') {
+    if (
+      record.name === 'function_execute' ||
+      record.name === 'run_code' ||
+      record.name === 'invoke_integration_tool' ||
+      record.name === 'call_integration_tool'
+    ) {
       const captured = extractCapturedOutput(record.result)
       if (captured) {
         parts.push(truncate(captured, GENERIC_MESSAGE_MAX_CHARS))

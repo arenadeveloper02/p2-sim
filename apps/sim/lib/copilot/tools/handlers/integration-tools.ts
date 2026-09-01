@@ -2,6 +2,7 @@ import { getBlockVisibilityForCopilot } from '@/lib/copilot/block-visibility'
 import {
   filterExposedIntegrationTools,
   getExposedIntegrationTools,
+  type ExposedIntegrationTool,
 } from '@/lib/copilot/integration-tools'
 import type { ExecutionContext, ToolCallResult } from '@/lib/copilot/request/types'
 import { getAllowedIntegrationsFromEnv } from '@/lib/core/config/env-flags'
@@ -9,6 +10,29 @@ import { isIntegrationDeploymentAvailableForVisibility } from '@/lib/integration
 import { intersectIntegrationAllowlists } from '@/lib/permission-groups/integration-allowlist'
 import { getUserPermissionConfig } from '@/ee/access-control/utils/permission-check'
 import { stripVersionSuffix } from '@/tools/utils'
+
+/**
+ * Viewer-projected integration catalog — same set `list_integration_tools` uses.
+ */
+export async function getVisibleExposedIntegrationTools(
+  context: Pick<ExecutionContext, 'userId' | 'workspaceId'>
+): Promise<ExposedIntegrationTool[]> {
+  const vis = await getBlockVisibilityForCopilot(context.userId, context.workspaceId)
+  const permissionConfig = context.workspaceId
+    ? await getUserPermissionConfig(context.userId, context.workspaceId)
+    : null
+  const allowedIntegrations = intersectIntegrationAllowlists(
+    permissionConfig?.allowedIntegrations ?? null,
+    getAllowedIntegrationsFromEnv()
+  )
+  return filterExposedIntegrationTools(
+    getExposedIntegrationTools(),
+    vis,
+    (owner) =>
+      isIntegrationDeploymentAvailableForVisibility(owner.blockType, vis) &&
+      (allowedIntegrations === null || allowedIntegrations.includes(owner.blockType.toLowerCase()))
+  )
+}
 
 export async function executeListIntegrationTools(
   params: Record<string, unknown>,
@@ -19,23 +43,7 @@ export async function executeListIntegrationTools(
     return { success: false, error: "Missing required parameter 'integration'" }
   }
 
-  // The exposed set is the ungated universe — project it for this viewer so
-  // gated (preview / kill-switched) integrations stay undiscoverable.
-  const vis = await getBlockVisibilityForCopilot(context.userId, context.workspaceId)
-  const permissionConfig = context.workspaceId
-    ? await getUserPermissionConfig(context.userId, context.workspaceId)
-    : null
-  const allowedIntegrations = intersectIntegrationAllowlists(
-    permissionConfig?.allowedIntegrations ?? null,
-    getAllowedIntegrationsFromEnv()
-  )
-  const all = filterExposedIntegrationTools(
-    getExposedIntegrationTools(),
-    vis,
-    (owner) =>
-      isIntegrationDeploymentAvailableForVisibility(owner.blockType, vis) &&
-      (allowedIntegrations === null || allowedIntegrations.includes(owner.blockType.toLowerCase()))
-  )
+  const all = await getVisibleExposedIntegrationTools(context)
   const service = stripVersionSuffix(raw.toLowerCase())
   const matches = all.filter((tool) => tool.service === service)
 

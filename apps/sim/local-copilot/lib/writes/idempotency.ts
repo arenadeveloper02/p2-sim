@@ -5,10 +5,12 @@ const IDEMPOTENT_TOOLS = new Set([
   'deploy_api',
   'deploy_chat',
   'deploy_mcp',
+  'deploy_custom_block',
   'redeploy',
   'promote_to_live',
   'update_deployment_version',
   'invoke_integration_tool',
+  'call_integration_tool',
 ])
 
 /**

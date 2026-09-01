@@ -64,14 +64,14 @@ export function assertInvokeLookBeforeWrite(params: {
 }): LookBeforeWriteOk | LookBeforeWriteDenied {
   const toolId = params.toolId.trim()
   if (!toolId) {
-    return { ok: false, error: 'toolId is required — call list_integration_tools first' }
+    return { ok: false, error: 'toolId is required — call list_integration_tools or search_integration_tools first' }
   }
   if (params.knownToolIds?.has(toolId) || params.listedIntegrationToolIds?.has(toolId)) {
     return { ok: true }
   }
   return {
     ok: false,
-    error: `Call list_integration_tools before invoke_integration_tool for "${toolId}".`,
+    error: `Call list_integration_tools or search_integration_tools before invoke_integration_tool for "${toolId}".`,
   }
 }
 

@@ -21,11 +21,12 @@ export interface LocalWorkflowPatchTagData {
   workflowId: string
 }
 
-const ALWAYS_DESTRUCTIVE_TOOLS = new Set(['delete_workflow'])
+const ALWAYS_DESTRUCTIVE_TOOLS = new Set(['delete_workflow', 'rm'])
 const PRODUCTION_TOOLS = new Set([
   'deploy_api',
   'deploy_chat',
   'deploy_mcp',
+  'deploy_custom_block',
   'redeploy',
   'promote_to_live',
   'update_deployment_version',
@@ -147,7 +148,7 @@ export function classifyLocalToolConfirmation(
 
   // Integration invokes run immediately — no Approve step. Destructive/deploy/
   // credential/costly tools above still require confirmation.
-  if (toolName === 'invoke_integration_tool') {
+  if (toolName === 'invoke_integration_tool' || toolName === 'call_integration_tool') {
     return null
   }
 

@@ -25,7 +25,7 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
     domain: 'deploy',
     weight: 3,
     patterns: [
-      /\b(deploy|redeploy|promote|chat\s*url|api\s*endpoint|mcp\s*server|go\s*live|production)\b/i,
+      /\b(deploy|redeploy|promote|chat\s*url|api\s*endpoint|mcp\s*server|go\s*live|production|custom\s+block)\b/i,
       /\bdeployment\b/i,
     ],
   },
@@ -55,7 +55,8 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
     domain: 'file',
     weight: 3,
     patterns: [
-      /\b(file|folder|vfs|markdown|html|htm|csv|docx?|pptx?|pdf|slides?|deck|presentation|powerpoint|read\s+file|write\s+file|glob|grep)\b/i,
+      /\b(file|folder|vfs|markdown|html|htm|csv|docx?|pptx?|pdf|slides?|deck|presentation|powerpoint|read\s+file|write\s+file|glob|grep|mkdir|rmdir)\b/i,
+      /\b(copy|move|rename|delete)\s+(the\s+)?(file|folder|directory|dir)s?\b/i,
       /\b(create|make|generate|build|write)\s+(an?\s+)?(ppt|pptx|powerpoint|presentation|slides?|deck|docx?|pdf|document)\b/i,
     ],
   },
@@ -92,8 +93,9 @@ const DOMAIN_PATTERNS: DomainPattern[] = [
     domain: 'agent',
     weight: 2,
     patterns: [
-      /\b(integration\s+tool|list_integration|invoke_integration|mcp\s+tool|custom\s+tool|load_user_skill|skill)\b/i,
-      /\b(function_execute|sandbox\s+code)\b/i,
+      /\b(integration\s+tool|list_integration|invoke_integration|search_integration|load_integration|call_integration|mcp\s+tool|custom\s+tool|load_user_skill|skill)\b/i,
+      /\b(function_execute|run_code|manage_sandbox|sandbox\s+code|custom\s+block)\b/i,
+      /\b(create|list|edit|delete|manage)\s+(a\s+)?sandbox/i,
     ],
   },
   {

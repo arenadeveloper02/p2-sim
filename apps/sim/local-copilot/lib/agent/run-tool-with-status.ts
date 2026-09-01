@@ -21,6 +21,7 @@ const LONG_RUNNING_TOOLS = new Set([
   'run_block',
   'run_from_block',
   'function_execute',
+  'run_code',
   'development_generate_app',
   'development_edit_app',
   'search_online',

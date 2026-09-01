@@ -1,6 +1,20 @@
+import { TOOL_RUNTIME_SCHEMAS } from '@/lib/copilot/generated/tool-schemas-v1'
+import {
+  CALL_INTEGRATION_TOOL_NAME,
+  LOAD_INTEGRATION_TOOL_NAME,
+  SEARCH_INTEGRATION_TOOLS_NAME,
+} from '@/local-copilot/lib/tools/integration-gateway'
 import { buildMothershipDelegatedToolDefinitions } from '@/local-copilot/lib/tools/mothership-delegated-tool-defs'
 import { buildLocalCopilotUserSkillTool } from '@/local-copilot/lib/tools/user-skills'
 import type { LocalCopilotToolDefinition } from '@/local-copilot/lib/types'
+
+function cloudToolParameters(name: string): Record<string, unknown> {
+  return (TOOL_RUNTIME_SCHEMAS[name]?.parameters ?? {
+    type: 'object',
+    properties: {},
+    additionalProperties: false,
+  }) as Record<string, unknown>
+}
 
 const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
@@ -140,7 +154,7 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
   {
     name: 'invoke_integration_tool',
     description:
-      'Runs a Arena integration tool directly (no workflow). Use list_integration_tools first to get the exact toolId (e.g. exa_search, exa_answer, firecrawl_scrape). For live/current web data prefer exa_answer (factual Q&A with citations) or exa_search (result lists) — same as the Exa block. For E2B-backed web apps when e2b.enabled is true, use development_generate_app or development_edit_app. Workspace env keys, BYOK, and hosted keys are applied automatically.',
+      'Runs a Arena integration tool directly (no workflow). Use list_integration_tools or search_integration_tools first to get the exact toolId (e.g. exa_search, exa_answer, firecrawl_scrape). Cloud alias: call_integration_tool (toolId + arguments). For live/current web data prefer exa_answer (factual Q&A with citations) or exa_search (result lists) — same as the Exa block. For E2B-backed web apps when e2b.enabled is true, use development_generate_app or development_edit_app. Workspace env keys, BYOK, and hosted keys are applied automatically.',
     parameters: {
       type: 'object',
       properties: {
@@ -156,6 +170,24 @@ const CORE_LOCAL_COPILOT_TOOLS: LocalCopilotToolDefinition[] = [
       required: ['toolId', 'params'],
       additionalProperties: false,
     },
+  },
+  {
+    name: SEARCH_INTEGRATION_TOOLS_NAME,
+    description:
+      'Cloud-compatible search across integration operations. Pass query (what the operation must do) and optional service (gmail, slack, google_sheets). Then load_integration_tool or invoke_integration_tool / call_integration_tool with the returned id. Prefer list_integration_tools when you already know the service name.',
+    parameters: cloudToolParameters(SEARCH_INTEGRATION_TOOLS_NAME),
+  },
+  {
+    name: LOAD_INTEGRATION_TOOL_NAME,
+    description:
+      'Cloud-compatible preload for integration tool ids. Arena does not defer schemas — this records the ids and returns their params so you can call invoke_integration_tool or call_integration_tool next. REQUIRED: tool_ids from search_integration_tools or list_integration_tools.',
+    parameters: cloudToolParameters(LOAD_INTEGRATION_TOOL_NAME),
+  },
+  {
+    name: CALL_INTEGRATION_TOOL_NAME,
+    description:
+      'Cloud-compatible invoke. Same as invoke_integration_tool: pass toolId plus arguments (operation inputs). Optional credentialId. Use after search_integration_tools / list_integration_tools (and optional load_integration_tool).',
+    parameters: cloudToolParameters(CALL_INTEGRATION_TOOL_NAME),
   },
   {
     name: 'validate_workflow',

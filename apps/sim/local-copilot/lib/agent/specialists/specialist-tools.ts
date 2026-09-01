@@ -40,7 +40,7 @@ const SPECIALIST_SPECS: SpecialistToolSpec[] = [
   },
   {
     domain: 'deploy',
-    description: 'Deploy Agent — deploy chat/API/MCP, redeploy, promote, status.',
+    description: 'Deploy Agent — deploy chat/API/MCP, custom blocks, redeploy, promote, status.',
     properties: {
       request: { type: 'string', description: 'What deploy or promotion action is needed.' },
     },
@@ -85,7 +85,7 @@ const SPECIALIST_SPECS: SpecialistToolSpec[] = [
   },
   {
     domain: 'agent',
-    description: 'Tools Agent — skills, custom tools, MCP configs, integration listing/invoke.',
+    description: 'Tools Agent — skills, custom tools, MCP configs, sandboxes, integration listing/invoke (including Cloud search/load/call names).',
     properties: {
       request: { type: 'string', description: 'What tool/skill/MCP action is needed.' },
     },
